@@ -309,6 +309,9 @@ func (b *Broker) Reclaim(ctx context.Context, dryRun bool) (ReclaimReport, error
 			d := b.reclaimTaskDir(ctx, rd, r, rep.At, dryRun)
 			touched = touched || (d.Subject != "" && d.Reason != WhyLive)
 			b.decide(ctx, &rep, d, dryRun)
+			if !dryRun {
+				b.recordTaskGoCacheDecision(ctx, r, d, rep.At)
+			}
 		}
 		if r.Callback != nil {
 			d := b.reclaimCallback(ctx, r, rep.At, dryRun)
@@ -903,6 +906,19 @@ func (b *Broker) reclaimTaskDir(ctx context.Context, rd reading, r Record, now t
 	if !gone {
 		return kept(r, ReclaimTaskDir, scratch, why, map[string]any{"owner": owner})
 	}
+	gateCacheRegistered := false
+	if r.Gate != nil {
+		registered, err := b.Store.GoCachesByOwner(ctx, "task", r.ID)
+		if err != nil {
+			return kept(r, ReclaimTaskDir, scratch, WhyUnreadable, map[string]any{"owner": owner})
+		}
+		if len(registered) > 0 {
+			if len(registered) != 1 || registered[0].Path != b.gateScratch(r.ID).Cache || !registered[0].Rebuildable {
+				return kept(r, ReclaimTaskDir, scratch, WhyUnrecorded, map[string]any{"owner": owner})
+			}
+			gateCacheRegistered = true
+		}
+	}
 	bytes, _ := dirBytes(scratch)
 	d := ReclaimDecision{Task: r.ID, Subject: ReclaimTaskDir, Path: scratch, Reason: WhyWorkScratch, Bytes: bytes,
 		Evidence: map[string]any{"owner": owner}}
@@ -916,7 +932,18 @@ func (b *Broker) reclaimTaskDir(ctx context.Context, rd reading, r Record, now t
 		d.Evidence["intent"] = err.Error()
 		return kept(r, ReclaimTaskDir, scratch, WhyUnrecorded, d.Evidence)
 	}
-	if err := removeOwned(r.Dir, scratch, "work"); err != nil {
+	if gateCacheRegistered {
+		if err := b.Store.MarkGoCacheCleanup(ctx, b.gateScratch(r.ID).Cache, "task", r.ID,
+			reclaimRemoving, WhyWorkScratch, b.now()); err != nil {
+			d.Evidence["intent"] = err.Error()
+			return kept(r, ReclaimTaskDir, scratch, WhyUnrecorded, d.Evidence)
+		}
+	}
+	remove := b.removeTaskScratch
+	if remove == nil {
+		remove = removeOwned
+	}
+	if err := remove(r.Dir, scratch, "work"); err != nil {
 		d.Evidence["remove"] = err.Error()
 		return kept(r, ReclaimTaskDir, scratch, WhyRemoveFailed, d.Evidence)
 	}

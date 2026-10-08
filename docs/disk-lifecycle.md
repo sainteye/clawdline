@@ -39,10 +39,37 @@ Go's default build cache is shared by commands of the same user. Go validates
 cache keys and periodically removes entries not used recently. `go clean
 -cache` removes all of its build entries and forces recompilation on the next
 build. The shared cache is rebuildable, but it is not a task-owned directory:
-the task reclaimer must never chmod or remove it. A separate `GOCACHE` inside
-a task's broker-owned `work/` is task scratch and follows that task's reclaim
-decision. A cache an Agent creates at another path has no broker ownership
-just because its name resembles a Go cache.
+the task reclaimer must never chmod or remove it. Ordinary task, Root
+Assignment, and Agent launch commands do not set `GOCACHE` or `GOMODCACHE`;
+they inherit the normal Go environment. The content-addressed Go build cache
+supports concurrent builds, so these launches do not need a fresh cache for
+correctness. The verification gate is different: its read-only checker has
+only three broker-owned writable scratch directories, so its launcher sets
+`GOCACHE` to the exact task `work/cache` and `GOMODCACHE` below it. Sharing
+the user's normal cache would cross that filesystem permission boundary.
+
+Before a gate checker launches, the broker validates its task directory and
+scratch as spelled and resolved, refuses symlink escapes, and registers the
+exact `work/cache` path in SQLite's `broker_go_caches` with owner kind `task`,
+task ID, purpose, rebuildability, and creation time. The row also retains the
+last actual cleanup outcome, reason, and time. A dry run changes none of them.
+The cache has no independent deletion schedule: its cleanup result follows
+the existing task `work/` decision. The broker records a `removing` intent
+before unlinking, keeps an active or unknown owner, and retries a failed
+removal on the next sweep. A missing scratch after a recorded intent becomes
+`removed`; without that intent its disappearance is `unknown`. Read-only
+module directories are made traversable only inside proved task scratch;
+symlinks are never followed to their targets. A gate cache created by an older
+daemon has no registration row, but its task-owned `work/` still follows the
+existing task owner proof and reclaim decision. The broker does not invent a
+creation timestamp or registration for that older cache.
+
+Root Assignments and Agent launches do not create a separate Go cache in the
+broker's launch code. A session may manually set `GOCACHE` somewhere else,
+but that directory has no broker ownership receipt and is not registered or
+reclaimed by this mechanism. The register operation is intentionally internal
+to the gate dispatch; an arbitrary path, including a shared GOPATH or
+GOCACHE, is not admitted as gate scratch.
 
 Before an operator clears the shared cache, read `go env GOCACHE`, the active
 compile lease and queue, and whether other Go commands are using it. Wait for
@@ -56,24 +83,24 @@ unknown owner, not proof that the cache is idle.
 
 These are implementation gaps, not permissions to delete existing data:
 
-1. Give task, Root and Agent-created temporary caches a durable registration:
-   exact path, owner Session or task, purpose, whether the contents can be
-   rebuilt, creation time, and the last cleanup result. A registration must
-   name an exact path under an allowed scratch root; a filename pattern or a
-   UUID-looking directory is insufficient.
+1. If Root or Agent sessions gain a Clawdline-managed temporary cache creation
+   path, add an authenticated exact-path registration and an owner completion
+   receipt before reclaiming it. Manually created paths remain outside this
+   broker's cleanup authority.
 2. Tie Root completion to its Session's actual close or another durable
    completion receipt. Keep `briefed` as a launch state. Reclaim only its
    separately registered scratch after the owner is absent and preservation
    obligations have been resolved.
-3. Surface filesystem free space and reclaim backlog with reason counts and
-   the last failure. The existing machine-only
-   `GET /v1/orchestrator/reclaim` has standing decisions and sweep statistics,
-   but the console does not yet present them. Measurement must use cheap
-   counters or a cached bounded scan, not walk all caches on each page read.
-4. Cover interruption and retry, active and unknown owners, out-of-bound
-   symlinks, read-only directories, and changed worktrees with failure
-   injection. Existing worktree tests already cover several of these cases;
-   any new destructive path needs its own control case that stays untouched.
+3. The machine dashboard now reads filesystem free space and grouped standing
+   reclaim decisions through `GET /v1/machine/usage`, including failure counts
+   and fixed reason codes. It does not show private paths or task identifiers.
+   A per-decision last failure and an operator action for retry remain future
+   work; the machine summary must stay a bounded read rather than scan caches
+   on each page view.
+4. Continue testing changed worktrees and filesystem races with failure
+   injection. Gate-cache tests cover interruption and retry, active and
+   unknown owners, symlink escapes, and read-only directories with an external
+   target that stays untouched.
 
 Any new retention window, byte ceiling, row limit, or scan bound belongs in
 `internal/domain/capacity` and its registration guard. A cleanup report should
