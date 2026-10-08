@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { StatusCloudClient, statusChannel } from "./status-client.js"
+import { StatusCloudClient, pinnedReplyMatches, statusChannel } from "./status-client.js"
 import { base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
 
 const zero = (length) => Buffer.alloc(length).toString("base64")
@@ -107,6 +107,7 @@ test("read_transcript-only pinned reads pass the old local write guard", async (
   client.allowWrites = false
   client.retired = false
   client.readWaiters = new Map()
+  client.pinnedReadProofs = new Map()
   client._sessionIdentity = () => ({ machine: "m", session: "s" })
   client._unsupportedRefusal = () => null
   client._offlineRefusal = () => Object.assign(new Error("offline sentinel"), { code: "offline_sentinel" })
@@ -167,18 +168,66 @@ test("only pinned info and transcript seal r/; send remains on ctl/", async () =
   const key = "m\u0000s\u0000transcript"
   const waiters = {}
   client.readWaiters = new Map([[key, waiters]])
+  client.pinnedReadProofs = new Map([[key, { machineID: "m", sessionID: "s", generation: genA,
+    read: "transcript", seq: null, waiters }]])
   const pending = { key, waiters }
   const transcript = await client._publishCommand("m", "transcript", {
     session: "s", machine_id: "m", expected_generation: genA, limit: 200,
   }, "ctl", pending)
   assert.equal(transcript.ch, "r/m")
   assert.equal(pending.registered.ref.seq, 8)
+  assert.equal(client.pinnedReadProofs.get(key).seq, 8)
   assert.equal(client.pendingBySequence.get(8), pending.registered)
   await assert.rejects(() => client._publishCommand("m", "info", {
     session: "s", parts: "full", machine_id: "other", expected_generation: genA,
   }, "ctl"), { code: "execution_target_required" })
   await assert.rejects(() => client._publishCommand("m", "send", { session: "s" }, "ctl"),
     { code: "cloud_read_only" })
+})
+
+test("pinned t/ replies need the machine, Session, generation and original request sequence", () => {
+  const proof = { machineID: "m", sessionID: "s", generation: genA, read: "info.full", seq: 42 }
+  const answer = { read: "info.full", machine_id: "m", session_id: "s", expected_generation: genA, seq: 42,
+    body: { info: {} } }
+  assert.equal(pinnedReplyMatches(answer, proof), true)
+  for (const [field, replacement] of [
+    ["machine_id", "elsewhere"], ["session_id", "reused"], ["expected_generation", genB],
+    ["seq", 41], ["read", "transcript"],
+  ]) {
+    assert.equal(pinnedReplyMatches({ ...answer, [field]: replacement }, proof), false, field)
+    const missing = { ...answer }
+    delete missing[field]
+    assert.equal(pinnedReplyMatches(missing, proof), false, "missing " + field)
+  }
+})
+
+test("a retained or mismatched t/ row cannot settle a new pinned execution", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const key = "m\u0000s\u0000transcript"
+  const waiters = {}
+  client.readWaiters = new Map([[key, waiters]])
+  client.pinnedReadProofs = new Map([[key, { machineID: "m", sessionID: "s", generation: genB,
+    read: "transcript", seq: 18, waiters }]])
+  client._observeMachine = () => {}
+  client.transcriptSnapshots = new Map()
+  client.sessionSequenceByKey = new Map()
+  client._emit = () => {}
+  const settlements = []
+  client._settleRead = (readKey, body, error) => settlements.push({ readKey, body, error })
+  const channel = { kind: "transcript", machine: "m", session: "s" }
+  const old = { read: "transcript", machine_id: "m", session_id: "s", expected_generation: genA,
+    seq: 17, body: { entries: [{ text: "old content" }] } }
+  client._applySnapshot(channel, old, { seq: 23, ts: Date.now() }, true)
+  assert.equal(settlements.length, 0)
+  assert.equal(client.transcriptSnapshots.size, 0)
+  client._applySnapshot(channel, old, { seq: 24, ts: Date.now() }, false)
+  assert.equal(settlements.length, 1)
+  assert.equal(settlements[0].error.code, "read_reply_mismatch")
+  assert.equal(client.transcriptSnapshots.size, 0)
+  settlements.length = 0
+  const current = { ...old, expected_generation: genB, seq: 18, body: { entries: [] } }
+  client._applySnapshot(channel, current, { seq: 25, ts: Date.now() }, false)
+  assert.deepEqual(settlements, [{ readKey: key, body: current.body, error: null }])
 })
 
 test("leaving a detail releases s and t immediately", () => {

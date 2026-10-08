@@ -18,6 +18,18 @@ function pinnedRead(type, body) {
     body?.expected_generation !== undefined
 }
 
+function pinnedReplyKey(machine, session, read) {
+  return machine + "\u0000" + session + "\u0000" + read
+}
+
+/** A retained or delayed t/ row must name the exact request before it can settle a pinned read. */
+export function pinnedReplyMatches(payload, expected) {
+  return !!payload && typeof payload === "object" && !Array.isArray(payload) &&
+    payload.read === expected.read && payload.machine_id === expected.machineID &&
+    payload.session_id === expected.sessionID && payload.expected_generation === expected.generation &&
+    Number.isSafeInteger(payload.seq) && payload.seq === expected.seq
+}
+
 /** Validate every envelope field with the frozen validator, then verify the original signed ss/ bytes. */
 export function statusChannel(envelope) {
   const match = typeof envelope?.ch === "string" ? STATUS.exec(envelope.ch) : null
@@ -39,6 +51,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     this.detailSnapshots = new Map()
     this.pinnedInfoFlights = new Map()
     this.pinnedTranscriptFlights = new Map()
+    this.pinnedReadProofs = new Map()
   }
 
   // A status list must not cause the old, content-bearing sessions.snapshot
@@ -51,12 +64,28 @@ export class StatusCloudClient extends CatalogCloudClient {
     if (!GENERATION.test(extra.expected_generation) || typeof extra.machine_id !== "string" || !extra.machine_id) {
       return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
     }
+    const key = pinnedReplyKey(extra.machine_id, value.session, answer)
+    if (this.readWaiters.has(key)) {
+      return Promise.reject(refused("cloud_read_busy", "another read owns this Session reply channel"))
+    }
+    const proof = { machineID: extra.machine_id, sessionID: value.session,
+      generation: extra.expected_generation, read: answer, seq: null, waiters: null }
+    this.pinnedReadProofs.set(key, proof)
     // The copied _read checks allowWrites synchronously before registering its
     // t/ waiter. It is a local guard for ctl/; this one narrow call publishes
     // on r/ and is authorized separately by the relay and machine.
     const previous = this.allowWrites
     this.allowWrites = true
-    try { return super._read(value, type, extra, answer, timeoutMs, readOptions) }
+    try {
+      const promise = super._read(value, type, extra, answer, timeoutMs, readOptions)
+      proof.waiters = this.readWaiters.get(key) || null
+      if (!proof.waiters) this.pinnedReadProofs.delete(key)
+      return promise
+    }
+    catch (error) {
+      if (this.pinnedReadProofs.get(key) === proof) this.pinnedReadProofs.delete(key)
+      throw error
+    }
     finally { this.allowWrites = previous }
   }
 
@@ -76,6 +105,15 @@ export class StatusCloudClient extends CatalogCloudClient {
     const pairing = await this._outboundMachinePairing(machine)
     const sequence = await this.nextSequence(this.deviceID)
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw refused("bad_sequence", "invalid envelope sequence")
+    if (pending?.key) {
+      const proof = this.pinnedReadProofs.get(pending.key)
+      if (!proof || proof.waiters !== pending.waiters || proof.machineID !== machine ||
+        proof.sessionID !== body.session || proof.generation !== body.expected_generation ||
+        proof.read !== (type === "info" ? "info.full" : "transcript")) {
+        throw refused("read_reply_mismatch", "the pinned read no longer owns its reply")
+      }
+      proof.seq = sequence
+    }
     const envelope = await sealEnvelope({
       ch: "ctl/" + channelSegment(machine), seq: sequence, ts: Date.now(), class: "ctl",
       key_id: pairing.keyID, sender: this.deviceID,
@@ -105,6 +143,30 @@ export class StatusCloudClient extends CatalogCloudClient {
       throw this.closedFailure || error
     }
     return envelope
+  }
+
+  _applySnapshot(channel, payload, envelope, realign) {
+    if (channel?.kind === "transcript" && (payload?.read === "info.full" || payload?.read === "transcript")) {
+      const machine = decodedChannelSegment(channel.machine)
+      const session = decodedChannelSegment(channel.session)
+      const key = pinnedReplyKey(machine, session, payload.read)
+      const proof = this.pinnedReadProofs?.get(key)
+      if (proof) {
+        // Exact subscriptions realign with the relay's last t/ row. It is not
+        // an answer to a request this page has just sent.
+        if (realign) return
+        if (proof.waiters !== this.readWaiters.get(key) || !pinnedReplyMatches(payload, proof)) {
+          this._settleRead(key, null, refused("read_reply_mismatch", "the Session content reply did not match its request"))
+          return
+        }
+      }
+    }
+    return super._applySnapshot(channel, payload, envelope, realign)
+  }
+
+  _settleRead(key, body, error) {
+    this.pinnedReadProofs?.delete(key)
+    return super._settleRead(key, body, error)
   }
 
   openDetail(destination) {
