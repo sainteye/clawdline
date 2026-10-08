@@ -18,6 +18,8 @@ export interface UpdateReadEnvironment {
   visible(): boolean
   onVisibilityChange(listener: () => void): () => void
   onFocus(listener: () => void): () => void
+  /** Optional for adapters that cannot report a window leaving focus. */
+  onBlur?(listener: () => void): () => void
   onOnline(listener: () => void): () => void
   setInterval(listener: () => void, ms: number): ReturnType<typeof setInterval>
   clearInterval(timer: ReturnType<typeof setInterval>): void
@@ -29,6 +31,8 @@ export function createUpdateReadStore(read: () => Promise<UpdateRead>, env: Upda
   let readAt: number | null = null
   let inFlight: Promise<UpdateRead> | null = null
   let timer: ReturnType<typeof setInterval> | null = null
+  let wasVisible = env.visible()
+  let lostFocus = false
   const listeners = new Set<() => void>()
   let unlisten: Array<() => void> = []
 
@@ -60,9 +64,28 @@ export function createUpdateReadStore(read: () => Promise<UpdateRead>, env: Upda
     timer = null
   }
   const visibilityChanged = () => {
-    if (!env.visible()) { stopTimer(); return }
+    if (!env.visible()) {
+      wasVisible = false
+      lostFocus = false
+      stopTimer()
+      return
+    }
+    const resumed = !wasVisible
+    wasVisible = true
+    lostFocus = false
     if (timer === null) timer = env.setInterval(refreshIfStale, UPDATE_READ_EVERY_MS)
-    refreshIfStale()
+    if (resumed) void readNow()
+    else refreshIfStale()
+  }
+  const focused = () => {
+    if (!env.visible()) return
+    // Some browsers send focus before visibilitychange on the same return.
+    // Recording the visible transition here makes its later event harmless.
+    if (!wasVisible) { visibilityChanged(); return }
+    if (lostFocus) {
+      lostFocus = false
+      void readNow()
+    } else refreshIfStale()
   }
   const online = () => {
     if (!env.visible()) return
@@ -75,7 +98,14 @@ export function createUpdateReadStore(read: () => Promise<UpdateRead>, env: Upda
   const subscribe = (listener: () => void): (() => void) => {
     listeners.add(listener)
     if (listeners.size === 1) {
-      unlisten = [env.onVisibilityChange(visibilityChanged), env.onFocus(refreshIfStale), env.onOnline(online)]
+      wasVisible = env.visible()
+      lostFocus = false
+      unlisten = [
+        env.onVisibilityChange(visibilityChanged),
+        env.onFocus(focused),
+        ...(env.onBlur ? [env.onBlur(() => { if (env.visible()) lostFocus = true })] : []),
+        env.onOnline(online),
+      ]
       visibilityChanged()
     }
     return () => {

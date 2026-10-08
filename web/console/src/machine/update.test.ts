@@ -77,7 +77,7 @@ test("a hidden page makes no periodic reads and checks immediately after a stale
   assert.equal(time.timers(), 0)
 })
 
-test("short switches and simultaneous resume events share the in-flight read", async () => {
+test("short switches reread while simultaneous resume events share the in-flight read", async () => {
   const time = environment()
   const pending: Array<(read: UpdateRead) => void> = []
   const store = createUpdateReadStore(() => new Promise((resolve) => { pending.push(resolve) }), time.env)
@@ -90,12 +90,12 @@ test("short switches and simultaneous resume events share the in-flight read", a
   time.show(false)
   time.show(true)
   time.fire("focus")
-  assert.equal(pending.length, 0)
+  assert.equal(pending.length, 1, "a short return reads even before ten minutes")
   time.advance(1)
   time.fire("focus")
   time.fire("online")
   time.tick()
-  assert.equal(pending.length, 1)
+  assert.equal(pending.length, 1, "the same return keeps one request on the wire")
   pending.shift()!(status("current"))
   await settle()
   assert.equal(bannerVersion(store.current()), null)
