@@ -14,7 +14,7 @@ function refused(code, message) {
 }
 
 function pinnedRead(type, body) {
-  return (type === "info" && body?.parts === "full" || type === "transcript") &&
+  return (type === "info" && body?.parts === "full" || type === "transcript" || type === "peer-inbox") &&
     body?.expected_generation !== undefined
 }
 
@@ -56,12 +56,41 @@ export class StatusCloudClient extends CatalogCloudClient {
     // on r/ and is authorized separately by the relay and machine.
     const previous = this.allowWrites
     this.allowWrites = true
-    try { return super._read(value, type, extra, answer, timeoutMs, readOptions) }
+    try {
+      const pending = super._read(value, type, extra, answer, timeoutMs, readOptions)
+      if (type === "peer-inbox") {
+        const key = value.machine + "\u0000" + value.session + "\u0000" + answer
+        const waiters = this.readWaiters?.get(key)
+        if (waiters) waiters.expectedGeneration = extra.expected_generation
+      }
+      return pending
+    }
     finally { this.allowWrites = previous }
+  }
+
+  _applySnapshot(channel, payload, envelope, realign) {
+    if (channel.kind === "transcript" && typeof payload?.read === "string") {
+      const machine = decodedChannelSegment(channel.machine)
+      const session = decodedChannelSegment(channel.session)
+      const key = machine + "\u0000" + session + "\u0000" + payload.read
+      const waiters = this.readWaiters?.get(key)
+      if (waiters?.type === "peer-inbox") {
+        const ref = waiters.ref
+        if (!ref || payload.machine_id !== machine || payload.session_id !== session ||
+          payload.expected_generation !== waiters.expectedGeneration || payload.seq !== ref.seq) {
+          this._settleRead(key, null, refused("peer_inbox_target_mismatch", "the peer inbox reply names another request"))
+          return
+        }
+      }
+    }
+    return super._applySnapshot(channel, payload, envelope, realign)
   }
 
   /** Only pinned content reads may leave on the read_transcript-authorized r/ channel. */
   async _publishCommand(machine, type, body, envelopeClass, pending) {
+    if (type === "peer-inbox" && !GENERATION.test(body?.expected_generation)) {
+      throw refused("execution_target_required", "an exact Session execution is required")
+    }
     if (!pinnedRead(type, body)) return super._publishCommand(machine, type, body, envelopeClass, pending)
     if (envelopeClass !== "ctl" || body.machine_id !== machine || typeof body.session !== "string" || !body.session ||
       !GENERATION.test(body.expected_generation)) {

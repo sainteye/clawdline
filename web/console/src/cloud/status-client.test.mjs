@@ -117,7 +117,7 @@ test("read_transcript-only pinned reads pass the old local write guard", async (
     { code: "cloud_read_needs_send_prompt" })
 })
 
-test("only pinned info and transcript seal r/; send remains on ctl/", async () => {
+test("only pinned Session content reads seal r/; send remains on ctl/", async () => {
   const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])
   const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])
   const client = Object.create(StatusCloudClient.prototype)
@@ -174,11 +174,30 @@ test("only pinned info and transcript seal r/; send remains on ctl/", async () =
   assert.equal(transcript.ch, "r/m")
   assert.equal(pending.registered.ref.seq, 8)
   assert.equal(client.pendingBySequence.get(8), pending.registered)
+  const inbox = await client._publishCommand("m", "peer-inbox", {
+    session: "s", machine_id: "m", expected_generation: genA, request: "inbox-1",
+  }, "ctl")
+  assert.equal(inbox.ch, "r/m")
+  await assert.rejects(() => client._publishCommand("m", "peer-inbox", {
+    session: "s", machine_id: "m", request: "inbox-2",
+  }, "ctl"), { code: "execution_target_required" })
   await assert.rejects(() => client._publishCommand("m", "info", {
     session: "s", parts: "full", machine_id: "other", expected_generation: genA,
   }, "ctl"), { code: "execution_target_required" })
   await assert.rejects(() => client._publishCommand("m", "send", { session: "s" }, "ctl"),
     { code: "cloud_read_only" })
+})
+
+test("peer inbox refuses a reply from another request or execution before settling content", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const key = "m\u0000s\u0000read:inbox-1"
+  client.readWaiters = new Map([[key, { type: "peer-inbox", expectedGeneration: genA, ref: { seq: 7 } }]])
+  const settled = []
+  client._settleRead = (name, body, error) => settled.push({ name, body, code: error?.code })
+  client._applySnapshot({ kind: "transcript", machine: "m", session: "s" },
+    { read: "read:inbox-1", machine_id: "m", session_id: "s", expected_generation: genA, seq: 6,
+      body: { items: [{ body: "private" }] } }, {}, false)
+  assert.deepEqual(settled, [{ name: key, body: null, code: "peer_inbox_target_mismatch" }])
 })
 
 test("leaving a detail releases s and t immediately", () => {

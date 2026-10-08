@@ -687,7 +687,7 @@ func refusalReply(b body, word string, class Class) (string, string, bool) {
 		if !hasRequest {
 			return "", "", false
 		}
-		if word != "document" && session != MachineReplySession {
+		if word != "document" && word != "peer-inbox" && session != MachineReplySession {
 			return "", "", false
 		}
 		return session, "read:" + request, true

@@ -68,6 +68,26 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/cloud/peer/control",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/peer/inbox",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/peer/outbox/",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/peer/send",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/cloud/status",
       "guide": "cloud"
     },

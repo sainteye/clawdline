@@ -24,6 +24,8 @@ The machine can create a one-time pairing link with `clawdline cloud pair`, or a
 
 The account roster and the machine's local pinned-device record are distinct evidence. A locally revoked device is refused even if it appears in the account roster; a roster read failure is not treated as an empty roster. Browser pairing is also distinct from account sign-in: a browser listed under an account does not thereby have this machine's content key.
 
+Machine-to-machine Agent messages and work handoffs require a separate peer pairing and revocable grant. The current receiver admission contract and the remaining integration points are in [cross-machine Agent handoff](cross-machine-agent-handoff.md). A Cloud account or viewer pairing does not grant one machine authority to act as another machine's Agent.
+
 ## Publications, reads and commands
 
 The publisher sends a machine descriptor on `orch/<machine>`, one complete row per session on `s/<machine>/<session>`, a content-free status projection on `ss/<machine>/<session>`, and an inventory marker after the rows. It polls the daemon's local routes, skips unchanged session content, and periodically restates values so an idle machine does not appear stale. A `sessions.snapshot` request can ask the machine to restate rows after a reconnect. The publisher preserves previously known rows when a partial local scan cannot prove they disappeared. The descriptor includes the supported command words. See [`publish.go`](../internal/transport/cloud/publish.go) for current timing, freshness and inventory rules.
