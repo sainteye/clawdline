@@ -234,6 +234,7 @@ export type WriteRoute =
   | { op: "project-mirror-apply"; word: Carried<"project-mirror-apply"> }
   | { op: "project-mirror-detach"; word: Carried<"project-mirror-detach"> }
   | { op: "send"; word: Carried<"send">; session: string }
+  | { op: "session-receipt"; word: Carried<"session-receipt">; session: string; request: string }
   | { op: "info"; word: Carried<"info">; session: string }
   | { op: "git"; word: Carried<"git">; session: string }
   | { op: "git-diff"; word: Carried<"git-diff">; session: string }
@@ -362,6 +363,9 @@ const SENT_UNANSWERED = new Set([
   "receipt_expired",
   "ready_expired",
   "peer_rejected",
+  "receipt_outcome_unknown",
+  "receipt_pending",
+  "receipt_unavailable",
 ])
 
 /**
@@ -443,6 +447,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "screen",
   "documents",
   "document",
+  "session-receipt",
 ])
 
 /** Parse a console route into the command it stands for, or null for one this file does not carry. */
@@ -457,6 +462,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   }
   const [head, a, b, c, d] = segments
   if (method === "GET") {
+    if (head === "sessions" && a && b === "cloud-receipts" && c && segments.length === 4) {
+      return { op: "session-receipt", word: "session-receipt", session: a, request: c }
+    }
     if (head === "work" && a === "v2" && b === "images" && c && segments.length === 4) {
       return { op: "work-v2-image", word: "work.v2.image", artifact: c }
     }
@@ -1015,28 +1023,26 @@ export class RelayWriter {
         const body = await bodyOf(init)
         const text = typeof body.text === "string" ? body.text : ""
         const images = Array.isArray(body.images) ? body.images.filter((x): x is string => typeof x === "string") : []
-        const identity = await this.identity(client, route.session)
+        const { identity, generation } = await this.mutationTarget(client, route.session, route.word)
         // F2: use the card's current request, so an unanswered attempt keeps
         // its receipt. A confirmed terminal failure may use a new request
         // after the person checks for a turn and accepts duplicate risk.
         // The copied `send` mints a new id per call, so the same read it makes
         // is made here with the card's.
         const request = headerOf(init, "idempotency-key")
-        if (request && typeof client._read === "function") {
-          return client._read(identity, "send", { request, text, images }, "action:" + request)
-        }
-        return client.send(identity, text, images)
+        if (!request.trim()) throw failure("idempotency_key_required", "This action needs an Idempotency-Key.", 400)
+        return client._read!(identity, "send", { request, execution_generation: generation, text, images }, "action:" + request)
       }
       case "answer": {
         const body = await bodyOf(init)
         const expect = typeof body.expect === "string" ? body.expect : ""
         const typed = typeof body.typed === "string" ? body.typed : undefined
-        const identity = await this.identity(client, route.session)
-        return this.press(client, identity, String(body.key ?? ""), expect, headerOf(init, "idempotency-key"), typed)
+        const { identity, generation } = await this.mutationTarget(client, route.session, route.word)
+        return this.press(client, identity, String(body.key ?? ""), expect, headerOf(init, "idempotency-key"), generation, typed)
       }
       case "end": {
         const body = await bodyOf(init)
-        const identity = await this.identity(client, route.session)
+        const { identity, generation } = await this.mutationTarget(client, route.session, route.word)
         // What the page last read of this session's close gates. The Go daemon
         // carries it and does not compare it yet (cloudops `Divergences`); a
         // Swift Mac refuses a close against a reading that has moved.
@@ -1045,12 +1051,10 @@ export class RelayWriter {
         const version = typeof body.expected_closeability_version === "string" && body.expected_closeability_version
           ? body.expected_closeability_version : typeof closeability?.version === "string" ? closeability.version : ""
         const request = headerOf(init, "idempotency-key")
-        if (request && typeof client._read === "function") {
-          return client._read(identity, "end", {
-            request, accept_loss: body.force === true, expected_closeability_version: version,
-          }, "action:" + request)
-        }
-        return client.end(identity, body.force === true, version)
+        if (!request.trim()) throw failure("idempotency_key_required", "This action needs an Idempotency-Key.", 400)
+        return client._read!(identity, "end", {
+          request, execution_generation: generation, accept_loss: body.force === true, expected_closeability_version: version,
+        }, "action:" + request)
       }
       case "archive": {
         // The close's own decision key is the command's request, as `end`
@@ -1061,13 +1065,13 @@ export class RelayWriter {
         if (!request) throw failure("bad_request", `${route.word} needs an Idempotency-Key`, 400)
         if (typeof client._read !== "function") throw failure("cloud_not_carried", route.word, 501)
         const body = await bodyOf(init)
-        const identity = await this.identity(client, route.session)
+        const { identity, generation } = await this.mutationTarget(client, route.session, route.word)
         const row = await this.row(client, route.session)
         const closeability = row?.closeability as { version?: unknown } | undefined
         const version = typeof body.expected_closeability_version === "string" && body.expected_closeability_version
           ? body.expected_closeability_version : typeof closeability?.version === "string" ? closeability.version : ""
         return client._read(identity, route.word, {
-          request, force: body.force === true, expected_closeability_version: version,
+          request, execution_generation: generation, force: body.force === true, expected_closeability_version: version,
         }, "action:" + request)
       }
       case "focus":
@@ -1081,12 +1085,26 @@ export class RelayWriter {
         if (typeof client._read !== "function") {
           throw failure("cloud_not_carried", route.word, 501)
         }
+        const target = route.op === "interrupt" ? await this.mutationTarget(client, route.session, route.word) : null
         return client._read(
-          await this.identity(client, route.session),
+          target?.identity ?? await this.identity(client, route.session),
           route.word,
-          { request },
+          { request, ...(target ? { execution_generation: target.generation } : {}) },
           "action:" + request,
         )
+      }
+      case "session-receipt": {
+        const action = url.searchParams.get("action") ?? ""
+        const generation = url.searchParams.get("execution_generation") ?? ""
+        if (!new Set(["send", "answer", "key", "interrupt", "end", "archive-session"]).has(action) || !/^[0-9a-f]{32}$/.test(generation)) {
+          throw failure("bad_request", "A receipt lookup needs its action and execution generation.", 400)
+        }
+        if (!declaredCommands(client, this.host.machine)?.includes("session-receipt") || typeof client._read !== "function") {
+          throw failure("cloud_machine_unsupported", "This machine cannot look up session receipts.", 501)
+        }
+        const query = this.requestID()
+        return client._read({ machine: this.host.machine, session: route.session }, "session-receipt",
+          { request: query, target_request: route.request, execution_generation: generation, action }, "read:" + query)
       }
       case "info": {
         // The two halves are two reads on the wire, answered on two channels
@@ -1720,16 +1738,17 @@ export class RelayWriter {
    * the machine checks are still in the input line before it presses
    * (`app.SubmitTyped`). It goes only where that check happens, too.
    */
-  private press(client: CloudWriteClient, identity: CloudIdentity, key: string, expect: string, request: string, typed?: string): Promise<unknown> {
+  private press(client: CloudWriteClient, identity: CloudIdentity, key: string, expect: string, request: string, generation: string, typed?: string): Promise<unknown> {
     const listed = declaredCommands(client, identity.machine)
     const checks = !client.macCapabilities?.has(identity.machine) && !!listed?.includes("answer") && typeof client._read === "function"
     const names = key === "enter" ? typed !== undefined && !expect : !!expect
     if (!names || !checks) {
       return Promise.reject(failure("menu_unverified", "this press cannot be checked against the machine's screen", 428))
     }
-    const id = request || this.requestID()
+    if (!request.trim()) return Promise.reject(failure("idempotency_key_required", "This action needs an Idempotency-Key.", 400))
+    const id = request
     const named = key === "enter" ? { typed } : { expect }
-    return client._read!(identity, "answer", { request: id, answer: key, ...named }, "action:" + id, undefined, { retireUncertain: true })
+    return client._read!(identity, "answer", { request: id, execution_generation: generation, answer: key, ...named }, "action:" + id, undefined, { retireUncertain: true })
   }
 
   /**
@@ -1767,6 +1786,22 @@ export class RelayWriter {
     const identity = row.identity
     if (identity && typeof identity.machine === "string" && typeof identity.session === "string") return identity
     return { machine: this.host.machine, session: typeof row.session === "string" ? row.session : session }
+  }
+
+  private async mutationTarget(client: CloudWriteClient, session: string, word: string): Promise<{ identity: CloudIdentity; generation: string }> {
+    const row = await this.row(client, session)
+    if (!row) throw failure("session_not_found", "This page holds no row for that session.", 404)
+    const generation = (row as CloudRow & { execution_generation?: unknown }).execution_generation
+    const identity = row.identity && typeof row.identity.machine === "string" && typeof row.identity.session === "string"
+      ? row.identity : { machine: this.host.machine, session: typeof row.session === "string" ? row.session : session }
+    if (identity.machine !== this.host.machine || identity.session !== session || !/^[0-9a-f]{32}$/.test(String(generation ?? ""))) {
+      throw failure("execution_generation_required", "This session's current execution generation is unavailable.", 409)
+    }
+    const commands = declaredCommands(client, identity.machine)
+    if (!commands?.includes(word) || !commands.includes("session-receipt") || typeof client._read !== "function") {
+      throw failure("cloud_machine_unsupported", "This machine cannot provide durable session receipts.", 501)
+    }
+    return { identity, generation: generation as string }
   }
 
   /**
