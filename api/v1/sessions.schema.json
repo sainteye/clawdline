@@ -124,6 +124,7 @@
         "icon": { "$ref": "common.schema.json#/$defs/Icon" },
         "identity": { "$ref": "#/$defs/IdentityBinding" },
         "id": { "type": "string" },
+		"execution_generation": { "description": "Machine-issued durable identity of this terminal execution. Absent when the source or process start cannot be verified, the machine has no Cloud identity, or the identity store could not be written. This is not scan.generation.", "type": "string", "pattern": "^[0-9a-f]{32}$" },
         "isClaude": { "type": "boolean" },
         "label": { "description": "What the session is called, by the Swift app's rungs (ITerm.swift preferredDisplayLabel): a name typed in Clawdline (the Swift store's config.json `session_titles`), the title of the task, handoff or Feature Root Clawdline opened the tab for (orchestrator.json), the conversation's own title (`/rename`, else `aiTitle`), Codex's thread name or an automatic title, Claude Code's registry handle — the first that has something. Never a terminal title. Absent when nothing names the session.", "type": "string" },
         "line": { "description": "What a working session says it is doing, read from its screen with the assistant's own clock in it. Present while working; on a waiting session with a menu it is instead that menu's revision (the Swift app's menuRevision), which no row draws and which changes whenever the question does. The Swift app sends it under this name and the row's height depends on it.", "type": "string" },

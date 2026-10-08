@@ -60,6 +60,8 @@ type Server struct {
 	proxy     *httputil.ReverseProxy
 	inventory app.Inventory
 	store     *store.Store
+	// Tests can supply a machine identity without starting a Cloud link.
+	executionMachineID string
 	// replaceMachineItemReceipt is a test seam for a failed post-create
 	// receipt refinement. Nil uses the durable store implementation.
 	replaceMachineItemReceipt func(context.Context, store.ReceiptKey, store.ReceiptAnswer) error
@@ -430,6 +432,12 @@ func (s *Server) routeTable() []route {
 		// each, because the id is a path segment and Go's mux matches prefixes,
 		// not patterns.
 		{Route{"*", "/v1/sessions/"}, func(w http.ResponseWriter, r *http.Request) {
+			// A new Cloud caller may pin every per-session read and write to
+			// the exact execution it selected. The gate has authenticated it
+			// before this handler; legacy callers carry no pin.
+			if !s.admitPinnedSessionRequest(w, r) {
+				return
+			}
 			// The sessions a reboot took away: three fixed paths, asked before
 			// anything reads the next segment as a session id.
 			if s.restorableRoute(w, r) {

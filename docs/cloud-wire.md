@@ -103,10 +103,12 @@ sequence 與重送視窗。`internal/adapters/cloudkeys` 因此拒絕 `~/.config
 
 | prefix | 段數 | 允許的 class | 載什麼 |
 |---|---|---|---|
-| `s/<machine>/<session>` | 2 | `stream` | session 快照，**每次都是整份，永遠不是 diff** |
+| `ss/<machine>/<session>` | 2 | `stream` | 不含內容的 Session 狀態列與清單標記；預設推送 |
+| `s/<machine>/<session>` | 2 | `stream` | 可選發布的完整 session 快照，**每次都是整份，永遠不是 diff**；viewer 明確訂閱才接收 |
 | `t/<machine>/<session>` | 2 | `stream` | transcript 片段，viewer 打開 session 才要 |
 | `orch/<machine>` | 1 | `stream` | orchestrator 快照：tasks、schedules、waits |
 | `ctl/<machine>` | 1 | `ctl`, `dispatch` | viewer → Mac 的指令 |
+| `r/<machine>` | 1 | `ctl` | viewer → machine 的加密唯讀內容請求；僅 `info` 且 `parts=full` 或 `transcript` |
 | `ctlr/<machine>/<viewer_device>` | 2 | `ctl` | Mac → 指定 viewer 的指令回應 |
 | `ho/<account>/<handoff_id>` | 2 | `ho` | 交接包與交接收據 |
 | `wh/` | — | **保留，一律拒絕** | §10 留給 v1 的 webhook-out |
@@ -493,8 +495,8 @@ header 的 `alg` 必須是 `EdDSA` 或 `ES256`；`none` 與所有 HMAC 在看 pa
 
 | capability | 誰執行 | 打開什麼 |
 |---|---|---|
-| `read_sessions` | relay，收的時候 | `s/` 與 `orch/` 快照 |
-| `read_transcript` | relay，收的時候 | `t/` 與 `ho/` |
+| `read_sessions` | relay，收的時候 | 預設接收 `ss/` 與 `orch/` 狀態快照 |
+| `read_transcript` | relay，發 `r/` 與收內容時；machine 在 `r/` 回答前及封裝前再查 | 明確訂閱的完整 `s/`、`t/` 與 `ho/`，以及唯讀 `r/` 請求 |
 | `send_prompt` | relay，發與收；**Mac 自己的 admission 仍然另外算** | 發 `ctl/`（兩種 class）、收 `ctlr/` |
 | `start_session` | **只有 Mac**（它在 `ct` 裡面） | relay 看不到的東西 |
 
@@ -503,6 +505,22 @@ header 的 `alg` 必須是 `EdDSA` 或 `ES256`；`none` 與所有 HMAC 在看 pa
 capability，**不記 channel 名字**）。
 
 **Machine 不受 capability 管**：它發自己的狀態、收寄給它的 `ctl/` 與依角色收 `ho/`。
+
+`orch/<machine>` 的 `machine.read_content_v1` 只在 machine 已接上唯讀 `r/` bridge 時為 `true`。缺欄視為舊版，不從 `ss/` 是否出現推論。`r/` 的 JSON body 只接受 `{"type":"info","machine_id":"<machine>","parts":"full","session":"<id>","expected_generation":"<32 lowercase hex>"}` 或 `{"type":"transcript","machine_id":"<machine>","session":"<id>","limit":1..1000,"expected_generation":"<32 lowercase hex>"}`；`machine_id` 必須與 `r/` channel 目標相同。機器從已驗簽並解密的 envelope 取得 `sender`、`seq` 與 `ch`；重新讀取 roster、signing key、本機撤銷及 `read_transcript` 能力，且在本機 pinned HTTP read 後、密封回答前再查一次。其他字回 `read_only_channel`；缺世代回 `execution_target_required`；能力不足回 `read_transcript_required`。成功與具安全回覆定位的拒絕仍走 `t/<machine>/<session>` `stream` envelope，payload 以 `read: "info.full"` 或 `"transcript"`、`status`、`body`／`error` 對應 waiter；錯誤 `seq` 對應原請求。Cloud viewer 應先訂閱精確的 `t/` channel，再發送 `r/`，並以選定的 machine、session、generation 驗證回覆後才顯示內容。
+
+### 8.3 Session 狀態頻道的分階段契約
+
+Go daemon 另外發布 `ss/<machine>/<session>`。每個 JSON 僅有 `machine_id`、`session_id`、可驗證時的 `execution_generation`、同批的 `snapshot_generation`、`assistant`、`backend`、`state`、`source`（`provenance`、`observed_at`、`freshness`）、`inventory_complete`、`projected_at`、`last_movement_at`、`no_progress_after_ms`、可判定時的 `no_movement`，以及有來源證據時的 `completed_unconfirmed`、`attention_required`、`close_blocked`、`failed_agent_count`。`completed_unconfirmed` 只在未讀 Board 交付已到 `done` 時為真；`deploying` 不算完成。`close_blocked` 在新鮮且狀態已知的關閉可行性讀值時帶 true/false；`failed_agent_count` 在完整且未截斷的 provider-native 子代理讀值時帶整數，包含 0。缺欄即未知，兩者都不宣稱整個 Session 工作失敗。`last_movement_at` 只表示助理自己的紀錄新增位元組，並非推論工作已進展；門檻由 `internal/domain/capacity` 登錄。不傳標題、對話、畫面、選單、Shell、Git、工作目錄或內容衍生摘要。來源不是 `current` 時省略執行世代與這些狀態事實；`scan.generation` 仍只是清單讀取序號，不能作為執行世代。
+
+`waiting_for_reply` 是額外的正面布林訊號：只有當前 `waiting` 列真的帶選項，且 `screen_reading=read` 證實畫面選單，或 `screen_reading=unavailable`、`menu.source=transcript` 證實仍開啟的單題問句時才為 true。投影只帶布林，不帶問句與選項文字。只有 `state=waiting` 或 `work_person_needed` 不足以推論問句；缺欄表示無法分類。
+
+狀態清單標記放在 `ss/<machine>/__clawdline_inventory_v1__`，其 JSON 是 `inventory:{version:1,sessions:[終端 ID]}`、`at`（Unix 秒）、`complete`（布林）及隨機 128-bit 的 `snapshot_generation`。每批狀態列都帶相同值，viewer 必須丟棄與標記不符的舊快取列；狀態集合改變或 heartbeat 時整批列先發、標記後發。舊 relay 拒絕 `ss/` 時，新頻道自行重試，不阻斷既有 `s/` 標記。狀態列的 `source.observed_at`、`projected_at` 與 `last_movement_at` 都是 Unix 秒，`no_progress_after_ms` 是毫秒。
+
+私有 Cloud relay 的相容版 `b6d3740` 已部署，允許並預設推送 `ss/`，同時保留現有 `s/` 接收方式。`f7e309e` 已實作表中的目標接收規則，但尚未部署；Console 用 `ss/` 清單、按需訂閱 `s/` 詳情後，再啟用 `s/` 明確訂閱與 `read_transcript` 權限。權限收緊前 relay 仍依 `read_sessions` 接收完整 `s/`；不能把該 row 當成僅狀態資料。完整 `s/` 可選擇發布時仍帶 `execution_generation`，舊快取缺這欄時不得用於固定世代的內容讀取。
+
+機器端世代以 Cloud machine id、終端 id 及隨機 128-bit 值固定；同一核心程序的 PID 與啟動時間持續可證時不變，確認消失再現或程序指紋變動時換新。`Server.AdmitExecutionTarget` 在新鮮的權威終端讀取後比對三者；`execution_target_required`、`execution_machine_mismatch`、`execution_target_missing`、`execution_source_unknown`、`execution_generation_changed`、`execution_check_unavailable` 均是拒絕，不可把來源未知當成空集合。呼叫端仍須另驗 viewer 能力與撤銷。沒有世代的舊版請求維持舊路徑行為，不具備固定目標保證。
+
+新版 Cloud `transcript` 指令可加 `expected_generation`（保留原有 `session`、`limit` 及可選的 `priority`），`info` 指令可在 `session`、`parts` 旁加同一欄。Bridge 從已驗證的 `ctl/<machine>` 取得 machine id，轉成機器內部的兩個固定目標 header；HTTP 在內容讀取前後各驗一次，Bridge 在送出前再驗撤銷。舊版沒有世代的指令形狀仍按舊語意處理。
 
 機器收到效果性請求時，傳輸層先用裝置簽章驗證身分，並以該機器的內容金鑰解密；執行前再核對同一把驗章公鑰仍在帳號名冊中。本機若有配對釘選，名冊公鑰也必須與釘選相同；本機撤銷優先於名冊。這讓在釘選檔建立前已完成配對、仍持有該機器內容金鑰的舊瀏覽器可以傳送，但只有帳號登入而沒有該機器金鑰的裝置仍無法送出可解密的請求。逐機 Cloud 命令開關另外在執行前檢查。
 

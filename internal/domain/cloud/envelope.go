@@ -481,9 +481,11 @@ func (k channelKind) allows(c Class) bool {
 // readers are deployed.
 var channelKinds = []channelKind{
 	{prefix: "s", segments: 2, classes: []Class{ClassStream}},
+	{prefix: "ss", segments: 2, classes: []Class{ClassStream}},
 	{prefix: "t", segments: 2, classes: []Class{ClassStream}},
 	{prefix: "orch", segments: 1, classes: []Class{ClassStream}},
 	{prefix: "ctl", segments: 1, classes: []Class{ClassCtl, ClassDispatch}},
+	{prefix: "r", segments: 1, classes: []Class{ClassCtl}},
 	{prefix: "ctlr", segments: 2, classes: []Class{ClassCtl}},
 	{prefix: "termi", segments: 2, classes: []Class{ClassCtl}},
 	{prefix: "term", segments: 3, classes: []Class{ClassStream}},

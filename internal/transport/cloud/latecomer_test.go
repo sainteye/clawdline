@@ -25,8 +25,8 @@ func TestAnIdleMacSaysNothingBetweenHeartbeats(t *testing.T) {
 	publisher := newPublisher(&fixedRouter{body: completeScan}, out)
 	publisher.Now = func() time.Time { return at }
 	publisher.firstPass(context.Background())
-	if len(out.channels()) != 3 {
-		t.Fatalf("the first pass published %v; want the descriptor, the row and the marker", out.channels())
+	if names := legacyChannels(out.channels()); len(names) != 3 {
+		t.Fatalf("the first pass published %v; want the descriptor, the row and the marker", names)
 	}
 
 	// Every pass from here to the heartbeat, at the publisher's own interval.
@@ -44,8 +44,8 @@ func TestAnIdleMacSaysNothingBetweenHeartbeats(t *testing.T) {
 		t.Errorf("an idle machine was quiet for %v; the skip and the %v heartbeat make that %v",
 			silent, Heartbeat, Heartbeat-SnapshotInterval)
 	}
-	if len(out.channels()) != 3 {
-		t.Errorf("the heartbeat pass published %v; want all three again", out.channels())
+	if names := legacyChannels(out.channels()); len(names) != 3 {
+		t.Errorf("the heartbeat pass published %v; want all three again", names)
 	}
 }
 
@@ -70,7 +70,7 @@ func TestAViewerHeardFromForTheFirstTimeIsStatedToAgain(t *testing.T) {
 	publisher.Seen("viewer-01")
 	publisher.Pass(context.Background())
 
-	channels := out.channels()
+	channels := legacyChannels(out.channels())
 	if len(channels) != 3 {
 		t.Fatalf("a machine that has just heard from a viewer published %v; "+
 			"want the descriptor, the row and the marker, or that viewer waits %v",
@@ -114,7 +114,7 @@ func TestAViewerAlreadyStatedToCostsNothingMore(t *testing.T) {
 	publisher.Seen("viewer-02")
 	at = at.Add(SnapshotInterval)
 	publisher.Pass(context.Background())
-	if names := out.channels(); len(names) != 3 {
+	if names := legacyChannels(out.channels()); len(names) != 3 {
 		t.Errorf("the second viewer was stated to with %v; want all three", names)
 	}
 }

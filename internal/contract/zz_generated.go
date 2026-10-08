@@ -5534,6 +5534,11 @@ type SessionRow struct {
 	EpicParent     *EpicSessionParent   `json:"epic_parent,omitempty"`
 	Evidence       Evidence             `json:"evidence"`
 
+	// Machine-issued durable identity of this terminal execution. Absent when the
+	// source or process start cannot be verified, the machine has no Cloud identity,
+	// or the identity store could not be written. This is not scan.generation.
+	ExecutionGeneration string `json:"execution_generation,omitempty"`
+
 	// Only the Session that started the declared-heavy callback currently holding and
 	// running in the machine's heavy_compile slot. Absent for queued work, wait
 	// callbacks, direct heavy commands and unreadable evidence.
@@ -5656,6 +5661,87 @@ const (
 
 // SessionStateValues is every value the contract allows, in contract order.
 var SessionStateValues = []SessionState{SessionStateWorking, SessionStateWaiting, SessionStateIdle, SessionStateUnknown}
+
+type SessionStatus struct {
+	Assistant string `json:"assistant,omitempty"`
+
+	// True only when a person-needed declaration or a positive attention count is
+	// known.
+	AttentionRequired bool   `json:"attention_required,omitempty"`
+	Backend           string `json:"backend,omitempty"`
+
+	// Measured only when closeability has a current source and a known state. True
+	// means closing is blocked, false means it is not; absent is unknown. It does not
+	// mean the whole Session or its work is blocked.
+	CloseBlocked bool `json:"close_blocked,omitempty"`
+
+	// True only for an unviewed Board delivery in phase done. A deploying item is not
+	// called complete.
+	CompletedUnconfirmed bool `json:"completed_unconfirmed,omitempty"`
+
+	// Random 128-bit machine-issued execution identity, absent unless this row's
+	// source is current and its process is pinned by PID and kernel start time.
+	ExecutionGeneration string `json:"execution_generation,omitempty"`
+
+	// Count of provider-native background agents in failed state when their reading is
+	// complete and untruncated. Zero is measured; absent is unknown. It does not mean
+	// the Session failed.
+	FailedAgentCount int64 `json:"failed_agent_count,omitempty"`
+
+	// Whether the whole local scan was complete. False does not by itself revoke a
+	// currently observed row.
+	InventoryComplete bool `json:"inventory_complete"`
+
+	// Unix seconds when the assistant's own record last grew; this is activity, not a
+	// claim of task progress.
+	LastMovementAt int64  `json:"last_movement_at,omitempty"`
+	MachineID      string `json:"machine_id"`
+
+	// Absent when activity or current source evidence is unknown; false is a measured
+	// answer.
+	NoMovement bool `json:"no_movement,omitempty"`
+
+	// Machine policy threshold in milliseconds for classifying no recent record
+	// movement.
+	NoProgressAfterMs int64 `json:"no_progress_after_ms"`
+
+	// Unix seconds when this status was projected.
+	ProjectedAt int64  `json:"projected_at"`
+	SessionID   string `json:"session_id"`
+
+	// Random pass id shared by every status row and the inventory marker of one
+	// publication. A viewer discards rows with a different value.
+	SnapshotGeneration string              `json:"snapshot_generation"`
+	Source             SessionStatusSource `json:"source"`
+	State              string              `json:"state"`
+
+	// True only when a current waiting row has a nonempty menu corroborated by a
+	// captured screen, or by a registry wait and an open single-question transcript
+	// menu while the screen is unavailable. No question or option text is copied.
+	// Absent means the reply signal is unavailable, not that no reply is needed.
+	WaitingForReply bool `json:"waiting_for_reply,omitempty"`
+}
+
+type SessionStatusInventory struct {
+	// Unix seconds of this inventory reading.
+	At                 int64                      `json:"at"`
+	Complete           bool                       `json:"complete"`
+	Inventory          SessionStatusInventoryList `json:"inventory"`
+	SnapshotGeneration string                     `json:"snapshot_generation"`
+}
+
+type SessionStatusInventoryList struct {
+	Sessions []string `json:"sessions"`
+	Version  int64    `json:"version"`
+}
+
+type SessionStatusSource struct {
+	Freshness string `json:"freshness"`
+
+	// Unix seconds; zero when no observation time is known.
+	ObservedAt int64  `json:"observed_at"`
+	Provenance string `json:"provenance"`
+}
 
 // The durable local result of naming a session. This daemon keeps the display
 // name in its own config and does not mutate the assistant's conversation

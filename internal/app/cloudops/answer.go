@@ -543,7 +543,8 @@ func itoa(v int64) string { return strconv.FormatInt(v, 10) }
 func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
 	parsed, parseErr := decodeBody(cmd.Plaintext)
 	word, _ := parsed.str("type")
-	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) {
+	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) &&
+		cmd.Channel != "r/"+ChannelSegment(b.MachineID) {
 		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
 			Message: "This Cloud request addresses another machine.", fixedCopy: true})
 	}
@@ -553,6 +554,10 @@ func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
 		Layer:  layerTransport}
 	if parseErr != nil || word == "" {
 		return b.notice(cmd, full)
+	}
+	if b.contentReadChannel(cmd) && word != "info" && word != "transcript" {
+		return b.refuse(cmd, parsed, word, Refusal{Status: 403, Code: "read_only_channel",
+			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true})
 	}
 	o, known := catalog[word]
 	if known && !o.read {
@@ -574,7 +579,8 @@ func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
 func (b Bridge) Busy(cmd Command, limit int) Answer {
 	parsed, parseErr := decodeBody(cmd.Plaintext)
 	word, _ := parsed.str("type")
-	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) {
+	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) &&
+		cmd.Channel != "r/"+ChannelSegment(b.MachineID) {
 		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
 			Message: "This Cloud request addresses another machine.", fixedCopy: true})
 	}
@@ -584,6 +590,10 @@ func (b Bridge) Busy(cmd Command, limit int) Answer {
 		Layer:  layerTransport}
 	if parseErr != nil || word == "" {
 		return b.notice(cmd, busy)
+	}
+	if b.contentReadChannel(cmd) && word != "info" && word != "transcript" {
+		return b.refuse(cmd, parsed, word, Refusal{Status: 403, Code: "read_only_channel",
+			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true})
 	}
 	o, known := catalog[word]
 	if known && o.read && cmd.Class == ClassCtl {

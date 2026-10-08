@@ -102,6 +102,9 @@ type Publisher struct {
 	// answers, so a newer console can say a feature needs an update before it
 	// asks for it. Zero leaves the key out, as a daemon before it had none.
 	APILevel int
+	// ReadContentV1 is true only when this machine has the pinned r/ read
+	// bridge wired. A status publisher alone must not claim it can answer r/.
+	ReadContentV1 bool
 	// Router is this daemon's own routes — the same in-process dispatch a Cloud
 	// read goes through, so the rows a viewer sees are the rows the local
 	// console sees.
@@ -525,14 +528,18 @@ func (p *Publisher) publishDescriptor(ctx context.Context) {
 	if p.APILevel > 0 {
 		appStamp["api_level"] = p.APILevel
 	}
+	machine := map[string]any{
+		"name":     p.MachineName,
+		"platform": p.platform(),
+		"commands": cloudops.Implemented(),
+	}
+	if p.ReadContentV1 {
+		machine["read_content_v1"] = true
+	}
 	snapshot := map[string]any{
-		"at":  time.Now().Unix(),
-		"app": appStamp,
-		"machine": map[string]any{
-			"name":     p.MachineName,
-			"platform": p.platform(),
-			"commands": cloudops.Implemented(),
-		},
+		"at":      time.Now().Unix(),
+		"app":     appStamp,
+		"machine": machine,
 	}
 	// A machine with no task a viewer can reach publishes the descriptor it
 	// always did. The hosted console replaces a machine's whole snapshot with
@@ -716,6 +723,7 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 		// retries the forgotten publication and then states the marker.
 		return
 	}
+	p.publishStatuses(ctx, reading, ids)
 	// The set about to be stated is what a viewer will hold, so it is what the
 	// next partial reading has to be measured against — remembered here rather
 	// than after the send, because an unchanged marker is not re-sent and the
