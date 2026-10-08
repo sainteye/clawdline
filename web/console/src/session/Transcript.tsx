@@ -143,6 +143,7 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   // newest end, where the reader's eye already is. Only the session's own
   // transcript: a provider subagent's page is not what the row's state is about.
   const working = !agentId && !!session && L.workState(session).state === "working"
+  const heavyWork = !agentId ? session?.heavy_work : null
   const entries = useMemo<Entry[]>(() => (data ? data.entries.map((e) => ({ ...e })) : []), [data])
   const skeleton = useWait(show === "loading")
   // `S.newestFirst` and `S.assistantIcons`, read on every draw as the original
@@ -291,10 +292,11 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   // Newest end: the bottom, or the top when the transcript reads newest first.
   const cardsDrawn = (newestFirst ? [...cards].reverse() : cards).map(pendingHTML)
   const live = working ? <WorkingLine key="working" line={session?.line ?? ""} /> : null
+  const heavy = heavyWork ? <HeavyWorkLine key="heavy" reason={heavyWork.reason} /> : null
   // The working line is newer than any card: the turn it stands for is the
   // one answering them.
-  const pending = newestFirst ? [live, ...cardsDrawn] : [...cardsDrawn, live]
-  if (show === "loading") return cardsDrawn.length || live ? <>{pending}</> : null
+  const pending = newestFirst ? [heavy, live, ...cardsDrawn] : [...cardsDrawn, live, heavy]
+  if (show === "loading") return cardsDrawn.length || live || heavy ? <>{pending}</> : null
   // The daemon's note is diagnostic English. It is useful evidence in the
   // disclosure below, but never the main sentence in a translated interface.
   // `no_record` is not a failure at all: the provider has not created its
@@ -468,6 +470,17 @@ function WorkingLine({ line }: { line: string }) {
     <div className="tx-working" role="status">
       <canvas className="spin"></canvas>
       <span className="line">{line || L.strings.webStateWorking}</span>
+    </div>
+  )
+}
+
+/** The callback can still be running after the provider's turn becomes idle. */
+function HeavyWorkLine({ reason }: { reason: string }) {
+  return (
+    <div className="tx-working tx-heavy" role="status">
+      <span aria-hidden="true">🏗️</span>
+      <canvas className="spin" aria-hidden="true"></canvas>
+      <span className="line">{[nextWord("sessionCallbackActive"), reason].filter(Boolean).join(" · ")}</span>
     </div>
   )
 }
