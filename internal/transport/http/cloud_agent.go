@@ -3,17 +3,16 @@ package http
 // `POST /v1/cloud/pairing/agent` — carry a browser's pairing offer to another
 // machine through an assistant on this one.
 //
-// The Cloud tab in the Mac app shows a machine it is not paired with, and the
-// person asks this Mac to finish the pairing there. This Mac usually reaches
-// that machine already (an ssh alias, a cloud provider's session manager), so
-// the offer goes over that channel — the person's own — and never through
-// Cloud, which is the rule the whole pairing design keeps: Cloud carries
-// ciphertext, and the offer is the half of a key exchange it must not see.
+// A paired helper machine can carry the browser's offer to the target over
+// access it already has (an ssh alias or a cloud provider's session manager).
+// The hosted browser sends the offer to the helper inside an encrypted Cloud
+// command; the relay sees ciphertext. The helper then uses its own access to
+// run the pairing command on the target.
 //
-// **This machine's own token only**, like every pairing route here: the answer
-// starts an assistant that runs a command on another machine. The shell asks
-// the person in a native dialog before it calls; this route is not reachable by
-// a paired phone, a Cloud viewer or a page.
+// The HTTP route requires this machine's own token. A paired Cloud viewer can
+// reach it only through the encrypted cloudops command, which checks the
+// sender and this machine's Cloud command switch before using that token.
+// The answer starts an assistant that runs a command on another machine.
 //
 // The page supplies three values and no prose. Each is checked before it is
 // used: the offer is decoded exactly as `/v1/cloud/pairing/offer` decodes it,
@@ -23,6 +22,7 @@ package http
 // logged.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -35,6 +35,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/limits"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
@@ -58,6 +59,30 @@ func (s *Server) cloudPairingAgentRoute(w http.ResponseWriter, r *http.Request) 
 		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request", "A pairing is handed to this machine's assistant with POST.")
 		return
 	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 8<<10))
+	if err != nil {
+		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "That request body could not be read.")
+		return
+	}
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if key != "" {
+		if len(key) > 200 {
+			writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "An Idempotency-Key is at most 200 characters.")
+			return
+		}
+		actor := accessOf(r).verdict.Device
+		if actor == "" {
+			actor = "local"
+		}
+		s.receipted(w, r, store.ReceiptKey{Scope: scopePairingAgent, Actor: actor, Key: key},
+			requestDigest(raw), func(status int) bool { return status < 500 && status != http.StatusTooManyRequests },
+			func(w http.ResponseWriter) { s.startPairingAgent(w, r, raw) })
+		return
+	}
+	s.startPairingAgent(w, r, raw)
+}
+
+func (s *Server) startPairingAgent(w http.ResponseWriter, r *http.Request, raw []byte) {
 	pairing, ok := s.cloudPairing(w)
 	if !ok {
 		return
@@ -68,7 +93,7 @@ func (s *Server) cloudPairingAgentRoute(w http.ResponseWriter, r *http.Request) 
 		MachineName string `json:"machine_name"`
 	}
 	// The same eight KiB the offer route reads, for the same reason.
-	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&body); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&body); err != nil {
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "That request body is not readable JSON.")
 		return
 	}

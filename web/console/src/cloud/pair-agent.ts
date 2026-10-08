@@ -9,7 +9,8 @@
  * `clawdline cloud pair -offer …` there. The page sends no prose: the daemon
  * writes the instructions from its own template.
  *
- * Every other browser has no such handler, and the copy path is all it gets.
+ * Hosted browsers use an encrypted command to a paired helper machine instead;
+ * that route is implemented by CloudGate. This module handles only WebKit.
  * The pairing itself still completes through the offer run this card is
  * already waiting on — this only changes who carries the offer.
  */

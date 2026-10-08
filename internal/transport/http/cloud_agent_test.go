@@ -13,6 +13,7 @@ import (
 	"time"
 
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/auth"
@@ -216,6 +217,39 @@ func TestAPairingHandOffToAnotherMachineStartsOneTaskFromTheTemplate(t *testing.
 	}
 	if strings.Contains(brief, "DELETE") {
 		t.Fatal("text from the body beyond the three values reached the brief")
+	}
+}
+
+// A relay may resend one sealed command after losing the answer. The helper
+// must answer that press from its durable receipt rather than spend a second
+// assistant task. Reusing the key for another target is refused.
+func TestAPairingHandOffRetryStartsOnlyOneTask(t *testing.T) {
+	h := newPairAgentHarness(t)
+	st, err := store.Open(h.s.cfg.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	h.s.store = st
+	post := func(machine string) *httptest.ResponseRecorder {
+		t.Helper()
+		raw, _ := json.Marshal(map[string]any{"offer": h.offer.Fragment(), "machine_id": machine, "machine_name": "Target"})
+		req := httptest.NewRequest(http.MethodPost, "/v1/cloud/pairing/agent", strings.NewReader(string(raw)))
+		req.Header.Set("Idempotency-Key", "pair-press-1")
+		req = req.WithContext(context.WithValue(req.Context(), accessKey{},
+			access{verdict: auth.Verdict{Allowed: true, Local: true}}))
+		rec := httptest.NewRecorder()
+		h.s.cloudPairingAgentRoute(rec, req)
+		return rec
+	}
+	first := post("mac_target")
+	second := post("mac_target")
+	if first.Code != http.StatusOK || second.Code != http.StatusOK || first.Body.String() != second.Body.String() || len(h.dispatched) != 1 {
+		t.Fatalf("first %d %s; retry %d %s; tasks %d", first.Code, first.Body.String(), second.Code, second.Body.String(), len(h.dispatched))
+	}
+	changed := post("mac_other")
+	if changed.Code != http.StatusConflict || refusalCode(changed) != "idempotency_key_reused" || len(h.dispatched) != 1 {
+		t.Fatalf("changed %d %s; tasks %d", changed.Code, changed.Body.String(), len(h.dispatched))
 	}
 }
 

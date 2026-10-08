@@ -23,9 +23,10 @@ import (
 
 // Receipt scopes of the routes in this package.
 const (
-	scopePlaces = "places"
-	scopeVoice  = "voice"
-	scopeIntent = "intent"
+	scopePlaces       = "places"
+	scopeVoice        = "voice"
+	scopeIntent       = "intent"
+	scopePairingAgent = "pairing-agent"
 )
 
 // receiptWait is how long a request whose twin is still being answered waits
