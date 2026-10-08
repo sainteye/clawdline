@@ -27,6 +27,7 @@ package cloud
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
 	"strings"
@@ -121,14 +122,15 @@ func (r *Relay) Requests() <-chan Inbound {
 }
 
 // Deliver is what the transport's Inbound callback calls. It never blocks.
-func (r *Relay) Deliver(envelope domaincloud.Envelope, plaintext []byte) {
+func (r *Relay) Deliver(envelope domaincloud.Envelope, plaintext []byte, verifiedKey ed25519.PublicKey) {
 	r.start()
 	in := Inbound{
-		Channel:   envelope.Ch,
-		Class:     string(envelope.Class),
-		Sender:    envelope.Sender,
-		Sequence:  envelope.Seq,
-		Plaintext: plaintext,
+		Channel:     envelope.Ch,
+		Class:       string(envelope.Class),
+		Sender:      envelope.Sender,
+		Sequence:    envelope.Seq,
+		Plaintext:   plaintext,
+		VerifiedKey: verifiedKey,
 	}
 	if r.Audience != nil {
 		r.Audience(envelope.Sender)

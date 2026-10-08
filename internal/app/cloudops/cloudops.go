@@ -25,6 +25,7 @@ package cloudops
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"strings"
 )
@@ -59,6 +60,10 @@ type Command struct {
 	Class   Class
 	// Sender is the viewer device id the envelope was signed by.
 	Sender string
+	// VerifiedKey is the exact sender key used by the transport for both
+	// signature verification and decryption. The machine compares it with the
+	// current roster again before an effect.
+	VerifiedKey ed25519.PublicKey
 	// Sequence is the envelope's `seq`, carried into every refusal as `seq` so
 	// a browser can tie a notice to the request it wrote.
 	Sequence uint64
@@ -189,7 +194,7 @@ type Bridge struct {
 	// return. Nil trusts the transport's own admission for the roster and the
 	// clock — which is what the Swift app's default does — and still consults
 	// AllowCommands for the write gate.
-	Authority func(ctx context.Context, sender string, requiresWriteGate bool) Authority
+	Authority func(ctx context.Context, sender string, verifiedKey ed25519.PublicKey, requiresWriteGate bool) Authority
 	// Sessions puts every Session row of this machine back on its own channel,
 	// then its inventory, and answers the ids it stated (`sessions.snapshot`).
 	// Nil answers that word `unknown_command`, which the hosted console
@@ -404,7 +409,7 @@ func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op
 	// Admission may have waited. Re-read every revocable authority here, at
 	// the point of no return, instead of reusing what was true when this
 	// arrived.
-	if refusal, denied := b.authorize(ctx, cmd.Sender, !o.readLevel); denied {
+	if refusal, denied := b.authorize(ctx, cmd.Sender, cmd.VerifiedKey, !o.readLevel); denied {
 		return b.publish(cmd, plan, refusal, nil)
 	}
 	if o.refusal != nil {
@@ -461,11 +466,11 @@ func (b Bridge) allowCommands() bool {
 // clock, then whether the roster could be read at all, then whether it holds
 // this sender, then the switch. Each is a different sentence because each
 // sends the person somewhere different.
-func (b Bridge) authorize(ctx context.Context, sender string, requiresWriteGate bool) (Refusal, bool) {
+func (b Bridge) authorize(ctx context.Context, sender string, verifiedKey ed25519.PublicKey, requiresWriteGate bool) (Refusal, bool) {
 	a := Authority{ClockReady: true, RosterReadable: true, RosterAllowsSender: true,
 		WriteGateAllows: !requiresWriteGate || b.allowCommands()}
 	if b.Authority != nil {
-		a = b.Authority(ctx, sender, requiresWriteGate)
+		a = b.Authority(ctx, sender, verifiedKey, requiresWriteGate)
 	}
 	switch {
 	case !a.ClockReady:

@@ -99,7 +99,7 @@ func laneLink(t *testing.T, router cloudops.LocalRouter) (*Link, *Fake) {
 func deliver(t *testing.T, l *Link, seq uint64, object map[string]any) {
 	t.Helper()
 	l.relay.Deliver(domaincloud.Envelope{Ch: "ctl/mac-01", Class: "ctl", Sender: "viewer-01", Seq: seq},
-		plaintext(t, object))
+		plaintext(t, object), nil)
 }
 
 func placesRead(request string) map[string]any {
