@@ -13,8 +13,7 @@ project, stop the turn it is on, and close it safely.
 - Sessions are found in tmux on macOS and Linux, and in iTerm2 on macOS. Windows cannot list
   sessions yet ([platforms.md](platforms.md)).
 
-The console's interface is in Traditional Chinese, the only language it ships so far. Labels below
-are given as they appear, with their meaning in parentheses.
+Labels below use Traditional Chinese examples with their English meaning; the console supports other interface languages.
 
 ## Read the list
 

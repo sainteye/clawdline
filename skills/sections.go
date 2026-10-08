@@ -190,6 +190,11 @@ func Core(lang string) ([]byte, error) {
 			fmt.Fprintf(&b, "- `%s%s` — %s\n", prefix, s.Name, sectionTitle(parts[i]))
 		}
 	}
+	if resolved == "zh-Hant" {
+		fmt.Fprintf(&b, "\n`%sroutes` 列出此 build 已註冊的路由、起始 API 等級與對應的指南部分；路由不是授權。\n", prefix)
+	} else {
+		fmt.Fprintf(&b, "\n`%sroutes` lists this build's registered routes, API levels, and related guide parts; a route is not authorization.\n", prefix)
+	}
 	fmt.Fprintf(&b, "\n`%sall` %s\n", prefix, copy.all)
 	return b.Bytes(), nil
 }

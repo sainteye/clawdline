@@ -111,11 +111,20 @@ func main() {
 	if err != nil {
 		fatal("%v", err)
 	}
+	agentRoutes, err := readAgentRoutes(filepath.Join(root, "api", "v1", "agent-routes.json"))
+	if err != nil {
+		fatal("agent-routes.json: %v", err)
+	}
+	if err := validateAgentRoutes(routes, agentRoutes); err != nil {
+		fatal("%v", err)
+	}
 
 	want := map[string][]byte{
 		filepath.Join(root, "internal", "contract", "zz_generated.go"): renderGo(names),
 		filepath.Join(root, "web", "contract", "src", "generated.ts"):  renderTS(names),
 		routesPath: renderRoutes(routes),
+		filepath.Join(root, "skills", "clawdline", "routes.md"):       renderAgentRoutes(routes, agentRoutes, false),
+		filepath.Join(root, "skills", "clawdline", "routes.zh-TW.md"): renderAgentRoutes(routes, agentRoutes, true),
 	}
 
 	if check {

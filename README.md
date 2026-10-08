@@ -18,6 +18,10 @@ daemon and return when it finishes; an Agent can leave a concrete request for yo
 attention panel; and you can save future work as a Session to-do without interrupting its current
 turn.
 
+New here? Follow [your first Session](docs/user/first-session.md), or choose a job in the
+[user guide](docs/user/README.md). Agents should read the
+[guide compiled into the current machine](docs/agent-contract.md).
+
 ## What it does
 
 **Basics — every day**
@@ -75,7 +79,8 @@ The screenshots below show the current console with sample data.
 
 - **A Board that follows delivery.** Assign a Feature, Issue or Epic to a session and follow it
   through implementation, verification, merge and deployment, each phase with evidence. Planning
-  is on by default: Features and Epics need a plan and an independent review before work starts.
+  is on by default: Features need observable acceptance criteria. A plan and independent review
+  are required when you turn on **Needs independent review**. Epics require a reviewed plan.
   Questions for you appear on the card. The Board itself is off until you turn it on in Settings.
   [Board](docs/user/board.md)
 

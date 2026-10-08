@@ -51,6 +51,8 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 
 ## 2. 連上 daemon
 
+需要探索此 build 已註冊的路由時，先讀 `clawdline guide routes`，確認目標機器的 API 等級與能力。路由列在表中不等於取得授權：請讀它對應的指南部分，核對具體動作、輸入、前置狀態、上限、具型別拒絕、重試規則及收據。能力、版本、身分或完成證據缺失時停止；不得改用舊 helper、另一台機器或限制較少的路徑。已接受、已執行、已送達、已觀察與已確認是不同狀態，只能宣稱收據實際證明的狀態。路由旁也列出服務的使用者目標；共用名詞見 `docs/contract-model.md`。
+
 **有指令可以用，就用指令，不要自己組 curl。** 指令在自己的 process 裡讀憑證，所以憑證不會出現在命令列、
 `ps`、指令輸出，也不會出現在你的 transcript 裡。自己組的 curl 沒帶這份憑證，會回 `401 unauthorized`
 （"No valid credential came with this request …"）：缺的是憑證，不是權限。改用指令。
@@ -58,6 +60,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | 指令 | 做什麼 |
 |---|---|
 | `clawdline guide [lang]` | 這份指南。不需要 daemon |
+| `clawdline guide routes` | 此 build 的路由、API 等級、對應指南部分與使用者目標；不需要 daemon |
 | `clawdline session report --summary "…"` | 記錄你已經完成的 turn（§7） |
 | `clawdline session close [--dry-run] [--terminal id]` | 稽核並關閉已完成的 Session，絕不強制（§2a） |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 派出一個 owned child（§4） |

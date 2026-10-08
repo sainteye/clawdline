@@ -22,7 +22,7 @@ import (
 	"sync"
 )
 
-//go:embed clawdline/SKILL.md clawdline/freshness.json clawdline/guide.md clawdline/guide.zh-TW.md clawdline/guide.ja.md clawdline/guide.zh-Hans.md clawdline/guide.ko.md clawdline/guide.es.md clawdline/guide.pt-BR.md clawdline/guide.fr.md clawdline/guide.de.md
+//go:embed clawdline/SKILL.md clawdline/freshness.json clawdline/guide.md clawdline/guide.zh-TW.md clawdline/guide.ja.md clawdline/guide.zh-Hans.md clawdline/guide.ko.md clawdline/guide.es.md clawdline/guide.pt-BR.md clawdline/guide.fr.md clawdline/guide.de.md clawdline/routes.md clawdline/routes.zh-TW.md
 var files embed.FS
 
 // DefaultTopic is the guide `clawdline guide` prints with no topic.
@@ -221,4 +221,14 @@ func Stub() []byte {
 		panic(err)
 	}
 	return data
+}
+
+// RouteCatalog is the generated inventory compiled into this binary. It is
+// discovery only; the current guide part remains the operation contract.
+func RouteCatalog(topic string) ([]byte, error) {
+	path := "clawdline/routes.md"
+	if ResolveTopic(topic) == "zh-Hant" {
+		path = "clawdline/routes.zh-TW.md"
+	}
+	return files.ReadFile(path)
 }
