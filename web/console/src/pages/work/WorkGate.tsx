@@ -174,6 +174,8 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
   return <section className="work-gate-detail" aria-label={catalogWord("inline", "9737e4f2e725")}>
     <h4>{catalogWord("inline", "9737e4f2e725")}</h4>
     <p className="work-gate-current"><WorkGateLine item={item} /></p>
+    {loading && <p role="status">{catalogWord("inline", "47d0495491da")}</p>}
+    {error && <p role="alert">{catalogLabel("inline", "68a78ae9f308")}{error} <button className="chip" type="button" onClick={retry}>{catalogWord("inline", "7e59d0f16293")}</button></p>}
     {!loading && !error && !detail && <p>{catalogWord("inline", "ce6184e46a66")}<button className="chip" type="button" onClick={retry}>{catalogWord("inline", "aa2938c4e84f")}</button></p>}
     <p>{catalogLabel("inline", "a24529fd35aa")}{item.gate_snapshot_cycle ? catalogFormat("template", "0d6f06c58208", [item.gate_snapshot_cycle, gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)]) : catalogWord("literal", "cd8db91c094e")}{catalogWord("inline", "fa13f75c4f30")}</p>
     <div className="work-gate-acceptance"><strong>{catalogWord("inline", "b1d809e93c19")}</strong>

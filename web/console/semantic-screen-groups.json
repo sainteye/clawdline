@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4726,
-  "riskKeys": 2062,
-  "nonRiskCount": 2664,
+  "englishContentKeys": 4723,
+  "riskKeys": 2061,
+  "nonRiskCount": 2662,
   "groups": [
     {
       "name": "bar / other",
@@ -3055,7 +3055,7 @@
     },
     {
       "name": "work / other",
-      "count": 67,
+      "count": 65,
       "sources": [
         "src/pages/work/words.ts"
       ],
@@ -3084,8 +3084,6 @@
         "work.decideLede",
         "work.decisionDefault",
         "work.decisionFrom",
-        "work.detailLoading",
-        "work.detailRetry",
         "work.handoverTo",
         "work.lastEvidence",
         "work.more",
