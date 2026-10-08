@@ -67,6 +67,7 @@ interface StartHost {
 
 const HOLD = 15000 // how long the band waits before it admits it has stopped waiting
 const MANY = 8 // places, past which a box to filter them earns its row
+const PLACES_REFRESH_MS = 3000 // an open start sheet sees registrations made in another terminal
 const MACHINE_PLACE = "@machine"
 
 const api = L.startApi
@@ -576,11 +577,11 @@ function drawPast(list: HTMLElement, box: HTMLInputElement): void {
   edge()
 }
 
-function load(): void {
+function load(background = false): void {
   if (loading || typeof api.places !== "function") return
   const generation = ++placesGeneration
   loading = true
-  draw()
+  if (!background) draw()
   asked(() => api.places())
     .then((d) => {
       if (generation !== placesGeneration) return
@@ -593,7 +594,7 @@ function load(): void {
     .catch((e: Failure) => {
       if (generation !== placesGeneration) return
       places = places || []
-      said(why(e), e)
+      if (!background) said(why(e), e)
     })
     .then(() => {
       if (generation !== placesGeneration) return
@@ -979,7 +980,11 @@ export function StartSheet() {
     list.addEventListener("scroll", onScroll, { passive: true })
     list.addEventListener("click", onList)
     document.addEventListener("keydown", onKey, true)
+    const placesRefresh = window.setInterval(() => {
+      if (!sheetHidden() && document.visibilityState === "visible" && mode === "session" && !at && !machineOnly) load(true)
+    }, PLACES_REFRESH_MS)
     return () => {
+      window.clearInterval(placesRefresh)
       bound.current = false
       start.removeEventListener("click", onOverlay)
       sheet.removeEventListener("click", onSheet)

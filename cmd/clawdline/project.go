@@ -2,21 +2,22 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"text/tabwriter"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
-	"github.com/sainteye/clawdline/internal/config"
-	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
-// `clawdline project` changes the explicit session-start registry. It writes
-// this daemon's own state directly, so it works before the daemon starts and
-// never needs an assistant call merely to remember a directory.
+// `clawdline project` asks the running daemon to change the explicit
+// session-start registry. Its successful answer is from the same authority
+// that serves the Project and start lists.
 func projectCommand(args []string) {
 	if len(args) == 0 {
 		projectUsage()
@@ -33,10 +34,6 @@ func projectCommand(args []string) {
 		projectUnifyCommand(args[1:])
 		return
 	}
-	registry := projects.OpenPlaceRegistry(config.Load().Dir, foreignDirs()...)
-	resolved, _ := capacity.Resolve(capacity.Register(), os.Getenv(capacity.OverrideEnv))
-	registry.SetLimit(capacity.Limit(resolved, capacity.PlacesRegistered))
-
 	switch args[0] {
 	case "add":
 		fs := flag.NewFlagSet("project add", flag.ExitOnError)
@@ -46,7 +43,7 @@ func projectCommand(args []string) {
 			projectUsage()
 			os.Exit(2)
 		}
-		rows, err := registry.Add(fs.Args(), time.Now())
+		rows, err := projectRegistryRequest(http.MethodPost, fs.Args())
 		if err != nil {
 			fail(err)
 		}
@@ -59,7 +56,7 @@ func projectCommand(args []string) {
 			projectUsage()
 			os.Exit(2)
 		}
-		rows, err := registry.Remove(fs.Args())
+		rows, err := projectRegistryRequest(http.MethodDelete, fs.Args())
 		if err != nil {
 			fail(err)
 		}
@@ -71,7 +68,7 @@ func projectCommand(args []string) {
 		if fs.NArg() != 0 {
 			fail(fmt.Errorf(cliCopy("misc", "project.unexpected_argument", "unexpected argument %q"), fs.Arg(0)))
 		}
-		rows, err := registry.List()
+		rows, err := projectRegistryRequest(http.MethodGet, nil)
 		if err != nil {
 			fail(err)
 		}
@@ -80,6 +77,46 @@ func projectCommand(args []string) {
 		projectUsage()
 		os.Exit(2)
 	}
+}
+
+func projectRegistryRequest(method string, paths []string) ([]projects.RegisteredPlace, error) {
+	b, err := openBroker(0)
+	if err != nil {
+		return nil, err
+	}
+	path := "/v1/places"
+	var body any
+	if method == http.MethodGet {
+		path += "?registered=1"
+	} else {
+		absolute := make([]string, 0, len(paths))
+		for _, p := range paths {
+			p, err = filepath.Abs(p)
+			if err != nil {
+				return nil, err
+			}
+			absolute = append(absolute, p)
+		}
+		body = struct {
+			Paths []string `json:"paths"`
+		}{absolute}
+	}
+	a, err := b.request(method, path, nil, body, "")
+	if err != nil {
+		return nil, err
+	}
+	if !a.ok() {
+		code, message := a.refusal()
+		return nil, fmt.Errorf("%s: %s (%d)", code, message, a.Status)
+	}
+	var result struct {
+		Registered bool                       `json:"registered"`
+		Places     []projects.RegisteredPlace `json:"places"`
+	}
+	if err := json.Unmarshal(a.Body, &result); err != nil || !result.Registered || result.Places == nil {
+		return nil, errors.New(cliCopy("misc", "project.daemon_answer_invalid", "the daemon did not return a Project list; update the running daemon"))
+	}
+	return result.Places, nil
 }
 
 func projectUsage() {

@@ -40,9 +40,11 @@ The hosted and daemon consoles share source but require different builds. The ho
 
 The Cloud console shows the selected machine's Projects, but does not register a local directory.
 For a missing existing directory, run `clawdline project add /absolute/path/to/project` on the
-machine that holds it, then reopen that machine's **專案** page in the paired console. The CLI's
-`clawdline project list` checks only its own registry; it cannot prove which daemon the console
-asked. [Adding a project](user/projects.md#add-a-project) gives the full steps and diagnosis.
+machine that holds it while its daemon is running. The session start sheet refreshes automatically
+while open; reopen **Projects** to refresh that page. The command reports success only when the serving daemon
+registered it; `clawdline project list` reads that same explicit list. If the daemon cannot be
+reached or authenticated, the command fails without writing another list. [Adding a project](user/projects.md#add-a-project)
+gives the full steps.
 
 For a machine that appears offline, inspect `clawdline cloud status` or the local status route first: the switch, identity, connection state, last error and publication counters narrow down which side has evidence. Then inspect the hosted build using [hosted-console.md](hosted-console.md). The status route and logs expose this machine's observations; they do not prove that a particular browser decrypted or displayed a frame. [cloud-cutover.md](cloud-cutover.md) records local preflight and stand-in tests, not a fresh production validation.
 
