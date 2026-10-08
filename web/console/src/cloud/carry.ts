@@ -64,8 +64,8 @@ export const CARRIED = {
   documents: "GET /v1/sessions/{id}/documents",
   "work-gate-settings": "GET /v1/settings/work-gates",
   "work-gate-settings-update": "POST /v1/settings/work-gates",
-  // The dashboard behind the session counts (`machine/`): this machine's CPU
-  // and memory and each session's share, a machine read with no parameter.
+  // The dashboard behind the session counts (`machine/`): CPU, memory, disk
+  // space and grouped reclaim backlog, a machine read with no parameter.
   "machine-usage": "GET /v1/machine/usage",
   // The Settings page's update panel and the list's banner (`machine/update.ts`):
   // whether this machine trails the latest build, a machine read with no parameter.

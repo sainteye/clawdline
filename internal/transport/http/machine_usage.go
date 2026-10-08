@@ -12,8 +12,8 @@ import (
 )
 
 // machineUsageRoute is GET /v1/machine/usage: the dashboard the session counts
-// open (web/console/src/machine/). This machine's CPU and memory now, and each
-// session's share, summed over the tree of processes the session started.
+// open (web/console/src/machine/). This machine's CPU and memory now, each
+// session's process share, and the cached disk and reclaim summary.
 //
 // It is the terminal work of 2026-09-26 made readable: everything in the
 // console was slow, and telling a slow daemon from a machine out of memory took
@@ -59,14 +59,18 @@ func (s *Server) machineUsageRoute(w http.ResponseWriter, r *http.Request) {
 		writeRawRefusal(w, http.StatusServiceUnavailable, "machine_usage_unreadable", err.Error())
 		return
 	}
-	writeJSON(w, machineUsageWire(u, func(key string) (contract.MachineUsageGroup, bool) {
+	out := machineUsageWire(u, func(key string) (contract.MachineUsageGroup, bool) {
 		if key == "daemon" {
 			return contract.MachineUsageGroup{Kind: contract.MachineUsageGroupKindDaemon}, true
 		}
 		r, ok := rows[key]
 		return contract.MachineUsageGroup{Kind: contract.MachineUsageGroupKindSession,
 			ID: r.id, Label: r.label, Assistant: r.assistant, TTY: r.tty}, ok
-	}))
+	})
+	disk := s.machineDiskSummary()
+	reclaim := s.machineReclaimSummary(ctx)
+	out.Disk, out.Reclaim = &disk, &reclaim
+	writeJSON(w, out)
 }
 
 // machineUsageWire is a reading as it is sent. named gives each group the

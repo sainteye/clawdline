@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4738,
-  "riskKeys": 2067,
-  "nonRiskCount": 2671,
+  "englishContentKeys": 4759,
+  "riskKeys": 2074,
+  "nonRiskCount": 2685,
   "groups": [
     {
       "name": "bar / other",
@@ -1778,7 +1778,7 @@
     },
     {
       "name": "next / other",
-      "count": 89,
+      "count": 103,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1797,10 +1797,24 @@
         "next.infoContext",
         "next.infoContextUsed",
         "next.infoResetsInMinutes",
+        "next.machineDiskFree",
         "next.machineNeedsUpdateLink",
         "next.machineNeedsUpdateShort",
         "next.machineNeedsUpdateVersion",
+        "next.machineReclaimDeferred",
+        "next.machineReclaimFailures",
+        "next.machineReclaimKept",
+        "next.machineReclaimReasonChangedDuringSweep",
+        "next.machineReclaimReasonFiltersPresent",
+        "next.machineReclaimReasonNestedRepository",
+        "next.machineReclaimReasonOwnerPresent",
+        "next.machineReclaimReasonPathNotOwned",
+        "next.machineReclaimReasonWithinGrace",
+        "next.machineReclaimReasons",
+        "next.machineReclaimRemoving",
+        "next.machineReclaimTitle",
         "next.machineSessionScope",
+        "next.machineStorageTitle",
         "next.menuCancel",
         "next.menuChooseAgain",
         "next.newBuild",

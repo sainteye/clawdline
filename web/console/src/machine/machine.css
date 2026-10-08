@@ -105,6 +105,15 @@
 .machine-section h3 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--dim); }
 .machine-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
+.machine-storage-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 10px; }
+.machine-storage-grid > div { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.machine-storage-grid strong { font: 600 16px var(--mono); color: var(--ink); }
+.machine-storage-counts { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--dim); }
+.machine-storage-counts b, .machine-storage-reasons b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.machine-storage-reasons { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; }
+.machine-storage-reasons ul { list-style: none; padding: 0; margin: 0; }
+.machine-storage-reasons li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 12px; color: var(--dim); border-top: 1px solid var(--line); }
+
 .machine-stack { display: flex; gap: 2px; height: 14px; border-radius: 4px; background: var(--line); overflow: hidden; }
 .machine-stack i { display: block; height: 100%; min-width: 2px; transition: width 400ms var(--ease); }
 .machine-stack i:hover { filter: brightness(1.2); }
@@ -162,6 +171,7 @@
     .sheet.machine-sheet { width: 100%; border-radius: 16px 16px 0 0; padding: 0 16px 20px; max-height: calc(100dvh - 12px); }
     .machine-head { margin: 0 -16px; padding: 16px 16px 10px; }
     .machine-gauges { grid-template-columns: 1fr; gap: 8px; }
+    .machine-storage-grid { grid-template-columns: 1fr; }
     .machine-gauge { display: grid; grid-template-columns: auto minmax(0, 1fr) 64px; grid-template-areas: "top top top" "value meter spark" "sub sub sub"; gap: 4px 12px; align-items: center; }
     .machine-gauge-top { grid-area: top; }
     .machine-gauge-mid { display: contents; }

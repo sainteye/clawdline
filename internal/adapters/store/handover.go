@@ -439,6 +439,42 @@ func (s *Store) Reclaims(ctx context.Context) ([]Reclaim, error) {
 	return out, classify(rows.Err())
 }
 
+// ReclaimCounts reads only grouped standing decisions. It never loads task
+// identifiers, paths, or evidence into the machine-visible summary.
+func (s *Store) ReclaimCounts(ctx context.Context) ([]ReclaimCount, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	rows, err := s.rd.QueryContext(ctx,
+		`SELECT outcome,
+		 CASE WHEN outcome = 'kept' AND reason IN (
+		   'within_grace', 'owner_present', 'owner_unknown', 'path_not_owned',
+		   'unreadable', 'nested_repository', 'filters_present', 'preserve_failed',
+		   'changed_during_sweep', 'intent_not_recorded', 'remove_failed'
+		 ) THEN reason ELSE '' END AS safe_reason, COUNT(*)
+		 FROM broker_reclaim WHERE outcome IN ('kept', 'removing')
+		 GROUP BY outcome, safe_reason`)
+	if err != nil {
+		return nil, classify(err)
+	}
+	defer rows.Close()
+	out := []ReclaimCount{}
+	for rows.Next() {
+		var r ReclaimCount
+		if err := rows.Scan(&r.Outcome, &r.Reason, &r.Count); err != nil {
+			return nil, classify(err)
+		}
+		out = append(out, r)
+	}
+	return out, classify(rows.Err())
+}
+
+type ReclaimCount struct {
+	Outcome string
+	Reason  string
+	Count   int64
+}
+
 // ErrNoReclaim is a subject the sweep has never decided about.
 var ErrNoReclaim = errors.New("no reclamation decision")
 

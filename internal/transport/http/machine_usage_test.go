@@ -46,6 +46,9 @@ func TestAPairedDeviceReadsTheMachinesUsage(t *testing.T) {
 	if u.Cores < 1 || u.MemoryTotalBytes <= 0 || u.MemoryUsedBytes <= 0 || u.IntervalMs <= 0 || len(u.Load) != 3 {
 		t.Fatalf("the machine: %+v", u)
 	}
+	if u.Disk == nil || u.Disk.Known || u.Reclaim == nil || u.Reclaim.Known {
+		t.Fatalf("unstarted storage readers must say unknown: disk=%+v reclaim=%+v", u.Disk, u.Reclaim)
+	}
 	if u.CpuPercent < 0 || u.CpuPercent > 100 {
 		t.Fatalf("cpu %v", u.CpuPercent)
 	}
