@@ -130,17 +130,6 @@ function checkTerminalAccess(): void {
   })
 }
 
-function setMode(next: StartMode): void {
-  if (pressing || wait || machineOnly) return
-  mode = next
-  leave()
-  if (next === "terminal") checkTerminalAccess()
-  else {
-    void loadPersonas().then(() => draw())
-    draw()
-  }
-}
-
 /* The list redraws when the wait changes: `renderList()` in the original. */
 let version = 0
 const listeners = new Set<() => void>()
@@ -415,16 +404,6 @@ function draw(): void {
   const list = el("start-list")
   const box = el<HTMLInputElement>("start-filter")
   const machineAction = el<HTMLButtonElement>("start-machine-action")
-  const tabs = el("start-mode-tabs")
-  tabs.hidden = machineOnly
-  const panel = el("start-mode-panel")
-  panel.setAttribute("role", machineOnly ? "group" : "tabpanel")
-  panel.setAttribute("aria-labelledby", machineOnly ? "start-title" : mode === "session" ? "start-session-tab" : "start-terminal-tab")
-  panel.tabIndex = machineOnly ? -1 : 0
-  el("start-session-tab").setAttribute("aria-selected", mode === "session" ? "true" : "false")
-  el("start-terminal-tab").setAttribute("aria-selected", mode === "terminal" ? "true" : "false")
-  el("start-session-tab").tabIndex = mode === "session" ? 0 : -1
-  el("start-terminal-tab").tabIndex = mode === "terminal" ? 0 : -1
   el("start-title").textContent = machineOnly ? "Clawdfather" : mode === "terminal" ? nextWord("terminalStartTitle") : T().webStart
   machineAction.hidden = !machineOnly
   machineAction.disabled = !!pressing || !!wait || !with_ || !write
@@ -944,8 +923,6 @@ export function StartSheet() {
     const onSheet = (ev: Event) => ev.stopPropagation()
     const onClose = () => close()
     const onMachine = () => press(MACHINE_PLACE)
-    const onSessionTab = () => setMode("session")
-    const onTerminalTab = () => setMode("terminal")
     const onInput = () => Start.typed(filter.value)
     const onScroll = () => Start.scrolled()
     const onList = (ev: Event) => {
@@ -966,15 +943,6 @@ export function StartSheet() {
       if (ev.key === "Escape") {
         close()
         ev.stopImmediatePropagation()
-        return
-      }
-      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(ev.key) &&
-          (document.activeElement === el("start-session-tab") || document.activeElement === el("start-terminal-tab"))) {
-        ev.preventDefault()
-        ev.stopImmediatePropagation()
-        const next = ev.key === "Home" ? "session" : ev.key === "End" ? "terminal" : mode === "session" ? "terminal" : "session"
-        setMode(next)
-        el(next === "session" ? "start-session-tab" : "start-terminal-tab").focus()
         return
       }
       if (ev.key === "Tab") {
@@ -1007,8 +975,6 @@ export function StartSheet() {
     sheet.addEventListener("click", onSheet)
     el("start-close").addEventListener("click", onClose)
     el("start-machine-action").addEventListener("click", onMachine)
-    el("start-session-tab").addEventListener("click", onSessionTab)
-    el("start-terminal-tab").addEventListener("click", onTerminalTab)
     filter.addEventListener("input", onInput)
     list.addEventListener("scroll", onScroll, { passive: true })
     list.addEventListener("click", onList)
@@ -1019,8 +985,6 @@ export function StartSheet() {
       sheet.removeEventListener("click", onSheet)
       el("start-close")?.removeEventListener("click", onClose)
       el("start-machine-action")?.removeEventListener("click", onMachine)
-      el("start-session-tab")?.removeEventListener("click", onSessionTab)
-      el("start-terminal-tab")?.removeEventListener("click", onTerminalTab)
       filter.removeEventListener("input", onInput)
       list.removeEventListener("scroll", onScroll)
       list.removeEventListener("click", onList)
@@ -1032,12 +996,7 @@ export function StartSheet() {
     <div className="overlay" id="start" hidden>
       <div className="sheet" role="dialog" aria-modal="true" id="start-sheet" aria-labelledby="start-title">
         <h2 id="start-title" tabIndex={-1}>{T.webStart}</h2>
-        <div className="start-mode-tabs" id="start-mode-tabs" role="tablist" aria-label={nextWord("terminalStartModeLabel")}>
-          <button type="button" role="tab" id="start-session-tab" aria-selected="true" aria-controls="start-mode-panel">{nextWord("terminalStartSessionTab")}</button>
-          <button type="button" role="tab" id="start-terminal-tab" aria-selected="false" aria-controls="start-mode-panel">{nextWord("terminalStartTerminalTab")}</button>
-        </div>
-
-        <div className="block" id="start-mode-panel" role="tabpanel" aria-labelledby="start-session-tab" tabIndex={0}>
+        <div className="block" id="start-mode-panel" role="group" aria-labelledby="start-title">
           <p className="say" id="start-say" role="status" aria-live="polite"></p>
           <div className="row" id="start-machine" hidden></div>
           <div className="row" id="start-with" hidden></div>
