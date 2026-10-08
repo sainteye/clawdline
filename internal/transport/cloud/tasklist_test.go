@@ -127,7 +127,7 @@ func TestNoTaskAViewerCanReachLeavesTheDescriptorAsItWas(t *testing.T) {
 			}
 			// And the rest of the pass is the one it was: the descriptor, one
 			// row and the inventory, in that order.
-			if names := out.channels(); len(names) != 3 || names[0] != "orch/mac-01" {
+			if names := legacyChannels(out.channels()); len(names) != 3 || names[0] != "orch/mac-01" {
 				t.Errorf("the pass published %v", names)
 			}
 		})

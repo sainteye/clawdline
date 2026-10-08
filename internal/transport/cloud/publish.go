@@ -716,6 +716,7 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 		// retries the forgotten publication and then states the marker.
 		return
 	}
+	p.publishStatuses(ctx, reading, ids)
 	// The set about to be stated is what a viewer will hold, so it is what the
 	// next partial reading has to be measured against — remembered here rather
 	// than after the send, because an unchanged marker is not re-sent and the

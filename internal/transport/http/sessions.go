@@ -134,6 +134,10 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	for i, item := range items {
 		lives[i] = liveOf(item)
 	}
+	// A generation belongs to a verified process, not to this list read. A
+	// failed source or database write leaves it absent rather than reusing the
+	// last value as authority for a new action.
+	executionGenerations := s.observeExecutions(records, inv, items, lives)
 	matches := identityMatchCounts(items)
 	conversationMatches := map[string]int{}
 	for _, item := range items {
@@ -219,24 +223,25 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	rows := make([]sessionRowWire, 0, len(items))
 	for i, item := range items {
 		row := s.sessionRow(rowInput{
-			item:       item,
-			live:       lives[i],
-			label:      labels[item.ID],
-			labelOf:    labelOf,
-			matches:    matches[item.ID],
-			swift:      swift,
-			owed:       owed,
-			owedErr:    owedErr,
-			ownErr:     ownErr,
-			closure:    openBySession[item.ConversationID],
-			closureErr: responsibilityErr,
-			inv:        inv,
-			now:        now,
-			generation: gen,
-			role:       role,
-			ownRole:    ownRole,
-			epicParent: epicParents[string(item.Assistant)+"\x00"+item.ConversationID],
-			acceptance: rowAcceptance(item.ConversationID, pending, pendingErr),
+			item:                item,
+			live:                lives[i],
+			label:               labels[item.ID],
+			labelOf:             labelOf,
+			matches:             matches[item.ID],
+			swift:               swift,
+			owed:                owed,
+			owedErr:             owedErr,
+			ownErr:              ownErr,
+			closure:             openBySession[item.ConversationID],
+			closureErr:          responsibilityErr,
+			inv:                 inv,
+			now:                 now,
+			generation:          gen,
+			executionGeneration: executionGenerations[item.ID],
+			role:                role,
+			ownRole:             ownRole,
+			epicParent:          epicParents[string(item.Assistant)+"\x00"+item.ConversationID],
+			acceptance:          rowAcceptance(item.ConversationID, pending, pendingErr),
 		})
 		if attentionErr == nil && item.ConversationID != "" && conversationMatches[item.ConversationID] == 1 &&
 			row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent &&
@@ -449,20 +454,21 @@ func rowLabel(item session.Session, titles swiftstore.Titles, project string) st
 }
 
 type rowInput struct {
-	item       session.Session
-	live       swiftstore.Live
-	label      string
-	labelOf    func(string) string
-	matches    int
-	swift      swiftstore.Snapshot
-	owed       []task.Obligation
-	owedErr    error
-	ownErr     error // this daemon's own records not all read (ownrecords.go)
-	closure    []store.SessionResponsibility
-	closureErr error
-	inv        session.Inventory
-	now        time.Time
-	generation int64
+	item                session.Session
+	live                swiftstore.Live
+	label               string
+	labelOf             func(string) string
+	matches             int
+	swift               swiftstore.Snapshot
+	owed                []task.Obligation
+	owedErr             error
+	ownErr              error // this daemon's own records not all read (ownrecords.go)
+	closure             []store.SessionResponsibility
+	closureErr          error
+	inv                 session.Inventory
+	now                 time.Time
+	generation          int64
+	executionGeneration string
 	// role is this daemon's own machine role, and ownRole whether it holds
 	// one; see sessionsPayload.
 	role       *coordinator.Record
@@ -508,14 +514,15 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		IsClaude: item.Assistant == session.AssistantClaude,
 		// Not in the Swift contract: how this row's state was learned. A
 		// registry reading and a screen guess are different kinds of fact.
-		Evidence:  contract.Evidence(item.Evidence),
-		TTY:       item.TTY,
-		Assistant: contract.Assistant(item.Assistant),
-		Label:     in.label,
-		Line:      item.Line,
-		Source:    wireSessionObservation(item, in.inv),
-		CWD:       item.CWD,
-		SessionID: item.ConversationID,
+		Evidence:            contract.Evidence(item.Evidence),
+		ExecutionGeneration: in.executionGeneration,
+		TTY:                 item.TTY,
+		Assistant:           contract.Assistant(item.Assistant),
+		Label:               in.label,
+		Line:                item.Line,
+		Source:              wireSessionObservation(item, in.inv),
+		CWD:                 item.CWD,
+		SessionID:           item.ConversationID,
 		// How that id was obtained, or which kind of nothing took its place.
 		// A row with no `sessionId` is three different situations, and only
 		// one of them — a session that has not written anything yet — is
