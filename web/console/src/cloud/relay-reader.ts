@@ -216,6 +216,8 @@ export interface CloudReadClient {
    */
   agent?(identity: CloudIdentity, agent: string): Promise<unknown>
   shell?(identity: CloudIdentity, shell: string): Promise<unknown>
+  /** The copied client's session reader, used for cursor pages without changing the pinned copy. */
+  _read?(identity: CloudIdentity, word: string, body: Record<string, unknown>, answer: string): Promise<unknown>
   /**
    * The application server key, as the machine's `push-key` read answers it.
    *
@@ -291,6 +293,8 @@ export function machineApp(client: CloudReadClient, machine: string): { version?
 
 /** The copied client's `AGENT_LIMIT`: the entries one subagent read carries. */
 export const CLOUD_AGENT_LIMIT = 200
+/** The copied client's `TRANSCRIPT_LIMIT`: the entries one session read carries. */
+export const CLOUD_TRANSCRIPT_LIMIT = 200
 /** The copied client's `SHELL_BYTES`: the tail one background-command read carries. */
 export const CLOUD_SHELL_BYTES = 64 * 1024
 
@@ -668,10 +672,14 @@ export class RelayReader {
       }
       const agent = sessionAgent(path)
       if (agent) {
-        const q = this.only(url, path, "limit")
+        const q = this.only(url, path, "limit", "before")
         this.window(path, "limit", q.limit, CLOUD_AGENT_LIMIT)
+        const before = historyCursor(q.before)
+        if (q.before !== undefined && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
         return await this.sessionRead(init?.signal, method, path, "agent", (client) =>
-          client.agent?.({ machine: this.machine, session: agent.session }, agent.agent))
+          before ? client._read?.({ machine: this.machine, session: agent.session }, "agent",
+            { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, before }, `agent:${agent.agent}.before.${before}`)
+            : client.agent?.({ machine: this.machine, session: agent.session }, agent.agent))
       }
       const shell = sessionShell(path)
       if (shell) {
@@ -868,6 +876,17 @@ export class RelayReader {
         case "/v1/transcript": {
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
+          const beforeRaw = url.searchParams.get("before")
+          const before = historyCursor(beforeRaw)
+          if (beforeRaw !== null && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
+          if (before) {
+            const client = this.connected()
+            if (!client._read) return this.refuse(method, path, 501, "cloud_not_carried", "This console cannot read earlier messages.")
+            const page = transcriptPage(await client._read({ machine: this.machine, session }, "transcript",
+              { limit: CLOUD_TRANSCRIPT_LIMIT, before, priority: "foreground" }, `transcript.before.${before}`), session)
+            this.note(method, path, "relay", undefined, { word: "transcript" })
+            return json(200, page)
+          }
           // `cache: "no-store"` is a caller that must see the machine's answer
           // now: a failed send's "try again" checks the words did not arrive
           // after all before it types them a second time (`session/send.ts`).
@@ -1829,6 +1848,12 @@ function transcriptPage(body: unknown, session: string): TranscriptPage {
     signature: typeof page.signature === "string" ? page.signature : "",
     evidence: typeof page.evidence === "string" ? page.evidence : "transcript",
   } as TranscriptPage
+}
+
+function historyCursor(value: string | null | undefined): number {
+  if (!value || !/^[1-9][0-9]*$/.test(value)) return 0
+  const cursor = Number(value)
+  return Number.isSafeInteger(cursor) ? cursor : 0
 }
 
 /** A row with the fields that move on every reading taken out, as one comparable string. */

@@ -87,6 +87,16 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil {
 		limit = min(max(n, 1), 1000)
 	}
+	before := int64(0)
+	if r.URL.Query().Has("before") {
+		raw := r.URL.Query().Get("before")
+		var err error
+		before, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || before < 1 {
+			writeRefusal(w, http.StatusBadRequest, "invalid_cursor", "before must be a positive byte cursor")
+			return
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
@@ -95,11 +105,15 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 		writeActionRefusal(w, err)
 		return
 	}
-	writeJSON(w, s.transcriptPage(id, item, limit))
+	writeJSON(w, s.transcriptPageBefore(id, item, limit, before))
 }
 
 // transcriptPage is the newest `limit` entries of one session's own record.
 func (s *Server) transcriptPage(id string, item session.Session, limit int) contract.TranscriptPage {
+	return s.transcriptPageBefore(id, item, limit, 0)
+}
+
+func (s *Server) transcriptPageBefore(id string, item session.Session, limit int, before int64) contract.TranscriptPage {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	path := recordPath(item)
 	if path == "" {
@@ -112,9 +126,9 @@ func (s *Server) transcriptPage(id string, item session.Session, limit int) cont
 	var read transcript.Page
 	var err error
 	if item.Assistant == session.AssistantCodex {
-		read, err = transcript.ReadCodex(path, limit)
+		read, err = transcript.ReadCodexBefore(path, limit, before)
 	} else {
-		read, err = transcript.ReadClaude(path, limit)
+		read, err = transcript.ReadClaudeBefore(path, limit, before)
 	}
 	if errors.Is(err, transcript.ErrNoRecord) {
 		// A session that has just started has not written its record yet.
@@ -138,8 +152,12 @@ func (s *Server) transcriptPage(id string, item session.Session, limit int) cont
 		row.Artifacts = s.pictures.wireArtifacts(e, now)
 		entries = append(entries, row)
 	}
-	kept, omitted := boundedTranscript(entries)
+	kept, omitted := boundedTranscriptRows(entries, read.Entries)
 	page.Entries = kept
+	page.NextBefore = read.NextBefore
+	if omitted > 0 {
+		page.NextBefore = read.Entries[omitted].Before
+	}
 	if omitted > 0 {
 		page.Truncation = &contract.TranscriptTruncation{
 			Reason:              "transcript_byte_budget",
@@ -179,6 +197,22 @@ func boundedTranscript(entries []contract.TranscriptEntry) ([]contract.Transcrip
 	for first > 0 {
 		size := legacyRowBytes(entries[first-1])
 		if first < len(entries) && used+size > transcriptBudget {
+			break
+		}
+		used += size
+		first--
+	}
+	return entries[first:], first
+}
+
+// A JSONL row can produce several entries. Keep that row together so the
+// byte cursor never passes over an entry omitted from this page.
+func boundedTranscriptRows(entries []contract.TranscriptEntry, source []transcript.Entry) ([]contract.TranscriptEntry, int) {
+	used := 0
+	first := len(entries)
+	for first > 0 {
+		size := legacyRowBytes(entries[first-1])
+		if first < len(entries) && used+size > transcriptBudget && source[first-1].Before != source[first].Before {
 			break
 		}
 		used += size

@@ -38,8 +38,8 @@ const (
 )
 
 // ReadBudget is how much of a record's end one transcript read looks at: the
-// Swift app's `Transcript.tail(of:bytes: 8 << 20)`. Only the newest entries
-// are ever wanted, and a Codex rollout on this Mac is 900 MB.
+// Swift app's `Transcript.tail(of:bytes: 8 << 20)`. A history page starts
+// at its cursor and looks at no more than this much earlier content.
 const ReadBudget = 8 << 20
 
 // AskTool is the tool Claude Code stops on when it wants a decision rather
@@ -60,6 +60,9 @@ const (
 type Entry struct {
 	Kind string
 	Text string
+	// Before is the start of the JSONL row this entry came from. It is used
+	// only by the paged reader to preserve whole rows at page boundaries.
+	Before int64
 	// Tool names the tool on a call. A result carries none.
 	Tool string
 	// At is Unix seconds, or 0 when the record carried no timestamp.
@@ -178,6 +181,9 @@ type NoticeOverlap struct {
 type Page struct {
 	Entries   []Entry
 	Signature string
+	// NextBefore is the exclusive end for the next older page; zero means the
+	// beginning of the record was reached.
+	NextBefore int64
 	// Unread is how many bytes before the read window were never looked at,
 	// when the window ran out before `limit` entries were found: the
 	// conversation goes back further than Entries shows. Zero when the read
