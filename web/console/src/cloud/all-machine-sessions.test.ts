@@ -2,7 +2,8 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment,
-  destinationKey, matchesSession, SessionDetailCache, type MachineSessionProjection, type ProjectedSession,
+  destinationKey, matchesSession, prependOlderPage, projectionRefreshAt, SessionDetailCache,
+  type MachineSessionProjection, type ProjectedSession,
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
 } from "./all-machine-sessions.ts"
 
@@ -71,4 +72,32 @@ test("the five filters operate on status only", () => {
   assert.equal(matchesSession({ ...item, needsAttention: false }, "macOS", filters), false)
   assert.equal(matchesSession({ ...item, freshness: "stale" }, "macOS", filters), false)
   assert.equal(matchesSession({ ...item, state: "waiting" }, "macOS", filters), false)
+})
+
+test("older pages prepend only to the exact execution and requested cursor", () => {
+  const destination = row("one", "same", "1").destination
+  const current = { kind: "ready" as const, destination, observedAt: 1000, info: {},
+    entries: [{ speaker: "assistant", text: "newest" }], nextBefore: 123, question: null }
+  const older = { kind: "ready" as const, destination, before: 123,
+    entries: [{ speaker: "user", text: "older" }], nextBefore: 40 }
+  assert.deepEqual(prependOlderPage(current, older)?.entries.map((entry) => entry.text), ["older", "newest"])
+  assert.equal(prependOlderPage(current, older)?.nextBefore, 40)
+  assert.equal(prependOlderPage(current, { ...older, before: 122 }), null)
+  assert.equal(prependOlderPage(current, { ...older, nextBefore: 123 }), null)
+  assert.equal(prependOlderPage(current, { ...older, destination: row("two", "same", "1").destination }), null)
+  assert.equal(prependOlderPage(current, { ...older, destination: row("one", "same", "2").destination }), null)
+  assert.equal(prependOlderPage(current, { ...older, nextBefore: undefined })?.nextBefore, undefined)
+  assert.equal(prependOlderPage(current, { kind: "unavailable", reason: "old_version" }), null)
+  assert.deepEqual(current.entries, [{ speaker: "assistant", text: "newest" }])
+})
+
+test("current status is reread when its earliest status time expires", () => {
+  const one = ready("one", [{ ...row("one", "s", "1"), observedAt: 900 }])
+  const two = ready("two", [{ ...row("two", "s", "1"), observedAt: 950 }])
+  assert.equal(projectionRefreshAt(one, 300_000), 300_901)
+  assert.equal(projectionRefreshAt(two, 300_000), 300_951)
+  assert.equal(projectionRefreshAt(ready("one", [{ ...row("one", "s", "1"), freshness: "stale", observedAt: 1 }]),
+    300_000), 301_001)
+  assert.equal(projectionRefreshAt({ kind: "unavailable", reason: "stale" }, 300_000), null)
+  assert.equal(projectionRefreshAt({ kind: "unavailable", reason: "offline", retryAt: 1200 }, 300_000), 1200)
 })

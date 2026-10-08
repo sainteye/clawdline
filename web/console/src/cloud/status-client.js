@@ -24,8 +24,10 @@ function pinnedReplyKey(machine, session, read) {
 
 function pinnedReadName(type, body) {
   if (type === "info" && body?.parts === "full") return "info.full"
-  if (type === "transcript") return Number.isSafeInteger(body?.before) && body.before > 0
-    ? "transcript.before." + body.before : "transcript"
+  if (type === "transcript") {
+    if (body?.before === undefined) return "transcript"
+    return Number.isSafeInteger(body.before) && body.before > 0 ? "transcript.before." + body.before : null
+  }
   if (type === "peer-inbox" && typeof body?.request === "string" && body.request) return "read:" + body.request
   return null
 }
@@ -66,10 +68,32 @@ export class StatusCloudClient extends CatalogCloudClient {
   // recovery. The ss/ inventory and row recovery is owned by its publisher.
   _recoverSessions() {}
 
+  /** The copied ACK handler knows ctl/; a pinned r/ ACK has the same request receipt semantics. */
+  _relayAnswered(frame, refusal) {
+    const seq = frame?.seq
+    const pending = Number.isSafeInteger(seq) ? this.pendingBySequence?.get(seq) : null
+    const machine = pending?.machine
+    const readChannel = machine && "r/" + channelSegment(machine)
+    const isPinnedRead = !!machine && frame?.ch === readChannel
+    if (isPinnedRead) {
+      const proof = pending?.key && this.pinnedReadProofs?.get(pending.key)
+      if (!proof || proof.seq !== seq || proof.machineID !== machine) return
+    }
+    const ctlMachine = typeof frame?.ch === "string" ? /^ctl\/([^/]+)$/u.exec(frame.ch) : null
+    const target = machine || (ctlMachine ? decodedChannelSegment(ctlMachine[1]) : null)
+    const before = target ? this.machineOffline?.get(target) : null
+    super._relayAnswered(isPinnedRead ? { ...frame, ch: "ctl/" + channelSegment(machine) } : frame, refusal)
+    if (target && (frame?.status === "machine_offline" || frame?.status === "delivered") &&
+      this.machineOffline?.get(target) !== before) {
+      this._emit({ type: "machine_reachability", machine: target })
+    }
+  }
+
   /** The copied reader's local write flag predates the read-only r/ channel. */
   _read(value, type, extra, answer, timeoutMs, readOptions) {
     if (!pinnedRead(type, extra)) return super._read(value, type, extra, answer, timeoutMs, readOptions)
-    if (!GENERATION.test(extra.expected_generation) || typeof extra.machine_id !== "string" || !extra.machine_id) {
+    if (!GENERATION.test(extra.expected_generation) || typeof extra.machine_id !== "string" || !extra.machine_id ||
+      answer !== pinnedReadName(type, extra)) {
       return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
     }
     const key = pinnedReplyKey(extra.machine_id, value.session, answer)
@@ -104,7 +128,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     }
     if (!pinnedRead(type, body)) return super._publishCommand(machine, type, body, envelopeClass, pending)
     if (envelopeClass !== "ctl" || body.machine_id !== machine || typeof body.session !== "string" || !body.session ||
-      !GENERATION.test(body.expected_generation)) {
+      !GENERATION.test(body.expected_generation) || !pinnedReadName(type, body)) {
       throw refused("execution_target_required", "an exact Session execution is required")
     }
     const unsupported = this._unsupportedRefusal(machine, type)
@@ -253,6 +277,7 @@ export class StatusCloudClient extends CatalogCloudClient {
       const key = JSON.stringify([identity.machine, identity.session])
       if ((this.statusSequences.get(key) ?? -1) > envelope.seq) return
       this.statusSequences.set(key, envelope.seq)
+      if (!realign) this.machineOffline?.delete(identity.machine)
       if (payload === null || payload?.deleted === true) this.statusSnapshots.delete(key)
       else this.statusSnapshots.set(key, { identity, payload, observedAt: envelope.ts, sequence: envelope.seq })
       this._sawAuthenticatedEnvelope(envelope, { kind: "session_status" }, identity.machine)
@@ -381,5 +406,20 @@ export class StatusCloudClient extends CatalogCloudClient {
     })
     this.pinnedTranscriptFlights.set(key, { generation: executionGeneration, promise })
     return promise
+  }
+
+  /** Older pages keep their own read name, so they cannot settle the newest page's waiter. */
+  transcriptPageForGeneration(destination, before, signal) {
+    const { machineID, sessionID, executionGeneration } = destination
+    if (!machineID || !sessionID || !GENERATION.test(executionGeneration) ||
+      !Number.isSafeInteger(before) || before < 1) {
+      return Promise.reject(refused("execution_target_required", "an exact older Session page is required"))
+    }
+    if (signal?.aborted) return Promise.reject(refused("read_aborted", "the Session detail was closed"))
+    const answer = "transcript.before." + before
+    return this._read({ machine: machineID, session: sessionID }, "transcript", {
+      limit: 200, before, priority: "foreground", machine_id: machineID,
+      expected_generation: executionGeneration,
+    }, answer, undefined, { signal })
   }
 }

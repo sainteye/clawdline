@@ -27,7 +27,10 @@ function clientFixture() {
       snapshot_generation: snapshotGeneration }, observedAt: at, sequence: 2,
   })
   const client = {
+    ready: true,
     statusSnapshots,
+    machineOffline: new Map<string, { until: number }>(),
+    now: () => Date.now(),
     readContentCapabilities: new Map([[machineID, { at, supported: true }]]),
     detailSnapshots,
     openDetail() {},
@@ -47,7 +50,11 @@ function clientFixture() {
     },
     async transcriptForGeneration(destination: { executionGeneration: string }) {
       calls.push("transcript:" + destination.executionGeneration)
-      return { entries: [{ role: "assistant", text: "Done" }] }
+      return { id: sessionID, entries: [{ role: "assistant", text: "Done" }], nextBefore: 123 }
+    },
+    async transcriptPageForGeneration(destination: { executionGeneration: string }, before: number): Promise<unknown> {
+      calls.push("older:" + destination.executionGeneration + ":" + before)
+      return { id: sessionID, entries: [{ role: "user", text: "Earlier" }], nextBefore: 40 }
     },
   }
   return { client, calls, row }
@@ -61,6 +68,30 @@ test("status-only list never subscribes to or reads rich content", async () => {
   assert.deepEqual(calls, [])
 })
 
+test("Relay-confirmed offline applies to one machine only and expires to unknown", async () => {
+  const { client } = clientFixture()
+  let now = Date.now()
+  client.now = () => now
+  client.machineOffline.set(machineID, { until: now + 100 })
+  const source = statusSource(() => client as never)
+  client.ready = false
+  assert.deepEqual(await source.readMachine(machineID, new AbortController().signal),
+    { kind: "unavailable", reason: "unknown" })
+  client.ready = true
+  assert.deepEqual(await source.readMachine(machineID, new AbortController().signal),
+    { kind: "unavailable", reason: "offline", retryAt: now + 101 })
+  now += 101
+  const expired = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(expired.kind === "unavailable" && expired.reason, "unknown")
+  const marker = client.statusSnapshots.get(JSON.stringify([machineID, inventory])) as { payload: { at: number } }
+  marker.payload.at = Math.floor((Date.now() - 301_000) / 1000)
+  const stale = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(stale.kind === "unavailable" && stale.reason, "stale")
+  client.machineOffline.delete(machineID)
+  marker.payload.at = Math.floor(Date.now() / 1000)
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
+})
+
 test("opening and leaving an exact detail subscribes, reads pinned content, and releases both channels", async () => {
   const { client, calls } = clientFixture()
   const source = statusSource(() => client as never)
@@ -68,9 +99,83 @@ test("opening and leaving an exact detail subscribes, reads pinned content, and 
   const detail = await source.readDetail(destination, new AbortController().signal)
   assert.equal(detail.kind, "ready")
   assert.equal(detail.kind === "ready" && detail.info.title, "Pinned")
+  assert.equal(detail.kind === "ready" && detail.nextBefore, 123)
   source.closeDetail?.(destination)
   assert.deepEqual(calls, ["subscribe:s/one/same,t/one/same", "info:" + executionGeneration,
     "transcript:" + executionGeneration, "unsubscribe:s/one/same,t/one/same"])
+})
+
+test("an opened detail reads an older page with the same execution and a decreasing cursor", async () => {
+  const { client, calls } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  await source.readDetail(destination, new AbortController().signal)
+  const older = await source.readOlder?.(destination, 123, new AbortController().signal)
+  assert.deepEqual(older, { kind: "ready", destination, before: 123,
+    entries: [{ speaker: "user", text: "Earlier" }], nextBefore: 40 })
+  assert.deepEqual(calls.filter((call) => call.startsWith("older:")), ["older:" + executionGeneration + ":123"])
+  source.closeDetail?.(destination)
+  assert.deepEqual(await source.readOlder?.(destination, 40, new AbortController().signal),
+    { kind: "unavailable", reason: "unknown" })
+})
+
+test("an older page is refused if status changes during its machine read", async () => {
+  const { client, calls, row } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  await source.readDetail(destination, new AbortController().signal)
+  client.transcriptPageForGeneration = async () => {
+    calls.push("older")
+    row.execution_generation = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    return { id: sessionID, entries: [{ role: "user", text: "wrong generation" }] }
+  }
+  assert.deepEqual(await source.readOlder?.(destination, 123, new AbortController().signal),
+    { kind: "unavailable", reason: "changed" })
+  assert.equal(calls.filter((call) => call === "older").length, 1)
+})
+
+test("an older page rejects a nondecreasing cursor and stops when no cursor remains", async () => {
+  const { client } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  await source.readDetail(destination, new AbortController().signal)
+  client.transcriptPageForGeneration = async () => ({ id: sessionID, entries: [], nextBefore: 123 })
+  assert.deepEqual(await source.readOlder?.(destination, 123, new AbortController().signal),
+    { kind: "unavailable", reason: "unknown" })
+  client.transcriptPageForGeneration = async () => ({ id: sessionID, entries: [] })
+  assert.deepEqual(await source.readOlder?.(destination, 123, new AbortController().signal),
+    { kind: "ready", destination, before: 123, entries: [], nextBefore: undefined })
+})
+
+test("an older machine rejects only pagination while its already read first page remains usable", async () => {
+  const { client } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  const first = await source.readDetail(destination, new AbortController().signal)
+  assert.equal(first.kind, "ready")
+  client.transcriptPageForGeneration = async () => { throw Object.assign(new Error("Unsupported before"), { code: "malformed_read" }) }
+  assert.deepEqual(await source.readOlder?.(destination, 123, new AbortController().signal),
+    { kind: "unavailable", reason: "old_version" })
+  assert.equal(first.kind === "ready" && first.entries[0]?.text, "Done")
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
+})
+
+test("leaving a detail prevents an in-flight older page from reaching the view", async () => {
+  const { client } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  await source.readDetail(destination, new AbortController().signal)
+  let finish!: (value: unknown) => void
+  let began!: () => void
+  const started = new Promise<void>((resolve) => { began = resolve })
+  client.transcriptPageForGeneration = () => new Promise((resolve) => { finish = resolve; began() })
+  const abort = new AbortController()
+  const older = source.readOlder?.(destination, 123, abort.signal)
+  await started
+  abort.abort()
+  source.closeDetail?.(destination)
+  finish({ id: sessionID, entries: [{ role: "user", text: "closed" }] })
+  assert.deepEqual(await older, { kind: "unavailable", reason: "unknown" })
 })
 
 test("a changed status generation stops detail before transcript", async () => {

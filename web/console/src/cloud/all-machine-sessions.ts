@@ -32,19 +32,27 @@ export type ProjectionProblem = "offline" | "stale" | "unknown" | "old_version" 
 
 export type MachineSessionProjection =
   | { kind: "ready"; complete: true; observedAt: number; snapshotGeneration?: string; rows: ProjectedSession[]; unknownTargets?: number }
-  | { kind: "unavailable"; reason: ProjectionProblem; observedAt?: number; rows?: ProjectedSession[] }
+  | { kind: "unavailable"; reason: ProjectionProblem; observedAt?: number; rows?: ProjectedSession[]; retryAt?: number }
 
 export type SessionContent =
   | { kind: "ready"; destination: SessionDestination; observedAt: number; info: { title?: string; assistant?: string; model?: string };
       entries: { speaker: string; text: string }[];
+      nextBefore?: number;
       question: { text?: string; fingerprint: string; options: { key: string; label: string }[]; observedAt: number } | null }
   | { kind: "unavailable"; reason: "no_permission" | "old_version" | "unknown" | "offline" | "stale" | "changed" }
+
+export type SessionOlderPage =
+  | { kind: "ready"; destination: SessionDestination; before: number;
+      entries: { speaker: string; text: string }[]; nextBefore?: number }
+  | Extract<SessionContent, { kind: "unavailable" }>
 
 export interface SessionProjectionSource {
   /** Must settle or reject; each machine is requested independently. */
   readMachine(machineID: string, signal: AbortSignal): Promise<MachineSessionProjection>
   /** Content is requested only after a person opens an exact destination. */
   readDetail(destination: SessionDestination, signal: AbortSignal): Promise<SessionContent>
+  /** A person asks for one older page on the same opened, pinned detail. */
+  readOlder?(destination: SessionDestination, before: number, signal: AbortSignal): Promise<SessionOlderPage>
   /** Recheck the signed rich row when an opened detail receives a new menu. */
   readQuestion?(destination: SessionDestination, signal: AbortSignal): Promise<Extract<SessionContent, { kind: "ready" }>["question"]>
   /** Release both the rich Session and transcript channels on detail exit. */
@@ -116,6 +124,26 @@ export function afterEventGap(before: MachineSessionProjection | undefined): Mac
     rows: before?.kind === "ready" ? before.rows : undefined,
     observedAt: before?.observedAt,
   }
+}
+
+/** Schedule a status-only read when the earliest trusted status time expires. */
+export function projectionRefreshAt(projection: MachineSessionProjection, freshnessMs: number): number | null {
+  if (projection.kind !== "ready") return projection.reason === "offline" && Number.isFinite(projection.retryAt)
+    ? projection.retryAt! : null
+  return Math.min(projection.observedAt, ...projection.rows.filter((row) => row.freshness === "current")
+    .map((row) => row.observedAt)) + freshnessMs + 1
+}
+
+/** An older page can only extend the exact detail and cursor that requested it. */
+export function prependOlderPage(current: SessionContent, page: SessionOlderPage):
+  Extract<SessionContent, { kind: "ready" }> | null {
+  if (current.kind !== "ready" || page.kind !== "ready" ||
+    destinationKey(current.destination) !== destinationKey(page.destination) || current.nextBefore !== page.before ||
+    !Number.isSafeInteger(page.before) || page.before < 1 ||
+    (page.nextBefore !== undefined && (!Number.isSafeInteger(page.nextBefore) || page.nextBefore < 1 || page.nextBefore >= page.before))) {
+    return null
+  }
+  return { ...current, entries: [...page.entries, ...current.entries], nextBefore: page.nextBefore }
 }
 
 export class SessionDetailCache {

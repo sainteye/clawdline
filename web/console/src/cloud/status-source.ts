@@ -1,14 +1,18 @@
 import { channelSegment } from "../legacy/js/net/client.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { menuFingerprint } from "../session/fingerprint.ts"
-import type { MachineSessionProjection, SessionContent, SessionDestination, SessionProjectionSource } from "./all-machine-sessions.js"
+import type { MachineSessionProjection, SessionContent, SessionDestination, SessionOlderPage,
+  SessionProjectionSource } from "./all-machine-sessions.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
-import { destinationAvailable } from "./all-machine-sessions.ts"
+import { destinationAvailable, destinationKey } from "./all-machine-sessions.ts"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { record, STATUS_FRESH_MS, statusGapTarget, statusProjection } from "./status-projection.ts"
 import type { CloudClientHandle } from "./copied.js"
 
 type StatusClient = CloudClientHandle & {
+  /** A recent Relay machine_offline ACK, cleared by a live machine envelope. */
+  machineOffline?: ReadonlyMap<string, { until: number }>
+  now?(): number
   readContentCapabilities?: ReadonlyMap<string, unknown>
   detailSnapshots?: ReadonlyMap<string, unknown>
   openDetail?(destination: SessionDestination): void
@@ -20,6 +24,7 @@ type StatusClient = CloudClientHandle & {
   /** The daemon must atomically compare the execution generation before reading content. */
   infoForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
   transcriptForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
+  transcriptPageForGeneration?(destination: SessionDestination, before: number, signal: AbortSignal): Promise<unknown>
 }
 
 function channels(destination: SessionDestination): string[] {
@@ -28,6 +33,19 @@ function channels(destination: SessionDestination): string[] {
 }
 
 type Question = Extract<SessionContent, { kind: "ready" }>["question"]
+
+function transcriptPage(reply: unknown, sessionID: string, before?: number):
+  { entries: { speaker: string; text: string }[]; nextBefore?: number } | null {
+  const page = record(reply)
+  if (!page || !Array.isArray(page.entries) ||
+    (page.id !== undefined && page.id !== sessionID) ||
+    (page.nextBefore !== undefined && (!Number.isSafeInteger(page.nextBefore) || Number(page.nextBefore) < 1 ||
+      (before !== undefined && Number(page.nextBefore) >= before)))) return null
+  const entries = page.entries.map((entry: unknown) => record(entry))
+  if (entries.some((entry) => !entry || typeof entry.role !== "string" || typeof entry.text !== "string")) return null
+  return { entries: entries.map((entry) => ({ speaker: String(entry!.role), text: String(entry!.text) })),
+    nextBefore: page.nextBefore === undefined ? undefined : Number(page.nextBefore) }
+}
 
 function supportsPinnedRead(client: StatusClient, machineID: string, nowMs = Date.now()): boolean {
   const capability = record(client.readContentCapabilities?.get(machineID))
@@ -68,12 +86,21 @@ export function pinnedQuestion(client: Pick<StatusClient, "detailSnapshots">, de
 export function statusSource(current: () => StatusClient | null): SessionProjectionSource {
   let attemptedClient: StatusClient | null = null
   const gapAttempts = new Map<string, { generation: string; sessions: Set<string> }>()
+  const opened = new Map<string, StatusClient>()
   const readMachine = async (machineID: string, signal: AbortSignal): Promise<MachineSessionProjection> => {
     const client = current()
-    if (!client) return { kind: "unavailable", reason: "offline" }
+    if (!client || client.ready === false) return { kind: "unavailable", reason: "unknown" }
     if (client !== attemptedClient) {
       attemptedClient = client
       gapAttempts.clear()
+    }
+    const offline = client.machineOffline?.get(machineID)
+    if (offline && Number.isFinite(offline.until)) {
+      const now = client.now?.() ?? Date.now()
+      if (now < offline.until) return { kind: "unavailable", reason: "offline", retryAt: offline.until + 1 }
+      const expired = statusProjection(client, machineID)
+      return expired.kind === "unavailable" && (expired.reason === "stale" || expired.reason === "old_version") ? expired
+        : { kind: "unavailable", reason: "unknown", observedAt: expired.observedAt }
     }
     const projection = statusProjection(client, machineID)
     if (projection.kind === "unavailable" && projection.reason === "event_gap" && client.recoverStatusRow) {
@@ -111,6 +138,11 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     subscribe(listener) {
       const client = current()
       const stop = client?.events((event) => {
+        if ((event.type === "machine_reachability" || event.type === "orchestrator") &&
+          typeof event.machine === "string") {
+          listener({ machineID: event.machine, kind: "changed" })
+          return
+        }
         if (event.type === "sessions" && event.identity?.machine && event.identity?.session &&
           event.identity.session !== "__clawdline_inventory_v1__") {
           listener({ machineID: event.identity.machine, sessionID: event.identity.session, kind: "detail_changed" })
@@ -125,7 +157,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     },
     async readDetail(destination, signal): Promise<SessionContent> {
       const client = current()
-      if (!client) return { kind: "unavailable", reason: "offline" }
+      if (!client || client.ready === false) return { kind: "unavailable", reason: "unknown" }
       const initialReading = await readMachine(destination.machineID, signal)
       if (initialReading.kind === "unavailable") return { kind: "unavailable", reason: detailProblem(initialReading.reason) }
       const initial = destinationAvailable(destination, initialReading)
@@ -140,6 +172,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       const pinned = channels(destination)
       client.openDetail(destination)
       client.subscribe(pinned)
+      opened.set(destinationKey(destination), client)
       if (signal.aborted) return { kind: "unavailable", reason: "unknown" }
       try {
         const infoReply = record(await client.infoForGeneration(destination, signal))
@@ -154,33 +187,68 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         if (afterTranscriptReading.kind === "unavailable") return { kind: "unavailable", reason: detailProblem(afterTranscriptReading.reason) }
         const afterTranscript = destinationAvailable(destination, afterTranscriptReading)
         if (afterTranscript !== "ready") return { kind: "unavailable", reason: afterTranscript === "waiting" ? "unknown" : afterTranscript }
-        if (!reply || !Array.isArray(reply.entries)) return { kind: "unavailable", reason: "unknown" }
-        const entries = reply.entries.map((entry: unknown) => record(entry)).filter((entry): entry is Record<string, unknown> => !!entry)
-        if (entries.length !== reply.entries.length || entries.some((entry) => typeof entry.role !== "string" || typeof entry.text !== "string")) {
-          return { kind: "unavailable", reason: "unknown" }
-        }
+        const page = transcriptPage(reply, destination.sessionID)
+        if (!page) return { kind: "unavailable", reason: "unknown" }
         const session = record(record(infoReply.info)?.session)
         return { kind: "ready", destination, observedAt: Date.now(),
           info: { title: typeof session?.title === "string" ? session.title : undefined,
             assistant: typeof session?.assistant === "string" ? session.assistant : undefined,
             model: typeof session?.model === "string" ? session.model : undefined },
-          entries: entries.map((entry) => ({ speaker: String(entry.role), text: String(entry.text) })),
+          entries: page.entries, nextBefore: page.nextBefore,
           question: pinnedQuestion(client, destination) }
       } catch (error) {
-        const code = (error as { code?: unknown } | null)?.code
-        return { kind: "unavailable", reason: code === "machine_offline" ? "offline"
-          : code === "execution_generation_changed" ? "changed"
-          : code === "read_transcript_required" || code === "forbidden" || code === "cloud_read_needs_send_prompt" ? "no_permission"
-          : code === "execution_source_unknown" ? "unknown"
-          : code === "old_version" ? "old_version" : "unknown" }
+        return { kind: "unavailable", reason: contentFailure(error) }
+      }
+    },
+    async readOlder(destination, before, signal): Promise<SessionOlderPage> {
+      const client = current()
+      if (!client || opened.get(destinationKey(destination)) !== client || signal.aborted ||
+        !Number.isSafeInteger(before) || before < 1) return { kind: "unavailable", reason: "unknown" }
+      const initial = await readMachine(destination.machineID, signal)
+      if (initial.kind === "unavailable") return { kind: "unavailable", reason: detailProblem(initial.reason) }
+      const availability = destinationAvailable(destination, initial)
+      if (availability !== "ready") return { kind: "unavailable", reason: availability === "waiting" ? "unknown" : availability }
+      if (!supportsPinnedRead(client, destination.machineID) || !client.transcriptPageForGeneration) {
+        return { kind: "unavailable", reason: "old_version" }
+      }
+      try {
+        const reply = await client.transcriptPageForGeneration(destination, before, signal)
+        if (signal.aborted || opened.get(destinationKey(destination)) !== client) {
+          return { kind: "unavailable", reason: "unknown" }
+        }
+        const after = await readMachine(destination.machineID, signal)
+        if (after.kind === "unavailable") return { kind: "unavailable", reason: detailProblem(after.reason) }
+        const still = destinationAvailable(destination, after)
+        if (still !== "ready") return { kind: "unavailable", reason: still === "waiting" ? "unknown" : still }
+        if (!supportsPinnedRead(client, destination.machineID)) return { kind: "unavailable", reason: "old_version" }
+        const page = transcriptPage(reply, destination.sessionID, before)
+        return page ? { kind: "ready", destination, before, ...page } : { kind: "unavailable", reason: "unknown" }
+      } catch (error) {
+        return { kind: "unavailable", reason: olderFailure(error) }
       }
     },
     closeDetail(destination) {
-      const client = current()
+      const key = destinationKey(destination)
+      const client = opened.get(key) || current()
+      opened.delete(key)
       client?.closeDetail?.(destination)
       client?.unsubscribe?.(channels(destination))
     },
   }
+}
+
+function contentFailure(error: unknown): Extract<SessionContent, { kind: "unavailable" }>["reason"] {
+  const code = (error as { code?: unknown } | null)?.code
+  return code === "machine_offline" ? "offline"
+    : code === "execution_generation_changed" ? "changed"
+    : code === "read_transcript_required" || code === "forbidden" || code === "cloud_read_needs_send_prompt" ? "no_permission"
+    : code === "old_version" || code === "bad_request" ? "old_version" : "unknown"
+}
+
+function olderFailure(error: unknown): Extract<SessionContent, { kind: "unavailable" }>["reason"] {
+  const code = (error as { code?: unknown } | null)?.code
+  return code === "malformed_read" || code === "unsupported" || code === "unsupported_read"
+    ? "old_version" : contentFailure(error)
 }
 
 function detailProblem(reason: Extract<MachineSessionProjection, { kind: "unavailable" }>["reason"]): Extract<SessionContent, { kind: "unavailable" }>["reason"] {
