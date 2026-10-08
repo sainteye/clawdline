@@ -27,6 +27,7 @@ import { CARRY_TABLE } from "./carry.js"
 import { afterForget, forgetMachine, honestyIsOurs, type ForgetOutcome } from "./forget.js"
 import { NAME_MAX, renameMachine, type RenameOutcome } from "./rename.js"
 import { setAccountMachines, setMachineForgetting, setMachinePairing } from "../legacy/devices-bridge.js"
+import { machinePaired } from "./pairing-completion.js"
 import { setProjectSyncSeam, syncSeamFor, type SyncClient } from "./project-sync.js"
 import { machinePresentation } from "../legacy/js/session/selection.js"
 import { accountMachineRoster, devicesPageRows, machineIdentityFacts, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
@@ -488,6 +489,7 @@ export function CloudGate({ declared }: { declared: string }) {
       .then((opened) => {
         if (opened) {
           claimedPairings.current.add(opened.machineID)
+          machinePaired(opened.machineID)
           setConnectionVersion((version) => version + 1)
         }
       })
@@ -525,6 +527,7 @@ export function CloudGate({ declared }: { declared: string }) {
       // reconnect so the relay replays the machine's retained snapshots.
       if (state.phase === "paired") {
         claimedPairings.current.add(state.machineID)
+        machinePaired(state.machineID)
         setConnectionVersion((version) => version + 1)
       }
       // Stopping only puts the card away. The offer and its private claim key

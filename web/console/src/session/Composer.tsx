@@ -25,6 +25,9 @@ import {
   skillQuery,
 } from "../legacy/skills-bridge.js"
 import { toast } from "../overlays/toast.js"
+import { nextWord } from "../next-strings.js"
+import { canOpenMachinePairing, openMachinePairing } from "../legacy/devices-bridge.js"
+import { watchMachinePaired } from "../cloud/pairing-completion.js"
 import { writeIsOff } from "./outcome.js"
 import { deliverUntilSeen, pendingSends } from "./send.js"
 import { Waiting } from "./Waiting.js"
@@ -66,8 +69,8 @@ import { ImageMarkup } from "./ImageMarkup.js"
  * transcript, saying so, with a way to send it again (`pending.ts`) — only a
  * failed quit line, which has no card, is written on the `.why` line; and the
  * original's `write` flag comes from `/v1/health`, which this daemon's health
- * does not carry, so the box is writable until a send is refused with
- * `write_disabled` — the same correction the original makes to its own flag.
+ * does not carry. A write refusal closes this machine's box with its actual
+ * reason; a completed pairing or an explicit retry opens it again.
  *
  * `hasKeyboard` and `words` come from the copied modules through the bridge.
  * `useKeyboardBar` below is still a local rendering of `input/edges.js`, which
@@ -95,7 +98,7 @@ export function Composer({
   // second Return inside the same render would otherwise send a second request.
   const [sending, setSending] = useState(false)
   const inFlight = useRef(false)
-  const [write, setWrite] = useState(true)
+  const [blocked, setBlocked] = useState<{ machine: string; code: string } | null>(null)
   const [failure, setFailure] = useState("")
   const [editingShot, setEditingShot] = useState<ReturnType<typeof Shots.shot>>(null)
   const sendWidth = useRef({ word: "", px: 0 })
@@ -123,6 +126,9 @@ export function Composer({
 
   useKeyboardBar(msg)
 
+  const machine = row ? L.machineFor(row).id : ""
+  const blockedCode = blocked?.machine === machine ? blocked.code : ""
+  const write = !blockedCode
   const on = write && !!row
   // The picture listeners are bound once, and ask what is open when they fire.
   const open = useRef({ on })
@@ -137,6 +143,11 @@ export function Composer({
     // The menu was about the session that was open; `session/open.js` closes it.
     setSkills({ shown: false, matches: [], selected: 0 })
   }, [openId])
+
+  useEffect(() => watchMachinePaired((pairedMachine) => {
+    setBlocked((was) => was?.machine === pairedMachine ? null : was)
+    setFailure("")
+  }), [])
 
   // `input/shots.js`, the foot of the file: a paste anywhere on the page, and
   // a drag onto the whole detail pane.
@@ -436,27 +447,26 @@ export function Composer({
       // transcript, which takes the card's place, is the second — and is
       // enough on its own to free the box when the first never arrives.
       const code = await deliverUntilSeen(pendingSends.add(row.id, said, pictures, Date.now()))
-      if (writeIsOff(code)) setWrite(false)
+      if (writeIsOff(code)) setBlocked({ machine, code })
       if (!code) onDid()
     } catch (err) {
       const code = err instanceof RefusalError ? err.code : "unexpected_error"
-      if (writeIsOff(code)) setWrite(false)
+      if (writeIsOff(code)) setBlocked({ machine, code })
       // This used to build `webFailWithTag` by hand: the tag was the code and
       // the sentence was always `sendFailed`, so the half of
       // `core/failure-text.js` that chooses words by code was skipped and
       // `write_disabled`, `rate_limited` and `machine_offline` all read as
       // "送不出去". The formatter builds the same line and picks the sentence.
-      setFailure(L.failureSentence(err, T.sendFailed))
+      if (!writeIsOff(code)) setFailure(L.failureSentence(err, T.sendFailed))
     } finally {
       inFlight.current = false
       setSending(false)
     }
   }
 
-  // The write-off notice is the catalog's own markup, rendered by the copied
-  // `words()` exactly as the original renders it; everything else is text.
-  const whyHTML = !failure && !write ? L.wordsHTML(T.webWriteOff) : null
-  const why: ReactNode = failure || (write ? (row ? "" : T.webWriteOpen) : null)
+  const why: ReactNode = failure || (blockedCode
+    ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)
+    : row ? "" : T.webWriteOpen)
   const pinned = sending && sendWidth.current.px ? { minWidth: `${sendWidth.current.px}px` } : undefined
 
   return (
@@ -647,8 +657,14 @@ export function Composer({
           e.currentTarget.value = ""
         }}
       />
-      <div className="why" id="why" {...(whyHTML !== null ? { dangerouslySetInnerHTML: { __html: whyHTML } } : {})}>
-        {whyHTML === null ? why : null}
+      <div className="why" id="why">
+        {why}
+        {blockedCode === "unknown_sender" && canOpenMachinePairing() && (
+          <button type="button" onClick={() => openMachinePairing(machine)}>{nextWord("sessionPairToSend")}</button>
+        )}
+        {blockedCode && blockedCode !== "unknown_sender" && (
+          <button type="button" onClick={() => { setBlocked(null); setFailure("") }}>{nextWord("sessionTrySendingAgain")}</button>
+        )}
       </div>
       {editingShot ? (
         <ImageMarkup

@@ -34,7 +34,7 @@ test("nothing answered is not known; what the far side says wins", () => {
 
 test("a failed card retries only while the composer would still accept it", () => {
   assert.equal(writeIsOff("busy"), false)
-  for (const code of ["write_disabled", "cloud_commands_disabled", "cloud_read_only", "cloud_read_needs_send_prompt", "unknown_sender"]) {
+  for (const code of ["write_disabled", "cloud_commands_disabled", "command_writes_disabled", "cloud_read_only", "cloud_read_needs_send_prompt", "unknown_sender"]) {
     assert.equal(writeIsOff(code), true, code)
   }
 })

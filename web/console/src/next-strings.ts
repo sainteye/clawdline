@@ -12,6 +12,9 @@ import { catalogWord } from "./catalog.js"
 
 const words = {
   en: {
+    sessionPairToSend: "Pair this browser",
+    sessionTrySendingAgain: "Try sending again",
+    sessionWriteDisabled: "Sending is disabled on this machine.",
     olderNotRead:
       "Earlier conversation was not loaded: this page reads only the last {window} of the record, and {bytes} before that were not read.",
     olderLeftOut: "Earlier conversation was not loaded: {count} older entries did not fit in one page ({budget}).",
@@ -928,6 +931,9 @@ const words = {
     signedInCapsSendTerminal: "Read, send and open a shell",
   },
   "zh-Hant": {
+    sessionPairToSend: "配對這個瀏覽器",
+    sessionTrySendingAgain: "重新嘗試傳送",
+    sessionWriteDisabled: "這台機器已停用傳送功能。",
     olderNotRead: "更早的對話沒有載入：這一頁只讀對話記錄的最後 {window}，前面還有 {bytes} 沒有讀。",
     olderLeftOut: "更早的對話沒有載入：一頁最多 {budget}，比較舊的 {count} 則沒有放進來。",
     documentsListed: "還有 {count} 份比較舊的文件不在這份清單上。",

@@ -252,6 +252,8 @@ export function openMachinePairing(machine: string): boolean {
   return true
 }
 
+export function canOpenMachinePairing(): boolean { return pairing !== null }
+
 /** The Cloud gate's existing forget confirmation, opened for one account row. */
 let forgetting: ((machine: string) => void) | null = null
 
