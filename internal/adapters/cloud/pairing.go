@@ -176,6 +176,7 @@ type MachineRecord struct {
 	ID             string  `json:"id"`
 	Name           string  `json:"name"`
 	Platform       string  `json:"platform"`
+	PublicKey      string  `json:"public_key"`
 	KeyFingerprint string  `json:"key_fingerprint"`
 	KeyEpoch       int     `json:"key_epoch"`
 	IdentityEpoch  int     `json:"identity_epoch"`

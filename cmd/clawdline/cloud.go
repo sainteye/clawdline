@@ -54,6 +54,8 @@ func cloudCommand(args []string) {
 	switch args[0] {
 	case "status":
 		cloudStatusCommand()
+	case "viewer":
+		cloudViewerCommand(args[1:])
 	case "preflight":
 		cloudPreflightCommand()
 	case "on":
@@ -92,6 +94,7 @@ func cloudUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.revoke", "  revoke <device-id>     throw one browser out of this machine"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.rotate", "  rotate [--yes]         replace this machine's signing key; every browser re-pairs"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.connect", "  connect [--for 1m]     hold the line open and report what happens"))
+	fmt.Fprintln(os.Stderr, cliCopy("viewer", "usage_short", "  viewer login | status | machines | pair   authorize and pair this CLI as a Cloud viewer"))
 }
 
 // cloudParts is everything the cloud commands share: the settings file, the
