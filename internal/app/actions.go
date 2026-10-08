@@ -12,6 +12,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/lane"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
@@ -201,6 +202,10 @@ func (a Actions) read(ctx context.Context) session.Inventory {
 
 // host returns the terminal that owns this session.
 func (a Actions) host(s session.Session) (ports.TerminalHost, error) {
+	if session.SourceForID(s.ID) == "ps" {
+		return nil, Refusal{Code: "backend_unsupported", RawDetail: true,
+			Detail: "this process has no terminal backend Clawdline can type into"}
+	}
 	for _, h := range a.Terminals {
 		if h.Name() == string(s.Backend) {
 			return h, nil
@@ -662,9 +667,22 @@ func (a Actions) Interrupt(ctx context.Context, id string) (session.Session, err
 // override `unknown`: overriding a refusal is a decision, and there is nothing
 // to decide about when the list could not be read.
 func (a Actions) Close(ctx context.Context, id string, force bool) (session.Session, error) {
+	return a.ClosePinned(ctx, id, force, 0, time.Time{})
+}
+
+// ClosePinned ends a process-only row only while its PID and kernel start
+// still match the closeability version the person confirmed.
+func (a Actions) ClosePinned(ctx context.Context, id string, force bool, pid int, started time.Time) (session.Session, error) {
 	s, err := a.Find(ctx, id)
 	if err != nil {
 		return session.Session{}, err
+	}
+	if pid != 0 {
+		if session.SourceForID(id) != "ps" || started.IsZero() || s.PID != pid ||
+			!swiftstore.ProcessStart(pid).Equal(started) {
+			return s, Refusal{Code: "close_not_proven", Detail: "the process changed since this close was confirmed"}
+		}
+		s.ExpectedStart = started
 	}
 	owed, owedErr := a.owed(ctx)
 	c := task.Closeability(s.ID, owed, owedErr)

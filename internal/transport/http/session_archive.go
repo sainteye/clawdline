@@ -118,7 +118,7 @@ func (s *Server) archiveSession(w http.ResponseWriter, r *http.Request, id strin
 		writeRefusal(w, http.StatusConflict, app.ArchiveNoConversation, "That Session has no conversation to archive.")
 		return
 	}
-	if !s.closeEvidence(w, r.Context(), id, body.ExpectedCloseabilityVersion, body.Force) {
+	if !s.closeEvidence(w, r.Context(), id, body.ExpectedCloseabilityVersion, body.Force, nil) {
 		return
 	}
 	// The whole close ladder, as a close has it.

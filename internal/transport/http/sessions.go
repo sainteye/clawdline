@@ -68,6 +68,8 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 // outer field shadows the embedded one for encoding/json.
 type sessionRowWire struct {
 	contract.SessionRow
+	processPID   int
+	processStart time.Time
 	// A successful zero must survive omitempty on the generated integer.
 	AttentionCount   *int64 `json:"attention_count,omitempty"`
 	WorkPersonNeeded *bool  `json:"work_person_needed,omitempty"`
@@ -284,6 +286,21 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 // is what this said for every row before it could tell them apart.
 func sourceComplete(inv session.Inventory, backend session.Backend) bool {
 	proves, _ := inv.ProvesAbsence(session.SourceFor(backend))
+	return proves
+}
+
+// A tty-named assistant came only from ps, even if its provisional backend
+// is iTerm2. Its evidence must follow ps; an unrelated Apple Event failure
+// cannot make the process reading stale.
+func rowSource(item session.Session) string {
+	if session.SourceForID(item.ID) == "ps" {
+		return "ps"
+	}
+	return session.SourceFor(item.Backend)
+}
+
+func sourceCompleteRow(inv session.Inventory, item session.Session) bool {
+	proves, _ := inv.ProvesAbsence(rowSource(item))
 	return proves
 }
 
@@ -514,7 +531,7 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		Persona:      item.Persona,
 		MachineScope: projects.IsMachineWorkspace(s.cfg.Dir, item.CWD),
 	}
-	out := sessionRowWire{Menu: wireMenu(item)}
+	out := sessionRowWire{Menu: wireMenu(item), processPID: item.PID, processStart: in.live.ProcessStart}
 	// Only a waiting row says whether its screen was read: it is what tells
 	// the card a terminal that is not answering from a dialog nothing
 	// recognised. Elsewhere it would flicker with the terminal's health and
@@ -613,7 +630,7 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		// with `session_inventory_stale` — including ten tmux panes iTerm2 has
 		// never listed and could not be hiding — and nothing on this Mac could
 		// be closed for as long as that window was open.
-		InventoryComplete:   sourceComplete(in.inv, item.Backend),
+		InventoryComplete:   sourceCompleteRow(in.inv, item),
 		InventoryObservedAt: in.inv.ObservedAt,
 		Now:                 in.now,
 		Generation:          in.generation,
@@ -646,9 +663,9 @@ func wireSessionObservation(item session.Session, inv session.Inventory) *contra
 	if obs.Freshness == "" {
 		obs = session.Observation{
 			ObservedAt: inv.ObservedAt,
-			Provenance: session.SourceFor(item.Backend),
+			Provenance: rowSource(item),
 		}
-		if sourceComplete(inv, item.Backend) {
+		if sourceCompleteRow(inv, item) {
 			obs.Freshness = session.FreshnessCurrent
 		} else {
 			obs.Freshness = session.FreshnessMissing

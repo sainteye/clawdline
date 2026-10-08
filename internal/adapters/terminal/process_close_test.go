@@ -56,6 +56,15 @@ func TestAProcessPushedBehindSomethingElseIsNotOurs(t *testing.T) {
 	}
 }
 
+func TestAReusedPIDCannotReceiveAConfirmedRecoverySignal(t *testing.T) {
+	row := looseRow
+	row.ExpectedStart = time.Unix(4000, 0)
+	sight := processSightOf(paneRootedInClaude, 77548, row)
+	if _, why := ours(row, sight); why == "" {
+		t.Fatal("a process started after the confirmation was accepted for signalling")
+	}
+}
+
 func TestARowWithNoPidIsNeverSignalled(t *testing.T) {
 	row := looseRow
 	row.PID = 0

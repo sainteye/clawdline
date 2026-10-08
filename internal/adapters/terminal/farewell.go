@@ -209,6 +209,9 @@ func ours(s session.Session, sight farewellSight) (session.Assistant, string) {
 		return "", fmt.Sprintf("%s (%d) is not the process this close was asked about (%d), so it is newer "+
 			"than anything this reading knows", sight.Assistant, sight.PID, s.PID)
 	}
+	if !s.ExpectedStart.IsZero() && !sight.Start.Equal(s.ExpectedStart) {
+		return "", "the process changed since this close was confirmed"
+	}
 	return sight.Assistant, ""
 }
 

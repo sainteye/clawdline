@@ -81,6 +81,26 @@ func TestAWindowITermCannotReadDoesNotMakeEveryRowUnknown(t *testing.T) {
 	}
 }
 
+func TestAProcessOnlyRowStaysCurrentWhenITermFails(t *testing.T) {
+	s := gapServer(t)
+	inv := oneBlindWindow()
+	inv.Sessions = []session.Session{{ID: "ttys011", TTY: "ttys011", Backend: session.BackendITerm,
+		Assistant: session.AssistantClaude, PID: 4244, State: session.StateUnknown}}
+	snap := s.sessionsPayloadFrom(context.Background(), inv)
+	if len(snap.Sessions) != 1 {
+		t.Fatalf("rows = %d", len(snap.Sessions))
+	}
+	row := snap.Sessions[0]
+	if row.Source == nil || row.Source.Provenance != "ps" || row.Source.Freshness != "current" {
+		t.Fatalf("process source = %+v", row.Source)
+	}
+	for _, reason := range row.Closeability.Reasons {
+		if reason.Code == "session_inventory_stale" {
+			t.Fatalf("iTerm failure contaminated process closeability: %+v", row.Closeability)
+		}
+	}
+}
+
 func TestSessionDirectTodoAppearsAndClearsInCloseEvidence(t *testing.T) {
 	s := gapServer(t)
 	ctx := context.Background()

@@ -312,6 +312,12 @@ func (in Inventory) named(s session.Session) session.Session {
 // in two minutes to one pane, and nothing on the phone could dismiss it. The
 // gate stays shut for it, and its idle is never overruled by ReadState.
 func (in Inventory) readScreen(ctx context.Context, s session.Session) session.Session {
+	// A tty id seen only by ps is not an iTerm2 session id. Asking iTerm2
+	// to capture it can only fail, and repeated failures can stall that
+	// source for sessions which really are in iTerm2.
+	if session.SourceForID(s.ID) == "ps" {
+		return s
+	}
 	reader := in.screens()
 	if reader == nil || !s.IsAssistant() {
 		return s

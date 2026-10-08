@@ -163,7 +163,8 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
       : ""
     html = '<canvas class="spin"></canvas>' + line + callbackSaid + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   } else if (notStarted) {
-    html = `<span class="unread">${L.escapeHTML(nextWord("sessionNotStartedShort"))}</span>` + callbackSaid + attentionSaid + peerSaid + workSaid + shellsSaid
+    const word = /^(tty|pts\/)/.test(row.id) ? nextWord("processOnlyShort") : nextWord("sessionNotStartedShort")
+    html = `<span class="unread">${L.escapeHTML(word)}</span>` + callbackSaid + attentionSaid + peerSaid + workSaid + shellsSaid
   } else if (work.state === "unknown" && row.state === "unknown") {
     // The label already says the state could not be read; the work copy
     // beside it would say so again.

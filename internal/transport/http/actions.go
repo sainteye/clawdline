@@ -194,7 +194,8 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			if !s.closeEvidence(w, ctx, id, body.ExpectedCloseabilityVersion, body.Force) {
+			var pin processPin
+			if !s.closeEvidence(w, ctx, id, body.ExpectedCloseabilityVersion, body.Force, &pin) {
 				return
 			}
 			// A close walks a ladder now — the assistant's own quit word,
@@ -203,7 +204,7 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			// the route would have cut it off part way through.
 			ctx, more := context.WithTimeout(r.Context(), closeBudget)
 			defer more()
-			if _, err := s.closeActions(r).Close(ctx, id, body.Force); err != nil {
+			if _, err := s.closeActions(r).ClosePinned(ctx, id, body.Force, pin.pid, pin.started); err != nil {
 				writeActionRefusal(w, err)
 				return
 			}
@@ -230,14 +231,20 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 // obligation alone is not the whole answer: assigned Board items, direct
 // to-dos, identity, terminal state, and the Session's own owed declaration
 // also have to be read before ending its process.
-func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, expected string, force bool) bool {
+type processPin struct {
+	pid     int
+	started time.Time
+}
+
+func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, expected string, force bool, pin *processPin) bool {
 	snapshot := s.sessionsPayloadFrom(ctx, s.freshReading(ctx))
 	for _, row := range snapshot.Sessions {
 		if row.ID != id {
 			continue
 		}
 		c := row.Closeability
-		allowed, refusal := closeEvidenceDecision(c, expected, force)
+		processOnly := session.SourceForID(row.ID) == "ps"
+		allowed, refusal := closeEvidenceDecision(c, expected, force, processOnly)
 		switch refusal {
 		case "close_not_proven":
 			writeRefusal(w, http.StatusConflict, "close_not_proven", "The Session changed since it was shown. Read it again before closing.")
@@ -255,6 +262,13 @@ func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, e
 			writeRefusal(w, http.StatusConflict, "close_inventory_unavailable", "A fresh Session inventory did not complete. Try again after the next scan.")
 			return false
 		}
+		if allowed && processOnly && pin != nil {
+			if row.processPID <= 0 || row.processStart.IsZero() {
+				writeRefusal(w, http.StatusConflict, "close_not_proven", "The process identity could not be verified. Read it again before closing.")
+				return false
+			}
+			*pin = processPin{pid: row.processPID, started: row.processStart}
+		}
 		return allowed
 	}
 	if snapshot.Scan.Complete {
@@ -265,7 +279,19 @@ func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, e
 	return false
 }
 
-func closeEvidenceDecision(c contract.Closeability, expected string, force bool) (bool, string) {
+func closeEvidenceDecision(c contract.Closeability, expected string, force, processOnly bool) (bool, string) {
+	if processOnly && c.State == contract.CloseabilityStateUnknown && recoverableProcessOnly(c) {
+		// The process table proved the exact running assistant, but no terminal
+		// backend can read or type into it. The first close returns the reasons;
+		// only a second explicit decision pinned to this version may signal it.
+		if expected == "" || expected != c.Version {
+			return false, "close_not_proven"
+		}
+		if !force {
+			return false, "close_blocked"
+		}
+		return true, ""
+	}
 	// A failed fresh scan is a retryable inability to verify, regardless of
 	// the version the last successful list advertised. Do not imply that the
 	// Session itself changed when only the inventory reader failed.
@@ -297,6 +323,19 @@ func closeEvidenceDecision(c contract.Closeability, expected string, force bool)
 	default:
 		return false, "closeability_unknown"
 	}
+}
+
+func recoverableProcessOnly(c contract.Closeability) bool {
+	if c.Version == "" || c.Source.Freshness != "current" || len(c.Reasons) == 0 {
+		return false
+	}
+	for _, reason := range c.Reasons {
+		if reason.Kind != "evidence" ||
+			(reason.Code != "session_identity_unbound" && reason.Code != "terminal_unreadable") {
+			return false
+		}
+	}
+	return true
 }
 
 // closeBodyLimit is what a close's options weigh: `{"force":true}` and the

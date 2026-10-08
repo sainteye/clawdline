@@ -162,13 +162,15 @@ func StateFromAssistantStatus(status string) State {
 }
 
 type Session struct {
-	ID        string    `json:"id"`
-	Backend   Backend   `json:"backend"`
-	TTY       string    `json:"tty,omitempty"`
-	PID       int       `json:"pid,omitempty"`
-	Assistant Assistant `json:"assistant,omitempty"`
-	CWD       string    `json:"cwd,omitempty"`
-	Label     string    `json:"label,omitempty"`
+	ID      string  `json:"id"`
+	Backend Backend `json:"backend"`
+	TTY     string  `json:"tty,omitempty"`
+	PID     int     `json:"pid,omitempty"`
+	// ExpectedStart pins a recovery close to the process the person saw.
+	ExpectedStart time.Time `json:"-"`
+	Assistant     Assistant `json:"assistant,omitempty"`
+	CWD           string    `json:"cwd,omitempty"`
+	Label         string    `json:"label,omitempty"`
 	// Line is what a working assistant says it is doing — the spinner line,
 	// with its own clock in it. Empty unless the session is working.
 	Line     string   `json:"line,omitempty"`

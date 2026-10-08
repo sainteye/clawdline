@@ -23,19 +23,61 @@ func TestCloseUsesFreshIdleWorkEvidenceWithoutAnAttestation(t *testing.T) {
 		{"unknown", false, "stale", false, "closeability_unknown"},
 		{"needs_attestation", false, "current", false, "closeability_unknown"},
 	} {
-		allowed, code := closeEvidenceDecision(contract.Closeability{State: c.state, Version: "current"}, c.version, c.force)
+		allowed, code := closeEvidenceDecision(contract.Closeability{State: c.state, Version: "current"}, c.version, c.force, false)
 		if allowed != c.want || code != c.code {
 			t.Errorf("%s force=%v version=%s: allowed=%v code=%s", c.state, c.force, c.version, allowed, code)
 		}
 	}
 	failedScan := contract.Closeability{State: contract.CloseabilityStateUnknown, Version: "fresh",
 		Reasons: []contract.CloseReason{{Code: "session_inventory_stale"}}}
-	if allowed, code := closeEvidenceDecision(failedScan, "previous", false); allowed || code != "close_inventory_unavailable" {
+	if allowed, code := closeEvidenceDecision(failedScan, "previous", false, false); allowed || code != "close_inventory_unavailable" {
 		t.Fatalf("failed fresh inventory: allowed=%v code=%s", allowed, code)
 	}
 	failedScan.Reasons = append(failedScan.Reasons, contract.CloseReason{Code: "own_records_unreadable", Kind: "evidence"})
-	if allowed, code := closeEvidenceDecision(failedScan, "previous", false); allowed || code != "closeability_unknown" {
+	if allowed, code := closeEvidenceDecision(failedScan, "previous", false, false); allowed || code != "closeability_unknown" {
 		t.Fatalf("multiple missing evidence sources: allowed=%v code=%s", allowed, code)
+	}
+}
+
+func TestProcessOnlyRecoveryRequiresFreshEvidenceAndASecondDecision(t *testing.T) {
+	c := contract.Closeability{State: contract.CloseabilityStateUnknown, Version: "process-version",
+		Source: contract.CloseSource{Freshness: "current"}, Reasons: []contract.CloseReason{
+			{Code: "session_identity_unbound", Kind: "evidence"},
+			{Code: "terminal_unreadable", Kind: "evidence"},
+		}}
+	for _, tc := range []struct {
+		name    string
+		version string
+		force   bool
+		want    bool
+		code    string
+	}{
+		{"first decision", "process-version", false, false, "close_blocked"},
+		{"confirmed recovery", "process-version", true, true, ""},
+		{"unversioned recovery", "", true, false, "close_not_proven"},
+		{"changed process", "old-version", true, false, "close_not_proven"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, code := closeEvidenceDecision(c, tc.version, tc.force, true)
+			if got != tc.want || code != tc.code {
+				t.Fatalf("allowed=%v code=%s", got, code)
+			}
+		})
+	}
+	for _, reason := range []contract.CloseReason{
+		{Code: "session_todo_open", Kind: "obligation"},
+		{Code: "own_records_unreadable", Kind: "evidence"},
+		{Code: "session_inventory_stale", Kind: "evidence"},
+	} {
+		withReason := c
+		withReason.Reasons = append(append([]contract.CloseReason{}, c.Reasons...), reason)
+		if allowed, code := closeEvidenceDecision(withReason, c.Version, true, true); allowed || code != "closeability_unknown" {
+			t.Errorf("reason %s: allowed=%v code=%s", reason.Code, allowed, code)
+		}
+	}
+	c.Source.Freshness = "stale"
+	if allowed, code := closeEvidenceDecision(c, c.Version, true, true); allowed || code != "closeability_unknown" {
+		t.Fatalf("stale process reading: allowed=%v code=%s", allowed, code)
 	}
 }
 
