@@ -420,6 +420,11 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 				"Could not make the verification checker read-only: "+err.Error(), nil)
 			return Dispatched{Record: settled, Warnings: warnings}, nil
 		}
+		if err := b.registerGateGoCache(ctx, record); err != nil {
+			settled, _ := b.Settle(ctx, record.ID, StateSpawnFailed,
+				"Could not register the verification checker Go cache: "+err.Error(), nil)
+			return Dispatched{Record: settled, Warnings: warnings}, nil
+		}
 	}
 
 	spawned := b.spawn(ctx, record, cwd, req.Secret, opening)

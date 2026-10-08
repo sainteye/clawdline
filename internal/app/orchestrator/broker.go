@@ -195,6 +195,9 @@ type Broker struct {
 	// answers it — the sweep's proof that nobody is working inside a
 	// checkout it is about to remove. Nil asks `lsof` (reclaim.go).
 	ProcessCWDs func(ctx context.Context) ([]string, error)
+	// removeTaskScratch is a failure-injection seam for a recorded removal
+	// intent. Production always uses removeOwned.
+	removeTaskScratch func(root, path, name string) error
 	// Clock is injectable so a test does not wait out a real deadline.
 	Clock func() time.Time
 	// NewID makes a task id when a caller does not.
