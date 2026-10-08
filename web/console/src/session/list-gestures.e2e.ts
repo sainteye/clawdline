@@ -317,7 +317,7 @@ let sessionWorkReads = 0
 let machineStarts: { path: string; key: string }[] = []
 /** Explicit reminder presses received from an assigned Board item detail. */
 let workReminders = 0
-let detailReadMode: "normal" | "slow" | "fail" = "normal"
+let delaySessionWork = false
 /** Every stream this daemon is holding open, so a new list can be pushed down one. */
 const streams = new Set<ServerResponse>()
 
@@ -467,44 +467,38 @@ function daemon(): Server {
       setTimeout(() => json(res, 200, { ok: true, decision: { state: "answered", answer: "yes" } }), 1000)
       return
     }
-    if (path === "/v1/work/v2/items/work-fixture" && req.method === "GET") {
-      const mode = detailReadMode
-      const answer = {
-        ok: true,
-        item: {
-          id: "work-fixture",
-          project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
-          kind: "feature",
-          title: "Finish the release receipt",
-          description: "Publish the verified receipt after the production check passes.",
-          phase: "merging",
-          condition: "waiting_user",
-          user_action: "Confirm the production release window.",
-          area: "merging",
-          deployment_policy: "agent_decides",
-          review_required: false,
-          owner_session: SAFE,
-          created_at: 1,
-          updated_at: 1,
-          closed_at: null,
-          cycle: 1,
-          version: 2,
-          documents: [{
-            id: "report-fixture",
-            role: "completion_report",
-            title: "Completion report",
-            body: "## Root cause\\n\\n" + "A verified finding that must remain readable on a phone.\\n\\n".repeat(24),
-            reference: "",
-            position: 0,
-            version: 1,
-            created_at: 100,
-          }],
-        },
-      }
-      if (mode === "slow") { setTimeout(() => json(res, 200, answer), 900); return }
-      if (mode === "fail") return json(res, 503, { error: "detail unavailable" })
-      return json(res, 200, answer)
-    }
+    if (path === "/v1/work/v2/items/work-fixture" && req.method === "GET") return json(res, 200, {
+      ok: true,
+      item: {
+        id: "work-fixture",
+        project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
+        kind: "feature",
+        title: "Finish the release receipt",
+        description: "Publish the verified receipt after the production check passes.",
+        phase: "merging",
+        condition: "waiting_user",
+        user_action: "Confirm the production release window.",
+        area: "merging",
+        deployment_policy: "agent_decides",
+        review_required: false,
+        owner_session: SAFE,
+        created_at: 1,
+        updated_at: 1,
+        closed_at: null,
+        cycle: 1,
+        version: 2,
+        documents: [{
+          id: "report-fixture",
+          role: "completion_report",
+          title: "Completion report",
+          body: "## Root cause\\n\\n" + "A verified finding that must remain readable on a phone.\\n\\n".repeat(24),
+          reference: "",
+          position: 0,
+          version: 1,
+          created_at: 100,
+        }],
+      },
+    })
     if (path === "/v1/work/v2/items/work-fixture/remind" && req.method === "POST") {
       workReminders++
       return json(res, 200, {
@@ -666,8 +660,13 @@ function daemon(): Server {
           question: "Should the release proceed?", options: [{ id: "yes", label: "Proceed" }, { id: "later", label: "Later" }],
           default: "later", blocking: true, state: "open", created_at: 1, due_at: 9999999999 }]
         : []
-      return json(res, 200, { ok: true, assigned_items: assigned, recent_items: recent, direct_todos: direct,
-        open_decisions: openDecisions, decisions_error: null, truncated: false })
+      const answer = { ok: true, assigned_items: assigned, recent_items: recent, direct_todos: direct,
+        open_decisions: openDecisions, decisions_error: null, truncated: false }
+      if (delaySessionWork && !url.searchParams.has("summary")) {
+        setTimeout(() => json(res, 200, answer), 900)
+        return
+      }
+      return json(res, 200, answer)
     }
     if (path === "/v1/orchestrator/tasks") {
       const tasks = readingScenario === "session-gap"
@@ -1916,9 +1915,9 @@ test("a phone answers the question directly on its Session todo card with a visi
     }
   }))
 
-test("an assigned Board item shows its read progress and retry on a phone", () =>
+test("the Session to-do fold shows loading until its Board items arrive on a phone", () =>
   inTab(async (tab) => {
-    detailReadMode = "slow"
+    delaySessionWork = true
     try {
       await tab.go("/#session=" + encodeURIComponent(SAFE))
       const pending = await tab.run(`new Promise((resolve, reject) => {
@@ -1926,67 +1925,34 @@ test("an assigned Board item shows its read progress and retry on a phone", () =
         const read = () => {
           const fold = document.querySelector('.session-todos')
           if (fold && !fold.open) fold.querySelector('summary')?.click()
-          const item = document.querySelector('.session-owned-summary')
-          if (item && !document.querySelector('.work-item-detail-modal')) item.click()
-          const modal = document.querySelector('.work-item-detail-modal')
-          const status = modal?.querySelector('.work-detail-read[role="status"]')
-          if (status) return resolve({ text: status.textContent,
-            spin: getComputedStyle(status.querySelector('.work-detail-spinner')).animationName })
-          if (Date.now() >= deadline) return reject(new Error('item read progress did not appear: ' +
-            JSON.stringify({ fold: !!fold, item: !!item, modal: !!modal, text: fold?.textContent?.slice(0, 300), body: document.body.textContent?.slice(0, 300) })))
+          const loading = fold?.querySelector('.session-todos-loading[role="status"]')
+          if (loading) return resolve({ text: loading.textContent,
+            items: fold.querySelectorAll('.session-owned-item').length,
+            animation: getComputedStyle(loading.querySelector('.work-assignment-spinner')).animationName })
+          if (Date.now() >= deadline) return reject(new Error('the Session to-do loading state did not appear'))
           setTimeout(read, 25)
         }
         read()
       })`)
-      assert.match(pending.text, /正在載入看板項目明細/)
-      assert.equal(pending.spin, "work-assignment-spin")
-      const settled = await tab.run(`new Promise((resolve, reject) => {
+      assert.match(pending.text, /載入/)
+      assert.equal(pending.items, 0)
+      assert.equal(pending.animation, "work-assignment-spin")
+      const loaded = await tab.run(`new Promise((resolve, reject) => {
         const deadline = Date.now() + 8000
         const read = () => {
-          const modal = document.querySelector('.work-item-detail-modal')
-          if (modal?.textContent.includes('Publish the verified receipt') && !modal.querySelector('.work-detail-read')) return resolve(true)
-          if (Date.now() >= deadline) return reject(new Error('item read progress did not finish'))
+          const fold = document.querySelector('.session-todos')
+          const item = fold?.querySelector('.session-owned-item b')
+          if (item?.textContent.includes('Finish the release receipt') && !fold.querySelector('.session-todos-loading')) {
+            return resolve(item.textContent)
+          }
+          if (Date.now() >= deadline) return reject(new Error('the Session Board item did not replace loading'))
           setTimeout(read, 25)
         }
         read()
       })`)
-      assert.equal(settled, true)
-
-      detailReadMode = "fail"
-      const failed = await tab.run(`new Promise((resolve, reject) => {
-        document.querySelector('.work-item-detail-modal .work-modal-close')?.click()
-        const deadline = Date.now() + 8000
-        const read = () => {
-          const item = document.querySelector('.session-owned-summary')
-          if (item && !document.querySelector('.work-item-detail-modal')) item.click()
-          const modal = document.querySelector('.work-item-detail-modal')
-          const error = modal?.querySelector('.work-detail-read[role="alert"]')
-          if (error) return resolve({ text: error.textContent,
-            retry: !!error.querySelector('button'), loading: !!modal.querySelector('.work-detail-spinner') })
-          if (Date.now() >= deadline) return reject(new Error('item read failure did not appear'))
-          setTimeout(read, 25)
-        }
-        read()
-      })`)
-      assert.match(failed.text, /無法更新這個項目的明細/)
-      assert.equal(failed.retry, true)
-      assert.equal(failed.loading, false)
-
-      detailReadMode = "normal"
-      const retried = await tab.run(`new Promise((resolve, reject) => {
-        document.querySelector('.work-detail-read button')?.click()
-        const deadline = Date.now() + 8000
-        const read = () => {
-          const modal = document.querySelector('.work-item-detail-modal')
-          if (modal?.textContent.includes('Publish the verified receipt') && !modal.querySelector('.work-detail-read')) return resolve(true)
-          if (Date.now() >= deadline) return reject(new Error('item retry did not finish'))
-          setTimeout(read, 25)
-        }
-        read()
-      })`)
-      assert.equal(retried, true)
+      assert.match(loaded, /Finish the release receipt/)
     } finally {
-      detailReadMode = "normal"
+      delaySessionWork = false
     }
   }))
 

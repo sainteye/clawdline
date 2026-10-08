@@ -242,14 +242,12 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     setCreateDraft(draft)
     setCreating(true)
   }), [])
-  const detailTicket = useRef(0)
   const refreshDetail = useCallback((id: string) => {
-    const ticket = ++detailTicket.current
     setDetailLoading(true); setDetailError("")
-    void readWorkV2Item(id).then((answer) => setOpenedItem((current) => ticket === detailTicket.current && current?.id === id
+    void readWorkV2Item(id).then((answer) => setOpenedItem((current) => current?.id === id
       ? [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, answer.item) : current))
-      .catch((error: unknown) => { if (ticket === detailTicket.current) setDetailError(failureWords(error)) })
-      .finally(() => { if (ticket === detailTicket.current) setDetailLoading(false) })
+      .catch((error: unknown) => setDetailError(failureWords(error)))
+      .finally(() => setDetailLoading(false))
   }, [])
   // Every request to open an item takes a ticket; a read that answers after a
   // later one was made is dropped rather than replacing what is now open.
@@ -1297,8 +1295,6 @@ function CreatedWorkModal({ item, created = true, back, sessions, decisions, dec
       <div className="work-modal-head"><div><p className="board-eyebrow">{created ? catalogWord("ui", "workItemCreated") : catalogWord("ui", "boardItem")}</p>
         <h2 id={`work-created-title-${item.id}`}>{created ? catalogWord("literal", "935ee1ab45ca") : catalogWord("literal", "79a3cb6e5cdb")}</h2></div>
         <button ref={initialFocus} className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} onClick={onClose}><WorkIcon name="close" /></button></div>
-      {detailLoading && <p className="work-detail-read" role="status"><span className="work-detail-spinner" aria-hidden="true" />{workWord("detailLoading")}</p>}
-      {detailError && !detailLoading && <p className="work-detail-read" role="alert">{workWord("detailRefreshFailed", { reason: detailError })} <button className="chip" type="button" onClick={retryDetail}>{workWord("detailRetry")}</button></p>}
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <WorkCard item={item} sessions={sessions} decisions={decisions} decisionAnswers={decisionAnswers} busy={busy} failure={failure} clearFailure={clearFailure} run={run} answerWorkDecision={answerWorkDecision}
         detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />
