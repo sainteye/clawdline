@@ -136,6 +136,8 @@ export interface CloudReadClient {
   lifecycle?(reason: string): boolean
   /** machine → the last inventory marker it published; present once one arrived. */
   readonly sessionInventoryByMachine?: Map<string, unknown>
+  /** Content-free ss/ envelopes; the hosted Session list reads only these. */
+  readonly statusSnapshots?: ReadonlyMap<string, unknown>
   /**
    * machine → its last decrypted `orch/` snapshot. Read here only for
    * `snapshot.app`'s `version` and `api_level` (`publishDescriptor`,
@@ -415,6 +417,8 @@ export interface RelayReaderOptions {
   carry?: CarryTable
   /** `RECONNECT_WAIT_MS`, for a test. */
   reconnectWaitMs?: number
+  /** Hosted ss/ compatibility clock; no rich s/ snapshot is read when supplied. */
+  statusList?: () => { at: number; complete: boolean }
 }
 
 interface HeldTranscript {
@@ -1122,6 +1126,7 @@ export class RelayReader {
    */
   private async initialSnapshot(signal?: AbortSignal | null, initial = false): Promise<SessionsSnapshot> {
     if (this.initialSnapshotDelivered) {
+      if (this.options.statusList) return this.snapshot()
       // Remounting the list is another view of the same relay reading. Only a
       // person's refresh asks the machine again, unless the held pass is
       // incomplete and a restatement could recover missing rows.
@@ -1209,6 +1214,25 @@ export class RelayReader {
   }
 
   private async snapshotReading(): Promise<{ snapshot: SessionsSnapshot; settled: boolean }> {
+    if (this.options.statusList) {
+      const status = this.options.statusList()
+      this.generation += 1
+      return {
+        snapshot: {
+          at: Math.floor(status.at / 1000),
+          scan: {
+            complete: status.complete,
+            completed: { complete: status.complete, sequence: this.generation },
+            emptyAuthoritative: false,
+            epoch: this.epoch,
+            generation: this.generation,
+            provenance: "cloud",
+          },
+          sessions: [],
+        },
+        settled: true,
+      }
+    }
     const client = this.connected()
     const all = await client.sessions()
     this.sayDrift()
@@ -1512,7 +1536,8 @@ export class RelayReader {
             return
           }
           const machine = event.type === "orchestrator" ? event.machine : event.identity?.machine
-          if ((event.type === "sessions" || event.type === "orchestrator") && machine === this.machine) {
+          if (((this.options.statusList ? event.type === "session_status" : event.type === "sessions") ||
+            event.type === "orchestrator") && machine === this.machine) {
             this.queueFrame(stream)
           }
         })

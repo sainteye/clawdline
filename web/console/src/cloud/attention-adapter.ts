@@ -7,7 +7,7 @@ export interface ListSession {
   title: string
   state: string
   freshness: "current" | "stale" | "unknown"
-  needsAttention: boolean
+  needsAttention?: boolean
   /** Present only when ss/ proves a current, source-matched question. */
   waitingForReply?: boolean
   observedAt: number
