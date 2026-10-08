@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 4734,
-  "riskKeys": 2067,
-  "nonRiskCount": 2667,
+  "riskKeys": 2066,
+  "nonRiskCount": 2668,
   "groups": [
     {
       "name": "bar / other",
@@ -1635,7 +1635,7 @@
     },
     {
       "name": "next / cloud",
-      "count": 68,
+      "count": 69,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1707,7 +1707,8 @@
         "next.cloudRenaming",
         "next.cloudRetry",
         "next.cloudRetryingBrowserOffline",
-        "next.cloudSwitch"
+        "next.cloudSwitch",
+        "next.cloudTerminalDefaultLoading"
       ]
     },
     {

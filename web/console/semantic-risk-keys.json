@@ -2,13 +2,13 @@
   "version": 1,
   "englishKeys": 4734,
   "counts": {
-    "negation": 1389,
+    "negation": 1388,
     "state": 655,
-    "permission": 253,
-    "deletion": 89,
-    "uncertainty": 133
+    "permission": 252,
+    "deletion": 88,
+    "uncertainty": 132
   },
-  "unionCount": 2067,
+  "unionCount": 2066,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -1212,7 +1212,6 @@
       "next.terminalProjectsFailed",
       "next.terminalProjectsFailedCode",
       "next.terminalReacquired",
-      "next.terminalRefusalForbidden",
       "next.terminalRefusalInputGap",
       "next.terminalRefusalInputStateUnknown",
       "next.terminalRefusalInputTooLarge",
@@ -2239,7 +2238,6 @@
       "next.cloudSignInLede",
       "next.cloudSwitchUnpaired",
       "next.cloudTerminalDefaultHelp",
-      "next.cloudTerminalDefaultLoading",
       "next.cloudTerminalDefaultRead",
       "next.cloudTerminalDefaultSend",
       "next.cloudTerminalPermissionConnectionFailed",
@@ -2384,7 +2382,6 @@
       "next.restoreGo",
       "next.scheduleMoveCopyLeft",
       "next.scheduleMoveDeleteFailed",
-      "next.terminalCloudAccessRevoked",
       "next.terminalDefaultLocalHelp",
       "settings.settingsHooksLegacy",
       "settings.settingsHooksRemove",
@@ -2516,7 +2513,6 @@
       "next.sessionStateUnrecognizedList",
       "next.sessionsListIncompleteTitle",
       "next.stacksTruncated",
-      "next.terminalAllMachineAccessDenied",
       "next.terminalKeysNotSentUnknown",
       "next.updateUnknownVersion",
       "projects.setupUnifyUnreadable",
@@ -4016,7 +4012,6 @@
     "next.cloudSignInLede",
     "next.cloudSwitchUnpaired",
     "next.cloudTerminalDefaultHelp",
-    "next.cloudTerminalDefaultLoading",
     "next.cloudTerminalDefaultRead",
     "next.cloudTerminalDefaultSend",
     "next.cloudTerminalPermissionConnectionFailed",
