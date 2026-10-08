@@ -154,13 +154,21 @@ const (
 // The names of the rows. Stable: they are keys on the wire and in the
 // CLAWDLINE_NEXT_CAPACITY override.
 const (
-	AuditSecurity     = "audit.security"
-	StoreDB           = "store.db"
-	SessionExecutions = "session.executions"
-	SessionNoMovement = "session.no_movement_seconds"
-	BoardReceipts     = "board.receipts"
-	CloudRelayQueue   = "cloud.relay_queue"
-	StoreReceipts     = "store.receipts"
+	AuditSecurity      = "audit.security"
+	StoreDB            = "store.db"
+	SessionExecutions  = "session.executions"
+	SessionNoMovement  = "session.no_movement_seconds"
+	BoardReceipts      = "board.receipts"
+	CloudRelayQueue    = "cloud.relay_queue"
+	StoreReceipts      = "store.receipts"
+	CloudPeerPairs     = "cloud.peer_pairs"
+	CloudPeerGrants    = "cloud.peer_grants"
+	CloudPeerInbox     = "cloud.peer_inbox"
+	CloudPeerInboxPage = "cloud.peer_inbox_page"
+	CloudPeerOutbox    = "cloud.peer_outbox"
+	CloudPeerIngress   = "cloud.peer_ingress"
+	CloudPeerBody      = "cloud.peer_body_bytes"
+	CloudPeerFrame     = "cloud.peer_frame_bytes"
 	// C2: the things that had no limit at all (limits §3.3, §7.2 wave 2).
 	LogDaemon             = "log.daemon"
 	DevicesList           = "devices.list"
@@ -599,6 +607,73 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/store.ReceiptLimit"},
+		},
+		{
+			// Locally pinned machine-to-machine pairs are authorization evidence.
+			// No account roster fallback or automatic eviction may free a slot.
+			Name: CloudPeerPairs, Class: Evidence, Unit: Rows,
+			Limit: 128, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/peerstore.PairLimit"},
+		},
+		{
+			// A target's exact Session scope grants remain until a person removes
+			// them; expiry and revocation deny without erasing the evidence.
+			Name: CloudPeerGrants, Class: Evidence, Unit: Rows,
+			Limit: 512, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/peerstore.GrantLimit"},
+		},
+		{
+			// A received Agent message or handoff is retained as evidence.
+			Name: CloudPeerInbox, Class: Evidence, Unit: Rows,
+			Limit: 512, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/peerstore.InboxLimit"},
+		},
+		{
+			// One encrypted content read carries one message and its receipt.
+			Name: CloudPeerInboxPage, Class: Buffer, Unit: Rows,
+			Limit: 1, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Log},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/peerstore.InboxPageLimit"},
+		},
+		{
+			Name: CloudPeerBody, Class: Buffer, Unit: Bytes,
+			Limit: 512 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/domain/agenthandoff.MaxBodyBytes"},
+		},
+		{
+			Name: CloudPeerFrame, Class: Buffer, Unit: Bytes,
+			Limit: 1 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Log, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/cloud.PeerFrameBytesLimit"},
+		},
+		{
+			// A source keeps the request and relay evidence for later checks.
+			Name: CloudPeerOutbox, Class: Evidence, Unit: Rows,
+			Limit: 512, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/peerstore.OutboxLimit"},
+		},
+		{
+			// Peer frames wait off the socket reader for fresh authorization.
+			Name: CloudPeerIngress, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Log, Sender},
+			EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.PeerIngressLimit",
+				"internal/transport/cloud.PeerAckIngressLimit",
+				"internal/transport/cloud.(*Link).runOnce:chan(PeerIngressLimit)",
+				"internal/transport/cloud.(*Link).runOnce:chan(PeerAckIngressLimit)"},
 		},
 		{
 			// Decrypted Cloud requests waiting for the bridge (limits N20).

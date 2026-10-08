@@ -68,6 +68,8 @@ func cloudCommand(args []string) {
 		cloudConnectCommand(args[1:])
 	case "pair":
 		cloudPairCommand(args[1:])
+	case "peer":
+		cloudPeerCommand(args[1:])
 	case "devices":
 		cloudDevicesCommand()
 	case "revoke":
@@ -88,6 +90,7 @@ func cloudUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.commands", "  commands on | off      whether a paired viewer may act on this machine; off by default"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.login", "  login [--wait 10m]     register this machine and wait for the approval"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.pair", "  pair [--offer <code>]  show a browser a one-time link, or finish with its code"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud_peer", "usage.entry", "  peer <command>         pair machines and grant exact Agent work scopes"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.devices", "  devices                who may speak to this machine, and where that trust came from"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.revoke", "  revoke <device-id>     throw one browser out of this machine"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.rotate", "  rotate [--yes]         replace this machine's signing key; every browser re-pairs"))

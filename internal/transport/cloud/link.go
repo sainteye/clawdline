@@ -40,8 +40,10 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	peerapp "github.com/sainteye/clawdline/internal/app/agenthandoff"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/app/terminals"
+	peercontract "github.com/sainteye/clawdline/internal/domain/agenthandoff"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
@@ -173,6 +175,11 @@ type LinkOptions struct {
 	TerminalService   func() (*terminals.Service, error)
 	TerminalProject   func(context.Context, string) (string, bool)
 	DropTerminalGrant func(string) error
+	// PeerReceipts and PeerExecute are the daemon's durable peer inbox seam.
+	// Without all three hooks, peer ingress is refused.
+	PeerReceipts    peerapp.Receipts
+	PeerAdmitTarget func(context.Context, string, string, string) error
+	PeerExecute     func(context.Context, peercontract.Request, []byte) error
 	// Authorize stamps the credential the gate judges an in-process request by.
 	Authorize func(*http.Request)
 	// Version is this build, for the machine registration record.
@@ -269,6 +276,8 @@ type Link struct {
 	terminalAfter      func(d time.Duration, f func())
 	machineIncarnation string
 	terminalRequests   chan Inbound
+	peerRequests       chan []byte
+	peerAcks           chan []byte
 	terminalLists      chan Inbound
 	terminalRefusals   chan Inbound
 }
@@ -667,6 +676,8 @@ func (l *Link) wire() error {
 		Status:       status,
 		Replay:       domaincloud.NewReplayWindow(0),
 		Inbound:      l.relay.Deliver,
+		PeerInbound:  l.enqueuePeer,
+		PeerAck:      l.enqueuePeerAck,
 		OnDisconnect: l.closeAllTerminalConnections,
 		OnSettled:    l.terminalReceiptSettled,
 		PublicKeyFor: l.publicKeyFor,
@@ -797,6 +808,14 @@ func (l *Link) Run(ctx context.Context) error {
 
 // runOnce holds one socket up until its context is done.
 func (l *Link) runOnce(ctx context.Context) error {
+	l.mu.Lock()
+	l.peerRequests = make(chan []byte, PeerIngressLimit)
+	l.peerAcks = make(chan []byte, PeerAckIngressLimit)
+	l.mu.Unlock()
+	peerCtx, stopPeer := context.WithCancel(ctx)
+	peerDone := make(chan struct{})
+	go func() { defer close(peerDone); l.runPeer(peerCtx) }()
+	defer func() { stopPeer(); <-peerDone }()
 	l.terminalRequests = make(chan Inbound, CloudTerminalIngressLimit)
 	l.terminalLists = make(chan Inbound, CloudTerminalListIngressLimit)
 	l.terminalRefusals = make(chan Inbound, CloudTerminalRefusalsLimit)

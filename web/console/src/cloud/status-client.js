@@ -14,12 +14,20 @@ function refused(code, message) {
 }
 
 function pinnedRead(type, body) {
-  return (type === "info" && body?.parts === "full" || type === "transcript") &&
+  return (type === "info" && body?.parts === "full" || type === "transcript" || type === "peer-inbox") &&
     body?.expected_generation !== undefined
 }
 
 function pinnedReplyKey(machine, session, read) {
   return machine + "\u0000" + session + "\u0000" + read
+}
+
+function pinnedReadName(type, body) {
+  if (type === "info" && body?.parts === "full") return "info.full"
+  if (type === "transcript") return Number.isSafeInteger(body?.before) && body.before > 0
+    ? "transcript.before." + body.before : "transcript"
+  if (type === "peer-inbox" && typeof body?.request === "string" && body.request) return "read:" + body.request
+  return null
 }
 
 /** A retained or delayed t/ row must name the exact request before it can settle a pinned read. */
@@ -91,6 +99,9 @@ export class StatusCloudClient extends CatalogCloudClient {
 
   /** Only pinned content reads may leave on the read_transcript-authorized r/ channel. */
   async _publishCommand(machine, type, body, envelopeClass, pending) {
+    if (type === "peer-inbox" && !GENERATION.test(body?.expected_generation)) {
+      throw refused("execution_target_required", "an exact Session execution is required")
+    }
     if (!pinnedRead(type, body)) return super._publishCommand(machine, type, body, envelopeClass, pending)
     if (envelopeClass !== "ctl" || body.machine_id !== machine || typeof body.session !== "string" || !body.session ||
       !GENERATION.test(body.expected_generation)) {
@@ -109,7 +120,7 @@ export class StatusCloudClient extends CatalogCloudClient {
       const proof = this.pinnedReadProofs.get(pending.key)
       if (!proof || proof.waiters !== pending.waiters || proof.machineID !== machine ||
         proof.sessionID !== body.session || proof.generation !== body.expected_generation ||
-        proof.read !== (type === "info" ? "info.full" : "transcript")) {
+        proof.read !== pinnedReadName(type, body)) {
         throw refused("read_reply_mismatch", "the pinned read no longer owns its reply")
       }
       proof.seq = sequence
@@ -146,7 +157,7 @@ export class StatusCloudClient extends CatalogCloudClient {
   }
 
   _applySnapshot(channel, payload, envelope, realign) {
-    if (channel?.kind === "transcript" && (payload?.read === "info.full" || payload?.read === "transcript")) {
+    if (channel?.kind === "transcript" && typeof payload?.read === "string") {
       const machine = decodedChannelSegment(channel.machine)
       const session = decodedChannelSegment(channel.session)
       const key = pinnedReplyKey(machine, session, payload.read)
@@ -159,6 +170,9 @@ export class StatusCloudClient extends CatalogCloudClient {
           this._settleRead(key, null, refused("read_reply_mismatch", "the Session content reply did not match its request"))
           return
         }
+      } else if (this.readWaiters?.get(key)?.type === "peer-inbox") {
+        this._settleRead(key, null, refused("read_reply_mismatch", "the peer inbox reply has no pinned request"))
+        return
       }
     }
     return super._applySnapshot(channel, payload, envelope, realign)

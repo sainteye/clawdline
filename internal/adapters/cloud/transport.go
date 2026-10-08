@@ -52,6 +52,10 @@ type Options struct {
 	// Inbound is called for every envelope that passed decoding, the channel
 	// check, signature verification and the replay window. It must not block.
 	Inbound func(cloud.Envelope, []byte, ed25519.PublicKey)
+	// PeerInbound receives opaque machine-to-machine frames. It must enqueue
+	// rather than perform a Cloud authorization read on the socket reader.
+	PeerInbound func([]byte)
+	PeerAck     func([]byte)
 	// OnDisconnect invalidates terminal connection registrations tied to this socket.
 	OnDisconnect func()
 	// OnSettled receives the correlated relay outcome after the spool settles it.
@@ -477,6 +481,16 @@ func (t *Transport) handle(conn *Conn, data []byte) error {
 	case FrameEnvelope:
 		t.handleEnvelope(data)
 		return nil
+	case "peer_envelope":
+		if t.opts.PeerInbound != nil {
+			t.opts.PeerInbound(data)
+		}
+		return nil
+	case "peer_ack":
+		if t.opts.PeerAck != nil {
+			t.opts.PeerAck(data)
+		}
+		return nil
 	}
 	t.logf("cloud ignored an unknown frame type=%s", kind)
 	return nil
@@ -678,6 +692,31 @@ func (t *Transport) Publish(envelope []byte) error {
 		return err
 	}
 	t.opts.Status.Published()
+	return nil
+}
+
+// PublishPeer sends one already signed and encrypted peer frame. A failed
+// socket write is an unknown delivery outcome; callers retain the request ID.
+const PeerFrameBytesLimit = 1 << 20
+
+func (t *Transport) PublishPeer(frame []byte) error {
+	if len(frame) == 0 || len(frame) > PeerFrameBytesLimit || !json.Valid(frame) {
+		return errors.New("peer_frame_invalid")
+	}
+	var header frameHeader
+	if json.Unmarshal(frame, &header) != nil || header.Type != "peer_publish" {
+		return errors.New("peer_frame_invalid")
+	}
+	t.mu.Lock()
+	conn := t.conn
+	t.mu.Unlock()
+	if conn == nil {
+		return ErrNotConnected
+	}
+	if err := conn.WriteText(frame, t.opts.Now().Add(OpeningTimeout)); err != nil {
+		_ = conn.Close()
+		return err
+	}
 	return nil
 }
 

@@ -54,6 +54,7 @@ import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { AllMachineSessions } from "./AllMachineSessions.js"
 import { PinnedSessionActionPanel } from "./PinnedSessionActions.js"
+import { PeerHandoffPanel, PeerRevocationPanel } from "./PeerHandoffPanel.js"
 import { destinationFromFragment, type SessionProjectionSource } from "./all-machine-sessions.js"
 import { statusSource } from "./status-source.js"
 import { statusProjection } from "./status-projection.js"
@@ -1123,7 +1124,18 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             machines={[{ id: chosen.id, name: chosen.name || chosen.label || chosen.id,
               platform: platformWord(machineIdentityFacts(chosen).platform), freshness: chosen.freshness }]}
             source={liveSessionSource}
-            detailActions={(context) => <PinnedSessionActionPanel context={context} source={liveSessionSource} current={currentActionClient} />}
+            fleetControls={<PeerRevocationPanel machines={quickMachines.map((machine) => ({
+              id: machine.id, name: machine.name || machine.label || machine.id,
+              platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
+            }))} current={currentActionClient} />}
+            detailActions={(context) => <>
+              <PinnedSessionActionPanel context={context} source={liveSessionSource} current={currentActionClient} />
+              <PeerHandoffPanel context={context} machines={quickMachines.map((machine) => ({
+                id: machine.id, name: machine.name || machine.label || machine.id,
+                platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
+              }))}
+                source={liveSessionSource} current={currentActionClient} />
+            </>}
           />} />
         </CloudAccountContext.Provider>
       )}
@@ -1134,7 +1146,17 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
         }))}
         source={liveSessionSource}
-        detailActions={(context) => <PinnedSessionActionPanel context={context} source={liveSessionSource} current={currentActionClient} />}
+        fleetControls={<PeerRevocationPanel machines={quickMachines.map((machine) => ({
+          id: machine.id, name: machine.name || machine.label || machine.id,
+          platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
+        }))} current={currentActionClient} />}
+        detailActions={(context) => <>
+          <PinnedSessionActionPanel context={context} source={liveSessionSource} current={currentActionClient} />
+          <PeerHandoffPanel context={context} machines={quickMachines.map((machine) => ({
+            id: machine.id, name: machine.name || machine.label || machine.id,
+            platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
+          }))} source={liveSessionSource} current={currentActionClient} />
+        </>}
         onClose={closeAllSessions}
       />}
       {words && (screen.at !== "console" && screen.at !== "all_sessions" || pairing) && (

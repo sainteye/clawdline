@@ -66,6 +66,9 @@ func init() {
 				if p.before > 0 {
 					query["before"] = itoa(p.before)
 				}
+				if p.executionGeneration != "" {
+					query["expected_generation"] = p.executionGeneration
+				}
 				return LocalRequest{Method: "GET", Path: "/v1/transcript", Query: query}
 			}},
 

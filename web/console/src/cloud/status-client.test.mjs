@@ -118,7 +118,7 @@ test("read_transcript-only pinned reads pass the old local write guard", async (
     { code: "cloud_read_needs_send_prompt" })
 })
 
-test("only pinned info and transcript seal r/; send remains on ctl/", async () => {
+test("only pinned Session content reads seal r/; send remains on ctl/", async () => {
   const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])
   const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])
   const client = Object.create(StatusCloudClient.prototype)
@@ -178,6 +178,13 @@ test("only pinned info and transcript seal r/; send remains on ctl/", async () =
   assert.equal(pending.registered.ref.seq, 8)
   assert.equal(client.pinnedReadProofs.get(key).seq, 8)
   assert.equal(client.pendingBySequence.get(8), pending.registered)
+  const inbox = await client._publishCommand("m", "peer-inbox", {
+    session: "s", machine_id: "m", expected_generation: genA, request: "inbox-1",
+  }, "ctl")
+  assert.equal(inbox.ch, "r/m")
+  await assert.rejects(() => client._publishCommand("m", "peer-inbox", {
+    session: "s", machine_id: "m", request: "inbox-2",
+  }, "ctl"), { code: "execution_target_required" })
   await assert.rejects(() => client._publishCommand("m", "info", {
     session: "s", parts: "full", machine_id: "other", expected_generation: genA,
   }, "ctl"), { code: "execution_target_required" })
@@ -228,6 +235,33 @@ test("a retained or mismatched t/ row cannot settle a new pinned execution", () 
   const current = { ...old, expected_generation: genB, seq: 18, body: { entries: [] } }
   client._applySnapshot(channel, current, { seq: 25, ts: Date.now() }, false)
   assert.deepEqual(settlements, [{ readKey: key, body: current.body, error: null }])
+})
+
+test("peer inbox refuses a reply from another request or execution before settling content", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const key = "m\u0000s\u0000read:inbox-1"
+  const waiters = { type: "peer-inbox", ref: { seq: 7 } }
+  client.readWaiters = new Map([[key, waiters]])
+  client.pinnedReadProofs = new Map([[key, { machineID: "m", sessionID: "s", generation: genA,
+    read: "read:inbox-1", seq: 7, waiters }]])
+  client.transcriptSnapshots = new Map()
+  client.sessionSequenceByKey = new Map()
+  client._observeMachine = () => {}
+  client._emit = () => {}
+  const settled = []
+  client._settleRead = (name, body, error) => settled.push({ name, body, code: error?.code })
+  const channel = { kind: "transcript", machine: "m", session: "s" }
+  const old =
+    { read: "read:inbox-1", machine_id: "m", session_id: "s", expected_generation: genA, seq: 6,
+      body: { items: [{ body: "private" }] } }
+  client._applySnapshot(channel, old, {}, false)
+  assert.deepEqual(settled, [{ name: key, body: null, code: "read_reply_mismatch" }])
+  settled.length = 0
+  const current = { ...old, seq: 7, body: { items: [] } }
+  client._applySnapshot(channel, current, {}, true)
+  assert.equal(settled.length, 0)
+  client._applySnapshot(channel, current, {}, false)
+  assert.deepEqual(settled, [{ name: key, body: current.body, code: undefined }])
 })
 
 test("leaving a detail releases s and t immediately", () => {

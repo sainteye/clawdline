@@ -140,3 +140,31 @@ func TestReadContentRailChecksRevocationBeforeSealing(t *testing.T) {
 		t.Fatalf("answer=%+v checks=%d", a, checks)
 	}
 }
+
+func TestPeerInboxRequiresThePinnedContentRailAndCurrentViewerGrant(t *testing.T) {
+	input := map[string]any{"type": "peer-inbox", "machine_id": "mac-01", "session": pane,
+		"request": "inbox-1", "expected_generation": pinnedGeneration}
+	r := &router{}
+	b := open(r)
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+		return contentReadAuthority(true)
+	}
+	ctl := request(t, ClassCtl, input)
+	if answer := b.Handle(context.Background(), ctl); answer.Code != "read_only_channel" || len(r.seen) != 0 {
+		t.Fatalf("ordinary control read crossed content gate: %+v, %+v", answer, r.seen)
+	}
+	read := contentReadRequest(t, input)
+	if answer := b.Handle(context.Background(), read); !answer.OK() || answer.Name != "read:inbox-1" ||
+		len(r.seen) != 1 || r.last().Path != "/v1/cloud/peer/inbox" ||
+		r.last().Query["machine_id"] != "mac-01" || r.last().Query["session_id"] != pane ||
+		r.last().Query["execution_generation"] != pinnedGeneration {
+		t.Fatalf("pinned peer inbox read: %+v, %+v", answer, r.seen)
+	}
+	r.seen = nil
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+		return contentReadAuthority(false)
+	}
+	if answer := b.Handle(context.Background(), read); answer.Code != "read_transcript_required" || len(r.seen) != 0 {
+		t.Fatalf("revoked viewer read crossed content gate: %+v, %+v", answer, r.seen)
+	}
+}

@@ -212,8 +212,8 @@ type plan struct {
 	// the same field as session: a machine-scoped request's session is the
 	// machine reply channel.
 	target string
-	// New Cloud reads pin the terminal execution through the local HTTP
-	// route's final check. Empty preserves the older unpinned request shape.
+	// A pinned Cloud read uses the local HTTP route's final execution check.
+	// Empty preserves the older unpinned request shape.
 	executionGeneration string
 
 	id, scope, task, path             string
@@ -687,7 +687,7 @@ func refusalReply(b body, word string, class Class) (string, string, bool) {
 		if !hasRequest {
 			return "", "", false
 		}
-		if word != "document" && session != MachineReplySession {
+		if word != "document" && word != "peer-inbox" && session != MachineReplySession {
 			return "", "", false
 		}
 		return session, "read:" + request, true

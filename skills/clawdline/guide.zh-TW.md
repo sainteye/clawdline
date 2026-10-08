@@ -193,6 +193,30 @@ roster 與本機信任狀態；配對後要唯讀複查，也用這條。
 這些指令都透過本機正在執行的 daemon。失敗時回報 stderr 原文。除非使用者另外要求，否則不要順手
 開啟 Cloud、登入、開啟 commands、rotate key，也不要替換使用者給的 offer。
 
+**為 Agent 工作配對兩台機器。** 瀏覽器配對不會授予機器間權限。請在兩台機器各執行
+`clawdline cloud peer fingerprint`，由當事人在各自機器上核對簽章指紋。來源機器執行
+`clawdline cloud peer start <target-machine-id> <target-fingerprint>` 開始配對；目標機器執行
+`clawdline cloud peer accept <pair-id> <source-fingerprint>` 接受；來源機器執行
+`clawdline cloud peer sync <pair-id> <target-fingerprint>` 固定配對。目標機器用
+`clawdline cloud peer grant` 建立指定來源與目標 Session 執行世代的授權，再由來源機器用
+`clawdline cloud peer grant-sync` 固定授權。`clawdline cloud peer revoke-pair` 與
+`revoke-grant` 先在本機拒絕，再要求 Cloud 撤銷。Cloud Console 的固定目標 Session 詳情也提供
+同一流程。同帳號與 viewer key 都不能取代機器簽章、明示的 `message`／`handoff` 範圍或目前世代。
+
+本機路由為 `POST /v1/cloud/peer/control`（`action`、配對或授權 ID、核對過的指紋、指定
+Session ID 與世代、範圍）、`POST /v1/cloud/peer/send`（`request` 內含兩端機器／Session／
+世代、類型、授權 ID、內容摘要，另附 `body`）、`GET /v1/cloud/peer/outbox/<request-id>`
+（來源 Relay 證據），以及
+`GET /v1/cloud/peer/inbox?machine_id=&session_id=&execution_generation=&before=`（單筆目標工作與持久收據；before 可省略）。
+收件正文是 `body_base64`，`next_before` 可讀取較早項目，其他執行的游標不能共用。
+CLI 用 `clawdline cloud peer outbox <request-id>` 讀取來源證據。
+已配對的 viewer 要有 send 權限才能變更；Cloud 收件匣內容另外需要 `read_content_v1`、
+`read_transcript` 和 `r/` 獨立通道上的固定執行世代。拒絕碼包括 `peer_control_refused`、
+`peer_send_unavailable`、`execution_generation_changed`、`read_transcript_required` 與
+`read_only_channel`。寫入 WebSocket 後，Relay 接受仍未知，直到收到 `peer_ack`；Relay 的
+`delivered` 只證明 socket 交付。來源端仍將目標執行與 Agent
+觀察標為未知；目標收據可證明機器執行及 Session 交付，Agent 觀察與確認須有另外的證據。
+
 **東西在哪裡。**
 
 - Port：`CLAWDLINE_NEXT_PORT`，沒設就是 **7727**。只聽 loopback：`http://127.0.0.1:<port>`。

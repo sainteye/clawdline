@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
 	"github.com/sainteye/clawdline/internal/adapters/logs"
+	"github.com/sainteye/clawdline/internal/adapters/peerstore"
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
@@ -65,6 +67,25 @@ func (s *Server) terminalCapacity(name string) capacity.Reading {
 		return capacity.Unmeasured("Cloud line does not report terminal capacity")
 	}
 	return reader.TerminalCapacity(name)
+}
+
+func (s *Server) peerStoreCapacity(name string) capacity.Reading {
+	usage, err := peerstore.ReadUsage(context.Background(), filepath.Join(s.cfg.Dir, cloudkeys.DirName))
+	if err != nil {
+		return capacity.Unmeasured(err.Error())
+	}
+	var used int64
+	switch name {
+	case capacity.CloudPeerPairs:
+		used = usage.Pairs
+	case capacity.CloudPeerGrants:
+		used = usage.Grants
+	case capacity.CloudPeerInbox:
+		used = usage.Inbox
+	case capacity.CloudPeerOutbox:
+		used = usage.Outbox
+	}
+	return capacity.Reading{Known: true, Used: used}
 }
 
 // capacityOverrides is the register resolved against CLAWDLINE_NEXT_CAPACITY,
@@ -976,6 +997,34 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 				r.Note = fmt.Sprintf("the queue holds %d, not the register's %d", depth, limit)
 			}
 			return r
+		},
+		capacity.CloudPeerPairs:  func() capacity.Reading { return s.peerStoreCapacity(capacity.CloudPeerPairs) },
+		capacity.CloudPeerGrants: func() capacity.Reading { return s.peerStoreCapacity(capacity.CloudPeerGrants) },
+		capacity.CloudPeerInbox:  func() capacity.Reading { return s.peerStoreCapacity(capacity.CloudPeerInbox) },
+		capacity.CloudPeerOutbox: func() capacity.Reading { return s.peerStoreCapacity(capacity.CloudPeerOutbox) },
+		capacity.CloudPeerInboxPage: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "one item per pinned content read"}
+		},
+		capacity.CloudPeerBody: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-message body guard; no retained buffer"}
+		},
+		capacity.CloudPeerFrame: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-frame ingress guard; no retained buffer"}
+		},
+		capacity.CloudPeerIngress: func() capacity.Reading {
+			line, ok := cloudLines.Load(s.cfg.Dir)
+			if !ok {
+				return capacity.Reading{Known: true, Note: "the Cloud peer line is off"}
+			}
+			reader, ok := line.(interface{ PeerIngressUsage() (int, bool) })
+			if !ok {
+				return capacity.Unmeasured("this Cloud line does not report peer ingress")
+			}
+			waiting, active := reader.PeerIngressUsage()
+			if !active {
+				return capacity.Reading{Known: true, Note: "the Cloud peer line has no socket"}
+			}
+			return capacity.Reading{Known: true, Used: int64(waiting)}
 		},
 		capacity.CloudTerminalRosterRefresh:        func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRosterRefresh) },
 		capacity.CloudTerminalRosterDeadline:       func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRosterDeadline) },

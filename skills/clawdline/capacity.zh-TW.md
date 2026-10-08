@@ -28,6 +28,14 @@
 | `callback.tail_bytes` | 8192 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `cloud.header_read_diagnostic_rows` | 24 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cloud.header_read_diagnostic_seconds` | 3600 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.peer_body_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, notice, sender` | — |
+| `cloud.peer_frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, log, sender` | — |
+| `cloud.peer_grants` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `cloud.peer_inbox` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `cloud.peer_inbox_page` | 1 | `rows` | `refuse` | `diagnostics, log` | — |
+| `cloud.peer_ingress` | 16 | `rows` | `refuse` | `diagnostics, log, sender` | — |
+| `cloud.peer_outbox` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `cloud.peer_pairs` | 128 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `cloud.relay_queue` | 64 | `rows` | `refuse` | `diagnostics, notice, cloud_status, log, sender` | — |
 | `cloud.spool` | 2000 | `rows` | `refuse` | `diagnostics, notice, log` | — |
 | `cloud.spool_bytes` | 16777216 | `bytes` | `refuse` | `diagnostics, notice, log` | — |

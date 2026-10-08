@@ -217,6 +217,35 @@ These commands go through the running local daemon. If one fails, report its exa
 turn Cloud on, log in, enable commands, rotate keys, or replace the supplied offer unless the
 person separately asked for that change.
 
+**Pair machines for Agent work.** Browser pairing never grants machine-to-machine authority.
+Run `clawdline cloud peer fingerprint` on each machine and have the person compare the two
+signing fingerprints on their respective machines. A source starts a pair with
+`clawdline cloud peer start <target-machine-id> <target-fingerprint>`; the target accepts with
+`clawdline cloud peer accept <pair-id> <source-fingerprint>`; the source pins it with
+`clawdline cloud peer sync <pair-id> <target-fingerprint>`. The target creates an exact
+source/target Session execution grant with `clawdline cloud peer grant`, and the source pins
+it with `clawdline cloud peer grant-sync`. `clawdline cloud peer revoke-pair` and
+`revoke-grant` deny locally before asking Cloud to revoke. The Cloud Console offers the same
+flow in a fixed target Session detail. A shared account and a viewer key never stand in for
+the peer machine signature, its explicit `message` or `handoff` scope, or a current generation.
+
+The local routes are `POST /v1/cloud/peer/control` (`action`, pair/grant id, compared fingerprint,
+exact Session ids and generations, scopes), `POST /v1/cloud/peer/send` (`request` with both
+machine/Session/generation endpoints, kind, grant id and body digest, plus `body`),
+`GET /v1/cloud/peer/outbox/<request-id>` (source relay evidence), and
+`GET /v1/cloud/peer/inbox?machine_id=&session_id=&execution_generation=&before=` (one target item and durable
+target receipt). The inbox body is `body_base64`; `next_before` pages older items without
+reusing a cursor from another execution. The CLI reads source evidence with
+`clawdline cloud peer outbox <request-id>`.
+A paired viewer needs send permission for changes; Cloud inbox content also
+requires `read_content_v1`, `read_transcript` and the pinned execution on the separate `r/`
+rail. Refusals include `peer_control_refused`, `peer_send_unavailable`,
+`execution_generation_changed`, `read_transcript_required` and `read_only_channel`.
+Writing the WebSocket leaves relay acceptance unknown until `peer_ack`; relay `delivered`
+proves only socket delivery. The source leaves target execution and Agent
+observation unknown; the target receipt proves machine execution and Session delivery, while
+Agent observation and acknowledgement remain unknown until independently evidenced.
+
 **Where things are.**
 
 - Port: `CLAWDLINE_NEXT_PORT`, else **7727**. Loopback only: `http://127.0.0.1:<port>`.

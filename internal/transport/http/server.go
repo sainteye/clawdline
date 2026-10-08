@@ -413,6 +413,10 @@ func (s *Server) routeTable() []route {
 		// What the line to app.clawdline.com is doing (cloud.go). This machine's
 		// own token only.
 		{Route{"*", "/v1/cloud/status"}, s.cloudStatusRoute},
+		{Route{"*", "/v1/cloud/peer/send"}, s.cloudPeerSendRoute},
+		{Route{"*", "/v1/cloud/peer/control"}, s.cloudPeerControlRoute},
+		{Route{"*", "/v1/cloud/peer/inbox"}, s.cloudPeerInboxRoute},
+		{Route{"*", "/v1/cloud/peer/outbox/"}, s.cloudPeerOutboxRoute},
 		// Pairing a browser with this Mac, and throwing one out again. Same rule:
 		// this machine's own token, because the first of them answers a link that
 		// hands over the account key.

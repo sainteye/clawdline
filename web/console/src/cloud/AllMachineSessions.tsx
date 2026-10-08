@@ -28,12 +28,13 @@ type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionP
 const emptyFilters: SessionFilters = { machine: "", platform: "", state: "", freshness: "all", attention: "all" }
 
 /** Only the hosted Cloud gate mounts this view; its source is the ss/ adapter. */
-export function AllMachineSessions({ machines, source, onClose, embedded = false, detailActions }: {
+export function AllMachineSessions({ machines, source, onClose, embedded = false, detailActions, fleetControls }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
   onClose?: () => void
   embedded?: boolean
   detailActions?: (context: DetailActionContext) => ReactNode
+  fleetControls?: ReactNode
 }) {
   const [readings, setReadings] = useState<Record<string, Reading>>({})
   const [filters, setFilters] = useState(emptyFilters)
@@ -211,6 +212,7 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
         </section>}
     </main> : <main className="cloud-all-main">
       <p className="cloud-all-lede">{nextWord("cloudAllLede")}</p>
+      {fleetControls}
       {!embedded && <AttentionOverview
         reading={{ phase: "ready", machines: machines.map((machine) => fromListProjection(machine, readings[machine.id])), observedNow: Date.now() }}
         locale={document.documentElement.lang === "zh-Hant" ? "zh-Hant-TW" : "en"}
