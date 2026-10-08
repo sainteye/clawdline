@@ -30,6 +30,12 @@ func TestExecutionGenerationSurvivesRestartAndRejectsReuse(t *testing.T) {
 	if err != nil || again["%19"] != first["%19"] {
 		t.Fatalf("restart changed generation: %v %v", again, err)
 	}
+	if count, err := s.ExecutionCount(ctx, "mac_a"); err != nil || count != 1 {
+		t.Fatalf("durable execution count: %d %v", count, err)
+	}
+	if count, err := s.ExecutionCount(ctx, ""); err != nil || count != 0 {
+		t.Fatalf("no Cloud identity claimed executions: %d %v", count, err)
+	}
 	other, err := s.ObserveExecutions(ctx, "mac_b", row, proof)
 	if err != nil || other["%19"] == first["%19"] {
 		t.Fatalf("other machine shared generation: %v %v", other, err)
@@ -48,6 +54,9 @@ func TestExecutionGenerationSurvivesRestartAndRejectsReuse(t *testing.T) {
 	}
 	if err := s.AdmitExecution(ctx, "mac_a", "%19", first["%19"]); err == nil || err.Error() != "execution_target_missing" {
 		t.Fatalf("proven absence: %v", err)
+	}
+	if count, err := s.ExecutionCount(ctx, "mac_a"); err != nil || count != 0 {
+		t.Fatalf("proven absence was still counted: %d %v", count, err)
 	}
 	returned, err := s.ObserveExecutions(ctx, "mac_a", row, proof)
 	if err != nil || returned["%19"] == first["%19"] {

@@ -147,3 +147,16 @@ func (s *Store) AdmitExecution(ctx context.Context, machine, id, expected string
 	}
 	return nil
 }
+
+// ExecutionCount measures the current Cloud machine's durable execution
+// index. With no Cloud identity there is no active execution namespace.
+func (s *Store) ExecutionCount(ctx context.Context, machine string) (int64, error) {
+	if machine == "" {
+		return 0, nil
+	}
+	var count int64
+	if err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM session_executions WHERE machine=?`, machine).Scan(&count); err != nil {
+		return 0, classify(err)
+	}
+	return count, nil
+}

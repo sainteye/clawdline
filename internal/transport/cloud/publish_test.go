@@ -57,6 +57,18 @@ func (c *collector) channels() []string {
 	return c.channelsLocked()
 }
 
+// These older publication assertions measure the full s/ compatibility
+// stream. ss/ has its own row/marker assertions in session_status_test.go.
+func legacyChannels(names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		if !strings.HasPrefix(name, "ss/") {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 func (c *collector) channelsLocked() []string {
 	var names []string
 	for _, out := range c.out {
@@ -147,7 +159,7 @@ func TestTheInventoryNamesEveryRowItPublished(t *testing.T) {
 	publisher := newPublisher(&fixedRouter{body: completeScan}, out)
 	publisher.firstPass(context.Background())
 
-	names := out.channels()
+	names := legacyChannels(out.channels())
 	if len(names) != 3 {
 		t.Fatalf("expected the descriptor, one row and the marker; got %v", names)
 	}
@@ -192,8 +204,8 @@ func TestAPartialScanPublishesRowsAndAnInventoryOfWhatItCanAccountFor(t *testing
 	publisher := newPublisher(&fixedRouter{body: partial}, out)
 	publisher.firstPass(context.Background())
 
-	if len(out.channels()) != 3 {
-		t.Errorf("expected the descriptor, one row and the marker: %v", out.channels())
+	if names := legacyChannels(out.channels()); len(names) != 3 {
+		t.Errorf("expected the descriptor, one row and the marker: %v", names)
 	}
 	if names := inventoryNames(t, out); len(names) != 1 || names[0] != "%19" {
 		t.Errorf("the marker named %v", names)

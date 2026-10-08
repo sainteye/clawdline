@@ -67,6 +67,7 @@ var sessionFields = map[string]string{
 	"projects#PlaceResumed.session":               conversation,
 	"schedules#ScheduleRequest.session_id":        conversation,
 	"sessions#SessionRow.sessionId":               conversation,
+	"session-status#SessionStatus.session_id":     "terminal: the ss/ row's terminal id, pinned by execution_generation; retire when status rows use conversation ids",
 	// The Epic assignment actor records the owner's conversation at dispatch
 	// time, even when the child runs as an independent Root.
 	"sessions#EpicSessionParent.owner_session_id": conversation,

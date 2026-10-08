@@ -564,7 +564,7 @@ func Register() []Entry {
 			// refuses a newly observed id; no generation is silently evicted.
 			Name: SessionExecutions, Class: Evidence, Unit: Rows,
 			Limit: 4096, AtLimit: Refuse,
-			Told: []Channel{Sender, Log}, EvictedBy: Person,
+			Told: []Channel{Diagnostics, Health, Sender, Log}, EvictedBy: Person,
 			Sources: []string{"internal/adapters/store.ExecutionRecordsLimit"},
 		},
 		{
@@ -573,7 +573,7 @@ func Register() []Entry {
 			// the threshold; an unknown reading never becomes a quiet one.
 			Name: SessionNoMovement, Class: Cache, Unit: Seconds,
 			Limit: 1800, AtLimit: Expire,
-			Told: []Channel{Sender}, EvictedBy: Daemon,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.SessionNoMovementSecondsLimit"},
 		},
 		{
