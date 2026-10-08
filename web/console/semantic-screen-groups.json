@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4716,
+  "englishContentKeys": 4719,
   "riskKeys": 2058,
-  "nonRiskCount": 2658,
+  "nonRiskCount": 2661,
   "groups": [
     {
       "name": "bar / other",
@@ -1775,7 +1775,7 @@
     },
     {
       "name": "next / other",
-      "count": 81,
+      "count": 84,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1811,6 +1811,9 @@
         "next.schedulesHeading",
         "next.schedulesListLabel",
         "next.screenSessionGone",
+        "next.sessionCallbackActive",
+        "next.sessionCallbackUnverified",
+        "next.sessionCallbacksActive",
         "next.sessionLastActivity",
         "next.sessionStop",
         "next.smartTitleAction",

@@ -65,6 +65,7 @@ type ReadingScenario =
   | "unstarted-codex"
   | "unstarted-claude-refresh"
   | "session-gap"
+  | "callback-owner"
 let readingScenario: ReadingScenario = "normal"
 let inlineDecisionFixture = false
 let inlineDecisionAnswers = 0
@@ -665,6 +666,9 @@ function daemon(): Server {
       const tasks = readingScenario === "session-gap"
         ? [{ id: "task-gap-fixture", state: "briefed", created: 1,
             root: { terminalId: SAFE, sessionId: "conversation-" + SAFE }, child: { terminalId: BLOCKED } }]
+        : readingScenario === "callback-owner"
+        ? ["a", "b"].map((suffix) => ({ id: "callback-" + suffix, kind: "callback", state: "briefed", created: 1,
+            title: "Heavy work " + suffix, root: { terminalId: SAFE, sessionId: "conversation-" + SAFE } }))
         : readingScenario === "worst"
         ? [{
             id: "task-fixture",
@@ -830,6 +834,7 @@ const PROBE = `(() => {
       const task = n.querySelector(".task-chip")
       return task && getComputedStyle(task).display !== "none"
     }),
+    callbackRows: rows.filter((n) => n.querySelector(".session-callback-active")).map((n) => n.dataset.id),
     ptrHeight: ptr ? ptr.style.height : "",
     ptrWord: label ? label.textContent : "",
     scrollTop: document.getElementById("list-scroll")?.scrollTop ?? -1,
@@ -871,6 +876,7 @@ interface Seen {
   retainedText: string | null
   moving: boolean
   taskVisible: boolean
+  callbackRows: string[]
   ptrHeight: string
   ptrWord: string
   scrollTop: number
@@ -1137,6 +1143,31 @@ test("an incomplete session reading keeps a confirmed root and its child togethe
     } finally {
       sessionGap = false
       sessionGapComplete = false
+      readingScenario = "normal"
+    }
+  }))
+
+test("a phone identifies the Session that started two live callbacks", () =>
+  inTab(async (tab) => {
+    readingScenario = "callback-owner"
+    try {
+      await list(tab)
+      await tab.until("the callback owner is marked", (seen) => seen.callbackRows.join() === SAFE)
+      const badge = await tab.run(`(() => {
+        const row = document.querySelector("#rows > li.row[data-id='${SAFE}']")
+        const mark = row?.querySelector(".session-callback-active")
+        return { text: mark?.textContent, verified: mark?.dataset.verified,
+          visible: !!mark && mark.getBoundingClientRect().width > 0,
+          clipped: !!mark && mark.scrollWidth > mark.clientWidth + 1,
+          listWidth: document.querySelector("#list-scroll")?.scrollWidth,
+          viewportWidth: window.innerWidth }
+      })()`)
+      assert.equal(badge.text, "重工作業進行中 · 2 項")
+      assert.equal(badge.verified, "1")
+      assert.equal(badge.visible, true)
+      assert.equal(badge.clipped, false)
+      assert.ok(badge.listWidth <= badge.viewportWidth, JSON.stringify(badge))
+    } finally {
       readingScenario = "normal"
     }
   }))
