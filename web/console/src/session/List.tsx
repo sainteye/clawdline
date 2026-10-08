@@ -11,6 +11,7 @@ import { conversationNotStarted } from "./readiness.js"
 import { retainedStateWords, sessionReadingChinese } from "../session-reading.js"
 import { rowPersonaLine } from "../personas.js"
 import { usePersonas } from "./PersonaBot.js"
+import { activeCallbacksForSession } from "./callback-owner.js"
 import "./list-density.css"
 import "./list-tree.css"
 import "./swipe-archive.css"
@@ -56,6 +57,16 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   const waitingOn = coordination?.waitingOn ?? []
   const waitedOnBy = coordination?.waitedOnBy ?? []
   const roots = L.tasksOfRoot(row.id)
+  const callbacks = activeCallbacksForSession(row, roots)
+  const callbackKnown = L.taskListKnown()
+  const callbackLabel = !callbackKnown
+    ? nextWord("sessionCallbackUnverified")
+    : callbacks.length === 1
+      ? nextWord("sessionCallbackActive")
+      : nextWord("sessionCallbacksActive", { count: callbacks.length })
+  const callbackSaid = callbacks.length
+    ? `<span class="session-callback-active" data-verified="${callbackKnown ? "1" : "0"}" title="${L.escapeHTML(callbacks.map((task) => task.title || task.id).join("\n"))}">${L.escapeHTML(callbackLabel)}</span>`
+    : ""
   const n = row.shells?.length ?? 0
   const shellsSaid = n
     ? `<span class="shells">${L.escapeHTML(n === 1 ? T.sessionShellOne : L.fillString(T.sessionShellMany, { n }))}</span>`
@@ -144,26 +155,27 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
     work.state +
     (n ? "+sh" + n : "") +
     (waitShape ? "+cw" + waitShape : "") +
+    (callbacks.length ? "+cb" + String(callbackKnown) + ":" + callbacks.map((task) => task.id + ":" + task.state).join(",") : "") +
     (row.source ? "+src" + row.source.freshness + ":" + row.source.observed_at : "")
     + (attentionSaid ? "+attention" + attention : "")
     + (work.state === "working" ? "+line" + (row.line || "") : "")
 
   let html: string
   if (work.state === "waiting_you") {
-    html = `<span class="wants">${L.glyphHTML("🙋", T.sessionWaiting)}</span>` + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
+    html = `<span class="wants">${L.glyphHTML("🙋", T.sessionWaiting)}</span>` + callbackSaid + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   } else if (work.state === "working") {
     const line = row.line
       ? `<span class="line session-live-line" title="${L.escapeHTML(row.line)}">${L.escapeHTML(row.line)}</span>`
       : ""
-    html = '<canvas class="spin"></canvas>' + line + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
+    html = '<canvas class="spin"></canvas>' + line + callbackSaid + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   } else if (notStarted) {
-    html = `<span class="unread">${L.escapeHTML(nextWord("sessionNotStartedShort"))}</span>` + attentionSaid + peerSaid + workSaid + shellsSaid
+    html = `<span class="unread">${L.escapeHTML(nextWord("sessionNotStartedShort"))}</span>` + callbackSaid + attentionSaid + peerSaid + workSaid + shellsSaid
   } else if (work.state === "unknown" && row.state === "unknown") {
     // The label already says the state could not be read; the work copy
     // beside it would say so again.
-    html = `<span class="unread">${L.escapeHTML(nextWord("sessionStateUnrecognizedList"))}</span>` + attentionSaid + peerSaid + retainedSaid + shellsSaid
+    html = `<span class="unread">${L.escapeHTML(nextWord("sessionStateUnrecognizedList"))}</span>` + callbackSaid + attentionSaid + peerSaid + retainedSaid + shellsSaid
   } else {
-    html = attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
+    html = callbackSaid + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   }
   return { html: html + pausedSaid, shape }
 }

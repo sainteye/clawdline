@@ -74,6 +74,9 @@ const words = {
     infoContextUsed: "{used} of {window} tokens in the context",
     infoResetsInMinutes: "in {n} min",
     sessionLastActivity: "last activity {time}",
+    sessionCallbackActive: "Heavy work in progress",
+    sessionCallbacksActive: "Heavy work in progress · {count}",
+    sessionCallbackUnverified: "Heavy work status unverified",
     sessionStateUnrecognizedList:
       "State unknown",
     proposalNeedsYourDecision:
@@ -983,6 +986,9 @@ const words = {
     infoContextUsed: "context 裡有 {used} / {window} tokens",
     infoResetsInMinutes: "{n} 分鐘後",
     sessionLastActivity: "上次活動：{time}",
+    sessionCallbackActive: "重工作業進行中",
+    sessionCallbacksActive: "重工作業進行中 · {count} 項",
+    sessionCallbackUnverified: "重工作業狀態待確認",
     sessionStateUnrecognizedList: "無法辨認狀態",
     sessionStateUnrecognizedDetail: "Clawdline 已讀到畫面，但無法辨認狀態。決定下一步前，請查看下方對話。",
     sessionCountNotStarted: "{n} 個還沒開始對話",

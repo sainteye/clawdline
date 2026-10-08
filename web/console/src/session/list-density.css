@@ -86,6 +86,22 @@
   background: currentColor;
 }
 
+/* The callback belongs to this Session even while its heavy slot is queued.
+ * Keep the owner visible beside any ordinary idle or waiting state. */
+.row .state > .session-callback-active {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--warn);
+  font: 600 11.5px/1.2 var(--mono);
+}
+
+.row .state > .session-callback-active[data-verified="0"] {
+  color: var(--dim);
+}
+
 .row .state > .session-work-completion,
 .row .state > .session-closeability,
 .row .state > .session-work-owed,
@@ -170,6 +186,15 @@
  * row is active and where it belongs.
  */
 @media (max-width: 480px) {
+  .row .state:has(> .session-callback-active) > .persona-state {
+    max-width: 14px;
+    overflow: hidden;
+  }
+
+  .row .state:has(> .session-callback-active) > .persona-state .persona-state-name {
+    display: none;
+  }
+
   .row[data-attention] .state > .persona-state {
     order: 5;
     max-width: 14px;
