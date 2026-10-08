@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4912,
-  "riskKeys": 2141,
-  "nonRiskCount": 2771,
+  "englishContentKeys": 4924,
+  "riskKeys": 2147,
+  "nonRiskCount": 2777,
   "groups": [
     {
       "name": "bar / other",
@@ -1638,7 +1638,7 @@
     },
     {
       "name": "next / cloud",
-      "count": 148,
+      "count": 153,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1686,8 +1686,10 @@
         "next.cloudAllLoadingDetail",
         "next.cloudAllLoadingOlder",
         "next.cloudAllMachine",
+        "next.cloudAllMachineID",
         "next.cloudAllMachines",
         "next.cloudAllPlatform",
+        "next.cloudAllSessionID",
         "next.cloudAllStale",
         "next.cloudAllStaleSource",
         "next.cloudAllState",
@@ -1772,11 +1774,14 @@
         "next.cloudPeerOlderInbox",
         "next.cloudPeerReadFingerprints",
         "next.cloudPeerReadInbox",
+        "next.cloudPeerRevokeConfirmTitle",
         "next.cloudPeerSend",
         "next.cloudPeerSendResult",
         "next.cloudPeerSource",
+        "next.cloudPeerSourceCompared",
         "next.cloudPeerSourceFingerprint",
         "next.cloudPeerTarget",
+        "next.cloudPeerTargetCompared",
         "next.cloudPeerTargetFingerprint",
         "next.cloudRename",
         "next.cloudRenameField",
@@ -1811,12 +1816,13 @@
     },
     {
       "name": "next / end",
-      "count": 9,
+      "count": 10,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
         "next.endNamedTitle",
+        "next.endProcessRecoveryGo",
         "next.endWorkBoardLabel",
         "next.endWorkChecking",
         "next.endWorkClose",

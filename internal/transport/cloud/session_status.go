@@ -142,6 +142,12 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	if p.Publish == nil {
 		return
 	}
+	// A partial source scan cannot replace the last complete ss/ set. Keep its
+	// original observation time so the viewer eventually marks it stale; a
+	// later authoritative pass will publish a fresh set and removal barrier.
+	if !reading.whole() {
+		return
+	}
 	rows := make(map[string]map[string]any, len(reading.sessions))
 	for _, row := range reading.sessions {
 		if id, _ := row["id"].(string); id != "" {
@@ -153,7 +159,7 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	statuses := make([]SessionStatus, 0, len(ids))
 	identities := make([]SessionStatus, 0, len(ids))
 	for _, id := range ids {
-		status := ProjectSessionStatus(p.MachineID, id, rows[id], reading.complete, at)
+		status := ProjectSessionStatus(p.MachineID, id, rows[id], true, at)
 		statuses = append(statuses, status)
 		identity := status
 		identity.ProjectedAt = 0
@@ -168,7 +174,7 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		Rows     []SessionStatus `json:"rows"`
 		IDs      []string        `json:"ids"`
 		Complete bool            `json:"complete"`
-	}{Rows: identities, IDs: ids, Complete: reading.complete})) {
+	}{Rows: identities, IDs: ids, Complete: true})) {
 		return
 	}
 	var nonce [16]byte
@@ -205,7 +211,7 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		At                 int64  `json:"at"`
 		Complete           bool   `json:"complete"`
 		SnapshotGeneration string `json:"snapshot_generation"`
-	}{At: at, Complete: reading.complete, SnapshotGeneration: pass}
+	}{At: at, Complete: true, SnapshotGeneration: pass}
 	marker.Inventory.Version = 1
 	marker.Inventory.Sessions = append([]string{}, ids...)
 	body, err := json.Marshal(marker)

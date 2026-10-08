@@ -154,3 +154,37 @@ func TestStatusInventoryPublishesAnEmptySet(t *testing.T) {
 		t.Fatalf("empty snapshot was not a proved empty set: %v", inventory["sessions"])
 	}
 }
+
+func TestPartialScanCannotReplaceTheLastCompleteStatusSet(t *testing.T) {
+	c := &collector{}
+	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
+	id := "%19"
+	complete := sessionReading{sessions: []map[string]any{{"id": id, "state": "idle"}}, at: json.RawMessage(`100`), complete: true}
+	p.publishStatuses(context.Background(), complete, []string{id})
+	first := c.payload(t, "ss/mac_a/"+InventorySessionID)
+	if len(c.channels()) != 2 {
+		t.Fatalf("first complete pass published %v", c.channels())
+	}
+	partial := sessionReading{sessions: []map[string]any{{"id": id, "state": "working"}}, at: json.RawMessage(`200`)}
+	p.publishStatuses(context.Background(), partial, []string{id})
+	if len(c.channels()) != 2 {
+		t.Fatalf("partial pass replaced the complete status set: %v", c.channels())
+	}
+	if got := c.payload(t, "ss/mac_a/"+InventorySessionID); got["snapshot_generation"] != first["snapshot_generation"] {
+		t.Fatalf("partial pass changed the status barrier: %v", got)
+	}
+	partial.complete = true
+	p.publishStatuses(context.Background(), partial, []string{id})
+	if len(c.channels()) != 4 {
+		t.Fatalf("next complete pass did not replace the set: %v", c.channels())
+	}
+}
+
+func TestAuthoritativeEmptyScanPublishesACompleteStatusBarrier(t *testing.T) {
+	c := &collector{}
+	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
+	p.publishStatuses(context.Background(), sessionReading{at: json.RawMessage(`100`), emptyAuthoritative: true}, nil)
+	if got := c.payload(t, "ss/mac_a/"+InventorySessionID); got["complete"] != true {
+		t.Fatalf("authoritative empty scan did not establish completeness: %v", got)
+	}
+}
