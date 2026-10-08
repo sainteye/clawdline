@@ -186,21 +186,34 @@ func codexLiveFor(ctx context.Context, lives map[string]codexLiveIdentity, s ses
 	if matches != 0 {
 		return found, matches == 1
 	}
-	// A Codex tab waiting for the person can prepend this observed status
-	// marker to its title. Try its unadorned title only when the exact one
+	// A Codex tab waiting for the person alternates these two observed status
+	// markers in its title. Try its unadorned title only when the exact one
 	// matched nothing: a conversation literally named with the marker keeps
 	// its exact identity, and an ambiguous match is never ranked away.
-	if strings.HasPrefix(label, codexActionRequiredPrefix) {
-		found, matches = codexLiveMatches(ctx, lives, s, strings.TrimPrefix(label, codexActionRequiredPrefix))
+	if plain, marked := codexActionRequiredTitle(label); marked {
+		found, matches = codexLiveMatches(ctx, lives, s, plain)
 		return found, matches == 1
 	}
 	return codexLiveIdentity{}, false
 }
 
-const codexActionRequiredPrefix = "[ ! ] Action Required | "
+var codexActionRequiredPrefixes = [...]string{
+	"[ ! ] Action Required | ",
+	"[ . ] Action Required | ",
+}
+
+func codexActionRequiredTitle(label string) (string, bool) {
+	for _, prefix := range codexActionRequiredPrefixes {
+		if plain, ok := strings.CutPrefix(label, prefix); ok {
+			return plain, true
+		}
+	}
+	return label, false
+}
 
 func codexObservedTitle(label string) string {
-	return strings.TrimPrefix(codexTerminalTitle(label), codexActionRequiredPrefix)
+	plain, _ := codexActionRequiredTitle(codexTerminalTitle(label))
+	return plain
 }
 
 func codexLiveMatches(ctx context.Context, lives map[string]codexLiveIdentity, s session.Session, label string) (codexLiveIdentity, int) {
