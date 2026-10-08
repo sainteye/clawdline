@@ -52,6 +52,10 @@ import { machinesByCapability } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
+import { AllMachineSessions } from "./AllMachineSessions.js"
+import { destinationFromFragment, type SessionProjectionSource } from "./all-machine-sessions.js"
+import { statusSource } from "./status-source.js"
+import { statusProjection } from "./status-projection.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
 import { installScheduleWebhookManagement } from "./schedule-webhooks.js"
 import { installCloudPush, type CloudPushClient } from "./cloud-push.js"
@@ -130,6 +134,7 @@ type Screen =
   | { at: "revoked"; url: string }
   | { at: "machines" }
   | { at: "console" }
+  | { at: "all_sessions" }
   | { at: "blocked"; origin: string }
   | { at: "misdeclared"; reason: string }
 
@@ -176,7 +181,7 @@ async function catalog(config: CloudConfig): Promise<Record<string, string>> {
   return bundledCatalog(config, navigator.languages ?? [navigator.language], document.baseURI)
 }
 
-export function CloudGate({ declared }: { declared: string }) {
+export function CloudGate({ declared, sessionSource = null }: { declared: string; sessionSource?: SessionProjectionSource | null }) {
   const transport = useMemo(() => readDeclaration(declared), [declared])
   const [words, setWords] = useState(false)
   // A catalog that arrives late has words for a screen already on show
@@ -197,6 +202,7 @@ export function CloudGate({ declared }: { declared: string }) {
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const switcherRef = useRef<HTMLDivElement>(null)
   const switchButtonRef = useRef<HTMLButtonElement>(null)
+  const beforeAllHash = useRef("")
   // Forgetting a machine (`forget.ts`): which one is being asked about, which
   // ones this tab or the account says are forgotten, and what the account
   // answered about the last one. The relay can retain an old snapshot after
@@ -246,6 +252,8 @@ export function CloudGate({ declared }: { declared: string }) {
   const session = useRef<RecoverableCloudSession | null>(null)
   const line = useRef<CloudConnection | null>(null)
   const client = useRef<CloudClientHandle | null>(null)
+  const [clientEpoch, setClientEpoch] = useState(0)
+  const liveSessionSource = useMemo(() => sessionSource ?? statusSource(() => client.current), [sessionSource])
   useEffect(() => clearTerminalCloseStates(), [who?.account])
   const reader = useRef<RelayReader | null>(null)
   const unlisten = useRef<(() => void) | null>(null)
@@ -353,6 +361,10 @@ export function CloudGate({ declared }: { declared: string }) {
     const next = new RelayReader(machine.id, {
       strings: () => (config ? catalog(config) : Promise.resolve({})),
       carry: CARRY_TABLE,
+      statusList: () => {
+        const result = statusProjection(client.current, machine.id)
+        return { at: result.observedAt ?? Date.now(), complete: result.kind === "ready" }
+      },
     })
     const writer = new RelayWriter(next.writeHost)
     next.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
@@ -649,6 +661,7 @@ export function CloudGate({ declared }: { declared: string }) {
         case "connected": {
           const next = update.client
           client.current = next
+          setClientEpoch((epoch) => epoch + 1)
           setWho({ account: next.account ?? "", device: next.deviceID ?? "" })
           // The Devices page reads the account's machines through this, and
           // says so under its heading. It is the client at the moment of the
@@ -681,7 +694,7 @@ export function CloudGate({ declared }: { declared: string }) {
           unlisten.current?.()
           unlisten.current = next.events((event) => {
             // The list is for choosing; once a machine is on screen nobody is looking at it.
-            if (!reader.current && (event.type === "orchestrator" || event.type === "sessions")) listMachines()
+            if (!reader.current && (event.type === "orchestrator" || event.type === "session_status")) listMachines()
             // A decryptable inventory clears only the problem attributed to
             // that machine. One machine answering is not evidence that a
             // different machine's key problem went away.
@@ -787,6 +800,19 @@ export function CloudGate({ declared }: { declared: string }) {
   // A machine this tab chose before, once it is listed again.
   useEffect(() => {
     if (screen.at !== "machines" || !machines || !who) return
+    const exact = destinationFromFragment(location.hash)
+    if (exact) {
+      const target = machines.find((machine) => machine.id === exact.machineID && machine.selectable)
+      if (!target) return
+      if (machines.filter((machine) => machine.selectable).length >= 2) setScreen({ at: "all_sessions" })
+      else choose(target)
+      return
+    }
+    if (machines.filter((machine) => machine.selectable).length >= 2 &&
+      location.hash === "#all-machines") {
+      setScreen({ at: "all_sessions" })
+      return
+    }
     const id = machineForAddress(location.hash, remembered())
     const again = machines.find((m) => m.id === id && m.selectable)
     if (again) choose(again)
@@ -882,6 +908,18 @@ export function CloudGate({ declared }: { declared: string }) {
     choose(machine)
   }
 
+  const openAllSessions = () => {
+    setSwitcherOpen(false)
+    beforeAllHash.current = location.hash
+    history.pushState({ view: "all-machines" }, "", "#all-machines")
+    setScreen({ at: "all_sessions" })
+  }
+
+  const closeAllSessions = () => {
+    history.replaceState(history.state, "", location.pathname + location.search + beforeAllHash.current)
+    setScreen({ at: chosen ? "console" : "machines" })
+  }
+
   // Which machine this is and whether it answers, in one control: the
   // console's connection light is handed in (`App`'s `aside`) and drawn as the
   // dot before the name, so the phone's one header line keeps its room for the
@@ -940,6 +978,8 @@ export function CloudGate({ declared }: { declared: string }) {
           </div>
           <p className="cloud-switch-title">{nextWord("cloudMachinesLede")}</p>
           <div className="cloud-switch-options">
+            {quickMachines.length >= 2 && <button type="button" className="cloud-switch-option"
+              onClick={openAllSessions}>{nextWord("cloudAllMachines")}</button>}
             {quickMachines.map((machine) => {
               const current = machine.id === chosen.id
               const identity = machineIdentityFacts(machine)
@@ -1073,12 +1113,27 @@ export function CloudGate({ declared }: { declared: string }) {
   // drawn over it, as the door is over a local console (`door/Door.tsx`).
   return (
     <>
-      {chosen && who && transport.kind === "cloud" && (
+      {chosen && who && transport.kind === "cloud" && screen.at !== "all_sessions" && (
         <CloudAccountContext.Provider value={{ apiOrigin: transport.config.apiOrigin, deviceID: who.device }}>
-          <App aside={aside} />
+          <App aside={aside} cloudSessions={<AllMachineSessions
+            key={clientEpoch + ":" + chosen.id}
+            embedded
+            machines={[{ id: chosen.id, name: chosen.name || chosen.label || chosen.id,
+              platform: platformWord(machineIdentityFacts(chosen).platform), freshness: chosen.freshness }]}
+            source={liveSessionSource}
+          />} />
         </CloudAccountContext.Provider>
       )}
-      {words && (screen.at !== "console" || pairing) && (
+      {words && screen.at === "all_sessions" && <AllMachineSessions
+        key={clientEpoch}
+        machines={quickMachines.map((machine) => ({
+          id: machine.id, name: machine.name || machine.label || machine.id,
+          platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
+        }))}
+        source={liveSessionSource}
+        onClose={closeAllSessions}
+      />}
+      {words && (screen.at !== "console" && screen.at !== "all_sessions" || pairing) && (
         <GateCard
           screen={screen}
           who={who}

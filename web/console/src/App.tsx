@@ -20,6 +20,7 @@ import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
 import { bootLocalCatalog } from "./catalog.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
+import { destinationFromFragment } from "./cloud/all-machine-sessions.js"
 import { hasDocumentIntent } from "./legacy/documents-bridge.js"
 import { NewBuild } from "./NewBuild.js"
 import { MachineDashboard } from "./machine/MachineDashboard.js"
@@ -192,7 +193,7 @@ function rowNode(id: string): HTMLElement | null {
  * light and draws both in one control (`cloud/CloudGate.tsx`) — on a phone two
  * pills beside each other left the counts no room to be read.
  */
-export default function App({ aside }: { aside?: ReactNode | ((light: ConnectionLight) => ReactNode) } = {}) {
+export default function App({ aside, cloudSessions }: { aside?: ReactNode | ((light: ConnectionLight) => ReactNode); cloudSessions?: ReactNode } = {}) {
   const fleet = useFleet(client)
   const light = useConnectionLight(fleet.live, fleet.refresh)
   const machineVersion = useMachineVersion()
@@ -337,13 +338,14 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
         writeHash("#page=" + encodeURIComponent(from))
         return
       }
-      askedRef.current = documentLink ? null : sessionsInFragment(location.hash)
+      askedRef.current = documentLink || (cloudSessions && destinationFromFragment(location.hash))
+        ? null : sessionsInFragment(location.hash)
       if (askedRef.current) openAskedRef.current()
     }
     routeTo()
     window.addEventListener("hashchange", routeTo)
     return () => window.removeEventListener("hashchange", routeTo)
-  }, [])
+  }, [!!cloudSessions])
 
   const rows = fleet.snapshot?.sessions ?? []
   const rowsRef = useRef(rows)
@@ -859,7 +861,7 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
         </div>
       </nav>
 
-      <SessionsPage
+      {cloudSessions ? (page === "sessions" ? cloudSessions : null) : <SessionsPage
         rows={rows}
         loaded={fleet.loaded}
         arrived={fleet.snapshot !== null}
@@ -878,7 +880,7 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
         onOpen={(id) => openSession(id)}
         onBack={() => closeDetail()}
         onDid={fleet.refresh}
-      />
+      />}
       {Object.values(PAGE_MODULES).map(({ id, Component }) => (
         // Mounted once opened and kept, as the original keeps its sections in
         // the document and only hides them.
