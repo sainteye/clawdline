@@ -3714,7 +3714,7 @@
   "next.smartTitleAction": "AI でこの Session に名前を付ける",
   "next.smartTitleButton": "AI で名前を付ける",
   "next.smartTitleConfirmSay": "Clawdline は、このセッションの依頼とアシスタントの最新の返信を {assistant} に送り、小さなモデル処理を 1 回実行します。その回答をセッションのタイトルとして保存し、回答したアシスタントの利用枠を消費します。モデルを呼び出さずに自分でタイトルを編集する場合は、キャンセルしてください。",
-  "next.smartTitleConfirmSayAuto": "Clawdline は、このセッションの依頼とアシスタントの最新の返信を Claude Code に送り、小さなモデル処理を 1 回実行します。Claude Code の利用枠が残っていないか、インストールされていない場合に限り Codex に送ります。回答をセッションのタイトルとして保存し、回答したアシスタントの利用枠を消費します。モデルを呼び出さずに自分でタイトルを編集する場合は、キャンセルしてください。",
+  "next.smartTitleConfirmSayAuto": "Clawdline は、このセッションの依頼とアシスタントの最新の返信を Claude Code に送り、タイトルを作成します。使用できるタイトルが返らなかった場合は、同じ内容を Codex に 1 回送ります。両方のアカウントでそれぞれ 1 回分の利用枠を消費する可能性があります。回答はセッションのタイトルとして保存されます。モデルを呼び出さずに自分でタイトルを編集する場合は、キャンセルしてください。",
   "next.smartTitleConfirmTitle": "このセッションをAIで名付けますか?",
   "next.smartTitleFailed": "{assistant} は使用可能なタイトルを返しませんでした。タイトルは変更されません。",
   "next.smartTitleNoNamer": "{assistant}、設定で選択したネーミングアシスタントは、このマシンにインストールされていない。",

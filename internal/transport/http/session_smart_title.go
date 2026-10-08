@@ -16,7 +16,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
-// smartSessionTitle spends one explicitly confirmed, receipted model turn and
+// smartSessionTitle spends one receipted request with at most two model turns and
 // makes its answer durable through the same local title store as manual edits.
 func (s *Server) smartSessionTitle(w http.ResponseWriter, r *http.Request, id string, findContext context.Context) {
 	item, err := s.actions().Find(findContext, id)
@@ -107,10 +107,8 @@ func (s *Server) firstRequest(item session.Session) (string, error) {
 	return transcript.FirstUser(path, string(item.Assistant))
 }
 
-// autoNamingOrder is who `auto` asks, in order. Claude Code is first; Codex
-// is asked only when Claude Code cannot answer at all — no usage left, or not
-// installed — never after a turn that ran and produced nothing usable, which
-// would spend twice for one press.
+// autoNamingOrder is who `auto` asks, in order. A failed or unusable answer
+// moves to the other assistant, for at most two model turns per request.
 var autoNamingOrder = []string{"claude", "codex"}
 
 // nameWith runs the naming turn for the assistant chosen in Settings, each
@@ -123,13 +121,22 @@ func (s *Server) nameWith(ctx context.Context, first, assistant string) (title, 
 		order = autoNamingOrder
 	}
 	var said []string
+	var lastErr error
 	quota := false
+	failed := false
 	for _, candidate := range order {
 		turn, cancel := context.WithTimeout(ctx, time.Duration(CapacityLimit(capacity.IntentPlannerSeconds))*time.Second)
 		title, err = s.namer()(turn, first, candidate)
 		cancel()
 		switch {
 		case err == nil:
+			title = normalizedSessionTitle(title)
+			if title == "" || !titleWithinLimit(title) {
+				said = append(said, candidate+":invalid_title")
+				failed = true
+				err = errors.New("naming assistant returned an invalid title")
+				break
+			}
 			said = append(said, candidate+":ok")
 			return title, candidate, strings.Join(said, ","), nil
 		case errors.Is(err, planner.ErrOutOfQuota):
@@ -138,17 +145,27 @@ func (s *Server) nameWith(ctx context.Context, first, assistant string) (title, 
 		case errors.Is(err, planner.ErrNoPlanner):
 			said = append(said, candidate+":not_installed")
 		default:
+			failed = true
 			said = append(said, candidate+":failed")
-			return "", "", strings.Join(said, ","), err
 		}
+		lastErr = err
 		if ctx.Err() != nil {
 			break
 		}
 	}
-	if quota {
-		err = fmt.Errorf("%w: %v", planner.ErrOutOfQuota, err)
+	if failed {
+		if lastErr == nil || errors.Is(lastErr, planner.ErrNoPlanner) || errors.Is(lastErr, planner.ErrOutOfQuota) {
+			lastErr = errors.New("naming assistant did not return a usable title")
+		}
+		return "", "", strings.Join(said, ","), lastErr
 	}
-	return "", "", strings.Join(said, ","), err
+	if quota {
+		lastErr = fmt.Errorf("%w: %v", planner.ErrOutOfQuota, lastErr)
+	}
+	if lastErr == nil {
+		lastErr = planner.ErrNoPlanner
+	}
+	return "", "", strings.Join(said, ","), lastErr
 }
 
 func (s *Server) namer() func(context.Context, string, string) (string, error) {

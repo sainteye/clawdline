@@ -107,7 +107,7 @@ const words = {
     smartTitleFailed: "{assistant} did not return a usable title. No title was changed.",
     smartTitleNoNamer: "{assistant}, the naming assistant chosen in Settings, is not installed on this machine.",
     smartTitleConfirmSayAuto:
-      "Clawdline will send this session's requests and the assistant's latest reply to Claude Code for one small model turn, and to Codex only if Claude Code has no usage left or is not installed. The answer is saved as the session title and uses the quota of whichever assistant answered. Cancel to make no model call and edit the title yourself instead.",
+      "Clawdline will send this session's requests and the assistant's latest reply to Claude Code to name it. If Claude Code cannot return a usable title, Clawdline will send the same content to Codex once. This may use one turn on each account. The answer is saved as the session title. Cancel to make no model call and edit the title yourself instead.",
     smartTitleSavedBy: "Smart title saved, named by {assistant}.",
     smartTitleOutOfQuotaAll:
       "Claude Code and Codex both have no usage left on their accounts, so no title was changed. Try again once either one resets.",
@@ -1500,7 +1500,7 @@ const words = {
     smartTitleFailed: "{assistant} 沒有回傳可用的標題，標題沒有變更。",
     smartTitleNoNamer: "設定裡選的命名助理 {assistant} 沒有安裝在這台機器上。",
     smartTitleConfirmSayAuto:
-      "Clawdline 會把這個 session 的需求與助理最新的回覆交給 Claude Code 跑一次小型模型 turn；只有在 Claude Code 額度用完或沒安裝時，才改交給 Codex。答案會存成 session 標題，並使用實際回答的那個助理的額度。取消就不會呼叫模型，也可以改用手動編輯標題。",
+      "Clawdline 會先把這個 session 的需求與助理最新回覆交給 Claude Code 命名；若未取得可用標題，就把相同內容交給 Codex 再試一次。這可能分別使用兩個帳號各一次模型額度。取得的標題會存成 session 標題。取消就不會呼叫模型，也可以手動編輯標題。",
     smartTitleSavedBy: "智能標題已儲存（由 {assistant} 命名）。",
     smartTitleOutOfQuotaAll: "Claude Code 和 Codex 的額度都已用完，標題沒有變更。等其中一個額度恢復再試。",
     smartTitleNoNamerAll: "這台機器上沒有安裝 Claude Code，也沒有 Codex，標題沒有變更。",

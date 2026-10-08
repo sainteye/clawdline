@@ -282,6 +282,8 @@ func TestNamerTellsAnExhaustedAccountFromOtherFailures(t *testing.T) {
 		{"codex", "", "ERROR: You\u2019ve hit your usage limit. Visit the settings page or try again at Sep 27th, 2:11 PM.\n", true},
 		{"claude", `{"type":"result","is_error":true,"result":"Claude AI usage limit reached|1790000000"}`, "", true},
 		{"claude", `{"type":"result","is_error":true,"result":"5-hour limit reached \u2219 resets 3pm"}`, "", true},
+		{"claude", `{"type":"result","is_error":true,"result":"You've hit your weekly limit · resets 4am (Asia/Taipei)"}`, "", true},
+		{"claude", `{"type":"result","is_error":true,"error":"rate_limit"}`, "", true},
 		{"codex", "", "ERROR: stream disconnected before completion\n", false},
 		{"claude", "", "Error: not logged in\n", false},
 	}

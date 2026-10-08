@@ -62,9 +62,9 @@ var ErrNoPlanner = errors.New("no planner installed")
 var ErrOutOfQuota = errors.New("assistant usage limit reached")
 
 // quotaWords are the phrases each CLI prints when its account is out of
-// usage: Codex's "You've hit your usage limit", Claude's "usage limit
-// reached" and "5-hour limit reached".
-var quotaWords = []string{"usage limit", "limit reached"}
+// usage. Claude Code may say "You've hit your weekly limit" instead of its
+// older "usage limit reached" or "5-hour limit reached" wording.
+var quotaWords = []string{"usage limit", "limit reached", "weekly limit", `"rate_limit"`}
 
 // outOfQuota says whether what an assistant printed is its usage-limit refusal.
 func outOfQuota(said []byte) bool {

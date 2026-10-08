@@ -3714,7 +3714,7 @@
   "next.smartTitleAction": "Diese Session mit KI benennen",
   "next.smartTitleButton": "Mit KI benennen",
   "next.smartTitleConfirmSay": "Clawdline sendet die Anfragen dieser Session und die letzte Antwort des Assistenten für einen kurzen Modelldurchlauf an {assistant}. Die Antwort wird als Session-Titel gespeichert und verbraucht das Kontingent dieses Assistenten. Brechen Sie ab, um keinen Modellaufruf auszuführen und den Titel selbst zu bearbeiten.",
-  "next.smartTitleConfirmSayAuto": "Clawdline sendet die Anfragen dieser Session und die letzte Antwort des Assistenten für einen kurzen Modelldurchlauf an Claude Code. Nur wenn dessen Kontingent aufgebraucht oder Claude Code nicht installiert ist, wird Codex verwendet. Die Antwort wird als Session-Titel gespeichert und verbraucht das Kontingent des antwortenden Assistenten. Brechen Sie ab, um keinen Modellaufruf auszuführen und den Titel selbst zu bearbeiten.",
+  "next.smartTitleConfirmSayAuto": "Clawdline sendet die Anfragen dieser Session und die letzte Antwort des Assistenten an Claude Code, um einen Titel zu erstellen. Wenn Claude Code keinen brauchbaren Titel liefert, werden dieselben Inhalte einmal an Codex gesendet. Dabei kann auf jedem Konto ein Modellaufruf verbraucht werden. Die Antwort wird als Session-Titel gespeichert. Brechen Sie ab, um keinen Modellaufruf auszuführen und den Titel selbst zu bearbeiten.",
   "next.smartTitleConfirmTitle": "Diese Session mit KI benennen?",
   "next.smartTitleFailed": "{assistant} hat keinen verwendbaren Titel geliefert. Der Titel wurde nicht geändert.",
   "next.smartTitleNoNamer": "{assistant}, der in Einstellungen gewählte Namensassistent, ist nicht auf diesem Computer installiert.",

@@ -3714,7 +3714,7 @@
   "next.smartTitleAction": "智能命名这个 session",
   "next.smartTitleButton": "智能命名",
   "next.smartTitleConfirmSay": "Clawdline 会把这个 session 的需求与助理最新的回复交给 {assistant} 执行一次小型模型 turn，再把答案存成 session 标题；这会使用该助理的额度。取消就不会调用模型，也可以改用手动编辑标题。",
-  "next.smartTitleConfirmSayAuto": "Clawdline 会把这个 session 的需求与助理最新的回复交给 Claude Code 执行一次小型模型 turn；只有在 Claude Code 额度用完或没安装时，才改交给 Codex。答案会存成 session 标题，并使用实际回答的那个助理的额度。取消就不会调用模型，也可以改用手动编辑标题。",
+  "next.smartTitleConfirmSayAuto": "Clawdline 会先把这个 session 的需求与助理最新回复交给 Claude Code 命名；若未取得可用标题，就把相同内容交给 Codex 再试一次。这可能分别使用两个账号各一次模型额度。取得的标题会存成 session 标题。取消就不会调用模型，也可以手动编辑标题。",
   "next.smartTitleConfirmTitle": "要智能命名这个 session 吗？",
   "next.smartTitleFailed": "{assistant} 没有回传可用的标题，标题没有变更。",
   "next.smartTitleNoNamer": "设置里选的命名助理 {assistant} 没有安装在这台机器上。",

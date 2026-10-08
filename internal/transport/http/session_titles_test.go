@@ -222,10 +222,9 @@ func TestSessionTitleRowsExpireAndKeepTheNewestBound(t *testing.T) {
 	}
 }
 
-// `auto` asks Claude Code first and Codex only when Claude Code cannot answer
-// at all. A turn that ran and failed is not retried on the other account, and
-// when both are out of usage the refusal still says so.
-func TestAutoNamingFallsBackOnlyWhenAnAssistantCannotAnswer(t *testing.T) {
+// `auto` asks Claude Code first and Codex once if the first answer is unusable.
+// It preserves the distinction between exhausted accounts and other failures.
+func TestAutoNamingTriesTheOtherAssistantAfterAnUnusableAnswer(t *testing.T) {
 	quota := fmt.Errorf("%w: exit status 1", planner.ErrOutOfQuota)
 	cases := []struct {
 		name    string
@@ -237,7 +236,9 @@ func TestAutoNamingFallsBackOnlyWhenAnAssistantCannotAnswer(t *testing.T) {
 		{"claude answers", map[string]error{"claude": nil, "codex": nil}, "", "claude", "claude"},
 		{"claude out of usage", map[string]error{"claude": quota, "codex": nil}, "", "claude,codex", "codex"},
 		{"claude not installed", map[string]error{"claude": planner.ErrNoPlanner, "codex": nil}, "", "claude,codex", "codex"},
-		{"claude failed", map[string]error{"claude": errors.New("stream closed"), "codex": nil}, "naming_failed", "claude", ""},
+		{"claude failed", map[string]error{"claude": errors.New("stream closed"), "codex": nil}, "", "claude,codex", "codex"},
+		{"both failed", map[string]error{"claude": errors.New("stream closed"), "codex": errors.New("bad JSON")}, "naming_failed", "claude,codex", ""},
+		{"failed then exhausted", map[string]error{"claude": errors.New("stream closed"), "codex": quota}, "naming_failed", "claude,codex", ""},
 		{"both out of usage", map[string]error{"claude": quota, "codex": quota}, "namer_out_of_quota", "claude,codex", ""},
 		{"one out, one missing", map[string]error{"claude": quota, "codex": planner.ErrNoPlanner}, "namer_out_of_quota", "claude,codex", ""},
 		{"neither installed", map[string]error{"claude": planner.ErrNoPlanner, "codex": planner.ErrNoPlanner}, "no_namer", "claude,codex", ""},
@@ -276,6 +277,43 @@ func TestAutoNamingFallsBackOnlyWhenAnAssistantCannotAnswer(t *testing.T) {
 			if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &answer) != nil ||
 				string(answer.NamedBy) != c.namedBy || answer.Title != "Named by "+c.namedBy {
 				t.Fatalf("answer = %d %s", rec.Code, rec.Body)
+			}
+		})
+	}
+}
+
+func TestAutoNamingRetriesAnInvalidTitleButAChosenAssistantDoesNot(t *testing.T) {
+	for _, choice := range []string{"auto", "claude"} {
+		t.Run(choice, func(t *testing.T) {
+			item := session.Session{ID: "%71", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
+				ConversationID: "conversation-71", State: session.StateIdle}
+			s := paneServer(t, &pane{s: item})
+			s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
+			s.icons = &icon.Registry{}
+			if _, err := nextconfig.Open(s.cfg.Dir).Set(map[string]any{"auto_name_assistant": choice}); err != nil {
+				t.Fatal(err)
+			}
+			s.firstSessionRequest = func(session.Session) (string, error) { return "name this", nil }
+			s.sessionTailRead = func(session.Session) (transcript.Page, error) { return transcript.Page{}, nil }
+			var asked []string
+			s.nameSession = func(_ context.Context, _ string, assistant string) (string, error) {
+				asked = append(asked, assistant)
+				if assistant == "claude" {
+					return "  ", nil
+				}
+				return "Usable title", nil
+			}
+			rec := act(t, s, "smart-title", item.ID, "smart-invalid", `{}`)
+			if choice == "auto" {
+				var answer contract.SessionTitleReply
+				if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &answer) != nil ||
+					answer.Title != "Usable title" || string(answer.NamedBy) != "codex" || strings.Join(asked, ",") != "claude,codex" {
+					t.Fatalf("auto answer = %d %s, asked=%v", rec.Code, rec.Body, asked)
+				}
+				return
+			}
+			if rec.Code != http.StatusBadGateway || codeOf(t, rec) != "naming_failed" || strings.Join(asked, ",") != "claude" {
+				t.Fatalf("chosen assistant answer = %d %s, asked=%v", rec.Code, rec.Body, asked)
 			}
 		})
 	}

@@ -3714,7 +3714,7 @@
   "next.smartTitleAction": "poner nombre a esta sesión con IA",
   "next.smartTitleButton": "Poner nombre con IA",
   "next.smartTitleConfirmSay": "Clawdline enviará las solicitudes de esta Sesión y la última respuesta del asistente a {assistant} para un turno breve del modelo, y guardará la respuesta como título de la Sesión. Consumirá cuota de ese asistente. Cancela para evitar la llamada al modelo y editar el título tú mismo.",
-  "next.smartTitleConfirmSayAuto": "Clawdline enviará las solicitudes de esta sesión y la última respuesta del asistente a Claude Code para un turno breve del modelo; solo recurrirá a Codex si Claude Code se quedó sin cuota o no está instalado. La respuesta se guardará como título de la sesión y consumirá la cuota del asistente que responda. Cancela para evitar la llamada al modelo y editar tú mismo el título.",
+  "next.smartTitleConfirmSayAuto": "Clawdline enviará las solicitudes de esta sesión y la última respuesta del asistente a Claude Code para crear un título. Si Claude Code no devuelve un título válido, enviará el mismo contenido una vez a Codex. Esto puede consumir una llamada en cada cuenta. La respuesta se guardará como título de la sesión. Cancela para evitar las llamadas al modelo y editar tú mismo el título.",
   "next.smartTitleConfirmTitle": "¿Nombrar esta sesión con AI?",
   "next.smartTitleFailed": "{assistant} no devolvió un título utilizable. No se cambió el título.",
   "next.smartTitleNoNamer": "{assistant}, el asistente de nombramiento elegido en Ajustes, no está instalado en esta máquina.",

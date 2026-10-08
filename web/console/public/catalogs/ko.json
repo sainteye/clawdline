@@ -3714,7 +3714,7 @@
   "next.smartTitleAction": "AI로 이 세션의 이름을 지정",
   "next.smartTitleButton": "인공지능으로 이름",
   "next.smartTitleConfirmSay": "Clawdline이 이 세션의 요청과 어시스턴트의 최근 답변을 {assistant}에게 보내 짧은 모델 작업 한 번을 실행하고, 그 결과를 세션 제목으로 저장합니다. 해당 어시스턴트의 할당량이 사용됩니다. 취소하면 모델을 호출하지 않고 제목을 직접 수정할 수 있습니다.",
-  "next.smartTitleConfirmSayAuto": "Clawdline이 이 세션의 요청과 어시스턴트의 최신 답변을 Claude Code에 보내 작은 모델 작업 한 번을 실행합니다. Claude Code의 사용량이 소진됐거나 설치되지 않았을 때만 Codex로 보냅니다. 결과는 세션 제목으로 저장되며 실제 응답한 어시스턴트의 사용량이 차감됩니다. 취소하면 모델을 호출하지 않고 제목을 직접 편집할 수 있습니다.",
+  "next.smartTitleConfirmSayAuto": "Clawdline이 이 세션의 요청과 어시스턴트의 최신 답변을 Claude Code에 보내 제목을 만듭니다. 사용할 수 있는 제목이 반환되지 않으면 같은 내용을 Codex에 한 번 보냅니다. 각 계정에서 모델 호출 한 번씩 사용될 수 있습니다. 결과는 세션 제목으로 저장됩니다. 취소하면 모델을 호출하지 않고 제목을 직접 편집할 수 있습니다.",
   "next.smartTitleConfirmTitle": "AI로 이 세션의 이름을 지정할까요?",
   "next.smartTitleFailed": "{assistant}는 사용 가능한 제목을 반환하지 않았습니다. 제목은 변경되지 않았습니다.",
   "next.smartTitleNoNamer": "{assistant}, 설정에서 선택한 이름 보조기는 이 기기에 설치되어 있지 않습니다.",

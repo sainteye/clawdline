@@ -3715,7 +3715,7 @@
   "next.smartTitleAction": "name this session with AI",
   "next.smartTitleButton": "Name with AI",
   "next.smartTitleConfirmSay": "Clawdline will send this session's requests and the assistant's latest reply to {assistant} for one small model turn, then save its answer as the session title. This uses that assistant's quota. Cancel to make no model call and edit the title yourself instead.",
-  "next.smartTitleConfirmSayAuto": "Clawdline will send this session's requests and the assistant's latest reply to Claude Code for one small model turn, and to Codex only if Claude Code has no usage left or is not installed. The answer is saved as the session title and uses the quota of whichever assistant answered. Cancel to make no model call and edit the title yourself instead.",
+  "next.smartTitleConfirmSayAuto": "Clawdline will send this session's requests and the assistant's latest reply to Claude Code to name it. If Claude Code cannot return a usable title, Clawdline will send the same content to Codex once. This may use one turn on each account. The answer is saved as the session title. Cancel to make no model call and edit the title yourself instead.",
   "next.smartTitleConfirmTitle": "Name this session with AI?",
   "next.smartTitleFailed": "{assistant} did not return a usable title. No title was changed.",
   "next.smartTitleNoNamer": "{assistant}, the naming assistant chosen in Settings, is not installed on this machine.",
