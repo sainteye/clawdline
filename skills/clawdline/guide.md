@@ -124,6 +124,13 @@ ten items, mostly on queued `heavy` runs.
 If an earlier `task wait` already printed the terminal result and closed the notice, a late notice
 for that same task does not require another `task show` or another integration.
 
+**Show heavy work in the conversation.** Before starting `clawdline heavy` or handing a long
+command to `clawdline callback`, make your last person-facing sentence start with `🏗️` and name the
+work being started. If the command is accepted as a callback (`heavy` exit 76 or `callback <id>
+briefed`), end the turn with a short `🏗️` sentence saying what is waiting and that the completion
+notice will bring you back. Give no repeated waiting updates. If the handoff is refused or `heavy`
+exits 75, say that the command did not start instead of using the waiting signal.
+
 **A short wait inside the current turn.** Use this only when the result is needed to finish work
 already in this turn and it is expected soon. Make one tool call with a long enough timeout; a
 tool returning a session ID is still the same call when you collect it inside that cell. If the
