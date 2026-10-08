@@ -237,6 +237,29 @@ func (s *Store) Pair(ctx context.Context, id string) (Pair, error) {
 	return pair, err
 }
 
+// ListPairs reads the bounded durable table, including pending and revoked
+// rows. The caller decides which rows are currently displayable. An oversized
+// or unreadable table is an error, not an apparently empty authority list.
+func (s *Store) ListPairs(ctx context.Context) ([]Pair, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT body FROM peer_pairs ORDER BY rowid DESC LIMIT ?", PairLimit+1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	pairs := make([]Pair, 0)
+	for rows.Next() {
+		var pair Pair
+		if err := rows.Scan(&pairBody{into: &pair}); err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, pair)
+		if len(pairs) > PairLimit {
+			return nil, ErrFull
+		}
+	}
+	return pairs, rows.Err()
+}
+
 func (s *Store) PinGrant(ctx context.Context, grant Grant) error {
 	if grant.ID == "" || grant.PairID == "" || grant.Source.MachineID == "" ||
 		grant.Source.SessionID == "" || grant.Source.ExecutionGeneration == "" ||
@@ -279,6 +302,28 @@ func (s *Store) Grant(ctx context.Context, id string) (Grant, error) {
 		return Grant{}, ErrNotFound
 	}
 	return grant, err
+}
+
+// ListGrants has the same complete-or-error bound as ListPairs. It does not
+// put request bodies, encryption material or receipt contents on the wire.
+func (s *Store) ListGrants(ctx context.Context) ([]Grant, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT body FROM peer_grants ORDER BY rowid DESC LIMIT ?", GrantLimit+1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	grants := make([]Grant, 0)
+	for rows.Next() {
+		var grant Grant
+		if err := rows.Scan(&pairBody{into: &grant}); err != nil {
+			return nil, err
+		}
+		grants = append(grants, grant)
+		if len(grants) > GrantLimit {
+			return nil, ErrFull
+		}
+	}
+	return grants, rows.Err()
 }
 
 // PutInbox is idempotent only for byte-identical request and content. The

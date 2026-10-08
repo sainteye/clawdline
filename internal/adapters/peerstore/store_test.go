@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -146,6 +147,33 @@ func TestPeerInboxPagePinsExecutionAndBoundsTheCloudReply(t *testing.T) {
 	}
 	if _, _, err := st.InboxPage(ctx, target, "other-generation"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("foreign generation cursor accepted: %v", err)
+	}
+}
+
+func TestPeerAuthorityListsRefuseAnOversizedStore(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "private-peers"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for i := 0; i <= PairLimit; i++ {
+		if _, err := st.db.ExecContext(ctx, "INSERT INTO peer_pairs(id,body) VALUES(?,?)",
+			fmt.Sprintf("pair-%d", i), []byte(`{}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.ListPairs(ctx); !errors.Is(err, ErrFull) {
+		t.Fatalf("oversized pair authority list: %v", err)
+	}
+	for i := 0; i <= GrantLimit; i++ {
+		if _, err := st.db.ExecContext(ctx, "INSERT INTO peer_grants(id,pair_id,body) VALUES(?,?,?)",
+			fmt.Sprintf("grant-%d", i), "pair", []byte(`{}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.ListGrants(ctx); !errors.Is(err, ErrFull) {
+		t.Fatalf("oversized grant authority list: %v", err)
 	}
 }
 
