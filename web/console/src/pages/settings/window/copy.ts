@@ -52,7 +52,7 @@ const ownWords = {
     settingsProviderDefault: "Assistant default",
     settingsITermNative: "iTerm2 (native tab)",
     settingsSessionTerminalHint:
-      "A different question from where the hotkey works, above. Automatic uses iTerm2 while it is open and tmux while it is not. Choosing iTerm2 names iTerm2: when it is closed the start is refused, even with a tmux server running. With tmux installed, both open the session in its own tmux session and show it in an iTerm2 tab, so reading and typing never wait on iTerm2. iTerm2 (native tab) runs the session in the tab itself, as before. tmux always opens in a tmux server, even with iTerm2 open. The next session follows this; nothing needs restarting.",
+      "Automatic uses iTerm2 while it is open and tmux while it is not. Choosing iTerm2 names iTerm2: when it is closed the start is refused, even with a tmux server running. With tmux installed, both open the session in its own tmux session and show it in an iTerm2 tab, so reading and typing never wait on iTerm2. iTerm2 (native tab) runs the session in the tab itself, as before. tmux always opens in a tmux server, even with iTerm2 open. The next session follows this; nothing needs restarting.",
   },
   "zh-Hant": {
     settingsRemoteHint:
@@ -96,7 +96,7 @@ const ownWords = {
     settingsProviderDefault: "由助理決定",
     settingsITermNative: "iTerm2（原生分頁）",
     settingsSessionTerminalHint:
-      "跟上面熱鍵在哪裡生效是兩回事。自動是 iTerm2 開著就用它、沒開就走 tmux；選 iTerm2 就是指名要 iTerm2，旁邊有跑著的 tmux server 也不算答案，iTerm2 關著就直接拒絕。有裝 tmux 的話，這兩種都會把 session 開在它自己的 tmux session 裡，再用一個 iTerm2 分頁顯示它，讀畫面和打字就不必等 iTerm2。iTerm2（原生分頁）則跟以前一樣，直接在分頁裡跑。選 tmux 則是就算 iTerm2 開著也一律開在 tmux server 裡。下一個開的 session 就會照這個走，不用重開 app。",
+      "自動是 iTerm2 開著就用它、沒開就走 tmux；選 iTerm2 就是指名要 iTerm2，旁邊有跑著的 tmux server 也不算答案，iTerm2 關著就直接拒絕。有裝 tmux 的話，這兩種都會把 session 開在它自己的 tmux session 裡，再用一個 iTerm2 分頁顯示它，讀畫面和打字就不必等 iTerm2。iTerm2（原生分頁）則跟以前一樣，直接在分頁裡跑。選 tmux 則是就算 iTerm2 開著也一律開在 tmux server 裡。下一個開的 session 就會照這個走，不用重開 app。",
   },
 } as const
 

@@ -4100,7 +4100,7 @@
   "settings.settingsScopeRemove": "Entfernen",
   "settings.settingsScopeRunning": "Derzeit geöffnet",
   "settings.settingsSessionTerminal": "Offene neue Sessions in",
-  "settings.settingsSessionTerminalHint": "Diese Einstellung unterscheidet sich davon, wo der Hotkey funktioniert. Automatisch verwendet iTerm2, wenn es geöffnet ist, und sonst tmux. Wenn Sie iTerm2 ausdrücklich wählen, wird der Start bei geschlossenem iTerm2 abgelehnt, selbst wenn ein tmux-Server läuft. Ist tmux installiert, öffnen beide Varianten die Session in einer eigenen tmux-Session und zeigen sie in einem iTerm2-Tab an; Lesen und Tippen müssen dadurch nicht auf iTerm2 warten. iTerm2 (nativer Tab) führt die Session wie bisher direkt im Tab aus. tmux öffnet die Session immer auf einem tmux-Server, auch wenn iTerm2 geöffnet ist. Diese Einstellung gilt ab der nächsten Session; ein Neustart ist nicht nötig.",
+  "settings.settingsSessionTerminalHint": "Automatisch verwendet iTerm2, wenn es geöffnet ist, und sonst tmux. Wenn Sie iTerm2 ausdrücklich wählen, wird der Start bei geschlossenem iTerm2 abgelehnt, selbst wenn ein tmux-Server läuft. Ist tmux installiert, öffnen beide Varianten die Session in einer eigenen tmux-Session und zeigen sie in einem iTerm2-Tab an; Lesen und Tippen müssen dadurch nicht auf iTerm2 warten. iTerm2 (nativer Tab) führt die Session wie bisher direkt im Tab aus. tmux öffnet die Session immer auf einem tmux-Server, auch wenn iTerm2 geöffnet ist. Diese Einstellung gilt ab der nächsten Session; ein Neustart ist nicht nötig.",
   "settings.settingsSettle": "Pause vor Satzende",
   "settings.settingsShow": "Anzeigen",
   "settings.settingsSmartNotifications": "Intelligente Benachrichtigungen",

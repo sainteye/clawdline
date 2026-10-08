@@ -1709,6 +1709,7 @@ test("a phone reads and changes only the two default models", async () => {
     assert.equal(res.status, 501, path)
   }
   assert.equal(writeRoute("POST", "/v1/settings"), null)
+  assert.equal(writeRoute("POST", "/v1/settings/browser"), null)
 })
 
 test("a phone reads and changes only the two work gates", async () => {

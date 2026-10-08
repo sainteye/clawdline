@@ -4100,7 +4100,7 @@
   "settings.settingsScopeRemove": "移除",
   "settings.settingsScopeRunning": "现在打开的",
   "settings.settingsSessionTerminal": "新 session 开在",
-  "settings.settingsSessionTerminalHint": "跟上面热键在哪里生效是两回事。自动是 iTerm2 打开就用它、没开就走 tmux；选 iTerm2 就是指名要 iTerm2，旁边有正在运行的 tmux server 也不算答案，iTerm2 关着就直接拒绝。有装 tmux 的话，这两种都会把 session 开在它自己的 tmux session 里，再用一个 iTerm2 标签页显示它，读画面和打字就不必等 iTerm2。iTerm2（原生标签页）则跟以前一样，直接在标签页里跑。选 tmux 则是就算 iTerm2 打开也一律开在 tmux server 里。下一个开的 session 就会照这个走，不用重开 app。",
+  "settings.settingsSessionTerminalHint": "自动是 iTerm2 打开就用它、没开就走 tmux；选 iTerm2 就是指名要 iTerm2，旁边有正在运行的 tmux server 也不算答案，iTerm2 关着就直接拒绝。有装 tmux 的话，这两种都会把 session 开在它自己的 tmux session 里，再用一个 iTerm2 标签页显示它，读画面和打字就不必等 iTerm2。iTerm2（原生标签页）则跟以前一样，直接在标签页里跑。选 tmux 则是就算 iTerm2 打开也一律开在 tmux server 里。下一个开的 session 就会照这个走，不用重开 app。",
   "settings.settingsSettle": "停顿多久算一句话结束",
   "settings.settingsShow": "显示",
   "settings.settingsSmartNotifications": "智能通知",

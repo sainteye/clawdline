@@ -4100,7 +4100,7 @@
   "settings.settingsScopeRemove": "取り除く",
   "settings.settingsScopeRunning": "現在開いているアプリ",
   "settings.settingsSessionTerminal": "新しいセッションの起動先",
-  "settings.settingsSessionTerminalHint": "上のホットキーを使える場所とは別の設定です。「自動」は iTerm2 が開いている間は iTerm2 を、それ以外では tmux を使います。「iTerm2」を選ぶと iTerm2 が必要になり、tmux サーバーが動作していても iTerm2 が閉じていれば起動は拒否されます。tmux がインストールされている場合、どちらもセッションを個別の tmux セッションで起動して iTerm2 のタブに表示するため、読み取りや入力で iTerm2 を待ちません。「iTerm2（ネイティブタブ）」は以前と同じくタブ内で直接セッションを実行します。「tmux」は iTerm2 が開いていても常に tmux サーバーで起動します。次のセッションから反映され、再起動は不要です。",
+  "settings.settingsSessionTerminalHint": "「自動」は iTerm2 が開いている間は iTerm2 を、それ以外では tmux を使います。「iTerm2」を選ぶと iTerm2 が必要になり、tmux サーバーが動作していても iTerm2 が閉じていれば起動は拒否されます。tmux がインストールされている場合、どちらもセッションを個別の tmux セッションで起動して iTerm2 のタブに表示するため、読み取りや入力で iTerm2 を待ちません。「iTerm2（ネイティブタブ）」は以前と同じくタブ内で直接セッションを実行します。「tmux」は iTerm2 が開いていても常に tmux サーバーで起動します。次のセッションから反映され、再起動は不要です。",
   "settings.settingsSettle": "文の終わりと判断するまでの待機時間",
   "settings.settingsShow": "表示",
   "settings.settingsSmartNotifications": "スマート通知",

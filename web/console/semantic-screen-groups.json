@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4734,
+  "englishContentKeys": 4738,
   "riskKeys": 2066,
-  "nonRiskCount": 2668,
+  "nonRiskCount": 2672,
   "groups": [
     {
       "name": "bar / other",
@@ -2628,11 +2628,13 @@
     },
     {
       "name": "settings / other",
-      "count": 96,
+      "count": 100,
       "sources": [
         "src/pages/settings/window/copy.ts"
       ],
       "keys": [
+        "settings.browserTab",
+        "settings.machineTab",
         "settings.menuMascot",
         "settings.pairingScanTitle",
         "settings.settingsAgentNotifyNote",
@@ -2705,6 +2707,7 @@
         "settings.settingsVoiceLanguage",
         "settings.settingsVoiceLanguageFollow",
         "settings.settingsWidth",
+        "settings.statusTab",
         "settings.voiceLanguageChinese",
         "settings.voiceLanguageFixed",
         "settings.voiceMachineLocale",
@@ -2728,7 +2731,8 @@
         "settings.webCloudStatus",
         "settings.webCloudStatusConnection",
         "settings.webCloudStatusKey",
-        "settings.webCloudStatusMac"
+        "settings.webCloudStatusMac",
+        "settings.workTab"
       ]
     },
     {
