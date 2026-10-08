@@ -1,0 +1,520 @@
+{
+  "description": "Exact registered route to Agent guide part map. A row is discoverability, never authorization or proof of success. tools/contract-gen checks it against the daemon route table.",
+  "routes": [
+    {
+      "method": "*",
+      "pattern": "/reports/",
+      "guide": "report"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/artifacts/images",
+      "guide": "note"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/artifacts/images/",
+      "guide": "note"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/auth/",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/board",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/board/tracks",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/capacity",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/devices/revoke",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/keys/rotate",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/pairing",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/pairing/agent",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/pairing/agent/",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/pairing/offer",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/status",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/devstacks",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/diagnostics",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/events",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/health",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/intents",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/machine/usage",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/next/coordinator",
+      "guide": "coordination"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/next/obligations",
+      "guide": "coordination"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/assistants",
+      "guide": "inventory"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/callbacks",
+      "guide": "callback"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/completions",
+      "guide": "report"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/completions/",
+      "guide": "report"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/coordinator",
+      "guide": "coordination"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/coordinator/",
+      "guide": "coordination"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/decisions",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/decisions/",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/detached-tasks",
+      "guide": "landing"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/durable-reports/promotions",
+      "guide": "report"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/graphs",
+      "guide": "coordination"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/handoffs",
+      "guide": "landing"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/handoffs/",
+      "guide": "landing"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/inflight",
+      "guide": "running"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/inventory",
+      "guide": "inventory"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/landings",
+      "guide": "landing"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/leases",
+      "guide": "coordination"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/leases/",
+      "guide": "coordination"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/messages",
+      "guide": "send"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/notify",
+      "guide": "notify"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/pauses",
+      "guide": "coordination"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/pauses/",
+      "guide": "coordination"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/proposals",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/proposals/",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/reclaim",
+      "guide": "landing"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/root-assignments",
+      "guide": "landing"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/root-assignments/",
+      "guide": "landing"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/runs/",
+      "guide": "running"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/schedule-exports",
+      "guide": "schedule"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/schedule-imports",
+      "guide": "schedule"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/schedule-webhooks/bind",
+      "guide": "schedule"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/schedules",
+      "guide": "schedule"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/schedules/",
+      "guide": "schedule"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/sessions",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/sessions/",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/tasks",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/tasks/",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/waits",
+      "guide": "running"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/waits/",
+      "guide": "running"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/whoami",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/personas",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/places",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/places/",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/project-sync/",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/projects",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/projects/",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/push/",
+      "guide": "notify"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/screens",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/sessions",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/sessions/",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/settings",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/settings/default-models",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/settings/work-gates",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/snippets",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/snippets/",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/squad-packages/",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/squad/",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/squad/events",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/squad/events/head",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/squad/session-bindings",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/squad/session-events",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/squad/session-snapshots/",
+      "guide": "dispatch"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/strings",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/terminals",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/terminals/",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/timeline",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/transcript",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/tunnel",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/update",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/update/apply",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/usage/",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/verifications",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/verifications/",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/voice",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/voice/language",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/work/",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/work/decisions",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/work/decisions/",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/work/digests",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/work/proposals",
+      "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/work/proposals/",
+      "guide": "board"
+    }
+  ]
+}

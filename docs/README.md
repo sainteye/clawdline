@@ -20,8 +20,14 @@ Some historical design and migration records remain in Traditional Chinese.
 
 ## Using Clawdline
 
+Start with the [task-based user index](user/README.md). It leads to a first Session, cross-machine viewing, recovery, permissions, and advanced operations without requiring the API.
+
 | Document | Kind | Language | What it is |
 | --- | --- | --- | --- |
+| [user/README.md](user/README.md) | User index | English | Choose a task and see its success sign |
+| [user/first-session.md](user/first-session.md) | User page | English | Install, open, and answer a first Session |
+| [user/cloud-first-look.md](user/cloud-first-look.md) | User page | English | See a paired machine from another device |
+| [user/recovery.md](user/recovery.md) | User page | English | Recognize common symptoms and take one next action |
 | [user/install.md](user/install.md) | User page | English | Build, start the daemon, open the console, and see a session in the list |
 | [user/platforms.md](user/platforms.md) | User page | English | The macOS app, a Linux `systemd --user` service, and what Windows can do |
 | [user/sessions.md](user/sessions.md) | User page | English | Read the list, answer Agent attention notes, send messages, start, stop and close Sessions |
@@ -47,6 +53,8 @@ Some historical design and migration records remain in Traditional Chinese.
 
 | Document | Kind | Language | What it is |
 | --- | --- | --- | --- |
+| [contract-model.md](contract-model.md) | Shared vocabulary | English | States, content ownership, compatibility and publishing rules |
+| [agent-contract.md](agent-contract.md) | Agent map | English | Build-bound guide entry, operation parts and paired risk checks |
 | [ai-squad-contract.md](ai-squad-contract.md) | Public design note | English | Squad contract and role boundaries |
 | [repo-health.md](repo-health.md) | Public design note | English | Proposed governance review and document policy |
 | [token-ledger.md](token-ledger.md) | Public design note | English | What a session's tokens were spent on — board, protocol, rules, work, delegation — and how the ledger measures it |

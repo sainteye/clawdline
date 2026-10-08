@@ -8,8 +8,7 @@ session's own to-dos; and keep a list of changes waiting to be verified on **Ver
 
 All of this is local and free. The Board is off until you turn it on.
 
-The console's interface is in Traditional Chinese, the only language it ships so far. Labels
-below are given as they appear, with their meaning in parentheses.
+Labels below use Traditional Chinese examples with their English meaning; the console supports other interface languages.
 
 ## Turn the Board on
 
@@ -44,9 +43,11 @@ In the console's **設定 → 規劃與驗證 gate** block, planning is on by de
 verification is off. The macOS app also shows the same pair in **Clawdline Next → 設定⋯ →
 派工作給別的 session**.
 The two values are captured on the item's first successful assignment in each cycle; changing the
-switches later affects future cycles. With planning on, Feature and Epic need a plan and independent
-plan review before implementation; Issue is exempt. Planning off also lets an Epic skip forced
-planning. With independent verification on, the card shows the latest result, and detail shows
+switches later affects future cycles. With planning on, Feature and Epic need observable acceptance
+criteria before implementation. An Epic needs a plan and independent review; a Feature needs those
+only when its **Needs independent review** switch is on. An Issue is exempt. Planning off also lets
+an Epic skip forced planning. With independent verification on, the card shows the latest result, and
+detail shows
 bounded evidence or why a claim could not be verified. `NEEDS_WORK`, stale evidence, and technical
 failure never count as PASS. Escalations show whose decision it is; only a **waiting for you**
 decision exposes person controls. AI, person, and technical overrides are labeled as overrides.

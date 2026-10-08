@@ -92,8 +92,7 @@ fragment, which the browser never sends to a server. Treat a printed address lik
 until it has been used. On a machine with no desktop, reach it over an SSH port forward
 ([remote-access.md](remote-access.md)).
 
-**Check:** the console loads and shows the session list. Its interface is in Traditional Chinese,
-the only language it ships so far; the other pages here give each label with its meaning.
+**Check:** the console loads and shows the session list. The examples in these pages show Traditional Chinese labels with their English meaning; the console supports other interface languages.
 
 ## 3. Put a session in the list
 

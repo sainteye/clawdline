@@ -19,8 +19,7 @@ should be told subscribes once.
 - **iPhone and iPad:** iOS only notifies an app on the Home Screen. In Safari, use **Share → Add to
   Home Screen**, then open Clawdline from the Home Screen and subscribe there.
 
-The console's interface is in Traditional Chinese, the only language it ships so far. Labels below
-are given as they appear, with their meaning in parentheses.
+Labels below use Traditional Chinese examples with their English meaning; the console supports other interface languages.
 
 ## Turn them on
 

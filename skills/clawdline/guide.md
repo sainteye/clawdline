@@ -55,6 +55,8 @@ item to `done`, and it names the part to print for anything rarer.
 
 ## 2. Reaching the daemon
 
+Read `clawdline guide routes` when you need to discover this build's registered route and the part that owns it. Compare the target machine's API level and available capability first. A listed route is not permission: read its owning part for the exact action, input, precondition, bound, typed refusal, retry rule, and receipt. Stop when the capability, version, identity, or completion evidence is missing. Do not use a retired helper, another machine, or a looser route as a fallback. Accepted, executed, delivered, observed, and acknowledged are different states; claim only the state the receipt proves. The human goal for each route is indexed beside it, and `docs/contract-model.md` defines the shared terms.
+
 **Use the commands, not hand-built curl, where one exists.** They read the credential inside their
 own process, so it never appears in a command line, in `ps`, in their output or in your
 transcript. A hand-built curl without that credential answers `401 unauthorized` ("No valid
@@ -64,6 +66,7 @@ the command instead.
 | Command | What it does |
 |---|---|
 | `clawdline guide [lang]` | This guide. No daemon needed |
+| `clawdline guide routes` | Registered route inventory for this build, API levels, owning parts, and human goals; no daemon needed |
 | `clawdline session report --summary "…"` | Records your finished turn (§7) |
 | `clawdline session close [--dry-run] [--terminal id]` | Audits and closes a finished Session, never by force (§2a) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |

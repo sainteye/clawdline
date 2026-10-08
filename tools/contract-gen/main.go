@@ -111,11 +111,28 @@ func main() {
 	if err != nil {
 		fatal("%v", err)
 	}
+	agentRoutes, err := readAgentRoutes(filepath.Join(root, "api", "v1", "agent-routes.json"))
+	if err != nil {
+		fatal("agent-routes.json: %v", err)
+	}
+	if err := validateAgentRoutes(routes, agentRoutes); err != nil {
+		fatal("%v", err)
+	}
+	refusals, err := refusalReference(root)
+	if err != nil {
+		fatal("refusal reference: %v", err)
+	}
 
 	want := map[string][]byte{
 		filepath.Join(root, "internal", "contract", "zz_generated.go"): renderGo(names),
 		filepath.Join(root, "web", "contract", "src", "generated.ts"):  renderTS(names),
 		routesPath: renderRoutes(routes),
+		filepath.Join(root, "skills", "clawdline", "routes.md"):         renderAgentRoutes(routes, agentRoutes, false),
+		filepath.Join(root, "skills", "clawdline", "routes.zh-TW.md"):   renderAgentRoutes(routes, agentRoutes, true),
+		filepath.Join(root, "skills", "clawdline", "capacity.md"):       renderCapacityReference(false),
+		filepath.Join(root, "skills", "clawdline", "capacity.zh-TW.md"): renderCapacityReference(true),
+		filepath.Join(root, "skills", "clawdline", "refusals.md"):       renderRefusalReference(refusals, false),
+		filepath.Join(root, "skills", "clawdline", "refusals.zh-TW.md"): renderRefusalReference(refusals, true),
 	}
 
 	if check {

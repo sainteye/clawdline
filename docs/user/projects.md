@@ -4,8 +4,7 @@ After this page you can make a directory appear as a project to start sessions i
 worktrees and undelivered work, and give a second machine the same project names, icons and
 untracked skills as the first.
 
-The console's interface is in Traditional Chinese, the only language it ships so far. Labels below
-are given as they appear, with their meaning in parentheses.
+Labels below use Traditional Chinese examples with their English meaning; the console supports other interface languages.
 
 ## Add a project
 

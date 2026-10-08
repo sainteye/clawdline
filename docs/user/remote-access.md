@@ -14,8 +14,7 @@ Your agents and code stay on your machine whichever way you choose.
 
 The daemon itself listens on `127.0.0.1` only. None of these opens a port on your network.
 
-The console's interface is in Traditional Chinese, the only language it ships so far. Labels below
-are given as they appear, with their meaning in parentheses.
+Labels below use Traditional Chinese examples with their English meaning; the console supports other interface languages.
 
 ## A. Another computer, over SSH
 

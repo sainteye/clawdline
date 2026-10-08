@@ -7,8 +7,7 @@ result. You can tell it worked from the schedule's history.
 
 ## Availability
 
-The console's interface is in Traditional Chinese, the only language it ships so far. Labels
-below are given as they appear, with their meaning in parentheses.
+Labels below use Traditional Chinese examples with their English meaning; the console supports other interface languages.
 
 | | Free (no account) | Clawdline Cloud Pro |
 | --- | --- | --- |

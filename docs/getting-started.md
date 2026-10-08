@@ -1,4 +1,6 @@
-# Getting started
+# Getting started from source
+
+For the installed release and your first Session, start with the [user walkthrough](user/first-session.md). This page is for developers building from a clone.
 
 From a fresh clone to the console in your browser, a session in the list, and, if you want it,
 Clawdline Cloud. Every step ends with a way to check that it worked.
@@ -112,7 +114,7 @@ nothing.)
 has been used.
 
 **Check:** the console loads and shows the session list. The interface text is Traditional
-Chinese; it is the only catalog the console ships so far.
+Chinese in these examples; the console offers multiple interface languages.
 
 ## 4. Put a session in the list
 
