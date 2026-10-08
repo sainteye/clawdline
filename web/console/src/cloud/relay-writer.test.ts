@@ -1201,6 +1201,10 @@ test("the schedule form's four writes reach the machine as its own four words", 
   assert.equal(ran.status, 200)
   assert.deepEqual(await json(ran), { ok: true, task_id: "t-1" })
 
+  const forced = await reader.fetch("/v1/orchestrator/schedules/sch-9/run",
+    post({ force: true }, { "Idempotency-Key": "press-5" }))
+  assert.equal(forced.status, 200)
+
   assert.deepEqual(client.calls, [
     // The form's body whole: the copied client reads `place_id` out of it to
     // find the machine, so nothing may be reshaped on the way past.
@@ -1208,10 +1212,11 @@ test("the schedule form's four writes reach the machine as its own four words", 
     ["_machineRequest", "mac-a", "schedule-update", { id: "sch 9", schedule: form }, "action"],
     ["_machineRequest", "mac-a", "schedule-delete", { id: "sch-9" }, "action"],
     ["_machineRequest", "mac-a", "schedule-run", { id: "sch-9" }, "action"],
+    ["_machineRequest", "mac-a", "schedule-run", { id: "sch-9", force: true }, "action"],
   ])
   assert.deepEqual(reader.log.map((x: { word?: string; answer: string }) => [x.word, x.answer]), [
     ["schedule-create", "relay"], ["schedule-update", "relay"],
-    ["schedule-delete", "relay"], ["schedule-run", "relay"],
+    ["schedule-delete", "relay"], ["schedule-run", "relay"], ["schedule-run", "relay"],
   ])
 })
 

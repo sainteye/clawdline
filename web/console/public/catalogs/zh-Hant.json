@@ -3606,6 +3606,7 @@
   "next.restoreSheetTitle": "重新開機前開著的 session",
   "next.restoreUnknownOutcome": "沒有收到回覆，不確定有沒有打開。下方清單已重新讀取。",
   "next.scheduleEffortField": "Codex 推理強度",
+  "next.scheduleForceRunConfirmation": "「{title}」已有一個執行中的工作。仍要強制再執行一次嗎？兩個工作都會繼續執行；如果它們會寫到同一個地方，或 Session 容量已滿，新工作仍會被擋下。",
   "next.scheduleInvalid": "無效的排程",
   "next.scheduleInvalidSchema": "這個排程檔的內容不符合格式，已停用。",
   "next.scheduleInvalidStatus": "無效",

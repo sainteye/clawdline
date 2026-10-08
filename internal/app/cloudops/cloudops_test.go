@@ -933,11 +933,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "DELETE", path: "/v1/orchestrator/schedules/" + scheduleID,
 	}, {
 		word: "schedule-run",
-		body: map[string]any{"type": "schedule-run", "session": machine, "request": "req-now",
-			"id": scheduleID},
-		session: machine, name: "action:req-now",
+		body: map[string]any{"type": "schedule-run", "session": machine, "request": "req-force",
+			"id": scheduleID, "force": true},
+		session: machine, name: "action:req-force",
 		method: "POST", path: "/v1/orchestrator/schedules/" + scheduleID + "/run",
-		body2: `{}`,
+		body2: `{"force":true}`,
 	}, {
 		word: "schedule-webhook-bind-v1",
 		body: map[string]any{"type": "schedule-webhook-bind-v1",

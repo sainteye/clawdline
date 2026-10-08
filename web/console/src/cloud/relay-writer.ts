@@ -1449,7 +1449,9 @@ export class RelayWriter {
         if (typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", "schedule-run", 501)
         }
-        return client._machineRequest(this.namedMachine(url), "schedule-run", { id: route.schedule }, "action")
+        const body = await bodyOf(init)
+        const request = body.force === true ? { id: route.schedule, force: true } : { id: route.schedule }
+        return client._machineRequest(this.namedMachine(url), "schedule-run", request, "action")
       }
       case "snippet-create": {
         // The sheet's own body, whole: `view/snippets-data.js`'s

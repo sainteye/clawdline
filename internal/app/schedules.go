@@ -94,8 +94,7 @@ type ScheduleBook struct {
 	Location *time.Location
 	Now      func() time.Time
 	// DispatchEnabled is `orchestrator_enabled`. A schedule made while it is
-	// off is listed, but the clock and webhooks never fire it. An explicit
-	// manual Run is the person's override and does not consult this switch.
+	// off is listed and never fires.
 	DispatchEnabled func() bool
 	// Audit writes one line to this daemon's audit log.
 	Audit func(event string, fields map[string]string)
@@ -911,15 +910,28 @@ func (b *ScheduleBook) Delete(ctx context.Context, id string, authority Schedule
 	return answered(map[string]any{"ok": true, "deleted": id})
 }
 
-// Run is `runSchedule`: now, ignoring `enabled`, the clock and the proactive
-// dispatch switch, and refusing while a run from this schedule is still
-// working or a one-shot has run. This authenticated request explicitly asks
-// for Run now, so it is the switch's manual override.
+// Run is `runSchedule`: now, ignoring `enabled` and the clock, and refusing
+// while a run from this schedule is still working or a one-shot has run.
 //
 // A trigger-only schedule is the exception to ignoring `enabled`: it has no
 // clock, so a press is not a check of what the clock will do but the thing
 // itself, and a disabled one refuses it exactly as its webhook does.
 func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
+	return b.run(ctx, id, false)
+}
+
+// RunForced is the person's explicit override after Run answered
+// schedule_active. It leaves the earlier task running and tries to dispatch a
+// second one; broker capacity and claims arbitration still decide whether that
+// second task is safe to start.
+func (b *ScheduleBook) RunForced(ctx context.Context, id string) ScheduleReply {
+	return b.run(ctx, id, true)
+}
+
+func (b *ScheduleBook) run(ctx context.Context, id string, force bool) ScheduleReply {
+	if !b.dispatchEnabled() {
+		return refusedSchedule(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	h, ok, err := b.named(ctx, id)
@@ -948,11 +960,15 @@ func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 	for _, r := range runs {
 		// A run whose task record is gone cannot be working; one still queued,
 		// spawning or briefed is.
-		if r.State != "" && !finished(r.State) {
+		if !force && r.State != "" && !finished(r.State) {
 			return refusedSchedule(409, "schedule_active", "The previous task from this schedule is still active.")
 		}
 	}
-	b.audit("orchestrator.schedule.run", map[string]string{"schedule": id, "how": "manual"})
+	audit := map[string]string{"schedule": id, "how": "manual"}
+	if force {
+		audit["force"] = "1"
+	}
+	b.audit("orchestrator.schedule.run", audit)
 	// A run at or after an occurrence stands for it, so that occurrence is
 	// claimed before the dispatch — the timer must not open a second session for
 	// it if this process dies half way. A validation press before the scheduled

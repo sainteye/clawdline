@@ -307,24 +307,26 @@ func TestAScheduledRunHasItsOwnSecretBriefingAndClock(t *testing.T) {
 	}
 }
 
-// A person pressing Run now is an explicit start, not the proactive dispatch
-// that the machine-wide switch disables. The clock still stays quiet while
-// that switch is off, but the press can start the same schedule immediately.
-func TestAManualRunOverridesTheProactiveDispatchSwitch(t *testing.T) {
+// Run now first protects an active occurrence. Only the person's explicit
+// force retry may leave it running and dispatch a second task.
+func TestAForcedManualRunStartsBesideTheActiveRun(t *testing.T) {
 	f := newW4(t)
 	ctx := context.Background()
-	id := f.schedule(t, "5c000013-0000-4000-8000-000000000013", "manual report",
+	id := f.schedule(t, "5c000013-0000-4000-8000-000000000013", "parallel report",
 		map[string]any{"claims": []string{}})
-	f.book.DispatchEnabled = func() bool { return false }
 
-	if pulse := f.book.Beat(ctx); pulse.Fired != 0 || pulse.Note != "task dispatch is switched off" {
-		t.Fatalf("the disabled clock fired or lost its reason: %+v", pulse)
-	}
 	if reply := f.book.Run(ctx, id); !reply.OK() {
-		t.Fatalf("an explicit manual run was refused: %d %s %s", reply.Status, reply.Code, reply.Message)
+		t.Fatalf("first run: %d %s %s", reply.Status, reply.Code, reply.Message)
 	}
-	if f.term.opened() != 1 {
-		t.Fatalf("manual run opened %d sessions, want one", f.term.opened())
+	if reply := f.book.Run(ctx, id); reply.Code != "schedule_active" {
+		t.Fatalf("ordinary retry beside the active run: %+v", reply)
+	}
+	if reply := f.book.RunForced(ctx, id); !reply.OK() {
+		t.Fatalf("forced retry: %d %s %s", reply.Status, reply.Code, reply.Message)
+	}
+	if f.term.opened() != 2 || len(f.runs(t, id)) != 2 {
+		t.Fatalf("forced retry opened %d sessions and recorded %d runs, want two of each",
+			f.term.opened(), len(f.runs(t, id)))
 	}
 }
 

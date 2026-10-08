@@ -3606,6 +3606,7 @@
   "next.restoreSheetTitle": "Sessions open before the restart",
   "next.restoreUnknownOutcome": "No answer came back, so whether these opened is not known. The list below is re-read.",
   "next.scheduleEffortField": "Codex reasoning effort",
+  "next.scheduleForceRunConfirmation": "“{title}” already has work running. Start another run anyway? Both tasks will keep running. If they would write to the same place, or session capacity is full, the new run will still be refused.",
   "next.scheduleInvalid": "Invalid schedule",
   "next.scheduleInvalidSchema": "This schedule file has an invalid format and was disabled.",
   "next.scheduleInvalidStatus": "Invalid",

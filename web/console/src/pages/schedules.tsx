@@ -6,6 +6,7 @@ import { readAnswer, readFailure, readReady, type ReadState } from "../read-stat
 import { invalidScheduleErrorHTML } from "../schedule-errors.js"
 import { isTriggerOnly, scheduleNextLine, scheduleTimeZone, scheduleWhenFields } from "../schedule-when.js"
 import { historyRecordFor, shouldOpenHistory } from "../schedule-history-open.js"
+import { runScheduleWithForce } from "../schedule-force-run.js"
 import "../schedule-errors.css"
 import {
   createPlacesCache,
@@ -1965,8 +1966,10 @@ const ScheduleHistory = (() => {
     runningNow = true
     el("schedule-history-said").textContent = ""
     draw()
-    scheduleApi
-      .runSchedule(id, scheduleOwner(id))
+    runScheduleWithForce(
+      (force) => scheduleApi.runSchedule(id, scheduleOwner(id), force),
+      () => window.confirm(nextWord("scheduleForceRunConfirmation", { title: record?.title || id })),
+    )
       .then(() => {
         if (scheduleId !== id) return
         runningNow = false

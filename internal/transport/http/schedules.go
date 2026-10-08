@@ -196,7 +196,17 @@ func (s *Server) scheduleRoute(w http.ResponseWriter, r *http.Request) {
 		// A manual run through this machine's token needs no key, as there;
 		// a device's does.
 		s.scheduleWriting(w, r, !machineAuthed(r),
-			func(app.ScheduleAuthority, map[string]any) app.ScheduleReply { return book.Run(ctx, id) })
+			func(_ app.ScheduleAuthority, body map[string]any) app.ScheduleReply {
+				if len(body) == 0 {
+					return book.Run(ctx, id)
+				}
+				force, ok := body["force"].(bool)
+				if len(body) != 1 || !ok || !force {
+					return app.ScheduleReply{Status: http.StatusBadRequest, Code: "bad_request",
+						Message: "A manual run reads only force: true."}
+				}
+				return book.RunForced(ctx, id)
+			})
 	case run:
 		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No such route")
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:

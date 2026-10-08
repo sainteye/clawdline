@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
@@ -49,13 +48,7 @@ func cloudStandIn(t *testing.T) *standIn {
 	recordConversation(t, home, project, "c6000003-0000-4000-8000-000000000003", "look at the overnight runs")
 	state := filepath.Join(home, ".config", "clawdline-next")
 	t.Setenv("CLAWDLINE_SWIFT_DIR", filepath.Join(home, "swift"))
-	// Proactive task dispatch is off. The clock and webhooks must honor that,
-	// while the viewer's explicit `schedule-run` is allowed to override it.
 	if err := os.MkdirAll(state, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(state, nextconfig.FileName),
-		[]byte(`{"orchestrator_enabled": false}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,20 +232,32 @@ func TestACloudViewerArrangesARepeatingSchedule(t *testing.T) {
 		t.Fatalf("the viewer could not save it: %d/%q %s", answer.Status, answer.Code, answer.Payload)
 	}
 
-	// Running it now is the person's override: proactive dispatch is off in
-	// this state directory, but the explicit press still opens the task.
+	// The first press starts it. A second ordinary press retains the active-run
+	// protection, while the person's explicit force retry starts beside it.
 	answer, payload = s.ask(t, 4, map[string]any{"type": "schedule-run",
 		"session": cloudops.MachineReplySession, "request": "req-now", "id": id})
 	if !answer.OK() {
-		t.Fatalf("the explicit run did not override proactive dispatch: %d/%q %s",
-			answer.Status, answer.Code, answer.Payload)
+		t.Fatalf("the first run was refused: %d/%q %s", answer.Status, answer.Code, answer.Payload)
 	}
 	if task, _ := bodyOf(t, payload)["task_id"].(string); task == "" {
 		t.Fatalf("the accepted run names no task: %v", payload)
 	}
+	answer, _ = s.ask(t, 5, map[string]any{"type": "schedule-run",
+		"session": cloudops.MachineReplySession, "request": "req-again", "id": id})
+	if answer.Status != http.StatusConflict || answer.Code != "schedule_active" {
+		t.Fatalf("ordinary retry answered %d/%q, want 409/schedule_active", answer.Status, answer.Code)
+	}
+	answer, payload = s.ask(t, 6, map[string]any{"type": "schedule-run",
+		"session": cloudops.MachineReplySession, "request": "req-force", "id": id, "force": true})
+	if !answer.OK() {
+		t.Fatalf("the forced retry was refused: %d/%q %s", answer.Status, answer.Code, answer.Payload)
+	}
+	if task, _ := bodyOf(t, payload)["task_id"].(string); task == "" {
+		t.Fatalf("the forced run names no task: %v", payload)
+	}
 
 	// And taking it away.
-	answer, payload = s.ask(t, 5, map[string]any{"type": "schedule-delete",
+	answer, payload = s.ask(t, 7, map[string]any{"type": "schedule-delete",
 		"session": cloudops.MachineReplySession, "request": "req-gone", "id": id})
 	if !answer.OK() {
 		t.Fatalf("the viewer could not remove it: %d/%q %s", answer.Status, answer.Code, answer.Payload)

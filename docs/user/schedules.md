@@ -47,9 +47,9 @@ running when a schedule is due; see [platforms.md](platforms.md) for keeping it 
 
 **Check:** the schedule is a row in the list. Click it to open its history, and press **立即執行**
 (run now) to try it at once. A new session opens and starts working on the first message.
-This explicit press still tries to start the work when proactive Agent task dispatch is switched
-off; automatic clock and webhook starts remain off. Other safety checks still apply, including an
-already-running task from the same schedule and the machine's session capacity.
+If this schedule already has work running, Clawdline first protects it from an accidental duplicate.
+You can confirm **force run** to start another one while the earlier task keeps running. Project-claim,
+session-capacity, disabled-dispatch, and one-time-schedule checks still apply to the new run.
 
 ## What happens when it is due
 

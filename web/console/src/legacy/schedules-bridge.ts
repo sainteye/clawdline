@@ -266,10 +266,10 @@ export const scheduleApi = {
       method: "DELETE",
       headers: { "Idempotency-Key": uuid() },
     }),
-  runSchedule: (id: string, machine?: string) =>
+  runSchedule: (id: string, machine?: string, force = false) =>
     jsonFetch<Record<string, unknown>>(
       "/v1/orchestrator/schedules/" + encodeURIComponent(id) + "/run" + on(machine),
-      post({}, { "Idempotency-Key": uuid() }),
+      post(force ? { force: true } : {}, { "Idempotency-Key": uuid() }),
     ),
   places: (machine?: string) => jsonFetch<SchedulePlaces>("/v1/places" + on(machine)),
   /** `net/live.js`'s `resumePlace`, as `start-bridge.ts` spells it. */

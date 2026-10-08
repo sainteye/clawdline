@@ -409,11 +409,15 @@ func init() {
 			}},
 
 		op{name: "schedule-run",
-			decode: decodeNamedSchedule,
+			decode: decodeScheduleRun,
 			route: func(p plan) LocalRequest {
+				body := []byte("{}")
+				if p.force {
+					body = []byte(`{"force":true}`)
+				}
 				return LocalRequest{Method: "POST",
 					Path:   "/v1/orchestrator/schedules/" + segment(p.id) + "/run",
-					Body:   []byte("{}"),
+					Body:   body,
 					Header: asDevice()}
 			}},
 

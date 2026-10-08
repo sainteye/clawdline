@@ -236,7 +236,7 @@ type plan struct {
 	// is a dismissal that named none, which means every one on offer.
 	conversations                          []string
 	allConversations                       bool
-	upcoming, acceptLoss                   bool
+	upcoming, acceptLoss, force            bool
 	closeability                           string
 	rate, limit, byteWindow, offset, after int64
 	document                               []byte
@@ -1013,8 +1013,8 @@ func decodeSnippetWrite(named bool) func(b body) (plan, bool) {
 	}
 }
 
-// decodeNamedSchedule is `schedule-delete` and `schedule-run`: one id, and
-// nothing else to get wrong.
+// decodeNamedSchedule is `schedule-delete`: one id, and nothing else to get
+// wrong.
 func decodeNamedSchedule(b body) (plan, bool) {
 	if !b.has("type", "session", "request", "id") {
 		return plan{}, false
@@ -1028,6 +1028,34 @@ func decodeNamedSchedule(b body) (plan, bool) {
 		return plan{}, false
 	}
 	p.id = id
+	return p, true
+}
+
+// decodeScheduleRun accepts the ordinary press and the one explicit retry
+// shape that may override schedule_active. False is not another spelling of
+// the retry: omitting force is the ordinary protected run.
+func decodeScheduleRun(b body) (plan, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "session", "request", "id"},
+		[]string{"type", "session", "request", "id", "force"},
+	) {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok || p.request == "" {
+		return plan{}, false
+	}
+	id, ok := b.nonEmpty("id")
+	if !ok {
+		return plan{}, false
+	}
+	p.id = id
+	if _, present := b["force"]; present {
+		p.force, ok = b.boolean("force")
+		if !ok || !p.force {
+			return plan{}, false
+		}
+	}
 	return p, true
 }
 
