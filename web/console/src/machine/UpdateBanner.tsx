@@ -22,7 +22,8 @@ function dismissedVersion(): string | null {
  * the dismissal lasts as long as the page does.
  *
  * It shares the Settings panel's reading (`update.ts`), so it adds no request
- * of its own beyond one read every ten minutes while it is on screen.
+ * of its own: the shared reading pauses while hidden and checks a stale
+ * reading as soon as the console is visible, focused, or online again.
  */
 export function UpdateBanner() {
   const read = useSyncExternalStore(subscribeUpdate, currentUpdateRead, currentUpdateRead)

@@ -12,6 +12,85 @@ import type { NextWord, nextWord } from "../next-strings.js"
 /** No more often than this does an open console ask again while nothing is happening. */
 export const UPDATE_READ_EVERY_MS = 10 * 60 * 1000
 
+/** Browser lifecycle and time supplied to the shared update reading. */
+export interface UpdateReadEnvironment {
+  now(): number
+  visible(): boolean
+  onVisibilityChange(listener: () => void): () => void
+  onFocus(listener: () => void): () => void
+  onOnline(listener: () => void): () => void
+  setInterval(listener: () => void, ms: number): ReturnType<typeof setInterval>
+  clearInterval(timer: ReturnType<typeof setInterval>): void
+}
+
+/** One reading for all mounted update views, including their resume checks. */
+export function createUpdateReadStore(read: () => Promise<UpdateRead>, env: UpdateReadEnvironment) {
+  let reading: UpdateRead | null = null
+  let readAt: number | null = null
+  let inFlight: Promise<UpdateRead> | null = null
+  let timer: ReturnType<typeof setInterval> | null = null
+  const listeners = new Set<() => void>()
+  let unlisten: Array<() => void> = []
+
+  const publish = (next: UpdateRead) => {
+    reading = next
+    readAt = env.now()
+    for (const listener of listeners) listener()
+  }
+
+  const readNow = (): Promise<UpdateRead> => {
+    if (inFlight) return inFlight
+    inFlight = read().then((next) => {
+      publish(next)
+      return next
+    }).finally(() => { inFlight = null })
+    return inFlight
+  }
+
+  // The Settings panel also has a timer while an update moves. A browser
+  // backgrounding that panel must not keep polling through this entry point.
+  const refresh = (): Promise<UpdateRead | null> => env.visible() ? readNow() : Promise.resolve(reading)
+
+  const stale = () => readAt === null || env.now() < readAt || env.now() - readAt >= UPDATE_READ_EVERY_MS
+  const refreshIfStale = () => {
+    if (env.visible() && stale()) void readNow()
+  }
+  const stopTimer = () => {
+    if (timer !== null) env.clearInterval(timer)
+    timer = null
+  }
+  const visibilityChanged = () => {
+    if (!env.visible()) { stopTimer(); return }
+    if (timer === null) timer = env.setInterval(refreshIfStale, UPDATE_READ_EVERY_MS)
+    refreshIfStale()
+  }
+  const online = () => {
+    if (!env.visible()) return
+    // A failed read may be recent; the online transition is new evidence that
+    // the next attempt can answer. Focus and visibility still obey freshness.
+    if (reading?.kind === "unreachable" || reading?.kind === "refused") void readNow()
+    else refreshIfStale()
+  }
+
+  const subscribe = (listener: () => void): (() => void) => {
+    listeners.add(listener)
+    if (listeners.size === 1) {
+      unlisten = [env.onVisibilityChange(visibilityChanged), env.onFocus(refreshIfStale), env.onOnline(online)]
+      visibilityChanged()
+    }
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) {
+        stopTimer()
+        for (const remove of unlisten) remove()
+        unlisten = []
+      }
+    }
+  }
+
+  return { refresh, publish, subscribe, current: () => reading }
+}
+
 /**
  * While an update is under way, or the daemon is restarting into one, the
  * panel asks this often: the steps take seconds to minutes, and the restart's

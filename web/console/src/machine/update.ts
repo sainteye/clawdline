@@ -1,6 +1,6 @@
 import { client } from "../client.js"
 import { isDifferentBuild } from "../build-freshness.js"
-import { classifyApplyAnswer, classifyUpdateRead, UPDATE_READ_EVERY_MS, type Answer, type ApplyAnswer, type UpdateRead } from "./update-model.js"
+import { classifyApplyAnswer, classifyUpdateRead, createUpdateReadStore, type Answer, type ApplyAnswer, type UpdateRead } from "./update-model.js"
 
 /**
  * `/v1/update` and `/v1/update/apply`, asked the way `read.ts` asks
@@ -62,52 +62,45 @@ function pressKey(): string {
 /*
  * One reading shared by the Settings panel and the session list's banner, so
  * the two never ask twice for the same answer. It reads while somebody is
- * listening: every ten minutes on its own, and sooner whenever the panel asks
- * (`refreshUpdate`), which it does every two seconds while an update moves.
+ * listening and visible: every ten minutes on its own, and immediately after
+ * a stale page becomes visible, focused, or online. The panel can also ask
+ * sooner (`refreshUpdate`) while an update moves.
  */
-let reading: UpdateRead | null = null
-const listeners = new Set<() => void>()
-let clock: ReturnType<typeof setInterval> | null = null
-let inFlight: Promise<UpdateRead> | null = null
+const store = createUpdateReadStore(readUpdate, {
+  now: () => Date.now(),
+  visible: () => document.visibilityState !== "hidden",
+  onVisibilityChange: (listener) => {
+    document.addEventListener("visibilitychange", listener)
+    return () => document.removeEventListener("visibilitychange", listener)
+  },
+  onFocus: (listener) => {
+    window.addEventListener("focus", listener)
+    return () => window.removeEventListener("focus", listener)
+  },
+  onOnline: (listener) => {
+    window.addEventListener("online", listener)
+    return () => window.removeEventListener("online", listener)
+  },
+  setInterval: (listener, ms) => setInterval(listener, ms),
+  clearInterval: (timer) => clearInterval(timer),
+})
 
-function publish(next: UpdateRead): void {
-  reading = next
-  for (const listener of listeners) listener()
-}
-
-/** Read now; a read already on the wire is shared rather than doubled. */
-export function refreshUpdate(): Promise<UpdateRead> {
-  if (inFlight) return inFlight
-  inFlight = readUpdate().then((next) => {
-    inFlight = null
-    publish(next)
-    return next
-  })
-  return inFlight
+/** Read now while visible; a read already on the wire is shared rather than doubled. */
+export function refreshUpdate(): Promise<UpdateRead | null> {
+  return store.refresh()
 }
 
 /** Hand a status the press answered with to every listener, as a read would. */
 export function publishUpdateRead(next: UpdateRead): void {
-  publish(next)
+  store.publish(next)
 }
 
 export function subscribeUpdate(listener: () => void): () => void {
-  listeners.add(listener)
-  if (listeners.size === 1) {
-    if (!reading) void refreshUpdate()
-    clock = setInterval(() => void refreshUpdate(), UPDATE_READ_EVERY_MS)
-  }
-  return () => {
-    listeners.delete(listener)
-    if (listeners.size === 0 && clock) {
-      clearInterval(clock)
-      clock = null
-    }
-  }
+  return store.subscribe(listener)
 }
 
 export function currentUpdateRead(): UpdateRead | null {
-  return reading
+  return store.current()
 }
 
 /**
