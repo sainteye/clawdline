@@ -63,7 +63,8 @@ function pressKey(): string {
  * One reading shared by the Settings panel and the session list's banner, so
  * the two never ask twice for the same answer. It reads while somebody is
  * listening and visible: every ten minutes on its own, and immediately after
- * a stale page becomes visible, focused, or online. The panel can also ask
+ * a hidden page becomes visible or a blurred window regains focus. An online
+ * event also checks stale readings or retries a failed one. The panel can ask
  * sooner (`refreshUpdate`) while an update moves.
  */
 const store = createUpdateReadStore(readUpdate, {
@@ -76,6 +77,10 @@ const store = createUpdateReadStore(readUpdate, {
   onFocus: (listener) => {
     window.addEventListener("focus", listener)
     return () => window.removeEventListener("focus", listener)
+  },
+  onBlur: (listener) => {
+    window.addEventListener("blur", listener)
+    return () => window.removeEventListener("blur", listener)
   },
   onOnline: (listener) => {
     window.addEventListener("online", listener)

@@ -171,10 +171,11 @@ at the next check hours later.
 The Settings page's **Clawdline 版本** panel (`web/console/src/machine/UpdatePanel.tsx`, its logic
 in `update-model.ts`) shares one `/v1/update` reading with the session list's banner. While the
 console is visible, it reads when first opened and every ten minutes. A hidden console stops its
-periodic reads. When the browser or Home Screen console becomes visible or focused again, or the
-network returns, it reads immediately if its last reading is at least ten minutes old. A network
-return also retries a recent failed reading. A short switch back to the console uses the recent
-reading; overlapping events share one request. The banner disappears when a fresh answer says the
+periodic reads. Returning from hidden to visible, or from a blurred window to focus, immediately
+reads `/v1/update` even if the previous answer is under ten minutes old. Visibility and focus
+events from the same return share one request; repeated focus events without a preceding blur
+keep the ten-minute freshness rule. A network return checks a stale reading and retries a recent
+failed reading. The banner disappears when a fresh answer says the
 release is current, unknown, or otherwise no longer available, and when the read fails.
 The panel shows the running and latest version (a short commit for a source build), a **版本說明** link to
 `latest.notes_url`, when the last check ran, and the channel.
