@@ -22,6 +22,8 @@ An envelope carries routing metadata the relay needs, while its payload is encry
 
 The machine can create a one-time pairing link with `clawdline cloud pair`, or accept a browser-originated offer with `clawdline cloud pair --offer <code>`. Pairing transfers the content key and trust information through the handover protocol. Compare the fingerprints shown at both ends. `clawdline cloud devices` lists viewers known to the machine, and `clawdline cloud revoke <device-id>` revokes one locally. Local pairing and revoke routes require this machine's own credential. The [remote access guide](user/remote-access.md) gives setup steps.
 
+The [local Console and CLI viewer authorization contract](cloud-local-viewer.md) records the separate viewer device flow and its current integration boundary.
+
 The account roster and the machine's local pinned-device record are distinct evidence. A locally revoked device is refused even if it appears in the account roster; a roster read failure is not treated as an empty roster. Browser pairing is also distinct from account sign-in: a browser listed under an account does not thereby have this machine's content key.
 
 Machine-to-machine Agent messages and work handoffs require a separate peer pairing and revocable grant. The current receiver admission contract and the remaining integration points are in [cross-machine Agent handoff](cross-machine-agent-handoff.md). A Cloud account or viewer pairing does not grant one machine authority to act as another machine's Agent.

@@ -56,7 +56,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify" | "archive" | "squad" | "documents"
+type Page = "sessions" | "cloud" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify" | "archive" | "squad" | "documents"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -69,6 +69,7 @@ type Asked = "none" | "waiting" | "opened" | "gone"
 // reached from that item on the work page.
 const PAGES: { id: Page; nav: string; icon: SidebarIconName; key?: string; text?: string; ready: boolean }[] = [
   { id: "sessions", nav: "nav-sessions", icon: "sessions", key: "webSessions", ready: true },
+  { id: "cloud", nav: "nav-cloud", icon: "sessions", ready: false },
   { id: "devices", nav: "nav-devices", icon: "devices", key: "webDevices", ready: false },
   { id: "projects", nav: "nav-projects", icon: "projects", key: "webProjects", ready: false },
   { id: "plan", nav: "nav-plan", icon: "plan", key: "webPlan", ready: false },
@@ -193,7 +194,11 @@ function rowNode(id: string): HTMLElement | null {
  * light and draws both in one control (`cloud/CloudGate.tsx`) — on a phone two
  * pills beside each other left the counts no room to be read.
  */
-export default function App({ aside, cloudSessions }: { aside?: ReactNode | ((light: ConnectionLight) => ReactNode); cloudSessions?: ReactNode } = {}) {
+export default function App({ aside, cloudSessions, localViewer = false }: {
+  aside?: ReactNode | ((light: ConnectionLight) => ReactNode)
+  cloudSessions?: ReactNode
+  localViewer?: boolean
+} = {}) {
   const fleet = useFleet(client)
   const light = useConnectionLight(fleet.live, fleet.refresh)
   const machineVersion = useMachineVersion()
@@ -201,6 +206,7 @@ export default function App({ aside, cloudSessions }: { aside?: ReactNode | ((li
   // and says why, rather than missing (pages/registry.ts `pageNeedsUpdate`).
   const tooOld = (id: string) => pageNeedsUpdate(id, PAGE_MODULES, machineVersion.apiLevel)
   const offered = (id: string) => ready(id) && !tooOld(id)
+  const knowsHere = (name: string): name is Page => knows(name) && (name !== "cloud" || localViewer)
   const tooOldTitle = (id: string) => tooOld(id) ? nextWord("machineNeedsUpdate") : undefined
   const tooOldMark = (id: string) => tooOld(id) ? <small className="sidebar-needs-update"> · {nextWord("machineNeedsUpdateShort")}</small> : null
   const [page, setPage] = useState<Page>(() => location.pathname === "/billing/done"
@@ -303,7 +309,7 @@ export default function App({ aside, cloudSessions }: { aside?: ReactNode | ((li
   // hidden, not taken down: `main#app` keeps its scroll and its open session —
   // so coming back to it writes that session's address, not the page's.
   const go = (to: Page, options?: { hash?: boolean }) => {
-    if (!knows(to) || to === pageRef.current) return false
+    if (!knowsHere(to) || to === pageRef.current) return false
     if (!document.dispatchEvent(new CustomEvent(BEFORE_PAGE_CHANGE, { cancelable: true, detail: { from: pageRef.current, to } }))) return false
     pageRef.current = to
     setPage(to)
@@ -332,13 +338,14 @@ export default function App({ aside, cloudSessions }: { aside?: ReactNode | ((li
   useEffect(() => {
     const routeTo = () => {
       const documentLink = hasDocumentIntent(location.hash)
-      const target = documentLink ? "documents" : pageFromHash(location.hash, knows)
+      const localCloudTarget = localViewer && destinationFromFragment(location.hash)
+      const target = documentLink ? "documents" : localCloudTarget ? "cloud" : pageFromHash(location.hash, knowsHere)
       const from = pageRef.current
       if (!goRef.current(target, { hash: false }) && target !== from) {
         writeHash("#page=" + encodeURIComponent(from))
         return
       }
-      askedRef.current = documentLink || (cloudSessions && destinationFromFragment(location.hash))
+      askedRef.current = documentLink || localCloudTarget || (cloudSessions && destinationFromFragment(location.hash))
         ? null : sessionsInFragment(location.hash)
       if (askedRef.current) openAskedRef.current()
     }
@@ -779,7 +786,7 @@ export default function App({ aside, cloudSessions }: { aside?: ReactNode | ((li
         }}
       >
         <div className="sidebar-panel" id="sidebar-panel">
-          {drawerEntries(PAGES, PAGE_MODULES).map((p) => (
+          {drawerEntries(PAGES.filter((p) => localViewer || p.id !== "cloud"), PAGE_MODULES).map((p) => (
             <button
               key={p.id}
               className="sidebar-item"
@@ -792,7 +799,7 @@ export default function App({ aside, cloudSessions }: { aside?: ReactNode | ((li
               title={tooOldTitle(p.id)}
             >
               <SidebarIcon name={p.icon} />
-              {p.key ? T[p.key] : p.text}
+              {p.id === "cloud" ? (/^zh(?:-|$)/i.test(document.documentElement.lang) ? "跨機工作階段" : "Cloud Sessions") : p.key ? T[p.key] : p.text}
               {tooOldMark(p.id)}
             </button>
           ))}
@@ -881,7 +888,7 @@ export default function App({ aside, cloudSessions }: { aside?: ReactNode | ((li
         onBack={() => closeDetail()}
         onDid={fleet.refresh}
       />}
-      {Object.values(PAGE_MODULES).map(({ id, Component }) => (
+      {Object.values(PAGE_MODULES).filter(({ id }) => localViewer || id !== "cloud").map(({ id, Component }) => (
         // Mounted once opened and kept, as the original keeps its sections in
         // the document and only hides them.
         <Component key={id} shown={page === id} />

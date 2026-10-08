@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -60,11 +61,18 @@ type Options struct {
 	OnDisconnect func()
 	// OnSettled receives the correlated relay outcome after the spool settles it.
 	OnSettled func(channel string, seq uint64, kind SettleKind)
+	// OnAck and OnPublishRefusal expose the exact relay receipt to a viewer
+	// that publishes directly and never queues an offline action for replay.
+	OnAck            func(AckFrame)
+	OnPublishRefusal func(PublishErrorFrame)
 	// PublicKeyFor answers the pinned public key for a sender.
 	PublicKeyFor cloud.PublicKeyFor
 	// ContentKey opens an inbound envelope. A nil one means inbound envelopes
 	// are verified and counted but not opened.
 	ContentKey cloud.ContentKey
+	// ContentKeyFor selects a paired machine's secret for a viewer. The sender
+	// must already have passed PublicKeyFor and signature verification.
+	ContentKeyFor func(sender, keyID string) (cloud.ContentKey, bool)
 	// Log is one line per material event. nil means silence.
 	Log func(string)
 	// Now and Jitter exist so a test can drive the clock.
@@ -514,6 +522,9 @@ func (t *Transport) handleAck(data []byte) {
 		t.logf("cloud dropped a receipt reason=unknown_ack_status status=%s", frame.Status)
 		return
 	}
+	if t.opts.OnAck != nil {
+		t.opts.OnAck(frame)
+	}
 	if t.opts.Spool == nil {
 		return
 	}
@@ -541,6 +552,9 @@ func (t *Transport) handlePublishError(data []byte) {
 	}
 	t.opts.Status.PublishError()
 	t.logf("cloud publish refused seq=%d ch=%s code=%s field=%s", frame.Seq, frame.Ch, frame.Code, frame.Field)
+	if t.opts.OnPublishRefusal != nil {
+		t.opts.OnPublishRefusal(frame)
+	}
 	if t.opts.Spool == nil {
 		return
 	}
@@ -566,6 +580,19 @@ func (t *Transport) handleEnvelope(data []byte) {
 	if err := json.Unmarshal(data, &frame); err != nil || len(frame.Envelope) == 0 {
 		t.opts.Status.Dropped(DropMalformed)
 		return
+	}
+	// A relay realignment may replay the last t/ answer after a new pinned
+	// request has opened the same channel. It is not a reply to that request.
+	// Status and rich rows still need their retained realignment.
+	if t.opts.Role == "viewer" && frame.Realign {
+		envelope, err := cloud.DecodeEnvelope(frame.Envelope)
+		if err != nil {
+			t.opts.Status.Dropped(DropMalformed)
+			return
+		}
+		if strings.HasPrefix(envelope.Ch, "t/") {
+			return
+		}
 	}
 	t.admitEnvelope(frame.Envelope, "")
 }
@@ -595,7 +622,7 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 	}
 	// A machine receives `ctl/` and read-only `r/` for itself, and `ho/`. Anything else on
 	// this socket is not addressed to it, whatever the relay thought.
-	if !t.deliverable(envelope.Ch) {
+	if !t.deliverable(envelope.Ch, envelope.Sender) {
 		t.opts.Status.Dropped(DropWrongChannel)
 		t.logf("cloud dropped an envelope reason=%s ch=%s", DropWrongChannel, envelope.Ch)
 		return false
@@ -638,8 +665,19 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 	}
 
 	var plaintext []byte
-	if t.opts.ContentKey.Valid() {
-		plaintext, err = envelope.Open(t.opts.ContentKey, keyForEnvelope)
+	contentKey := t.opts.ContentKey
+	if t.opts.Role == "viewer" {
+		var paired bool
+		if t.opts.ContentKeyFor != nil {
+			contentKey, paired = t.opts.ContentKeyFor(envelope.Sender, envelope.KeyID)
+		}
+		if !paired || !contentKey.Valid() {
+			t.opts.Status.Dropped(DropDecryptFailed)
+			return false
+		}
+	}
+	if contentKey.Valid() {
+		plaintext, err = envelope.Open(contentKey, keyForEnvelope)
 		if err != nil {
 			// The claim is **not** given back. It was spent when the envelope
 			// authenticated, and a sender that re-sends the same sequence
@@ -660,7 +698,24 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 // deliverable reports whether this machine is the intended reader of a
 // channel. A machine receives its own `ctl/` and `r/`, and any `ho/`; it never receives
 // another machine's anything.
-func (t *Transport) deliverable(channel string) bool {
+func (t *Transport) deliverable(channel, sender string) bool {
+	if t.opts.Role == "viewer" {
+		parts := strings.Split(channel, "/")
+		if len(parts) < 2 {
+			return false
+		}
+		machine, err := url.PathUnescape(parts[1])
+		if err != nil || machine != sender {
+			return false
+		}
+		if len(parts) == 2 && parts[0] == "orch" {
+			return true
+		}
+		if len(parts) != 3 || parts[2] == "" {
+			return false
+		}
+		return parts[0] == "ss" || parts[0] == "s" || parts[0] == "t"
+	}
 	switch {
 	case channel == "ctl/"+t.opts.Identity.MachineID:
 		return true
@@ -723,6 +778,22 @@ func (t *Transport) PublishPeer(frame []byte) error {
 // Subscribe opens transcript or handoff channels on this connection.
 func (t *Transport) Subscribe(channels ...string) error {
 	frame, err := SubscribeFrame(FrameSubscribe, channels)
+	if err != nil {
+		return err
+	}
+	t.mu.Lock()
+	conn := t.conn
+	t.mu.Unlock()
+	if conn == nil {
+		return ErrNotConnected
+	}
+	return conn.WriteText(frame, t.opts.Now().Add(OpeningTimeout))
+}
+
+// Unsubscribe releases exact detail or recovery channels when a local viewer
+// closes its request. The relay's default ss/ fanout is unaffected.
+func (t *Transport) Unsubscribe(channels ...string) error {
+	frame, err := SubscribeFrame(FrameUnsubscribe, channels)
 	if err != nil {
 		return err
 	}

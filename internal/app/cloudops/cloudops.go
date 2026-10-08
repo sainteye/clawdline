@@ -326,11 +326,11 @@ func (b Bridge) Handle(ctx context.Context, cmd Command) (answer Answer) {
 		return b.refuse(cmd, parsed, word, Refusal{Status: 403, Code: "read_only_channel",
 			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true})
 	}
-	if word == "session-receipt" {
-		return b.sessionReceipt(ctx, cmd, parsed)
-	}
 	if b.contentReadChannel(cmd) {
 		return b.serveContentRead(ctx, cmd, parsed, o)
+	}
+	if word == "session-receipt" {
+		return b.sessionReceipt(ctx, cmd, parsed)
 	}
 	if o.read {
 		return b.serveRead(ctx, cmd, parsed, o)

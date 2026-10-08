@@ -49,6 +49,8 @@ const (
 	// The name is the Swift app's Keychain account, kept so the two stores can
 	// be reasoned about together.
 	DeviceKeyFile = "device-ed25519-v1"
+	// ViewerKeyFile is a separate identity. A machine key must never become a viewer.
+	ViewerKeyFile = "viewer-ed25519-v1"
 	// MasterSecretFile holds the 32-byte account content key, base64, one line.
 	MasterSecretFile = "account-master-secret-v1"
 
@@ -99,7 +101,7 @@ func Open(root string, foreign ...string) (*Files, error) {
 		return nil, err
 	}
 	f := &Files{dir: dir}
-	for _, name := range []string{DeviceKeyFile, MasterSecretFile} {
+	for _, name := range []string{DeviceKeyFile, ViewerKeyFile, MasterSecretFile} {
 		file, err := f.open(name, os.O_RDONLY, 0)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -145,6 +147,31 @@ func (f *Files) SaveDeviceKey(key cloud.DeviceKey) error {
 	return f.writeSecret(DeviceKeyFile, key.Seed())
 }
 
+// ViewerKey reads the CLI viewer signing key, separate from the machine key.
+func (f *Files) ViewerKey() (cloud.DeviceKey, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	raw, found, err := f.readSecret(ViewerKeyFile, cloud.DeviceKeySeedBytes)
+	if err != nil || !found {
+		return cloud.DeviceKey{}, false, err
+	}
+	key, err := cloud.DeviceKeyFromSeed(raw)
+	if err != nil {
+		return cloud.DeviceKey{}, false, fmt.Errorf("%w: %s: %v", ErrUnreadable, ViewerKeyFile, err)
+	}
+	return key, true, nil
+}
+
+// SaveViewerKey writes the viewer signing key only after a viewer flow starts.
+func (f *Files) SaveViewerKey(key cloud.DeviceKey) error {
+	if !key.Valid() {
+		return fmt.Errorf("%w: refusing to store an empty viewer key", cloud.ErrSeedLength)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.writeSecret(ViewerKeyFile, key.Seed())
+}
+
 // MasterSecret reads the account content key.
 func (f *Files) MasterSecret() (cloud.ContentKey, bool, error) {
 	f.mu.Lock()
@@ -179,7 +206,7 @@ func (f *Files) Forget() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var failures []string
-	for _, name := range []string{DeviceKeyFile, MasterSecretFile} {
+	for _, name := range []string{DeviceKeyFile, ViewerKeyFile, MasterSecretFile} {
 		if err := os.Remove(filepath.Join(f.dir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 		}

@@ -76,6 +76,8 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline sessions [--json]` | 傳訊、等待或交接可以指名的 Session，附狀態與 task |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
 | `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
+| `clawdline cloud viewer login\|status\|machines\|pair` | 授權並配對獨立的本機 Cloud 檢視端 |
+| `clawdline cloud viewer sessions\|read\|send\|answer\|interrupt\|end\|receipt` | 透過本機 daemon 使用明確的機器、工作階段與執行世代 |
 | `clawdline task show [--json] <task id>` | 精簡地看一個 child task：狀態、verdict、summary、leftover 標題、驗證、landing、checkout（§5） |
 | `clawdline task wait <task id>… [--timeout 9m] [--any]` | 等 child 結束（全部，或 `--any` 一個），每個都照 `task show` 印出並關掉它的通知。exit 0 全部成功、1 有一個失敗、5 有一個被取消且沒有其他失敗、3 逾時、4 有 task 讀不到；優先順序 4、3、1、5（§5） |
 | `clawdline task cancel <task id> --reason "…"` | 停掉派錯的 child：關掉它的分頁、釋放它的寫入範圍與名額，有 commit 的 branch 會留給你（§5） |
@@ -216,6 +218,27 @@ CLI 用 `clawdline cloud peer outbox <request-id>` 讀取來源證據。
 `read_only_channel`。寫入 WebSocket 後，Relay 接受仍未知，直到收到 `peer_ack`；Relay 的
 `delivered` 只證明 socket 交付。來源端仍將目標執行與 Agent
 觀察標為未知；目標收據可證明機器執行及 Session 交付，Agent 觀察與確認須有另外的證據。
+
+**在本機跨機使用 Cloud 檢視端。**
+
+使用者授權本機檢視端後，執行 `clawdline cloud viewer login`，並請使用者核准畫面列出的裝置與確切權限。
+`clawdline cloud viewer machines` 列出帳號機器；仍須在目標機器獨立核對指紋，才能執行
+`clawdline cloud viewer pair --machine MACHINE_ID --fingerprint FINGERPRINT`。在目標機器執行印出的
+一次性 `clawdline cloud pair --offer` 指令，不要把 offer 放進報告。
+`clawdline cloud viewer sessions [--machine MACHINE_ID]` 會回報每台機器已驗證的狀態投影；
+無法取得或不完整的投影不等於空工作階段清單。
+
+`read`、`send`、`answer`、`interrupt`、`end`、`receipt` 都要從同一筆目前資料列取得
+`--machine MACHINE_ID`、`--session SESSION_ID`、`--generation GENERATION` 三個值；
+`GENERATION` 是 32 位小寫十六進位字串。`read` 先回傳最新逐字紀錄頁；若有 `next_before`，
+以相同三元目標加上 `--before NEXT_BEFORE` 按需讀取一頁較早訊息，直到回覆不再提供游標。
+每頁都重新檢查目前執行世代；不得猜測游標，也不可把最新 200 筆當成完整對話。
+`send` 需要 `--text`；`answer` 需要畫面上選項的
+`--answer` 代碼與問題 `--expect` 指紋，Agent 不得猜測。變更操作會先印請求 ID；結果不確定時，
+用相同三元目標、`--action ACTION`、`--request REQUEST_ID` 執行 `clawdline cloud viewer receipt`。
+查收據不會重送操作。配對遭撤銷、狀態過期、執行世代改變、缺少權限或機器離線時就停止。
+本機 `/v1/cloud/viewer/` 路由只接受這台 daemon 自己的本機 token，已配對的遠端裝置不能使用。
+路由索引只供發現；操作契約以上述 CLI 為準。
 
 **東西在哪裡。**
 

@@ -94,6 +94,36 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/cloud/viewer/actions",
+      "since": 4
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/viewer/detail",
+      "since": 4
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/viewer/machines",
+      "since": 4
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/viewer/receipts",
+      "since": 4
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/viewer/sessions",
+      "since": 4
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/viewer/status",
+      "since": 4
+    },
+    {
+      "method": "*",
       "pattern": "/v1/devstacks",
       "since": 1
     },

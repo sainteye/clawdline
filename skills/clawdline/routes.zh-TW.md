@@ -22,6 +22,12 @@
 | `*` | `/v1/cloud/peer/outbox/` | 4 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/cloud/peer/send` | 4 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/cloud/status` | 1 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
+| `*` | `/v1/cloud/viewer/actions` | 4 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
+| `*` | `/v1/cloud/viewer/detail` | 4 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
+| `*` | `/v1/cloud/viewer/machines` | 4 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
+| `*` | `/v1/cloud/viewer/receipts` | 4 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
+| `*` | `/v1/cloud/viewer/sessions` | 4 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
+| `*` | `/v1/cloud/viewer/status` | 4 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/devstacks` | 1 | `clawdline guide project` | `docs/user/projects.md` |
 | `*` | `/v1/diagnostics` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/events` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
