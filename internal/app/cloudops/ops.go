@@ -234,12 +234,12 @@ type plan struct {
 	images []string
 	// conversations is a restore's or a dismissal's list; allConversations
 	// is a dismissal that named none, which means every one on offer.
-	conversations                          []string
-	allConversations                       bool
-	upcoming, acceptLoss, force            bool
-	closeability                           string
-	rate, limit, byteWindow, offset, after int64
-	document                               []byte
+	conversations                                  []string
+	allConversations                               bool
+	upcoming, acceptLoss, force                    bool
+	closeability                                   string
+	rate, limit, byteWindow, offset, after, before int64
+	document                                       []byte
 }
 
 // op is one word of the vocabulary.
