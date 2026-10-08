@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 type humanInterventionWire struct {
@@ -182,11 +184,22 @@ func (s *Server) agentCreateHumanIntervention(w http.ResponseWriter, r *http.Req
 		b, _ := json.Marshal(map[string]any{"ok": true, "note": humanInterventionOf(v)})
 		return b
 	}
-	_, response, err := s.humanInterventions().Create(r.Context(), body, k, answer)
+	language := s.productLanguage()
+	effect := func(v work.HumanIntervention) store.Effect {
+		payload, _ := json.Marshal(orchestrator.HumanInterventionPush{NoteID: v.ID, Terminal: v.TargetSession,
+			Title: productcopy.Format(language, "note.title", nil),
+			Body:  productcopy.Format(language, "note.body", map[string]string{"title": v.Title}),
+			Tag:   "human-intervention-" + v.ID})
+		return store.Effect{Kind: orchestrator.EffectHumanInterventionPush, Subject: v.ID, Payload: payload}
+	}
+	_, response, effectID, err := s.humanInterventions().CreateWithEffect(r.Context(), body, k, answer, effect)
 	if err != nil {
 		release()
 		s.writeWorkV2Error(w, err)
 		return
+	}
+	if effectID != 0 {
+		go s.broker.RunEffects(context.WithoutCancel(r.Context()), []int64{effectID})
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusCreated)

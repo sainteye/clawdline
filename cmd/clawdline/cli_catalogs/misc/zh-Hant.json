@@ -99,6 +99,7 @@
   "note.the_body_names_kind_title_summary_a.642cb1ab": "  內容需指定 kind、title、summary、action、reason，並可選填 detail、options、document_url",
   "note.to_retry_the_same_note_clawdline_no.8d1b2aa3": "若要重試同一則 Note：clawdline note create --key %s …\n",
   "note.usage_clawdline_note_create_body_fi.688dbfca": "用法：clawdline note create --body-file <JSON path|-> [--target <terminal id>] [--from <conversation id>] [--key k] [--port n]",
+  "note.usage_with_requested_by_person": "用法：clawdline note create --body-file <JSON path|-> [--requested-by-person] [--target <terminal id>] [--from <conversation id>] [--key k] [--port n]",
   "portheld.clawdline.f8aa7cdb": "clawdline:",
   "portheld.console_missing": "%s，且 / 回覆 %d：未提供主控台。",
   "portheld.console_refused": "%s，且 / 回覆 %d %s：未提供主控台。",

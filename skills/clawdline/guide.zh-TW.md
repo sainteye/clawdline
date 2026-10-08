@@ -950,7 +950,7 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 
 ## 9a. 留下需要人處理的便條
 
-長時間工作的 Agent 有一件具體的事需要使用者閱讀、執行或決定，而一般對話訊息容易被後續內容淹沒時，使用便條。便條留在目標 Session 預設收合的「關注」區，未處理時顯示紅點；Agent 可以繼續做不依賴該答覆的工作，使用者可在告一段落時回來看。便條不是進度日誌、Agent 私人提醒、推播通知，也不是看板決策的授權。同一件事不要重複貼便條。
+長時間工作的 Agent 有一件具體的事需要使用者閱讀、執行或決定，而一般對話訊息容易被後續內容淹沒時，使用便條。便條留在目標 Session 預設收合的「關注」區，未處理時顯示紅點；Agent 可以繼續做不依賴該答覆的工作，使用者可在告一段落時回來看。便條不是進度日誌、Agent 私人提醒，也不是看板決策的授權。同一件事不要重複貼便條。Agent 主動建立便條時，若通知已開啟且裝置已訂閱，Clawdline 也會送推播。
 
 **要在對話中請使用者選擇之前**，先建立一張 `answer` 便條，寫清楚實際問題、決策所需的取捨，以及二至四個完整的建議回覆。點一下按鈕就會把回覆當成對話訊息送出，所以每個 `draft` 單獨閱讀也要清楚。建立後，在對話中簡短提示即可。建立便條或便條被標記為已處理，都不是使用者的答覆；收到對話訊息（點選送出的回覆或使用者自己打的）後，才能執行依賴該決定的動作。建立失敗時，說明失敗並直接在對話中提問。只有需要人判斷的決定才用便條；Agent 能自行決定的例行選擇不用。
 
@@ -963,9 +963,11 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 ```sh
 clawdline note create --body-file note.json
 # For another Session: clawdline note create --target <terminal-id> --body-file note.json
+# Only when the person explicitly asked you to create this note:
+clawdline note create --requested-by-person --body-file note.json
 ```
 
-`kind` 可為 `read`、`answer`、`action` 或 `report`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是按鈕顯示的建議回覆。使用者點一下，Console 就把它當成對話訊息直接送到便條所在的 Session，後面附上便條 ID、標題和待回覆事項，讓接收的 Session 知道使用者回答的是哪張便條；按鈕不顯示這段脈絡。送出成功後，便條才會移到最近已處理。送出失敗時，便條維持待處理，關注按鈕會說明回覆沒有送出。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。依實際收到的對話訊息行事，不看便條狀態：使用者手動標記已處理的便條，並沒有送出任何訊息。若工作確實卡在答覆上，另記錄等待使用者的狀態，並按既有規則發送一次關注通知。便條本身不推播，也不喚醒 Agent。
+`kind` 可為 `read`、`answer`、`action` 或 `report`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是按鈕顯示的建議回覆。使用者點一下，Console 就把它當成對話訊息直接送到便條所在的 Session，後面附上便條 ID、標題和待回覆事項，讓接收的 Session 知道使用者回答的是哪張便條；按鈕不顯示這段脈絡。送出成功後，便條才會移到最近已處理。送出失敗時，便條維持待處理，關注按鈕會說明回覆沒有送出。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。依實際收到的對話訊息行事，不看便條狀態：使用者手動標記已處理的便條，並沒有送出任何訊息。只有使用者明確要求建立便條時才用 `--requested-by-person`；泛稱「完成工作」不算明確要求。加上此旗標時便條仍會顯示，但不會送便條推播。若工作確實卡在答覆上，另記錄等待使用者的狀態；Agent 主動建立的便條已負責關注通知，別再重複送一則。便條不會喚醒 Agent。
 
 ## 10. 看板
 
