@@ -107,7 +107,7 @@ type workV2ItemWire struct {
 	Version           int64                      `json:"version"`
 	Assignments       []workV2AssignmentWire     `json:"assignments,omitempty"`
 	Documents         []workV2DocumentWire       `json:"documents,omitempty"`
-	Images            []workV2ImageWire          `json:"images,omitempty"`
+	Images            []workV2ImageWire          `json:"images"`
 	Steps             []workV2StepWire           `json:"steps,omitempty"`
 	Events            []workV2EventWire          `json:"events,omitempty"`
 }
@@ -387,7 +387,7 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 		DeploymentEvidence: v.CardProgress.DeploymentEvidence, NoDeploymentReason: v.CardProgress.NoDeploymentReason,
 		NoLandingReason: v.CardProgress.NoLandingReason, Landings: recordedLandingsWire(v.Landings),
 		GateSnapshotAt: optionalUnix(i.GateSnapshotAt), PlanningGate: i.PlanningGate, VerifyGate: i.VerifyGate,
-		Version: i.Version, ParentID: i.ParentID}
+		Version: i.Version, ParentID: i.ParentID, Images: make([]workV2ImageWire, 0, len(v.Images))}
 	if v.Gate != nil {
 		out.Verification = v.Gate
 	} else if v.GateCompact != nil {

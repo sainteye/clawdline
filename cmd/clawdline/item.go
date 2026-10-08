@@ -52,7 +52,7 @@ func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 type itemFlags struct {
 	project, kind, title, description, acceptance, deploy, run string
 	expectedVersion                                            int64
-	docID                                                      string
+	docID, output                                              string
 	steps                                                      []string
 	phase                                                      phaseEvidence
 	doc                                                        docFlags
@@ -153,6 +153,7 @@ func itemCommand(args []string) {
 	run := fs.String("run", "", cliCopy("item", "flag.run", "the run of the person's message (default: this conversation's latest run)"))
 	expectedVersion := fs.Int64("expected-version", 0, cliCopy("item", "flag.expected_version", "the item's version the write expects; refused as version_conflict when it moved on (required for acceptance-revise)"))
 	docID := fs.String("doc", "", cliCopy("item", "flag.doc", "for show: print only this document's body, raw"))
+	output := fs.String("output", "", cliCopy("item", "flag.output", "for image: save the full reference image to this new file"))
 	role := fs.String("role", "", cliCopy("item", "flag.role", "for doc: spec, design, test, deploy, completion_report, plan, plan_review or other"))
 	reference := fs.String("reference", "", cliCopy("item", "flag.reference", "for doc: a path in the Project, a URL, or for plan_review the review task's id"))
 	bodyFile := fs.String("body-file", "", cliCopy("item", "flag.body_file", "for doc or acceptance: a file holding Markdown; - or absent reads stdin"))
@@ -255,6 +256,13 @@ func itemCommand(args []string) {
 		if op == "show" {
 			f.docID = strings.TrimSpace(*docID)
 		}
+	case "image":
+		if len(positional) != 2 || strings.TrimSpace(*output) == "" {
+			fmt.Fprintln(os.Stderr, cliCopy("item", "argument.image", "clawdline item image: give an item id, image id, and --output file"))
+			itemUsage()
+		}
+		rest = positional
+		f.output = strings.TrimSpace(*output)
 	case "step-add":
 		if len(positional) < 1 {
 			fmt.Fprintln(os.Stderr, cliCopy("item", "argument.step_add", "clawdline item step-add: takes an item id and the steps' titles"))
@@ -362,6 +370,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.assign", "       clawdline item assign (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona id])"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.assign_options", "                          [--run id] [--conversation id] [--key k] [--port n] <item id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.show", "       clawdline item show [--doc <doc id>] [--port n] <item id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.image", "       clawdline item image --output <new file> [--port n] <item id> <image id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.steps", "       clawdline item steps [--port n] <item id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.step_add", "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.step_done", "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>"))
@@ -431,6 +440,7 @@ func readTextFrom(name string, r io.Reader, what string) (string, error) {
 type itemWire struct {
 	ID                 string  `json:"id"`
 	Title              string  `json:"title"`
+	Description        *string `json:"description"`
 	Kind               string  `json:"kind"`
 	Phase              string  `json:"phase"`
 	OwnerSession       *string `json:"owner_session"`
@@ -449,7 +459,17 @@ type itemWire struct {
 		Done     bool   `json:"done"`
 		Position int64  `json:"position"`
 	} `json:"steps"`
-	Documents []itemDocWire `json:"documents"`
+	Documents []itemDocWire    `json:"documents"`
+	Images    *[]itemImageWire `json:"images"`
+}
+
+type itemImageWire struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	MediaType string `json:"media_type"`
+	ByteCount int64  `json:"byte_count"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
 }
 
 type itemDocWire struct {
@@ -539,6 +559,9 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		}
 		printItem(stdout, it)
 		return 0
+	}
+	if op == "image" {
+		return itemImage(stdout, stderr, b, strings.TrimSpace(args[0]), strings.TrimSpace(args[1]), f.output)
 	}
 	if conversation == "" {
 		var err error
@@ -954,8 +977,25 @@ func itemShow(stdout, stderr io.Writer, it itemWire, docID string) int {
 		fmt.Fprintf(stderr, cliCopy("item", "show.no_document", "clawdline item show: item %s has no document %s; %s.\n"), it.ID, docID, held)
 		return 1
 	}
+	if it.Description == nil {
+		fmt.Fprintln(stderr, cliCopy("item", "show.description_unavailable", "clawdline item show: the item response omitted its description; description status is unknown."))
+		return 1
+	}
+	if it.Images == nil {
+		fmt.Fprintln(stderr, cliCopy("item", "show.images_unavailable", "clawdline item show: the item response omitted its image inventory; image status is unknown."))
+		return 1
+	}
 	printItem(stdout, it)
 	fmt.Fprintf(stdout, cliCopy("item", "show.version", "  item version %d\n"), it.Version)
+	fmt.Fprintln(stdout, cliCopy("item", "show.description", "\n===== description ====="))
+	if *it.Description == "" {
+		fmt.Fprintln(stdout, cliCopy("item", "show.no_description", "(no description)"))
+	} else {
+		fmt.Fprint(stdout, *it.Description)
+		if !strings.HasSuffix(*it.Description, "\n") {
+			fmt.Fprintln(stdout)
+		}
+	}
 	for _, d := range it.Documents {
 		fmt.Fprintf(stdout, cliCopy("item", "show.document_header", "\n===== doc %s  %s  %s  (v%d) =====\n"), d.ID, d.Role, d.Title, d.Version)
 		if d.Reference != "" {
@@ -966,6 +1006,15 @@ func itemShow(stdout, stderr io.Writer, it itemWire, docID string) int {
 			if !strings.HasSuffix(d.Body, "\n") {
 				fmt.Fprintln(stdout)
 			}
+		}
+	}
+	if len(*it.Images) == 0 {
+		fmt.Fprintln(stdout, cliCopy("item", "show.no_images", "\nReference images: none"))
+	} else {
+		fmt.Fprintf(stdout, cliCopy("item", "show.image_count", "\nReference images: %d\n"), len(*it.Images))
+		for _, image := range *it.Images {
+			fmt.Fprintf(stdout, cliCopy("item", "show.image", "  %s  %s  %s  %d bytes\n"), image.ID, image.Title, image.MediaType, image.ByteCount)
+			fmt.Fprintf(stdout, cliCopy("item", "show.image_command", "    Read full image: clawdline item image %s %s --output <new file>\n"), it.ID, image.ID)
 		}
 	}
 	return 0

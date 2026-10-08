@@ -370,11 +370,15 @@ is refused. Anything rarer is one `clawdline guide <part>` away; the pointers ar
 
 **1. Read the item.** `clawdline item show <item id>` prints its kind, phase, acceptance criteria,
 captured gates, the acceptance version (`acceptance vN`), for a Feature the person's Needs
-independent review switch, its steps, and every document with its body. That is
-the record you work from. `clawdline item show <item id> --doc <doc id>` prints one document's
-body alone, to pipe into a file; `clawdline item steps <item id>` is the same record without the bodies. Every item
+independent review switch, its steps, full description, every document with its body, and the
+reference-image inventory. For each image, follow the printed `clawdline item image <item id>
+<image id> --output <new file>` command, then open that file with your image-reading tool before
+planning. The command saves the full pixels and refuses a missing or unreadable image. An item
+with no images says so explicitly; an omitted image inventory is an error, not an empty list.
+`clawdline item show <item id> --doc <doc id>` prints one document's body alone, to pipe into a
+file; `clawdline item steps <item id>` is the shorter record without the bodies. Every item
 write prints `wrote …; item <id> is at version N`, a short item summary, and an `item show`
-hint. Read the full acceptance, steps, and documents with `item show`. Writes act on the item's current version unless you pass
+hint. Read the full acceptance, description, steps, documents, and images with `item show`. Writes act on the item's current version unless you pass
 `--expected-version`.
 
 If your ASSIGNMENT.md has a **HANDOFF** heading, you are taking over an item another Session left
