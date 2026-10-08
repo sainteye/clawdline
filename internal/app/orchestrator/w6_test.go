@@ -143,6 +143,19 @@ func TestTheSweepRemovesOnlyWhatItCanProve(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(path, "untracked.txt"), []byte("only here\n"), 0o644)
 	})
 	w6Checkout(t, b, ctx, repo, empty, "%23", nil)
+	module := filepath.Join(b.Tasks.Path(empty), "work", "go-mod", "example.invalid", "module@v1")
+	if err := os.MkdirAll(module, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module example.invalid/module\n"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(module, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Dir(module), 0o555); err != nil {
+		t.Fatal(err)
+	}
 	w6Checkout(t, b, ctx, repo, present, "%9", nil)
 	u := w6Checkout(t, b, ctx, repo, unknown, "", nil)
 	_ = u
@@ -356,6 +369,41 @@ func TestOnlyOwnedPathsAreRemoved(t *testing.T) {
 	}
 	if !dirExists(outside) {
 		t.Fatal("the directory a link pointed at is gone")
+	}
+}
+
+func TestOwnedScratchRemovesReadOnlyGoModulesWithoutFollowingSymlinks(t *testing.T) {
+	root := t.TempDir()
+	work := filepath.Join(root, "work")
+	module := filepath.Join(work, "go-mod", "example.invalid", "module@v1")
+	if err := os.MkdirAll(module, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module example.invalid/module\n"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	keep := filepath.Join(outside, "keep.txt")
+	if err := os.WriteFile(keep, []byte("untouched"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(module, "outside")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(module, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Dir(module), 0o555); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeOwned(root, work, "work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(work); !os.IsNotExist(err) {
+		t.Fatalf("owned scratch remains: %v", err)
+	}
+	if got, err := os.ReadFile(keep); err != nil || string(got) != "untouched" {
+		t.Fatalf("symlink target changed: %q, %v", got, err)
 	}
 }
 
