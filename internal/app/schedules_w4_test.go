@@ -307,6 +307,27 @@ func TestAScheduledRunHasItsOwnSecretBriefingAndClock(t *testing.T) {
 	}
 }
 
+// A person pressing Run now is an explicit start, not the proactive dispatch
+// that the machine-wide switch disables. The clock still stays quiet while
+// that switch is off, but the press can start the same schedule immediately.
+func TestAManualRunOverridesTheProactiveDispatchSwitch(t *testing.T) {
+	f := newW4(t)
+	ctx := context.Background()
+	id := f.schedule(t, "5c000013-0000-4000-8000-000000000013", "manual report",
+		map[string]any{"claims": []string{}})
+	f.book.DispatchEnabled = func() bool { return false }
+
+	if pulse := f.book.Beat(ctx); pulse.Fired != 0 || pulse.Note != "task dispatch is switched off" {
+		t.Fatalf("the disabled clock fired or lost its reason: %+v", pulse)
+	}
+	if reply := f.book.Run(ctx, id); !reply.OK() {
+		t.Fatalf("an explicit manual run was refused: %d %s %s", reply.Status, reply.Code, reply.Message)
+	}
+	if f.term.opened() != 1 {
+		t.Fatalf("manual run opened %d sessions, want one", f.term.opened())
+	}
+}
+
 // ③ A run that never writes result.json ends on its own clock, and the next
 // occurrence runs. The control is the same schedule a day earlier, with the
 // broker's clock not yet run: the live run holds the occurrence back, which is

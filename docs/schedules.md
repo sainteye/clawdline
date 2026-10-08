@@ -38,6 +38,9 @@ depend on the target Linux or Windows installation carrying zoneinfo.
 | `GET /v1/orchestrator/schedule-exports` | 只有 orchestrator token（本 daemon 新增，遷移用） |
 
 `gate.go` 只多一行：`/v1/orchestrator/schedules/…` 的寫入跟清單一樣走「兩扇門」，不再一律要 orchestrator token。
+「立即執行」是人已經明確做出的啟動：即使 `orchestrator_enabled` 關閉，手動 Run 仍會嘗試開始。
+時鐘與 webhook 是主動啟動，仍會被這個開關擋下；手動 Run 也不繞過同排程已在執行、
+單次排程已用完、claims 衝突或 broker 容量限制。
 
 ### A Session relays a person's recurring instruction
 
