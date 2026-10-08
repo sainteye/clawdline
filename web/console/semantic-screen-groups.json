@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4882,
-  "riskKeys": 2132,
-  "nonRiskCount": 2750,
+  "englishContentKeys": 4887,
+  "riskKeys": 2134,
+  "nonRiskCount": 2753,
   "groups": [
     {
       "name": "bar / other",
@@ -1638,7 +1638,7 @@
     },
     {
       "name": "next / cloud",
-      "count": 145,
+      "count": 148,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1754,6 +1754,9 @@
         "next.cloudPairYourKey",
         "next.cloudPairYourKeyCheck",
         "next.cloudPeerAccept",
+        "next.cloudPeerAccessGrants",
+        "next.cloudPeerAccessPairs",
+        "next.cloudPeerAccessRefresh",
         "next.cloudPeerBody",
         "next.cloudPeerCheckRelay",
         "next.cloudPeerChooseMachine",

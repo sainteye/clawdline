@@ -53,6 +53,20 @@ Run `clawdline cloud peer fingerprint` on each machine to compare its signing
 fingerprint from that machine before entering the opposite fingerprint in the
 pair flow.
 
+`peer-control` with `{"action":"status"}` returns the local machine ID and
+signing fingerprint plus `pairs` and `grants` arrays. A pair row contains its
+revocable `pair_id`, source and target machine IDs and fingerprints, expiration,
+and `state` (`waiting_for_target` or `active`). A grant row contains its
+revocable `grant_id`, `pair_id`, exact source and target machine/Session/execution
+triples, `scopes`, and expiration. The arrays contain only unexpired,
+unrevoked local records for this machine and account. The entire durable
+tables are read within the registered 128-pair and 512-grant bounds; an
+unreadable or oversized table is an error, never a successful empty list.
+No signing or encryption key, signature, request body, or inbox content is
+returned. `active` describes the local pin; every attempted send or receive
+still requires fresh Cloud grant authorization. The status list lets a person
+recover IDs for revocation after a Session disappears or the Console reloads.
+
 The local HTTP routes are:
 
 - `POST /v1/cloud/peer/control` for an explicit pair or grant action;

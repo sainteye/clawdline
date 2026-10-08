@@ -10,3 +10,5 @@
 .cloud-peer-revocation[open] { margin-block-end: 1rem; }
 .cloud-peer-revocation[open] label { margin-block-start: .5rem; }
 .cloud-peer-revocation button { min-height: 44px; margin-inline-end: .5rem; }
+.cloud-peer-access-list li { display: grid; gap: .25rem; margin-block: .5rem; overflow-wrap: anywhere; }
+.cloud-peer-access-list li button { justify-self: start; }

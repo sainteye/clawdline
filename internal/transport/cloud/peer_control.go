@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"crypto/ecdh"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/peerstore"
 	"github.com/sainteye/clawdline/internal/domain/agenthandoff"
+	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // PeerControlInput names a single deliberate machine-pair or grant action.
@@ -38,6 +40,29 @@ type PeerControlResult struct {
 	PeerMachineID    string `json:"peer_machine_id,omitempty"`
 	PeerFingerprint  string `json:"peer_fingerprint,omitempty"`
 	State            string `json:"state"`
+	// These are present only for status. They describe locally pinned authority,
+	// never message content, private keys or an inferred Cloud grant decision.
+	Pairs  *[]PeerPairStatus  `json:"pairs,omitempty"`
+	Grants *[]PeerGrantStatus `json:"grants,omitempty"`
+}
+
+type PeerPairStatus struct {
+	PairID            string    `json:"pair_id"`
+	SourceMachineID   string    `json:"source_machine_id"`
+	TargetMachineID   string    `json:"target_machine_id"`
+	SourceFingerprint string    `json:"source_fingerprint"`
+	TargetFingerprint string    `json:"target_fingerprint"`
+	State             string    `json:"state"`
+	ExpiresAt         time.Time `json:"expires_at"`
+}
+
+type PeerGrantStatus struct {
+	GrantID   string                `json:"grant_id"`
+	PairID    string                `json:"pair_id"`
+	Source    agenthandoff.Endpoint `json:"source"`
+	Target    agenthandoff.Endpoint `json:"target"`
+	Scopes    []string              `json:"scopes"`
+	ExpiresAt time.Time             `json:"expires_at"`
 }
 
 func (l *Link) ControlPeer(ctx context.Context, input PeerControlInput) (PeerControlResult, error) {
@@ -58,7 +83,7 @@ func (l *Link) ControlPeer(ctx context.Context, input PeerControlInput) (PeerCon
 		LocalFingerprint: key.Fingerprint()}
 	switch input.Action {
 	case "status":
-		base.State = "identity_read"
+		return peerControlStatus(ctx, st, base, l.identity.AccountID, l.opts.Now())
 	case "start":
 		if input.TargetMachineID == "" || input.TargetMachineID == l.identity.MachineID || input.ComparedFingerprint == "" {
 			return base, errors.New("peer_target_and_compared_fingerprint_required")
@@ -227,6 +252,117 @@ func (l *Link) ControlPeer(ctx context.Context, input PeerControlInput) (PeerCon
 		return base, errors.New("peer_control_action_unknown")
 	}
 	return base, nil
+}
+
+// peerControlStatus returns a complete bounded view of this machine's local
+// pins. An absent or corrupt row never becomes a claimed active grant. Cloud
+// revocation is still checked separately at every send and receive admission.
+func peerControlStatus(ctx context.Context, st *peerstore.Store, base PeerControlResult,
+	accountID string, now time.Time) (PeerControlResult, error) {
+	allPairs, err := st.ListPairs(ctx)
+	if err != nil {
+		return base, err
+	}
+	allGrants, err := st.ListGrants(ctx)
+	if err != nil {
+		return base, err
+	}
+	pairs := make([]PeerPairStatus, 0)
+	grants := make([]PeerGrantStatus, 0)
+	active := make(map[string]peerstore.Pair)
+	for _, pair := range allPairs {
+		if pair.AccountID != accountID || !pair.RevokedAt.IsZero() || !now.Before(pair.ExpiresAt) {
+			continue
+		}
+		localIsSource := pair.SourceMachineID == base.LocalMachineID
+		if !localIsSource && pair.TargetMachineID != base.LocalMachineID {
+			continue
+		}
+		localFingerprint := pair.TargetFingerprint
+		peerFingerprint := pair.SourceFingerprint
+		if localIsSource {
+			localFingerprint, peerFingerprint = pair.SourceFingerprint, pair.TargetFingerprint
+		}
+		if localFingerprint != base.LocalFingerprint || peerFingerprint == "" {
+			continue
+		}
+		state := "active"
+		if pair.TargetSignature == "" {
+			if !localIsSource || !pendingPairValid(pair) {
+				return base, errors.New("peer_local_pair_invalid")
+			}
+			state = "waiting_for_target"
+		} else {
+			transcript := agenthandoff.PairTranscript{PairID: pair.ID,
+				SourceMachineID: pair.SourceMachineID, TargetMachineID: pair.TargetMachineID,
+				SourcePublicKey: pair.SourcePublicKey, TargetPublicKey: pair.TargetPublicKey,
+				SourceFingerprint: pair.SourceFingerprint, TargetFingerprint: pair.TargetFingerprint,
+				SourceEncryptionKey: pair.SourceEncryptionKey, TargetEncryptionKey: pair.TargetEncryptionKey,
+				SourceOfferSignature: pair.SourceSignature, TargetAcceptSignature: pair.TargetSignature}
+			private, privateErr := ecdh.X25519().NewPrivateKey(pair.LocalPrivateKey)
+			if privateErr != nil || agenthandoff.VerifyTranscript(transcript, base.LocalMachineID, peerFingerprint) != nil {
+				return base, errors.New("peer_local_pair_invalid")
+			}
+			if _, _, err := agenthandoff.PairKey(pairKeys(pair), private, localIsSource); err != nil {
+				return base, errors.New("peer_local_pair_invalid")
+			}
+			active[pair.ID] = pair
+		}
+		pairs = append(pairs, PeerPairStatus{PairID: pair.ID,
+			SourceMachineID: pair.SourceMachineID, TargetMachineID: pair.TargetMachineID,
+			SourceFingerprint: pair.SourceFingerprint, TargetFingerprint: pair.TargetFingerprint,
+			State: state, ExpiresAt: pair.ExpiresAt})
+	}
+	for _, grant := range allGrants {
+		if !grant.RevokedAt.IsZero() || !now.Before(grant.ExpiresAt) {
+			continue
+		}
+		pair, found := active[grant.PairID]
+		if !found {
+			continue
+		}
+		if grant.Source.MachineID != pair.SourceMachineID || grant.Target.MachineID != pair.TargetMachineID ||
+			grant.SourceKeyFingerprint != pair.SourceFingerprint || grant.ExpiresAt.After(pair.ExpiresAt) ||
+			(!grant.AllowMessage && !grant.AllowHandoff) {
+			return base, errors.New("peer_local_grant_invalid")
+		}
+		scopes := make([]string, 0, 2)
+		if grant.AllowMessage {
+			scopes = append(scopes, "message")
+		}
+		if grant.AllowHandoff {
+			scopes = append(scopes, "handoff")
+		}
+		grants = append(grants, PeerGrantStatus{GrantID: grant.ID, PairID: grant.PairID,
+			Source: grant.Source, Target: grant.Target, Scopes: scopes, ExpiresAt: grant.ExpiresAt})
+	}
+	base.State, base.Pairs, base.Grants = "identity_read", &pairs, &grants
+	return base, nil
+}
+
+func pendingPairValid(pair peerstore.Pair) bool {
+	if pair.SourcePublicKey == "" || pair.SourceSignature == "" || len(pair.LocalPrivateKey) != 32 ||
+		pair.TargetPublicKey != "" || pair.TargetEncryptionKey != "" {
+		return false
+	}
+	signer, err := base64.StdEncoding.Strict().DecodeString(pair.SourcePublicKey)
+	if err != nil || len(signer) != ed25519.PublicKeySize ||
+		domaincloud.Fingerprint(ed25519.PublicKey(signer)) != pair.SourceFingerprint {
+		return false
+	}
+	private, err := ecdh.X25519().NewPrivateKey(pair.LocalPrivateKey)
+	if err != nil || base64.StdEncoding.EncodeToString(private.PublicKey().Bytes()) != pair.SourceEncryptionKey {
+		return false
+	}
+	signature, err := base64.StdEncoding.Strict().DecodeString(pair.SourceSignature)
+	if err != nil || len(signature) != ed25519.SignatureSize {
+		return false
+	}
+	return ed25519.Verify(ed25519.PublicKey(signer), agenthandoff.OfferBytes(agenthandoff.PairTranscript{
+		SourceMachineID: pair.SourceMachineID, TargetMachineID: pair.TargetMachineID,
+		SourceFingerprint: pair.SourceFingerprint, TargetFingerprint: pair.TargetFingerprint,
+		SourceEncryptionKey: pair.SourceEncryptionKey,
+	}), signature)
 }
 
 func peerTranscript(pair adaptercloud.PeerPair) agenthandoff.PairTranscript {

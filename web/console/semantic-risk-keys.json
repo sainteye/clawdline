@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 4882,
+  "englishKeys": 4887,
   "counts": {
-    "negation": 1414,
-    "state": 681,
+    "negation": 1415,
+    "state": 682,
     "permission": 265,
     "deletion": 88,
     "uncertainty": 140
   },
-  "unionCount": 2132,
+  "unionCount": 2134,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -1054,6 +1054,7 @@
       "next.cloudPairingFine",
       "next.cloudPairingLede",
       "next.cloudPastUnavailable",
+      "next.cloudPeerAccessEmpty",
       "next.cloudPeerCompareInstruction",
       "next.cloudPeerInboxRead",
       "next.cloudRenameAbsent",
@@ -1865,6 +1866,7 @@
       "next.cloudPairStoppedEarly",
       "next.cloudPairWaiting",
       "next.cloudPairingFine",
+      "next.cloudPeerAccessObservedAt",
       "next.cloudPeerRefused",
       "next.cloudPeerRelayReceipt",
       "next.cloudPeerSync",
@@ -4124,7 +4126,9 @@
     "next.cloudPairingFine",
     "next.cloudPairingLede",
     "next.cloudPastUnavailable",
+    "next.cloudPeerAccessEmpty",
     "next.cloudPeerAccessMachine",
+    "next.cloudPeerAccessObservedAt",
     "next.cloudPeerCompareInstruction",
     "next.cloudPeerInboxRead",
     "next.cloudPeerManageAccess",

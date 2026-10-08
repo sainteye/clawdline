@@ -3,7 +3,7 @@ import { nextWord } from "../next-strings.js"
 import type { CloudClientHandle } from "./copied.js"
 import type { DetailActionContext, FleetMachine } from "./AllMachineSessions.js"
 import type { SessionDestination, SessionProjectionSource } from "./all-machine-sessions.js"
-import { ensurePeerEndpointCurrent } from "./peer-handoff-admission.js"
+import { checkedPeerAccessStatus, ensurePeerEndpointCurrent, type PeerAccessSnapshot } from "./peer-handoff-admission.js"
 import { STATUS_FRESH_MS } from "./status-projection.js"
 import "./peer-handoff.css"
 
@@ -277,22 +277,43 @@ export function PeerRevocationPanel({ machines, current }: {
   const [grantID, setGrantID] = useState("")
   const [busy, setBusy] = useState(false)
   const [answer, setAnswer] = useState("")
+  const [access, setAccess] = useState<PeerAccessSnapshot | null>(null)
   const machine = machines.find((entry) => entry.id === machineID)
+
+  async function clientForAccess(): Promise<CloudClientHandle> {
+    const client = current()
+    const roster = await client?.machines().catch(() => null)
+    const currentMachine = roster?.machines.find((entry) => entry.id === machineID)
+    if (!client || !currentMachine || currentMachine.freshness !== "current" ||
+      currentMachine.pairing !== "paired") throw new Error("peer_machine_stale")
+    if (!client.allowWrites || !client._machineRequestAs || !client.viewerVerified?.has(machineID) ||
+      !client.machineDescriptor?.(machineID)?.machine?.commands?.includes("peer-control")) {
+      throw new Error("peer_capability_unavailable")
+    }
+    return client
+  }
+
+  async function readAccess() {
+    if (busy || !machineID) return
+    setBusy(true)
+    setAccess(null)
+    try {
+      const client = await clientForAccess()
+      const response = await client._machineRequestAs!(crypto.randomUUID(), machineID, "peer-control",
+        { control: { action: "status" } }, "action", 30_000)
+      setAccess(checkedPeerAccessStatus(response, machineID))
+      setAnswer("")
+    } catch (error) { setAnswer(nextWord("cloudPeerRefused", { code: problem(error) })) }
+    finally { setBusy(false) }
+  }
 
   async function revoke(action: "revoke_pair" | "revoke_grant", id: string) {
     if (busy || !machineID || !id) return
     setBusy(true)
+    setAccess(null)
     try {
-      const client = current()
-      const roster = await client?.machines().catch(() => null)
-      const currentMachine = roster?.machines.find((entry) => entry.id === machineID)
-      if (!client || !currentMachine || currentMachine.freshness !== "current" ||
-        currentMachine.pairing !== "paired") throw new Error("peer_machine_stale")
-      if (!client.allowWrites || !client._machineRequestAs || !client.viewerVerified?.has(machineID) ||
-        !client.machineDescriptor?.(machineID)?.machine?.commands?.includes("peer-control")) {
-        throw new Error("peer_capability_unavailable")
-      }
-      const response = await client._machineRequestAs(crypto.randomUUID(), machineID, "peer-control",
+      const client = await clientForAccess()
+      const response = await client._machineRequestAs!(crypto.randomUUID(), machineID, "peer-control",
         { control: { action, ...(action === "revoke_pair" ? { pair_id: id } : { grant_id: id }) } },
         "action", 30_000) as ControlAnswer
       if (response.state !== "revoked") throw new Error("peer_revocation_unconfirmed")
@@ -306,11 +327,39 @@ export function PeerRevocationPanel({ machines, current }: {
   return <details className="cloud-peer-panel cloud-peer-revocation">
     <summary>{nextWord("cloudPeerManageAccess")}</summary>
     <label>{nextWord("cloudPeerAccessMachine")}
-      <select value={machineID} disabled={busy} onChange={(event) => { setMachineID(event.target.value); setAnswer("") }}>
+      <select value={machineID} disabled={busy} onChange={(event) => {
+        setMachineID(event.target.value); setPairID(""); setGrantID(""); setAccess(null); setAnswer("")
+      }}>
         <option value="">{nextWord("cloudPeerChooseMachine")}</option>
         {machines.map((entry) => <option key={entry.id} value={entry.id}>{entry.name || entry.id}</option>)}
       </select>
     </label>
+    <button type="button" disabled={busy || machine?.freshness !== "current"}
+      onClick={() => void readAccess()}>{nextWord("cloudPeerAccessRefresh")}</button>
+    {access && <div className="cloud-peer-access-list">
+      <p>{nextWord("cloudPeerAccessObservedAt", { time: new Date(access.observedAt).toLocaleString() })}</p>
+      {access.pairs.length === 0 && access.grants.length === 0 && <p>{nextWord("cloudPeerAccessEmpty")}</p>}
+      {access.pairs.length > 0 && <section aria-label={nextWord("cloudPeerAccessPairs")}>
+        <h3>{nextWord("cloudPeerAccessPairs")}</h3>
+        <ul>{access.pairs.map((pair) => <li key={pair.pair_id}>
+          <strong>{pair.pair_id}</strong>
+          <span>{pair.source_machine_id} → {pair.target_machine_id} · {pair.state} · {new Date(pair.expires_at).toLocaleString()}</span>
+          <button type="button" disabled={busy || machine?.freshness !== "current"}
+            onClick={() => void revoke("revoke_pair", pair.pair_id)}>{nextWord("cloudPeerRevokePair")}</button>
+        </li>)}</ul>
+      </section>}
+      {access.grants.length > 0 && <section aria-label={nextWord("cloudPeerAccessGrants")}>
+        <h3>{nextWord("cloudPeerAccessGrants")}</h3>
+        <ul>{access.grants.map((grant) => <li key={grant.grant_id}>
+          <strong>{grant.grant_id}</strong>
+          <span>{grant.source.machine_id}/{grant.source.session_id}/{grant.source.execution_generation} →
+            {grant.target.machine_id}/{grant.target.session_id}/{grant.target.execution_generation} ·
+            {grant.scopes.join(", ")} · {new Date(grant.expires_at).toLocaleString()}</span>
+          <button type="button" disabled={busy || machine?.freshness !== "current"}
+            onClick={() => void revoke("revoke_grant", grant.grant_id)}>{nextWord("cloudPeerRevokeGrant")}</button>
+        </li>)}</ul>
+      </section>}
+    </div>}
     <label>{nextWord("cloudPeerPairID")}<input value={pairID} disabled={busy} onChange={(event) => setPairID(event.target.value)} /></label>
     <button type="button" disabled={busy || machine?.freshness !== "current" || !pairID}
       onClick={() => void revoke("revoke_pair", pairID)}>{nextWord("cloudPeerRevokePair")}</button>

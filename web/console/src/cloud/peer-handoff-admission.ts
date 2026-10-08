@@ -1,6 +1,62 @@
 import type { CloudClientHandle } from "./copied.js"
 import { destinationKey, type SessionDestination, type SessionProjectionSource } from "./all-machine-sessions.js"
 
+export interface PeerPairStatus {
+  pair_id: string
+  source_machine_id: string
+  target_machine_id: string
+  source_fingerprint: string
+  target_fingerprint: string
+  state: "waiting_for_target" | "active"
+  expires_at: string
+}
+
+export interface PeerGrantStatus {
+  grant_id: string
+  pair_id: string
+  source: { machine_id: string; session_id: string; execution_generation: string }
+  target: { machine_id: string; session_id: string; execution_generation: string }
+  scopes: ("message" | "handoff")[]
+  expires_at: string
+}
+
+export interface PeerAccessSnapshot {
+  machineID: string
+  observedAt: number
+  pairs: PeerPairStatus[]
+  grants: PeerGrantStatus[]
+}
+
+/** Never treat an old or malformed machine authority response as an empty list. */
+export function checkedPeerAccessStatus(value: unknown, machineID: string, observedAt = Date.now()): PeerAccessSnapshot {
+  const reply = value as Record<string, unknown> | null
+  const pairs = reply?.pairs
+  const grants = reply?.grants
+  const endpoint = (item: unknown): boolean => {
+    const part = item as Record<string, unknown> | null
+    return !!part && typeof part.machine_id === "string" && !!part.machine_id &&
+      typeof part.session_id === "string" && !!part.session_id &&
+      typeof part.execution_generation === "string" && /^[0-9a-f]{32}$/u.test(part.execution_generation)
+  }
+  if (!reply || reply.action !== "status" || reply.state !== "identity_read" ||
+    reply.local_machine_id !== machineID || !Array.isArray(pairs) || !Array.isArray(grants) ||
+    !pairs.every((entry: PeerPairStatus) => entry && typeof entry.pair_id === "string" && !!entry.pair_id &&
+      typeof entry.source_machine_id === "string" && !!entry.source_machine_id &&
+      typeof entry.target_machine_id === "string" && !!entry.target_machine_id &&
+      typeof entry.source_fingerprint === "string" && !!entry.source_fingerprint &&
+      typeof entry.target_fingerprint === "string" && !!entry.target_fingerprint &&
+      (entry.state === "waiting_for_target" || entry.state === "active") &&
+      typeof entry.expires_at === "string" && Number.isFinite(Date.parse(entry.expires_at))) ||
+    !grants.every((entry: PeerGrantStatus) => entry && typeof entry.grant_id === "string" && !!entry.grant_id &&
+      typeof entry.pair_id === "string" && !!entry.pair_id && endpoint(entry.source) && endpoint(entry.target) &&
+      Array.isArray(entry.scopes) && entry.scopes.length > 0 &&
+      entry.scopes.every((scope) => scope === "message" || scope === "handoff") &&
+      typeof entry.expires_at === "string" && Number.isFinite(Date.parse(entry.expires_at)))) {
+    throw Object.assign(new Error("peer_access_bad_status"), { code: "peer_access_bad_status" })
+  }
+  return { machineID, observedAt, pairs, grants }
+}
+
 /** Recheck both the live machine roster and the exact status row before a peer write. */
 export async function ensurePeerEndpointCurrent(destination: SessionDestination,
   source: SessionProjectionSource | null, client: Pick<CloudClientHandle, "machines"> | null): Promise<void> {

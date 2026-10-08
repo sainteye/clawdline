@@ -10,7 +10,8 @@ import { renderToStaticMarkup } from "react-dom/server"
 const here = dirname(fileURLToPath(import.meta.url))
 const { outputFiles } = await build({ entryPoints: [resolve(here, "peer-handoff-admission.ts")],
   bundle: true, platform: "node", format: "esm", write: false })
-const { ensurePeerEndpointCurrent } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].contents).toString("base64")}`)
+const { checkedPeerAccessStatus, ensurePeerEndpointCurrent } = await import(
+  `data:text/javascript;base64,${Buffer.from(outputFiles[0].contents).toString("base64")}`)
 const generationA = "0123456789abcdef0123456789abcdef"
 const generationB = "fedcba9876543210fedcba9876543210"
 const sourceEndpoint = { machineID: "machine-a", sessionID: "shared", executionGeneration: generationA }
@@ -48,6 +49,24 @@ test("peer write admission accepts two current exact destinations", async () => 
     ensurePeerEndpointCurrent(targetEndpoint, f.source, f.client)])
   assert.equal(f.rows.get("machine-a").destination.machineID, "machine-a")
   assert.equal(f.rows.get("machine-b").destination.machineID, "machine-b")
+})
+
+test("peer access discovery accepts only the named machine and explicit complete arrays", () => {
+  const reply = { action: "status", state: "identity_read", local_machine_id: "machine-a",
+    pairs: [{ pair_id: "pair-1", source_machine_id: "machine-a", target_machine_id: "machine-b",
+      source_fingerprint: "source", target_fingerprint: "target", state: "active", expires_at: "2030-01-01T00:00:00Z" }],
+    grants: [{ grant_id: "grant-1", pair_id: "pair-1",
+      source: { machine_id: "machine-a", session_id: "shared", execution_generation: generationA },
+      target: { machine_id: "machine-b", session_id: "shared", execution_generation: generationB },
+      scopes: ["message"], expires_at: "2030-01-01T00:00:00Z" }] }
+  assert.equal(checkedPeerAccessStatus(reply, "machine-a", 123).grants[0].grant_id, "grant-1")
+  assert.equal(checkedPeerAccessStatus(reply, "machine-a", 123).observedAt, 123)
+  assert.throws(() => checkedPeerAccessStatus(reply, "machine-b"), { code: "peer_access_bad_status" })
+  assert.throws(() => checkedPeerAccessStatus({ ...reply, grants: undefined }, "machine-a"),
+    { code: "peer_access_bad_status" })
+  assert.throws(() => checkedPeerAccessStatus({ ...reply, grants: [{ ...reply.grants[0],
+    target: { ...reply.grants[0].target, execution_generation: "stale" } }] }, "machine-a"),
+  { code: "peer_access_bad_status" })
 })
 
 test("pair and grant revocation remain accessible without a current Session", async () => {
