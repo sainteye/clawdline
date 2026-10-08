@@ -89,13 +89,9 @@
 /* The callback belongs to this Session even while its heavy slot is queued.
  * Keep the owner visible beside any ordinary idle or waiting state. */
 .row .state > .session-callback-active {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 0 0 auto;
   color: var(--warn);
-  font: 600 11.5px/1.2 var(--mono);
+  font: 16px/1.2 sans-serif;
 }
 
 .row .state > .session-callback-active[data-verified="0"] {

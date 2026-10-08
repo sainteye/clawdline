@@ -65,7 +65,7 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
       ? nextWord("sessionCallbackActive")
       : nextWord("sessionCallbacksActive", { count: callbacks.length })
   const callbackSaid = callbacks.length
-    ? `<span class="session-callback-active" data-verified="${callbackKnown ? "1" : "0"}" title="${L.escapeHTML(callbacks.map((task) => task.title || task.id).join("\n"))}">${L.escapeHTML(callbackLabel)}</span>`
+    ? `<span class="session-callback-active" data-verified="${callbackKnown ? "1" : "0"}" role="img" aria-label="${L.escapeHTML(callbackLabel)}" title="${L.escapeHTML([callbackLabel, ...callbacks.map((task) => task.title || task.id)].join("\n"))}">🏗️</span>`
     : ""
   const n = row.shells?.length ?? 0
   const shellsSaid = n
