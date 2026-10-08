@@ -23,12 +23,12 @@ import {
 import type { CloudReadClient } from "./relay-reader.js"
 import type { OpenedPairing, PendingOffer } from "./pair.js"
 import type { RecoverySession } from "./device-limit.js"
-import { CatalogCloudClient } from "./refusal-client.js"
+import { StatusCloudClient } from "./status-client.js"
 
 // The archived bootstrap derives allowWrites from a device capability that
 // older Cloud tokens can omit. The current contract makes every signed-in
 // viewer writable; the target machine still checks its own pairing and switch.
-class PairedCloudClient extends CatalogCloudClient {
+class PairedCloudClient extends StatusCloudClient {
   constructor(options: Record<string, unknown>) {
     super({ ...options, allowWrites: true })
   }
