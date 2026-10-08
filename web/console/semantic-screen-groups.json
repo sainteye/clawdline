@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4887,
-  "riskKeys": 2134,
-  "nonRiskCount": 2753,
+  "englishContentKeys": 4912,
+  "riskKeys": 2141,
+  "nonRiskCount": 2771,
   "groups": [
     {
       "name": "bar / other",
@@ -1860,7 +1860,7 @@
     },
     {
       "name": "next / other",
-      "count": 89,
+      "count": 103,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1879,10 +1879,24 @@
         "next.infoContext",
         "next.infoContextUsed",
         "next.infoResetsInMinutes",
+        "next.machineDiskFree",
         "next.machineNeedsUpdateLink",
         "next.machineNeedsUpdateShort",
         "next.machineNeedsUpdateVersion",
+        "next.machineReclaimDeferred",
+        "next.machineReclaimFailures",
+        "next.machineReclaimKept",
+        "next.machineReclaimReasonChangedDuringSweep",
+        "next.machineReclaimReasonFiltersPresent",
+        "next.machineReclaimReasonNestedRepository",
+        "next.machineReclaimReasonOwnerPresent",
+        "next.machineReclaimReasonPathNotOwned",
+        "next.machineReclaimReasonWithinGrace",
+        "next.machineReclaimReasons",
+        "next.machineReclaimRemoving",
+        "next.machineReclaimTitle",
         "next.machineSessionScope",
+        "next.machineStorageTitle",
         "next.menuCancel",
         "next.menuChooseAgain",
         "next.newBuild",
@@ -2713,11 +2727,13 @@
     },
     {
       "name": "settings / other",
-      "count": 96,
+      "count": 100,
       "sources": [
         "src/pages/settings/window/copy.ts"
       ],
       "keys": [
+        "settings.browserTab",
+        "settings.machineTab",
         "settings.menuMascot",
         "settings.pairingScanTitle",
         "settings.settingsAgentNotifyNote",
@@ -2790,6 +2806,7 @@
         "settings.settingsVoiceLanguage",
         "settings.settingsVoiceLanguageFollow",
         "settings.settingsWidth",
+        "settings.statusTab",
         "settings.voiceLanguageChinese",
         "settings.voiceLanguageFixed",
         "settings.voiceMachineLocale",
@@ -2813,7 +2830,8 @@
         "settings.webCloudStatus",
         "settings.webCloudStatusConnection",
         "settings.webCloudStatusKey",
-        "settings.webCloudStatusMac"
+        "settings.webCloudStatusMac",
+        "settings.workTab"
       ]
     },
     {

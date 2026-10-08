@@ -13,6 +13,7 @@
 | `cache.assistant_quota` | 32 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.background_agents` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.image_thumbs` | 8388608 | `bytes` | `evict_oldest` | `diagnostics` | — |
+| `cache.reclaim_summary` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.session_activity` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.session_inventory` | 120 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.session_links` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |

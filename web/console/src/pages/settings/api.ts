@@ -40,8 +40,7 @@ export function defaultModelOptions(
  * shape all the same, so `failureSentence` reads them the way it reads any
  * other refusal.
  */
-async function call(init: RequestInit): Promise<SettingsSnapshot> {
-  const path = "/v1/settings"
+async function call(init: RequestInit, path = "/v1/settings"): Promise<SettingsSnapshot> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
   let res: Response
@@ -70,6 +69,11 @@ export function readSettings(): Promise<SettingsSnapshot> {
   return call({ method: "GET" })
 }
 
+/** The daemon console's paired-browser surface excludes native input-bar keys. */
+export function readBrowserSettings(): Promise<SettingsSnapshot> {
+  return call({ method: "GET" }, "/v1/settings/browser")
+}
+
 /**
  * Change the keys given; a key left out, or sent as null, is left as the file
  * has it.
@@ -80,6 +84,14 @@ export function readSettings(): Promise<SettingsSnapshot> {
  * made since this page last read the file.
  */
 export function writeSettings(change: Partial<SettingsRequest>): Promise<SettingsSnapshot> {
+  return writeSettingsTo("/v1/settings", change)
+}
+
+export function writeBrowserSettings(change: Partial<SettingsRequest>): Promise<SettingsSnapshot> {
+  return writeSettingsTo("/v1/settings/browser", change)
+}
+
+function writeSettingsTo(path: string, change: Partial<SettingsRequest>): Promise<SettingsSnapshot> {
   const body: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(change)) {
     if (value !== undefined) body[key] = value
@@ -88,7 +100,7 @@ export function writeSettings(change: Partial<SettingsRequest>): Promise<Setting
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  })
+  }, path)
 }
 
 async function callDefaultModels(init: RequestInit): Promise<DefaultModelsSnapshot> {

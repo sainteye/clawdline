@@ -13,7 +13,7 @@ says what it set up, and how a source checkout does the same.
 | Sessions Clawdline opens (start, dispatch, schedules) | tmux | tmux | No |
 | Keep it running | LaunchAgent (installer) | `systemd --user` service (installer) | By hand (a shortcut in `shell:startup`) |
 | Installer, signed updates with rollback | Yes | Yes | No |
-| Global hotkey, menu bar, notch mascot | Native app | No | No |
+| Menu bar, notch mascot | Native app | No | No |
 
 Linux was measured on a headless Ubuntu 24.04 server, and the installer and updates were also run on Debian 12 (bookworm) in a container with systemd as its init, logged in over SSH; Windows was measured on Windows Server 2022. Other distributions and desktop Linux have not been run.
 
@@ -48,19 +48,22 @@ command line tools (`swiftc --version`). An app built this way, without the inst
 What it adds:
 
 - **A menu bar item** (✳). It turns to the accent colour with a dot when a session is waiting for
-  you, and shows a count when several are working. Its menu opens the input bar, the console
+  you, and shows a count when several are working. Its menu opens the console
   window (**主頁／設定中心**), **開機時啟動** (start at login), **設定⋯** (settings) and **結束
   Clawdline** (quit). The app's own menus are in Traditional Chinese.
-- **An input bar** on a global hotkey, ⌥Space by default. By default the hotkey is only held while
-  iTerm2 or the app is in front; the settings window changes both. No Accessibility permission is
-  needed.
 - **A mascot in the notch**, on displays that have one. It can be turned off.
-- **A settings window** with tabs for general settings, the input bar, dictation, remote access,
+- **A settings window** with tabs for general settings, remote access,
   dispatch, and Cloud pairing with a QR code.
 
 **Check:** the app's window shows the same session list as the browser. An app that starts its own
 daemon (built from a checkout) finds a daemon already holding port 7727, lets its own exit and
 shows the one already there; quitting it stops only the daemon it started.
+
+The browser settings page uses tabs and two columns. A paired browser connected directly to the
+local daemon also has a **This machine** tab for the machine settings from the native settings
+window. Changing those settings requires Send access for that browser.
+The hosted Cloud browser has **Browser**, **Work**, and **Status** tabs; it only offers the settings
+its remote connection can change.
 
 ## Linux: a `systemd --user` service
 
@@ -97,8 +100,8 @@ either fails. It prints `deployed <commit>; daemon pid N; console 200`. Such a m
 offered releases; `clawdline setup --adopt` moves it onto them.
 
 On a machine with no desktop, `clawdline open --print` prints the sign-in address; reach it over an
-SSH port forward ([remote-access.md](remote-access.md)). Clipboard pictures, the global hotkey and
-the notch are unavailable on Linux, and a picture you send is handed to the assistant by its path.
+SSH port forward ([remote-access.md](remote-access.md)). Clipboard pictures and the notch are
+unavailable on Linux, and a picture you send is handed to the assistant by its path.
 
 ## Windows: not yet for sessions
 

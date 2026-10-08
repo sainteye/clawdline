@@ -144,8 +144,11 @@ type Server struct {
 	// releaseUpdate is set, on the same first use, when this daemon runs
 	// from a release install: it then answers GET /v1/update instead of
 	// update, and POST /v1/update/apply installs releases (update.go).
-	releaseUpdate *updater.Daemon
-	usage         *machineusage.Sampler
+	releaseUpdate    *updater.Daemon
+	usage            *machineusage.Sampler
+	reclaimSummaryMu sync.Mutex
+	reclaimSummaryAt time.Time
+	reclaimSummary   contract.MachineReclaimSummary
 	// beat is the broker's account of its last pass, read by /v1/diagnostics.
 	beat atomic.Pointer[orchestrator.Pulse]
 	// pulse is the scheduler's own account of its last pass, read by
@@ -610,6 +613,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/orchestrator/reclaim"}, s.reclaimRoute},
 		{Route{"*", "/v1/strings"}, s.strings},
 		{Route{"*", "/v1/settings"}, s.settingsRoute},
+		{Route{"*", "/v1/settings/browser"}, s.settingsRoute},
 		{Route{"*", "/v1/settings/default-models"}, s.defaultModelsRoute},
 		{Route{"*", "/v1/settings/work-gates"}, s.workGateSettingsRoute},
 		{Route{"*", "/v1/places"}, s.placesRoute},

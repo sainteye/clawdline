@@ -46,34 +46,27 @@ Cloud 暫時持有    傳輸中的密文；relay 記憶體中的最新加密快�
 
 Cloud 能看到必要的路由中繼資料，例如帳號／裝置／機器識別、通道、連線與用量；內容信封中的 Session 文字、Board 文字與終端機輸入由端點加解密。relay 不把密文信封寫進持久儲存；它的最新快照快取僅在記憶體。配對交接可暫存不透明的密封資料，Cloud 不能據此解密工作內容。
 
-## 05｜程式碼規模：實作行數
+## 05｜各功能實作占比
 
-下列是**程式碼份量，不是執行時間、重要性或複雜度**。2026-10-09 量測公開 repo `934f62a6` 與 Cloud 服務 repo `3f1d1a62` 的 Git 追蹤實作原始檔，共 **338,049 實體行／1,276 檔**；含空行與註解，排除測試、產生碼、文件、套件依賴及建置輸出。每個檔案只歸到一組；`legacy` 目錄仍在現行 console 中，計入。
+2026-10-09 量測公開 repo `79cdc084` 與 Cloud 預覽分支 `f4cff69` 的 Git 追蹤實作檔，共 **337,652 實體行／1,272 檔**。每檔依主要功能歸類一次；跨功能的接線與平台程式列為共用。含空行與註解，排除測試、產生碼、文件、工具、依賴、建置輸出與本架構頁。分類規則可由 [`tools/architecture-feature-size.py`](../tools/architecture-feature-size.py) 重跑。
 
-| 模組（依程式碼路徑分組） | 行數 | 占比 |
+| 功能 | 行數 | 占比 |
 |---|---:|---:|
-| Console ＋ web core | 103,911 | 30.7% |
-| 本機協調與領域規則 | 61,392 | 18.2% |
-| 本機平台／外部程式接點 | 53,346 | 15.8% |
-| 本機 HTTP ＋ SSE | 31,262 | 9.2% |
-| 機器端 Cloud 協定 | 21,741 | 6.4% |
-| 本機 SQLite | 16,145 | 4.8% |
-| CLI 與啟動接線 | 14,694 | 4.3% |
-| 官網 | 11,802 | 3.5% |
-| Cloud API ＋ MongoDB | 10,940 | 3.2% |
-| 桌面殼與其他命令 | 6,478 | 1.9% |
-| Cloud relay | 6,338 | 1.9% |
+| Cloud 遠端與加密 | 62,970 | 18.6% |
+| 共用框架與平台 | 58,750 | 17.4% |
+| 派工與協調 | 32,746 | 9.7% |
+| Session 閱讀／歷史 | 32,266 | 9.6% |
+| 工作流程與提案 | 29,664 | 8.8% |
+| Session 輸入／終端 | 26,747 | 7.9% |
+| 專案、檔案與文件 | 25,630 | 7.6% |
+| 設定、帳號與裝置 | 15,708 | 4.7% |
+| 排程、通知與 webhook | 14,218 | 4.2% |
+| 看板／Backlog／待辦 | 10,386 | 3.1% |
+| 角色與 Squad | 10,294 | 3.0% |
+| 用量、方案與更新 | 9,261 | 2.7% |
+| 官網 | 9,012 | 2.7% |
 
-```text
-Console           ███████████████████████████████ 30.7
-協調與規則         ██████████████████              18.2
-本機接點           ████████████████                15.8
-HTTP／SSE         █████████                       9.2
-機器端 Cloud      ██████                          6.4
-其餘六組           ████████████████████            19.6
-```
-
-百分比各自四捨五入，合計可能差 0.1%。這張圖包含公開 Clawdline repo 與 Cloud 服務 repo 的實作，**不包含 Claude、Codex、tmux 或 Cloudflare／MongoDB 本身的程式碼**。
+角色／Squad 與派工 broker 分開；看板／待辦與 Work／Proposal 分開；Session 閱讀與輸入／終端分開。這是**程式碼份量，不是執行時間、重要性或開發成本**，也不包含 Claude、Codex、tmux、Cloudflare 或 MongoDB 本身的原始碼。
 
 ## 06｜加密與信任邊界（開發者圖一）
 
@@ -109,4 +102,4 @@ CLI（cmd/clawdline）───────────┘                      
 
 ---
 
-**證據與邊界**：本機實作以 `docs/architecture.md`、`docs/cloud.md`、`internal/adapters/store`、`internal/transport/{http,cloud}`、`web/console/src/cloud` 為準；Cloud 服務以其 `api/src/db/mongo`、`relay/src/account-do.ts`、`relay/src/lib/cache.ts` 為準。行數依上述路徑對兩個 checkout 的追蹤檔逐檔歸類。本文件核對的是 2026-10-09 的原始碼，不宣稱此時生產環境每個部署都與 checkout 同版。
+**證據與邊界**：本機實作以 `docs/architecture.md`、`docs/cloud.md`、`internal/adapters/store`、`internal/transport/{http,cloud}`、`web/console/src/cloud` 為準；Cloud 服務以其 `api/src/db/mongo`、`relay/src/account-do.ts`、`relay/src/lib/cache.ts` 為準。功能行數依 `tools/architecture-feature-size.py` 對兩個 checkout 的追蹤檔逐檔歸類。本文件核對的是 2026-10-09 的原始碼，不宣稱此時生產環境每個部署都與 checkout 同版。

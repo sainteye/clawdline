@@ -5,7 +5,8 @@ import { nextWord } from "../next-strings.js"
 import { client } from "../client.js"
 
 /**
- * `/v1/machine/usage`, asked the way `pages/settings/capacity.ts` asks
+ * `/v1/machine/usage`, including disk and grouped reclaim readings, asked
+ * the way `pages/settings/capacity.ts` asks
  * `/v1/capacity`: through `client.url` and the page's `fetch`, which a console
  * reading a machine through Clawdline Cloud answers from the relay as the
  * `machine-usage` word. The read is spelled beside its method on one line

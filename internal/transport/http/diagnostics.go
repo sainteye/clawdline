@@ -550,6 +550,19 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return s.readings.AnswerReading()
 		},
+		capacity.CacheReclaimSummary: func() capacity.Reading {
+			s.reclaimSummaryMu.Lock()
+			defer s.reclaimSummaryMu.Unlock()
+			if s.reclaimSummaryAt.IsZero() {
+				return capacity.Reading{Known: true, Note: "no grouped reclaim reading yet"}
+			}
+			if time.Since(s.reclaimSummaryAt) >= reclaimSummaryAge() {
+				s.reclaimSummaryAt = time.Time{}
+				s.reclaimSummary = contract.MachineReclaimSummary{}
+				return capacity.Reading{Known: true, Note: "expired grouped reclaim reading"}
+			}
+			return capacity.Reading{Known: true, Used: int64(time.Since(s.reclaimSummaryAt) / time.Second)}
+		},
 		// The store's read-only pool: connections in use now, and how often a
 		// reader has waited for one since the daemon opened it.
 		capacity.StoreReadConnections: func() capacity.Reading {

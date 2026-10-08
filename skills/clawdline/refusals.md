@@ -26,6 +26,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `board_unavailable` | `internal/transport/http/board.go` |
 | `body_too_large` | `internal/transport/http/body.go`, `internal/transport/http/project_files.go`, `internal/transport/http/project_icons.go`, `internal/transport/http/project_memory.go`, `internal/transport/http/project_sync.go`, `internal/transport/http/projects.go`, `internal/transport/http/session_restore.go`, `internal/transport/http/snippets.go`, `internal/transport/http/squad.go`, `internal/transport/http/squad_packages.go`, `internal/transport/http/work.go`, `internal/transport/http/work_v2.go`, `internal/transport/http/work_v2_session_name.go` |
 | `broker_unavailable` | `internal/transport/http/cloud_agent.go` |
+| `browser_setting_unavailable` | `internal/transport/http/settings.go` |
 | `builtin_read_only` | `internal/transport/http/squad.go` |
 | `busy` | `internal/transport/http/intent.go`, `internal/transport/http/session_smart_title.go`, `internal/transport/http/snippets.go`, `internal/transport/http/squad.go`, `internal/transport/http/voice.go`, `internal/transport/http/work_v2_persona_suggestion.go` |
 | `capacity_full` | `internal/transport/http/squad.go` |

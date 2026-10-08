@@ -12,8 +12,8 @@
  * the original's reason: every surface colour this project owns is white at a
  * low alpha and simply disappears on a light ground.
  *
- * Nothing in here leaks: the whole sheet is under `.sw-window`, and this
- * stylesheet is loaded only by the settings window's own document.
+ * Nothing in here leaks: the whole sheet is under `.sw-window`, whether it
+ * fills the native settings document or sits inside the local browser page.
  */
 
 .sw-window {
@@ -695,10 +695,9 @@
   }
 }
 
-/* Six tabs no longer fit on one line at phone widths. Keep the same strip and
+/* The tabs no longer fit on one line at phone widths. Keep the same strip and
    accent treatment, but give each label a real cell instead of letting flex
-   squeeze Chinese words into tall, clipped columns. The mark spans the three
-   rows, leaving the controls themselves in a predictable 2-by-3 keyboard order. */
+   squeeze Chinese words into tall, clipped columns. */
 @media (max-width: 460px) {
   .sw-strip {
     height: auto;
@@ -710,7 +709,7 @@
     padding: 8px 12px;
   }
   .sw-strip-mark {
-    grid-row: 1 / span 3;
+    grid-row: 1 / span 2;
     margin-right: 0;
   }
   .sw-tab {

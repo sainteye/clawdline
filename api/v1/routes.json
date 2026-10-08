@@ -419,6 +419,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/settings/browser",
+      "since": 4
+    },
+    {
+      "method": "*",
       "pattern": "/v1/settings/default-models",
       "since": 1
     },

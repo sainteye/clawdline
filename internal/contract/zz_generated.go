@@ -3236,6 +3236,14 @@ const (
 // LivenessValues is every value the contract allows, in contract order.
 var LivenessValues = []Liveness{LivenessOnline, LivenessOffline, LivenessUnknown}
 
+// The last capacity pass's free space on the daemon state volume. Unknown
+// includes a missing or stalled pass.
+type MachineDiskSummary struct {
+	At        int64 `json:"at"`
+	FreeBytes int64 `json:"free_bytes"`
+	Known     bool  `json:"known"`
+}
+
 // Percent of the last ten seconds in which some task (or, for `memory_full`,
 // every task) waited on the resource.
 type MachinePressure struct {
@@ -3245,23 +3253,60 @@ type MachinePressure struct {
 	MemorySome float64 `json:"memory_some"`
 }
 
-// GET /v1/machine/usage, for any paired device: this machine's CPU and memory
-// now, and each session's share of them — the dashboard opened from the
-// session counts beside the wordmark. Clawdline Cloud carries it as the
-// `machine-usage` word. The CPU figures are shares over `interval_ms`, the time
-// between two readings, because a process's CPU time is a counter: a share
-// needs two. Every percentage is of the whole machine, all cores together,
-// 0-100. A session's figures are its whole process tree: the assistant, the
-// shells it opened and what they started, each process given to the nearest
-// session above it. A process that ended inside the interval is in the
-// machine's figures and in no row. On a platform without a reader the route
-// answers 501 `machine_usage_unsupported` rather than an idle machine.
+// One allowlisted reason, without the task or file it concerns.
+type MachineReclaimReason struct {
+	Code  MachineReclaimReasonCode `json:"code"`
+	Count int64                    `json:"count"`
+}
+
+type MachineReclaimReasonCode string
+
+const (
+	MachineReclaimReasonCodeWithinGrace        MachineReclaimReasonCode = "within_grace"
+	MachineReclaimReasonCodeOwnerPresent       MachineReclaimReasonCode = "owner_present"
+	MachineReclaimReasonCodeOwnerUnknown       MachineReclaimReasonCode = "owner_unknown"
+	MachineReclaimReasonCodePathNotOwned       MachineReclaimReasonCode = "path_not_owned"
+	MachineReclaimReasonCodeUnreadable         MachineReclaimReasonCode = "unreadable"
+	MachineReclaimReasonCodeNestedRepository   MachineReclaimReasonCode = "nested_repository"
+	MachineReclaimReasonCodeFiltersPresent     MachineReclaimReasonCode = "filters_present"
+	MachineReclaimReasonCodePreserveFailed     MachineReclaimReasonCode = "preserve_failed"
+	MachineReclaimReasonCodeChangedDuringSweep MachineReclaimReasonCode = "changed_during_sweep"
+	MachineReclaimReasonCodeIntentNotRecorded  MachineReclaimReasonCode = "intent_not_recorded"
+	MachineReclaimReasonCodeRemoveFailed       MachineReclaimReasonCode = "remove_failed"
+)
+
+// MachineReclaimReasonCodeValues is every value the contract allows, in contract order.
+var MachineReclaimReasonCodeValues = []MachineReclaimReasonCode{MachineReclaimReasonCodeWithinGrace, MachineReclaimReasonCodeOwnerPresent, MachineReclaimReasonCodeOwnerUnknown, MachineReclaimReasonCodePathNotOwned, MachineReclaimReasonCodeUnreadable, MachineReclaimReasonCodeNestedRepository, MachineReclaimReasonCodeFiltersPresent, MachineReclaimReasonCodePreserveFailed, MachineReclaimReasonCodeChangedDuringSweep, MachineReclaimReasonCodeIntentNotRecorded, MachineReclaimReasonCodeRemoveFailed}
+
+// Grouped standing decisions, refreshed at most once per registered cache
+// interval. A failed read is unknown, never an empty backlog.
+type MachineReclaimSummary struct {
+	At       int64 `json:"at"`
+	Deferred int64 `json:"deferred"`
+
+	// Kept decisions with one of the fixed unreadable, preserve_failed,
+	// intent_not_recorded or remove_failed reasons.
+	Failures    int64                  `json:"failures"`
+	Kept        int64                  `json:"kept"`
+	Known       bool                   `json:"known"`
+	LastSweepAt int64                  `json:"last_sweep_at,omitempty"`
+	Reasons     []MachineReclaimReason `json:"reasons"`
+	Removing    int64                  `json:"removing"`
+}
+
+// GET /v1/machine/usage, for any paired device: CPU, memory, cached free disk
+// space and grouped reclaim backlog. Clawdline Cloud carries this as the
+// `machine-usage` word. The CPU figures are shares over `interval_ms`. Disk and
+// reclaim readings say whether they are known; no task identifiers, paths or
+// raw evidence are sent. On a platform without a CPU reader the route answers
+// 501 `machine_usage_unsupported`.
 type MachineUsage struct {
 	At int64 `json:"at"`
 
 	// The cores the kernel counts.
-	Cores      int64   `json:"cores"`
-	CpuPercent float64 `json:"cpu_percent"`
+	Cores      int64               `json:"cores"`
+	CpuPercent float64             `json:"cpu_percent"`
+	Disk       *MachineDiskSummary `json:"disk,omitempty"`
 
 	// One row per session whose process is alive, and one for this daemon.
 	Groups     []MachineUsageGroup `json:"groups"`
@@ -3282,9 +3327,10 @@ type MachineUsage struct {
 
 	// The kernel's pressure-stall averages over ten seconds. Absent where the kernel
 	// keeps none, which is not the same as none.
-	Pressure       *MachinePressure `json:"pressure,omitempty"`
-	SwapTotalBytes int64            `json:"swap_total_bytes"`
-	SwapUsedBytes  int64            `json:"swap_used_bytes"`
+	Pressure       *MachinePressure       `json:"pressure,omitempty"`
+	Reclaim        *MachineReclaimSummary `json:"reclaim,omitempty"`
+	SwapTotalBytes int64                  `json:"swap_total_bytes"`
+	SwapUsedBytes  int64                  `json:"swap_used_bytes"`
 }
 
 // What one tree of processes used.

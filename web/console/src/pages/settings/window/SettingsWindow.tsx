@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { SettingsSnapshot, TunnelStatus, VoiceLanguage } from "@clawdline/contract"
 import {
   defaultModelOptions,
+  readBrowserSettings,
   readDefaultModels,
   readSettings,
+  writeBrowserSettings,
   writeSettings,
   type DefaultModelsSnapshot,
 } from "../api.js"
@@ -43,8 +45,8 @@ import { CATALOG_TAGS, catalogWord } from "../../../catalog.js"
  * The native "Clawdline 設定" window, as a web page.
  *
  * The Swift app draws this window in AppKit, 3,822 lines of it
- * (`Sources/Settings.swift`). This is the same window: the same six tabs in the
- * same order, the same rows in the same columns, the same words — every one of
+ * (`Sources/Settings.swift`). The retained tabs and rows use the same columns
+ * and words — every one of
  * them a property of `Copy+Chinese.swift`, in copy.ts — and the same behaviour,
  * which is that **there is no OK button** because there is nothing to cancel.
  * Each control writes what the config file would have said, and the shell picks
@@ -77,7 +79,12 @@ import { CATALOG_TAGS, catalogWord } from "../../../catalog.js"
 /** The value being written, over what the file last said, so a slider moves while it saves. */
 type Draft = Partial<Record<SettingKey, string | number | boolean>>
 
-export function SettingsWindow() {
+// The native input bar is paused; keep its controls for when it returns.
+const INPUT_BAR_ENABLED = false
+const VOICE_ENABLED = false
+const HOOKS_ENABLED = false
+
+export function SettingsWindow({ embedded = false }: { embedded?: boolean } = {}) {
   const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null)
   const [defaultModels, setDefaultModels] = useState<DefaultModelsSnapshot | null>(null)
   const [shell, setShell] = useState<ShellState | null>(null)
@@ -110,21 +117,23 @@ export function SettingsWindow() {
   recordingRef.current = recording
 
   const has = inShell()
+  const voiceTab = INPUT_BAR_ENABLED ? 2 : 1
+  const remoteTab = (INPUT_BAR_ENABLED ? 2 : 1) + (VOICE_ENABLED && !embedded ? 1 : 0)
 
   const snapshotRef = useRef(snapshot)
   snapshotRef.current = snapshot
 
   const read = useCallback(() => {
-    readSettings().then(
+    (embedded ? readBrowserSettings : readSettings)().then(
       (answer) => {
         setSnapshot(answer)
         setDraft({})
         setSaid("")
-        void readDefaultModels().then(setDefaultModels, (error: unknown) => setSaid(settingsFailureSentence(error)))
+        if (!embedded) void readDefaultModels().then(setDefaultModels, (error: unknown) => setSaid(settingsFailureSentence(error)))
       },
       (error: unknown) => setSaid(settingsFailureSentence(error)),
     )
-  }, [])
+  }, [embedded])
 
   useEffect(() => {
     read()
@@ -132,7 +141,7 @@ export function SettingsWindow() {
   }, [read])
 
   useEffect(() => {
-    if (tab !== 2) return
+    if (!VOICE_ENABLED || embedded || tab !== voiceTab) return
     let live = true
     void readVoiceLanguage().then((answer) => {
       if (live) setVoiceLanguage(answer)
@@ -140,7 +149,7 @@ export function SettingsWindow() {
     return () => {
       live = false
     }
-  }, [tab, snapshot])
+  }, [tab, snapshot, embedded, voiceTab])
 
   // The Cloud line, while the Remote ("遠端") tab is open. A line that is
   // reconnecting changes on its own, so this card is the one thing in this
@@ -148,7 +157,7 @@ export function SettingsWindow() {
   // moment the tab is left, because a settings window nobody is looking at
   // should ask this daemon nothing.
   useEffect(() => {
-    if (tab !== 3) return
+    if (tab !== remoteTab || embedded) return
     let live = true
     const pass = () => {
       void readCloudStatus().then((answer) => {
@@ -166,14 +175,14 @@ export function SettingsWindow() {
       live = false
       clearInterval(timer)
     }
-  }, [tab, cloud?.pairing?.phase])
+  }, [tab, cloud?.pairing?.phase, embedded, remoteTab])
 
   // The tunnel's reading, while the same tab is open. The Swift window asked
   // its tunnel once a second, because "starting" turns into an address on its
   // own; this asks every second and a half while it is starting and every five
   // seconds otherwise, and nothing once the tab is left.
   useEffect(() => {
-    if (tab !== 3) return
+    if (tab !== remoteTab || embedded) return
     let live = true
     const pass = () => {
       void readTunnelStatus().then((answer) => {
@@ -186,7 +195,7 @@ export function SettingsWindow() {
       live = false
       clearInterval(timer)
     }
-  }, [tab, tunnel?.state])
+  }, [tab, tunnel?.state, embedded, remoteTab])
 
   /**
    * Write, then tell the shell. The Swift app's `apply()`: save the file and
@@ -198,7 +207,7 @@ export function SettingsWindow() {
     setDraft((prior) => ({ ...prior, ...(keys as unknown as Draft) }))
     setSaid("")
     try {
-      const answer = await writeSettings(keys)
+      const answer = await (embedded ? writeBrowserSettings : writeSettings)(keys)
       setSnapshot(answer)
       setDraft((prior) => {
         const next = { ...prior }
@@ -208,7 +217,7 @@ export function SettingsWindow() {
       ask({ kind: "changed" })
       // A Remote-tab switch moves the tunnel at once (the daemon applies it
       // on the write); the card asks again rather than waiting its turn.
-      if ("remote" in keys || "remote_tunnel" in keys || "remote_hostname" in keys) {
+      if (!embedded && ("remote" in keys || "remote_tunnel" in keys || "remote_hostname" in keys)) {
         void readTunnelStatus().then(setTunnel)
       }
       return answer
@@ -221,7 +230,7 @@ export function SettingsWindow() {
       setSaid(settingsFailureSentence(error))
       throw error
     }
-  }, [])
+  }, [embedded])
 
   // The shell's answers. A reading replaces what the page believed about the
   // machine; a recording is the one thing the page asked for and could not do.
@@ -314,14 +323,14 @@ export function SettingsWindow() {
 
   // MARK: the tabs
 
-  const panes = [generalPane, barPane, voicePane, remotePane, orchestratorPane, hooksPane]
+  const panes = [generalPane, ...(INPUT_BAR_ENABLED ? [barPane] : []), ...(VOICE_ENABLED && !embedded ? [voicePane] : []), remotePane, orchestratorPane, ...(HOOKS_ENABLED ? [hooksPane] : [])]
   const titles = [
     W.settingsGeneral,
-    W.settingsBar,
-    W.settingsVoice,
+    ...(INPUT_BAR_ENABLED ? [W.settingsBar] : []),
+    ...(VOICE_ENABLED && !embedded ? [W.settingsVoice] : []),
     W.settingsRemote,
     W.settingsOrchestrator,
-    W.settingsHooks,
+    ...(HOOKS_ENABLED ? [W.settingsHooks] : []),
   ]
 
   function generalPane() {
@@ -334,7 +343,7 @@ export function SettingsWindow() {
     return (
       <>
         <div className="sw-column">
-          <Row label={W.settingsHotkey} first>
+          {INPUT_BAR_ENABLED && <><Row label={W.settingsHotkey} first>
             <Chip
               wide
               armed={recording}
@@ -362,11 +371,11 @@ export function SettingsWindow() {
           ) : !shell && !has ? (
             <p className="sw-said">{noShell()}</p>
           ) : null}
-          <p className="sw-hint">{W.settingsHotkeyHint}</p>
+          <p className="sw-hint">{W.settingsHotkeyHint}</p></>}
 
-          <Row label={catalogWord("ui", "language")} hint={catalogWord("ui", "browserOnly")}>
+          {!embedded && <Row label={catalogWord("ui", "language")} hint={catalogWord("ui", "browserOnly")}>
             <BrowserLanguageControl id="settings-window-ui-language" compact />
-          </Row>
+          </Row>}
           <Row label={catalogWord("ui", "agentLanguage")} hint={catalogWord("ui", "agentLanguageHint")}>
             <PopUp
               label={catalogWord("ui", "agentLanguage")}
@@ -378,7 +387,7 @@ export function SettingsWindow() {
           {String(now("language")) !== "auto" && !CATALOG_TAGS.includes(String(now("language")) as (typeof CATALOG_TAGS)[number]) ? (
             <p className="sw-said" role="status">{catalogWord("ui", "unsupportedAgentHint")}</p>
           ) : null}
-          <Row label={W.menuMascot}>
+          {!embedded && <Row label={W.menuMascot}>
             <PopUp
               label={W.menuMascot}
               value={String(now("mascot"))}
@@ -388,7 +397,7 @@ export function SettingsWindow() {
               }))}
               onPick={pick("mascot")}
             />
-          </Row>
+          </Row>}
           <Row label={W.settingsSessionTerminal} hint={W.settingsSessionTerminalHint}>
             <PopUp
               label={W.settingsSessionTerminal}
@@ -402,7 +411,7 @@ export function SettingsWindow() {
               onPick={pick("terminal")}
             />
           </Row>
-          <Row label={W.settingsScopeGlobal}>
+          {INPUT_BAR_ENABLED && <><Row label={W.settingsScopeGlobal}>
             <Switch
               label={W.settingsScopeGlobal}
               on={global}
@@ -461,17 +470,17 @@ export function SettingsWindow() {
                 canBrowse={has}
               />
             </div>
-          </Block>
+          </Block></>}
         </div>
 
         <div className="sw-column">
-          <Row label={W.settingsReopen} hint={W.settingsReopenHint} first>
+          {INPUT_BAR_ENABLED && <><Row label={W.settingsReopen} hint={W.settingsReopenHint} first>
             <Switch label={W.settingsReopen} on={!!now("reopen_on_return")} onChange={flip("reopen_on_return")} />
           </Row>
           <Row label={W.settingsFollow} hint={W.settingsFollowHint}>
             <Switch label={W.settingsFollow} on={!!now("follow_target")} onChange={flip("follow_target")} />
-          </Row>
-          <Row label={W.settingsCodexDefaultModel} hint={W.settingsDefaultModelHint}>
+          </Row></>}
+          {!embedded && <><Row label={W.settingsCodexDefaultModel} hint={W.settingsDefaultModelHint}>
             <PopUp
               label={W.settingsCodexDefaultModel}
               value={String(now("codex_default_model"))}
@@ -504,7 +513,7 @@ export function SettingsWindow() {
               disabled={!defaultModels}
               onPick={(value) => void change({ claude_default_model: value })}
             />
-          </Row>
+          </Row></>}
           <Row label={W.settingsCodexAutoName} hint={W.settingsCodexAutoNameHint}>
             <PopUp
               label={W.settingsCodexAutoName}
@@ -524,9 +533,9 @@ export function SettingsWindow() {
               }}
             />
           </Row>
-          <Row label={W.settingsNotch} hint={W.settingsNotchHint}>
+          {!embedded && <Row label={W.settingsNotch} hint={W.settingsNotchHint}>
             <Switch label={W.settingsNotch} on={!!now("notch")} onChange={flip("notch")} />
-          </Row>
+          </Row>}
         </div>
       </>
     )
@@ -998,8 +1007,8 @@ export function SettingsWindow() {
           </Row>
         </div>
         <div className="sw-column">
-          {cloudBlock()}
-          {cloudPairingBlock()}
+          {!embedded && cloudBlock()}
+          {!embedded && cloudPairingBlock()}
           <Row label={W.settingsTunnel} hint={W.settingsTunnelHint} first>
             <PopUp
               label={W.settingsTunnel}
@@ -1023,7 +1032,7 @@ export function SettingsWindow() {
               }}
             />
           </Row>
-          {tunnelBlock()}
+          {!embedded && tunnelBlock()}
         </div>
       </>
     )
@@ -1089,7 +1098,7 @@ export function SettingsWindow() {
               onChange={flip("orchestrator_enabled")}
             />
           </Row>
-          <Row label={catalogWord("literal", "bc9e50e8ee8c")} hint={catalogWord("literal", "7daab4ee36ab")}>
+          {!embedded && <><Row label={catalogWord("literal", "bc9e50e8ee8c")} hint={catalogWord("literal", "7daab4ee36ab")}>
             <Switch label={catalogWord("literal", "bc9e50e8ee8c")} on={planning} onChange={flip("planning_gate")} />
           </Row>
           <Row label={catalogWord("literal", "b970bd3d556b")} hint={catalogWord("literal", "f4456928970e")}>
@@ -1102,7 +1111,7 @@ export function SettingsWindow() {
               <span><strong>{mode.label}</strong>{mode.default && <small>{catalogWord("inline", "09f725209f4b")}</small>}{mode.current && <small>{catalogWord("inline", "937f63a4fb51")}</small>}</span>
               <p>{mode.description}</p>
             </li>)}</ul>
-          </section>
+          </section></>}
           <Row label={W.settingsOrchestratorMax} hint={W.settingsOrchestratorMaxHint}>
             <PopUp
               label={W.settingsOrchestratorMax}
@@ -1270,7 +1279,7 @@ export function SettingsWindow() {
 
   const Pane = panes[tab]
   return (
-    <div className="sw-window">
+    <div className={embedded ? "sw-window embedded" : "sw-window"}>
       <TabStrip titles={titles} current={tab} onPick={setTab} />
       <div className="sw-scroll">
         <div className="sw-pane" id={`sw-pane-${tab}`} role="tabpanel" aria-labelledby={`sw-tab-${tab}`}>

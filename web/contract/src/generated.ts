@@ -3767,6 +3767,16 @@ export type Liveness =
 export const LivenessValues: readonly Liveness[] = ["online", "offline", "unknown"] as const
 
 /**
+ * The last capacity pass's free space on the daemon state volume. Unknown includes
+ * a missing or stalled pass.
+ */
+export interface MachineDiskSummary {
+  at: number
+  free_bytes: number
+  known: boolean
+}
+
+/**
  * Percent of the last ten seconds in which some task (or, for `memory_full`, every
  * task) waited on the resource.
  */
@@ -3778,17 +3788,55 @@ export interface MachinePressure {
 }
 
 /**
- * GET /v1/machine/usage, for any paired device: this machine's CPU and memory now,
- * and each session's share of them — the dashboard opened from the session counts
- * beside the wordmark. Clawdline Cloud carries it as the `machine-usage` word. The
- * CPU figures are shares over `interval_ms`, the time between two readings, because
- * a process's CPU time is a counter: a share needs two. Every percentage is of the
- * whole machine, all cores together, 0-100. A session's figures are its whole
- * process tree: the assistant, the shells it opened and what they started, each
- * process given to the nearest session above it. A process that ended inside the
- * interval is in the machine's figures and in no row. On a platform without a
- * reader the route answers 501 `machine_usage_unsupported` rather than an idle
- * machine.
+ * One allowlisted reason, without the task or file it concerns.
+ */
+export interface MachineReclaimReason {
+  code: MachineReclaimReasonCode
+  count: number
+}
+
+export type MachineReclaimReasonCode =
+    "within_grace"
+  | "owner_present"
+  | "owner_unknown"
+  | "path_not_owned"
+  | "unreadable"
+  | "nested_repository"
+  | "filters_present"
+  | "preserve_failed"
+  | "changed_during_sweep"
+  | "intent_not_recorded"
+  | "remove_failed"
+
+export const MachineReclaimReasonCodeValues: readonly MachineReclaimReasonCode[] = ["within_grace", "owner_present", "owner_unknown", "path_not_owned", "unreadable", "nested_repository", "filters_present", "preserve_failed", "changed_during_sweep", "intent_not_recorded", "remove_failed"] as const
+
+/**
+ * Grouped standing decisions, refreshed at most once per registered cache interval.
+ * A failed read is unknown, never an empty backlog.
+ */
+export interface MachineReclaimSummary {
+  at: number
+  deferred: number
+
+  /**
+   * Kept decisions with one of the fixed unreadable, preserve_failed,
+   * intent_not_recorded or remove_failed reasons.
+   */
+  failures: number
+  kept: number
+  known: boolean
+  last_sweep_at?: number
+  reasons: MachineReclaimReason[]
+  removing: number
+}
+
+/**
+ * GET /v1/machine/usage, for any paired device: CPU, memory, cached free disk space
+ * and grouped reclaim backlog. Clawdline Cloud carries this as the `machine-usage`
+ * word. The CPU figures are shares over `interval_ms`. Disk and reclaim readings
+ * say whether they are known; no task identifiers, paths or raw evidence are sent.
+ * On a platform without a CPU reader the route answers 501
+ * `machine_usage_unsupported`.
  */
 export interface MachineUsage {
   at: number
@@ -3798,6 +3846,7 @@ export interface MachineUsage {
    */
   cores: number
   cpu_percent: number
+  disk?: MachineDiskSummary
 
   /**
    * One row per session whose process is alive, and one for this daemon.
@@ -3829,6 +3878,7 @@ export interface MachineUsage {
    * keeps none, which is not the same as none.
    */
   pressure?: MachinePressure
+  reclaim?: MachineReclaimSummary
   swap_total_bytes: number
   swap_used_bytes: number
 }

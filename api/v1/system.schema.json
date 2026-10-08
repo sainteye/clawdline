@@ -378,7 +378,7 @@
       }
     },
     "MachineUsage": {
-      "description": "GET /v1/machine/usage, for any paired device: this machine's CPU and memory now, and each session's share of them — the dashboard opened from the session counts beside the wordmark. Clawdline Cloud carries it as the `machine-usage` word. The CPU figures are shares over `interval_ms`, the time between two readings, because a process's CPU time is a counter: a share needs two. Every percentage is of the whole machine, all cores together, 0-100. A session's figures are its whole process tree: the assistant, the shells it opened and what they started, each process given to the nearest session above it. A process that ended inside the interval is in the machine's figures and in no row. On a platform without a reader the route answers 501 `machine_usage_unsupported` rather than an idle machine.",
+      "description": "GET /v1/machine/usage, for any paired device: CPU, memory, cached free disk space and grouped reclaim backlog. Clawdline Cloud carries this as the `machine-usage` word. The CPU figures are shares over `interval_ms`. Disk and reclaim readings say whether they are known; no task identifiers, paths or raw evidence are sent. On a platform without a CPU reader the route answers 501 `machine_usage_unsupported`.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -449,7 +449,46 @@
           "items": {
             "$ref": "#/$defs/MachineUsageOther"
           }
-        }
+        },
+        "disk": { "$ref": "#/$defs/MachineDiskSummary" },
+        "reclaim": { "$ref": "#/$defs/MachineReclaimSummary" }
+      }
+    },
+    "MachineDiskSummary": {
+      "description": "The last capacity pass's free space on the daemon state volume. Unknown includes a missing or stalled pass.",
+      "type": "object", "additionalProperties": false,
+      "required": ["known", "at", "free_bytes"],
+      "properties": {
+        "known": { "type": "boolean" },
+        "at": { "type": "integer" },
+        "free_bytes": { "type": "integer" }
+      }
+    },
+    "MachineReclaimReason": {
+      "description": "One allowlisted reason, without the task or file it concerns.",
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "count"],
+      "properties": {
+        "code": { "$ref": "#/$defs/MachineReclaimReasonCode" },
+        "count": { "type": "integer" }
+      }
+    },
+    "MachineReclaimReasonCode": {
+      "type": "string", "enum": ["within_grace", "owner_present", "owner_unknown", "path_not_owned", "unreadable", "nested_repository", "filters_present", "preserve_failed", "changed_during_sweep", "intent_not_recorded", "remove_failed"]
+    },
+    "MachineReclaimSummary": {
+      "description": "Grouped standing decisions, refreshed at most once per registered cache interval. A failed read is unknown, never an empty backlog.",
+      "type": "object", "additionalProperties": false,
+      "required": ["known", "at", "kept", "failures", "removing", "deferred", "reasons"],
+      "properties": {
+        "known": { "type": "boolean" },
+        "at": { "type": "integer" },
+        "kept": { "type": "integer" },
+        "failures": { "description": "Kept decisions with one of the fixed unreadable, preserve_failed, intent_not_recorded or remove_failed reasons.", "type": "integer" },
+        "removing": { "type": "integer" },
+        "reasons": { "type": "array", "items": { "$ref": "#/$defs/MachineReclaimReason" } },
+        "last_sweep_at": { "type": "integer" },
+        "deferred": { "type": "integer" }
       }
     },
     "MachinePressure": {
