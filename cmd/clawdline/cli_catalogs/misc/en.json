@@ -120,6 +120,7 @@
   "portheld.this_daemon_has_started_nothing_and.42f3a707": " This daemon has started nothing and is exiting.",
   "portheld.where": "port %d on %s",
   "project.add_directory_keep_existing_directo.69166d26": "  add <directory…>      keep existing directories in the session-start list",
+  "project.daemon_answer_invalid": "the daemon did not return a Project list; update the running daemon",
   "project.clawdline_project_export_out_file_n.08105c5e": "       clawdline project export [--out file] [--name source]",
   "project.clawdline_project_import_clone_repl.fcdc6204": "       clawdline project import [--clone] [--replace-source] <file>",
   "project.clawdline_project_unify_apply_check.4c4400ff": "       clawdline project unify [--apply | --check] [--json] [directory]",

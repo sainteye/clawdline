@@ -18,18 +18,17 @@ clawdline project add /absolute/path/to/my-app
 clawdline project list
 ```
 
-The first command adds the directory to that machine's durable Project list; the second shows
-explicitly registered directories. These commands work without the daemon. Run `./bin/clawdline`
+The first command asks the running daemon to add the directory to its durable Project list; the
+second reads the explicit registrations from that same daemon. Run `./bin/clawdline`
 instead if you built Clawdline from source and did not install its CLI. The directory must already
 exist. From inside the directory, `clawdline project add .` is equivalent. There is no Add Project
 button in the console, including the hosted Cloud console. If you have Cloud terminal access to
 that machine, you can run the same CLI command in its terminal.
 
-**Check:** refresh **專案** on the same machine in the local console, or select that machine in
-the paired Cloud console and refresh **專案** there. The directory should also be offered when you
-start a session ([sessions.md](sessions.md)); close and reopen the start sheet after registering.
-`project list` shows only manual registrations in the CLI's state directory, not what a different
-machine or daemon has read. Projects found from assistant history or live Sessions may appear in
+**Check:** refresh **Projects** on the same machine in the local console, or select that machine in
+the paired Cloud console and refresh **Projects** there. The directory is also offered when you
+start a session ([sessions.md](sessions.md)); an already open start sheet refreshes automatically.
+`project list` shows manual registrations on the selected machine. Projects found from assistant history or live Sessions may appear in
 the console without it.
 
 To remove only the manual registration later, run
@@ -143,7 +142,8 @@ and build caches inside those directories, and your personal `~/.claude/skills`.
 
 | You see | Do this |
 | --- | --- |
-| `project add` printed the path, but it is absent from the Cloud Project or start list | Select the machine that holds the directory and reopen the start sheet. In the same terminal where you ran `project add`, run `clawdline doctor` and check its `port` and `dir` against the daemon serving that machine. A CLI pointed at another state directory can register the path there successfully while the visible daemon still lacks it; use the daemon's CLI configuration and add it again. |
+| `project add` cannot connect or authenticate | Start or update the daemon on the machine that holds the directory. Run `clawdline doctor` to check the CLI's port and state directory against that daemon, then retry. The command leaves the Project list unchanged when it cannot reach the daemon. |
+| `project add` succeeded, but the Project is absent from Cloud | Select the machine that holds the directory; the open start sheet refreshes automatically, while **Projects** refreshes when reopened. If it is still absent, report a product defect with the command response and selected machine; success means the serving daemon accepted the registration. |
 | `mirror_source_mismatch` | Another machine already owns that project's settings here. Choose that one as the source, or import with `--replace-source` |
 | `project_mirrored` | Change it on the source, or press **改回本機設定** first |
 | `clone_failed` | The receiving machine could not reach the remote with its own credentials. Clone it by hand into the named directory, then sync again |
