@@ -9,19 +9,32 @@ are given as they appear, with their meaning in parentheses.
 
 ## Add a project
 
-A project is a directory an assistant has run in. Clawdline finds them by itself from Claude Code's
-and Codex's own records and from live sessions. To add a directory before any agent has run there:
+A project is an existing directory on a machine. Clawdline finds directories from Claude Code's
+and Codex's own records and from live sessions. If a directory is missing from **專案** (Projects),
+run this on the machine that holds it, using its absolute path:
 
 ```sh
-./bin/clawdline project add ~/code/my-app ~/code/another-app
-./bin/clawdline project list
-./bin/clawdline project remove ~/code/another-app
+clawdline project add /absolute/path/to/my-app
+clawdline project list
 ```
 
-These write the state directory directly and work without the daemon. There is no button for this
-in the console.
+The first command adds the directory to that machine's durable Project list; the second shows
+explicitly registered directories. These commands work without the daemon. Run `./bin/clawdline`
+instead if you built Clawdline from source and did not install its CLI. The directory must already
+exist. From inside the directory, `clawdline project add .` is equivalent. There is no Add Project
+button in the console, including the hosted Cloud console. If you have Cloud terminal access to
+that machine, you can run the same CLI command in its terminal.
 
-**Check:** the directory is offered when you start a session ([sessions.md](sessions.md)).
+**Check:** refresh **專案** on the same machine in the local console, or select that machine in
+the paired Cloud console and refresh **專案** there. The directory should also be offered when you
+start a session ([sessions.md](sessions.md)); close and reopen the start sheet after registering.
+`project list` shows only manual registrations in the CLI's state directory, not what a different
+machine or daemon has read. Projects found from assistant history or live Sessions may appear in
+the console without it.
+
+To remove only the manual registration later, run
+`clawdline project remove /absolute/path/to/my-app`. This does not delete the directory. If
+assistant history or a live Session still points to it, the Project may remain visible.
 
 ## The Projects page
 
@@ -130,6 +143,7 @@ and build caches inside those directories, and your personal `~/.claude/skills`.
 
 | You see | Do this |
 | --- | --- |
+| `project add` printed the path, but it is absent from the Cloud Project or start list | Select the machine that holds the directory and reopen the start sheet. In the same terminal where you ran `project add`, run `clawdline doctor` and check its `port` and `dir` against the daemon serving that machine. A CLI pointed at another state directory can register the path there successfully while the visible daemon still lacks it; use the daemon's CLI configuration and add it again. |
 | `mirror_source_mismatch` | Another machine already owns that project's settings here. Choose that one as the source, or import with `--replace-source` |
 | `project_mirrored` | Change it on the source, or press **改回本機設定** first |
 | `clone_failed` | The receiving machine could not reach the remote with its own credentials. Clone it by hand into the named directory, then sync again |

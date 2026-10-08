@@ -38,6 +38,12 @@ The connection backs off and reconnects. An outbound spool owns publish order an
 
 The hosted and daemon consoles share source but require different builds. The hosted build must set `VITE_HOSTED_CONSOLE` so its entry point selects `CloudGate`; an ordinary local build selects `DoorGate`. [Deploying the hosted console](hosted-console.md) documents the build, production ancestry check, `BUILD.json` stamp, served-bundle `CloudGate` check and rollback procedure. A build stamp alone does not show that the served bundle is the Cloud one. This page makes no claim that the currently deployed bundle or private service matches this checkout.
 
+The Cloud console shows the selected machine's Projects, but does not register a local directory.
+For a missing existing directory, run `clawdline project add /absolute/path/to/project` on the
+machine that holds it, then reopen that machine's **專案** page in the paired console. The CLI's
+`clawdline project list` checks only its own registry; it cannot prove which daemon the console
+asked. [Adding a project](user/projects.md#add-a-project) gives the full steps and diagnosis.
+
 For a machine that appears offline, inspect `clawdline cloud status` or the local status route first: the switch, identity, connection state, last error and publication counters narrow down which side has evidence. Then inspect the hosted build using [hosted-console.md](hosted-console.md). The status route and logs expose this machine's observations; they do not prove that a particular browser decrypted or displayed a frame. [cloud-cutover.md](cloud-cutover.md) records local preflight and stand-in tests, not a fresh production validation.
 
 ## Limits of this overview

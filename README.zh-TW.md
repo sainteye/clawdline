@@ -85,6 +85,11 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 
 **專案與多台機器**
 
+- **手動加入本機專案。** 在存放既有資料夾的機器上執行
+  `clawdline project add /absolute/path/to/project`。`clawdline project list` 只能確認 CLI 寫入的
+  清單；重新開啟該機器在本機或已配對 Cloud 主控台的**專案**頁，確認 daemon 也列出了它。
+  主控台目前沒有「新增專案」按鈕。
+  [加入專案](docs/user/projects.md#add-a-project)
 - **跨機器的專案。** 以 git origin 對應，讓第二台機器拿到相同的專案名稱、圖示和沒進
   git 的 skill，有沒有 Cloud 都可以。[專案](docs/user/projects.md)
 - **Claude 和 Codex 共用同一套規則與 skill。** `clawdline project unify` 會列出怎麼讓同一個
