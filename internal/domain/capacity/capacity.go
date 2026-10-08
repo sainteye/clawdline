@@ -1797,7 +1797,8 @@ func Register() []Entry {
 			EvictedBy: Daemon,
 		},
 		{
-			// CLAWDLINE_NEXT_DIR/places.json: explicit project directories. Each
+			// CLAWDLINE_NEXT_DIR/places.json: explicit project directories and
+			// directories deliberately hidden from the lists. Each
 			// row is a person's choice, so the daemon never evicts one; a full
 			// registry refuses a new path and `clawdline project remove` is its
 			// deliberate exit.

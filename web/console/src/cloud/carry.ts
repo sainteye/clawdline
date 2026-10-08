@@ -84,6 +84,7 @@ export const CARRIED = {
   intents: "POST /v1/intents",
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",
   places: "GET /v1/places",
+  "project-hide": "DELETE /v1/places",
   // The built-in personas a start may name (docs/personas.md): a machine read
   // with no parameter. A machine that does not list it is refused by the copied
   // client before anything leaves (`_unsupportedRefusal`).

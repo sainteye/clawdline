@@ -209,6 +209,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-places",
 		method: "GET", path: "/v1/places",
 	}, {
+		word:    "project-hide",
+		body:    map[string]any{"type": "project-hide", "session": machine, "request": "req-hide", "path": "/projects/example"},
+		session: machine, name: "action:req-hide",
+		method: "DELETE", path: "/v1/places", body2: `{"paths":["/projects/example"]}`,
+	}, {
 		word:    "squad.catalog",
 		body:    map[string]any{"type": "squad.catalog", "session": machine, "request": "req-squad-catalog"},
 		session: machine, name: "read:req-squad-catalog",

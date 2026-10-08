@@ -95,10 +95,10 @@ The screenshots below show the current console with sample data.
 **Projects and machines**
 
 - **Add a local project by hand.** On the machine that holds an existing directory, run
-  `clawdline project add /absolute/path/to/project` while its daemon is running. The command
+  `clawdline project add` from that directory, or pass a relative or absolute path, while its daemon is running. The command
   succeeds only after that daemon registers the directory. `clawdline project list` reads the same
   list; the open session start sheet refreshes automatically, and **Projects** can be reopened to see it. The console has
-  no Add Project button. [Add a project](docs/user/projects.md#add-a-project)
+  no Add Project button. Each Project row has **Remove from list**, which keeps its directory and sessions. [Add a project](docs/user/projects.md#add-a-project)
 - **Projects across machines.** Give a second machine the same project names, icons and untracked
   skills, matched by git origin, with or without Cloud. [Projects](docs/user/projects.md)
 - **One set of rules and skills for Claude and Codex.** `clawdline project unify` shows how to give

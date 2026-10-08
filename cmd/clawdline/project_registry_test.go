@@ -33,7 +33,7 @@ func TestProjectAddUsesDaemonAnswerAndResolvesRelativePathLocally(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Setenv("CLAWDLINE_NEXT_DIR", state)
-	seen := false
+	seen := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/places" || r.Header.Get("X-Clawdline-Orchestrator") != "test-token" {
 			t.Errorf("request = %s %s", r.Method, r.URL.String())
@@ -43,10 +43,14 @@ func TestProjectAddUsesDaemonAnswerAndResolvesRelativePathLocally(t *testing.T) 
 		var body struct {
 			Paths []string `json:"paths"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Paths) != 1 || body.Paths[0] != project {
+		want := project
+		if seen == 1 {
+			want = state
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Paths) != 1 || body.Paths[0] != want {
 			t.Errorf("paths = %#v, %v", body.Paths, err)
 		}
-		seen = true
+		seen++
 		_ = json.NewEncoder(w).Encode(struct {
 			Registered bool                       `json:"registered"`
 			Places     []projects.RegisteredPlace `json:"places"`
@@ -74,8 +78,11 @@ func TestProjectAddUsesDaemonAnswerAndResolvesRelativePathLocally(t *testing.T) 
 	}
 	t.Cleanup(func() { _ = os.Chdir(old) })
 	rows, err := projectRegistryRequest(http.MethodPost, []string{relative})
-	if err != nil || !seen || len(rows) != 1 || rows[0].Path != project {
+	if err != nil || seen != 1 || len(rows) != 1 || rows[0].Path != project {
 		t.Fatalf("daemon registration = %#v, seen %v, %v", rows, seen, err)
+	}
+	if _, err := projectRegistryRequest(http.MethodPost, nil); err != nil || seen != 2 {
+		t.Fatalf("current directory registration: seen %d, %v", seen, err)
 	}
 	if _, err := os.Stat(filepath.Join(state, projects.PlaceRegistryFile)); !os.IsNotExist(err) {
 		t.Fatalf("CLI wrote a second registry: %v", err)

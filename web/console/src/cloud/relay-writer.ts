@@ -228,6 +228,7 @@ export type WriteRoute =
  | { op: "squad-write"; word: Carried<"squad.settings.update" | "squad.motion.update" | "squad.catalog.update"> }
   | { op: "squad-package"; word: Carried<"squad.packages.preview" | "squad.packages.adopt" | "squad.packages.export"> }
  | { op: "project-icon-copy"; word: Carried<"project-icon-copy">; id: string }
+  | { op: "project-hide"; word: Carried<"project-hide"> }
   | { op: "project-file-save"; word: Carried<"project-file-save">; project: string; file: string }
   | { op: "project-unify-apply"; word: Carried<"project-unify-apply">; project: string }
   | { op: "project-mirror-apply"; word: Carried<"project-mirror-apply"> }
@@ -573,6 +574,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return { op: "work-v2-edit", word: "work.v2.edit", id: c }
   }
   if (head === "projects" && a && b === "icon" && segments.length === 3 && method === "PUT") return { op: "project-icon-copy", word: "project-icon-copy", id: a }
+  if (head === "places" && segments.length === 1 && method === "DELETE") return { op: "project-hide", word: "project-hide" }
   if (head === "projects" && a && b === "files" && c && segments.length === 4 && method === "PUT" && /^[0-9a-f]{32}$/.test(c)) {
     return { op: "project-file-save", word: "project-file-save", project: a, file: c }
   }
@@ -829,6 +831,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "squad-package":
     case "board-command":
     case "project-icon-copy":
+    case "project-hide":
     case "project-file-save":
     case "project-unify-apply":
     case "project-mirror-apply":
@@ -1568,6 +1571,20 @@ export class RelayWriter {
         const place = client._place(route.id)
         if (place.machine !== this.host.machine) throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
         return this.machineWorkV2(client, route.word, { id: place.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "project-hide": {
+        if (typeof client._place !== "function") throw failure("cloud_not_carried", route.word, 501)
+        const body = await bodyOf(init)
+        const id = typeof body.place === "string" ? body.place : ""
+        if (!id) throw failure("bad_request", "a Project must be selected", 400)
+        const place = client._place(id)
+        if (place.machine !== this.host.machine) throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
+        if (!Array.isArray(body.paths) || body.paths.length !== 1 || body.paths[0] !== place.path) {
+          throw failure("bad_request", "the Project path changed", 400)
+        }
+        const request = headerOf(init, "idempotency-key")
+        if (!request) throw failure("idempotency_key_required", "Removing a Project needs an Idempotency-Key.", 400)
+        return this.machineWorkV2(client, route.word, { path: place.path }, request)
       }
       case "project-file-save": {
         if (typeof client._place !== "function" || typeof client._machineRequestAs !== "function") throw failure("cloud_not_carried", route.word, 501)

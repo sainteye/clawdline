@@ -85,10 +85,10 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 
 **專案與多台機器**
 
-- **手動加入本機專案。** 在存放既有資料夾的機器上執行
-  `clawdline project add /absolute/path/to/project`，並確保該機器的 daemon 正在執行。
+- **手動加入本機專案。** 在存放既有資料夾的機器上，進入該目錄後執行
+  `clawdline project add`，或傳入相對／絕對路徑，並確保該機器的 daemon 正在執行。
   指令只會在 daemon 登錄目錄後回報成功；`clawdline project list` 讀取同一份清單。
-  已開啟的 Session 啟動視窗會自動更新；重新開啟**專案**頁也會看到。主控台目前沒有「新增專案」按鈕。
+  已開啟的 Session 啟動視窗會自動更新；重新開啟**專案**頁也會看到。主控台目前沒有「新增專案」按鈕；每個專案列都有「從列表移除」，會保留資料夾與 Session。
   [加入專案](docs/user/projects.md#add-a-project)
 - **跨機器的專案。** 以 git origin 對應，讓第二台機器拿到相同的專案名稱、圖示和沒進
   git 的 skill，有沒有 Cloud 都可以。[專案](docs/user/projects.md)

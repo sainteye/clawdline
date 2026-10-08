@@ -33,6 +33,7 @@ type RegisteredPlace struct {
 type placeRegistryDocument struct {
 	Version int               `json:"version"`
 	Places  []RegisteredPlace `json:"places"`
+	Hidden  []string          `json:"hidden,omitempty"`
 }
 
 // PlaceRegistry reads and changes one state directory's explicit places.
@@ -48,7 +49,7 @@ func OpenPlaceRegistry(dir string, foreign ...string) *PlaceRegistry {
 	return &PlaceRegistry{dir: dir, foreign: foreign}
 }
 
-// SetLimit sets the capacity-register value enforced by Add.
+// SetLimit sets the capacity-register value enforced by Add and Remove.
 func (r *PlaceRegistry) SetLimit(limit int64) { r.limit = limit }
 
 func (r *PlaceRegistry) Path() string { return filepath.Join(r.dir, PlaceRegistryFile) }
@@ -59,7 +60,16 @@ func (r *PlaceRegistry) Path() string { return filepath.Join(r.dir, PlaceRegistr
 func (r *PlaceRegistry) List() ([]RegisteredPlace, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.readUnlocked()
+	doc, err := r.readUnlocked()
+	return doc.Places, err
+}
+
+// Hidden returns directories deliberately removed from the Project list.
+func (r *PlaceRegistry) Hidden() ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	doc, err := r.readUnlocked()
+	return doc.Hidden, err
 }
 
 // Add validates every directory before changing the file, then adds the new
@@ -80,31 +90,35 @@ func (r *PlaceRegistry) Add(paths []string, at time.Time) ([]RegisteredPlace, er
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	current, err := r.readUnlocked()
+	doc, err := r.readUnlocked()
 	if err != nil {
 		return nil, err
 	}
+	current := doc.Places
 	seen := map[string]bool{}
 	for _, row := range current {
 		seen[row.Path] = true
 	}
 	for _, path := range canonical {
+		doc.Hidden = withoutPath(doc.Hidden, path)
 		if !seen[path] {
 			current = append(current, RegisteredPlace{Path: path, AddedAt: at.Unix()})
 			seen[path] = true
 		}
 	}
-	if r.limit > 0 && int64(len(current)) > r.limit {
-		return nil, fmt.Errorf("%w: %d places would exceed %d", ErrPlaceRegistryFull, len(current), r.limit)
+	if r.limit > 0 && int64(len(current)+len(doc.Hidden)) > r.limit {
+		return nil, fmt.Errorf("%w: %d places would exceed %d", ErrPlaceRegistryFull, len(current)+len(doc.Hidden), r.limit)
 	}
-	if err := r.write(current); err != nil {
+	doc.Places = current
+	if err := r.write(doc); err != nil {
 		return nil, err
 	}
 	return current, nil
 }
 
-// Remove forgets the named directories without removing anything inside
-// them. A path not in the registry is already removed and is not an error.
+// Remove hides the named directories from every Project source without
+// removing anything inside them. A directory found only in assistant history
+// or a live session can be hidden too.
 func (r *PlaceRegistry) Remove(paths []string) ([]RegisteredPlace, error) {
 	canonical := map[string]bool{}
 	for _, path := range paths {
@@ -116,48 +130,80 @@ func (r *PlaceRegistry) Remove(paths []string) ([]RegisteredPlace, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	current, err := r.readUnlocked()
+	doc, err := r.readUnlocked()
 	if err != nil {
 		return nil, err
 	}
+	current := doc.Places
 	kept := make([]RegisteredPlace, 0, len(current))
 	for _, row := range current {
 		if !canonical[comparablePath(row.Path)] {
 			kept = append(kept, row)
 		}
 	}
-	if len(kept) == len(current) {
-		return current, nil
+	for path := range canonical {
+		if !containsPath(doc.Hidden, path) {
+			doc.Hidden = append(doc.Hidden, path)
+		}
 	}
-	if err := r.write(kept); err != nil {
+	if r.limit > 0 && int64(len(kept)+len(doc.Hidden)) > r.limit {
+		return nil, fmt.Errorf("%w: %d places would exceed %d", ErrPlaceRegistryFull, len(kept)+len(doc.Hidden), r.limit)
+	}
+	doc.Places = kept
+	if err := r.write(doc); err != nil {
 		return nil, err
 	}
 	return kept, nil
 }
 
-func (r *PlaceRegistry) readUnlocked() ([]RegisteredPlace, error) {
+func (r *PlaceRegistry) readUnlocked() (placeRegistryDocument, error) {
 	if err := r.checkDir(false); err != nil {
-		return nil, err
+		return placeRegistryDocument{}, err
 	}
 	data, err := os.ReadFile(r.Path())
 	if errors.Is(err, os.ErrNotExist) {
-		return []RegisteredPlace{}, nil
+		return placeRegistryDocument{Version: 1, Places: []RegisteredPlace{}}, nil
 	}
 	if err != nil {
-		return nil, err
+		return placeRegistryDocument{}, err
 	}
 	var doc placeRegistryDocument
 	if err := json.Unmarshal(data, &doc); err != nil || doc.Version != 1 || doc.Places == nil {
-		return nil, errors.New("the place registry is not a version 1 document")
+		return placeRegistryDocument{}, errors.New("the place registry is not a version 1 document")
 	}
 	seen := map[string]bool{}
 	for _, row := range doc.Places {
 		if !usable(row.Path) || row.AddedAt <= 0 || seen[row.Path] {
-			return nil, errors.New("the place registry contains an invalid row")
+			return placeRegistryDocument{}, errors.New("the place registry contains an invalid row")
 		}
 		seen[row.Path] = true
 	}
-	return doc.Places, nil
+	for _, path := range doc.Hidden {
+		if !usable(path) || seen[path] {
+			return placeRegistryDocument{}, errors.New("the place registry contains an invalid hidden path")
+		}
+		seen[path] = true
+	}
+	return doc, nil
+}
+
+func containsPath(paths []string, path string) bool {
+	for _, item := range paths {
+		if comparablePath(item) == comparablePath(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func withoutPath(paths []string, path string) []string {
+	kept := make([]string, 0, len(paths))
+	for _, item := range paths {
+		if comparablePath(item) != comparablePath(path) {
+			kept = append(kept, item)
+		}
+	}
+	return kept
 }
 
 func canonicalDirectories(paths []string) ([]string, error) {
@@ -184,14 +230,16 @@ func canonicalDirectories(paths []string) ([]string, error) {
 	return out, nil
 }
 
-func (r *PlaceRegistry) write(rows []RegisteredPlace) (err error) {
+func (r *PlaceRegistry) write(doc placeRegistryDocument) (err error) {
 	if err := r.checkDir(true); err != nil {
 		return err
 	}
-	stable := make([]RegisteredPlace, len(rows))
-	copy(stable, rows)
+	stable := make([]RegisteredPlace, len(doc.Places))
+	copy(stable, doc.Places)
 	sort.Slice(stable, func(i, j int) bool { return stable[i].Path < stable[j].Path })
-	body, err := json.MarshalIndent(placeRegistryDocument{Version: 1, Places: stable}, "", "  ")
+	doc.Places = stable
+	sort.Strings(doc.Hidden)
+	body, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return err
 	}

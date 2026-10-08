@@ -11,17 +11,18 @@ are given as they appear, with their meaning in parentheses.
 
 A project is an existing directory on a machine. Clawdline finds directories from Claude Code's
 and Codex's own records and from live sessions. If a directory is missing from **專案** (Projects),
-run this on the machine that holds it, using its absolute path:
+run this on the machine that holds it, from inside that directory:
 
 ```sh
-clawdline project add /absolute/path/to/my-app
+clawdline project add
 clawdline project list
 ```
 
 The first command asks the running daemon to add the directory to its durable Project list; the
 second reads the explicit registrations from that same daemon. Run `./bin/clawdline`
 instead if you built Clawdline from source and did not install its CLI. The directory must already
-exist. From inside the directory, `clawdline project add .` is equivalent. There is no Add Project
+exist. `clawdline project add .`, `clawdline project add ../my-app`, and an absolute path also work.
+There is no Add Project
 button in the console, including the hosted Cloud console. If you have Cloud terminal access to
 that machine, you can run the same CLI command in its terminal.
 
@@ -31,9 +32,11 @@ start a session ([sessions.md](sessions.md)); an already open start sheet refres
 `project list` shows manual registrations on the selected machine. Projects found from assistant history or live Sessions may appear in
 the console without it.
 
-To remove only the manual registration later, run
-`clawdline project remove /absolute/path/to/my-app`. This does not delete the directory. If
-assistant history or a live Session still points to it, the Project may remain visible.
+To remove the Project from both **Projects** and the session start list, use its row's
+**Remove from list** action and confirm, or run `clawdline project remove /absolute/path/to/my-app`.
+The directory and sessions remain on the machine. Assistant history and live Sessions cannot
+restore a removed Project. **Projects** refreshes when removal succeeds, and an open
+session start sheet refreshes automatically; `clawdline project add` from its directory restores it.
 
 ## The Projects page
 
