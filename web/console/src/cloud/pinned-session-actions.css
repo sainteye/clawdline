@@ -1,0 +1,10 @@
+.cloud-pinned-actions { display: grid; gap: 1rem; min-width: 0; }
+.cloud-pinned-actions form, .cloud-pinned-receipts article { display: grid; gap: .5rem; min-width: 0; }
+.cloud-pinned-actions textarea, .cloud-pinned-actions input { box-sizing: border-box; max-width: 100%; width: 100%; }
+.cloud-pinned-actions button { min-height: 44px; }
+.cloud-pinned-target, .cloud-pinned-receipts p { overflow-wrap: anywhere; }
+.cloud-pinned-risk { display: flex; flex-wrap: wrap; gap: 1rem; }
+.cloud-pinned-actions [role="alertdialog"] { border: 1px solid currentColor; border-radius: .5rem; padding: 1rem; }
+.cloud-pinned-receipts { display: grid; gap: 1rem; }
+.cloud-pinned-receipts article { border-top: 1px solid currentColor; padding-top: 1rem; }
+@media (max-width: 600px) { .cloud-pinned-risk, .cloud-pinned-risk > div { display: grid; width: 100%; } }
