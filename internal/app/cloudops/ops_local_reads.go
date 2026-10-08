@@ -13,7 +13,9 @@ func init() {
 				"one lane, so a foreground read is not overtaken by a background one",
 			decode: func(b body) (plan, bool) {
 				if !b.hasOneOf([]string{"type", "session", "limit"},
-					[]string{"type", "session", "limit", "priority"}) {
+					[]string{"type", "session", "limit", "priority"},
+					[]string{"type", "session", "limit", "before"},
+					[]string{"type", "session", "limit", "priority", "before"}) {
 					return plan{}, false
 				}
 				p, ok := sessionPlan(b, "transcript")
@@ -25,6 +27,14 @@ func init() {
 					return plan{}, false
 				}
 				p.limit = limit
+				if _, named := b["before"]; named {
+					before, ok := b.integer("before")
+					if !ok || before < 1 {
+						return plan{}, false
+					}
+					p.before = before
+					p.name = "transcript.before." + itoa(before)
+				}
 				p.priority = "foreground"
 				if raw, named := b["priority"]; named {
 					// A stale hosted tab can only be a person-driven reader:
@@ -41,8 +51,11 @@ func init() {
 			route: func(p plan) LocalRequest {
 				// This daemon's transcript is a route of its own with the
 				// session in the query, not a segment under /v1/sessions.
-				return LocalRequest{Method: "GET", Path: "/v1/transcript",
-					Query: map[string]string{"session": p.target, "limit": itoa(p.limit)}}
+				query := map[string]string{"session": p.target, "limit": itoa(p.limit)}
+				if p.before > 0 {
+					query["before"] = itoa(p.before)
+				}
+				return LocalRequest{Method: "GET", Path: "/v1/transcript", Query: query}
 			}},
 
 		op{name: "info", read: true,

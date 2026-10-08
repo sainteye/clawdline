@@ -39,7 +39,9 @@ import { agentReportIdentity } from "./agent-report.js"
 import "./agent-report.css"
 import "./transcript-error.css"
 import { atNewest, jumpOffered } from "./jump.js"
+import { joinTranscript } from "./history.js"
 import "./jump.css"
+import "./history.css"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -95,6 +97,12 @@ type Block =
 
 type Toggle = (key: string, defaultOpen?: boolean) => void
 
+interface EarlierPages {
+  base: TranscriptPage
+  // Newest older page first; rendering reverses this order.
+  pages: TranscriptPage[]
+}
+
 export function Transcript({
   id,
   agentId,
@@ -138,18 +146,86 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   // have their size before the clock's next tick.
   useLayoutEffect(turnPendingSpinners)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [earlier, setEarlier] = useState<EarlierPages | null>(null)
+  const [olderLoading, setOlderLoading] = useState(false)
+  const [olderError, setOlderError] = useState(false)
+  const olderBusy = useRef(false)
+  const olderAnchor = useRef<{ top: number; height: number } | null>(null)
   const session = useSession(id)
   // The list row's spinner and live line, repeated under the conversation's
   // newest end, where the reader's eye already is. Only the session's own
   // transcript: a provider subagent's page is not what the row's state is about.
   const working = !agentId && !!session && L.workState(session).state === "working"
   const heavyWork = !agentId ? session?.heavy_work : null
-  const entries = useMemo<Entry[]>(() => (data ? data.entries.map((e) => ({ ...e })) : []), [data])
+  const entries = useMemo<Entry[]>(() => {
+    if (!data) return []
+    if (!earlier) return data.entries.map((e) => ({ ...e }))
+    const retained = [...earlier.pages].reverse().flatMap((page) => page.entries).concat(earlier.base.entries)
+    return joinTranscript(retained, data.entries).map((e) => ({ ...e }))
+  }, [data, earlier])
   const skeleton = useWait(show === "loading")
   // `S.newestFirst` and `S.assistantIcons`, read on every draw as the original
   // reads them, and a draw of their own when either changes.
   const newestFirst = useSyncExternalStore(L.subscribeSettings, L.settingsNewestFirst)
   const icons = useSyncExternalStore(L.subscribeSettings, L.settingsAssistantIcons)
+  const olderCursor = earlier
+    ? earlier.pages.length ? earlier.pages[earlier.pages.length - 1].nextBefore : earlier.base.nextBefore
+    : data?.nextBefore
+  const loadOlder = useCallback(async () => {
+    if (!olderCursor || olderBusy.current || !data) return
+    olderBusy.current = true
+    setOlderLoading(true)
+    setOlderError(false)
+    const scroll = document.getElementById("tx-scroll")
+    try {
+      const page = agentId
+        ? await client.agentTranscript(id, agentId, LIMIT, olderCursor)
+        : await client.transcript(id, LIMIT, olderCursor)
+      if (page.evidence !== "transcript") throw new Error(page.note || "Earlier conversation could not be read")
+      if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
+      setEarlier((was) => ({ base: was?.base ?? data, pages: [...(was?.pages ?? []), page] }))
+    } catch {
+      setOlderError(true)
+    } finally {
+      olderBusy.current = false
+      setOlderLoading(false)
+    }
+  }, [agentId, data, id, olderCursor])
+  useLayoutEffect(() => {
+    const anchor = olderAnchor.current
+    if (!anchor) return
+    olderAnchor.current = null
+    const scroll = document.getElementById("tx-scroll")
+    if (scroll) scroll.scrollTop = anchor.top + (newestFirst ? 0 : scroll.scrollHeight - anchor.height)
+  }, [earlier, newestFirst])
+  useEffect(() => {
+    const scroll = document.getElementById("tx-scroll")
+    if (!scroll || !olderCursor) return
+    let touched = false
+    const gesture = () => { touched = true }
+    const approach = () => {
+      if (!touched || olderBusy.current || olderError) return
+      const distance = newestFirst
+        ? scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop
+        : scroll.scrollTop
+      if (distance < scroll.clientHeight * 0.75) {
+        touched = false
+        void loadOlder()
+      }
+    }
+    scroll.addEventListener("wheel", gesture, { passive: true })
+    scroll.addEventListener("touchstart", gesture, { passive: true })
+    scroll.addEventListener("pointerdown", gesture, { passive: true })
+    scroll.addEventListener("keydown", gesture)
+    scroll.addEventListener("scroll", approach, { passive: true })
+    return () => {
+      scroll.removeEventListener("wheel", gesture)
+      scroll.removeEventListener("touchstart", gesture)
+      scroll.removeEventListener("pointerdown", gesture)
+      scroll.removeEventListener("keydown", gesture)
+      scroll.removeEventListener("scroll", approach)
+    }
+  }, [loadOlder, newestFirst, olderCursor, olderError])
 
   // `artifactRenderQueue`: every picture this draw shows, in the order it is
   // drawn, rebuilt on every draw. The tiles are connected after the draw.
@@ -288,6 +364,14 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   })
 
   const T = L.strings
+  const olderControl = olderCursor ? (
+    <div className="tx-older" key="tx-older" aria-live="polite">
+      <button type="button" className="go" disabled={olderLoading} onClick={() => void loadOlder()}>
+        {nextWord(olderLoading ? "transcriptLoadingEarlier" : olderError ? "transcriptRetryEarlier" : "transcriptLoadEarlier")}
+      </button>
+      {olderError && <span role="alert">{nextWord("transcriptEarlierFailed")}</span>}
+    </div>
+  ) : null
   if (skeleton) return <Skeleton />
   // Newest end: the bottom, or the top when the transcript reads newest first.
   const cardsDrawn = (newestFirst ? [...cards].reverse() : cards).map(pendingHTML)
@@ -333,8 +417,8 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
     // conversation with nothing in it.
     return (
       <>
-        {cutNote(data)}
-        <div className="tx-note">{agentId ? T.agentEmpty : T.noOutput}</div>
+        {olderControl ?? (!earlier && cutNote(data))}
+        {!olderCursor && <div className="tx-note">{agentId ? T.agentEmpty : T.noOutput}</div>}
         {pending}
       </>
     )
@@ -393,11 +477,9 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   // order whichever way round the transcript is read. Keys are counted from
   // the oldest entry either way, so turning it over moves rows, not rebuilds them.
   if (newestFirst) drawn.reverse()
-  // The oldest end says when there is more before it (limits N17). The Swift
-  // app's page draws nothing here and reads as if the conversation began at
-  // its first entry; this is a deliberate difference, in the copied note's
-  // class, at whichever end is the oldest.
-  const cut = cutNote(data)
+  // The oldest end offers another page when the daemon names a cursor. Older
+  // daemons still show the diagnostic cut note rather than a dead control.
+  const cut = olderControl ?? (!earlier && cutNote(data))
   const jumpDrawn = <JumpToLatest key="jump" {...jump} newestFirst={newestFirst} onJump={jumpToNewest} />
   return (
     <>

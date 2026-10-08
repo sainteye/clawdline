@@ -67,7 +67,15 @@
   min-height: 40px;
 }
 
+#settings #settings-close {
+  width: auto;
+  min-width: 128px;
+  margin-left: auto;
+  padding-inline: 20px;
+}
+
 @media (max-width: 720px) {
   .page-settings .settings-grid { grid-template-columns: 1fr; }
   .page-settings .settings-tabs { gap: 18px; }
+  #settings #settings-close { width: 100%; }
 }

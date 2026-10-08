@@ -88,6 +88,13 @@ class FakeClient implements CloudReadClient {
     this.asks += 1
     return this.answer()
   }
+  olderAsks: number[] = []
+  sessionPageReads: { identity: CloudIdentity; word: string; body: Record<string, unknown>; answer: string }[] = []
+  _read = async (identity: CloudIdentity, word: string, reqBody: Record<string, unknown>, answer: string) => {
+    this.sessionPageReads.push({ identity, word, body: reqBody, answer })
+    this.olderAsks.push(reqBody.before as number)
+    return { id: "s1", entries: [{ role: "user", text: "earlier" }], signature: "1-1", evidence: "transcript" }
+  }
   pushKeyAsks = 0
   pushKey?: () => Promise<unknown> = async () => {
     this.pushKeyAsks += 1
@@ -138,6 +145,21 @@ class FakeClient implements CloudReadClient {
     throw Object.assign(new Error("Project not found"), { code: "not_found", status: 404 })
   }
 }
+
+test("older transcript reads name their cursor and do not replace the newest cache", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 10_000 })
+  const older = await body<TranscriptPage>(await r.fetch("/v1/transcript?session=s1&limit=200&before=123"))
+  assert.equal(older.entries[0].text, "earlier")
+  assert.deepEqual(client.olderAsks, [123])
+  assert.deepEqual(client.sessionPageReads, [{
+    identity: { machine: "mac-a", session: "s1" }, word: "transcript",
+    body: { limit: 200, before: 123, priority: "foreground" }, answer: "transcript.before.123",
+  }])
+  const latest = await body<TranscriptPage>(await r.fetch("/v1/transcript?session=s1&limit=200"))
+  assert.equal(latest.entries[0].text, "hi")
+  assert.equal(client.asks, 1)
+})
 
 /** A snippet row as the copied client tags it, with nothing of anybody's in it. */
 function snippet(machine: string, id: string, extra: Record<string, unknown> = {}) {

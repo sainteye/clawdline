@@ -8679,6 +8679,12 @@ export interface TranscriptPage {
    * only when above zero.
    */
   leftovers?: number
+
+  /**
+   * Exclusive byte cursor for the next older page; absent at the beginning of the
+   * record.
+   */
+  nextBefore?: number
   note?: string
 
   /**

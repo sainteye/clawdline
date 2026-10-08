@@ -1,5 +1,9 @@
 # Architecture
 
+For a visual overview of the current browser paths, databases, storage, and code size, see
+[Architecture at a glance](architecture-at-a-glance.html). A [text version](architecture-at-a-glance.md)
+is available for readers who prefer a document.
+
 One Go binary is both the daemon and its command line. Work always runs on your own machine. Every
 client, whether the native window, a browser tab or the Cloud console, reads the same HTTP + SSE
 API, which is defined once, as JSON Schema, before any code is written against it.

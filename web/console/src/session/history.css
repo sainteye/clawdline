@@ -1,0 +1,18 @@
+.tx-older {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 0 18px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.tx-older .go {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 7px 12px;
+}
+.tx-older .go:disabled { opacity: .6; cursor: default; }

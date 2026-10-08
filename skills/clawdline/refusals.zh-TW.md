@@ -80,7 +80,7 @@
 | `internal` | `internal/transport/http/actions.go`, `internal/transport/http/auth.go`, `internal/transport/http/board.go`, `internal/transport/http/orchestrator.go`, `internal/transport/http/push.go`, `internal/transport/http/terminals.go`, `internal/transport/http/tracks.go` |
 | `invalid_audience_selector` | `internal/transport/http/board.go` |
 | `invalid_command` | `internal/transport/http/board.go`, `internal/transport/http/work.go` |
-| `invalid_cursor` | `internal/transport/http/squad_events.go`, `internal/transport/http/tracks.go` |
+| `invalid_cursor` | `internal/transport/http/agents.go`, `internal/transport/http/squad_events.go`, `internal/transport/http/tracks.go`, `internal/transport/http/transcript.go` |
 | `invalid_deployment_policy` | `internal/domain/work/v2.go` |
 | `invalid_event` | `internal/transport/http/squad_events.go` |
 | `invalid_gate_result` | `internal/transport/http/orchestrator.go` |
