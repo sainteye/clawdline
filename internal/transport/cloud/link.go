@@ -688,18 +688,20 @@ func (l *Link) wire() error {
 			AdmitExecution:         opts.AdmitExecution,
 			Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
 				AppOrigin: settings.AppOrigin},
-			AllowCommands: l.allowCommands,
-			Authority:     l.authority,
+			AllowCommands:       l.allowCommands,
+			Authority:           l.authority,
+			TranscriptAuthority: l.transcriptAuthority,
 		},
 		Transport: l.relay,
 		Log:       opts.Log,
 	}
 	l.publisher = &Publisher{
-		MachineID:   identity.MachineID,
-		MachineName: machineName(identity, settings, HostName(), runtime.GOOS),
-		Platform:    runtime.GOOS,
-		Version:     opts.Version,
-		APILevel:    opts.APILevel,
+		MachineID:     identity.MachineID,
+		MachineName:   machineName(identity, settings, HostName(), runtime.GOOS),
+		Platform:      runtime.GOOS,
+		Version:       opts.Version,
+		APILevel:      opts.APILevel,
+		ReadContentV1: l.service.Bridge.TranscriptAuthority != nil,
 		Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
 			AppOrigin: settings.AppOrigin},
 		Publish: l.relay.Publish,
@@ -1151,6 +1153,46 @@ func (l *Link) authority(ctx context.Context, sender string, verifiedKey ed25519
 		a.WriteGateAllows = l.allowCommands()
 		return a
 	}
+	return a
+}
+
+// transcriptAuthority never relies on the relay's earlier capability check.
+// A viewer can lose its key, pairing or read_transcript cap while a local
+// transcript route is running, so the bridge calls this before and after it.
+func (l *Link) transcriptAuthority(ctx context.Context, sender string, verifiedKey ed25519.PublicKey) cloudops.Authority {
+	a := cloudops.Authority{ClockReady: true}
+	if l.roster == nil || l.roster.Refresh(ctx) != nil {
+		return a // A failed fresh roster read cannot authorize old content.
+	}
+	a = l.authority(ctx, sender, verifiedKey, false)
+	if !a.RosterAllowsSender {
+		return a
+	}
+	for _, device := range l.roster.Devices() {
+		if device.ID != sender {
+			continue
+		}
+		key, err := base64.StdEncoding.DecodeString(device.PublicKey)
+		if err != nil || len(key) != ed25519.PublicKeySize || !bytes.Equal(key, verifiedKey) {
+			a.RosterAllowsSender = false
+			return a
+		}
+		if l.pinned != nil {
+			pinned, ok, err := l.pinned.PublicKeyFor(sender)
+			if err != nil || ok && !bytes.Equal(pinned, key) {
+				a.RosterAllowsSender = false
+				return a
+			}
+		}
+		for _, cap := range device.Caps {
+			if cap == "read_transcript" {
+				a.ReadTranscriptAllows = true
+				break
+			}
+		}
+		return a
+	}
+	a.RosterAllowsSender = false
 	return a
 }
 
