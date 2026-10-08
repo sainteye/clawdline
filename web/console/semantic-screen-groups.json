@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4779,
-  "riskKeys": 2085,
-  "nonRiskCount": 2694,
+  "englishContentKeys": 4828,
+  "riskKeys": 2110,
+  "nonRiskCount": 2718,
   "groups": [
     {
       "name": "bar / other",
@@ -1638,11 +1638,35 @@
     },
     {
       "name": "next / cloud",
-      "count": 92,
+      "count": 116,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
+        "next.cloudActionAnswer",
+        "next.cloudActionAnswerKey",
+        "next.cloudActionCancel",
+        "next.cloudActionChanged",
+        "next.cloudActionCheckReceipt",
+        "next.cloudActionCheckRequired",
+        "next.cloudActionClose",
+        "next.cloudActionCloseBlocked",
+        "next.cloudActionConfirm",
+        "next.cloudActionConfirmQuestion",
+        "next.cloudActionExpected",
+        "next.cloudActionHeading",
+        "next.cloudActionInterrupt",
+        "next.cloudActionMachineExecution",
+        "next.cloudActionMessage",
+        "next.cloudActionOffline",
+        "next.cloudActionQuestion",
+        "next.cloudActionReceiptPath",
+        "next.cloudActionReceiptProblem",
+        "next.cloudActionRequest",
+        "next.cloudActionSend",
+        "next.cloudActionStale",
+        "next.cloudActionTarget",
+        "next.cloudActionTyped",
         "next.cloudAllAny",
         "next.cloudAllAttention",
         "next.cloudAllAttentionNeeded",
