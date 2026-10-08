@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 // @ts-expect-error -- Node's type-stripping runner loads this source in the focused test.
-import { PinnedSessionActions, receiptPath, receiptStages } from "./pinned-session-actions.ts"
+import { ACTION_STATUS_FRESH_MS, PinnedSessionActions, receiptPath, receiptStages, watchActionAvailability } from "./pinned-session-actions.ts"
 import type { ActionContext, ActionInput, ActionProjection, PinnedClient } from "./pinned-session-actions.js"
 
 const generationA = "0123456789abcdef0123456789abcdef"
@@ -64,6 +64,65 @@ test("a new execution generation, stale, offline and unknown projections stop th
   f.projections.set("machine-a", { kind: "unavailable", reason: "event_gap" })
   assert.equal(await f.service.availability(context, "send"), "unknown")
   assert.equal(f.calls.length, 0)
+})
+
+test("buttons become stale when signed status expires without any source event", async () => {
+  const f = fixture()
+  const observedAt = Date.now() - ACTION_STATUS_FRESH_MS + 500
+  const seen: unknown[] = []
+  let reads = 0
+  let events = 0
+  const source = {
+    async readMachine() {
+      ++reads
+      return Date.now() - observedAt > ACTION_STATUS_FRESH_MS
+        ? { kind: "unavailable" as const, reason: "stale" }
+        : { kind: "ready" as const, observedAt,
+          rows: [{ destination: target, freshness: "current" as const, observedAt }] }
+    },
+    subscribe() { ++events; return () => {} },
+  }
+  const storage = { getItem: () => null, setItem: () => {} }
+  const service = new PinnedSessionActions(source, () => f.client, storage, () => "request")
+  let stop = () => {}
+  const stale = new Promise<void>((resolve) => {
+    stop = watchActionAvailability(context, source, service, (value) => {
+      if (value.send !== undefined) seen.push(value.send)
+      if (value.send === "stale") resolve()
+    })
+  })
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([stale, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("freshness timer did not fire")), 2_000) })])
+    assert.deepEqual(seen, [null, "stale"])
+    assert.equal(events, 1, "the transition needs no source event")
+    assert.ok(reads >= 2, "the timer reads fresh status again")
+  } finally { stop(); if (timeout !== undefined) clearTimeout(timeout) }
+})
+
+test("machine inventory expiry disables an otherwise fresh pinned action without an event", async () => {
+  const f = fixture()
+  const observedAt = Date.now() - ACTION_STATUS_FRESH_MS + 500
+  f.client.machines = async () => ({ machines: [{ id: "machine-a", observedAt,
+    freshness: Date.now() - observedAt > ACTION_STATUS_FRESH_MS ? "stale" as const : "current" as const,
+    pairing: "paired" }] })
+  const source = { async readMachine() { const now = Date.now(); return { kind: "ready" as const, observedAt: now,
+    rows: [{ destination: target, freshness: "current" as const, observedAt: now }] } } }
+  const storage = { getItem: () => null, setItem: () => {} }
+  const service = new PinnedSessionActions(source, () => f.client, storage, () => "request")
+  const seen: unknown[] = []
+  let stop = () => {}
+  const stale = new Promise<void>((resolve) => {
+    stop = watchActionAvailability(context, source, service, (value) => {
+      if (value.send !== undefined) seen.push(value.send)
+      if (value.send === "stale") resolve()
+    })
+  })
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([stale, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("machine timer did not fire")), 2_000) })])
+    assert.deepEqual(seen, [null, "stale"])
+  } finally { stop(); if (timeout !== undefined) clearTimeout(timeout) }
 })
 
 test("capability, content and pairing revocation refuse a write before its envelope", async () => {
@@ -158,9 +217,9 @@ test("high-risk actions carry pinned target and their result can be acknowledged
 test("answers use a verified displayed option and its authoritative question fingerprint", async () => {
   const f = fixture()
   assert.equal(await f.service.availability(context, "answer"), "menu_unverified")
-  const question = { fingerprint: "a".repeat(64), options: [{ key: "2", label: "Allow this request" }], observedAt: 200 }
+  const question = { fingerprint: "a".repeat(64), options: [{ key: "2", label: "Allow this request" }], observedAt: Date.now() }
   const withQuestion: ActionContext = { ...context, content: { kind: "ready", question } }
-  f.projections.set("machine-a", { kind: "ready", rows: [{ destination: target, freshness: "current", observedAt: 100 }] })
+  f.projections.set("machine-a", { kind: "ready", rows: [{ destination: target, freshness: "current", observedAt: question.observedAt - 100 }] })
   assert.equal(await f.service.availability(withQuestion, "answer"), null)
   await assert.rejects(f.service.perform(withQuestion, "answer", { answer: "1", expect: question.fingerprint }), { code: "menu_unverified" })
   await assert.rejects(f.service.perform(withQuestion, "answer", { answer: "2", expect: "b".repeat(64) }), { code: "menu_unverified" })
@@ -170,6 +229,6 @@ test("answers use a verified displayed option and its authoritative question fin
   await f.service.perform(withQuestion, "answer", { answer: "2", expect: question.fingerprint })
   assert.deepEqual(f.calls[0].body, { request: "request-1", execution_generation: generationA,
     answer: "2", expect: question.fingerprint })
-  f.projections.set("machine-a", { kind: "ready", rows: [{ destination: target, freshness: "current", observedAt: 300 }] })
+  f.projections.set("machine-a", { kind: "ready", rows: [{ destination: target, freshness: "current", observedAt: question.observedAt + 100 }] })
   assert.equal(await f.service.availability(withQuestion, "answer"), "menu_unverified")
 })

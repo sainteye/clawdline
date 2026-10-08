@@ -47,6 +47,7 @@ export interface ActionContext {
 
 export interface ActionProjection {
   kind: "ready" | "unavailable"
+  observedAt?: number
   rows?: readonly { destination: ActionDestination; freshness: "current" | "stale" | "unknown";
     observedAt?: number; closeBlocked?: boolean }[]
   reason?: string
@@ -54,13 +55,15 @@ export interface ActionProjection {
 
 export interface ActionSource {
   readMachine(machineID: string, signal: AbortSignal): Promise<ActionProjection>
+  subscribe?(listener: (event: { machineID: string }) => void): () => void
 }
 
 export interface PinnedClient {
   deviceID: string | null
   allowWrites?: boolean
   viewerVerified?: ReadonlyMap<string, unknown>
-  machines(): Promise<{ machines: readonly { id: string; freshness: "current" | "stale" | "unknown"; pairing: string }[] }>
+  machines(): Promise<{ machines: readonly { id: string; freshness: "current" | "stale" | "unknown";
+    pairing: string; observedAt?: number | null }[] }>
   machineDescriptor?(machine: string): { machine?: { commands?: string[] } } | null
   _read?(identity: { machine: string; session: string }, type: string, body: Record<string, unknown>,
     answer: string, timeoutMs?: number, options?: { retireUncertain?: boolean }): Promise<unknown>
@@ -79,6 +82,52 @@ export interface ActionInput {
 
 const generation = /^[0-9a-f]{32}$/u
 const fingerprint = /^[0-9a-f]{64}$/u
+// Match the status projection's existing signed-observation freshness window.
+export const ACTION_STATUS_FRESH_MS = 300_000
+const actions: readonly Action[] = ["send", "answer", "interrupt", "end"]
+export type ActionAvailability = Partial<Record<Action, ActionProblem | null>>
+
+/** Refresh at the first expiry of the marker, row or displayed question, even without an event. */
+export function watchActionAvailability(context: ActionContext, source: ActionSource, service: PinnedSessionActions,
+  onChange: (value: ActionAvailability) => void): () => void {
+  let active = true
+  let sequence = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const check = async () => {
+    const thisCheck = ++sequence
+    if (timer !== undefined) clearTimeout(timer)
+    timer = undefined
+    onChange({})
+    let projection: ActionProjection | null = null
+    let machineObservedAt: number | null = null
+    let values: ActionAvailability
+    try {
+      const results = await Promise.all([
+        source.readMachine(context.destination.machineID, new AbortController().signal),
+        service.machineObservation(context.destination.machineID),
+        ...actions.map((action) => service.availability(context, action)),
+      ])
+      projection = results[0] as ActionProjection
+      machineObservedAt = results[1] as number | null
+      values = Object.fromEntries(actions.map((action, index) => [action, results[index + 2] as ActionProblem | null]))
+    } catch {
+      values = Object.fromEntries(actions.map((action) => [action, "unknown"]))
+    }
+    if (!active || thisCheck !== sequence) return
+    onChange(values)
+    if (!actions.some((action) => values[action] === null)) return
+    const row = projection?.rows?.find((candidate) => sameDestination(candidate.destination, context.destination))
+    const observed = [projection?.observedAt, row?.observedAt, machineObservedAt,
+      values.answer === null && context.content?.kind === "ready" ? context.content.question?.observedAt : undefined]
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+    const nextExpiry = observed.length ? Math.min(...observed) + ACTION_STATUS_FRESH_MS + 1
+      : Date.now() + ACTION_STATUS_FRESH_MS
+    timer = setTimeout(() => void check(), Math.max(1, nextExpiry - Date.now()))
+  }
+  void check()
+  const stop = source.subscribe?.((event) => { if (event.machineID === context.destination.machineID) void check() })
+  return () => { active = false; ++sequence; if (timer !== undefined) clearTimeout(timer); stop?.() }
+}
 
 export function sameDestination(a: ActionDestination, b: ActionDestination): boolean {
   return a.machineID === b.machineID && a.sessionID === b.sessionID && a.executionGeneration === b.executionGeneration
@@ -142,6 +191,12 @@ export class PinnedSessionActions {
     this.store.setItem(this.key(record.viewer, record.destination, record.action), JSON.stringify(record))
   }
 
+  async machineObservation(machineID: string): Promise<number | null> {
+    const machines = await this.current()?.machines().catch(() => null)
+    const observedAt = machines?.machines.find((entry) => entry.id === machineID)?.observedAt
+    return typeof observedAt === "number" && Number.isFinite(observedAt) ? observedAt : null
+  }
+
   /** Fresh status and capability evidence is read again immediately before every write. */
   async availability(context: ActionContext, action: Action): Promise<ActionProblem | null> {
     const target = context.destination
@@ -170,6 +225,8 @@ export class PinnedSessionActions {
       if (context.content?.kind !== "ready") return "unknown"
       if (!context.content.question || !fingerprint.test(context.content.question.fingerprint) ||
         !context.content.question.options.some((option) => option.key && option.label)) return "menu_unverified"
+      if (!Number.isFinite(context.content.question.observedAt) ||
+        Math.abs(Date.now() - context.content.question.observedAt) > ACTION_STATUS_FRESH_MS) return "menu_unverified"
     }
     const projection = await this.source.readMachine(target.machineID, new AbortController().signal).catch(() => null)
     if (!projection || projection.kind === "unavailable") {

@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { nextWord } from "../next-strings.js"
 import {
-  PinnedSessionActions, problemCode, receiptPath, receiptStages, type Action, type ActionContext,
-  type ActionInput, type ActionProblem, type ActionRecord, type ActionSource, type PinnedClient,
+  PinnedSessionActions, problemCode, receiptPath, receiptStages, watchActionAvailability, type Action, type ActionContext,
+  type ActionAvailability, type ActionInput, type ActionProblem, type ActionRecord, type ActionSource, type PinnedClient,
 } from "./pinned-session-actions.js"
 import "./pinned-session-actions.css"
 
@@ -35,7 +35,7 @@ export function PinnedSessionActionPanel({ context, source, current }: {
   current: () => PinnedClient | null
 }) {
   const service = useMemo(() => new PinnedSessionActions(source, current, localStorage, () => crypto.randomUUID()), [source, current])
-  const [availability, setAvailability] = useState<Partial<Record<Action, ActionProblem | null>>>({})
+  const [availability, setAvailability] = useState<ActionAvailability>({})
   const [records, setRecords] = useState<Partial<Record<Action, ActionRecord>>>({})
   const [busy, setBusy] = useState<Action | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -52,15 +52,9 @@ export function PinnedSessionActionPanel({ context, source, current }: {
   }, [service, key])
 
   useEffect(() => {
-    let live = true
-    const check = () => void Promise.all(actions.map(async (action) => [action, await service.availability(context, action)] as const))
-      .then((values) => { if (live) setAvailability(Object.fromEntries(values)) })
-      .catch(() => { if (live) setAvailability(Object.fromEntries(actions.map((action) => [action, "unknown"]))) })
-    check()
-    const stop = (source as ActionSource & { subscribe?: (listener: (event: { machineID: string }) => void) => () => void })
-      .subscribe?.((event) => { if (event.machineID === destination.machineID) check() })
-    return () => { live = false; stop?.() }
-  }, [service, key, context.content?.kind, question?.fingerprint, context.machine.freshness])
+    return watchActionAvailability(context, source, service, setAvailability)
+  }, [service, key, context.content?.kind, question?.fingerprint, question?.observedAt,
+    context.machine.freshness, context.row.observedAt])
 
   useLayoutEffect(() => { if (confirm) cancelRef.current?.focus({ preventScroll: true }) }, [confirm])
 
