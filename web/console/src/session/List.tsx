@@ -106,7 +106,10 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   const retainedSaid = retained
     ? `<span class="session-work-copy retained-reading" title="${L.escapeHTML(retained)}">${L.escapeHTML(retained)}</span>`
     : ""
-  const pausedSaid = row.source?.freshness === "unverified"
+  // A pending inventory refresh is not a failed verification. Its prior row
+  // becomes worth annotating only after the retained-reading age threshold;
+  // an unstarted conversation has no work state to verify at all.
+  const pausedSaid = retained && !notStarted && row.source?.freshness === "unverified"
     ? `<span class="session-work-copy retained-reading">${L.escapeHTML(catalogWord("literal", "1ebe900add97"))} · ${L.escapeHTML(new Date(row.source.observed_at * 1000).toLocaleTimeString())}</span>`
     : ""
   const attention = row.attention_count
