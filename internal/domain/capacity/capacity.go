@@ -316,6 +316,8 @@ const (
 	// How old one source's own answer may be and still vouch for its rows
 	// while a slower source holds the refresh.
 	CacheSourceAnswer = "cache.source_answer"
+	// Minimum age before the machine dashboard refreshes grouped reclaim rows.
+	CacheReclaimSummary = "cache.reclaim_summary"
 	// The Project Timeline is a projection that stores nothing, so what is
 	// bounded is the read (limits §3.3).
 	TimelineEntries = "timeline.entries"
@@ -1735,6 +1737,15 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app.SourceAnswerAgeLimit"},
+		},
+		{
+			// The machine dashboard polls every three seconds. Grouped reclaim
+			// decisions come from the store at most once per thirty seconds.
+			Name: CacheReclaimSummary, Class: Cache, Unit: Seconds,
+			Limit: 30, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.reclaimSummaryLimit"},
 		},
 		{
 			// The screens held between those captures, one per session the

@@ -24,7 +24,8 @@ import { failureWords, failureWordsLanguage, readMachineUsage } from "./read.js"
 import { NeedsUpdate } from "./NeedsUpdate.js"
 import { asMachineNeedsUpdate } from "@clawdline/core"
 import { Mark } from "../session/List.js"
-import { nextWord } from "../next-strings.js"
+import { byteWords, nextWord } from "../next-strings.js"
+import { reclaimReasonWord } from "./storage.js"
 import "./machine.css"
 
 /** How often an open dashboard asks. The route answers a second ask inside 1.5 s from its last reading. */
@@ -190,6 +191,40 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
                 zh={zh}
               />
             </div>
+
+            <section className="machine-section machine-storage" aria-label={nextWord("machineStorageTitle")}>
+              <h3>{nextWord("machineStorageTitle")}</h3>
+              <div className="machine-storage-grid">
+                <div>
+                  <span className="machine-label">{nextWord("machineDiskFree")}</span>
+                  <strong>{usage.disk?.known && usage.disk.free_bytes !== undefined
+                    ? byteWords(usage.disk.free_bytes) : nextWord("machineStorageUnknown")}</strong>
+                </div>
+                <div>
+                  <span className="machine-label">{nextWord("machineReclaimTitle")}</span>
+                  {usage.reclaim?.known ? (
+                    <>
+                      <p className="machine-storage-counts">
+                        <span>{nextWord("machineReclaimKept")}: <b>{usage.reclaim.kept}</b></span>
+                        <span>{nextWord("machineReclaimFailures")}: <b>{usage.reclaim.failures}</b></span>
+                        {usage.reclaim.removing > 0 ? <span>{nextWord("machineReclaimRemoving")}: <b>{usage.reclaim.removing}</b></span> : null}
+                        {usage.reclaim.last_sweep_at !== undefined && usage.reclaim.deferred > 0
+                          ? <span>{nextWord("machineReclaimDeferred")}: <b>{usage.reclaim.deferred}</b></span> : null}
+                      </p>
+                      {usage.reclaim.reasons.length > 0 ? (
+                        <div className="machine-storage-reasons">
+                          <span className="machine-label">{nextWord("machineReclaimReasons")}</span>
+                          <ul>{usage.reclaim.reasons.map((reason) => (
+                            <li key={reason.code}><span>{reclaimReasonWord(reason.code)}</span><b>{reason.count}</b></li>
+                          ))}</ul>
+                        </div>
+                      ) : usage.reclaim.kept === 0 && usage.reclaim.removing === 0
+                        ? <p className="machine-note">{nextWord("machineReclaimNone")}</p> : null}
+                    </>
+                  ) : <strong>{nextWord("machineStorageUnknown")}</strong>}
+                </div>
+              </div>
+            </section>
 
             {usage.pressure ? (
               <p className="machine-pressure">
