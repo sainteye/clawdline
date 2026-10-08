@@ -16,7 +16,7 @@ import (
 func TestAFullQueueRefusesTheNewRequestAndKeepsTheOnesItTook(t *testing.T) {
 	relay := &Relay{Depth: 2, Log: func(string, ...any) {}}
 	for seq := uint64(1); seq <= 3; seq++ {
-		relay.Deliver(domaincloud.Envelope{Ch: "ctl/mac-01", Class: "ctl", Sender: "viewer-01", Seq: seq}, []byte(`{}`))
+		relay.Deliver(domaincloud.Envelope{Ch: "ctl/mac-01", Class: "ctl", Sender: "viewer-01", Seq: seq}, []byte(`{}`), nil)
 	}
 	queued := []uint64{(<-relay.Requests()).Sequence, (<-relay.Requests()).Sequence}
 	if queued[0] != 1 || queued[1] != 2 {
@@ -42,7 +42,7 @@ func TestARefusalThatCannotBeToldIsCountedAsDropped(t *testing.T) {
 	var lines []string
 	relay := &Relay{Depth: 1, Log: func(f string, _ ...any) { lines = append(lines, f) }}
 	for seq := uint64(1); seq <= uint64(2+refusalLane); seq++ {
-		relay.Deliver(domaincloud.Envelope{Ch: "ctl/mac-01", Class: "ctl", Sender: "viewer-01", Seq: seq}, []byte(`{}`))
+		relay.Deliver(domaincloud.Envelope{Ch: "ctl/mac-01", Class: "ctl", Sender: "viewer-01", Seq: seq}, []byte(`{}`), nil)
 	}
 	_, _, counters := relay.Queue()
 	if counters.Refused != int64(1+refusalLane) || counters.Dropped != 1 {

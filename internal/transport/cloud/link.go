@@ -244,14 +244,17 @@ type Link struct {
 
 	// The direct carrier (direct.go). directMu is never held while
 	// terminalMu is taken, nor the other way round.
-	directMu                   sync.Mutex
-	directPeers                map[string]*directPeer
-	directOffers               map[string][]time.Time
-	directWebRTC               *webrtc.API
-	directLoopback             bool // tests only: two peers on one host
-	directNoSTUN               bool // tests only: no network beyond this host
-	terminalMu                 sync.Mutex
-	terminalConnections        map[string]*terminalConnection
+	directMu            sync.Mutex
+	directPeers         map[string]*directPeer
+	directOffers        map[string][]time.Time
+	directWebRTC        *webrtc.API
+	directLoopback      bool // tests only: two peers on one host
+	directNoSTUN        bool // tests only: no network beyond this host
+	terminalMu          sync.Mutex
+	terminalConnections map[string]*terminalConnection
+	// Only a terminal envelope that passed signature verification and decryption
+	// may establish the legacy sender key used by terminalAccess after receipt.
+	terminalAuthenticated      map[string]ed25519.PublicKey
 	terminalRetireAfterReceipt map[string]*terminalConnection
 	// terminalReceiptsEvicted counts the receipts let go early because their
 	// connection held CloudTerminalReceiptsLimit, since this process began;
@@ -352,10 +355,11 @@ func (l *Link) TerminalViewerAllowed(device string) bool {
 
 // terminalAuthority is the three-way terminal answer. With withKey false it
 // is only the Cloud-side prerequisite for a relay connection registration:
-// local pin and grant are checked again after that registration, so a
-// locally refused viewer can receive a keyed refusal. With withKey it uses the
-// same locally revoked, pin-first sender key as Cloud commands, plus a fresh
-// roster with the matching key.
+// the grant is checked again after that registration, so a locally refused
+// viewer can receive a keyed refusal. With withKey it uses the same locally
+// revoked, pin-first sender key as Cloud commands, plus a fresh roster. A
+// viewer without a local pin must have reached this point through an
+// authenticated, decrypted terminal envelope carrying this machine's content key.
 func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, string) {
 	if !l.settings.Enabled {
 		return TerminalDenied, "Cloud is off on this machine"
@@ -371,6 +375,7 @@ func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, 
 	// unreadable roster must not turn "this machine threw it out" into
 	// "try again".
 	var pinnedKey ed25519.PublicKey
+	var authenticatedKey ed25519.PublicKey
 	if withKey && l.pinned != nil {
 		refused, err := l.pinned.Refused(device)
 		if err != nil {
@@ -388,7 +393,12 @@ func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, 
 		}
 	}
 	if withKey && pinnedKey == nil {
-		return TerminalDenied, "this device is not paired with this machine"
+		l.terminalMu.Lock()
+		authenticatedKey = l.terminalAuthenticated[device]
+		l.terminalMu.Unlock()
+		if authenticatedKey == nil {
+			return TerminalDenied, "this device has not authenticated a terminal envelope for this machine"
+		}
 	}
 	if l.roster == nil {
 		return TerminalUnverified, "this machine holds no credential to read the device roster"
@@ -410,7 +420,8 @@ func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, 
 		if err != nil || len(rosterKey) != ed25519.PublicKeySize {
 			return TerminalDenied, "the account's key for the device is unreadable"
 		}
-		if !bytes.Equal(rosterKey, pinnedKey) {
+		if (pinnedKey != nil && !bytes.Equal(rosterKey, pinnedKey)) ||
+			(authenticatedKey != nil && !bytes.Equal(rosterKey, authenticatedKey)) {
 			return TerminalDenied, "the account's key for the device is not the paired one"
 		}
 		return TerminalAllowed, ""
@@ -1082,9 +1093,11 @@ func (l *Link) pairingKeys() (domaincloud.DeviceKey, domaincloud.ContentKey, err
 //
 // The roster is the account's, not this machine's: a device the person removed
 // in the hosted console stops being able to act here at the next refresh.
-// Every active viewer paired to this machine may send while Cloud commands
-// are enabled on this machine.
-func (l *Link) authority(ctx context.Context, sender string, requiresWriteGate bool) cloudops.Authority {
+// Every active viewer that can authenticate and decrypt this machine's
+// envelope may send while Cloud commands are enabled. The transport already
+// verified both before calling the bridge. A local pin, when present, still
+// overrides the roster key; a local revocation always denies the viewer.
+func (l *Link) authority(ctx context.Context, sender string, verifiedKey ed25519.PublicKey, requiresWriteGate bool) cloudops.Authority {
 	readable, _ := l.roster.Readable()
 	var pairedKey ed25519.PublicKey
 	if l.pinned != nil {
@@ -1118,7 +1131,9 @@ func (l *Link) authority(ctx context.Context, sender string, requiresWriteGate b
 		}
 		if requiresWriteGate {
 			rosterKey, err := base64.StdEncoding.DecodeString(device.PublicKey)
-			if err != nil || len(rosterKey) != ed25519.PublicKeySize || !bytes.Equal(rosterKey, pairedKey) {
+			if err != nil || len(rosterKey) != ed25519.PublicKeySize ||
+				!bytes.Equal(rosterKey, verifiedKey) ||
+				(pairedKey != nil && !bytes.Equal(rosterKey, pairedKey)) {
 				return a
 			}
 		}

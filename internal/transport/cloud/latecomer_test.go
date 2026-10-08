@@ -145,9 +145,9 @@ func TestTheRelayTellsThePublisherEverySenderItHearsFrom(t *testing.T) {
 	var heard []string
 	relay := &Relay{Depth: 1, Log: func(string, ...any) {},
 		Audience: func(sender string) { heard = append(heard, sender) }}
-	relay.Deliver(domaincloud.Envelope{Ch: "ctl/mac-01", Class: "ctl", Sender: "viewer-01", Seq: 1}, []byte(`{}`))
+	relay.Deliver(domaincloud.Envelope{Ch: "ctl/mac-01", Class: "ctl", Sender: "viewer-01", Seq: 1}, []byte(`{}`), nil)
 	// The second one is past the queue's depth and is refused.
-	relay.Deliver(domaincloud.Envelope{Ch: "ctl/mac-01", Class: "ctl", Sender: "viewer-02", Seq: 2}, []byte(`{}`))
+	relay.Deliver(domaincloud.Envelope{Ch: "ctl/mac-01", Class: "ctl", Sender: "viewer-02", Seq: 2}, []byte(`{}`), nil)
 	if len(heard) != 2 || heard[0] != "viewer-01" || heard[1] != "viewer-02" {
 		t.Fatalf("the audience heard %v; want both senders, including the refused one", heard)
 	}

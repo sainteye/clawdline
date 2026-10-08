@@ -15,6 +15,7 @@ package cloud
 
 import (
 	"context"
+	"crypto/ed25519"
 	"log"
 	"time"
 
@@ -23,16 +24,16 @@ import (
 )
 
 // Inbound is one decrypted request, as the transport hands it over. It is the
-// envelope's identity fields and its plaintext, and deliberately not the
-// envelope: by this point the signature has been checked and the ciphertext
-// opened, and repeating either here would be a second opinion about a question
-// already answered.
+// envelope's identity fields, its plaintext and the exact key used to verify
+// it. The envelope itself is not repeated: the transport already checked its
+// signature and opened its ciphertext.
 type Inbound struct {
-	Channel   string
-	Class     string
-	Sender    string
-	Sequence  uint64
-	Plaintext []byte
+	Channel     string
+	Class       string
+	Sender      string
+	Sequence    uint64
+	Plaintext   []byte
+	VerifiedKey ed25519.PublicKey
 }
 
 // Outbound is one answer, ready to seal: the channel it belongs on, the class
@@ -191,11 +192,12 @@ func (s Service) Run(ctx context.Context) error {
 func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 	started := s.now()
 	answer := s.Bridge.Handle(ctx, cloudops.Command{
-		Channel:   request.Channel,
-		Class:     cloudops.Class(request.Class),
-		Sender:    request.Sender,
-		Sequence:  request.Sequence,
-		Plaintext: request.Plaintext,
+		Channel:     request.Channel,
+		Class:       cloudops.Class(request.Class),
+		Sender:      request.Sender,
+		VerifiedKey: request.VerifiedKey,
+		Sequence:    request.Sequence,
+		Plaintext:   request.Plaintext,
 	})
 	if !answer.Published() {
 		s.logf("cloud: %s answered nobody: session=%s status=%d code=%s sender=%s seq=%d",
@@ -284,11 +286,12 @@ func codeOrOK(code string) string {
 // that will not fit is not evidence about it (Bridge.Undeliverable).
 func (s Service) tellChannelFull(ctx context.Context, request Inbound, answer cloudops.Answer, limit int, cause error) {
 	refusal := s.Bridge.Undeliverable(cloudops.Command{
-		Channel:   request.Channel,
-		Class:     cloudops.Class(request.Class),
-		Sender:    request.Sender,
-		Sequence:  request.Sequence,
-		Plaintext: request.Plaintext,
+		Channel:     request.Channel,
+		Class:       cloudops.Class(request.Class),
+		Sender:      request.Sender,
+		VerifiedKey: request.VerifiedKey,
+		Sequence:    request.Sequence,
+		Plaintext:   request.Plaintext,
 	}, limit)
 	if !refusal.Published() {
 		s.logf("cloud: %s (operation=%s) did not fit its channel and its sender could not be told: the request names no waiter (%s): %v",
@@ -339,11 +342,12 @@ func (s Service) refuse(ctx context.Context, r Refuser) {
 // told, or "" when the answer was handed to the transport.
 func (s Service) Busy(ctx context.Context, request Inbound, limit int) string {
 	answer := s.Bridge.Busy(cloudops.Command{
-		Channel:   request.Channel,
-		Class:     cloudops.Class(request.Class),
-		Sender:    request.Sender,
-		Sequence:  request.Sequence,
-		Plaintext: request.Plaintext,
+		Channel:     request.Channel,
+		Class:       cloudops.Class(request.Class),
+		Sender:      request.Sender,
+		VerifiedKey: request.VerifiedKey,
+		Sequence:    request.Sequence,
+		Plaintext:   request.Plaintext,
 	}, limit)
 	if !answer.Published() {
 		return "the request names no waiter a refusal may be published to (" + answer.Code + ")"

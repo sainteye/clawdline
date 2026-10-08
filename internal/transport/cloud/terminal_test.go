@@ -422,7 +422,7 @@ func TestTerminalAdmissionUsesCommandKeyPinAndFreshRoster(t *testing.T) {
 		pinned:   adaptercloud.NewPinnedStore(filepath.Join(dir, "legacy-pins")),
 		roster:   adaptercloud.NewRoster(server.URL, "credential", time.Now)}
 	if legacy.TerminalViewerAllowed("viewer") {
-		t.Fatal("a roster-only viewer gained terminal access without pairing")
+		t.Fatal("a roster-only viewer gained terminal access without a decrypted envelope")
 	}
 	if revoked, err := pinned.Revoke("viewer", time.Now()); err != nil || !revoked {
 		t.Fatalf("revoke pinned viewer: changed=%v err=%v", revoked, err)

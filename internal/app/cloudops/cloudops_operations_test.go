@@ -2,6 +2,7 @@ package cloudops
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"reflect"
@@ -529,7 +530,7 @@ func TestTheAuthorityIsRereadAtThePointOfNoReturn(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			r := &router{}
 			b := open(r)
-			b.Authority = func(context.Context, string, bool) Authority { return c.say }
+			b.Authority = func(context.Context, string, ed25519.PublicKey, bool) Authority { return c.say }
 			answer := b.Handle(context.Background(), request(t, ClassCtl, map[string]any{
 				"type": "focus", "session": pane, "request": "req"}))
 			if answer.Code != c.code || answer.Status != c.status {
@@ -549,7 +550,7 @@ func TestTheAuthorityIsRereadAtThePointOfNoReturn(t *testing.T) {
 	// And with every permission in hand it routes.
 	r := &router{}
 	b := open(r)
-	b.Authority = func(context.Context, string, bool) Authority { return ready }
+	b.Authority = func(context.Context, string, ed25519.PublicKey, bool) Authority { return ready }
 	if answer := b.Handle(context.Background(), request(t, ClassCtl, map[string]any{
 		"type": "focus", "session": pane, "request": "req"})); answer.Status != 200 {
 		t.Fatalf("a permitted command was refused: %+v", answer)
@@ -562,7 +563,7 @@ func TestTheAuthorityIsRereadAtThePointOfNoReturn(t *testing.T) {
 func TestOnlyTheWriteWordsAskForTheWriteGate(t *testing.T) {
 	var asked []bool
 	b := Bridge{MachineID: "mac-01", Router: &router{}}
-	b.Authority = func(_ context.Context, _ string, requiresWriteGate bool) Authority {
+	b.Authority = func(_ context.Context, _ string, _ ed25519.PublicKey, requiresWriteGate bool) Authority {
 		asked = append(asked, requiresWriteGate)
 		return Authority{ClockReady: true, RosterReadable: true, RosterAllowsSender: true,
 			WriteGateAllows: !requiresWriteGate}
@@ -1844,7 +1845,7 @@ func TestLocalRefusalDetailKeyCrossesCloudOnlyWhenTheWriterProvidedIt(t *testing
 func TestBridgeFixedClockRefusalCarriesKeyButDynamicCopyDoesNot(t *testing.T) {
 	r := &router{}
 	b := open(r)
-	b.Authority = func(context.Context, string, bool) Authority {
+	b.Authority = func(context.Context, string, ed25519.PublicKey, bool) Authority {
 		return Authority{RosterReadable: true, RosterAllowsSender: true, WriteGateAllows: true}
 	}
 	answer := b.Handle(context.Background(), request(t, ClassCtl, map[string]any{

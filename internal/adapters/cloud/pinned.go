@@ -3,24 +3,22 @@ package cloud
 // Who this machine pinned, and who it threw out.
 //
 // `roster.go` reads the account's device list from the control plane, which is
-// what let the fourth wave admit a viewer at all. It is the wrong root of
-// trust and always was: PROTOCOL.md §3 says a machine holds a paired device's
-// key **locally** and does not trust what the cloud says about it. A control
-// plane that answered with a substituted `public_key` would otherwise be able
-// to speak as any viewer on the account.
+// what let the fourth wave admit a viewer at all. A roster key alone does not
+// prove pairing: the viewer must also produce an authenticated envelope under
+// this machine's content key. A local pin is stronger identity evidence and
+// takes precedence over a substituted roster key.
 //
 // This file is that local root. It holds one row per browser this machine
-// itself handed the account key to, written at the moment of pairing, with the
+// itself handed the machine content key to, written at the moment of pairing, with the
 // Ed25519 public key that came inside the sealed offer — bytes the cloud never
 // saw in the clear. `PublicKeyFor` prefers it; the roster is the fallback for
 // a device paired before this file existed, and the *refused* list beats both.
 //
 // Three rules worth naming:
 //
-//   - **A pin is written after delivery, never before.** Pinning is what makes
-//     a browser able to drive this Mac; a browser that never received the
-//     account key cannot produce a command anyway, so pinning first would only
-//     leave a pinned viewer behind every failed handover.
+//   - **A pin is written after delivery, never before.** A browser that never
+//     received this machine's content key cannot produce a command, so pinning
+//     first would leave a pinned viewer behind every failed handover.
 //   - **Revoking is local and it is final here.** The control plane's
 //     `DELETE /v1/devices/:id` needs a browser session, which a daemon does not
 //     have; and even when the account revokes a device, "the roster no longer
