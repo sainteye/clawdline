@@ -938,6 +938,31 @@ func removeOwned(root, path, name string) error {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return errors.New("refusing to remove something that is not a directory: " + path)
 	}
+	// Go's module cache makes downloaded directories read-only. RemoveAll can
+	// unlink read-only files, but it cannot descend through a read-only parent
+	// to unlink them. Change only directories below this already-proved scratch
+	// path; files and symlinks need no chmod, and no shared module cache is in
+	// the path we walk. WalkDir never follows a symlink inside the scratch tree.
+	if err := filepath.WalkDir(path, func(child string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		mode, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		return os.Chmod(child, mode.Mode().Perm()|0o700)
+	}); err != nil {
+		return err
+	}
+	// A directory could have changed while it was walked. Keep the same
+	// ownership check immediately before the destructive operation.
+	if !ownedPath(root, path, name) {
+		return errors.New("refusing to remove a path that changed while being prepared: " + path)
+	}
 	return os.RemoveAll(path)
 }
 
