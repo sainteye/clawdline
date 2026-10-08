@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
@@ -16,9 +17,23 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+func TestWorkV2ItemWireDistinguishesNoImagesFromOmittedInventory(t *testing.T) {
+	s := &Server{}
+	wire := s.workV2ItemOf(workV2ProjectCatalog{}, app.WorkV2View{Item: work.ItemV2{
+		ID: "32000000-0000-4000-8000-000000000001", ProjectID: "p", ProjectPath: "/p",
+		Title: "Reference", Description: "Full scope", Kind: work.KindIssue,
+	}})
+	data, err := json.Marshal(wire)
+	if err != nil || !bytes.Contains(data, []byte(`"description":"Full scope"`)) ||
+		!bytes.Contains(data, []byte(`"images":[]`)) {
+		t.Fatalf("empty reference inventory must be explicit: %s, %v", data, err)
+	}
+}
 
 func TestWorkV2ReferenceImageRouteReadsOnlyDurableBoardBytes(t *testing.T) {
 	dir := t.TempDir()

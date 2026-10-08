@@ -327,9 +327,11 @@ Project）。type 是 `user`、`feedback`、`project`、`reference` 其中之一
 最後。
 
 **1. 讀項目。** `clawdline item show <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、
-驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選、steps，以及每份文件連同內文。你就從這份紀錄開始工作。
-`clawdline item show <item id> --doc <doc id>` 只印一份文件的內文，可直接導到檔案；`clawdline item steps <item id>` 是同一份紀錄但不含內文。
-每個項目寫入都會印出 `wrote …; item <id> is at version N`、精簡摘要及 `item show` 提示；完整驗收、steps 與文件請用 `item show` 讀。
+驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選、steps、完整描述、每份文件的內文與參考圖片清單。
+每張圖片都照畫面印出的 `clawdline item image <item id> <image id> --output <new file>` 指令存下完整像素，再用讀圖工具開啟，才開始規劃。
+圖片不存在或無法讀取時，指令會明確報錯；項目沒有圖片會直接寫明，API 未提供圖片清單也會報錯，不會當作空清單。
+`clawdline item show <item id> --doc <doc id>` 只印一份文件的內文，可直接導到檔案；`clawdline item steps <item id>` 是不含內文的精簡紀錄。
+每個項目寫入都會印出 `wrote …; item <id> is at version N`、精簡摘要及 `item show` 提示；完整驗收、描述、steps、文件與圖片請用 `item show` 讀。
 寫入一律作用在項目當下的版本，除非你帶 `--expected-version`。
 
 你的指派檔若有 **HANDOFF** 段，代表你在接手別的 Session 做到一半的項目（開始 implementing 之後、

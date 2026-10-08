@@ -5,7 +5,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -919,7 +926,7 @@ func TestTheVerifyGateHintIsPrintedOnlyWhenTheGateIsOn(t *testing.T) {
 }
 
 const itemWithBodies = `{"ok":true,"item":{"id":"item-1","title":"Big","kind":"epic","phase":"implementing",
- "owner_session":"` + thinConversation + `","version":5,"steps":[{"id":"s1","title":"draft","done":true,"position":0}],
+ "owner_session":"` + thinConversation + `","version":5,"description":"Complete scope.","images":[],"steps":[{"id":"s1","title":"draft","done":true,"position":0}],
  "documents":[
  {"id":"d1","role":"plan","title":"Plan","body":"# Plan\nFirst do this.","position":0,"version":2},
  {"id":"d2","role":"plan_review","title":"Review","body":"It holds.\n","reference":"task-9","position":1,"version":1}]}}`
@@ -938,6 +945,7 @@ func TestItemShowPrintsEveryDocumentsBody(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{"item-1  Big  [epic, implementing, assigned to " + thinConversation + "]",
 		"[x] s1  draft", "doc d1  plan  Plan", "doc d2  plan_review  Review",
+		"===== description =====\nComplete scope.\n", "Reference images: none",
 		"===== doc d1  plan  Plan  (v2) =====\n# Plan\nFirst do this.\n",
 		"===== doc d2  plan_review  Review  (v1) =====\nreference: task-9\nIt holds.\n"} {
 		if !strings.Contains(got, want) {
@@ -946,6 +954,89 @@ func TestItemShowPrintsEveryDocumentsBody(t *testing.T) {
 	}
 	if strings.Index(got, "===== doc d1") > strings.Index(got, "===== doc d2") {
 		t.Fatalf("documents out of order:\n%s", got)
+	}
+}
+
+func TestItemShowAndImageReadFullReferencePixels(t *testing.T) {
+	var encoded bytes.Buffer
+	pixels := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	pixels.Set(0, 0, color.RGBA{R: 255, A: 255})
+	if err := png.Encode(&encoded, pixels); err != nil {
+		t.Fatal(err)
+	}
+	const imageID = "32000000-0000-4000-8000-000000000002"
+	item := fmt.Sprintf(`{"ok":true,"item":{"id":"item-1","title":"Reference","kind":"issue","phase":"implementing",
+"description":"First line.\nSecond line.","version":4,"steps":[],"documents":[{"id":"d1","role":"spec","title":"Details","body":"Full document."}],
+"images":[{"id":"%s","title":"screen.png","media_type":"image/png","byte_count":%d,"width":2,"height":1}]}}`, imageID, encoded.Len())
+	var imageReads int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Clawdline-Orchestrator") != thinToken {
+			t.Errorf("request lacks machine credential")
+		}
+		switch r.URL.Path {
+		case "/v1/work/v2/items/item-1":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, item)
+		case "/v1/work/v2/images/" + imageID:
+			imageReads++
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(encoded.Bytes())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	b := &broker{base: srv.URL, token: thinToken, client: srv.Client()}
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "show", itemFlags{}, []string{"item-1"}, "", "", envOf(nil)); code != 0 {
+		t.Fatalf("show exit %d: %s", code, errs.String())
+	}
+	for _, want := range []string{"First line.\nSecond line.", "Full document.", "Reference images: 1", imageID,
+		"clawdline item image item-1 " + imageID + " --output <new file>"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("show omitted %q:\n%s", want, out.String())
+		}
+	}
+	if imageReads != 0 {
+		t.Fatal("show fetched pixels before the agent chose to read them")
+	}
+	path := filepath.Join(t.TempDir(), "reference.png")
+	out.Reset()
+	if code := sessionItem(&out, &errs, b, "image", itemFlags{output: path}, []string{"item-1", imageID}, "", "", envOf(nil)); code != 0 {
+		t.Fatalf("image exit %d: %s", code, errs.String())
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(got, encoded.Bytes()) || imageReads != 1 {
+		t.Fatalf("saved pixels: bytes=%d error=%v reads=%d", len(got), err, imageReads)
+	}
+}
+
+func TestItemShowDoesNotTreatOmittedImagesAsNone(t *testing.T) {
+	_, b := newStandIn(t, func(r *http.Request) (int, string) {
+		return 200, `{"ok":true,"item":{"id":"item-1","title":"Old response","description":"Present","version":1}}`
+	})
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "show", itemFlags{}, []string{"item-1"}, "", "", envOf(nil)); code != 1 ||
+		!strings.Contains(errs.String(), "image status is unknown") || strings.Contains(out.String(), "Reference images: none") {
+		t.Fatalf("missing image inventory: exit %d stdout %q stderr %q", code, out.String(), errs.String())
+	}
+}
+
+func TestItemImageReadFailureLeavesNoFile(t *testing.T) {
+	const imageID = "32000000-0000-4000-8000-000000000002"
+	_, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.URL.Path == "/v1/work/v2/images/"+imageID {
+			return http.StatusGone, `{"error":"image_file_missing","detail":"The reference image is gone."}`
+		}
+		return http.StatusOK, `{"ok":true,"item":{"id":"item-1","description":"Scope","images":[{"id":"` + imageID + `","media_type":"image/png","byte_count":100,"width":2,"height":1}]}}`
+	})
+	path := filepath.Join(t.TempDir(), "missing.png")
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "image", itemFlags{output: path}, []string{"item-1", imageID}, "", "", envOf(nil)); code != 1 {
+		t.Fatalf("missing image exit %d: stdout %q stderr %q", code, out.String(), errs.String())
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("missing image created a file: %v", err)
 	}
 }
 
@@ -999,7 +1090,7 @@ func TestItemWritesKeepAcceptanceOutOfReceipts(t *testing.T) {
 	const criteria = "A long acceptance paragraph that belongs in an explicit read."
 	const written = `{"ok":true,"item":{"id":"item-1","title":"Ship it","kind":"feature","phase":"verifying",` +
 		`"owner_session":"` + thinConversation + `","version":9,"acceptance_criteria":"` + criteria + `",` +
-		`"acceptance_version":3,"acceptance_digest":"abcd"}}`
+		`"acceptance_version":3,"acceptance_digest":"abcd","description":"","images":[]}}`
 	for _, tc := range []struct {
 		op   string
 		args []string
