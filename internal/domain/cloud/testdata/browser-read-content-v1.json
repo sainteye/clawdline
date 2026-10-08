@@ -1,0 +1,24 @@
+{
+  "test_only": true,
+  "public_key": "stxSLvJjml3P62lh9NGn8jVKX7bJAMO/4nMThrvxiSA=",
+  "content_key": "Xwle6rm2cfC4eMbYxKi5QNGst+XoRBinIvCxPnQt3jg=",
+  "envelope": {
+    "v": 1,
+    "ch": "r/test_machine",
+    "seq": 17,
+    "ts": 1791484575602,
+    "class": "ctl",
+    "key_id": "test_master",
+    "nonce": "u5Y4fhbjo1i+Rwyn",
+    "ct": "bNnKkT5aD9VITjRuLav/KzrgvT4Ey6hGvJTwN947AbPmwJ+ZQKhNnHEd8ZVnUkTTmbNWcfnrsT9xOWWxJHCi4uO4suvgLStTL/yYP6DDVbzJvZCJqM9wXRCOOp+fBf9JFUyIEH0tl2E+qVO++o6i5mZrA0Rq/MKztesH+5OU8rmBr5rnzksX8567X5wG0mjOr3OmR7rGH8eynwy+",
+    "sender": "test_viewer",
+    "sig": "e5PdYclHAC5gNHOAQ8SkDQF0XoI/4a/vVVwSj8w+kdvzfkZzgmz/WQYhzU/9EXmwvCZutmMs16cL+T31YAuGAA=="
+  },
+  "body": {
+    "type": "info",
+    "session": "test_session",
+    "parts": "full",
+    "machine_id": "test_machine",
+    "expected_generation": "0123456789abcdef0123456789abcdef"
+  }
+}

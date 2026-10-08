@@ -579,7 +579,7 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 		t.opts.Status.Dropped(DropWrongChannel)
 		return false
 	}
-	// A machine receives `ctl/<its own machine>` and `ho/`. Anything else on
+	// A machine receives `ctl/` and read-only `r/` for itself, and `ho/`. Anything else on
 	// this socket is not addressed to it, whatever the relay thought.
 	if !t.deliverable(envelope.Ch) {
 		t.opts.Status.Dropped(DropWrongChannel)
@@ -644,11 +644,13 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 }
 
 // deliverable reports whether this machine is the intended reader of a
-// channel. A machine receives its own `ctl/` and any `ho/`; it never receives
+// channel. A machine receives its own `ctl/` and `r/`, and any `ho/`; it never receives
 // another machine's anything.
 func (t *Transport) deliverable(channel string) bool {
 	switch {
 	case channel == "ctl/"+t.opts.Identity.MachineID:
+		return true
+	case channel == "r/"+t.opts.Identity.MachineID:
 		return true
 	case strings.HasPrefix(channel, "termi/"+t.opts.Identity.MachineID+"/"):
 		return true

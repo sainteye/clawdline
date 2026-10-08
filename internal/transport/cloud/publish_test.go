@@ -154,6 +154,19 @@ func TestTheDescriptorNamesTheWordsThisMacAnswers(t *testing.T) {
 	}
 }
 
+func TestDescriptorAdvertisesPinnedReadOnlyDetailOnlyWhenWired(t *testing.T) {
+	for _, wired := range []bool{false, true} {
+		out := &collector{}
+		publisher := newPublisher(&fixedRouter{body: completeScan}, out)
+		publisher.ReadContentV1 = wired
+		publisher.firstPass(context.Background())
+		machine := out.payload(t, "orch/mac-01")["machine"].(map[string]any)
+		if got, present := machine["read_content_v1"]; present != wired || wired && got != true {
+			t.Fatalf("wired=%v machine=%v", wired, machine)
+		}
+	}
+}
+
 func TestTheInventoryNamesEveryRowItPublished(t *testing.T) {
 	out := &collector{}
 	publisher := newPublisher(&fixedRouter{body: completeScan}, out)

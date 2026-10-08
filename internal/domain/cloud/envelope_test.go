@@ -314,9 +314,14 @@ func TestChannelGrammar(t *testing.T) {
 		why     string
 	}{
 		{"s/mac-01/session-01", ClassStream, true, ""},
+		{"ss/mac-01/session-01", ClassStream, true, "status projections are streams"},
+		{"ss/mac-01/session-01", ClassCtl, false, "status projections are not requests"},
 		{"t/mac-01/session-01", ClassStream, true, ""},
 		{"orch/mac-01", ClassStream, true, ""},
 		{"ctl/mac-01", ClassCtl, true, ""},
+		{"r/mac-01", ClassCtl, true, "content reads use a separate request rail"},
+		{"r/mac-01", ClassDispatch, false, "a content read cannot be a command"},
+		{"r/mac-01", ClassStream, false, "a content read request is not a snapshot"},
 		{"ctl/mac-01", ClassDispatch, true, "a dispatch is a command on the command rail"},
 		{"ctlr/mac-01/viewer-01", ClassCtl, true, "the response rail"},
 		{"ho/account-01/handoff-01", ClassHo, true, ""},

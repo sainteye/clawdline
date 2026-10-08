@@ -108,6 +108,7 @@ sequence 與重送視窗。`internal/adapters/cloudkeys` 因此拒絕 `~/.config
 | `t/<machine>/<session>` | 2 | `stream` | transcript 片段，viewer 打開 session 才要 |
 | `orch/<machine>` | 1 | `stream` | orchestrator 快照：tasks、schedules、waits |
 | `ctl/<machine>` | 1 | `ctl`, `dispatch` | viewer → Mac 的指令 |
+| `r/<machine>` | 1 | `ctl` | viewer → machine 的加密唯讀內容請求；僅 `info` 且 `parts=full` 或 `transcript` |
 | `ctlr/<machine>/<viewer_device>` | 2 | `ctl` | Mac → 指定 viewer 的指令回應 |
 | `ho/<account>/<handoff_id>` | 2 | `ho` | 交接包與交接收據 |
 | `wh/` | — | **保留，一律拒絕** | §10 留給 v1 的 webhook-out |
@@ -495,7 +496,7 @@ header 的 `alg` 必須是 `EdDSA` 或 `ES256`；`none` 與所有 HMAC 在看 pa
 | capability | 誰執行 | 打開什麼 |
 |---|---|---|
 | `read_sessions` | relay，收的時候 | 預設接收 `ss/` 與 `orch/` 狀態快照 |
-| `read_transcript` | relay，收的時候 | 明確訂閱的完整 `s/`，以及 `t/` 與 `ho/` |
+| `read_transcript` | relay，發 `r/` 與收內容時；machine 在 `r/` 回答前及封裝前再查 | 明確訂閱的完整 `s/`、`t/` 與 `ho/`，以及唯讀 `r/` 請求 |
 | `send_prompt` | relay，發與收；**Mac 自己的 admission 仍然另外算** | 發 `ctl/`（兩種 class）、收 `ctlr/` |
 | `start_session` | **只有 Mac**（它在 `ct` 裡面） | relay 看不到的東西 |
 
@@ -504,6 +505,8 @@ header 的 `alg` 必須是 `EdDSA` 或 `ES256`；`none` 與所有 HMAC 在看 pa
 capability，**不記 channel 名字**）。
 
 **Machine 不受 capability 管**：它發自己的狀態、收寄給它的 `ctl/` 與依角色收 `ho/`。
+
+`orch/<machine>` 的 `machine.read_content_v1` 只在 machine 已接上唯讀 `r/` bridge 時為 `true`。缺欄視為舊版，不從 `ss/` 是否出現推論。`r/` 的 JSON body 只接受 `{"type":"info","machine_id":"<machine>","parts":"full","session":"<id>","expected_generation":"<32 lowercase hex>"}` 或 `{"type":"transcript","machine_id":"<machine>","session":"<id>","limit":1..1000,"expected_generation":"<32 lowercase hex>"}`；`machine_id` 必須與 `r/` channel 目標相同。機器從已驗簽並解密的 envelope 取得 `sender`、`seq` 與 `ch`；重新讀取 roster、signing key、本機撤銷及 `read_transcript` 能力，且在本機 pinned HTTP read 後、密封回答前再查一次。其他字回 `read_only_channel`；缺世代回 `execution_target_required`；能力不足回 `read_transcript_required`。成功與具安全回覆定位的拒絕仍走 `t/<machine>/<session>` `stream` envelope，payload 以 `read: "info.full"` 或 `"transcript"`、`status`、`body`／`error` 對應 waiter。解碼後的 `r/` 回覆頂層另有 `machine_id`、`session_id`、`expected_generation`、`seq`，其中 `seq` 是原請求的 envelope 序號；viewer 必須逐項與選定三元組及自己送出的序號比對，不符或缺欄即拒讀。Cloud viewer 應先訂閱精確的 `t/` channel，再發送 `r/`。
 
 ### 8.3 Session 狀態頻道的分階段契約
 
