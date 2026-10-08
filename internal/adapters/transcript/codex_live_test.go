@@ -154,8 +154,11 @@ func TestActionRequiredCodexTitleBindsItsOwnLiveConversation(t *testing.T) {
 	lives := map[string]codexLiveIdentity{wanted.ID: wanted, other.ID: other}
 	row := session.Session{Backend: session.BackendITerm, Assistant: session.AssistantCodex,
 		CWD: "/code/demo", Label: "[ ! ] Action Required | Inspect the queue | demo (codex)"}
-	if got, ok := codexLiveFor(context.Background(), lives, row); !ok || got.ID != wanted.ID {
-		t.Fatalf("action-required title = %+v, %v; want its own conversation", got, ok)
+	for _, marker := range []string{"[ ! ]", "[ . ]"} {
+		row.Label = marker + " Action Required | Inspect the queue | demo (codex)"
+		if got, ok := codexLiveFor(context.Background(), lives, row); !ok || got.ID != wanted.ID {
+			t.Fatalf("%s action-required title = %+v, %v; want its own conversation", marker, got, ok)
+		}
 	}
 	row.Label = "[ ! ] Action Required | Unknown title | demo (codex)"
 	if got, ok := codexLiveFor(context.Background(), lives, row); ok {
@@ -174,6 +177,12 @@ func TestActionRequiredCodexTitleBindsItsOwnLiveConversation(t *testing.T) {
 	if got, ok := codexLiveFor(context.Background(), lives, row); !ok || got.ID != literal.ID {
 		t.Fatalf("literal name = %+v, %v; want the exact match", got, ok)
 	}
+	literal.Name = "[ . ] Action Required | Inspect the queue"
+	lives[literal.ID] = literal
+	row.Label = "[ . ] Action Required | Inspect the queue | demo (codex)"
+	if got, ok := codexLiveFor(context.Background(), lives, row); !ok || got.ID != literal.ID {
+		t.Fatalf("literal waiting name = %+v, %v; want the exact match", got, ok)
+	}
 }
 
 func TestActionRequiredBareCodexTitleStillNeedsOneTerminalAndOneThread(t *testing.T) {
@@ -184,6 +193,11 @@ func TestActionRequiredBareCodexTitleStillNeedsOneTerminalAndOneThread(t *testin
 	ctx := h.ObserveRows(context.Background(), []session.Session{row})
 	if got, ok := codexLiveFor(ctx, h.codexLive, row); !ok || got.ID != unnamed.ID {
 		t.Fatalf("one decorated bare title = %+v, %v", got, ok)
+	}
+	row.Label = "[ . ] Action Required | demo (codex)"
+	ctx = h.ObserveRows(context.Background(), []session.Session{row})
+	if got, ok := codexLiveFor(ctx, h.codexLive, row); !ok || got.ID != unnamed.ID {
+		t.Fatalf("one waiting bare title = %+v, %v", got, ok)
 	}
 	second := row
 	second.ID, second.Label = "ITERM-2", "demo (codex)"
