@@ -6549,6 +6549,13 @@ export interface SessionRow {
   evidence: Evidence
 
   /**
+   * Machine-issued durable identity of this terminal execution. Absent when the
+   * source or process start cannot be verified, the machine has no Cloud identity,
+   * or the identity store could not be written. This is not scan.generation.
+   */
+  execution_generation?: string
+
+  /**
    * Only the Session that started the declared-heavy callback currently holding and
    * running in the machine's heavy_compile slot. Absent for queued work, wait
    * callbacks, direct heavy commands and unreadable evidence.
@@ -6702,6 +6709,107 @@ export type SessionState =
   | "unknown"
 
 export const SessionStateValues: readonly SessionState[] = ["working", "waiting", "idle", "unknown"] as const
+
+export interface SessionStatus {
+  assistant?: string
+
+  /**
+   * True only when a person-needed declaration or a positive attention count is
+   * known.
+   */
+  attention_required?: boolean
+  backend?: string
+
+  /**
+   * Measured only when closeability has a current source and a known state. True
+   * means closing is blocked, false means it is not; absent is unknown. It does not
+   * mean the whole Session or its work is blocked.
+   */
+  close_blocked?: boolean
+
+  /**
+   * True only for an unviewed Board delivery in phase done. A deploying item is not
+   * called complete.
+   */
+  completed_unconfirmed?: boolean
+
+  /**
+   * Random 128-bit machine-issued execution identity, absent unless this row's
+   * source is current and its process is pinned by PID and kernel start time.
+   */
+  execution_generation?: string
+
+  /**
+   * Count of provider-native background agents in failed state when their reading
+   * is complete and untruncated. Zero is measured; absent is unknown. It does not
+   * mean the Session failed.
+   */
+  failed_agent_count?: number
+
+  /**
+   * Whether the whole local scan was complete. False does not by itself revoke a
+   * currently observed row.
+   */
+  inventory_complete: boolean
+
+  /**
+   * Unix seconds when the assistant's own record last grew; this is activity, not a
+   * claim of task progress.
+   */
+  last_movement_at?: number
+  machine_id: string
+
+  /**
+   * Absent when activity or current source evidence is unknown; false is a measured
+   * answer.
+   */
+  no_movement?: boolean
+
+  /**
+   * Machine policy threshold in milliseconds for classifying no recent record
+   * movement.
+   */
+  no_progress_after_ms: number
+
+  /**
+   * Unix seconds when this status was projected.
+   */
+  projected_at: number
+  session_id: string
+
+  /**
+   * Random pass id shared by every status row and the inventory marker of one
+   * publication. A viewer discards rows with a different value.
+   */
+  snapshot_generation: string
+  source: SessionStatusSource
+  state: string
+}
+
+export interface SessionStatusInventory {
+  /**
+   * Unix seconds of this inventory reading.
+   */
+  at: number
+  complete: boolean
+  inventory: SessionStatusInventoryList
+  snapshot_generation: string
+}
+
+export interface SessionStatusInventoryList {
+  sessions: string[]
+  version: number
+}
+
+export interface SessionStatusSource {
+  freshness: string
+
+  /**
+   * Unix seconds; zero when no observation time is known.
+   */
+  observed_at: number
+  provenance: string
+}
 
 /**
  * The durable local result of naming a session. This daemon keeps the display name

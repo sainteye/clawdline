@@ -13,7 +13,9 @@ func init() {
 				"one lane, so a foreground read is not overtaken by a background one",
 			decode: func(b body) (plan, bool) {
 				if !b.hasOneOf([]string{"type", "session", "limit"},
-					[]string{"type", "session", "limit", "priority"}) {
+					[]string{"type", "session", "limit", "priority"},
+					[]string{"type", "session", "limit", "expected_generation"},
+					[]string{"type", "session", "limit", "priority", "expected_generation"}) {
 					return plan{}, false
 				}
 				p, ok := sessionPlan(b, "transcript")
@@ -25,6 +27,13 @@ func init() {
 					return plan{}, false
 				}
 				p.limit = limit
+				if raw, named := b["expected_generation"]; named {
+					value, ok := raw.(string)
+					if !ok || !executionGenerationValid(value) {
+						return plan{}, false
+					}
+					p.executionGeneration = value
+				}
 				p.priority = "foreground"
 				if raw, named := b["priority"]; named {
 					// A stale hosted tab can only be a person-driven reader:
@@ -50,7 +59,9 @@ func init() {
 				"same body for both halves, so a summary is a full answer here",
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "parts") {
-					return plan{}, false
+					if !b.has("type", "session", "parts", "expected_generation") {
+						return plan{}, false
+					}
 				}
 				parts, ok := b.str("parts")
 				if !ok || (parts != "full" && parts != "summary") {
@@ -64,6 +75,13 @@ func init() {
 					return plan{}, false
 				}
 				p.parts = parts
+				if raw, named := b["expected_generation"]; named {
+					value, ok := raw.(string)
+					if !ok || !executionGenerationValid(value) {
+						return plan{}, false
+					}
+					p.executionGeneration = value
+				}
 				return p, true
 			},
 			route: func(p plan) LocalRequest {

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "session-status.schema.json",
+  "title": "Content-free Cloud Session status",
+  "description": "The machine publishes SessionStatus on ss/<machine>/<session> and SessionStatusInventory on ss/<machine>/__clawdline_inventory_v1__. The private relay must grant read_sessions on ss/ and require read_transcript for the existing full s/ row. Older machines and relays may lack ss/.",
+  "$defs": {
+    "SessionStatusSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provenance", "observed_at", "freshness"],
+      "properties": {
+        "provenance": { "type": "string", "enum": ["", "ps", "tmux", "iterm"] },
+        "observed_at": { "description": "Unix seconds; zero when no observation time is known.", "type": "integer" },
+        "freshness": { "type": "string", "enum": ["current", "unverified", "missing"] }
+      }
+    },
+    "SessionStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["machine_id", "session_id", "snapshot_generation", "state", "source", "inventory_complete", "projected_at", "no_progress_after_ms"],
+      "properties": {
+        "machine_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "snapshot_generation": { "description": "Random pass id shared by every status row and the inventory marker of one publication. A viewer discards rows with a different value.", "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "execution_generation": { "description": "Random 128-bit machine-issued execution identity, absent unless this row's source is current and its process is pinned by PID and kernel start time.", "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "assistant": { "type": "string", "enum": ["claude", "codex"] },
+        "backend": { "type": "string", "enum": ["tmux", "iterm", "ps"] },
+        "state": { "type": "string", "enum": ["working", "waiting", "idle", "unknown"] },
+        "source": { "$ref": "#/$defs/SessionStatusSource" },
+        "inventory_complete": { "description": "Whether the whole local scan was complete. False does not by itself revoke a currently observed row.", "type": "boolean" },
+        "projected_at": { "description": "Unix seconds when this status was projected.", "type": "integer" },
+        "last_movement_at": { "description": "Unix seconds when the assistant's own record last grew; this is activity, not a claim of task progress.", "type": "integer" },
+        "no_progress_after_ms": { "description": "Machine policy threshold in milliseconds for classifying no recent record movement.", "type": "integer" },
+        "no_movement": { "description": "Absent when activity or current source evidence is unknown; false is a measured answer.", "type": "boolean" },
+        "completed_unconfirmed": { "description": "True only for an unviewed Board delivery in phase done. A deploying item is not called complete.", "type": "boolean" },
+        "attention_required": { "description": "True only when a person-needed declaration or a positive attention count is known.", "type": "boolean" },
+        "close_blocked": { "description": "Measured only when closeability has a current source and a known state. True means closing is blocked, false means it is not; absent is unknown. It does not mean the whole Session or its work is blocked.", "type": "boolean" },
+        "failed_agent_count": { "description": "Count of provider-native background agents in failed state when their reading is complete and untruncated. Zero is measured; absent is unknown. It does not mean the Session failed.", "type": "integer", "minimum": 0 }
+      }
+    },
+    "SessionStatusInventoryList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "sessions"],
+      "properties": {
+        "version": { "type": "integer", "const": 1 },
+        "sessions": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "SessionStatusInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventory", "at", "complete", "snapshot_generation"],
+      "properties": {
+        "inventory": { "$ref": "#/$defs/SessionStatusInventoryList" },
+        "at": { "description": "Unix seconds of this inventory reading.", "type": "integer" },
+        "complete": { "type": "boolean" },
+        "snapshot_generation": { "type": "string", "pattern": "^[0-9a-f]{32}$" }
+      }
+    }
+  }
+}

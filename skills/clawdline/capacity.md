@@ -157,6 +157,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `session.close_scheduled_seconds` | 900 | `seconds` | `expire` | `diagnostics, log` | — |
 | `session.direct_todo_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
 | `session.direct_todos` | 500 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `session.executions` | 4096 | `rows` | `refuse` | `sender, log` | — |
 | `session.human_intervention_detail_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `session.human_intervention_document_bytes` | 2048 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `session.human_intervention_draft_bytes` | 2048 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -165,6 +166,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `session.human_interventions_open` | 8 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `session.human_interventions_recent` | 5 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `session.human_interventions_total` | 2000 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
+| `session.no_movement_seconds` | 1800 | `seconds` | `expire` | `sender` | — |
 | `session.report_open_todo_characters` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `session.report_open_todo_rows` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `session.title_age` | 7776000 | `seconds` | `evict_oldest` | `diagnostics, notice` | — |

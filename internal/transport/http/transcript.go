@@ -81,6 +81,9 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusBadRequest, "bad_request", "name a session")
 		return
 	}
+	if !s.admitPinnedTarget(w, r, id) {
+		return
+	}
 	// The Swift app's bounds: 200 unless asked, never fewer than 1 or more
 	// than 1,000.
 	limit := 200
@@ -95,7 +98,11 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 		writeActionRefusal(w, err)
 		return
 	}
-	writeJSON(w, s.transcriptPage(id, item, limit))
+	page := s.transcriptPage(id, item, limit)
+	if !s.admitPinnedTarget(w, r, id) {
+		return
+	}
+	writeJSON(w, page)
 }
 
 // transcriptPage is the newest `limit` entries of one session's own record.
@@ -364,6 +371,9 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 		info.Repository = contract.ProjectRepository(reading.Repo)
 		info.RepositoryUnreadable = contract.ProjectGitFailure(reading.Unreadable)
 		info.DeployQuiet = wireDeployQuiet(reading.DeployQuiet)
+	}
+	if !s.admitPinnedTarget(w, r, id) {
+		return
 	}
 	writeJSON(w, contract.SessionInfoReply{Info: info})
 }
