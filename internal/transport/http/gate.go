@@ -128,7 +128,7 @@ type gate struct {
 	// tunnel and the gate in front of it never disagree about its name.
 	hostname atomic.Pointer[string]
 	port     int
-	// dir is the state directory, whose config.json holds `remote_write`.
+	// dir is the state directory used by the gate and local adapters.
 	dir string
 
 	machineWarned sync.Once
@@ -285,7 +285,7 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 		device := judgedAsDevice(r)
 		machine := machineScoped(p) && !device &&
 			g.verifyMachine(r.Header.Get(machineHeader))
-		verdict := g.withRemoteWrite(g.permission(r))
+		verdict := g.permission(r)
 		if device {
 			verdict = notThisMachine(verdict)
 		}
@@ -698,36 +698,6 @@ func (g *gate) permission(r *http.Request) auth.Verdict {
 		return auth.Verdict{}
 	}
 	return g.auth.Verify(bearer(r))
-}
-
-// withRemoteWrite is the settings window's 讓配對過的裝置寫進 session, which
-// is `remote_write` in config.json. On, every paired device may send, as the
-// Swift app's switch granted `send` to all of them at once
-// (`RemoteAuth.syncWriteCapability`). Off, a device keeps what it was granted
-// itself: a browser the person opened with `clawdline open --send` still
-// sends, and a device paired with a code only reads.
-//
-// It only ever adds `send`, never `admin`, and never to anything that was not
-// already let in. It is read from the file at the request that needs it, so
-// turning it off holds at the next request, a hand edit counts the same as
-// the window, and a file that cannot be read is not a yes.
-//
-// Clawdline Cloud has its own switch, `cloud commands on`
-// (internal/transport/cloud), and is not decided here: its in-process request
-// carries this machine's own token, which already sends.
-func (g *gate) withRemoteWrite(v auth.Verdict) auth.Verdict {
-	if !v.Allowed || v.Local || v.Caps.Has(auth.Send) || g.dir == "" {
-		return v
-	}
-	values, err := nextconfig.Open(g.dir).Read()
-	if err != nil {
-		return v
-	}
-	if on, _ := values.Bool("remote_write"); !on {
-		return v
-	}
-	v.Caps = auth.NewCaps(append(append(auth.Caps{}, v.Caps...), auth.Send)...)
-	return v
 }
 
 func (g *gate) verifyMachine(presented string) bool {

@@ -68,8 +68,8 @@ func TestPackageRoutesKeepPreviewAndPublicExportReadableButProtectAdoptionAndPri
 		"preview_token": preview.PreviewToken, "catalog_version": preview.CatalogVersion,
 		"scope_id": "global", "choices": map[string]string{}, "private_scopes": []string{},
 		"confirm_private": false})
-	if status, _ := f.ask("POST", "/v1/squad-packages/adopt", f.reader, string(adoptBody), "adopt-1"); status != 403 {
-		t.Fatalf("reader adoption = %d", status)
+	if status, _ := f.ask("POST", "/v1/squad-packages/adopt", "", string(adoptBody), "adopt-1"); status != 401 {
+		t.Fatalf("anonymous adoption = %d", status)
 	}
 	status, raw = f.ask("POST", "/v1/squad-packages/adopt", f.sender, string(adoptBody), "adopt-1")
 	if status != 200 || !strings.Contains(raw, `"catalog_version":1`) {
@@ -116,8 +116,8 @@ func TestPackageRoutesKeepPreviewAndPublicExportReadableButProtectAdoptionAndPri
 		t.Fatal("fixture Project scope missing")
 	}
 	privateBody, _ := json.Marshal(map[string]any{"private_scopes": []string{scope.ID}, "confirm_private": true})
-	if status, _ := f.ask("POST", "/v1/squad-packages/export", f.reader, string(privateBody), ""); status != 403 {
-		t.Fatalf("reader private export = %d", status)
+	if status, _ := f.ask("POST", "/v1/squad-packages/export", "", string(privateBody), ""); status != 401 {
+		t.Fatalf("anonymous private export = %d", status)
 	}
 	if status, body := f.ask("POST", "/v1/squad-packages/export", f.sender, string(privateBody), ""); status != 200 {
 		t.Fatalf("writer private export = %d: %s", status, body)

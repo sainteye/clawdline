@@ -11,6 +11,7 @@ type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 export async function readTerminalPermissionDevice(apiOrigin: string, deviceID: string, fetcher: Fetch = fetch): Promise<TerminalPermissionDevice> {
   const response = await fetcher(new URL("/v1/devices", apiOrigin).href, { credentials: "include", cache: "no-store" })
   const body: unknown = await response.json().catch(() => null)
+  if (response.status === 401 || response.status === 403) throw new Error("device_unavailable")
   if (!response.ok || !body || typeof body !== "object" || !Array.isArray((body as { devices?: unknown }).devices)) {
     throw new Error("devices_unavailable")
   }

@@ -146,8 +146,8 @@ func TestAVerificationLivesThroughItsRoutes(t *testing.T) {
 	}
 }
 
-// Every door and every refusal by its code: a reading device reads and does
-// not write, nobody reads without a token, a field the route does not read is
+// Every door and every refusal by its code: a paired device can write,
+// nobody reads without a token, a field the route does not read is
 // refused by name, an unknown data source by its kind, and there is no delete
 // that does not name one record.
 func TestTheVerificationRoutesRefuseByName(t *testing.T) {
@@ -162,7 +162,7 @@ func TestTheVerificationRoutesRefuseByName(t *testing.T) {
 		status             int
 		code               string
 	}{
-		{http.MethodPost, "/v1/verifications", `{"title":"a","due_at":` + due + `}`, v.as(v.f.read), 403, ""},
+		{http.MethodPost, "/v1/verifications", `{"title":"a","due_at":` + due + `,"color":"red"}`, v.as(v.f.read), 400, "bad_request"},
 		{http.MethodPost, "/v1/verifications", `{"title":"a","due_at":` + due + `,"color":"red"}`, v.as(v.f.send), 400, "bad_request"},
 		{http.MethodPost, "/v1/verifications", `{"title":"a","due_at":` + due + `,"source":{"kind":"weather"}}`, v.as(v.f.send), 400, "unknown_source"},
 		{http.MethodPost, "/v1/verifications", `{"title":"a"}`, v.as(v.f.send), 400, "bad_request"},
@@ -173,7 +173,7 @@ func TestTheVerificationRoutesRefuseByName(t *testing.T) {
 		{http.MethodGet, "/v1/verifications?status=open", "", v.as(v.f.read), 400, "bad_request"},
 		{http.MethodPost, "/v1/verifications/abc/criteria/01", `{"state":"passed"}`, v.as(v.f.send), 404, "not_found"},
 		{http.MethodPost, "/v1/verifications/abc/criteria/0", `{"state":"passed"}`, v.as(v.f.send), 404, "not_found"},
-		{http.MethodPost, "/v1/verifications/abc/close", `{"status":"accepted","reason":"x"}`, v.as(v.f.read), 403, ""},
+		{http.MethodPost, "/v1/verifications/abc/close", `{"status":"accepted","reason":"x"}`, v.as(v.f.read), 404, "not_found"},
 	} {
 		code, body := v.do(tc.method, tc.path, tc.body, tc.headers)
 		if code != tc.status || (tc.code != "" && flatCode(body) != tc.code) {

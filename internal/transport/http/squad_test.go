@@ -132,8 +132,8 @@ func TestSquadPrivateCatalogAndAuthorization(t *testing.T) {
 		t.Fatalf("summary leaked full content: %d, %s", status, raw)
 	}
 	write := `{"definition_id":"backend","expected_version":0,"overrides":{"handbook":{"present":true,"value":"secret"}}}`
-	if status, _ := f.ask("PUT", "/v1/squad/settings", f.reader, write, "reader-1"); status != 403 {
-		t.Fatalf("read-only writer = %d", status)
+	if status, _ := f.ask("PUT", "/v1/squad/settings", f.reader, `{}`, "reader-1"); status != 400 {
+		t.Fatalf("paired device did not reach validation = %d", status)
 	}
 	if status, _ := f.ask("PUT", "/v1/squad/settings", "", write, "anon-1"); status != 401 {
 		t.Fatalf("anonymous writer = %d", status)

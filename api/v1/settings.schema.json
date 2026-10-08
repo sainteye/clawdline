@@ -160,11 +160,6 @@
           "nullable": true,
           "type": "boolean"
         },
-        "remote_write": {
-          "description": "Whether a paired device may write into a session.",
-          "nullable": true,
-          "type": "boolean"
-        },
         "remote_tunnel": {
           "description": "`off`, `quick` or `named`.",
           "nullable": true,
@@ -398,11 +393,6 @@
         },
         "remote": {
           "description": "Whether anything but this Mac may read the session list.",
-          "nullable": true,
-          "type": "boolean"
-        },
-        "remote_write": {
-          "description": "Whether a paired device may write into a session.",
           "nullable": true,
           "type": "boolean"
         },

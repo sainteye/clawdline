@@ -111,10 +111,9 @@ func TestAReleaseInstallNeverReadsTheHostedBuild(t *testing.T) {
 	}
 }
 
-// POST /v1/update/apply restarts this daemon, so a device that may only
-// read is refused before anything is looked at, and every refusal after
-// that carries a code.
-func TestApplyingAnUpdateNeedsSendAndAReleaseInstall(t *testing.T) {
+// POST /v1/update/apply restarts this daemon. Paired devices reach validation,
+// and every refusal after that carries a code.
+func TestApplyingAnUpdateNeedsPairingAndAReleaseInstall(t *testing.T) {
 	f, _ := newGateFixture(t)
 	s, _ := releaseUpdateServer(t, f.g.dir, "v0.11.0")
 	mux := http.NewServeMux()
@@ -125,8 +124,8 @@ func TestApplyingAnUpdateNeedsSendAndAReleaseInstall(t *testing.T) {
 		return map[string]string{"Authorization": "Bearer " + tok, "Content-Type": "application/json"}
 	}
 
-	if rec := (call{path: "/v1/update/apply", headers: bearer(f.read)}).do(h); rec.Code != http.StatusForbidden {
-		t.Fatalf("a read-only device: %d %s", rec.Code, rec.Body)
+	if rec := (call{path: "/v1/update/apply", headers: bearer("unpaired")}).do(h); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("an unpaired device: %d %s", rec.Code, rec.Body)
 	}
 	if rec := (call{method: http.MethodGet, path: "/v1/update/apply", headers: bearer(f.send)}).do(h); rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET: %d", rec.Code)

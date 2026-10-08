@@ -367,24 +367,6 @@ func (g *gate) devicesRoute(w http.ResponseWriter, r *http.Request, rest string)
 			g.dropTerminalGrants()
 		}
 		writeDeviceChange(w, err)
-	case post && len(parts) == 2 && parts[0] != "" && parts[1] == "caps":
-		raw, ok := readBody(r)["caps"].([]any)
-		if !ok {
-			writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "That needs caps.")
-			return
-		}
-		var caps auth.Caps
-		for _, item := range raw {
-			name, _ := item.(string)
-			c, ok := auth.ParseCapability(name)
-			if !ok {
-				writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "caps may be read and send.")
-				return
-			}
-			caps = append(caps, c)
-		}
-		_, err := g.auth.SetCapabilities(parts[0], caps)
-		writeDeviceChange(w, err)
 	default:
 		writeNoSuchRoute(w, r)
 	}

@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react"
 import type { PairedDevice } from "@clawdline/contract"
 import { failureSentence } from "../../legacy/bridge.js"
-import { nextWord, type NextWord } from "../../next-strings.js"
+import { nextWord } from "../../next-strings.js"
 import { readSignedIn, revokeDevice, signOutThisBrowser, type SignedIn } from "./signed-in.js"
-
-/** A paired sender inherits terminal access; read-only devices do not. */
-function capsWord(send: boolean): NextWord {
-  return send ? "signedInCapsSendTerminal" : "signedInCapsRead"
-}
 
 function when(unix: number): string {
   return new Date(unix * 1000).toLocaleString(document.documentElement.lang || undefined)
@@ -117,7 +112,7 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
                 <code>{device.id}</code>
               </div>
               <div className="device-facts">
-                <span data-tone={device.caps.includes("send") ? "warn" : undefined}>{nextWord(capsWord(device.caps.includes("send")))}</span>
+                <span data-tone="warn">{nextWord("signedInCapsSendTerminal")}</span>
                 <span>{nextWord("signedInSince", { time: when(device.created) })}</span>
                 <span>
                   {device.last_seen

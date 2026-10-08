@@ -365,7 +365,7 @@ func TestASessionCanArrangeARepeatingScheduleOnAPersonsRun(t *testing.T) {
 // TestTheActorHeaderOnlyEverTakesAuthorityAway is why the gate may honour a
 // header any caller can set. It closes the machine door and opens nothing: a
 // caller holding only the orchestrator token loses every route behind it, and
-// a caller holding a device that may only read gains nothing on the way.
+// a caller holding an unpaired token gains nothing on the way.
 func TestTheActorHeaderOnlyEverTakesAuthorityAway(t *testing.T) {
 	f, h := newGateFixture(t)
 	for _, tc := range []struct {
@@ -383,11 +383,11 @@ func TestTheActorHeaderOnlyEverTakesAuthorityAway(t *testing.T) {
 			actorHeader: actorDevice, "Content-Type": "application/json"},
 		want: http.StatusUnauthorized,
 	}, {
-		name: "a device that may only read is still refused with it",
-		headers: map[string]string{"Authorization": "Bearer " + f.read,
+		name: "an unpaired token is still refused with it",
+		headers: map[string]string{"Authorization": "Bearer unpaired",
 			"X-Clawdline-Orchestrator": f.machine, actorHeader: actorDevice,
 			"Content-Type": "application/json"},
-		want: http.StatusForbidden,
+		want: http.StatusUnauthorized,
 	}, {
 		name: "a device that may send is let through, as it is without it",
 		headers: map[string]string{"Authorization": "Bearer " + f.send,
@@ -497,14 +497,13 @@ func TestACloudWebhookBindReachesTheBinder(t *testing.T) {
 	}
 }
 
-// TestAReadOnlyDeviceStillCannotBindAWebhook: the bind route opened to a
-// device that may send, and to nobody less.
-func TestAReadOnlyDeviceStillCannotBindAWebhook(t *testing.T) {
+// TestPairedDeviceCanBindAWebhook: both legacy device grants reach the binder.
+func TestPairedDeviceCanBindAWebhook(t *testing.T) {
 	f, h := newGateFixture(t)
 	rec := call{path: "/v1/orchestrator/schedule-webhooks/bind", body: `{}`, headers: map[string]string{
 		"Authorization": "Bearer " + f.read, "Content-Type": "application/json"}}.do(h)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("a read-only device reached the binder: %d %s", rec.Code, rec.Body)
+	if rec.Code == http.StatusForbidden || rec.Code == http.StatusUnauthorized {
+		t.Fatalf("a paired device was refused at the door: %d %s", rec.Code, rec.Body)
 	}
 	rec = call{path: "/v1/orchestrator/schedule-webhooks/bind", body: `{}`, headers: map[string]string{
 		"Authorization": "Bearer " + f.send, "Content-Type": "application/json"}}.do(h)

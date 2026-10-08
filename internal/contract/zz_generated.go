@@ -1718,8 +1718,6 @@ type BrowserDevice struct {
 // POST /v1/auth/devices/browser: `clawdline open` asking for a device of its
 // own. Local token only.
 type BrowserRequest struct {
-	// Also grant send. Off unless the person at this machine asked.
-	Send bool `json:"send,omitempty"`
 }
 
 // One build: the commit it was built from and, when its BUILD.json said so,
@@ -2040,12 +2038,6 @@ const (
 
 // CapacityUnitValues is every value the contract allows, in contract order.
 var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitCharacters, CapacityUnitRows, CapacityUnitSeconds}
-
-// POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other
-// grant. Local token only.
-type CapsRequest struct {
-	Caps []string `json:"caps"`
-}
 
 type CatalogError struct {
 	Code    string `json:"code"`
@@ -3413,7 +3405,7 @@ type PairStarted struct {
 }
 
 type PairedDevice struct {
-	// read, and send when this device may type into a session.
+	// Paired devices have read and send access.
 	Caps []string `json:"caps"`
 
 	// Unix seconds.
@@ -3425,8 +3417,8 @@ type PairedDevice struct {
 	LastSeen int64  `json:"last_seen,omitempty"`
 	Name     string `json:"name"`
 
-	// Legacy terminal grant record for older clients. Access now follows pairing and
-	// send permission; this field does not grant or revoke terminal access.
+	// Legacy terminal grant record for older clients. Access now follows pairing; this
+	// field does not grant or revoke terminal access.
 	Terminal bool `json:"terminal,omitempty"`
 }
 
@@ -5778,9 +5770,6 @@ type SettingsRequest struct {
 	// `off`, `quick` or `named`.
 	RemoteTunnel *string `json:"remote_tunnel"`
 
-	// Whether a paired device may write into a session.
-	RemoteWrite *bool `json:"remote_write"`
-
 	// Whether the bar comes back with the terminal.
 	ReopenOnReturn *bool `json:"reopen_on_return"`
 
@@ -5942,9 +5931,6 @@ type SettingsSnapshot struct {
 
 	// `off`, `quick` or `named`.
 	RemoteTunnel *string `json:"remote_tunnel"`
-
-	// Whether a paired device may write into a session.
-	RemoteWrite *bool `json:"remote_write"`
 
 	// Whether the bar comes back with the terminal.
 	ReopenOnReturn *bool `json:"reopen_on_return"`

@@ -48,7 +48,7 @@ func newUnverifiedFixture(t *testing.T) *unverifiedFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.row = adaptercloud.RosterDevice{ID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{TerminalCapability}}
+	f.row = adaptercloud.RosterDevice{ID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{"send_prompt"}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.reads++
@@ -161,7 +161,7 @@ func (f *unverifiedFixture) request(operation string) Inbound {
 func TestUnreadableRosterIsUnverifiedAndAFreshNoIsADenial(t *testing.T) {
 	f := newUnverifiedFixture(t)
 	if err := f.l.TerminalViewerAccess("viewer"); err != nil {
-		t.Fatalf("a pinned viewer with send_prompt was refused: %v", err)
+		t.Fatalf("a pinned viewer was refused: %v", err)
 	}
 	f.set(func(f *unverifiedFixture) { f.fail = true })
 	f.advance(CloudTerminalRosterRefreshLimit * time.Second)
@@ -177,11 +177,11 @@ func TestUnreadableRosterIsUnverifiedAndAFreshNoIsADenial(t *testing.T) {
 	}
 	f.set(func(f *unverifiedFixture) { f.row.Caps = []string{"read_sessions"} })
 	f.advance(CloudTerminalRosterRefreshLimit * time.Second)
-	if code, _ := terminal.CodeOf(f.l.TerminalViewerAccess("viewer")); code != terminal.CodeForbidden {
-		t.Fatalf("a fresh roster without send_prompt answered %q, want %q", code, terminal.CodeForbidden)
+	if err := f.l.TerminalViewerAccess("viewer"); err != nil {
+		t.Fatalf("a legacy read-only viewer was refused: %v", err)
 	}
 	revoked := "2026-10-06T00:00:00Z"
-	f.set(func(f *unverifiedFixture) { f.row.Caps = []string{TerminalCapability}; f.row.RevokedAt = &revoked })
+	f.set(func(f *unverifiedFixture) { f.row.RevokedAt = &revoked })
 	f.advance(CloudTerminalRosterRefreshLimit * time.Second)
 	if code, _ := terminal.CodeOf(f.l.TerminalViewerAccess("viewer")); code != terminal.CodeForbidden {
 		t.Fatalf("a fresh roster revocation answered %q, want %q", code, terminal.CodeForbidden)
@@ -227,16 +227,17 @@ func TestUnreadableRosterAnswersAnOpenWithARetryableReceipt(t *testing.T) {
 		got[0]["error"] != string(terminal.CodeBusy) {
 		t.Fatalf("open during an unreadable roster: %v", got)
 	}
-	// A fresh roster that says no still gets no answer: the sender is not
+	// A fresh roster revocation still gets no answer: the sender is not
 	// someone this machine will encrypt to.
 	g := newUnverifiedFixture(t)
-	g.set(func(f *unverifiedFixture) { f.row.Caps = []string{"read_sessions"} })
+	revoked := "2026-10-06T00:00:00Z"
+	g.set(func(f *unverifiedFixture) { f.row.RevokedAt = &revoked })
 	g.l.handleTerminal(context.Background(), Inbound{Channel: "termi/machine/viewer", Class: string(domaincloud.ClassCtl),
 		Sender: "viewer", Plaintext: []byte(`{"v":1,"type":"terminal_request","request_id":"` + testRequestID +
 			`","connection":"` + testConnection + `","operation":"open_connection","key_id":"` + testKeyID +
 			`","key":"` + base64.StdEncoding.EncodeToString(g.key.Bytes()) + `"}`)})
 	if got := g.published(); len(got) != 0 {
-		t.Fatalf("a viewer without send_prompt was answered: %v", got)
+		t.Fatalf("a revoked viewer was answered: %v", got)
 	}
 }
 
@@ -298,11 +299,12 @@ func TestSweepPausesAnUnverifiedConnectionAndRetiresItWithoutRevoking(t *testing
 func TestSweepRevokesOnAFreshRosterThatSaysNo(t *testing.T) {
 	f := newUnverifiedFixture(t)
 	c := f.register()
-	f.set(func(f *unverifiedFixture) { f.row.Caps = []string{"read_sessions"} })
+	revoked := "2026-10-06T00:00:00Z"
+	f.set(func(f *unverifiedFixture) { f.row.RevokedAt = &revoked })
 	f.l.sweepTerminalConnections()
 	got := f.published()
 	if len(got) != 1 || got[0]["type"] != "terminal_notice" || got[0]["code"] != "terminal_access_revoked" {
-		t.Fatalf("a fresh roster without send_prompt: %v", got)
+		t.Fatalf("a fresh roster revocation: %v", got)
 	}
 	f.l.terminalMu.Lock()
 	denied := c.denied

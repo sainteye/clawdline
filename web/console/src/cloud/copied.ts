@@ -25,6 +25,15 @@ import type { OpenedPairing, PendingOffer } from "./pair.js"
 import type { RecoverySession } from "./device-limit.js"
 import { CatalogCloudClient } from "./refusal-client.js"
 
+// The archived bootstrap derives allowWrites from a device capability that
+// older Cloud tokens can omit. The current contract makes every signed-in
+// viewer writable; the target machine still checks its own pairing and switch.
+class PairedCloudClient extends CatalogCloudClient {
+  constructor(options: Record<string, unknown>) {
+    super({ ...options, allowWrites: true })
+  }
+}
+
 /** A build's Cloud declaration, checked (`readCloudConfig`). */
 export interface CloudConfig {
   appOrigin: string
@@ -146,7 +155,7 @@ export type RecoverableCloudSession = CloudSession & RecoverySession
 export function newCloudSession(options: { config: CloudConfig; deviceKind: string; deviceName: string }): RecoverableCloudSession {
   // `handlers` is the Swift page's render seam (`net/handlers.js`, not copied):
   // this console draws from the client's events instead, so none is given.
-  return new CloudViewerSessionOriginal({ ...options, Client: CatalogCloudClient, handlers: null }) as unknown as RecoverableCloudSession
+  return new CloudViewerSessionOriginal({ ...options, Client: PairedCloudClient, handlers: null }) as unknown as RecoverableCloudSession
 }
 
 export const keepConnected = keepConnectedOriginal as (

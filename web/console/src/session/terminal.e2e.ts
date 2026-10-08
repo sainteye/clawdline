@@ -986,9 +986,9 @@ test("the keyboard reaches the header, goes into the terminal with Tab, and leav
   await tab.close()
 })
 
-/** A browser device of this machine's own, as `clawdline open --print` makes one: read-only, no terminal. */
-async function pairedDevice(send = false): Promise<{ id: string; token: string }> {
-  const made = await api("/v1/auth/devices/browser", { method: "POST", body: JSON.stringify({ send }) })
+/** A browser device of this machine's own, as `clawdline open --print` makes one. */
+async function pairedDevice(): Promise<{ id: string; token: string }> {
+  const made = await api("/v1/auth/devices/browser", { method: "POST", body: "{}" })
   return { id: made.id, token: made.token }
 }
 
@@ -1002,25 +1002,16 @@ async function deviceTab(device: { token: string }, phone = false): Promise<Tab>
 
 const grantOf = async (id: string) => (await api("/v1/auth/devices")).devices.find((d: { id: string }) => d.id === id)?.terminal === true
 
-test("Session terminal mode gives a read-only device a reason and no open action", { skip }, async () => {
+test("a paired browser can open a terminal without a separate grant", { skip }, async () => {
   const device = await pairedDevice()
+  const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
+  opened.add(made.id)
   const tab = await deviceTab(device, true)
-  await tab.go("#page=sessions&mode=terminal")
-  await tab.run(`new Promise((ok, fail) => {
-    const end = setTimeout(() => fail(new Error("device refusal did not appear: " + document.body.innerText.slice(0, 500))), 6000)
-    const look = () => document.body.innerText.includes("唯讀裝置不能使用終端") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50)
-    look()
-  })`)
-  assert.equal(await tab.run(`document.querySelector(".session-terminal-head button") === null`), true)
-  await tab.press("#start-go")
-  await tab.press("#start-terminal-tab")
-  await tab.run(`new Promise((ok, fail) => {
-    const end = setTimeout(() => fail(new Error("start refusal did not appear")), 6000)
-    const look = () => document.querySelector("#start-say")?.textContent?.includes("唯讀裝置不能使用終端") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50)
-    look()
-  })`)
-  assert.equal(await tab.run(`document.querySelectorAll("#start-list .place").length`), 0)
-  await tab.shot("session-terminal-device-refused")
+  await tab.go(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)
+  await tab.until("the paired device sees the screen", (s) => prompted(s), 15_000)
+  await tab.shot("session-terminal-paired-device")
+  await api(`/v1/auth/devices/${device.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
+  await tab.close()
 })
 
 test("hosted Session terminal entries distinguish a missing Cloud line from an empty list", { skip: skip || !hostedOrigin }, async () => {
@@ -1033,60 +1024,38 @@ test("hosted Session terminal entries distinguish a missing Cloud line from an e
   await tab.shot("session-terminal-hosted")
 })
 
-test("device cards derive terminal access from send without a separate switch", { skip }, async () => {
-  const reader = await pairedDevice()
-  const sender = await pairedDevice(true)
+test("device cards show terminal access for every pairing without a separate switch", { skip }, async () => {
+  const first = await pairedDevice()
+  const second = await pairedDevice()
   const tab = await Tab.open(browser)
   await tab.go("#page=devices")
   const card = (id: string) => `[data-device="${id}"]`
   await tab.run(`new Promise((ok, fail) => {
     const t = setTimeout(() => fail(new Error("device cards missing")), 8000)
-    const look = () => document.querySelector(${JSON.stringify(card(reader.id))}) && document.querySelector(${JSON.stringify(card(sender.id))})
+    const look = () => document.querySelector(${JSON.stringify(card(first.id))}) && document.querySelector(${JSON.stringify(card(second.id))})
       ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
     look()
   })`)
-  assert.match(await tab.run(`document.querySelector(${JSON.stringify(card(reader.id) + " .device-facts span")}).textContent`), /只能讀/)
-  assert.match(await tab.run(`document.querySelector(${JSON.stringify(card(sender.id) + " .device-facts span")}).textContent`), /可開 shell/)
+  assert.match(await tab.run(`document.querySelector(${JSON.stringify(card(first.id) + " .device-facts span")}).textContent`), /可開 shell/)
+  assert.match(await tab.run(`document.querySelector(${JSON.stringify(card(second.id) + " .device-facts span")}).textContent`), /可開 shell/)
   assert.equal(await tab.run(`document.querySelectorAll(".terminal-grant").length`), 0)
-  assert.equal(await grantOf(sender.id), false, "a sender was not separately granted")
+  assert.equal(await grantOf(first.id), false, "a paired device was not separately granted")
   await tab.shot("20-devices-default-terminal")
-  await api(`/v1/auth/devices/${reader.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
-  await api(`/v1/auth/devices/${sender.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
+  await api(`/v1/auth/devices/${first.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
+  await api(`/v1/auth/devices/${second.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
   await tab.close()
 })
 
-test("a read-only paired device is told why terminal input is unavailable, with no button that would fail the same way", { skip }, async () => {
+test("a paired device revoked while it watches is told", { skip }, async () => {
   const device = await pairedDevice()
-  const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
-  opened.add(made.id)
-  const tab = await deviceTab(device)
-  await tab.go(`#page=terminal&project=${encodeURIComponent(project)}`)
-  await tab.run(`new Promise((ok, fail) => {
-    const t = setTimeout(() => fail(new Error("no refusal on the list: " + document.querySelector("#terminal")?.textContent)), 10000)
-    const look = () => document.querySelector("#terminal .terminal-note[role=alert]") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
-    look()
-  })`)
-  const said = await tab.run(`document.querySelector("#terminal .terminal-note[role=alert]").textContent`)
-  assert.match(said, /唯讀裝置不能使用終端/, "the send boundary is named: " + said)
-  assert.equal(await tab.run(`!!document.querySelector("#terminal .terminal-open-new")`), false, "no 開新終端 to press into the same refusal")
-  await tab.shot("21-unauthorised-device")
-  await tab.run(`location.hash = ${JSON.stringify(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)}`)
-  await tab.until("the terminal itself refuses in words", (s) => /唯讀裝置不能使用終端/.test(s.status), 10_000)
-  await tab.shot("21b-unauthorised-device-terminal")
-  await api(`/v1/auth/devices/${device.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
-  await tab.close()
-})
-
-test("a sender whose send permission is removed while it watches is told", { skip }, async () => {
-  const device = await pairedDevice(true)
   const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
   opened.add(made.id)
   const tab = await deviceTab(device)
   await tab.go(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)
   await tab.until("the device sees the screen", (s) => prompted(s), 15_000)
-  await api(`/v1/auth/devices/${device.id}/caps`, { method: "POST", body: JSON.stringify({ caps: ["read"] }) })
+  await api(`/v1/auth/devices/${device.id}/revoke`, { method: "POST", body: "{}" })
   const seen = await tab.until("the device is told its access was taken back", (s) => s.ended.includes("收回"), 12_000)
-  assert.match(seen.ended, /配對和傳送權限/, "the send boundary is named: " + seen.ended)
+  assert.match(seen.ended, /收回/, "the revocation is named: " + seen.ended)
   assert.equal(await tab.run(`document.querySelector("#terminal .terminal-view").hasAttribute("data-ended")`), true, "the last frame is drawn as not live")
   await tab.shot("22-revoked-mid-stream")
   await api(`/v1/auth/devices/${device.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})

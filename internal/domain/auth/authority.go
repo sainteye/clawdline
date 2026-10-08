@@ -141,6 +141,23 @@ func New(store Store, opts Options) (*Authority, error) {
 	if err := checkState(state); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidState, err)
 	}
+	// Older releases stored paired devices without Send. Upgrade the stored
+	// grant before serving any request, so a restart and every later save keep
+	// the same paired-device contract.
+	changed := false
+	for i := range state.Devices {
+		d := &state.Devices[i]
+		if !d.Approved || d.Local || d.Caps.Has(Send) {
+			continue
+		}
+		d.Caps = NewCaps(append(d.Caps, Read, Send)...)
+		changed = true
+	}
+	if changed {
+		if err := store.Save(state); err != nil {
+			return nil, fmt.Errorf("store_unavailable: %w", err)
+		}
+	}
 	for _, d := range state.Devices {
 		a.devices[d.ID] = d
 	}
@@ -462,6 +479,11 @@ func (a *Authority) AddDevice(name string, caps Caps, local bool) (id, token str
 }
 
 func (a *Authority) addDevice(name string, caps Caps, local bool) (string, string, error) {
+	// A paired device cannot be issued a read-only credential, including by
+	// older callers that still pass only Read.
+	if !local {
+		caps = NewCaps(append(caps, Read, Send)...)
+	}
 	id, err := newID(a.random)
 	if err != nil {
 		return "", "", err
@@ -537,10 +559,10 @@ func (a *Authority) RevokeAll() (int, error) {
 	return removed, nil
 }
 
-// SetCapabilities replaces what a paired device may do. Reading is always
-// included; admin belongs to the machine's own device and is not granted here.
+// SetCapabilities accepts legacy callers without creating a read-only device.
+// The device management route no longer exposes capability changes.
 func (a *Authority) SetCapabilities(id string, caps Caps) (Caps, error) {
-	want := Caps{Read}
+	want := Caps{Read, Send}
 	for _, c := range caps {
 		switch c {
 		case Read:

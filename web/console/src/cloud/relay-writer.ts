@@ -77,8 +77,8 @@ interface RememberedDescriptor {
 
 /**
  * The part of the copied `CloudClient` the writes call. Every method is its
- * own, with its own checks: `allowWrites` (the device's `send_prompt`
- * capability), the machine's declared vocabulary, the relay's word on the
+ * own, with its own checks: `allowWrites` (the signed-in client's write state),
+ * the machine's declared vocabulary, the relay's word on the
  * envelope, and the machine's answer on `t/<machine>/<session>`.
  */
 export interface CloudWriteClient extends CloudReadClient {

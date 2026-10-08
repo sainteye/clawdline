@@ -277,6 +277,24 @@ func TestRevokeAndCaps(t *testing.T) {
 	}
 }
 
+func TestOldPairedDeviceCanSendAfterRestart(t *testing.T) {
+	const token = "legacy-paired-token"
+	store := &memStore{state: State{Devices: []Device{{
+		ID: "old-phone", Name: "phone", Hash: Hash(token), Caps: NewCaps(Read), Approved: true,
+	}}}}
+	a, _ := newAuthority(t, store)
+	if !a.Verify(token).Caps.Has(Send) || !store.state.Devices[0].Caps.Has(Send) || store.saves != 1 {
+		t.Fatalf("legacy grant was not upgraded in memory and on disk: %+v, saves=%d", store.state.Devices[0].Caps, store.saves)
+	}
+	a, _ = newAuthority(t, store)
+	if !a.Verify(token).Caps.Has(Send) || store.saves != 1 {
+		t.Fatal("restarting changed the upgraded grant")
+	}
+	if err := a.Revoke("old-phone"); err != nil || a.Verify(token).Allowed {
+		t.Fatalf("revoked legacy device still has access: %v", err)
+	}
+}
+
 func TestFailedSaveChangesNothing(t *testing.T) {
 	store := &memStore{}
 	a, _ := newAuthority(t, store)

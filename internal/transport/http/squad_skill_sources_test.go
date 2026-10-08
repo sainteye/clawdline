@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestSquadSkillSourcesStayInChosenProjectAndRequireSendForContent(t *testing.T) {
+func TestSquadSkillSourcesStayInChosenProjectAndPairedDevicesCanReadContent(t *testing.T) {
 	f := newSquadFixture(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -44,8 +44,8 @@ func TestSquadSkillSourcesStayInChosenProjectAndRequireSendForContent(t *testing
 		t.Fatalf("project list = %d, %s", status, raw)
 	}
 	id := list.Skills[0].ID
-	if status, _ := f.ask("GET", path+"&id="+id+"&folder=true", f.reader, "", ""); status != 403 {
-		t.Fatalf("remote reader detail = %d", status)
+	if status, _ := f.ask("GET", path+"&id="+id+"&folder=true", f.reader, "", ""); status != 200 {
+		t.Fatalf("paired device detail = %d", status)
 	}
 	status, raw = f.ask("GET", path+"&id="+id+"&folder=true", f.local, "", "")
 	var detail skillSourceDetail

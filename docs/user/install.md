@@ -85,8 +85,7 @@ clawdline open           # sign this browser in
 clawdline open --print   # print the address instead (a machine with no desktop)
 ```
 
-A browser signed in this way can read every session and type into it. (`--send` is still accepted
-for older scripts and changes nothing.)
+A browser signed in this way can read every session and type into it.
 
 `open` creates a device for your browser and signs it in. The key travels in the address's
 fragment, which the browser never sends to a server. Treat a printed address like a password

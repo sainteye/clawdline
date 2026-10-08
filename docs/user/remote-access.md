@@ -1,16 +1,16 @@
 # Remote access: another browser, a phone, Clawdline Cloud
 
 After this page you can open the console somewhere other than the machine's own browser — another
-computer, or your phone — decide whether that device may only read or may also act, and take that
-permission away again. Your agents and code stay on your machine whichever way you choose.
+computer, or your phone — pair that device so it can read and send, and revoke it when needed.
+Your agents and code stay on your machine whichever way you choose.
 
 ## Which way to choose
 
 | Way | Account | Reaches | What it can do | State |
 | --- | --- | --- | --- | --- |
 | A. SSH port forward | None | Another computer you can SSH from | Read and send | Works |
-| B. Your own cloudflared tunnel | None | Any browser, including a phone | Read, and send once you allow it | Built; the real Cloudflare leg has not been tested end to end |
-| C. Clawdline Cloud | Clawdline account (GitHub sign-in) | Any browser, including a phone; several machines | Read, and act once you allow it | Preview |
+| B. Your own cloudflared tunnel | None | Any browser, including a phone | Read and send after pairing | Built; the real Cloudflare leg has not been tested end to end |
+| C. Clawdline Cloud | Clawdline account (GitHub sign-in) | Any browser, including a phone; several machines | Read and act on paired machines while their Cloud commands are on | Preview |
 
 The daemon itself listens on `127.0.0.1` only. None of these opens a port on your network.
 
@@ -74,12 +74,11 @@ the attempt. **Undo:** set the tunnel to **關閉** (off), or `"remote_tunnel": 
 
 ### Send from paired devices
 
-New devices paired with a code, signed in with the password, or opened with `clawdline open`
-can read sessions and send prompts. Sending can run code on this machine through the assistant.
-The **讓配對過的裝置寫進 session** switch (`"remote_write": true` in `config.json`)
-continues to allow older devices that were issued read-only keys to send. Turning the switch off
-does not remove a device's own send permission. Revoke a device to remove its access.
-Clawdline Cloud has a separate machine command switch (below).
+Devices paired with a code, signed in with the password, or opened with `clawdline open`
+can read sessions and send prompts. Older paired devices issued read-only keys gain sending
+automatically when the daemon is upgraded. Sending can run code on this machine through the
+assistant. Revoke a device to remove its access. Clawdline Cloud has a separate machine command
+switch (below).
 
 ### See and revoke devices signed in directly
 
@@ -94,7 +93,7 @@ password are listed in two places. Only this machine's own key can see the list 
 - **A terminal on the machine:**
 
   ```sh
-  ./bin/clawdline devices                    # one line per device: id, read or read+send, signed in, last used, name
+  ./bin/clawdline devices                    # one line per device: id, capabilities, signed in, last used, name
   ./bin/clawdline devices revoke <device-id> # names the device and asks [y/N]; --yes skips the question
   ```
 
@@ -147,8 +146,8 @@ Both screens show the same fingerprint when pairing finishes; compare them.
 
 ### Let paired devices act
 
-A paired device can read. To let it send text, answer, and start or close sessions on this
-machine:
+A paired device can send text, answer, and start or close sessions on this machine while its
+Cloud command switch is on:
 
 ```sh
 ./bin/clawdline cloud commands on     # takes effect on the next request; `off` stops it at once
@@ -174,8 +173,8 @@ and needs no account.
   conditions is missing, or says cloudflared is not installed.
 - **The Cloud line stays off**: `./bin/clawdline cloud status` says why. A broken Cloud setting
   never stops the daemon.
-- **A phone can read but not act**: over Cloud, run `cloud commands on`. Over the tunnel, turn on
-  **讓配對過的裝置寫進 session** (`"remote_write": true`).
+- **A phone can read but not act**: check that it is paired with the selected machine and that
+  `clawdline cloud commands` is on there. Over a direct tunnel, check that its sign-in is still valid.
 - **Notifications on the phone**: [notifications.md](notifications.md).
 
 ## Deeper

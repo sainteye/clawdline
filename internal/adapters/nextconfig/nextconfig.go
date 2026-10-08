@@ -496,7 +496,6 @@ var Settables = []Settable{
 	{Name: "voice_settle_seconds", Kind: "number", Min: 0, Max: 30},
 	{Name: "voice_stop_seconds", Kind: "number", Min: 0, Max: 300},
 	{Name: "remote", Kind: "bool"},
-	{Name: "remote_write", Kind: "bool"},
 	{Name: "remote_tunnel", Kind: "string", Choices: []string{"off", "quick", "named"},
 		Refusal: "invalid_tunnel", Because: "off, quick or named"},
 	{Name: "remote_hostname", Kind: "string", Check: ValidHostname, Refusal: "invalid_hostname",

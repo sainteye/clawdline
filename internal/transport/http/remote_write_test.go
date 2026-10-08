@@ -1,23 +1,20 @@
 package http
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 )
 
-// The settings window's 讓配對過的裝置寫進 session is `remote_write`. On, it
-// lets every paired device send, as the Swift app's switch did; off, a device
-// keeps only what it was granted itself — a `clawdline open --send` browser
-// still sends, a device paired with a code only reads. It is read at every
-// request, so turning it off takes effect on the next one.
-func TestRemoteWriteLetsPairedDevicesSend(t *testing.T) {
+// A legacy caller may ask for a read-only credential, but the authority
+// issues Read+Send and the HTTP gate admits it without a device-level switch.
+func TestEveryPairedDeviceCanSend(t *testing.T) {
 	t.Setenv("CLAWDLINE_SWIFT_DIR", filepath.Join(t.TempDir(), "swift"))
 	dir := filepath.Join(t.TempDir(), "next")
 	g := openGate(config.Config{Dir: dir, Port: 7757})
@@ -49,13 +46,6 @@ func TestRemoteWriteLetsPairedDevicesSend(t *testing.T) {
 			_, _ = io.WriteString(w, "read")
 		}
 	}))
-	file := nextconfig.Open(dir)
-	set := func(on bool) {
-		t.Helper()
-		if _, err := file.Set(map[string]any{"remote_write": on}); err != nil {
-			t.Fatal(err)
-		}
-	}
 	const board = `{"operation":"note","requestId":"r","expectedRevision":0,"actor":"t"}`
 	ask := func(token string) string {
 		rec := call{method: http.MethodGet, path: "/v1/sessions",
@@ -82,16 +72,12 @@ func TestRemoteWriteLetsPairedDevicesSend(t *testing.T) {
 		}
 	}
 
-	check("no config.json", "read", http.StatusForbidden)
-	set(true)
-	check("remote_write on", "send", http.StatusOK)
-	set(false)
-	check("remote_write off again", "read", http.StatusForbidden)
-
-	// A file that cannot be read is not a yes.
-	set(true)
-	if err := os.WriteFile(file.Path(), []byte("{not json"), 0o600); err != nil {
+	check("no config.json", "send", http.StatusOK)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	check("config.json unreadable", "read", http.StatusForbidden)
+	check("config.json unreadable", "send", http.StatusOK)
+	if _, refusal := settingsChanges(map[string]json.RawMessage{"remote_write": []byte("true")}); refusal == nil || refusal.code != "bad_request" {
+		t.Fatalf("legacy device switch was still accepted: %+v", refusal)
+	}
 }

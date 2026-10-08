@@ -96,12 +96,12 @@
       "additionalProperties": false,
       "required": ["caps", "created", "id", "name"],
       "properties": {
-        "caps": { "description": "read, and send when this device may type into a session.", "type": "array", "items": { "type": "string" } },
+        "caps": { "description": "Paired devices have read and send access.", "type": "array", "items": { "type": "string" } },
         "created": { "description": "Unix seconds.", "type": "integer" },
         "id": { "type": "string" },
         "last_seen": { "description": "Unix seconds of the last request it made since the daemon started or last saved; absent when never.", "type": "integer" },
         "name": { "type": "string" },
-        "terminal": { "description": "Legacy terminal grant record for older clients. Access now follows pairing and send permission; this field does not grant or revoke terminal access.", "type": "boolean" }
+        "terminal": { "description": "Legacy terminal grant record for older clients. Access now follows pairing; this field does not grant or revoke terminal access.", "type": "boolean" }
       }
     },
     "DeviceList": {
@@ -113,15 +113,6 @@
         "configured": { "description": "Whether a person has paired something or set a password — the tunnel interlock's question. This machine's own token does not count.", "type": "boolean" },
         "devices": { "type": "array", "items": { "$ref": "#/$defs/PairedDevice" } },
         "password": { "type": "boolean" }
-      }
-    },
-    "CapsRequest": {
-      "description": "POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other grant. Local token only.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["caps"],
-      "properties": {
-        "caps": { "type": "array", "items": { "type": "string" } }
       }
     },
     "RevokedAll": {
@@ -138,9 +129,7 @@
       "description": "POST /v1/auth/devices/browser: `clawdline open` asking for a device of its own. Local token only.",
       "type": "object",
       "additionalProperties": false,
-      "properties": {
-        "send": { "description": "Also grant send. Off unless the person at this machine asked.", "type": "boolean" }
-      }
+      "properties": {}
     },
     "BrowserDevice": {
       "description": "A device minted for a browser on this machine. `url` carries the token in its fragment, which a browser never sends and never logs; the page trades it for the cookie with /v1/auth/adopt.",
