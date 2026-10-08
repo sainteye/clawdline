@@ -145,3 +145,52 @@ func TestTwoBareCodexTabsNeverShareOneUnnamedThread(t *testing.T) {
 		t.Fatalf("bare tab beside unrelated rows = %+v, %v", got, ok)
 	}
 }
+
+// Codex can prefix an iTerm title while it waits for a person. The title
+// still names the same conversation; the prefix is not part of its name.
+func TestActionRequiredCodexTitleBindsItsOwnLiveConversation(t *testing.T) {
+	wanted := codexLiveIdentity{ID: "c0de0011-0000-4000-8000-000000000011", Name: "Inspect the queue", CWD: "/code/demo"}
+	other := codexLiveIdentity{ID: "c0de0012-0000-4000-8000-000000000012", Name: "Review the plan", CWD: "/code/demo"}
+	lives := map[string]codexLiveIdentity{wanted.ID: wanted, other.ID: other}
+	row := session.Session{Backend: session.BackendITerm, Assistant: session.AssistantCodex,
+		CWD: "/code/demo", Label: "[ ! ] Action Required | Inspect the queue | demo (codex)"}
+	if got, ok := codexLiveFor(context.Background(), lives, row); !ok || got.ID != wanted.ID {
+		t.Fatalf("action-required title = %+v, %v; want its own conversation", got, ok)
+	}
+	row.Label = "[ ! ] Action Required | Unknown title | demo (codex)"
+	if got, ok := codexLiveFor(context.Background(), lives, row); ok {
+		t.Fatalf("unknown title bound %+v", got)
+	}
+	row.Label = "[ ! ] Action Required | Inspect the queue | other (codex)"
+	if got, ok := codexLiveFor(context.Background(), lives, row); ok {
+		t.Fatalf("wrong directory title bound %+v", got)
+	}
+
+	// A literal conversation name beginning with the same words gets its
+	// exact match before the decorated-title fallback is considered.
+	literal := codexLiveIdentity{ID: "c0de0013-0000-4000-8000-000000000013", Name: "[ ! ] Action Required | Inspect the queue", CWD: "/code/demo"}
+	lives[literal.ID] = literal
+	row.Label = "[ ! ] Action Required | Inspect the queue | demo (codex)"
+	if got, ok := codexLiveFor(context.Background(), lives, row); !ok || got.ID != literal.ID {
+		t.Fatalf("literal name = %+v, %v; want the exact match", got, ok)
+	}
+}
+
+func TestActionRequiredBareCodexTitleStillNeedsOneTerminalAndOneThread(t *testing.T) {
+	unnamed := codexLiveIdentity{ID: "c0de0014-0000-4000-8000-000000000014", CWD: "/code/demo"}
+	h := &Host{codexLive: map[string]codexLiveIdentity{unnamed.ID: unnamed}}
+	row := session.Session{ID: "ITERM-1", Backend: session.BackendITerm, Assistant: session.AssistantCodex,
+		CWD: "/code/demo", Label: "[ ! ] Action Required | demo (codex)"}
+	ctx := h.ObserveRows(context.Background(), []session.Session{row})
+	if got, ok := codexLiveFor(ctx, h.codexLive, row); !ok || got.ID != unnamed.ID {
+		t.Fatalf("one decorated bare title = %+v, %v", got, ok)
+	}
+	second := row
+	second.ID, second.Label = "ITERM-2", "demo (codex)"
+	ctx = h.ObserveRows(context.Background(), []session.Session{row, second})
+	for _, candidate := range []session.Session{row, second} {
+		if got, ok := codexLiveFor(ctx, h.codexLive, candidate); ok {
+			t.Fatalf("%s bound %+v with another bare tab", candidate.ID, got)
+		}
+	}
+}
