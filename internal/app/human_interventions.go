@@ -49,6 +49,9 @@ type CreateHumanIntervention struct {
 	Detail             string                         `json:"detail"`
 	Options            []work.HumanInterventionOption `json:"options"`
 	DocumentURL        string                         `json:"document_url"`
+	// RequestedByPerson is true only when the person explicitly asked the
+	// agent to create this note; such a note needs no separate push.
+	RequestedByPerson bool `json:"requested_by_person"`
 }
 
 func humanInterventionError(code, message string) error {
@@ -153,10 +156,19 @@ func validateHumanIntervention(c CreateHumanIntervention) error {
 }
 
 func (h *HumanInterventions) Create(ctx context.Context, c CreateHumanIntervention, k store.ReceiptKey, answer func(work.HumanIntervention) []byte) (work.HumanIntervention, []byte, error) {
+	out, body, _, err := h.CreateWithEffect(ctx, c, k, answer, nil)
+	return out, body, err
+}
+
+// CreateWithEffect commits the note, its receipt, and any push intent together.
+// The returned effect is run only after the transaction has committed.
+func (h *HumanInterventions) CreateWithEffect(ctx context.Context, c CreateHumanIntervention, k store.ReceiptKey,
+	answer func(work.HumanIntervention) []byte, effect func(work.HumanIntervention) store.Effect) (work.HumanIntervention, []byte, int64, error) {
 	var out work.HumanIntervention
 	var body []byte
+	var effectID int64
 	if err := validateHumanIntervention(c); err != nil {
-		return out, nil, err
+		return out, nil, 0, err
 	}
 	at := h.Now().UTC().Truncate(time.Second)
 	out = work.HumanIntervention{ID: newWorkID(), SourceConversation: c.SourceConversation, SourceLabel: c.SourceLabel,
@@ -167,13 +179,20 @@ func (h *HumanInterventions) Create(ctx context.Context, c CreateHumanInterventi
 		if err := tx.AddHumanIntervention(out, at); err != nil {
 			return err
 		}
+		if effect != nil && !c.RequestedByPerson {
+			var err error
+			effectID, err = tx.AddEffect(effect(out))
+			if err != nil {
+				return err
+			}
+		}
 		if answer != nil {
 			body = answer(out)
 			return tx.CompleteReceipt(k, store.ReceiptAnswer{Status: http.StatusCreated, Body: body})
 		}
 		return nil
 	})
-	return out, body, mapHumanInterventionError(err)
+	return out, body, effectID, mapHumanInterventionError(err)
 }
 
 func (h *HumanInterventions) List(ctx context.Context, conversation string) ([]work.HumanIntervention, int64, error) {

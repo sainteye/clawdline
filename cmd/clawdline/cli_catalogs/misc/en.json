@@ -99,6 +99,7 @@
   "note.the_body_names_kind_title_summary_a.642cb1ab": "  the body names kind, title, summary, action, reason and optional detail, options, document_url",
   "note.to_retry_the_same_note_clawdline_no.8d1b2aa3": "To retry the same note: clawdline note create --key %s …\n",
   "note.usage_clawdline_note_create_body_fi.688dbfca": "usage: clawdline note create --body-file <JSON path|-> [--target <terminal id>] [--from <conversation id>] [--key k] [--port n]",
+  "note.usage_with_requested_by_person": "usage: clawdline note create --body-file <JSON path|-> [--requested-by-person] [--target <terminal id>] [--from <conversation id>] [--key k] [--port n]",
   "portheld.clawdline.f8aa7cdb": "clawdline:",
   "portheld.console_missing": "%s, and / answers %d: it serves no console.",
   "portheld.console_refused": "%s, and / answers %d %s: it serves no console.",
