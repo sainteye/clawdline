@@ -908,8 +908,19 @@ export const Start = {
     wait = null
     if (timer) clearTimeout(timer)
     timer = null
-    if (detached) band(detachedWords(), true)
-    else hideBand()
+    if (detached) {
+      // The attach command is useful immediately after a detached start, but
+      // the arrival is no longer a pending start. Let the hint go after the
+      // existing start wait interval instead of pinning it above every row.
+      const hint = detached
+      band(detachedWords(), true)
+      timer = setTimeout(() => {
+        if (wait || detached !== hint) return
+        timer = null
+        detached = null
+        hideBand()
+      }, HOLD)
+    } else hideBand()
     draw()
     renderList()
     if (late || host.openId() !== from) return false

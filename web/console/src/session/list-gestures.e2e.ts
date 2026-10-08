@@ -63,6 +63,7 @@ type ReadingScenario =
   | "refresh"
   | "safe-cleared"
   | "unstarted-codex"
+  | "unstarted-claude-refresh"
   | "session-gap"
 let readingScenario: ReadingScenario = "normal"
 let inlineDecisionFixture = false
@@ -159,6 +160,13 @@ function rows(): Row[] {
   if (readingScenario === "unstarted-codex") return [
     row(SAFE, "Codex has not started", safeCloseability(), 300,
       { assistant: "codex", isClaude: false, sessionId: "", identity: "no_record" }),
+  ]
+  if (readingScenario === "unstarted-claude-refresh") return [
+    row(SAFE, "Claude has not started", unknownCloseability(), 300, {
+      state: "unknown", sessionId: "", identity: "no_record",
+      activity: { known: false, unknown_reason: "no_record" },
+      source: { freshness: "unverified", observed_at: Date.now() / 1000 - 90, provenance: "iterm" },
+    }),
   ]
   if (readingScenario === "session-gap") {
     const child = row(BLOCKED, "Alpha child", blockedCloseability(), 100, { state: "working" })
@@ -368,7 +376,7 @@ function document(): string {
   const words = JSON.parse(readFileSync(join(dist, "strings", "zh-Hant.json"), "utf8"))
   words.lang = "zh-Hant"
   words.dir = "ltr"
-  const slot = "<script>window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>"
+  const slot = "<script>localStorage.setItem('ui_language','zh-Hant');window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>"
   return html.replace("<!-- clawdline:strings -->", slot).replace("<!-- clawdline:cloud -->", "")
 }
 
@@ -376,6 +384,9 @@ function daemon(): Server {
   return createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
+    if (path === "/v1/strings") {
+      return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
+    }
     if (path === "/v1/sessions") {
       listReads++
       return json(res, 200, snapshot())
@@ -2364,7 +2375,7 @@ test("a brief inventory refresh leaves the row without a closeability badge, at 
     }
   }))
 
-test("a safe row says verification paused, not unknown, and close waits for a complete reading", () =>
+test("a routine refresh keeps close pending without calling the row verification paused", () =>
   inTab(async (tab) => {
     await list(tab)
     readingScenario = "refresh"
@@ -2373,7 +2384,7 @@ test("a safe row says verification paused, not unknown, and close waits for a co
       await tab.until("the retained reading arrived", (s) => s.refreshing)
       const open = await swipeOpen(tab, SAFE)
       assert.equal(open.actionKind, "unknown", "a prior safe answer cannot authorize close")
-      assert.match(open.rowState ?? "", /驗證暫停/)
+      assert.doesNotMatch(open.rowState ?? "", /驗證暫停/)
       assert.doesNotMatch(open.rowState ?? "", /無法判斷能否關閉|可安全關閉/)
     } finally {
       readingScenario = "normal"
@@ -2382,6 +2393,22 @@ test("a safe row says verification paused, not unknown, and close waits for a co
     await tab.until("the complete reading arrived", (s) => !s.refreshing)
     const restored = await swipeOpen(tab, SAFE)
     assert.equal(restored.actionKind, "safe", "a complete new reading restores the close action")
+  }))
+
+test("a Claude process without a first conversation stays listed without a false paused warning", () =>
+  inTab(async (tab) => {
+    await list(tab)
+    readingScenario = "unstarted-claude-refresh"
+    try {
+      pushSessions()
+      await tab.until("the unstarted Claude row arrives", (s) => s.order.join() === SAFE && s.refreshing)
+      const open = await swipeOpen(tab, SAFE)
+      assert.match(open.rowState ?? "", /對話還沒開始/)
+      assert.doesNotMatch(open.rowState ?? "", /驗證暫停/)
+    } finally {
+      readingScenario = "normal"
+      pushSessions()
+    }
   }))
 
 test("a session awaiting attestation explains that inside its named confirmation", () =>
