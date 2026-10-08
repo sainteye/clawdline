@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { StatusCloudClient, statusChannel } from "./status-client.js"
-import { envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
+import { base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
 
 const zero = (length) => Buffer.alloc(length).toString("base64")
 const envelope = (ch) => ({ v: 1, ch, seq: 1, ts: 1, class: "stream", key_id: "key", nonce: zero(12),
@@ -102,6 +102,85 @@ test("pinned detail refuses to join an unpinned read waiter", async () => {
     { code: "cloud_read_busy" })
 })
 
+test("read_transcript-only pinned reads pass the old local write guard", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.allowWrites = false
+  client.retired = false
+  client.readWaiters = new Map()
+  client._sessionIdentity = () => ({ machine: "m", session: "s" })
+  client._unsupportedRefusal = () => null
+  client._offlineRefusal = () => Object.assign(new Error("offline sentinel"), { code: "offline_sentinel" })
+  await assert.rejects(() => client._read({ machine: "m", session: "s" }, "info",
+    { parts: "full", machine_id: "m", expected_generation: genA }, "info.full"), { code: "offline_sentinel" })
+  assert.equal(client.allowWrites, false)
+  await assert.rejects(() => client._read({ machine: "m", session: "s" }, "send", {}, "action:one"),
+    { code: "cloud_read_needs_send_prompt" })
+})
+
+test("only pinned info and transcript seal r/; send remains on ctl/", async () => {
+  const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])
+  const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])
+  const client = Object.create(StatusCloudClient.prototype)
+  client.allowWrites = false
+  client.ready = true
+  client.deviceID = "viewer"
+  client.devicePrivateKey = keys.privateKey
+  let sequence = 7
+  client.nextSequence = async () => sequence++
+  client._unsupportedRefusal = () => null
+  client._offlineRefusal = () => null
+  client._outboundMachinePairing = async () => ({ keyID: "key", masterKey })
+  client.trail = { sealed() {} }
+  client.pendingBySequence = new Map()
+  const frames = []
+  client._send = (frame) => frames.push(frame)
+  const reply = await client._publishCommand("m", "info", {
+    session: "s", parts: "full", machine_id: "m", expected_generation: genA,
+  }, "ctl")
+  assert.equal(reply.ch, "r/m")
+  assert.equal(reply.class, "ctl")
+  assert.equal(frames[0].envelope.ch, "r/m")
+  assert.equal(await crypto.subtle.verify({ name: "Ed25519" }, keys.publicKey,
+    base64Bytes(reply.sig, "sig"), envelopeSigningBytes(reply)), true)
+  const flip = (value) => {
+    const bytes = base64Bytes(value)
+    bytes[0] ^= 1
+    return Buffer.from(bytes).toString("base64")
+  }
+  for (const changed of [
+    { v: 2 }, { ch: "ctl/m" }, { ch: "r/other" }, { seq: 9 }, { ts: reply.ts + 1 },
+    { class: "dispatch" }, { key_id: "other" },
+    { nonce: flip(reply.nonce) }, { ct: flip(reply.ct) },
+  ]) {
+    const tampered = { ...reply, ...changed }
+    assert.equal(await crypto.subtle.verify({ name: "Ed25519" }, keys.publicKey,
+      base64Bytes(tampered.sig, "sig"), envelopeSigningBytes(tampered)), false,
+    "tampering with " + Object.keys(changed)[0] + " must fail")
+  }
+  const other = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])
+  assert.equal(await crypto.subtle.verify({ name: "Ed25519" }, other.publicKey,
+    base64Bytes(reply.sig, "sig"), envelopeSigningBytes({ ...reply, sender: "other" })), false,
+  "another roster sender cannot use the viewer signature")
+  const opened = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64Bytes(reply.nonce, "nonce") }, masterKey, base64Bytes(reply.ct, "ct"))))
+  assert.deepEqual(opened, { type: "info", session: "s", parts: "full", machine_id: "m", expected_generation: genA })
+  const key = "m\u0000s\u0000transcript"
+  const waiters = {}
+  client.readWaiters = new Map([[key, waiters]])
+  const pending = { key, waiters }
+  const transcript = await client._publishCommand("m", "transcript", {
+    session: "s", machine_id: "m", expected_generation: genA, limit: 200,
+  }, "ctl", pending)
+  assert.equal(transcript.ch, "r/m")
+  assert.equal(pending.registered.ref.seq, 8)
+  assert.equal(client.pendingBySequence.get(8), pending.registered)
+  await assert.rejects(() => client._publishCommand("m", "info", {
+    session: "s", parts: "full", machine_id: "other", expected_generation: genA,
+  }, "ctl"), { code: "execution_target_required" })
+  await assert.rejects(() => client._publishCommand("m", "send", { session: "s" }, "ctl"),
+    { code: "cloud_read_only" })
+})
+
 test("leaving a detail releases s and t immediately", () => {
   const client = Object.create(StatusCloudClient.prototype)
   client.ready = true
@@ -129,6 +208,20 @@ test("only an s row received after exact detail open may supply its menu", () =>
   assert.equal(client.detailSnapshots.get("m\u0000s").menu.question, "new")
   client.closeDetail(destination)
   assert.equal(client.detailSnapshots.size, 0)
+})
+
+test("r/ capability is learned only from this socket's full machine descriptor", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.readContentCapabilities = new Map()
+  client.listeners = new Set()
+  client._emit({ type: "orchestrator", machine: "m", statusOnly: true,
+    data: { at: 1, machine: { read_content_v1: true } } })
+  assert.equal(client.readContentCapabilities.has("m"), false)
+  client._emit({ type: "orchestrator", machine: "m",
+    data: { at: 2, machine: { read_content_v1: true } } })
+  assert.deepEqual(client.readContentCapabilities.get("m"), { at: 2, supported: true })
+  client._emit({ type: "orchestrator", machine: "m", data: { at: 3, machine: {} } })
+  assert.deepEqual(client.readContentCapabilities.get("m"), { at: 3, supported: false })
 })
 
 test("an event gap requests one retained ss row and releases it after realign", async () => {

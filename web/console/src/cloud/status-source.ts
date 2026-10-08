@@ -9,6 +9,7 @@ import { record, STATUS_FRESH_MS, statusGapTarget, statusProjection } from "./st
 import type { CloudClientHandle } from "./copied.js"
 
 type StatusClient = CloudClientHandle & {
+  readContentCapabilities?: ReadonlyMap<string, unknown>
   detailSnapshots?: ReadonlyMap<string, unknown>
   openDetail?(destination: SessionDestination): void
   closeDetail?(destination: SessionDestination): void
@@ -27,6 +28,12 @@ function channels(destination: SessionDestination): string[] {
 }
 
 type Question = Extract<SessionContent, { kind: "ready" }>["question"]
+
+function supportsPinnedRead(client: StatusClient, machineID: string, nowMs = Date.now()): boolean {
+  const capability = record(client.readContentCapabilities?.get(machineID))
+  return capability?.supported === true && Number.isFinite(capability?.at) &&
+    Math.abs(nowMs - Number(capability!.at) * 1000) <= STATUS_FRESH_MS
+}
 
 /** Rich rows are visible only after an exact s/ subscription and must name the same execution. */
 export function pinnedQuestion(client: Pick<StatusClient, "detailSnapshots">, destination: SessionDestination,
@@ -123,6 +130,9 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       if (initialReading.kind === "unavailable") return { kind: "unavailable", reason: detailProblem(initialReading.reason) }
       const initial = destinationAvailable(destination, initialReading)
       if (initial !== "ready") return { kind: "unavailable", reason: initial === "waiting" ? "unknown" : initial }
+      // A signed but older machine can still publish ss/ and has no r/ reader.
+      // Refuse only its content, before the relay can mistake r/ for an offline machine.
+      if (!supportsPinnedRead(client, destination.machineID)) return { kind: "unavailable", reason: "old_version" }
       if (!client.infoForGeneration || !client.transcriptForGeneration || !client.subscribe || !client.unsubscribe ||
         !client.openDetail || !client.closeDetail) {
         return { kind: "unavailable", reason: "old_version" }

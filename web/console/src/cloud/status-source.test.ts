@@ -28,6 +28,7 @@ function clientFixture() {
   })
   const client = {
     statusSnapshots,
+    readContentCapabilities: new Map([[machineID, { at, supported: true }]]),
     detailSnapshots,
     openDetail() {},
     closeDetail() {},
@@ -132,6 +133,23 @@ test("a stale machine refuses detail before subscribing to content", async () =>
   assert.deepEqual(reading.kind === "unavailable" && reading.reason, "stale")
   const detail = await source.readDetail({ machineID, sessionID, executionGeneration }, new AbortController().signal)
   assert.deepEqual(detail, { kind: "unavailable", reason: "stale" })
+  assert.deepEqual(calls, [])
+})
+
+test("an old or stale r/ capability blocks only detail, not the ss/ list", async () => {
+  const { client, calls } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  const list = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(list.kind, "ready")
+  const descriptor = client.readContentCapabilities.get(machineID) as { at: number; supported?: boolean }
+  delete descriptor.supported
+  assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
+    { kind: "unavailable", reason: "old_version" })
+  descriptor.supported = true
+  descriptor.at -= 301
+  assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
+    { kind: "unavailable", reason: "old_version" })
   assert.deepEqual(calls, [])
 })
 

@@ -3,13 +3,19 @@
 // validation for any existing channel.
 import { CatalogCloudClient } from "./refusal-client.js"
 import { channelSegment, decodedChannelSegment } from "../legacy/js/net/client.js"
-import { base64Bytes, envelopeSigningBytes, importMasterSecret, validateEnvelope } from "../legacy/js/net/cloud-crypto.js"
+import { base64Bytes, bytesBase64, envelopeSigningBytes, importMasterSecret, sealEnvelope, validateEnvelope } from "../legacy/js/net/cloud-crypto.js"
 
 const decoder = new TextDecoder()
 const STATUS = /^ss\/([^/]+)\/([^/]+)$/u
+const GENERATION = /^[0-9a-f]{32}$/u
 
 function refused(code, message) {
   return Object.assign(new Error(message), { code })
+}
+
+function pinnedRead(type, body) {
+  return (type === "info" && body?.parts === "full" || type === "transcript") &&
+    body?.expected_generation !== undefined
 }
 
 /** Validate every envelope field with the frozen validator, then verify the original signed ss/ bytes. */
@@ -28,6 +34,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     this.statusSnapshots = new Map()
     this.statusSequences = new Map()
     this.statusRecoveries = new Map()
+    this.readContentCapabilities = new Map()
     this.openedDetails = new Set()
     this.detailSnapshots = new Map()
     this.pinnedInfoFlights = new Map()
@@ -37,6 +44,68 @@ export class StatusCloudClient extends CatalogCloudClient {
   // A status list must not cause the old, content-bearing sessions.snapshot
   // recovery. The ss/ inventory and row recovery is owned by its publisher.
   _recoverSessions() {}
+
+  /** The copied reader's local write flag predates the read-only r/ channel. */
+  _read(value, type, extra, answer, timeoutMs, readOptions) {
+    if (!pinnedRead(type, extra)) return super._read(value, type, extra, answer, timeoutMs, readOptions)
+    if (!GENERATION.test(extra.expected_generation) || typeof extra.machine_id !== "string" || !extra.machine_id) {
+      return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
+    }
+    // The copied _read checks allowWrites synchronously before registering its
+    // t/ waiter. It is a local guard for ctl/; this one narrow call publishes
+    // on r/ and is authorized separately by the relay and machine.
+    const previous = this.allowWrites
+    this.allowWrites = true
+    try { return super._read(value, type, extra, answer, timeoutMs, readOptions) }
+    finally { this.allowWrites = previous }
+  }
+
+  /** Only pinned content reads may leave on the read_transcript-authorized r/ channel. */
+  async _publishCommand(machine, type, body, envelopeClass, pending) {
+    if (!pinnedRead(type, body)) return super._publishCommand(machine, type, body, envelopeClass, pending)
+    if (envelopeClass !== "ctl" || body.machine_id !== machine || typeof body.session !== "string" || !body.session ||
+      !GENERATION.test(body.expected_generation)) {
+      throw refused("execution_target_required", "an exact Session execution is required")
+    }
+    const unsupported = this._unsupportedRefusal(machine, type)
+    if (unsupported) throw unsupported
+    const offline = this._offlineRefusal(machine)
+    if (offline) throw offline
+    if (!this.ready) throw this.closedFailure || refused("offline", "the Cloud connection is not ready")
+    if (!this.devicePrivateKey || !this.deviceID) throw refused("missing_device_key", "the viewer key is unavailable")
+    const pairing = await this._outboundMachinePairing(machine)
+    const sequence = await this.nextSequence(this.deviceID)
+    if (!Number.isSafeInteger(sequence) || sequence < 0) throw refused("bad_sequence", "invalid envelope sequence")
+    const envelope = await sealEnvelope({
+      ch: "ctl/" + channelSegment(machine), seq: sequence, ts: Date.now(), class: "ctl",
+      key_id: pairing.keyID, sender: this.deviceID,
+    }, JSON.stringify({ type, ...body }), pairing.masterKey, this.devicePrivateKey)
+    // The byte-frozen sealer validates only the older ctl/ vocabulary. Its
+    // ciphertext has no channel AAD, so name r/ and sign those exact wire bytes.
+    envelope.ch = "r/" + channelSegment(machine)
+    envelope.sig = bytesBase64(await crypto.subtle.sign({ name: "Ed25519" }, this.devicePrivateKey,
+      envelopeSigningBytes(envelope)))
+    const ref = { sender: this.deviceID, seq: sequence,
+      request: typeof body.request === "string" ? body.request : null }
+    if (pending) {
+      if (pending.waiters) {
+        if (this.readWaiters.get(pending.key) !== pending.waiters) {
+          throw refused("cloud_read_settled", "the read settled before it was sent")
+        }
+        pending.waiters.ref = ref
+      }
+      pending.registered = { ref, machine, key: pending.key || null, ack: pending.ack || null }
+      this.pendingBySequence.set(sequence, pending.registered)
+    }
+    this.trail.sealed({ sender: ref.sender, seq: sequence, request: ref.request, type, machine })
+    try { this._send({ type: "publish", envelope }) }
+    catch (error) {
+      this.pendingBySequence.delete(sequence)
+      if (pending?.waiters) pending.waiters.ref = null
+      throw this.closedFailure || error
+    }
+    return envelope
+  }
 
   openDetail(destination) {
     const channel = "s/" + channelSegment(destination.machineID) + "/" + channelSegment(destination.sessionID)
@@ -51,6 +120,12 @@ export class StatusCloudClient extends CatalogCloudClient {
   }
 
   _emit(event) {
+    if (event?.type === "orchestrator" && !event.statusOnly && event.machine) {
+      const payload = event.data
+      this.readContentCapabilities?.set(event.machine, {
+        at: payload?.at, supported: payload?.machine?.read_content_v1 === true,
+      })
+    }
     if (event?.type === "sessions" && event.identity?.machine && event.identity?.session) {
       const channel = "s/" + channelSegment(event.identity.machine) + "/" + channelSegment(event.identity.session)
       if (this.openedDetails?.has(channel)) {
