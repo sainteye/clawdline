@@ -1,0 +1,24 @@
+/* Keep the past-session list's shape visible while its fresh read is pending. */
+.sheet #start-say.loading { display: flex; align-items: center; gap: 8px; }
+.sheet #start-say.loading::before {
+    content: ""; flex: 0 0 auto; width: 12px; height: 12px;
+    border: 2px solid var(--line-hi); border-top-color: var(--accent);
+    border-radius: 50%; animation: start-past-spin 800ms linear infinite;
+}
+.sheet .start-past-skeleton {
+    display: flex; align-items: center; justify-content: space-between; gap: 18px;
+    min-height: 44px; padding: 9px 10px; margin-bottom: 2px;
+}
+.sheet .start-past-skeleton span {
+    display: block; height: 11px; border-radius: 5px; background: var(--line);
+    animation: start-past-pulse 1.2s ease-in-out infinite alternate;
+}
+.sheet .start-past-skeleton .title { width: 64%; }
+.sheet .start-past-skeleton .time { width: 15%; min-width: 30px; height: 9px; opacity: .7; }
+.sheet .start-past-skeleton:nth-child(2) .title { width: 48%; }
+.sheet .start-past-skeleton:nth-child(3) .title { width: 72%; }
+@keyframes start-past-spin { to { transform: rotate(360deg); } }
+@keyframes start-past-pulse { to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) {
+    .sheet #start-say.loading::before, .sheet .start-past-skeleton span { animation: none; }
+}

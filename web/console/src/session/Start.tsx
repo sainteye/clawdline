@@ -5,6 +5,7 @@ import { loadPersonas, personaById, personasNow, rememberPersona, rememberTeam, 
 import { drawRoleRow } from "./RoleRow.js"
 import "./persona.css"
 import "./machine-start.css"
+import "./start-loading.css"
 import { hostedConsole, listTerminals, openTerminal, readTerminalMachine, TerminalRequestError } from "../pages/terminal/api.js"
 import { firstSize } from "../pages/terminal/TerminalProjectList.js"
 import { openNewTerminal, openTerminalPage } from "../pages/terminal/navigate.js"
@@ -402,6 +403,7 @@ function edge(): void {
 function draw(): void {
   L.setStartSpin(null)
   if (sheetHidden()) return
+  el("start-say").classList.remove("loading")
   const list = el("start-list")
   const box = el<HTMLInputElement>("start-filter")
   const machineAction = el<HTMLButtonElement>("start-machine-action")
@@ -527,6 +529,8 @@ function drawPast(list: HTMLElement, box: HTMLInputElement): void {
             ? T().webResumeEmpty
             : T().webResumePick,
   )
+  const loadingPast = reading && !pasts
+  el("start-say").classList.toggle("loading", loadingPast)
 
   box.hidden = !(pasts && pasts.length > 1)
   if (box.hidden && box.value) {
@@ -535,6 +539,17 @@ function drawPast(list: HTMLElement, box: HTMLInputElement): void {
   }
 
   list.innerHTML = ""
+  if (loadingPast) {
+    for (let i = 0; i < 3; i += 1) {
+      const row = document.createElement("li")
+      row.className = "start-past-skeleton"
+      row.setAttribute("aria-hidden", "true")
+      row.innerHTML = '<span class="title"></span><span class="time"></span>'
+      list.appendChild(row)
+    }
+    edge()
+    return
+  }
   const all = matchingPast()
   all.forEach((r) => {
     const li = document.createElement("li")
