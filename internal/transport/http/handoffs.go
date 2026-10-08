@@ -85,6 +85,7 @@ func (s *Server) rootAssignmentsRoute(w http.ResponseWriter, r *http.Request) {
 			writeBrokerError(w, err)
 			return
 		}
+		s.broker.ProjectRootCleanup(r.Context(), list)
 		out := contract.BrokerRootAssignmentList{RootAssignments: []contract.BrokerRootAssignment{}, At: time.Now().Unix()}
 		for _, a := range list {
 			out.RootAssignments = append(out.RootAssignments, wireAssignment(a))
@@ -109,6 +110,9 @@ func (s *Server) rootAssignmentsRoute(w http.ResponseWriter, r *http.Request) {
 			writeBrokerError(w, err)
 			return
 		}
+		projected := []orchestrator.RootAssignment{a}
+		s.broker.ProjectRootCleanup(r.Context(), projected)
+		a = projected[0]
 		writeJSON(w, contract.BrokerRootAssignmentEnvelope{RootAssignment: wireAssignment(a)})
 	default:
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed",

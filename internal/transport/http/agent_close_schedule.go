@@ -12,6 +12,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // A Session's own close, carried out when its turn ends.
@@ -135,8 +136,9 @@ func onlyThisTurn(audit agentCloseAudit) bool {
 // supplies its own, a test its fakes.
 type closeSweep struct {
 	audit  func(ctx context.Context, caller, terminal string) (agentCloseAudit, *agentCloseRefusal)
-	close  func(ctx context.Context, sc scheduledClose) error
+	close  func(ctx context.Context, sc scheduledClose) (session.Session, error)
 	record func(ctx context.Context, kind, terminal string, payload map[string]any)
+	closed func(ctx context.Context, audit agentCloseAudit, closed session.Session) error
 }
 
 // sweep carries out every waiting request whose turn has ended, keeps the
@@ -174,10 +176,17 @@ func (c *closeSchedule) sweep(ctx context.Context, do closeSweep) {
 			}
 		case audit.State == string(contract.CloseabilityStateSafe):
 			c.settle(sc)
-			if err := do.close(ctx, sc); err != nil {
+			closed, err := do.close(ctx, sc)
+			if err != nil {
 				do.record(ctx, "session.close_schedule_dropped", sc.Terminal,
 					map[string]any{"why": "close_failed", "conversation": sc.Caller, "error": err.Error()})
 				continue
+			}
+			if do.closed != nil {
+				if err := do.closed(ctx, audit, closed); err != nil {
+					do.record(ctx, "session.root_close_receipt_failed", sc.Terminal,
+						map[string]any{"conversation": sc.Caller, "error": err.Error()})
+				}
 			}
 			do.record(ctx, "session.closed", sc.Terminal,
 				map[string]any{"conversation": sc.Caller, "scheduled_at": sc.At.UTC().Format(time.RFC3339)})
@@ -194,13 +203,15 @@ func (s *Server) scheduledCloseSweep(ctx context.Context) {
 	}
 	s.closes.sweep(ctx, closeSweep{
 		audit: s.agentAuditClose,
-		close: func(ctx context.Context, sc scheduledClose) error {
+		close: func(ctx context.Context, sc scheduledClose) (session.Session, error) {
 			ctx, more := context.WithTimeout(ctx, closeBudget)
 			defer more()
-			_, err := s.closeActionsAs(sc.Actor).Close(ctx, sc.Terminal, false)
-			return err
+			return s.closeActionsAs(sc.Actor).Close(ctx, sc.Terminal, false)
 		},
 		record: s.recordCloseEvent,
+		closed: func(ctx context.Context, audit agentCloseAudit, closed session.Session) error {
+			return s.recordAuditedRootClosure(ctx, audit, closed, "scheduled")
+		},
 	})
 }
 

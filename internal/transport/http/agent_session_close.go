@@ -36,7 +36,9 @@ type agentCloseAudit struct {
 	Version    string                 `json:"version"`
 	Reasons    []contract.CloseReason `json:"reasons"`
 	// Authority is why this caller may close it: self, or epic_owner.
-	Authority string `json:"authority"`
+	Authority      string          `json:"authority"`
+	RootAssignment string          `json:"-"`
+	Target         session.Session `json:"-"`
 }
 
 // agentCloseRefusal is a refusal before anything was closed.
@@ -107,8 +109,13 @@ func (s *Server) agentCloseSession(w http.ResponseWriter, r *http.Request, termi
 	}
 	ctx, more := context.WithTimeout(r.Context(), closeBudget)
 	defer more()
-	if _, err := s.closeActions(r).Close(ctx, terminal, false); err != nil {
+	closed, err := s.closeActions(r).Close(ctx, terminal, false)
+	if err != nil {
 		writeActionRefusal(w, err)
+		return
+	}
+	if err := s.recordAuditedRootClosure(ctx, audit, closed, "close"); err != nil {
+		writeRootCloseReceiptRefusal(w)
 		return
 	}
 	writeJSON(w, contract.ActionResult{OK: true, ID: terminal, Action: "closed"})
@@ -189,9 +196,13 @@ func (s *Server) agentAuditClose(ctx context.Context, caller, terminal string) (
 	reasons := append([]contract.CloseReason{}, c.Reasons...)
 	reasons = append(reasons, s.unacknowledgedCloseReasons(ctx, target.ConversationID)...)
 	reasons = append(reasons, s.childTaskCloseReasons(ctx, target.ConversationID)...)
+	rootAssignment := ""
+	if row.RootAssignment != nil {
+		rootAssignment = row.RootAssignment.ID
+	}
 	return agentCloseAudit{
 		TerminalID: terminal, State: string(agentCloseState(c.State, reasons)), Version: c.Version,
-		Reasons: reasons, Authority: authority,
+		Reasons: reasons, Authority: authority, RootAssignment: rootAssignment, Target: target,
 	}, nil
 }
 

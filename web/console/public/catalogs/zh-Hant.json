@@ -649,6 +649,7 @@
   "http.7d7dd627e380a20e": "回合報告須在這台機器上開啟，不透過 Clawdline Cloud。",
   "http.7dec3cd3b4ca3f79": "Agent 只能完成自身 Session 的待辦事項。",
   "http.7e2c5d9ffaec4584": "派任需要協調器權杖。",
+  "http.7e63fd158afd2797": "Session 已關閉，但無法記錄其 Root Assignment 的關閉憑據。",
   "http.7e838461cb86f5ba": "該產物不是 PNG 或 JPEG，無法透過此連線傳送。",
   "http.7f274d7c058b1244": "這台機器在十分鐘內已寫入十次程式碼片段。",
   "http.7f3611c4961fe4b4": "override 只能授權該升級處理目前凍結的候選版本。",

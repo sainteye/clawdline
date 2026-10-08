@@ -27,11 +27,42 @@ dry-run guard at the integration boundary; see [worktrees.md](worktrees.md).
 
 The Root Assignment's `briefed` state means that the assignment line reached
 its terminal. It does not mean the Root completed, left, or released any file.
-The broker therefore must not infer that a Root Assignment directory or a
-cache inside it is disposable from `briefed`. A Root-owned cleanup needs a
-separate completion receipt, an absent owner reading, a named scratch path,
-and preservation rules for files outside that scratch path. Until those exist,
-keep Root Assignment data whose purpose or owner is unknown.
+The Session close, archive, and deferred self-close paths now write a distinct
+`root_assignment.closed` receipt into the assignment row and event log after
+the exact executor closes. The close route's Root identity comes from the
+fresh Session projection, which binds the terminal, assistant and process
+launch interval; the stored assignment is checked again for its terminal,
+backend and assistant. A replay leaves the first receipt unchanged. The
+receipt names the conversation, method, timestamp and whether the close was
+forced. A forced close records closure but is not completion evidence. A
+refused close or a self-close merely scheduled for later writes no receipt.
+If closing succeeds but storing this receipt fails, the response says so and
+the Root remains unproved for cleanup.
+
+The supported close paths and their records are:
+
+| Path | Close record | Root receipt |
+| --- | --- | --- |
+| Person's Session close | `app.Actions.ClosePinned` attempts `session.closed` after terminal close; that event writer logs a store failure but does not fail the close | `root_assignment.closed` in the assignment transaction after the verified executor closes; `forced` reflects the request |
+| Person's archive | The same close event, then an archive row; `archive_not_recorded` can follow a successful close | The Root receipt is still attempted for that successful close, including when the archive row fails |
+| Agent's immediate self or Epic-owner close | The same close event after a safe close | A safe Root receipt only when the fresh Session projection proves the exact Root executor |
+| Agent's deferred self-close | `session.close_scheduled` is logged when queued; the queue itself is in memory. The sweep repeats the close audit, calls the same close action and logs `session.closed` after success | A safe Root receipt is written only after the sweep actually closes the Session; a dropped schedule has none |
+
+The scheduled-close event writer also logs store errors rather than claiming
+durability. The assignment row and its `root_assignment.closed` event share a
+transaction, so that separate receipt is the durable Root close fact.
+
+GET `/v1/orchestrator/root-assignments` and its single-assignment read carry a
+fresh read-only cleanup projection. It separately reports safe completion,
+owner present/absent/unknown, scratch registration, and preservation. Owner
+absence requires a complete reading from the executor's terminal source with
+another terminal seen, plus a readable process CWD table with no process
+inside the project or brief directory. This is conservative for shared
+projects. There is no broker-registered, separately owned Root scratch path,
+and the Root may hold unlanded bytes in a worktree or other files; scratch is
+`unregistered`, preservation is `unverified`, and eligibility is always false.
+The `root-assignments/<id>` directory holds the brief and sometimes a handoff
+pack, so this change never deletes that directory, a Root worktree, or a cache.
 
 ## Go build caches
 
@@ -87,10 +118,10 @@ These are implementation gaps, not permissions to delete existing data:
    path, add an authenticated exact-path registration and an owner completion
    receipt before reclaiming it. Manually created paths remain outside this
    broker's cleanup authority.
-2. Tie Root completion to its Session's actual close or another durable
-   completion receipt. Keep `briefed` as a launch state. Reclaim only its
-   separately registered scratch after the owner is absent and preservation
-   obligations have been resolved.
+2. If Root sessions gain broker-owned rebuildable scratch, register its exact
+   path at creation. Only then consider removal after safe close, a fresh
+   owner-absent reading, and independent proof that worktree or other unlanded
+   bytes are preserved. A forced or uncertain close is not that proof.
 3. The machine dashboard now reads filesystem free space and grouped standing
    reclaim decisions through `GET /v1/machine/usage`, including failure counts
    and fixed reason codes. It does not show private paths or task identifiers.
