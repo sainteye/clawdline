@@ -241,13 +241,13 @@ export function PeerHandoffPanel({ context, machines, source, current }: {
 
   return <section className="cloud-peer-panel" aria-label={nextWord("cloudPeerHeading")}>
     <h2>{nextWord("cloudPeerHeading")}</h2>
-    <p>{nextWord("cloudPeerTarget", { machine: context.machine.name, session: target.sessionID,
+    <p>{nextWord("cloudPeerTarget", { machine: `${context.machine.name} (${target.machineID})`, session: target.sessionID,
       generation: target.executionGeneration })}</p>
     <label>{nextWord("cloudPeerSource")}
       <select value={selected} disabled={busy} onChange={(event) => setSelected(event.target.value)}>
         <option value="">{nextWord("cloudPeerChooseSource")}</option>
         {sources.map((entry) => <option key={JSON.stringify(entry)} value={JSON.stringify(entry)}>
-          {machines.find((machine) => machine.id === entry.machineID)?.name ?? entry.machineID} / {entry.sessionID} / {entry.executionGeneration}
+          {machines.find((machine) => machine.id === entry.machineID)?.name ?? entry.machineID} ({entry.machineID}) / {entry.sessionID} / {entry.executionGeneration}
         </option>)}
       </select>
     </label>

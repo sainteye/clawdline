@@ -10,12 +10,12 @@ export type AttentionReading =
 
 const ui = {
   en: { loading: "Reading machine status…", error: "Machine status could not be read.", retry: "Retry",
-    machine: "Machine", platform: "Platform", state: "Session state", freshness: "Freshness", kind: "Attention type",
+    machine: "Machine", machineID: "Machine ID", sessionID: "Session ID", platform: "Platform", state: "Session state", freshness: "Freshness", kind: "Attention type",
     all: "All", known: "known items", unknown: "machines with incomplete status", empty: "No matching known items.",
     report: "Show manager report", hide: "Hide manager report", copy: "Copy report", copying: "Copying…", copied: "Report copied.", copyFailed: "Could not copy the report. Select the text below to copy it.",
     open: "Open Session", observed: "Observed", generation: "Snapshot generation", gap: "Gap", next: "Next step", unavailable: "Unavailable", source: "Source", coverage: "Machine coverage" },
   "zh-Hant-TW": { loading: "正在讀取機器狀態…", error: "無法讀取機器狀態。", retry: "重試",
-    machine: "機器", platform: "平台", state: "Session 狀態", freshness: "新鮮度", kind: "注意類別",
+    machine: "機器", machineID: "機器 ID", sessionID: "Session ID", platform: "平台", state: "Session 狀態", freshness: "新鮮度", kind: "注意類別",
     all: "全部", known: "個已知待處理項目", unknown: "台機器資料不完整", empty: "沒有符合篩選條件的已知項目。",
     report: "顯示管理者報告", hide: "隱藏管理者報告", copy: "複製報告", copying: "複製中…", copied: "報告已複製。", copyFailed: "無法複製報告；可選取下方文字複製。",
     open: "開啟 Session", observed: "觀察時間", generation: "快照世代", gap: "資料缺口", next: "下一步", unavailable: "無法使用", source: "來源", coverage: "機器涵蓋範圍" },
@@ -56,13 +56,13 @@ export function AttentionOverview({ reading, locale, onOpen, onRetry }: {
       {!overview.complete && <p className="attention-gap" role="note">{w.incomplete}</p>}
       <details className="attention-coverage"><summary>{t.coverage} · {overview.machines.length}</summary>
         <ul>{overview.machines.map((machine) => <li key={machine.machine_id}>
-          <strong>{machine.name}</strong> · {machine.platform} · {freshnessWord(machine, locale)}
+          <strong>{machine.name}</strong> · <code>{machine.machine_id}</code> · {machine.platform} · {freshnessWord(machine, locale)}
           <small>{t.source}: ss/{machine.machine_id} · {t.observed}: {machine.observedAt === null ? w.unknown : new Date(machine.observedAt).toLocaleString(locale)} · {t.generation}: {machine.snapshotGeneration ?? w.unknown}</small>
           <small>{w.completeness}: {machine.completeness === "complete" ? w.complete : machine.completeness === "partial" ? w.partial : w.unknownComplete} · {t.gap}: {machineGap(machine, locale)}</small>
         </li>)}</ul>
       </details>
       <div className="attention-filters">
-        <label>{t.machine}{options(overview.machines.map((m) => m.machine_id), filter.machine, (machine) => setFilter((f) => ({ ...f, machine })), (id) => overview.machines.find((m) => m.machine_id === id)?.name ?? id)}</label>
+        <label>{t.machine}{options(overview.machines.map((m) => m.machine_id), filter.machine, (machine) => setFilter((f) => ({ ...f, machine })), (id) => `${overview.machines.find((m) => m.machine_id === id)?.name ?? id} · ${id}`)}</label>
         <label>{t.platform}{options([...new Set(overview.machines.map((m) => m.platform))], filter.platform, (platform) => setFilter((f) => ({ ...f, platform })), (value) => value)}</label>
         <label>{t.state}{options(states, filter.state, (state) => setFilter((f) => ({ ...f, state: state as SessionState })), (value) => value)}</label>
         <label>{t.freshness}{options(freshnesses, filter.freshness, (freshness) => setFilter((f) => ({ ...f, freshness: freshness as Freshness })), (value) => value === "stale" ? w.stale : value === "offline" ? w.offline : value === "unknown" ? w.unknownFresh : w.current)}</label>
@@ -74,6 +74,7 @@ export function AttentionOverview({ reading, locale, onOpen, onRetry }: {
           <strong>{attentionKindWord(entry.kind, locale)}</strong>
           <span>{entry.machine.name} · {entry.machine.platform}</span>
           {entry.session && <span>{entry.session.title || entry.session.target.session_id}</span>}
+          <small>{t.machineID}: {entry.machine.machine_id}{entry.session && ` · ${t.sessionID}: ${entry.session.target.session_id}`}</small>
           <small>{t.source}: ss/{entry.machine.machine_id} · {t.observed}: {entry.machine.observedAt === null ? w.unknown : new Date(entry.machine.observedAt).toLocaleString(locale)} · {t.generation}: {entry.machine.snapshotGeneration ?? w.unknown} · {entry.evidence === "retained" ? w.stale : entry.evidence === "unknown" ? w.unknownFresh : freshnessWord(entry.machine, locale)}</small>
           <small>{t.gap}: {machineGap(entry.machine, locale)} · {t.next}: {nextStep(entry.machine, entry.session, locale)}</small>
           {entry.session && onOpen && entry.machine.access === "readable" && entry.evidence === "current" && <button type="button" onClick={() => onOpen(entry.session!.target)}>{t.open}</button>}
