@@ -51,6 +51,18 @@ CREATE TABLE IF NOT EXISTS broker_reclaim (
   last_at  INTEGER NOT NULL,
   PRIMARY KEY (task_id, subject)
 );
+CREATE TABLE IF NOT EXISTS broker_go_caches (
+  path          TEXT PRIMARY KEY,
+  owner_kind    TEXT NOT NULL,
+  owner_id      TEXT NOT NULL,
+  purpose       TEXT NOT NULL,
+  rebuildable   INTEGER NOT NULL CHECK (rebuildable IN (0, 1)),
+  created_at    INTEGER NOT NULL,
+  last_outcome  TEXT NOT NULL DEFAULT '',
+  last_reason   TEXT NOT NULL DEFAULT '',
+  last_at       INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS broker_go_caches_owner ON broker_go_caches(owner_kind, owner_id);
 `
 
 func openHandover(db *sql.DB) error {

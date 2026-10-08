@@ -26,10 +26,28 @@ func (b *Broker) prepareGateReadonly(r Record) error {
 	if r.Worktree == nil || !r.Worktree.Detached {
 		return fmt.Errorf("the checker checkout is not detached")
 	}
+	if filepath.Clean(r.Dir) != filepath.Clean(b.Tasks.Path(r.ID)) ||
+		!ownedPath(b.Tasks.Dir, r.Dir, r.ID) {
+		return fmt.Errorf("the checker task directory is not broker-owned")
+	}
 	scratch := b.gateScratch(r.ID)
+	work := filepath.Join(r.Dir, "work")
+	if err := os.Mkdir(work, 0o700); err != nil && !os.IsExist(err) {
+		return err
+	}
+	if !ownedPath(r.Dir, work, "work") {
+		return fmt.Errorf("the checker scratch is not broker-owned")
+	}
 	for _, path := range []string{scratch.Build, scratch.Cache, scratch.Temp} {
-		if err := os.MkdirAll(path, 0o700); err != nil {
+		if err := os.Mkdir(path, 0o700); err != nil && !os.IsExist(err) {
 			return err
+		}
+		if !ownedPath(work, path, filepath.Base(path)) {
+			return fmt.Errorf("the checker scratch path is not broker-owned: %s", path)
+		}
+		info, err := os.Lstat(path)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("the checker scratch path is not a directory: %s", path)
 		}
 		if err := os.Chmod(path, 0o700); err != nil {
 			return err
