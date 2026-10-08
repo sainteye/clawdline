@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { nextWord } from "../next-strings.js"
 import {
   PinnedSessionActions, problemCode, receiptPath, receiptStages, watchActionAvailability, type Action, type ActionContext,
@@ -24,7 +24,7 @@ const problems: Record<ActionProblem, "cloudActionOffline" | "cloudActionStale" 
 }
 
 function targetLabel(context: ActionContext): string {
-  return nextWord("cloudActionTarget", { machine: context.machine.name, session: context.destination.sessionID,
+  return nextWord("cloudActionTarget", { machine: `${context.machine.name} (${context.destination.machineID})`, session: context.destination.sessionID,
     generation: context.destination.executionGeneration })
 }
 
@@ -42,6 +42,8 @@ export function PinnedSessionActionPanel({ context, source, current }: {
   const [message, setMessage] = useState("")
   const [confirm, setConfirm] = useState<Action | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const confirmDialog = useRef<HTMLDialogElement>(null)
+  const confirmTrigger = useRef<HTMLButtonElement | null>(null)
   const destination = context.destination
   const question = context.content?.kind === "ready" ? context.content.question : null
   const key = JSON.stringify([destination.machineID, destination.sessionID, destination.executionGeneration])
@@ -56,7 +58,12 @@ export function PinnedSessionActionPanel({ context, source, current }: {
   }, [service, key, context.content?.kind, question?.fingerprint, question?.observedAt,
     context.machine.freshness, context.row.observedAt])
 
-  useLayoutEffect(() => { if (confirm) cancelRef.current?.focus({ preventScroll: true }) }, [confirm])
+  useEffect(() => {
+    if (!confirm) return
+    confirmDialog.current?.showModal()
+    cancelRef.current?.focus({ preventScroll: true })
+    return () => { confirmDialog.current?.close(); confirmTrigger.current?.focus({ preventScroll: true }) }
+  }, [confirm])
 
   async function run(action: Action, input: ActionInput = {}) {
     if (busy) return
@@ -114,17 +121,20 @@ export function PinnedSessionActionPanel({ context, source, current }: {
     </div>
     <div className="cloud-pinned-risk">
       {(["interrupt", "end"] as const).map((action) => <div key={action}>
-        <button type="button" disabled={disabled(action)} onClick={() => setConfirm(action)}>{nextWord(labels[action])}</button>
+        <button type="button" disabled={disabled(action)} onClick={(event) => {
+          confirmTrigger.current = event.currentTarget
+          setConfirm(action)
+        }}>{nextWord(labels[action])}</button>
         {reason(action) && <p role="status" data-code={availability[action]}>{reason(action)}</p>}
       </div>)}
     </div>
-    {confirm && <div role="alertdialog" aria-modal="true" aria-label={nextWord("cloudActionConfirm")}
-      onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setConfirm(null) } }}>
+    {confirm && <dialog ref={confirmDialog} role="alertdialog" aria-modal="true" aria-label={nextWord("cloudActionConfirm")}
+      onCancel={(event) => { event.preventDefault(); setConfirm(null) }}>
       <p>{nextWord("cloudActionConfirmQuestion", { action: nextWord(labels[confirm]) })}</p>
       <p>{targetLabel(context)}</p>
       <button type="button" ref={cancelRef} onClick={() => setConfirm(null)}>{nextWord("cloudActionCancel")}</button>
       <button type="button" onClick={() => void run(confirm)}>{nextWord("cloudActionConfirm")}</button>
-    </div>}
+    </dialog>}
     {error && <p role="alert" data-code={error}>{nextWord("cloudActionFailure", { code: error })}</p>}
     <div className="cloud-pinned-receipts" aria-live="polite">
       {actions.map((action) => records[action] && <article key={action}>

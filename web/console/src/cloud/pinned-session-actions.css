@@ -4,7 +4,9 @@
 .cloud-pinned-actions button { min-height: 44px; }
 .cloud-pinned-target, .cloud-pinned-receipts p { overflow-wrap: anywhere; }
 .cloud-pinned-risk { display: flex; flex-wrap: wrap; gap: 1rem; }
-.cloud-pinned-actions [role="alertdialog"] { border: 1px solid currentColor; border-radius: .5rem; padding: 1rem; }
+.cloud-pinned-actions [role="alertdialog"] { width: min(100% - 32px, 520px); color: var(--ink); background: var(--card);
+  border: 1px solid currentColor; border-radius: .5rem; padding: 1rem; overflow-wrap: anywhere; }
+.cloud-pinned-actions [role="alertdialog"]::backdrop { background: rgba(0, 0, 0, .72); }
 .cloud-pinned-receipts { display: grid; gap: 1rem; }
 .cloud-pinned-receipts article { border-top: 1px solid currentColor; padding-top: 1rem; }
 @media (max-width: 600px) { .cloud-pinned-risk, .cloud-pinned-risk > div { display: grid; width: 100%; } }

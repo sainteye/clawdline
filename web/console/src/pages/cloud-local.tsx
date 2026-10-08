@@ -85,6 +85,10 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
   const [olderPages, setOlderPages] = useState<{ target: string; pages: OlderPage[] } | null>(null)
   const [olderBusy, setOlderBusy] = useState(false)
   const olderController = useRef<AbortController | null>(null)
+  const authorizationEpoch = useRef(0)
+  const detailEpoch = useRef(0)
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
   const [problem, setProblem] = useState("")
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
@@ -92,25 +96,50 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
   const [lastAction, setLastAction] = useState("send")
   const [receipt, setReceipt] = useState<Receipt | null>(null)
 
+  const clearSelectedContent = useCallback(() => {
+    detailEpoch.current++
+    olderController.current?.abort()
+    olderController.current = null
+    setSelected(null); setDetail(null)
+    setOlderPages(null); setOlderBusy(false); setReceipt(null); setRequest("")
+  }, [])
+  const clearAuthorizedContent = useCallback(() => {
+    authorizationEpoch.current++
+    clearSelectedContent()
+    setMachines([]); setProjections({})
+  }, [clearSelectedContent])
+
   const refresh = useCallback(async () => {
     setBusy(true)
     setProblem("")
     try {
       const state = await localViewerFetch<{ enabled: boolean; authorized: boolean }>("/v1/cloud/viewer/status")
       setEnabled(state.enabled); setAuthorized(state.authorized)
-      if (!state.enabled || !state.authorized) { setMachines([]); setProjections({}); return }
+      if (!state.enabled || !state.authorized) { clearAuthorizedContent(); return }
+      const epoch = authorizationEpoch.current
       const listing = await localViewerFetch<Machine[]>("/v1/cloud/viewer/machines")
+      if (epoch !== authorizationEpoch.current) return
       setMachines(listing)
       const next: Record<string, Projection> = {}
       await Promise.all(listing.map(async (machine) => {
         if (machine.pairing !== "paired") { next[machine.id] = { kind: "unavailable", reason: machine.pairing }; return }
         try { next[machine.id] = await localViewerFetch<Projection>("/v1/cloud/viewer/sessions?machine=" + encodeURIComponent(machine.id)) }
-        catch (error) { next[machine.id] = { kind: "unavailable", reason: String(error instanceof Error ? error.message : error) } }
+        catch (error) {
+          const reason = String(error instanceof Error ? error.message : error)
+          next[machine.id] = { kind: "unavailable", reason }
+          if ((reason === "forbidden" || reason === "no_permission" || reason === "viewer_revoked") &&
+            selectedRef.current?.machine_id === machine.id) clearSelectedContent()
+        }
       }))
-      setProjections(next)
-    } catch (error) { setProblem(String(error instanceof Error ? error.message : error)) }
+      if (epoch === authorizationEpoch.current) setProjections(next)
+    } catch (error) {
+      if (error instanceof Error && (error.message === "forbidden" || error.message === "viewer_revoked")) {
+        setAuthorized(false); clearAuthorizedContent()
+      }
+      setProblem(String(error instanceof Error ? error.message : error))
+    }
     finally { setBusy(false) }
-  }, [])
+  }, [clearAuthorizedContent, clearSelectedContent])
 
   useEffect(() => { if (shown) void refresh() }, [shown, refresh])
   useEffect(() => {
@@ -128,17 +157,25 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
     olderController.current = null
     setOlderPages(null)
     setOlderBusy(false)
-    if (!shown || !selected) { setDetail(null); return }
+    if (!shown || !selected || enabled !== true || !authorized) { setDetail(null); return }
     const controller = new AbortController()
+    const epoch = authorizationEpoch.current
+    const selectedEpoch = detailEpoch.current
     setDetail(null)
     setReceipt(null)
     try { setRequest(localStorage.getItem(receiptStorage(selected, lastAction)) || "") }
     catch { setRequest("") }
     void localViewerFetch<Detail>("/v1/cloud/viewer/detail?" + query(selected), controller.signal)
-      .then((result) => { if (!controller.signal.aborted && same(result.destination, selected)) setDetail(result) })
-      .catch((error) => { if (!controller.signal.aborted) setProblem(String(error instanceof Error ? error.message : error)) })
+      .then((result) => { if (!controller.signal.aborted && epoch === authorizationEpoch.current &&
+        selectedEpoch === detailEpoch.current &&
+        same(result.destination, selected)) setDetail(result) })
+      .catch((error) => { if (!controller.signal.aborted) {
+        const reason = String(error instanceof Error ? error.message : error)
+        if (reason === "forbidden" || reason === "no_permission" || reason === "viewer_revoked") clearSelectedContent()
+        setProblem(reason)
+      } })
     return () => { controller.abort(); olderController.current?.abort() }
-  }, [shown, selected])
+  }, [shown, selected, enabled, authorized, clearSelectedContent])
 
   const current = selected ? projections[selected.machine_id]?.rows?.find((row) => same(row.destination, selected)) : null
   const canAct = !!selected && !!current && current.freshness === "current" && !busy
@@ -161,7 +198,11 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
         setOlderPages((previous) => ({ target: key, pages: [...(previous?.target === key ? previous.pages : []), page] }))
       }
     } catch (error) {
-      if (!controller.signal.aborted) setProblem(String(error instanceof Error ? error.message : error))
+      if (!controller.signal.aborted) {
+        const reason = String(error instanceof Error ? error.message : error)
+        if (reason === "forbidden" || reason === "no_permission" || reason === "viewer_revoked") clearSelectedContent()
+        setProblem(reason)
+      }
     } finally {
       if (olderController.current === controller) { olderController.current = null; setOlderBusy(false) }
     }
@@ -229,7 +270,7 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
           </div>
         })}
       </div>}
-      {selected && <div className="block cloud-local-detail">
+      {enabled && authorized && selected && <div className="block cloud-local-detail">
         <button className="chip" type="button" onClick={() => { location.hash = "#page=cloud"; setSelected(null); setDetail(null) }}>{t.back}</button>
         <h3>{selected.machine_id} / {selected.session_id}</h3><small>{selected.execution_generation}</small>
         {!current && <p role="alert">{t.changed}</p>}

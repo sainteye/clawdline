@@ -48,6 +48,8 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
   const destinationRef = useRef(destination)
   const detailRef = useRef(detail)
   const olderAbort = useRef<AbortController | null>(null)
+  const heading = useRef<HTMLHeadingElement | null>(null)
+  const returnFocus = useRef<HTMLElement | null>(null)
   destinationRef.current = destination
   detailRef.current = detail
 
@@ -60,6 +62,12 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
       window.removeEventListener("popstate", route)
     }
   }, [])
+
+  useEffect(() => {
+    if (!destination) return
+    const frame = window.requestAnimationFrame(() => heading.current?.focus())
+    return () => window.cancelAnimationFrame(frame)
+  }, [destination?.machineID, destination?.sessionID, destination?.executionGeneration])
 
   useEffect(() => {
     if (!source) {
@@ -209,6 +217,11 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     olderAbort.current?.abort()
     history.replaceState(history.state, "", location.pathname + location.search)
     setDestination(null)
+    window.requestAnimationFrame(() => {
+      if (returnFocus.current?.isConnected) returnFocus.current.focus()
+      else heading.current?.focus()
+      returnFocus.current = null
+    })
   }
   const loadOlder = () => {
     const current = detailRef.current
@@ -242,11 +255,13 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
   return <div className="cloud-all" data-embedded={embedded ? "true" : undefined} data-step="all-sessions">
     <header className="cloud-all-header">
       {(destination || onClose) && <button type="button" onClick={destination ? closeDetail : onClose}>{nextWord("cloudAllBack")}</button>}
-      <h1>{destination ? nextWord("cloudAllDetail") : machines.length === 1 ? nextWord("cloudSingleSessions") : nextWord("cloudAllMachines")}</h1>
+      <h1 ref={heading} tabIndex={-1}>{destination ? nextWord("cloudAllDetail") : machines.length === 1 ? nextWord("cloudSingleSessions") : nextWord("cloudAllMachines")}</h1>
     </header>
     {destination ? <main className="cloud-all-main" aria-live="polite">
       <dl className="cloud-all-target">
         <div><dt>{nextWord("cloudAllMachine")}</dt><dd>{named?.name ?? destination.machineID}</dd></div>
+        <div><dt>{nextWord("cloudAllMachineID")}</dt><dd className="cloud-all-id">{destination.machineID}</dd></div>
+        <div><dt>{nextWord("cloudAllSessionID")}</dt><dd className="cloud-all-id">{destination.sessionID}</dd></div>
         <div><dt>{nextWord("cloudAllPlatform")}</dt><dd>{named?.platform ?? nextWord("cloudAllUnknown")}</dd></div>
         <div><dt>{nextWord("cloudAllGeneration")}</dt><dd>{destination.executionGeneration}</dd></div>
         <div><dt>{nextWord("cloudAllDataTime")}</dt><dd>{row ? timeWord(row.observedAt) : nextWord("cloudAllUnknown")}</dd></div>
@@ -303,13 +318,14 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
         onOpen={(target) => {
           const selected = { machineID: target.machine_id, sessionID: target.session_id,
             executionGeneration: target.execution_generation }
+          returnFocus.current = null
           location.hash = destinationFragment(selected)
           setDestination(selected)
         }}
       />}
       <div className="cloud-all-filters">
         <label>{nextWord("cloudAllMachine")}<select value={filters.machine} onChange={(event) => setFilters({ ...filters, machine: event.target.value })}>
-          <option value="">{nextWord("cloudAllAny")}</option>{machines.map((machine) => <option value={machine.id} key={machine.id}>{machine.name}</option>)}
+          <option value="">{nextWord("cloudAllAny")}</option>{machines.map((machine) => <option value={machine.id} key={machine.id}>{machine.name} · {machine.id}</option>)}
         </select></label>
         <label>{nextWord("cloudAllPlatform")}<select value={filters.platform} onChange={(event) => setFilters({ ...filters, platform: event.target.value })}>
           <option value="">{nextWord("cloudAllAny")}</option>{platforms.map((platform) => <option value={platform} key={platform}>{platform}</option>)}
@@ -325,8 +341,9 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
         </select></label>
       </div>
       <div className="cloud-all-groups">
-        {shown.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group" aria-label={machine.name}>
+        {shown.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group" aria-label={`${machine.name} ${machine.id}`}>
           <h2>{machine.name} <small>{machine.platform}</small></h2>
+          <p className="cloud-all-id">{nextWord("cloudAllMachineID")}: {machine.id}</p>
           {machine.freshness !== "current" && reading?.phase === "settled" && reading.value.kind === "ready" && <p role="status">{machine.freshness === "stale"
             ? nextWord("cloudAllStaleSource") : nextWord("cloudAllUnknownSource")}</p>}
           {!reading || reading.phase === "loading" ? <p role="status">{nextWord("cloudAllLoading")}</p>
@@ -334,8 +351,12 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
             : rows.length === 0 ? reading.value.unknownTargets ? null : <p>{reading.value.rows.length === 0
               ? nextWord("cloudAllEmptyMachine") : nextWord("cloudAllNoMatch")}</p>
             : <ul>{rows.map((row) => <li key={destinationKey(row.destination)}>
-              <a href={destinationFragment(row.destination)} onClick={() => setDestination(row.destination)}>
+              <a href={destinationFragment(row.destination)} onClick={(event) => {
+                returnFocus.current = event.currentTarget
+                setDestination(row.destination)
+              }}>
                 <strong>{row.title || row.destination.sessionID}</strong>
+                <span className="cloud-all-id">{nextWord("cloudAllSessionID")}: {row.destination.sessionID}</span>
                 <span>{stateWord(row.state)} · {timeWord(row.observedAt)}{row.needsAttention ? " · " + nextWord("cloudAllAttentionNeeded") : ""}</span>
               </a>
             </li>)}</ul>}
