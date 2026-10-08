@@ -752,6 +752,12 @@
 .work-delete-modal strong { color: var(--ink); }
 .work-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .work-modal-head .board-eyebrow { margin: 0 0 4px; }
+.work-detail-read { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--dim); font-size: 12px; }
+.work-detail-spinner {
+    box-sizing: border-box; flex: none; width: 14px; height: 14px; border: 2px solid currentColor;
+    border-right-color: transparent; border-radius: 50%; animation: work-assignment-spin 800ms linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .work-detail-spinner { animation: none; } }
 .work-modal-close {
     display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--line);
     border-radius: 999px; background: transparent; color: var(--dim); font: 22px/1 sans-serif;
