@@ -1528,9 +1528,13 @@ type BrokerTask struct {
 	// `auto_compact_window` when it named one, the machine's
 	// `claude_auto_compact_window` otherwise — and 0 when none was applied. Null for
 	// a Codex task, which is never given one, and for a task not launched yet.
-	AutoCompactWindow *int64       `json:"auto_compact_window"`
-	Child             *BrokerChild `json:"child,omitempty"`
-	Claims            []string     `json:"claims"`
+	AutoCompactWindow *int64 `json:"auto_compact_window"`
+
+	// A callback's declared purpose: wait or heavy. Absent for children and callbacks
+	// made before intent was recorded.
+	CallbackIntent string       `json:"callback_intent,omitempty"`
+	Child          *BrokerChild `json:"child,omitempty"`
+	Claims         []string     `json:"claims"`
 
 	// Whether the dispatch said anything about claims at all. `I declared none` and `I
 	// did not say` are different requests, and only one of them can be arbitrated.
@@ -3107,11 +3111,14 @@ type KeyRequest struct {
 }
 
 type LeaseHolder struct {
-	AcquiredAt  int64         `json:"acquired_at"`
-	HeldSeconds int64         `json:"held_seconds"`
-	Holder      string        `json:"holder"`
-	LeaseID     string        `json:"lease_id"`
-	Liveness    LeaseLiveness `json:"liveness"`
+	AcquiredAt int64 `json:"acquired_at"`
+
+	// The callback whose command holds this lease, when one did.
+	CallbackTaskID string        `json:"callback_task_id,omitempty"`
+	HeldSeconds    int64         `json:"held_seconds"`
+	Holder         string        `json:"holder"`
+	LeaseID        string        `json:"lease_id"`
+	Liveness       LeaseLiveness `json:"liveness"`
 
 	// proving, process_running, session_live, heartbeat_lapsed, owner_gone or
 	// evidence_unknown.
@@ -3173,6 +3180,10 @@ type LeaseReply struct {
 // renewal every 20 seconds, `pid` (with `process_start`, epoch seconds),
 // `session_id` (a conversation id), or any of them.
 type LeaseRequest struct {
+	// The callback command that asked for heavy_compile, when one did. Absent for a
+	// direct heavy command and for other resources.
+	CallbackTaskID string `json:"callback_task_id,omitempty"`
+
 	// landing only: the absolute path of the checkout being landed into.
 	Checkout     string        `json:"checkout,omitempty"`
 	Holder       string        `json:"holder"`
@@ -5211,6 +5222,12 @@ type SessionCoordinatorCommand struct {
 	Why              string `json:"why,omitempty"`
 }
 
+type SessionHeavyWork struct {
+	// The heavy command's declared reason, for the icon's title and accessible name.
+	Reason string `json:"reason"`
+	TaskID string `json:"task_id"`
+}
+
 // The facts behind the status line under an open session. This daemon serves
 // the transcript-derived part the Swift app calls the summary, the context
 // reading, the plan windows and the project's addresses; the working tree,
@@ -5516,10 +5533,15 @@ type SessionRow struct {
 	Disposition    *WorkDisposition     `json:"disposition,omitempty"`
 	EpicParent     *EpicSessionParent   `json:"epic_parent,omitempty"`
 	Evidence       Evidence             `json:"evidence"`
-	Icon           *Icon                `json:"icon,omitempty"`
-	ID             string               `json:"id"`
-	Identity       IdentityBinding      `json:"identity,omitempty"`
-	IsClaude       bool                 `json:"isClaude"`
+
+	// Only the Session that started the declared-heavy callback currently holding and
+	// running in the machine's heavy_compile slot. Absent for queued work, wait
+	// callbacks, direct heavy commands and unreadable evidence.
+	HeavyWork *SessionHeavyWork `json:"heavy_work,omitempty"`
+	Icon      *Icon             `json:"icon,omitempty"`
+	ID        string            `json:"id"`
+	Identity  IdentityBinding   `json:"identity,omitempty"`
+	IsClaude  bool              `json:"isClaude"`
 
 	// What the session is called, by the Swift app's rungs (ITerm.swift
 	// preferredDisplayLabel): a name typed in Clawdline (the Swift store's config.json
@@ -6467,11 +6489,15 @@ type TaskRoot struct {
 // landing_paths, terminal_intervention, released_claims, respawn_of,
 // waiting_on.
 type TaskRow struct {
-	Artifacts      []string   `json:"artifacts,omitempty"`
-	Assistant      Assistant  `json:"assistant"`
-	AttachSession  string     `json:"attachSession,omitempty"`
-	Attached       bool       `json:"attached,omitempty"`
-	BriefedAt      int64      `json:"briefedAt,omitempty"`
+	Artifacts     []string  `json:"artifacts,omitempty"`
+	Assistant     Assistant `json:"assistant"`
+	AttachSession string    `json:"attachSession,omitempty"`
+	Attached      bool      `json:"attached,omitempty"`
+	BriefedAt     int64     `json:"briefedAt,omitempty"`
+
+	// A callback's declared purpose: wait or heavy. Absent for children and callbacks
+	// made before intent was recorded.
+	CallbackIntent string     `json:"callback_intent,omitempty"`
 	Child          *TaskChild `json:"child,omitempty"`
 	Claims         []string   `json:"claims"`
 	ClaimsDeclared bool       `json:"claims_declared"`

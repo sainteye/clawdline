@@ -426,7 +426,7 @@ func TestHeavyHandoff(t *testing.T) {
 				if tc.wait > 0 {
 					wantTimeout = 240
 				}
-				if body["timeout_minutes"] != wantTimeout || body["root"].(map[string]any)["session_id"] != thinConversation {
+				if body["timeout_minutes"] != wantTimeout || body["root"].(map[string]any)["session_id"] != thinConversation || body["intent"] != "heavy" {
 					t.Fatalf("callback body %v", body)
 				}
 				argv := body["argv"].([]any)

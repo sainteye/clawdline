@@ -139,6 +139,7 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			conversationMatches[item.ConversationID]++
 		}
 	}
+	heavySession, heavyWork := s.runningHeavyCallback(records)
 	// One database read for the entire fleet. An error leaves the count
 	// unknown on every row, rather than turning it into zero.
 	attentionCounts, attentionErr := s.store.OpenHumanInterventionCounts(records)
@@ -241,6 +242,10 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 				item.Binding == session.BindingLiveTitle || item.Binding == session.BindingRegistry) {
 			count := attentionCounts[item.ConversationID]
 			row.AttentionCount = &count
+		}
+		if heavyWork != nil && item.ConversationID == heavySession && conversationMatches[heavySession] == 1 &&
+			row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent {
+			row.HeavyWork = heavyWork
 		}
 		rows = append(rows, row)
 	}

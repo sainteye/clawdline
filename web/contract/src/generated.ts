@@ -1763,6 +1763,12 @@ export interface BrokerTask {
    * for a Codex task, which is never given one, and for a task not launched yet.
    */
   auto_compact_window: number | null
+
+  /**
+   * A callback's declared purpose: wait or heavy. Absent for children and callbacks
+   * made before intent was recorded.
+   */
+  callback_intent?: string
   child?: BrokerChild
   claims: string[]
 
@@ -3631,6 +3637,11 @@ export interface KeyRequest {
 
 export interface LeaseHolder {
   acquired_at: number
+
+  /**
+   * The callback whose command holds this lease, when one did.
+   */
+  callback_task_id?: string
   held_seconds: number
   holder: string
   lease_id: string
@@ -3700,6 +3711,12 @@ export interface LeaseReply {
  * `session_id` (a conversation id), or any of them.
  */
 export interface LeaseRequest {
+  /**
+   * The callback command that asked for heavy_compile, when one did. Absent for a
+   * direct heavy command and for other resources.
+   */
+  callback_task_id?: string
+
   /**
    * landing only: the absolute path of the checkout being landed into.
    */
@@ -6117,6 +6134,14 @@ export interface SessionCoordinatorCommand {
   why?: string
 }
 
+export interface SessionHeavyWork {
+  /**
+   * The heavy command's declared reason, for the icon's title and accessible name.
+   */
+  reason: string
+  task_id: string
+}
+
 /**
  * The facts behind the status line under an open session. This daemon serves the
  * transcript-derived part the Swift app calls the summary, the context reading, the
@@ -6522,6 +6547,13 @@ export interface SessionRow {
   disposition?: WorkDisposition
   epic_parent?: EpicSessionParent
   evidence: Evidence
+
+  /**
+   * Only the Session that started the declared-heavy callback currently holding and
+   * running in the machine's heavy_compile slot. Absent for queued work, wait
+   * callbacks, direct heavy commands and unreadable evidence.
+   */
+  heavy_work?: SessionHeavyWork
   icon?: Icon
   id: string
   identity?: IdentityBinding
@@ -7739,6 +7771,12 @@ export interface TaskRow {
   attachSession?: string
   attached?: boolean
   briefedAt?: number
+
+  /**
+   * A callback's declared purpose: wait or heavy. Absent for children and callbacks
+   * made before intent was recorded.
+   */
+  callback_intent?: string
   child?: TaskChild
   claims: string[]
   claims_declared: boolean

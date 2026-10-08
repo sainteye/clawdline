@@ -11,7 +11,6 @@ import { conversationNotStarted } from "./readiness.js"
 import { retainedStateWords, sessionReadingChinese } from "../session-reading.js"
 import { rowPersonaLine } from "../personas.js"
 import { usePersonas } from "./PersonaBot.js"
-import { activeCallbacksForSession } from "./callback-owner.js"
 import "./list-density.css"
 import "./list-tree.css"
 import "./swipe-archive.css"
@@ -57,15 +56,10 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   const waitingOn = coordination?.waitingOn ?? []
   const waitedOnBy = coordination?.waitedOnBy ?? []
   const roots = L.tasksOfRoot(row.id)
-  const callbacks = activeCallbacksForSession(row, roots)
-  const callbackKnown = L.taskListKnown()
-  const callbackLabel = !callbackKnown
-    ? nextWord("sessionCallbackUnverified")
-    : callbacks.length === 1
-      ? nextWord("sessionCallbackActive")
-      : nextWord("sessionCallbacksActive", { count: callbacks.length })
-  const callbackSaid = callbacks.length
-    ? `<span class="session-callback-active" data-verified="${callbackKnown ? "1" : "0"}" title="${L.escapeHTML(callbacks.map((task) => task.title || task.id).join("\n"))}">${L.escapeHTML(callbackLabel)}</span>`
+  const callbackLabel = nextWord("sessionCallbackActive")
+  const callbackDetail = [callbackLabel, row.heavy_work?.reason].filter(Boolean).join(" · ")
+  const callbackSaid = row.heavy_work
+    ? `<span class="session-callback-active" role="img" aria-label="${L.escapeHTML(callbackDetail)}" title="${L.escapeHTML(callbackDetail)}">🏗️</span>`
     : ""
   const n = row.shells?.length ?? 0
   const shellsSaid = n
@@ -155,7 +149,7 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
     work.state +
     (n ? "+sh" + n : "") +
     (waitShape ? "+cw" + waitShape : "") +
-    (callbacks.length ? "+cb" + String(callbackKnown) + ":" + callbacks.map((task) => task.id + ":" + task.state).join(",") : "") +
+    (row.heavy_work ? "+heavy" + row.heavy_work.task_id + ":" + row.heavy_work.reason : "") +
     (row.source ? "+src" + row.source.freshness + ":" + row.source.observed_at : "")
     + (attentionSaid ? "+attention" + attention : "")
     + (work.state === "working" ? "+line" + (row.line || "") : "")

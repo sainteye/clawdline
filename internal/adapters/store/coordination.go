@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS leases (
   holder        TEXT    NOT NULL,
   reason        TEXT    NOT NULL DEFAULT '',
   session       TEXT    NOT NULL DEFAULT '',
+  callback_task_id TEXT NOT NULL DEFAULT '',
   pid           INTEGER NOT NULL DEFAULT 0,
   process_start INTEGER NOT NULL DEFAULT 0,
   requested_at  INTEGER NOT NULL,
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS lease_waiters (
   holder        TEXT    NOT NULL,
   reason        TEXT    NOT NULL DEFAULT '',
   session       TEXT    NOT NULL DEFAULT '',
+  callback_task_id TEXT NOT NULL DEFAULT '',
   pid           INTEGER NOT NULL DEFAULT 0,
   process_start INTEGER NOT NULL DEFAULT 0,
   requested_at  INTEGER NOT NULL,
@@ -138,6 +140,17 @@ func openCoordination(db *sql.DB) error {
 		if !has {
 			if _, err := db.Exec(step.ddl); err != nil {
 				return fmt.Errorf("coordinator.%s: %w", step.column, err)
+			}
+		}
+	}
+	for _, table := range []string{"leases", "lease_waiters"} {
+		has, err := hasColumn(db, table, "callback_task_id")
+		if err != nil {
+			return err
+		}
+		if !has {
+			if _, err := db.Exec("ALTER TABLE " + table + " ADD COLUMN callback_task_id TEXT NOT NULL DEFAULT ''"); err != nil {
+				return fmt.Errorf("%s.callback_task_id: %w", table, err)
 			}
 		}
 	}
@@ -284,12 +297,13 @@ type LeaseRow struct {
 	// Session is the conversation id whose presence proves the holder or
 	// waiter alive; PID and ProcessStart are the process that does. Either,
 	// both or neither may be given.
-	Session      string
-	PID          int
-	ProcessStart time.Time
-	RequestedAt  time.Time
-	AcquiredAt   time.Time
-	RenewedAt    time.Time
+	Session        string
+	CallbackTaskID string
+	PID            int
+	ProcessStart   time.Time
+	RequestedAt    time.Time
+	AcquiredAt     time.Time
+	RenewedAt      time.Time
 	// AskedAt is a waiter's last ask.
 	AskedAt time.Time
 	Phase   string
@@ -323,16 +337,16 @@ func (c LeaseChange) empty() bool {
 		len(c.Events) == 0
 }
 
-const leaseColumns = `resource, key, request_id, lease_id, holder, reason, session, pid, process_start,
+const leaseColumns = `resource, key, request_id, lease_id, holder, reason, session, callback_task_id, pid, process_start,
   requested_at, acquired_at, renewed_at, phase`
 
-const waiterColumns = `resource, key, request_id, holder, reason, session, pid, process_start,
+const waiterColumns = `resource, key, request_id, holder, reason, session, callback_task_id, pid, process_start,
   requested_at, asked_at`
 
 func scanHolder(sc scanner) (LeaseRow, error) {
 	var r LeaseRow
 	var start, requested, acquired, renewed int64
-	err := sc.Scan(&r.Resource, &r.Key, &r.RequestID, &r.LeaseID, &r.Holder, &r.Reason, &r.Session, &r.PID,
+	err := sc.Scan(&r.Resource, &r.Key, &r.RequestID, &r.LeaseID, &r.Holder, &r.Reason, &r.Session, &r.CallbackTaskID, &r.PID,
 		&start, &requested, &acquired, &renewed, &r.Phase)
 	r.ProcessStart, r.RequestedAt, r.AcquiredAt, r.RenewedAt =
 		timeOrZero(start), timeOrZero(requested), timeOrZero(acquired), timeOrZero(renewed)
@@ -342,7 +356,7 @@ func scanHolder(sc scanner) (LeaseRow, error) {
 func scanWaiter(sc scanner) (LeaseRow, error) {
 	var r LeaseRow
 	var start, requested, asked int64
-	err := sc.Scan(&r.Resource, &r.Key, &r.RequestID, &r.Holder, &r.Reason, &r.Session, &r.PID,
+	err := sc.Scan(&r.Resource, &r.Key, &r.RequestID, &r.Holder, &r.Reason, &r.Session, &r.CallbackTaskID, &r.PID,
 		&start, &requested, &asked)
 	r.ProcessStart, r.RequestedAt, r.AskedAt = timeOrZero(start), timeOrZero(requested), timeOrZero(asked)
 	return r, err
@@ -476,8 +490,8 @@ func (s *Store) DecideLease(ctx context.Context, resource, key string, decide fu
 		}
 		if h := change.SetHolder; h != nil {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO leases (`+leaseColumns+`)
-			   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				resource, key, h.RequestID, h.LeaseID, h.Holder, h.Reason, h.Session, h.PID,
+			   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				resource, key, h.RequestID, h.LeaseID, h.Holder, h.Reason, h.Session, h.CallbackTaskID, h.PID,
 				unixOrZeroTime(h.ProcessStart), unixOrZeroTime(h.RequestedAt), unixOrZeroTime(h.AcquiredAt),
 				unixOrZeroTime(h.RenewedAt), h.Phase); err != nil {
 				return 0, err
@@ -493,8 +507,8 @@ func (s *Store) DecideLease(ctx context.Context, resource, key string, decide fu
 		}
 		for _, w := range change.PutWaiters {
 			if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO lease_waiters (`+waiterColumns+`)
-			   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				resource, key, w.RequestID, w.Holder, w.Reason, w.Session, w.PID,
+			   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				resource, key, w.RequestID, w.Holder, w.Reason, w.Session, w.CallbackTaskID, w.PID,
 				unixOrZeroTime(w.ProcessStart), unixOrZeroTime(w.RequestedAt), unixOrZeroTime(w.AskedAt)); err != nil {
 				return 0, err
 			}

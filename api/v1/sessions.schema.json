@@ -115,6 +115,7 @@
         "backend": { "$ref": "common.schema.json#/$defs/Backend" },
         "closeability": { "$ref": "#/$defs/Closeability" },
         "coordination": { "$ref": "#/$defs/SessionCoordination" },
+		"heavy_work": { "description": "Only the Session that started the declared-heavy callback currently holding and running in the machine's heavy_compile slot. Absent for queued work, wait callbacks, direct heavy commands and unreadable evidence.", "$ref": "#/$defs/SessionHeavyWork" },
         "coordinator": { "$ref": "#/$defs/SessionCoordinator" },
         "machine_scope": { "description": "This Session is in the daemon's machine workspace. It may still need role registration; the coordinator field is the registration receipt.", "type": "boolean" },
         "cwd": { "type": "string" },
@@ -147,6 +148,15 @@
         "work_state": { "$ref": "#/$defs/WorkState" }
       }
     },
+	"SessionHeavyWork": {
+	  "type": "object",
+	  "additionalProperties": false,
+	  "required": ["task_id", "reason"],
+	  "properties": {
+	    "task_id": { "type": "string" },
+	    "reason": { "description": "The heavy command's declared reason, for the icon's title and accessible name.", "type": "string" }
+	  }
+	},
 	"EpicSessionParent": {
 	  "description": "Presentation ancestry of an independent Root opened when an Epic owner assigned a child Board item. The owner is the conversation that made that assignment, even if the Epic is later reassigned. This does not transfer task, landing, or close ownership.",
 	  "type": "object",

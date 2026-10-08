@@ -77,6 +77,28 @@ func TestTheCompileSlotQueuesTheSecondAsker(t *testing.T) {
 	}
 }
 
+func TestCallbackIdentityFollowsTheCompileSlotFromQueueToHolder(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	const callbackID = "c0000000-0000-4000-8000-000000000099"
+	first := ask(t, b, ctx, LeaseRequest{Resource: ResourceCompile, RequestID: askA})
+	if first.State != "granted" {
+		t.Fatal(first)
+	}
+	queued := ask(t, b, ctx, LeaseRequest{Resource: ResourceCompile, RequestID: askB,
+		Session: rootConversation, CallbackTaskID: callbackID})
+	if queued.State != "queued" || len(queued.View.Queue) != 1 || queued.View.Queue[0].CallbackTaskID != callbackID {
+		t.Fatalf("queued identity: %+v", queued)
+	}
+	if _, err := b.Release(ctx, LeaseOwner{Resource: ResourceCompile, RequestID: askA}); err != nil {
+		t.Fatal(err)
+	}
+	granted := ask(t, b, ctx, LeaseRequest{Resource: ResourceCompile, RequestID: askB,
+		Session: rootConversation, CallbackTaskID: callbackID})
+	if granted.State != "granted" || granted.View.Holder == nil || granted.View.Holder.CallbackTaskID != callbackID || granted.View.Holder.Session != rootConversation {
+		t.Fatalf("holder identity: %+v", granted)
+	}
+}
+
 // 15924b14, 24a33139, O9: a holder whose renewal lapsed keeps the slot while
 // its process is there, keeps it while nobody can say, and loses it only when
 // the kernel says the process is gone — here, a different process now has

@@ -38,6 +38,7 @@ import (
 type callbackInvocation struct {
 	port         int
 	title        string
+	intent       string
 	timeout      time.Duration
 	workID       string
 	dir          string
@@ -53,6 +54,7 @@ func callbackArgs(args []string, cwd string) (callbackInvocation, error) {
 	inv := callbackInvocation{}
 	fs.IntVar(&inv.port, "port", 0, "the daemon's port")
 	fs.StringVar(&inv.title, "title", "", "one line of at most 60 characters saying what will be true when it succeeds")
+	fs.StringVar(&inv.intent, "intent", orchestrator.CallbackIntentWait, "wait or heavy; heavy is for a callback that will acquire the compile slot")
 	fs.DurationVar(&inv.timeout, "timeout", 30*time.Minute, "stop the command after this long (1m to 4h)")
 	fs.StringVar(&inv.workID, "work-id", "", "the Board item this wait serves")
 	fs.StringVar(&inv.dir, "dir", "", "the directory the command runs in (default: this one)")
@@ -68,6 +70,9 @@ func callbackArgs(args []string, cwd string) (callbackInvocation, error) {
 	}
 	if strings.TrimSpace(inv.title) == "" {
 		return inv, errors.New(cliCopy("misc", "callback.title_required", "--title is required"))
+	}
+	if inv.intent != orchestrator.CallbackIntentWait && inv.intent != orchestrator.CallbackIntentHeavy {
+		return inv, errors.New(cliCopy("misc", "callback.intent_invalid", "--intent must be wait or heavy"))
 	}
 	if inv.timeout < time.Minute || inv.timeout > 240*time.Minute {
 		return inv, errors.New(cliCopy("misc", "callback.timeout_invalid", "--timeout must be 1m to 4h"))
@@ -92,7 +97,7 @@ func callbackCommand(args []string) {
 	inv, err := callbackArgs(args, cwd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, cliCopy("misc", "callback.clawdline_callback.0e6befe9", "clawdline callback:"), err)
-		fmt.Fprintln(os.Stderr, cliCopy("misc", "callback.usage_clawdline_callback_title_time.ed8f80b7", `usage: clawdline callback --title "…" [--timeout 30m] [--work-id <item>] [--dir D] [--task-id uuid] [--json] -- <command> [args…]`))
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "callback.usage_intent", `usage: clawdline callback --title "…" [--intent wait|heavy] [--timeout 30m] [--work-id <item>] [--dir D] [--task-id uuid] [--json] -- <command> [args…]`))
 		os.Exit(2)
 	}
 	b, err := openBroker(inv.port)
@@ -133,7 +138,7 @@ func startCallback(stdout, stderr io.Writer, b *broker, inv callbackInvocation, 
 		}
 	}
 	body := map[string]any{
-		"task_id": id, "title": inv.title, "argv": inv.argv, "dir": inv.dir, "env": env,
+		"task_id": id, "intent": inv.intent, "title": inv.title, "argv": inv.argv, "dir": inv.dir, "env": env,
 		"timeout_minutes": int(inv.timeout / time.Minute),
 		"root":            map[string]string{"session_id": conversation, "assistant": assistant},
 	}

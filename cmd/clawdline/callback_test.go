@@ -18,6 +18,13 @@ func TestCallbackArgumentsNameACommandAndATitle(t *testing.T) {
 	if inv.dir != "/w" || inv.timeout != 15*time.Minute || strings.Join(inv.argv, "|") != "sh|-c|deploy && wait" {
 		t.Fatalf("%+v", inv)
 	}
+	if inv.intent != orchestrator.CallbackIntentWait {
+		t.Fatalf("default intent %q", inv.intent)
+	}
+	heavy, err := callbackArgs([]string{"--title", "Build finished", "--intent", "heavy", "--", "true"}, "/w")
+	if err != nil || heavy.intent != orchestrator.CallbackIntentHeavy {
+		t.Fatalf("heavy intent: %+v, %v", heavy, err)
+	}
 	for _, args := range [][]string{
 		{"--title", "t"},
 		{"--", "true"},
@@ -25,6 +32,7 @@ func TestCallbackArgumentsNameACommandAndATitle(t *testing.T) {
 		{"--title", "t", "--timeout", "5h", "--", "true"},
 		{"--title", "t", "--task-id", "NOT-A-UUID", "--", "true"},
 		{"--title", "t", "--env", "TOKEN=x", "--", "true"},
+		{"--title", "t", "--intent", "unknown", "--", "true"},
 	} {
 		if _, err := callbackArgs(args, "/w"); err == nil {
 			t.Errorf("%q was accepted", args)

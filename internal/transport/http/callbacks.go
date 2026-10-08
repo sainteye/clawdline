@@ -27,6 +27,7 @@ func (s *Server) brokerCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		TaskID         string            `json:"task_id"`
+		Intent         string            `json:"intent"`
 		Title          string            `json:"title"`
 		Argv           []string          `json:"argv"`
 		Dir            string            `json:"dir"`
@@ -43,13 +44,13 @@ func (s *Server) brokerCallback(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
 		writeRawRefusal(w, http.StatusBadRequest, "bad_request",
-			"The body is {task_id, title, argv, dir, env?, timeout_minutes?, work_id?, root: {session_id, assistant}}: "+err.Error())
+			"The body is {task_id, intent?, title, argv, dir, env?, timeout_minutes?, work_id?, root: {session_id, assistant}}: "+err.Error())
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), time.Minute)
 	defer cancel()
 	out, err := s.broker.StartCallback(ctx, orchestrator.CallbackRequest{
-		TaskID: body.TaskID, Title: body.Title, Argv: body.Argv, Dir: body.Dir, Env: body.Env,
+		TaskID: body.TaskID, Intent: body.Intent, Title: body.Title, Argv: body.Argv, Dir: body.Dir, Env: body.Env,
 		TimeoutMinutes: body.TimeoutMinutes, WorkID: body.WorkID,
 		Root: orchestrator.RootRef{SessionID: body.Root.SessionID, Assistant: body.Root.Assistant, Label: body.Root.Label},
 	})

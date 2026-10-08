@@ -198,6 +198,7 @@
         "id": { "type": "string" },
         "state": { "$ref": "tasks.schema.json#/$defs/TaskState" },
         "kind": { "type": "string" },
+		"callback_intent": { "description": "A callback's declared purpose: wait or heavy. Absent for children and callbacks made before intent was recorded.", "type": "string", "enum": ["wait", "heavy"] },
         "title": { "type": "string" },
         "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
         "assistant_quota": { "$ref": "#/$defs/BrokerAssistantQuotaDecision" },

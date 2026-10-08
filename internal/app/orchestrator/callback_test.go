@@ -69,7 +69,7 @@ func TestACallbackSettlesOnItsExitAndOwesItsRootANotice(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if out.Record.State != StateBriefed || out.Record.Callback == nil || out.Record.Kind != TaskKindCallback {
+			if out.Record.State != StateBriefed || out.Record.Callback == nil || out.Record.Kind != TaskKindCallback || out.Record.Callback.Intent != CallbackIntentWait {
 				t.Fatalf("started as %+v", out.Record)
 			}
 			r := settledWithin(t, b, ctx, id, 10*time.Second)
@@ -109,6 +109,10 @@ func TestTheSameCallbackStartedTwiceRunsOnce(t *testing.T) {
 	if err != nil || !again.Replayed {
 		t.Fatalf("the retry was %+v, %v; want a replay", again, err)
 	}
+	req.Intent = CallbackIntentHeavy
+	if _, err := b.StartCallback(ctx, req); refusalCode(err) != "intent_conflict" {
+		t.Fatalf("a changed intent was replayed: %v", err)
+	}
 	settledWithin(t, b, ctx, id, 10*time.Second)
 	raw, _ := os.ReadFile(filepath.Join(req.Dir, "ran"))
 	if string(raw) != "once\n" {
@@ -131,6 +135,7 @@ func TestACallbackIsRefusedBeforeAnythingStarts(t *testing.T) {
 		{"relative dir", func(r *CallbackRequest) { r.Dir = "here" }, "bad_task"},
 		{"long timeout", func(r *CallbackRequest) { r.TimeoutMinutes = 241 }, "bad_task"},
 		{"no root", func(r *CallbackRequest) { r.Root.SessionID = "" }, "root_session_required"},
+		{"unknown intent", func(r *CallbackRequest) { r.Intent = "something-else" }, "bad_task"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := callbackRequest(t, id, "touch", "ran")

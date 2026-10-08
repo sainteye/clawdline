@@ -158,6 +158,12 @@ let spareMoved = MOVED.spare
 
 function rows(): Row[] {
   if (readingScenario === "expired") return []
+  if (readingScenario === "callback-owner") return [
+    row(SAFE, "Heavy callback running", safeCloseability(), 300,
+      { heavy_work: { task_id: "callback-heavy", reason: "Go tests" } }),
+    row(BLOCKED, "Wait callback running", blockedCloseability(), 200),
+    row(UNKNOWN, "Heavy callback queued", unknownCloseability(), 100),
+  ]
   if (readingScenario === "unstarted-codex") return [
     row(SAFE, "Codex has not started", safeCloseability(), 300,
       { assistant: "codex", isClaude: false, sessionId: "", identity: "no_record" }),
@@ -673,8 +679,14 @@ function daemon(): Server {
         ? [{ id: "task-gap-fixture", state: "briefed", created: 1,
             root: { terminalId: SAFE, sessionId: "conversation-" + SAFE }, child: { terminalId: BLOCKED } }]
         : readingScenario === "callback-owner"
-        ? ["a", "b"].map((suffix) => ({ id: "callback-" + suffix, kind: "callback", state: "briefed", created: 1,
-            title: "Heavy work " + suffix, root: { terminalId: SAFE, sessionId: "conversation-" + SAFE } }))
+        ? [
+            { id: "callback-heavy", kind: "callback", callback_intent: "heavy", state: "briefed", created: 1,
+              title: "Go tests", root: { terminalId: SAFE, sessionId: "conversation-" + SAFE } },
+            { id: "callback-wait", kind: "callback", callback_intent: "wait", state: "briefed", created: 1,
+              title: "Wait for CI", root: { terminalId: BLOCKED, sessionId: "conversation-" + BLOCKED } },
+            { id: "callback-queued", kind: "callback", callback_intent: "heavy", state: "briefed", created: 1,
+              title: "Go build", root: { terminalId: UNKNOWN, sessionId: "conversation-" + UNKNOWN } },
+          ]
         : readingScenario === "worst"
         ? [{
             id: "task-fixture",
@@ -1153,23 +1165,24 @@ test("an incomplete session reading keeps a confirmed root and its child togethe
     }
   }))
 
-test("a phone identifies the Session that started two live callbacks", () =>
+test("a phone marks only the Session whose heavy callback is running", () =>
   inTab(async (tab) => {
     readingScenario = "callback-owner"
     try {
-      await list(tab)
+      await tab.go("/")
       await tab.until("the callback owner is marked", (seen) => seen.callbackRows.join() === SAFE)
       const badge = await tab.run(`(() => {
         const row = document.querySelector("#rows > li.row[data-id='${SAFE}']")
         const mark = row?.querySelector(".session-callback-active")
-        return { text: mark?.textContent, verified: mark?.dataset.verified,
+        return { text: mark?.textContent, label: mark?.getAttribute("aria-label"), title: mark?.getAttribute("title"),
           visible: !!mark && mark.getBoundingClientRect().width > 0,
           clipped: !!mark && mark.scrollWidth > mark.clientWidth + 1,
           listWidth: document.querySelector("#list-scroll")?.scrollWidth,
           viewportWidth: window.innerWidth }
       })()`)
-      assert.equal(badge.text, "重工作業進行中 · 2 項")
-      assert.equal(badge.verified, "1")
+      assert.equal(badge.text, "🏗️")
+      assert.equal(badge.label, "重工作業進行中 · Go tests")
+      assert.ok(badge.title?.includes("Go tests"), JSON.stringify(badge))
       assert.equal(badge.visible, true)
       assert.equal(badge.clipped, false)
       assert.ok(badge.listWidth <= badge.viewportWidth, JSON.stringify(badge))

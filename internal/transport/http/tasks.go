@@ -106,6 +106,7 @@ func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.
 				Dir:            t.Dir,
 				Title:          t.Title,
 				Kind:           t.Kind,
+				CallbackIntent: callbackIntentOf(t),
 				ScheduleID:     t.ScheduleID,
 				Persona:        t.Persona,
 			}
@@ -127,6 +128,13 @@ func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.
 		Store:  storeReading(snap),
 		Source: taskListSource(now, snap),
 	}, nil
+}
+
+func callbackIntentOf(t orchestrator.Record) string {
+	if t.Callback == nil {
+		return ""
+	}
+	return t.Callback.Intent
 }
 
 // taskListSource says what the whole list is worth, in the vocabulary every

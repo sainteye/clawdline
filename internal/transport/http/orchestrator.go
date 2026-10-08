@@ -1047,6 +1047,7 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 		ID:             r.ID,
 		State:          contract.TaskState(r.State),
 		Kind:           r.Kind,
+		CallbackIntent: callbackIntentOf(r),
 		Title:          r.Title,
 		Assistant:      contract.Assistant(r.Assistant),
 		ProjectDir:     r.ProjectDir,

@@ -94,7 +94,11 @@ func callbackEnviron(r Record) []string {
 		env = append(env, k+"="+v)
 	}
 	sort.Strings(env)
-	return append(env, "CLAWDLINE_CALLBACK_TASK_ID="+r.ID, "CLAWDLINE_CALLBACK_DIR="+r.Dir)
+	env = append(env, "CLAWDLINE_CALLBACK_TASK_ID="+r.ID, "CLAWDLINE_CALLBACK_DIR="+r.Dir)
+	if r.Root != nil {
+		env = append(env, "CLAWDLINE_CALLBACK_ROOT_SESSION_ID="+r.Root.SessionID)
+	}
+	return env
 }
 
 // wait reaps the wrapper and says how it ended.

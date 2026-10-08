@@ -90,6 +90,7 @@
         "id": { "type": "string" },
         "isolation": { "type": "string" },
         "kind": { "type": "string" },
+		"callback_intent": { "description": "A callback's declared purpose: wait or heavy. Absent for children and callbacks made before intent was recorded.", "type": "string", "enum": ["wait", "heavy"] },
         "model": { "type": "string" },
         "permission": { "type": "string" },
         "project_dir": { "type": "string" },

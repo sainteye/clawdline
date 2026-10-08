@@ -852,6 +852,16 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 	// exit status and the end of its output — and it writes no result,
 	// owes no landing and has no branch.
 	if t.Kind == orchestrator.TaskKindCallback {
+		intent := t.CallbackIntent
+		switch intent {
+		case orchestrator.CallbackIntentWait:
+			intent = cliCopy("task", "view.callback_wait", "wait")
+		case orchestrator.CallbackIntentHeavy:
+			intent = cliCopy("task", "view.callback_heavy", "heavy work")
+		default:
+			intent = cliCopy("task", "view.callback_legacy", "unclassified (recorded before callback intents)")
+		}
+		fmt.Fprintf(w, cliCopy("task", "view.callback_intent", "intent:       %s\n"), intent)
 		return
 	}
 

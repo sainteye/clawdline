@@ -380,6 +380,13 @@ turns; each poll reread its whole context. `POST /v1/orchestrator/callbacks`
 command to the daemon instead. The command's exit settles a task and opens the same notice a
 finished child does, so the root ends its turn and is woken.
 
+The caller declares `--intent wait` (the default) or `--intent heavy` when it starts the callback.
+The task record, task views and `task show` carry that intent for agents and people. An automatic
+`heavy --handoff` callback declares `heavy`. The Session list shows 🏗️ only when a heavy-intent
+callback actually holds the `heavy_compile` lease in its running phase, with matching task and
+conversation IDs. A queued heavy callback, a wait callback and an old callback with no recorded
+intent have no heavy marker. Its hover and accessible name state what the icon means.
+
 A callback is a task with no tab. **`Record.Callback` is what makes one**, never `kind`: only this
 route sets it, and a dispatch naming `kind callback` is refused `bad_task`. It is `briefed` from the
 moment it is recorded, holds no child slot (`childrenOf`), has its own caps (8 per root, 16 per

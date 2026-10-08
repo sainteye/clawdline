@@ -231,6 +231,7 @@
         "holder": { "type": "string" },
         "reason": { "type": "string" },
         "session_id": { "type": "string" },
+		"callback_task_id": { "description": "The callback command that asked for heavy_compile, when one did. Absent for a direct heavy command and for other resources.", "type": "string" },
         "pid": { "type": "integer" },
         "process_start": { "type": "integer" },
         "phase": { "type": "string" }
@@ -262,6 +263,7 @@
         "holder": { "type": "string" },
         "reason": { "type": "string" },
         "session_id": { "type": "string" },
+		"callback_task_id": { "description": "The callback whose command holds this lease, when one did.", "type": "string" },
         "pid": { "type": "integer" },
         "acquired_at": { "type": "integer" },
         "renewed_at": { "type": "integer" },

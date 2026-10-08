@@ -23,8 +23,16 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/machineusage"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
 )
+
+func heavyConversation(getenv func(string) string) string {
+	if getenv("CLAWDLINE_CALLBACK_TASK_ID") != "" {
+		return getenv("CLAWDLINE_CALLBACK_ROOT_SESSION_ID")
+	}
+	return conversationOf(getenv)
+}
 
 // `clawdline heavy -- <command>` runs a build, a test suite or anything else
 // that needs much of the machine, after the machine can take it.
@@ -220,7 +228,8 @@ func runHeavy(opts heavyOptions, argv []string, d heavyDeps) int {
 		req := contract.LeaseRequest{
 			RequestID: d.requestID, Resource: contract.LeaseResourceHeavyCompile,
 			Holder: heavyHolder(argv), Reason: heavyReason(opts.reason, argv),
-			SessionID: conversationOf(d.getenv), PID: int64(d.pid), Phase: "waiting",
+			SessionID: heavyConversation(d.getenv), CallbackTaskID: d.getenv("CLAWDLINE_CALLBACK_TASK_ID"),
+			PID: int64(d.pid), Phase: "waiting",
 		}
 		if at := swiftstore.ProcessStart(d.pid); !at.IsZero() {
 			req.ProcessStart = at.Unix()
@@ -234,6 +243,11 @@ func runHeavy(opts heavyOptions, argv []string, d heavyDeps) int {
 		return code
 	}
 
+	// Publish the running phase before the command starts. The lease's initial
+	// waiting phase and its queue do not prove that heavy work is executing.
+	if slot.b != nil && slot.held {
+		_, _ = slot.b.request("POST", "/v1/orchestrator/leases/renew", nil, slot.owner("running"), "")
+	}
 	stop := slot.keepAlive(d.renew)
 	code, err := d.run(argv, []string{heavyEnv + "=" + d.requestID})
 	stop()
@@ -454,7 +468,7 @@ func heavyHandoff(opts heavyOptions, argv []string, d heavyDeps) (string, error)
 	// Callback timeout is sent in whole minutes, so round up rather than
 	// silently cutting the final partial minute from the run allowance.
 	timeout = (timeout + time.Minute - 1) / time.Minute * time.Minute
-	cmd := []string{"--title", "Queued heavy command finished", "--timeout", timeout.String(), "--dir", d.cwd}
+	cmd := []string{"--title", "Queued heavy command finished", "--intent", orchestrator.CallbackIntentHeavy, "--timeout", timeout.String(), "--dir", d.cwd}
 	if opts.port != 0 {
 		cmd = append(cmd, "--port", strconv.Itoa(opts.port))
 	}

@@ -82,7 +82,8 @@ type LeaseRequest struct {
 	Reason    string
 	// Session is the conversation id whose presence proves the asker alive
 	// (#36: a session is named by its conversation, never by its terminal).
-	Session string
+	Session        string
+	CallbackTaskID string
 	// PID is the process whose existence proves it alive; ProcessStart, when
 	// given, tells that process from a later one with the same pid.
 	PID          int
@@ -116,32 +117,34 @@ type LeaseView struct {
 
 // LeaseHolder is the holder, with the proof it is judged by.
 type LeaseHolder struct {
-	LeaseID     string
-	RequestID   string
-	Holder      string
-	Reason      string
-	Session     string
-	PID         int
-	AcquiredAt  time.Time
-	RenewedAt   time.Time
-	Phase       string
-	HeldSeconds int
-	RenewalAge  int
-	Liveness    string
-	LivenessWhy string
+	LeaseID        string
+	RequestID      string
+	Holder         string
+	Reason         string
+	Session        string
+	CallbackTaskID string
+	PID            int
+	AcquiredAt     time.Time
+	RenewedAt      time.Time
+	Phase          string
+	HeldSeconds    int
+	RenewalAge     int
+	Liveness       string
+	LivenessWhy    string
 }
 
 // LeaseWaiter is one asker in line.
 type LeaseWaiter struct {
-	RequestID   string
-	Holder      string
-	Reason      string
-	Session     string
-	PID         int
-	Position    int
-	RequestedAt time.Time
-	Waited      int
-	Proving     bool
+	RequestID      string
+	Holder         string
+	Reason         string
+	Session        string
+	CallbackTaskID string
+	PID            int
+	Position       int
+	RequestedAt    time.Time
+	Waited         int
+	Proving        bool
 }
 
 // proofOf is one row's liveness: what the renewal, the process and the
@@ -259,6 +262,9 @@ func validLeaseRequest(req LeaseRequest) error {
 	if req.Session != "" && !isLowercaseUUID(req.Session) {
 		return sessionIsTerminal(req.Session)
 	}
+	if req.CallbackTaskID != "" && (req.Resource != ResourceCompile || !IsTaskID(req.CallbackTaskID)) {
+		return refuse(http.StatusBadRequest, "bad_lease", "callback_task_id must be a callback UUID on heavy_compile.")
+	}
 	if req.PID < 0 {
 		return refuse(http.StatusBadRequest, "bad_lease", "pid must be positive.")
 	}
@@ -347,7 +353,7 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 			}
 			waiters = append(waiters, store.LeaseRow{
 				Resource: req.Resource, Key: key, RequestID: req.RequestID, Holder: req.Holder, Reason: req.Reason,
-				Session: req.Session, PID: req.PID, ProcessStart: req.ProcessStart, RequestedAt: now, AskedAt: now,
+				Session: req.Session, CallbackTaskID: req.CallbackTaskID, PID: req.PID, ProcessStart: req.ProcessStart, RequestedAt: now, AskedAt: now,
 			})
 			mine = len(waiters) - 1
 		}
@@ -364,7 +370,7 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 			lease := uuidLike()
 			change.SetHolder = &store.LeaseRow{
 				Resource: req.Resource, Key: key, RequestID: w.RequestID, LeaseID: lease, Holder: w.Holder,
-				Reason: w.Reason, Session: w.Session, PID: w.PID, ProcessStart: w.ProcessStart,
+				Reason: w.Reason, Session: w.Session, CallbackTaskID: w.CallbackTaskID, PID: w.PID, ProcessStart: w.ProcessStart,
 				RequestedAt: w.RequestedAt, AcquiredAt: now, RenewedAt: now, Phase: req.Phase,
 			}
 			change.DropWaiters = append(change.DropWaiters, w.RequestID)
@@ -531,7 +537,7 @@ func (b *Broker) viewOf(st store.LeaseState, now time.Time) LeaseView {
 	if h := st.Holder; h != nil {
 		p := b.livenessOf(*h, h.RenewedAt, now)
 		v.Holder = &LeaseHolder{
-			LeaseID: h.LeaseID, RequestID: h.RequestID, Holder: h.Holder, Reason: h.Reason, Session: h.Session,
+			LeaseID: h.LeaseID, RequestID: h.RequestID, Holder: h.Holder, Reason: h.Reason, Session: h.Session, CallbackTaskID: h.CallbackTaskID,
 			PID: h.PID, AcquiredAt: h.AcquiredAt, RenewedAt: h.RenewedAt, Phase: h.Phase,
 			HeldSeconds: int(now.Sub(h.AcquiredAt) / time.Second), RenewalAge: int(now.Sub(h.RenewedAt) / time.Second),
 			Liveness: p.verdict, LivenessWhy: p.why,
@@ -540,7 +546,7 @@ func (b *Broker) viewOf(st store.LeaseState, now time.Time) LeaseView {
 	position := 0
 	for _, w := range st.Waiters {
 		proving := now.Sub(w.AskedAt) <= waiterSilence
-		row := LeaseWaiter{RequestID: w.RequestID, Holder: w.Holder, Reason: w.Reason, Session: w.Session,
+		row := LeaseWaiter{RequestID: w.RequestID, Holder: w.Holder, Reason: w.Reason, Session: w.Session, CallbackTaskID: w.CallbackTaskID,
 			PID: w.PID, RequestedAt: w.RequestedAt, Waited: int(now.Sub(w.RequestedAt) / time.Second), Proving: proving}
 		if proving {
 			position++

@@ -164,13 +164,13 @@ func (s *Server) leasesRoute(w http.ResponseWriter, r *http.Request) {
 	switch p {
 	case "/v1/orchestrator/leases":
 		var body contract.LeaseRequest
-		if !decodeClosed(w, r, &body, "request_id", "resource", "checkout", "holder", "reason", "session_id",
+		if !decodeClosed(w, r, &body, "request_id", "resource", "checkout", "holder", "reason", "session_id", "callback_task_id",
 			"pid", "process_start", "phase") {
 			return
 		}
 		req := orchestrator.LeaseRequest{
 			Resource: string(body.Resource), Checkout: body.Checkout, RequestID: strings.TrimSpace(body.RequestID),
-			Holder: body.Holder, Reason: body.Reason, Session: strings.TrimSpace(body.SessionID),
+			Holder: body.Holder, Reason: body.Reason, Session: strings.TrimSpace(body.SessionID), CallbackTaskID: strings.TrimSpace(body.CallbackTaskID),
 			PID: int(body.PID), Phase: body.Phase,
 		}
 		if body.ProcessStart > 0 {
@@ -213,7 +213,7 @@ func wireLease(v orchestrator.LeaseView) contract.LeaseRecord {
 	out := contract.LeaseRecord{Resource: contract.LeaseResource(v.Resource), Key: v.Key, Queue: []contract.LeaseWaiter{}}
 	if h := v.Holder; h != nil {
 		out.Holder = &contract.LeaseHolder{
-			LeaseID: h.LeaseID, RequestID: h.RequestID, Holder: h.Holder, Reason: h.Reason, SessionID: h.Session,
+			LeaseID: h.LeaseID, RequestID: h.RequestID, Holder: h.Holder, Reason: h.Reason, SessionID: h.Session, CallbackTaskID: h.CallbackTaskID,
 			PID: int64(h.PID), AcquiredAt: h.AcquiredAt.Unix(), RenewedAt: h.RenewedAt.Unix(), Phase: h.Phase,
 			HeldSeconds: int64(h.HeldSeconds), RenewalAgeSeconds: int64(h.RenewalAge),
 			Liveness: contract.LeaseLiveness(h.Liveness), LivenessReason: h.LivenessWhy,

@@ -57,6 +57,11 @@ import (
 const TaskKindCallback = "callback"
 
 const (
+	CallbackIntentWait  = "wait"
+	CallbackIntentHeavy = "heavy"
+)
+
+const (
 	// EffectCallbackStart starts a callback's command. Idempotent by the
 	// evidence in its task directory: an exit file or a held lock means it
 	// already started, and it is adopted rather than started twice.
@@ -105,9 +110,12 @@ func CallbackEnvNames() []string {
 
 // Callback is the command a callback runs and what became of it.
 type Callback struct {
-	Argv []string          `json:"argv"`
-	Dir  string            `json:"dir"`
-	Env  map[string]string `json:"env,omitempty"`
+	// Intent is declared when the callback is created. An older callback with
+	// no intent is treated as a wait, never as proof of heavy work.
+	Intent string            `json:"intent,omitempty"`
+	Argv   []string          `json:"argv"`
+	Dir    string            `json:"dir"`
+	Env    map[string]string `json:"env,omitempty"`
 	// PID and PGID are the wrapper's, once it started; LeaderStart is that
 	// pid's start time in Unix seconds as the kernel gave it then (sysctl on
 	// macOS, /proc on Linux — no locale or time zone in it), compared before
@@ -125,6 +133,7 @@ type Callback struct {
 // CallbackRequest is POST /v1/orchestrator/callbacks.
 type CallbackRequest struct {
 	TaskID         string
+	Intent         string
 	Title          string
 	Argv           []string
 	Dir            string
@@ -197,12 +206,27 @@ func (b *Broker) StartCallback(ctx context.Context, req CallbackRequest) (Dispat
 	if !IsTaskID(req.TaskID) {
 		return bad("task_id must be a lowercase UUID.")
 	}
+	intent := req.Intent
+	if intent == "" {
+		intent = CallbackIntentWait
+	}
+	if intent != CallbackIntentWait && intent != CallbackIntentHeavy {
+		return bad("intent must be wait or heavy.")
+	}
 	held, _, err := b.Record(ctx, req.TaskID)
 	switch {
 	case err == nil:
 		if held.Callback == nil {
 			return Dispatched{}, refuseWith(http.StatusConflict, "task_exists",
 				"A task with this id exists and is not a callback; nothing was started.", map[string]any{"task": held.ID})
+		}
+		priorIntent := held.Callback.Intent
+		if priorIntent == "" {
+			priorIntent = CallbackIntentWait
+		}
+		if priorIntent != intent {
+			return Dispatched{}, refuseWith(http.StatusConflict, "intent_conflict",
+				"This callback id already has a different intent; nothing was started.", map[string]any{"task": held.ID})
 		}
 		return Dispatched{Record: held, Replayed: true}, nil
 	case !isNotFound(err):
@@ -279,7 +303,7 @@ func (b *Broker) StartCallback(ctx context.Context, req CallbackRequest) (Dispat
 		TimeoutMinutes: timeout,
 		Root:           root,
 		WorkID:         req.WorkID,
-		Callback:       &Callback{Argv: append([]string(nil), req.Argv...), Dir: filepath.Clean(req.Dir), Env: env},
+		Callback:       &Callback{Intent: intent, Argv: append([]string(nil), req.Argv...), Dir: filepath.Clean(req.Dir), Env: env},
 	}
 	if err := b.bindLine(ctx, &record); err != nil {
 		return Dispatched{}, err
