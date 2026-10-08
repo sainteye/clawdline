@@ -28,6 +28,13 @@ test("a code-only failure keeps its screen-owned sentence", () => {
   assert.match(sentence, /offline/u)
 })
 
+test("a durable receipt refusal uses the editable catalog and keeps its code", () => {
+  const sentence = failureSentence({ code: "receipt_outcome_unknown" }, "Generic failure")
+  assert.match(sentence, /earlier action may have run/u)
+  assert.match(sentence, /receipt_outcome_unknown/u)
+  assert.doesNotMatch(sentence, /Generic failure/u)
+})
+
 test("a Cloud failure with an unknown key keeps its raw detail", () => {
   const sentence = failureSentence({
     code: "project_required",

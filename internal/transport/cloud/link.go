@@ -39,6 +39,7 @@ import (
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/app/terminals"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -164,7 +165,9 @@ type LinkOptions struct {
 	// Handler is the daemon's own routes, gate and all. A Cloud request is
 	// answered by exactly the handler a paired browser on this machine's own
 	// network reaches.
-	Handler http.Handler
+	Handler        http.Handler
+	Receipts       *store.Store
+	AdmitExecution func(context.Context, string, string, string) error
 	// TerminalService is the only ingress to the local terminal service from
 	// signed Cloud envelopes. The regular Router remains forbidden.
 	TerminalService   func() (*terminals.Service, error)
@@ -679,7 +682,10 @@ func (l *Link) wire() error {
 	l.service = Service{
 		MachineID: identity.MachineID,
 		Bridge: cloudops.Bridge{
-			MachineID: identity.MachineID,
+			MachineID:              identity.MachineID,
+			Receipts:               opts.Receipts,
+			EnforceSessionReceipts: true,
+			AdmitExecution:         opts.AdmitExecution,
 			Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
 				AppOrigin: settings.AppOrigin},
 			AllowCommands:       l.allowCommands,
