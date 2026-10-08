@@ -136,9 +136,14 @@ Any one of these:
   (generate a pairing QR). **On an iPhone or iPad, first add app.clawdline.com to the Home Screen
   (Safari → Share → Add to Home Screen), open it from there, sign in, and scan from inside it.** A
   pairing made in Safari does not carry over to the Home Screen app.
-- **From the browser, for a machine you reach only over SSH:** in the hosted console, press
-  **配對** (pair) on the machine's row. It shows one line to run on the machine,
-  `clawdline cloud pair --offer <code>`, with the browser's fingerprint beside it.
+- **From the browser, using a paired helper machine:** in the hosted console, press
+  **配對** (pair) on the target machine's row, choose a machine this browser is already
+  paired with, then start its pairing assistant. The helper uses access it already
+  has to reach the target. The card reports progress and the fingerprints to compare.
+  The helper must be online and its Cloud command switch must be on.
+- **From the browser, manually:** the same card shows
+  `clawdline cloud pair --offer <code>` to run on the target machine if a helper is
+  unavailable or cannot reach it.
 
 Both screens show the same fingerprint when pairing finishes; compare them.
 

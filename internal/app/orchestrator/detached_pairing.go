@@ -2,15 +2,11 @@ package orchestrator
 
 // Handing a Cloud pairing to an assistant on this machine.
 //
-// A browser signed in to Clawdline Cloud pairs with a machine by showing an
-// offer that has to reach that machine by some route other than Cloud: the
-// offer is the browser's half of the key exchange, and Cloud only ever carries
-// ciphertext. For another machine the route used to be a person copying a
-// command and pasting it there. This machine often already reaches that one —
-// an ssh alias, a cloud provider's session manager — so the Mac app can hand
-// the same command to an assistant here instead, which runs it over that
-// access. The offer still travels over the person's own channel, never through
-// Cloud.
+// A browser signed in to Clawdline Cloud shows an offer for the target
+// machine. A paired helper receives that offer in an encrypted Cloud command,
+// then uses access it already has (an ssh alias or a cloud provider's session
+// manager) to run the pairing command on the target. The relay sees only
+// ciphertext; the helper's assistant receives the offer in a fixed brief.
 //
 // The task is **detached** and it is admitted through the same door every
 // detached task is (Dispatch with Detached set): the same brief checks, the

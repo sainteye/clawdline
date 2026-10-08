@@ -83,7 +83,11 @@ export interface CloudClientHandle extends CloudReadClient {
    * null when this browser has opened none — which is every machine it is not
    * paired with (`cloud-client.js`).
    */
-  machineDescriptor?(machine: string): { machine?: { name?: string; platform?: string } } | null
+  machineDescriptor?(machine: string): { machine?: { name?: string; platform?: string; commands?: string[] } } | null
+  /** A request with a stable id, answered on the encrypted machine channel. */
+  _machineRequestAs?(
+    request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number,
+  ): Promise<unknown>
   /** Low-level encrypted command seam used by the original webhook binder. */
   _publishCommand(
     machine: string,

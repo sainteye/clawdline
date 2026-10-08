@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
@@ -58,7 +59,7 @@ func cloudStandIn(t *testing.T) *standIn {
 	}
 	t.Cleanup(func() { st.Close() })
 	s := &Server{cfg: config.Config{Dir: state, Port: 7757}, store: st, icons: &icon.Registry{},
-		broker: &orchestrator.Broker{Store: st, Tasks: taskdir.New(state), Dir: state,
+		broker: &orchestrator.Broker{Store: st, Tasks: taskdir.New(state), Git: git.New(), Dir: state,
 			Launcher: oneTmuxPane{pane: "%99"},
 			Live: func(context.Context) []session.Session {
 				return []session.Session{{ID: "%99", Assistant: session.AssistantClaude}}

@@ -46,6 +46,9 @@ export function PairPanel(props: {
   onAgain: () => void
   onClose: () => void
   onPaired: () => void
+  helpers?: { id: string; name: string }[]
+  onAgentStart?: (helper: string, offer: string, target: { id: string; name: string }) => Promise<PairAgentReply>
+  onAgentStatus?: (helper: string, task: string) => Promise<PairAgentProgress>
 }) {
   const { request, state, nameOf, onBegin, onStop, onAgain, onClose, onPaired } = props
   const T = L.strings
@@ -57,9 +60,11 @@ export function PairPanel(props: {
   const [progress, setProgress] = useState<PairAgentProgress | null>(null)
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
-  // The copy path inside the Mac app: folded until asked for, or until the AI
-  // could not finish.
+  // The manual path: folded until asked for, or until the AI could not finish.
   const [manualOpen, setManualOpen] = useState(false)
+  const [helperID, setHelperID] = useState("")
+  const [runningHelper, setRunningHelper] = useState("")
+  const autoHelper = useRef("")
   const field = useRef<HTMLTextAreaElement>(null)
   const first = useRef<HTMLButtonElement>(null)
   const phase = state.phase
@@ -74,16 +79,39 @@ export function PairPanel(props: {
     setProgress(null)
     setStartedAt(null)
     setManualOpen(false)
+    setRunningHelper("")
   }, [phase])
   const followed = agent !== null && agent !== "sending" && agent.ok && agent.mode === "agent" ? agent.taskID : ""
   const following = followed !== "" && startedAt !== null
   useEffect(() => {
     if (!followed) return
+    if (runningHelper && props.onAgentStatus) {
+      let active = true
+      let pending = false
+      const read = () => {
+        if (pending || !active) return
+        pending = true
+        void props.onAgentStatus!(runningHelper, followed).then((next) => {
+          if (active) setProgress(next)
+          if (next.stage === "failed" && active) setManualOpen(true)
+          if (next.stage === "done" || next.stage === "failed") active = false
+        }).catch((error) => {
+          if (active) {
+            setProgress({ stage: "failed", summary: "", failedReason: error instanceof Error ? error.message : String(error) })
+            setManualOpen(true)
+            active = false
+          }
+        }).finally(() => { pending = false })
+      }
+      read()
+      const timer = setInterval(read, 2000)
+      return () => { active = false; clearInterval(timer) }
+    }
     return listenPairAgent(followed, (next) => {
       setProgress(next)
       if (next.stage === "failed") setManualOpen(true)
     })
-  }, [followed])
+  }, [followed, runningHelper, props.onAgentStatus])
   const running = following && progress?.stage !== "done" && progress?.stage !== "failed"
   useEffect(() => {
     if (!running) return
@@ -94,6 +122,25 @@ export function PairPanel(props: {
 
   const offer = request.mode === "offer"
   const asked = offer ? request.machine : null
+  const selectedHelper = props.helpers?.find((machine) => machine.id === helperID) ?? props.helpers?.[0]
+  function startAgent(helper: { id: string; name: string } | null, target: { id: string; name: string }) {
+    setAgent("sending")
+    setProgress(null)
+    setRunningHelper(helper?.id ?? "")
+    const started = helper && props.onAgentStart
+      ? props.onAgentStart(helper.id, state.phase === "waiting" ? state.fragment : "", target)
+      : handPairToAgent({ offer: state.phase === "waiting" ? state.fragment : "", machineID: target.id, machineName: target.name })
+    void started.then((reply) => {
+      setAgent(reply)
+      if (reply.ok && reply.mode === "agent") setStartedAt(Date.now())
+    }).catch((error) => setAgent({ ok: false, error: error instanceof Error ? error.message : String(error) }))
+  }
+  useEffect(() => {
+    if (state.phase !== "waiting" || !asked || !autoHelper.current) return
+    const helper = props.helpers?.find((machine) => machine.id === autoHelper.current)
+    autoHelper.current = ""
+    if (helper) startAgent(helper, asked)
+  }, [state.phase, state.phase === "waiting" ? state.fragment : "", asked?.id])
   const title = offer
     ? asked
       ? nextWord("cloudPairTitle", { machine: asked.name })
@@ -142,10 +189,10 @@ export function PairPanel(props: {
               <p className="cloud-pair-status">{nextWord("cloudPairStatusUnpaired")}</p>
               <p className="fine">{nextWord("cloudPairWaysIntro")}</p>
               <div className="cloud-pair-ways">
-                <article data-recommended="true">
+                <article data-recommended={selectedHelper ? undefined : "true"}>
                   <div className="cloud-pair-way-head">
                     <h3>{nextWord("cloudPairFromMachineTitle")}</h3>
-                    <span>{nextWord("cloudPairRecommended")}</span>
+                    {!selectedHelper && <span>{nextWord("cloudPairRecommended")}</span>}
                   </div>
                   <p>{nextWord("cloudPairFromMachineWhen")}</p>
                   <ol>
@@ -155,24 +202,42 @@ export function PairPanel(props: {
                   <code>clawdline cloud pair</code>
                   <p className="cloud-pair-success">{nextWord("cloudPairFromMachineSuccess")}</p>
                 </article>
-                <article>
+                <article data-recommended={selectedHelper ? "true" : undefined}>
                   <div className="cloud-pair-way-head">
-                    <h3>{nextWord("cloudPairFromBrowserTitle")}</h3>
+                    <h3>{selectedHelper && asked ? nextWord("cloudPairCloudHand") : nextWord("cloudPairFromBrowserTitle")}</h3>
                   </div>
-                  <p>{nextWord("cloudPairFromBrowserWhen")}</p>
-                  <ol>
-                    <li>{nextWord("cloudPairFromBrowserStep1")}</li>
-                    <li>{nextWord("cloudPairFromBrowserStep2")}</li>
-                  </ol>
-                  <p className="cloud-pair-success">{nextWord("cloudPairFromBrowserSuccess")}</p>
+                  {selectedHelper && asked ? (
+                    <>
+                      <p>{nextWord("cloudPairCloudHandWhen", { helper: selectedHelper.name, machine: asked.name })}</p>
+                      {(props.helpers?.length ?? 0) > 1 && <label className="cloud-pair-helper">
+                        {nextWord("cloudPairHelperChoose")}
+                        <select value={selectedHelper.id}
+                          onChange={(event) => setHelperID(event.target.value)}>
+                          {props.helpers!.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
+                        </select>
+                      </label>}
+                    </>
+                  ) : (
+                    <>
+                      <p>{nextWord("cloudPairFromBrowserWhen")}</p>
+                      <ol>
+                        <li>{nextWord("cloudPairFromBrowserStep1")}</li>
+                        <li>{nextWord("cloudPairFromBrowserStep2")}</li>
+                      </ol>
+                      <p className="cloud-pair-success">{nextWord("cloudPairFromBrowserSuccess")}</p>
+                    </>
+                  )}
                   <button
                     className="chip cloud-pair-generate"
                     type="button"
                     id="cloud-pair-go"
                     ref={first}
-                    onClick={onBegin}
+                    onClick={() => {
+                      autoHelper.current = asked ? selectedHelper?.id ?? "" : ""
+                      onBegin()
+                    }}
                   >
-                    {nextWord("cloudPairGenerate")}
+                    {asked && selectedHelper ? nextWord("cloudPairCloudHand") : nextWord("cloudPairGenerate")}
                   </button>
                 </article>
               </div>
@@ -216,16 +281,10 @@ export function PairPanel(props: {
         const agentPrompt = nextWord("cloudPairAgentPrompt", { machine: target, command: line })
         // Only inside the Mac app's Cloud tab, and only for a named machine:
         // the shell needs to say which machine it is about to reach.
-        const handOff = offer && asked && pairAgentAvailable() ? asked : null
-        const send = () => {
-          if (!handOff) return
-          setAgent("sending")
-          setProgress(null)
-          void handPairToAgent({ offer: state.fragment, machineID: handOff.id, machineName: handOff.name }).then((reply) => {
-            setAgent(reply)
-            if (reply.ok && reply.mode === "agent") setStartedAt(Date.now())
-          })
-        }
+        const helper = props.helpers?.find((machine) => machine.id === helperID) ?? props.helpers?.[0]
+        const cloudHandOff = offer && asked && helper && props.onAgentStart ? helper : null
+        const handOff = offer && asked && (cloudHandOff || pairAgentAvailable()) ? asked : null
+        const send = () => { if (handOff) startAgent(cloudHandOff || null, handOff) }
         // The copy path. Inside the Mac app it is the second way, folded
         // under a quiet disclosure; everywhere else it is the card.
         const manual = (
@@ -263,6 +322,14 @@ export function PairPanel(props: {
               <>
                 {handOff && (
                   <div className="cloud-pair-agent">
+                    {cloudHandOff && (props.helpers?.length ?? 0) > 1 && !following && (
+                      <label className="cloud-pair-helper">
+                        {nextWord("cloudPairHelperChoose")}
+                        <select value={cloudHandOff.id} disabled={agent === "sending"} onChange={(event) => setHelperID(event.target.value)}>
+                          {props.helpers!.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
+                        </select>
+                      </label>
+                    )}
                     {following ? (
                       agentProgress(handOff.name, send)
                     ) : (
@@ -275,9 +342,11 @@ export function PairPanel(props: {
                           disabled={agent === "sending" || (agent !== null && agent.ok)}
                           onClick={send}
                         >
-                          {nextWord("cloudPairAgentHand")}
+                          {cloudHandOff ? nextWord("cloudPairCloudHand") : nextWord("cloudPairAgentHand")}
                         </button>
-                        <p className="fine">{nextWord("cloudPairAgentHandWhen", { machine: handOff.name })}</p>
+                        <p className="fine">{cloudHandOff
+                          ? nextWord("cloudPairCloudHandWhen", { helper: cloudHandOff.name, machine: handOff.name })
+                          : nextWord("cloudPairAgentHandWhen", { machine: handOff.name })}</p>
                         {agent && (
                           <p className="cloud-pair-agent-said" id="cloud-pair-agent-said" role="status" data-agent={agentOutcome(agent)}>
                             {agentSaid(agent, handOff.name, nextWord)}
@@ -403,6 +472,7 @@ export function PairPanel(props: {
         <p className="cloud-pair-progress-said" id="cloud-pair-agent-said" role="status" aria-live="polite">
           {progressSaid(progress, machine, nextWord)}
         </p>
+        {stage === "done" && progress?.summary && <p className="cloud-pair-progress-summary">{progress.summary}</p>}
         {!ended && startedAt !== null && (
           <p className="fine cloud-pair-elapsed">{elapsedSaid((now - startedAt) / 1000, nextWord)}</p>
         )}

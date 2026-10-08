@@ -74,28 +74,31 @@ test("the status line says sent, finished here, cancelled, or refused with the r
   assert.deepEqual(said({ ok: false, error: "busy" }), ["refused", 'cloudPairAgentRefused{"reason":"busy"}'])
 })
 
-// The card itself is React and is read here as source, as unpaired-rows.test.ts
-// reads it: the hand-off is offered only for a named machine inside the Mac
-// app, above the copy box, which stays for every other browser.
-test("the waiting card offers the hand-off above the copy box, only where the shell can take it", () => {
-  // Inside the Mac app the hand-off is the primary button and the copy path
-  // folds under a disclosure that opens when the AI could not finish.
+// The hosted browser's helper acts only on a machine it has already paired
+// with. The target stays inaccessible until the offer completes there.
+test("the pairing card sends its offer through a paired helper and keeps the manual route", () => {
   const here = dirname(fileURLToPath(import.meta.url))
   const panel = readFileSync(resolve(here, "PairPanel.tsx"), "utf8")
-  assert.match(panel, /const handOff = offer && asked && pairAgentAvailable\(\) \? asked : null/)
+  const gate = readFileSync(resolve(here, "CloudGate.tsx"), "utf8")
+  assert.match(gate, /machine\.id !== \(pairRequest\.mode === "offer" \? pairRequest\.machine\?\.id : ""\)/)
+  assert.match(gate, /machineDescriptor\?\.\(machine\.id\)\?\.machine\?\.commands\?\.includes\("pair-agent-start"\)/)
+  assert.match(gate, /_machineRequestAs[\s\S]*"pair-agent-start"/)
+  assert.match(gate, /_machineRequestAs[\s\S]*"pair-agent-status"/)
+  assert.match(panel, /autoHelper\.current = asked \? selectedHelper\?\.id/)
+  assert.match(panel, /props\.onAgentStart\(helper\.id/)
+  assert.match(panel, /cloudPairCloudHand/)
   const button = panel.indexOf('id="cloud-pair-agent"')
-  // The copy box is built as `manual` and drawn where `{manual}` stands.
   assert.match(panel, /const manual = \(\s*<>[\s\S]*id="cloud-pair-command"/)
   const copyBox = panel.indexOf("{manual}")
   assert.ok(button > 0 && copyBox > button, "the hand-off button is drawn before the copy box")
-  assert.match(panel, /handPairToAgent\(\{ offer: state\.fragment, machineID: handOff\.id, machineName: handOff\.name \}\)/)
+  assert.match(panel, /handPairToAgent\(\{ offer:/)
   assert.match(panel, /id="cloud-pair-copy"/)
   const agentButton = panel.slice(panel.lastIndexOf("<button", button), button)
   assert.match(agentButton, /className="go"/)
   const manual = panel.indexOf('id="cloud-pair-manual"')
   assert.ok(manual > button, "the disclosure is under the hand-off")
   assert.match(panel, /\{handOff \? \(\s*<details/)
-  assert.match(panel, /if \(next\.stage === "failed"\) setManualOpen\(true\)/)
+  assert.match(panel, /setManualOpen\(true\)/)
 })
 
 const TASK = "7ab00050-0000-4000-8000-000000000050"

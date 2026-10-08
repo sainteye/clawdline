@@ -79,7 +79,7 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 	closed := Bridge{MachineID: "mac-01", Router: r}
 	for _, word := range []string{"send", "answer", "end", "focus", "interrupt", "smart-title", "start", "resume", "voice", "intents",
 		"schedule-create", "schedule-update", "schedule-delete", "schedule-run",
-		"schedule-webhook-bind-v1",
+		"schedule-webhook-bind-v1", "pair-agent-start",
 		"snippet-create", "snippet-update", "snippet-delete", "snippet-order", "dispatch"} {
 		body := map[string]any{"type": word, "session": pane, "request": "req-" + word}
 		switch word {
@@ -126,6 +126,9 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 		case "schedule-webhook-bind-v1":
 			body = map[string]any{"type": word, "request_id": scheduleWebhookRequestID,
 				"hook_id": scheduleWebhookHook, "schedule_id": scheduleID, "replace_hook_id": nil}
+		case "pair-agent-start":
+			body["session"] = MachineReplySession
+			body["offer"], body["machine_id"], body["machine_name"] = "opaque", "mac_target", "Target"
 		case "dispatch":
 			body["session"] = MachineReplySession
 			body["task"] = map[string]any{}

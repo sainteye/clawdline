@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4717,
-  "riskKeys": 2059,
-  "nonRiskCount": 2658,
+  "englishContentKeys": 4723,
+  "riskKeys": 2061,
+  "nonRiskCount": 2662,
   "groups": [
     {
       "name": "bar / other",
@@ -1634,7 +1634,7 @@
     },
     {
       "name": "next / cloud",
-      "count": 67,
+      "count": 68,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1687,6 +1687,7 @@
         "next.cloudPairFromMachineTitle",
         "next.cloudPairFromMachineWhen",
         "next.cloudPairGenerate",
+        "next.cloudPairHelperChoose",
         "next.cloudPairMachineKey",
         "next.cloudPairManual",
         "next.cloudPairRecommended",
@@ -1775,7 +1776,7 @@
     },
     {
       "name": "next / other",
-      "count": 81,
+      "count": 84,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1811,6 +1812,9 @@
         "next.schedulesHeading",
         "next.schedulesListLabel",
         "next.screenSessionGone",
+        "next.sessionCallbackActive",
+        "next.sessionCallbackUnverified",
+        "next.sessionCallbacksActive",
         "next.sessionLastActivity",
         "next.sessionStop",
         "next.smartTitleAction",

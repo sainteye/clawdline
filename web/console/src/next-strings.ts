@@ -74,6 +74,9 @@ const words = {
     infoContextUsed: "{used} of {window} tokens in the context",
     infoResetsInMinutes: "in {n} min",
     sessionLastActivity: "last activity {time}",
+    sessionCallbackActive: "Heavy work in progress",
+    sessionCallbacksActive: "Heavy work in progress · {count}",
+    sessionCallbackUnverified: "Heavy work status unverified",
     sessionStateUnrecognizedList:
       "State unknown",
     proposalNeedsYourDecision:
@@ -206,6 +209,9 @@ const words = {
     cloudPairSettings:
       "A machine with Clawdline's settings window can take the part after -offer in its field for the browser's pairing code instead.",
     cloudPairAgentHand: "Hand it to this Mac's AI",
+    cloudPairCloudHand: "Pair with help from a paired machine",
+    cloudPairCloudHandWhen: "{helper} starts a separate AI Session, uses its existing access to reach {machine}, and reports the fingerprints here.",
+    cloudPairHelperChoose: "Machine that will help",
     cloudPairAgentHandWhen:
       "You confirm once. Then an AI session here reaches {machine} with the access this machine already has (ssh, for example) and pairs it, in about a minute.",
     cloudPairAgentSending: "Waiting for your answer in the confirmation…",
@@ -982,6 +988,9 @@ const words = {
     infoContextUsed: "context 裡有 {used} / {window} tokens",
     infoResetsInMinutes: "{n} 分鐘後",
     sessionLastActivity: "上次活動：{time}",
+    sessionCallbackActive: "重工作業進行中",
+    sessionCallbacksActive: "重工作業進行中 · {count} 項",
+    sessionCallbackUnverified: "重工作業狀態待確認",
     sessionStateUnrecognizedList: "無法辨認狀態",
     sessionStateUnrecognizedDetail: "Clawdline 已讀到畫面，但無法辨認狀態。決定下一步前，請查看下方對話。",
     sessionCountNotStarted: "{n} 個還沒開始對話",
@@ -1067,6 +1076,9 @@ const words = {
       "請在目標機器 {machine} 上完成 Clawdline Cloud 配對。先確認你目前操作的就是這個確切目標；如果不是，請用既有且已授權的方式連到它，或把工作交給正在那台機器上執行的 Agent。不要在目前這台機器代跑。\n\n在目標機器上，將以下一次性指令原樣執行一次：\n{command}\n\noffer 是短效、只能使用一次的秘密；不要解碼、修改、保存，也不要在回覆中重貼。成功後請在同一台機器執行 `clawdline cloud devices`，核對瀏覽器與機器指紋，並回報結果但不要附上 offer。",
     cloudPairSettings: "有 Clawdline 設定視窗的機器，也可以把 -offer 後面那一串貼進「瀏覽器顯示的配對碼」那一欄。",
     cloudPairAgentHand: "交給這台 Mac 的 AI",
+    cloudPairCloudHand: "由已配對機器協助配對",
+    cloudPairCloudHandWhen: "{helper} 會啟動獨立的 AI Session，用現有權限連到 {machine}，並在這裡回報指紋。",
+    cloudPairHelperChoose: "選擇協助機器",
     cloudPairAgentHandWhen: "先確認一次；接著這裡的 AI 會用這台機器現有的連線方式（例如 ssh）連到 {machine} 完成配對，大約一分鐘。",
     cloudPairAgentSending: "等你在確認視窗回答…",
     cloudPairAgentSent: "已交給 AI。{machine} 回應後，這張卡會自己完成。",

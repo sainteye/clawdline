@@ -39,6 +39,7 @@ import {
   resumePendingPairing,
 } from "./pair-pending.js"
 import { PairPanel, type PairRequest } from "./PairPanel.js"
+import type { PairAgentProgress, PairAgentReply } from "./pair-agent.js"
 import { DeviceLimitPanel } from "./DeviceLimitPanel.js"
 import { readThroughRelay } from "./install.js"
 import { setTerminalHost } from "./terminal-host.js"
@@ -1029,6 +1030,39 @@ export function CloudGate({ declared }: { declared: string }) {
           // the authenticated handover. Closing reveals that updated list;
           // the fingerprint stays here until the person has compared it.
           onPaired: closePairing,
+          helpers: quickMachines.filter((machine) =>
+            machine.id !== (pairRequest.mode === "offer" ? pairRequest.machine?.id : "") &&
+            client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("pair-agent-start") &&
+            client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("pair-agent-status"),
+          ).map((machine) => ({ id: machine.id, name: machine.name || machine.label || machine.id })),
+          onAgentStart: async (helper: string, offer: string, target: { id: string; name: string }): Promise<PairAgentReply> => {
+            const request = client.current?._machineRequestAs
+            if (!request) return { ok: false, error: "helper_unavailable" }
+            try {
+              const answer = await request.call(client.current, crypto.randomUUID(), helper, "pair-agent-start",
+                { offer, machine_id: target.id, machine_name: target.name }, "action", 130_000) as Record<string, unknown>
+              if (answer?.mode === "agent" && typeof answer.task_id === "string" && answer.task_id) {
+                return { ok: true, mode: "agent", taskID: answer.task_id, trust: typeof answer.trust === "string" ? answer.trust : "" }
+              }
+              return { ok: false, error: "unreadable_helper_answer" }
+            } catch (error) {
+              return { ok: false, error: typeof (error as { code?: unknown })?.code === "string"
+                ? (error as { code: string }).code : error instanceof Error ? error.message : String(error) }
+            }
+          },
+          onAgentStatus: async (helper: string, task: string): Promise<PairAgentProgress> => {
+            const request = client.current?._machineRequestAs
+            if (!request) throw new Error("helper_unavailable")
+            const answer = await request.call(client.current, crypto.randomUUID(), helper, "pair-agent-status",
+              { task_id: task }, "read", 30_000) as Record<string, unknown>
+            const states = ["starting", "dialog", "working", "done", "failed"] as const
+            if (!states.some((state) => state === answer?.state)) throw new Error("unreadable_helper_status")
+            return {
+              stage: answer.state as PairAgentProgress["stage"],
+              summary: typeof answer.summary === "string" ? answer.summary : "",
+              failedReason: typeof answer.failed_reason === "string" ? answer.failed_reason : "",
+            }
+          },
         }
       : null
   // Once drawn, the console stays: the copied modules bind to the document
