@@ -5714,6 +5714,12 @@ type SessionStatus struct {
 	SnapshotGeneration string              `json:"snapshot_generation"`
 	Source             SessionStatusSource `json:"source"`
 	State              string              `json:"state"`
+
+	// True only when a current waiting row has a nonempty menu corroborated by a
+	// captured screen, or by a registry wait and an open single-question transcript
+	// menu while the screen is unavailable. No question or option text is copied.
+	// Absent means the reply signal is unavailable, not that no reply is needed.
+	WaitingForReply bool `json:"waiting_for_reply,omitempty"`
 }
 
 type SessionStatusInventory struct {

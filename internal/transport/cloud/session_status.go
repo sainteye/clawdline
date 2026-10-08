@@ -36,6 +36,7 @@ type SessionStatus struct {
 	LastMovementAt       int64  `json:"last_movement_at,omitempty"`
 	NoProgressAfterMS    int64  `json:"no_progress_after_ms"`
 	NoMovement           *bool  `json:"no_movement,omitempty"`
+	WaitingForReply      bool   `json:"waiting_for_reply,omitempty"`
 	CompletedUnconfirmed bool   `json:"completed_unconfirmed,omitempty"`
 	AttentionRequired    bool   `json:"attention_required,omitempty"`
 	CloseBlocked         *bool  `json:"close_blocked,omitempty"`
@@ -88,6 +89,19 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 	if out.Source.Freshness != "current" {
 		out.ExecutionGeneration = ""
 		return out
+	}
+	// A waiting state alone can be an unrecognised dialog. A reply signal
+	// needs the question's options and the evidence that named their source;
+	// none of their words enter this status projection.
+	if out.State == "waiting" {
+		if menu, ok := row["menu"].(map[string]any); ok {
+			if options, ok := menu["options"].([]any); ok && len(options) > 0 {
+				screen, _ := row["screen_reading"].(string)
+				menuSource, _ := menu["source"].(string)
+				out.WaitingForReply = screen == "read" && menuSource == "" ||
+					screen == "unavailable" && menuSource == "transcript"
+			}
+		}
 	}
 	if acceptance, ok := row["acceptance"].(map[string]any); ok && acceptance["state"] == "pending" && acceptance["phase"] == "done" {
 		out.CompletedUnconfirmed = true

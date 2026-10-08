@@ -509,6 +509,8 @@ capability，**不記 channel 名字**）。
 
 Go daemon 另外發布 `ss/<machine>/<session>`。每個 JSON 僅有 `machine_id`、`session_id`、可驗證時的 `execution_generation`、同批的 `snapshot_generation`、`assistant`、`backend`、`state`、`source`（`provenance`、`observed_at`、`freshness`）、`inventory_complete`、`projected_at`、`last_movement_at`、`no_progress_after_ms`、可判定時的 `no_movement`，以及有來源證據時的 `completed_unconfirmed`、`attention_required`、`close_blocked`、`failed_agent_count`。`completed_unconfirmed` 只在未讀 Board 交付已到 `done` 時為真；`deploying` 不算完成。`close_blocked` 在新鮮且狀態已知的關閉可行性讀值時帶 true/false；`failed_agent_count` 在完整且未截斷的 provider-native 子代理讀值時帶整數，包含 0。缺欄即未知，兩者都不宣稱整個 Session 工作失敗。`last_movement_at` 只表示助理自己的紀錄新增位元組，並非推論工作已進展；門檻由 `internal/domain/capacity` 登錄。不傳標題、對話、畫面、選單、Shell、Git、工作目錄或內容衍生摘要。來源不是 `current` 時省略執行世代與這些狀態事實；`scan.generation` 仍只是清單讀取序號，不能作為執行世代。
 
+`waiting_for_reply` 是額外的正面布林訊號：只有當前 `waiting` 列真的帶選項，且 `screen_reading=read` 證實畫面選單，或 `screen_reading=unavailable`、`menu.source=transcript` 證實仍開啟的單題問句時才為 true。投影只帶布林，不帶問句與選項文字。只有 `state=waiting` 或 `work_person_needed` 不足以推論問句；缺欄表示無法分類。
+
 狀態清單標記放在 `ss/<machine>/__clawdline_inventory_v1__`，其 JSON 是 `inventory:{version:1,sessions:[終端 ID]}`、`at`（Unix 秒）、`complete`（布林）及隨機 128-bit 的 `snapshot_generation`。每批狀態列都帶相同值，viewer 必須丟棄與標記不符的舊快取列；狀態集合改變或 heartbeat 時整批列先發、標記後發。舊 relay 拒絕 `ss/` 時，新頻道自行重試，不阻斷既有 `s/` 標記。狀態列的 `source.observed_at`、`projected_at` 與 `last_movement_at` 都是 Unix 秒，`no_progress_after_ms` 是毫秒。
 
 私有 Cloud relay 的相容版 `b6d3740` 已部署，允許並預設推送 `ss/`，同時保留現有 `s/` 接收方式。`f7e309e` 已實作表中的目標接收規則，但尚未部署；Console 用 `ss/` 清單、按需訂閱 `s/` 詳情後，再啟用 `s/` 明確訂閱與 `read_transcript` 權限。權限收緊前 relay 仍依 `read_sessions` 接收完整 `s/`；不能把該 row 當成僅狀態資料。完整 `s/` 可選擇發布時仍帶 `execution_generation`，舊快取缺這欄時不得用於固定世代的內容讀取。

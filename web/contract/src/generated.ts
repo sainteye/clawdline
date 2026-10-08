@@ -6784,6 +6784,14 @@ export interface SessionStatus {
   snapshot_generation: string
   source: SessionStatusSource
   state: string
+
+  /**
+   * True only when a current waiting row has a nonempty menu corroborated by a
+   * captured screen, or by a registry wait and an open single-question transcript
+   * menu while the screen is unavailable. No question or option text is copied.
+   * Absent means the reply signal is unavailable, not that no reply is needed.
+   */
+  waiting_for_reply?: boolean
 }
 
 export interface SessionStatusInventory {

@@ -69,6 +69,43 @@ func TestStatusDoesNotCallDeployingCompletedOrInventSessionFailure(t *testing.T)
 	}
 }
 
+func TestStatusReplySignalRequiresAProvenCurrentQuestion(t *testing.T) {
+	row := map[string]any{
+		"state": "waiting", "work_person_needed": true,
+		"source": map[string]any{"freshness": "current"},
+	}
+	if got := ProjectSessionStatus("mac_a", "%19", row, true, 100); got.WaitingForReply {
+		t.Fatalf("a waiting state and person-needed work invented a question: %+v", got)
+	}
+	row["screen_reading"] = "read"
+	row["menu"] = map[string]any{"question": "private question", "options": []any{map[string]any{"label": "private option"}}}
+	got := ProjectSessionStatus("mac_a", "%19", row, true, 100)
+	if !got.WaitingForReply {
+		t.Fatalf("current captured menu lost its reply signal: %+v", got)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "private") {
+		t.Fatalf("reply signal copied menu content: %s", encoded)
+	}
+	row["screen_reading"] = "unavailable"
+	row["menu"].(map[string]any)["source"] = "transcript"
+	if got := ProjectSessionStatus("mac_a", "%19", row, true, 100); !got.WaitingForReply {
+		t.Fatalf("open single-question transcript menu lost its signal: %+v", got)
+	}
+	row["menu"].(map[string]any)["source"] = ""
+	if got := ProjectSessionStatus("mac_a", "%19", row, true, 100); got.WaitingForReply {
+		t.Fatalf("an unavailable screen without transcript proof invented a question: %+v", got)
+	}
+	row["source"].(map[string]any)["freshness"] = "unverified"
+	row["screen_reading"] = "read"
+	if got := ProjectSessionStatus("mac_a", "%19", row, false, 101); got.WaitingForReply {
+		t.Fatalf("a carried old question remained actionable: %+v", got)
+	}
+}
+
 func TestStatusRelayFailureDoesNotBlockLegacyInventory(t *testing.T) {
 	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}}
 	p.Publish = func(_ context.Context, out Outbound) error {

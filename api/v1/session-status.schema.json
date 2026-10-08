@@ -32,6 +32,7 @@
         "last_movement_at": { "description": "Unix seconds when the assistant's own record last grew; this is activity, not a claim of task progress.", "type": "integer" },
         "no_progress_after_ms": { "description": "Machine policy threshold in milliseconds for classifying no recent record movement.", "type": "integer" },
         "no_movement": { "description": "Absent when activity or current source evidence is unknown; false is a measured answer.", "type": "boolean" },
+        "waiting_for_reply": { "description": "True only when a current waiting row has a nonempty menu corroborated by a captured screen, or by a registry wait and an open single-question transcript menu while the screen is unavailable. No question or option text is copied. Absent means the reply signal is unavailable, not that no reply is needed.", "type": "boolean" },
         "completed_unconfirmed": { "description": "True only for an unviewed Board delivery in phase done. A deploying item is not called complete.", "type": "boolean" },
         "attention_required": { "description": "True only when a person-needed declaration or a positive attention count is known.", "type": "boolean" },
         "close_blocked": { "description": "Measured only when closeability has a current source and a known state. True means closing is blocked, false means it is not; absent is unknown. It does not mean the whole Session or its work is blocked.", "type": "boolean" },
