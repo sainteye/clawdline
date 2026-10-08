@@ -317,6 +317,7 @@ let sessionWorkReads = 0
 let machineStarts: { path: string; key: string }[] = []
 /** Explicit reminder presses received from an assigned Board item detail. */
 let workReminders = 0
+let detailReadMode: "normal" | "slow" | "fail" = "normal"
 /** Every stream this daemon is holding open, so a new list can be pushed down one. */
 const streams = new Set<ServerResponse>()
 
@@ -466,38 +467,44 @@ function daemon(): Server {
       setTimeout(() => json(res, 200, { ok: true, decision: { state: "answered", answer: "yes" } }), 1000)
       return
     }
-    if (path === "/v1/work/v2/items/work-fixture" && req.method === "GET") return json(res, 200, {
-      ok: true,
-      item: {
-        id: "work-fixture",
-        project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
-        kind: "feature",
-        title: "Finish the release receipt",
-        description: "Publish the verified receipt after the production check passes.",
-        phase: "merging",
-        condition: "waiting_user",
-        user_action: "Confirm the production release window.",
-        area: "merging",
-        deployment_policy: "agent_decides",
-        review_required: false,
-        owner_session: SAFE,
-        created_at: 1,
-        updated_at: 1,
-        closed_at: null,
-        cycle: 1,
-        version: 2,
-        documents: [{
-          id: "report-fixture",
-          role: "completion_report",
-          title: "Completion report",
-          body: "## Root cause\\n\\n" + "A verified finding that must remain readable on a phone.\\n\\n".repeat(24),
-          reference: "",
-          position: 0,
-          version: 1,
-          created_at: 100,
-        }],
-      },
-    })
+    if (path === "/v1/work/v2/items/work-fixture" && req.method === "GET") {
+      const mode = detailReadMode
+      const answer = {
+        ok: true,
+        item: {
+          id: "work-fixture",
+          project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
+          kind: "feature",
+          title: "Finish the release receipt",
+          description: "Publish the verified receipt after the production check passes.",
+          phase: "merging",
+          condition: "waiting_user",
+          user_action: "Confirm the production release window.",
+          area: "merging",
+          deployment_policy: "agent_decides",
+          review_required: false,
+          owner_session: SAFE,
+          created_at: 1,
+          updated_at: 1,
+          closed_at: null,
+          cycle: 1,
+          version: 2,
+          documents: [{
+            id: "report-fixture",
+            role: "completion_report",
+            title: "Completion report",
+            body: "## Root cause\\n\\n" + "A verified finding that must remain readable on a phone.\\n\\n".repeat(24),
+            reference: "",
+            position: 0,
+            version: 1,
+            created_at: 100,
+          }],
+        },
+      }
+      if (mode === "slow") { setTimeout(() => json(res, 200, answer), 900); return }
+      if (mode === "fail") return json(res, 503, { error: "detail unavailable" })
+      return json(res, 200, answer)
+    }
     if (path === "/v1/work/v2/items/work-fixture/remind" && req.method === "POST") {
       workReminders++
       return json(res, 200, {
@@ -575,7 +582,7 @@ function daemon(): Server {
         return res.end(JSON.stringify({ error: "session_unavailable" }))
       }
       const sessionID = decodeURIComponent(sessionWork[1])
-      const ownsSafe = sessionID === SAFE || (inlineDecisionFixture && sessionID === "conversation:conversation-" + SAFE)
+      const ownsSafe = sessionID === SAFE || sessionID === "conversation:conversation-" + SAFE
       const assigned = ownsSafe && readingScenario !== "safe-cleared"
         ? [{
             id: "work-fixture",
@@ -1906,6 +1913,80 @@ test("a phone answers the question directly on its Session todo card with a visi
     } finally {
       inlineDecisionFixture = false
       inlineDecisionAnswers = 0
+    }
+  }))
+
+test("an assigned Board item shows its read progress and retry on a phone", () =>
+  inTab(async (tab) => {
+    detailReadMode = "slow"
+    try {
+      await tab.go("/#session=" + encodeURIComponent(SAFE))
+      const pending = await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 8000
+        const read = () => {
+          const fold = document.querySelector('.session-todos')
+          if (fold && !fold.open) fold.querySelector('summary')?.click()
+          const item = document.querySelector('.session-owned-summary')
+          if (item && !document.querySelector('.work-item-detail-modal')) item.click()
+          const modal = document.querySelector('.work-item-detail-modal')
+          const status = modal?.querySelector('.work-detail-read[role="status"]')
+          if (status) return resolve({ text: status.textContent,
+            spin: getComputedStyle(status.querySelector('.work-detail-spinner')).animationName })
+          if (Date.now() >= deadline) return reject(new Error('item read progress did not appear: ' +
+            JSON.stringify({ fold: !!fold, item: !!item, modal: !!modal, text: fold?.textContent?.slice(0, 300), body: document.body.textContent?.slice(0, 300) })))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      assert.match(pending.text, /正在載入看板項目明細/)
+      assert.equal(pending.spin, "work-assignment-spin")
+      const settled = await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 8000
+        const read = () => {
+          const modal = document.querySelector('.work-item-detail-modal')
+          if (modal?.textContent.includes('Publish the verified receipt') && !modal.querySelector('.work-detail-read')) return resolve(true)
+          if (Date.now() >= deadline) return reject(new Error('item read progress did not finish'))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      assert.equal(settled, true)
+
+      detailReadMode = "fail"
+      const failed = await tab.run(`new Promise((resolve, reject) => {
+        document.querySelector('.work-item-detail-modal .work-modal-close')?.click()
+        const deadline = Date.now() + 8000
+        const read = () => {
+          const item = document.querySelector('.session-owned-summary')
+          if (item && !document.querySelector('.work-item-detail-modal')) item.click()
+          const modal = document.querySelector('.work-item-detail-modal')
+          const error = modal?.querySelector('.work-detail-read[role="alert"]')
+          if (error) return resolve({ text: error.textContent,
+            retry: !!error.querySelector('button'), loading: !!modal.querySelector('.work-detail-spinner') })
+          if (Date.now() >= deadline) return reject(new Error('item read failure did not appear'))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      assert.match(failed.text, /無法更新這個項目的明細/)
+      assert.equal(failed.retry, true)
+      assert.equal(failed.loading, false)
+
+      detailReadMode = "normal"
+      const retried = await tab.run(`new Promise((resolve, reject) => {
+        document.querySelector('.work-detail-read button')?.click()
+        const deadline = Date.now() + 8000
+        const read = () => {
+          const modal = document.querySelector('.work-item-detail-modal')
+          if (modal?.textContent.includes('Publish the verified receipt') && !modal.querySelector('.work-detail-read')) return resolve(true)
+          if (Date.now() >= deadline) return reject(new Error('item retry did not finish'))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      assert.equal(retried, true)
+    } finally {
+      detailReadMode = "normal"
     }
   }))
 
