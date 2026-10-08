@@ -216,6 +216,7 @@ var effectHandlers = map[string]effectHandler{
 	EffectCapacityPush:          {idempotent: false, run: runCapacityPush},
 	EffectWaitingPush:           {idempotent: false, run: runWaitingPush},
 	EffectWorkItemCompletedPush: {idempotent: false, run: runWorkItemCompletedPush},
+	EffectHumanInterventionPush: {idempotent: false, run: runHumanInterventionPush},
 }
 
 func (b *Broker) fault(point string, e store.Effect) {

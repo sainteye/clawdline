@@ -24,6 +24,7 @@ func noteCommand(args []string) {
 	file := fs.String("body-file", "", "JSON note body, or - for stdin")
 	key := fs.String("key", "", "the Idempotency-Key; reuse after an uncertain result")
 	port := fs.Int("port", 0, "the daemon's port")
+	requestedByPerson := fs.Bool("requested-by-person", false, "the person explicitly asked for this note")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 || *file == "" {
 		noteUsage()
 	}
@@ -49,16 +50,16 @@ func noteCommand(args []string) {
 	if err != nil {
 		fail(err)
 	}
-	os.Exit(createNote(os.Stdout, os.Stderr, b, *target, *from, body, *key, os.Getenv))
+	os.Exit(createNote(os.Stdout, os.Stderr, b, *target, *from, body, *key, *requestedByPerson, os.Getenv))
 }
 
 func noteUsage() {
-	fmt.Fprintln(os.Stderr, cliCopy("misc", "note.usage_clawdline_note_create_body_fi.688dbfca", "usage: clawdline note create --body-file <JSON path|-> [--target <terminal id>] [--from <conversation id>] [--key k] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "note.usage_with_requested_by_person", "usage: clawdline note create --body-file <JSON path|-> [--requested-by-person] [--target <terminal id>] [--from <conversation id>] [--key k] [--port n]"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "note.the_body_names_kind_title_summary_a.642cb1ab", "  the body names kind, title, summary, action, reason and optional detail, options, document_url"))
 	os.Exit(2)
 }
 
-func createNote(stdout, stderr io.Writer, b *broker, target, from string, raw []byte, key string, getenv func(string) string) int {
+func createNote(stdout, stderr io.Writer, b *broker, target, from string, raw []byte, key string, requestedByPerson bool, getenv func(string) string) int {
 	if from == "" {
 		var err error
 		if from, _, err = conversationFromEnv(getenv); err != nil {
@@ -75,7 +76,7 @@ func createNote(stdout, stderr io.Writer, b *broker, target, from string, raw []
 		fmt.Fprintln(stderr, cliCopy("misc", "note.clawdline_note_create_body_file_mus.7c1bacd5", "clawdline note create: --body-file must contain one JSON object. Nothing was changed."))
 		return 2
 	}
-	for _, field := range []string{"source_conversation", "source_label", "target_conversation", "target_session", "target_machine"} {
+	for _, field := range []string{"source_conversation", "source_label", "target_conversation", "target_session", "target_machine", "requested_by_person"} {
 		if _, exists := body[field]; exists {
 			fmt.Fprintf(stderr, cliCopy("misc", "note.clawdline_note_create_s_is_supplied.47cca53c", "clawdline note create: %s is supplied by this command or the daemon. Nothing was changed.\n"), field)
 			return 2
@@ -104,6 +105,9 @@ func createNote(stdout, stderr io.Writer, b *broker, target, from string, raw []
 	targetJSON, _ := json.Marshal(target)
 	body["source_conversation"] = fromJSON
 	body["target_session"] = targetJSON
+	if requestedByPerson {
+		body["requested_by_person"] = json.RawMessage("true")
+	}
 	if key == "" {
 		key = newKey("note")
 	}

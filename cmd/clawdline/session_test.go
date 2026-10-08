@@ -472,7 +472,7 @@ func TestEveryCommandRefusesWhenTwoAssistantsNameTheConversation(t *testing.T) {
 			return showUsage(o, e, b, usageAsk{}, env)
 		}},
 		{"note create", "--from", func(o, e io.Writer, b *broker) int {
-			return createNote(o, e, b, "target-terminal", "", []byte(`{"kind":"answer","title":"Choose"}`), "k", env)
+			return createNote(o, e, b, "target-terminal", "", []byte(`{"kind":"answer","title":"Choose"}`), "k", false, env)
 		}},
 		{"coordinator bind", "--conversation", func(o, e io.Writer, b *broker) int {
 			return bindCoordinatorWithWait(o, e, b, "", env, func() {})
