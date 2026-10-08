@@ -129,6 +129,20 @@ test("pending and outcome unknown retain a lookup pointer after reload; only the
   assert.equal(f.calls.filter((call) => call.type === "session-receipt").length, 1)
 })
 
+test("a missing receipt remains unresolved and cannot release the original request key", async () => {
+  const f = fixture()
+  f.setMutationError("receipt_outcome_unknown")
+  f.setReceipt({ request: "request-1", action: "send", execution_generation: generationA,
+    machine_execution: "missing", status: 0, code: "", relay_accepted: "unknown", relay_delivered: "unknown",
+    viewer_observed: "unknown", viewer_acknowledged: "unknown" })
+  const record = await f.service.perform(context, "send", { text: "hello" })
+  assert.equal(record.receipt?.machine_execution, "missing")
+  assert.throws(() => f.service.acknowledge(record), { code: "receipt_outcome_unknown" })
+  const retried = await f.service.perform(context, "send", { text: "hello" })
+  assert.equal(retried.request, record.request)
+  assert.equal(f.calls.filter((call) => call.type === "send").length, 1)
+})
+
 test("high-risk actions carry pinned target and their result can be acknowledged", async () => {
   const f = fixture()
   f.setReceipt({ request: "request-1", action: "end", execution_generation: generationA,

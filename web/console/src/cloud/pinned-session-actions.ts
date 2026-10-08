@@ -261,6 +261,9 @@ export class PinnedSessionActions {
   }
 
   acknowledge(record: ActionRecord): ActionRecord {
+    if (record.receipt?.machine_execution !== "completed" && record.receipt?.machine_execution !== "rejected") {
+      throw Object.assign(new Error("receipt_outcome_unknown"), { code: "receipt_outcome_unknown" })
+    }
     const result = { ...record, acknowledged: true }
     this.save(result)
     return result

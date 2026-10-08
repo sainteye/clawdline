@@ -151,7 +151,7 @@ export function PinnedSessionActionPanel({ context, source, current }: {
           {nextWord("cloudActionReceiptProblem", { code: records[action]!.receipt!.code })}</p>}
         <button type="button" disabled={busy !== null} onClick={() => void checkReceipt(action, records[action]!)}>
           {nextWord("cloudActionCheckReceipt")}</button>
-        {!records[action]!.acknowledged && ["completed", "rejected", "missing"].includes(records[action]!.receipt?.machine_execution ?? "") &&
+        {!records[action]!.acknowledged && ["completed", "rejected"].includes(records[action]!.receipt?.machine_execution ?? "") &&
           <button type="button" onClick={() => setRecords((before) => ({ ...before,
             [action]: service.acknowledge(records[action]!) }))}>{nextWord("cloudActionAcknowledge")}</button>}
       </article>)}
