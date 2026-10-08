@@ -89,9 +89,14 @@
 /* A running heavy callback's owner stays visible beside the ordinary state. */
 .row .state > .session-callback-active {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--warn);
   font: 16px/1.2 sans-serif;
 }
+
+.row .session-callback-active > canvas.spin { flex: 0 0 auto; }
 
 .row .state > .session-work-completion,
 .row .state > .session-closeability,

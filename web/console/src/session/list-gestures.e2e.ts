@@ -1200,7 +1200,9 @@ test("a phone marks only the Session whose heavy callback is running", () =>
       const badge = await tab.run(`(() => {
         const row = document.querySelector("#rows > li.row[data-id='${SAFE}']")
         const mark = row?.querySelector(".session-callback-active")
+        const spinner = mark?.querySelector("canvas.spin")
         return { text: mark?.textContent, label: mark?.getAttribute("aria-label"), title: mark?.getAttribute("title"),
+          spinnerWidth: spinner?.getBoundingClientRect().width, spinnerHidden: spinner?.getAttribute("aria-hidden"),
           visible: !!mark && mark.getBoundingClientRect().width > 0,
           clipped: !!mark && mark.scrollWidth > mark.clientWidth + 1,
           listWidth: document.querySelector("#list-scroll")?.scrollWidth,
@@ -1210,13 +1212,39 @@ test("a phone marks only the Session whose heavy callback is running", () =>
       assert.equal(badge.label, "重工作業進行中 · Go tests")
       assert.ok(badge.title?.includes("Go tests"), JSON.stringify(badge))
       assert.equal(badge.visible, true)
+      assert.ok(badge.spinnerWidth > 0, JSON.stringify(badge))
+      assert.equal(badge.spinnerHidden, "true")
       assert.equal(badge.clipped, false)
       assert.ok(badge.listWidth <= badge.viewportWidth, JSON.stringify(badge))
       await tab.shotArea("callback-waiting-zh-TW", `#rows > li.row[data-id="${SAFE}"]`)
+      await tab.press(`#rows > li.row[data-id="${SAFE}"]`)
+      const inside = await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 8000
+        const read = () => {
+          const mark = document.querySelector("#tx .tx-heavy")
+          const spin = mark?.querySelector("canvas.spin")
+          if (mark && spin?.width) return resolve({ text: mark.textContent, width: spin.getBoundingClientRect().width,
+            nativeWorking: !!document.querySelector("#tx .tx-working:not(.tx-heavy)") })
+          if (Date.now() >= deadline) return reject(new Error("heavy work did not appear inside the idle Session"))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      assert.equal(inside.text, "🏗️重工作業進行中 · Go tests")
+      assert.ok(inside.width > 0)
+      assert.equal(inside.nativeWorking, false)
       callbackDone = true
       pushSessions()
       await tab.until("the finished heavy callback loses its marker", (seen) => seen.callbackRows.length === 0)
-      await tab.press(`#rows > li.row[data-id="${SAFE}"]`)
+      await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 8000
+        const read = () => {
+          if (!document.querySelector("#tx .tx-heavy")) return resolve(true)
+          if (Date.now() >= deadline) return reject(new Error("finished heavy work remains inside the Session"))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
       await tab.run(`new Promise((resolve, reject) => {
         const deadline = Date.now() + 8000
         const read = () => {

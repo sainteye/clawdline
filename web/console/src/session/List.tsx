@@ -59,7 +59,7 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   const callbackLabel = nextWord("sessionCallbackActive")
   const callbackDetail = [callbackLabel, row.heavy_work?.reason].filter(Boolean).join(" · ")
   const callbackSaid = row.heavy_work
-    ? `<span class="session-callback-active" role="img" aria-label="${L.escapeHTML(callbackDetail)}" title="${L.escapeHTML(callbackDetail)}">🏗️</span>`
+    ? `<span class="session-callback-active" role="img" aria-label="${L.escapeHTML(callbackDetail)}" title="${L.escapeHTML(callbackDetail)}">🏗️${L.workState(row).state === "working" ? "" : '<canvas class="spin" aria-hidden="true"></canvas>'}</span>`
     : ""
   const n = row.shells?.length ?? 0
   const shellsSaid = n
