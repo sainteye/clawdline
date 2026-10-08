@@ -354,7 +354,7 @@ func TestTerminalRequestRejectsForgedShapeAndKey(t *testing.T) {
 	}
 }
 
-func TestTerminalAdmissionUsesCommandKeyRosterCapabilityAndFreshRead(t *testing.T) {
+func TestTerminalAdmissionUsesCommandKeyPinAndFreshRoster(t *testing.T) {
 	dir := t.TempDir()
 	file := nextconfig.Open(dir)
 	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
@@ -369,7 +369,7 @@ func TestTerminalAdmissionUsesCommandKeyRosterCapabilityAndFreshRead(t *testing.
 		t.Fatal(err)
 	}
 	var mu sync.Mutex
-	row := adaptercloud.RosterDevice{ID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{TerminalCapability}}
+	row := adaptercloud.RosterDevice{ID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{"send_prompt"}}
 	failed := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
@@ -386,7 +386,7 @@ func TestTerminalAdmissionUsesCommandKeyRosterCapabilityAndFreshRead(t *testing.
 		settings: adaptercloud.Settings{Enabled: true}, pinned: pinned,
 		roster: adaptercloud.NewRoster(server.URL, "credential", time.Now)}
 	if !l.TerminalViewerAllowed("viewer") {
-		t.Fatal("exact pin and send_prompt were refused")
+		t.Fatal("exact pin was refused")
 	}
 	if l.TerminalViewerAllowed("another-viewer") {
 		t.Fatal("another viewer inherited the authorized viewer connection")
@@ -395,11 +395,11 @@ func TestTerminalAdmissionUsesCommandKeyRosterCapabilityAndFreshRead(t *testing.
 	row.Caps = []string{"read_sessions"}
 	mu.Unlock()
 	l.terminalRosterAt = time.Time{}
-	if l.TerminalViewerAllowed("viewer") {
-		t.Fatal("read-only viewer gained terminal access")
+	if !l.TerminalViewerAllowed("viewer") {
+		t.Fatal("legacy read-only viewer was refused")
 	}
 	mu.Lock()
-	row.Caps = []string{TerminalCapability}
+	row.Caps = []string{"send_prompt"}
 	row.PublicKey = base64.StdEncoding.EncodeToString(make([]byte, 32))
 	mu.Unlock()
 	l.terminalRosterAt = time.Time{}
@@ -421,8 +421,8 @@ func TestTerminalAdmissionUsesCommandKeyRosterCapabilityAndFreshRead(t *testing.
 		settings: adaptercloud.Settings{Enabled: true},
 		pinned:   adaptercloud.NewPinnedStore(filepath.Join(dir, "legacy-pins")),
 		roster:   adaptercloud.NewRoster(server.URL, "credential", time.Now)}
-	if !legacy.TerminalViewerAllowed("viewer") {
-		t.Fatal("a roster-only viewer that can send commands was refused terminal access")
+	if legacy.TerminalViewerAllowed("viewer") {
+		t.Fatal("a roster-only viewer gained terminal access without pairing")
 	}
 	if revoked, err := pinned.Revoke("viewer", time.Now()); err != nil || !revoked {
 		t.Fatalf("revoke pinned viewer: changed=%v err=%v", revoked, err)
@@ -503,7 +503,7 @@ func TestLocalGrantRefusalRegistersBeforeReceiptAndRetiresAfterSettlement(t *tes
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"devices": []adaptercloud.RosterDevice{{ID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{TerminalCapability}}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"devices": []adaptercloud.RosterDevice{{ID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{"send_prompt"}}}})
 	}))
 	defer server.Close()
 	file := nextconfig.Open(t.TempDir())
@@ -574,13 +574,13 @@ func TestLocalGrantRefusalRegistersBeforeReceiptAndRetiresAfterSettlement(t *tes
 	}
 }
 
-func TestRosterOnlyCommandSenderGetsEncryptedTerminalConnectionReceipt(t *testing.T) {
+func TestRosterOnlyCommandSenderGetsEncryptedTerminalRefusal(t *testing.T) {
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"devices": []adaptercloud.RosterDevice{{ID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{TerminalCapability}}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"devices": []adaptercloud.RosterDevice{{ID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{"send_prompt"}}}})
 	}))
 	defer server.Close()
 	file := nextconfig.Open(t.TempDir())
@@ -619,7 +619,7 @@ func TestRosterOnlyCommandSenderGetsEncryptedTerminalConnectionReceipt(t *testin
 		terminalRequest{RequestID: testRequestID, Operation: "open_connection", Connection: testConnection,
 			KeyID: testKeyID, Key: base64.StdEncoding.EncodeToString(key.Bytes())})
 	if !registered {
-		t.Fatal("roster-only sender was refused before keyed receipt could be delivered")
+		t.Fatal("roster-only sender did not register for a keyed refusal")
 	}
 	row, ok := spool.Row(0)
 	if !ok {
@@ -637,7 +637,7 @@ func TestRosterOnlyCommandSenderGetsEncryptedTerminalConnectionReceipt(t *testin
 	if err := json.Unmarshal(plain, &receipt); err != nil {
 		t.Fatal(err)
 	}
-	if receipt.Status != "ok" || receipt.Error != "" {
+	if receipt.Status != "refused" || receipt.Error != string(terminal.CodeForbidden) {
 		t.Fatalf("roster-only sender: %+v", receipt)
 	}
 }

@@ -969,9 +969,6 @@ export function SettingsWindow() {
           <Row label={W.settingsRemoteServe} hint={W.settingsRemoteHint} first>
             <Switch label={W.settingsRemoteServe} on={!!now("remote")} onChange={flip("remote")} />
           </Row>
-          <Row label={W.settingsRemoteWrite} hint={W.settingsRemoteWriteHint}>
-            <Switch label={W.settingsRemoteWrite} on={!!now("remote_write")} onChange={flip("remote_write")} />
-          </Row>
           <Row label={W.settingsPushDelivery} hint={W.settingsPushDeliveryHint}>
             <Switch
               label={W.settingsPushDelivery}

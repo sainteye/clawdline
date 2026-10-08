@@ -670,7 +670,7 @@ func TestTerminalRosterReadIsDatedFromItsStart(t *testing.T) {
 		now = now.Add(1500 * time.Millisecond) // the read is slow
 		mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]any{"devices": []adaptercloud.RosterDevice{{ID: "viewer",
-			PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{TerminalCapability}}}})
+			PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{"send_prompt"}}}})
 	}))
 	defer server.Close()
 	l := &Link{opts: LinkOptions{Now: clock}, roster: adaptercloud.NewRoster(server.URL, "credential", clock)}
@@ -778,7 +778,7 @@ func TestDirectRekeyRefusesWithoutAnOpenChannel(t *testing.T) {
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"devices": []adaptercloud.RosterDevice{{ID: "viewer",
-			PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{TerminalCapability}}}})
+			PublicKey: base64.StdEncoding.EncodeToString(pub), Caps: []string{"send_prompt"}}}})
 	}))
 	defer server.Close()
 	for _, tc := range []struct {
@@ -797,6 +797,9 @@ func TestDirectRekeyRefusesWithoutAnOpenChannel(t *testing.T) {
 		f.l.file = file
 		f.l.settings = adaptercloud.Settings{Enabled: true, TerminalDirect: tc.enabled}
 		f.l.pinned = adaptercloud.NewPinnedStore(t.TempDir())
+		if err := f.l.pinned.Pin("account", adaptercloud.PinnedDevice{DeviceID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(pub)}); err != nil {
+			t.Fatal(err)
+		}
 		f.l.roster = adaptercloud.NewRoster(server.URL, "credential", time.Now)
 		next, err := domaincloud.NewContentKey(rand.Reader)
 		if err != nil {

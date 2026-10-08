@@ -1999,10 +1999,6 @@ export interface BrowserDevice {
  * Local token only.
  */
 export interface BrowserRequest {
-  /**
-   * Also grant send. Off unless the person at this machine asked.
-   */
-  send?: boolean
 }
 
 /**
@@ -2396,14 +2392,6 @@ export type CapacityUnit =
   | "seconds"
 
 export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "characters", "rows", "seconds"] as const
-
-/**
- * POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other
- * grant. Local token only.
- */
-export interface CapsRequest {
-  caps: string[]
-}
 
 export interface CatalogError {
   code: string
@@ -3976,7 +3964,7 @@ export interface PairStarted {
 
 export interface PairedDevice {
   /**
-   * read, and send when this device may type into a session.
+   * Paired devices have read and send access.
    */
   caps: string[]
 
@@ -3994,8 +3982,8 @@ export interface PairedDevice {
   name: string
 
   /**
-   * Legacy terminal grant record for older clients. Access now follows pairing and
-   * send permission; this field does not grant or revoke terminal access.
+   * Legacy terminal grant record for older clients. Access now follows pairing;
+   * this field does not grant or revoke terminal access.
    */
   terminal?: boolean
 }
@@ -6896,11 +6884,6 @@ export interface SettingsRequest {
   remote_tunnel: string | null
 
   /**
-   * Whether a paired device may write into a session.
-   */
-  remote_write: boolean | null
-
-  /**
    * Whether the bar comes back with the terminal.
    */
   reopen_on_return: boolean | null
@@ -7156,11 +7139,6 @@ export interface SettingsSnapshot {
    * `off`, `quick` or `named`.
    */
   remote_tunnel: string | null
-
-  /**
-   * Whether a paired device may write into a session.
-   */
-  remote_write: boolean | null
 
   /**
    * Whether the bar comes back with the terminal.

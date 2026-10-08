@@ -109,11 +109,10 @@ func fail(err error) {
 // not the query — a browser never sends a fragment and never logs it.
 func openCommand(args []string) {
 	fs := flag.NewFlagSet("open", flag.ExitOnError)
-	_ = fs.Bool("send", true, "compatibility flag; new browsers can already send")
 	printOnly := fs.Bool("print", false, "print the address instead of opening it (it carries a key)")
 	_ = fs.Parse(args)
 
-	req, err := daemonRequest(http.MethodPost, "/v1/auth/devices/browser", contract.BrowserRequest{Send: true})
+	req, err := daemonRequest(http.MethodPost, "/v1/auth/devices/browser", contract.BrowserRequest{})
 	if err != nil {
 		fail(err)
 	}

@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 4716,
-  "riskKeys": 2059,
-  "nonRiskCount": 2657,
+  "riskKeys": 2058,
+  "nonRiskCount": 2658,
   "groups": [
     {
       "name": "bar / other",
@@ -1974,12 +1974,13 @@
     },
     {
       "name": "next / signed",
-      "count": 8,
+      "count": 9,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
         "next.signedInCancel",
+        "next.signedInCapsRead",
         "next.signedInCapsSend",
         "next.signedInLastSeen",
         "next.signedInSignOut",

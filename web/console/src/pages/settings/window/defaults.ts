@@ -38,7 +38,6 @@ export const DEFAULTS = {
   voice_settle_seconds: 1.8,
   voice_stop_seconds: 4.0,
   remote: false,
-  remote_write: false,
   remote_tunnel: "off",
   remote_hostname: "",
   push_on_delivery: true,

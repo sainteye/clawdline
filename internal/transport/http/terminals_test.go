@@ -12,11 +12,9 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/devices"
-	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/app/terminals"
 	"github.com/sainteye/clawdline/internal/contract"
-	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/terminal"
 	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
@@ -114,8 +112,8 @@ func TestQueuedTerminalInputRechecksSendBeforeHostEffect(t *testing.T) {
 	if svc.Lanes().Stats().Admitted < 2 {
 		t.Fatal("the second input never entered the terminal lane")
 	}
-	if _, err := f.s.gate().auth.SetCapabilities(device, auth.NewCaps(auth.Read)); err != nil {
-		t.Fatalf("remove send: %v", err)
+	if err := f.s.gate().auth.Revoke(device); err != nil {
+		t.Fatalf("revoke device: %v", err)
 	}
 	<-first
 	if got := <-second; !strings.Contains(got, "terminal_forbidden") {
@@ -154,8 +152,8 @@ func TestRevocationDuringInitialCaptureNeverSendsFrame(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("capture did not begin")
 	}
-	if _, err := f.s.gate().auth.SetCapabilities(device, auth.NewCaps(auth.Read)); err != nil {
-		t.Fatalf("remove send: %v", err)
+	if err := f.s.gate().auth.Revoke(device); err != nil {
+		t.Fatalf("revoke device: %v", err)
 	}
 	close(host.frameRelease)
 	a := <-ready
@@ -177,26 +175,19 @@ func TestRevocationDuringInitialCaptureNeverSendsFrame(t *testing.T) {
 	}
 }
 
-// A paired sender inherits terminal access; a legacy read-only device does not.
-func TestAReadOnlyDeviceIsForbiddenTerminals(t *testing.T) {
+// Every paired device inherits send permission; terminal grants remain separate.
+func TestEveryPairedDeviceMayUseTerminalsButCannotGrantItself(t *testing.T) {
 	f := newTermFixture(t, newFakeTerms())
 	term := f.open(f.local)
-	srv := f.server()
-	if _, err := nextconfig.Open(f.dir).Set(map[string]any{"remote_write": true}); err != nil {
-		t.Fatal(err)
-	}
 	_, reader := f.device("phone", false)
 
-	if rec := f.do(http.MethodGet, "/v1/terminals", reader, ""); rec.Code != http.StatusForbidden || termCode(rec) != "terminal_forbidden" {
+	if rec := f.do(http.MethodGet, "/v1/terminals", reader, ""); rec.Code != http.StatusOK {
 		t.Fatalf("list: %d %s", rec.Code, rec.Body)
 	}
-	if _, status := f.stream(srv, term.ID, reader, "c1"); status != http.StatusForbidden {
-		t.Fatalf("stream: %d", status)
-	}
-	if rec := f.input(term.ID, reader, "c1", 1, 1, "ls\r"); rec.Code != http.StatusForbidden || termCode(rec) != "terminal_forbidden" {
+	if rec := f.input(term.ID, reader, "c1", 1, 1, "ls\r"); termCode(rec) != "not_controller" {
 		t.Fatalf("input: %d %s", rec.Code, rec.Body)
 	}
-	if _, rec := f.control(term.ID, reader, "c1", "acquire"); termCode(rec) != "terminal_forbidden" {
+	if _, rec := f.control(term.ID, reader, "c1", "acquire"); rec.Code != http.StatusOK {
 		t.Fatalf("acquire: %d %s", rec.Code, rec.Body)
 	}
 	// A device may not give itself a grant: the grant route takes this
@@ -346,14 +337,13 @@ func TestInputIsTypedOnceInOrderAndNeverGuessed(t *testing.T) {
 	}
 }
 
-// A device revoked, or its send permission removed, loses its stream
-// within a second and cannot type.
+// A revoked device loses its stream within a second and cannot type.
 func TestRevokingEndsTheStreamWithinASecond(t *testing.T) {
 	f := newTermFixture(t, newFakeTerms())
 	term := f.open(f.local)
 	srv := f.server()
 
-	for _, how := range []string{"revoke the device", "remove send permission"} {
+	for _, how := range []string{"revoke the device"} {
 		t.Run(how, func(t *testing.T) {
 			id, token := f.device("phone-"+strings.ReplaceAll(how, " ", "-"), true)
 			c, rec := f.control(term.ID, token, "p", "takeover")
@@ -364,16 +354,8 @@ func TestRevokingEndsTheStreamWithinASecond(t *testing.T) {
 			stream.until(t, 2*time.Second, "the first frame", func(e sseEvent) bool { return e.name == "frame" })
 
 			began := time.Now()
-			want, wantCode := http.StatusUnauthorized, ""
-			if how == "revoke the device" {
-				if rec := f.do(http.MethodPost, "/v1/auth/devices/"+id+"/revoke", f.local, ""); rec.Code != http.StatusOK {
-					t.Fatalf("revoke: %d %s", rec.Code, rec.Body)
-				}
-			} else {
-				if _, err := f.s.gate().auth.SetCapabilities(id, auth.NewCaps(auth.Read)); err != nil {
-					t.Fatal(err)
-				}
-				want, wantCode = http.StatusForbidden, "terminal_forbidden"
+			if rec := f.do(http.MethodPost, "/v1/auth/devices/"+id+"/revoke", f.local, ""); rec.Code != http.StatusOK {
+				t.Fatalf("revoke: %d %s", rec.Code, rec.Body)
 			}
 			ended, seen := stream.ended(t, time.Second)
 			took := ended.Sub(began)
@@ -382,7 +364,7 @@ func TestRevokingEndsTheStreamWithinASecond(t *testing.T) {
 			}
 			t.Logf("%s: the stream closed %v after the change", how, took.Round(time.Millisecond))
 			rec = f.input(term.ID, token, "p", c.Epoch, 1, "after")
-			if rec.Code != want || (wantCode != "" && termCode(rec) != wantCode) {
+			if rec.Code != http.StatusUnauthorized {
 				t.Fatalf("the next input: %d %s", rec.Code, rec.Body)
 			}
 			if ctl, _ := f.control(term.ID, f.local, "a", "acquire"); !ctl.Held {

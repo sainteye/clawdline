@@ -157,9 +157,9 @@ func TestGateChangeChecks(t *testing.T) {
 				"Origin": "http://127.0.0.1:9999", "X-Clawdline-Task-Secret": "task-secret", "Content-Type": "text/plain"}}, 403},
 		{"a header token and no body",
 			call{path: "/v1/board", headers: map[string]string{"Authorization": "Bearer " + f.send}}, 200},
-		{"a read-only device is refused for the capability before the body type",
+		{"a paired device reaches the body type check",
 			call{path: "/v1/board", body: "x", headers: map[string]string{
-				"Authorization": "Bearer " + f.read, "Content-Type": "text/plain"}}, 403},
+				"Authorization": "Bearer " + f.read, "Content-Type": "text/plain"}}, 415},
 		{"PUT is a change too",
 			call{method: http.MethodPut, path: "/v1/board", body: "x", headers: map[string]string{
 				"Origin": here, "Cookie": cookie, "Content-Type": "text/plain"}}, 415},

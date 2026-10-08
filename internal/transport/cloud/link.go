@@ -47,19 +47,6 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/terminal"
 )
 
-// SendCapability is the roster capability a Cloud viewer needs before this
-// machine will act on anything it says.
-//
-// It is the control plane's word (`api/src/types.ts:85`), not this daemon's:
-// the account decides what a device may do, and a machine that made up its own
-// answer would be a second permission model. `start_session` is listed beside
-// it because starting a session is the other way a viewer causes code to run
-// here, and a device trusted with that is trusted with typing.
-const (
-	SendCapability  = "send_prompt"
-	StartCapability = "start_session"
-)
-
 // Status is what the status route answers: enough to tell "the switch is off"
 // from "the relay refused us" from "it is up and nothing has arrived".
 type Status struct {
@@ -280,10 +267,7 @@ type Link struct {
 	terminalRefusals   chan Inbound
 }
 
-// A paired viewer already trusted to send commands may also use terminals.
-// Read-only viewers never inherit shell access.
-const TerminalCapability = "send_prompt"
-
+// A paired viewer may use terminals while Cloud commands are enabled.
 const (
 	CloudTerminalRosterRefreshLimit  = 2
 	CloudTerminalRosterDeadlineLimit = 2
@@ -310,11 +294,11 @@ const (
 	TerminalUnverified TerminalVerdict = iota
 	// TerminalAllowed means a roster read fresh within
 	// CloudTerminalRosterRefreshLimit names the viewer, unrevoked, with
-	// send_prompt and the same key this machine verifies its envelopes with.
+	// the same key this machine verifies its envelopes with.
 	TerminalAllowed
 	// TerminalDenied means a fact this machine holds says no: Cloud or Cloud
 	// commands are off here, this machine revoked the device, or a fresh
-	// roster lacks the device, marks it revoked, lacks send_prompt or names a
+	// roster lacks the device, marks it revoked or names a
 	// different key than the pin.
 	TerminalDenied
 )
@@ -371,8 +355,7 @@ func (l *Link) TerminalViewerAllowed(device string) bool {
 // local pin and grant are checked again after that registration, so a
 // locally refused viewer can receive a keyed refusal. With withKey it uses the
 // same locally revoked, pin-first sender key as Cloud commands, plus a fresh
-// roster with the matching key and send_prompt. A read-only viewer cannot
-// reach the terminal service.
+// roster with the matching key.
 func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, string) {
 	if !l.settings.Enabled {
 		return TerminalDenied, "Cloud is off on this machine"
@@ -404,6 +387,9 @@ func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, 
 			pinnedKey = key
 		}
 	}
+	if withKey && pinnedKey == nil {
+		return TerminalDenied, "this device is not paired with this machine"
+	}
 	if l.roster == nil {
 		return TerminalUnverified, "this machine holds no credential to read the device roster"
 	}
@@ -417,9 +403,6 @@ func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, 
 		if row.RevokedAt != nil && *row.RevokedAt != "" {
 			return TerminalDenied, "the account revoked the device"
 		}
-		if !hasAny(row.Caps, TerminalCapability) {
-			return TerminalDenied, "the device may not send commands"
-		}
 		if !withKey {
 			return TerminalAllowed, ""
 		}
@@ -427,8 +410,7 @@ func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, 
 		if err != nil || len(rosterKey) != ed25519.PublicKeySize {
 			return TerminalDenied, "the account's key for the device is unreadable"
 		}
-		// The roster is the fallback key for a viewer paired before pins.
-		if pinnedKey != nil && !bytes.Equal(rosterKey, pinnedKey) {
+		if !bytes.Equal(rosterKey, pinnedKey) {
 			return TerminalDenied, "the account's key for the device is not the paired one"
 		}
 		return TerminalAllowed, ""
@@ -1099,18 +1081,21 @@ func (l *Link) pairingKeys() (domaincloud.DeviceKey, domaincloud.ContentKey, err
 // authority is cloudops' re-read at the point of no return.
 //
 // The roster is the account's, not this machine's: a device the person removed
-// in the hosted console stops being able to act here at the next refresh. The
-// capability check is the same borrowing — a viewer enrolled without
-// `send_prompt` may read this machine and may not type into it, and that is the
-// account's decision rather than one this file makes up.
+// in the hosted console stops being able to act here at the next refresh.
+// Every active viewer paired to this machine may send while Cloud commands
+// are enabled on this machine.
 func (l *Link) authority(ctx context.Context, sender string, requiresWriteGate bool) cloudops.Authority {
 	readable, _ := l.roster.Readable()
+	var pairedKey ed25519.PublicKey
 	if l.pinned != nil {
 		if refused, err := l.pinned.Refused(sender); err != nil || refused {
 			// A device this machine threw out, or a pin file it cannot read.
 			// Either way the answer is no, and it is no before the roster is
 			// consulted: the roster is the thing a revocation has to beat.
 			return cloudops.Authority{ClockReady: true, RosterReadable: readable}
+		}
+		if key, ok, err := l.pinned.PublicKeyFor(sender); err == nil && ok {
+			pairedKey = key
 		}
 	}
 	a := cloudops.Authority{
@@ -1131,26 +1116,21 @@ func (l *Link) authority(ctx context.Context, sender string, requiresWriteGate b
 		if device.RevokedAt != nil && *device.RevokedAt != "" {
 			return a
 		}
+		if requiresWriteGate {
+			rosterKey, err := base64.StdEncoding.DecodeString(device.PublicKey)
+			if err != nil || len(rosterKey) != ed25519.PublicKeySize || !bytes.Equal(rosterKey, pairedKey) {
+				return a
+			}
+		}
 		a.RosterAllowsSender = true
 		if !requiresWriteGate {
 			a.WriteGateAllows = true
 			return a
 		}
-		a.WriteGateAllows = l.allowCommands() && hasAny(device.Caps, SendCapability, StartCapability)
+		a.WriteGateAllows = l.allowCommands()
 		return a
 	}
 	return a
-}
-
-func hasAny(have []string, want ...string) bool {
-	for _, item := range have {
-		for _, candidate := range want {
-			if item == candidate {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // RelayQueue is the request queue's reading for the capacity register. ok is
