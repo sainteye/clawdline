@@ -123,6 +123,35 @@
       "type": "string",
       "enum": ["accepted", "terminal_opened", "briefed", "failed"]
     },
+    "BrokerRootAssignmentClosure": {
+      "description": "A durable close of the exact executor. Only safe, unforced closure is completion evidence; the assignment remains briefed as its launch state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["terminal_id", "method", "forced", "safe", "closed_at"],
+      "properties": {
+        "terminal_id": { "type": "string" },
+        "conversation_id": { "type": "string" },
+        "method": { "type": "string", "enum": ["close", "archive", "scheduled"] },
+        "forced": { "type": "boolean" },
+        "safe": { "type": "boolean" },
+        "closed_at": { "type": "integer" }
+      }
+    },
+    "BrokerRootCleanupEligibility": {
+      "description": "Fresh conservative cleanup gates. No Root scratch is registered yet, so eligible is false and no Root path is deleted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eligible", "reason", "next_owner", "completion", "owner", "scratch", "preservation"],
+      "properties": {
+        "eligible": { "type": "boolean" },
+        "reason": { "type": "string" },
+        "next_owner": { "type": "string" },
+        "completion": { "type": "boolean" },
+        "owner": { "type": "string", "enum": ["present", "absent", "unknown"] },
+        "scratch": { "type": "string", "enum": ["unregistered"] },
+        "preservation": { "type": "string", "enum": ["unverified"] }
+      }
+    },
     "BrokerRootAssignment": {
       "description": "One independently owned Feature Root. It carries no child lineage — no task, parent, secret, timeout, result or landing — and a reader can tell by its shape. The brief is the file at `brief_path`; the one line typed names it. `brief_attempted_at` is durable before the keystroke, so the brief is typed at most once.",
       "type": "object",
@@ -144,7 +173,9 @@
         "brief_path": { "type": "string" },
         "brief_attempted_at": { "type": "integer" },
         "briefed_at": { "type": "integer" },
-        "failure": { "type": "string" }
+        "failure": { "type": "string" },
+        "closure": { "$ref": "#/$defs/BrokerRootAssignmentClosure" },
+        "cleanup": { "$ref": "#/$defs/BrokerRootCleanupEligibility" }
       }
     },
     "BrokerRootAssignmentResult": {

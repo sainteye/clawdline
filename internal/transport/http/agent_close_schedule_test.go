@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 func working(terminal string) contract.CloseReason {
@@ -86,9 +87,9 @@ func (f *sweepFake) do() closeSweep {
 		audit: func(context.Context, string, string) (agentCloseAudit, *agentCloseRefusal) {
 			return f.audit, f.refusal
 		},
-		close: func(_ context.Context, sc scheduledClose) error {
+		close: func(_ context.Context, sc scheduledClose) (session.Session, error) {
 			f.closed = append(f.closed, sc.Terminal)
-			return nil
+			return session.Session{ID: sc.Terminal}, nil
 		},
 		record: func(_ context.Context, kind, terminal string, payload map[string]any) {
 			f.recorded = append(f.recorded, kind)

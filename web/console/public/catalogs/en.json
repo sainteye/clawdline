@@ -649,6 +649,7 @@
   "http.7d7dd627e380a20e": "a turn's report is opened on this machine, never through Clawdline Cloud",
   "http.7dec3cd3b4ca3f79": "An Agent may complete only its own Session to-do.",
   "http.7e2c5d9ffaec4584": "Dispatching needs the orchestrator token.",
+  "http.7e63fd158afd2797": "The Session closed, but its Root Assignment close receipt could not be recorded.",
   "http.7e838461cb86f5ba": "That artifact is not a PNG or a JPEG and does not cross this connection.",
   "http.7f274d7c058b1244": "This machine has taken ten snippet writes in ten minutes.",
   "http.7f3611c4961fe4b4": "Override may authorize only the escalation's current frozen candidate.",

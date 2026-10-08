@@ -118,13 +118,23 @@ func (s *Server) archiveSession(w http.ResponseWriter, r *http.Request, id strin
 		writeRefusal(w, http.StatusConflict, app.ArchiveNoConversation, "That Session has no conversation to archive.")
 		return
 	}
-	if !s.closeEvidence(w, r.Context(), id, body.ExpectedCloseabilityVersion, body.Force, nil) {
+	var pin processPin
+	if !s.closeEvidence(w, r.Context(), id, body.ExpectedCloseabilityVersion, body.Force, &pin) {
 		return
 	}
 	// The whole close ladder, as a close has it.
 	ctx, cancel := context.WithTimeout(r.Context(), closeBudget)
 	defer cancel()
-	_, row, err := s.closeActions(r).Archive(ctx, id, body.Force)
+	closed, row, err := s.closeActions(r).Archive(ctx, id, body.Force)
+	// Archive can fail after the Session closed because its conversation row
+	// could not be filed. The Root's close receipt still describes that close.
+	var archiveRefusal app.Refusal
+	if closed.ID == id && (err == nil || (errors.As(err, &archiveRefusal) && archiveRefusal.Code == app.ArchiveNotRecorded)) {
+		if receiptErr := s.recordRootClosure(ctx, pin.rootAssignment, closed, "archive", body.Force); receiptErr != nil {
+			writeRootCloseReceiptRefusal(w)
+			return
+		}
+	}
 	if err != nil {
 		writeActionRefusal(w, err)
 		return

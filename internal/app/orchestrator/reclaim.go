@@ -455,15 +455,22 @@ func (b *Broker) occupied(ctx context.Context, paths ...string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	return occupiedFromCWDs(cwds, targets...), nil
+}
+
+// occupiedFromCWDs compares one process-table reading against a set of
+// already folded target paths. A list projection can reuse the same reading
+// instead of invoking lsof for every assignment.
+func occupiedFromCWDs(cwds []string, targets ...string) string {
 	for _, cwd := range cwds {
 		folded := foldPath(cwd)
 		for _, t := range targets {
 			if folded == t || strings.HasPrefix(folded, t+"/") {
-				return cwd, nil
+				return cwd
 			}
 		}
 	}
-	return "", nil
+	return ""
 }
 
 // foldPath is a path as this Mac's file system compares it: links resolved
