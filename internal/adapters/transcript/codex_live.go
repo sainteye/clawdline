@@ -157,7 +157,7 @@ func (h *Host) ObserveRows(ctx context.Context, rows []session.Session) context.
 		if s.Backend != session.BackendITerm || s.Assistant != session.AssistantCodex || s.CWD == "" {
 			continue
 		}
-		if codexTerminalTitle(s.Label) == codexBareTitle(s.CWD) {
+		if codexObservedTitle(s.Label) == codexBareTitle(s.CWD) {
 			bare[s.CWD]++
 		}
 	}
@@ -182,10 +182,32 @@ func codexLiveFor(ctx context.Context, lives map[string]codexLiveIdentity, s ses
 		return codexLiveIdentity{}, false
 	}
 	label := codexTerminalTitle(s.Label)
+	found, matches := codexLiveMatches(ctx, lives, s, label)
+	if matches != 0 {
+		return found, matches == 1
+	}
+	// A Codex tab waiting for the person can prepend this observed status
+	// marker to its title. Try its unadorned title only when the exact one
+	// matched nothing: a conversation literally named with the marker keeps
+	// its exact identity, and an ambiguous match is never ranked away.
+	if strings.HasPrefix(label, codexActionRequiredPrefix) {
+		found, matches = codexLiveMatches(ctx, lives, s, strings.TrimPrefix(label, codexActionRequiredPrefix))
+		return found, matches == 1
+	}
+	return codexLiveIdentity{}, false
+}
+
+const codexActionRequiredPrefix = "[ ! ] Action Required | "
+
+func codexObservedTitle(label string) string {
+	return strings.TrimPrefix(codexTerminalTitle(label), codexActionRequiredPrefix)
+}
+
+func codexLiveMatches(ctx context.Context, lives map[string]codexLiveIdentity, s session.Session, label string) (codexLiveIdentity, int) {
 	if label == codexBareTitle(s.CWD) {
 		bare, _ := ctx.Value(codexBareRowsKey{}).(map[string]int)
 		if bare[s.CWD] != 1 {
-			return codexLiveIdentity{}, false
+			return codexLiveIdentity{}, 2
 		}
 	}
 	var found codexLiveIdentity
@@ -204,7 +226,7 @@ func codexLiveFor(ctx context.Context, lives map[string]codexLiveIdentity, s ses
 		found = live
 		matches++
 	}
-	return found, matches == 1
+	return found, matches
 }
 
 // Codex prefixes the title with one braille spinner cell while it works. The
