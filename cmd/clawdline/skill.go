@@ -103,6 +103,10 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 		text, err = skills.Guide(lang)
 	case part == "routes":
 		text, err = skills.RouteCatalog(lang)
+	case part == "capacity":
+		text, err = skills.CapacityCatalog(lang)
+	case part == "refusals":
+		text, err = skills.RefusalCatalog(lang)
 	default:
 		text, err = skills.Section(lang, part)
 	}
@@ -123,7 +127,7 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 }
 
 func isGuideSection(v string) bool {
-	if v == "all" || v == "routes" || v == orchestrator.ChildGuideTopic {
+	if v == "all" || v == "routes" || v == "capacity" || v == "refusals" || v == orchestrator.ChildGuideTopic {
 		return true
 	}
 	for _, t := range skills.SectionNames() {

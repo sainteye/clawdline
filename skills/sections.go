@@ -195,6 +195,16 @@ func Core(lang string) ([]byte, error) {
 	} else {
 		fmt.Fprintf(&b, "\n`%sroutes` lists this build's registered routes, API levels, and related guide parts; a route is not authorization.\n", prefix)
 	}
+	if resolved == "zh-Hant" {
+		fmt.Fprintf(&b, "`%scapacity` 列出此 build 的預設容量上限；執行時以目標機器的即時讀數為準。\n", prefix)
+	} else {
+		fmt.Fprintf(&b, "`%scapacity` lists this build's default capacity bounds; use the target machine's live reading for an action.\n", prefix)
+	}
+	if resolved == "zh-Hant" {
+		fmt.Fprintf(&b, "`%srefusals` 列出此 build 直接宣告的具型別拒絕碼；未知代碼要停止。\n", prefix)
+	} else {
+		fmt.Fprintf(&b, "`%srefusals` lists this build's directly declared typed refusal codes; stop on an unknown code.\n", prefix)
+	}
 	fmt.Fprintf(&b, "\n`%sall` %s\n", prefix, copy.all)
 	return b.Bytes(), nil
 }

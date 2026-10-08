@@ -42,9 +42,9 @@ A later state never follows automatically from an earlier one. In particular, **
 | --- | --- | --- |
 | Registered HTTP patterns and API level | `internal/transport/http/routes.go` | `tools/contract-gen -check` compares `api/v1/routes.json` and the build's route table. |
 | Request and response field shapes | `api/v1/*.schema.json` | `tools/contract-gen -check` compares generated Go and TypeScript types. |
-| Capacity bounds | `internal/domain/capacity` | The capacity guard requires every new bound to be registered. |
+| Capacity bounds | `internal/domain/capacity` | The capacity guard requires every new bound to be registered; `tools/contract-gen -check` compares the generated build-bound Agent capacity reference. |
 | Agent route navigation and relevant guide part | `api/v1/agent-routes.json` | Contract generation refuses an unmapped or removed route and checks the generated build-bound catalog. |
-| Agent command and refusal handling | The relevant part of `skills/clawdline/guide.md`, compiled into the binary | Tests check current commands, route claims, and English/Taiwan Traditional Chinese parity. |
+| Agent command and refusal handling | The relevant part of `skills/clawdline/guide.md`, compiled into the binary | Tests check current commands, route claims, and English/Taiwan Traditional Chinese parity; `contract-gen -check` compares the generated static refusal inventory. |
 | Human task, success sign, and recovery action | `docs/user/` | Task links and paired risk scenarios in [Agent contract map](agent-contract.md). |
 | Cloud deployment version | The deployed `BUILD.json` and served bundle | `CloudGate` in [hosted console operations](hosted-console.md). |
 
@@ -52,7 +52,7 @@ The human pages intentionally explain only the states a person can recognize and
 
 ## Publishing and compatibility
 
-The installed binary is the source for `clawdline guide` and `clawdline guide routes`. An Agent checks that machine's guide and route catalog at the time of work; a saved copy from another build is not an authorization. The route catalog states the minimum API level for a registered pattern. A pattern's presence is only discovery: an Agent still follows the relevant guide part and current authorization requirements. An absent capability, older API level, unknown state, or missing receipt stops the dependent write.
+The installed binary is the source for `clawdline guide`, `clawdline guide routes`, and `clawdline guide capacity`, and `clawdline guide refusals`. An Agent checks that machine's guide and route catalog at the time of work; a saved copy from another build is not an authorization. The route catalog states the minimum API level for a registered pattern. A pattern's presence is only discovery: an Agent still follows the relevant guide part and current authorization requirements. An absent capability, older API level, unknown state, or missing receipt stops the dependent write.
 
 Public help and the hosted console may be newer than a person's machine. A console feature that needs a route the machine lacks must show an update state. Human pages describe the common workflow and link the current technical reference; they must not promise that a stale local daemon can perform a newer action. Cloud does not upgrade or silently redirect a command to another machine.
 
