@@ -82,6 +82,8 @@ the command instead.
 | `clawdline sessions [--json]` | The Sessions a send, a wait or a handoff can name, with their state and task |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
+| `clawdline cloud viewer login\|status\|machines\|pair` | Authorizes and pairs a separate local Cloud viewer |
+| `clawdline cloud viewer sessions\|read\|send\|answer\|interrupt\|end\|receipt` | Uses an exact machine, Session, and execution generation through the local daemon |
 | `clawdline task show [--json] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout (§5) |
 | `clawdline task wait <task id>… [--timeout 9m] [--any]` | Waits until the children finish (all, or `--any` one), shows each as `task show` does and closes its notice. Exit 0 all succeeded, 1 one failed, 5 one was cancelled and none failed, 3 timed out, 4 a task could not be read; 4 over 3 over 1 over 5 (§5) |
 | `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | Runs a long command — a deploy and its check, a wait on CI — under the daemon and returns at once; end your turn, and its exit types the same `<clawdline-notice>` a finished child's does (§5a, `clawdline guide callback`) |
@@ -216,6 +218,31 @@ local trust status; it is also the read-only check to use after pairing.
 These commands go through the running local daemon. If one fails, report its exact stderr. Do not
 turn Cloud on, log in, enable commands, rotate keys, or replace the supplied offer unless the
 person separately asked for that change.
+
+**Use a local Cloud viewer across machines.**
+
+Only when the person has authorized a local Cloud viewer, use `clawdline cloud viewer login` and
+have them approve the displayed device and capabilities. `clawdline cloud viewer machines` lists
+the account roster; pairing still requires the target machine's independently checked fingerprint.
+Run `clawdline cloud viewer pair --machine MACHINE_ID --fingerprint FINGERPRINT`, then run the
+printed one-time `clawdline cloud pair --offer` line on that target machine. Never put the offer in
+a report. `clawdline cloud viewer sessions [--machine MACHINE_ID]` returns each machine's verified
+status projection; an unavailable or incomplete projection is not an empty Session list.
+
+For `read`, `send`, `answer`, `interrupt`, `end`, and `receipt`, pass all of `--machine MACHINE_ID`,
+`--session SESSION_ID`, and `--generation GENERATION` from one current row. `GENERATION` is 32
+lowercase hexadecimal characters. `read` returns the newest transcript page and `next_before`
+when older messages remain. Fetch
+one older page with the same three values and `--before NEXT_BEFORE`, repeating only while the
+reply supplies another cursor. Every page rechecks the current execution; do not invent a cursor
+or treat the first 200 entries as the complete conversation. `send` needs `--text`; `answer` needs a displayed option's
+`--answer` key and `--expect` question fingerprint. An Agent may not invent either. A mutation
+prints its request ID before sending. Keep that ID; after an uncertain result use
+`clawdline cloud viewer receipt` with the same three target values, `--action ACTION`, and
+`--request REQUEST_ID`. A receipt lookup never resends the action. Revoked pairing, stale status,
+changed generation, missing capability, and offline machines stop the operation. The local
+`/v1/cloud/viewer/` routes require this daemon's own local token; a paired remote device cannot
+use them. Treat the route inventory as discovery and prefer the CLI contract above.
 
 **Where things are.**
 

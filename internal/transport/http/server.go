@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/logs"
 	"github.com/sainteye/clawdline/internal/adapters/machineusage"
 	"github.com/sainteye/clawdline/internal/adapters/planner"
@@ -53,7 +54,11 @@ import (
 )
 
 type Server struct {
-	cfg config.Config
+	cfg             config.Config
+	viewerMu        sync.Mutex
+	viewer          *adaptercloud.ViewerClient
+	viewerSignature string
+	viewerCancel    context.CancelFunc
 	// version is this build as `clawdline version` prints it, for /v1/health
 	// (SetVersion). Empty leaves `version` out of the answer.
 	version   string
@@ -413,6 +418,12 @@ func (s *Server) routeTable() []route {
 		// What the line to app.clawdline.com is doing (cloud.go). This machine's
 		// own token only.
 		{Route{"*", "/v1/cloud/status"}, s.cloudStatusRoute},
+		{Route{"*", "/v1/cloud/viewer/status"}, s.cloudViewerRoute},
+		{Route{"*", "/v1/cloud/viewer/machines"}, s.cloudViewerRoute},
+		{Route{"*", "/v1/cloud/viewer/sessions"}, s.cloudViewerRoute},
+		{Route{"*", "/v1/cloud/viewer/detail"}, s.cloudViewerRoute},
+		{Route{"*", "/v1/cloud/viewer/actions"}, s.cloudViewerRoute},
+		{Route{"*", "/v1/cloud/viewer/receipts"}, s.cloudViewerRoute},
 		// Pairing a browser with this Mac, and throwing one out again. Same rule:
 		// this machine's own token, because the first of them answers a link that
 		// hands over the account key.

@@ -73,6 +73,36 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/cloud/viewer/actions",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/viewer/detail",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/viewer/machines",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/viewer/receipts",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/viewer/sessions",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/cloud/viewer/status",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/devstacks",
       "guide": "project"
     },

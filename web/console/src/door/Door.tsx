@@ -130,7 +130,7 @@ export function DoorGate() {
 
   return (
     <>
-      {(where === "in" || drawn) && <App />}
+      {(where === "in" || drawn) && <App localViewer />}
       {words && <Door shown={where === "door"} password={password} onSignedIn={signedIn} />}
     </>
   )

@@ -1,6 +1,6 @@
 {
-  "usage": "usage: clawdline cloud viewer <login|status|machines|pair>",
-  "usage_short": "  viewer login | status | machines | pair   authorize and pair this CLI as a Cloud viewer",
+  "usage": "usage: clawdline cloud viewer <login|status|machines|pair|sessions|read|send|answer|interrupt|end|receipt>",
+  "usage_short": "  viewer login | status | machines | pair | sessions | read | send | answer | interrupt | end | receipt",
   "login_usage": "usage: clawdline cloud viewer login [--wait 10m] [--name label]",
   "wait_help": "how long to wait for approval",
   "name_help": "name of this viewer device",
@@ -20,5 +20,18 @@
   "machines_none": "no Cloud machines are registered on this account",
   "machines_unpaired": "unpaired",
   "machines_revoked": "revoked",
-  "machines_paired": "paired"
+  "machines_paired": "paired",
+  "sessions.usage": "usage: clawdline cloud viewer <sessions|read|send|answer|interrupt|end|receipt> [--machine ID] [--session ID --generation HEX] [--before CURSOR for read]",
+  "sessions.empty": "no Sessions",
+  "action.request": "request %s\n",
+  "action.lookup": "Check: clawdline cloud viewer receipt --machine %s --session %s --generation %s --action %s --request %s\n",
+  "error.disabled": "cloud_disabled: turn Cloud on before using remote Sessions",
+  "error.login": "viewer_login_required: run `clawdline cloud viewer login`",
+  "error.pair": "viewer_machine_not_paired: pair this viewer with the selected machine",
+  "error.revoked": "viewer_machine_revoked: access to this machine was revoked",
+  "error.offline": "viewer_machine_offline: this machine is offline; nothing was queued",
+  "error.changed": "execution_generation_changed: select the Session's current execution again",
+  "error.status": "viewer_status_unavailable: a current Session target could not be proved",
+  "error.uncertain": "receipt_outcome_unknown: query the request receipt before acting again",
+  "error.machine": "viewer_machine_not_found: no such Cloud machine is visible"
 }

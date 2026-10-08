@@ -18,7 +18,7 @@ import (
 // cloud viewer is a separate principal from cloud login's machine role.
 func cloudViewerCommand(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, cliCopy("viewer", "usage", "usage: clawdline cloud viewer <login|status|machines|pair>"))
+		fmt.Fprintln(os.Stderr, cliCopy("viewer", "usage", "usage: clawdline cloud viewer <login|status|machines|pair|sessions|read|send|answer|interrupt|end|receipt>"))
 		os.Exit(2)
 	}
 	switch args[0] {
@@ -26,6 +26,8 @@ func cloudViewerCommand(args []string) {
 		cloudViewerPairCommand(args[1:])
 	case "machines":
 		cloudViewerMachinesCommand(args[1:])
+	case "sessions", "read", "send", "answer", "interrupt", "end", "receipt":
+		os.Exit(cloudViewerSessionCommand(os.Stdout, os.Stderr, args))
 	case "login":
 		fs := flag.NewFlagSet("cloud viewer login", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
@@ -47,7 +49,7 @@ func cloudViewerCommand(args []string) {
 		os.Exit(code)
 	case "status":
 		if len(args) != 1 {
-			fmt.Fprintln(os.Stderr, cliCopy("viewer", "usage", "usage: clawdline cloud viewer <login|status|machines|pair>"))
+			fmt.Fprintln(os.Stderr, cliCopy("viewer", "usage", "usage: clawdline cloud viewer <login|status|machines|pair|sessions|read|send|answer|interrupt|end|receipt>"))
 			os.Exit(2)
 		}
 		parts, err := openCloud()
@@ -75,7 +77,7 @@ func cloudViewerCommand(args []string) {
 		}
 		fmt.Fprintf(os.Stdout, cliCopy("viewer", "status_ready", "viewer device %s on account %s; key %s; use `viewer machines` to inspect pairing\n"), identity.DeviceID, identity.AccountID, key.Fingerprint())
 	default:
-		fmt.Fprintln(os.Stderr, cliCopy("viewer", "usage", "usage: clawdline cloud viewer <login|status|machines|pair>"))
+		fmt.Fprintln(os.Stderr, cliCopy("viewer", "usage", "usage: clawdline cloud viewer <login|status|machines|pair|sessions|read|send|answer|interrupt|end|receipt>"))
 		os.Exit(2)
 	}
 }

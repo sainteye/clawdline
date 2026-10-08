@@ -137,3 +137,20 @@ func TestStatusInventoryFollowsTheRows(t *testing.T) {
 		t.Fatalf("status marker: %v", marker)
 	}
 }
+
+func TestStatusInventoryPublishesAnEmptySet(t *testing.T) {
+	c := &collector{}
+	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
+	p.publishStatuses(context.Background(), sessionReading{at: json.RawMessage(`100`), complete: true}, nil)
+	channels := c.channels()
+	if len(channels) != 1 || channels[0] != "ss/mac_a/"+InventorySessionID {
+		t.Fatalf("empty status publication: %v", channels)
+	}
+	inventory, ok := c.payload(t, channels[0])["inventory"].(map[string]any)
+	if !ok {
+		t.Fatal("empty marker has no inventory")
+	}
+	if sessions, ok := inventory["sessions"].([]any); !ok || len(sessions) != 0 {
+		t.Fatalf("empty snapshot was not a proved empty set: %v", inventory["sessions"])
+	}
+}

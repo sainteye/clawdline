@@ -1,6 +1,6 @@
 {
-  "usage": "用法：clawdline cloud viewer <login|status|machines|pair>",
-  "usage_short": "  viewer login | status | machines | pair   將此 CLI 授權並配對為 Cloud 檢視端",
+  "usage": "用法：clawdline cloud viewer <login|status|machines|pair|sessions|read|send|answer|interrupt|end|receipt>",
+  "usage_short": "  viewer login | status | machines | pair | sessions | read | send | answer | interrupt | end | receipt",
   "login_usage": "用法：clawdline cloud viewer login [--wait 10m] [--name label]",
   "wait_help": "等待核准的時間",
   "name_help": "此檢視端裝置的名稱",
@@ -20,5 +20,18 @@
   "machines_none": "此帳號尚無 Cloud 機器",
   "machines_unpaired": "尚未配對",
   "machines_revoked": "已撤銷",
-  "machines_paired": "已配對"
+  "machines_paired": "已配對",
+  "sessions.usage": "用法：clawdline cloud viewer <sessions|read|send|answer|interrupt|end|receipt> [--machine ID] [--session ID --generation HEX] [--before CURSOR，僅限 read]",
+  "sessions.empty": "沒有工作階段",
+  "action.request": "請求 %s\n",
+  "action.lookup": "查詢：clawdline cloud viewer receipt --machine %s --session %s --generation %s --action %s --request %s\n",
+  "error.disabled": "cloud_disabled：使用遠端工作階段前，請先開啟 Cloud",
+  "error.login": "viewer_login_required：請執行 `clawdline cloud viewer login`",
+  "error.pair": "viewer_machine_not_paired：請先將此檢視端與目標機器配對",
+  "error.revoked": "viewer_machine_revoked：此機器的存取權已撤銷",
+  "error.offline": "viewer_machine_offline：此機器離線；未排入任何操作",
+  "error.changed": "execution_generation_changed：請重新選取此工作階段目前的執行世代",
+  "error.status": "viewer_status_unavailable：無法確認工作階段目前的目標",
+  "error.uncertain": "receipt_outcome_unknown：再次操作前，請先查詢請求收據",
+  "error.machine": "viewer_machine_not_found：看不到這台 Cloud 機器"
 }

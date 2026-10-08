@@ -207,7 +207,7 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		SnapshotGeneration string `json:"snapshot_generation"`
 	}{At: at, Complete: reading.complete, SnapshotGeneration: pass}
 	marker.Inventory.Version = 1
-	marker.Inventory.Sessions = ids
+	marker.Inventory.Sessions = append([]string{}, ids...)
 	body, err := json.Marshal(marker)
 	if err != nil {
 		delete(p.published, key)
