@@ -31,7 +31,7 @@ func TestNoteCreateInjectsIdentityAndPreservesRetryKey(t *testing.T) {
 	defer server.Close()
 	b := &broker{base: server.URL, token: "machine-secret", client: server.Client()}
 	var out, errs bytes.Buffer
-	code := createNote(&out, &errs, b, "target-terminal", "", []byte(`{"kind":"answer","title":"Choose a date"}`), "same-press",
+	code := createNote(&out, &errs, b, "target-terminal", "", []byte(`{"kind":"answer","title":"Choose a date"}`), "same-press", false,
 		func(name string) string {
 			if name == conversationEnv[0] {
 				return "root-conversation"
@@ -50,7 +50,7 @@ func TestNoteCreateRejectsCallerSuppliedIdentity(t *testing.T) {
 	b := &broker{base: server.URL, token: "machine-secret", client: server.Client()}
 	var out, errs bytes.Buffer
 	code := createNote(&out, &errs, b, "target-terminal", "root-conversation",
-		[]byte(`{"source_conversation":"somebody-else","kind":"answer"}`), "",
+		[]byte(`{"source_conversation":"somebody-else","kind":"answer"}`), "", false,
 		func(string) string { return "" })
 	if code != 2 || called != 0 || !strings.Contains(errs.String(), "source_conversation") {
 		t.Fatalf("identity spoof was sent: code %d, calls %d, errors %q", code, called, errs.String())
@@ -81,7 +81,7 @@ func TestNoteCreateTargetsTheCallingSessionByDefault(t *testing.T) {
 	defer server.Close()
 	b := &broker{base: server.URL, token: "machine-secret", client: server.Client()}
 	var out, errs bytes.Buffer
-	code := createNote(&out, &errs, b, "", "root-conversation", []byte(`{"kind":"answer","title":"Choose a date"}`), "same-press", func(string) string { return "" })
+	code := createNote(&out, &errs, b, "", "root-conversation", []byte(`{"kind":"answer","title":"Choose a date"}`), "same-press", false, func(string) string { return "" })
 	if code != 0 || len(paths) != 2 || paths[0] != "/v1/orchestrator/whoami" || paths[1] != "/v1/work/v2/agent/human-interventions" {
 		t.Fatalf("note create: code %d, paths %v, output %q, errors %q", code, paths, out.String(), errs.String())
 	}
@@ -99,10 +99,37 @@ func TestNoteCreateDoesNotPostWhenOwnSessionCannotBeResolved(t *testing.T) {
 		}))
 		b := &broker{base: server.URL, token: "machine-secret", client: server.Client()}
 		var out, errs bytes.Buffer
-		code := createNote(&out, &errs, b, "", "root-conversation", []byte(`{"kind":"answer"}`), "", func(string) string { return "" })
+		code := createNote(&out, &errs, b, "", "root-conversation", []byte(`{"kind":"answer"}`), "", false, func(string) string { return "" })
 		server.Close()
 		if code != 1 || called != 1 || !strings.Contains(errs.String(), "without a terminal id") {
 			t.Fatalf("unresolved target: code %d, calls %d, errors %q", code, called, errs.String())
 		}
+	}
+}
+
+func TestNoteCreateMarksOnlyExplicitlyRequestedNotes(t *testing.T) {
+	var requested any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		requested = body["requested_by_person"]
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"ok":true,"note":{"id":"note-id"}}`))
+	}))
+	defer server.Close()
+	b := &broker{base: server.URL, token: "machine-secret", client: server.Client()}
+	var out, errs bytes.Buffer
+	input := []byte(`{"kind":"read","title":"Read this"}`)
+	if code := createNote(&out, &errs, b, "target", "source", input, "note-one", true, func(string) string { return "" }); code != 0 || requested != true {
+		t.Fatalf("explicit request: code=%d marker=%v errors=%s", code, requested, errs.String())
+	}
+	requested = nil
+	if code := createNote(&out, &errs, b, "target", "source", input, "note-two", false, func(string) string { return "" }); code != 0 || requested != nil {
+		t.Fatalf("agent initiated: code=%d marker=%v errors=%s", code, requested, errs.String())
+	}
+	if code := createNote(&out, &errs, b, "target", "source", []byte(`{"requested_by_person":true}`), "note-three", false, func(string) string { return "" }); code != 2 {
+		t.Fatalf("body spoofed request marker: code=%d", code)
 	}
 }

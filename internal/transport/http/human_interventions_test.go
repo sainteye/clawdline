@@ -3,11 +3,14 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -129,5 +132,100 @@ func TestHumanInterventionRejectsUnresolvedSourceAndTarget(t *testing.T) {
 	s.workV2Route(missingTarget, agentWorkV2Request(http.MethodPost, path, string(bytes), "missing-target"))
 	if missingTarget.Code != http.StatusConflict {
 		t.Fatalf("missing target: %d %s", missingTarget.Code, missingTarget.Body)
+	}
+}
+
+func TestAgentNotePushesOnceAndRequestedNoteStaysQuiet(t *testing.T) {
+	s, source, target := humanInterventionTestServer(t)
+	type sentPush struct{ title, body, terminal, tag string }
+	pushes := make(chan sentPush, 2)
+	s.broker.Push = func(_ context.Context, title, body, terminal, tag string) (int, int, error) {
+		pushes <- sentPush{title, body, terminal, tag}
+		return 1, 0, nil
+	}
+	path := "/v1/work/v2/agent/human-interventions"
+	input := humanInterventionBody(source)
+	created := httptest.NewRecorder()
+	s.workV2Route(created, agentWorkV2Request(http.MethodPost, path, input, "agent-note"))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body)
+	}
+	var answer struct {
+		Note humanInterventionWire `json:"note"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case push := <-pushes:
+		if push.terminal != "pane-target" || push.title == "" || push.body == "" || push.tag != "human-intervention-"+answer.Note.ID {
+			t.Fatalf("wrong push: %+v", push)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("agent note did not push")
+	}
+	replay := httptest.NewRecorder()
+	s.workV2Route(replay, agentWorkV2Request(http.MethodPost, path, input, "agent-note"))
+	if replay.Code != http.StatusCreated || replay.Body.String() != created.Body.String() {
+		t.Fatalf("replay: %d %s", replay.Code, replay.Body)
+	}
+	effects, err := s.store.Effects(context.Background(), orchestrator.EffectHumanInterventionPush, answer.Note.ID)
+	if err != nil || len(effects) != 1 {
+		t.Fatalf("effects after replay: %d %v", len(effects), err)
+	}
+	var requested map[string]any
+	if err := json.Unmarshal([]byte(input), &requested); err != nil {
+		t.Fatal(err)
+	}
+	requested["requested_by_person"] = true
+	raw, _ := json.Marshal(requested)
+	quiet := httptest.NewRecorder()
+	s.workV2Route(quiet, agentWorkV2Request(http.MethodPost, path, string(raw), "requested-note"))
+	if quiet.Code != http.StatusCreated {
+		t.Fatalf("requested note: %d %s", quiet.Code, quiet.Body)
+	}
+	if err := json.Unmarshal(quiet.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	effects, err = s.store.Effects(context.Background(), orchestrator.EffectHumanInterventionPush, answer.Note.ID)
+	if err != nil || len(effects) != 0 || len(pushes) != 0 {
+		t.Fatalf("requested note notified: effects=%d pushes=%d err=%v", len(effects), len(pushes), err)
+	}
+	read := httptest.NewRecorder()
+	s.workV2Route(read, personWorkV2Request(http.MethodGet, "/v1/work/v2/human-interventions/conversation:"+target, "", ""))
+	var listed struct {
+		Rows []humanInterventionWire `json:"rows"`
+	}
+	if read.Code != http.StatusOK || json.Unmarshal(read.Body.Bytes(), &listed) != nil || len(listed.Rows) != 2 {
+		t.Fatalf("both notes remain visible: %d %s", read.Code, read.Body)
+	}
+}
+
+func TestAgentNoteRemainsReadableWhenPushFails(t *testing.T) {
+	s, source, target := humanInterventionTestServer(t)
+	attempted := make(chan struct{}, 1)
+	s.broker.Push = func(context.Context, string, string, string, string) (int, int, error) {
+		attempted <- struct{}{}
+		return 0, 1, errors.New("push service unavailable")
+	}
+	created := httptest.NewRecorder()
+	s.workV2Route(created, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/human-interventions",
+		humanInterventionBody(source), "push-fails"))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("note creation depended on push: %d %s", created.Code, created.Body)
+	}
+	select {
+	case <-attempted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no push attempt")
+	}
+	read := httptest.NewRecorder()
+	s.workV2Route(read, personWorkV2Request(http.MethodGet,
+		"/v1/work/v2/human-interventions/conversation:"+target, "", ""))
+	var listed struct {
+		Rows []humanInterventionWire `json:"rows"`
+	}
+	if read.Code != http.StatusOK || json.Unmarshal(read.Body.Bytes(), &listed) != nil || len(listed.Rows) != 1 {
+		t.Fatalf("note disappeared after push failure: %d %s", read.Code, read.Body)
 	}
 }
