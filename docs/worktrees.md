@@ -1,5 +1,9 @@
 # Worktree lifecycle
 
+For task scratch, Root Assignment data, and Go build caches, see
+[disk lifecycle](disk-lifecycle.md). Their ownership rules differ from a
+worktree's.
+
 Worktrees are disposable only after the system can prove what they hold, who owns them, and where
 their delivery landed. Age, a UUID-shaped directory, a branch prefix, and a clean-looking path are
 not that proof. `git worktree prune` is also not a lifecycle: it removes stale metadata only after

@@ -53,6 +53,7 @@ import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } fr
 import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { AllMachineSessions } from "./AllMachineSessions.js"
+import { PinnedSessionActionPanel } from "./PinnedSessionActions.js"
 import { destinationFromFragment, type SessionProjectionSource } from "./all-machine-sessions.js"
 import { statusSource } from "./status-source.js"
 import { statusProjection } from "./status-projection.js"
@@ -252,6 +253,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const session = useRef<RecoverableCloudSession | null>(null)
   const line = useRef<CloudConnection | null>(null)
   const client = useRef<CloudClientHandle | null>(null)
+  const currentActionClient = useCallback(() => client.current, [])
   const [clientEpoch, setClientEpoch] = useState(0)
   const liveSessionSource = useMemo(() => sessionSource ?? statusSource(() => client.current), [sessionSource])
   useEffect(() => clearTerminalCloseStates(), [who?.account])
@@ -1121,6 +1123,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             machines={[{ id: chosen.id, name: chosen.name || chosen.label || chosen.id,
               platform: platformWord(machineIdentityFacts(chosen).platform), freshness: chosen.freshness }]}
             source={liveSessionSource}
+            detailActions={(context) => <PinnedSessionActionPanel context={context} source={liveSessionSource} current={currentActionClient} />}
           />} />
         </CloudAccountContext.Provider>
       )}
@@ -1131,6 +1134,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
         }))}
         source={liveSessionSource}
+        detailActions={(context) => <PinnedSessionActionPanel context={context} source={liveSessionSource} current={currentActionClient} />}
         onClose={closeAllSessions}
       />}
       {words && (screen.at !== "console" && screen.at !== "all_sessions" || pairing) && (

@@ -792,7 +792,8 @@ func init() {
 
 		op{name: "agent", read: true,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "agent", "limit") {
+				if !b.hasOneOf([]string{"type", "session", "agent", "limit"},
+					[]string{"type", "session", "agent", "limit", "before"}) {
 					return plan{}, false
 				}
 				agent, ok := b.nonEmpty("agent")
@@ -812,11 +813,23 @@ func init() {
 					return plan{}, false
 				}
 				p.id, p.limit = agent, limit
+				if _, named := b["before"]; named {
+					before, ok := b.integer("before")
+					if !ok || before < 1 {
+						return plan{}, false
+					}
+					p.before = before
+					p.name += ".before." + strconv.FormatInt(before, 10)
+				}
 				return p, true
 			},
 			route: func(p plan) LocalRequest {
+				query := map[string]string{"limit": strconv.FormatInt(p.limit, 10)}
+				if p.before > 0 {
+					query["before"] = strconv.FormatInt(p.before, 10)
+				}
 				return LocalRequest{Method: "GET", Path: "/v1/sessions/" + segment(p.session) + "/agents/" + segment(p.id),
-					Query: map[string]string{"limit": strconv.FormatInt(p.limit, 10)}}
+					Query: query}
 			}},
 
 		op{name: "shell", read: true,

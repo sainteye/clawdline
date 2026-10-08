@@ -1,6 +1,7 @@
 package http
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,4 +82,51 @@ func TestAnUnreadableTranscriptFailsWithoutNamingItsPath(t *testing.T) {
 	}
 	pathFree(t, "the transcript note", page.Note, path, home)
 
+}
+
+func TestTranscriptByteBudgetPagesDoNotSkipOlderEntries(t *testing.T) {
+	item, path, _ := recordSession(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var record strings.Builder
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&record, `{"type":"user","timestamp":"2026-09-16T10:00:00Z","message":{"content":"%03d:%s"}}`+"\n", i, strings.Repeat("x", 2000))
+	}
+	if err := os.WriteFile(path, []byte(record.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{}
+	var pages [][]string
+	before := int64(0)
+	for {
+		page := s.transcriptPageBefore(item.ID, item, 200, before)
+		if page.Evidence != contract.EvidenceTranscript {
+			t.Fatalf("page failed: %+v", page)
+		}
+		var texts []string
+		for _, row := range page.Entries {
+			texts = append(texts, row.Text[:3])
+		}
+		pages = append(pages, texts)
+		if page.NextBefore == 0 {
+			break
+		}
+		if before != 0 && page.NextBefore >= before {
+			t.Fatalf("cursor did not move: %d -> %d", before, page.NextBefore)
+		}
+		before = page.NextBefore
+	}
+	var found []string
+	for i := len(pages) - 1; i >= 0; i-- {
+		found = append(found, pages[i]...)
+	}
+	if len(found) != 100 {
+		t.Fatalf("got %d entries across pages, want 100", len(found))
+	}
+	for i, value := range found {
+		if want := fmt.Sprintf("%03d", i); value != want {
+			t.Fatalf("entry %d is %q, want %q", i, value, want)
+		}
+	}
 }

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { nextWord } from "../next-strings.js"
+import { AttentionOverview } from "./AttentionOverview.js"
+import { fromListProjection } from "./attention-adapter.js"
 import {
   afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
   matchesSession, SessionDetailCache, type MachineSessionProjection, type ProjectionProblem,
@@ -209,6 +211,16 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
         </section>}
     </main> : <main className="cloud-all-main">
       <p className="cloud-all-lede">{nextWord("cloudAllLede")}</p>
+      {!embedded && <AttentionOverview
+        reading={{ phase: "ready", machines: machines.map((machine) => fromListProjection(machine, readings[machine.id])), observedNow: Date.now() }}
+        locale={document.documentElement.lang === "zh-Hant" ? "zh-Hant-TW" : "en"}
+        onOpen={(target) => {
+          const selected = { machineID: target.machine_id, sessionID: target.session_id,
+            executionGeneration: target.execution_generation }
+          location.hash = destinationFragment(selected)
+          setDestination(selected)
+        }}
+      />}
       <div className="cloud-all-filters">
         <label>{nextWord("cloudAllMachine")}<select value={filters.machine} onChange={(event) => setFilters({ ...filters, machine: event.target.value })}>
           <option value="">{nextWord("cloudAllAny")}</option>{machines.map((machine) => <option value={machine.id} key={machine.id}>{machine.name}</option>)}

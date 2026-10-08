@@ -29,6 +29,8 @@ func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 	}{
 		{map[string]any{"type": "info", "session": pane, "parts": "full", "expected_generation": pinnedGeneration}, "info.full"},
 		{map[string]any{"type": "transcript", "session": pane, "limit": 100, "expected_generation": pinnedGeneration}, "transcript"},
+		{map[string]any{"type": "transcript", "session": pane, "limit": 100, "before": 12345,
+			"expected_generation": pinnedGeneration}, "transcript.before.12345"},
 	} {
 		r := &router{}
 		checks := 0
@@ -43,6 +45,9 @@ func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 		}
 		if got := r.last().Header; got["X-Clawdline-Target-Machine"] != "mac-01" || got["X-Clawdline-Execution-Generation"] != pinnedGeneration {
 			t.Fatalf("pinned target headers: %v", got)
+		}
+		if input.name == "transcript.before.12345" && r.last().Query["before"] != "12345" {
+			t.Fatalf("pinned transcript cursor: %+v", r.last().Query)
 		}
 		if got := answerOf(t, a); got["machine_id"] != "mac-01" || got["session_id"] != pane ||
 			got["expected_generation"] != pinnedGeneration || got["seq"] != float64(411) {

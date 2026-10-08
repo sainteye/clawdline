@@ -51,11 +51,15 @@ const ROW = {
 // Sixty turns, each a paragraph: many screens at either width. `turns` grows
 // when the test says a new one has landed.
 let turns = 60
-function transcript() {
+let paged = false
+function transcript(before = false) {
   const entries = Array.from({ length: turns }, (_, i) => ({
     role: i % 2 ? "assistant" : "user",
     text: "Turn " + (i + 1) + ". " + "This is a line of the conversation that wraps across the reading column. ".repeat(3),
   }))
+  if (paged) return { entries: before ? entries.slice(0, 30) : entries.slice(30),
+    evidence: "transcript", id: ID, signature: "turns-" + turns,
+    ...(!before ? { nextBefore: 12345 } : {}) }
   return { entries, evidence: "transcript", id: ID, signature: "turns-" + turns }
 }
 
@@ -93,7 +97,9 @@ function daemon(): Server {
       res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n")
       return
     }
-    if (path === "/v1/transcript") return json(res, 200, transcript())
+    if (path === "/v1/strings") return json(res, 200,
+      JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
+    if (path === "/v1/transcript") return json(res, 200, transcript(new URL(req.url ?? "/", "http://fixture").searchParams.has("before")))
     if (path.startsWith("/v1/")) return json(res, 404, { error: "not_found", detail: path })
     if (path === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
@@ -216,6 +222,7 @@ const HIDDEN = `document.querySelector(".tx-jump")?.dataset.shown === "off"`
 for (const [name, size] of [["desk-1280", DESK], ["phone-390", PHONE]] as const) {
   test(name + ": the transcript offers the way back to its newest end", async () => {
     turns = 60
+    paged = false
     const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
     const { sessionId: s } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
     const run = async (expression: string) => {
@@ -242,6 +249,8 @@ for (const [name, size] of [["desk-1280", DESK], ["phone-390", PHONE]] as const)
     try {
       await browser.send("Page.enable", {}, s)
       await browser.send("Runtime.enable", {}, s)
+      await browser.send("Page.addScriptToEvaluateOnNewDocument",
+        { source: `localStorage.setItem("ui_language", "zh-Hant")` }, s)
       await browser.send("Emulation.setDeviceMetricsOverride", { ...size, deviceScaleFactor: 2 }, s)
       const mark = browser.loadCount
       await browser.send("Page.navigate", { url: origin + "/#session=" + ID }, s)
@@ -314,3 +323,45 @@ for (const [name, size] of [["desk-1280", DESK], ["phone-390", PHONE]] as const)
     }
   })
 }
+
+test("phone: loading an older page keeps the current turn in place", async () => {
+  turns = 60
+  paged = true
+  const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+  const { sessionId: s } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+  const run = async (expression: string) => {
+    const { result, exceptionDetails } = await browser.send("Runtime.evaluate",
+      { expression, returnByValue: true, awaitPromise: true }, s)
+    if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+    return result.value
+  }
+  const turnTop = `(() => [...document.querySelectorAll("#tx .entry")].find((el) => el.textContent.includes("Turn 31."))?.getBoundingClientRect().top)()`
+  try {
+    await browser.send("Page.enable", {}, s)
+    await browser.send("Runtime.enable", {}, s)
+    await browser.send("Page.addScriptToEvaluateOnNewDocument",
+      { source: `localStorage.setItem("ui_language", "zh-Hant")` }, s)
+    await browser.send("Emulation.setDeviceMetricsOverride", { ...PHONE, deviceScaleFactor: 2 }, s)
+    const mark = browser.loadCount
+    await browser.send("Page.navigate", { url: origin + "/#session=" + ID }, s)
+    await browser.loaded(s, mark)
+    const deadline = Date.now() + 8_000
+    while (!(await run(`document.querySelector(".tx-older .go") && ${turnTop} !== undefined`))) {
+      if (Date.now() > deadline) assert.fail("the newest page did not appear")
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    await run(`document.getElementById("tx-scroll").scrollTop = 0`)
+    const before = await run(turnTop)
+    await run(`document.querySelector(".tx-older .go").click()`)
+    while (!(await run(`document.getElementById("tx").textContent.includes("Turn 1.")`))) {
+      if (Date.now() > deadline + 8_000) assert.fail("the older page did not appear")
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    const after = await run(turnTop)
+    assert.ok(Math.abs(after - before) <= 3, `Turn 31 moved from ${before} to ${after}`)
+    assert.equal(await run(`document.querySelector(".tx-older") === null`), true)
+  } finally {
+    paged = false
+    await browser.send("Target.closeTarget", { targetId }).catch(() => undefined)
+  }
+})
