@@ -94,7 +94,8 @@ type ScheduleBook struct {
 	Location *time.Location
 	Now      func() time.Time
 	// DispatchEnabled is `orchestrator_enabled`. A schedule made while it is
-	// off is listed and never fires.
+	// off is listed, but the clock and webhooks never fire it. An explicit
+	// manual Run is the person's override and does not consult this switch.
 	DispatchEnabled func() bool
 	// Audit writes one line to this daemon's audit log.
 	Audit func(event string, fields map[string]string)
@@ -910,16 +911,15 @@ func (b *ScheduleBook) Delete(ctx context.Context, id string, authority Schedule
 	return answered(map[string]any{"ok": true, "deleted": id})
 }
 
-// Run is `runSchedule`: now, ignoring `enabled` and the clock, and refusing
-// while a run from this schedule is still working or a one-shot has run.
+// Run is `runSchedule`: now, ignoring `enabled`, the clock and the proactive
+// dispatch switch, and refusing while a run from this schedule is still
+// working or a one-shot has run. This authenticated request explicitly asks
+// for Run now, so it is the switch's manual override.
 //
 // A trigger-only schedule is the exception to ignoring `enabled`: it has no
 // clock, so a press is not a check of what the clock will do but the thing
 // itself, and a disabled one refuses it exactly as its webhook does.
 func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
-	if !b.dispatchEnabled() {
-		return refusedSchedule(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	h, ok, err := b.named(ctx, id)

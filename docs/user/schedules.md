@@ -47,6 +47,9 @@ running when a schedule is due; see [platforms.md](platforms.md) for keeping it 
 
 **Check:** the schedule is a row in the list. Click it to open its history, and press **立即執行**
 (run now) to try it at once. A new session opens and starts working on the first message.
+This explicit press still tries to start the work when proactive Agent task dispatch is switched
+off; automatic clock and webhook starts remain off. Other safety checks still apply, including an
+already-running task from the same schedule and the machine's session capacity.
 
 ## What happens when it is due
 

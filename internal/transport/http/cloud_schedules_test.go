@@ -49,8 +49,8 @@ func cloudStandIn(t *testing.T) *standIn {
 	recordConversation(t, home, project, "c6000003-0000-4000-8000-000000000003", "look at the overnight runs")
 	state := filepath.Join(home, ".config", "clawdline-next")
 	t.Setenv("CLAWDLINE_SWIFT_DIR", filepath.Join(home, "swift"))
-	// Task dispatch off, so `schedule-run` reaches this machine's own route
-	// and is answered by it without opening anybody a terminal.
+	// Proactive task dispatch is off. The clock and webhooks must honor that,
+	// while the viewer's explicit `schedule-run` is allowed to override it.
 	if err := os.MkdirAll(state, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,12 @@ func cloudStandIn(t *testing.T) *standIn {
 	}
 	t.Cleanup(func() { st.Close() })
 	s := &Server{cfg: config.Config{Dir: state, Port: 7757}, store: st, icons: &icon.Registry{},
-		broker: &orchestrator.Broker{Store: st, Tasks: taskdir.New(state), Dir: state}}
+		broker: &orchestrator.Broker{Store: st, Tasks: taskdir.New(state), Dir: state,
+			Launcher: oneTmuxPane{pane: "%99"},
+			Live: func(context.Context) []session.Session {
+				return []session.Session{{ID: "%99", Assistant: session.AssistantClaude}}
+			},
+			Type: func(context.Context, string, string) error { return nil }}}
 	t.Cleanup(func() { scheduleBooks.Delete(state) })
 
 	place := ""
@@ -234,15 +239,16 @@ func TestACloudViewerArrangesARepeatingSchedule(t *testing.T) {
 		t.Fatalf("the viewer could not save it: %d/%q %s", answer.Status, answer.Code, answer.Payload)
 	}
 
-	// Running it now reaches the route rather than the vocabulary: task
-	// dispatch is off in this state directory, so the route says so itself.
+	// Running it now is the person's override: proactive dispatch is off in
+	// this state directory, but the explicit press still opens the task.
 	answer, payload = s.ask(t, 4, map[string]any{"type": "schedule-run",
 		"session": cloudops.MachineReplySession, "request": "req-now", "id": id})
-	if answer.Code != "orchestrator_disabled" || answer.Status != http.StatusForbidden {
-		t.Fatalf("answered %d/%q, wanted 403/orchestrator_disabled", answer.Status, answer.Code)
+	if !answer.OK() {
+		t.Fatalf("the explicit run did not override proactive dispatch: %d/%q %s",
+			answer.Status, answer.Code, answer.Payload)
 	}
-	if failure, _ := payload["error"].(map[string]any); failure["layer"] != "mac_route" {
-		t.Fatalf("the refusal was not the route's: %v", failure)
+	if task, _ := bodyOf(t, payload)["task_id"].(string); task == "" {
+		t.Fatalf("the accepted run names no task: %v", payload)
 	}
 
 	// And taking it away.
