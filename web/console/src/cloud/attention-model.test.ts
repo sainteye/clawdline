@@ -84,7 +84,7 @@ test("report names each source, target and next step in Taiwan Traditional Chine
 })
 
 test("list adapter preserves gaps and does not classify generic attention as a specific issue", () => {
-  const descriptor = { id: "m", name: "Mac", platform: "macOS" }
+  const descriptor = { id: "m", name: "Machine", platform: "macOS" }
   const row = { destination: { machineID: "m", sessionID: "s", executionGeneration: "g" }, title: "Task", state: "working", freshness: "current" as const, needsAttention: true, observedAt: NOW }
   const ready = fromListProjection(descriptor, { phase: "settled", value: { kind: "ready", complete: true, observedAt: NOW, rows: [row] } })
   assert.equal(ready.snapshotGeneration, null)
@@ -109,8 +109,27 @@ test("a generic waiting state and missing no-activity policy cannot become live 
   assert.match(formatAttentionReport(overview, NOW, "en"), /Unknown machines are not counted as zero/)
 })
 
+test("list adapter emits reply only for an explicit source-proven signal", () => {
+  const descriptor = { id: "m", name: "Machine", platform: "macOS", freshness: "current" as const }
+  const row = { destination: { machineID: "m", sessionID: "s", executionGeneration: "0123456789abcdef0123456789abcdef" },
+    title: "Session", state: "waiting", freshness: "current" as const, needsAttention: true, observedAt: NOW,
+    sourceProvenance: "tmux", inventoryComplete: true, snapshotGeneration: "pass-1", closeBlocked: false, failedAgentCount: 0 }
+  const projection = (waitingForReply?: boolean) => fromListProjection(descriptor, { phase: "settled", value: {
+    kind: "ready", complete: true, observedAt: NOW, snapshotGeneration: "pass-1", rows: [{ ...row, waitingForReply }],
+  } })
+  const proven = projection(true)
+  assert.deepEqual(buildAttentionOverview([proven], NOW).entries.map((entry) => entry.kind), ["reply"])
+  assert.doesNotMatch(proven.gap!, /reply_signal_unavailable/)
+  const missing = projection()
+  assert.equal(buildAttentionOverview([missing], NOW).entries.length, 0)
+  assert.match(missing.gap!, /reply_signal_unavailable/)
+  const negative = projection(false)
+  assert.equal(buildAttentionOverview([negative], NOW).entries.length, 0)
+  assert.match(negative.gap!, /reply_signal_unavailable/)
+})
+
 test("list adapter retains the marker and row provenance without promoting related failures", () => {
-  const descriptor = { id: "m", name: "Mac", platform: "macOS" }
+  const descriptor = { id: "m", name: "Machine", platform: "macOS" }
   const row = { destination: { machineID: "m", sessionID: "s", executionGeneration: "0123456789abcdef0123456789abcdef" },
     title: "Session", state: "working", freshness: "current" as const, needsAttention: false, observedAt: NOW - 1000,
     sourceProvenance: "tmux", inventoryComplete: true, snapshotGeneration: "pass-1", noProgressAfterMs: POLICY_MS,
@@ -146,7 +165,7 @@ test("a row with unknown freshness remains unknown in filters and report", () =>
 })
 
 test("a retained machine snapshot cannot be promoted to current by a ready row", () => {
-  const descriptor = { id: "m", name: "Mac", platform: "macOS", freshness: "stale" as const }
+  const descriptor = { id: "m", name: "Machine", platform: "macOS", freshness: "stale" as const }
   const row = { destination: { machineID: "m", sessionID: "s", executionGeneration: "0123456789abcdef0123456789abcdef" },
     title: "Session", state: "working", freshness: "current" as const, needsAttention: false, observedAt: NOW - 1000,
     sourceProvenance: "tmux", inventoryComplete: true, snapshotGeneration: "pass-1", noProgressAfterMs: POLICY_MS,

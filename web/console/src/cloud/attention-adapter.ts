@@ -8,6 +8,8 @@ export interface ListSession {
   state: string
   freshness: "current" | "stale" | "unknown"
   needsAttention: boolean
+  /** Present only when ss/ proves a current, source-matched question. */
+  waitingForReply?: boolean
   observedAt: number
   lastMovementAt?: number
   completedUnconfirmed?: boolean
@@ -41,6 +43,7 @@ export function fromListProjection(machine: ListMachine, reading: ListReading | 
       inventoryComplete: row.inventoryComplete ?? (result?.kind === "ready" ? result.complete : null),
       snapshotGeneration: row.snapshotGeneration ?? null },
     completedUnconfirmed: row.completedUnconfirmed,
+    waitingForReply: row.waitingForReply === true ? true : undefined,
     lastMovementAt: row.lastMovementAt ?? null,
     closeBlocked: row.closeBlocked,
     failedAgentCount: row.failedAgentCount ?? null,
@@ -56,7 +59,7 @@ export function fromListProjection(machine: ListMachine, reading: ListReading | 
     rows?.some((row) => !row.snapshotGeneration || !row.sourceProvenance || row.inventoryComplete === false) ? "session_source_incomplete" : null,
     result?.kind === "ready" && result.unknownTargets ? "session_target_unavailable" : null,
     rows?.some((row) => row.needsAttention && !row.completedUnconfirmed && !row.closeBlocked && !row.failedAgentCount) ? "attention_kind_unavailable" : null,
-    rows?.some((row) => row.state === "waiting") ? "reply_signal_unavailable" : null,
+    rows?.some((row) => row.state === "waiting" && row.waitingForReply !== true) ? "reply_signal_unavailable" : null,
     rows?.some((row) => row.freshness !== "current") ? "session_freshness_incomplete" : null,
     rows?.some((row) => row.state === "working" && (policy === null || typeof row.lastMovementAt !== "number")) ? "no_progress_data_unavailable" : null,
     rows?.some((row) => row.failedAgentCount === undefined || row.closeBlocked === undefined) ? "blocked_failed_signal_unavailable" : null,
