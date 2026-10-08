@@ -172,6 +172,24 @@ func TestAReadDoesNotNeedTheWriteSwitch(t *testing.T) {
 	}
 }
 
+func TestTranscriptHistoryReadCarriesCursorAndDistinctAnswer(t *testing.T) {
+	r := &router{}
+	bridge := Bridge{MachineID: "mac-01", Router: r}
+	answer := bridge.Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "transcript", "session": pane, "limit": 200, "before": 12345}))
+	if answer.Status != 200 || answer.Name != "transcript.before.12345" || len(r.seen) != 1 {
+		t.Fatalf("paged read: %+v, routes %+v", answer, r.seen)
+	}
+	if got := r.last().Query["before"]; got != "12345" {
+		t.Fatalf("local query before = %q", got)
+	}
+	bad := bridge.Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "transcript", "session": pane, "limit": 200, "before": -1}))
+	if bad.Code != "malformed_read" || len(r.seen) != 1 {
+		t.Fatalf("invalid cursor reached route: %+v, routes %+v", bad, r.seen)
+	}
+}
+
 func TestProjectFileCloudReadsDoNotGrantRemoteWrites(t *testing.T) {
 	r := &router{}
 	closed := Bridge{MachineID: "mac-01", Router: r}

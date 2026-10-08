@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "transcript.schema.json",
   "title": "What a session said",
-  "description": "GET /v1/transcript reads the assistant's own record and carries evidence rather than presenting content with no source.",
+  "description": "GET /v1/transcript reads the assistant's own record and carries evidence rather than presenting content with no source. The initial request reads the newest page; before=nextBefore reads the next older page at a JSONL row boundary. Each page remains bounded by its row, byte and read-window limits.",
   "$defs": {
     "TranscriptEntry": {
       "description": "One thing in a conversation, in the shape the Swift app's `transcriptRows` writes it. A tool call and what the tool returned both carry `role: tool`; only the call names its tool. A call's `text` is the one line describing what it was asked to do — a command, a path, a query — which is what a folded row shows as its subject. An `AskUserQuestion` call carries its questions instead, after the U+0001 `ask` U+0001 marker.",
@@ -155,6 +155,7 @@
         "id": { "type": "string" },
         "leftovers": { "description": "task_finished only: how many things the delivery said it left undone. Present only when above zero.", "type": "integer" },
         "note": { "type": "string" },
+		"nextBefore": { "description": "Exclusive byte cursor for the next older page; absent at the beginning of the record.", "type": "integer" },
         "path": { "description": "Which file this was read from. A reading that cannot name its source is not evidence.", "type": "string" },
         "signature": { "description": "The record's size and modification time, `<bytes>-<unix seconds>`, and empty when nothing was read. It changes whenever the entries could have.", "type": "string" },
         "truncation": { "$ref": "#/$defs/TranscriptTruncation" },
