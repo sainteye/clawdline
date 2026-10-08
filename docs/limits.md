@@ -32,9 +32,11 @@ retired-app comparison, analysis, and uncited rows. The implementation register 
 transcript tail、完成通知 cursor，每張最多 256。穩定的一次掃描仍會 `stat` 近期 Claude agent 以判斷是否有變，但快取命中不再開 transcript；Codex 則用已知的 thread id
 命中快取，不在每次 beat 重走 rollout 目錄。讀不到來源時讀數是 `unknown`，不把它畫成 0。
 
-`places.registered` 是 `CLAWDLINE_NEXT_DIR/places.json` 中由人明確保留的 Project 目錄，限制 512 筆。
-它是人的選擇（`evidence`），所以滿了拒絕新增，不自動淘汰；只有 `clawdline project remove` 會移除。
-diagnostics 每次直接數這個最多 512 列的檔案，壞掉或讀不到回 `unknown`，不把既有 Project 說成零個。
+`places.registered` counts the explicit Project choices in `CLAWDLINE_NEXT_DIR/places.json`:
+directories added by the person and directories they hid from the list, with a combined limit of 512.
+These are evidence, so a full registry refuses another choice rather than evicting one. The Project
+row's **Remove from list** action and `clawdline project remove` hide a directory; `project add`
+restores it. Diagnostics reads this bounded file directly and reports `unknown` if it cannot be read.
 
 `places.git_config_bytes` 是讀一個 Project 的 git config 來回答 `repo`（`GET /v1/places`）時最多讀的位元組，64 KiB。
 超過就不解析，這個 place 的 `repo` 是 `""`（等同沒有 origin），不拿截斷的前半段猜；它不累積，所以沒有淘汰，只在 place 讀取時量。

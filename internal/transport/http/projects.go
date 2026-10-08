@@ -63,6 +63,9 @@ func (s *Server) projectReaders() *projectReaders {
 	places := projects.NewPlaces(s.icons.Label, managed)
 	places.MachineStateDir = s.cfg.Dir
 	places.Registered = registry.List
+	if s.cfg.Dir != "" {
+		places.Hidden = registry.Hidden
+	}
 	r := &projectReaders{
 		places:   places,
 		registry: registry,
@@ -217,7 +220,7 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 // whose start sheet reads GET /v1/places. A write never silently falls back to
 // a second state directory when the daemon cannot be reached.
 func (s *Server) registeredPlacesRoute(w http.ResponseWriter, r *http.Request) {
-	if !machineAuthed(r) {
+	if !machineAuthed(r) && !(r.Method == http.MethodDelete && maySend(r)) {
 		writeRefusal(w, http.StatusForbidden, "machine_required", "Only this machine may change its registered Projects.")
 		return
 	}

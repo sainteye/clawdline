@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4726,
-  "riskKeys": 2061,
-  "nonRiskCount": 2665,
+  "englishContentKeys": 4734,
+  "riskKeys": 2067,
+  "nonRiskCount": 2667,
   "groups": [
     {
       "name": "bar / other",
@@ -1904,7 +1904,7 @@
     },
     {
       "name": "next / projects",
-      "count": 8,
+      "count": 10,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1913,6 +1913,8 @@
         "next.projectsLede",
         "next.projectsOpenWork",
         "next.projectsRefreshObservation",
+        "next.projectsRemoveCancel",
+        "next.projectsRemoveDescription",
         "next.projectsRepositoryLifecycle",
         "next.projectsTitle",
         "next.projectsUnattributedWorktrees",

@@ -38,6 +38,7 @@ type Places struct {
 	// It is separate from Fixture: production registration is a source beside
 	// provider history, while a fixture replaces every production source.
 	Registered func() ([]RegisteredPlace, error)
+	Hidden     func() ([]string, error)
 	// Managed is ManagedWorktreeRoots: where a Clawdline broker makes its
 	// children's checkouts. Nothing at or below one of them is offered as a
 	// place, however it became known — a transcript folder, or a session
@@ -130,9 +131,20 @@ func (p *Places) List(live []string, limit int) []Place {
 		}
 		all = append(all, Place{ID: PlaceID(cwd), Path: cwd, Label: p.label(cwd), At: now})
 	}
+	hidden := map[string]bool{}
+	if p.Hidden != nil {
+		if paths, err := p.Hidden(); err == nil {
+			for _, path := range paths {
+				hidden[comparablePath(path)] = true
+			}
+		} else {
+			// A broken preference file must not silently restore removed Projects.
+			return []Place{}
+		}
+	}
 	durable := durableJudge(p.Managed)
 	return tidy(all, limit, isDirectory, func(path string) bool {
-		return !IsMachineWorkspace(p.MachineStateDir, path) && durable(path)
+		return !hidden[comparablePath(path)] && !IsMachineWorkspace(p.MachineStateDir, path) && durable(path)
 	})
 }
 

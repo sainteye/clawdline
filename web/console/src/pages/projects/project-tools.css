@@ -80,6 +80,37 @@
 .project-row-terminal:hover { border-color: var(--accent-ed); color: var(--ink); background: var(--card-hi); }
 .project-row-terminal:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
+.project-row-wrap.has-remove .project-row { padding-right: 186px; }
+.project-row-wrap.has-remove .project-row-worktrees { right: 142px; }
+.project-row-wrap.has-remove .project-row-terminal { right: 98px; }
+.project-row-remove {
+  position: absolute;
+  right: 54px;
+  top: 50%;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0;
+  transform: translateY(-50%);
+  background: rgba(22, 22, 26, .84);
+  color: var(--dim);
+  cursor: pointer;
+}
+.project-row-remove:hover { border-color: var(--warn); color: var(--ink); background: var(--card-hi); }
+.project-row-remove:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.project-remove-dialog { width: min(420px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 16px; padding: 24px; background: var(--card); color: var(--ink); }
+.project-remove-dialog::backdrop { background: rgba(0, 0, 0, .7); }
+.project-remove-dialog h2 { margin: 0 0 12px; font-size: 20px; }
+.project-remove-dialog p { overflow-wrap: anywhere; line-height: 1.5; }
+.project-remove-error { color: var(--warn); }
+.project-remove-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.project-remove-actions button { min-height: 40px; border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; background: var(--card-hi); color: var(--ink); cursor: pointer; }
+.project-remove-actions button:last-child { border-color: var(--warn); }
+
 .projects-activity-help {
   display: flex;
   align-items: baseline;

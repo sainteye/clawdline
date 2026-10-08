@@ -94,3 +94,26 @@ func TestPlaceRegistryRemoveDoesNotNeedDirectoryToExist(t *testing.T) {
 		t.Fatalf("reopen after remove: rows=%#v err=%v", rows, err)
 	}
 }
+
+func TestRemovedPlaceStaysHiddenUntilAddedAgain(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "state")
+	dir := filepath.Join(t.TempDir(), "project")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	registry := OpenPlaceRegistry(state)
+	if _, err := registry.Remove([]string{dir}); err != nil {
+		t.Fatal(err)
+	}
+	hidden, err := OpenPlaceRegistry(state).Hidden()
+	if err != nil || len(hidden) != 1 || comparablePath(hidden[0]) != comparablePath(dir) {
+		t.Fatalf("hidden after reopen = %#v, %v", hidden, err)
+	}
+	if _, err := registry.Add([]string{dir}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	hidden, err = OpenPlaceRegistry(state).Hidden()
+	if err != nil || len(hidden) != 0 {
+		t.Fatalf("hidden after add = %#v, %v", hidden, err)
+	}
+}

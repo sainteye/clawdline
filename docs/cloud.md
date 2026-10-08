@@ -39,12 +39,16 @@ The connection backs off and reconnects. An outbound spool owns publish order an
 The hosted and daemon consoles share source but require different builds. The hosted build must set `VITE_HOSTED_CONSOLE` so its entry point selects `CloudGate`; an ordinary local build selects `DoorGate`. [Deploying the hosted console](hosted-console.md) documents the build, production ancestry check, `BUILD.json` stamp, served-bundle `CloudGate` check and rollback procedure. A build stamp alone does not show that the served bundle is the Cloud one. This page makes no claim that the currently deployed bundle or private service matches this checkout.
 
 The Cloud console shows the selected machine's Projects, but does not register a local directory.
-For a missing existing directory, run `clawdline project add /absolute/path/to/project` on the
+For a missing existing directory, run `clawdline project add` from that directory on the
 machine that holds it while its daemon is running. The session start sheet refreshes automatically
 while open; reopen **Projects** to refresh that page. The command reports success only when the serving daemon
 registered it; `clawdline project list` reads that same explicit list. If the daemon cannot be
 reached or authenticated, the command fails without writing another list. [Adding a project](user/projects.md#add-a-project)
 gives the full steps.
+Relative and absolute directory arguments also work. **Projects** offers **Remove from list** for
+each row on both the local and Cloud console; it hides that directory from the Project and start
+lists without deleting files or sessions. Re-adding it restores visibility.
+The Project list refreshes as soon as removal succeeds; an open session start sheet refreshes automatically.
 
 For a machine that appears offline, inspect `clawdline cloud status` or the local status route first: the switch, identity, connection state, last error and publication counters narrow down which side has evidence. Then inspect the hosted build using [hosted-console.md](hosted-console.md). The status route and logs expose this machine's observations; they do not prove that a particular browser decrypted or displayed a frame. [cloud-cutover.md](cloud-cutover.md) records local preflight and stand-in tests, not a fresh production validation.
 

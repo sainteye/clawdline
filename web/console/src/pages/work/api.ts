@@ -94,6 +94,8 @@ export const readDecision = (id: string) => call<{ decision: Decision }>(`/v1/wo
 export const copyProjectIcon = (id: string, icon: unknown, expected: unknown) =>
   mutate<{ ok: boolean; icon: unknown }>(`/v1/projects/${encodeURIComponent(id)}/icon`, { icon, expected }, "PUT")
 export const readProjectPlaces = (machine?: string) => call<ProjectPlacePage>("/v1/places" + query({ machine }))
+export const removeProjectPlace = (place: ProjectPlace) =>
+  mutate<{ registered: boolean }>("/v1/places", { place: place.id, paths: [place.path] }, "DELETE")
 /** Project settings sync (docs/project-sync.md), as internal/domain/projectsync spells it. */
 export interface SyncFile { path: string; sha256: string; size: number; content?: string }
 export interface SyncEntry { repo: string; clone_url: string; label: string; icon: unknown; files: SyncFile[]; withheld?: string[]; revision: string }

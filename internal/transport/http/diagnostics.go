@@ -403,7 +403,11 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			if err != nil {
 				return capacity.Unmeasured(err.Error())
 			}
-			return capacity.Reading{Known: true, Used: int64(len(rows))}
+			hidden, err := s.projectReaders().registry.Hidden()
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: int64(len(rows) + len(hidden))}
 		},
 		// A Project's shared memory (docs/project-memory.md): the fullest
 		// Project's entries and groups, and four per-write guards.

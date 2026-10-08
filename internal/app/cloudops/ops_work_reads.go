@@ -2,6 +2,7 @@ package cloudops
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -418,6 +419,23 @@ func init() {
 
 		// The Projects page's catalog and worktree lifecycle. `places` above is
 		// carried separately.
+		op{name: "project-hide",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "path") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				path, valid := b.nonEmpty("path")
+				if !ok || !valid || !printable(path) || len(path) > 4096 || !filepath.IsAbs(path) {
+					return plan{}, false
+				}
+				p.path = path
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				payload, _ := json.Marshal(map[string][]string{"paths": {p.path}})
+				return LocalRequest{Method: "DELETE", Path: "/v1/places", Body: payload, Header: asDevice()}
+			}},
 		op{name: "project-icon-copy",
 			decode: decodeWorkV2NamedDocument("id", "item"),
 			route: func(p plan) LocalRequest {

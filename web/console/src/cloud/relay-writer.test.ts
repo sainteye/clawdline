@@ -1421,6 +1421,20 @@ test("project icon copy resolves the receiving place and carries only the mark",
   assert.equal(refused.status, 409)
 })
 
+test("removing a Project uses its selected machine and rejects a changed path", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const init = { ...post({ place: "cloud-p1", paths: ["/repo"] }), method: "DELETE", headers: { "Idempotency-Key": "hide-1" } }
+  const response = await reader.fetch("/v1/places", init)
+  assert.equal(response.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "hide-1", "mac-a", "project-hide", { path: "/repo" }, "action"])
+  const stale = await reader.fetch("/v1/places", { ...post({ place: "cloud-p1", paths: ["/other"] }), method: "DELETE", headers: { "Idempotency-Key": "hide-2" } })
+  assert.equal(stale.status, 400)
+  client._place = () => ({ machine: "different-machine", id: "p1", path: "/repo" })
+  const foreign = await reader.fetch("/v1/places", init)
+  assert.equal(foreign.status, 409)
+})
+
 test("a Project file save keeps its key, Project machine and exact file id", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)

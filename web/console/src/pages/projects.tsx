@@ -14,6 +14,8 @@ import { nextWord, type NextWord } from "../next-strings.js"
 import { workPageHash } from "../page-route.js"
 import { openTerminalPage } from "./terminal/navigate.js"
 import { showProjectRefusalDetail } from "./projects/refusal-detail.js"
+import { removeProjectPlace } from "./work/api.js"
+import { failureSentence } from "../legacy/bridge.js"
 
 type ProjectTarget = {
   id: string
@@ -53,6 +55,33 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
   const setup = useRef<ProjectSetupHandle>(null)
   const was = useRef(false)
   const painted = useRef(false)
+  const [removeTarget, setRemoveTarget] = useState<ProjectTarget | null>(null)
+  const [removeBusy, setRemoveBusy] = useState(false)
+  const [removeError, setRemoveError] = useState("")
+  const removeDialog = useRef<HTMLDialogElement>(null)
+
+  useLayoutEffect(() => {
+    const dialog = removeDialog.current
+    if (!dialog) return
+    if (removeTarget && !dialog.open) dialog.showModal()
+    if (!removeTarget && dialog.open) dialog.close()
+  }, [removeTarget])
+
+  async function confirmRemove() {
+    if (!removeTarget?.path || removeBusy) return
+    setRemoveBusy(true)
+    setRemoveError("")
+    try {
+      await removeProjectPlace({ id: removeTarget.id, label: removeTarget.label || removeTarget.path,
+        path: removeTarget.path })
+      setRemoveTarget(null)
+      void page.current?.enter()
+    } catch (error) {
+      setRemoveError(failureSentence(error, nextWord("projectsRemoveFailed")))
+    } finally {
+      setRemoveBusy(false)
+    }
+  }
 
   useLayoutEffect(() => {
     const root = document.getElementById("project-worktree-lifecycle")
@@ -175,6 +204,16 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         </svg>`
         wrapper.classList.add("has-terminal")
         wrapper.appendChild(terminal)
+        const remove = document.createElement("button")
+        remove.type = "button"
+        remove.className = "project-row-remove"
+        remove.dataset.placeId = project.dataset.placeId
+        remove.title = nextWord("projectsRemove")
+        remove.setAttribute("aria-label", nextWord("projectsRemoveFor", { project: name }))
+        remove.setAttribute("aria-haspopup", "dialog")
+        remove.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>`
+        wrapper.classList.add("has-remove")
+        wrapper.appendChild(remove)
       }
       const localizedStatus = localizePinnedProjectStatus(status.textContent ?? "")
       if (localizedStatus !== status.textContent) status.textContent = localizedStatus
@@ -194,8 +233,15 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       const project = page.current?.state.places?.find((place) => place.id === button.dataset.placeId)
       if (project?.path) openTerminalPage(project.path)
     }
+    const onRemove = (ev: Event) => {
+      const button = (ev.target as Element | null)?.closest<HTMLButtonElement>("button.project-row-remove[data-place-id]")
+      if (!button || !rows.contains(button)) return
+      const project = page.current?.state.places?.find(place => place.id === button.dataset.placeId)
+      if (project?.path) { setRemoveError(""); setRemoveTarget(project) }
+    }
     rows.addEventListener("click", onSettings)
     rows.addEventListener("click", onTerminal)
+    rows.addEventListener("click", onRemove)
     const observer = new MutationObserver(decorate)
     observer.observe(rows, { childList: true, subtree: true })
     observer.observe(status, { childList: true })
@@ -204,6 +250,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       observer.disconnect()
       rows.removeEventListener("click", onSettings)
       rows.removeEventListener("click", onTerminal)
+      rows.removeEventListener("click", onRemove)
     }
   }, [])
 
@@ -270,6 +317,17 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
     {iconHost && createPortal(<>
       <ProjectTools shown={shown} changed={() => { void page.current?.enter() }} setupRef={setup} />
     </>, iconHost)}
+    <dialog className="project-remove-dialog" ref={removeDialog}
+      onCancel={(event) => { if (removeBusy) event.preventDefault() }}
+      onClose={() => { if (!removeBusy) setRemoveTarget(null) }}>
+      <h2>{nextWord("projectsRemoveTitle")}</h2>
+      <p>{nextWord("projectsRemoveDescription", { project: removeTarget?.label || removeTarget?.path || "" })}</p>
+      {removeError && <p className="project-remove-error" role="alert">{removeError}</p>}
+      <div className="project-remove-actions">
+        <button type="button" disabled={removeBusy} onClick={() => setRemoveTarget(null)}>{nextWord("projectsRemoveCancel")}</button>
+        <button type="button" disabled={removeBusy} onClick={() => void confirmRemove()}>{removeBusy ? nextWord("projectsRemoveBusy") : nextWord("projectsRemoveConfirm")}</button>
+      </div>
+    </dialog>
     </>
   )
 }
