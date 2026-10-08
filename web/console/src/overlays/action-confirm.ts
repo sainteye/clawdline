@@ -86,6 +86,7 @@ interface Pending {
   release: string[]
   /** True only after the daemon disclosed the obligations this decision overrides. */
   force: boolean
+  processOnly: boolean
   /** The decision's own id, which is the close's `Idempotency-Key`. */
   request: string
 }
@@ -249,7 +250,7 @@ export const ActionConfirm = {
       closeability: closeable && closeable.state, help, work: [], recentWork: [], directTodos: [],
       closeabilityVersion: pinned,
       workState: closes(kind) && !unstartedCodex ? "loading" : "ready", workTruncated: false,
-      release, force: release.length > 0, request: mintRequest(),
+      release, force: release.length > 0, processOnly: /^(tty|pts\/)/.test(id), request: mintRequest(),
     }
     this.busy = false
     sheet.dataset.kind = kind
@@ -400,6 +401,9 @@ export const ActionConfirm = {
     } else if (help && recordedWorkClear) {
       statusClass = "is-ready"
       statusCopy = nextWord("endWorkReadyToClose")
+    } else if (pending.processOnly && (closeability === "unknown" || pending.force)) {
+      statusClass = "is-warning"
+      statusCopy = nextWord("endProcessRecoveryWarning")
     } else if (closeNotes.length && !release.length) {
       statusClass = "is-warning"
       const notes = closeNotes.map((note) => note.count > 1 ? `${note.text} (${note.count})` : note.text)
@@ -631,6 +635,8 @@ export const ActionConfirm = {
         ? archiving
           ? recordedWorkClear ? nextWord("archiveGo") : nextWord("archiveAnyway")
           : recordedWorkClear ? nextWord("endWorkConfirmClose") : help.confirmLabel
+        : this.pending?.force && this.pending.processOnly
+          ? nextWord("endProcessRecoveryGo")
         : this.pending?.force
           ? archiving ? nextWord("archiveAnyway") : T.webConfirmEndAnyway
           : this.pending?.kind === "end"

@@ -100,7 +100,8 @@ func TestAStalledITermLeavesTmuxAndProcessRowsVerified(t *testing.T) {
 	itermTab := session.Session{ID: "0A1B2C3D-0000-4000-8000-000000000001", TTY: "ttys002",
 		Backend: session.BackendITerm}
 	// A session in a tab only the process table saw, listed under its tty.
-	proc := session.Session{ID: "ttys003", TTY: "ttys003", Assistant: session.AssistantClaude}
+	proc := session.Session{ID: "ttys003", TTY: "ttys003", Backend: session.BackendITerm,
+		Assistant: session.AssistantClaude}
 
 	tmux := &stallTerminal{name: "tmux", mode: "answer", rows: []session.Session{tmuxPane}}
 	iterm := &stallTerminal{name: "iterm", mode: "answer", rows: []session.Session{itermTab},

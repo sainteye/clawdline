@@ -403,7 +403,7 @@ function detailSub(row: SessionRow | null): string {
   if (row.tty) sub.push(row.tty)
   if (row.state === "waiting") sub.push(T.sessionWaiting)
   else if (row.state === "working") sub.push(T.webStateWorking)
-  else if (conversationNotStarted(row)) sub.push(nextWord("sessionNotStartedShort"))
+  else if (conversationNotStarted(row)) sub.push(nextWord(/^(tty|pts\/)/.test(row.id) ? "processOnlyShort" : "sessionNotStartedShort"))
   else if (row.state === "unknown") sub.push(nextWord("sessionStateUnrecognizedDetail"))
   const task = L.taskOfChild(row.id)
   if (task) {

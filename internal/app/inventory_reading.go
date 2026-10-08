@@ -557,7 +557,7 @@ func (r *InventoryReading) retainLocked(raw session.Inventory) session.Inventory
 		ObservedAt: observed, Provenance: raw.Provenance, Freshness: session.FreshnessCurrent,
 	}
 	for n := range display.Sessions {
-		source := session.SourceFor(display.Sessions[n].Backend)
+		source := rowSource(display.Sessions[n])
 		freshness := session.FreshnessCurrent
 		if !rowAnswered(raw, display.Sessions[n]) {
 			freshness = session.FreshnessMissing
@@ -636,6 +636,9 @@ const processSource = "ps"
 // rowSource is the source that answers for one row: its terminal backend's,
 // or the process table's for a row only the process table saw.
 func rowSource(row session.Session) string {
+	if session.SourceForID(row.ID) == processSource {
+		return processSource
+	}
 	if source := session.SourceFor(row.Backend); source != "" {
 		return source
 	}
@@ -673,7 +676,7 @@ func (r *InventoryReading) withoutForgottenLocked(raw session.Inventory, observe
 			continue
 		}
 		later := observed.After(gone.at)
-		proves, _ := raw.ProvesAbsence(session.SourceFor(gone.row.Backend))
+		proves, _ := raw.ProvesAbsence(rowSource(gone.row))
 		present := hasSession(raw.Sessions, gone.row)
 		if later && proves {
 			// This source has now answered for itself. Whether it confirmed the
@@ -718,7 +721,7 @@ func sameTerminalSession(a, b session.Session) bool {
 func rowsFromSource(rows []session.Session, source string) []session.Session {
 	out := make([]session.Session, 0, len(rows))
 	for _, row := range rows {
-		if session.SourceFor(row.Backend) == source {
+		if rowSource(row) == source {
 			out = append(out, row)
 		}
 	}
@@ -728,7 +731,7 @@ func rowsFromSource(rows []session.Session, source string) []session.Session {
 func withoutSource(rows []session.Session, source string) []session.Session {
 	out := rows[:0]
 	for _, row := range rows {
-		if session.SourceFor(row.Backend) != source {
+		if rowSource(row) != source {
 			out = append(out, row)
 		}
 	}

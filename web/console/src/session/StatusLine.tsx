@@ -109,7 +109,7 @@ export function StatusLine({
                 className="item model"
                 dangerouslySetInnerHTML={{ __html: modelHTML(row.assistant, L.assistantDisplayName(row.assistant)) }}
               />
-              <span className="item empty">{nextWord("sessionNotStartedShort")}</span>
+              <span className="item empty">{/^(tty|pts\/)/.test(row.id) ? nextWord("processOnlyShort") : nextWord("sessionNotStartedShort")}</span>
             </>
           ) : (
             <>
