@@ -36,6 +36,16 @@ func (s *Server) sessionAgentRoute(w http.ResponseWriter, r *http.Request, sessi
 	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil {
 		limit = min(max(n, 1), 1000)
 	}
+	before := int64(0)
+	if r.URL.Query().Has("before") {
+		raw := r.URL.Query().Get("before")
+		var err error
+		before, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || before < 1 {
+			writeRefusal(w, http.StatusBadRequest, "invalid_cursor", "before must be a positive byte cursor")
+			return
+		}
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	item, err := s.actions().Find(ctx, sessionID)
@@ -48,17 +58,21 @@ func (s *Server) sessionAgentRoute(w http.ResponseWriter, r *http.Request, sessi
 		writeRefusal(w, http.StatusNotFound, "not_found", "that background agent is not part of this session")
 		return
 	}
-	writeJSON(w, s.agentTranscriptPage(agentID, item, path, limit))
+	writeJSON(w, s.agentTranscriptPageBefore(agentID, item, path, limit, before))
 }
 
 func (s *Server) agentTranscriptPage(id string, item session.Session, path string, limit int) contract.TranscriptPage {
+	return s.agentTranscriptPageBefore(id, item, path, limit, 0)
+}
+
+func (s *Server) agentTranscriptPageBefore(id string, item session.Session, path string, limit int, before int64) contract.TranscriptPage {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	var read transcript.Page
 	var err error
 	if item.Assistant == session.AssistantClaude {
-		read, err = transcript.ReadClaudeAgent(path, limit)
+		read, err = transcript.ReadClaudeAgentBefore(path, limit, before)
 	} else {
-		read, err = transcript.ReadCodex(path, limit)
+		read, err = transcript.ReadCodexBefore(path, limit, before)
 	}
 	if errors.Is(err, transcript.ErrNoRecord) {
 		page.Evidence = contract.EvidenceTranscript
@@ -78,8 +92,10 @@ func (s *Server) agentTranscriptPage(id string, item session.Session, path strin
 		row.Artifacts = s.pictures.wireArtifacts(entry, now)
 		entries = append(entries, row)
 	}
-	page.Entries, _ = boundedTranscript(entries)
+	page.Entries, _ = boundedTranscriptRows(entries, read.Entries)
+	page.NextBefore = read.NextBefore
 	if omitted := len(entries) - len(page.Entries); omitted > 0 {
+		page.NextBefore = read.Entries[omitted].Before
 		page.Truncation = &contract.TranscriptTruncation{Reason: "transcript_byte_budget", EntriesOmittedCount: int64(omitted), BudgetBytes: transcriptBudget}
 	}
 	if read.Unread > 0 {

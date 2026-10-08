@@ -7308,8 +7308,12 @@ type TranscriptPage struct {
 
 	// task_finished only: how many things the delivery said it left undone. Present
 	// only when above zero.
-	Leftovers int64  `json:"leftovers,omitempty"`
-	Note      string `json:"note,omitempty"`
+	Leftovers int64 `json:"leftovers,omitempty"`
+
+	// Exclusive byte cursor for the next older page; absent at the beginning of the
+	// record.
+	NextBefore int64  `json:"nextBefore,omitempty"`
+	Note       string `json:"note,omitempty"`
 
 	// Which file this was read from. A reading that cannot name its source is not
 	// evidence.

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 4828,
+  "englishKeys": 4832,
   "counts": {
-    "negation": 1408,
+    "negation": 1409,
     "state": 674,
     "permission": 255,
     "deletion": 88,
     "uncertainty": 139
   },
-  "unionCount": 2110,
+  "unionCount": 2111,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -1253,6 +1253,7 @@
       "next.terminalUnavailableUnknown",
       "next.terminalUnavailableWindows",
       "next.todosReadFailed",
+      "next.transcriptEarlierFailed",
       "next.updateAutoFailed",
       "next.updateAutoSay",
       "next.updateCheckFailed",
@@ -4398,6 +4399,7 @@
     "next.todosReadFailed",
     "next.todosRefreshFailed",
     "next.todosRetryTip",
+    "next.transcriptEarlierFailed",
     "next.updateAutoFailed",
     "next.updateAutoSay",
     "next.updateCheckFailed",

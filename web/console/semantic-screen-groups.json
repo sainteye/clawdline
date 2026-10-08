@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4828,
-  "riskKeys": 2110,
-  "nonRiskCount": 2718,
+  "englishContentKeys": 4832,
+  "riskKeys": 2111,
+  "nonRiskCount": 2721,
   "groups": [
     {
       "name": "bar / other",
@@ -1828,7 +1828,7 @@
     },
     {
       "name": "next / other",
-      "count": 86,
+      "count": 89,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1884,7 +1884,10 @@
         "next.todosRetrying",
         "next.transcriptJumpLatest",
         "next.transcriptJumpNew",
+        "next.transcriptLoadEarlier",
+        "next.transcriptLoadingEarlier",
         "next.transcriptRetry",
+        "next.transcriptRetryEarlier",
         "next.transcriptRetrying",
         "next.transcriptTechnicalDetails",
         "next.updateApplyOlder",

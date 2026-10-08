@@ -73,12 +73,12 @@ export class ClawdlineClient {
   coordinator(): Promise<CoordinatorSnapshot> {
     return this.get(routes.coordinator)
   }
-  transcript(id: string, limit = 40): Promise<TranscriptPage> {
-    return this.get(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}`)
+  transcript(id: string, limit = 40, before?: number): Promise<TranscriptPage> {
+    return this.get(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}${before ? `&before=${before}` : ""}`)
   }
 
-  agentTranscript(id: string, agent: string, limit = 40): Promise<TranscriptPage> {
-    return this.get(`${sessionRoutes.agent(id, agent)}?limit=${limit}`)
+  agentTranscript(id: string, agent: string, limit = 40, before?: number): Promise<TranscriptPage> {
+    return this.get(`${sessionRoutes.agent(id, agent)}?limit=${limit}${before ? `&before=${before}` : ""}`)
   }
 
   strings(): Promise<Record<string, string>> {
