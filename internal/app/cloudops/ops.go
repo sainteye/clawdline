@@ -212,7 +212,7 @@ type plan struct {
 	// the same field as session: a machine-scoped request's session is the
 	// machine reply channel.
 	target string
-	// A new Cloud read pins the terminal execution shown in the status list.
+	// A Cloud read pins the selected execution through the local route's final check.
 	// Empty is the older unpinned request shape.
 	executionGeneration string
 

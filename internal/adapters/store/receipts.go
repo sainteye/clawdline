@@ -104,6 +104,8 @@ const (
 	// owns the receipt and must complete it with an answer that says so; it
 	// must not run the request.
 	ReceiptOrphaned ReceiptOutcome = "orphaned"
+	// ReceiptMissing means no request with this identity was admitted.
+	ReceiptMissing ReceiptOutcome = "missing"
 )
 
 // ReceiptClaim is the answer to ClaimReceipt.
@@ -111,6 +113,40 @@ type ReceiptClaim struct {
 	Outcome    ReceiptOutcome
 	Answer     ReceiptAnswer
 	RetryAfter time.Duration
+}
+
+// LookupReceipt reads an existing receipt without admitting a missing request.
+// A pending owner that is gone has an unknown effect; it is never reported as
+// missing, even when the process died before it could write an answer.
+func (s *Store) LookupReceipt(ctx context.Context, k ReceiptKey) (ReceiptClaim, error) {
+	if err := reading(); err != nil {
+		return ReceiptClaim{}, err
+	}
+	var state, holder string
+	var status int
+	var body []byte
+	err := s.rd.QueryRowContext(ctx, `SELECT state, status, body, owner FROM request_receipts
+		WHERE scope = ? AND actor = ? AND key = ?`, k.Scope, k.Actor, k.Key).
+		Scan(&state, &status, &body, &holder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ReceiptClaim{Outcome: ReceiptMissing}, nil
+	}
+	if err != nil {
+		return ReceiptClaim{}, err
+	}
+	switch state {
+	case "complete":
+		return ReceiptClaim{Outcome: ReceiptReplay, Answer: ReceiptAnswer{Status: status, Body: body}}, nil
+	case "expired":
+		return ReceiptClaim{Outcome: ReceiptExpired}, nil
+	case "pending":
+		if s.ownerGone(holder) {
+			return ReceiptClaim{Outcome: ReceiptOrphaned}, nil
+		}
+		return ReceiptClaim{Outcome: ReceiptPending}, nil
+	default:
+		return ReceiptClaim{}, ErrConflict
+	}
 }
 
 // ClaimReceipt asks whether a request has been seen, and reserves it for this
