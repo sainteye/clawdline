@@ -1527,6 +1527,8 @@ export interface BrokerRootAssignment {
   brief_attempted_at?: number
   brief_path: string
   briefed_at?: number
+  cleanup?: BrokerRootCleanupEligibility
+  closure?: BrokerRootAssignmentClosure
   created_at: number
   executor?: BrokerOpenedSession
   failure?: string
@@ -1543,6 +1545,19 @@ export interface BrokerRootAssignment {
   project_dir: string
   request_id: string
   state: BrokerRootAssignmentState
+}
+
+/**
+ * A durable close of the exact executor. Only safe, unforced closure is completion
+ * evidence; the assignment remains briefed as its launch state.
+ */
+export interface BrokerRootAssignmentClosure {
+  closed_at: number
+  conversation_id?: string
+  forced: boolean
+  method: string
+  safe: boolean
+  terminal_id: string
 }
 
 export interface BrokerRootAssignmentEnvelope {
@@ -1593,6 +1608,20 @@ export type BrokerRootAssignmentState =
   | "failed"
 
 export const BrokerRootAssignmentStateValues: readonly BrokerRootAssignmentState[] = ["accepted", "terminal_opened", "briefed", "failed"] as const
+
+/**
+ * Fresh conservative cleanup gates. No Root scratch is registered yet, so eligible
+ * is false and no Root path is deleted.
+ */
+export interface BrokerRootCleanupEligibility {
+  completion: boolean
+  eligible: boolean
+  next_owner: string
+  owner: string
+  preservation: string
+  reason: string
+  scratch: string
+}
 
 /**
  * A root's own receipt: one sentence saying this turn delivered something. It

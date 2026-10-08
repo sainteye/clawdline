@@ -1319,18 +1319,20 @@ type BrokerRoot struct {
 // it. `brief_attempted_at` is durable before the keystroke, so the brief is
 // typed at most once.
 type BrokerRootAssignment struct {
-	Assignment       BrokerAssignment     `json:"assignment"`
-	Assistant        string               `json:"assistant"`
-	BriefAttemptedAt int64                `json:"brief_attempted_at,omitempty"`
-	BriefPath        string               `json:"brief_path"`
-	BriefedAt        int64                `json:"briefed_at,omitempty"`
-	CreatedAt        int64                `json:"created_at"`
-	Executor         *BrokerOpenedSession `json:"executor,omitempty"`
-	Failure          string               `json:"failure,omitempty"`
-	ID               string               `json:"id"`
-	Label            string               `json:"label"`
-	Model            string               `json:"model"`
-	Ownership        string               `json:"ownership"`
+	Assignment       BrokerAssignment              `json:"assignment"`
+	Assistant        string                        `json:"assistant"`
+	BriefAttemptedAt int64                         `json:"brief_attempted_at,omitempty"`
+	BriefPath        string                        `json:"brief_path"`
+	BriefedAt        int64                         `json:"briefed_at,omitempty"`
+	Cleanup          *BrokerRootCleanupEligibility `json:"cleanup,omitempty"`
+	Closure          *BrokerRootAssignmentClosure  `json:"closure,omitempty"`
+	CreatedAt        int64                         `json:"created_at"`
+	Executor         *BrokerOpenedSession          `json:"executor,omitempty"`
+	Failure          string                        `json:"failure,omitempty"`
+	ID               string                        `json:"id"`
+	Label            string                        `json:"label"`
+	Model            string                        `json:"model"`
+	Ownership        string                        `json:"ownership"`
 
 	// The built-in persona the Feature Root was launched as; absent for none.
 	// ASSIGNMENT.md then carries a PERSONA section naming it and its file.
@@ -1338,6 +1340,17 @@ type BrokerRootAssignment struct {
 	ProjectDir string                    `json:"project_dir"`
 	RequestID  string                    `json:"request_id"`
 	State      BrokerRootAssignmentState `json:"state"`
+}
+
+// A durable close of the exact executor. Only safe, unforced closure is
+// completion evidence; the assignment remains briefed as its launch state.
+type BrokerRootAssignmentClosure struct {
+	ClosedAt       int64  `json:"closed_at"`
+	ConversationID string `json:"conversation_id,omitempty"`
+	Forced         bool   `json:"forced"`
+	Method         string `json:"method"`
+	Safe           bool   `json:"safe"`
+	TerminalID     string `json:"terminal_id"`
 }
 
 type BrokerRootAssignmentEnvelope struct {
@@ -1387,6 +1400,18 @@ const (
 
 // BrokerRootAssignmentStateValues is every value the contract allows, in contract order.
 var BrokerRootAssignmentStateValues = []BrokerRootAssignmentState{BrokerRootAssignmentStateAccepted, BrokerRootAssignmentStateTerminalOpened, BrokerRootAssignmentStateBriefed, BrokerRootAssignmentStateFailed}
+
+// Fresh conservative cleanup gates. No Root scratch is registered yet, so
+// eligible is false and no Root path is deleted.
+type BrokerRootCleanupEligibility struct {
+	Completion   bool   `json:"completion"`
+	Eligible     bool   `json:"eligible"`
+	NextOwner    string `json:"next_owner"`
+	Owner        string `json:"owner"`
+	Preservation string `json:"preservation"`
+	Reason       string `json:"reason"`
+	Scratch      string `json:"scratch"`
+}
 
 // A root's own receipt: one sentence saying this turn delivered something. It
 // produces the check that means `delivered, awaiting approval`, and can never

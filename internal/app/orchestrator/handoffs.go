@@ -698,9 +698,36 @@ type RootAssignment struct {
 	BriefAttemptedAt int64  `json:"brief_attempted_at,omitempty"`
 	BriefedAt        int64  `json:"briefed_at,omitempty"`
 	Failure          string `json:"failure,omitempty"`
+	// Closure is a separate receipt: briefed remains a launch state.
+	Closure *RootAssignmentClosure `json:"closure,omitempty"`
+	// Cleanup is a fresh, read-only projection, never stored with the row.
+	Cleanup *RootCleanupEligibility `json:"cleanup,omitempty"`
 	// AwaitingDialogSince is when the briefing stopped on a dialog, zero when
 	// it never did (root_dialog.go).
 	AwaitingDialogSince int64 `json:"awaiting_dialog_since,omitempty"`
+}
+
+// RootAssignmentClosure records a verified close of this assignment's exact
+// executor. A forced close is recorded, but is not completion evidence.
+type RootAssignmentClosure struct {
+	TerminalID     string `json:"terminal_id"`
+	ConversationID string `json:"conversation_id,omitempty"`
+	Method         string `json:"method"`
+	Forced         bool   `json:"forced"`
+	Safe           bool   `json:"safe"`
+	ClosedAt       int64  `json:"closed_at"`
+}
+
+// RootCleanupEligibility keeps the independent cleanup gates visible. There
+// is currently no broker-registered Root scratch, so eligible is always false.
+type RootCleanupEligibility struct {
+	Eligible     bool   `json:"eligible"`
+	Reason       string `json:"reason"`
+	NextOwner    string `json:"next_owner"`
+	Completion   bool   `json:"completion"`
+	Owner        string `json:"owner"`
+	Scratch      string `json:"scratch"`
+	Preservation string `json:"preservation"`
 }
 
 // The assignment's limits, the Swift app's (Orchestrator.swift:3398-3466).

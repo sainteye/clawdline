@@ -204,8 +204,13 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			// the route would have cut it off part way through.
 			ctx, more := context.WithTimeout(r.Context(), closeBudget)
 			defer more()
-			if _, err := s.closeActions(r).ClosePinned(ctx, id, body.Force, pin.pid, pin.started); err != nil {
+			closed, err := s.closeActions(r).ClosePinned(ctx, id, body.Force, pin.pid, pin.started)
+			if err != nil {
 				writeActionRefusal(w, err)
+				return
+			}
+			if err := s.recordRootClosure(ctx, pin.rootAssignment, closed, "close", body.Force); err != nil {
+				writeRootCloseReceiptRefusal(w)
 				return
 			}
 			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "closed", Forced: body.Force})
@@ -232,8 +237,9 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 // to-dos, identity, terminal state, and the Session's own owed declaration
 // also have to be read before ending its process.
 type processPin struct {
-	pid     int
-	started time.Time
+	pid            int
+	started        time.Time
+	rootAssignment string
 }
 
 func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, expected string, force bool, pin *processPin) bool {
@@ -243,6 +249,9 @@ func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, e
 			continue
 		}
 		c := row.Closeability
+		if pin != nil && row.RootAssignment != nil {
+			pin.rootAssignment = row.RootAssignment.ID
+		}
 		processOnly := session.SourceForID(row.ID) == "ps"
 		allowed, refusal := closeEvidenceDecision(c, expected, force, processOnly)
 		switch refusal {
@@ -267,7 +276,7 @@ func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, e
 				writeRefusal(w, http.StatusConflict, "close_not_proven", "The process identity could not be verified. Read it again before closing.")
 				return false
 			}
-			*pin = processPin{pid: row.processPID, started: row.processStart}
+			pin.pid, pin.started = row.processPID, row.processStart
 		}
 		return allowed
 	}
@@ -277,6 +286,40 @@ func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, e
 		writeRefusal(w, http.StatusConflict, "close_inventory_unavailable", "A fresh Session inventory did not complete. Try again after the next scan.")
 	}
 	return false
+}
+
+func (s *Server) recordRootClosure(ctx context.Context, assignment string, closed session.Session, method string, forced bool) error {
+	if assignment == "" || s.broker == nil {
+		return nil
+	}
+	return s.broker.RecordRootClosure(context.WithoutCancel(ctx), assignment, closed, method, forced)
+}
+
+// An agent's audit and close are separate reads. A reused terminal must not
+// turn the earlier Root projection into a receipt for a later Session.
+func (s *Server) recordAuditedRootClosure(ctx context.Context, audit agentCloseAudit, closed session.Session, method string) error {
+	if audit.RootAssignment == "" {
+		return nil
+	}
+	before := audit.Target
+	if before.ID != closed.ID || before.Backend != closed.Backend || before.Assistant != closed.Assistant ||
+		(before.PID != 0 && before.PID != closed.PID) ||
+		(before.ConversationID != "" && before.ConversationID != closed.ConversationID) ||
+		(before.PID == 0 && before.ConversationID == "") {
+		return errors.New("closed Session changed since Root identity was audited")
+	}
+	return s.recordRootClosure(ctx, audit.RootAssignment, closed, method, false)
+}
+
+const rootCloseReceiptDetail = "The Session closed, but its Root Assignment close receipt could not be recorded."
+const rootCloseReceiptDetailKey = "http.7e63fd158afd2797"
+
+func writeRootCloseReceiptRefusal(w http.ResponseWriter) {
+	markFixedRefusalKey(w, rootCloseReceiptDetailKey)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	_ = json.NewEncoder(w).Encode(contract.Refusal{Error: "root_close_receipt_not_recorded",
+		Detail: rootCloseReceiptDetail, DetailKey: rootCloseReceiptDetailKey})
 }
 
 func closeEvidenceDecision(c contract.Closeability, expected string, force, processOnly bool) (bool, string) {
