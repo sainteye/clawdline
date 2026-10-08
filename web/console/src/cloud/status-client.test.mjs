@@ -40,6 +40,7 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
   const client = Object.create(StatusCloudClient.prototype)
   client.statusSnapshots = new Map()
   client.statusSequences = new Map()
+  client.machineOffline = new Map([["m", { until: Date.now() + 1000 }]])
   client.sequenceBySender = new Map()
   client.realignSequenceByChannel = new Map()
   client._machinePairing = async () => ({ keyID: "key", senderID: "sender", senderKey: keys.publicKey, masterKey })
@@ -50,7 +51,14 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
   client._emit = (event) => events.push(event)
   await client._receiveEnvelope(signed, false)
   assert.deepEqual(client.statusSnapshots.get(JSON.stringify(["m", "s"])).payload, payload)
+  assert.equal(client.machineOffline.has("m"), false)
   assert.equal(events[0].type, "session_status")
+  client.machineOffline.set("m", { until: Date.now() + 1000 })
+  const retained = { ...signed, seq: 2 }
+  retained.sig = Buffer.from(await crypto.subtle.sign({ name: "Ed25519" }, keys.privateKey,
+    envelopeSigningBytes(retained))).toString("base64")
+  await client._receiveEnvelope(retained, true)
+  assert.equal(client.machineOffline.has("m"), true, "a retained row does not prove the machine is online")
 })
 
 test("pinned transcript sends exact generation and never coalesces another generation", async () => {
@@ -78,6 +86,21 @@ test("pinned transcript sends exact generation and never coalesces another gener
   assert.deepEqual(calls.map((args) => args[2].expected_generation), [genA, genB])
   assert.deepEqual(calls.map((args) => args[2].machine_id), ["m", "m"])
   assert.equal(calls[1][5].signal, signal)
+})
+
+test("an older transcript page names its cursor in the read waiter and preserves its pin", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const calls = []
+  client._read = (...args) => { calls.push(args); return Promise.resolve({ entries: [], nextBefore: 40 }) }
+  const destination = { machineID: "m", sessionID: "s", executionGeneration: genA }
+  const signal = new AbortController().signal
+  await client.transcriptPageForGeneration(destination, 123, signal)
+  assert.deepEqual(calls[0][2], { limit: 200, before: 123, priority: "foreground", machine_id: "m",
+    expected_generation: genA })
+  assert.equal(calls[0][3], "transcript.before.123")
+  assert.equal(calls[0][5].signal, signal)
+  await assert.rejects(() => client.transcriptPageForGeneration(destination, 0, signal),
+    { code: "execution_target_required" })
 })
 
 test("pinned info asks for full detail with the exact machine and generation", async () => {
@@ -230,6 +253,30 @@ test("a retained or mismatched t/ row cannot settle a new pinned execution", () 
   assert.deepEqual(settlements, [{ readKey: key, body: current.body, error: null }])
 })
 
+test("an older page reply settles only the waiter for its exact cursor and request sequence", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const read = "transcript.before.123"
+  const key = "m\u0000s\u0000" + read
+  const waiters = {}
+  client.readWaiters = new Map([[key, waiters]])
+  client.pinnedReadProofs = new Map([[key, { machineID: "m", sessionID: "s", generation: genA,
+    read, seq: 52, waiters }]])
+  client._observeMachine = () => {}
+  client.transcriptSnapshots = new Map()
+  client._emit = () => {}
+  const settlements = []
+  client._settleRead = (readKey, body, error) => settlements.push({ readKey, body, error })
+  const channel = { kind: "transcript", machine: "m", session: "s" }
+  const older = { read, machine_id: "m", session_id: "s", expected_generation: genA, seq: 51,
+    body: { entries: [{ role: "assistant", text: "old" }] } }
+  client._applySnapshot(channel, older, { seq: 60, ts: Date.now() }, false)
+  assert.equal(settlements[0].error.code, "read_reply_mismatch")
+  settlements.length = 0
+  client._applySnapshot(channel, { ...older, seq: 52 }, { seq: 61, ts: Date.now() }, false)
+  assert.deepEqual(settlements, [{ readKey: key, body: older.body, error: null }])
+  assert.equal(client.transcriptSnapshots.size, 0, "an older page never replaces the newest transcript cache")
+})
+
 test("leaving a detail releases s and t immediately", () => {
   const client = Object.create(StatusCloudClient.prototype)
   client.ready = true
@@ -271,6 +318,32 @@ test("r/ capability is learned only from this socket's full machine descriptor",
   assert.deepEqual(client.readContentCapabilities.get("m"), { at: 2, supported: true })
   client._emit({ type: "orchestrator", machine: "m", data: { at: 3, machine: {} } })
   assert.deepEqual(client.readContentCapabilities.get("m"), { at: 3, supported: false })
+})
+
+test("only the exact pinned r/ ACK can report Relay-confirmed machine offline", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const key = "m\u0000s\u0000transcript"
+  const pending = { machine: "m", key, ref: { sender: "viewer", seq: 42 }, ack: null }
+  client.pendingBySequence = new Map([[42, pending]])
+  client.pinnedReadProofs = new Map([[key, { seq: 42, machineID: "m" }]])
+  client.machineOffline = new Map()
+  client.now = () => 1000
+  client.trail = { step() {}, refused() {} }
+  const settled = []
+  const events = []
+  client._settleRead = (...args) => settled.push(args)
+  client._emit = (event) => events.push(event)
+  client._relayAnswered({ seq: 42, ch: "r/other", status: "machine_offline" }, null)
+  assert.equal(client.machineOffline.size, 0)
+  client._relayAnswered({ seq: 42, ch: "r/m", status: "machine_offline" }, null)
+  assert.ok(client.machineOffline.get("m")?.until > 1000)
+  assert.equal(settled[0][0], key)
+  assert.deepEqual(events, [{ type: "machine_reachability", machine: "m" }])
+  client.pendingBySequence.set(43, { ...pending, ref: { sender: "viewer", seq: 43 } })
+  client.pinnedReadProofs.set(key, { seq: 43, machineID: "m" })
+  client._relayAnswered({ seq: 43, ch: "r/m", status: "delivered" }, null)
+  assert.equal(client.machineOffline.has("m"), false)
+  assert.equal(events.length, 2)
 })
 
 test("an event gap requests one retained ss row and releases it after realign", async () => {

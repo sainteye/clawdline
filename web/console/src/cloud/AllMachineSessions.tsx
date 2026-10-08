@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { nextWord } from "../next-strings.js"
 import {
   afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
-  matchesSession, SessionDetailCache, type MachineSessionProjection, type ProjectionProblem,
+  matchesSession, prependOlderPage, projectionRefreshAt, SessionDetailCache, type MachineSessionProjection, type ProjectionProblem,
   type SessionContent, type SessionDestination, type SessionFilters, type SessionProjectionSource,
 } from "./all-machine-sessions.js"
+import { STATUS_FRESH_MS } from "./status-projection.js"
 
 export interface FleetMachine {
   id: string
@@ -37,10 +38,15 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
   const [filters, setFilters] = useState(emptyFilters)
   const [destination, setDestination] = useState<SessionDestination | null>(() => destinationFromFragment(location.hash))
   const [detail, setDetail] = useState<{ key: string; value: SessionContent | null; loading: boolean } | null>(null)
+  const [older, setOlder] = useState<{ key: string; loading: boolean; error: Extract<SessionContent,
+    { kind: "unavailable" }>["reason"] | null } | null>(null)
   const [questionRevision, setQuestionRevision] = useState(0)
   const cache = useRef(new SessionDetailCache())
   const destinationRef = useRef(destination)
+  const detailRef = useRef(detail)
+  const olderAbort = useRef<AbortController | null>(null)
   destinationRef.current = destination
+  detailRef.current = detail
 
   useEffect(() => {
     const route = () => setDestination(destinationFromFragment(location.hash))
@@ -107,6 +113,32 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     }
   }, [source, machines.map((machine) => machine.id + ":" + machine.freshness).join("\0")])
 
+  useEffect(() => {
+    if (!source) return
+    const deadlines = Object.entries(readings).flatMap(([machineID, reading]) => {
+      const at = reading.phase === "settled" ? projectionRefreshAt(reading.value, STATUS_FRESH_MS) : null
+      return at === null ? [] : [{ machineID, at }]
+    })
+    if (!deadlines.length) return
+    const earliest = Math.min(...deadlines.map(({ at }) => at))
+    const abort = new AbortController()
+    const timer = window.setTimeout(() => {
+      for (const { machineID, at } of deadlines) {
+        if (at !== earliest || !machines.some((machine) => machine.id === machineID)) continue
+        void source.readMachine(machineID, abort.signal).then((value) => {
+          if (!abort.signal.aborted) setReadings((before) => ({ ...before,
+            [machineID]: { phase: "settled", value: checkedProjection(machineID, value) },
+          }))
+        }, (error: unknown) => {
+          if (!abort.signal.aborted) setReadings((before) => ({ ...before,
+            [machineID]: { phase: "settled", value: { kind: "unavailable", reason: problemOf(error) } },
+          }))
+        })
+      }
+    }, Math.max(1, earliest - Date.now()))
+    return () => { window.clearTimeout(timer); abort.abort() }
+  }, [readings, source, machines.map((machine) => machine.id).join("\0")])
+
   const detailReading = destination ? readings[destination.machineID] : undefined
   const named = destination ? machines.find((machine) => machine.id === destination.machineID) : null
   const projection: MachineSessionProjection | undefined = named && named.freshness !== "current"
@@ -114,16 +146,14 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     : detailReading?.phase === "settled" ? detailReading.value : undefined
   const availability = destination ? destinationAvailable(destination, projection) : "waiting"
   useEffect(() => {
+    olderAbort.current?.abort()
+    olderAbort.current = null
+    setOlder(null)
     if (!destination || !source || availability !== "ready") {
       setDetail(null)
       return
     }
     const key = destinationKey(destination)
-    const held = cache.current.get(destination)
-    if (held) {
-      setDetail({ key, value: held, loading: false })
-      return
-    }
     const abort = new AbortController()
     setDetail({ key, value: null, loading: true })
     void source.readDetail(destination, abort.signal).then((value) => {
@@ -140,6 +170,7 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     })
     return () => {
       abort.abort()
+      olderAbort.current?.abort()
       source.closeDetail?.(destination)
     }
   }, [source, destination?.machineID, destination?.sessionID, destination?.executionGeneration, availability])
@@ -172,8 +203,38 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     ? projection.rows.find((candidate) => destinationKey(candidate.destination) === destinationKey(destination)) : null
 
   const closeDetail = () => {
+    olderAbort.current?.abort()
     history.replaceState(history.state, "", location.pathname + location.search)
     setDestination(null)
+  }
+  const loadOlder = () => {
+    const current = detailRef.current
+    if (!destination || !source?.readOlder || availability !== "ready" || current?.value?.kind !== "ready" ||
+      current.key !== destinationKey(destination) || !Number.isSafeInteger(current.value.nextBefore) ||
+      !current.value.nextBefore || olderAbort.current) return
+    const key = current.key
+    const before = current.value.nextBefore
+    const abort = new AbortController()
+    olderAbort.current = abort
+    setOlder({ key, loading: true, error: null })
+    void source.readOlder(destination, before, abort.signal).then((page) => {
+      if (abort.signal.aborted || !destinationRef.current || destinationKey(destinationRef.current) !== key) return
+      if (page.kind === "unavailable") {
+        setOlder({ key, loading: false, error: page.reason })
+        return
+      }
+      const shown = detailRef.current
+      const merged = shown?.value ? prependOlderPage(shown.value, page) : null
+      if (!merged || shown?.key !== key) {
+        setOlder({ key, loading: false, error: "unknown" })
+        return
+      }
+      cache.current.put(merged)
+      setDetail({ key, value: merged, loading: false })
+      setOlder(null)
+    }, (error: unknown) => {
+      if (!abort.signal.aborted) setOlder({ key, loading: false, error: contentProblemOf(error) })
+    }).finally(() => { if (olderAbort.current === abort) olderAbort.current = null })
   }
   return <div className="cloud-all" data-embedded={embedded ? "true" : undefined} data-step="all-sessions">
     <header className="cloud-all-header">
@@ -187,6 +248,21 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
         <div><dt>{nextWord("cloudAllGeneration")}</dt><dd>{destination.executionGeneration}</dd></div>
         <div><dt>{nextWord("cloudAllDataTime")}</dt><dd>{row ? timeWord(row.observedAt) : nextWord("cloudAllUnknown")}</dd></div>
       </dl>
+      {availability === "ready" && row && projection?.kind === "ready" && <section className="cloud-all-work"
+        aria-label={nextWord("cloudAllWorkStatus")}>
+        <h2>{nextWord("cloudAllWorkStatus")}</h2>
+        <dl>
+          <div><dt>{nextWord("cloudAllState")}</dt><dd>{stateWord(row.state)}</dd></div>
+          <div><dt>{nextWord("cloudAllWaitingForReply")}</dt><dd>{factWord(row.waitingForReply)}</dd></div>
+          <div><dt>{nextWord("cloudAllNoMovement")}</dt><dd>{factWord(row.noMovement)}</dd></div>
+          <div><dt>{nextWord("cloudAllCloseBlocked")}</dt><dd>{factWord(row.closeBlocked)}</dd></div>
+          <div><dt>{nextWord("cloudAllFailedAgents")}</dt><dd>{row.failedAgentCount ?? nextWord("cloudAllUnknown")}</dd></div>
+          <div><dt>{nextWord("cloudAllCompletedUnconfirmed")}</dt><dd>{factWord(row.completedUnconfirmed)}</dd></div>
+          <div><dt>{nextWord("cloudAllLastMovement")}</dt><dd>{row.lastMovementAt === undefined
+            ? nextWord("cloudAllUnknown") : timeWord(row.lastMovementAt)}</dd></div>
+          <div><dt>{nextWord("cloudAllStatusTime")}</dt><dd>{timeWord(projection.observedAt)}</dd></div>
+        </dl>
+      </section>}
       {availability === "ready" && named && projection?.kind === "ready" && row && detailActions?.({
         destination, machine: named, row, projection,
         content: detail?.key === destinationKey(destination) ? detail.value : null,
@@ -204,6 +280,14 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
           {detail.value!.info.title && <h2>{detail.value!.info.title}</h2>}
           {(detail.value!.info.assistant || detail.value!.info.model) && <p>{[detail.value!.info.assistant,
             detail.value!.info.model].filter(Boolean).join(" · ")}</p>}
+          {detail.value!.nextBefore !== undefined && source?.readOlder && <div className="cloud-all-older">
+            <button type="button" onClick={loadOlder} disabled={older?.key === detail.key && older.loading}
+              aria-busy={older?.key === detail.key && older.loading ? "true" : undefined}>
+              {older?.key === detail.key && older.loading ? nextWord("cloudAllLoadingOlder") : nextWord("cloudAllLoadOlder")}
+            </button>
+            {older?.key === detail.key && older.error && <p role="alert">{older.error === "old_version"
+              ? nextWord("cloudAllOlderOldVersion") : contentWord(older.error)}</p>}
+          </div>}
           {detail.value!.entries.length === 0 ? <p>{nextWord("cloudAllNoContent")}</p> : detail.value!.entries.map((entry, index) =>
             <article key={index}><h2>{entry.speaker}</h2><p>{entry.text}</p></article>)}
         </section>}
@@ -275,6 +359,10 @@ function contentWord(reason: Extract<SessionContent, { kind: "unavailable" }>["r
 
 function timeWord(at: number): string {
   return Number.isFinite(at) ? new Date(at).toLocaleString() : nextWord("cloudAllUnknown")
+}
+
+function factWord(value: boolean | undefined): string {
+  return value === undefined ? nextWord("cloudAllUnknown") : nextWord(value ? "cloudAllYes" : "cloudAllNo")
 }
 
 function stateWord(state: string): string {

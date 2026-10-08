@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4772,
-  "riskKeys": 2081,
-  "nonRiskCount": 2691,
+  "englishContentKeys": 4785,
+  "riskKeys": 2087,
+  "nonRiskCount": 2698,
   "groups": [
     {
       "name": "bar / other",
@@ -1635,7 +1635,7 @@
     },
     {
       "name": "next / cloud",
-      "count": 92,
+      "count": 99,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1644,6 +1644,7 @@
         "next.cloudAllAttention",
         "next.cloudAllAttentionNeeded",
         "next.cloudAllBack",
+        "next.cloudAllCloseBlocked",
         "next.cloudAllConversation",
         "next.cloudAllCurrent",
         "next.cloudAllDataAt",
@@ -1652,8 +1653,11 @@
         "next.cloudAllEventGap",
         "next.cloudAllFreshness",
         "next.cloudAllGeneration",
+        "next.cloudAllLastMovement",
+        "next.cloudAllLoadOlder",
         "next.cloudAllLoading",
         "next.cloudAllLoadingDetail",
+        "next.cloudAllLoadingOlder",
         "next.cloudAllMachine",
         "next.cloudAllMachines",
         "next.cloudAllPlatform",
@@ -1662,6 +1666,9 @@
         "next.cloudAllState",
         "next.cloudAllStateIdle",
         "next.cloudAllStateWorking",
+        "next.cloudAllStatusTime",
+        "next.cloudAllWorkStatus",
+        "next.cloudAllYes",
         "next.cloudChecking",
         "next.cloudConnRetry",
         "next.cloudConnecting",
