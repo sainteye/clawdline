@@ -85,6 +85,12 @@ func TestACallbackSettlesOnItsExitAndOwesItsRootANotice(t *testing.T) {
 			if got := b.FinishedLine(r, r.Notice.ID); !strings.HasPrefix(got, "callback "+id[:8]+" finished: "+string(tc.state)) {
 				t.Fatalf("notice line %q", got)
 			}
+			if changed, err := b.Acknowledge(ctx, id, r.Notice.ID); err != nil || !changed {
+				t.Fatalf("first result read was changed=%v, err=%v", changed, err)
+			}
+			if changed, err := b.Acknowledge(ctx, id, r.Notice.ID); err != nil || changed {
+				t.Fatalf("repeated result read was changed=%v, err=%v", changed, err)
+			}
 			if r.Callback.Exit == nil {
 				t.Fatal("the exit status was not recorded")
 			}
@@ -223,6 +229,15 @@ func TestACallbackPastItsTimeoutIsStopped(t *testing.T) {
 	r = settledWithin(t, b, ctx, id, time.Second)
 	if r.State != StateTimeout || !strings.HasPrefix(r.Verdict, "stopped at its 1-minute timeout") {
 		t.Fatalf("%s: %q", r.State, r.Verdict)
+	}
+	if r.Notice == nil || !strings.HasPrefix(b.FinishedLine(r, r.Notice.ID), "callback "+id[:8]+" finished: timeout") {
+		t.Fatalf("timeout has no actionable completion notice: %+v", r.Notice)
+	}
+	if changed, err := b.Acknowledge(ctx, id, r.Notice.ID); err != nil || !changed {
+		t.Fatalf("timeout result read was changed=%v, err=%v", changed, err)
+	}
+	if changed, err := b.Acknowledge(ctx, id, r.Notice.ID); err != nil || changed {
+		t.Fatalf("repeated timeout read was changed=%v, err=%v", changed, err)
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for alive(r.Callback.PGID) {

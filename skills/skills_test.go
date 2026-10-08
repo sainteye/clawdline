@@ -167,14 +167,15 @@ func TestBothGuidesPutCallbackBeforeInTurnWaiting(t *testing.T) {
 			t.Fatal(err)
 		}
 		section := strings.SplitN(string(guide), "- **Claude Code", 2)[0]
-		start := strings.LastIndex(section, "**Waiting on a long command.")
-		endTurn := "end your turn"
+		start := strings.LastIndex(section, "**Continue on the completion notice.")
+		endTurn := "end the turn"
 		if topic == "zh-Hant" {
-			start = strings.LastIndex(section, "**等一個跑很久的指令。")
+			start = strings.LastIndex(section, "**收到完成通知後再續接。")
 			endTurn = "結束這個 turn"
 		}
-		if start < 0 || !strings.Contains(section[start:], "clawdline callback") || !strings.Contains(section[start:], endTurn) {
-			t.Errorf("guide %s must recommend callback and %q before Claude Code's in-turn wait", topic, endTurn)
+		if start < 0 || !strings.Contains(section[start:], "clawdline callback") || !strings.Contains(section[start:], endTurn) ||
+			!strings.Contains(section[start:], "clawdline task show <id>") {
+			t.Errorf("guide %s must recommend callback, %q and one task result read before Claude Code's in-turn wait", topic, endTurn)
 		}
 	}
 }

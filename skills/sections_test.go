@@ -378,7 +378,22 @@ func TestTheFeatureRootPathIsShortAndComplete(t *testing.T) {
 		if lang != DefaultTopic {
 			prefix += lang + " "
 		}
-		for _, want := range append(wants, prefix+"board", prefix+"epic", prefix+"landing", prefix+"dispatch") {
+		featurePrefix := prefix
+		pending, err := PendingSections(lang)
+		if err != nil {
+			t.Fatal(err)
+		}
+		staleFeatureRoot := false
+		for _, name := range pending {
+			if name == "feature-root" {
+				staleFeatureRoot = true
+				break
+			}
+		}
+		if staleFeatureRoot {
+			featurePrefix = "clawdline guide "
+		}
+		for _, want := range append(wants, featurePrefix+"board", featurePrefix+"epic", featurePrefix+"landing", featurePrefix+"dispatch") {
 			if !strings.Contains(string(part), want) {
 				t.Errorf("%s: the feature-root part does not carry %q", lang, want)
 			}
