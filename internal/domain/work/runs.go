@@ -80,6 +80,15 @@ func (r Run) Evidence() map[string]any {
 // not that an unrelated message authorized an edit.
 func AcceptanceRevisionInstruction(excerpt, itemID, title string, soleOwnedItem bool) bool {
 	words := strings.ToLower(strings.Join(strings.Fields(excerpt), " "))
+	// An answer Note appends its own ID and context after the person's reply.
+	// Its ID identifies the Note, not another Board item. Keep the reply intact.
+	const noteContext = " (clawdline 便條 "
+	if at := strings.LastIndex(words, noteContext); at >= 0 {
+		suffix := words[at+len(noteContext):]
+		if len(suffix) >= 36 && RunShaped(suffix[:36]) && strings.HasPrefix(suffix[36:], "：「") {
+			words = words[:at]
+		}
+	}
 	identified := strings.Contains(words, strings.ToLower(itemID))
 	if title = strings.ToLower(strings.TrimSpace(title)); title != "" {
 		identified = identified || strings.Contains(words, title)
