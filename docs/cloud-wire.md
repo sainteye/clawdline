@@ -681,6 +681,29 @@ relay 的 `delivered` 只證明 fan-out 送出去了，不證明機器執行或�
 
 See the [dated operation record](records/cloud-operations-2026-09.md).
 
+For a live Session's `send`, `answer`/`key`, `interrupt`, `end`, or
+`archive-session`, the Go machine now requires `request` (the caller's stable
+Idempotency-Key) and `execution_generation` (the authoritative 32-digit
+lowercase hex generation in the Session row). The machine checks the current
+execution through `AdmitExecutionTarget` before performing an effect. A missing or
+unprovable generation fails closed. An older machine without `session-receipt`
+in its descriptor is not offered these durable operations by the console.
+
+The SQLite request receipt uses `(viewer sender, machine, terminal Session,
+execution_generation, operation, request)` as its identity. The canonical
+request digest is a comparison field: repeating that identity with different
+parameters returns `idempotency_key_reused`. Admission commits before the local
+route runs. A completed answer is replayed; an orphaned admission is unknown
+and is never run again. The read word `session-receipt` takes the same identity
+plus a separate read correlation ID and reports `machine_execution` as
+`missing`, `pending`, `completed`, `rejected`, or `unknown`. It deliberately
+reports relay acceptance, relay delivery, viewer observation and viewer
+acknowledgement as unknown: those are separate evidence domains, and the
+machine's execution receipt cannot prove them. The console exposes this word
+through `GET /v1/sessions/{id}/cloud-receipts/{request}` with `action` and
+`execution_generation` query fields. A lost reply must be reconciled by this
+read under the original request ID, never by minting another write ID.
+
 ### 10.4 派工就是 task.json
 
 遠端派工的加密載荷帶的就是本機 orchestrator 已經在講的 wire format：**task.json 就是協定**。

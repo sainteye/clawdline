@@ -27,6 +27,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"strings"
 )
 
@@ -184,6 +185,15 @@ type Bridge struct {
 	// listens on the channel it addressed and an answer on ours reaches
 	// nobody.
 	MachineID string
+	// Receipts is the durable machine admission store. A nil store refuses
+	// session mutations; a missing disk is never an invitation to run them.
+	Receipts *store.Store
+	// EnforceSessionReceipts is set by the running Cloud link. Older bridge
+	// fixtures can still exercise the historical vocabulary without a store.
+	EnforceSessionReceipts bool
+	// AdmitExecution is the execution feature's authoritative, fresh check.
+	// It must reject an unprovable or stale generation. Nil refuses writes.
+	AdmitExecution func(context.Context, string, string, string) error
 	// Router is this daemon's own routes. Nil answers every routed operation
 	// with `router_unavailable` rather than pretending it succeeded.
 	Router LocalRouter
@@ -260,7 +270,7 @@ func Vocabulary() []string { return opNames(func(o op) bool { return true }) }
 // the hosted console learns from: it stops asking this machine for that word
 // (`machineLacks` in `net/cloud-client.js`).
 func Implemented() []string {
-	return opNames(func(o op) bool { return o.route != nil || o.sessions })
+	return opNames(func(o op) bool { return o.route != nil || o.sessions || o.name == "session-receipt" })
 }
 
 // Divergences names every routed word whose answer is not the one the hosted
@@ -301,6 +311,9 @@ func (b Bridge) Handle(ctx context.Context, cmd Command) (answer Answer) {
 			Message: "This machine does not know that Cloud command.", fixedCopy: true})
 	}
 	mutating = !o.read
+	if word == "session-receipt" {
+		return b.sessionReceipt(ctx, cmd, parsed)
+	}
 	if o.read {
 		return b.serveRead(ctx, cmd, parsed, o)
 	}
@@ -401,10 +414,30 @@ func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "malformed_command",
 			Message: "This Cloud command is malformed.", fixedCopy: true})
 	}
-	plan, ok := o.decode(parsed)
+	decode := parsed
+	var generation string
+	if b.EnforceSessionReceipts && sessionMutation(o.name) {
+		var valid bool
+		generation, valid = executionGeneration(parsed["execution_generation"])
+		if !valid {
+			return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "execution_generation_required",
+				Message: "This action needs the session's current execution generation."})
+		}
+		decode = make(body, len(parsed)-1)
+		for k, v := range parsed {
+			if k != "execution_generation" {
+				decode[k] = v
+			}
+		}
+	}
+	plan, ok := o.decode(decode)
 	if !ok {
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "malformed_command",
 			Message: "This Cloud command is malformed.", fixedCopy: true})
+	}
+	if b.EnforceSessionReceipts && sessionMutation(o.name) && plan.request == "" {
+		return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "idempotency_key_required",
+			Message: "This action needs an Idempotency-Key."})
 	}
 	// Admission may have waited. Re-read every revocable authority here, at
 	// the point of no return, instead of reusing what was true when this
@@ -424,6 +457,9 @@ func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op
 		return b.publish(cmd, plan, Refusal{Status: 400, Code: "unknown_command",
 			Message: "This machine does not know that Cloud command.", fixedCopy: true}, nil)
 	}
+	if b.EnforceSessionReceipts && sessionMutation(o.name) {
+		return b.sessionCommand(ctx, cmd, parsed, plan, o, generation)
+	}
 	return b.route(ctx, cmd, plan, o)
 }
 
@@ -437,6 +473,10 @@ func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer 
 	req := o.route(plan)
 	if req.Header == nil {
 		req.Header = map[string]string{}
+	}
+	if plan.executionGeneration != "" {
+		req.Header["X-Clawdline-Target-Machine"] = b.MachineID
+		req.Header["X-Clawdline-Execution-Generation"] = plan.executionGeneration
 	}
 	// A retried request is not a second effect. The viewer's own request id is
 	// the key when it named one, because that is the identity it will retry

@@ -1037,6 +1037,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: pane, name: "shell:b0aau3e6s", method: "GET",
 		path: "/v1/sessions/%2519/shells/b0aau3e6s", query: map[string]string{"bytes": "65536"},
 	}, {
+		word: "session-receipt",
+		body: map[string]any{"type": "session-receipt", "session": pane, "request": "lookup-1",
+			"target_request": "press-1", "execution_generation": testExecution, "action": "send"},
+		session: pane, name: "read:lookup-1", code: "receipt_unavailable", status: 503,
+	}, {
 		// The words this daemon knows and cannot answer. `unknown_command` is
 		// not a guess at a code: it is the one the hosted console learns from
 		// (`machineLacks` in net/cloud-client.js), so a machine that says it stops

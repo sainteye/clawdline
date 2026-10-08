@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4734,
-  "riskKeys": 2066,
-  "nonRiskCount": 2668,
+  "englishContentKeys": 4741,
+  "riskKeys": 2070,
+  "nonRiskCount": 2671,
   "groups": [
     {
       "name": "bar / other",
@@ -1055,7 +1055,7 @@
     },
     {
       "name": "legacy / Fail",
-      "count": 8,
+      "count": 11,
       "sources": [
         "src/legacy/js/core/i18n.js"
       ],
@@ -1064,6 +1064,9 @@
         "legacy.webFailClockIn",
         "legacy.webFailMacBusy",
         "legacy.webFailRateLimited",
+        "legacy.webFailReceiptCapacity",
+        "legacy.webFailReceiptPending",
+        "legacy.webFailReceiptUnknown",
         "legacy.webFailReconnecting",
         "legacy.webFailTap",
         "legacy.webFailTooLarge",

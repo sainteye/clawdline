@@ -212,6 +212,8 @@ type plan struct {
 	// the same field as session: a machine-scoped request's session is the
 	// machine reply channel.
 	target string
+	// The target remains pinned through the local HTTP route's final check.
+	executionGeneration string
 
 	id, scope, task, path             string
 	place, past, assistant, model     string

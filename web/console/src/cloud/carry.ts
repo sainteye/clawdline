@@ -163,6 +163,7 @@ export const CARRIED = {
   schedule: "GET /v1/orchestrator/schedules/{id}",
   schedules: "GET /v1/orchestrator/schedules",
   send: "POST /v1/sessions/{id}/send",
+  "session-receipt": "GET /v1/sessions/{id}/cloud-receipts/{request}?action=&execution_generation=",
   // The Shell panel (`session/ShellPanel.tsx`): the tail of one background
   // command's output, polled while the panel is open.
   shell: "GET /v1/sessions/{id}/shells/{shell}?bytes=",

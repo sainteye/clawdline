@@ -323,8 +323,10 @@ func stopTunnelOnSignal(srv *httptransport.Server) {
 // is the difference between a quiet failure and a legible one.
 func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.Server) {
 	link, err := cloudtransport.Open(cloudtransport.LinkOptions{
-		Dir:         cfg.Dir,
-		ForeignDirs: foreignDirs(),
+		Dir:            cfg.Dir,
+		ForeignDirs:    foreignDirs(),
+		Receipts:       srv.CloudSessionReceipts(),
+		AdmitExecution: srv.CloudAdmitExecution,
 		// The daemon's own routes, gate and all. A Cloud request is answered by
 		// exactly the handler a paired browser on this machine's own network
 		// reaches — one set of permission checks, not two.
