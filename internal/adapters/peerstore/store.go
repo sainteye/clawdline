@@ -241,20 +241,24 @@ func (s *Store) Pair(ctx context.Context, id string) (Pair, error) {
 // rows. The caller decides which rows are currently displayable. An oversized
 // or unreadable table is an error, not an apparently empty authority list.
 func (s *Store) ListPairs(ctx context.Context) ([]Pair, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT body FROM peer_pairs ORDER BY rowid DESC LIMIT ?", PairLimit+1)
+	rows, err := s.db.QueryContext(ctx, "SELECT id,body FROM peer_pairs ORDER BY rowid DESC LIMIT ?", PairLimit+1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	pairs := make([]Pair, 0)
 	for rows.Next() {
+		var id string
 		var pair Pair
-		if err := rows.Scan(&pairBody{into: &pair}); err != nil {
+		if err := rows.Scan(&id, &pairBody{into: &pair}); err != nil {
 			return nil, err
 		}
 		pairs = append(pairs, pair)
 		if len(pairs) > PairLimit {
 			return nil, ErrFull
+		}
+		if pair.ID == "" || pair.ID != id {
+			return nil, errors.New("peer_record_unreadable")
 		}
 	}
 	return pairs, rows.Err()
@@ -307,20 +311,24 @@ func (s *Store) Grant(ctx context.Context, id string) (Grant, error) {
 // ListGrants has the same complete-or-error bound as ListPairs. It does not
 // put request bodies, encryption material or receipt contents on the wire.
 func (s *Store) ListGrants(ctx context.Context) ([]Grant, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT body FROM peer_grants ORDER BY rowid DESC LIMIT ?", GrantLimit+1)
+	rows, err := s.db.QueryContext(ctx, "SELECT id,pair_id,body FROM peer_grants ORDER BY rowid DESC LIMIT ?", GrantLimit+1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	grants := make([]Grant, 0)
 	for rows.Next() {
+		var id, pairID string
 		var grant Grant
-		if err := rows.Scan(&pairBody{into: &grant}); err != nil {
+		if err := rows.Scan(&id, &pairID, &pairBody{into: &grant}); err != nil {
 			return nil, err
 		}
 		grants = append(grants, grant)
 		if len(grants) > GrantLimit {
 			return nil, ErrFull
+		}
+		if grant.ID == "" || grant.ID != id || grant.PairID == "" || grant.PairID != pairID {
+			return nil, errors.New("peer_record_unreadable")
 		}
 	}
 	return grants, rows.Err()

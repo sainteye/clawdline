@@ -158,8 +158,9 @@ func TestPeerAuthorityListsRefuseAnOversizedStore(t *testing.T) {
 	}
 	defer st.Close()
 	for i := 0; i <= PairLimit; i++ {
+		id := fmt.Sprintf("pair-%d", i)
 		if _, err := st.db.ExecContext(ctx, "INSERT INTO peer_pairs(id,body) VALUES(?,?)",
-			fmt.Sprintf("pair-%d", i), []byte(`{}`)); err != nil {
+			id, []byte(fmt.Sprintf(`{"id":%q}`, id))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -167,13 +168,37 @@ func TestPeerAuthorityListsRefuseAnOversizedStore(t *testing.T) {
 		t.Fatalf("oversized pair authority list: %v", err)
 	}
 	for i := 0; i <= GrantLimit; i++ {
+		id := fmt.Sprintf("grant-%d", i)
 		if _, err := st.db.ExecContext(ctx, "INSERT INTO peer_grants(id,pair_id,body) VALUES(?,?,?)",
-			fmt.Sprintf("grant-%d", i), "pair", []byte(`{}`)); err != nil {
+			id, "pair", []byte(fmt.Sprintf(`{"id":%q,"pair_id":"pair"}`, id))); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if _, err := st.ListGrants(ctx); !errors.Is(err, ErrFull) {
 		t.Fatalf("oversized grant authority list: %v", err)
+	}
+}
+
+func TestPeerAuthorityListRejectsARecordWhoseBodyNamesAnotherRevocationID(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "private-peers"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if _, err := st.db.ExecContext(ctx, "INSERT INTO peer_pairs(id,body) VALUES(?,?)",
+		"actual-pair", []byte(`{"id":"wrong-pair"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ListPairs(ctx); err == nil {
+		t.Fatal("pair list presented an ID that could not revoke its row")
+	}
+	if _, err := st.db.ExecContext(ctx, "INSERT INTO peer_grants(id,pair_id,body) VALUES(?,?,?)",
+		"actual-grant", "actual-pair", []byte(`{"id":"wrong-grant","pair_id":"actual-pair"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ListGrants(ctx); err == nil {
+		t.Fatal("grant list presented an ID that could not revoke its row")
 	}
 }
 
