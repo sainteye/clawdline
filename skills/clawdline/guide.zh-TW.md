@@ -112,6 +112,16 @@ token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原�
 若先前的 `task wait` 已印出終止結果並關閉通知，之後才到的同一任務通知不需再執行 `task show`，也不需
 再次整合。
 
+**呼叫時宣告 callback 意圖。** `clawdline callback` 預設為 `--intent wait`，適用於等待部署或外部結果。
+命令會透過 `clawdline heavy` 執行時，使用 `--intent heavy`；自動的 `heavy --handoff` 會自行指定。
+任務紀錄和 `task show` 都會顯示意圖。Session 清單只在 heavy callback 實際取得重工作業租約並執行時
+顯示 🏗️；排隊中的 callback 和等待結果的 callback 都不顯示重工圖示。
+
+**在對話裡標出重工作業。** 執行 `clawdline heavy` 前，對人的最後一句話以 `🏗️` 開頭，簡短說明即將
+開始的工作。若交接成 callback（回傳 76），結束這輪時用一句 `🏗️` 說明排隊中的工作與完成通知。
+一般等待 callback 則說明正在等什麼，不使用重工圖示。等待期間不要反覆回報進度。若交接遭拒或
+`heavy` 回 75，直接說明指令尚未執行。
+
 **同一個 turn 內的短暫等待。** 只有目前工作必須立即取得結果，且預期很快完成時才使用。用一個工具呼叫
 設定足夠的 timeout；工具回傳 session ID 時，在同一個 cell 內收取結果，仍算同一次呼叫。等待逾時後
 停止等待，改由任務完成通知續接；不要再開第二次 `task wait` 或連續查狀態。`clawdline heavy` 和長時間

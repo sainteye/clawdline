@@ -124,6 +124,19 @@ ten items, mostly on queued `heavy` runs.
 If an earlier `task wait` already printed the terminal result and closed the notice, a late notice
 for that same task does not require another `task show` or another integration.
 
+**Declare the callback's purpose.** `clawdline callback` defaults to `--intent wait` for a deploy
+or an external result. Use `--intent heavy` when its command will run through `clawdline heavy`;
+automatic `heavy --handoff` does this itself. The task record and `task show` expose the intent.
+The Session list draws 🏗️ only while that heavy callback actually owns and runs in the compile
+slot. A queued callback or one waiting for a result has no heavy marker.
+
+**Show heavy work in the conversation.** Before starting `clawdline heavy`, make your last
+person-facing sentence start with `🏗️` and name the work being started. If it hands off to a
+callback (exit 76), end the turn with a short `🏗️` sentence saying what is queued and that the
+completion notice will bring you back. For a wait callback, say what is awaited without that
+heavy-work icon. Give no repeated waiting updates. If the handoff is refused or `heavy` exits 75,
+say that the command did not start.
+
 **A short wait inside the current turn.** Use this only when the result is needed to finish work
 already in this turn and it is expected soon. Make one tool call with a long enough timeout; a
 tool returning a session ID is still the same call when you collect it inside that cell. If the

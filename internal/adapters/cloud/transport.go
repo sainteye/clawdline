@@ -10,6 +10,7 @@ package cloud
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -50,7 +51,7 @@ type Options struct {
 	Replay *cloud.ReplayWindow
 	// Inbound is called for every envelope that passed decoding, the channel
 	// check, signature verification and the replay window. It must not block.
-	Inbound func(cloud.Envelope, []byte)
+	Inbound func(cloud.Envelope, []byte, ed25519.PublicKey)
 	// OnDisconnect invalidates terminal connection registrations tied to this socket.
 	OnDisconnect func()
 	// OnSettled receives the correlated relay outcome after the spool settles it.
@@ -596,12 +597,16 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 		t.opts.Status.Dropped(DropRosterUnreadable)
 		return false
 	}
-	if _, known := t.opts.PublicKeyFor(envelope.Sender); !known {
+	verifiedKey, known := t.opts.PublicKeyFor(envelope.Sender)
+	if !known {
 		t.opts.Status.Dropped(DropUnknownSender)
 		t.logf("cloud dropped an envelope reason=%s sender=%s", DropUnknownSender, envelope.Sender)
 		return false
 	}
-	if !envelope.Verify(t.opts.PublicKeyFor) {
+	keyForEnvelope := func(sender string) (ed25519.PublicKey, bool) {
+		return verifiedKey, sender == envelope.Sender
+	}
+	if !envelope.Verify(keyForEnvelope) {
 		t.opts.Status.Dropped(DropBadSignature)
 		t.logf("cloud dropped an envelope reason=%s sender=%s seq=%d", DropBadSignature, envelope.Sender, envelope.Seq)
 		return false
@@ -620,7 +625,7 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 
 	var plaintext []byte
 	if t.opts.ContentKey.Valid() {
-		plaintext, err = envelope.Open(t.opts.ContentKey, t.opts.PublicKeyFor)
+		plaintext, err = envelope.Open(t.opts.ContentKey, keyForEnvelope)
 		if err != nil {
 			// The claim is **not** given back. It was spent when the envelope
 			// authenticated, and a sender that re-sends the same sequence
@@ -633,7 +638,7 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 	}
 	t.opts.Status.Inbound()
 	if t.opts.Inbound != nil {
-		t.opts.Inbound(envelope, plaintext)
+		t.opts.Inbound(envelope, plaintext, verifiedKey)
 	}
 	return true
 }

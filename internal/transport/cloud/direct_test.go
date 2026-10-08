@@ -69,7 +69,7 @@ func newDirectFixture(t *testing.T) *directFixture {
 		PublicKeyFor: func(sender string) (ed25519.PublicKey, bool) {
 			return f.viewer.PublicKey(), sender == "viewer"
 		},
-		Inbound: func(_ domaincloud.Envelope, plain []byte) { f.inbound <- plain },
+		Inbound: func(_ domaincloud.Envelope, plain []byte, _ ed25519.PublicKey) { f.inbound <- plain },
 	})
 	if err != nil {
 		t.Fatal(err)

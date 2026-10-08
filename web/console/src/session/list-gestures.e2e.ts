@@ -67,6 +67,7 @@ type ReadingScenario =
   | "session-gap"
   | "callback-owner"
 let readingScenario: ReadingScenario = "normal"
+let callbackDone = false
 let inlineDecisionFixture = false
 let inlineDecisionAnswers = 0
 let sessionGap = false
@@ -159,8 +160,8 @@ let spareMoved = MOVED.spare
 function rows(): Row[] {
   if (readingScenario === "expired") return []
   if (readingScenario === "callback-owner") return [
-    row(SAFE, "Heavy callback running", safeCloseability(), 300,
-      { heavy_work: { task_id: "callback-heavy", reason: "Go tests" } }),
+    row(SAFE, "示範：Go 測試", safeCloseability(), Date.now() / 1000,
+      { heavy_work: callbackDone ? undefined : { task_id: "callback-heavy", reason: "Go tests" } }),
     row(BLOCKED, "Wait callback running", blockedCloseability(), 200),
     row(UNKNOWN, "Heavy callback queued", unknownCloseability(), 100),
   ]
@@ -330,7 +331,7 @@ const streams = new Set<ServerResponse>()
 function snapshot() {
   generation++
   const age = readingScenario === "five" ? 5 : readingScenario === "ninety" ? 90 : 0
-  const source = readingScenario === "normal" || readingScenario === "worst" || readingScenario === "live-crowded" || readingScenario === "epic" || readingScenario === "unstarted-codex" || (readingScenario === "session-gap" && (!sessionGap || sessionGapComplete))
+  const source = readingScenario === "normal" || readingScenario === "worst" || readingScenario === "live-crowded" || readingScenario === "epic" || readingScenario === "unstarted-codex" || readingScenario === "callback-owner" || (readingScenario === "session-gap" && (!sessionGap || sessionGapComplete))
     ? { freshness: "current", observed_at: Date.now() / 1000, provenance: "fixture" }
     : readingScenario === "expired"
       ? { freshness: "missing", observed_at: Date.now() / 1000 - 121, provenance: "iterm" }
@@ -678,7 +679,7 @@ function daemon(): Server {
       const tasks = readingScenario === "session-gap"
         ? [{ id: "task-gap-fixture", state: "briefed", created: 1,
             root: { terminalId: SAFE, sessionId: "conversation-" + SAFE }, child: { terminalId: BLOCKED } }]
-        : readingScenario === "callback-owner"
+        : readingScenario === "callback-owner" && !callbackDone
         ? [
             { id: "callback-heavy", kind: "callback", callback_intent: "heavy", state: "briefed", created: 1,
               title: "Go tests", root: { terminalId: SAFE, sessionId: "conversation-" + SAFE } },
@@ -739,7 +740,12 @@ function daemon(): Server {
       return
     }
     if (path === "/v1/transcript") {
-      return json(res, 200, { entries: [], evidence: "process", id: url.searchParams.get("session"), signature: "fixture" })
+      const entries = readingScenario === "callback-owner" ? [
+        { role: "assistant", text: "🏗️ Go 測試已交給 Callback，完成通知會叫我回來。", at: 1 },
+        ...(callbackDone ? [{ role: "notice", text: "callback finished: success", at: 2,
+          notice: { kind: "task_finished", state: "success", task: { id: "callback-demo", title: "Go 測試完成" }, outstanding: 0 } }] : []),
+      ] : []
+      return json(res, 200, { entries, evidence: "process", id: url.searchParams.get("session"), signature: "fixture" })
     }
     if (path.startsWith("/v1/")) return json(res, 404, { error: { code: "not_found", message: path } })
     if (path === "/") {
@@ -1070,6 +1076,22 @@ class Tab {
     const { data } = await this.b.send("Page.captureScreenshot", { format: "png" }, this.session)
     writeFileSync(join(shots, name + ".png"), Buffer.from(data, "base64"))
   }
+
+  async shotArea(name: string, selector: string): Promise<void> {
+    if (!shots) return
+    const clip = await this.run(`(() => {
+      const nodes = [...document.querySelectorAll(${JSON.stringify(selector)})]
+      if (!nodes.length) throw new Error("nothing to capture at " + ${JSON.stringify(selector)})
+      const boxes = nodes.map((node) => node.getBoundingClientRect())
+      const x = Math.max(0, Math.floor(Math.min(...boxes.map((box) => box.left)) - 12))
+      const y = Math.max(0, Math.floor(Math.min(...boxes.map((box) => box.top)) - 12))
+      const right = Math.min(innerWidth, Math.ceil(Math.max(...boxes.map((box) => box.right)) + 12))
+      const bottom = Math.min(innerHeight, Math.ceil(Math.max(...boxes.map((box) => box.bottom)) + 12))
+      return { x, y, width: right - x, height: bottom - y, scale: 1 }
+    })()`)
+    const { data } = await this.b.send("Page.captureScreenshot", { format: "png", clip }, this.session)
+    writeFileSync(join(shots, name + ".png"), Buffer.from(data, "base64"))
+  }
 }
 
 // ---- the run
@@ -1108,7 +1130,10 @@ before(async () => {
   ])
   const endpoint = await new Promise<string>((ok, fail) => {
     let said = ""
-    const timer = setTimeout(() => fail(new Error("Chrome did not start: " + said)), 20_000)
+    const timer = setTimeout(() => {
+      browserProcess.kill()
+      fail(new Error("Chrome did not start: " + said))
+    }, 20_000)
     browserProcess.stderr?.on("data", (chunk) => {
       said += String(chunk)
       const found = /DevTools listening on (ws:\/\/\S+)/.exec(said)
@@ -1168,6 +1193,7 @@ test("an incomplete session reading keeps a confirmed root and its child togethe
 test("a phone marks only the Session whose heavy callback is running", () =>
   inTab(async (tab) => {
     readingScenario = "callback-owner"
+    callbackDone = false
     try {
       await tab.go("/")
       await tab.until("the callback owner is marked", (seen) => seen.callbackRows.join() === SAFE)
@@ -1186,7 +1212,24 @@ test("a phone marks only the Session whose heavy callback is running", () =>
       assert.equal(badge.visible, true)
       assert.equal(badge.clipped, false)
       assert.ok(badge.listWidth <= badge.viewportWidth, JSON.stringify(badge))
+      await tab.shotArea("callback-waiting-zh-TW", `#rows > li.row[data-id="${SAFE}"]`)
+      callbackDone = true
+      pushSessions()
+      await tab.until("the finished heavy callback loses its marker", (seen) => seen.callbackRows.length === 0)
+      await tab.press(`#rows > li.row[data-id="${SAFE}"]`)
+      await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 8000
+        const read = () => {
+          const card = document.querySelector(".entry.clawdline-notice .notice-card")
+          if (card?.textContent?.includes("Go 測試完成")) return resolve(true)
+          if (Date.now() >= deadline) return reject(new Error("callback completion notice did not appear"))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      await tab.shotArea("callback-finished-zh-TW", ".tx-scroll .entry")
     } finally {
+      callbackDone = false
       readingScenario = "normal"
     }
   }))

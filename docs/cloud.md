@@ -14,7 +14,7 @@ This page describes the **public repository's machine and browser code**. The ac
 | [`internal/app/cloudops`](../internal/app/cloudops) | Defines the implemented request vocabulary and dispatches authorized requests through the daemon's local route handler and gate. |
 | [`web/console/src/cloud`](../web/console/src/cloud) | Pairs and verifies a browser, reads decrypted snapshots, and sends supported requests through the relay. |
 
-An envelope carries routing metadata the relay needs, while its payload is encrypted with the account content key and signed with a device key. The machine checks the sender's signature and local trust or revocation state before handling a request. The browser must hold the pairing handover's keys to verify and decrypt machine publications. This is the encryption boundary implemented here; the private service's data handling and deployed configuration need separate evidence. See [cloud-wire.md](cloud-wire.md) for exact envelope fields, channel rules and cryptographic construction.
+An envelope carries routing metadata the relay needs, while its payload is encrypted with the target machine's content key and signed with a device key. The machine checks the sender's signature and local trust or revocation state before handling a request. The browser must hold the pairing handover's keys to verify and decrypt machine publications. This is the encryption boundary implemented here; the private service's data handling and deployed configuration need separate evidence. See [cloud-wire.md](cloud-wire.md) for exact envelope fields, channel rules and cryptographic construction.
 
 ## Starting the line and pairing
 
@@ -30,13 +30,19 @@ The publisher sends a machine descriptor on `orch/<machine>`, one complete row p
 
 An incoming request arrives on `ctl/<machine>`. The transport verifies and decrypts it, then [`Service`](../internal/transport/cloud/cloud.go) hands it to `cloudops`. The answer is sealed for `t/<machine>/<session>`, including the reserved machine reply session for machine-wide reads. `cloudops.Implemented()` is the machine's current operation list; the hosted console's [`carry.ts`](../web/console/src/cloud/carry.ts) maps routes to that vocabulary. Unsupported or machine-only routes, including terminal control, are not general Cloud capabilities.
 
-Every signed-in viewer paired with the target machine may send. The account roster, machine-local pairing key and revocation state are checked before an effect; `cloud_commands` is checked for each effectful request. `clawdline cloud commands on|off` changes that machine switch without restarting the daemon. A Cloud command uses the same in-process HTTP handler and authorization gate as a direct request.
+Every signed-in viewer paired with the target machine may send. The machine verifies the viewer's account identity and decrypts its request with that machine's content key before handling it. A machine-local key pin, when present, takes precedence over the account roster; a local or account revocation refuses the viewer. This also admits older browsers that hold the machine key from a pairing completed before local pins existed. `cloud_commands` is checked for each effectful request. `clawdline cloud commands on|off` changes that machine switch without restarting the daemon. A Cloud command uses the same in-process HTTP handler and authorization gate as a direct request.
 
 The connection backs off and reconnects. An outbound spool owns publish order and capacity, while inbound queues and per-channel answer reserves produce typed busy or refusal answers where possible. An accepted relay write is not the same as an executed command or an observed answer. Logs and status counters separate published, acknowledged, answered, refused and undeliverable work. Protocol and capacity details are in [cloud-wire.md](cloud-wire.md), [limits.md](limits.md), and the transport code; this overview does not promise delivery after every network or process failure.
 
 ## Hosted console and operations
 
 The hosted and daemon consoles share source but require different builds. The hosted build must set `VITE_HOSTED_CONSOLE` so its entry point selects `CloudGate`; an ordinary local build selects `DoorGate`. [Deploying the hosted console](hosted-console.md) documents the build, production ancestry check, `BUILD.json` stamp, served-bundle `CloudGate` check and rollback procedure. A build stamp alone does not show that the served bundle is the Cloud one. This page makes no claim that the currently deployed bundle or private service matches this checkout.
+
+The Cloud console shows the selected machine's Projects, but does not register a local directory.
+For a missing existing directory, run `clawdline project add /absolute/path/to/project` on the
+machine that holds it, then reopen that machine's **專案** page in the paired console. The CLI's
+`clawdline project list` checks only its own registry; it cannot prove which daemon the console
+asked. [Adding a project](user/projects.md#add-a-project) gives the full steps and diagnosis.
 
 For a machine that appears offline, inspect `clawdline cloud status` or the local status route first: the switch, identity, connection state, last error and publication counters narrow down which side has evidence. Then inspect the hosted build using [hosted-console.md](hosted-console.md). The status route and logs expose this machine's observations; they do not prove that a particular browser decrypted or displayed a frame. [cloud-cutover.md](cloud-cutover.md) records local preflight and stand-in tests, not a fresh production validation.
 
