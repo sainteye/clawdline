@@ -26,10 +26,7 @@
 @keyframes terminal-list-spin { to { transform: rotate(360deg); } }
 @keyframes terminal-list-pulse { to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .terminal-list-spinner, .terminal-list-skeleton span { animation: none; } }
-.start-mode-tabs { display: flex; gap: 6px; margin: 12px 0; }
-.start-mode-tabs button { flex: 1; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
-.start-mode-tabs button[aria-selected="true"] { background: var(--accent-in); color: var(--accent); }
-.sheet #start-mode-tabs[hidden], .sheet #start-mode-panel [hidden] { display: none; }
+.sheet #start-mode-panel [hidden] { display: none; }
 .session-mode-tabs { flex: 0 0 auto; align-self: stretch; display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; }
 .filter-row .session-mode-tabs .session-mode-choice { border: 0; border-radius: 0; }
 .filter-row .session-mode-tabs .session-mode-choice + .session-mode-choice { border-left: 1px solid var(--line); }
