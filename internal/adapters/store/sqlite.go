@@ -176,6 +176,9 @@ func Open(dir string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
 	}
+	if _, err := db.Exec(executionSchema); err != nil {
+		return nil, err
+	}
 	if err := openBroker(db); err != nil {
 		return nil, err
 	}

@@ -438,6 +438,10 @@ func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer 
 	if req.Header == nil {
 		req.Header = map[string]string{}
 	}
+	if plan.executionGeneration != "" {
+		req.Header["X-Clawdline-Target-Machine"] = b.MachineID
+		req.Header["X-Clawdline-Execution-Generation"] = plan.executionGeneration
+	}
 	// A retried request is not a second effect. The viewer's own request id is
 	// the key when it named one, because that is the identity it will retry
 	// under; without one, the envelope's sender and sequence are, which are
@@ -449,6 +453,13 @@ func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer 
 	if err != nil {
 		return b.publish(cmd, plan, Refusal{Status: 502, Code: "route_failed",
 			Message: "This machine could not answer that.", fixedCopy: true, Layer: layerRoute}, nil)
+	}
+	if plan.executionGeneration != "" && o.read {
+		// A revocation while the local route was reading content must win
+		// before that content is sealed for the viewer.
+		if refusal, denied := b.authorize(ctx, cmd.Sender, cmd.VerifiedKey, false); denied {
+			return b.publish(cmd, plan, refusal, nil)
+		}
 	}
 	return b.answer(cmd, plan, o, res)
 }

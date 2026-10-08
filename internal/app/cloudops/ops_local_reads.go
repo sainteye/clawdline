@@ -15,7 +15,11 @@ func init() {
 				if !b.hasOneOf([]string{"type", "session", "limit"},
 					[]string{"type", "session", "limit", "priority"},
 					[]string{"type", "session", "limit", "before"},
-					[]string{"type", "session", "limit", "priority", "before"}) {
+					[]string{"type", "session", "limit", "priority", "before"},
+					[]string{"type", "session", "limit", "expected_generation"},
+					[]string{"type", "session", "limit", "priority", "expected_generation"},
+					[]string{"type", "session", "limit", "before", "expected_generation"},
+					[]string{"type", "session", "limit", "priority", "before", "expected_generation"}) {
 					return plan{}, false
 				}
 				p, ok := sessionPlan(b, "transcript")
@@ -34,6 +38,13 @@ func init() {
 					}
 					p.before = before
 					p.name = "transcript.before." + itoa(before)
+				}
+				if raw, named := b["expected_generation"]; named {
+					value, ok := raw.(string)
+					if !ok || !executionGenerationValid(value) {
+						return plan{}, false
+					}
+					p.executionGeneration = value
 				}
 				p.priority = "foreground"
 				if raw, named := b["priority"]; named {
@@ -55,6 +66,9 @@ func init() {
 				if p.before > 0 {
 					query["before"] = itoa(p.before)
 				}
+				if p.executionGeneration != "" {
+					query["expected_generation"] = p.executionGeneration
+				}
 				return LocalRequest{Method: "GET", Path: "/v1/transcript", Query: query}
 			}},
 
@@ -63,7 +77,9 @@ func init() {
 				"same body for both halves, so a summary is a full answer here",
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "parts") {
-					return plan{}, false
+					if !b.has("type", "session", "parts", "expected_generation") {
+						return plan{}, false
+					}
 				}
 				parts, ok := b.str("parts")
 				if !ok || (parts != "full" && parts != "summary") {
@@ -77,6 +93,13 @@ func init() {
 					return plan{}, false
 				}
 				p.parts = parts
+				if raw, named := b["expected_generation"]; named {
+					value, ok := raw.(string)
+					if !ok || !executionGenerationValid(value) {
+						return plan{}, false
+					}
+					p.executionGeneration = value
+				}
 				return p, true
 			},
 			route: func(p plan) LocalRequest {

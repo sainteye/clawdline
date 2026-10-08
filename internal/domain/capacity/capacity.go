@@ -154,11 +154,13 @@ const (
 // The names of the rows. Stable: they are keys on the wire and in the
 // CLAWDLINE_NEXT_CAPACITY override.
 const (
-	AuditSecurity   = "audit.security"
-	StoreDB         = "store.db"
-	BoardReceipts   = "board.receipts"
-	CloudRelayQueue = "cloud.relay_queue"
-	StoreReceipts   = "store.receipts"
+	AuditSecurity     = "audit.security"
+	StoreDB           = "store.db"
+	SessionExecutions = "session.executions"
+	SessionNoMovement = "session.no_movement_seconds"
+	BoardReceipts     = "board.receipts"
+	CloudRelayQueue   = "cloud.relay_queue"
+	StoreReceipts     = "store.receipts"
 	// C2: the things that had no limit at all (limits §3.3, §7.2 wave 2).
 	LogDaemon             = "log.daemon"
 	DevicesList           = "devices.list"
@@ -556,6 +558,23 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice, Health},
 			EvictedBy: Person,
 			Projects:  true,
+		},
+		{
+			// One durable identity per terminal id on this machine. Full
+			// refuses a newly observed id; no generation is silently evicted.
+			Name: SessionExecutions, Class: Evidence, Unit: Rows,
+			Limit: 4096, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Health, Sender, Log}, EvictedBy: Person,
+			Sources: []string{"internal/adapters/store.ExecutionRecordsLimit"},
+		},
+		{
+			// A current record-movement observation stops being recent after
+			// this age. The status publisher marks no_movement and tells viewers
+			// the threshold; an unknown reading never becomes a quiet one.
+			Name: SessionNoMovement, Class: Cache, Unit: Seconds,
+			Limit: 1800, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.SessionNoMovementSecondsLimit"},
 		},
 		{
 			// The board commands' (actor, requestId) receipts (limits N24):

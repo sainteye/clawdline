@@ -55,7 +55,7 @@ func TestASessionsSnapshotStatesEveryRowBeforeItAnswers(t *testing.T) {
 	defer cancel()
 	done := make(chan struct{})
 	go func() { _ = publisher.Run(ctx); close(done) }()
-	waitFor(t, "the first pass", func() bool { return len(out.channels()) >= 4 })
+	waitFor(t, "the first pass", func() bool { return len(legacyChannels(out.channels())) >= 4 })
 	// Idle passes publish nothing; wait for one to be sure the first pass is
 	// over before the reset.
 	time.Sleep(3 * publisher.Every)
@@ -68,7 +68,7 @@ func TestASessionsSnapshotStatesEveryRowBeforeItAnswers(t *testing.T) {
 	if strings.Join(stated.IDs, ",") != "%19,GUID-A" || !stated.Complete {
 		t.Fatalf("answered %+v", stated)
 	}
-	channels := out.channels()
+	channels := legacyChannels(out.channels())
 	want := []string{"orch/mac-01", "s/mac-01/%2519", "s/mac-01/GUID-A", "s/mac-01/" + InventorySessionID}
 	if strings.Join(channels, " ") != strings.Join(want, " ") {
 		t.Fatalf("before the answer the machine published %v; want %v", channels, want)
@@ -133,14 +133,14 @@ func TestTwoAsksInsideOneWindowShareTheWire(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = publisher.Run(ctx) }()
-	waitFor(t, "the first pass", func() bool { return len(out.channels()) >= 3 })
+	waitFor(t, "the first pass", func() bool { return len(legacyChannels(out.channels())) >= 3 })
 	time.Sleep(publisher.Every + 20*time.Millisecond)
 
 	out.reset()
 	if _, refusal := publisher.Snapshot(ctx); refusal != nil {
 		t.Fatalf("refused: %+v", *refusal)
 	}
-	first := len(out.channels())
+	first := len(legacyChannels(out.channels()))
 	started := time.Now()
 	if _, refusal := publisher.Snapshot(ctx); refusal != nil {
 		t.Fatalf("refused: %+v", *refusal)
@@ -148,8 +148,8 @@ func TestTwoAsksInsideOneWindowShareTheWire(t *testing.T) {
 	if waited := time.Since(started); waited < publisher.Every/2 {
 		t.Fatalf("the second ask was answered after %v, inside the %v window", waited, publisher.Every)
 	}
-	if first != 3 || len(out.channels()) != 6 {
-		t.Fatalf("published %d then %d envelopes; want 3 per re-statement", first, len(out.channels()))
+	if next := len(legacyChannels(out.channels())); first != 3 || next != 6 {
+		t.Fatalf("published %d then %d legacy envelopes; want 3 per re-statement", first, next)
 	}
 }
 
@@ -165,7 +165,7 @@ func TestFirstRecoveryFromAnotherViewerStartsInsideWindow(t *testing.T) {
 	defer cancel()
 	done := make(chan struct{})
 	go func() { _ = publisher.Run(ctx); close(done) }()
-	waitFor(t, "first pass", func() bool { return len(out.channels()) == 3 })
+	waitFor(t, "first pass", func() bool { return len(legacyChannels(out.channels())) == 3 })
 	out.reset()
 	answer := make(chan *cloudops.Refusal, 1)
 	go func() { _, refusal := publisher.SnapshotFrom(ctx, "viewer-02", true); answer <- refusal }()
@@ -177,7 +177,7 @@ func TestFirstRecoveryFromAnotherViewerStartsInsideWindow(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("first recovery waited for the restatement window")
 	}
-	if got := len(out.channels()); got != 3 {
+	if got := len(legacyChannels(out.channels())); got != 3 {
 		t.Fatalf("stated %d envelopes, want 3", got)
 	}
 	cancel()
@@ -194,7 +194,7 @@ func TestRepeatedRecoveryCannotBuyAnotherImmediatePass(t *testing.T) {
 	defer cancel()
 	done := make(chan struct{})
 	go func() { _ = publisher.Run(ctx); close(done) }()
-	waitFor(t, "first pass", func() bool { return len(out.channels()) == 3 })
+	waitFor(t, "first pass", func() bool { return len(legacyChannels(out.channels())) == 3 })
 	if _, refusal := publisher.SnapshotFrom(ctx, "viewer-01", true); refusal != nil {
 		t.Fatalf("first recovery refused: %+v", refusal)
 	}
@@ -243,7 +243,7 @@ func TestImmediateRecoveryReportsARowRejectedByTheRelay(t *testing.T) {
 	defer cancel()
 	done := make(chan struct{})
 	go func() { _ = publisher.Run(ctx); close(done) }()
-	waitFor(t, "first pass", func() bool { return len(out.channels()) == 3 })
+	waitFor(t, "first pass", func() bool { return len(legacyChannels(out.channels())) == 3 })
 	out.reset()
 	close(reject)
 	_, refusal := publisher.SnapshotFrom(ctx, "viewer-02", true)

@@ -212,6 +212,9 @@ type plan struct {
 	// the same field as session: a machine-scoped request's session is the
 	// machine reply channel.
 	target string
+	// A new Cloud read pins the terminal execution shown in the status list.
+	// Empty is the older unpinned request shape.
+	executionGeneration string
 
 	id, scope, task, path             string
 	place, past, assistant, model     string
@@ -487,6 +490,18 @@ func sessionPlan(b body, name string) (plan, bool) {
 		return plan{}, false
 	}
 	return plan{session: id, target: id, name: name}, true
+}
+
+func executionGenerationValid(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // machinePlan is the answer channel for a word about the machine rather than a
