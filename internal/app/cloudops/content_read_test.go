@@ -44,6 +44,29 @@ func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 		if got := r.last().Header; got["X-Clawdline-Target-Machine"] != "mac-01" || got["X-Clawdline-Execution-Generation"] != pinnedGeneration {
 			t.Fatalf("pinned target headers: %v", got)
 		}
+		if got := answerOf(t, a); got["machine_id"] != "mac-01" || got["session_id"] != pane ||
+			got["expected_generation"] != pinnedGeneration || got["seq"] != float64(411) {
+			t.Fatalf("the read reply cannot be matched to its pinned request: %v", got)
+		}
+	}
+}
+
+func TestReadContentRepliesWithTheSameNameKeepSeparateExecutionIdentities(t *testing.T) {
+	b := open(&router{})
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority { return contentReadAuthority(true) }
+	first := contentReadRequest(t, map[string]any{
+		"type": "info", "session": pane, "parts": "full", "expected_generation": pinnedGeneration,
+	})
+	secondGeneration := strings.Repeat("f", 32)
+	second := contentReadRequest(t, map[string]any{
+		"type": "info", "session": pane, "parts": "full", "expected_generation": secondGeneration,
+	})
+	second.Sequence = first.Sequence + 1
+	one := answerOf(t, b.Handle(context.Background(), first))
+	two := answerOf(t, b.Handle(context.Background(), second))
+	if one["read"] != two["read"] || one["expected_generation"] != pinnedGeneration ||
+		two["expected_generation"] != secondGeneration || one["seq"] == two["seq"] {
+		t.Fatalf("same-name replies cannot be distinguished: first=%v second=%v", one, two)
 	}
 }
 

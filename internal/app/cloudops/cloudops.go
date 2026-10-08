@@ -365,17 +365,43 @@ func (b Bridge) serveContentRead(ctx context.Context, cmd Command, parsed body, 
 			Message: "This Cloud read is malformed.", fixedCopy: true})
 	}
 	if o.name == "info" && p.parts != "full" {
-		return b.publish(cmd, p, Refusal{Status: 403, Code: "read_only_channel",
-			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true}, nil)
+		return b.contentReadAnswer(cmd, p, b.publish(cmd, p, Refusal{Status: 403, Code: "read_only_channel",
+			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true}, nil))
 	}
 	if p.executionGeneration == "" {
-		return b.publish(cmd, p, Refusal{Status: 400, Code: "execution_target_required",
-			Message: "This content read needs the selected Session execution.", fixedCopy: true}, nil)
+		return b.contentReadAnswer(cmd, p, b.publish(cmd, p, Refusal{Status: 400, Code: "execution_target_required",
+			Message: "This content read needs the selected Session execution.", fixedCopy: true}, nil))
 	}
 	if refusal, denied := b.authorizeTranscript(ctx, cmd.Sender, cmd.VerifiedKey); denied {
-		return b.publish(cmd, p, refusal, nil)
+		return b.contentReadAnswer(cmd, p, b.publish(cmd, p, refusal, nil))
 	}
-	return b.route(ctx, cmd, p, o)
+	return b.contentReadAnswer(cmd, p, b.route(ctx, cmd, p, o))
+}
+
+// contentReadAnswer binds a t/ answer to the request that produced it. A
+// viewer may have two reads with the same `read` name in flight across a
+// restarted Session; the channel and name alone cannot distinguish them.
+// These fields are inside the machine-signed ciphertext, not relay metadata.
+func (b Bridge) contentReadAnswer(cmd Command, p plan, answer Answer) Answer {
+	if !answer.Published() {
+		return answer
+	}
+	var body map[string]any
+	if err := json.Unmarshal(answer.Payload, &body); err != nil || body == nil {
+		return Answer{Status: 502, Code: "read_failed", Subject: p.target}
+	}
+	body["machine_id"] = b.MachineID
+	body["session_id"] = p.target
+	body["seq"] = cmd.Sequence
+	if p.executionGeneration != "" {
+		body["expected_generation"] = p.executionGeneration
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return Answer{Status: 502, Code: "read_failed", Subject: p.target}
+	}
+	answer.Payload = encoded
+	return answer
 }
 
 // serveRead answers one of the effect-free words.
