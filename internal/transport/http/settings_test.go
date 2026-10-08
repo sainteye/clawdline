@@ -35,6 +35,32 @@ func settingsCall(t *testing.T, s *Server, method, contentType, body string) (*h
 	return rec, snap, refusal
 }
 
+func TestBrowserSettingsKeepInputBarAndHotkeyUnavailable(t *testing.T) {
+	s := &Server{cfg: config.Config{Dir: filepath.Join(t.TempDir(), "next")}}
+	call := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/v1/settings/browser", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.settingsRoute(rec, req)
+		return rec
+	}
+	for _, body := range []string{`{"hotkey":"option+space"}`, `{"scope_app":""}`, `{"width":720}`} {
+		rec := call(body)
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"browser_setting_unavailable"`) {
+			t.Fatalf("%s: %d %s", body, rec.Code, rec.Body)
+		}
+	}
+	rec := call(`{"language":"en"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("visible setting: %d %s", rec.Code, rec.Body)
+	}
+	read := httptest.NewRecorder()
+	s.settingsRoute(read, httptest.NewRequest(http.MethodGet, "/v1/settings/browser", nil))
+	if read.Code != http.StatusOK || !strings.Contains(read.Body.String(), `"language":"en"`) {
+		t.Fatalf("saved browser setting: %d %s", read.Code, read.Body)
+	}
+}
+
 func defaultModelsCall(t *testing.T, s *Server, method, contentType, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, "/v1/settings/default-models", strings.NewReader(body))

@@ -174,6 +174,9 @@ func settingsWordsScript() -> String {
 
 final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate,
                    WKScriptMessageHandler {
+    // Keep the input bar implementation for a later release, but expose no
+    // window or keyboard grab while the feature is paused.
+    private let inputBarEnabled = false
     var window: ConsoleWindow!
     var web: WKWebView!
     var statusItem: NSStatusItem!
@@ -264,6 +267,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         // console window keeps the Dock, ⇧⌘H and clawdline-next://open. See
         // Bar.swift.
         hotKey.onFire = { [weak self] in
+            guard self?.inputBarEnabled == true else { return }
             shellLog("hotkey fired")
             self?.inputBar.toggle()
         }
@@ -275,7 +279,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         ) { [weak self] note in
             self?.updateHotKeyScope()
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            self?.inputBar.appBecameFrontmost(app?.bundleIdentifier)
+            if self?.inputBarEnabled == true {
+                self?.inputBar.appBecameFrontmost(app?.bundleIdentifier)
+            }
         }
         // The Swift app opened again, or put away. Carbon refuses neither app
         // the shared combination, so nothing here fails; the log and the
@@ -306,7 +312,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             // The bar's page is loaded now and kept loaded behind a window that
             // is not on screen, so that a hotkey press is a window appearing
             // rather than a page starting (Bar.swift).
-            self?.inputBar.reload()
+            if self?.inputBarEnabled == true { self?.inputBar.reload() }
         }
 
         // A first launch has a visible destination. Once the window has been
@@ -600,6 +606,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         // not this one's trouble.
         hotKey.turnOff()
         hotKeyActive = false
+        guard inputBarEnabled else { return .none }
         guard !config.hotKey.isEmpty else {
             shellLog("hotkey: set to none in \(config.fileURL.path); nothing registered")
             return .none
@@ -643,6 +650,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// this one, or the window is up) and detached otherwise — and stays itself
     /// in every other app instead of being swallowed here.
     private func updateHotKeyScope() {
+        guard inputBarEnabled else { return }
         let config = NextConfig.shared
         guard !config.hotKey.isEmpty, !hotKeySuspended else { return }
         let scope = config.scopeApp
@@ -815,22 +823,21 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         let menu = NSMenu()
         menu.delegate = self
 
-        let open = NSMenuItem(title: L.t.menuOpen, action: #selector(openPanel), keyEquivalent: "")
-        open.target = self
-        menu.addItem(open)
-
-        // The Swift app focuses the terminal tab its panel is aimed at. Nothing
-        // here aims at a tab, and the daemon has no route that raises one.
-        menu.addItem(NSMenuItem(title: L.t.menuReveal, action: nil, keyEquivalent: ""))
+        if inputBarEnabled {
+            let open = NSMenuItem(title: L.t.menuOpen, action: #selector(openPanel), keyEquivalent: "")
+            open.target = self
+            menu.addItem(open)
+            menu.addItem(NSMenuItem(title: L.t.menuReveal, action: nil, keyEquivalent: ""))
+        }
 
         let homeItem = NSMenuItem(title: L.t.menuHome, action: #selector(showHome), keyEquivalent: "")
         homeItem.target = self
         menu.addItem(homeItem)
 
-        // What dictation would use, read the way the Swift app reads it. This
-        // app does not dictate, so the row says the same thing and does nothing.
-        menu.addItem(NSMenuItem(title: L.t.dictationStatus(readings.dictation),
-                                action: nil, keyEquivalent: ""))
+        if inputBarEnabled {
+            menu.addItem(NSMenuItem(title: L.t.dictationStatus(readings.dictation),
+                                    action: nil, keyEquivalent: ""))
+        }
 
         if let latest = readings.newerRelease {
             let update = NSMenuItem(
@@ -911,7 +918,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     // "打開輸入框" opens the input bar, which is what it says and what it opens
     // in the Swift app. The rows under it — "主頁／設定中心", "設定⋯" — are still
     // the console window's (Bar.swift).
-    @objc private func openPanel() { inputBar.toggle() }
+    @objc private func openPanel() {
+        guard inputBarEnabled else { return }
+        inputBar.toggle()
+    }
 
     /// "Home" is the console, even when Cloud was the tab left in front.
     @objc private func showHome() {
@@ -1302,10 +1312,12 @@ extension Shell: NSMenuDelegate {
         guard menu === statusItem.menu else { return }
         // No combination beside the item when there is none that works: a
         // menu showing ⌥Space is a menu saying ⌥Space opens this.
-        let spec = NextConfig.shared.hotKey
-        menu.item(at: 0)?.title = spec.isEmpty || hotKey.trouble != nil
-            ? L.t.menuOpen : "\(L.t.menuOpen)   \(HotKey.display(spec))"
-        menu.item(at: 1)?.title = "\(L.t.menuReveal)   \(L.t.menuNoTarget)"
+        if inputBarEnabled {
+            let spec = NextConfig.shared.hotKey
+            menu.item(at: 0)?.title = spec.isEmpty || hotKey.trouble != nil
+                ? L.t.menuOpen : "\(L.t.menuOpen)   \(HotKey.display(spec))"
+            menu.item(at: 1)?.title = "\(L.t.menuReveal)   \(L.t.menuNoTarget)"
+        }
         menu.item(withTag: Self.mascotTag)?.submenu = buildMascotMenu()
         let loginOn = serviceMode.map { $0.runsAtLoad } ?? (SMAppService.mainApp.status == .enabled)
         menu.item(withTag: Self.loginTag)?.state = loginOn ? .on : .off

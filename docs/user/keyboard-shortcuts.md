@@ -31,9 +31,3 @@ Shortcuts stand down while you are typing in a text box: anything you type there
 - On the **⋯** button, ↓ opens the menu; Home, End, ↑ and ↓ move; ← or Esc leaves the Git
   submenu.
 - Esc closes the snippets, start, to-do and picture-marking sheets and confirmation dialogs.
-
-## The macOS app
-
-The native app adds a global hotkey that opens its input bar: ⌥Space by default, and by default only
-while iTerm2 or the app itself is in front. Both are set in the app's settings window
-([platforms.md](platforms.md)).

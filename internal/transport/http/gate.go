@@ -482,6 +482,12 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && v.Local) {
 			return http.StatusForbidden, "forbidden", "Only this machine's own token may change its settings."
 		}
+	case p == "/v1/settings/browser":
+		// The handler limits this route to controls shown by the local browser.
+		// Cloud's carry table deliberately has no entry for it.
+		if !(v.Allowed && (v.Local || send)) {
+			return http.StatusForbidden, "forbidden", "This device may read, and not change machine settings."
+		}
 	case p == "/v1/settings/default-models":
 		// This narrow route is the Settings surface carried to a paired phone.
 		// A local console may write it, and a remote device needs Send just as

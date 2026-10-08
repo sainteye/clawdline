@@ -13,7 +13,10 @@ import {
 } from "../legacy/settings-bridge.js"
 import { pushShape, sendPushTest, startPush, subscribePush, togglePush } from "../push/push.js"
 import { legacyState } from "../legacy/overlay-bridge.js"
-import { ShellBlocks } from "./settings/ShellBlocks.js"
+import { followsRelay } from "../client.js"
+import { SettingsWindow } from "./settings/window/SettingsWindow.js"
+import "./settings/window/window.css"
+import "./settings/page.css"
 import { BoardBlock } from "./settings/BoardBlock.js"
 import { CapacityBlock } from "./settings/CapacityBlock.js"
 import { UpdatePanel } from "../machine/UpdatePanel.js"
@@ -57,7 +60,9 @@ import {
  * - **Version**: the Mac's version from `/v1/health`, which this daemon's does
  *   not carry, so the line is empty and hidden by `.foot span:empty`.
  *
- * Inside the native shell two more blocks come first — see ShellBlocks.
+ * The machine controls are embedded only for a browser served by the local
+ * daemon. Cloud transports expose their narrower settings through dedicated
+ * routes, so a hosted browser never mounts the local settings window.
  */
 
 /** `Pages.go` through the drawer's own row, so a move from here is the move the drawer makes. */
@@ -91,6 +96,14 @@ function timelineWords(en: string, zh: string): string {
 
 function SettingsPage({ shown }: { shown: boolean }) {
   const T = L.strings
+  const cloud = followsRelay()
+  const [tab, setTab] = useState(() => asksForUpdatePanel(location.hash) ? 2 : 0)
+  const tabs = [
+    catalogWord("settings", "browserTab"),
+    catalogWord("settings", "workTab"),
+    catalogWord("settings", "statusTab"),
+    ...(!cloud ? [catalogWord("settings", "machineTab")] : []),
+  ]
   // `enter` has not run until the page has been shown once; before that the
   // blocks it draws are as the markup has them.
   const [entered, setEntered] = useState(false)
@@ -122,6 +135,16 @@ function SettingsPage({ shown }: { shown: boolean }) {
       (window as { __clawdlineCloud?: { build?: string } }).__clawdlineCloud,
     )
     setVersion(v ? L.fillString(T.webSettingsVersion, { v }) : "")
+  }, [shown])
+
+  useEffect(() => {
+    if (!shown) return
+    const openUpdate = () => {
+      if (asksForUpdatePanel(location.hash)) setTab(2)
+    }
+    openUpdate()
+    window.addEventListener("hashchange", openUpdate)
+    return () => window.removeEventListener("hashchange", openUpdate)
   }, [shown])
 
   // `Pages.go` lands the keyboard on the page's own control, `settings-close`.
@@ -234,13 +257,35 @@ function SettingsPage({ shown }: { shown: boolean }) {
       <div className="sheet" id="settings-sheet">
         <h2 id="settings-title">{T.webSettings}</h2>
 
+        <div className="settings-tabs" role="tablist" aria-label={T.webSettings}>
+          {tabs.map((title, index) => (
+            <button
+              key={title}
+              id={`settings-tab-${index}`}
+              type="button"
+              role="tab"
+              aria-selected={tab === index}
+              aria-controls={`settings-pane-${index}`}
+              tabIndex={tab === index ? 0 : -1}
+              onClick={() => setTab(index)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+                event.preventDefault()
+                const next = (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length
+                setTab(next)
+                document.getElementById(`settings-tab-${next}`)?.focus()
+              }}
+            >{title}</button>
+          ))}
+        </div>
+
+        <div className="settings-pane" id="settings-pane-0" role="tabpanel" aria-labelledby="settings-tab-0" hidden={tab !== 0}>
+          <div className="settings-grid">
+            <div className="settings-column">
+
         <div className="block" id="settings-ui-language">
           <BrowserLanguageControl id="settings-ui-language-select" />
         </div>
-
-        <ShellBlocks shown={shown} />
-
-        <DefaultModelsBlock shown={shown} />
 
         <div className="block">
           <b id="settings-notify-title">{T.webSettingsNotify}</b>
@@ -332,6 +377,9 @@ function SettingsPage({ shown }: { shown: boolean }) {
           </p>
         </div>
 
+            </div>
+            <div className="settings-column">
+
         <div className="block">
           <b id="settings-assistant-icons-title">{T.webSettingsAssistantIcons}</b>
           <p
@@ -388,8 +436,19 @@ function SettingsPage({ shown }: { shown: boolean }) {
           </div>
         </div>
 
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-pane" id="settings-pane-1" role="tabpanel" aria-labelledby="settings-tab-1" hidden={tab !== 1}>
+          <div className="settings-grid">
+            <div className="settings-column">
+              <DefaultModelsBlock shown={shown && tab === 1} />
+
         <BoardBlock shown={shown} goToPage={goToPage} />
-        <GateSettingsBlock shown={shown} />
+            </div>
+            <div className="settings-column">
+        <GateSettingsBlock shown={shown && tab === 1} />
         <div className="block" id="settings-timeline">
           <b id="settings-timeline-title">{timelineWords("Enable Project Timeline", catalogWord("literal", "b593e064f518"))}</b>
           <p className="say" id="settings-timeline-say">
@@ -408,8 +467,24 @@ function SettingsPage({ shown }: { shown: boolean }) {
           </button>
           <p className="say" id="settings-timeline-status" role="status"></p>
         </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-pane" id="settings-pane-2" role="tabpanel" aria-labelledby="settings-tab-2" hidden={tab !== 2}>
+          <div className="settings-grid">
+            <div className="settings-column">
         <UpdatePanel shown={shown} />
+            </div>
+            <div className="settings-column">
         <CapacityBlock shown={shown} />
+            </div>
+          </div>
+        </div>
+
+        {!cloud && <div className="settings-pane settings-machine-pane" id="settings-pane-3" role="tabpanel" aria-labelledby="settings-tab-3" hidden={tab !== 3}>
+          {shown && tab === 3 && <SettingsWindow embedded />}
+        </div>}
         <div className="foot">
           <span id="settings-version" style={entered ? { cursor: "pointer" } : undefined} onClick={pressVersion}>
             {version}

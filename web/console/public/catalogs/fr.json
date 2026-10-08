@@ -4100,7 +4100,7 @@
   "settings.settingsScopeRemove": "Supprimer",
   "settings.settingsScopeRunning": "Actuellement ouvert",
   "settings.settingsSessionTerminal": "Ouvrir de nouvelles sessions en",
-  "settings.settingsSessionTerminalHint": "Ce réglage est distinct de la portée du raccourci ci-dessus. En mode automatique, iTerm2 est utilisé lorsqu’il est ouvert, sinon tmux. Choisir iTerm2 exige qu’il soit ouvert : sinon le démarrage est refusé, même si un serveur tmux fonctionne. Lorsque tmux est installé, ces deux modes ouvrent la session dans sa propre session tmux et l’affichent dans un onglet iTerm2 ; la lecture et la saisie n’attendent ainsi pas iTerm2. Le mode « iTerm2 (onglet natif) » exécute directement la session dans l’onglet, comme auparavant. Le mode tmux utilise toujours un serveur tmux, même si iTerm2 est ouvert. Ce choix s’applique à la prochaine session, sans redémarrage.",
+  "settings.settingsSessionTerminalHint": "En mode automatique, iTerm2 est utilisé lorsqu’il est ouvert, sinon tmux. Choisir iTerm2 exige qu’il soit ouvert : sinon le démarrage est refusé, même si un serveur tmux fonctionne. Lorsque tmux est installé, ces deux modes ouvrent la session dans sa propre session tmux et l’affichent dans un onglet iTerm2 ; la lecture et la saisie n’attendent ainsi pas iTerm2. Le mode « iTerm2 (onglet natif) » exécute directement la session dans l’onglet, comme auparavant. Le mode tmux utilise toujours un serveur tmux, même si iTerm2 est ouvert. Ce choix s’applique à la prochaine session, sans redémarrage.",
   "settings.settingsSettle": "Pause avant la fin d’une phrase",
   "settings.settingsShow": "Afficher",
   "settings.settingsSmartNotifications": "Notifications intelligentes",

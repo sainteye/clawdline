@@ -1088,6 +1088,16 @@ test("Settings selects provider model defaults, fits a phone, and restores a ref
     await tab.go("/#page=settings")
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
+      const open = () => {
+        const button = document.getElementById("settings-tab-1")
+        if (button) { button.click(); return resolve(true) }
+        if (Date.now() > deadline) return reject(new Error("the Work settings tab did not appear"))
+        setTimeout(open, 25)
+      }
+      open()
+    })`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
       const read = () => {
         const select = document.getElementById("settings-codex-default-model")
         if (select && !select.disabled) return resolve(true)
@@ -1168,7 +1178,7 @@ test("Settings selects provider model defaults, fits a phone, and restores a ref
       const read = () => {
         const select = document.getElementById("settings-codex-default-model")
         const said = document.querySelector("#settings-default-models .said")?.textContent || ""
-        if (select.value === "gpt-6-sol" && said.includes("失敗")) return resolve(true)
+        if (select.value === "gpt-6-sol" && said.includes("settings_unavailable")) return resolve(true)
         if (Date.now() > deadline) return reject(new Error("the refused value was not restored: " + select.value + " / " + said))
         setTimeout(read, 25)
       }
@@ -1179,6 +1189,16 @@ test("Settings selects provider model defaults, fits a phone, and restores a ref
 
   await inTab(DESK, async (tab) => {
     await tab.go("/#page=settings")
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const open = () => {
+        const button = document.getElementById("settings-tab-1")
+        if (button) { button.click(); return resolve(true) }
+        if (Date.now() > deadline) return reject(new Error("the Work settings tab did not appear"))
+        setTimeout(open, 25)
+      }
+      open()
+    })`)
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
       const read = () => {

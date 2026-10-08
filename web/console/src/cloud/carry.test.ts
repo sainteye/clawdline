@@ -768,8 +768,17 @@ test("the work-gate block stays visible on Cloud and asks only its narrow route"
   const page = readFileSync(resolve(console_, "src/pages/settings.tsx"), "utf8")
   const api = readFileSync(resolve(console_, "src/pages/settings/api.ts"), "utf8")
   assert.doesNotMatch(block, /followsRelay|return null/, "a hosted Settings page must not hide the gate controls")
-  assert.match(page, /<GateSettingsBlock shown=\{shown\} \/>/)
+  assert.match(page, /<GateSettingsBlock shown=\{shown && tab === 1\} \/>/)
   assert.match(api, /const path = "\/v1\/settings\/work-gates"/)
   assert.equal(writeRoute("GET", "/v1/settings/work-gates")?.word, "work-gate-settings")
   assert.equal(writeRoute("POST", "/v1/settings/work-gates")?.word, "work-gate-settings-update")
+})
+
+test("full browser machine settings stay on the local console", () => {
+  const page = readFileSync(resolve(console_, "src/pages/settings.tsx"), "utf8")
+  const api = readFileSync(resolve(console_, "src/pages/settings/api.ts"), "utf8")
+  assert.match(page, /!cloud && <div className="settings-pane settings-machine-pane"/)
+  assert.match(api, /"\/v1\/settings\/browser"/)
+  assert.equal(writeRoute("GET", "/v1/settings/browser"), null)
+  assert.equal(writeRoute("POST", "/v1/settings/browser"), null)
 })

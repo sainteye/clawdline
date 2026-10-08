@@ -4100,7 +4100,7 @@
   "settings.settingsScopeRemove": "Retirar",
   "settings.settingsScopeRunning": "Actualmente abierto",
   "settings.settingsSessionTerminal": "Abrir nuevas sesiones en",
-  "settings.settingsSessionTerminalHint": "Esto es distinto de dónde funciona el atajo de teclado. La opción automática usa iTerm2 cuando está abierto y tmux cuando no lo está. Al elegir iTerm2, se exige que esté abierto: si está cerrado, se rechaza el inicio aunque haya un servidor tmux en ejecución. Si tmux está instalado, ambas opciones abren la Sesión en su propia sesión tmux y la muestran en una pestaña de iTerm2, de modo que leer y escribir no depende de iTerm2. «iTerm2 (pestaña nativa)» ejecuta la Sesión directamente en la pestaña, como antes. La opción tmux siempre usa un servidor tmux, aunque iTerm2 esté abierto. Se aplicará a la próxima Sesión, sin reiniciar nada.",
+  "settings.settingsSessionTerminalHint": "La opción automática usa iTerm2 cuando está abierto y tmux cuando no lo está. Al elegir iTerm2, se exige que esté abierto: si está cerrado, se rechaza el inicio aunque haya un servidor tmux en ejecución. Si tmux está instalado, ambas opciones abren la Sesión en su propia sesión tmux y la muestran en una pestaña de iTerm2, de modo que leer y escribir no depende de iTerm2. «iTerm2 (pestaña nativa)» ejecuta la Sesión directamente en la pestaña, como antes. La opción tmux siempre usa un servidor tmux, aunque iTerm2 esté abierto. Se aplicará a la próxima Sesión, sin reiniciar nada.",
   "settings.settingsSettle": "Pausa antes de terminar una oración",
   "settings.settingsShow": "Mostrar",
   "settings.settingsSmartNotifications": "Notificaciones inteligentes",

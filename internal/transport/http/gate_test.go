@@ -218,6 +218,7 @@ func TestGateCoversEveryChange(t *testing.T) {
 		"/v1/orchestrator/tasks", "/v1/orchestrator/tasks/t1/respawn",
 		"/v1/sessions/%25x/send", "/v1/sessions/%25x/interrupt", "/v1/sessions/%25x/close",
 		"/v1/settings",
+		"/v1/settings/browser",
 		"/v1/settings/default-models",
 		"/v1/settings/work-gates",
 		"/v1/projects/p/worktrees/refresh",
@@ -246,6 +247,30 @@ func TestGateCoversEveryChange(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s as json with every credential: %d %s", p, rec.Code, rec.Body)
 		}
+	}
+}
+
+func TestBrowserSettingsNeedSendWhileNativeSettingsKeepLocalToken(t *testing.T) {
+	f, h := newGateFixture(t)
+	for _, tc := range []struct {
+		name, path, token string
+		want              int
+	}{
+		{"paired sender", "/v1/settings/browser", f.send, http.StatusOK},
+		{"native settings stay local", "/v1/settings", f.send, http.StatusForbidden},
+		{"native local token", "/v1/settings", f.local, http.StatusOK},
+	} {
+		rec := call{path: tc.path, body: `{}`, headers: map[string]string{
+			"Origin": "http://127.0.0.1:7757", "Cookie": "clawdline-next=" + tc.token,
+			"Content-Type": "application/json",
+		}}.do(h)
+		if rec.Code != tc.want {
+			t.Errorf("%s: %d %s, want %d", tc.name, rec.Code, rec.Body, tc.want)
+		}
+	}
+	readOnly := auth.Verdict{Allowed: true, Caps: auth.NewCaps(auth.Read)}
+	if status, code, _ := writePolicy(http.MethodPost, "/v1/settings/browser", false, readOnly); status != http.StatusForbidden || code != "forbidden" {
+		t.Fatalf("read-only verdict: %d %q", status, code)
 	}
 }
 

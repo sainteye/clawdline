@@ -4100,7 +4100,7 @@
   "settings.settingsScopeRemove": "Remover",
   "settings.settingsScopeRunning": "Aberto atualmente",
   "settings.settingsSessionTerminal": "Abrir novas sessões em",
-  "settings.settingsSessionTerminalHint": "Uma pergunta diferente de onde a tecla de atalho funciona, acima. Automático usa o iTerm2 enquanto está aberto e o tmux enquanto não está. Escolhendo os nomes iTerm2 iTerm2: quando está fechado, o início é recusado, mesmo com um servidor tmux em execução. Com o tmux instalado, ambos abrem a sessão na sua própria sessão tmux e a mostram numa página iTerm2; assim, a leitura e a digitação nunca esperam no iTerm2. O iTerm2 (página nativa) executa a sessão na aba em si, como antes. O tmux abre sempre num servidor tmux, mesmo com o iTerm2 aberto. A próxima sessão segue isto; nada precisa ser reiniciado.",
+  "settings.settingsSessionTerminalHint": "Automático usa o iTerm2 enquanto está aberto e o tmux enquanto não está. Escolhendo os nomes iTerm2 iTerm2: quando está fechado, o início é recusado, mesmo com um servidor tmux em execução. Com o tmux instalado, ambos abrem a sessão na sua própria sessão tmux e a mostram numa página iTerm2; assim, a leitura e a digitação nunca esperam no iTerm2. O iTerm2 (página nativa) executa a sessão na aba em si, como antes. O tmux abre sempre num servidor tmux, mesmo com o iTerm2 aberto. A próxima sessão segue isto; nada precisa ser reiniciado.",
   "settings.settingsSettle": "Pausa antes de terminar uma frase",
   "settings.settingsShow": "Mostrar",
   "settings.settingsSmartNotifications": "Notificações inteligentes",

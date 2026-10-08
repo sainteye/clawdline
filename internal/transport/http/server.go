@@ -590,6 +590,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/orchestrator/reclaim"}, s.reclaimRoute},
 		{Route{"*", "/v1/strings"}, s.strings},
 		{Route{"*", "/v1/settings"}, s.settingsRoute},
+		{Route{"*", "/v1/settings/browser"}, s.settingsRoute},
 		{Route{"*", "/v1/settings/default-models"}, s.defaultModelsRoute},
 		{Route{"*", "/v1/settings/work-gates"}, s.workGateSettingsRoute},
 		{Route{"*", "/v1/places"}, s.placesRoute},
