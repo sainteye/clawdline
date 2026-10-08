@@ -60,6 +60,14 @@ A root session may have **5** children at once by default (20 for the whole mach
 opens in its own terminal and appears in the console under its parent, marked └. When it finishes,
 its result is typed into the root session.
 
+After dispatching, the root ends its turn. The child's native completion notice wakes it; no
+callback is needed to watch the child. The notice is a pointer, so the root reads that task once
+and then handles the result. A short in-turn `task wait` is reserved for a result needed immediately
+and expected soon. After a wait times out, the root ends its turn and follows the native notice;
+it does not start another wait or dispatch the child again.
+If `task wait` already printed a terminal result and closed its notice, a late notice for that task
+does not call for another read or another integration.
+
 ```sh
 clawdline task show <task id>     # state, summary, what is left, landing
 ```
@@ -86,14 +94,16 @@ clawdline session report --summary "The parser test is in and passing"
 When a command such as a build, test run or deployment will take longer than the current turn,
 the owning Session can hand it to the daemon with `clawdline callback`. The Session ends its turn;
 the daemon runs the command once and sends a completion notice with its exit result. The Session
-then checks that task's result with `clawdline task show` before reporting an outcome. A callback
+then checks that task's result once with `clawdline task show` before reporting an outcome. A callback
 uses no child Session slot and makes no Git landing claim.
 
 Use this when the work is a command that can run without Agent decisions. It avoids repeated
 polling turns and their context reloads, replacing them with a completion follow-up; it does not
 guarantee a fixed token or price saving.
-Timeout or cancellation settles the callback; a failed or uncertain command needs inspection
-before any retry. Callbacks run on macOS and Linux; Windows reports
+Timeout or cancellation settles the callback. Success permits the next step; failure requires
+inspection of the exit status and output; timeout or an uncertain result requires checking what
+the command may have done before it stopped. Neither a reminder nor a timed-out wait means the
+command should run again. Callbacks run on macOS and Linux; Windows reports
 `no_callback_capability`. The installed Agent guide has the current command syntax:
 `clawdline guide callback`.
 

@@ -208,6 +208,7 @@ func TestTaskShowClosesTheNotice(t *testing.T) {
 	}{
 		{"finished", waitTask(id, "success", "n-1"), "", false, 1, "notice:       closed (read)", ""},
 		{"finished, --json", waitTask(id, "failure", "n-1"), "", true, 1, `"completion_delivery"`, ""},
+		{"timed out", waitTask(id, "timeout", "n-1"), "", false, 1, "notice:       closed (read)", ""},
 		{"running", waitTask(id, "briefed", ""), "", false, 0, "briefed", ""},
 		{"running with a notice", strings.Replace(waitTask(id, "briefed", "n-1"), "delivered", "pending", 1),
 			"", false, 0, "briefed", ""},

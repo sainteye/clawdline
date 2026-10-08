@@ -102,10 +102,20 @@ token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原�
 或 `transcript_unreadable`，絕不回一個空的總數；沒人認得的 id 回 404 `unknown_session`、
 `unknown_task` 或 `unknown_item`。帳本是否還在讀，看 `/v1/diagnostics` 裡的 `usage`。
 
-**等一個跑很久的指令。** 如果等待的是外部工作，例如排隊中的 `heavy`、CI 或 deploy，而且可能超過幾分鐘，使用 `clawdline callback`（或 `heavy --handoff`／`tools/check.sh`），然後結束這個 turn。完成時會收到通知；不要在後續 turn 輪詢，包括使用 `clawdline leases`。短時間等待與 child 使用下面的單次長等待方式。`clawdline heavy`、`clawdline dispatch` 和跑很久的測試，等待期間都不印東西，
-跑完會自己結束。等它們要**一次等久一點**，不要每隔幾秒去看一次：每看一次就是一個 turn，要把整段
-context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種 turn（7,220 萬 token），大多花在排隊中的
-`heavy` 上。
+**收到完成通知後再續接。** 派出 child 後結束這個 turn：child 自己的完成通知會喚醒你，不必另設 callback
+監看它。排隊中的 `heavy`、CI、deploy、長時間編譯，或其他不需 Agent 即時判斷的指令，登記
+`clawdline callback`（或使用 `heavy --handoff`／`tools/check.sh`）後結束 turn。收到通知後，對該 id 執行一次
+`clawdline task show <id>`；讀取會關掉通知。分別處理成功、失敗與逾時。失敗、逾時或結果不明時，先查明
+已執行的部分，再判斷重試是否安全；不要只因等待逾時就重啟同一工作。後續 turn 不要輪詢，包括用
+`clawdline leases`。一次 token 檢查在十個項目裡數到 520 個純等待 turn（7,220 萬 token），大多花在排隊
+中的 `heavy` 上。
+若先前的 `task wait` 已印出終止結果並關閉通知，之後才到的同一任務通知不需再執行 `task show`，也不需
+再次整合。
+
+**同一個 turn 內的短暫等待。** 只有目前工作必須立即取得結果，且預期很快完成時才使用。用一個工具呼叫
+設定足夠的 timeout；工具回傳 session ID 時，在同一個 cell 內收取結果，仍算同一次呼叫。等待逾時後
+停止等待，改由任務完成通知續接；不要再開第二次 `task wait` 或連續查狀態。`clawdline heavy` 和長時間
+測試執行時不會印出內容；長指令使用上述 callback 路徑。
 
 - **Claude Code：** 一次 Bash 呼叫，`timeout` 設長一點（最多 `600000` ms）；或用 `run_in_background`，
   然後什麼都不做，等完成通知進來。不要用 `sleep` 加 `tail` 的迴圈。
@@ -115,12 +125,12 @@ context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種
   `600000` 可持續 330 秒，空的 `write_stdin` 最多等 300 秒。外層 cell 若仍提早交還，就用設了長
   `yield_time_ms` 的 `wait` 接著等。
 
-  等 child 或建置時使用一個 cell，只替換指令。把 session 的後續等待留在同一個 cell，
-  一般的 30 秒 `exec_command` 回傳就不會喚醒代理重新發起同一段等待：
+  確有必要在同一個 turn 短暫等待時，把後續收取結果留在同一個 cell；一般的 30 秒
+  `exec_command` 回傳就不會喚醒 Agent 重新發起同一段等待：
 
   ```js
   // @exec: {"yield_time_ms": 600000}
-  let r = await tools.exec_command({cmd: "clawdline task wait --timeout 9m TASK_ID", yield_time_ms: 30000});
+  let r = await tools.exec_command({cmd: "clawdline task wait --timeout 1m TASK_ID", yield_time_ms: 30000});
   while (r.session_id) {
     r = await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000});
   }
@@ -128,11 +138,11 @@ context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種
   text(`exit ${r.exit_code}`);
   ```
 
-  建置時把指令換成 `tools/heavy.sh …`，並保留退出碼；75 代表編譯額度或記憶體的等待逾時，
+  短時間建置時把指令換成 `tools/heavy.sh …`，並保留退出碼；75 代表編譯額度或記憶體的等待逾時，
   建置尚未執行；76 代表 `heavy --handoff` 已啟動 callback，應結束這個 turn 並等待通知。
 
 `clawdline heavy` 最多等 `--max-wait`（預設 30 分鐘），之後不執行指令、以 75 結束；要等的時間比你的工具
-允許的長，可用 `--handoff`：排隊時啟動 callback 並以 76 結束。`tools/check.sh` 預設啟用；child 或 callback 被拒絕時，仍在原處等待。
+允許的長，可用 `--handoff`：排隊時啟動 callback 並以 76 結束。`tools/check.sh` 預設啟用；child 不需要等待型 callback。callback 被拒絕時，讀取具體的拒絕原因並選擇受支援的路徑；拒絕代表指令尚未啟動。
 
 **用 curl 呼叫 orchestrator 路由。** 從 `<state dir>/orchestrator-token` 讀取憑證，放進
 `X-Clawdline-Orchestrator` header。避免把憑證放在指令參數：使用
@@ -362,8 +372,9 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 
 **5. 若有 child 結束**，你的輸入框會被打進一行 `<clawdline-notice>`。執行 `clawdline task show <task id>`，
 再整合交付；讀了就會關掉通知，不必另外 ACK。**派工之後就結束這個 turn**：通知會叫醒你，而開著 turn
-等待，每輪輪詢都要重讀整段 context。只有沒別的事可做、非得卡住等時，才執行
-`clawdline task wait <task id>…`（預設 `--timeout 9m`，`--any` 等第一個）。worktree child 的整合方式是**把它的 branch
+等待，每輪輪詢都要重讀整段 context。只有本輪要完成的工作需要立刻取得結果，而且預期很快完成時，
+才可執行一次有時限的 `clawdline task wait <task id>…`；逾時後結束 turn，讓原生通知喚醒你。不要為同一個
+child 建立等待型 callback。worktree child 的整合方式是**把它的 branch
 merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要手動送 landing。`clawdline landings`
 列出還欠著的。用 `--claims ""` 派出、什麼都沒寫的 child，broker 會自己記 `nothing_to_land`。其他情況用
 `clawdline task land <task id> <state>`（`clawdline guide landing`）。
@@ -650,6 +661,11 @@ clawdline callback --title "CI is green on <sha>" --timeout 45m -- gh run watch 
 `<clawdline-notice>`，body 是
 `callback <id 前 8 碼> finished: success (exit 0 after 6m) — run clawdline task show <id>`；`task show`
 印出它怎麼結束——exit status 與輸出的最後幾行——並關掉通知，跟 child 完全一樣。
+
+保留登記回應中的 callback id。通知到達後，對該 id 執行一次 `task show`，依已結束的紀錄處理：成功才
+進行下一步整合或發佈；失敗先查 exit status 與輸出；逾時先確認停止前可能已執行的部分。結果不明的
+失敗也要先確認。重複 `task show` 並不是重試；提醒通知或等待逾時，也都不代表可以重跑指令。只有登記
+回應不確定時，才用同一個 `--task-id` 查明原本那次登記。
 
 - 它是你的一個沒有分頁的 task：`clawdline task cancel <id> --reason "…"` 會停掉指令整個 process
   group；超過 `--timeout`（1m 到 4h，預設 30m）會被停掉並記成 `timeout`。執行中的 callback 跟執行中的

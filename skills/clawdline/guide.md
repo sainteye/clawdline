@@ -112,10 +112,24 @@ ledger has not read, or can no longer read, answers `not_yet_read`, `transcript_
 `unknown_task` or `unknown_item`. Whether the ledger is still reading is `usage` in
 `/v1/diagnostics`.
 
-**Waiting on a long command.** If the wait is for something outside you — a queued `heavy`, CI, or a deploy — and may take more than a few minutes, use `clawdline callback` (or `heavy --handoff` / `tools/check.sh`) and end your turn. Its notice arrives when it finishes; do not poll from later turns, including with `clawdline leases`. For short waits and children, use the in-turn advice below. `clawdline heavy`, `clawdline dispatch` and a long test run print
-nothing while they wait, and end on their own. Wait for one with **one long wait**, not by
-checking it every few seconds: each check is a turn that rereads your whole context, and a token
-review counted 520 such turns (72.2M tokens) over ten items, mostly on queued `heavy` runs.
+**Continue on the completion notice.** After dispatching a child, end the turn: the child's own
+completion notice wakes you, so do not add a callback to watch it. For a queued `heavy`, CI, deploy,
+long build or other command that can run without Agent decisions, register `clawdline callback`
+(or use `heavy --handoff` / `tools/check.sh`) and end the turn. On its notice, run
+`clawdline task show <id>` once; the read closes the notice. Treat success, failure and timeout as
+different results. Inspect a failure, timeout or uncertain outcome before deciding whether a retry
+is safe; do not start the same work again just because a wait expired. Do not poll from later turns,
+including with `clawdline leases`. A token review counted 520 wait-only turns (72.2M tokens) over
+ten items, mostly on queued `heavy` runs.
+If an earlier `task wait` already printed the terminal result and closed the notice, a late notice
+for that same task does not require another `task show` or another integration.
+
+**A short wait inside the current turn.** Use this only when the result is needed to finish work
+already in this turn and it is expected soon. Make one tool call with a long enough timeout; a
+tool returning a session ID is still the same call when you collect it inside that cell. If the
+wait times out, stop waiting and use the task's completion notice for the later result. Do not
+start a second `task wait` or a sequence of status reads. `clawdline heavy` and a long test run
+print nothing while running; for long commands use the callback path above.
 
 - **Claude Code:** one Bash call with a long `timeout` (up to `600000` ms), or `run_in_background`
   and then nothing until its completion notification arrives. Not a loop of `sleep` and `tail`.
@@ -126,13 +140,13 @@ review counted 520 such turns (72.2M tokens) over ten items, mostly on queued `h
   empty `write_stdin` waited up to 300 seconds. If the outer cell yields, use `wait` with a long
   `yield_time_ms` to collect it.
 
-  Use one cell for a child wait or a build. Replace only the command; keep the
-  session polling inside the cell so a normal 30-second `exec_command` return
-  does not wake the agent to issue the same wait again:
+  For a justified short in-turn wait, keep the session collection inside one
+  cell so a normal 30-second `exec_command` return does not wake the Agent to
+  issue the same wait again:
 
   ```js
   // @exec: {"yield_time_ms": 600000}
-  let r = await tools.exec_command({cmd: "clawdline task wait --timeout 9m TASK_ID", yield_time_ms: 30000});
+  let r = await tools.exec_command({cmd: "clawdline task wait --timeout 1m TASK_ID", yield_time_ms: 30000});
   while (r.session_id) {
     r = await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000});
   }
@@ -140,11 +154,11 @@ review counted 520 such turns (72.2M tokens) over ten items, mostly on queued `h
   text(`exit ${r.exit_code}`);
   ```
 
-  For a build, replace the command with `tools/heavy.sh …` and retain its
+  For a short build, replace the command with `tools/heavy.sh …` and retain its
   exit code: 75 means the compile-slot or memory wait expired before the build ran; 76 means `heavy --handoff` started a callback, so end your turn and wait for its notice.
 
 `clawdline heavy` waits at most `--max-wait` (default 30m) and then exits 75 without running the
-command. With `--handoff`, a queued wait starts a callback and exits 76; `tools/check.sh` requests this by default. A child or a refused callback waits in place with the advice above.
+command. With `--handoff`, a queued wait starts a callback and exits 76; `tools/check.sh` requests this by default. A child needs no waiting callback. If a callback is refused, read the typed refusal and choose a supported path; a refusal has not started the command.
 
 **Curl to an orchestrator route.** Read `<state dir>/orchestrator-token` and send it in the
 `X-Clawdline-Orchestrator` header. Keep the token out of command arguments: use
@@ -412,8 +426,10 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 **5. If a child finishes**, a `<clawdline-notice>` line is typed into your composer. Run
 `clawdline task show <task id>`, then integrate the delivery; reading it closes the notice, so there
 is no separate ACK. **After a dispatch, end your turn**: the notice wakes you, and a turn kept open
-to wait rereads your whole context on every poll. Only when there is nothing else to do and you
-must block, run `clawdline task wait <task id>…` (default `--timeout 9m`, `--any` for the first one). Integrate a worktree child by **merging its branch** into the target. **The merge records the
+to wait rereads your whole context on every poll. Only when the result is needed to finish this
+turn and expected soon may you use one bounded `clawdline task wait <task id>…`; after its timeout,
+end the turn and let the native notice wake you. Never create a waiting callback for that child.
+Integrate a worktree child by **merging its branch** into the target. **The merge records the
 landing by itself** within a few minutes: do not post a landing by hand. `clawdline landings` lists
 what is still owed. A child dispatched with `--claims ""` that wrote nothing is recorded
 `nothing_to_land` by the broker. Anything else is `clawdline task land <task id> <state>`
@@ -741,6 +757,13 @@ types a `<clawdline-notice>` whose body reads
 `callback <first 8 of id> finished: success (exit 0 after 6m) — run clawdline task show <id>`; `task show`
 prints how it ended — its exit status and the last lines of its output — and closes the notice,
 exactly as for a child.
+
+Keep the callback id from the registration response. On the notice, read that id with `task show`
+once and act on the settled record: success permits the next integration or release step; failure
+needs the exit status and output investigated; timeout needs a check of what the command may have
+done before it stopped. A failure with an unknown outcome also needs that check. Repeating
+`task show` is not a retry, and neither a reminder nor a timed-out wait authorizes rerunning the
+command. Use the same `--task-id` only to resolve an uncertain registration response.
 
 - It is a task of yours with no tab: `clawdline task cancel <id> --reason "…"` stops the command's
   whole process group; past `--timeout` (1m to 4h, default 30m) it is stopped and settled `timeout`.
