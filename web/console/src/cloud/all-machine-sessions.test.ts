@@ -52,8 +52,22 @@ test("an event gap marks only its machine unknown until an authoritative reread"
   const gap = afterEventGap(before)
   assert.equal(gap.kind, "unavailable")
   assert.equal(gap.kind === "unavailable" && gap.reason, "event_gap")
+  assert.equal(gap.rows?.[0].freshness, "stale")
+  assert.equal(gap.observedAt, 1000)
   assert.equal(destinationAvailable(row("one", "s", "1").destination, gap), "waiting")
   assert.equal(destinationAvailable(row("two", "s", "1").destination, ready("two", [row("two", "s", "1")])), "ready")
+})
+
+test("retained observations remain readable but cannot authorize content", () => {
+  const old = row("one", "same", "7")
+  const retained: MachineSessionProjection = { kind: "unavailable", reason: "stale", complete: true,
+    observedAt: 1000, rows: [{ ...old, freshness: "stale" }] }
+  assert.equal(checkedProjection("one", retained), retained)
+  assert.equal(destinationAvailable(old.destination, retained), "waiting")
+  assert.equal(checkedProjection("one", { ...retained, rows: [old] }).kind, "unavailable")
+  assert.equal((checkedProjection("one", { ...retained, rows: [old] }) as { reason: string }).reason, "bad_projection")
+  assert.equal((checkedProjection("one", { ...retained, rows: [{ ...old, destination: { ...old.destination, machineID: "two" } }] }) as { reason: string }).reason,
+    "bad_projection")
 })
 
 test("malformed projection and URLs are refused without content reads", () => {

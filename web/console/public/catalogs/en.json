@@ -3256,6 +3256,7 @@
   "next.cloudAccessProblem": "Machine {machine}'s data could not be read in this browser ({code}). Pair that machine with this browser again; if it still cannot be read, sign in again.",
   "next.cloudAllMachineID": "Machine ID",
   "next.cloudAllSessionID": "Session ID",
+  "next.cloudAllSearch": "Search Sessions or machines",
   "next.cloudBlocked": "This console was built for {origin} and is being served from {here}, so it does not connect.",
   "next.cloudChecking": "Checking this browser's Clawdline account…",
   "next.cloudConnecting": "Connecting to Clawdline Cloud…",

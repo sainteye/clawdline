@@ -3256,6 +3256,7 @@
   "next.cloudAccessProblem": "機器 {machine} 的資料在這個瀏覽器讀不出來（{code}）。請重新配對這台機器；若仍然讀不到，請重新登入。",
   "next.cloudAllMachineID": "機器 ID",
   "next.cloudAllSessionID": "Session ID",
+  "next.cloudAllSearch": "搜尋 Session 或機器",
   "next.cloudBlocked": "這個 console 是給 {origin} 用的，現在卻從 {here} 打開，所以不會連線。",
   "next.cloudChecking": "正在確認這個瀏覽器的 Clawdline 帳號…",
   "next.cloudConnecting": "正在連上 Clawdline Cloud…",

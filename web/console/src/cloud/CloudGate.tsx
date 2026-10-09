@@ -936,14 +936,14 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         className="cloud-switch"
         id="cloud-switch"
         type="button"
-        data-state={light.state}
+        data-state={screen.at === "all_sessions" ? "unknown" : light.state}
         // Down, the light's own tip says "press to retry", which this press
         // does not do; the retry is in the menu.
         title={
-          (chosen.label || chosen.id) +
+          (screen.at === "all_sessions" ? nextWord("cloudAllMachines") : chosen.label || chosen.id) +
           " · " +
-          light.label +
-          (light.state === "live" ? " — " + light.tip : "") +
+          (screen.at === "all_sessions" ? nextWord("cloudMachinesLede") : light.label) +
+          (screen.at !== "all_sessions" && light.state === "live" ? " — " + light.tip : "") +
           " · " +
           nextWord("cloudSwitch")
         }
@@ -954,7 +954,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         onClick={() => setSwitcherOpen((open) => !open)}
       >
         <span className="dot" aria-hidden="true" />
-        <span className="cloud-switch-name">{chosen.name || chosen.label || chosen.id}</span>
+        <span className="cloud-switch-name">{screen.at === "all_sessions" ? nextWord("cloudAllMachines") : chosen.name || chosen.label || chosen.id}</span>
         {/* Drawn, not typed: "⌄" sits at the bottom of its font box, so the
             text glyph hung low beside the name and high once turned over. */}
         <svg className="cloud-switch-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
@@ -968,10 +968,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           role="dialog"
           aria-label={nextWord("cloudSwitch")}
         >
-          <div className="cloud-switch-conn" data-state={light.state}>
+          <div className="cloud-switch-conn" data-state={screen.at === "all_sessions" ? "unknown" : light.state}>
             <span className="dot" aria-hidden="true" />
-            <span className="cloud-switch-conn-word">{light.label}</span>
-            {light.state === "live" ? (
+            <span className="cloud-switch-conn-word">{screen.at === "all_sessions" ? nextWord("cloudAllMachines") : light.label}</span>
+            {screen.at === "all_sessions" ? null : light.state === "live" ? (
               <span className="cloud-switch-conn-tip">{light.tip}</span>
             ) : (
               <button type="button" className="cloud-switch-retry" onClick={light.onRetry}>
@@ -982,6 +982,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           <p className="cloud-switch-title">{nextWord("cloudMachinesLede")}</p>
           <div className="cloud-switch-options">
             {quickMachines.length >= 2 && <button type="button" className="cloud-switch-option"
+              data-current={screen.at === "all_sessions" ? "true" : undefined}
               onClick={openAllSessions}>{nextWord("cloudAllMachines")}</button>}
             {quickMachines.map((machine) => {
               const current = machine.id === chosen.id
@@ -1117,13 +1118,18 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // drawn over it, as the door is over a local console (`door/Door.tsx`).
   return (
     <>
-      {chosen && who && transport.kind === "cloud" && screen.at !== "all_sessions" && (
+      {chosen && who && transport.kind === "cloud" && (screen.at === "console" || screen.at === "all_sessions") && (
         <CloudAccountContext.Provider value={{ apiOrigin: transport.config.apiOrigin, deviceID: who.device }}>
-          <App aside={aside} cloudSessions={<AllMachineSessions
-            key={clientEpoch + ":" + chosen.id}
-            embedded
-            machines={[{ id: chosen.id, name: chosen.name || chosen.label || chosen.id,
-              platform: platformWord(machineIdentityFacts(chosen).platform), freshness: chosen.freshness }]}
+          <App aside={aside} hideSessionCounts={screen.at === "all_sessions"}
+            focusCloudSessions={screen.at === "all_sessions"}
+            onLeaveCloudSessions={() => setScreen({ at: "console" })}
+            cloudSessions={<AllMachineSessions
+            key={clientEpoch + ":" + (screen.at === "all_sessions" ? "all" : chosen.id)}
+            embedded={screen.at !== "all_sessions"}
+            machines={(screen.at === "all_sessions" ? quickMachines : [chosen]).map((machine) => ({
+              id: machine.id, name: machine.name || machine.label || machine.id,
+              platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
+            }))}
             source={liveSessionSource}
             fleetControls={<PeerRevocationPanel machines={quickMachines.map((machine) => ({
               id: machine.id, name: machine.name || machine.label || machine.id,
@@ -1137,29 +1143,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
               }))}
                 source={liveSessionSource} current={currentActionClient} />
             </>}
+            onClose={screen.at === "all_sessions" ? closeAllSessions : undefined}
           />} />
         </CloudAccountContext.Provider>
       )}
-      {words && screen.at === "all_sessions" && <AllMachineSessions
-        key={clientEpoch}
-        machines={quickMachines.map((machine) => ({
-          id: machine.id, name: machine.name || machine.label || machine.id,
-          platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
-        }))}
-        source={liveSessionSource}
-        fleetControls={<PeerRevocationPanel machines={quickMachines.map((machine) => ({
-          id: machine.id, name: machine.name || machine.label || machine.id,
-          platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
-        }))} current={currentActionClient} />}
-        detailActions={(context) => <>
-          <PinnedSessionActionPanel context={context} source={liveSessionSource} current={currentActionClient} />
-          <PeerHandoffPanel context={context} machines={quickMachines.map((machine) => ({
-            id: machine.id, name: machine.name || machine.label || machine.id,
-            platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
-          }))} source={liveSessionSource} current={currentActionClient} />
-        </>}
-        onClose={closeAllSessions}
-      />}
       {words && (screen.at !== "console" && screen.at !== "all_sessions" || pairing) && (
         <GateCard
           screen={screen}
