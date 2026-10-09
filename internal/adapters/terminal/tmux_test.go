@@ -275,7 +275,7 @@ func stubTmux(t *testing.T, out string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "tmux")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\ncat "+data+"\n"), 0o700); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n/bin/cat "+data+"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return path

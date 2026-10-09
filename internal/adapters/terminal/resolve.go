@@ -10,10 +10,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/config"
 )
 
-// Which tmux this daemon runs (docs/design-decisions.md D33).
+// The attach line a person is handed names `clawdline tmux` when the daemon
+// runs the carried tmux: a bare `tmux` either does not exist on that machine
+// or reaches a different server.
+func init() {
+	projects.TmuxClient = func() string {
+		if ResolveTmux(context.Background()).Bundled {
+			return "clawdline tmux"
+		}
+		return "tmux"
+	}
+}
+
+// Which tmux this daemon runs (docs/design-decisions.md D71).
 //
 // A release carries a tmux of its own (tools/release/tmux), so a machine
 // without one still gets a working Clawdline. The person's tmux, when there is

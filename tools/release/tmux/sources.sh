@@ -1,5 +1,5 @@
 # The tmux a release carries, and everything it is built from
-# (docs/design-decisions.md D33). Each tarball is checked against the hash
+# (docs/design-decisions.md D71). Each tarball is checked against the hash
 # below before anything is unpacked; a mismatch stops the build.
 #
 # Sourced by tools/release/tmux/build.sh; not run on its own.
@@ -33,4 +33,4 @@ NCURSES_SHA256=136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6
 
 # The Linux build runs in this image, pinned by digest, so the C library a
 # static binary carries (musl) is the same on every run.
-ALPINE_IMAGE=alpine:3.20
+ALPINE_IMAGE=alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc

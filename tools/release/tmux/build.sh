@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the tmux one release carries, for one platform (docs/design-decisions.md
-# D33). Every source is a pinned tarball checked against its sha256 in
+# D71). Every source is a pinned tarball checked against its sha256 in
 # sources.sh before it is unpacked.
 #
 # usage: tools/release/tmux/build.sh <goos> <goarch> <out-dir>

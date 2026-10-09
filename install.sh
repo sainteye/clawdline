@@ -84,10 +84,13 @@ purge_state() {
     return
   fi
   sock=$state/tmux/term.sock
-  if [ -S "$sock" ] && have tmux && [ -n "$(tmux -S "$sock" ls 2>/dev/null)" ]; then
+  # Without a tmux of its own the machine ran the one the release carried,
+  # which is gone with the release: nothing here can ask that server, so a
+  # socket that is there is kept rather than taken from under its terminals.
+  if [ -S "$sock" ] && { ! have tmux || [ -n "$(tmux -S "$sock" ls 2>/dev/null)" ]; }; then
     find "$state" -mindepth 1 -maxdepth 1 ! -path "$state/tmux" -exec rm -rf {} +
     say "removed $state (--purge), all but $state/tmux"
-    say "kept $state/tmux: the terminals the daemon started are still open; they end when you exit them (tmux -S $sock ls), and then it can go"
+    say "kept $state/tmux: the terminals the daemon started may still be open; they end when you exit them, and then it can go"
     return
   fi
   rm -rf "$state"
@@ -196,9 +199,9 @@ main() {
   status=0
   "$dest/clawdline" setup --archive "$work/$name" --manifest-dir "$work" "$@" </dev/null || status=$?
   # A repair that failed puts back the copy of this version that was there.
-  # A first install that setup refused before `current` named it (tmux
-  # missing, a bad signature) takes the unpacked release away again, so
-  # "Nothing was installed" is true.
+  # A first install that setup refused before `current` named it (a bad
+  # signature; no tmux in a build that carries none) takes the unpacked
+  # release away again, so "Nothing was installed" is true.
   if [ "$status" != 0 ] && [ -e "$work/previous" ]; then
     mv "$dest" "$work/refused" && mv "$work/previous" "$dest"
   elif [ "$status" != 0 ] && [ "$(readlink "$root/current" 2>/dev/null)" != "releases/$v" ]; then
