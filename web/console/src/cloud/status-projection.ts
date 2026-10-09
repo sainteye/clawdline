@@ -34,9 +34,9 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     return { kind: "unavailable", reason: "bad_projection" }
   }
   if (marker.complete !== true) return { kind: "unavailable", reason: "unknown", observedAt: Number(marker.at) * 1000 }
-  if (outsideFreshWindow(Number(marker.at) * 1000, nowMs)) {
-    return { kind: "unavailable", reason: "stale", observedAt: Number(marker.at) * 1000 }
-  }
+  // An expired but internally consistent pass remains a readable observation.
+  // Its rows cannot authorize fresh content reads or changing operations.
+  let stale = outsideFreshWindow(Number(marker.at) * 1000, nowMs)
   const rows: ProjectedSession[] = []
   let unknownTargets = 0
   for (const session of ids as string[]) {
@@ -53,10 +53,9 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     if (data.snapshot_generation !== marker.snapshot_generation) {
       return { kind: "unavailable", reason: "event_gap", observedAt: Number(marker.at) * 1000 }
     }
-    if (outsideFreshWindow(Number(data.projected_at) * 1000, nowMs) ||
-      (source!.freshness === "current" && outsideFreshWindow(Number(source!.observed_at) * 1000, nowMs))) {
-      return { kind: "unavailable", reason: "stale", observedAt: Number(marker.at) * 1000 }
-    }
+    const rowStale = outsideFreshWindow(Number(data.projected_at) * 1000, nowMs) ||
+      (source!.freshness === "current" && outsideFreshWindow(Number(source!.observed_at) * 1000, nowMs))
+    stale ||= rowStale
     if (typeof data.execution_generation !== "string" || !/^[0-9a-f]{32}$/u.test(data.execution_generation)) {
       unknownTargets += 1
       continue
@@ -64,8 +63,11 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     rows.push({
       destination: { machineID: machine, sessionID: session, executionGeneration: data.execution_generation },
       title: session,
+      assistant: data.assistant === "claude" || data.assistant === "codex" ? data.assistant : undefined,
+      backend: data.backend === "tmux" || data.backend === "iterm" || data.backend === "ps" ? data.backend : undefined,
       state: String(data.state),
-      freshness: source!.freshness === "current" ? "current" : source!.freshness === "unverified" ? "stale" : "unknown",
+      freshness: stale || rowStale ? "stale" : source!.freshness === "current" ? "current" :
+        source!.freshness === "unverified" ? "stale" : "unknown",
       needsAttention: typeof data.attention_required === "boolean" ? data.attention_required : undefined,
       waitingForReply: data.waiting_for_reply === true ? true : undefined,
       observedAt: Number(source!.observed_at) * 1000,
@@ -81,6 +83,9 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
         ? Number(data.failed_agent_count) : undefined,
     })
   }
+  if (stale) return { kind: "unavailable", reason: "stale", complete: true,
+    observedAt: Number(marker.at) * 1000, snapshotGeneration: marker.snapshot_generation as string,
+    rows: rows.map((row) => ({ ...row, freshness: "stale" })), unknownTargets }
   return { kind: "ready", complete: true, observedAt: Number(marker.at) * 1000,
     snapshotGeneration: marker.snapshot_generation as string, rows, unknownTargets }
 }

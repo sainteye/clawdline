@@ -48,13 +48,22 @@ function clientFixture() {
       calls.push("info:" + destination.executionGeneration)
       return { info: { session: { title: "Pinned" } } }
     },
-    async transcriptForGeneration(destination: { executionGeneration: string }) {
+    async transcriptForGeneration(destination: { executionGeneration: string }): Promise<unknown> {
       calls.push("transcript:" + destination.executionGeneration)
-      return { id: sessionID, entries: [{ role: "assistant", text: "Done" }], nextBefore: 123 }
+      return { id: sessionID, entries: [{ role: "assistant", text: "Done", artifacts: [{ id: "image-1",
+        media_type: "image/png", byte_count: 3, width: 1, height: 1, expires_at: 4_000_000_000 }] }], nextBefore: 123 }
     },
     async transcriptPageForGeneration(destination: { executionGeneration: string }, before: number): Promise<unknown> {
       calls.push("older:" + destination.executionGeneration + ":" + before)
       return { id: sessionID, entries: [{ role: "user", text: "Earlier" }], nextBefore: 40 }
+    },
+    async skillsForGeneration(destination: { executionGeneration: string }) {
+      calls.push("skills:" + destination.executionGeneration)
+      return { skills: [{ name: "review", description: "Review work", source: "project" }] }
+    },
+    async imageForGeneration(destination: { executionGeneration: string }, id: string) {
+      calls.push("image:" + destination.executionGeneration + ":" + id)
+      return { id, media_type: "image/png", byte_count: 3, data: "cG5n" }
     },
   }
   return { client, calls, row }
@@ -78,8 +87,10 @@ test("Relay-confirmed offline applies to one machine only and expires to unknown
   assert.deepEqual(await source.readMachine(machineID, new AbortController().signal),
     { kind: "unavailable", reason: "unknown" })
   client.ready = true
-  assert.deepEqual(await source.readMachine(machineID, new AbortController().signal),
-    { kind: "unavailable", reason: "offline", retryAt: now + 101 })
+  const offline = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(offline.kind === "unavailable" && offline.reason, "offline")
+  assert.equal(offline.kind === "unavailable" && offline.retryAt, now + 101)
+  assert.equal(offline.rows?.[0].freshness, "stale")
   now += 101
   const expired = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(expired.kind === "unavailable" && expired.reason, "unknown")
@@ -87,6 +98,7 @@ test("Relay-confirmed offline applies to one machine only and expires to unknown
   marker.payload.at = Math.floor((Date.now() - 301_000) / 1000)
   const stale = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(stale.kind === "unavailable" && stale.reason, "stale")
+  assert.equal(stale.rows?.[0].freshness, "stale")
   client.machineOffline.delete(machineID)
   marker.payload.at = Math.floor(Date.now() / 1000)
   assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
@@ -105,6 +117,63 @@ test("opening and leaving an exact detail subscribes, reads pinned content, and 
     "transcript:" + executionGeneration, "unsubscribe:s/one/same,t/one/same"])
 })
 
+test("an image tile reads only an artifact visible in the opened exact execution", async () => {
+  const { client, calls } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  const artifact = { id: "image-1", media_type: "image/png", byte_count: 3,
+    width: 1, height: 1, expires_at: 4_000_000_000 }
+  await assert.rejects(() => source.readImage!(destination, artifact), { code: "execution_generation_changed" })
+  assert.equal((await source.readDetail(destination, new AbortController().signal)).kind, "ready")
+  await assert.rejects(() => source.readImage!(destination, { ...artifact, id: "another" }),
+    { code: "execution_generation_changed" })
+  const image = await source.readImage!(destination, artifact)
+  assert.ok(image.url.startsWith("blob:"))
+  image.release()
+  assert.deepEqual(calls.filter((call) => call.startsWith("image:")), ["image:" + executionGeneration + ":image-1"])
+  source.closeDetail?.(destination)
+  await assert.rejects(() => source.readImage!(destination, artifact), { code: "execution_generation_changed" })
+})
+
+test("slash-menu skills belong to the opened execution and stop when that execution changes", async () => {
+  const { client, calls, row } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  await assert.rejects(() => source.readSkills!(destination, new AbortController().signal), { code: "old_version" })
+  await source.readDetail(destination, new AbortController().signal)
+  assert.deepEqual((await source.readSkills!(destination, new AbortController().signal)).map((skill) => skill.name), ["review"])
+  row.execution_generation = "ffffffffffffffffffffffffffffffff"
+  await assert.rejects(() => source.readSkills!(destination, new AbortController().signal),
+    { code: "execution_generation_changed" })
+  assert.deepEqual(calls.filter((call) => call.startsWith("skills:")), ["skills:" + executionGeneration])
+  source.closeDetail?.(destination)
+})
+
+test("an opened rich-row change rereads pinned content without replaying its subscription", async () => {
+  const { client, calls } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  await source.readDetail(destination, new AbortController().signal)
+  await source.readDetail(destination, new AbortController().signal)
+  assert.equal(calls.filter((call) => call.startsWith("subscribe:")).length, 1)
+  assert.equal(calls.filter((call) => call.startsWith("transcript:")).length, 2)
+  source.closeDetail?.(destination)
+  assert.equal(calls.filter((call) => call.startsWith("unsubscribe:")).length, 1)
+})
+
+test("a pinned read keeps the local transcript's structured cards and Unix-second times", async () => {
+  const { client } = clientFixture()
+  const entry = { role: "tool", text: "Edited a file", tool: "Edit", at: 123,
+    fileChanges: [{ kind: "edit", path: "sample.ts", unifiedDiff: "+line" }],
+    plan: [{ step: "Review", status: "completed" }],
+    activity: { kind: "explored", title: "Files" } }
+  client.transcriptForGeneration = async () => ({ id: sessionID, entries: [entry], nextBefore: 123 })
+  const detail = await statusSource(() => client as never).readDetail(
+    { machineID, sessionID, executionGeneration }, new AbortController().signal)
+  assert.equal(detail.kind, "ready")
+  if (detail.kind === "ready") assert.deepEqual(detail.entries, [entry])
+})
+
 test("an opened detail reads an older page with the same execution and a decreasing cursor", async () => {
   const { client, calls } = clientFixture()
   const source = statusSource(() => client as never)
@@ -112,7 +181,7 @@ test("an opened detail reads an older page with the same execution and a decreas
   await source.readDetail(destination, new AbortController().signal)
   const older = await source.readOlder?.(destination, 123, new AbortController().signal)
   assert.deepEqual(older, { kind: "ready", destination, before: 123,
-    entries: [{ speaker: "user", text: "Earlier" }], nextBefore: 40 })
+    entries: [{ role: "user", text: "Earlier" }], nextBefore: 40 })
   assert.deepEqual(calls.filter((call) => call.startsWith("older:")), ["older:" + executionGeneration + ":123"])
   source.closeDetail?.(destination)
   assert.deepEqual(await source.readOlder?.(destination, 40, new AbortController().signal),

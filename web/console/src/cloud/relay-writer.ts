@@ -105,6 +105,7 @@ export interface CloudWriteClient extends CloudReadClient {
    */
   info(identity: CloudIdentity): Promise<unknown>
   infoSummary(identity: CloudIdentity): Promise<unknown>
+  skills?(identity: CloudIdentity): Promise<unknown>
   /**
    * The Git panel's read. The copied client has had it since the Swift
    * console and nothing here asked for it, so 「Git 變更」 said "無法讀取 Git
@@ -236,6 +237,7 @@ export type WriteRoute =
   | { op: "send"; word: Carried<"send">; session: string }
   | { op: "session-receipt"; word: Carried<"session-receipt">; session: string; request: string }
   | { op: "info"; word: Carried<"info">; session: string }
+  | { op: "skills"; word: Carried<"skills">; session: string }
   | { op: "git"; word: Carried<"git">; session: string }
   | { op: "git-diff"; word: Carried<"git-diff">; session: string }
   | { op: "screen"; word: Carried<"screen">; session: string }
@@ -442,6 +444,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "past",
   "image",
   "info",
+  "skills",
   "git",
   "git-diff",
   "screen",
@@ -532,6 +535,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // be parsed into two words.
     if (head === "sessions" && a && b === "info" && segments.length === 3) {
       return { op: "info", word: "info", session: a }
+    }
+    if (head === "sessions" && a && b === "skills" && segments.length === 3) {
+      return { op: "skills", word: "skills", session: a }
     }
     // The second read parsed here rather than in `relay-reader.ts`, and for
     // the same reason `info` is: it is a session's read, so it has to be asked
@@ -797,6 +803,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "smart-title":
     case "interrupt":
     case "info":
+    case "skills":
     case "git":
     case "git-diff":
     case "screen":
@@ -1116,6 +1123,9 @@ export class RelayWriter {
         const identity = await this.identity(client, route.session)
         return url.searchParams.get("parts") === "summary" ? client.infoSummary(identity) : client.info(identity)
       }
+      case "skills":
+        if (!client.skills) throw failure("cloud_not_carried", "This Cloud client cannot read Session skills.", 501)
+        return client.skills(await this.identity(client, route.session))
       case "git":
         // A read, so nothing is marked written and `sessionOf` leaves it out:
         // asking what a repository has changed changes nothing. The machine's own

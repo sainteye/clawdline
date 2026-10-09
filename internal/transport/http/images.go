@@ -72,6 +72,18 @@ func (s *Server) imageRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusNotFound, "artifact_not_found", "No image artifact named that.")
 		return
 	}
+	// An r/ content read fixes the Session execution before bytes leave this
+	// machine. A reused Session ID cannot lend its image to the old request.
+	if r.Header.Get("X-Clawdline-Target-Machine") != "" || r.Header.Get("X-Clawdline-Execution-Generation") != "" {
+		session := r.URL.Query().Get("session")
+		if session == "" {
+			writeRefusal(w, http.StatusBadRequest, "execution_target_required", "An image read needs its Session.")
+			return
+		}
+		if !s.admitPinnedTarget(w, r, session) {
+			return
+		}
+	}
 	now := time.Now()
 	found := s.pictures.store.Lookup(id, now)
 	data, state, mediaType := found.Data, found.State, found.Artifact.MediaType
@@ -87,6 +99,11 @@ func (s *Server) imageRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	switch state {
 	case artifacts.Live:
+		if r.Header.Get("X-Clawdline-Target-Machine") != "" || r.Header.Get("X-Clawdline-Execution-Generation") != "" {
+			if !s.admitPinnedTarget(w, r, r.URL.Query().Get("session")) {
+				return
+			}
+		}
 		w.Header().Set("Content-Type", mediaType)
 		w.Header().Set("Cache-Control", "private, no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")

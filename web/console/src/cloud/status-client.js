@@ -14,7 +14,7 @@ function refused(code, message) {
 }
 
 function pinnedRead(type, body) {
-  return (type === "info" && body?.parts === "full" || type === "transcript" || type === "peer-inbox") &&
+  return (type === "info" && body?.parts === "full" || type === "transcript" || type === "skills" || type === "image" || type === "peer-inbox") &&
     body?.expected_generation !== undefined
 }
 
@@ -24,6 +24,8 @@ function pinnedReplyKey(machine, session, read) {
 
 function pinnedReadName(type, body) {
   if (type === "info" && body?.parts === "full") return "info.full"
+  if (type === "skills") return "skills"
+  if (type === "image" && typeof body?.id === "string" && body.id) return "image." + body.id
   if (type === "transcript") {
     if (body?.before === undefined) return "transcript"
     return Number.isSafeInteger(body.before) && body.before > 0 ? "transcript.before." + body.before : null
@@ -379,6 +381,29 @@ export class StatusCloudClient extends CatalogCloudClient {
     })
     this.pinnedInfoFlights.set(key, { generation: executionGeneration, promise })
     return promise
+  }
+
+  /** Slash-menu metadata follows the same exact execution and reply proof as content. */
+  skillsForGeneration(destination, signal) {
+    const { machineID, sessionID, executionGeneration } = destination
+    if (!machineID || !sessionID || !GENERATION.test(executionGeneration) || signal?.aborted) {
+      return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
+    }
+    return this._read({ machine: machineID, session: sessionID }, "skills", {
+      machine_id: machineID, expected_generation: executionGeneration,
+    }, "skills", undefined, { signal })
+  }
+
+  /** Transcript image bytes use the selected execution and the same r/ reply proof. */
+  imageForGeneration(destination, id, signal) {
+    const { machineID, sessionID, executionGeneration } = destination
+    if (!machineID || !sessionID || !GENERATION.test(executionGeneration) ||
+      typeof id !== "string" || !id || signal?.aborted) {
+      return Promise.reject(refused("execution_target_required", "an exact Session image is required"))
+    }
+    return this._read({ machine: machineID, session: sessionID }, "image", {
+      id, machine_id: machineID, expected_generation: executionGeneration,
+    }, "image." + id, undefined, { signal })
   }
 
   /** Keep distinct generations from joining the copied client's per-session read waiter. */

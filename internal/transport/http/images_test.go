@@ -70,6 +70,24 @@ func TestImageRouteReadsOwnStoreThenSwifts(t *testing.T) {
 	}
 }
 
+func TestPinnedImageCannotBypassSessionAdmission(t *testing.T) {
+	s, own, _ := picturesFixture(t)
+	request := httptest.NewRequest(http.MethodGet, "/v1/artifacts/images/"+own+"?session=%2519", nil)
+	request.Header.Set("X-Clawdline-Target-Machine", "machine-a")
+	request.Header.Set("X-Clawdline-Execution-Generation", strings.Repeat("a", 32))
+	recorder := httptest.NewRecorder()
+	s.imageRoute(recorder, request)
+	if recorder.Code == http.StatusOK || bytes.HasPrefix(recorder.Body.Bytes(), []byte("\x89PNG")) {
+		t.Fatalf("unverified Session received image bytes: %d %s", recorder.Code, recorder.Body.String())
+	}
+	request.URL.RawQuery = ""
+	recorder = httptest.NewRecorder()
+	s.imageRoute(recorder, request)
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "execution_target_required") {
+		t.Fatalf("pinned image without Session: %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 // Only the machine's own token stores pictures.
 func TestImagesRouteRefusesADevice(t *testing.T) {
 	s, _, _ := picturesFixture(t)

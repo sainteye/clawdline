@@ -1,11 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { nextWord } from "../next-strings.js"
+import { TranscriptEntries } from "../session/Transcript.js"
+import { SessionToolbar } from "../session/SessionToolbar.js"
+import { ProjectedRow } from "../session/List.js"
+import { Mark } from "../session/List.js"
+import { DetailPane } from "../session/Detail.js"
+import { BRAND_MARK } from "../brand-mark.js"
+import { CloudAllTerminalList } from "../session/CloudAllTerminalList.js"
+import { sessionsTerminalMode } from "../page-route.js"
+import "../session/terminal-list.css"
 import { AttentionOverview } from "./AttentionOverview.js"
 import { fromListProjection } from "./attention-adapter.js"
 import {
   afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
-  matchesSession, prependOlderPage, projectionRefreshAt, SessionDetailCache, type MachineSessionProjection, type ProjectionProblem,
-  type SessionContent, type SessionDestination, type SessionFilters, type SessionProjectionSource,
+  prependOlderPage, projectionRefreshAt, SessionDetailCache, type MachineSessionProjection, type ProjectionProblem,
+  type SessionContent, type SessionDestination, type SessionProjectionSource,
 } from "./all-machine-sessions.js"
 import { STATUS_FRESH_MS } from "./status-projection.js"
 
@@ -26,19 +35,23 @@ export interface DetailActionContext {
 }
 
 type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionProjection }
-const emptyFilters: SessionFilters = { machine: "", platform: "", state: "", freshness: "all", attention: "all" }
 
 /** Only the hosted Cloud gate mounts this view; its source is the ss/ adapter. */
-export function AllMachineSessions({ machines, source, onClose, embedded = false, detailActions, fleetControls }: {
+export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal"
+
+export function AllMachineSessions({ machines, source, detailActions, detailExtras, fleetControls, onMachineAction }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
-  onClose?: () => void
-  embedded?: boolean
   detailActions?: (context: DetailActionContext) => ReactNode
+  detailExtras?: (context: DetailActionContext) => ReactNode
   fleetControls?: ReactNode
+  onMachineAction?: (machineID: string, action: MachineToolbarAction) => void
 }) {
   const [readings, setReadings] = useState<Record<string, Reading>>({})
-  const [filters, setFilters] = useState(emptyFilters)
+  const [query, setQuery] = useState("")
+  const [terminalMode, setTerminalMode] = useState(() => sessionsTerminalMode(location.hash))
+  const [machineAction, setMachineAction] = useState<MachineToolbarAction | null>(null)
+  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 899px)").matches)
   const [destination, setDestination] = useState<SessionDestination | null>(() => destinationFromFragment(location.hash))
   const [detail, setDetail] = useState<{ key: string; value: SessionContent | null; loading: boolean } | null>(null)
   const [older, setOlder] = useState<{ key: string; loading: boolean; error: Extract<SessionContent,
@@ -48,13 +61,27 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
   const destinationRef = useRef(destination)
   const detailRef = useRef(detail)
   const olderAbort = useRef<AbortController | null>(null)
+  const refreshAbort = useRef<AbortController | null>(null)
   const heading = useRef<HTMLHeadingElement | null>(null)
+  const listHeading = useRef<HTMLHeadingElement | null>(null)
+  const searchField = useRef<HTMLInputElement | null>(null)
+  const machineDialog = useRef<HTMLDialogElement | null>(null)
   const returnFocus = useRef<HTMLElement | null>(null)
   destinationRef.current = destination
   detailRef.current = detail
 
   useEffect(() => {
-    const route = () => setDestination(destinationFromFragment(location.hash))
+    const media = window.matchMedia("(max-width: 899px)")
+    const change = () => setCompact(media.matches)
+    media.addEventListener("change", change)
+    return () => media.removeEventListener("change", change)
+  }, [])
+
+  useEffect(() => {
+    const route = () => {
+      setTerminalMode(sessionsTerminalMode(location.hash))
+      setDestination(destinationFromFragment(location.hash))
+    }
     window.addEventListener("hashchange", route)
     window.addEventListener("popstate", route)
     return () => {
@@ -62,6 +89,17 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
       window.removeEventListener("popstate", route)
     }
   }, [])
+
+  useEffect(() => {
+    if (machineAction) machineDialog.current?.showModal()
+    else machineDialog.current?.close()
+  }, [machineAction])
+
+  const chooseAction = (action: MachineToolbarAction) => {
+    if (!onMachineAction || machines.length === 0) return
+    if (machines.length === 1) onMachineAction(machines[0].id, action)
+    else setMachineAction(action)
+  }
 
   useEffect(() => {
     if (!destination) return
@@ -104,6 +142,23 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
         setDetail((before) => before?.key === key && before.value?.kind === "ready"
           ? { ...before, value: { ...before.value, question: null } } : before)
         setQuestionRevision((before) => before + 1)
+        if (detailRef.current?.key !== key || detailRef.current.value?.kind !== "ready") return
+        refreshAbort.current?.abort()
+        olderAbort.current?.abort()
+        olderAbort.current = null
+        setOlder(null)
+        const abort = new AbortController()
+        refreshAbort.current = abort
+        void source.readDetail(selected, abort.signal).then((value) => {
+          if (abort.signal.aborted || !destinationRef.current || destinationKey(destinationRef.current) !== key) return
+          if (value.kind === "ready" && (destinationKey(value.destination) !== key || !cache.current.put(value))) {
+            setDetail({ key, value: { kind: "unavailable", reason: "unknown" }, loading: false })
+            return
+          }
+          setDetail({ key, value, loading: false })
+        }, (error: unknown) => {
+          if (!abort.signal.aborted) setDetail({ key, value: { kind: "unavailable", reason: contentProblemOf(error) }, loading: false })
+        }).finally(() => { if (refreshAbort.current === abort) refreshAbort.current = null })
         return
       }
       if (!machines.some((machine) => machine.id === machineID)) return
@@ -120,6 +175,7 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     return () => {
       live = false
       stop()
+      refreshAbort.current?.abort()
       for (const abort of aborts.values()) abort.abort()
     }
   }, [source, machines.map((machine) => machine.id + ":" + machine.freshness).join("\0")])
@@ -152,11 +208,16 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
 
   const detailReading = destination ? readings[destination.machineID] : undefined
   const named = destination ? machines.find((machine) => machine.id === destination.machineID) : null
+  const observedProjection = detailReading?.phase === "settled" ? detailReading.value : undefined
   const projection: MachineSessionProjection | undefined = named && named.freshness !== "current"
-    ? { kind: "unavailable", reason: named.freshness === "stale" ? "stale" : "unknown" }
-    : detailReading?.phase === "settled" ? detailReading.value : undefined
+    ? { kind: "unavailable", reason: named.freshness === "stale" ? "stale" : "unknown",
+      observedAt: observedProjection?.observedAt, snapshotGeneration: observedProjection?.snapshotGeneration,
+      rows: observedProjection?.rows?.map((item) => ({ ...item, freshness: "stale" })) }
+    : observedProjection
   const availability = destination ? destinationAvailable(destination, projection) : "waiting"
   useEffect(() => {
+    refreshAbort.current?.abort()
+    refreshAbort.current = null
     olderAbort.current?.abort()
     olderAbort.current = null
     setOlder(null)
@@ -181,6 +242,7 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     })
     return () => {
       abort.abort()
+      refreshAbort.current?.abort()
       olderAbort.current?.abort()
       source.closeDetail?.(destination)
     }
@@ -200,18 +262,23 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
   }, [source, destination?.machineID, destination?.sessionID, destination?.executionGeneration,
     detail?.key, detail?.loading, detail?.value?.kind, availability, questionRevision])
 
-  const states = useMemo(() => [...new Set(Object.values(readings).flatMap((reading) =>
-    reading.phase === "settled" && reading.value.kind === "ready" ? reading.value.rows.map((row) => row.state) : [],
-  ))].sort(), [readings])
-  const platforms = [...new Set(machines.map((machine) => machine.platform))]
-  const shown = machines.filter((machine) => !filters.machine || filters.machine === machine.id).map((machine) => {
+  const search = query.trim().toLocaleLowerCase()
+  const shown = machines.map((machine) => {
     const reading = readings[machine.id]
-    const rows = reading?.phase === "settled" && reading.value.kind === "ready"
-      ? reading.value.rows.filter((row) => matchesSession(row, machine.platform, filters)) : []
+    const rows = reading?.phase === "settled" && reading.value.rows
+      ? reading.value.rows.filter((row) => !search ||
+        `${machine.name} ${machine.id} ${machine.platform} ${row.title} ${row.destination.sessionID} ${stateWord(row.state)}`
+          .toLocaleLowerCase().includes(search)) : []
     return { machine, reading, rows }
-  })
-  const row = projection?.kind === "ready" && destination
+  }).filter(({ machine, rows }) => !search || rows.length > 0 ||
+    `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search))
+  const row = projection?.rows && destination
     ? projection.rows.find((candidate) => destinationKey(candidate.destination) === destinationKey(destination)) : null
+  const actionContext: DetailActionContext | null = availability === "ready" && destination && named &&
+    projection?.kind === "ready" && row ? {
+      destination, machine: named, row, projection,
+      content: detail?.key === destinationKey(destination) ? detail.value : null,
+    } : null
 
   const closeDetail = () => {
     olderAbort.current?.abort()
@@ -219,10 +286,38 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     setDestination(null)
     window.requestAnimationFrame(() => {
       if (returnFocus.current?.isConnected) returnFocus.current.focus()
-      else heading.current?.focus()
+      else listHeading.current?.focus()
       returnFocus.current = null
     })
   }
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const modal = [...document.querySelectorAll('dialog[open], [role="dialog"][aria-modal="true"]')]
+        .some((element) => element.getClientRects().length > 0)
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || modal) return
+      const active = document.activeElement
+      const typing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ||
+        (active instanceof HTMLElement && active.isContentEditable)
+      if (event.key === "Escape") {
+        if (destinationRef.current) { event.preventDefault(); closeDetail(); return }
+        if (active === searchField.current) {
+          event.preventDefault()
+          if (query) setQuery("")
+          else searchField.current?.blur()
+        }
+        return
+      }
+      if (typing) return
+      if (event.key === "/") {
+        event.preventDefault()
+        searchField.current?.focus()
+        searchField.current?.select()
+        return
+      }
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [query])
   const loadOlder = () => {
     const current = detailRef.current
     if (!destination || !source?.readOlder || availability !== "ready" || current?.value?.kind !== "ready" ||
@@ -252,23 +347,84 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
       if (!abort.signal.aborted) setOlder({ key, loading: false, error: contentProblemOf(error) })
     }).finally(() => { if (olderAbort.current === abort) olderAbort.current = null })
   }
-  return <div className="cloud-all" data-embedded={embedded ? "true" : undefined} data-step="all-sessions">
+  const listPane = <section className="pane pane-list cloud-all-list" inert={compact && !!destination}
+    aria-hidden={compact && !!destination ? true : undefined}>
+    <SessionToolbar inputRef={searchField} filter={query} onFilter={setQuery} terminalMode={terminalMode}
+      placeholder={nextWord("cloudAllSearch")} label={nextWord("cloudAllSearch")}
+      onSessions={() => { location.hash = machines.length > 1 ? "#all-machines" : "#page=sessions"; setTerminalMode(false) }}
+      onTerminals={() => chooseAction("terminal")}
+      onVoice={() => chooseAction("voice")} onWork={() => chooseAction("work")}
+      onStart={() => chooseAction(terminalMode ? "start_terminal" : "start")} />
+    <div className="scroller list-scroll cloud-all-list-scroll">
+    {terminalMode ? <CloudAllTerminalList shown={true} filter={query} /> : <>
+    <div className="cloud-all-groups">
+      {shown.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group" aria-label={`${machine.name} ${machine.id}`}>
+        <h2>{machine.name} <small>{machine.platform}</small></h2>
+        <p className="cloud-all-id">{nextWord("cloudAllMachineID")}: {machine.id}</p>
+        {machine.freshness !== "current" && reading?.phase === "settled" && reading.value.kind === "ready" && <p role="status">{machine.freshness === "stale"
+          ? nextWord("cloudAllStaleSource") : nextWord("cloudAllUnknownSource")}</p>}
+        {!reading || reading.phase === "loading" ? <p role="status">{nextWord("cloudAllLoading")}</p>
+          : <>
+            {reading.value.kind === "unavailable" && <p role="status">{problemWord(reading.value.reason)}</p>}
+            {rows.length === 0 ? reading.value.unknownTargets ? null : reading.value.kind === "ready" ? <p>{reading.value.rows.length === 0
+            ? nextWord("cloudAllEmptyMachine") : nextWord("cloudAllNoMatch")}</p>
+            : null : <ul className="rows" role="listbox" aria-label={`${machine.name} ${nextWord("cloudSingleSessions")}`}>
+            {rows.map((row) => <ProjectedRow key={destinationKey(row.destination)}
+              title={destination && destinationKey(destination) === destinationKey(row.destination) &&
+                detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
+                ? detail.value.info.title || row.title : row.title}
+              sessionID={row.destination.sessionID} machineName={machine.name} platform={machine.platform}
+              assistant={row.assistant} backend={row.backend} state={stateWord(row.state)}
+              freshness={nextWord(row.freshness === "current" ? "cloudAllCurrent" :
+                row.freshness === "stale" ? "cloudAllStale" : "cloudAllUnknown")}
+              observedAt={timeWord(row.observedAt)} attention={row.needsAttention === true}
+              open={!!destination && destinationKey(destination) === destinationKey(row.destination)}
+              selectionKey={destinationKey(row.destination)} onOpen={(element) => {
+                returnFocus.current = element
+                location.hash = destinationFragment(row.destination)
+                setDestination(row.destination)
+              }} />)}</ul>}
+          </>}
+        {reading?.phase === "settled" && !!reading.value.unknownTargets &&
+          <p role="status">{nextWord("cloudAllUnknownTargets", { count: reading.value.unknownTargets })}</p>}
+      </section>)}
+    </div>
+    {shown.length === 0 && <p>{nextWord("cloudAllNoMatch")}</p>}
+    </>}
+    </div>
+  </section>
+  return <main className="app cloud-all" data-page-view="sessions" data-view={destination ? "detail" : "list"}
+    data-pane="on" data-mode={terminalMode ? "terminal" : undefined} data-step="all-sessions">
     <header className="cloud-all-header">
-      {(destination || onClose) && <button type="button" onClick={destination ? closeDetail : onClose}>{nextWord("cloudAllBack")}</button>}
-      <h1 ref={heading} tabIndex={-1}>{destination ? nextWord("cloudAllDetail") : machines.length === 1 ? nextWord("cloudSingleSessions") : nextWord("cloudAllMachines")}</h1>
+      <h1 ref={listHeading} tabIndex={-1}>{machines.length === 1 ? nextWord("cloudSingleSessions") : nextWord("cloudAllMachines")}</h1>
     </header>
-    {destination ? <main className="cloud-all-main" aria-live="polite">
+    {listPane}
+    {destination && <DetailPane id="pane-detail" className="cloud-all-main" aria-live="polite">
+      <div className="detail-head cloud-all-detail-head">
+        <button type="button" className="back cloud-all-detail-back" onClick={closeDetail}>{nextWord("cloudAllBack")}</button>
+        <div className="detail-identity-block">
+          <span className="detail-mark-go" aria-hidden="true"><span className="detail-identity">
+            <Mark icon={BRAND_MARK} cellPx={5} id="detail-mark" /></span></span>
+          <div className="detail-session"><span className="who detail-who">
+            <h2 className="name" ref={heading} tabIndex={-1}>{detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
+              ? detail.value.info.title || row?.title || destination.sessionID : row?.title || destination.sessionID}</h2>
+            <span className="sub">{named?.name ?? destination.machineID} · {row ? stateWord(row.state) : nextWord("cloudAllUnknown")}</span>
+          </span></div>
+        </div>
+      </div>
+      <div className="scroller tx-scroll cloud-all-detail-scroll">
       <dl className="cloud-all-target">
-        <div><dt>{nextWord("cloudAllMachine")}</dt><dd>{named?.name ?? destination.machineID}</dd></div>
-        <div><dt>{nextWord("cloudAllMachineID")}</dt><dd className="cloud-all-id">{destination.machineID}</dd></div>
         <div><dt>{nextWord("cloudAllSessionID")}</dt><dd className="cloud-all-id">{destination.sessionID}</dd></div>
-        <div><dt>{nextWord("cloudAllPlatform")}</dt><dd>{named?.platform ?? nextWord("cloudAllUnknown")}</dd></div>
-        <div><dt>{nextWord("cloudAllGeneration")}</dt><dd>{destination.executionGeneration}</dd></div>
-        <div><dt>{nextWord("cloudAllDataTime")}</dt><dd>{row ? timeWord(row.observedAt) : nextWord("cloudAllUnknown")}</dd></div>
+        <div><dt>{nextWord("cloudAllDataTime")}</dt><dd>{detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
+          ? timeWord(detail.value.observedAt) : row ? timeWord(row.observedAt) : nextWord("cloudAllUnknown")}</dd></div>
       </dl>
-      {availability === "ready" && row && projection?.kind === "ready" && <section className="cloud-all-work"
+      <details className="cloud-all-identity"><summary>{nextWord("cloudAllGeneration")}</summary>
+        <p>{nextWord("cloudAllMachineID")}: <code>{destination.machineID}</code></p>
+        <p>{nextWord("cloudAllGeneration")}: <code>{destination.executionGeneration}</code></p>
+      </details>
+      {row && <details className="cloud-all-work"
         aria-label={nextWord("cloudAllWorkStatus")}>
-        <h2>{nextWord("cloudAllWorkStatus")}</h2>
+        <summary>{nextWord("cloudAllWorkStatus")} · {stateWord(row.state)} · {nextWord(row.freshness === "current" && availability === "ready" ? "cloudAllCurrent" : "cloudAllStale")}</summary>
         <dl>
           <div><dt>{nextWord("cloudAllState")}</dt><dd>{stateWord(row.state)}</dd></div>
           <div><dt>{nextWord("cloudAllWaitingForReply")}</dt><dd>{factWord(row.waitingForReply)}</dd></div>
@@ -278,13 +434,9 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
           <div><dt>{nextWord("cloudAllCompletedUnconfirmed")}</dt><dd>{factWord(row.completedUnconfirmed)}</dd></div>
           <div><dt>{nextWord("cloudAllLastMovement")}</dt><dd>{row.lastMovementAt === undefined
             ? nextWord("cloudAllUnknown") : timeWord(row.lastMovementAt)}</dd></div>
-          <div><dt>{nextWord("cloudAllStatusTime")}</dt><dd>{timeWord(projection.observedAt)}</dd></div>
+          <div><dt>{nextWord("cloudAllStatusTime")}</dt><dd>{timeWord(projection?.observedAt ?? row.observedAt)}</dd></div>
         </dl>
-      </section>}
-      {availability === "ready" && named && projection?.kind === "ready" && row && detailActions?.({
-        destination, machine: named, row, projection,
-        content: detail?.key === destinationKey(destination) ? detail.value : null,
-      })}
+      </details>}
       {!named ? <p role="alert">{nextWord("cloudAllUnknownSource")}</p>
         : availability === "changed" ? <p role="alert">{nextWord("cloudAllChanged")}</p>
         : availability === "stale" ? <p role="status">{nextWord("cloudAllStaleSource")}</p>
@@ -294,9 +446,7 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
         : !detail || detail.loading || detail.key !== destinationKey(destination) ? <p role="status">{nextWord("cloudAllLoadingDetail")}</p>
         : detail.value?.kind === "unavailable" ? <p role="alert">{contentWord(detail.value.reason)}</p>
         : <section aria-label={nextWord("cloudAllConversation")} className="cloud-all-content">
-          <p className="cloud-all-time">{nextWord("cloudAllDataAt", { time: timeWord(detail.value!.observedAt) })}</p>
-          {detail.value!.info.title && <h2>{detail.value!.info.title}</h2>}
-          {(detail.value!.info.assistant || detail.value!.info.model) && <p>{[detail.value!.info.assistant,
+          {(detail.value!.info.assistant || detail.value!.info.model) && <p className="cloud-all-provider">{[detail.value!.info.assistant,
             detail.value!.info.model].filter(Boolean).join(" · ")}</p>}
           {detail.value!.nextBefore !== undefined && source?.readOlder && <div className="cloud-all-older">
             <button type="button" onClick={loadOlder} disabled={older?.key === detail.key && older.loading}
@@ -306,67 +456,52 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
             {older?.key === detail.key && older.error && <p role="alert">{older.error === "old_version"
               ? nextWord("cloudAllOlderOldVersion") : contentWord(older.error)}</p>}
           </div>}
-          {detail.value!.entries.length === 0 ? <p>{nextWord("cloudAllNoContent")}</p> : detail.value!.entries.map((entry, index) =>
-            <article key={index}><h2>{entry.speaker}</h2><p>{entry.text}</p></article>)}
+          {detail.value!.entries.length === 0 ? <p>{nextWord("cloudAllNoContent")}</p> :
+            <TranscriptEntries key={destinationKey(destination)}
+              entries={detail.value!.entries} assistant={detail.value!.info.assistant}
+              working={row?.state === "working"} sessionID={destination.sessionID}
+              pictureSource={(artifact) => source?.readImage
+                ? source.readImage(destination, artifact)
+                : Promise.reject(Object.assign(new Error("No image reader"), { code: "old_version" }))} />}
         </section>}
-    </main> : <main className="cloud-all-main">
-      <p className="cloud-all-lede">{nextWord("cloudAllLede")}</p>
-      {fleetControls}
-      {!embedded && <AttentionOverview
-        reading={{ phase: "ready", machines: machines.map((machine) => fromListProjection(machine, readings[machine.id])), observedNow: Date.now() }}
-        locale={document.documentElement.lang === "zh-Hant" ? "zh-Hant-TW" : "en"}
-        onOpen={(target) => {
-          const selected = { machineID: target.machine_id, sessionID: target.session_id,
-            executionGeneration: target.execution_generation }
-          returnFocus.current = null
-          location.hash = destinationFragment(selected)
-          setDestination(selected)
-        }}
-      />}
-      <div className="cloud-all-filters">
-        <label>{nextWord("cloudAllMachine")}<select value={filters.machine} onChange={(event) => setFilters({ ...filters, machine: event.target.value })}>
-          <option value="">{nextWord("cloudAllAny")}</option>{machines.map((machine) => <option value={machine.id} key={machine.id}>{machine.name} · {machine.id}</option>)}
-        </select></label>
-        <label>{nextWord("cloudAllPlatform")}<select value={filters.platform} onChange={(event) => setFilters({ ...filters, platform: event.target.value })}>
-          <option value="">{nextWord("cloudAllAny")}</option>{platforms.map((platform) => <option value={platform} key={platform}>{platform}</option>)}
-        </select></label>
-        <label>{nextWord("cloudAllState")}<select value={filters.state} onChange={(event) => setFilters({ ...filters, state: event.target.value })}>
-          <option value="">{nextWord("cloudAllAny")}</option>{states.map((state) => <option value={state} key={state}>{stateWord(state)}</option>)}
-        </select></label>
-        <label>{nextWord("cloudAllFreshness")}<select value={filters.freshness} onChange={(event) => setFilters({ ...filters, freshness: event.target.value as SessionFilters["freshness"] })}>
-          <option value="all">{nextWord("cloudAllAny")}</option><option value="current">{nextWord("cloudAllCurrent")}</option><option value="stale">{nextWord("cloudAllStale")}</option><option value="unknown">{nextWord("cloudAllUnknown")}</option>
-        </select></label>
-        <label>{nextWord("cloudAllAttention")}<select value={filters.attention} onChange={(event) => setFilters({ ...filters, attention: event.target.value as SessionFilters["attention"] })}>
-          <option value="all">{nextWord("cloudAllAny")}</option><option value="needed">{nextWord("cloudAllAttentionNeeded")}</option>
-        </select></label>
+      {actionContext && detailExtras?.(actionContext)}
       </div>
-      <div className="cloud-all-groups">
-        {shown.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group" aria-label={`${machine.name} ${machine.id}`}>
-          <h2>{machine.name} <small>{machine.platform}</small></h2>
-          <p className="cloud-all-id">{nextWord("cloudAllMachineID")}: {machine.id}</p>
-          {machine.freshness !== "current" && reading?.phase === "settled" && reading.value.kind === "ready" && <p role="status">{machine.freshness === "stale"
-            ? nextWord("cloudAllStaleSource") : nextWord("cloudAllUnknownSource")}</p>}
-          {!reading || reading.phase === "loading" ? <p role="status">{nextWord("cloudAllLoading")}</p>
-            : reading.value.kind === "unavailable" ? <p role="status">{problemWord(reading.value.reason)}</p>
-            : rows.length === 0 ? reading.value.unknownTargets ? null : <p>{reading.value.rows.length === 0
-              ? nextWord("cloudAllEmptyMachine") : nextWord("cloudAllNoMatch")}</p>
-            : <ul>{rows.map((row) => <li key={destinationKey(row.destination)}>
-              <a href={destinationFragment(row.destination)} onClick={(event) => {
-                returnFocus.current = event.currentTarget
-                setDestination(row.destination)
-              }}>
-                <strong>{row.title || row.destination.sessionID}</strong>
-                <span className="cloud-all-id">{nextWord("cloudAllSessionID")}: {row.destination.sessionID}</span>
-                <span>{stateWord(row.state)} · {timeWord(row.observedAt)}{row.needsAttention ? " · " + nextWord("cloudAllAttentionNeeded") : ""}</span>
-              </a>
-            </li>)}</ul>}
-          {reading?.phase === "settled" && reading.value.kind === "ready" && !!reading.value.unknownTargets &&
-            <p role="status">{nextWord("cloudAllUnknownTargets", { count: reading.value.unknownTargets })}</p>}
-        </section>)}
+      {actionContext && detailActions && <div className="cloud-all-action-bar">{detailActions(actionContext)}</div>}
+    </DetailPane>}
+    {!destination && !terminalMode && <section className="pane pane-detail cloud-all-overview" inert={compact}
+      aria-hidden={compact ? true : undefined}>
+      <div className="cloud-all-overview-scroll">
+        <h2>{machines.length === 1 ? nextWord("cloudSingleSessions") : nextWord("cloudAllMachines")}</h2>
+        <p className="cloud-all-lede">{nextWord("cloudAllLede")}</p>
+        <AttentionOverview
+          reading={{ phase: "ready", machines: machines.map((machine) => fromListProjection(machine, readings[machine.id])), observedNow: Date.now() }}
+          locale={document.documentElement.lang === "zh-Hant" ? "zh-Hant-TW" : "en"}
+          onOpen={(target) => {
+            const selected = { machineID: target.machine_id, sessionID: target.session_id,
+              executionGeneration: target.execution_generation }
+            returnFocus.current = null
+            location.hash = destinationFragment(selected)
+            setDestination(selected)
+          }}
+        />
+        {fleetControls}
       </div>
-      {shown.length === 0 && <p>{nextWord("cloudAllNoMatch")}</p>}
-    </main>}
-  </div>
+    </section>}
+    {terminalMode && <section className="pane pane-detail cloud-all-overview" inert={compact}
+      aria-hidden={compact ? true : undefined}><div className="cloud-all-overview-scroll">
+        <h2>{nextWord("terminalListMode")}</h2>
+      </div></section>}
+    <dialog ref={machineDialog} className="cloud-all-machine-dialog" aria-label={nextWord("cloudSwitch")}
+      onCancel={(event) => { event.preventDefault(); setMachineAction(null) }}>
+      <h2>{nextWord("cloudSwitch")}</h2>
+      {machines.map((machine) => <button key={machine.id} type="button" onClick={() => {
+        const action = machineAction
+        setMachineAction(null)
+        if (action) onMachineAction?.(machine.id, action)
+      }}>{machine.name} · {machine.platform}</button>)}
+      <button type="button" onClick={() => setMachineAction(null)}>{nextWord("cloudActionCancel")}</button>
+    </dialog>
+  </main>
 }
 
 function problemOf(error: unknown): ProjectionProblem {

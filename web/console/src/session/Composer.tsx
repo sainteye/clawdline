@@ -32,6 +32,7 @@ import { writeIsOff } from "./outcome.js"
 import { deliverUntilSeen, pendingSends } from "./send.js"
 import { Waiting } from "./Waiting.js"
 import { ImageMarkup } from "./ImageMarkup.js"
+import { ComposerBox } from "./ComposerBox.js"
 
 /**
  * The composer, as the original's `form#composer` is built.
@@ -82,12 +83,19 @@ export function Composer({
   onScreen,
   restoredDraft,
   suggestedDraft,
+  remote,
 }: {
   row: SessionRow | null
   onDid: () => void
   onScreen?: () => void
   restoredDraft?: { target: InterventionTarget; text: string } | null
   suggestedDraft?: { target: InterventionTarget; text: string; id: number } | null
+  /** A fixed remote destination uses this same editor and picture path. */
+  remote?: { key: string; machineID: string; assistant?: string; canSend: boolean; allowPictures: boolean;
+    transcribe?: (audio: string, rate: number) => Promise<{ text?: string; ms?: number }>;
+    loadSkills?: () => Promise<AssistantSkill[]>;
+    restoreDraft?: { id: number; text: string; images: readonly string[] } | null;
+    onSend(text: string, pictures: readonly string[]): Promise<void> }
 }) {
   const T = L.strings
   const msg = useRef<HTMLDivElement>(null)
@@ -107,6 +115,7 @@ export function Composer({
   useSyncExternalStore(subscribeShots, shotsVersion)
   const shotsBusy = Shots.busy()
   const voiceRow = useRef<HTMLDivElement>(null)
+  const voiceJob = useRef<V.VoiceJob | null>(null)
   const form = useRef<HTMLFormElement>(null)
   // What the microphone is doing, which is the whole of what `renderComposer`
   // reads back from `Voice`: `voiceBusy` for the two waits, `voiceLive` for
@@ -126,23 +135,33 @@ export function Composer({
 
   useKeyboardBar(msg)
 
-  const machine = row ? L.machineFor(row).id : ""
-  const blockedCode = blocked?.machine === machine ? blocked.code : ""
-  const write = !blockedCode
-  const on = write && !!row
+  const machine = remote?.machineID ?? (row ? L.machineFor(row).id : "")
+  const blockedCode = !remote && blocked?.machine === machine ? blocked.code : ""
+  const write = remote ? remote.canSend : !blockedCode
+  const on = remote ? remote.canSend : write && !!row
   // The picture listeners are bound once, and ask what is open when they fire.
   const open = useRef({ on })
-  open.current = { on }
+  open.current = { on: on && (!remote || remote.allowPictures) }
 
   // A picture picked for one session is not a picture for the next one
   // (`session/open.js` clears them on every open and close).
-  const openId = row?.id ?? null
+  const openId = remote?.key ?? row?.id ?? null
   useEffect(() => {
     Shots.clear()
     setEditingShot(null)
     // The menu was about the session that was open; `session/open.js` closes it.
     setSkills({ shown: false, matches: [], selected: 0 })
   }, [openId])
+
+  useEffect(() => {
+    const draft = remote?.restoreDraft
+    if (!draft || !msg.current) return
+    msg.current.textContent = draft.text
+    setText(draft.text)
+    Shots.restore(draft.images)
+    msg.current.focus({ preventScroll: true })
+    caretToEnd()
+  }, [remote?.restoreDraft?.id])
 
   useEffect(() => watchMachinePaired((pairedMachine) => {
     setBlocked((was) => was?.machine === pairedMachine ? null : was)
@@ -211,7 +230,7 @@ export function Composer({
   const voiceBusy = voice !== "off"
   const voiceLive = voice === "recording"
   let placeholder = T.placeholder
-  if (row?.assistant === "codex") {
+  if ((remote?.assistant ?? row?.assistant) === "codex") {
     placeholder = placeholder.replace("Claude Code", "Codex").replace("Claude", "Codex")
     if (placeholder === T.placeholder) placeholder = "Codex…"
   }
@@ -245,12 +264,14 @@ export function Composer({
    */
   const skillsChanged = () => {
     const at = rowRef.current
-    const q = at ? skillQuery(rawText(), at.assistant) : null
-    if (q === null || !at) {
+    const assistant = remote?.assistant ?? at?.assistant
+    const target = remote?.key ?? at?.id
+    const q = target ? skillQuery(rawText(), assistant) : null
+    if (q === null || !target) {
       hideSkills()
       return
     }
-    const held = heldSkills(at.id)
+    const held = heldSkills(target)
     if (held) {
       const matches = filterSkills(held, q)
       setSkills((was) =>
@@ -261,8 +282,8 @@ export function Composer({
       return
     }
     hideSkills()
-    void loadSkills(at.id).then(() => {
-      if (rowRef.current?.id === at.id) skillsChanged()
+    void loadSkills(target, remote?.loadSkills).then(() => {
+      if ((remote?.key ?? rowRef.current?.id) === target && heldSkills(target)) skillsChanged()
     })
   }
 
@@ -282,7 +303,7 @@ export function Composer({
     const skill = skills.shown ? selectedSkill(skills.matches, at) : null
     const el = msg.current
     if (!skill || !el) return false
-    el.textContent = skillPrefix(row?.assistant) + skill.name + " "
+    el.textContent = skillPrefix(remote?.assistant ?? row?.assistant) + skill.name + " "
     setText(rawText())
     setFailure("")
     setSkills({ shown: false, matches: [], selected: 0 })
@@ -398,18 +419,23 @@ export function Composer({
     const host = voiceRow.current
     if (!host) return
     V.attachVoice({ say: toast, changed: setVoice })
-    V.attachComposerVoice({
+    const job: V.VoiceJob = {
       host,
       composer: form.current,
       sink: (said) => sink.current(said),
+      transcribe: remote?.transcribe,
+      changed: setVoice,
+      say: toast,
       // **The composer has gone**, which is the original's `els.composer.hidden`:
       // a microphone left open behind a row that is no longer on the page is
       // one with no button left to shut it. Asked of the element rather than
       // of React, because by then React has already let go of it.
       guard: () => !host.isConnected,
-    })
-    return () => V.attachComposerVoice(null)
-  }, [])
+    }
+    voiceJob.current = job
+    V.attachComposerVoice(job)
+    return () => { if (voiceJob.current === job) voiceJob.current = null; V.attachComposerVoice(null) }
+  }, [remote?.key, remote?.transcribe])
 
   const submit = async () => {
     // A picture still shrinking is part of this message and has not arrived
@@ -419,11 +445,12 @@ export function Composer({
     if (acceptSkill()) return
     const said = rawText().trim()
     const pictures = Shots.urls().slice()
-    if ((!said && !pictures.length) || !row || !write) return
+    if ((!said && !pictures.length) || (!row && !remote) || !on ||
+      (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
     // A quit line is not a message: the original ends the session instead, while
     // its terminal is still known. Exact and per assistant, so a sentence that
     // mentions `/exit` is still an ordinary prompt.
-    const quit = !pictures.length && said === (row.assistant === "codex" ? "/quit" : "/exit")
+    const quit = !remote && !!row && !pictures.length && said === (row.assistant === "codex" ? "/quit" : "/exit")
     // **The box empties here, before the request exists**, and nothing puts the
     // words or the pictures back: a send that fails at this end may already
     // have been delivered. They move to a card at the end of the transcript
@@ -437,6 +464,11 @@ export function Composer({
     inFlight.current = true
     setSending(true)
     try {
+      if (remote) {
+        await remote.onSend(said, pictures)
+        return
+      }
+      if (!row) return
       if (quit) {
         await client.close(row.id)
         onDid()
@@ -464,9 +496,9 @@ export function Composer({
     }
   }
 
-  const why: ReactNode = failure || (blockedCode
+  const why: ReactNode = failure || (!remote && blockedCode
     ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)
-    : row ? "" : T.webWriteOpen)
+    : remote || row ? "" : T.webWriteOpen)
   const pinned = sending && sendWidth.current.px ? { minWidth: `${sendWidth.current.px}px` } : undefined
 
   return (
@@ -482,7 +514,7 @@ export function Composer({
         void submit()
       }}
     >
-      <Waiting row={row} write={write} onScreen={onScreen} />
+      {!remote && <Waiting row={row} write={write} onScreen={onScreen} />}
       <div
         className="shots"
         id="shots"
@@ -510,7 +542,7 @@ export function Composer({
         className="skill-menu"
         id="skill-menu"
         role="listbox"
-        aria-label={`${row?.assistant === "codex" ? "Codex" : "Claude Code"} skills`}
+        aria-label={`${(remote?.assistant ?? row?.assistant) === "codex" ? "Codex" : "Claude Code"} skills`}
         hidden={!skills.shown}
       >
         {skills.shown &&
@@ -525,19 +557,19 @@ export function Composer({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => acceptSkill(i)}
             >
-              <span className="command">{skillPrefix(row?.assistant) + skill.name}</span>
+              <span className="command">{skillPrefix(remote?.assistant ?? row?.assistant) + skill.name}</span>
               <span className="description">{skill.description || ""}</span>
             </button>
           ))}
       </div>
-      <div className="box">
+      <ComposerBox>
         <button
           className="attach"
           id="attach"
           type="button"
           aria-label={T.webAttach}
           title={T.webAttach}
-          disabled={!on || sending}
+          disabled={!on || sending || !!remote && !remote.allowPictures}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => pick.current?.click()}
         >
@@ -562,7 +594,7 @@ export function Composer({
           title={voiceLive ? T.webVoiceStop : T.webVoiceStart}
           aria-pressed={voiceLive ? "true" : "false"}
           disabled={voiceLive ? false : !on || sending || voiceBusy}
-          onClick={() => V.press()}
+          onClick={() => { if (voiceJob.current) V.press(voiceJob.current) }}
           // Pressing it must not take the focus off the box somebody is typing
           // in; the click still lands.
           onMouseDown={(e) => e.preventDefault()}
@@ -642,7 +674,7 @@ export function Composer({
         >
           {sending ? T.webSending : T.webSend}
         </button>
-      </div>
+      </ComposerBox>
       <input
         ref={pick}
         id="pick"

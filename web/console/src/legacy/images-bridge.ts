@@ -152,8 +152,9 @@ function imageLightbox(): Lightbox {
 }
 
 /** `hydrateArtifactImages`: give each fresh tile its state, its listeners and its source. */
-function hydrate(tiles: HTMLElement[], queue: (ArtifactRef | undefined)[], session: string | undefined): void {
-  const source = carried
+function hydrate(tiles: HTMLElement[], queue: (ArtifactRef | undefined)[], session: string | undefined,
+  selected?: PictureSource): void {
+  const source = selected ?? carried
   for (const tile of tiles) {
     const artifact = queue[Number(tile.dataset.artifactSlot)]
     connectArtifactTile(tile, artifact, {
@@ -181,6 +182,8 @@ function hydrate(tiles: HTMLElement[], queue: (ArtifactRef | undefined)[], sessi
 export class ArtifactTiles {
   private connected = new Set<HTMLElement>()
 
+  constructor(private readonly source?: PictureSource) {}
+
   settle(box: HTMLElement | null, queue: (ArtifactRef | undefined)[], session?: string): void {
     if (!box) return
     const now = Array.from(box.querySelectorAll<HTMLElement>("[data-artifact-slot]"))
@@ -193,7 +196,7 @@ export class ArtifactTiles {
     }
     const result = reconcileArtifactTiles(gone, fresh, queue, { activeElement: document.activeElement })
     for (const tile of result.reused) this.connected.add(tile)
-    hydrate(result.fresh, queue, session)
+    hydrate(result.fresh, queue, session, this.source)
     for (const tile of result.fresh) this.connected.add(tile)
     result.restoreFocus()
   }

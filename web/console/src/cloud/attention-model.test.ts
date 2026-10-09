@@ -96,7 +96,9 @@ test("list adapter preserves gaps and does not classify generic attention as a s
   assert.equal(denied.sessions, null)
   const gap = fromListProjection(descriptor, { phase: "settled", value: { kind: "unavailable", reason: "event_gap", observedAt: NOW, rows: [row] } })
   assert.equal(gap.freshness, "stale")
-  assert.equal(gap.sessions, null)
+  assert.equal(gap.sessions?.[0].freshness, "stale")
+  assert.equal(gap.observedAt, NOW)
+  assert.match(gap.gap!, /event_gap/)
 })
 
 test("a generic waiting state and missing no-activity policy cannot become live facts", () => {

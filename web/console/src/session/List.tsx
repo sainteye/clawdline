@@ -1,10 +1,10 @@
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithRef } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
-import { sessionMark, sessionName } from "../brand-mark.js"
+import { BRAND_MARK, sessionMark, sessionName } from "../brand-mark.js"
 import { requestConfirm } from "../overlays/events.js"
 import { ACTION_WIDTH, actionWidth, archivable, revealFor, swipes, type Reveal } from "./swipe.js"
 import { conversationNotStarted } from "./readiness.js"
@@ -14,6 +14,38 @@ import { usePersonas } from "./PersonaBot.js"
 import "./list-density.css"
 import "./list-tree.css"
 import "./swipe-archive.css"
+
+/** The same selectable list-row frame serves a local row and a light Cloud status row. */
+export function SessionRowLayout({ children, className, ...props }: ComponentPropsWithRef<"li">) {
+  return <li {...props} className={["row", className].filter(Boolean).join(" ")}>{children}</li>
+}
+
+/** Status-only rows keep the original list structure without inventing rich Session content. */
+export function ProjectedRow({ title, sessionID, machineName, platform, assistant, backend, state,
+  freshness, observedAt, attention, open, selectionKey, onOpen }: {
+  title: string; sessionID: string; machineName: string; platform: string
+  assistant?: "claude" | "codex"; backend?: "tmux" | "iterm" | "ps"
+  state: string; freshness: string; observedAt: string; attention: boolean; open: boolean
+  selectionKey: string; onOpen: (element: HTMLLIElement) => void
+}) {
+  const ref = useRef<HTMLLIElement>(null)
+  const activate = () => { if (ref.current) onOpen(ref.current) }
+  return <SessionRowLayout ref={ref} role="option" tabIndex={0} data-selection-key={selectionKey}
+    data-state={state} data-attention={attention ? "open" : undefined}
+    aria-selected={open ? "true" : "false"} aria-label={`${title}, ${machineName}, ${state}, ${freshness}`}
+    className={open ? "open projected-row" : "projected-row"}
+    onClick={activate} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault(); activate()
+    } }}>
+    <Mark icon={BRAND_MARK} cellPx={4} />
+    <div className="title"><span className="label">{title}</span>
+      {assistant && <span className="who" dangerouslySetInnerHTML={{ __html: L.whoHTML(assistant) }} />}</div>
+    <div className="meta"><span className="path">{machineName} · {platform}</span>
+      <span className="tty">{backend || sessionID}</span></div>
+    <div className="state"><span>{state}</span><span className="session-activity">{observedAt} · {freshness}</span>
+      {attention && <span className="session-attention"><span className="session-attention-dot" /></span>}</div>
+  </SessionRowLayout>
+}
 
 export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: number; id?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -339,9 +371,8 @@ export function Row({
   // draws nothing.
   const role = rowPersonaLine(usePersonas(), row.persona)
   return (
-    <li
+    <SessionRowLayout
       ref={ref}
-      className="row"
       role="option"
       tabIndex={-1}
       data-id={row.id}
@@ -442,7 +473,7 @@ export function Row({
       >
         <span className="word">{reveal.word}</span>
       </button>
-    </li>
+    </SessionRowLayout>
   )
 }
 

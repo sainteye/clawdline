@@ -40,7 +40,8 @@ export interface ActionContext {
   destination: ActionDestination
   machine: { id: string; name: string; freshness: "current" | "stale" | "unknown" }
   row: { destination: ActionDestination; freshness: "current" | "stale" | "unknown"; observedAt?: number; closeBlocked?: boolean }
-  content: { kind: string; reason?: string; question?: {
+  content: { kind: string; reason?: string; entries?: readonly { role: string; text: string; at?: number }[];
+    info?: { assistant?: string }; question?: {
     text?: string; fingerprint: string; options: readonly { key: string; label: string }[]; observedAt: number
   } | null } | null
 }
@@ -55,12 +56,15 @@ export interface ActionProjection {
 
 export interface ActionSource {
   readMachine(machineID: string, signal: AbortSignal): Promise<ActionProjection>
+  readSkills?(destination: ActionDestination, signal: AbortSignal): Promise<import("@clawdline/contract").AssistantSkill[]>
   subscribe?(listener: (event: { machineID: string }) => void): () => void
 }
 
 export interface PinnedClient {
   deviceID: string | null
   allowWrites?: boolean
+  voice?(audio: string, rate: number): Promise<{ text?: string; ms?: number }>
+  setVoiceHost?(machine: string): Promise<unknown>
   viewerVerified?: ReadonlyMap<string, unknown>
   machines(): Promise<{ machines: readonly { id: string; freshness: "current" | "stale" | "unknown";
     pairing: string; observedAt?: number | null }[] }>
@@ -76,6 +80,7 @@ export interface ActionStore {
 
 export interface ActionInput {
   text?: string
+  images?: readonly string[]
   answer?: string
   expect?: string
 }
@@ -247,7 +252,8 @@ export class PinnedSessionActions {
   }
 
   async perform(context: ActionContext, action: Action, input: ActionInput): Promise<ActionRecord> {
-    const bytes = new TextEncoder().encode(JSON.stringify([action, input.text?.trim() ?? "", input.answer ?? "", input.expect ?? ""]))
+    const bytes = new TextEncoder().encode(JSON.stringify([action, input.text?.trim() ?? "", input.images ?? [],
+      input.answer ?? "", input.expect ?? ""]))
     const digest = await crypto.subtle.digest("SHA-256", bytes)
     const payloadFingerprint = Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("")
     const existing = this.load(context, action)
@@ -257,7 +263,9 @@ export class PinnedSessionActions {
     }
     const problem = await this.availability(context, action)
     if (problem) throw Object.assign(new Error(problem), { code: problem })
-    if (action === "send" && !input.text?.trim()) throw Object.assign(new Error("empty"), { code: "empty" })
+    if (action === "send" && !input.text?.trim() && !input.images?.length) {
+      throw Object.assign(new Error("empty"), { code: "empty" })
+    }
     const question = context.content?.question
     if (action === "answer" && (!question || !input.answer || !input.expect || !fingerprint.test(input.expect) ||
       input.expect !== question.fingerprint || !question.options.some((option) => option.key === input.answer))) {
@@ -271,7 +279,7 @@ export class PinnedSessionActions {
     try { this.save(record) } catch { throw Object.assign(new Error("storage_unavailable"), { code: "storage_unavailable" }) }
     const identity = { machine: record.destination.machineID, session: record.destination.sessionID }
     const body: Record<string, unknown> = { request: record.request, execution_generation: record.destination.executionGeneration }
-    if (action === "send") Object.assign(body, { text: input.text!.trim(), images: [] })
+    if (action === "send") Object.assign(body, { text: input.text?.trim() ?? "", images: input.images ?? [] })
     if (action === "answer") Object.assign(body, { answer: input.answer, expect: input.expect })
     if (action === "end") Object.assign(body, { accept_loss: false, expected_closeability_version: "" })
     try {

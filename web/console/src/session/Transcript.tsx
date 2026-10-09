@@ -23,7 +23,7 @@ import type {
 import { client } from "../client.js"
 import { usePoll } from "../useFleet.js"
 import * as L from "../legacy/bridge.js"
-import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images-bridge.js"
+import { ArtifactTiles, artifactTilesHTML, artifactsKey, type PictureSource } from "../legacy/images-bridge.js"
 import { byteWords, nextWord } from "../next-strings.js"
 import type { PendingSend } from "./pending.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
@@ -443,16 +443,6 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
       else next[key] = !open
       return next
     })
-  const blocks = blocksOf(entries.filter(worthDrawing), session?.state === "working")
-  // Slots are handed out in the order the blocks are drawn, which is the
-  // original's: it reverses the blocks before rendering them.
-  const slots = new Map<Entry, number>()
-  for (const block of newestFirst ? [...blocks].reverse() : blocks) {
-    const e = block.rows[0]
-    if (block.kind !== "entry" || !showsPictures(who, e)) continue
-    slots.set(e, queue.current.length)
-    queue.current.push(...(e.artifacts ?? []))
-  }
   const view: View = {
     who,
     expanded,
@@ -461,22 +451,9 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
     agents: session?.agents ?? [],
     onAgent,
     icons,
-    slots,
+    slots: new Map(),
   }
-
-  let at = 0
-  const drawn = blocks.map((block) => {
-    const start = at
-    at += block.rows.length
-    if (block.kind === "run") return runHTML(view, block.rows, block.live, start)
-    if (block.kind === "explored") return exploredRunHTML(view, block.rows, start)
-    if (block.kind === "ask") return [askHTML(view, block.rows[0], start)]
-    return [entryHTML(view, block.rows[0], start)]
-  })
-  // Reversed a block at a time, so a run of calls stays one thing in its own
-  // order whichever way round the transcript is read. Keys are counted from
-  // the oldest entry either way, so turning it over moves rows, not rebuilds them.
-  if (newestFirst) drawn.reverse()
+  const drawn = drawTranscriptEntries(entries, session?.state === "working", newestFirst, view, queue.current)
   // The oldest end offers another page when the daemon names a cursor. Older
   // daemons still show the diagnostic cut note rather than a dead control.
   const cut = olderControl ?? (!earlier && cutNote(data))
@@ -493,6 +470,73 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
       {!newestFirst && jumpDrawn}
     </>
   )
+}
+
+/** The original conversation renderer, shared by local and pinned Cloud reads. */
+function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boolean, newestFirst: boolean,
+  view: View, pictures?: NonNullable<TranscriptEntry["artifacts"]>): ReactElement[] {
+  const blocks = blocksOf(entries.map((entry) => ({ ...entry })).filter(worthDrawing), working)
+  // Both local and pinned Cloud readers resolve the same artifact slots through
+  // their respective picture source after the shared entry markup is drawn.
+  if (pictures) {
+    for (const block of newestFirst ? [...blocks].reverse() : blocks) {
+      const entry = block.rows[0]
+      if (block.kind !== "entry" || !showsPictures(view.who, entry)) continue
+      view.slots.set(entry, pictures.length)
+      pictures.push(...(entry.artifacts ?? []))
+    }
+  }
+  let at = 0
+  const drawn = blocks.map((block) => {
+    const start = at
+    at += block.rows.length
+    if (block.kind === "run") return runHTML(view, block.rows, block.live, start)
+    if (block.kind === "explored") return exploredRunHTML(view, block.rows, start)
+    if (block.kind === "ask") return [askHTML(view, block.rows[0], start)]
+    return [entryHTML(view, block.rows[0], start)]
+  })
+  if (newestFirst) drawn.reverse()
+  return drawn.flat()
+}
+
+/** Render a pinned machine's transcript with the same blocks as the local Session. */
+export function TranscriptEntries({ entries, assistant, working = false, pictureSource, sessionID }: {
+  entries: readonly TranscriptEntry[]
+  assistant?: string
+  working?: boolean
+  pictureSource?: PictureSource
+  sessionID?: string
+}) {
+  const tiles = useRef<ArtifactTiles | null>(null)
+  const box = useRef<HTMLDivElement | null>(null)
+  const latestPictureSource = useRef(pictureSource)
+  latestPictureSource.current = pictureSource
+  const queue = useRef<NonNullable<TranscriptEntry["artifacts"]>>([])
+  tiles.current ??= new ArtifactTiles((artifact, session) => latestPictureSource.current
+    ? latestPictureSource.current(artifact, session)
+    : Promise.reject(Object.assign(new Error("No image reader"), { code: "read_failed" })))
+  queue.current = []
+  useLayoutEffect(() => { tiles.current?.settle(box.current, queue.current, sessionID) })
+  useEffect(() => () => tiles.current?.release(), [])
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const newestFirst = useSyncExternalStore(L.subscribeSettings, L.settingsNewestFirst)
+  const icons = useSyncExternalStore(L.subscribeSettings, L.settingsAssistantIcons)
+  const T = L.strings
+  const toggle: Toggle = (key, defaultOpen = false) => setExpanded((was) => {
+    const open = defaultOpen ? was[key] !== false : !!was[key]
+    const next = { ...was }
+    if (!defaultOpen && open) delete next[key]
+    else next[key] = !open
+    return next
+  })
+  const view: View = {
+    who: { user: T.webWhoYou, assistant: L.assistantDisplayName(assistant), error: L.assistantDisplayName(assistant),
+      agent: T.webAgents, peer: "Claude ↔", message: "Clawdline ↔", notice: "Clawdline", tool: T.webWhoTool },
+    expanded, toggle, assistant, agents: [], onAgent: undefined, icons, slots: new Map(),
+  }
+  return <div className="tx cloud-all-transcript" ref={box}>
+    {drawTranscriptEntries(entries, working, newestFirst, view, queue.current)}
+  </div>
 }
 
 /**
@@ -721,16 +765,19 @@ function pendingHTML(card: PendingSend): ReactElement {
       esc(card.state === "accepted" ? T.webPromptAccepted : T.webSending) +
       "</span></div>"
   }
-  const at = Math.floor(card.sentAt / 1000)
-  return (
-    <div className="entry pending" data-role="user" data-send={card.state} key={"pending:" + card.token}>
-      <div className="who">
-        <span className="speaker">{T.webWhoYou}</span>
-        <time data-at={at}>{L.clock(at)}</time>
-      </div>
-      <div className="body" onClick={pendingAction} dangerouslySetInnerHTML={{ __html: body }} />
-    </div>
-  )
+  return <PendingTurnFrame state={card.state} sentAt={card.sentAt} bodyHTML={body} onClick={pendingAction}
+    key={"pending:" + card.token} />
+}
+
+/** The same user-turn frame for local pending sends and pinned Cloud receipts. */
+export function PendingTurnFrame({ state, sentAt, bodyHTML, onClick }: {
+  state: string; sentAt: number; bodyHTML: string; onClick?: (event: MouseEvent<HTMLElement>) => void
+}) {
+  const at = Math.floor(sentAt / 1000)
+  return <div className="entry pending" data-role="user" data-send={state}>
+    <div className="who"><span className="speaker">{L.strings.webWhoYou}</span><time data-at={at}>{L.clock(at)}</time></div>
+    <div className="body" onClick={onClick} dangerouslySetInnerHTML={{ __html: bodyHTML }} />
+  </div>
 }
 
 /** Why the last Enter on an unsubmitted card did not go, or may not have. */

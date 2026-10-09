@@ -1,4 +1,6 @@
 import { channelSegment } from "../legacy/js/net/client.js"
+import type { AssistantSkill, TranscriptEntry } from "@clawdline/contract"
+import type { ArtifactRef } from "../legacy/images-bridge.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { menuFingerprint } from "../session/fingerprint.ts"
 import type { MachineSessionProjection, SessionContent, SessionDestination, SessionOlderPage,
@@ -25,6 +27,8 @@ type StatusClient = CloudClientHandle & {
   infoForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
   transcriptForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
   transcriptPageForGeneration?(destination: SessionDestination, before: number, signal: AbortSignal): Promise<unknown>
+  skillsForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
+  imageForGeneration?(destination: SessionDestination, id: string, signal: AbortSignal): Promise<unknown>
 }
 
 function channels(destination: SessionDestination): string[] {
@@ -35,7 +39,7 @@ function channels(destination: SessionDestination): string[] {
 type Question = Extract<SessionContent, { kind: "ready" }>["question"]
 
 function transcriptPage(reply: unknown, sessionID: string, before?: number):
-  { entries: { speaker: string; text: string }[]; nextBefore?: number } | null {
+  { entries: TranscriptEntry[]; nextBefore?: number } | null {
   const page = record(reply)
   if (!page || !Array.isArray(page.entries) ||
     (page.id !== undefined && page.id !== sessionID) ||
@@ -43,7 +47,9 @@ function transcriptPage(reply: unknown, sessionID: string, before?: number):
       (before !== undefined && Number(page.nextBefore) >= before)))) return null
   const entries = page.entries.map((entry: unknown) => record(entry))
   if (entries.some((entry) => !entry || typeof entry.role !== "string" || typeof entry.text !== "string")) return null
-  return { entries: entries.map((entry) => ({ speaker: String(entry!.role), text: String(entry!.text) })),
+  // The pinned r/ reply uses the same TranscriptEntry wire as the local reader.
+  // Keep its structured cards and Unix-second timestamps for the shared renderer.
+  return { entries: entries as unknown as TranscriptEntry[],
     nextBefore: page.nextBefore === undefined ? undefined : Number(page.nextBefore) }
 }
 
@@ -51,6 +57,13 @@ function supportsPinnedRead(client: StatusClient, machineID: string, nowMs = Dat
   const capability = record(client.readContentCapabilities?.get(machineID))
   return capability?.supported === true && Number.isFinite(capability?.at) &&
     Math.abs(nowMs - Number(capability!.at) * 1000) <= STATUS_FRESH_MS
+}
+
+function retainedStatus(reading: MachineSessionProjection, reason: "offline" | "stale", retryAt?: number): MachineSessionProjection {
+  return { kind: "unavailable", reason, observedAt: reading.observedAt,
+    rows: reading.rows?.map((row) => ({ ...row, freshness: "stale" })),
+    complete: reading.kind === "ready" ? true : reading.complete,
+    snapshotGeneration: reading.snapshotGeneration, unknownTargets: reading.unknownTargets, retryAt }
 }
 
 /** Rich rows are visible only after an exact s/ subscription and must name the same execution. */
@@ -87,6 +100,8 @@ export function statusSource(current: () => StatusClient | null): SessionProject
   let attemptedClient: StatusClient | null = null
   const gapAttempts = new Map<string, { generation: string; sessions: Set<string> }>()
   const opened = new Map<string, StatusClient>()
+  const imageSignals = new Map<string, AbortController>()
+  const visibleArtifacts = new Map<string, Set<string>>()
   const readMachine = async (machineID: string, signal: AbortSignal): Promise<MachineSessionProjection> => {
     const client = current()
     if (!client || client.ready === false) return { kind: "unavailable", reason: "unknown" }
@@ -97,7 +112,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     const offline = client.machineOffline?.get(machineID)
     if (offline && Number.isFinite(offline.until)) {
       const now = client.now?.() ?? Date.now()
-      if (now < offline.until) return { kind: "unavailable", reason: "offline", retryAt: offline.until + 1 }
+      if (now < offline.until) return retainedStatus(statusProjection(client, machineID), "offline", offline.until + 1)
       const expired = statusProjection(client, machineID)
       return expired.kind === "unavailable" && (expired.reason === "stale" || expired.reason === "old_version") ? expired
         : { kind: "unavailable", reason: "unknown", observedAt: expired.observedAt }
@@ -123,11 +138,61 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     const answer = await client.machines()
     const machine = answer.machines.find((entry) => entry.id === machineID)
     if (!machine || machine.freshness === "unknown") return { kind: "unavailable", reason: "unknown" }
-    if (machine.freshness !== "current") return { kind: "unavailable", reason: "stale", observedAt: projection.observedAt }
+    if (machine.freshness !== "current") return retainedStatus(projection, "stale")
     return projection
   }
   return {
     readMachine,
+    async readImage(destination, artifact): Promise<{ url: string; release: () => void }> {
+      const key = destinationKey(destination)
+      const client = current()
+      const controller = imageSignals.get(key)
+      if (!client || opened.get(key) !== client || !controller || controller.signal.aborted ||
+        !client.imageForGeneration || !visibleArtifacts.get(key)?.has(artifact.id) ||
+        !supportsPinnedRead(client, destination.machineID)) {
+        throw Object.assign(new Error("Session image is unavailable"), { code: "execution_generation_changed" })
+      }
+      const before = await readMachine(destination.machineID, controller.signal)
+      if (before.kind !== "ready" || destinationAvailable(destination, before) !== "ready") {
+        throw Object.assign(new Error("Session execution changed"), { code: "execution_generation_changed" })
+      }
+      const reply = record(await client.imageForGeneration(destination, artifact.id, controller.signal))
+      const after = await readMachine(destination.machineID, controller.signal)
+      if (controller.signal.aborted || opened.get(key) !== client || after.kind !== "ready" ||
+        destinationAvailable(destination, after) !== "ready" || !supportsPinnedRead(client, destination.machineID)) {
+        throw Object.assign(new Error("Session execution changed"), { code: "execution_generation_changed" })
+      }
+      if (!reply || reply.id !== artifact.id || (reply.media_type !== "image/png" && reply.media_type !== "image/jpeg") ||
+        !Number.isSafeInteger(reply.byte_count) || Number(reply.byte_count) < 1 || typeof reply.data !== "string") {
+        throw Object.assign(new Error("Invalid image answer"), { code: "malformed_reply" })
+      }
+      const raw = atob(reply.data)
+      if (raw.length !== reply.byte_count) throw Object.assign(new Error("Invalid image bytes"), { code: "malformed_reply" })
+      const bytes = new Uint8Array(raw.length)
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
+      const url = URL.createObjectURL(new Blob([bytes], { type: reply.media_type }))
+      return { url, release: () => URL.revokeObjectURL(url) }
+    },
+    async readSkills(destination, signal): Promise<AssistantSkill[]> {
+      const client = current()
+      if (!client || opened.get(destinationKey(destination)) !== client || !client.skillsForGeneration || signal.aborted ||
+        !supportsPinnedRead(client, destination.machineID)) throw Object.assign(new Error("Session skills are unavailable"), { code: "old_version" })
+      const before = await readMachine(destination.machineID, signal)
+      if (before.kind !== "ready" || destinationAvailable(destination, before) !== "ready") {
+        throw Object.assign(new Error("Session execution changed"), { code: "execution_generation_changed" })
+      }
+      const reply = record(await client.skillsForGeneration(destination, signal))
+      const after = await readMachine(destination.machineID, signal)
+      if (signal.aborted || opened.get(destinationKey(destination)) !== client || after.kind !== "ready" ||
+        destinationAvailable(destination, after) !== "ready" || !supportsPinnedRead(client, destination.machineID)) {
+        throw Object.assign(new Error("Session execution changed"), { code: "execution_generation_changed" })
+      }
+      if (!Array.isArray(reply?.skills) || reply.skills.some((item: unknown) => {
+        const skill = record(item)
+        return !skill || typeof skill.name !== "string" || typeof skill.description !== "string" || typeof skill.source !== "string"
+      })) throw Object.assign(new Error("Invalid Session skills"), { code: "malformed_reply" })
+      return reply.skills as AssistantSkill[]
+    },
     async readQuestion(destination, signal) {
       const client = current()
       if (!client || signal.aborted) return null
@@ -170,9 +235,17 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         return { kind: "unavailable", reason: "old_version" }
       }
       const pinned = channels(destination)
-      client.openDetail(destination)
-      client.subscribe(pinned)
-      opened.set(destinationKey(destination), client)
+      const key = destinationKey(destination)
+      // Rich-row changes reread the already opened destination. Keep its exact
+      // subscription in place so a retained s/ replay cannot trigger a loop.
+      if (opened.get(key) !== client) {
+        client.openDetail(destination)
+        client.subscribe(pinned)
+        opened.set(key, client)
+        imageSignals.get(key)?.abort()
+        imageSignals.set(key, new AbortController())
+        visibleArtifacts.delete(key)
+      }
       if (signal.aborted) return { kind: "unavailable", reason: "unknown" }
       try {
         const infoReply = record(await client.infoForGeneration(destination, signal))
@@ -189,6 +262,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         if (afterTranscript !== "ready") return { kind: "unavailable", reason: afterTranscript === "waiting" ? "unknown" : afterTranscript }
         const page = transcriptPage(reply, destination.sessionID)
         if (!page) return { kind: "unavailable", reason: "unknown" }
+        visibleArtifacts.set(key, new Set(page.entries.flatMap((entry) => entry.artifacts?.map((artifact) => artifact.id) ?? [])))
         const session = record(record(infoReply.info)?.session)
         return { kind: "ready", destination, observedAt: Date.now(),
           info: { title: typeof session?.title === "string" ? session.title : undefined,
@@ -222,6 +296,9 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         if (still !== "ready") return { kind: "unavailable", reason: still === "waiting" ? "unknown" : still }
         if (!supportsPinnedRead(client, destination.machineID)) return { kind: "unavailable", reason: "old_version" }
         const page = transcriptPage(reply, destination.sessionID, before)
+        if (page) for (const entry of page.entries) for (const artifact of entry.artifacts ?? []) {
+          visibleArtifacts.get(destinationKey(destination))?.add(artifact.id)
+        }
         return page ? { kind: "ready", destination, before, ...page } : { kind: "unavailable", reason: "unknown" }
       } catch (error) {
         return { kind: "unavailable", reason: olderFailure(error) }
@@ -231,6 +308,9 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       const key = destinationKey(destination)
       const client = opened.get(key) || current()
       opened.delete(key)
+      imageSignals.get(key)?.abort()
+      imageSignals.delete(key)
+      visibleArtifacts.delete(key)
       client?.closeDetail?.(destination)
       client?.unsubscribe?.(channels(destination))
     },

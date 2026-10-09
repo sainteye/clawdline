@@ -118,6 +118,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/cloud/viewer/skills",
+      "guide": "cloud"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/cloud/viewer/status",
       "guide": "cloud"
     },

@@ -11,14 +11,14 @@ export type AttentionReading =
 const ui = {
   en: { loading: "Reading machine status…", error: "Machine status could not be read.", retry: "Retry",
     machine: "Machine", machineID: "Machine ID", sessionID: "Session ID", platform: "Platform", state: "Session state", freshness: "Freshness", kind: "Attention type",
-    all: "All", known: "known items", unknown: "machines with incomplete status", empty: "No matching known items.",
+    all: "All", known: "known items", unknown: "machines with incomplete status", empty: "No matching known items.", filters: "Filter attention items",
     report: "Show manager report", hide: "Hide manager report", copy: "Copy report", copying: "Copying…", copied: "Report copied.", copyFailed: "Could not copy the report. Select the text below to copy it.",
-    open: "Open Session", observed: "Observed", generation: "Snapshot generation", gap: "Gap", next: "Next step", unavailable: "Unavailable", source: "Source", coverage: "Machine coverage" },
+    open: "Open Session", observed: "Observed", generation: "Snapshot generation", gap: "Gap", next: "Next step", unavailable: "Unavailable", source: "Source", coverage: "Machine coverage", evidence: "Evidence and gaps" },
   "zh-Hant-TW": { loading: "正在讀取機器狀態…", error: "無法讀取機器狀態。", retry: "重試",
     machine: "機器", machineID: "機器 ID", sessionID: "Session ID", platform: "平台", state: "Session 狀態", freshness: "新鮮度", kind: "注意類別",
-    all: "全部", known: "個已知待處理項目", unknown: "台機器資料不完整", empty: "沒有符合篩選條件的已知項目。",
+    all: "全部", known: "個已知待處理項目", unknown: "台機器資料不完整", empty: "沒有符合篩選條件的已知項目。", filters: "篩選待處理項目",
     report: "顯示管理者報告", hide: "隱藏管理者報告", copy: "複製報告", copying: "複製中…", copied: "報告已複製。", copyFailed: "無法複製報告；可選取下方文字複製。",
-    open: "開啟 Session", observed: "觀察時間", generation: "快照世代", gap: "資料缺口", next: "下一步", unavailable: "無法使用", source: "來源", coverage: "機器涵蓋範圍" },
+    open: "開啟 Session", observed: "觀察時間", generation: "快照世代", gap: "資料缺口", next: "下一步", unavailable: "無法使用", source: "來源", coverage: "機器涵蓋範圍", evidence: "依據與缺口" },
 } as const
 
 const kinds: AttentionKind[] = ["reply", "blocked", "failed", "no_progress", "unconfirmed", "offline"]
@@ -61,6 +61,7 @@ export function AttentionOverview({ reading, locale, onOpen, onRetry }: {
           <small>{w.completeness}: {machine.completeness === "complete" ? w.complete : machine.completeness === "partial" ? w.partial : w.unknownComplete} · {t.gap}: {machineGap(machine, locale)}</small>
         </li>)}</ul>
       </details>
+      <details className="attention-filter-disclosure"><summary>{t.filters}</summary>
       <div className="attention-filters">
         <label>{t.machine}{options(overview.machines.map((m) => m.machine_id), filter.machine, (machine) => setFilter((f) => ({ ...f, machine })), (id) => `${overview.machines.find((m) => m.machine_id === id)?.name ?? id} · ${id}`)}</label>
         <label>{t.platform}{options([...new Set(overview.machines.map((m) => m.platform))], filter.platform, (platform) => setFilter((f) => ({ ...f, platform })), (value) => value)}</label>
@@ -68,16 +69,19 @@ export function AttentionOverview({ reading, locale, onOpen, onRetry }: {
         <label>{t.freshness}{options(freshnesses, filter.freshness, (freshness) => setFilter((f) => ({ ...f, freshness: freshness as Freshness })), (value) => value === "stale" ? w.stale : value === "offline" ? w.offline : value === "unknown" ? w.unknownFresh : w.current)}</label>
         <label>{t.kind}{options(kinds, filter.kind, (kind) => setFilter((f) => ({ ...f, kind: kind as AttentionKind })), (value) => attentionKindWord(value as AttentionKind, locale))}</label>
       </div>
-      {matches.length === 0 && <p>{overview.entries.length === 0 && overview.complete ? w.noItems : t.empty}</p>}
+      </details>
+      {matches.length === 0 && <p>{overview.entries.length === 0 ? w.noItems : t.empty}</p>}
       <ul className="attention-items">
         {matches.map((entry) => <li key={`${entry.kind}:${entry.session ? targetKey(entry.session.target) : entry.machine.machine_id}`}>
           <strong>{attentionKindWord(entry.kind, locale)}</strong>
           <span>{entry.machine.name} · {entry.machine.platform}</span>
           {entry.session && <span>{entry.session.title || entry.session.target.session_id}</span>}
-          <small>{t.machineID}: {entry.machine.machine_id}{entry.session && ` · ${t.sessionID}: ${entry.session.target.session_id}`}</small>
-          <small>{t.source}: ss/{entry.machine.machine_id} · {t.observed}: {entry.machine.observedAt === null ? w.unknown : new Date(entry.machine.observedAt).toLocaleString(locale)} · {t.generation}: {entry.machine.snapshotGeneration ?? w.unknown} · {entry.evidence === "retained" ? w.stale : entry.evidence === "unknown" ? w.unknownFresh : freshnessWord(entry.machine, locale)}</small>
-          <small>{t.gap}: {machineGap(entry.machine, locale)} · {t.next}: {nextStep(entry.machine, entry.session, locale)}</small>
           {entry.session && onOpen && entry.machine.access === "readable" && entry.evidence === "current" && <button type="button" onClick={() => onOpen(entry.session!.target)}>{t.open}</button>}
+          <details className="attention-item-evidence"><summary>{t.evidence}</summary>
+            <small>{t.machineID}: {entry.machine.machine_id}{entry.session && ` · ${t.sessionID}: ${entry.session.target.session_id}`}</small>
+            <small>{t.source}: ss/{entry.machine.machine_id} · {t.observed}: {entry.machine.observedAt === null ? w.unknown : new Date(entry.machine.observedAt).toLocaleString(locale)} · {t.generation}: {entry.machine.snapshotGeneration ?? w.unknown} · {entry.evidence === "retained" ? w.stale : entry.evidence === "unknown" ? w.unknownFresh : freshnessWord(entry.machine, locale)}</small>
+            <small>{t.gap}: {machineGap(entry.machine, locale)} · {t.next}: {nextStep(entry.machine, entry.session, locale)}</small>
+          </details>
         </li>)}
       </ul>
       <div className="attention-report-controls">

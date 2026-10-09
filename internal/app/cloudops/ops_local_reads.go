@@ -8,6 +8,29 @@ func init() {
 	register(
 		// MARK: reads with a local capability
 
+		op{name: "skills", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.hasOneOf([]string{"type", "session"},
+					[]string{"type", "session", "expected_generation"}) {
+					return plan{}, false
+				}
+				p, ok := sessionPlan(b, "skills")
+				if !ok {
+					return plan{}, false
+				}
+				if raw, named := b["expected_generation"]; named {
+					generation, valid := raw.(string)
+					if !valid || !executionGenerationValid(generation) {
+						return plan{}, false
+					}
+					p.executionGeneration = generation
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/sessions/" + segment(p.target) + "/skills"}
+			}},
+
 		op{name: "transcript", read: true,
 			divergence: "`priority` is accepted and dropped: this daemon reads a transcript on " +
 				"one lane, so a foreground read is not overtaken by a background one",
@@ -159,7 +182,8 @@ func init() {
 
 		op{name: "image", read: true, shape: shapeImage,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "id") {
+				if !b.hasOneOf([]string{"type", "session", "id"},
+					[]string{"type", "session", "id", "expected_generation"}) {
 					return plan{}, false
 				}
 				// The id is the opaque one the transcript already published,
@@ -178,10 +202,18 @@ func init() {
 					return plan{}, false
 				}
 				p.id = id
+				if raw, named := b["expected_generation"]; named {
+					generation, valid := raw.(string)
+					if !valid || !executionGenerationValid(generation) {
+						return plan{}, false
+					}
+					p.executionGeneration = generation
+				}
 				return p, true
 			},
 			route: func(p plan) LocalRequest {
-				return LocalRequest{Method: "GET", Path: "/v1/artifacts/images/" + segment(p.id)}
+				return LocalRequest{Method: "GET", Path: "/v1/artifacts/images/" + segment(p.id),
+					Query: map[string]string{"session": p.target}}
 			}},
 
 		op{name: "documents", read: true, shape: shapeDocuments,

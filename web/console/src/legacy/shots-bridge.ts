@@ -169,6 +169,14 @@ export const Shots = {
     list = []
     draw()
   },
+  /** Return a rejected remote send's already-shrunk pictures to its composer. */
+  restore(urls: readonly string[]): boolean {
+    if (urls.length > MAX_COUNT || urls.some((url) => !url.startsWith("data:image/") || url.length > MAX_EACH) ||
+      urls.reduce((sum, url) => sum + url.length, 0) > MAX_TOTAL) return false
+    list = urls.map((url) => ({ id: ++seq, url, name: "picture" }))
+    draw()
+    return true
+  },
   /** The `#shots` click handler's half: the picture with this `data-shot` goes. */
   remove(id: string): void {
     list = list.filter((shot) => String(shot.id) !== id)

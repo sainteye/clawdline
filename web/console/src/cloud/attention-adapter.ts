@@ -24,7 +24,8 @@ export interface ListSession {
 }
 export type ListProjection =
   | { kind: "ready"; complete: true; observedAt: number; rows: ListSession[]; unknownTargets?: number; snapshotGeneration?: string }
-  | { kind: "unavailable"; reason: "offline" | "stale" | "unknown" | "old_version" | "no_permission" | "unresponsive" | "event_gap" | "bad_projection"; observedAt?: number; rows?: ListSession[] }
+  | { kind: "unavailable"; reason: "offline" | "stale" | "unknown" | "old_version" | "no_permission" | "unresponsive" | "event_gap" | "bad_projection"; observedAt?: number; rows?: ListSession[];
+      complete?: true; snapshotGeneration?: string; unknownTargets?: number }
 export type ListReading = { phase: "loading" } | { phase: "settled"; value: ListProjection }
 
 const knownStates = new Set<SessionState>(["working", "waiting", "blocked", "failed", "completed", "idle", "unknown"])
@@ -33,12 +34,13 @@ const knownStates = new Set<SessionState>(["working", "waiting", "blocked", "fai
 export function fromListProjection(machine: ListMachine, reading: ListReading | undefined): MachineStatusSnapshot {
   const result = reading?.phase === "settled" ? reading.value : null
   const reason = result?.kind === "unavailable" ? result.reason : null
-  const rows = result?.kind === "ready" ? result.rows : null
+  const rows = result?.rows ?? null
   const sessions: StatusSession[] | null = rows?.map((row) => ({
     target: { machine_id: row.destination.machineID, session_id: row.destination.sessionID, execution_generation: row.destination.executionGeneration },
     title: row.title,
     state: knownStates.has(row.state as SessionState) ? row.state as SessionState : "unknown",
-    freshness: row.freshness,
+    freshness: reason || machine.freshness === "stale" ? "stale" :
+      machine.freshness === "unknown" ? "unknown" : row.freshness,
     source: { provenance: row.sourceProvenance ?? null, observedAt: row.observedAt,
       inventoryComplete: row.inventoryComplete ?? (result?.kind === "ready" ? result.complete : null),
       snapshotGeneration: row.snapshotGeneration ?? null },
@@ -51,13 +53,13 @@ export function fromListProjection(machine: ListMachine, reading: ListReading | 
   const policyValues = rows?.map((row) => row.noProgressAfterMs).filter((n): n is number =>
     typeof n === "number" && Number.isFinite(n) && n > 0) ?? []
   const policy = policyValues.length === rows?.length && new Set(policyValues).size === 1 ? policyValues[0] : null
-  const snapshotGeneration = result?.kind === "ready" ? result.snapshotGeneration ??
-    (rows?.length && rows.every((row) => row.snapshotGeneration === rows[0].snapshotGeneration) ? rows[0].snapshotGeneration : undefined) ?? null : null
+  const snapshotGeneration = result?.snapshotGeneration ??
+    (rows?.length && rows.every((row) => row.snapshotGeneration === rows[0].snapshotGeneration) ? rows[0].snapshotGeneration : undefined) ?? null
   const gaps = [
     reason ?? (!result ? "snapshot_pending" : null),
     result?.kind === "ready" && !snapshotGeneration ? "snapshot_generation_unavailable" : null,
     rows?.some((row) => !row.snapshotGeneration || !row.sourceProvenance || row.inventoryComplete === false) ? "session_source_incomplete" : null,
-    result?.kind === "ready" && result.unknownTargets ? "session_target_unavailable" : null,
+    result?.unknownTargets ? "session_target_unavailable" : null,
     rows?.some((row) => row.needsAttention && !row.completedUnconfirmed && !row.closeBlocked && !row.failedAgentCount) ? "attention_kind_unavailable" : null,
     rows?.some((row) => row.state === "waiting" && row.waitingForReply !== true) ? "reply_signal_unavailable" : null,
     rows?.some((row) => row.freshness !== "current") ? "session_freshness_incomplete" : null,
@@ -70,7 +72,7 @@ export function fromListProjection(machine: ListMachine, reading: ListReading | 
     access: reason === "no_permission" ? "denied" : "readable",
     freshness: reason === "offline" ? "offline" : reason === "stale" || reason === "event_gap" || machine.freshness === "stale" ? "stale" :
       machine.freshness === "unknown" ? "unknown" : result?.kind === "ready" ? "current" : "unknown",
-    completeness: result?.kind === "ready" ? "complete" : "unknown",
+    completeness: result?.complete === true ? "complete" : rows ? "partial" : "unknown",
     observedAt: result?.observedAt ?? null,
     snapshotGeneration,
     noProgressAfterMs: policy,

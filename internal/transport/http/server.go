@@ -429,6 +429,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/cloud/viewer/machines"}, s.cloudViewerRoute},
 		{Route{"*", "/v1/cloud/viewer/sessions"}, s.cloudViewerRoute},
 		{Route{"*", "/v1/cloud/viewer/detail"}, s.cloudViewerRoute},
+		{Route{"*", "/v1/cloud/viewer/skills"}, s.cloudViewerRoute},
 		{Route{"*", "/v1/cloud/viewer/actions"}, s.cloudViewerRoute},
 		{Route{"*", "/v1/cloud/viewer/receipts"}, s.cloudViewerRoute},
 		// Pairing a browser with this Mac, and throwing one out again. Same rule:

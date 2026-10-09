@@ -194,10 +194,14 @@ function rowNode(id: string): HTMLElement | null {
  * light and draws both in one control (`cloud/CloudGate.tsx`) — on a phone two
  * pills beside each other left the counts no room to be read.
  */
-export default function App({ aside, cloudSessions, localViewer = false }: {
+export default function App({ aside, cloudSessions, localViewer = false, hideSessionCounts = false,
+  focusCloudSessions = false, onLeaveCloudSessions }: {
   aside?: ReactNode | ((light: ConnectionLight) => ReactNode)
   cloudSessions?: ReactNode
   localViewer?: boolean
+  hideSessionCounts?: boolean
+  focusCloudSessions?: boolean
+  onLeaveCloudSessions?: () => void
 } = {}) {
   const fleet = useFleet(client)
   const light = useConnectionLight(fleet.live, fleet.refresh)
@@ -313,6 +317,7 @@ export default function App({ aside, cloudSessions, localViewer = false }: {
     if (!document.dispatchEvent(new CustomEvent(BEFORE_PAGE_CHANGE, { cancelable: true, detail: { from: pageRef.current, to } }))) return false
     pageRef.current = to
     setPage(to)
+    if (focusCloudSessions && to !== "sessions") onLeaveCloudSessions?.()
     if (document.documentElement.classList.contains("booting")) landOnBrand.current = true
     else brandRef.current?.focus({ preventScroll: true })
     if (options?.hash !== false) {
@@ -321,6 +326,13 @@ export default function App({ aside, cloudSessions, localViewer = false }: {
     closeMenu()
     return true
   }
+
+  useEffect(() => {
+    if (!focusCloudSessions || pageRef.current === "sessions") return
+    pageRef.current = "sessions"
+    setPage("sessions")
+    closeMenu()
+  }, [focusCloudSessions])
 
   // `Pages.bind` writes the answer on the root element, and `routeTo`
   // (`input/route.js`) follows the address: once on arrival and on every
@@ -596,6 +608,13 @@ export default function App({ aside, cloudSessions, localViewer = false }: {
       return
     }
 
+    // Cloud's status list has its own rows, search and pinned destination in
+    // both scopes. The original list's shortcuts must not move a hidden row.
+    if (cloudSessions && pageRef.current === "sessions") {
+      if (key === "Escape" && menuRef.current) { ev.preventDefault(); closeMenu() }
+      return
+    }
+
     if (meta && (key === "k" || key === "K")) {
       ev.preventDefault()
       rowsEl?.focus()
@@ -752,11 +771,11 @@ export default function App({ aside, cloudSessions, localViewer = false }: {
           <canvas id="brand-mark" width={0} height={0} ref={markRef} />
           <b>clawdline</b>
         </button>
-        <Counts
+        {!hideSessionCounts && <Counts
           reading={sessionCountState(fleet)}
           recovering={!!fleet.snapshot && !fleet.snapshot.scan.complete}
           onOpen={() => setMachine(true)}
-        />
+        />}
         {typeof aside === "function" ? aside(light) : (
           <>
             {aside}

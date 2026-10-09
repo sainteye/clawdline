@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4925,
+  "englishContentKeys": 4926,
   "riskKeys": 2148,
-  "nonRiskCount": 2777,
+  "nonRiskCount": 2778,
   "groups": [
     {
       "name": "bar / other",
@@ -1638,7 +1638,7 @@
     },
     {
       "name": "next / cloud",
-      "count": 153,
+      "count": 154,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1689,6 +1689,7 @@
         "next.cloudAllMachineID",
         "next.cloudAllMachines",
         "next.cloudAllPlatform",
+        "next.cloudAllSearch",
         "next.cloudAllSessionID",
         "next.cloudAllStale",
         "next.cloudAllStaleSource",

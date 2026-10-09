@@ -182,11 +182,21 @@ func (s *Server) cloudViewerRoute(w http.ResponseWriter, r *http.Request) {
 				return client.ReadTranscriptPage(ctx, viewerDestination(r), before)
 			}
 			return client.ReadDetail(ctx, viewerDestination(r))
+		case "/v1/cloud/viewer/skills":
+			return client.ReadSkills(ctx, viewerDestination(r))
 		case "/v1/cloud/viewer/actions":
 			var input adaptercloud.ViewerMutation
+			r.Body = http.MaxBytesReader(w, r.Body, sendBodyLimit)
 			decoder := json.NewDecoder(r.Body)
 			decoder.DisallowUnknownFields()
-			if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+			if err := decoder.Decode(&input); err != nil {
+				var tooLarge *http.MaxBytesError
+				if errors.As(err, &tooLarge) {
+					return nil, adaptercloud.ViewerRefusal{Code: "image_too_large"}
+				}
+				return nil, adaptercloud.ViewerRefusal{Code: "bad_request"}
+			}
+			if decoder.Decode(&struct{}{}) != io.EOF {
 				return nil, adaptercloud.ViewerRefusal{Code: "bad_request"}
 			}
 			return client.Mutate(ctx, input)

@@ -14,6 +14,7 @@ func TestLocalViewerRoutesRequireThisMachinesOwnDoor(t *testing.T) {
 	}{
 		{"paired browser cannot see viewer setup", http.MethodGet, "/v1/cloud/viewer/status", h.phone, http.StatusForbidden},
 		{"paired browser cannot send through local viewer", http.MethodPost, "/v1/cloud/viewer/actions", h.phone, http.StatusForbidden},
+		{"paired browser cannot read viewer skills", http.MethodGet, "/v1/cloud/viewer/skills?machine=m&session=s&generation=g", h.phone, http.StatusForbidden},
 		{"machine token sees disabled viewer", http.MethodGet, "/v1/cloud/viewer/status", h.local, http.StatusOK},
 		{"machine token cannot use disabled viewer", http.MethodGet, "/v1/cloud/viewer/machines", h.local, http.StatusConflict},
 	} {

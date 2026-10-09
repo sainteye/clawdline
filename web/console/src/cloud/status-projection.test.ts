@@ -13,7 +13,7 @@ function fleet(machine: string, sessions: string[], generation = passOne, missin
     identity: { machine, session }, payload, observedAt: 1000, sequence,
   })
   sessions.filter((id) => id !== missing).forEach((id, index) => hold(id, {
-    machine_id: machine, session_id: id, execution_generation: execution, assistant: "codex", backend: "codex",
+    machine_id: machine, session_id: id, execution_generation: execution, assistant: "codex", backend: "tmux",
     state: "waiting", source: { provenance: "session_watch", observed_at: 1, freshness: "current" },
     inventory_complete: true, projected_at: 2, snapshot_generation: generation,
     attention_required: true, waiting_for_reply: true, completed_unconfirmed: false, last_movement_at: 1,
@@ -33,6 +33,8 @@ test("a complete ss pass with the same Session id on two machines stays scoped",
   assert.equal(a.rows[0].destination.machineID, "a")
   assert.equal(b.rows[0].destination.machineID, "b")
   assert.equal(a.rows[0].needsAttention, true)
+  assert.equal(a.rows[0].assistant, "codex")
+  assert.equal(a.rows[0].backend, "tmux")
   assert.equal(a.rows[0].waitingForReply, true)
   assert.equal(a.rows[0].lastMovementAt, 1000)
   assert.equal(a.rows[0].noProgressAfterMs, 1800000)
@@ -108,9 +110,27 @@ test("an old client and an absent marker never become authoritative emptiness", 
 test("an old marker or projected row is stale even when the source says current", () => {
   const expired = statusProjection(fleet("a", ["same"]), "a", 302001)
   assert.equal(expired.kind === "unavailable" && expired.reason, "stale")
+  assert.equal(expired.rows?.[0].destination.sessionID, "same")
+  assert.equal(expired.rows?.[0].freshness, "stale")
+  assert.equal(expired.observedAt, 2000)
+  assert.equal(expired.snapshotGeneration, passOne)
+  assert.equal(expired.complete, true)
   const source = fleet("a", ["same"])
   const entry = source.statusSnapshots.get(JSON.stringify(["a", "same"])) as { payload: { projected_at: number } }
   entry.payload.projected_at = -400
   const reading = statusProjection(source, "a", 2000)
   assert.equal(reading.kind === "unavailable" && reading.reason, "stale")
+  assert.equal(reading.rows?.[0].freshness, "stale")
+})
+
+test("an expired pass with a missing or mismatched row still reports a gap", () => {
+  const missing = statusProjection(fleet("a", ["same"], passOne, "same"), "a", 302001)
+  assert.equal(missing.kind === "unavailable" && missing.reason, "event_gap")
+  assert.equal(missing.rows, undefined)
+  const mismatched = fleet("a", ["same"])
+  const marker = mismatched.statusSnapshots.get(JSON.stringify(["a", INVENTORY])) as { payload: { snapshot_generation: string } }
+  marker.payload.snapshot_generation = passTwo
+  const gap = statusProjection(mismatched, "a", 302001)
+  assert.equal(gap.kind === "unavailable" && gap.reason, "event_gap")
+  assert.equal(gap.rows, undefined)
 })
