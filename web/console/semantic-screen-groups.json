@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4926,
+  "englishContentKeys": 4928,
   "riskKeys": 2148,
-  "nonRiskCount": 2778,
+  "nonRiskCount": 2780,
   "groups": [
     {
       "name": "bar / other",
@@ -2548,6 +2548,17 @@
         "literal.e12820431ff9",
         "literal.e3949613add9",
         "literal.e44c005aa593"
+      ]
+    },
+    {
+      "name": "session / other",
+      "count": 2,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "session.archiveCommand",
+        "session.moreCommands"
       ]
     },
     {
