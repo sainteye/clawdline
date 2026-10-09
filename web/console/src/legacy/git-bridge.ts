@@ -176,6 +176,11 @@ export function gitSentence(failure: unknown, fallback: string): string {
   const code = (failure as { code?: unknown } | null)?.code
   if (code === "not_a_repo") return S.webGitNotRepo
   if (code === "cloud_not_carried") return nextWord("cloudNotCarried")
+  // The daemon tells a missing folder and an unreadable one apart from a
+  // failed read (internal/transport/http/git.go, writeGitRefusal); neither is
+  // in the copied catalog, so both fell through to the generic failure.
+  if (code === "git_no_directory") return nextWord("gitNoDirectory")
+  if (code === "git_permission_denied") return nextWord("gitPermissionDenied")
   return failureSentence(failure, fallback)
 }
 

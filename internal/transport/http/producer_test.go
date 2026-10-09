@@ -154,6 +154,30 @@ func TestWorkingSinceIsSteadyWithinATurnAndMovesWithANewOne(t *testing.T) {
 	}
 }
 
+// A provider stops redrawing its clock while a tool runs. The line read the
+// same for 30 seconds on the running daemon; the turn did not start again.
+func TestAClockThatStandsStillIsTheSameTurn(t *testing.T) {
+	var clock workingClock
+	at := time.Unix(10_000, 0)
+	first := clock.since("%1", "Thinking… (12m 18s)", at)
+	for wait := 5; wait <= 30; wait += 5 {
+		if got := clock.since("%1", "Thinking… (12m 18s)", at.Add(time.Duration(wait)*time.Second)); got != first {
+			t.Fatalf("%d s into a clock that stood still the start moved: %d then %d", wait, first, got)
+		}
+	}
+	// It is drawn again, further on: still the same turn and the same start.
+	if got := clock.since("%1", "Thinking… (12m 50s)", at.Add(32*time.Second)); got != first {
+		t.Errorf("the clock drawn again moved the start: %d then %d", first, got)
+	}
+	// Read first while it stood still, the start was late; a later reading
+	// that shows it earlier is taken.
+	var late workingClock
+	stale := late.since("%2", "Thinking… (10s)", at.Add(20*time.Second))
+	if got := late.since("%2", "Thinking… (40s)", at.Add(30*time.Second)); got != stale-20 {
+		t.Errorf("a start read late was not corrected: %d then %d", stale, got)
+	}
+}
+
 // An old page reads the row by the keys it knows; the new one is additive.
 func TestAnOldShapedPageStillReadsTheRow(t *testing.T) {
 	row := sessionRowWire{SessionRow: contract.SessionRow{ID: "%19", State: contract.SessionStateWorking,
@@ -230,5 +254,37 @@ func TestAnUnchangedExecutionScanIsNotWritten(t *testing.T) {
 	}
 	if n, err := s.store.ExecutionCount(ctx, "mac_a"); err != nil || n != 1 {
 		t.Errorf("the store holds %d execution(s) (%v); the proven-absent one should be gone", n, err)
+	}
+}
+
+// The Cloud publisher reads the first task page on every pass. Inside one tick
+// that page is the stream's product; any other page is built as it was.
+func TestTheFirstTaskPageIsTheSharedProduct(t *testing.T) {
+	p := &pane{s: session.Session{ID: "%19", Backend: session.BackendTmux,
+		Assistant: session.AssistantClaude, State: session.StateIdle}}
+	s, _ := streamServer(t, p)
+	read := func(query string) int {
+		rec := httptest.NewRecorder()
+		s.tasksList(rec, httptest.NewRequest(http.MethodGet, "/v1/orchestrator/tasks"+query, nil))
+		return rec.Code
+	}
+	before := s.lists().tasks.builds.Load()
+	for i := 0; i < 4; i++ {
+		if code := read("?limit=50"); code != http.StatusOK {
+			t.Fatalf("the first page answered %d", code)
+		}
+	}
+	if built := s.lists().tasks.builds.Load() - before; built != 1 {
+		t.Errorf("four reads of the first page inside one tick built it %d times", built)
+	}
+	if code := read("?limit=50&state=running"); code != http.StatusOK {
+		t.Fatalf("a filtered first page answered %d", code)
+	}
+	before = s.lists().tasks.builds.Load()
+	if code := read("?limit=10"); code != http.StatusOK {
+		t.Fatalf("another page answered %d", code)
+	}
+	if built := s.lists().tasks.builds.Load() - before; built != 0 {
+		t.Errorf("another page was answered from the product (%d builds of it)", built)
 	}
 }

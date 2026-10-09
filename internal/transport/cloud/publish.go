@@ -34,6 +34,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -123,6 +124,11 @@ type Publisher struct {
 	// Now exists so a test can drive the clock the heartbeat is measured on.
 	// Nil is time.Now.
 	Now func() time.Time
+	// VolatileEvery is how often a row whose only change is a volatile field
+	// may go out; zero is SessionRowVolatileSecondsLimit. A negative value
+	// sends every change at once, which is how a test measures what the
+	// coalescing saves.
+	VolatileEvery time.Duration
 
 	// published is each row's identity bytes as last sent, so an unchanged row
 	// is skipped. Keyed by session id; the inventory and the descriptor have
@@ -133,6 +139,10 @@ type Publisher struct {
 	// is older than five minutes as stale and will not auto-select it
 	// (`cloud-client.js`'s MACHINE_INVENTORY_FRESH_MS), so silence is not free.
 	sent map[string]time.Time
+	// steady is each key's identity without its volatile fields as last sent
+	// (volatileFree), so a change in those fields alone waits for the row's
+	// window while any other change goes at once.
+	steady map[string][32]byte
 
 	// listed is the sessions a viewer holds rows for, which decides whether a
 	// finished task is still reachable (tasklist.go).
@@ -191,6 +201,7 @@ type Publisher struct {
 // that went out.
 type heldRow struct {
 	identity []byte
+	steady   []byte
 	body     []byte
 }
 
@@ -255,6 +266,7 @@ func (p *Publisher) Run(ctx context.Context) error {
 	}
 	p.published = map[string][32]byte{}
 	p.sent = map[string]time.Time{}
+	p.steady = map[string][32]byte{}
 	p.inventoried = map[string]inventoriedRow{}
 	p.held = map[string]heldRow{}
 	wake := p.open()
@@ -388,6 +400,7 @@ func (p *Publisher) restatePass(ctx context.Context) {
 	p.mu.Unlock()
 	p.published = map[string][32]byte{}
 	p.sent = map[string]time.Time{}
+	p.steady = map[string][32]byte{}
 	p.unsent = 0
 	inventory, reading, ok := p.pass(ctx)
 	result := snapshotResult{stated: cloudops.SessionsStated{IDs: inventory, Complete: ok && reading.whole()}}
@@ -502,6 +515,7 @@ func (p *Publisher) pass(ctx context.Context) ([]string, sessionReading, bool) {
 		// them.
 		p.published = map[string][32]byte{}
 		p.sent = map[string]time.Time{}
+		p.steady = map[string][32]byte{}
 	}
 	reading, ok := p.readSessions(ctx)
 	var inventory []string
@@ -697,7 +711,9 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 		}
 		// The comparison drops the fields that move with every reading of this
 		// machine and that no viewer reads; the row that goes out keeps them.
-		identity := mustJSON(withoutFreshness(session))
+		stripped := withoutFreshness(session)
+		identity := mustJSON(stripped)
+		steady := mustJSON(volatileFree(stripped))
 		if p.held == nil {
 			p.held = map[string]heldRow{}
 		}
@@ -709,10 +725,10 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 			// reading. Flipping to it and back is not a change. A viewer
 			// still ages the published reading by its own clock, and the
 			// heartbeat re-states the row as it now stands.
-			identity = prior.identity
+			identity, steady = prior.identity, prior.steady
 		}
-		p.held[id] = heldRow{identity: identity, body: row}
-		if !p.changed(id, identity) {
+		p.held[id] = heldRow{identity: identity, steady: steady, body: row}
+		if !p.changedCoalesced(id, identity, steady) {
 			continue
 		}
 		p.send(ctx, id, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+cloudops.ChannelSegment(id), row, "session "+id)
@@ -727,7 +743,7 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 			continue
 		}
 		held, ok := p.held[id]
-		if !ok || !p.changed(id, held.identity) {
+		if !ok || !p.changedCoalesced(id, held.identity, held.steady) {
 			continue
 		}
 		p.send(ctx, id, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+cloudops.ChannelSegment(id), held.body, "session "+id)
@@ -883,13 +899,90 @@ func incompleteSources(sources map[string]bool) []string {
 // changed reports whether this key is due to be published: because what a
 // viewer reads differs from last time, or because the heartbeat came due.
 func (p *Publisher) changed(key string, identity []byte) bool {
+	return p.changedCoalesced(key, identity, identity)
+}
+
+// changedCoalesced is changed for a value with volatile fields: steady is its
+// identity without them. A change that leaves steady as last sent goes out
+// only once the key's window (volatileEvery) has passed since it last went
+// out; the next pass after that carries the newest value. Any change to steady
+// goes at once, and every send starts the window again.
+func (p *Publisher) changedCoalesced(key string, identity, steady []byte) bool {
 	sum := sha256.Sum256(identity)
+	steadySum := sha256.Sum256(steady)
 	now := p.now()
-	if p.published[key] == sum && now.Sub(p.sent[key]) < Heartbeat {
+	last, sent := p.sent[key]
+	if p.published[key] == sum && now.Sub(last) < Heartbeat {
 		return false
 	}
-	p.published[key], p.sent[key] = sum, now
+	if sent && p.steady[key] == steadySum && now.Sub(last) < p.volatileEvery() {
+		return false
+	}
+	if p.steady == nil {
+		p.steady = map[string][32]byte{}
+	}
+	p.published[key], p.sent[key], p.steady[key] = sum, now, steadySum
 	return true
+}
+
+// forget drops what was recorded of a key that did not leave, so the next
+// pass sends it again.
+func (p *Publisher) forget(key string) {
+	delete(p.published, key)
+	delete(p.sent, key)
+	delete(p.steady, key)
+}
+
+func (p *Publisher) volatileEvery() time.Duration {
+	if p.VolatileEvery != 0 {
+		return p.VolatileEvery
+	}
+	return SessionRowVolatileSecondsLimit * time.Second
+}
+
+// SessionRowVolatileSecondsLimit is how often a row whose only change is in
+// its volatile fields (volatileFree) is re-sent to Cloud. While a Session
+// works its activity time, its sub-agents and the token count in its line move
+// on nearly every five-second pass; on the running daemon (2026-10-09) those
+// three made 268 of every 288 row changes once the clock was out. Any other
+// change — state, work state, title, the line's words, attention, a pending
+// question — goes out at once and starts the row's window again. The local
+// event stream is not coalesced: a screen on this machine stays live.
+const SessionRowVolatileSecondsLimit = 15
+
+// volatileSessionRowFields are the row paths volatileFree removes.
+var volatileSessionRowFields = [][]string{
+	{"activity", "at"},
+	{"agents"},
+}
+
+// tokenCount is the provider's running token count in a working line
+// ("↓ 757 tokens", "↑ 3.2k tokens"): it moves with every chunk the assistant
+// streams.
+var tokenCount = regexp.MustCompile(`[↑↓]?\s*\d[\d.,]*\s*[kKmM]?\s+tokens`)
+
+// volatileFree is an identity without the fields that move while a Session
+// works and say nothing a viewer must see at once: the activity time, the
+// sub-agent list and the line's token count. The row that goes out keeps
+// them; a change to them alone waits for the row's window
+// (changedCoalesced).
+func volatileFree(row map[string]any) map[string]any {
+	out := make(map[string]any, len(row))
+	for key, value := range row {
+		out[key] = value
+	}
+	for _, path := range volatileSessionRowFields {
+		removePath(out, path)
+	}
+	if line, ok := out["line"].(string); ok {
+		out["line"] = withoutTokenCount(line)
+	}
+	return out
+}
+
+// withoutTokenCount is a line with its token count cut out.
+func withoutTokenCount(line string) string {
+	return tokenCount.ReplaceAllString(line, "tokens")
 }
 
 // withoutFreshness copies a row with the freshness-only paths removed, and a
@@ -963,8 +1056,7 @@ func (p *Publisher) send(ctx context.Context, key, channel string, body []byte, 
 		// that, so the next pass tries again instead of waiting for the
 		// heartbeat, and so a re-statement does not answer ids whose rows
 		// never left.
-		delete(p.published, key)
-		delete(p.sent, key)
+		p.forget(key)
 		p.unsent++
 	}
 }

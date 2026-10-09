@@ -42,6 +42,7 @@
 | `cloud.peer_outbox` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `cloud.peer_pairs` | 128 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `cloud.relay_queue` | 64 | `rows` | `refuse` | `diagnostics, notice, cloud_status, log, sender` | — |
+| `cloud.session_row_volatile_seconds` | 15 | `seconds` | `expire` | `diagnostics` | — |
 | `cloud.spool` | 2000 | `rows` | `refuse` | `diagnostics, notice, log` | — |
 | `cloud.spool_bytes` | 16777216 | `bytes` | `refuse` | `diagnostics, notice, log` | — |
 | `cloud.spool_channel_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, notice, log` | — |
@@ -83,8 +84,12 @@
 | `cloud.terminal_unconfirmed_seconds` | 15 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_unverified_retire_seconds` | 10 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_viewer_connections` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `console.health_live_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
+| `console.session_notes_safety_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_backoff_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
+| `console.transcript_follow_fast_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
+| `console.transcript_follow_later_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_follow_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_merged_rows` | 1000 | `rows` | `expire` | `diagnostics` | — |
 | `console.transcript_safety_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |

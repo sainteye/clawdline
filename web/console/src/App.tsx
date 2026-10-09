@@ -2,11 +2,11 @@ import { catalogWord } from "./catalog.js"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
-import { client } from "./client.js"
+import { client, followsRelay } from "./client.js"
 import { BRAND_MARK } from "./brand-mark.js"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
 import { useFleet, usePoll } from "./useFleet.js"
-import { publishHealth } from "./health-feed.js"
+import { healthPace, publishHealth } from "./health-feed.js"
 import { SessionsPage } from "./Sessions.js"
 import { toggleOrder } from "./session/Transcript.js"
 import { conversationNotStarted } from "./session/readiness.js"
@@ -1071,7 +1071,13 @@ function Counts({
  */
 function useConnectionLight(live: boolean, onRetry: () => void): ConnectionLight {
   const read = useMemo(() => () => client.health(), [])
-  const { data, error: healthError } = usePoll(read, 15000)
+  // Slow while this machine's own stream is up and health has answered once
+  // (health-feed.ts, HEALTH_LIVE_MS); the pace moves back when the stream
+  // drops. A pace read before the first answer is the fifteen seconds.
+  const [answered, setAnswered] = useState(false)
+  const relayed = followsRelay() || !!import.meta.env.VITE_HOSTED_CONSOLE
+  const { data, error: healthError } = usePoll(read, healthPace({ live, answered, relayed }))
+  useEffect(() => { if (data !== null) setAnswered(true) }, [data])
   // The stream says the browser's line is open; health says the selected host
   // answered. In Cloud those are different subjects, so the relay opening
   // must not paint "connected" before the chosen machine's health arrives.

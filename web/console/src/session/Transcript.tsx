@@ -27,9 +27,12 @@ import type { ReadReason } from "../poll.js"
 import {
   appendedReadFrom,
   BACKOFF,
-  FOLLOW_MS,
+  BLIND_MS,
+  FOLLOW_FAST_MS,
   FOLLOW_WINDOW_MS,
+  followingNow,
   joinAppended,
+  SAFETY_MS,
   TRAIL_MS,
   transcriptPace,
 } from "./transcript-follow.js"
@@ -82,10 +85,13 @@ import "./history.css"
 /** Same as the original's `limit=200`, so both panes are reading the same stretch. */
 const LIMIT = 200
 /**
- * A provider subagent's page is not what the session row's times are about,
- * so it is read on the old pace (`transcript-follow.ts` is the session's own).
+ * A provider subagent's page is read by its own entry in the row's `agents`:
+ * its `at` is when that agent's record last grew, so it is read when that or
+ * its state moves and on the safety pace otherwise (`transcript-follow.ts`).
+ * An agent the row does not list, or lists with no time, is read on the old
+ * pace.
  */
-const AGENT_POLL_MS = 4000
+const AGENT_POLL_MS = BLIND_MS
 
 /** The mark an `AskUserQuestion` call's text starts with. */
 const ASK_MARK = "\u0001ask\u0001"
@@ -165,29 +171,36 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   const [, setPaceClock] = useState(0)
   useEffect(() => {
     if (!following) return
-    const left = newestSendAt + FOLLOW_WINDOW_MS - Date.now()
-    if (left <= 0) return
-    const timer = setTimeout(() => setPaceClock((n) => n + 1), left + 50)
-    return () => clearTimeout(timer)
+    // Each change of pace — the first stretch ending, then the window — is a
+    // draw of its own.
+    const timers = [FOLLOW_FAST_MS, FOLLOW_WINDOW_MS]
+      .map((end) => newestSendAt + end - Date.now())
+      .filter((left) => left > 0)
+      .map((left) => setTimeout(() => setPaceClock((n) => n + 1), left + 50))
+    return () => timers.forEach(clearTimeout)
   }, [following, newestSendAt])
-  const pace = agentId ? AGENT_POLL_MS
+  const agentRow = agentId ? session?.agents?.find((agent) => agent.id === agentId) : undefined
+  const agentTimed = !!agentRow && agentRow.at > 0
+  const pace = agentId ? (agentTimed ? SAFETY_MS : AGENT_POLL_MS)
     : transcriptPace({ following, newestSendAt, now: Date.now(), rowTimed: typeof session?.activity?.at === "number" })
-  fast.current = pace === FOLLOW_MS
+  fast.current = !agentId && followingNow({ following, newestSendAt, now: Date.now() })
   const poll = usePoll<TranscriptPage>(read, pace, agentId ? {} : { backoff: BACKOFF })
   const { data, error } = poll
   // The row says the record grew, or the session changed what it is doing:
   // read what was appended now, and once more a little after the last such
   // change, because the row's time is in whole seconds.
-  const rowMoved = agentId ? "" : `${session?.activity?.at ?? ""}:${session?.state ?? ""}`
+  const rowMoved = agentId
+    ? agentRow && agentTimed ? `${agentRow.at}:${agentRow.state}` : ""
+    : `${session?.activity?.at ?? ""}:${session?.state ?? ""}`
   const rowSeen = useRef(rowMoved)
   const { poke } = poll
   useEffect(() => {
-    if (agentId || rowMoved === rowSeen.current) return
+    if (rowMoved === rowSeen.current) return
     rowSeen.current = rowMoved
     poke()
     const trail = setTimeout(poke, TRAIL_MS)
     return () => clearTimeout(trail)
-  }, [agentId, rowMoved, poke])
+  }, [rowMoved, poke])
   // The "my messages" sheet reads these same entries instead of its own poll.
   useEffect(() => {
     if (agentId || !data) return

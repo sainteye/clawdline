@@ -659,6 +659,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.SessionNoMovement: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-row record-movement threshold; no retained wait"}
 		},
+		capacity.CloudSessionRowVolatile: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-row Cloud re-send window; a held change goes out on the next pass after it"}
+		},
 		capacity.StoreReceipts: func() capacity.Reading {
 			uses, err := s.store.ReceiptUses(context.Background(), store.ReceiptWindow, time.Now())
 			if err != nil {
@@ -1111,6 +1114,18 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		// The console's transcript cadence lives in each open tab; the
 		// daemon serves the reads and cannot count a tab's timers.
 		capacity.ConsoleTranscriptSafetySeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
+		capacity.ConsoleTranscriptFollowFast: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
+		capacity.ConsoleTranscriptFollowLater: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
+		capacity.ConsoleHealthLive: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
+		capacity.ConsoleSessionNotesSafety: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
 		},
 		capacity.ConsoleTranscriptFollowSeconds: func() capacity.Reading {

@@ -24,7 +24,7 @@ import { todoSend } from "./todo-send.js"
 import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import { useInterventions } from "./Interventions.js"
-import { browserRefreshEnvironment, OneRead, readFailureReason, readWithOneRetry, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
+import { browserRefreshEnvironment, OneRead, readFailureReason, readWithOneRetry, TODO_SAFETY_MS, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
 import { announceWorkItemChanged, onWorkItemChanged } from "../pages/work/item-changed.js"
 import { sessionTodosReady } from "./readiness.js"
 import { nextWord } from "../next-strings.js"
@@ -89,15 +89,16 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
     setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setSummary(null); setFailure("")
     setReadFailure(null); setReading(false)
     if (!readReady) return
-    // One read in flight per Session; the page asks again every fifteen
-    // seconds while it is visible, and at once when it comes back, so rows a
-    // Session writes appear without reopening it. A scheduled ask is fresh:
-    // when its tick meets the old read's fifteen-second deadline, queue one
-    // newer read instead of joining the promise that is about to abort.
+    // One read in flight per Session; the page asks again every minute while
+    // it is visible (TODO_SAFETY_MS), and at once when it comes back or is
+    // focused, so rows a Session writes appear without reopening it. A
+    // scheduled ask is fresh: when its tick meets the old read's deadline,
+    // queue one newer read instead of joining the promise that is about to
+    // abort.
     const one = new OneRead(load)
     reader.current = one
     void one.ask()
-    const stop = watchTodoRefresh(() => { void one.ask(true) }, browserRefreshEnvironment(onWorkItemChanged))
+    const stop = watchTodoRefresh(() => { void one.ask(true) }, browserRefreshEnvironment(onWorkItemChanged), TODO_SAFETY_MS)
     return () => {
       stop()
       if (reader.current === one) reader.current = null

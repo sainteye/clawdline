@@ -158,6 +158,8 @@ const (
 	StoreDB           = "store.db"
 	SessionExecutions = "session.executions"
 	SessionNoMovement = "session.no_movement_seconds"
+	// How often a Cloud Session row whose only change is volatile is re-sent.
+	CloudSessionRowVolatile = "cloud.session_row_volatile_seconds"
 	// The last committed execution scan, so an unchanged one opens no write.
 	CacheSessionExecutionMemo = "cache.session_execution_memo"
 	BoardReceipts             = "board.receipts"
@@ -437,6 +439,10 @@ const (
 	ConsoleTranscriptMergedRows       = "console.transcript_merged_rows"
 	ConsoleTranscriptBackoffSeconds   = "console.transcript_backoff_seconds"
 	ConsoleRelayTranscriptExpectReask = "console.relay_transcript_expect_reask_seconds"
+	ConsoleTranscriptFollowFast       = "console.transcript_follow_fast_seconds"
+	ConsoleTranscriptFollowLater      = "console.transcript_follow_later_seconds"
+	ConsoleHealthLive                 = "console.health_live_seconds"
+	ConsoleSessionNotesSafety         = "console.session_notes_safety_seconds"
 	// The ordinary shells this machine holds open for a person, and what one
 	// request may type into one or read back from it (limits N59).
 	TerminalCount        = "terminal.count"
@@ -621,6 +627,17 @@ func Register() []Entry {
 			Limit: 1800, AtLimit: Expire,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.SessionNoMovementSecondsLimit"},
+		},
+		{
+			// A Cloud Session row (s/) or status set (ss/) whose only change is
+			// its activity time, its sub-agents or its line's token count is
+			// re-sent at most once per this interval; the next pass after it
+			// carries the newest value. Any other change goes at once and
+			// starts the window again. The local event stream is not held.
+			Name: CloudSessionRowVolatile, Class: Cache, Unit: Seconds,
+			Limit: 15, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.SessionRowVolatileSecondsLimit"},
 		},
 		{
 			// The board commands' (actor, requestId) receipts (limits N24):
@@ -2411,8 +2428,9 @@ func Register() []Entry {
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
-			// After a send, the pane reads every two seconds for at most this
-			// long (FOLLOW_WINDOW_MS), then goes back to the safety pace. The
+			// After a send, the pane reads on its follow pace (two seconds,
+			// then four) for at most this long (FOLLOW_WINDOW_MS), then goes
+			// back to the safety pace. The
 			// card's own lifetime is session/pending.ts's and unchanged.
 			Name: ConsoleTranscriptFollowSeconds, Class: Cache, Unit: Seconds,
 			Limit: 90, AtLimit: Expire,
@@ -2440,6 +2458,37 @@ func Register() []Entry {
 			// at this age.
 			Name: ConsoleRelayTranscriptExpectReask, Class: Cache, Unit: Seconds,
 			Limit: 4, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// After a send the pane reads every two seconds for this long
+			// (FOLLOW_FAST_MS), then every FOLLOW_LATER_MS until the follow
+			// window ends.
+			Name: ConsoleTranscriptFollowFast, Class: Cache, Unit: Seconds,
+			Limit: 10, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// The rest of the follow window after a send is read this often
+			// (FOLLOW_LATER_MS).
+			Name: ConsoleTranscriptFollowLater, Class: Cache, Unit: Seconds,
+			Limit: 4, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// While this machine's own event stream is open, the connection
+			// light reads /v1/health this often (HEALTH_LIVE_MS) instead of
+			// every 15 seconds; a dropped stream, or a Cloud page, keeps 15.
+			Name: ConsoleHealthLive, Class: Cache, Unit: Seconds,
+			Limit: 90, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// An open Session page's to-dos, and its attention notes when the
+			// row counts them, are read at least this often (TODO_SAFETY_MS),
+			// and at once when the page is seen, focused, or the count moves.
+			Name: ConsoleSessionNotesSafety, Class: Cache, Unit: Seconds,
+			Limit: 60, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
