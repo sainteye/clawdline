@@ -485,3 +485,16 @@ test("the banner names a newer release until that version is dismissed", () => {
   assert.equal(updateBannerVersion(release("update_available", undefined, { install_kind: "source_deploy" }), null), null)
   assert.equal(updateBannerVersion(null, null), null)
 })
+
+test("a rolled-back release stops nagging in the session list while a newer one can appear", () => {
+  const rolledBack = release("update_available", { state: "rolled_back", from: "v0.10.0", to: "v0.11.0" })
+  assert.equal(updateBannerVersion(rolledBack, null), null)
+  const retry = panel({ read: answered(rolledBack) })
+  assert.equal(retry.press.shown, true)
+  assert.equal(retry.press.label, nextWord("updateRetry"))
+
+  const newer = release("update_available", { state: "rolled_back", from: "v0.10.0", to: "v0.11.0" }, {
+    latest: { stamp: "5c8d4e9f0a1b2c3d4e5f", version: "v0.12.0" },
+  })
+  assert.equal(updateBannerVersion(newer, null), "v0.12.0")
+})
