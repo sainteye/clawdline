@@ -25,6 +25,7 @@ test("the original one-machine page subscribes only exact rich rows named by tha
   client.classicSessionAttempted = new Map()
   client.pendingSubscriptions = new Set()
   client.socketSubscriptions = new Map()
+  client.subscriptionHolds = new Map()
   client.resubscribes = new Map()
   client.subscriptionLimit = 8
   client.ready = true
@@ -34,12 +35,46 @@ test("the original one-machine page subscribes only exact rich rows named by tha
   const frames = []
   client._sendSubscriptionFrame = (type, channels) => frames.push({ type, channels })
   client.enableClassicSessionView("m")
-  assert.deepEqual(frames, [{ type: "subscribe", channels: ["s/m/s1"] },
-    { type: "subscribe", channels: ["s/m/s2"] }])
-  assert.deepEqual([...client.socketSubscriptions.keys()], ["s/m/s1", "s/m/s2"])
+  assert.deepEqual(frames, [{ type: "subscribe", channels: ["s/m/s2"] }])
+  assert.deepEqual([...client.socketSubscriptions.keys()], ["s/m/s2"])
   client.ready = false
   client.disableClassicSessionView()
   assert.equal(client.socketSubscriptions.size, 0)
+})
+
+test("the original list recovers more rows when other idle Cloud channels fill the relay budget", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.statusSnapshots = new Map([[JSON.stringify(["m", "__clawdline_inventory_v1__"]), { payload: {
+    complete: true, snapshot_generation: genA, inventory: { version: 1, sessions: ["s1", "s2", "s3"] },
+  } }]])
+  for (const id of ["s1", "s2", "s3"]) client.statusSnapshots.set(JSON.stringify(["m", id]),
+    { payload: { snapshot_generation: genA, execution_generation: genA } })
+  client.sessionSnapshots = new Map()
+  client.classicSessionMachine = null
+  client.classicSessionReads = new Map()
+  client.classicSessionAttempted = new Map()
+  client.pendingSubscriptions = new Set(Array.from({ length: 8 }, (_, i) => `t/m/old${i}`))
+  client.socketSubscriptions = new Map([...client.pendingSubscriptions].map((channel) => [channel, 100]))
+  client.subscriptionHolds = new Map()
+  client.resubscribes = new Map()
+  client.subscriptionLimit = 8
+  client.ready = true
+  client.now = () => 100
+  client.setTimeout = () => 1
+  client.clearTimeout = () => {}
+  const frames = []
+  client._sendSubscriptionFrame = (type, channels) => frames.push({ type, channels })
+  client.enableClassicSessionView("m")
+  assert.deepEqual(frames.filter((frame) => frame.type === "subscribe"), [
+    { type: "subscribe", channels: ["s/m/s1"] }, { type: "subscribe", channels: ["s/m/s2"] },
+  ])
+  assert.equal(client.socketSubscriptions.size, 8)
+  client.sessionSnapshots.set("m\u0000s1", { execution_generation: genA })
+  client.unsubscribe(["s/m/s1"])
+  client.classicSessionReads.delete("s/m/s1")
+  client._recoverClassicSessionRows()
+  assert.deepEqual(frames.filter((frame) => frame.type === "subscribe").at(-1),
+    { type: "subscribe", channels: ["s/m/s3"] })
 })
 
 test("the live signed machine descriptor keeps commands beyond the archived cache bound", () => {

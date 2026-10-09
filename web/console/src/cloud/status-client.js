@@ -126,7 +126,11 @@ export class StatusCloudClient extends CatalogCloudClient {
       this.classicSessionReads.delete(channel)
       this.unsubscribe([channel])
     }
-    const available = Math.max(0, this.subscriptionLimit - this.socketSubscriptions.size - 2)
+    // The copied client already owns the eight-channel budget and releases idle
+    // channels before subscribing. Counting its occupied slots here stranded the
+    // original list when another pane had used all eight. Recover in a small
+    // rolling window instead; each signed row frees its slot for the next one.
+    const available = Math.max(0, 2 - this.classicSessionReads.size)
     let opened = 0
     for (const id of ids) {
       if (typeof id !== "string" || !id || id === "__clawdline_inventory_v1__") return
@@ -134,14 +138,15 @@ export class StatusCloudClient extends CatalogCloudClient {
       if (!status || status.snapshot_generation !== marker.snapshot_generation ||
         !GENERATION.test(status.execution_generation)) continue
       const channel = "s/" + channelSegment(machine) + "/" + channelSegment(id)
+      const held = this.sessionSnapshots.get(machine + "\u0000" + id)
+      if (held?.execution_generation === status.execution_generation) continue
       if (this.classicSessionReads.has(channel) ||
         this.classicSessionAttempted.get(channel) === status.execution_generation) continue
       if (opened >= available) break
-      this.classicSessionAttempted.set(channel, status.execution_generation)
       try {
-        this.pendingSubscriptions.add(channel)
-        this._sendSubscriptionFrame("subscribe", [channel])
-        this.socketSubscriptions.set(channel, this.now())
+        this.subscribe([channel])
+        if (!this.socketSubscriptions.has(channel)) continue
+        this.classicSessionAttempted.set(channel, status.execution_generation)
         const timer = this.setTimeout(() => {
           this.classicSessionReads.delete(channel)
           this.unsubscribe([channel])
