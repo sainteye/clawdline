@@ -11,6 +11,13 @@ src=$work/src
 build=$work/build
 prefix=$work/prefix
 out=$work/out
+if [ "$TARGET_OS" = linux ]; then
+  # Compiled inside the container, not on the mounted <work>: from a Mac,
+  # that mount is a case-insensitive filesystem, where ncurses's fallback
+  # step writes `eterm` and `Eterm` to one file and stops ("name redefined").
+  build=/tmp/clawdline-tmux/build
+  prefix=/tmp/clawdline-tmux/prefix
+fi
 mkdir -p "$build" "$prefix/lib" "$prefix/include" "$out/licenses"
 jobs=$( (getconf _NPROCESSORS_ONLN || sysctl -n hw.ncpu || echo 2) 2>/dev/null | head -1)
 
