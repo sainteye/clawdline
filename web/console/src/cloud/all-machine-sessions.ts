@@ -32,6 +32,13 @@ export interface MachineListPresentation extends SessionListPresentation {
   destination: SessionDestination
 }
 
+/** Keep a prior list reading for the same execution, unless fresh ss/ contradicts its state. */
+export function displayedPresentationStatus(row: ProjectedSession,
+  presentation: SessionListPresentation | undefined): Partial<SessionRow> | undefined {
+  const status = presentation?.status
+  return row.freshness === "current" && status?.state && status.state !== row.state ? undefined : status
+}
+
 export interface ProjectedSession {
   destination: SessionDestination
   title: string
@@ -136,7 +143,8 @@ export function checkedProjection(machineID: string, reply: MachineSessionProjec
   if (reply.kind === "ready" && (reply.complete !== true || !Number.isFinite(reply.observedAt)))
     return { kind: "unavailable", reason: "bad_projection" }
   if (reply.kind === "unavailable" && (!Number.isFinite(reply.observedAt) ||
-    !["stale", "offline", "event_gap"].includes(reply.reason) || rows.some((row) => row.freshness === "current")))
+    !["stale", "offline", "event_gap", "unknown", "unresponsive"].includes(reply.reason) ||
+    rows.some((row) => row.freshness === "current")))
     return { kind: "unavailable", reason: "bad_projection" }
   if (rows.some((row) =>
     row.destination.machineID !== machineID || !row.destination.sessionID ||
@@ -163,11 +171,19 @@ export function afterEventGap(before: MachineSessionProjection | undefined): Mac
   }
 }
 
-/** A partial status pass cannot erase the last visible list or authorize its actions. */
+/** A temporary status read failure cannot erase the last visible list or authorize its actions. */
 export function settleProjection(machineID: string, before: MachineSessionProjection | undefined,
   incoming: MachineSessionProjection): MachineSessionProjection {
   const checked = checkedProjection(machineID, incoming)
-  return checked.kind === "unavailable" && checked.reason === "event_gap" ? afterEventGap(before) : checked
+  if (checked.kind !== "unavailable" || checked.rows ||
+    !["event_gap", "unknown", "unresponsive", "stale", "offline"].includes(checked.reason)) return checked
+  if (checked.reason === "event_gap") return afterEventGap(before)
+  return before?.rows?.length ? {
+    kind: "unavailable", reason: checked.reason,
+    rows: before.rows.map((row) => ({ ...row, freshness: "stale" })),
+    observedAt: before.observedAt, snapshotGeneration: before.snapshotGeneration,
+    unknownTargets: before.unknownTargets, retryAt: checked.retryAt,
+  } : checked
 }
 
 /** Schedule a status-only read when the earliest trusted status time expires. */
