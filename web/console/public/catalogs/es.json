@@ -4316,6 +4316,7 @@
   "template.ddd756350b15": "La habilidad se añadió y activó. La lista global de habilidades cambió durante el guardado; este Proyecto aún no ha añadido: {arg0}. Añádela mediante «Añadir habilidad existente» o restaura la herencia global.",
   "template.dec5e1afdd7e": "Conflicto de versión y no se pudo recargar: {arg0} Tu texto sigue aquí; inténtalo de nuevo.",
   "template.df6b2970b6cb": "{arg0} sesiones",
+  "next.sessionCountOne": "{count} sesión",
   "template.e0059ef8ad57": "Ir a la sesión que implementa «{arg0}»",
   "template.e08a0f1557ad": "CLAUDE.md tiene {arg0} líneas visibles para Claude pero no Codex.",
   "template.e22e6512792a": "La respuesta se envió, pero la Nota sigue pendiente: {arg0} Haz clic en «Mover a gestionadas» para volver a intentarlo; no envíes la respuesta dos veces.",

@@ -4316,6 +4316,7 @@
   "template.ddd756350b15": "La compétence a été ajoutée et activée. La liste globale des compétences a changé lors de l'enregistrement; ce projet n'a pas ajouté: {arg0}. Ajoutez-le par « Ajouter des compétences existantes » ou rétablissez l'héritage global.",
   "template.dec5e1afdd7e": "Conflit de version et échec du rechargement : {arg0} Votre texte est toujours présent ; réessayez.",
   "template.df6b2970b6cb": "{arg0} sessions",
+  "next.sessionCountOne": "{count} session",
   "template.e0059ef8ad57": "Aller à la session mettant en œuvre \"{arg0}\"",
   "template.e08a0f1557ad": "CLAUDE.md a {arg0} lignes visibles à Claude mais pas Codex.",
   "template.e22e6512792a": "La réponse a été envoyée, mais la note est toujours en attente : {arg0} Cliquez sur « Déplacer vers traitées » pour réessayer ; n’envoyez pas la réponse une deuxième fois.",

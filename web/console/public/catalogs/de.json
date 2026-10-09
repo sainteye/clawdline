@@ -4316,6 +4316,7 @@
   "template.ddd756350b15": "Die Fertigkeit wurde hinzugefügt und aktiviert. Die globale Fertigkeitsliste hat sich während des Speicherns geändert; dieses Projekt hat nicht hinzugefügt: {arg0}. Fügen Sie es durch \"Bestehende Fähigkeiten hinzufügen\" hinzu oder stellen Sie die globale Vererbung wieder her.",
   "template.dec5e1afdd7e": "Versionskonflikt; erneutes Laden nicht möglich: {arg0} Ihr Text ist noch vorhanden. Versuchen Sie es erneut.",
   "template.df6b2970b6cb": "{arg0} Sitzungen",
+  "next.sessionCountOne": "{count} Sitzung",
   "template.e0059ef8ad57": "Gehen Sie zur Sitzung, die \"{arg0}\" implementiert",
   "template.e08a0f1557ad": "CLAUDE.md enthält {arg0} Zeilen, die Claude, aber nicht Codex sehen kann.",
   "template.e22e6512792a": "Die Antwort wurde gesendet, aber die Notiz ist noch ausstehend: {arg0} Klicken Sie auf „Als bearbeitet markieren“, um es erneut zu versuchen. Senden Sie die Antwort nicht noch einmal.",

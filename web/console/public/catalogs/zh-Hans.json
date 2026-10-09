@@ -4316,6 +4316,7 @@
   "template.ddd756350b15": "技能已加入并激活。保存期间全局技能列表也更新了；此 Project 尚未加入：{arg0}。可从「加入已创建技能」补入，或还原全局继承。",
   "template.dec5e1afdd7e": "版本冲突且无法重读：{arg0} 你的文本仍保留，请再试一次。",
   "template.df6b2970b6cb": "{arg0} 个 session",
+  "next.sessionCountOne": "{count} 个 session",
   "template.e0059ef8ad57": "前往正在实施「{arg0}」的 Session",
   "template.e08a0f1557ad": "CLAUDE.md 有 {arg0} 行只有 Claude 看得到，Codex 无法查看。",
   "template.e22e6512792a": "回复已发送，但便条仍待处理：{arg0} 请按「移到已处理」重试，不必再送一次回复。",
