@@ -3,7 +3,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see `session/order.test.ts`.
-import { refusedReasons, releasableItems } from "./close-release.ts"
+import { processRecovery, refusedReasons, releasableItems } from "./close-release.ts"
 
 const mover = { kind: "session", self: true, person_needed: false }
 const unstarted = (id: string) => ({ code: "board_item_unstarted", kind: "obligation", subject_kind: "work", subject_id: id, mover })
@@ -56,4 +56,27 @@ test("a process-only close refused over Cloud reopens with the unknown row's rea
   const row = { id: "ttys011", closeability: { state: "unknown", version: "v1", reasons: evidence } }
   assert.deepEqual(refusedReasons([], row, "v1"), evidence)
   assert.deepEqual(refusedReasons([], row, "v2"), [])
+})
+
+// The phone's third report (2026-10-09): after the fix above, closing a
+// terminal-less process asked twice, and the second sheet said it could not
+// read the Session's Board items, which such a process cannot have. The first
+// sheet already warns that only the process is reachable, so its press is the
+// decision the daemon waits for.
+test("only a reading the daemon would let a forced press close is a process recovery", () => {
+  const broker = { kind: "broker", self: false, person_needed: false }
+  const unbound = { code: "session_identity_unbound", kind: "evidence", mover: broker }
+  const unreadable = { code: "terminal_unreadable", kind: "evidence", subject_kind: "session", subject_id: "ttys011", mover: broker }
+  assert.equal(processRecovery("ttys011", { state: "unknown", version: "v1", reasons: [unbound, unreadable] }), true)
+  assert.equal(processRecovery("pts/3", { state: "unknown", version: "v1", reasons: [unreadable] }), true)
+  // A terminal Clawdline owns is never one.
+  assert.equal(processRecovery("%4", { state: "unknown", version: "v1", reasons: [unreadable] }), false)
+  // Without the version the daemon pins the press to, or with any other reason, it is not either.
+  assert.equal(processRecovery("ttys011", { state: "unknown", reasons: [unreadable] }), false)
+  assert.equal(processRecovery("ttys011", { state: "unknown", version: "v1", reasons: [] }), false)
+  assert.equal(processRecovery("ttys011", { state: "unknown", version: "v1", reasons: [unreadable,
+    { code: "session_inventory_stale", kind: "evidence", mover: broker }] }), false)
+  assert.equal(processRecovery("ttys011", { state: "blocked", version: "v1", reasons: [unreadable,
+    { code: "session_todo_open", kind: "obligation", subject_id: "t", mover }] }), false)
+  assert.equal(processRecovery("ttys011", null), false)
 })
