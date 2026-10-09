@@ -1,7 +1,11 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-// @ts-expect-error -- a `.ts` path, for node's strip-types runner.
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { inCatalog, withCatalog } from "./catalog-testing.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { batchReadingWords, inventoryRefreshInProgress, retainedStateWords, scanFailureWords, sessionCountState, totalSessionWords } from "./session-reading.ts"
+
+withCatalog("zh-Hant")
 
 const source = { observed_at: 1_000, provenance: "iterm", freshness: "unverified" as const }
 
@@ -70,7 +74,7 @@ test("an inventory still refreshing is not an iTerm failure", () => {
 
 test("the title's number is the same set as the list", () => {
   assert.equal(totalSessionWords(6, true), "6 個 session")
-  assert.equal(totalSessionWords(1, false), "1 session")
+  assert.equal(inCatalog("en", () => totalSessionWords(1, false)), "1 session")
 })
 
 test("the header tells first load, authoritative empty, and no answer apart", () => {

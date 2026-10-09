@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { addedBySession } from "./todo-author.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { pattern, word, wordCall } from "../catalog-testing.ts"
 
 const source = readFileSync(new URL("./Todos.tsx", import.meta.url), "utf8")
 
@@ -104,7 +106,7 @@ test("direct todo attachments are compact file links instead of previews", () =>
 
 test("an expanded Session todo fold has a clickable glass backdrop over the conversation", () => {
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
-  assert.match(source, /<button className="session-todos-backdrop"[^>]*aria-label="收起 Session 待辦"/)
+  assert.match(source, pattern`<button className="session-todos-backdrop"[^>]*aria-label=\{${wordCall("收起 Session 待辦")}\}`)
   assert.match(source, /onClick=\{\(\) => setOpen\(false\)\}/)
   assert.match(styles, /\.session-todos::after \{[^}]*backdrop-filter:\s*blur\(/)
   assert.match(styles, /\.session-todos-backdrop \{[^}]*pointer-events:\s*none/)
@@ -118,11 +120,11 @@ test("an expanded Session todo fold has a clickable glass backdrop over the conv
 test("owned Board work shows explicit release milestones and recent completion", () => {
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
   const milestones = readFileSync(new URL("../pages/work/WorkMilestones.tsx", import.meta.url), "utf8")
-  assert.match(source, /<WorkMilestones phase=\{item\.phase\} verifyGate=\{item\.verify_gate\} \/>/)
+  assert.match(source, /<WorkMilestones phase=\{item\.phase\} verifyGate=\{item\.verify_gate\}\s+onComplete=\{/)
   assert.match(milestones, /state === "done" \? "check"/)
   assert.match(source, /page\.recent_items\.map/)
-  assert.match(source, /最近完成的看板項目/)
-	assert.match(source, /`已完成 \$\{when\(item\.closed_at\)\}`/)
+  assert.match(source, pattern`${wordCall("最近完成的看板項目")}`)
+	assert.match(source, pattern`${word("已完成 {arg0}")}, \[when\(item\.closed_at\)\]\)`)
   assert.match(styles, /\.work-milestones li\[data-state="done"\]/)
   assert.match(styles, /var\(--ok\)/)
 })
@@ -135,10 +137,10 @@ test("direct todos explain receipts, allow a read row to be sent again, and reta
   const send = readFileSync(new URL("./todo-send.ts", import.meta.url), "utf8")
   assert.match(source, /const send = todoSend\(todo, now\)/)
   assert.match(send, /if \(todo\.read_at\) return \{ kind: "again", label: catalogWord\("literal", "3aa8e038c09d"\) \}/)
-  assert.match(source, /已同步到 Session，尚未完成/)
-  assert.match(source, /最近完成的直接待辦/)
+  assert.match(source, pattern`${wordCall("已同步到 Session，尚未完成")}`)
+  assert.match(source, pattern`${wordCall("最近完成的直接待辦")}`)
   assert.match(source, /session-todo-check completed/)
-  assert.match(source, /aria-label="恢復為未完成"[\s\S]*?onClick=\{\(\) => onAction\("reopen"\)\}/)
+  assert.match(source, pattern`aria-label=\{${wordCall("恢復為未完成")}\}[\s\S]*?onClick=\{\(\) => onAction\("reopen"\)\}`)
   assert.match(styles, /\.session-direct-todo\.completed/)
   assert.match(styles, /var\(--ok\)/)
 })
@@ -151,12 +153,12 @@ test("completed todo titles stay neutral while completion status stays green", (
 
 test("empty Session todos use one message and hide empty section furniture", () => {
   assert.match(source, /const empty = page !== null && !hasAssigned && !hasRecent && !hasDirect && !hasCompletedDirect/)
-  assert.match(source, /\{page && hasAssigned && <section[\s\S]*?這個 Session 尚未關閉的負責項目/)
-  assert.match(source, /\{page && hasRecent && <section[\s\S]*?最近完成的看板項目/)
-  assert.match(source, /\{page && hasDirect && <section className="session-todos-list" aria-label="直接待辦">[\s\S]*?openDirect\.map/)
+  assert.match(source, pattern`\{page && hasAssigned && <section[\s\S]*?${wordCall("這個 Session 尚未關閉的負責項目")}`)
+  assert.match(source, pattern`\{page && hasRecent && <section[\s\S]*?${wordCall("最近完成的看板項目")}`)
+  assert.match(source, pattern`\{page && hasDirect && <section className="session-todos-list" aria-label=\{${wordCall("直接待辦")}\}>[\s\S]*?openDirect\.map`)
   assert.doesNotMatch(source, /直接交給這個 Session 的待辦。/)
-  assert.match(source, /\{page && hasCompletedDirect && <section[\s\S]*?最近完成的直接待辦/)
-  assert.match(source, /\{empty && <p className="session-todos-empty">目前沒有待辦。<\/p>\}/)
+  assert.match(source, pattern`\{page && hasCompletedDirect && <section[\s\S]*?${wordCall("最近完成的直接待辦")}`)
+  assert.match(source, pattern`\{empty && <p className="session-todos-empty">\{${wordCall("目前沒有待辦。")}\}<\/p>\}`)
   assert.doesNotMatch(source, /目前沒有負責中的項目/)
   assert.doesNotMatch(source, /目前沒有直接待辦/)
 })
@@ -168,7 +170,7 @@ test("assigned Board items open the Board's current card with the requested user
   assert.match(source, /openWorkItem\(item\)/)
   assert.match(work, /const refreshDetail = useCallback\(\(id: string\) => \{[\s\S]*?readWorkV2Item\(id\)/)
   assert.match(work, /const openItem = useCallback\(\(item: WorkV2Item\) => \{[\s\S]*?refreshDetail\(item\.id\)/)
-  assert.match(work, /需要你做的事/)
+  assert.match(work, pattern`${wordCall("需要你做的事")}`)
   assert.match(work, /item\.user_action/)
   assert.match(work, /item\.description/)
   assert.match(work, /item\.images\.map/)
@@ -178,7 +180,7 @@ test("an open assigned Board item can remind its Session from the detail", () =>
   const api = readFileSync(new URL("../pages/work/api.ts", import.meta.url), "utf8")
   const work = readFileSync(new URL("../pages/work/WorkV2.tsx", import.meta.url), "utf8")
   // Only an open, owned item shows the reminder.
-  assert.match(work, /\{!!item\.owner_session && !item\.closed_at && <button[\s\S]*?remindWorkV2\(item\)[\s\S]*?提醒 Session/)
+  assert.match(work, pattern`\{!!item\.owner_session && !item\.closed_at && <button[\s\S]*?remindWorkV2\(item\)[\s\S]*?${wordCall("提醒 Session")}`)
   assert.match(api, /items\/\$\{item\.id\}\/remind/)
 })
 
@@ -191,8 +193,8 @@ test("a recent Board item opens its durable completion report in one click", () 
   assert.match(api, /interface WorkV2Document[\s\S]*created_at:\s*number/)
   assert.match(source, /completionReports\(item\)\.length/)
   assert.match(source, /session-owned-complete/)
-  assert.match(source, /aria-label="已完成"/)
-  assert.match(source, /結案報告/)
+  assert.match(source, pattern`className="session-owned-complete" role="img" aria-label=\{${wordCall("已完成")}\}`)
+  assert.match(source, pattern`${wordCall("結案報告")}`)
   const work = readFileSync(new URL("../pages/work/WorkV2.tsx", import.meta.url), "utf8")
   assert.match(work, /<WorkCompletionReports item=\{item\} expanded=\{reportsExpanded\}/)
   assert.match(work, /reportsExpanded=\{!created\}/)
@@ -200,7 +202,7 @@ test("a recent Board item opens its durable completion report in one click", () 
   assert.match(work, /document\.body/)
   assert.match(order, /role === "completion_report"/)
   assert.match(report, /completionReportsNewestFirst/)
-  assert.match(report, /寫於 \{when\(document\.created_at\)\}/)
+  assert.match(report, pattern`\{${wordCall("寫於")}\} \{when\(document\.created_at\)\}`)
   assert.match(report, /L\.richTextHTML\(completionReportText\(document\.body\)\)/)
   assert.match(styles, /\.work-completion-report/)
   assert.match(styles, /\.work-completion-report-body\s*\{[^}]*color:\s*var\(--ink\)[^}]*font-size:\s*15px/)
@@ -213,9 +215,9 @@ test("folded Session todos show finished, active and not-started counts", () => 
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
   assert.match(source, /<TodoProgressSummary progress=\{todoProgress\(page, row\.sessionId\)\} \/>/)
   assert.match(source, /aria-label=\{todoProgressLabel\(progress\)\}/)
-  assert.match(source, /\{ key: "done", icon: "check", word: "完成" \}/)
-  assert.match(source, /\{ key: "active", icon: "half", word: "進行中" \}/)
-  assert.match(source, /\{ key: "waiting", icon: "circle", word: "未開始" \}/)
+  assert.match(source, pattern`\{ key: "done", icon: "check", word: ${wordCall("完成")} \}`)
+  assert.match(source, pattern`\{ key: "active", icon: "half", word: ${wordCall("進行中")} \}`)
+  assert.match(source, pattern`\{ key: "waiting", icon: "circle", word: ${wordCall("未開始")} \}`)
   assert.doesNotMatch(source, /session-todos-completed/)
   assert.match(styles, /\.session-todos-state\[data-state="done"\] \{ color: var\(--ok\); \}/)
   assert.match(styles, /\.session-todos-bar > \[data-state="active"\] \{ background: var\(--warn\); \}/)
@@ -269,7 +271,7 @@ test("the Session-added label replaces the sent/read receipt, and the controls s
   assert.match(words, /todoAddedBySession: "Added by Session"/)
   assert.match(words, /todoAddedBySession: "Session 建立"/)
   // Delete, Complete and Send are not gated on who wrote the row.
-  assert.match(source, /<button className="session-todo-delete" type="button" disabled=\{busy\} aria-label="刪除待辦"[\s\S]*?onClick=\{\(\) => onAction\("delete"\)\}><WorkIcon name="delete" \/><\/button>/)
+  assert.match(source, pattern`<button className="session-todo-delete" type="button" disabled=\{busy\} aria-label=\{${wordCall("刪除待辦")}\}[\s\S]*?onClick=\{\(\) => onAction\("delete"\)\}><WorkIcon name="delete" \/><\/button>`)
   assert.match(source, /className=\{`chip session-todo-send\$\{send\.kind === "send" \? " on danger" : ""\}`\}[\s\S]*?<WorkIcon name="send" \/>\{send\.label\}/,
     "only a first Send takes the accent; Send again is a grey chip")
   assert.doesNotMatch(source, /own && <button|!own && <button/)
