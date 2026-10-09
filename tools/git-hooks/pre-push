@@ -12,9 +12,93 @@
 #
 # Three answers, like the other guards here: 0 allowed, 1 refused, 2 could not
 # check. Could-not-check is not a pass.
+#
+# A push to main is also refused while main is red. From 2026-10-07 04:12 to
+# 2026-10-09 160 of 200 CI runs on main failed and every push landed on top of
+# a failure, because nothing here asked. The answer is the latest completed CI
+# run on main that was not cancelled (a run cancelled by a newer push says
+# nothing); when it failed, the push is refused with its URL and failing jobs,
+# unless
+#   - one of the pushed commits carries a trailer `CI-Fix: <run id or URL>`,
+#     which says this push is the repair (`git commit --trailer
+#     "CI-Fix: 37916599301"`), or
+#   - CLAWDLINE_PUSH_ON_RED=1 is set, which is printed as an override.
+# When the run cannot be read (no gh, offline, not logged in) the answer is 2
+# and the push is refused, like the privacy checks below: an unread main is
+# how a red one was pushed onto. CLAWDLINE_PUSH_ON_RED=1 overrides that too.
+# CLAWDLINE_GH names the gh binary (the hook's test stubs it).
 set -u
 root=$(git rev-parse --show-toplevel) || exit 2
 cd "$root" || exit 2
+
+gh_bin=${CLAWDLINE_GH:-gh}
+remote_url=${2:-}
+
+# red_main <local_sha> <remote_sha> answers 0 main is green or the push may
+# land on it anyway, 1 refused, 2 could not check.
+red_main() {
+  # The repository from the URL being pushed to, when it is GitHub's; gh
+  # otherwise picks it from this checkout's remotes.
+  repo=$(printf '%s\n' "$remote_url" | sed -n 's#^.*github\.com[:/]\([^/]*/[^/]*\)$#\1#p' | sed 's#\.git$##')
+  set -- "$@" ${repo:+--repo} ${repo:+"$repo"}
+  local_sha=$1 remote_sha=$2; shift 2
+
+  # gh reads nothing, but the ref list git sends is this hook's stdin, so
+  # each call is kept off it.
+  if ! command -v "$gh_bin" >/dev/null 2>&1; then
+    why="gh is not installed"
+  elif ! latest=$("$gh_bin" run list "$@" --branch main --workflow ci.yml --status completed -L 20 \
+      --json databaseId,conclusion,url \
+      --jq '.[] | select(.conclusion != "cancelled" and .conclusion != "skipped") | "\(.databaseId) \(.conclusion) \(.url)"' 2>&1 </dev/null); then
+    why=$(printf '%s' "$latest" | head -n 3)
+  elif [ -z "$latest" ]; then
+    why="no completed CI run on main was found"
+  else
+    why=""
+  fi
+  if [ -n "$why" ]; then
+    if [ "${CLAWDLINE_PUSH_ON_RED:-}" = 1 ]; then
+      echo "pre-push: could not read CI on main ($why); CLAWDLINE_PUSH_ON_RED=1 overrode the check." >&2
+      return 0
+    fi
+    echo "pre-push: could not read the latest CI run on main, so this push to main is not allowed." >&2
+    echo "  $why" >&2
+    echo "  Fix gh (gh auth status) and push again, or set CLAWDLINE_PUSH_ON_RED=1 to push unchecked." >&2
+    return 2
+  fi
+
+  set -- $(printf '%s\n' "$latest" | head -n 1)
+  run_id=$1 conclusion=$2 run_url=$3
+  case "$conclusion" in
+    success | neutral) return 0 ;;
+  esac
+
+  jobs=$("$gh_bin" run view "$run_id" ${repo:+--repo} ${repo:+"$repo"} --json jobs \
+    --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure") | .name' 2>/dev/null </dev/null) ||
+    jobs="(the failing jobs could not be read)"
+
+  case "$remote_sha" in
+    "" | 0000000000000000000000000000000000000000) range="-1 $local_sha" ;;
+    *) if git cat-file -e "$remote_sha" 2>/dev/null; then range="$remote_sha..$local_sha"; else range="-1 $local_sha"; fi ;;
+  esac
+  # shellcheck disable=SC2086 # range is one or two words on purpose
+  fix=$(git log --format='%(trailers:key=CI-Fix,valueonly)' $range | sed '/^[[:space:]]*$/d' | head -n 1)
+
+  if [ -n "$fix" ]; then
+    echo "pre-push: main is red (run $run_id, $conclusion); pushing because a commit says CI-Fix: $fix" >&2
+    return 0
+  fi
+  if [ "${CLAWDLINE_PUSH_ON_RED:-}" = 1 ]; then
+    echo "pre-push: main is red (run $run_id, $conclusion); CLAWDLINE_PUSH_ON_RED=1 overrode the refusal." >&2
+    return 0
+  fi
+  echo "pre-push: refused a push onto a red main." >&2
+  echo "  The latest completed CI run on main ended $conclusion: $run_url" >&2
+  printf '%s\n' "$jobs" | sed '/^$/d; s/^/  failing job: /' >&2
+  echo "  Fix it first. A push that is the fix carries a trailer in one of its commits," >&2
+  echo "  git commit --trailer \"CI-Fix: $run_id\"; CLAWDLINE_PUSH_ON_RED=1 pushes anyway." >&2
+  return 1
+}
 
 status=0
 while read -r local_ref local_sha remote_ref remote_sha; do
@@ -29,6 +113,13 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     continue
   fi
   [ "$remote_ref" = "refs/heads/swift" ] && continue
+
+  red_main "$local_sha" "$remote_sha"
+  red=$?
+  if [ "$red" -ne 0 ]; then
+    [ "$status" -eq 1 ] || status=$red
+    continue
+  fi
 
   if ! out=$(tools/check-private.sh 2>&1); then
     echo "pre-push: the working tree is not clean of private material." >&2

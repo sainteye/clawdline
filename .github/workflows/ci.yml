@@ -79,6 +79,10 @@ jobs:
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-public-remote-guard.sh
 
+      - name: Check that pre-push refuses a push onto a red main
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
+        run: tools/test-pre-push-red-main.sh
+
       - name: Check explicit CI modes
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-ci-check-modes.sh
