@@ -81,19 +81,32 @@ func WorkingLine(screen string, assistant Assistant, tailLines int) string {
 // and hours forms, because the first version that did not made the line vanish
 // exactly when a long wait made it worth having.
 func Elapsed(text string) (int, bool) {
+	_, _, seconds, ok := ElapsedSpan(text)
+	return seconds, ok
+}
+
+// ElapsedSpan is Elapsed with where it found the clock: text[start:end] is the
+// clock as the provider drew it ("1m 12s"), in bytes.
+//
+// The span is what makes a working line comparable. The clock moves every
+// second the session works and nothing else in the line has to, so a list that
+// compared the whole line called every screen refresh a change and published
+// it (sessions.go, changeIdentity).
+func ElapsedSpan(text string) (start, end, seconds int, ok bool) {
 	chars := []rune(text)
+	offset := func(i int) int { return len(string(chars[:i])) }
 	for i := 0; i < len(chars); i++ {
 		if chars[i] != '(' {
 			continue
 		}
-		total := 0
+		total, first := 0, -1
 		j := i + 1
 		for j < len(chars) && chars[j] != ')' {
 			if !unicode.IsDigit(chars[j]) {
 				j++
 				continue
 			}
-			start := j
+			from := j
 			for j < len(chars) && unicode.IsDigit(chars[j]) {
 				j++
 			}
@@ -101,7 +114,7 @@ func Elapsed(text string) (int, bool) {
 				break
 			}
 			value := 0
-			for _, d := range chars[start:j] {
+			for _, d := range chars[from:j] {
 				value = value*10 + int(d-'0')
 			}
 			switch chars[j] {
@@ -110,15 +123,32 @@ func Elapsed(text string) (int, bool) {
 			case 'm':
 				total += value * 60
 			case 's':
-				return total + value, true
+				if first < 0 {
+					first = from
+				}
+				return offset(first), offset(j + 1), total + value, true
 			default:
 				j++
 				continue
 			}
+			if first < 0 {
+				first = from
+			}
 			j++
 		}
 	}
-	return 0, false
+	return 0, 0, 0, false
+}
+
+// WithoutElapsed is a working line with its clock cut out, or the line as it
+// is when it has none. Two readings of one turn differ only in the clock, and
+// this is what they have in common.
+func WithoutElapsed(line string) string {
+	start, end, _, ok := ElapsedSpan(line)
+	if !ok {
+		return line
+	}
+	return line[:start] + line[end:]
 }
 
 // Plain removes terminal controls so a capture can be read as text. CSI and OSC

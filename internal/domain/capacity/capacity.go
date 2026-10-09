@@ -154,21 +154,23 @@ const (
 // The names of the rows. Stable: they are keys on the wire and in the
 // CLAWDLINE_NEXT_CAPACITY override.
 const (
-	AuditSecurity      = "audit.security"
-	StoreDB            = "store.db"
-	SessionExecutions  = "session.executions"
-	SessionNoMovement  = "session.no_movement_seconds"
-	BoardReceipts      = "board.receipts"
-	CloudRelayQueue    = "cloud.relay_queue"
-	StoreReceipts      = "store.receipts"
-	CloudPeerPairs     = "cloud.peer_pairs"
-	CloudPeerGrants    = "cloud.peer_grants"
-	CloudPeerInbox     = "cloud.peer_inbox"
-	CloudPeerInboxPage = "cloud.peer_inbox_page"
-	CloudPeerOutbox    = "cloud.peer_outbox"
-	CloudPeerIngress   = "cloud.peer_ingress"
-	CloudPeerBody      = "cloud.peer_body_bytes"
-	CloudPeerFrame     = "cloud.peer_frame_bytes"
+	AuditSecurity     = "audit.security"
+	StoreDB           = "store.db"
+	SessionExecutions = "session.executions"
+	SessionNoMovement = "session.no_movement_seconds"
+	// The last committed execution scan, so an unchanged one opens no write.
+	CacheSessionExecutionMemo = "cache.session_execution_memo"
+	BoardReceipts             = "board.receipts"
+	CloudRelayQueue           = "cloud.relay_queue"
+	StoreReceipts             = "store.receipts"
+	CloudPeerPairs            = "cloud.peer_pairs"
+	CloudPeerGrants           = "cloud.peer_grants"
+	CloudPeerInbox            = "cloud.peer_inbox"
+	CloudPeerInboxPage        = "cloud.peer_inbox_page"
+	CloudPeerOutbox           = "cloud.peer_outbox"
+	CloudPeerIngress          = "cloud.peer_ingress"
+	CloudPeerBody             = "cloud.peer_body_bytes"
+	CloudPeerFrame            = "cloud.peer_frame_bytes"
 	// C2: the things that had no limit at all (limits §3.3, §7.2 wave 2).
 	LogDaemon             = "log.daemon"
 	DevicesList           = "devices.list"
@@ -590,6 +592,16 @@ func Register() []Entry {
 			Limit: 4096, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Health, Sender, Log}, EvictedBy: Person,
 			Sources: []string{"internal/adapters/store.ExecutionRecordsLimit"},
+		},
+		{
+			// The one execution scan observeExecutions last committed, by
+			// terminal. A scan equal to it is answered from it and opens no
+			// write transaction; a scan naming more terminals than this is not
+			// remembered and goes to the store, as every scan did before.
+			Name: CacheSessionExecutionMemo, Class: Cache, Unit: Rows,
+			Limit: 4096, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.ExecutionMemoLimit"},
 		},
 		{
 			// A current record-movement observation stops being recent after

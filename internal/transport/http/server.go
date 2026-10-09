@@ -130,6 +130,17 @@ type Server struct {
 	// their memory back, and resumable again (session_archive.go,
 	// docs/session-archive.md).
 	archive *app.SessionArchive
+	// listsProducer builds the session list and the first task page once per
+	// tick for every stream, the route and the Cloud publisher (producer.go).
+	// Made on first use by lists().
+	listsOnce     sync.Once
+	listsProducer *listProducer
+	// executions remembers what observeExecutions last committed, so an
+	// unchanged scan does not open a write transaction (execution_memo.go).
+	executions executionMemo
+	// turns keeps each working session's turn start steady across readings,
+	// so `working_since` is a change only when a new turn starts (sessions.go).
+	turns workingClock
 	// screenBus carries a moved screen's revision to every open event stream.
 	screenBus *screenBus
 	// broker is the loop from a root asking for work to a child reporting that

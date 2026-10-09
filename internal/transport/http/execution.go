@@ -65,6 +65,16 @@ func (s *Server) observeExecutions(ctx context.Context, inv session.Inventory,
 		}
 		seen = append(seen, store.ExecutionSeen{ID: item.ID, Source: rowSource(item), Fingerprint: fp})
 	}
+	// A scan the store already holds commits nothing, so it is not asked
+	// (execution_memo.go). The memo is held across the store call.
+	key, memoable := executionScanKey(s.executionMachine(), seen, present, inv)
+	s.executions.mu.Lock()
+	defer s.executions.mu.Unlock()
+	if memoable {
+		if generations, ok := s.executions.recall(key); ok {
+			return generations
+		}
+	}
 	generations, err := s.store.ObserveExecutions(ctx, s.executionMachine(), seen, func(id, source string) bool {
 		if present[id] {
 			return false
@@ -73,8 +83,10 @@ func (s *Server) observeExecutions(ctx context.Context, inv session.Inventory,
 		return proved
 	})
 	if err != nil {
+		s.executions.remember("", false, nil)
 		return nil
 	}
+	s.executions.remember(key, memoable, generations)
 	return generations
 }
 

@@ -5813,6 +5813,13 @@ type SessionRow struct {
 	// Unix seconds: when that declaration was made.
 	WorkSince int64     `json:"work_since,omitempty"`
 	WorkState WorkState `json:"work_state"`
+
+	// When the turn a working session's `line` reports began, in unix seconds: when
+	// the line was read, less the assistant's own clock in it. Present only beside a
+	// `line` that carries that clock. A page that has it draws the clock itself from
+	// this instant, so `line` is republished only when something other than the clock
+	// moved; a page without it draws `line` as sent.
+	WorkingSince int64 `json:"working_since,omitempty"`
 }
 
 // Whether this reading had the waiting session's screen to look at. Present

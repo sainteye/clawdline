@@ -18,6 +18,7 @@
 | `cache.pinned_read` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.reclaim_summary` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.session_activity` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
+| `cache.session_execution_memo` | 4096 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.session_inventory` | 120 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.session_links` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.session_skills` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |

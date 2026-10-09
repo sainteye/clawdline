@@ -6908,6 +6908,15 @@ export interface SessionRow {
    */
   work_since?: number
   work_state: WorkState
+
+  /**
+   * When the turn a working session's `line` reports began, in unix seconds: when
+   * the line was read, less the assistant's own clock in it. Present only beside a
+   * `line` that carries that clock. A page that has it draws the clock itself from
+   * this instant, so `line` is republished only when something other than the clock
+   * moved; a page without it draws `line` as sent.
+   */
+  working_since?: number
 }
 
 /**
