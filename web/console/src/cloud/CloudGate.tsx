@@ -58,7 +58,6 @@ import { PinnedSessionActionPanel } from "./PinnedSessionActions.js"
 import { PeerHandoffPanel, PeerRevocationPanel } from "./PeerHandoffPanel.js"
 import { destinationFromFragment, type SessionProjectionSource } from "./all-machine-sessions.js"
 import { statusSource } from "./status-source.js"
-import { statusProjection } from "./status-projection.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
 import { installScheduleWebhookManagement } from "./schedule-webhooks.js"
 import { installCloudPush, type CloudPushClient } from "./cloud-push.js"
@@ -212,6 +211,11 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const [problem, setProblem] = useState<AccessProblem | null>(null)
   const [chosen, setChosen] = useState<CloudMachine | null>(null)
   const [fleetScope, setFleetScope] = useState(() => location.hash === "#all-machines" || !!destinationFromFragment(location.hash))
+  useEffect(() => {
+    if (!chosen || screen.at !== "console") return
+    if (fleetScope) client.current?.disableClassicSessionView?.()
+    else client.current?.enableClassicSessionView?.(chosen.id)
+  }, [chosen?.id, fleetScope, screen.at])
   const [pendingTool, setPendingTool] = useState<PendingMachineAction | null>(pendingMachineTool)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const switcherRef = useRef<HTMLDivElement>(null)
@@ -375,14 +379,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     const next = new RelayReader(machine.id, {
       strings: () => (config ? catalog(config) : Promise.resolve({})),
       carry: CARRY_TABLE,
-      statusList: () => {
-        const result = statusProjection(client.current, machine.id)
-        return { at: result.observedAt ?? Date.now(), complete: result.kind === "ready" }
-      },
+      classicStatus: true,
     })
     const writer = new RelayWriter(next.writeHost)
     next.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
     next.attach(current)
+    current.enableClassicSessionView?.(machine.id)
     reader.current = next
     setTerminalHost({ client: current as unknown as TerminalCloudClient, machine: machine.id })
     readThroughRelay(next)
@@ -728,6 +730,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           if (reader.current) {
             // A renewal or a reconnect: the console keeps reading, through the new client.
             reader.current.attach(next)
+            next.enableClassicSessionView?.(reader.current.machine)
             setTerminalHost({ client: next as unknown as TerminalCloudClient, machine: reader.current.machine })
             setScreen({ at: "console" })
             return
@@ -1151,7 +1154,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           <App aside={aside} hideSessionCounts={fleetScope}
             focusCloudSessions={fleetScope}
             onLeaveCloudSessions={leaveFleet}
-            cloudSessions={<AllMachineSessions
+            cloudSessions={fleetScope ? <AllMachineSessions
             key={clientEpoch + ":" + (fleetScope ? "all" : chosen.id)}
             fleet={fleetScope}
             machines={(fleetScope ? quickMachines : [chosen]).map((machine) => ({
@@ -1171,7 +1174,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
                 platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
               }))}
                 source={liveSessionSource} current={currentActionClient} />}
-          />} />
+          /> : undefined} />
           <CloudSessionSheets machineID={chosen.id} source={liveSessionSource}
             pending={pendingTool} onConsumed={consumeTool} />
         </CloudAccountContext.Provider>

@@ -62,6 +62,7 @@ test("Session header trail distinguishes started, observed, canceled, unavailabl
 
 class FakeClient implements CloudReadClient {
   ready = true
+  statusSnapshots?: ReadonlyMap<string, unknown>
   sessionInventoryByMachine = new Map<string, unknown>()
   machineRows: { id: string; freshness: "current" | "stale" | "unknown" }[] = [
     { id: "mac-a", freshness: "current" },
@@ -198,6 +199,27 @@ test("the list keeps each selected row's document identity", async () => {
   assert.equal((snap.sessions[0] as unknown as { machine: string }).machine, "mac-a")
   assert.deepEqual(snap.sessions[0].identity, { machine: "mac-a", session: "s1" })
   assert.deepEqual(documentIdentityForSession(snap.sessions, "s1", "cloud"), { machine: "mac-a", session: "s1" })
+})
+
+test("the original page keeps rich titles only for current executions named by ss", async () => {
+  const client = new FakeClient()
+  const generation = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  client.rows = [row("mac-a", "s1", { label: "Project title", execution_generation: generation }),
+    row("mac-a", "s2", { label: "Old execution", execution_generation: generation }),
+    row("mac-b", "s1", { label: "Other machine", execution_generation: generation })]
+  client.statusSnapshots = new Map([
+    [JSON.stringify(["mac-a", "__clawdline_inventory_v1__"]), { payload: {
+      complete: true, inventory: { version: 1, sessions: ["s1", "s2"] },
+    } }],
+    [JSON.stringify(["mac-a", "s1"]), { payload: { execution_generation: generation } }],
+    [JSON.stringify(["mac-a", "s2"]), { payload: { execution_generation: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } }],
+  ])
+  const r = new RelayReader("mac-a", { classicStatus: true, now: () => 1000 })
+  r.attach(client)
+  const snap = await r.snapshot()
+  assert.deepEqual(snap.sessions.map((session) => session.label), ["Project title"])
+  assert.equal(snap.scan.complete, false)
+  assert.equal(snap.scan.emptyAuthoritative, false)
 })
 
 test("refresh asks the machine to restate quiet Sessions after the first list", async () => {

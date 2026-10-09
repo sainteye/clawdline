@@ -9,6 +9,39 @@ const envelope = (ch) => ({ v: 1, ch, seq: 1, ts: 1, class: "stream", key_id: "k
 const genA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const genB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
+test("the original one-machine page subscribes only exact rich rows named by that machine's status", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.statusSnapshots = new Map([
+    [JSON.stringify(["m", "__clawdline_inventory_v1__"]), { payload: {
+      complete: true, snapshot_generation: genA, inventory: { version: 1, sessions: ["s1", "s2"] },
+    } }],
+    [JSON.stringify(["m", "s1"]), { payload: { snapshot_generation: genA, execution_generation: genA } }],
+    [JSON.stringify(["m", "s2"]), { payload: { snapshot_generation: genA, execution_generation: genB } }],
+    [JSON.stringify(["other", "s1"]), { payload: { snapshot_generation: genA, execution_generation: genA } }],
+  ])
+  client.sessionSnapshots = new Map([["m\u0000s1", { execution_generation: genA }]])
+  client.classicSessionMachine = null
+  client.classicSessionReads = new Map()
+  client.classicSessionAttempted = new Map()
+  client.pendingSubscriptions = new Set()
+  client.socketSubscriptions = new Map()
+  client.resubscribes = new Map()
+  client.subscriptionLimit = 8
+  client.ready = true
+  client.now = () => 100
+  client.setTimeout = () => 1
+  client.clearTimeout = () => {}
+  const frames = []
+  client._sendSubscriptionFrame = (type, channels) => frames.push({ type, channels })
+  client.enableClassicSessionView("m")
+  assert.deepEqual(frames, [{ type: "subscribe", channels: ["s/m/s1"] },
+    { type: "subscribe", channels: ["s/m/s2"] }])
+  assert.deepEqual([...client.socketSubscriptions.keys()], ["s/m/s1", "s/m/s2"])
+  client.ready = false
+  client.disableClassicSessionView()
+  assert.equal(client.socketSubscriptions.size, 0)
+})
+
 test("the live signed machine descriptor keeps commands beyond the archived cache bound", () => {
   const client = Object.create(StatusCloudClient.prototype)
   const words = Array.from({ length: 65 }, (_, i) => `word-${i}`)
