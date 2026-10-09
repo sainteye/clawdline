@@ -1,4 +1,5 @@
-import { catalogWord, currentCatalogTag } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord, currentCatalogTag } from "../../catalog.ts"
 import { RefusalError, asMachineNeedsUpdate } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
 import { nextWord } from "../../next-strings.js"

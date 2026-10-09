@@ -5,7 +5,8 @@
 // daemon's Agent and voice language setting.
 
 /** `Assistant.label`: what a person calls it. Product names, not translated. */
-import { catalogWord } from "../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord } from "../catalog.ts"
 
 export const ASSISTANT_LABEL: Record<string, string> = {
   claude: "Claude Code",

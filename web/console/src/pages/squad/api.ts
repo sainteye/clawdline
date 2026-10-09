@@ -1,5 +1,7 @@
-import { catalogRefusalDetail, catalogWord } from "../../catalog.js"
-import { closingMark, fullStop } from "../../punctuation.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogRefusalDetail, catalogWord } from "../../catalog.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { closingMark, fullStop } from "../../punctuation.ts"
 import { client, mayWriteThroughCurrentTransport } from "../../client.js"
 import type { SquadReceipt, SquadSession, SquadView } from "./model.js"
 import { squadView, type WireCatalog, type WireSettings } from "./wire.js"

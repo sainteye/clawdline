@@ -1,6 +1,9 @@
-import { localizedLiteralMap } from "../../catalog.js"
-import { catalogFormat } from "../../catalog.js"
-import { catalogWord } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { localizedLiteralMap } from "../../catalog.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogFormat } from "../../catalog.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord } from "../../catalog.ts"
 import type { WorkGateCompactRead, WorkGateRoundSummary } from "@clawdline/contract"
 
 export const AUTHORITY: Record<string, string> = localizedLiteralMap({

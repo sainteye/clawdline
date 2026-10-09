@@ -1,4 +1,5 @@
-import { catalogWord } from "../../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord } from "../../../catalog.ts"
 export interface GateModeOption {
   id: "nexus" | "planning" | "verification" | "standard"
   label: string

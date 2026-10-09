@@ -14,7 +14,8 @@
  * which is the regression the rule is about. Inline it again and the rule goes
  * red on the one catalog that is right.
  */
-import { catalogWord, currentCatalogTag, type CatalogTag } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord, currentCatalogTag, type CatalogTag } from "../../catalog.ts"
 
 const englishBacklog = "Backlog"
 

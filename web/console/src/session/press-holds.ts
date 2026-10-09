@@ -32,7 +32,8 @@
  * Nothing is imported at run time, so `node --test` loads it as it is.
  */
 import type { Outcome } from "./outcome.js"
-import { catalogRefusalDetail } from "../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogRefusalDetail } from "../catalog.ts"
 
 /** How long an answered press holds its question once the machine said yes. */
 export const PRESS_SETTLED_MS = 10_000

@@ -1,5 +1,7 @@
-import { catalogFormat } from "../../catalog.js"
-import { catalogWord, currentCatalogTag } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogFormat } from "../../catalog.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord, currentCatalogTag } from "../../catalog.ts"
 import type { CapacityEntry, CapacityPanel, CapacityState } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"

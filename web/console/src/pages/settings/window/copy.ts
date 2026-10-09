@@ -1,11 +1,13 @@
-import { catalogFormat, currentCatalogTag } from "../../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogFormat, currentCatalogTag } from "../../../catalog.ts"
 /**
  * The native settings window's typed words. Original Swift copy and this
  * cross-platform app's own additions remain as source references here;
  * maintained `public/catalogs/<tag>.json` files provide screen text in all
  * supported languages. The guarded Swift web catalog stays unchanged.
  */
-import { catalogWord } from "../../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord } from "../../../catalog.ts"
 
 const ownWords = {
   en: {

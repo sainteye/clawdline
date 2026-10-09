@@ -1,5 +1,7 @@
-import { catalogFormat } from "../../catalog.js"
-import { catalogWord } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogFormat } from "../../catalog.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord } from "../../catalog.ts"
 import type { WorkV2Item } from "./api.js"
 
 /** The item's steps nobody has ticked, which a manual completion leaves open. */
