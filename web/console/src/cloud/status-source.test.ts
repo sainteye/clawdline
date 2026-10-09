@@ -78,8 +78,10 @@ test("Relay-confirmed offline applies to one machine only and expires to unknown
   assert.deepEqual(await source.readMachine(machineID, new AbortController().signal),
     { kind: "unavailable", reason: "unknown" })
   client.ready = true
-  assert.deepEqual(await source.readMachine(machineID, new AbortController().signal),
-    { kind: "unavailable", reason: "offline", retryAt: now + 101 })
+  const offline = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(offline.kind === "unavailable" && offline.reason, "offline")
+  assert.equal(offline.kind === "unavailable" && offline.retryAt, now + 101)
+  assert.equal(offline.rows?.[0].freshness, "stale")
   now += 101
   const expired = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(expired.kind === "unavailable" && expired.reason, "unknown")
@@ -87,6 +89,7 @@ test("Relay-confirmed offline applies to one machine only and expires to unknown
   marker.payload.at = Math.floor((Date.now() - 301_000) / 1000)
   const stale = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(stale.kind === "unavailable" && stale.reason, "stale")
+  assert.equal(stale.rows?.[0].freshness, "stale")
   client.machineOffline.delete(machineID)
   marker.payload.at = Math.floor(Date.now() / 1000)
   assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")

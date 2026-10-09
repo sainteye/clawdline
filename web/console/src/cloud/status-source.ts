@@ -53,6 +53,13 @@ function supportsPinnedRead(client: StatusClient, machineID: string, nowMs = Dat
     Math.abs(nowMs - Number(capability!.at) * 1000) <= STATUS_FRESH_MS
 }
 
+function retainedStatus(reading: MachineSessionProjection, reason: "offline" | "stale", retryAt?: number): MachineSessionProjection {
+  return { kind: "unavailable", reason, observedAt: reading.observedAt,
+    rows: reading.rows?.map((row) => ({ ...row, freshness: "stale" })),
+    complete: reading.kind === "ready" ? true : reading.complete,
+    snapshotGeneration: reading.snapshotGeneration, unknownTargets: reading.unknownTargets, retryAt }
+}
+
 /** Rich rows are visible only after an exact s/ subscription and must name the same execution. */
 export function pinnedQuestion(client: Pick<StatusClient, "detailSnapshots">, destination: SessionDestination,
   nowMs = Date.now()): Question {
@@ -97,7 +104,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     const offline = client.machineOffline?.get(machineID)
     if (offline && Number.isFinite(offline.until)) {
       const now = client.now?.() ?? Date.now()
-      if (now < offline.until) return { kind: "unavailable", reason: "offline", retryAt: offline.until + 1 }
+      if (now < offline.until) return retainedStatus(statusProjection(client, machineID), "offline", offline.until + 1)
       const expired = statusProjection(client, machineID)
       return expired.kind === "unavailable" && (expired.reason === "stale" || expired.reason === "old_version") ? expired
         : { kind: "unavailable", reason: "unknown", observedAt: expired.observedAt }
@@ -123,7 +130,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     const answer = await client.machines()
     const machine = answer.machines.find((entry) => entry.id === machineID)
     if (!machine || machine.freshness === "unknown") return { kind: "unavailable", reason: "unknown" }
-    if (machine.freshness !== "current") return { kind: "unavailable", reason: "stale", observedAt: projection.observedAt }
+    if (machine.freshness !== "current") return retainedStatus(projection, "stale")
     return projection
   }
   return {

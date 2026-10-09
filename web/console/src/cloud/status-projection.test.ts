@@ -108,9 +108,27 @@ test("an old client and an absent marker never become authoritative emptiness", 
 test("an old marker or projected row is stale even when the source says current", () => {
   const expired = statusProjection(fleet("a", ["same"]), "a", 302001)
   assert.equal(expired.kind === "unavailable" && expired.reason, "stale")
+  assert.equal(expired.rows?.[0].destination.sessionID, "same")
+  assert.equal(expired.rows?.[0].freshness, "stale")
+  assert.equal(expired.observedAt, 2000)
+  assert.equal(expired.snapshotGeneration, passOne)
+  assert.equal(expired.complete, true)
   const source = fleet("a", ["same"])
   const entry = source.statusSnapshots.get(JSON.stringify(["a", "same"])) as { payload: { projected_at: number } }
   entry.payload.projected_at = -400
   const reading = statusProjection(source, "a", 2000)
   assert.equal(reading.kind === "unavailable" && reading.reason, "stale")
+  assert.equal(reading.rows?.[0].freshness, "stale")
+})
+
+test("an expired pass with a missing or mismatched row still reports a gap", () => {
+  const missing = statusProjection(fleet("a", ["same"], passOne, "same"), "a", 302001)
+  assert.equal(missing.kind === "unavailable" && missing.reason, "event_gap")
+  assert.equal(missing.rows, undefined)
+  const mismatched = fleet("a", ["same"])
+  const marker = mismatched.statusSnapshots.get(JSON.stringify(["a", INVENTORY])) as { payload: { snapshot_generation: string } }
+  marker.payload.snapshot_generation = passTwo
+  const gap = statusProjection(mismatched, "a", 302001)
+  assert.equal(gap.kind === "unavailable" && gap.reason, "event_gap")
+  assert.equal(gap.rows, undefined)
 })

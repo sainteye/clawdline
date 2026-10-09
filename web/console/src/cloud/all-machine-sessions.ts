@@ -32,7 +32,8 @@ export type ProjectionProblem = "offline" | "stale" | "unknown" | "old_version" 
 
 export type MachineSessionProjection =
   | { kind: "ready"; complete: true; observedAt: number; snapshotGeneration?: string; rows: ProjectedSession[]; unknownTargets?: number }
-  | { kind: "unavailable"; reason: ProjectionProblem; observedAt?: number; rows?: ProjectedSession[]; retryAt?: number }
+  | { kind: "unavailable"; reason: ProjectionProblem; observedAt?: number; rows?: ProjectedSession[]; retryAt?: number;
+      complete?: true; snapshotGeneration?: string; unknownTargets?: number }
 
 export type SessionContent =
   | { kind: "ready"; destination: SessionDestination; observedAt: number; info: { title?: string; assistant?: string; model?: string };
@@ -95,14 +96,21 @@ export function destinationFromFragment(hash: string): SessionDestination | null
 
 /** Refuse malformed or cross-machine rows instead of silently routing them. */
 export function checkedProjection(machineID: string, reply: MachineSessionProjection): MachineSessionProjection {
-  if (reply.kind !== "ready") return reply
-  if (reply.complete !== true || !Number.isFinite(reply.observedAt) || reply.rows.some((row) =>
+  if (reply.kind === "unavailable" && !reply.rows) return reply
+  const rows = reply.rows
+  if (!rows) return { kind: "unavailable", reason: "bad_projection" }
+  if (reply.kind === "ready" && (reply.complete !== true || !Number.isFinite(reply.observedAt)))
+    return { kind: "unavailable", reason: "bad_projection" }
+  if (reply.kind === "unavailable" && (!Number.isFinite(reply.observedAt) ||
+    !["stale", "offline", "event_gap"].includes(reply.reason) || rows.some((row) => row.freshness === "current")))
+    return { kind: "unavailable", reason: "bad_projection" }
+  if (rows.some((row) =>
     row.destination.machineID !== machineID || !row.destination.sessionID ||
     !/^[0-9a-f]{32}$/u.test(row.destination.executionGeneration) || !Number.isFinite(row.observedAt) ||
     !["current", "stale", "unknown"].includes(row.freshness)
   )) return { kind: "unavailable", reason: "bad_projection" }
-  const keys = new Set(reply.rows.map((row) => destinationKey(row.destination)))
-  return keys.size === reply.rows.length ? reply : { kind: "unavailable", reason: "bad_projection" }
+  const keys = new Set(rows.map((row) => destinationKey(row.destination)))
+  return keys.size === rows.length ? reply : { kind: "unavailable", reason: "bad_projection" }
 }
 
 /** No content request may start from an unknown, stale, or superseded source. */
@@ -121,8 +129,9 @@ export function matchesSession(row: ProjectedSession, platform: string, filters:
 export function afterEventGap(before: MachineSessionProjection | undefined): MachineSessionProjection {
   return {
     kind: "unavailable", reason: "event_gap",
-    rows: before?.kind === "ready" ? before.rows : undefined,
+    rows: before?.rows?.map((row) => ({ ...row, freshness: "stale" })),
     observedAt: before?.observedAt,
+    snapshotGeneration: before?.snapshotGeneration,
   }
 }
 
