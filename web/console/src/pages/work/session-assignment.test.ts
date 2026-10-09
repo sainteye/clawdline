@@ -4,6 +4,10 @@ import type { SessionRow } from "@clawdline/contract"
 import type { SessionWorkV2 } from "./api.js"
 // @ts-expect-error -- a `.ts` path is required by Node's native type stripping.
 import { assignmentCandidates, assistantName, awaitsAcceptance, rememberAssistant, rememberedAssistant, sessionActivityName, sessionWorkCounts, sessionWorkLabel, sessionWorkStateName } from "./session-assignment.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "../../catalog-testing.ts"
+
+withCatalog("zh-Hant")
 
 test("assignment choices distinguish live activity from unreadable state", () => {
   assert.equal(sessionActivityName("working"), "Working")

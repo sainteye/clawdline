@@ -3,6 +3,10 @@ import test from "node:test"
 import type { SessionRow } from "@clawdline/contract"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { conditionWords, deploymentWords, needsPerson, nextActionWords, ownerOnlineWords, phaseStayWords } from "./board-card-facts.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "../../catalog-testing.ts"
+
+withCatalog("zh-Hant")
 
 const project = { available: true } as const
 

@@ -8,6 +8,8 @@ import type { UsageBill, UsageGap, UsageReason } from "@clawdline/contract"
 import { UsageCache, cardLine, formatCost, formatShare, formatTokens, gapWords, itemAbove, moneyOf, reasonWords, sessionReasonWords } from "./token-bill.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { workWordIn } from "./words.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { pattern, wordCall } from "../../catalog-testing.ts"
 
 const card = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
 const bill = readFileSync(new URL("./TokenBill.tsx", import.meta.url), "utf8")
@@ -143,7 +145,7 @@ test("the card and the session detail each draw the bill", () => {
   assert.match(bill, /const \[ref, seen\] = useSeen<HTMLDivElement>\(\)\n\s+const \{ reading \} = useUsage\(items, itemId, seen, version\)/)
   assert.match(bill, /useUsage\(sessions, conversation, open\)/)
   assert.match(bill, /usageRulesWhy/)
-  assert.match(bill, /c\.name === "wait" && c\.tokens\.total > 0\) &&\n\s+<p className="work-usage-note">wait · \{workWord\("usageWaitWhy"\)\}/)
+  assert.match(bill, pattern`c\.name === "wait" && c\.tokens\.total > 0\) &&\n\s+<p className="work-usage-note">\{${wordCall("等待（wait）·")}\} \{workWord\("usageWaitWhy"\)\}`)
   assert.match(bill, /<Composition composition=\{usage\.composition\} \/>/)
   assert.match(bill, /<Gaps gaps=\{usage\.gaps\} \/>/)
 })
