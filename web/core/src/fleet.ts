@@ -1,7 +1,10 @@
-import type { SessionsSnapshot, SessionRow, WorkState } from "@clawdline/contract"
+import type { SessionsSnapshot, SessionRow, TaskList, WorkState } from "@clawdline/contract"
 import type { ClawdlineClient } from "./client.js"
 import { routes } from "./routes.js"
 import type { StreamHandle, StreamTransport } from "./stream.js"
+import { taskListFrame } from "./task-frame.js"
+
+export { taskListFrame }
 
 /**
  * What a reader knows about the fleet, including what it does not know.
@@ -18,6 +21,21 @@ export interface FleetState {
   error: string | null
   /** Whether the live connection is currently up. */
   live: boolean
+  /**
+   * The task list the stream's `orchestrator` frame carried, or null when none
+   * has arrived on this connection. The daemon sends one as the stream opens
+   * and again whenever a task moves (`ownEvents`), so while `tasksLive` holds,
+   * this is as current as `GET /v1/orchestrator/tasks` and a page need not ask.
+   */
+  tasks: TaskList | null
+  /**
+   * An `orchestrator` frame arrived since the connection last opened, and the
+   * connection has not dropped since. A host whose stream carries no such frame
+   * — the relay, the quiet reads while a terminal holds the connection, a
+   * daemon that never sent one — leaves this false, and a page reads the list
+   * itself as it always did.
+   */
+  tasksLive: boolean
 }
 
 export type FleetListener = (state: FleetState) => void
@@ -31,7 +49,7 @@ export type FleetListener = (state: FleetState) => void
  * when a snapshot may be replaced.
  */
 export class FleetStore {
-  private state: FleetState = { snapshot: null, loaded: false, error: null, live: false }
+  private state: FleetState = { snapshot: null, loaded: false, error: null, live: false, tasks: null, tasksLive: false }
   private listeners = new Set<FleetListener>()
   private handle: StreamHandle | undefined
 
@@ -54,9 +72,16 @@ export class FleetStore {
     await this.refresh(true)
     if (!this.transport) return
     this.handle = this.transport.open(this.client.url(routes.events), {
-      onOpen: () => this.set({ live: true }),
-      onError: () => this.set({ live: false }),
+      // A reopened connection has not yet said what the tasks are: until its
+      // first `orchestrator` frame, the list held is from the old one.
+      onOpen: () => this.set({ live: true, tasksLive: false }),
+      onError: () => this.set({ live: false, tasksLive: false }),
       onFrame: (event, data) => {
+        if (event === "orchestrator") {
+          const tasks = taskListFrame(data)
+          if (tasks) this.set({ tasks, tasksLive: true })
+          return
+        }
         if (event !== "sessions" && event !== "message") return
         try {
           const next = JSON.parse(data) as SessionsSnapshot
@@ -72,7 +97,7 @@ export class FleetStore {
   stop(): void {
     this.handle?.close()
     this.handle = undefined
-    this.set({ live: false })
+    this.set({ live: false, tasksLive: false })
   }
 
   async refresh(initial = false): Promise<void> {

@@ -1147,6 +1147,11 @@ func TestSessionsSnapshotAnswersTheIdsThePublisherStated(t *testing.T) {
 		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1", "orchestrator": true},
 		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1", "initial": false},
 		{"type": "sessions.snapshot.initial", "session": MachineReplySession, "request": "req-1"},
+		// The page's own first recovery when it holds no `orch/` snapshot:
+		// `_askSessionSnapshot` in web/console/src/legacy/js/net/cloud-client.js
+		// sends `Object.assign({request}, {orchestrator: true})` under the
+		// initial word (refused as malformed_read before 2026-10-09).
+		{"type": "sessions.snapshot.initial", "session": MachineReplySession, "request": "req-1", "orchestrator": true},
 	} {
 		answer := bridge.Handle(context.Background(), request(t, ClassCtl, body))
 		if answer.Session != MachineReplySession || answer.Name != "read:req-1" || !answer.OK() {
@@ -1158,7 +1163,7 @@ func TestSessionsSnapshotAnswersTheIdsThePublisherStated(t *testing.T) {
 			t.Fatalf("the answer said %s", got)
 		}
 	}
-	if !reflect.DeepEqual(firsts, []bool{true, true, false, true}) {
+	if !reflect.DeepEqual(firsts, []bool{true, true, false, true, true}) {
 		t.Fatalf("the publisher saw first attempts %v", firsts)
 	}
 
@@ -1168,13 +1173,15 @@ func TestSessionsSnapshotAnswersTheIdsThePublisherStated(t *testing.T) {
 		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1", "orchestrator": false},
 		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1", "extra": 1},
 		{"type": "sessions.snapshot", "session": "%19", "request": "req-1"},
+		{"type": "sessions.snapshot.initial", "session": MachineReplySession, "request": "req-1", "orchestrator": false},
+		{"type": "sessions.snapshot.initial", "session": MachineReplySession, "request": "req-1", "initial": true},
 	} {
 		answer := bridge.Handle(context.Background(), request(t, ClassCtl, body))
 		if answer.Code != "malformed_read" {
 			t.Fatalf("%v answered %q, wanted malformed_read", body, answer.Code)
 		}
 	}
-	if len(firsts) != 4 {
+	if len(firsts) != 5 {
 		t.Fatalf("a malformed request asked the publisher (%d)", len(firsts))
 	}
 

@@ -4,7 +4,8 @@ import { BRAND_MARK } from "../brand-mark.js"
 import * as L from "../legacy/bridge.js"
 import { bootLocalCatalog } from "../catalog.js"
 import { toast } from "../overlays/toast.js"
-import { doorApi, type DoorFailure } from "./api.js"
+import { onHealth } from "../health-feed.js"
+import { doorApi, type DoorFailure, type DoorHealth } from "./api.js"
 import { passwordFailureSentence } from "./failure.js"
 
 /**
@@ -66,6 +67,12 @@ export function DoorGate() {
   const drawnRef = useRef(drawn)
   drawnRef.current = drawn
 
+  const take = useCallback((h: DoorHealth) => {
+    // Only offer the password door when there is a password behind it.
+    setPassword(h.password === true)
+    setWhere(h.authed === false ? "door" : "in")
+  }, [])
+
   const check = useCallback(async () => {
     let h: Awaited<ReturnType<typeof doorApi.health>>
     try {
@@ -76,9 +83,7 @@ export function DoorGate() {
       if (whereRef.current === "asking") setWhere("in")
       return
     }
-    // Only offer the password door when there is a password behind it.
-    setPassword(h.password === true)
-    setWhere(h.authed === false ? "door" : "in")
+    take(h)
   }, [])
 
   // The catalog, as App reads it (the slot the daemon filled, else
@@ -88,7 +93,16 @@ export function DoorGate() {
     void check()
   }, [check])
 
+  // While the console is drawn, its connection light reads health on its own
+  // lane, paused while the page is hidden, and the door hears that answer
+  // (`health-feed.ts`) rather than asking the same route again. Only the door
+  // alone, with no console behind it, reads for itself.
   useEffect(() => {
+    if (drawn) {
+      return onHealth((h) => {
+        if (h && typeof h === "object") take(h as DoorHealth)
+      })
+    }
     const again = () => {
       if (document.visibilityState === "visible") void check()
     }
@@ -100,7 +114,7 @@ export function DoorGate() {
       window.removeEventListener("online", again)
       window.clearInterval(timer)
     }
-  }, [check])
+  }, [check, drawn, take])
 
   // The page is uncovered by App once it has its words; with the door in
   // front and no App, the door does it.

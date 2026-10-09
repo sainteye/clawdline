@@ -7544,8 +7544,14 @@ type TranscriptPage struct {
 	// only when above zero.
 	Leftovers int64 `json:"leftovers,omitempty"`
 
+	// The byte offset just past the last complete row read: pass it as after= to read
+	// only what was appended since. Absent when nothing complete was read (no record
+	// yet, or an unreadable one), and from a daemon that does not take after=; a
+	// reader without it keeps reading the newest page whole.
+	NextAfter int64 `json:"nextAfter,omitempty"`
+
 	// Exclusive byte cursor for the next older page; absent at the beginning of the
-	// record.
+	// record, and on an after= page.
 	NextBefore int64  `json:"nextBefore,omitempty"`
 	Note       string `json:"note,omitempty"`
 
