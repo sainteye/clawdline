@@ -393,9 +393,22 @@ const workingClockDriftSeconds = 5
 // workingClock keeps each working session's turn start steady, so that it
 // can be compared: a start that wandered by a second on every reading would be
 // a change on every reading, which is what it exists to stop.
+//
+// A turn is told from the next by its clock going back, not by its start
+// moving. The line is the screen as last drawn, and a provider stops redrawing
+// its clock while a tool runs: on the running daemon (2026-10-09) one line read
+// "12m 18s" for six readings over 30 seconds, so a start worked out from it
+// moved five seconds a reading and was a new `working_since` every other one —
+// 285 changes in 20 minutes, more row changes than the clock it replaced.
 type workingClock struct {
 	mu     sync.Mutex
-	starts map[string]int64
+	starts map[string]turnStart
+}
+
+// turnStart is one working session's turn as last read: when it began, and
+// the clock its line showed then.
+type turnStart struct {
+	at, elapsed int64
 }
 
 // since is when the turn a working line reports began, in unix seconds, or 0
@@ -409,13 +422,23 @@ func (c *workingClock) since(id, line string, at time.Time) int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.starts == nil {
-		c.starts = map[string]int64{}
+		c.starts = map[string]turnStart{}
 	}
-	if held, ok := c.starts[id]; ok && held-start <= workingClockDriftSeconds && start-held <= workingClockDriftSeconds {
-		return held
+	held, ok := c.starts[id]
+	if !ok || int64(elapsed) < held.elapsed {
+		// The first reading of a turn, or a clock that went back: a new turn.
+		c.starts[id] = turnStart{at: start, elapsed: int64(elapsed)}
+		return start
 	}
-	c.starts[id] = start
-	return start
+	// The same turn. A line whose clock stood still while it was read again
+	// puts the start later than it was, so a start only ever moves earlier,
+	// and then only by more than reading jitter.
+	if start < held.at-workingClockDriftSeconds {
+		held.at = start
+	}
+	held.elapsed = int64(elapsed)
+	c.starts[id] = held
+	return held.at
 }
 
 // keep forgets every session that is not working in this list. The map holds

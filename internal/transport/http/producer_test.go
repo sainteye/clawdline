@@ -154,6 +154,30 @@ func TestWorkingSinceIsSteadyWithinATurnAndMovesWithANewOne(t *testing.T) {
 	}
 }
 
+// A provider stops redrawing its clock while a tool runs. The line read the
+// same for 30 seconds on the running daemon; the turn did not start again.
+func TestAClockThatStandsStillIsTheSameTurn(t *testing.T) {
+	var clock workingClock
+	at := time.Unix(10_000, 0)
+	first := clock.since("%1", "Thinking… (12m 18s)", at)
+	for wait := 5; wait <= 30; wait += 5 {
+		if got := clock.since("%1", "Thinking… (12m 18s)", at.Add(time.Duration(wait)*time.Second)); got != first {
+			t.Fatalf("%d s into a clock that stood still the start moved: %d then %d", wait, first, got)
+		}
+	}
+	// It is drawn again, further on: still the same turn and the same start.
+	if got := clock.since("%1", "Thinking… (12m 50s)", at.Add(32*time.Second)); got != first {
+		t.Errorf("the clock drawn again moved the start: %d then %d", first, got)
+	}
+	// Read first while it stood still, the start was late; a later reading
+	// that shows it earlier is taken.
+	var late workingClock
+	stale := late.since("%2", "Thinking… (10s)", at.Add(20*time.Second))
+	if got := late.since("%2", "Thinking… (40s)", at.Add(30*time.Second)); got != stale-20 {
+		t.Errorf("a start read late was not corrected: %d then %d", stale, got)
+	}
+}
+
 // An old page reads the row by the keys it knows; the new one is additive.
 func TestAnOldShapedPageStillReadsTheRow(t *testing.T) {
 	row := sessionRowWire{SessionRow: contract.SessionRow{ID: "%19", State: contract.SessionStateWorking,
