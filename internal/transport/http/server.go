@@ -289,6 +289,13 @@ func New(cfg config.Config) (*Server, error) {
 		SectionBytes: int(CapacityLimit(capacity.ITermStallSectionBytes)),
 		Step:         time.Duration(CapacityLimit(capacity.ITermStallStepSeconds)) * time.Second,
 	})
+	// The iTerm2 scan switch follows the settings file from the first
+	// reading on; a write that names it moves it again (settings.go).
+	if v, err := srv.settingsFile().Read(); err == nil {
+		applyITermScan(v)
+	} else {
+		log.Printf("settings: could not read iterm_scan, iTerm2 scanning stays on: %v", err)
+	}
 	srv.restore = srv.newSessionRestore()
 	srv.archive = srv.newSessionArchive()
 	srv.readings.Observe(srv.restore.Observe)
@@ -742,6 +749,9 @@ func (s *Server) StartScheduler(ctx context.Context) {
 	// Whether this machine trails the cloud's latest build: read now and on
 	// its own clock, so GET /v1/update never waits on the network.
 	go s.runUpdateCheck(ctx)
+	// One daemon.log line an hour counting the osascript runs behind it, so
+	// a week with iTerm2 scanning off can be compared with one with it on.
+	go runOsascriptReport(ctx, osascriptReportPeriod)
 }
 
 // schedulerTick is the clock's period: a minute, or CLAWDLINE_NEXT_TICK. The

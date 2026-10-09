@@ -202,6 +202,9 @@ type itermRow struct {
 
 func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 	now := i.now()
+	if !ITermScan() {
+		return disabledITermInventory(now), nil
+	}
 	inv := session.Inventory{
 		ObservedAt: now,
 		Provenance: "iterm",
@@ -310,6 +313,22 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 	return inv, nil
 }
 
+// disabledITermInventory is the iTerm2 source's answer while scanning is
+// turned off: no Apple Event was sent, so it is neither an empty list (which
+// would prove every iTerm2 tab gone) nor a failure (which would age the last
+// rows into `missing`, D55). It says it was turned off, and by what
+// (docs/design-decisions.md D56: a source that did not answer makes no
+// existence decision).
+func disabledITermInventory(now time.Time) session.Inventory {
+	return session.Inventory{
+		ObservedAt: now,
+		Provenance: "iterm",
+		Complete:   false,
+		Disabled:   ITermScanDisabledBy,
+		Notes:      []string{"iTerm2 scanning is turned off (setting iterm_scan); iTerm2 tabs are not listed"},
+	}
+}
+
 func runITermList(ctx context.Context) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript")
 	cmd.Stdin = strings.NewReader(itermList)
@@ -318,6 +337,7 @@ func runITermList(ctx context.Context) ([]byte, error) {
 	cmd.Stderr = &stderr
 	run := startOsascript(ctx, "list", "")
 	out, err := cmd.Output()
+	run.done(err)
 	if err != nil {
 		run.failed(ctx, stderr.String(), err)
 	}
@@ -455,6 +475,9 @@ var itermSendLimit = sendConfirm + 6*time.Second
 // on a current macOS, and iTerm2's own `write` does not bring the window
 // forward, which is the whole point.
 func (i *ITerm) Send(ctx context.Context, s session.Session, text string) error {
+	if !ITermScan() {
+		return ITermScanOff{Op: "type into that iTerm2 session"}
+	}
 	return itermCall(ctx, "send", itermSendScript, itermSendLimit, s.ID, text)
 }
 
@@ -488,6 +511,9 @@ func (i *ITerm) Interrupt(ctx context.Context, s session.Session) error {
 func (i *ITerm) Close(ctx context.Context, s session.Session) error {
 	if s.ID == "" {
 		return Unsent{Why: "there is no iTerm2 session id to close"}
+	}
+	if !ITermScan() {
+		return ITermScanOff{Op: "close that iTerm2 session"}
 	}
 	return i.farewell().say(ctx, s)
 }
@@ -577,6 +603,7 @@ func itermCall(ctx context.Context, kind, script string, limit time.Duration, ar
 	}
 	run := startOsascript(ctx, kind, session)
 	out, err := cmd.Output()
+	run.done(err)
 	if err != nil {
 		return osascriptFailure(ctx, run, stderr.String(), err, "iTerm2 did not do what it was asked.")
 	}

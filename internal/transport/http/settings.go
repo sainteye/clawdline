@@ -14,6 +14,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/contract"
 )
@@ -36,6 +37,7 @@ var browserSettings = map[string]bool{
 	"orchestrator_max_children": true, "orchestrator_permission": true,
 	"orchestrator_notify_root": true, "orchestrator_child_linger": true,
 	"claude_auto_compact_window": true,
+	"iterm_scan": true,
 }
 
 // settingsRequestBodyLimit bounds both the full local settings write and the
@@ -133,6 +135,9 @@ func (s *Server) settingsRoute(w http.ResponseWriter, r *http.Request) {
 		// moment they are written, as the Swift app's did on its reload.
 		if tunnelSettingChanged(changes) {
 			s.applyTunnel()
+		}
+		if _, changed := changes["iterm_scan"]; changed {
+			applyITermScan(v)
 		}
 		writeJSON(w, settingsSnapshot(f, v))
 	default:
@@ -438,4 +443,12 @@ func writeSettingsFailure(w http.ResponseWriter, f *nextconfig.File, err error) 
 	default:
 		writeRawRefusal(w, http.StatusInternalServerError, "settings_unavailable", err.Error())
 	}
+}
+
+// applyITermScan sets the iTerm2 scan switch from the settings file: absent,
+// or anything but false, is on. It runs once when the server is built and
+// again on every write that names the key, so the next reading follows it.
+func applyITermScan(v nextconfig.Values) {
+	on, ok := v.Bool("iterm_scan")
+	terminal.SetITermScan(!ok || on)
 }
