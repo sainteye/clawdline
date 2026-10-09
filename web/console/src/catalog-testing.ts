@@ -42,6 +42,25 @@ export function wordCall(text: string): string {
   return `${word(text)}\\)`
 }
 
+/**
+ * A pattern for copy a source must not show, however it is spelled there: the words written in
+ * place, or the quoted key (or legacy `T.key`) of any catalog entry whose zh-Hant or English value
+ * says them. A bare `doesNotMatch(source, /目前沒有直接待辦/)` passes forever once copy lives in
+ * catalogs; this one goes red again the moment a key that says it is named.
+ */
+export function said(words: string | RegExp): string {
+  const text = typeof words === "string" ? escape(words) : words.source
+  const says = new RegExp(text, typeof words === "string" ? "u" : words.flags)
+  const ids = [...new Set([...Object.keys(zh), ...Object.keys(en)])]
+    .filter((id) => id !== "lang" && id !== "dir" && (says.test(zh[id] ?? "") || says.test(en[id] ?? "")))
+  const keys = ids.map((id) => escape(id.slice(id.indexOf(".") + 1)))
+  const legacy = ids.filter((id) => id.startsWith("legacy.")).map((id) => escape(id.slice("legacy.".length)))
+  const ways = [`(?:${text})`]
+  if (keys.length) ways.push(`["'\`](?:${keys.join("|")})["'\`]`)
+  if (legacy.length) ways.push(`\\.(?:${legacy.join("|")})\\b`)
+  return `(?:${ways.join("|")})`
+}
+
 /** A regular expression written raw, with `word`/`wordCall` patterns interpolated as they are. */
 export function pattern(strings: TemplateStringsArray, ...parts: string[]): RegExp {
   return new RegExp(String.raw(strings, ...parts))

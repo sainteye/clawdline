@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 // @ts-expect-error -- Node runs this test against the source file directly.
-import { key, pattern, word, wordCall } from "../../catalog-testing.ts"
+import { key, pattern, said, word, wordCall } from "../../catalog-testing.ts"
 
 const source = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
 const workSteps = readFileSync(new URL("./WorkSteps.tsx", import.meta.url), "utf8")
@@ -73,7 +73,7 @@ test("assignment choices show Session activity, unfinished work, and selected de
   assert.match(source, pattern`${word("{arg0} · 完成 {arg1}")}, \[item\.project\.label, when\(item\.closed_at\)\]\)`)
   assert.match(source, /readSessionWorkV2\(session\.id\)/)
   assert.match(styles, /\.work-session-detail/)
-  assert.doesNotMatch(source, /<select className="work-input"[^>]*aria-label="指派既有 Session"/)
+  assert.doesNotMatch(source, pattern`<select className="work-input"[^>]*aria-label=(?:"|\{)[^>]*${said("指派既有 Session")}`)
 })
 
 test("AI role suggestions need no separate Settings consent", () => {
@@ -83,8 +83,8 @@ test("AI role suggestions need no separate Settings consent", () => {
 
 test("the assignment picker shows one compact AI suggestion action", () => {
   assert.match(source, pattern`aiSuggestionBusy \? ${wordCall("AI 建議中…")} : ${wordCall("AI 建議")}`)
-  assert.doesNotMatch(source, /讓 AI 判斷角色/)
-  assert.doesNotMatch(source, /只有按下按鈕才會把項目類型/)
+  assert.doesNotMatch(source, pattern`${said("讓 AI 判斷角色")}`)
+  assert.doesNotMatch(source, pattern`${said("只有按下按鈕才會把項目類型")}`)
   assert.doesNotMatch(styles, /\.work-persona-ai\s*\{/)
 })
 
@@ -421,7 +421,7 @@ test("an Epic shows its plan gate, its plan documents, and what assigning it mea
   assert.match(source, /\{epic && <p className="work-epic-assign-note">/)
   assert.match(report, /epicPlanDocuments\(item\.documents\)/)
   assert.match(source, pattern`epic: \{ icon: "◆", label: "Epic", description: "${key("可指派的大型工作；指派時若啟用規劃 gate，Session 要先寫計劃書並經 Child Session review")}"`)
-  assert.doesNotMatch(source, /先放在規劃區的大型工作主題/)
+  assert.doesNotMatch(source, pattern`${said("先放在規劃區的大型工作主題")}`)
 })
 
 test("an Epic lists its children with progress, and a child links back to its Epic", () => {
@@ -446,7 +446,7 @@ test("the Board puts each open question inside the item that explains it", () =>
   assert.match(source, /answerWorkDecision\(decision\.id, option\.id\)/)
   assert.match(source, /confirmDecisionAnswer\(\(\) => answerDecision\(decisionID, optionID\), confirmed\)/)
   assert.match(source, /setDecisions\(\(current\) => withoutAnsweredDecision\(current, decisionID\)\)/)
-  assert.doesNotMatch(source, /未連結的舊問題/)
+  assert.doesNotMatch(source, pattern`${said("未連結的舊問題")}`)
   assert.match(styles, /\.work-item-decisions/)
 })
 
@@ -495,7 +495,7 @@ test("a Feature or Refactor carries the person's Needs independent review checkb
   assert.match(source, /setWorkV2ReviewRequired\(item, checked\)/)
   assert.match(source, /workWord\("reviewRequiredLabel"\)/)
   assert.match(source, /workWord\("reviewRequiredHint"\)/)
-  assert.doesNotMatch(source, /[Rr]isk assessment|風險評估/)
+  assert.doesNotMatch(source, pattern`${said(/[Rr]isk assessment|風險評估/)}`)
 })
 
 test("a child card names its Epic on its own control, outside the summary button", () => {

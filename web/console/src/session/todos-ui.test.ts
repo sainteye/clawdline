@@ -4,7 +4,7 @@ import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { addedBySession } from "./todo-author.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { pattern, word, wordCall } from "../catalog-testing.ts"
+import { pattern, said, word, wordCall } from "../catalog-testing.ts"
 
 const source = readFileSync(new URL("./Todos.tsx", import.meta.url), "utf8")
 
@@ -156,11 +156,11 @@ test("empty Session todos use one message and hide empty section furniture", () 
   assert.match(source, pattern`\{page && hasAssigned && <section[\s\S]*?${wordCall("這個 Session 尚未關閉的負責項目")}`)
   assert.match(source, pattern`\{page && hasRecent && <section[\s\S]*?${wordCall("最近完成的看板項目")}`)
   assert.match(source, pattern`\{page && hasDirect && <section className="session-todos-list" aria-label=\{${wordCall("直接待辦")}\}>[\s\S]*?openDirect\.map`)
-  assert.doesNotMatch(source, /直接交給這個 Session 的待辦。/)
+  assert.doesNotMatch(source, pattern`${said("直接交給這個 Session 的待辦。")}`)
   assert.match(source, pattern`\{page && hasCompletedDirect && <section[\s\S]*?${wordCall("最近完成的直接待辦")}`)
   assert.match(source, pattern`\{empty && <p className="session-todos-empty">\{${wordCall("目前沒有待辦。")}\}<\/p>\}`)
-  assert.doesNotMatch(source, /目前沒有負責中的項目/)
-  assert.doesNotMatch(source, /目前沒有直接待辦/)
+  assert.doesNotMatch(source, pattern`${said("目前沒有負責中的項目")}`)
+  assert.doesNotMatch(source, pattern`${said("目前沒有直接待辦")}`)
 })
 
 test("assigned Board items open the Board's current card with the requested user action", () => {
