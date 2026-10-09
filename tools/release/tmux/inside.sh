@@ -11,6 +11,13 @@ src=$work/src
 build=$work/build
 prefix=$work/prefix
 out=$work/out
+# A container runs as root, so what it writes to the mounted <work> is
+# root's; on a Linux runner build.sh then cannot remove it ("rm: cannot
+# remove …/out/tmux: Permission denied", the first CI run on 2026-10-09).
+# Hand it back to the caller on the way out, whether or not the build worked.
+if [ -n "${HOST_UID:-}" ]; then
+  trap 'chown -R "$HOST_UID:${HOST_GID:-$HOST_UID}" "$work" 2>/dev/null || true' EXIT
+fi
 if [ "$TARGET_OS" = linux ]; then
   # Compiled inside the container, not on the mounted <work>: from a Mac,
   # that mount is a case-insensitive filesystem, where ncurses's fallback

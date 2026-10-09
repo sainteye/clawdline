@@ -92,6 +92,7 @@ case "$goos" in
     image=$ALPINE_IMAGE_AMD64
     [ "$goarch" = amd64 ] || image=$ALPINE_IMAGE_ARM64
     docker run --rm --platform "linux/$goarch" -v "$work:/w" \
+      -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
       -e TARGET_OS=linux -e TMUX_VERSION="$TMUX_VERSION" -e LIBEVENT_VERSION="$LIBEVENT_VERSION" \
       -e UTF8PROC_VERSION="$UTF8PROC_VERSION" -e NCURSES_VERSION="$NCURSES_VERSION" \
       "$image" /bin/sh /w/inside.sh /w
