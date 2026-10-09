@@ -1,5 +1,5 @@
 # The tmux a release carries, and everything it is built from
-# (docs/design-decisions.md D71). Each tarball is checked against the hash
+# (docs/design-decisions.md D72). Each tarball is checked against the hash
 # below before anything is unpacked; a mismatch stops the build.
 #
 # Sourced by tools/release/tmux/build.sh; not run on its own.

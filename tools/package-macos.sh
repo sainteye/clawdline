@@ -32,7 +32,7 @@
 #                 nothing is installed, quit or opened (tools/release/build.sh)
 #
 # The app carries a tmux of its own in Contents/Helpers/tmux, used only when
-# the Mac has no tmux 3.0 or newer (docs/design-decisions.md D71).
+# the Mac has no tmux 3.0 or newer (docs/design-decisions.md D72).
 # CLAWDLINE_TMUX_DIR names one already built by tools/release/tmux/build.sh;
 # without it the one in dist/tmux/darwin-arm64 is used, and built there first
 # when it is missing or not the pinned version.

@@ -40,7 +40,7 @@ go vet ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=true -o "$stage/clawdline" ./cmd/clawdline
 ( cd web && npm ci --ignore-scripts && npm run check && npm run build )
 cp -R web/console/dist "$stage/dist"
-# The tmux a release carries (docs/design-decisions.md D71), when one was
+# The tmux a release carries (docs/design-decisions.md D72), when one was
 # built for this machine with tools/release/tmux/build.sh and named in
 # CLAWDLINE_TMUX_DIR. A source deploy without it uses the machine's own tmux.
 if [ -n "${CLAWDLINE_TMUX_DIR:-}" ]; then

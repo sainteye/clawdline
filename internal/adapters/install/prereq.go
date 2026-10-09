@@ -7,7 +7,7 @@ import (
 
 // The prerequisites `setup` checks before it activates anything. tmux is the
 // one the daemon cannot run sessions without. A release carries one
-// (docs/design-decisions.md D71), used when the machine has no tmux 3.0 or
+// (docs/design-decisions.md D72), used when the machine has no tmux 3.0 or
 // newer; only a build that carries none stops setup when tmux is missing, with
 // the exact command for the package manager this machine actually has. A
 // missing assistant is a warning, because either one is enough and the person

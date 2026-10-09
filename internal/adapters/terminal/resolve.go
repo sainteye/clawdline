@@ -26,7 +26,7 @@ func init() {
 	}
 }
 
-// Which tmux this daemon runs (docs/design-decisions.md D71).
+// Which tmux this daemon runs (docs/design-decisions.md D72).
 //
 // A release carries a tmux of its own (tools/release/tmux), so a machine
 // without one still gets a working Clawdline. The person's tmux, when there is

@@ -553,7 +553,7 @@ const TmuxStartedSessionName = "clawdline"
 
 // TmuxClient is how a person runs the tmux this daemon runs: `tmux`, or
 // `clawdline tmux` when it is the one a release carries, which a bare `tmux`
-// would not reach (docs/design-decisions.md D71). The terminal adapter sets it
+// would not reach (docs/design-decisions.md D72). The terminal adapter sets it
 // from its resolver; this default is the machine's own tmux.
 var TmuxClient = func() string { return "tmux" }
 
