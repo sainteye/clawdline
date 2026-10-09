@@ -112,6 +112,12 @@ carry_tmux() {
   [ -x "$built/tmux" ] || die "no tmux for $goos/$goarch in $built"
   grep -q "\"version\": \"$TMUX_VERSION\", \"sha256\": \"$TMUX_SHA256\"" "$built/tmux.json" ||
     die "$built/tmux.json does not name the pinned tmux $TMUX_VERSION"
+  # A tmux from --tmux-from crossed a machine or a CI job: it must still be the
+  # binary its tmux.json was written for.
+  local got
+  got=$(shasum -a 256 "$built/tmux" | cut -d' ' -f1)
+  grep -q "\"binary_sha256\": \"$got\"" "$built/tmux.json" ||
+    die "$built/tmux is $got, not the binary its tmux.json describes"
   mkdir -p "$stage/libexec" "$stage/licenses"
   cp "$built/tmux" "$stage/libexec/tmux"
   cp "$built/tmux.json" "$stage/libexec/tmux.json"

@@ -1,0 +1,80 @@
+name: Carried tmux
+
+# Builds the tmux a Linux release carries (docs/design-decisions.md D72), on a
+# runner of each architecture, where Docker runs the pinned Alpine image
+# natively. A macOS runner has no Docker, so the Release workflow calls this
+# one first and takes the results with --tmux-from.
+#
+# On a change to the build itself it runs alone, so a broken build is seen in
+# the pull request and not at release time. Only when the Release workflow
+# asks does it upload: the binaries are compiled from the pinned public
+# tarballs in tools/release/tmux/sources.sh and hold nothing of this
+# repository, and they are kept one day.
+
+on:
+  workflow_call:
+    inputs:
+      upload:
+        description: "Upload each platform's result for the release job"
+        type: boolean
+        default: false
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - tools/release/tmux/**
+      - .github/workflows/tmux.yml
+  push:
+    branches:
+      - main
+    paths:
+      - tools/release/tmux/**
+      - .github/workflows/tmux.yml
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: tmux for linux/${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            machine: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            machine: aarch64
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        run: tools/release/tmux/build.sh linux "${{ matrix.arch }}" "$RUNNER_TEMP/tmux/linux-${{ matrix.arch }}"
+
+      - name: Check that it is a static ${{ matrix.machine }} binary that runs
+        env:
+          TMUX_BIN: ${{ runner.temp }}/tmux/linux-${{ matrix.arch }}/tmux
+        run: |
+          file "$TMUX_BIN"
+          file "$TMUX_BIN" | grep -q 'statically linked'
+          [ "$(uname -m)" = "${{ matrix.machine }}" ]
+          "$TMUX_BIN" -V
+          # A server on its own socket, outside any database the runner has:
+          # the compiled-in terminfo entries are what it falls back to.
+          sock="$RUNNER_TEMP/tmux-check.sock"
+          TERMINFO_DIRS=/nonexistent TERM=xterm-256color "$TMUX_BIN" -S "$sock" -f /dev/null new-session -d -s check 'sleep 30'
+          "$TMUX_BIN" -S "$sock" list-sessions -F '#{session_name}' | grep -qx check
+          "$TMUX_BIN" -S "$sock" kill-server
+          cat "$RUNNER_TEMP/tmux/linux-${{ matrix.arch }}/tmux.json"
+
+      - name: Upload for the release job
+        if: inputs.upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmux-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/tmux/linux-${{ matrix.arch }}
+          retention-days: 1
+          if-no-files-found: error
