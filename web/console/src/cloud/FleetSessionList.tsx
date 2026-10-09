@@ -78,9 +78,9 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     const stop = source.subscribe(({ machineID, sessionID, kind }) => {
       if (!machines.some((machine) => machine.id === machineID)) return
       if (kind === "detail_changed" && sessionID) {
-        for (const [key, value] of presentations.current) {
-          if (value.machineID === machineID && value.sessionID === sessionID) presentations.current.delete(key)
-        }
+        // Keep the verified label visible while its replacement is read. The
+        // presentation key includes the execution generation, so a restarted
+        // Session cannot reuse this label for a different execution.
         presentationPasses.current.delete(machineID)
         refreshPresentation((revision) => revision + 1)
         return

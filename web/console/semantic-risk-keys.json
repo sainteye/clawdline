@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 4928,
+  "englishKeys": 4930,
   "counts": {
-    "negation": 1419,
+    "negation": 1420,
     "state": 686,
-    "permission": 269,
+    "permission": 270,
     "deletion": 90,
     "uncertainty": 144
   },
-  "unionCount": 2148,
+  "unionCount": 2150,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -997,6 +997,7 @@
       "next.cloudActionStorageUnavailable",
       "next.cloudActionUnsupported",
       "next.cloudAllBadProjection",
+      "next.cloudAllContentUnknown",
       "next.cloudAllEmptyMachine",
       "next.cloudAllNo",
       "next.cloudAllNoContent",
@@ -2261,6 +2262,7 @@
       "next.cloudActionChecking",
       "next.cloudActionRevoked",
       "next.cloudAllLede",
+      "next.cloudAllPairing",
       "next.cloudDeviceRemoveAsk",
       "next.cloudDeviceSeenNever",
       "next.cloudDeviceTicketExpired",
@@ -4043,6 +4045,7 @@
     "next.cloudAllBadProjection",
     "next.cloudAllChanged",
     "next.cloudAllCompletedUnconfirmed",
+    "next.cloudAllContentUnknown",
     "next.cloudAllEmptyMachine",
     "next.cloudAllFailedAgents",
     "next.cloudAllLede",
@@ -4055,6 +4058,7 @@
     "next.cloudAllOffline",
     "next.cloudAllOldVersion",
     "next.cloudAllOlderOldVersion",
+    "next.cloudAllPairing",
     "next.cloudAllStateWaiting",
     "next.cloudAllUnknown",
     "next.cloudAllUnknownSource",
