@@ -4933,5 +4933,7 @@
   "next.cloudActionStagePending": "處理中",
   "next.cloudActionStageMissing": "無紀錄",
   "next.cloudActionStageObserved": "已觀察",
-  "next.cloudActionStageAcknowledged": "已確認"
+  "next.cloudActionStageAcknowledged": "已確認",
+  "next.gitNoDirectory": "這個 Session 的資料夾在它的機器上已經不存在，所以沒有 Git 變更可以顯示。",
+  "next.gitPermissionDenied": "它的機器沒有權限讀取這個 Session 的資料夾，所以無法顯示 Git 變更。"
 }

@@ -4933,5 +4933,7 @@
   "next.cloudActionStagePending": "Pending",
   "next.cloudActionStageMissing": "Missing",
   "next.cloudActionStageObserved": "Observed",
-  "next.cloudActionStageAcknowledged": "Acknowledged"
+  "next.cloudActionStageAcknowledged": "Acknowledged",
+  "next.gitNoDirectory": "This Session's folder no longer exists on its machine, so there are no Git changes to show.",
+  "next.gitPermissionDenied": "Its machine is not allowed to read this Session's folder, so its Git changes cannot be shown."
 }
