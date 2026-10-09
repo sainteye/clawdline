@@ -3,7 +3,7 @@ import type { AssistantSkill, TranscriptEntry } from "@clawdline/contract"
 import type { ArtifactRef } from "../legacy/images-bridge.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { menuFingerprint } from "../session/fingerprint.ts"
-import type { MachineSessionProjection, SessionContent, SessionDestination, SessionOlderPage,
+import type { MachineSessionProjection, SessionContent, SessionDestination, SessionListPresentation, SessionOlderPage,
   SessionProjectionSource } from "./all-machine-sessions.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { destinationAvailable, destinationKey } from "./all-machine-sessions.ts"
@@ -144,7 +144,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
   }
   return {
     readMachine,
-    async readListTitle(destination, signal): Promise<string | null> {
+    async readListPresentation(destination, signal): Promise<SessionListPresentation | null> {
       const client = current()
       if (!client?.infoListForGeneration || !supportsPinnedRead(client, destination.machineID) || signal.aborted) return null
       const before = await readMachine(destination.machineID, signal)
@@ -155,9 +155,19 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         if (signal.aborted || current() !== client || after.kind !== "ready" ||
           destinationAvailable(destination, after) !== "ready" || !supportsPinnedRead(client, destination.machineID)) return null
         const session = record(record(reply?.info)?.session)
-        return session?.id === destination.sessionID && typeof session.title === "string" && session.title.trim()
-          ? session.title.trim() : null
+        if (session?.id !== destination.sessionID || typeof session.title !== "string" || !session.title.trim()) return null
+        const icon = record(session.icon)
+        return { title: session.title.trim(),
+          cwd: typeof session.cwd === "string" ? session.cwd : undefined,
+          icon: typeof icon?.accent === "string" && Array.isArray(icon.cells) &&
+            icon.cells.every((line: unknown) => Array.isArray(line) &&
+              line.every((cell: unknown) => cell === null || typeof cell === "string"))
+            ? { accent: icon.accent, cells: icon.cells as ((string | null)[])[] } : undefined }
       } catch { return null }
+    },
+    async readListTitle(destination, signal): Promise<string | null> {
+      const presentation = await this.readListPresentation?.(destination, signal)
+      return presentation?.title ?? null
     },
     async readImage(destination, artifact): Promise<{ url: string; release: () => void }> {
       const key = destinationKey(destination)
@@ -232,7 +242,9 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         if (event.type !== "session_status" || !event.identity?.machine) return
         const machineID = event.identity.machine
         const projection = statusProjection(client, machineID)
-        listener({ machineID, kind: projection.kind === "unavailable" && projection.reason === "event_gap" ? "gap" : "changed" })
+        listener({ machineID, sessionID: event.identity.session === "__clawdline_inventory_v1__"
+          ? undefined : event.identity.session,
+        kind: projection.kind === "unavailable" && projection.reason === "event_gap" ? "gap" : "changed" })
       })
       return () => { stop?.(); client?.cancelStatusRecoveries?.() }
     },

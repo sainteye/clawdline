@@ -84,6 +84,7 @@ export function Detail({
   onBack,
   onDid,
   listUnknown = false,
+  emptyProblem,
 }: {
   row: SessionRow | null
   tasks: TaskRow[] | null
@@ -91,6 +92,7 @@ export function Detail({
   onBack: () => void
   onDid: () => void
   listUnknown?: boolean
+  emptyProblem?: string | null
 }) {
   const T = L.strings
   const [agentId, setAgentId] = useState<string | null>(null)
@@ -307,7 +309,8 @@ export function Detail({
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
-          {row ? <Transcript id={row.id} agentId={selectedAgent?.id} onAgent={chooseAgent} /> : home ? <HomeHero /> : null}
+          {row ? <Transcript id={row.id} agentId={selectedAgent?.id} onAgent={chooseAgent} /> :
+            emptyProblem ? <p className="cloud-detail-problem" role="status">{emptyProblem}</p> : home ? <HomeHero /> : null}
         </div>
       </div>
 

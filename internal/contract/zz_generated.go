@@ -5373,6 +5373,7 @@ type SessionInfoReply struct {
 type SessionInfoSession struct {
 	Assistant Assistant `json:"assistant,omitempty"`
 	CWD       string    `json:"cwd,omitempty"`
+	Icon      *Icon     `json:"icon,omitempty"`
 	ID        string    `json:"id"`
 
 	// The model the session is on, as its record last named it: the newest assistant

@@ -188,8 +188,10 @@ function row(session: string, extra: Record<string, unknown> = {}): CloudRow {
   return { id: session, machine: "mac-a", session, identity: { machine: "mac-a", session }, execution_generation: EXECUTION, state: "idle", ...extra }
 }
 
-function seam(client: FakeClient, clock = { t: 1_000 }) {
-  const reader = new RelayReader("mac-a", { now: () => clock.t })
+function seam(client: FakeClient, clock = { t: 1_000 }, fleet = false) {
+  const reader = new RelayReader("mac-a", { now: () => clock.t,
+    ...(fleet ? { fleetTarget: () => ({ machineID: "mac-a", sessionID: "s1", executionGeneration: EXECUTION }),
+      admitFleetMutation: async () => {} } : {}) })
   const writer = new RelayWriter(reader.writeHost, { now: () => clock.t, requestID: () => "req-1" })
   reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
   reader.attach(client)
@@ -385,6 +387,19 @@ test("smart naming reaches the session once under the confirmation's idempotency
   assert.equal(unkeyed.status, 400)
   assert.equal((await json(unkeyed)).error, "bad_request")
   assert.deepEqual(client.calls, [], "an unreceipted model turn never leaves the browser")
+})
+
+test("fleet focus and smart naming keep the selected Session execution", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client, { t: 1_000 }, true)
+  assert.equal((await reader.fetch("/v1/sessions/s1/focus", post({}))).status, 200)
+  assert.equal((await reader.fetch("/v1/sessions/s1/smart-title",
+    post({}, { "Idempotency-Key": "smart-press-1" }))).status, 200)
+  assert.deepEqual(client.calls.map((call) => [call[0], call[2], call[3]]), [
+    ["_read", "focus", { request: "req-1", execution_generation: EXECUTION }],
+    ["_read", "smart-title", { request: "smart-press-1", execution_generation: EXECUTION }],
+  ])
 })
 
 test("a stop reaches the session once under the press's idempotency key", async () => {

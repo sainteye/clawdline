@@ -26,6 +26,7 @@ import type { CarriedWord, CarryTable } from "./carry.js"
 import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
+import type { SessionDestination } from "./all-machine-sessions.js"
 import { authenticatedRefusalKey } from "./refusal-client.js"
 
 /** One machine and one of its sessions, as the relay's channels name them. */
@@ -199,6 +200,8 @@ export interface CloudReadClient {
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
   transcriptForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
   transcriptPageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, before: number, signal?: AbortSignal): Promise<unknown>
+  readForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string },
+    word: string, fields: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
   /**
    * One provider subagent's conversation, and one background command's
    * output: the session reads whose subject is a second id.
@@ -427,6 +430,10 @@ export interface RelayReaderOptions {
   statusList?: () => { at: number; complete: boolean }
   /** The original one-machine page reads exact rich rows named by ss/. */
   classicStatus?: boolean
+  /** The fleet detail currently admitted for this reader; absent in single-machine mode. */
+  fleetTarget?: () => SessionDestination | null
+  /** Recheck one visible fleet mutation against the latest ss/ pass. */
+  admitFleetMutation?: (target: SessionDestination) => Promise<void>
 }
 
 interface HeldTranscript {
@@ -525,6 +532,8 @@ export class RelayReader {
   get writeHost(): WriteHost {
     return {
       machine: this.machine,
+      exactTarget: this.options.fleetTarget,
+      admitExactTarget: this.options.admitFleetMutation,
       connected: () => this.connected() as CloudWriteClient,
       connectedFor: async (signal, word) => {
         const client = await this.connectedFor(signal)
@@ -684,7 +693,9 @@ export class RelayReader {
         const before = historyCursor(q.before)
         if (q.before !== undefined && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
         return await this.sessionRead(init?.signal, method, path, "agent", (client) =>
-          before ? client._read?.({ machine: this.machine, session: agent.session }, "agent",
+          this.options.fleetTarget?.() ? client.readForGeneration?.(this.pinnedSession(agent.session), "agent",
+            { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, ...(before ? { before } : {}) }, init?.signal ?? undefined)
+            : before ? client._read?.({ machine: this.machine, session: agent.session }, "agent",
             { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, before }, `agent:${agent.agent}.before.${before}`)
             : client.agent?.({ machine: this.machine, session: agent.session }, agent.agent))
       }
@@ -693,7 +704,9 @@ export class RelayReader {
         const q = this.only(url, path, "bytes")
         this.window(path, "bytes", q.bytes, CLOUD_SHELL_BYTES)
         return await this.sessionRead(init?.signal, method, path, "shell", (client) =>
-          client.shell?.({ machine: this.machine, session: shell.session }, shell.shell))
+          this.options.fleetTarget?.() ? client.readForGeneration?.(this.pinnedSession(shell.session), "shell",
+            { shell: shell.shell, bytes: CLOUD_SHELL_BYTES }, init?.signal ?? undefined)
+            : client.shell?.({ machine: this.machine, session: shell.session }, shell.shell))
       }
       const workTerminal = workV2SessionTodosTerminal(path)
       if (workTerminal) {
@@ -1593,7 +1606,15 @@ export class RelayReader {
       !fresh(data.source.observed_at)) throw Object.assign(new Error("The Session execution is no longer current"), {
       code: "execution_generation_changed", status: 409,
     })
-    return { machineID: this.machine, sessionID: session, executionGeneration: data.execution_generation }
+    const target = { machineID: this.machine, sessionID: session, executionGeneration: data.execution_generation }
+    const intended = this.options.fleetTarget?.()
+    if (intended && (intended.machineID !== target.machineID || intended.sessionID !== target.sessionID ||
+      intended.executionGeneration !== target.executionGeneration)) {
+      throw Object.assign(new Error("The opened Session execution has changed"), {
+        code: "execution_generation_changed", status: 409,
+      })
+    }
+    return target
   }
 
   private bind(stream: OpenStream): void {

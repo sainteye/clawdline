@@ -20,7 +20,7 @@ import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
 import { bootLocalCatalog } from "./catalog.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
-import { destinationFromFragment } from "./cloud/all-machine-sessions.js"
+import { destinationFragment, destinationFromFragment, destinationKey, type SessionDestination } from "./cloud/all-machine-sessions.js"
 import { hasDocumentIntent } from "./legacy/documents-bridge.js"
 import { NewBuild } from "./NewBuild.js"
 import { MachineDashboard } from "./machine/MachineDashboard.js"
@@ -194,10 +194,16 @@ function rowNode(id: string): HTMLElement | null {
  * light and draws both in one control (`cloud/CloudGate.tsx`) — on a phone two
  * pills beside each other left the counts no room to be read.
  */
-export default function App({ aside, cloudSessions, localViewer = false, hideSessionCounts = false,
+export default function App({ aside, cloudSessions, fleetList, fleetTarget = null, fleetReaderMachine = null,
+  fleetDetailProblem = null, onFleetClose, localViewer = false, hideSessionCounts = false,
   focusCloudSessions = false, onLeaveCloudSessions }: {
   aside?: ReactNode | ((light: ConnectionLight) => ReactNode)
   cloudSessions?: ReactNode
+  fleetList?: (filter: string, onFilter: (value: string) => void) => ReactNode
+  fleetTarget?: SessionDestination | null
+  fleetReaderMachine?: string | null
+  fleetDetailProblem?: string | null
+  onFleetClose?: () => void
   localViewer?: boolean
   hideSessionCounts?: boolean
   focusCloudSessions?: boolean
@@ -351,20 +357,21 @@ export default function App({ aside, cloudSessions, localViewer = false, hideSes
     const routeTo = () => {
       const documentLink = hasDocumentIntent(location.hash)
       const localCloudTarget = localViewer && destinationFromFragment(location.hash)
-      const target = documentLink ? "documents" : localCloudTarget ? "cloud" : pageFromHash(location.hash, knowsHere)
+      const target = documentLink ? "documents" : localCloudTarget ? "cloud" :
+        fleetList && destinationFromFragment(location.hash) ? "sessions" : pageFromHash(location.hash, knowsHere)
       const from = pageRef.current
       if (!goRef.current(target, { hash: false }) && target !== from) {
         writeHash("#page=" + encodeURIComponent(from))
         return
       }
-      askedRef.current = documentLink || localCloudTarget || (cloudSessions && destinationFromFragment(location.hash))
+      askedRef.current = documentLink || localCloudTarget || ((cloudSessions || fleetList) && destinationFromFragment(location.hash))
         ? null : sessionsInFragment(location.hash)
       if (askedRef.current) openAskedRef.current()
     }
     routeTo()
     window.addEventListener("hashchange", routeTo)
     return () => window.removeEventListener("hashchange", routeTo)
-  }, [!!cloudSessions])
+  }, [!!cloudSessions, !!fleetList])
 
   const rows = fleet.snapshot?.sessions ?? []
   const rowsRef = useRef(rows)
@@ -419,10 +426,11 @@ export default function App({ aside, cloudSessions, localViewer = false, hideSes
     if (phone()) {
       if (viewRef.current !== "detail") releaseKeyboardFocus()
       setView("detail")
-      stepIntoDetail(id, listAddress() + sessionFragment(id), arrived)
+      stepIntoDetail(id, fleetList && fleetTarget ? listAddress() + destinationFragment(fleetTarget) :
+        listAddress() + sessionFragment(id), arrived)
     } else {
       if (!paneRef.current) setPane(true)
-      writeHash(sessionFragment(id))
+      writeHash(fleetList && fleetTarget ? destinationFragment(fleetTarget) : sessionFragment(id))
     }
     if (!keepFocus && !phone()) rowNode(id)?.focus({ preventScroll: true })
   }
@@ -453,6 +461,23 @@ export default function App({ aside, cloudSessions, localViewer = false, hideSes
   }
   openAskedRef.current = openAsked
 
+  // The fleet list names a fixed machine, terminal and execution. The reader
+  // underneath this one original detail must have that same machine and rich
+  // row before it may open; an equal terminal ID on another machine is ignored.
+  const openedFleetKey = useRef<string | null>(null)
+  useEffect(() => {
+    if (!fleetList || !fleetTarget) { openedFleetKey.current = null; return }
+    if (fleetReaderMachine !== fleetTarget.machineID) return
+    const row = rows.find((candidate) => candidate.id === fleetTarget.sessionID &&
+      candidate.execution_generation === fleetTarget.executionGeneration)
+    const key = destinationKey(fleetTarget)
+    if (row && openedFleetKey.current !== key) {
+      openedFleetKey.current = key
+      openSession(row.id, true, true)
+    }
+  }, [fleetList, fleetReaderMachine, fleetTarget?.machineID, fleetTarget?.sessionID,
+    fleetTarget?.executionGeneration, rows])
+
   // `closeDetail`: the session goes, the highlight stays. On a phone the list
   // comes back and a `#session=…` or `#page=…` address goes with the detail,
   // replaced rather than pushed so it adds no Back step. On a desk the list
@@ -463,6 +488,12 @@ export default function App({ aside, cloudSessions, localViewer = false, hideSes
   const closeDetail = (settled = false) => {
     if (!settled && openRef.current && closing()) return
     setOpen(null)
+    if (fleetList) {
+      setView("list")
+      writeHash("#all-machines")
+      onFleetClose?.()
+      return
+    }
     if (phone()) {
       setView("list")
       leaveAddress({ view: "list" })
@@ -491,7 +522,7 @@ export default function App({ aside, cloudSessions, localViewer = false, hideSes
     const asked = openAsked()
     if (firstList.current && (rows.length || asked === "gone")) {
       firstList.current = false
-      if (pageRef.current === "sessions" && asked !== "opened") {
+      if (pageRef.current === "sessions" && asked !== "opened" && !fleetList) {
         const ordered = L.orderedRows()
         const top = ordered[0]
         if (top) {
@@ -906,6 +937,12 @@ export default function App({ aside, cloudSessions, localViewer = false, hideSes
         onOpen={(id) => openSession(id)}
         onBack={() => closeDetail()}
         onDid={fleet.refresh}
+        fleetList={fleetList?.(filter, setFilter)}
+        fleetDetailKey={fleetList && fleetTarget ? destinationKey(fleetTarget) : undefined}
+        fleetDetailPending={!!fleetList && !!fleetTarget &&
+          (fleetReaderMachine !== fleetTarget.machineID || !rows.some((row) =>
+            row.id === fleetTarget.sessionID && row.execution_generation === fleetTarget.executionGeneration))}
+        fleetDetailProblem={fleetList && fleetTarget ? fleetDetailProblem : null}
       />}
       {Object.values(PAGE_MODULES).filter(({ id }) => localViewer || id !== "cloud").map(({ id, Component }) => (
         // Mounted once opened and kept, as the original keeps its sections in

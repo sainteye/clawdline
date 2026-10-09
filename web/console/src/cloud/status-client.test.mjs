@@ -222,6 +222,32 @@ test("a transcript picture uses an exact image waiter and rejects a missing exec
     { code: "execution_target_required" })
 })
 
+test("original detail panels retain their read names on the exact r/ target", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const calls = []
+  client._read = (...args) => { calls.push(args); return Promise.resolve({}) }
+  const target = { machineID: "m", sessionID: "s", executionGeneration: genA }
+  for (const [word, fields, answer] of [
+    ["git", {}, "git"], ["git-diff", { request: "diff-1", path: "README.md" }, "read:diff-1"],
+    ["screen", {}, "screen"], ["agent", { agent: "a", limit: 100 }, "agent:a"],
+    ["agent", { agent: "a", limit: 100, before: 17 }, "agent:a.before.17"],
+    ["shell", { shell: "sh", bytes: 4096 }, "shell:sh"], ["documents", {}, "documents"],
+    ["document", { request: "doc-1", scope: "project", task: "", path: "README.md" }, "read:doc-1"],
+  ]) {
+    await client.readForGeneration(target, word, fields)
+    const sent = calls.at(-1)
+    assert.deepEqual(sent[0], { machine: "m", session: "s" })
+    assert.equal(sent[1], word)
+    assert.deepEqual(sent[2], { ...fields, machine_id: "m", expected_generation: genA })
+    assert.equal(sent[3], answer)
+  }
+  assert.equal(calls.length, 8)
+  await assert.rejects(() => client.readForGeneration(target, "send", { request: "write-1" }),
+    { code: "read_only_channel" })
+  await assert.rejects(() => client.readForGeneration({ ...target, executionGeneration: "" }, "git"),
+    { code: "execution_target_required" })
+})
+
 test("pinned detail refuses to join an unpinned read waiter", async () => {
   const client = Object.create(StatusCloudClient.prototype)
   client.pinnedInfoFlights = new Map()

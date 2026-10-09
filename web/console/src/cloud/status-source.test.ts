@@ -11,6 +11,7 @@ const inventory = "__clawdline_inventory_v1__"
 
 function clientFixture() {
   const calls: string[] = []
+  let emit = (_event: unknown) => {}
   const statusSnapshots = new Map<string, unknown>()
   const detailSnapshots = new Map<string, unknown>()
   const at = Math.floor(Date.now() / 1000)
@@ -35,7 +36,7 @@ function clientFixture() {
     detailSnapshots,
     openDetail() {},
     closeDetail() {},
-    events() { return () => {} },
+    events(listener: (event: unknown) => void) { emit = listener; return () => {} },
     async machines() { return { machines: [{ id: machineID, freshness: "current" }], syncing: false, retryAfterMs: 0 } },
     async recoverStatusRow(machine: string, session: string, generation: string) {
       calls.push("recover:" + [machine, session, generation].join(":"))
@@ -70,8 +71,17 @@ function clientFixture() {
       return { id, media_type: "image/png", byte_count: 3, data: "cG5n" }
     },
   }
-  return { client, calls, row }
+  return { client, calls, row, emit: (event: unknown) => emit(event) }
 }
+
+test("a status row event names the Session whose list title should refresh", () => {
+  const { client, emit } = clientFixture()
+  const events: unknown[] = []
+  const stop = statusSource(() => client as never).subscribe((event) => events.push(event))
+  emit({ type: "session_status", identity: { machine: machineID, session: sessionID } })
+  assert.deepEqual(events, [{ machineID, sessionID, kind: "changed" }])
+  stop()
+})
 
 test("status-only list never subscribes to or reads rich content", async () => {
   const { client, calls } = clientFixture()

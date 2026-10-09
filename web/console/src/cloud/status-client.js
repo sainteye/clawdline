@@ -14,7 +14,8 @@ function refused(code, message) {
 }
 
 function pinnedRead(type, body) {
-  return (type === "info" && (body?.parts === "full" || body?.parts === "list") || type === "transcript" || type === "skills" || type === "image" || type === "peer-inbox") &&
+  return (type === "info" && (body?.parts === "full" || body?.parts === "list") ||
+    ["transcript", "skills", "image", "git", "git-diff", "screen", "agent", "shell", "documents", "document", "peer-inbox"].includes(type)) &&
     body?.expected_generation !== undefined
 }
 
@@ -26,6 +27,15 @@ function pinnedReadName(type, body) {
   if (type === "info" && body?.parts === "full") return "info.full"
   if (type === "info" && body?.parts === "list") return "info.list"
   if (type === "skills") return "skills"
+  if (type === "git" || type === "screen" || type === "documents") return type
+  if ((type === "git-diff" || type === "document" || type === "peer-inbox") &&
+    typeof body?.request === "string" && body.request) return "read:" + body.request
+  if (type === "agent" && typeof body?.agent === "string" && body.agent) {
+    if (body.before === undefined) return "agent:" + body.agent
+    return Number.isSafeInteger(body.before) && body.before > 0
+      ? "agent:" + body.agent + ".before." + body.before : null
+  }
+  if (type === "shell" && typeof body?.shell === "string" && body.shell) return "shell:" + body.shell
   if (type === "image" && typeof body?.id === "string" && body.id) return "image." + body.id
   if (type === "transcript") {
     if (body?.before === undefined) return "transcript"
@@ -520,6 +530,21 @@ export class StatusCloudClient extends CatalogCloudClient {
     return this._read({ machine: machineID, session: sessionID }, "image", {
       id, machine_id: machineID, expected_generation: executionGeneration,
     }, "image." + id, undefined, { signal })
+  }
+
+  /** The original detail panels share this exact read adapter. */
+  readForGeneration(destination, type, fields = {}, signal) {
+    const { machineID, sessionID, executionGeneration } = destination
+    if (!machineID || !sessionID || !GENERATION.test(executionGeneration) || signal?.aborted ||
+      typeof fields !== "object" || !fields || Array.isArray(fields)) {
+      return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
+    }
+    const body = { ...fields, machine_id: machineID, expected_generation: executionGeneration }
+    const answer = pinnedReadName(type, body)
+    if (!pinnedRead(type, body) || !answer) {
+      return Promise.reject(refused("read_only_channel", "the selected read is not supported on the pinned channel"))
+    }
+    return this._read({ machine: machineID, session: sessionID }, type, body, answer, undefined, { signal })
   }
 
   /** Keep distinct generations from joining the copied client's per-session read waiter. */

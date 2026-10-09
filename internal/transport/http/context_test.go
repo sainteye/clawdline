@@ -28,7 +28,8 @@ func TestListInfoReturnsOnlyTheSessionDisplayIdentity(t *testing.T) {
 		t.Fatalf("list info carries more than its session and empty models: %v", info)
 	}
 	identity, _ := info["session"].(map[string]any)
-	if identity["id"] != "%19" || identity["title"] == "" || identity["assistant"] != "codex" || len(identity) != 3 {
+	if identity["id"] != "%19" || identity["title"] == "" || identity["assistant"] != "codex" ||
+		identity["cwd"] != "/private/project" || len(identity) != 4 {
 		t.Fatalf("list info exposes wrong or excess identity fields: %v", identity)
 	}
 }

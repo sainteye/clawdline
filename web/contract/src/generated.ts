@@ -6317,6 +6317,7 @@ export interface SessionInfoReply {
 export interface SessionInfoSession {
   assistant?: Assistant
   cwd?: string
+  icon?: Icon
   id: string
 
   /**

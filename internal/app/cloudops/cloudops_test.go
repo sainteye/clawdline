@@ -78,7 +78,8 @@ func (r *router) last() LocalRequest {
 // open is a bridge with the write switch on, which is not the default anywhere
 // else in this package: every test that wants an effect has to say so.
 func open(r LocalRouter) Bridge {
-	return Bridge{MachineID: "mac-01", Router: r, AllowCommands: func() bool { return true }}
+	return Bridge{MachineID: "mac-01", Router: r, AllowCommands: func() bool { return true },
+		AdmitExecution: func(context.Context, string, string, string) error { return nil }}
 }
 
 func request(t *testing.T, class Class, object map[string]any) Command {

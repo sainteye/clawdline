@@ -84,6 +84,11 @@ func (s *Server) smartSessionTitle(w http.ResponseWriter, r *http.Request, id st
 			"The naming assistant did not return a usable title. No title was changed.")
 		return
 	}
+	// Naming can spend a model turn. The terminal ID may have been reused while
+	// that turn ran, so the title must still belong to the selected execution.
+	if !s.admitPinnedTarget(w, r, id) {
+		return
+	}
 	title, err = s.saveSessionTitle(item, title, time.Now())
 	if err != nil {
 		writeRefusal(w, http.StatusInternalServerError, "title_not_saved", "the session title could not be saved")
