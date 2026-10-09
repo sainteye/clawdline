@@ -140,3 +140,11 @@ intentional history rewrite. `docs/privacy-guard.md` is the whole of it.
   2026-09-21 two restarts were each confirmed with health while `/` answered 501 to everybody for
   seven and a half hours. The console is back when `GET /` answers 200, or when the line under
   `listening` in `logs/daemon.log` says `console: served from …`.
+- **Kills its own tmux server before removing the directory it lives in.** A drill that gives
+  tmux a private `TMUX_TMPDIR` (or `-S` socket) owns that server; deleting the directory removes
+  the socket and leaves the server and every assistant inside it running, unreachable. On
+  2026-10-07 an install drill removed its scratch home this way and left two real `claude`
+  processes running for two days; the person's fleet list showed them as dashed rows reading
+  "terminal unreachable" until they were closed by hand. In the drill's exit trap, run
+  `tmux -S <its socket> kill-server` (or `TMUX_TMPDIR=<dir> tmux kill-server`) first, then
+  remove the directory.

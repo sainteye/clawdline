@@ -40,6 +40,13 @@ func ReadState(screen string, assistant Assistant) (State, bool) {
 			if t == "›" || strings.HasPrefix(t, "› Ask Codex to do anything") {
 				return StateIdle, true
 			}
+			// A draft keeps the caret too, "› some text", but Codex draws
+			// every sent message that way and marks an approval menu's choice
+			// with it. Only the last one, with no answer drawn under it and no
+			// numbered choice after it, is the composer.
+			if strings.HasPrefix(t, "› ") && !codexMenuChoice(t) && !codexOutputBelow(lines[i+1:end+1]) {
+				return StateIdle, true
+			}
 		case AssistantClaude:
 			t := strings.TrimSpace(lines[i])
 			// Claude Code puts a no-break space (U+00A0) after its caret.
@@ -53,4 +60,28 @@ func ReadState(screen string, assistant Assistant) (State, bool) {
 		}
 	}
 	return StateUnknown, false
+}
+
+// codexMenuChoice reports a selected approval-menu row, "› 1. Yes, proceed".
+func codexMenuChoice(t string) bool {
+	rest := strings.TrimPrefix(t, "› ")
+	n := 0
+	for n < len(rest) && rest[n] >= '0' && rest[n] <= '9' {
+		n++
+	}
+	return n > 0 && n < len(rest) && rest[n] == '.'
+}
+
+// codexOutputBelow reports whether anything under a caret line is the
+// assistant's answer or another menu row, which a composer never has under it:
+// only its own wrapped draft and the footer.
+func codexOutputBelow(below []string) bool {
+	for _, line := range below {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "•") || strings.HasPrefix(t, "└") || strings.HasPrefix(t, "›") ||
+			strings.HasPrefix(t, "Press enter") || codexMenuChoice("› "+t) {
+			return true
+		}
+	}
+	return false
 }

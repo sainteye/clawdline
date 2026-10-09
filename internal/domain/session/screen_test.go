@@ -103,3 +103,53 @@ func TestAComposerHoldingADraftIsIdle(t *testing.T) {
 		t.Fatalf("an empty composer reads %s, want idle", st)
 	}
 }
+
+// Codex draws a person's draft after the same caret, "› some text", and it
+// also draws every sent message in the history that way. A finished child
+// whose composer held stray text sat as an unrecognised session, drawn as a
+// dashed row in the fleet list, for nine hours (2026-10-09).
+func TestACodexComposerHoldingADraftIsIdle(t *testing.T) {
+	screen := strings.Join([]string{
+		"› You are a Clawdline CHILD agent for task 1234. Say this line first.",
+		"",
+		"• 複審完成，判定 changes_required。",
+		"",
+		"  Worked for 4m 30s • 8:02 AM",
+		"",
+		"",
+		"› >|iTerm2 3.7.0",
+		"",
+		"  GPT-6-Sol high · ~/code/project · project · main · No changes · Context 41% used",
+		"                                                         ⚠ 1 warning · f2 to view",
+	}, "\n")
+	if st, ok := ReadState(screen, AssistantCodex); st != StateIdle || !ok {
+		t.Fatalf("a Codex composer holding a draft reads %s, want idle", st)
+	}
+}
+
+// A sent message in the history has the assistant's answer under it, and an
+// approval menu marks its choice with the same caret; neither is a composer.
+func TestACodexHistoryLineOrMenuIsNotADraft(t *testing.T) {
+	history := strings.Join([]string{
+		"› please look at the build",
+		"",
+		"• Ran go build ./...",
+		"  └ ok",
+	}, "\n")
+	if st, _ := ReadState(history, AssistantCodex); st == StateIdle {
+		t.Fatalf("a sent message with output under it read as idle")
+	}
+	menu := strings.Join([]string{
+		"  Would you like to run the following command?",
+		"",
+		"  $ rm -rf build",
+		"",
+		"› 1. Yes, proceed (y)",
+		"  2. No, and tell Codex what to do differently (esc)",
+		"",
+		"  Press enter to confirm or esc to cancel",
+	}, "\n")
+	if st, _ := ReadState(menu, AssistantCodex); st == StateIdle {
+		t.Fatalf("an approval menu read as idle")
+	}
+}
