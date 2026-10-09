@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
+// @ts-expect-error -- Node runs this test against the source file directly.
+import { key, pattern, said, word, wordCall } from "../../catalog-testing.ts"
 
 const source = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
 const workSteps = readFileSync(new URL("./WorkSteps.tsx", import.meta.url), "utf8")
@@ -35,7 +37,7 @@ test("work kinds are an explained icon list instead of a select", () => {
 })
 
 test("the create modal closes from its close button, Escape, or the backdrop", () => {
-  assert.match(source, /aria-label="關閉"/)
+  assert.match(source, pattern`aria-label=\{${wordCall("關閉")}\}`)
   assert.match(source, /event\.key === "Escape"/)
   assert.match(source, /event\.target === event\.currentTarget/)
 })
@@ -46,7 +48,7 @@ test("interactive work controls announce the pointer and disabled state", () => 
 })
 
 test("work cards add, show, open, and remove durable reference images", () => {
-  assert.match(source, /＋ 參考圖片/)
+  assert.match(source, pattern`\{${wordCall("＋ 參考圖片")}\}`)
   assert.match(source, /accept="image\/\*,\.heic,\.heif"/)
   assert.match(source, /prepareReferencePicture/)
   assert.match(source, /useReferenceImage\(image\.id\)/)
@@ -56,7 +58,7 @@ test("work cards add, show, open, and remove durable reference images", () => {
 
 test("unassigned executable work is visible and assignable", () => {
   assert.match(source, /const unassigned = visibleItems\.filter\(\(item\) => item\.area === "unassigned"/)
-  assert.match(source, /<BoardRegion title="待指派" items=\{unassigned\}/)
+  assert.match(source, pattern`<BoardRegion title=\{${wordCall("待指派")}\} items=\{unassigned\}`)
   assert.match(source, /const assignable = item\.area !== "planning" && !item\.closed_at && !item\.owner_session/)
   assert.doesNotMatch(source, /item\.area === "execution"/)
 })
@@ -64,14 +66,14 @@ test("unassigned executable work is visible and assignable", () => {
 test("assignment choices show Session activity, unfinished work, and selected details", () => {
   assert.match(source, /function SessionAssignmentPicker/)
   assert.match(source, /sessionActivityName\(session\.state\)/)
-  assert.match(source, /`\$\{counts\.board\} 看板 · \$\{counts\.todos\} TODO`/)
-  assert.match(source, /title="還在做"/)
-  assert.match(source, /title="直接待辦"/)
-  assert.match(source, /title="最近完成"/)
-  assert.match(source, /`\$\{item\.project\.label\} · 完成 \$\{when\(item\.closed_at\)\}`/)
+  assert.match(source, pattern`${word("{arg0} 看板 · {arg1} TODO")}, \[counts\.board, counts\.todos\]\)`)
+  assert.match(source, pattern`<SessionWorkList title=\{${wordCall("還在做")}\}`)
+  assert.match(source, pattern`<SessionWorkList title=\{${wordCall("直接待辦")}\}`)
+  assert.match(source, pattern`<SessionWorkList title=\{${wordCall("最近完成")}\}`)
+  assert.match(source, pattern`${word("{arg0} · 完成 {arg1}")}, \[item\.project\.label, when\(item\.closed_at\)\]\)`)
   assert.match(source, /readSessionWorkV2\(session\.id\)/)
   assert.match(styles, /\.work-session-detail/)
-  assert.doesNotMatch(source, /<select className="work-input"[^>]*aria-label="指派既有 Session"/)
+  assert.doesNotMatch(source, pattern`<select className="work-input"[^>]*aria-label=(?:"|\{)[^>]*${said("指派既有 Session")}`)
 })
 
 test("AI role suggestions need no separate Settings consent", () => {
@@ -80,9 +82,9 @@ test("AI role suggestions need no separate Settings consent", () => {
 })
 
 test("the assignment picker shows one compact AI suggestion action", () => {
-  assert.match(source, /aiSuggestionBusy \? "AI 建議中…" : "AI 建議"/)
-  assert.doesNotMatch(source, /讓 AI 判斷角色/)
-  assert.doesNotMatch(source, /只有按下按鈕才會把項目類型/)
+  assert.match(source, pattern`aiSuggestionBusy \? ${wordCall("AI 建議中…")} : ${wordCall("AI 建議")}`)
+  assert.doesNotMatch(source, pattern`${said("讓 AI 判斷角色")}`)
+  assert.doesNotMatch(source, pattern`${said("只有按下按鈕才會把項目類型")}`)
   assert.doesNotMatch(styles, /\.work-persona-ai\s*\{/)
 })
 
@@ -105,13 +107,13 @@ test("an existing Session gets a confirmation only after selection", () => {
 test("assigned Board items show their generated TODO receipts", () => {
   assert.match(workSteps, /function WorkSteps/)
   assert.match(source, /item\.steps/)
-  assert.match(workSteps, /TODO · \{done\} \/ \{steps\.length\}/)
+  assert.match(workSteps, pattern`\{${wordCall("待辦 ·")}\} \{done\} \/ \{steps\.length\}`)
   assert.match(styles, /\.work-item-steps/)
   assert.match(todos, /<WorkSteps steps=\{item\.steps\}/)
 })
 
 test("closed Board cards show their completion time instead of another update time", () => {
-  assert.match(source, /item\.closed_at \? `完成 \$\{when\(item\.closed_at\)\}` : `更新 \$\{when\(item\.updated_at\)\}`/)
+  assert.match(source, pattern`item\.closed_at \? ${word("完成 {arg0}")}, \[when\(item\.closed_at\)\]\) : ${word("更新 {arg0}")}, \[when\(item\.updated_at\)\]\)`)
 })
 
 test("long detail descriptions start folded and can be opened without folding short ones", () => {
@@ -134,7 +136,7 @@ test("Board lanes keep items folded until their accessible summary opens the sha
 	assert.match(source, /\[gateShown && gateSnapshotDescriptionID, gateShown && gateDescriptionID,/)
 	assert.match(source, /\.filter\(Boolean\)\.join\(" "\) \|\| undefined/)
 	assert.match(source, /id=\{attentionDescriptionID\}/)
-	assert.match(source, /本輪：\{gateSnapshotText\(/)
+	assert.match(source, pattern`\{${wordCall("本輪：")}\}\{gateSnapshotText\(`)
   assert.match(source, /setOpenedItem\(\[\.\.\.answeredDecisionIDs\.current\]\.reduce\(withoutAnsweredWait, item\)\)/)
   assert.match(source, /<CreatedWorkModal item=\{openedItem\} created=\{false\}/)
   assert.match(styles, /\.work-card-summary-description \{[^}]*-webkit-line-clamp:\s*2/)
@@ -150,11 +152,11 @@ test("the Board detail modal owns focus while open and returns it to its summary
 })
 
 test("the Board can filter lifecycle state and search titles and descriptions", () => {
-  assert.match(source, /aria-label="篩選項目狀態"/)
-  assert.match(source, /搜尋標題與內容/)
+  assert.match(source, pattern`aria-label=\{${wordCall("篩選項目狀態")}\}`)
+  assert.match(source, pattern`aria-label=\{${wordCall("搜尋標題與內容")}\}`)
   assert.match(source, /readWorkV2\(selectedProject \|\| undefined, status, search\)/)
   assert.match(source, /readWorkV2\(project \|\| undefined, status, search, nextCursor\)/)
-  assert.match(source, /載入更多項目/)
+  assert.match(source, pattern`${wordCall("載入更多項目")}`)
   assert.match(styles, /\.work-filter-bar/)
   assert.match(styles, /\.work-search/)
 })
@@ -163,7 +165,7 @@ test("Plan items require an explicit accessible switch before the Board shows th
   assert.match(source, /const \[showPlans, setShowPlans\] = useState\(false\)/)
   assert.match(source, /visibleWorkItems\(items, showPlans\)/)
   assert.match(source, /aria-pressed=\{showPlans\}/)
-  assert.match(source, />顯示 Plan<\/button>/)
+  assert.match(source, pattern`>\{${wordCall("顯示 Plan")}\}<\/button>`)
   assert.match(source, /items=\{visibleItems\.filter/)
   assert.match(source, /visibleItems\.length === 0/)
   assert.match(styles, /\.work-plan-toggle/)
@@ -171,16 +173,16 @@ test("Plan items require an explicit accessible switch before the Board shows th
 
 test("Plan scheduling stays prominent while Epic and Feature conversion appears alongside item actions", () => {
   assert.match(source, /work-plan-card/)
-  assert.match(source, /PLAN · 未排入執行/)
+  assert.match(source, pattern`\{${wordCall("PLAN · 未排入執行")}\}`)
   assert.match(source, /item\.phase === "created" \|\| item\.phase === "assigned"/)
-  assert.match(source, /convertible && !plan && <button[\s\S]*?aria-controls=\{`work-convert-\$\{item\.id\}`\}[\s\S]*?轉成 Plan<\/button>/)
-  assert.match(source, /<WorkIcon name="edit" \/> 編輯<\/button>[\s\S]*?轉成 Plan<\/button>[\s\S]*?<WorkIcon name="delete" \/> 刪除<\/button>/)
+  assert.match(source, pattern`convertible && !plan && <button[\s\S]*?aria-controls=\{\`work-convert-\$\{item\.id\}\`\}[\s\S]*?\{${wordCall("轉成 Plan")}\}<\/button>`)
+  assert.match(source, pattern`<WorkIcon name="edit" \/>\{${wordCall("編輯")}\}<\/button>[\s\S]*?\{${wordCall("轉成 Plan")}\}<\/button>[\s\S]*?<WorkIcon name="delete" \/>\{${wordCall("刪除")}\}<\/button>`)
   assert.doesNotMatch(source, /work-card-more-actions|work-more-/)
   assert.match(source, /\{!plan && conversionPanel\}/)
   assert.match(source, /convertible && plan && <div className="work-convert-entry">/)
   assert.match(source, /\{plan && conversionPanel\}/)
   assert.match(source, /className="work-convert-cta"/)
-  assert.match(source, /<fieldset className="work-plan-kind-field"><legend>轉換後的項目類型<\/legend>/)
+  assert.match(source, pattern`<fieldset className="work-plan-kind-field"><legend>\{${wordCall("轉換後的項目類型")}\}<\/legend>`)
   assert.match(source, /type="radio" name=\{`plan-conversion-/)
   assert.match(source, /convertWorkV2\(item, plan \? conversionKind : "plan"\)/)
   assert.match(styles, /\.work-plan-card/)
@@ -203,9 +205,9 @@ test("the Board distinguishes initial loading, paging, empty, stale, and error s
 test("gate status, loading, and read errors stay readable in cards and detail", () => {
   const gate = readFileSync(new URL("./WorkGate.tsx", import.meta.url), "utf8")
   assert.match(gate, /className="work-gate-line"/)
-  assert.match(gate, /loading && <p role="status">正在讀取驗證證據…<\/p>/)
-  assert.match(gate, /error && <p role="alert">驗證詳情讀取失敗：\{error\}/)
-  assert.match(gate, /type="button" onClick=\{retry\}>重試<\/button>/)
+  assert.match(gate, pattern`loading && <p role="status">\{${wordCall("正在讀取驗證證據…")}\}<\/p>`)
+  assert.match(gate, pattern`error && <p role="alert">\{${wordCall("驗證詳情讀取失敗：")}\}\{error\}`)
+  assert.match(gate, pattern`type="button" onClick=\{retry\}>\{${wordCall("重試")}\}<\/button>`)
   const current = gate.indexOf('<p className="work-gate-current">')
   const readState = gate.indexOf('{loading && <p role="status">')
   const acceptance = gate.indexOf('<div className="work-gate-acceptance">')
@@ -225,10 +227,10 @@ test("closed Board cards retain and open Agent completion reports", () => {
   const report = readFileSync(new URL("./WorkCompletionReport.tsx", import.meta.url), "utf8")
   const reportOrder = readFileSync(new URL("./completion-report-order.js", import.meta.url), "utf8")
   assert.match(source, /<WorkCompletionReports item=\{item\}/)
-  assert.match(report, /結案報告/)
+  assert.match(report, pattern`label=\{${wordCall("結案報告")}\}`)
   assert.match(report, /completionReportsNewestFirst/)
   assert.match(reportOrder, /role === "completion_report"/)
-  assert.match(report, /寫於 \{when\(document\.created_at\)\}/)
+  assert.match(report, pattern`\{${wordCall("寫於")}\} \{when\(document\.created_at\)\}`)
   assert.match(styles, /\.work-completion-report/)
 })
 
@@ -236,30 +238,30 @@ test("assigned work links to its current Session instead of offering assignment 
   assert.match(source, /import \{ sessionFragment \} from "\.\.\/\.\.\/session\/address\.js"/)
   assert.match(source, /sessions\.find\(\(session\) => session\.sessionId === item\.owner_session\)/)
   assert.match(source, /className="work-session-link" href=\{sessionFragment\(owner\.id\)\}/)
-  assert.match(source, /aria-label=\{`前往正在實作「\$\{item\.title\}」的 Session`\}/)
+  assert.match(source, pattern`aria-label=\{${word("前往正在實作「{arg0}」的 Session")}, \[item\.title\]\)\}`)
 })
 
 test("assigned work can remind its current Session from the Board card", () => {
   assert.match(source, /remindWorkV2\(item\)/)
-  assert.match(source, /提醒 Session/)
-  assert.match(source, /reminded \? "已提醒"/)
+  assert.match(source, pattern`${wordCall("提醒 Session")}`)
+  assert.match(source, pattern`reminded \? ${wordCall("已提醒")}`)
   assert.match(source, /!!item\.owner_session && !item\.closed_at/)
 })
 
 test("started Board cards show the same lifecycle milestones as their owning Session", () => {
   const milestones = readFileSync(new URL("./WorkMilestones.tsx", import.meta.url), "utf8")
-  assert.match(source, /<WorkMilestones phase=\{item\.phase\} verifyGate=\{item\.verify_gate\} \/>/)
+  assert.match(source, /<WorkMilestones phase=\{item\.phase\} verifyGate=\{item\.verify_gate\}\s+onComplete=\{/)
   assert.match(milestones, /if \(!workMilestonesShown\(phase\)\) return null/)
   assert.match(milestones, /className="work-milestones"/)
-  assert.match(milestones, /aria-label="項目進度"/)
+  assert.match(milestones, pattern`aria-label=\{${wordCall("項目進度")}\}`)
   assert.match(styles, /\.work-milestones li\[data-state="done"\]/)
   assert.match(styles, /\.work-milestones li\[data-state="current"\]/)
 })
 
 test("the create modal accepts reference pictures before creating the item", () => {
   const pictures = readFileSync(new URL("./ReferencePictures.tsx", import.meta.url), "utf8")
-  assert.match(pictures, /＋ 加入參考圖片/)
-  assert.match(source, /<PendingPictures images=\{images\} busy=\{busy\} note="建立項目後上傳"/)
+  assert.match(pictures, pattern`\{${wordCall("＋ 加入參考圖片")}\}`)
+  assert.match(source, pattern`<PendingPictures images=\{images\} busy=\{busy\} note=\{${wordCall("建立項目後上傳")}\}`)
   assert.match(source, /deployment_policy: "agent_decides" as const/)
   assert.doesNotMatch(source, /const body = \{[^\n]*acceptance_criteria/, "an empty new-item field would break older strict daemons")
   assert.match(source, /onCreate\(body, images, decision\.key\)/)
@@ -268,14 +270,15 @@ test("the create modal accepts reference pictures before creating the item", () 
 
 test("Board cards name the action an Agent needs from the person", () => {
   assert.match(source, /item\.user_action/)
-  assert.match(source, /需要你做的事/)
+  assert.match(source, pattern`${wordCall("需要你做的事")}`)
   assert.match(styles, /\.work-user-action/)
 })
 
 test("the Session list shortcut creates an item and keeps its assignment card in a modal", () => {
-  assert.match(sessions, /id="work-create-go"/)
-  assert.match(sessions, /aria-label="新增看板項目"/)
-  assert.match(sessions, /onClick=\{\(\) => openNewWorkItem\(\)\}/)
+  const toolbar = readFileSync(new URL("../../session/SessionToolbar.tsx", import.meta.url), "utf8")
+  assert.match(toolbar, /id="work-create-go"/)
+  assert.match(toolbar, pattern`aria-label=\{${wordCall("新增看板項目")}\} onClick=\{onWork\}`)
+  assert.match(sessions, /onWork=\{\(\) => openNewWorkItem\(\)\}/)
   assert.match(source, /onOpenNewWorkItem/)
   assert.match(source, /setCreatedItem\(created\)/)
   assert.match(source, /<CreatedWorkModal item=\{createdItem\}/)
@@ -298,7 +301,7 @@ test("voice Board drafts are prefilled and still require the create confirmation
   assert.match(event, /new CustomEvent<NewWorkItemDraft>/)
   assert.match(source, /initialDraft=\{createDraft\}/)
   assert.match(source, /\[initialDraft\.project, \.\.\.places\]/)
-  assert.match(source, /語音已填入草稿；按「建立」前不會新增看板項目。/)
+  assert.match(source, pattern`\{${wordCall("語音已填入草稿；按「建立」前不會新增看板項目。")}\}`)
   assert.match(source, /onSubmit=\{\(e\) => \{[\s\S]*onCreate\(/)
 })
 
@@ -321,12 +324,12 @@ test("reference pictures use fetch-backed object URLs so Cloud can render their 
 
 test("every Board card exposes edit and guarded delete flows", () => {
   assert.match(source, /function EditWorkModal/)
-  assert.match(source, /編輯看板項目/)
+  assert.match(source, pattern`${wordCall("編輯看板項目")}`)
   assert.match(source, /editWorkV2\(item, title, description\)/)
   assert.match(source, /function DeleteWorkModal/)
-  assert.match(source, /刪除看板項目？/)
+  assert.match(source, pattern`${wordCall("刪除看板項目？")}`)
   assert.match(source, /deleteWorkV2\(item\)/)
-  assert.match(source, /執行紀錄仍會保留/)
+  assert.match(source, pattern`${wordCall("會從看板與負責 Session 的待辦移除。執行紀錄仍會保留，避免工作憑空消失。")}`)
 })
 
 test("edit and delete dialogs close from Escape, close control, or backdrop", () => {
@@ -345,10 +348,10 @@ test("work controls use reusable vector icons instead of font glyph positioning"
   assert.match(icons, /name === "edit"/)
   assert.match(icons, /name === "delete"/)
   assert.match(icons, /name === "remind"/)
-  assert.match(source, /<WorkIcon name="edit" \/> 編輯/)
-  assert.match(source, /<WorkIcon name="delete" \/> 刪除/)
+  assert.match(source, pattern`<WorkIcon name="edit" \/>\{${wordCall("編輯")}\}`)
+  assert.match(source, pattern`<WorkIcon name="delete" \/>\{${wordCall("刪除")}\}`)
   assert.match(source, /className="work-modal-close"[^>]*><WorkIcon name="close" \/><\/button>/)
-  assert.match(source, /aria-label=\{`移除參考圖片[\s\S]*?<WorkIcon name="close" \/>/)
+  assert.match(source, pattern`aria-label=\{${word("移除參考圖片 {arg0}")}[\s\S]*?<WorkIcon name="close" \/>`)
   assert.match(source, /className="work-kind-radio"><WorkIcon name=\{kind === value \? "radio" : "circle"\} \/>/)
   assert.match(steps, /<WorkIcon name=\{step\.done \? "check" : "circle"\} \/>/)
   assert.doesNotMatch(source, /className="work-modal-close"[^>]*>×<\/button>/)
@@ -369,7 +372,7 @@ test("a reference picture's remove control is the only button drawn as the round
   // button made it absolute, 24 px tall and pill-shaped, squashing the thumbnail.
   assert.doesNotMatch(styles, /\.work-reference-image\s*>\s*button\b/)
   assert.match(styles, /\.work-reference-image > \.work-reference-remove \{[^}]*position: absolute/)
-  assert.match(source, /<button className="work-reference-remove" type="button" aria-label=\{`移除參考圖片/)
+  assert.match(source, pattern`<button className="work-reference-remove" type="button" aria-label=\{${word("移除參考圖片 {arg0}")}`)
 })
 
 test("a dictating text box is never inside a <label>, which would hand its Done to Cancel", () => {
@@ -383,13 +386,13 @@ test("a dictating text box is never inside a <label>, which would hand its Done 
   const voice = readFileSync(new URL("./VoiceTextarea.tsx", import.meta.url), "utf8")
   assert.doesNotMatch(voice.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, ""), /<label\b/)
   assert.match(voice, /aria-labelledby=\{label \? heading : undefined\}/)
-  assert.match(source, /<VoiceTextarea label="描述" value=\{description\} maxLength=\{65536\}/)
-  assert.match(source, /<VoiceTextarea label="描述" value=\{description\} onValue=\{setDescription\} \/>/)
+  assert.match(source, pattern`<VoiceTextarea label=\{${wordCall("描述")}\} value=\{description\} maxLength=\{65536\}`)
+  assert.match(source, pattern`<VoiceTextarea label=\{${wordCall("描述")}\} value=\{description\} onValue=\{setDescription\} \/>`)
 })
 
 test("an assigned card can be moved to another or a new Session", () => {
   assert.match(source, /const reassignable = item\.area !== "planning" && !item\.closed_at && !!item\.owner_session/)
-  assert.match(source, /<WorkIcon name="reassign" \/> 改派/)
+  assert.match(source, pattern`<WorkIcon name="reassign" \/>\{${wordCall("改派")}\}`)
   assert.match(source, /\(assignable \|\| \(reassignable && reassigning\)\) && <div className="work-assignment">/)
   assert.match(source, /assignmentCandidates\(sessions, item\)/)
 })
@@ -402,7 +405,7 @@ test("opening Epic reassignment brings the picker into view", () => {
 
 test("an Epic keeps its frame and label without spanning both desktop columns", () => {
   assert.match(source, /const cardClass = epic \? "work-card work-v2-card work-epic-card"/)
-  assert.match(source, /EPIC · 大型項目/)
+  assert.match(source, pattern`\{${wordCall("EPIC · 大型項目")}\}`)
   assert.match(styles, /\.work-cards \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
   assert.doesNotMatch(styles, /\.work-cards > \.work-epic-card \{[^}]*grid-column:/)
   assert.match(styles, /--work-epic: var\(--peer\)/)
@@ -412,20 +415,20 @@ test("an Epic shows its plan gate, its plan documents, and what assigning it mea
   const report = readFileSync(new URL("./WorkCompletionReport.tsx", import.meta.url), "utf8")
   assert.match(source, /\{epicGateShown\(item\) && <EpicGateChecklist item=\{item\} \/>\}/)
   assert.match(source, /\{!gate\.ready && <p>\{planGateHint\(item\)\}<\/p>\}/)
-  assert.match(source, />計劃書<\/li>/)
-  assert.match(source, />Child Review<\/li>/)
+  assert.match(source, pattern`>\{${wordCall("計劃書")}\}<\/li>`)
+  assert.match(source, pattern`>\{${wordCall("獨立審查")}\}<\/li>`)
   assert.match(source, /<WorkEpicPlanDocuments item=\{item\} \/>/)
   assert.match(source, /\{epic && <p className="work-epic-assign-note">/)
   assert.match(report, /epicPlanDocuments\(item\.documents\)/)
-  assert.match(source, /epic: \{ icon: "◆", label: "Epic", description: "可指派的大型工作/)
-  assert.doesNotMatch(source, /先放在規劃區的大型工作主題/)
+  assert.match(source, pattern`epic: \{ icon: "◆", label: "Epic", description: "${key("可指派的大型工作；指派時若啟用規劃 gate，Session 要先寫計劃書並經 Child Session review")}"`)
+  assert.doesNotMatch(source, pattern`${said("先放在規劃區的大型工作主題")}`)
 })
 
 test("an Epic lists its children with progress, and a child links back to its Epic", () => {
   assert.match(source, /\{epic && <EpicChildren item=\{item\} sessions=\{sessions\} \/>\}/)
   assert.match(source, /<EpicParentLine item=\{item\} \/>/)
-  assert.match(source, /aria-label="子項目"/)
-  assert.match(source, /屬於 Epic：/)
+  assert.match(source, pattern`aria-label=\{${wordCall("子項目")}\}`)
+  assert.match(source, pattern`${wordCall("屬於 Epic：")}`)
   assert.match(source, /shortWorkID\(parent\.id\)/)
   // Closed children are left out of the 進行中 list, so the family is read with every status.
   assert.match(source, /readWorkV2\(project \|\| undefined, "all"\)/)
@@ -443,16 +446,16 @@ test("the Board puts each open question inside the item that explains it", () =>
   assert.match(source, /answerWorkDecision\(decision\.id, option\.id\)/)
   assert.match(source, /confirmDecisionAnswer\(\(\) => answerDecision\(decisionID, optionID\), confirmed\)/)
   assert.match(source, /setDecisions\(\(current\) => withoutAnsweredDecision\(current, decisionID\)\)/)
-  assert.doesNotMatch(source, /未連結的舊問題/)
+  assert.doesNotMatch(source, pattern`${said("未連結的舊問題")}`)
   assert.match(styles, /\.work-item-decisions/)
 })
 
 test("decision answer reports pending, confirmation, refusal, and uncertain transport inside its card", () => {
   assert.match(source, /submittingDecisionIDs\.current\.has\(decisionID\)/)
   assert.match(source, /phase: "pending"/)
-  assert.match(source, /正在送出「\$\{feedback\.label\}」/)
+  assert.match(source, pattern`${word("正在送出「{arg0}」…")}, \[feedback\.label\]\)`)
   assert.match(source, /phase: "confirmed"/)
-  assert.match(source, /已收到回答：「\{receipt\.label\}」/)
+  assert.match(source, pattern`\{${wordCall("已收到回答：「")}\}\{receipt\.label\}\{closingMark\(`)
   assert.match(source, /readDecision\(decisionID\)/)
   assert.match(source, /matchingDecisionAnswer\(observed, optionID\)/)
   assert.match(source, /phase: "rejected"/)
@@ -468,11 +471,11 @@ test("go to answer targets the rendered decision and scrolls it into view", () =
 
 test("Agent proposals are compact review rows with labelled detail on demand", () => {
   assert.match(source, /<ProposalQueue proposals=\{visibleProposals\}/)
-  assert.match(source, /為什麼要做/)
-  assert.match(source, /Explain/)
-  assert.match(source, /詳細說明/)
-  assert.match(source, /<dt>會改什麼<\/dt>/)
-  assert.match(source, /<dt>完成後會看到什麼<\/dt>/)
+  assert.match(source, pattern`${wordCall("為什麼要做")}`)
+  assert.match(source, pattern`${wordCall("展開")}`)
+  assert.match(source, pattern`${wordCall("詳細說明")}`)
+  assert.match(source, pattern`<dt>\{${wordCall("會改什麼")}\}<\/dt>`)
+  assert.match(source, pattern`<dt>\{${wordCall("完成後會看到什麼")}\}<\/dt>`)
   assert.match(styles, /\.work-proposal \{[\s\S]*grid-template-columns/)
   assert.doesNotMatch(source, /work-fold-body work-cards[^\n]*proposals\.map/)
 })
@@ -492,7 +495,7 @@ test("a Feature or Refactor carries the person's Needs independent review checkb
   assert.match(source, /setWorkV2ReviewRequired\(item, checked\)/)
   assert.match(source, /workWord\("reviewRequiredLabel"\)/)
   assert.match(source, /workWord\("reviewRequiredHint"\)/)
-  assert.doesNotMatch(source, /[Rr]isk assessment|風險評估/)
+  assert.doesNotMatch(source, pattern`${said(/[Rr]isk assessment|風險評估/)}`)
 })
 
 test("a child card names its Epic on its own control, outside the summary button", () => {

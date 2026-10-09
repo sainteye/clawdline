@@ -1,4 +1,5 @@
-import { catalogRefusalDetail, catalogWord } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogRefusalDetail, catalogWord } from "../../catalog.ts"
 import type { ProjectUnifyApplied, ProjectUnifyPlan } from "@clawdline/contract"
 
 export interface ProjectFile {

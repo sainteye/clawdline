@@ -4316,6 +4316,7 @@
   "template.ddd756350b15": "A skill foi adicionada e ativada. A lista global de skills mudou durante o salvamento; este Project ainda não contém: {arg0}. Adicione-a por “Adicionar skill existente” ou restaure a herança global.",
   "template.dec5e1afdd7e": "Conflito de versões e incapaz de recarregar: {arg0} Seu texto ainda está aqui; tente novamente.",
   "template.df6b2970b6cb": "{arg0} sessões",
+  "next.sessionCountOne": "{count} sessão",
   "template.e0059ef8ad57": "Ir para a Sessão implementando \"{arg0}\"",
   "template.e08a0f1557ad": "CLAUDE.md tem {arg0} linhas visíveis para Claude, mas não Codex.",
   "template.e22e6512792a": "A resposta foi enviada, mas a Note ainda está pendente: {arg0} Clique em “Mover para tratadas” para tentar novamente; não envie a resposta duas vezes.",

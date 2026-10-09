@@ -1,4 +1,5 @@
-import { catalogFormat } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogFormat } from "../../catalog.ts"
 import type { WorkV2Item } from "./api.js"
 
 /**

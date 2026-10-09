@@ -8,7 +8,8 @@
 import { T } from "./js/core/i18n.js"
 import { machineWording } from "./machine-copy.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
-import { catalogWord } from "../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord } from "../catalog.ts"
 
 /** The part of a board answer the Settings block reads. */
 export interface BoardMode {

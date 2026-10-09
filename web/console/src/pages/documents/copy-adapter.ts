@@ -1,4 +1,5 @@
-import { catalogFormat, catalogRefusalDetail, catalogWord, catalogWordLanguage, currentCatalogTag } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogFormat, catalogRefusalDetail, catalogWord, catalogWordLanguage, currentCatalogTag } from "../../catalog.ts"
 import { describeFailure } from "../../legacy/js/core/failure-text.js"
 
 type DocumentRow = { scope: "project" | "task"; path: string; title?: string; task?: string; bytes: number }

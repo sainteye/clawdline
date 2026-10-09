@@ -9,7 +9,8 @@
  * Holes are `{name}`, as the catalog's are.
  */
 
-import { catalogWord, currentCatalogTag, type CatalogTag } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord, currentCatalogTag, type CatalogTag } from "../../catalog.ts"
 
 const words = {
   en: {

@@ -8,7 +8,8 @@
  * Holes are `{name}`, as the copied catalog's are.
  */
 
-import { catalogWord } from "./catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord } from "./catalog.ts"
 
 const words = {
   en: {
@@ -22,6 +23,7 @@ const words = {
     transcriptLoadingEarlier: "Loading earlier messages…",
     transcriptRetryEarlier: "Try loading earlier messages again",
     transcriptEarlierFailed: "Earlier messages could not be loaded.",
+    sessionCountOne: "{count} session",
     documentsListed: "{count} older documents are not in this list.",
     documentsWalked: "The search stopped after {entries} entries, so some folders were not looked through.",
     documentsTasks: "The folders of {count} older tasks were not searched.",
@@ -1073,6 +1075,7 @@ const words = {
     cloudPeerControlResult: "Machine answered {state}. ID: {id}",
     cloudPeerSendResult: "Request {request}: relay {relay}; target execution {execution}.",
     cloudPeerRefused: "Peer operation stopped ({code}).",
+    cloudPeerSourcesUnread: "Sessions on the other machines could not be read, so no source can be chosen yet.",
     cloudActionHeading: "Session actions and receipts",
     cloudActionQuestion: "Current question",
     cloudActionNoQuestion: "No verified question is available for this Session.",
@@ -1135,6 +1138,7 @@ const words = {
     transcriptLoadingEarlier: "正在載入更早的訊息…",
     transcriptRetryEarlier: "重新載入更早的訊息",
     transcriptEarlierFailed: "更早的訊息載入失敗。",
+    sessionCountOne: "{count} 個 session",
     documentsListed: "還有 {count} 份比較舊的文件不在這份清單上。",
     documentsWalked: "搜尋在 {entries} 個項目後停下，有些資料夾沒有看完。",
     documentsTasks: "比較舊的 {count} 個工作的資料夾沒有搜尋。",
@@ -2092,6 +2096,7 @@ const words = {
     cloudPeerControlResult: "機器回覆 {state}。ID：{id}",
     cloudPeerSendResult: "請求 {request}：Relay {relay}；目標執行 {execution}。",
     cloudPeerRefused: "跨機操作已停止（{code}）。",
+    cloudPeerSourcesUnread: "讀不到其他機器上的 Session，暫時無法選擇來源。",
     cloudActionHeading: "Session 操作與收據",
     cloudActionQuestion: "目前的問題",
     cloudActionNoQuestion: "目前沒有可驗證的 Session 問題。",

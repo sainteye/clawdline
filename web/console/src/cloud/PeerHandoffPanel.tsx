@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { failureSentence } from "../refusals/refusal-text.js"
 import { nextWord } from "../next-strings.js"
 import type { CloudClientHandle } from "./copied.js"
 import type { DetailActionContext, FleetMachine, SessionDestination, SessionProjectionSource } from "./all-machine-sessions.js"
@@ -65,6 +66,7 @@ export function PeerHandoffPanel({ context, machines, source, current }: {
   current: () => CloudClientHandle | null
 }) {
   const [sources, setSources] = useState<SessionDestination[]>([])
+  const [sourcesProblem, setSourcesProblem] = useState("")
   const [selected, setSelected] = useState("")
   const [pairID, setPairID] = useState("")
   const [grantID, setGrantID] = useState("")
@@ -99,6 +101,7 @@ export function PeerHandoffPanel({ context, machines, source, current }: {
   }, [selected, target.machineID, target.sessionID, target.executionGeneration])
 
   useEffect(() => {
+    setSourcesProblem("")
     if (!source) { setSources([]); return }
     const abort = new AbortController()
     void Promise.all(machines.filter((machine) => machine.id !== target.machineID && machine.freshness === "current")
@@ -107,7 +110,11 @@ export function PeerHandoffPanel({ context, machines, source, current }: {
         if (abort.signal.aborted) return
         setSources(rows.flatMap(({ reading }) => reading.kind === "ready" ? reading.rows
           .filter((row) => row.freshness === "current").map((row) => row.destination) : []))
-      }).catch(() => { if (!abort.signal.aborted) setSources([]) })
+      }).catch((error: unknown) => {
+        if (abort.signal.aborted) return
+        setSources([])
+        setSourcesProblem(failureSentence(error, nextWord("cloudPeerSourcesUnread")))
+      })
     return () => abort.abort()
   }, [source, machines.map((machine) => machine.id + ":" + machine.freshness).join("\0"), target.machineID])
 
@@ -250,6 +257,7 @@ export function PeerHandoffPanel({ context, machines, source, current }: {
         </option>)}
       </select>
     </label>
+    {sourcesProblem && <p role="alert">{sourcesProblem}</p>}
     {chosen && !sourceCanControl && <p role="status">{nextWord("cloudPeerWriteUnavailable", { machine: chosen.machineID })}</p>}
     {!targetCanControl && <p role="status">{nextWord("cloudPeerWriteUnavailable", { machine: target.machineID })}</p>}
     <p>{nextWord("cloudPeerCompareInstruction")}</p>

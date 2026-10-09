@@ -5,6 +5,10 @@ import test from "node:test"
 import { TERMINAL_REFUSAL_WORDS } from "./refusal-table.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { nextWord } from "../../next-strings.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "../../catalog-testing.ts"
+
+withCatalog("zh-Hant")
 
 /** The contract's own list, read from the generated file (it cannot be imported under `node --test`). */
 function contractCodes(): string[] {

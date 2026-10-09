@@ -2,7 +2,11 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { SessionAgent } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "../catalog-testing.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { agentReportIdentity } from "./agent-report.ts"
+
+withCatalog("zh-Hant")
 
 const agent = {
   id: "agent-fixture",

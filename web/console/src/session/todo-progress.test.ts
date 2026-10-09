@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { inCatalog } from "../catalog-testing.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { todoProgress, todoProgressLabel } from "./todo-progress.ts"
 
@@ -43,5 +45,5 @@ test("without a conversation id nothing counts as written by the Session", () =>
 })
 
 test("the spoken label names all three counts and the total", () => {
-  assert.equal(todoProgressLabel({ done: 1, active: 2, waiting: 3 }), "6 個待辦：1 個完成、2 個進行中、3 個未開始")
+  assert.equal(inCatalog("zh-Hant", () => todoProgressLabel({ done: 1, active: 2, waiting: 3 })), "6 個待辦：1 個完成、2 個進行中、3 個未開始")
 })

@@ -1,7 +1,11 @@
-import { localizedLiteralMap } from "../../catalog.js"
-import { catalogFormat } from "../../catalog.js"
-import { catalogWord } from "../../catalog.js"
-import { labelled, listSeparator } from "../../punctuation.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { localizedLiteralMap } from "../../catalog.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogFormat } from "../../catalog.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord } from "../../catalog.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { labelled, listSeparator } from "../../punctuation.ts"
 // What the unify preview shows, computed from the machine's plan and nothing
 // else (docs/project-files.md, Unify). Kept out of JSX so each picture can be
 // tested as data: who sees which file now and after, what each action does to

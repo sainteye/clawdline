@@ -148,7 +148,7 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [earlier, setEarlier] = useState<EarlierPages | null>(null)
   const [olderLoading, setOlderLoading] = useState(false)
-  const [olderError, setOlderError] = useState(false)
+  const [olderError, setOlderError] = useState<string | null>(null)
   const olderBusy = useRef(false)
   const olderAnchor = useRef<{ top: number; height: number } | null>(null)
   const session = useSession(id)
@@ -175,7 +175,7 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
     if (!olderCursor || olderBusy.current || !data) return
     olderBusy.current = true
     setOlderLoading(true)
-    setOlderError(false)
+    setOlderError(null)
     const scroll = document.getElementById("tx-scroll")
     try {
       const page = agentId
@@ -184,8 +184,8 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
       if (page.evidence !== "transcript") throw new Error(page.note || "Earlier conversation could not be read")
       if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
       setEarlier((was) => ({ base: was?.base ?? data, pages: [...(was?.pages ?? []), page] }))
-    } catch {
-      setOlderError(true)
+    } catch (error) {
+      setOlderError(L.failureSentence(error, nextWord("transcriptEarlierFailed")))
     } finally {
       olderBusy.current = false
       setOlderLoading(false)
@@ -369,7 +369,7 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
       <button type="button" className="go" disabled={olderLoading} onClick={() => void loadOlder()}>
         {nextWord(olderLoading ? "transcriptLoadingEarlier" : olderError ? "transcriptRetryEarlier" : "transcriptLoadEarlier")}
       </button>
-      {olderError && <span role="alert">{nextWord("transcriptEarlierFailed")}</span>}
+      {olderError && <span role="alert">{olderError}</span>}
     </div>
   ) : null
   if (skeleton) return <Skeleton />

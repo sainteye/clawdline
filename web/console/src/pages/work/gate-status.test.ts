@@ -3,6 +3,10 @@ import test from "node:test"
 import type { WorkGateCompactRead, WorkGateRoundSummary } from "@clawdline/contract"
 // @ts-expect-error -- a .ts path for Node's type-stripping test runner.
 import { gateSnapshotText, gateStatus, roundStatus } from "./gate-status.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "../../catalog-testing.ts"
+
+withCatalog("zh-Hant")
 
 const round = (state: WorkGateRoundSummary["state"], verdict?: WorkGateRoundSummary["verdict"]): WorkGateRoundSummary => ({
   id: "r", state, verdict, candidate_commit: "c", criteria_digest: "d", created_at: 1,

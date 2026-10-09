@@ -964,8 +964,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       if (!abort.signal.aborted && answer.kind === "unavailable") {
         setFleetDetailProblem({ key, word: fleetContentProblemWord(answer.reason) })
       }
-    }, () => {
-      if (!abort.signal.aborted) setFleetDetailProblem({ key, word: nextWord("cloudAllContentUnknown") })
+    }, (error: unknown) => {
+      if (!abort.signal.aborted) setFleetDetailProblem({ key, word: L.failureSentence(error, nextWord("cloudAllContentUnknown")) })
     })
     return () => {
       abort.abort()

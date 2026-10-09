@@ -1,4 +1,5 @@
-import { catalogRefusalDetail, catalogWord } from "../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogRefusalDetail, catalogWord } from "../catalog.ts"
 import type { MachineUsage } from "@clawdline/contract"
 import { RefusalError, TransportError, asMachineNeedsUpdate, isRefusal } from "@clawdline/core"
 import { nextWord } from "../next-strings.js"

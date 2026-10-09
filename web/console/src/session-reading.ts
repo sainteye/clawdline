@@ -1,7 +1,11 @@
-import { catalogFormat } from "./catalog.js"
-import { catalogWord } from "./catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogFormat } from "./catalog.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord } from "./catalog.ts"
 import type { BearingsSource, ScanSource, SessionRow } from "@clawdline/contract"
 import type { ReadState } from "./read-state.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { nextWord } from "./next-strings.ts"
 
 function ageWords(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds))
@@ -109,6 +113,8 @@ export function scanFailureWords(
 export function totalSessionWords(total: number, chinese = sessionReadingChinese()): string {
   void chinese
   if (total === 0) return catalogWord("literal", "dee6ddd8236d")
+  // The catalog format has no plural rule, so one Session has its own entry.
+  if (total === 1) return nextWord("sessionCountOne", { count: total })
   return catalogFormat("template", "df6b2970b6cb", [total])
 }
 

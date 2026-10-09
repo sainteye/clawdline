@@ -13,6 +13,9 @@ import assert from "node:assert/strict"
 import { deployQuietNote, deployWhyWord, repositoryNote } from "./links-note.ts"
 // @ts-expect-error -- a `.ts` path, for node; see `legacy/devices-bridge.test.ts`.
 import { nextWord } from "../next-strings.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { inCatalog } from "../catalog-testing.ts"
+
 
 const lang = { documentElement: { lang: "en" } }
 ;(globalThis as { document?: unknown }).document = lang
@@ -48,7 +51,7 @@ test("a repository on GitHub with no deploy row is not silence any more", () => 
   lang.documentElement.lang = "en"
   assert.match(repositoryNote("github", undefined, quiet, say), /stopped counting as the current state/)
   lang.documentElement.lang = "zh-Hant"
-  assert.match(repositoryNote("github", undefined, quiet, say), /久到不再算是現在的狀態/)
+  assert.match(inCatalog("zh-Hant", () => repositoryNote("github", undefined, quiet, say)), /久到不再算是現在的狀態/)
   lang.documentElement.lang = "en"
 })
 
@@ -102,7 +105,7 @@ test("every reason that tool writes has words, and a new one is said as it was w
   assert.match(deployWhyWord(strange, say), /does not know/, "and named as one this app does not know")
   assert.match(deployWhyWord("", say), /did not say why/)
   lang.documentElement.lang = "zh-Hant"
-  assert.match(deployWhyWord(strange, say), /不認得的理由/)
+  assert.match(inCatalog("zh-Hant", () => deployWhyWord(strange, say)), /不認得的理由/)
   lang.documentElement.lang = "en"
 })
 

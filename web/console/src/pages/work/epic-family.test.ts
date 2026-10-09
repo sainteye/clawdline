@@ -4,6 +4,10 @@ import test from "node:test"
 import type { WorkV2Item } from "./api.js"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { epicChildren, epicParent, epicProgress, epicProgressWords, MAX_PARENT_READS, missingParentIDs, needsFamilyList, readMissingParents, shortWorkID } from "./epic-family.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "../../catalog-testing.ts"
+
+withCatalog("zh-Hant")
 
 type Row = Pick<WorkV2Item, "id" | "kind" | "title" | "phase" | "parent_id">
 

@@ -1,4 +1,5 @@
-import { catalogWord, currentCatalogTag } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogWord, currentCatalogTag } from "../../catalog.ts"
 import type { Icon } from "@clawdline/contract"
 import type { Effective, SquadPersona, SquadProject, SquadSkill, SquadView } from "./model.js"
 

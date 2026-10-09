@@ -1,4 +1,5 @@
-import { catalogFormat } from "../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogFormat } from "../catalog.ts"
 /**
  * How far along a Session's to-dos are, in the three states a person asks
  * about at a glance: finished, being worked on, not yet started.

@@ -26,7 +26,8 @@ test("a read delivery can always be sent again, and a completed one never", () =
 
 test("the window matches the daemon's", async () => {
   const { readFileSync } = await import("node:fs")
-  const app = readFileSync(new URL("../../../../internal/app/work_v2.go", import.meta.url), "utf8")
+  // The constant moved out of work_v2.go in db161b26.
+  const app = readFileSync(new URL("../../../../internal/app/work_v2_todos.go", import.meta.url), "utf8")
   assert.match(app, /const DirectTodoResendAfter = 2 \* time\.Minute/)
   assert.equal(DIRECT_TODO_RESEND_AFTER_SECONDS, 120)
 })

@@ -7,6 +7,8 @@ import { workProjectName, workWordIn } from "./words.ts"
 import { proposalFoldShouldOpen } from "./fold.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { nextWord } from "../../next-strings.ts"
+// @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
+import { inCatalog } from "../../catalog-testing.ts"
 
 test("pending proposals open their controls on arrival without defeating a manual close", () => {
   assert.equal(proposalFoldShouldOpen(null, 0), false)
@@ -28,20 +30,14 @@ test("Work screens translate an uncarried Cloud route instead of printing its in
 })
 
 test("declining for now and recording an evidence-backed resolution are visibly different", () => {
-  const prior = Object.getOwnPropertyDescriptor(globalThis, "navigator")
-  Object.defineProperty(globalThis, "navigator", {
-    configurable: true,
-    value: { language: "zh-TW" },
-  })
-  try {
+  // The selected catalog, not navigator.language, chooses the words since 33e1c4b1.
+  inCatalog("zh-Hant", () => {
     assert.equal(nextWord("proposalNotNow"), "現在不要")
-    assert.equal(nextWord("proposalResolve"), "已完成／已不存在")
+    // The zh-Hant catalog (0f9f6416) words it 不再適用 where the source said 已不存在.
+    assert.equal(nextWord("proposalResolve"), "已完成／不再適用")
     assert.notEqual(nextWord("proposalNotNow"), nextWord("proposalResolve"))
     assert.match(nextWord("proposalResolveEvidence"), /檔案:行號|指令輸出|daemon/)
-  } finally {
-    if (prior) Object.defineProperty(globalThis, "navigator", prior)
-    else Reflect.deleteProperty(globalThis, "navigator")
-  }
+  })
 })
 
 test("the Needs independent review checkbox is worded in both languages", () => {

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4930,
-  "riskKeys": 2150,
-  "nonRiskCount": 2780,
+  "englishContentKeys": 4932,
+  "riskKeys": 2151,
+  "nonRiskCount": 2781,
   "groups": [
     {
       "name": "bar / other",
@@ -1867,7 +1867,7 @@
     },
     {
       "name": "next / other",
-      "count": 103,
+      "count": 104,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1920,6 +1920,7 @@
         "next.sessionCallbackActive",
         "next.sessionCallbackUnverified",
         "next.sessionCallbacksActive",
+        "next.sessionCountOne",
         "next.sessionLastActivity",
         "next.sessionStop",
         "next.sessionTrySendingAgain",

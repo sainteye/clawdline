@@ -1,5 +1,6 @@
 import { Diagnostics } from "../legacy/js/core/layout-diagnostics.js"
-import { listSeparator } from "../punctuation.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { listSeparator } from "../punctuation.ts"
 import * as L from "../legacy/bridge.js"
 import {
   cloudDisable,

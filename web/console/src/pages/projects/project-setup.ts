@@ -1,4 +1,5 @@
-import { catalogFormat, catalogWord, localizedLiteralMap } from "../../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogFormat, catalogWord, localizedLiteralMap } from "../../catalog.ts"
 import type { ProjectSetup, ProjectUnifyStatus } from "@clawdline/contract"
 import type { ProjectPlace, ProjectSetupEvidence } from "../work/api.js"
 

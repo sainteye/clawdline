@@ -26,7 +26,9 @@ type Call = [string, ...unknown[]]
 /** A question's name, as `session/fingerprint.ts` and `session.MenuFingerprint` write one. */
 const FINGERPRINT = "8eca80fffc9359d5f0fca31f3e36b741bd50218b658fc086f05931747bd4c5ce"
 /** The words the Go daemon's descriptor lists (`cloudops.Implemented`), the ones these tests use. */
-const GO_DAEMON = { machine: { commands: ["send", "answer", "key", "end", "archive-session", "interrupt", "focus", "session-receipt"] } }
+// A durable exact-execution action needs the machine to declare its own word as well as
+// `session-receipt` (20f03679); the daemon lists `smart-title` (cloudops ops_local_commands.go).
+const GO_DAEMON = { machine: { commands: ["send", "answer", "key", "end", "archive-session", "interrupt", "focus", "smart-title", "session-receipt"] } }
 const EXECUTION = "0123456789abcdef0123456789abcdef"
 /** The envelope a failure was sent under: sealed, written, and so possibly run. */
 const REF = { sender: "web_abcdef123456", seq: 12, request: null }
@@ -2152,6 +2154,8 @@ test("every read the writer carries is one it waits for, and no write is", () =>
     ["/v1/sessions/s1/documents", "documents"],
     ["/v1/sessions/s1/documents/project/demo.md", "document"],
     ["/v1/sessions/s1/cloud-receipts/press-1", "session-receipt"],
+    // The Session page's skills picker on another machine (e13a02e6).
+    ["/v1/sessions/s1/skills", "skills"],
   ]
   for (const [path, op] of reads) {
     const route = writeRoute("GET", path)

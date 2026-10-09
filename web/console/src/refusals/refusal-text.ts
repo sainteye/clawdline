@@ -1,4 +1,5 @@
-import { catalogRefusalDetail, catalogWord } from "../catalog.js"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogRefusalDetail, catalogWord } from "../catalog.ts"
 import { describeFailure } from "../legacy/js/core/failure-text.js"
 
 // The copied formatter is pinned to the retired app. New Cloud refusal codes
