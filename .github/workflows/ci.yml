@@ -160,10 +160,14 @@ jobs:
           VITE_HOSTED_CONSOLE: '{"v":1,"app_origin":"https://app.example.invalid","api_origin":"https://api.example.invalid","relay_url":"wss://relay.example.invalid/v1/connect"}'
         run: npm run build
 
+      - name: Check that every console test file is run
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
+        run: node tools/check-console-tests.mjs
+
       - name: Run console tests
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
-        working-directory: web/console
-        run: node --test --experimental-strip-types "src/**/*.test.ts"
+        working-directory: web
+        run: npm test
 
   darwin:
     name: macOS and Darwin-only paths
