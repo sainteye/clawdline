@@ -2,6 +2,8 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { MachineUsage, SessionRow } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { inCatalog } from "../catalog-testing.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { assignSlots, bytes, memorySegments, rows, SLOTS, MORE, sparkPoints, remember, verdict } from "./model.ts"
 
 const GB = 1024 * 1024 * 1024
@@ -27,7 +29,7 @@ function usage(over: Partial<MachineUsage> = {}): MachineUsage {
 
 test("the verdict names memory before CPU, because a swapping machine also shows a high load", () => {
   // The machine of 2026-09-26: 1.9 GB, 290 MB available, 1.1 GB swapped, load 14 on two cores.
-  const v = verdict(
+  const v = inCatalog("zh-Hant", () => verdict(
     usage({
       cpu_percent: 100,
       load: [14.1, 5.6, 2.2],
@@ -37,7 +39,7 @@ test("the verdict names memory before CPU, because a swapping machine also shows
       swap_used_bytes: 1.1 * GB,
       pressure: { cpu_some: 92, memory_some: 36, memory_full: 18, io_some: 53 },
     }),
-  )
+  ))
   assert.equal(v.level, "bad")
   assert.match(v.zh, /^記憶體不夠/)
   assert.match(v.zh, /290 MB/)
@@ -45,7 +47,7 @@ test("the verdict names memory before CPU, because a swapping machine also shows
 })
 
 test("a saturated CPU with memory to spare is called the CPU", () => {
-  const v = verdict(usage({ cpu_percent: 97, load: [5, 3, 2] }))
+  const v = inCatalog("zh-Hant", () => verdict(usage({ cpu_percent: 97, load: [5, 3, 2] })))
   assert.equal(v.level, "bad")
   assert.match(v.zh, /^CPU 滿載/)
 })
@@ -89,7 +91,7 @@ test("rows carry the session list's name, heaviest first, and the daemon last", 
   })
   const list = [{ id: "%1", label: "Machine load" } as SessionRow]
   const slots = assignSlots(["%1", "%2", "%3"], new Map())
-  const byMemory = rows(u, list, slots, "memory", true)
+  const byMemory = inCatalog("zh-Hant", () => rows(u, list, slots, "memory", true))
   assert.deepEqual(
     byMemory.map((r) => r.title),
     ["pts/2", "Machine load", "%3", "Clawdline"],
@@ -102,7 +104,8 @@ test("rows carry the session list's name, heaviest first, and the daemon last", 
     byCPU.map((r) => r.id),
     ["%2", "%1", "%3", ""],
   )
-  assert.equal(byCPU[1].detail, "pts/1 · 3 processes")
+  // English counts as a complete template since 33e1c4b1, with no plural to choose.
+  assert.equal(byCPU[1].detail, "pts/1 · Processes: 3")
 })
 
 test("the memory bar never shows more than is used, and other is what is left over", () => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 // @ts-expect-error -- Node runs this test against the source file directly.
-import { key, pattern, word, wordCall } from "../../catalog-source.ts"
+import { key, pattern, word, wordCall } from "../../catalog-testing.ts"
 
 const source = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
 const workSteps = readFileSync(new URL("./WorkSteps.tsx", import.meta.url), "utf8")

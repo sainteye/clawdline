@@ -1,7 +1,12 @@
-// Source-text tests name copy by what a person reads, not by its catalog hash. Copy moved out of
-// the components into catalogs, so `word("關閉")` answers the pattern for the catalog call whose
-// Taiwan Traditional Chinese value is 關閉, and refuses a phrase no catalog key translates to.
+// Tests name copy by what a person reads, not by its catalog hash. Copy moved out of the
+// components into catalogs, so a source test's `word("關閉")` answers the pattern for the catalog
+// call whose Taiwan Traditional Chinese value is 關閉, and refuses a phrase no catalog key
+// translates to; a test of rendered words calls `withCatalog("zh-Hant")` to read them as a person
+// with that language selected would.
 import { readFileSync } from "node:fs"
+import { afterEach, beforeEach } from "node:test"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { activateCatalog, resetCatalogForTest, type CatalogTag } from "./catalog.ts"
 
 type Catalog = Record<string, string>
 
@@ -40,4 +45,32 @@ export function wordCall(text: string): string {
 /** A regular expression written raw, with `word`/`wordCall` patterns interpolated as they are. */
 export function pattern(strings: TemplateStringsArray, ...parts: string[]): RegExp {
   return new RegExp(String.raw(strings, ...parts))
+}
+
+function activate(tag: CatalogTag): () => void {
+  const stubbed = !("document" in globalThis)
+  if (stubbed) Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { lang: "en", dir: "ltr", setAttribute() {} } } })
+  const active = activateCatalog(read(tag), tag)
+  if (active !== tag) throw new Error(`the ${tag} catalog did not validate; ${active} is active`)
+  return () => {
+    resetCatalogForTest()
+    if (stubbed) Reflect.deleteProperty(globalThis, "document")
+  }
+}
+
+/** Every test in the calling file runs with `tag`'s catalog active, and the default afterwards. */
+export function withCatalog(tag: CatalogTag): void {
+  let restore = () => {}
+  beforeEach(() => { restore = activate(tag) })
+  afterEach(() => restore())
+}
+
+/** `run` with `tag`'s catalog active, and the default afterwards. */
+export function inCatalog<T>(tag: CatalogTag, run: () => T): T {
+  const restore = activate(tag)
+  try {
+    return run()
+  } finally {
+    restore()
+  }
 }
