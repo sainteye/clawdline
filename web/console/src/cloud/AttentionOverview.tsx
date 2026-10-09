@@ -13,12 +13,12 @@ const ui = {
     machine: "Machine", machineID: "Machine ID", sessionID: "Session ID", platform: "Platform", state: "Session state", freshness: "Freshness", kind: "Attention type",
     all: "All", known: "known items", unknown: "machines with incomplete status", empty: "No matching known items.", filters: "Filter attention items",
     report: "Show manager report", hide: "Hide manager report", copy: "Copy report", copying: "Copying…", copied: "Report copied.", copyFailed: "Could not copy the report. Select the text below to copy it.",
-    open: "Open Session", observed: "Observed", generation: "Snapshot generation", gap: "Gap", next: "Next step", unavailable: "Unavailable", source: "Source", coverage: "Machine coverage" },
+    open: "Open Session", observed: "Observed", generation: "Snapshot generation", gap: "Gap", next: "Next step", unavailable: "Unavailable", source: "Source", coverage: "Machine coverage", evidence: "Evidence and gaps" },
   "zh-Hant-TW": { loading: "正在讀取機器狀態…", error: "無法讀取機器狀態。", retry: "重試",
     machine: "機器", machineID: "機器 ID", sessionID: "Session ID", platform: "平台", state: "Session 狀態", freshness: "新鮮度", kind: "注意類別",
     all: "全部", known: "個已知待處理項目", unknown: "台機器資料不完整", empty: "沒有符合篩選條件的已知項目。", filters: "篩選待處理項目",
     report: "顯示管理者報告", hide: "隱藏管理者報告", copy: "複製報告", copying: "複製中…", copied: "報告已複製。", copyFailed: "無法複製報告；可選取下方文字複製。",
-    open: "開啟 Session", observed: "觀察時間", generation: "快照世代", gap: "資料缺口", next: "下一步", unavailable: "無法使用", source: "來源", coverage: "機器涵蓋範圍" },
+    open: "開啟 Session", observed: "觀察時間", generation: "快照世代", gap: "資料缺口", next: "下一步", unavailable: "無法使用", source: "來源", coverage: "機器涵蓋範圍", evidence: "依據與缺口" },
 } as const
 
 const kinds: AttentionKind[] = ["reply", "blocked", "failed", "no_progress", "unconfirmed", "offline"]
@@ -76,10 +76,12 @@ export function AttentionOverview({ reading, locale, onOpen, onRetry }: {
           <strong>{attentionKindWord(entry.kind, locale)}</strong>
           <span>{entry.machine.name} · {entry.machine.platform}</span>
           {entry.session && <span>{entry.session.title || entry.session.target.session_id}</span>}
-          <small>{t.machineID}: {entry.machine.machine_id}{entry.session && ` · ${t.sessionID}: ${entry.session.target.session_id}`}</small>
-          <small>{t.source}: ss/{entry.machine.machine_id} · {t.observed}: {entry.machine.observedAt === null ? w.unknown : new Date(entry.machine.observedAt).toLocaleString(locale)} · {t.generation}: {entry.machine.snapshotGeneration ?? w.unknown} · {entry.evidence === "retained" ? w.stale : entry.evidence === "unknown" ? w.unknownFresh : freshnessWord(entry.machine, locale)}</small>
-          <small>{t.gap}: {machineGap(entry.machine, locale)} · {t.next}: {nextStep(entry.machine, entry.session, locale)}</small>
           {entry.session && onOpen && entry.machine.access === "readable" && entry.evidence === "current" && <button type="button" onClick={() => onOpen(entry.session!.target)}>{t.open}</button>}
+          <details className="attention-item-evidence"><summary>{t.evidence}</summary>
+            <small>{t.machineID}: {entry.machine.machine_id}{entry.session && ` · ${t.sessionID}: ${entry.session.target.session_id}`}</small>
+            <small>{t.source}: ss/{entry.machine.machine_id} · {t.observed}: {entry.machine.observedAt === null ? w.unknown : new Date(entry.machine.observedAt).toLocaleString(locale)} · {t.generation}: {entry.machine.snapshotGeneration ?? w.unknown} · {entry.evidence === "retained" ? w.stale : entry.evidence === "unknown" ? w.unknownFresh : freshnessWord(entry.machine, locale)}</small>
+            <small>{t.gap}: {machineGap(entry.machine, locale)} · {t.next}: {nextStep(entry.machine, entry.session, locale)}</small>
+          </details>
         </li>)}
       </ul>
       <div className="attention-report-controls">
