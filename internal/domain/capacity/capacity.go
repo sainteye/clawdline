@@ -415,6 +415,16 @@ const (
 	SquadEventIDBytes            = "squad.event_id_bytes"
 	SquadEventPageRows           = "squad.event_page_rows"
 	SquadEventBodyBytes          = "squad.event_body_bytes"
+	// How the console's transcript pane reads (web/console/src/session/
+	// transcript-follow.ts) and how the Cloud seam answers it
+	// (web/console/src/cloud/relay-reader.ts). They bound requests, not
+	// storage: the browser enforces them, and they are registered here so a
+	// change to any of them is a change to this register.
+	ConsoleTranscriptSafetySeconds    = "console.transcript_safety_seconds"
+	ConsoleTranscriptFollowSeconds    = "console.transcript_follow_seconds"
+	ConsoleTranscriptMergedRows       = "console.transcript_merged_rows"
+	ConsoleTranscriptBackoffSeconds   = "console.transcript_backoff_seconds"
+	ConsoleRelayTranscriptExpectReask = "console.relay_transcript_expect_reask_seconds"
 	// The ordinary shells this machine holds open for a person, and what one
 	// request may type into one or read back from it (limits N59).
 	TerminalCount                     = "terminal.count"
@@ -2317,6 +2327,49 @@ func Register() []Entry {
 			Limit: 512 << 10, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Person,
 			Sources: []string{"internal/domain/squad.MaxSquadConsoleActiveSkillBytes"},
+		},
+		{
+			// The transcript pane reads the whole newest page at least this
+			// often (SAFETY_MS); between, it reads only what was appended, when
+			// the session row says the record grew. Past it the held page
+			// expires and is read whole: that read is what catches a row that
+			// said nothing and refreshes pictures an appended read never
+			// revisits.
+			Name: ConsoleTranscriptSafetySeconds, Class: Cache, Unit: Seconds,
+			Limit: 30, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// After a send, the pane reads every two seconds for at most this
+			// long (FOLLOW_WINDOW_MS), then goes back to the safety pace. The
+			// card's own lifetime is session/pending.ts's and unchanged.
+			Name: ConsoleTranscriptFollowSeconds, Class: Cache, Unit: Seconds,
+			Limit: 90, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// The entries one held page may grow to by appended reads
+			// (MERGED_ROWS_LIMIT), the route's own ceiling for a page. Past it
+			// the next read is a whole one, which starts again at 200.
+			Name: ConsoleTranscriptMergedRows, Class: Cache, Unit: Rows,
+			Limit: 1000, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// A failed transcript read waits 2, 4, 8 … seconds, at most this
+			// long (BACKOFF.maxMs), before the next.
+			Name: ConsoleTranscriptBackoffSeconds, Class: Cache, Unit: Seconds,
+			Limit: 30, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// For 45 seconds after a write the Cloud seam asks the machine for
+			// the transcript again when the row moved, and otherwise at most
+			// this often (TRANSCRIPT_EXPECT_REREAD_MS); its held answer expires
+			// at this age.
+			Name: ConsoleRelayTranscriptExpectReask, Class: Cache, Unit: Seconds,
+			Limit: 4, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
 			// One recovery query reads this many pending launch intents. Later
