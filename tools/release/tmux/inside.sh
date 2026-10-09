@@ -79,6 +79,11 @@ if [ "$TARGET_OS" = linux ]; then
     --with-fallbacks=xterm-256color,xterm,screen-256color,screen,tmux-256color,tmux,vt100,linux
   make -s -j"$jobs" >/dev/null
   make -s install.libs install.includes >/dev/null
+  # tmux's configure finds no ncurses.pc, falls back to -lncursesw, and on
+  # seeing ncurses.h appends -lncurses as well; with no such library every
+  # later link test fails, and it stops at "utf8proc not found". The name
+  # is the same wide, static library.
+  ln -sf libncursesw.a "$prefix/lib/libncurses.a"
   cp COPYING "$out/licenses/ncurses.txt"
   ncurses_flags="-I$prefix/include/ncursesw"
 fi
