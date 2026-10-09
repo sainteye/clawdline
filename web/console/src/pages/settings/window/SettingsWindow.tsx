@@ -411,6 +411,9 @@ export function SettingsWindow({ embedded = false }: { embedded?: boolean } = {}
               onPick={pick("terminal")}
             />
           </Row>
+          <Row label={W.settingsITermScan} hint={W.settingsITermScanHint}>
+            <Switch label={W.settingsITermScan} on={!!now("iterm_scan")} onChange={flip("iterm_scan")} />
+          </Row>
           {INPUT_BAR_ENABLED && <><Row label={W.settingsScopeGlobal}>
             <Switch
               label={W.settingsScopeGlobal}

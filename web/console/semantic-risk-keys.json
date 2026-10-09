@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 4928,
+  "englishKeys": 4931,
   "counts": {
-    "negation": 1419,
+    "negation": 1421,
     "state": 686,
     "permission": 269,
     "deletion": 90,
     "uncertainty": 144
   },
-  "unionCount": 2148,
+  "unionCount": 2150,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -1285,6 +1285,7 @@
       "resourceCoordination.none",
       "resourceCoordination.prompt",
       "resourceCoordination.unavailable",
+      "session.itermScanOff",
       "settings.settingsCodexAutoNameHint",
       "settings.settingsCodexDefaultEffortHint",
       "settings.settingsCompactWindowHint",
@@ -1306,6 +1307,7 @@
       "settings.settingsHotkeyRefused",
       "settings.settingsHotkeySystem",
       "settings.settingsHotkeyUnreadable",
+      "settings.settingsITermScanHint",
       "settings.settingsNotchHint",
       "settings.settingsOrchestratorMaxHint",
       "settings.settingsOrchestratorPermissionEdits",
@@ -4513,6 +4515,7 @@
     "resourceCoordination.unknown",
     "session.attentionAria",
     "session.attentionText",
+    "session.itermScanOff",
     "settings.settingsAgentNotify",
     "settings.settingsCodexAutoNameHint",
     "settings.settingsCodexDefaultEffortHint",
@@ -4537,6 +4540,7 @@
     "settings.settingsHotkeyRefused",
     "settings.settingsHotkeySystem",
     "settings.settingsHotkeyUnreadable",
+    "settings.settingsITermScanHint",
     "settings.settingsNotchHint",
     "settings.settingsOrchestratorCloseHint",
     "settings.settingsOrchestratorCloseKeep",

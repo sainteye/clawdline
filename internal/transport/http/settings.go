@@ -36,8 +36,7 @@ var browserSettings = map[string]bool{
 	"orchestrator_agent_notify": true, "orchestrator_enabled": true,
 	"orchestrator_max_children": true, "orchestrator_permission": true,
 	"orchestrator_notify_root": true, "orchestrator_child_linger": true,
-	"claude_auto_compact_window": true,
-	"iterm_scan": true,
+	"claude_auto_compact_window": true, "iterm_scan": true,
 }
 
 // settingsRequestBodyLimit bounds both the full local settings write and the

@@ -97,12 +97,28 @@ export function scanFailureWords(
   if (openGap) {
     return catalogWord("literal", "2811b1d9d660")
   }
+  // A source the person turned off was not looked at: say so in one line,
+  // rather than draw its tabs as nothing or call the list broken.
+  if ((sources ?? []).some((source) => source.disabled === "setting" && source.source === "iterm")) {
+    return catalogWord("session", "itermScanOff")
+  }
   if (inventoryRefreshInProgress(notes)) return null
-  const incomplete = (sources ?? []).find((source) => !source.complete)
+  const incomplete = (sources ?? []).find((source) => !source.complete && !source.disabled)
   if (incomplete) {
     return catalogFormat("template", "cdf164a88db5", [incomplete.source])
   }
   return null
+}
+
+/**
+ * Whether a reading is still settling. A source turned off by a setting is
+ * incomplete for good, on purpose, and is not something the list is
+ * recovering from; every other incomplete source is.
+ */
+export function scanRecovering(scan: { complete: boolean; sources?: readonly ScanSource[] }): boolean {
+  if (scan.complete) return false
+  const sources = scan.sources ?? []
+  return sources.length === 0 || sources.some((source) => !source.complete && !source.disabled)
 }
 
 /** The header's first number is always the list's total, never one state. */
