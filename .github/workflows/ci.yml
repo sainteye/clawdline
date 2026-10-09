@@ -14,11 +14,19 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Each kind of check is its own job, and inside a job every check after the
+# setup runs even when an earlier one failed. On 2026-10-07..09 one job ran
+# twenty steps in a row: a red Go test skipped the console tests and a red
+# console test was only seen once the Go test was fixed, so the two failures
+# took turns hiding each other for two days. A check step here therefore reads
+# `if: ${{ !cancelled() && steps.ready.outcome == 'success' }}`: it runs after
+# any earlier check, failed or not, but not after a broken setup, whose
+# failure is the one worth reading.
 jobs:
-  linux:
-    name: Linux, Windows cross-checks, and console
+  static:
+    name: Formatting, vet, cross-builds and guards
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -29,22 +37,12 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install process and terminal test dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes lsof tmux
-
-      - name: Install console dependencies
-        working-directory: web
-        run: npm ci
+      - name: Setup is complete
+        id: ready
+        run: 'true'
 
       - name: Check formatting
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         shell: bash
         run: |
           changed=$(gofmt -l internal cmd)
@@ -54,62 +52,116 @@ jobs:
           fi
 
       - name: Vet Linux
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: go vet ./...
 
       - name: Build Linux
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: go build ./...
 
       - name: Build static Linux daemon
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
 
       - name: Build static Windows daemon
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
 
       - name: Vet Windows, including Windows-only tests
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: GOOS=windows go vet ./...
 
-      - name: Run Go tests with four named host exclusions
-        run: tools/test-go-ci.sh
-
       - name: Check generated Go and TypeScript contracts
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: go run ./tools/contract-gen -check
 
       - name: Check the safe public remote guard
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-public-remote-guard.sh
 
       - name: Check explicit CI modes
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-ci-check-modes.sh
 
       - name: Check the copied files against their pinned manifest
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/check-legacy-css.sh
 
       - name: Run privacy rules and report the unavailable private-word rules
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         env:
           CLAWDLINE_CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: tools/check-private-ci.sh
 
       - name: Check machine-neutral screen text
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/check-machine-words.sh
 
+  go-linux:
+    name: Go tests on Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install process and terminal test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lsof tmux
+
+      - name: Run Go tests with four named host exclusions
+        run: tools/test-go-ci.sh
+
+  console:
+    name: Console type-check, builds and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install console dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Setup is complete
+        id: ready
+        run: 'true'
+
       - name: Test linked-worktree dependency preparation
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         working-directory: web
         run: npm run test:deps
 
       - name: Type-check the console
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         working-directory: web
         run: npm run check
 
       - name: Build the local console
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         working-directory: web
         run: npm run build
 
       - name: Build the hosted console
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         working-directory: web
         env:
           VITE_HOSTED_CONSOLE: '{"v":1,"app_origin":"https://app.example.invalid","api_origin":"https://api.example.invalid","relay_url":"wss://relay.example.invalid/v1/connect"}'
         run: npm run build
 
       - name: Run console tests
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         working-directory: web/console
         run: node --test --experimental-strip-types "src/**/*.test.ts"
 
@@ -132,11 +184,18 @@ jobs:
       - name: Install tmux integration-test dependency
         run: command -v tmux >/dev/null || brew install tmux
 
+      - name: Setup is complete
+        id: ready
+        run: 'true'
+
       - name: Vet Darwin
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: go vet ./...
 
       - name: Build Darwin
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: go build ./...
 
       - name: Run Darwin tests with four named host exclusions
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-go-ci.sh
