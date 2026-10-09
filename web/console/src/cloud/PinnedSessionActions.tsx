@@ -41,7 +41,10 @@ export function PinnedSessionActionPanel({ context, source, current }: {
   const [records, setRecords] = useState<Partial<Record<Action, ActionRecord>>>({})
   const [busy, setBusy] = useState<Action | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState<{ text: string; pictures: number; sentAt: number; problem: string | null } | null>(null)
+  const [pending, setPending] = useState<{ text: string; images: readonly string[]; sentAt: number;
+    problem: string | null; safeRestore: boolean } | null>(null)
+  const [restoredDraft, setRestoredDraft] = useState<{ id: number; text: string; images: readonly string[] } | null>(null)
+  const draftSerial = useRef(0)
   const [confirm, setConfirm] = useState<Action | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
   const confirmDialog = useRef<HTMLDialogElement>(null)
@@ -98,9 +101,19 @@ export function PinnedSessionActionPanel({ context, source, current }: {
   }, [confirm])
 
   async function run(action: Action, input: ActionInput = {}) {
-    if (busy) return
-    if (action === "send") setPending({ text: input.text ?? "", pictures: input.images?.length ?? 0,
-      sentAt: Date.now(), problem: null })
+    if (busy) {
+      if (action === "send") setPending({ text: input.text ?? "", images: [...(input.images ?? [])],
+        sentAt: Date.now(), problem: "receipt_check_required", safeRestore: true })
+      return
+    }
+    if (action === "send" && records.send && !records.send.acknowledged) {
+      setError("receipt_check_required")
+      setPending({ text: input.text ?? "", images: [...(input.images ?? [])],
+        sentAt: Date.now(), problem: "receipt_check_required", safeRestore: true })
+      return
+    }
+    if (action === "send") setPending({ text: input.text ?? "", images: [...(input.images ?? [])],
+      sentAt: Date.now(), problem: null, safeRestore: false })
     setConfirm(null)
     setBusy(action)
     setError(null)
@@ -110,7 +123,11 @@ export function PinnedSessionActionPanel({ context, source, current }: {
     } catch (problem) {
       const code = problemCode(problem)
       setError(code)
-      if (action === "send") setPending((before) => before ? { ...before, problem: code } : before)
+      if (action === "send") {
+        const persisted = service.load(context, "send")
+        if (persisted) setRecords((before) => ({ ...before, send: persisted }))
+        setPending((before) => before ? { ...before, problem: code, safeRestore: !persisted } : before)
+      }
     }
     finally { setBusy(null) }
   }
@@ -125,6 +142,15 @@ export function PinnedSessionActionPanel({ context, source, current }: {
     }
     catch (problem) { setError(problemCode(problem)) }
     finally { setBusy(null) }
+  }
+
+  const restoreRejectedDraft = () => {
+    if (!pending || busy || !pending.safeRestore && records.send?.receipt?.machine_execution !== "rejected") return
+    if (records.send?.receipt?.machine_execution === "rejected" && !records.send.acknowledged) {
+      setRecords((before) => ({ ...before, send: service.acknowledge(records.send!) }))
+    }
+    setRestoredDraft({ id: ++draftSerial.current, text: pending.text, images: pending.images })
+    setPending(null)
   }
 
   function disabled(action: Action): boolean {
@@ -150,14 +176,18 @@ export function PinnedSessionActionPanel({ context, source, current }: {
       </div>
       {reason("answer") && <p role="status" data-code={availability.answer}>{reason("answer")}</p>}
     </div> : null}
-    {pending && <PendingRemoteTurn text={pending.text} pictures={pending.pictures} sentAt={pending.sentAt}
+    {pending && <PendingRemoteTurn text={pending.text} images={pending.images} sentAt={pending.sentAt}
       state={busy === "send" ? "sending" : records.send?.receipt?.machine_execution === "completed" ? "accepted" : "unknown"}
       status={pending.problem || (busy === "send" ? nextWord("cloudActionChecking") :
         nextWord(stageLabels[records.send?.receipt?.machine_execution ?? "unknown"]))} />}
+    {pending && (records.send?.receipt?.machine_execution === "rejected" || pending.safeRestore) &&
+      <button type="button" className="cloud-pinned-restore" onClick={restoreRejectedDraft}>
+        {nextWord("cloudActionRestoreDraft")}
+      </button>}
     <div className="cloud-pinned-composer"><Composer key={key} row={null} onDid={() => undefined}
       remote={{ key, machineID: destination.machineID, assistant: context.content?.kind === "ready"
         ? context.content.info?.assistant : undefined, canSend: !disabled("send"), allowPictures: true,
-        transcribe, loadSkills,
+        transcribe, loadSkills, restoreDraft: restoredDraft,
         onSend: async (text, pictures) => { await run("send", { text, images: pictures }) } }} />
       {reason("send") && <p role="status" data-code={availability.send}>{reason("send")}</p>}
     </div>
@@ -198,8 +228,10 @@ export function PinnedSessionActionPanel({ context, source, current }: {
           <button type="button" disabled={busy !== null} onClick={() => void checkReceipt(action, records[action]!)}>
             {nextWord("cloudActionCheckReceipt")}</button>
           {!records[action]!.acknowledged && ["completed", "rejected"].includes(records[action]!.receipt?.machine_execution ?? "") &&
-            <button type="button" onClick={() => setRecords((before) => ({ ...before,
-              [action]: service.acknowledge(records[action]!) }))}>{nextWord("cloudActionAcknowledge")}</button>}
+            <button type="button" onClick={() => {
+              setRecords((before) => ({ ...before, [action]: service.acknowledge(records[action]!) }))
+              if (action === "send" && records.send?.receipt?.machine_execution === "completed") setPending(null)
+            }}>{nextWord("cloudActionAcknowledge")}</button>}
         </article>)}
       </div>
     </details>

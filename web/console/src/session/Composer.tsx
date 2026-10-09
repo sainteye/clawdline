@@ -94,6 +94,7 @@ export function Composer({
   remote?: { key: string; machineID: string; assistant?: string; canSend: boolean; allowPictures: boolean;
     transcribe?: (audio: string, rate: number) => Promise<{ text?: string; ms?: number }>;
     loadSkills?: () => Promise<AssistantSkill[]>;
+    restoreDraft?: { id: number; text: string; images: readonly string[] } | null;
     onSend(text: string, pictures: readonly string[]): Promise<void> }
 }) {
   const T = L.strings
@@ -151,6 +152,16 @@ export function Composer({
     // The menu was about the session that was open; `session/open.js` closes it.
     setSkills({ shown: false, matches: [], selected: 0 })
   }, [openId])
+
+  useEffect(() => {
+    const draft = remote?.restoreDraft
+    if (!draft || !msg.current) return
+    msg.current.textContent = draft.text
+    setText(draft.text)
+    Shots.restore(draft.images)
+    msg.current.focus({ preventScroll: true })
+    caretToEnd()
+  }, [remote?.restoreDraft?.id])
 
   useEffect(() => watchMachinePaired((pairedMachine) => {
     setBlocked((was) => was?.machine === pairedMachine ? null : was)
@@ -434,7 +445,8 @@ export function Composer({
     if (acceptSkill()) return
     const said = rawText().trim()
     const pictures = Shots.urls().slice()
-    if ((!said && !pictures.length) || (!row && !remote) || !on || (remote && pictures.length && !remote.allowPictures)) return
+    if ((!said && !pictures.length) || (!row && !remote) || !on ||
+      (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
     // A quit line is not a message: the original ends the session instead, while
     // its terminal is still known. Exact and per assistant, so a sentence that
     // mentions `/exit` is still an ordinary prompt.
@@ -523,7 +535,7 @@ export function Composer({
           diffs away the meter, the count or the two ways out. `opening` is the
           browser's own permission sheet, which is on top of the page and says
           more than this row could, so the row stays hidden for it. */}
-      <div className="voice" id="voice" role="status" hidden={!!remote || voice === "off" || voice === "opening"} ref={voiceRow}></div>
+      <div className="voice" id="voice" role="status" hidden={voice === "off" || voice === "opening"} ref={voiceRow}></div>
       {/* The original's label is English in every language; the catalog has no key for it. */}
       <div
         ref={skillMenu}

@@ -8,6 +8,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
+  type ComponentPropsWithRef,
 } from "react"
 import { requestConfirm, requestInfo, useClosingId } from "../overlays/index.js"
 import { toast, toastFailure } from "../overlays/toast.js"
@@ -50,6 +51,11 @@ import "./git-status.css"
  * asks one, so this is the one place the question is answered.
  */
 const SNIPPETS_READABLE = true
+
+/** The same Session detail pane owns the local and pinned Cloud layout. */
+export function DetailPane({ children, className, ...props }: ComponentPropsWithRef<"section">) {
+  return <section {...props} className={["pane pane-detail", className].filter(Boolean).join(" ")}>{children}</section>
+}
 
 function suggestionsTitle(): string {
   return catalogWord("literal", "32c2f23b127b")
@@ -187,8 +193,7 @@ export function Detail({
   const home = !row && !listUnknown
 
   return (
-    <section
-      className="pane pane-detail"
+    <DetailPane
       id="pane-detail"
       data-panel={screenOpen ? "screen" : gitOpen ? "git" : shellOpen ? "shell" : undefined}
     >
@@ -318,7 +323,7 @@ export function Detail({
       <UserMessages row={row} />
       <Snippets row={steward ? null : row} />
       {steward && suggestionsOpen ? <ClawdfatherSuggestions onClose={() => setSuggestionsOpen(false)} /> : null}
-    </section>
+    </DetailPane>
   )
 }
 

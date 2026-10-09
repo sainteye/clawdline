@@ -48,9 +48,10 @@ function clientFixture() {
       calls.push("info:" + destination.executionGeneration)
       return { info: { session: { title: "Pinned" } } }
     },
-    async transcriptForGeneration(destination: { executionGeneration: string }) {
+    async transcriptForGeneration(destination: { executionGeneration: string }): Promise<unknown> {
       calls.push("transcript:" + destination.executionGeneration)
-      return { id: sessionID, entries: [{ role: "assistant", text: "Done" }], nextBefore: 123 }
+      return { id: sessionID, entries: [{ role: "assistant", text: "Done", artifacts: [{ id: "image-1",
+        media_type: "image/png", byte_count: 3, width: 1, height: 1, expires_at: 4_000_000_000 }] }], nextBefore: 123 }
     },
     async transcriptPageForGeneration(destination: { executionGeneration: string }, before: number): Promise<unknown> {
       calls.push("older:" + destination.executionGeneration + ":" + before)
@@ -59,6 +60,10 @@ function clientFixture() {
     async skillsForGeneration(destination: { executionGeneration: string }) {
       calls.push("skills:" + destination.executionGeneration)
       return { skills: [{ name: "review", description: "Review work", source: "project" }] }
+    },
+    async imageForGeneration(destination: { executionGeneration: string }, id: string) {
+      calls.push("image:" + destination.executionGeneration + ":" + id)
+      return { id, media_type: "image/png", byte_count: 3, data: "cG5n" }
     },
   }
   return { client, calls, row }
@@ -110,6 +115,24 @@ test("opening and leaving an exact detail subscribes, reads pinned content, and 
   source.closeDetail?.(destination)
   assert.deepEqual(calls, ["subscribe:s/one/same,t/one/same", "info:" + executionGeneration,
     "transcript:" + executionGeneration, "unsubscribe:s/one/same,t/one/same"])
+})
+
+test("an image tile reads only an artifact visible in the opened exact execution", async () => {
+  const { client, calls } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  const artifact = { id: "image-1", media_type: "image/png", byte_count: 3,
+    width: 1, height: 1, expires_at: 4_000_000_000 }
+  await assert.rejects(() => source.readImage!(destination, artifact), { code: "execution_generation_changed" })
+  assert.equal((await source.readDetail(destination, new AbortController().signal)).kind, "ready")
+  await assert.rejects(() => source.readImage!(destination, { ...artifact, id: "another" }),
+    { code: "execution_generation_changed" })
+  const image = await source.readImage!(destination, artifact)
+  assert.ok(image.url.startsWith("blob:"))
+  image.release()
+  assert.deepEqual(calls.filter((call) => call.startsWith("image:")), ["image:" + executionGeneration + ":image-1"])
+  source.closeDetail?.(destination)
+  await assert.rejects(() => source.readImage!(destination, artifact), { code: "execution_generation_changed" })
 })
 
 test("slash-menu skills belong to the opened execution and stop when that execution changes", async () => {

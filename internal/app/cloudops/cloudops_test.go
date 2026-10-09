@@ -177,6 +177,7 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body:    map[string]any{"type": "image", "session": pane, "id": "img_7f3a"},
 		session: pane, name: "image.img_7f3a",
 		method: "GET", path: "/v1/artifacts/images/img_7f3a",
+		query:   map[string]string{"session": pane},
 		answers: &router{body: "\x89PNG", media: "image/png"},
 	}, {
 		word:    "documents",

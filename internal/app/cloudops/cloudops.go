@@ -312,7 +312,7 @@ func (b Bridge) Handle(ctx context.Context, cmd Command) (answer Answer) {
 		return b.refuse(cmd, parsed, "", Refusal{Status: 400, Code: "malformed_command",
 			Message: "This Cloud command is malformed.", fixedCopy: true})
 	}
-	if b.contentReadChannel(cmd) && word != "info" && word != "transcript" && word != "skills" && word != "peer-inbox" {
+	if b.contentReadChannel(cmd) && word != "info" && word != "transcript" && word != "skills" && word != "image" && word != "peer-inbox" {
 		return b.refuse(cmd, parsed, word, Refusal{Status: 403, Code: "read_only_channel",
 			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true})
 	}
@@ -346,7 +346,7 @@ func (b Bridge) contentReadChannel(cmd Command) bool {
 // rail. The exact decoded operation, fixed execution and current viewer cap
 // must all be established before the local router sees anything.
 func (b Bridge) serveContentRead(ctx context.Context, cmd Command, parsed body, o op) Answer {
-	if cmd.Class != ClassCtl || !o.read || (o.name != "info" && o.name != "transcript" && o.name != "skills" && o.name != "peer-inbox") {
+	if cmd.Class != ClassCtl || !o.read || (o.name != "info" && o.name != "transcript" && o.name != "skills" && o.name != "image" && o.name != "peer-inbox") {
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 403, Code: "read_only_channel",
 			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true})
 	}

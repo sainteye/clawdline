@@ -31,7 +31,7 @@ const copy = {
     answerKey: "Answer key", expect: "Question fingerprint", request: "Request ID", lookup: "Check receipt",
     receipt: "Machine execution", uncertain: "The outcome is unknown. Check the receipt before another action.",
     pending: "An earlier request is unresolved. Check and acknowledge its receipt before another action.",
-    acknowledge: "Acknowledge result", action: "Action",
+    acknowledge: "Acknowledge result", restoreDraft: "Return rejected message and pictures to the composer", action: "Action",
     generation: "Execution generation", machineIdentity: "Machine identity",
     changed: "This Session changed execution. Select its current row again.",
     stale: "The Session is not current. Refresh before acting.",
@@ -49,7 +49,7 @@ const copy = {
     answerKey: "答案代碼", expect: "問題指紋", request: "請求 ID", lookup: "查詢收據",
     receipt: "機器執行結果", uncertain: "結果尚未確定。再次操作前請先查詢收據。",
     pending: "前一筆請求尚未解決。再次操作前請先查詢並確認收據。",
-    acknowledge: "確認結果", action: "操作",
+    acknowledge: "確認結果", restoreDraft: "將遭拒的訊息與圖片放回輸入框", action: "操作",
     generation: "執行世代", machineIdentity: "機器身分",
     changed: "此工作階段已換成新的執行世代，請重新選取目前的資料列。",
     stale: "工作階段狀態已過期；操作前請重新整理。",
@@ -96,7 +96,10 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
   selectedRef.current = selected
   const [problem, setProblem] = useState("")
   const [busy, setBusy] = useState(false)
-  const [pending, setPending] = useState<{ text: string; pictures: number; sentAt: number; status: string } | null>(null)
+  const [pending, setPending] = useState<{ text: string; images: readonly string[]; sentAt: number; status: string;
+    safeRestore: boolean } | null>(null)
+  const [restoredDraft, setRestoredDraft] = useState<{ id: number; text: string; images: readonly string[] } | null>(null)
+  const draftSerial = useRef(0)
   const [request, setRequest] = useState("")
   const [lastAction, setLastAction] = useState("send")
   const [receipt, setReceipt] = useState<Receipt | null>(null)
@@ -228,7 +231,14 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
   async function act(action: "send" | "answer" | "interrupt" | "end", answerKey = "", fingerprint = "",
     text = "", pictures: readonly string[] = []) {
     if (!selected) return
-    if (!canAct) { setProblem(current ? t.stale : t.changed); return }
+    if (action === "send") setPending({ text, images: [...pictures], sentAt: Date.now(), status: t.loading,
+      safeRestore: false })
+    if (!canAct) {
+      const reason = current ? t.stale : t.changed
+      setProblem(reason)
+      if (action === "send") setPending((before) => before ? { ...before, status: reason, safeRestore: true } : before)
+      return
+    }
     try {
       const earlier = localStorage.getItem(receiptStorage(selected, action))
       if (earlier) {
@@ -236,12 +246,19 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
         await lookup(selected, action, earlier)
         return
       }
-    } catch { setProblem("storage_unavailable"); return }
+    } catch {
+      setProblem("storage_unavailable")
+      if (action === "send") setPending((before) => before ? { ...before, status: "storage_unavailable", safeRestore: true } : before)
+      return
+    }
     const id = crypto.randomUUID().replaceAll("-", "")
     try { localStorage.setItem(receiptStorage(selected, action), id) }
-    catch { setProblem("storage_unavailable"); return }
+    catch {
+      setProblem("storage_unavailable")
+      if (action === "send") setPending((before) => before ? { ...before, status: "storage_unavailable", safeRestore: true } : before)
+      return
+    }
     setLastAction(action); setRequest(id); setReceipt(null); setProblem(""); setBusy(true)
-    if (action === "send") setPending({ text, pictures: pictures.length, sentAt: Date.now(), status: t.loading })
     try {
       await localViewerFetch("/v1/cloud/viewer/actions", undefined,
         { destination: selected, action, request: id, text, images: pictures, answer: answerKey, expect: fingerprint })
@@ -308,12 +325,20 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
           {detail.question.options.map((option) => <button className="chip" key={option.key} type="button" disabled={!canAct}
             onClick={() => void act("answer", option.key, detail.question!.fingerprint)}>{option.label}</button>)}
         </div>}
-        {pending && <PendingRemoteTurn text={pending.text} pictures={pending.pictures} sentAt={pending.sentAt}
+        {pending && <PendingRemoteTurn text={pending.text} images={pending.images} sentAt={pending.sentAt}
           status={pending.status} state={busy ? "sending" : receipt?.machine_execution === "completed" ? "accepted" : "unknown"} />}
+        {pending && (pending.safeRestore || receipt?.machine_execution === "rejected") &&
+          <button className="chip" type="button" onClick={() => {
+            if (receipt?.machine_execution === "rejected") {
+              try { localStorage.removeItem(receiptStorage(selected, "send")) } catch { return }
+            }
+            setRestoredDraft({ id: ++draftSerial.current, text: pending.text, images: pending.images })
+            setPending(null)
+          }}>{t.restoreDraft}</button>}
         {shown && selected && <div className="cloud-local-composer"><Composer key={targetKey} row={null} onDid={() => undefined}
           remote={{ key: targetKey, machineID: selected.machine_id,
             assistant: (detail?.info as { info?: { session?: { assistant?: string } } } | null)?.info?.session?.assistant,
-            canSend: canAct && !sendUnresolved, allowPictures: true,
+            canSend: canAct && !sendUnresolved, allowPictures: true, restoreDraft: restoredDraft,
             loadSkills: async () => {
               const reply = await localViewerFetch<{ skills: AssistantSkill[] }>("/v1/cloud/viewer/skills?" + query(selected))
               return Array.isArray(reply.skills) ? reply.skills : []
@@ -336,6 +361,9 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
           {receipt && <p>{t.receipt}: {receipt.machine_execution} {receipt.code}</p>}
           {receipt && (receipt.machine_execution === "completed" || receipt.machine_execution === "rejected") &&
             <button className="chip" type="button" onClick={() => { try { localStorage.removeItem(receiptStorage(selected, lastAction)) } catch { return }
+              if (lastAction === "send" && receipt.machine_execution === "completed") setPending(null)
+              if (lastAction === "send" && receipt.machine_execution === "rejected")
+                setPending((before) => before ? { ...before, safeRestore: true } : before)
               setRequest(""); setReceipt(null); setProblem("") }}>{t.acknowledge}</button>}
         </div>
         </details>

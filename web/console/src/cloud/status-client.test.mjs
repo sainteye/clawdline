@@ -116,6 +116,21 @@ test("pinned info asks for full detail with the exact machine and generation", a
   assert.equal(calls[0][3], "info.full")
 })
 
+test("a transcript picture uses an exact image waiter and rejects a missing execution", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const calls = []
+  client._read = (...args) => { calls.push(args); return Promise.resolve({ id: "picture-1" }) }
+  const destination = { machineID: "m", sessionID: "s", executionGeneration: genA }
+  const signal = new AbortController().signal
+  await client.imageForGeneration(destination, "picture-1", signal)
+  assert.equal(calls[0][1], "image")
+  assert.deepEqual(calls[0][2], { id: "picture-1", machine_id: "m", expected_generation: genA })
+  assert.equal(calls[0][3], "image.picture-1")
+  assert.equal(calls[0][5].signal, signal)
+  await assert.rejects(() => client.imageForGeneration({ ...destination, executionGeneration: "" }, "picture-1", signal),
+    { code: "execution_target_required" })
+})
+
 test("pinned detail refuses to join an unpinned read waiter", async () => {
   const client = Object.create(StatusCloudClient.prototype)
   client.pinnedInfoFlights = new Map()

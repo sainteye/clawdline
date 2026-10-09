@@ -23,7 +23,7 @@ import type {
 import { client } from "../client.js"
 import { usePoll } from "../useFleet.js"
 import * as L from "../legacy/bridge.js"
-import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images-bridge.js"
+import { ArtifactTiles, artifactTilesHTML, artifactsKey, type PictureSource } from "../legacy/images-bridge.js"
 import { byteWords, nextWord } from "../next-strings.js"
 import type { PendingSend } from "./pending.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
@@ -476,8 +476,8 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
 function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boolean, newestFirst: boolean,
   view: View, pictures?: NonNullable<TranscriptEntry["artifacts"]>): ReactElement[] {
   const blocks = blocksOf(entries.map((entry) => ({ ...entry })).filter(worthDrawing), working)
-  // Only the local daemon can resolve artifact URLs. A remote read never gets
-  // a local image slot, even when its transcript entry names an artifact.
+  // Both local and pinned Cloud readers resolve the same artifact slots through
+  // their respective picture source after the shared entry markup is drawn.
   if (pictures) {
     for (const block of newestFirst ? [...blocks].reverse() : blocks) {
       const entry = block.rows[0]
@@ -500,11 +500,24 @@ function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boo
 }
 
 /** Render a pinned machine's transcript with the same blocks as the local Session. */
-export function TranscriptEntries({ entries, assistant, working = false }: {
+export function TranscriptEntries({ entries, assistant, working = false, pictureSource, sessionID }: {
   entries: readonly TranscriptEntry[]
   assistant?: string
   working?: boolean
+  pictureSource?: PictureSource
+  sessionID?: string
 }) {
+  const tiles = useRef<ArtifactTiles | null>(null)
+  const box = useRef<HTMLDivElement | null>(null)
+  const latestPictureSource = useRef(pictureSource)
+  latestPictureSource.current = pictureSource
+  const queue = useRef<NonNullable<TranscriptEntry["artifacts"]>>([])
+  tiles.current ??= new ArtifactTiles((artifact, session) => latestPictureSource.current
+    ? latestPictureSource.current(artifact, session)
+    : Promise.reject(Object.assign(new Error("No image reader"), { code: "read_failed" })))
+  queue.current = []
+  useLayoutEffect(() => { tiles.current?.settle(box.current, queue.current, sessionID) })
+  useEffect(() => () => tiles.current?.release(), [])
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const newestFirst = useSyncExternalStore(L.subscribeSettings, L.settingsNewestFirst)
   const icons = useSyncExternalStore(L.subscribeSettings, L.settingsAssistantIcons)
@@ -521,7 +534,9 @@ export function TranscriptEntries({ entries, assistant, working = false }: {
       agent: T.webAgents, peer: "Claude ↔", message: "Clawdline ↔", notice: "Clawdline", tool: T.webWhoTool },
     expanded, toggle, assistant, agents: [], onAgent: undefined, icons, slots: new Map(),
   }
-  return <>{drawTranscriptEntries(entries, working, newestFirst, view)}</>
+  return <div className="tx cloud-all-transcript" ref={box}>
+    {drawTranscriptEntries(entries, working, newestFirst, view, queue.current)}
+  </div>
 }
 
 /**

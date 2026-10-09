@@ -13,7 +13,7 @@ function fleet(machine: string, sessions: string[], generation = passOne, missin
     identity: { machine, session }, payload, observedAt: 1000, sequence,
   })
   sessions.filter((id) => id !== missing).forEach((id, index) => hold(id, {
-    machine_id: machine, session_id: id, execution_generation: execution, assistant: "codex", backend: "codex",
+    machine_id: machine, session_id: id, execution_generation: execution, assistant: "codex", backend: "tmux",
     state: "waiting", source: { provenance: "session_watch", observed_at: 1, freshness: "current" },
     inventory_complete: true, projected_at: 2, snapshot_generation: generation,
     attention_required: true, waiting_for_reply: true, completed_unconfirmed: false, last_movement_at: 1,
@@ -33,6 +33,8 @@ test("a complete ss pass with the same Session id on two machines stays scoped",
   assert.equal(a.rows[0].destination.machineID, "a")
   assert.equal(b.rows[0].destination.machineID, "b")
   assert.equal(a.rows[0].needsAttention, true)
+  assert.equal(a.rows[0].assistant, "codex")
+  assert.equal(a.rows[0].backend, "tmux")
   assert.equal(a.rows[0].waitingForReply, true)
   assert.equal(a.rows[0].lastMovementAt, 1000)
   assert.equal(a.rows[0].noProgressAfterMs, 1800000)

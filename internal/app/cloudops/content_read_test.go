@@ -3,6 +3,7 @@ package cloudops
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -15,6 +16,47 @@ func contentReadRequest(t *testing.T, input map[string]any) Command {
 	cmd := request(t, ClassCtl, input)
 	cmd.Channel = "r/mac-01"
 	return cmd
+}
+
+func TestPinnedImageUsesReadTranscriptAndTheExactSession(t *testing.T) {
+	var route LocalRequest
+	b := open(localRouterFunc(func(_ context.Context, request LocalRequest) (LocalResponse, error) {
+		route = request
+		return LocalResponse{Status: 200, ContentType: "image/png", Body: []byte("png")}, nil
+	}))
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+		return contentReadAuthority(true)
+	}
+	request := contentReadRequest(t, map[string]any{"type": "image", "session": pane,
+		"id": "picture-1", "expected_generation": pinnedGeneration})
+	answer := b.Handle(context.Background(), request)
+	if !answer.OK() || answer.Name != "image.picture-1" || route.Path != "/v1/artifacts/images/picture-1" ||
+		route.Query["session"] != pane || route.Header["X-Clawdline-Execution-Generation"] != pinnedGeneration {
+		t.Fatalf("pinned image request: answer=%+v route=%+v", answer, route)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(answer.Payload, &payload); err != nil || payload["read"] != "image.picture-1" ||
+		payload["machine_id"] != "mac-01" || payload["session_id"] != pane || payload["seq"] != float64(411) {
+		t.Fatalf("image reply does not prove its request: %v %v", payload, err)
+	}
+	for _, body := range []map[string]any{
+		{"type": "image", "session": pane, "id": "picture-1"},
+		{"type": "image", "session": pane, "id": "picture-1", "expected_generation": "wrong"},
+	} {
+		if refused := b.Handle(context.Background(), contentReadRequest(t, body)); refused.OK() {
+			t.Fatalf("unpinned image crossed read rail: %+v", refused)
+		}
+	}
+	denied := open(localRouterFunc(func(context.Context, LocalRequest) (LocalResponse, error) {
+		t.Fatal("revoked image read reached local route")
+		return LocalResponse{}, nil
+	}))
+	denied.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+		return contentReadAuthority(false)
+	}
+	if refusal := denied.Handle(context.Background(), request); refusal.Code != "read_transcript_required" {
+		t.Fatalf("image permission refusal: %+v", refusal)
+	}
 }
 
 func contentReadAuthority(allowed bool) Authority {

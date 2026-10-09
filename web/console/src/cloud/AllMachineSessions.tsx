@@ -2,6 +2,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 import { nextWord } from "../next-strings.js"
 import { TranscriptEntries } from "../session/Transcript.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
+import { ProjectedRow } from "../session/List.js"
+import { Mark } from "../session/List.js"
+import { DetailPane } from "../session/Detail.js"
+import { BRAND_MARK } from "../brand-mark.js"
 import { CloudAllTerminalList } from "../session/CloudAllTerminalList.js"
 import { sessionsTerminalMode } from "../page-route.js"
 import "../session/terminal-list.css"
@@ -364,19 +368,22 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
             {reading.value.kind === "unavailable" && <p role="status">{problemWord(reading.value.reason)}</p>}
             {rows.length === 0 ? reading.value.unknownTargets ? null : reading.value.kind === "ready" ? <p>{reading.value.rows.length === 0
             ? nextWord("cloudAllEmptyMachine") : nextWord("cloudAllNoMatch")}</p>
-            : null : <ul>{rows.map((row) => <li key={destinationKey(row.destination)}>
-            <a href={destinationFragment(row.destination)}
-              aria-current={destination && destinationKey(destination) === destinationKey(row.destination) ? "true" : undefined}
-              onClick={(event) => {
-              returnFocus.current = event.currentTarget
-              setDestination(row.destination)
-            }}>
-              <strong>{row.title || row.destination.sessionID}</strong>
-              <span className="cloud-all-id">{nextWord("cloudAllSessionID")}: {row.destination.sessionID}</span>
-              <span>{stateWord(row.state)} · {timeWord(row.observedAt)} · {nextWord(row.freshness === "current" ? "cloudAllCurrent" :
-                row.freshness === "stale" ? "cloudAllStale" : "cloudAllUnknown")}{row.needsAttention ? " · " + nextWord("cloudAllAttentionNeeded") : ""}</span>
-            </a>
-          </li>)}</ul>}
+            : null : <ul className="rows" role="listbox" aria-label={`${machine.name} ${nextWord("cloudSingleSessions")}`}>
+            {rows.map((row) => <ProjectedRow key={destinationKey(row.destination)}
+              title={destination && destinationKey(destination) === destinationKey(row.destination) &&
+                detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
+                ? detail.value.info.title || row.title : row.title}
+              sessionID={row.destination.sessionID} machineName={machine.name} platform={machine.platform}
+              assistant={row.assistant} backend={row.backend} state={stateWord(row.state)}
+              freshness={nextWord(row.freshness === "current" ? "cloudAllCurrent" :
+                row.freshness === "stale" ? "cloudAllStale" : "cloudAllUnknown")}
+              observedAt={timeWord(row.observedAt)} attention={row.needsAttention === true}
+              open={!!destination && destinationKey(destination) === destinationKey(row.destination)}
+              selectionKey={destinationKey(row.destination)} onOpen={(element) => {
+                returnFocus.current = element
+                location.hash = destinationFragment(row.destination)
+                setDestination(row.destination)
+              }} />)}</ul>}
           </>}
         {reading?.phase === "settled" && !!reading.value.unknownTargets &&
           <p role="status">{nextWord("cloudAllUnknownTargets", { count: reading.value.unknownTargets })}</p>}
@@ -392,14 +399,20 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
       <h1 ref={listHeading} tabIndex={-1}>{machines.length === 1 ? nextWord("cloudSingleSessions") : nextWord("cloudAllMachines")}</h1>
     </header>
     {listPane}
-    {destination && <section className="pane pane-detail cloud-all-main" aria-live="polite">
-      <header className="cloud-all-detail-head">
-        <button type="button" className="cloud-all-detail-back" onClick={closeDetail}>{nextWord("cloudAllBack")}</button>
-        <h2 ref={heading} tabIndex={-1}>{detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
-          ? detail.value.info.title || row?.title || destination.sessionID : row?.title || destination.sessionID}</h2>
-        <span>{named?.name ?? destination.machineID}</span>
-      </header>
-      <div className="cloud-all-detail-scroll">
+    {destination && <DetailPane id="pane-detail" className="cloud-all-main" aria-live="polite">
+      <div className="detail-head cloud-all-detail-head">
+        <button type="button" className="back cloud-all-detail-back" onClick={closeDetail}>{nextWord("cloudAllBack")}</button>
+        <div className="detail-identity-block">
+          <span className="detail-mark-go" aria-hidden="true"><span className="detail-identity">
+            <Mark icon={BRAND_MARK} cellPx={5} id="detail-mark" /></span></span>
+          <div className="detail-session"><span className="who detail-who">
+            <h2 className="name" ref={heading} tabIndex={-1}>{detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
+              ? detail.value.info.title || row?.title || destination.sessionID : row?.title || destination.sessionID}</h2>
+            <span className="sub">{named?.name ?? destination.machineID} · {row ? stateWord(row.state) : nextWord("cloudAllUnknown")}</span>
+          </span></div>
+        </div>
+      </div>
+      <div className="scroller tx-scroll cloud-all-detail-scroll">
       <dl className="cloud-all-target">
         <div><dt>{nextWord("cloudAllSessionID")}</dt><dd className="cloud-all-id">{destination.sessionID}</dd></div>
         <div><dt>{nextWord("cloudAllDataTime")}</dt><dd>{detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
@@ -444,14 +457,17 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
               ? nextWord("cloudAllOlderOldVersion") : contentWord(older.error)}</p>}
           </div>}
           {detail.value!.entries.length === 0 ? <p>{nextWord("cloudAllNoContent")}</p> :
-            <div className="tx cloud-all-transcript"><TranscriptEntries key={destinationKey(destination)}
+            <TranscriptEntries key={destinationKey(destination)}
               entries={detail.value!.entries} assistant={detail.value!.info.assistant}
-              working={row?.state === "working"} /></div>}
+              working={row?.state === "working"} sessionID={destination.sessionID}
+              pictureSource={(artifact) => source?.readImage
+                ? source.readImage(destination, artifact)
+                : Promise.reject(Object.assign(new Error("No image reader"), { code: "old_version" }))} />}
         </section>}
       {actionContext && detailExtras?.(actionContext)}
       </div>
       {actionContext && detailActions && <div className="cloud-all-action-bar">{detailActions(actionContext)}</div>}
-    </section>}
+    </DetailPane>}
     {!destination && !terminalMode && <section className="pane pane-detail cloud-all-overview" inert={compact}
       aria-hidden={compact ? true : undefined}>
       <div className="cloud-all-overview-scroll">

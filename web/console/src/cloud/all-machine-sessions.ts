@@ -1,4 +1,5 @@
 import type { AssistantSkill, TranscriptEntry } from "@clawdline/contract"
+import type { ArtifactRef } from "../legacy/images-bridge.js"
 
 /**
  * The hosted fleet view consumes only the content-free session status projection.
@@ -14,6 +15,8 @@ export interface SessionDestination {
 export interface ProjectedSession {
   destination: SessionDestination
   title: string
+  assistant?: "claude" | "codex"
+  backend?: "tmux" | "iterm" | "ps"
   state: string
   freshness: "current" | "stale" | "unknown"
   needsAttention?: boolean
@@ -60,6 +63,8 @@ export interface SessionProjectionSource {
   readQuestion?(destination: SessionDestination, signal: AbortSignal): Promise<Extract<SessionContent, { kind: "ready" }>["question"]>
   /** Read slash-menu metadata only for the open, exact execution. */
   readSkills?(destination: SessionDestination, signal: AbortSignal): Promise<AssistantSkill[]>
+  /** Resolve a visible transcript artifact only for the opened execution. */
+  readImage?(destination: SessionDestination, artifact: ArtifactRef): Promise<{ url: string; release: () => void }>
   /** Release both the rich Session and transcript channels on detail exit. */
   closeDetail?(destination: SessionDestination): void
   /** An event gap invalidates that machine's current projection and detail cache. */
