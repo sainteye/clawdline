@@ -17,6 +17,14 @@
 .cloud-machine-facts { font-size: 12px; color: var(--dim); }
 .cloud-machines li > button:first-child span { overflow-wrap: anywhere; }
 .door[data-cloud-screen="machines"] .fine { overflow-wrap: anywhere; }
+/* A long machine roster must scroll inside the picker. Centering an oversized
+   door card clips its first rows above the viewport on a narrow phone. */
+.door[data-cloud-screen="machines"] .door-card {
+    box-sizing: border-box;
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
 
 /* In the header, shaped like the connection light it replaces (`legacy/header.css` `.conn`)
    and carrying that light's dot before the machine's name. The list opens here
