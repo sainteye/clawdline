@@ -602,10 +602,18 @@ type sessionReading struct {
 	// can prove an absence. The merged complete above is their AND and so
 	// proves nothing about any one of them.
 	sources map[string]bool
+	// onlyTurnedOff is a reading whose every incomplete source was turned off
+	// by the person (the iTerm2 scan switch), not one that failed to answer.
+	// The rows the remaining sources list are then the whole set the person
+	// asked for: an iTerm2 left unread on purpose is not a partial scan.
+	onlyTurnedOff bool
 }
 
-// whole is whether this reading is the whole set by its own account.
-func (r sessionReading) whole() bool { return r.complete || r.emptyAuthoritative }
+// whole is whether this reading is the whole set by its own account. A source
+// the person turned off does not make it partial; without this, turning the
+// iTerm2 scan off left every reading incomplete, so the status set (ss/) was
+// never published again and the Cloud list waited for this machine forever.
+func (r sessionReading) whole() bool { return r.complete || r.emptyAuthoritative || r.onlyTurnedOff }
 
 // readSessions reads this machine's sessions, or answers false.
 func (p *Publisher) readSessions(ctx context.Context) (sessionReading, bool) {
@@ -634,6 +642,7 @@ func (p *Publisher) readSessions(ctx context.Context) (sessionReading, bool) {
 		Sources            []struct {
 			Source   string `json:"source"`
 			Complete bool   `json:"complete"`
+			Disabled string `json:"disabled"`
 		} `json:"sources"`
 	}
 	if err := json.Unmarshal(res.Body, &root); err != nil {
@@ -648,12 +657,21 @@ func (p *Publisher) readSessions(ctx context.Context) (sessionReading, bool) {
 	// said it is complete" — so nothing can be disproved and nothing is
 	// dropped. That is the safe direction for a reading from a daemon older
 	// than this field.
+	turnedOff, failed := 0, 0
 	for _, source := range scan.Sources {
 		if source.Source == "" {
 			continue
 		}
 		reading.sources[source.Source] = source.Complete
+		switch {
+		case source.Complete:
+		case source.Disabled != "":
+			turnedOff++
+		default:
+			failed++
+		}
 	}
+	reading.onlyTurnedOff = turnedOff > 0 && failed == 0
 	for _, session := range root.Sessions {
 		id, _ := session["id"].(string)
 		if id == "" || id == InventorySessionID {

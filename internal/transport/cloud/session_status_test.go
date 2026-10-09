@@ -242,3 +242,31 @@ func TestAuthoritativeEmptyScanPublishesACompleteStatusBarrier(t *testing.T) {
 		t.Fatalf("authoritative empty scan did not establish completeness: %v", got)
 	}
 }
+
+// Turning the iTerm2 scan off leaves that source incomplete on purpose. On
+// 2026-10-09 that made every reading partial, so ss/ was never published again
+// and the Cloud list said it was waiting for this machine until the scan was
+// turned back on. A source that failed to answer still holds the set back.
+func TestAScanTurnedOffStillPublishesTheStatusSet(t *testing.T) {
+	read := func(sources string) sessionReading {
+		body := []byte(`{"at":100,"sessions":[{"id":"%7","state":"idle"}],"scan":{"complete":false,"sources":` + sources + `}}`)
+		p := &Publisher{Sessions: func(context.Context) ([]byte, bool) { return body, true }}
+		reading, ok := p.readSessions(context.Background())
+		if !ok {
+			t.Fatal("the list was not read")
+		}
+		return reading
+	}
+	off := read(`[{"source":"iterm","complete":false,"disabled":"setting"},{"source":"ps","complete":true},{"source":"tmux","complete":true}]`)
+	c := &collector{}
+	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
+	p.publishStatuses(context.Background(), off, off.ids)
+	if got := c.payload(t, "ss/mac_a/"+InventorySessionID); got["complete"] != true {
+		t.Fatalf("a scan with iTerm2 turned off published no complete status set: %v", c.channels())
+	}
+
+	failed := read(`[{"source":"iterm","complete":false,"disabled":"setting"},{"source":"ps","complete":true},{"source":"tmux","complete":false}]`)
+	if failed.whole() {
+		t.Fatal("a source that failed to answer was counted as the whole set because another was turned off")
+	}
+}
