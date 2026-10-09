@@ -14,7 +14,8 @@ function refused(code, message) {
 }
 
 function pinnedRead(type, body) {
-  return (type === "info" && (body?.parts === "full" || body?.parts === "list") || type === "transcript" || type === "skills" || type === "image" || type === "peer-inbox") &&
+  return (type === "info" && (body?.parts === "full" || body?.parts === "list") ||
+    ["transcript", "skills", "image", "git", "git-diff", "screen", "agent", "shell", "documents", "document", "peer-inbox"].includes(type)) &&
     body?.expected_generation !== undefined
 }
 
@@ -26,6 +27,15 @@ function pinnedReadName(type, body) {
   if (type === "info" && body?.parts === "full") return "info.full"
   if (type === "info" && body?.parts === "list") return "info.list"
   if (type === "skills") return "skills"
+  if (type === "git" || type === "screen" || type === "documents") return type
+  if ((type === "git-diff" || type === "document" || type === "peer-inbox") &&
+    typeof body?.request === "string" && body.request) return "read:" + body.request
+  if (type === "agent" && typeof body?.agent === "string" && body.agent) {
+    if (body.before === undefined) return "agent:" + body.agent
+    return Number.isSafeInteger(body.before) && body.before > 0
+      ? "agent:" + body.agent + ".before." + body.before : null
+  }
+  if (type === "shell" && typeof body?.shell === "string" && body.shell) return "shell:" + body.shell
   if (type === "image" && typeof body?.id === "string" && body.id) return "image." + body.id
   if (type === "transcript") {
     if (body?.before === undefined) return "transcript"
@@ -65,6 +75,10 @@ export class StatusCloudClient extends CatalogCloudClient {
     this.pinnedInfoFlights = new Map()
     this.pinnedTranscriptFlights = new Map()
     this.pinnedReadProofs = new Map()
+    this.classicSessionMachine = null
+    this.classicSessionReads = new Map()
+    this.classicSessionAttempted = new Map()
+    this.classicSessionPass = null
   }
 
   // The archived client keeps only the first 64 advertised command words in
@@ -83,6 +97,79 @@ export class StatusCloudClient extends CatalogCloudClient {
   // A status list must not cause the old, content-bearing sessions.snapshot
   // recovery. The ss/ inventory and row recovery is owned by its publisher.
   _recoverSessions() {}
+
+  /** Feed the original one-machine Session page from exact, authorized s/ rows. */
+  enableClassicSessionView(machineID) {
+    if (this.classicSessionMachine === machineID) return
+    this.disableClassicSessionView()
+    this.classicSessionMachine = machineID
+    this._recoverClassicSessionRows()
+  }
+
+  disableClassicSessionView() {
+    for (const [channel, timer] of this.classicSessionReads) {
+      this.clearTimeout(timer)
+      this.unsubscribe([channel])
+    }
+    this.classicSessionReads.clear()
+    this.classicSessionAttempted.clear()
+    this.classicSessionPass = null
+    this.classicSessionMachine = null
+  }
+
+  _recoverClassicSessionRows() {
+    const machine = this.classicSessionMachine
+    if (!machine || !this.ready) return
+    const marker = this.statusSnapshots.get(JSON.stringify([machine, "__clawdline_inventory_v1__"]))?.payload
+    const ids = marker?.complete === true && marker?.inventory?.version === 1 &&
+      Array.isArray(marker.inventory.sessions) ? marker.inventory.sessions : null
+    if (!ids || ids.length > 512 || !GENERATION.test(marker.snapshot_generation)) return
+    if (this.classicSessionPass !== marker.snapshot_generation) {
+      this.classicSessionAttempted.clear()
+      this.classicSessionPass = marker.snapshot_generation
+    }
+    const expected = new Set(ids)
+    for (const [channel, timer] of this.classicSessionReads) {
+      const id = decodedChannelSegment(channel.split("/")[2])
+      if (expected.has(id)) continue
+      this.clearTimeout(timer)
+      this.classicSessionReads.delete(channel)
+      this.unsubscribe([channel])
+    }
+    // The copied client already owns the eight-channel budget and releases idle
+    // channels before subscribing. Counting its occupied slots here stranded the
+    // original list when another pane had used all eight. Recover in a small
+    // rolling window instead; each signed row frees its slot for the next one.
+    const available = Math.max(0, 2 - this.classicSessionReads.size)
+    let opened = 0
+    for (const id of ids) {
+      if (typeof id !== "string" || !id || id === "__clawdline_inventory_v1__") return
+      const status = this.statusSnapshots.get(JSON.stringify([machine, id]))?.payload
+      if (!status || status.snapshot_generation !== marker.snapshot_generation ||
+        !GENERATION.test(status.execution_generation)) continue
+      const channel = "s/" + channelSegment(machine) + "/" + channelSegment(id)
+      const held = this.sessionSnapshots.get(machine + "\u0000" + id)
+      if (held?.execution_generation === status.execution_generation) continue
+      if (this.classicSessionReads.has(channel) ||
+        this.classicSessionAttempted.get(channel) === status.execution_generation) continue
+      if (opened >= available) break
+      try {
+        this.subscribe([channel])
+        if (!this.socketSubscriptions.has(channel)) continue
+        this.classicSessionAttempted.set(channel, status.execution_generation)
+        const timer = this.setTimeout(() => {
+          this.classicSessionReads.delete(channel)
+          this.unsubscribe([channel])
+          this._recoverClassicSessionRows()
+        }, this.readTimeoutMs)
+        this.classicSessionReads.set(channel, timer)
+        opened += 1
+      } catch {
+        this.pendingSubscriptions.delete(channel)
+        this.socketSubscriptions.delete(channel)
+      }
+    }
+  }
 
   /** The copied ACK handler knows ctl/; a pinned r/ ACK has the same request receipt semantics. */
   _relayAnswered(frame, refusal) {
@@ -236,6 +323,20 @@ export class StatusCloudClient extends CatalogCloudClient {
   }
 
   _emit(event) {
+    if (event?.type === "connection" && event.state === "live") this._recoverClassicSessionRows()
+    if (event?.type === "session_status" && event.identity?.machine === this.classicSessionMachine &&
+      event.identity.session === "__clawdline_inventory_v1__") this._recoverClassicSessionRows()
+    if (event?.type === "sessions" && event.identity?.machine === this.classicSessionMachine &&
+      event.identity.session) {
+      const channel = "s/" + channelSegment(event.identity.machine) + "/" + channelSegment(event.identity.session)
+      const timer = this.classicSessionReads.get(channel)
+      if (timer !== undefined) {
+        this.clearTimeout(timer)
+        this.classicSessionReads.delete(channel)
+        this.unsubscribe([channel])
+        this._recoverClassicSessionRows()
+      }
+    }
     if (event?.type === "orchestrator" && !event.statusOnly && event.machine) {
       const payload = event.data
       this.readContentCapabilities?.set(event.machine, {
@@ -293,6 +394,9 @@ export class StatusCloudClient extends CatalogCloudClient {
       const key = JSON.stringify([identity.machine, identity.session])
       if ((this.statusSequences.get(key) ?? -1) > envelope.seq) return
       this.statusSequences.set(key, envelope.seq)
+      // Use the envelope's signed time, as the copied s/ and orch/ paths do.
+      // A retained row can still be recent, but its arrival does not renew it.
+      this._observeMachine(identity.machine, envelope.ts)
       if (!realign) this.machineOffline?.delete(identity.machine)
       if (payload === null || payload?.deleted === true) this.statusSnapshots.delete(key)
       else this.statusSnapshots.set(key, { identity, payload, observedAt: envelope.ts, sequence: envelope.seq })
@@ -429,6 +533,21 @@ export class StatusCloudClient extends CatalogCloudClient {
     return this._read({ machine: machineID, session: sessionID }, "image", {
       id, machine_id: machineID, expected_generation: executionGeneration,
     }, "image." + id, undefined, { signal })
+  }
+
+  /** The original detail panels share this exact read adapter. */
+  readForGeneration(destination, type, fields = {}, signal) {
+    const { machineID, sessionID, executionGeneration } = destination
+    if (!machineID || !sessionID || !GENERATION.test(executionGeneration) || signal?.aborted ||
+      typeof fields !== "object" || !fields || Array.isArray(fields)) {
+      return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
+    }
+    const body = { ...fields, machine_id: machineID, expected_generation: executionGeneration }
+    const answer = pinnedReadName(type, body)
+    if (!pinnedRead(type, body) || !answer) {
+      return Promise.reject(refused("read_only_channel", "the selected read is not supported on the pinned channel"))
+    }
+    return this._read({ machine: machineID, session: sessionID }, type, body, answer, undefined, { signal })
   }
 
   /** Keep distinct generations from joining the copied client's per-session read waiter. */

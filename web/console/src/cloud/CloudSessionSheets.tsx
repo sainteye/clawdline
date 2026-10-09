@@ -3,7 +3,7 @@ import { Start, StartSheet } from "../session/Start.js"
 import { Command, CommandSheet } from "../session/Command.js"
 import { openNewWorkItem } from "../pages/work/new-item.js"
 import { destinationFragment, type SessionProjectionSource } from "./all-machine-sessions.js"
-import type { MachineToolbarAction } from "./AllMachineSessions.js"
+import type { MachineToolbarAction } from "./FleetSessionList.js"
 
 export interface PendingMachineAction {
   machineID: string

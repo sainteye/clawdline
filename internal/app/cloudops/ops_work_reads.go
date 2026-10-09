@@ -793,7 +793,9 @@ func init() {
 		op{name: "agent", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.hasOneOf([]string{"type", "session", "agent", "limit"},
-					[]string{"type", "session", "agent", "limit", "before"}) {
+					[]string{"type", "session", "agent", "limit", "before"},
+					[]string{"type", "session", "agent", "limit", "expected_generation"},
+					[]string{"type", "session", "agent", "limit", "before", "expected_generation"}) {
 					return plan{}, false
 				}
 				agent, ok := b.nonEmpty("agent")
@@ -808,7 +810,7 @@ func init() {
 				// agents and one answer channel between them, so a reader who
 				// opens two would have the first settled by the second's
 				// conversation.
-				p, ok := sessionPlan(b, "agent:"+agent)
+				p, ok := pinnedSessionPlan(b, "agent:"+agent)
 				if !ok {
 					return plan{}, false
 				}
@@ -834,7 +836,8 @@ func init() {
 
 		op{name: "shell", read: true,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "shell", "bytes") {
+				if !b.hasOneOf([]string{"type", "session", "shell", "bytes"},
+					[]string{"type", "session", "shell", "bytes", "expected_generation"}) {
 					return plan{}, false
 				}
 				shell, ok := b.nonEmpty("shell")
@@ -847,7 +850,7 @@ func init() {
 				if !ok || window < 1<<10 || window > 1<<20 {
 					return plan{}, false
 				}
-				p, ok := sessionPlan(b, "shell:"+shell)
+				p, ok := pinnedSessionPlan(b, "shell:"+shell)
 				if !ok {
 					return plan{}, false
 				}

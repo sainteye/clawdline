@@ -105,6 +105,11 @@ export interface CloudWriteClient extends CloudReadClient {
    */
   info(identity: CloudIdentity): Promise<unknown>
   infoSummary(identity: CloudIdentity): Promise<unknown>
+  infoForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
+  skillsForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
+  imageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, id: string, signal?: AbortSignal): Promise<unknown>
+  readForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string },
+    word: string, fields: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
   skills?(identity: CloudIdentity): Promise<unknown>
   /**
    * The Git panel's read. The copied client has had it since the Swift
@@ -202,6 +207,8 @@ export interface CloudWriteClient extends CloudReadClient {
 /** What the seam around this writer gives it. */
 export interface WriteHost {
   readonly machine: string
+  exactTarget?(): { machineID: string; sessionID: string; executionGeneration: string } | null
+  admitExactTarget?(target: { machineID: string; sessionID: string; executionGeneration: string }): Promise<void>
   /** The client, or a throw coded `offline` when the line is not up. */
   connected(): CloudWriteClient
   /**
@@ -1082,6 +1089,13 @@ export class RelayWriter {
         }, "action:" + request)
       }
       case "focus":
+        if (this.host.exactTarget?.()) {
+          const { identity, generation } = await this.mutationTarget(client, route.session, route.word)
+          const request = headerOf(init, "idempotency-key") || this.requestID()
+          return client._read!(identity, "focus", {
+            request, execution_generation: generation,
+          }, "action:" + request)
+        }
         return client.focus(await this.identity(client, route.session))
       case "smart-title":
       case "interrupt": {
@@ -1092,7 +1106,8 @@ export class RelayWriter {
         if (typeof client._read !== "function") {
           throw failure("cloud_not_carried", route.word, 501)
         }
-        const target = route.op === "interrupt" ? await this.mutationTarget(client, route.session, route.word) : null
+        const target = route.op === "interrupt" || this.host.exactTarget?.()
+          ? await this.mutationTarget(client, route.session, route.word) : null
         return client._read(
           target?.identity ?? await this.identity(client, route.session),
           route.word,
@@ -1120,10 +1135,19 @@ export class RelayWriter {
         // leaves out (`cloudops` `info`). This daemon answers the same body for
         // both — its own divergence — and the page still asks for the half it
         // wants, so a machine that does tell them apart is asked correctly.
+        const exact = this.fleetTarget(route.session)
+        if (exact) {
+          if (!client.infoForGeneration) throw failure("cloud_not_carried", "Pinned Session info is unavailable.", 501)
+          return client.infoForGeneration(exact, init?.signal ?? undefined)
+        }
         const identity = await this.identity(client, route.session)
         return url.searchParams.get("parts") === "summary" ? client.infoSummary(identity) : client.info(identity)
       }
       case "skills":
+        if (this.fleetTarget(route.session)) {
+          if (!client.skillsForGeneration) throw failure("cloud_not_carried", "Pinned Session skills are unavailable.", 501)
+          return client.skillsForGeneration(this.fleetTarget(route.session)!, init?.signal ?? undefined)
+        }
         if (!client.skills) throw failure("cloud_not_carried", "This Cloud client cannot read Session skills.", 501)
         return client.skills(await this.identity(client, route.session))
       case "git":
@@ -1132,6 +1156,7 @@ export class RelayWriter {
         // refusal crosses as its code — `not_a_repo` is the one the panel
         // branches on — because `git-bridge.ts` reads the code and not the
         // sentence (`session/GitPanel.tsx`).
+        if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, "git", {}, init?.signal)
         return client.git(await this.identity(client, route.session))
       case "screen":
         // A read, and the lease on the machine's capture: asking is how the
@@ -1139,6 +1164,7 @@ export class RelayWriter {
         // wrote it — a first read is `pending` with no `text` — except that
         // the copied client names a tmux screen `on-demand`, which is what
         // keeps the panel asking at the machine's floor (`screen`).
+        if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, "screen", {}, init?.signal)
         return client.screen(await this.identity(client, route.session))
       case "git-diff": {
         const path = url.searchParams.get("path") ?? ""
@@ -1146,6 +1172,7 @@ export class RelayWriter {
           throw failure("malformed_read", "a Git diff is read with its changed path", 400)
         }
         const request = this.requestID()
+        if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, "git-diff", { request, path }, init?.signal)
         return client._read(
           await this.identity(client, route.session),
           "git-diff",
@@ -1210,6 +1237,20 @@ export class RelayWriter {
       }
       case "image": {
         const session = url.searchParams.get("session") ?? ""
+        const exact = this.fleetTarget(session)
+        if (exact) {
+          if (!client.imageForGeneration) throw failure("cloud_not_carried", "Pinned Session images are unavailable.", 501)
+          const answer = await client.imageForGeneration(exact, route.artifact, init?.signal ?? undefined) as
+            { id?: unknown; media_type?: unknown; byte_count?: unknown; data?: unknown } | null
+          if (answer?.id !== route.artifact || typeof answer.media_type !== "string" ||
+            typeof answer.data !== "string" || !Number.isSafeInteger(answer.byte_count) ||
+            !["image/png", "image/jpeg"].includes(answer.media_type)) {
+            throw failure("malformed_reply", "The Session image reply was malformed.", 502)
+          }
+          const bytes = Uint8Array.from(atob(answer.data), (character) => character.charCodeAt(0))
+          if (bytes.length !== answer.byte_count) throw failure("malformed_reply", "The Session image bytes were incomplete.", 502)
+          return { media_type: answer.media_type, bytes }
+        }
         if (!session || typeof client.image !== "function") {
           throw failure("malformed_read", "a picture is read with the session it belongs to", 400)
         }
@@ -1222,6 +1263,7 @@ export class RelayWriter {
           throw failure("document_machine_mismatch", "The document link does not name this machine.", 400)
         }
         if (route.op === "documents") {
+          if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, "documents", {}, init?.signal)
           // The listing keeps its legacy `documents` answer name on the
           // Session channel; it has no request-id answer on the machine one.
           if (typeof client._read !== "function") throw failure("cloud_not_carried", route.word, 501)
@@ -1231,10 +1273,11 @@ export class RelayWriter {
         // A machine-scoped waiter would listen on __clawdline_machine__ and time out.
         if (typeof client._read !== "function") throw failure("cloud_not_carried", route.word, 501)
         const request = this.requestID()
-        const answer = await client._read(
-          { machine: this.host.machine, session: route.session }, "document",
-          { request, scope: route.scope, task: route.task, path: route.path }, "read:" + request,
-        ) as { media_type?: unknown; byte_count?: unknown; data?: unknown }
+        const fields = { request, scope: route.scope, task: route.task, path: route.path }
+        const answer = await (this.fleetTarget(route.session)
+          ? this.pinnedRead(client, route.session, "document", fields, init?.signal)
+          : client._read({ machine: this.host.machine, session: route.session }, "document",
+            fields, "read:" + request)) as { media_type?: unknown; byte_count?: unknown; data?: unknown }
         if ((answer.media_type !== "text/markdown; charset=utf-8" && answer.media_type !== "text/plain; charset=utf-8") ||
           typeof answer.data !== "string" || !Number.isSafeInteger(answer.byte_count) || Number(answer.byte_count) < 0) {
           throw failure("malformed_answer", "The document answer is invalid.", 502)
@@ -1793,6 +1836,7 @@ export class RelayWriter {
   private async identity(client: CloudWriteClient, session: string): Promise<CloudIdentity> {
     const row = await this.row(client, session)
     if (!row) throw failure("session_not_found", "this page holds no row for that session", 404)
+    this.requireFleetRow(row, session)
     const identity = row.identity
     if (identity && typeof identity.machine === "string" && typeof identity.session === "string") return identity
     return { machine: this.host.machine, session: typeof row.session === "string" ? row.session : session }
@@ -1807,11 +1851,43 @@ export class RelayWriter {
     if (identity.machine !== this.host.machine || identity.session !== session || !/^[0-9a-f]{32}$/.test(String(generation ?? ""))) {
       throw failure("execution_generation_required", "This session's current execution generation is unavailable.", 409)
     }
+    this.requireFleetRow(row, session)
+    const exact = this.fleetTarget(session)
+    if (exact) {
+      if (!this.host.admitExactTarget) throw failure("execution_check_unavailable", "The selected Session cannot be checked now.", 503)
+      await this.host.admitExactTarget(exact)
+    }
     const commands = declaredCommands(client, identity.machine)
     if (!commands?.includes(word) || !commands.includes("session-receipt") || typeof client._read !== "function") {
       throw failure("cloud_machine_unsupported", "This machine cannot provide durable session receipts.", 501)
     }
     return { identity, generation: generation as string }
+  }
+
+  private fleetTarget(session: string): { machineID: string; sessionID: string; executionGeneration: string } | null {
+    const target = this.host.exactTarget?.() ?? null
+    if (!target) return null
+    if (target.machineID !== this.host.machine || target.sessionID !== session ||
+      !/^[0-9a-f]{32}$/.test(target.executionGeneration)) {
+      throw failure("execution_generation_changed", "The opened Session destination has changed.", 409)
+    }
+    return target
+  }
+
+  private pinnedRead(client: CloudWriteClient, session: string, word: string,
+    fields: Record<string, unknown>, signal?: AbortSignal | null): Promise<unknown> {
+    const target = this.fleetTarget(session)
+    if (!target || !client.readForGeneration) {
+      throw failure("cloud_not_carried", "This machine cannot read the selected Session content.", 501)
+    }
+    return client.readForGeneration(target, word, fields, signal ?? undefined)
+  }
+
+  private requireFleetRow(row: CloudRow, session: string): void {
+    const target = this.fleetTarget(session)
+    if (target && row.execution_generation !== target.executionGeneration) {
+      throw failure("execution_generation_changed", "The Session row belongs to another execution.", 409)
+    }
   }
 
   /**

@@ -11,6 +11,7 @@ const inventory = "__clawdline_inventory_v1__"
 
 function clientFixture() {
   const calls: string[] = []
+  let emit = (_event: unknown) => {}
   const statusSnapshots = new Map<string, unknown>()
   const detailSnapshots = new Map<string, unknown>()
   const at = Math.floor(Date.now() / 1000)
@@ -35,7 +36,7 @@ function clientFixture() {
     detailSnapshots,
     openDetail() {},
     closeDetail() {},
-    events() { return () => {} },
+    events(listener: (event: unknown) => void) { emit = listener; return () => {} },
     async machines() { return { machines: [{ id: machineID, freshness: "current" }], syncing: false, retryAfterMs: 0 } },
     async recoverStatusRow(machine: string, session: string, generation: string) {
       calls.push("recover:" + [machine, session, generation].join(":"))
@@ -70,8 +71,40 @@ function clientFixture() {
       return { id, media_type: "image/png", byte_count: 3, data: "cG5n" }
     },
   }
-  return { client, calls, row }
+  return { client, calls, row, emit: (event: unknown) => emit(event) }
 }
+
+test("a status row event names the Session whose list title should refresh", () => {
+  const { client, emit } = clientFixture()
+  const events: unknown[] = []
+  const stop = statusSource(() => client as never).subscribe((event) => events.push(event))
+  emit({ type: "session_status", identity: { machine: machineID, session: sessionID } })
+  assert.deepEqual(events, [{ machineID, sessionID, kind: "changed" }])
+  stop()
+})
+
+test("a newer row before its marker does not announce a transient event gap", () => {
+  const { client, emit, calls } = clientFixture()
+  const events: unknown[] = []
+  const stop = statusSource(() => client as never).subscribe((event) => events.push(event))
+  const next = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  const rowEntry = client.statusSnapshots.get(JSON.stringify([machineID, sessionID])) as {
+    payload: { snapshot_generation: string }; sequence: number
+  }
+  rowEntry.payload.snapshot_generation = next
+  rowEntry.sequence = 3
+  emit({ type: "session_status", identity: { machine: machineID, session: sessionID } })
+  assert.deepEqual(events, [])
+  const marker = client.statusSnapshots.get(JSON.stringify([machineID, inventory])) as {
+    payload: { snapshot_generation: string }; sequence: number
+  }
+  marker.payload.snapshot_generation = next
+  marker.sequence = 4
+  emit({ type: "session_status", identity: { machine: machineID, session: inventory } })
+  assert.deepEqual(events, [{ machineID, sessionID: undefined, kind: "changed" }])
+  assert.deepEqual(calls, [])
+  stop()
+})
 
 test("status-only list never subscribes to or reads rich content", async () => {
   const { client, calls } = clientFixture()
@@ -284,12 +317,12 @@ test("a stale status row refuses content without subscribing", async () => {
   assert.deepEqual(calls, [])
 })
 
-test("a missing ss row recovers only that retained status channel", async () => {
+test("a missing ss row settles before it can shake the visible list", async () => {
   const { client, calls } = clientFixture()
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
   const source = statusSource(() => client as never)
-  const gap = await source.readMachine(machineID, new AbortController().signal)
-  assert.equal(gap.kind === "unavailable" && gap.reason, "event_gap")
+  const recovered = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(recovered.kind, "ready")
   assert.deepEqual(calls, ["recover:" + [machineID, sessionID, snapshotGeneration].join(":")])
   const reading = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(reading.kind, "ready")

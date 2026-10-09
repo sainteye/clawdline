@@ -1,5 +1,6 @@
 import { followFleetFrom, followFleetWriteAccess } from "../client.js"
 import { carryPictures } from "../legacy/images-bridge.js"
+import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { RelayReader } from "./relay-reader.js"
 
 /**
@@ -18,8 +19,28 @@ import type { RelayReader } from "./relay-reader.js"
  * the API and relay themselves — goes to the network exactly as before.
  * Called once, before the console is drawn.
  */
+let activeReader: RelayReader | null = null
+let networkFetch: typeof globalThis.fetch | null = null
+const fleetListeners = new Set<{ url: string; handlers: StreamHandlers; handle: StreamHandle }>()
+const changingFleet: StreamTransport = {
+  open(url, handlers) {
+    const slot = { url, handlers, handle: activeReader!.stream().open(url, handlers) }
+    fleetListeners.add(slot)
+    return { close() { slot.handle.close(); fleetListeners.delete(slot) } }
+  },
+}
+
 export function readThroughRelay(reader: RelayReader): void {
+  activeReader = reader
+  if (networkFetch) {
+    for (const slot of fleetListeners) {
+      slot.handle.close()
+      slot.handle = reader.stream().open(slot.url, slot.handlers)
+    }
+    return
+  }
   const network = globalThis.fetch.bind(globalThis)
+  networkFetch = network
   globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
     let url: URL
@@ -28,13 +49,13 @@ export function readThroughRelay(reader: RelayReader): void {
     } catch {
       return network(input, init)
     }
-    if (url.origin === location.origin && url.pathname.startsWith("/v1/")) return reader.fetch(input, init)
+    if (url.origin === location.origin && url.pathname.startsWith("/v1/")) return activeReader!.fetch(input, init)
     return network(input, init)
   }
-  followFleetFrom(reader.stream())
-  followFleetWriteAccess(() => reader.mayWrite())
+  followFleetFrom(changingFleet)
+  followFleetWriteAccess(() => activeReader?.mayWrite() === true)
   carryPictures(async (artifact, session) => {
-    const res = await reader.fetch(
+    const res = await activeReader!.fetch(
       "/v1/artifacts/images/" + encodeURIComponent(artifact.id) + "?session=" + encodeURIComponent(session),
     )
     if (!res.ok) {

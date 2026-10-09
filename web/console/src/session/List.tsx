@@ -21,28 +21,37 @@ export function SessionRowLayout({ children, className, ...props }: ComponentPro
 }
 
 /** Status-only rows keep the original list structure without inventing rich Session content. */
-export function ProjectedRow({ title, sessionID, machineName, platform, assistant, backend, state,
-  freshness, observedAt, attention, open, selectionKey, onOpen }: {
+export function ProjectedRow({ title, sessionID, machineName, platform, assistant, backend, state, stateLabel, icon, cwd,
+  freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, onOpen }: {
   title: string; sessionID: string; machineName: string; platform: string
   assistant?: "claude" | "codex"; backend?: "tmux" | "iterm" | "ps"
-  state: string; freshness: string; observedAt: string; attention: boolean; open: boolean
+  icon?: SessionRow["icon"]; cwd?: string
+  state: string; stateLabel: string; freshness: string; lastMovementAt?: number; attention: boolean; open: boolean
+  depth: number; branchThrough: boolean; ancestorThrough: boolean
   selectionKey: string; onOpen: (element: HTMLLIElement) => void
 }) {
   const ref = useRef<HTMLLIElement>(null)
+  const mark = icon ?? BRAND_MARK
+  useLayoutEffect(() => { if (state === "working") L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null) }, [state])
   const activate = () => { if (ref.current) onOpen(ref.current) }
   return <SessionRowLayout ref={ref} role="option" tabIndex={0} data-selection-key={selectionKey}
     data-state={state} data-attention={attention ? "open" : undefined}
-    aria-selected={open ? "true" : "false"} aria-label={`${title}, ${machineName}, ${state}, ${freshness}`}
+    data-depth={depth ? String(depth) : undefined} data-tree-through={branchThrough ? "1" : undefined}
+    aria-selected={open ? "true" : "false"} aria-label={`${title}, ${machineName}, ${stateLabel}, ${freshness}`}
     className={open ? "open projected-row" : "projected-row"}
     onClick={activate} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") {
       event.preventDefault(); activate()
     } }}>
-    <Mark icon={BRAND_MARK} cellPx={4} />
-    <div className="title"><span className="label">{title}</span>
+    <span className="kid" hidden={!depth} aria-hidden="true" />
+    {ancestorThrough && <span className="tree-ancestor" aria-hidden="true" />}
+    <Mark icon={mark} cellPx={4} />
+    <div className="title" style={{ color: L.accentTint(mark.accent) }}><span className="label">{title}</span>
       {assistant && <span className="who" dangerouslySetInnerHTML={{ __html: L.whoHTML(assistant) }} />}</div>
-    <div className="meta"><span className="path">{machineName} · {platform}</span>
-      <span className="tty">{backend || sessionID}</span></div>
-    <div className="state"><span>{state}</span><span className="session-activity">{observedAt} · {freshness}</span>
+    <div className="meta"><span className="path">{cwd ? `${machineName} · ${L.path(cwd)}` : `${machineName} · ${platform}`}</span>
+      <span className="tty">{backend || sessionID}</span>
+      {lastMovementAt && <span className="session-activity">{sessionActivityWord({ activity: { known: true, at: lastMovementAt / 1000 } })}</span>}</div>
+    <div className="state">{state === "working" && <canvas className="spin" aria-hidden="true" />}
+      <span>{stateLabel}</span>{freshness && <span className="session-activity">{freshness}</span>}
       {attention && <span className="session-attention"><span className="session-attention-dot" /></span>}</div>
   </SessionRowLayout>
 }

@@ -26,6 +26,7 @@ import type { CarriedWord, CarryTable } from "./carry.js"
 import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
+import type { SessionDestination } from "./all-machine-sessions.js"
 import { authenticatedRefusalKey } from "./refusal-client.js"
 
 /** One machine and one of its sessions, as the relay's channels name them. */
@@ -197,6 +198,10 @@ export interface CloudReadClient {
    */
   snippets?(identity: CloudIdentity, options?: { fresh?: boolean }): Promise<CloudSnippets>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
+  transcriptForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
+  transcriptPageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, before: number, signal?: AbortSignal): Promise<unknown>
+  readForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string },
+    word: string, fields: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
   /**
    * One provider subagent's conversation, and one background command's
    * output: the session reads whose subject is a second id.
@@ -423,6 +428,12 @@ export interface RelayReaderOptions {
   reconnectWaitMs?: number
   /** Hosted ss/ compatibility clock; no rich s/ snapshot is read when supplied. */
   statusList?: () => { at: number; complete: boolean }
+  /** The original one-machine page reads exact rich rows named by ss/. */
+  classicStatus?: boolean
+  /** The fleet detail currently admitted for this reader; absent in single-machine mode. */
+  fleetTarget?: () => SessionDestination | null
+  /** Recheck one visible fleet mutation against the latest ss/ pass. */
+  admitFleetMutation?: (target: SessionDestination) => Promise<void>
 }
 
 interface HeldTranscript {
@@ -450,7 +461,6 @@ interface OpenStream {
   queued: boolean
 }
 
-/** The live row-channel keys an inventory marker says make up its pass. */
 function inventoryRowKeys(value: unknown): ReadonlySet<string> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   const ids = (value as { ids?: unknown }).ids
@@ -522,6 +532,8 @@ export class RelayReader {
   get writeHost(): WriteHost {
     return {
       machine: this.machine,
+      exactTarget: this.options.fleetTarget,
+      admitExactTarget: this.options.admitFleetMutation,
       connected: () => this.connected() as CloudWriteClient,
       connectedFor: async (signal, word) => {
         const client = await this.connectedFor(signal)
@@ -681,7 +693,9 @@ export class RelayReader {
         const before = historyCursor(q.before)
         if (q.before !== undefined && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
         return await this.sessionRead(init?.signal, method, path, "agent", (client) =>
-          before ? client._read?.({ machine: this.machine, session: agent.session }, "agent",
+          this.options.fleetTarget?.() ? client.readForGeneration?.(this.pinnedSession(agent.session), "agent",
+            { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, ...(before ? { before } : {}) }, init?.signal ?? undefined)
+            : before ? client._read?.({ machine: this.machine, session: agent.session }, "agent",
             { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, before }, `agent:${agent.agent}.before.${before}`)
             : client.agent?.({ machine: this.machine, session: agent.session }, agent.agent))
       }
@@ -690,7 +704,9 @@ export class RelayReader {
         const q = this.only(url, path, "bytes")
         this.window(path, "bytes", q.bytes, CLOUD_SHELL_BYTES)
         return await this.sessionRead(init?.signal, method, path, "shell", (client) =>
-          client.shell?.({ machine: this.machine, session: shell.session }, shell.shell))
+          this.options.fleetTarget?.() ? client.readForGeneration?.(this.pinnedSession(shell.session), "shell",
+            { shell: shell.shell, bytes: CLOUD_SHELL_BYTES }, init?.signal ?? undefined)
+            : client.shell?.({ machine: this.machine, session: shell.session }, shell.shell))
       }
       const workTerminal = workV2SessionTodosTerminal(path)
       if (workTerminal) {
@@ -885,9 +901,14 @@ export class RelayReader {
           if (beforeRaw !== null && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
           if (before) {
             const client = this.connected()
-            if (!client._read) return this.refuse(method, path, 501, "cloud_not_carried", "This console cannot read earlier messages.")
-            const page = transcriptPage(await client._read({ machine: this.machine, session }, "transcript",
-              { limit: CLOUD_TRANSCRIPT_LIMIT, before, priority: "foreground" }, `transcript.before.${before}`), session)
+            if (this.options.classicStatus ? !client.transcriptPageForGeneration : !client._read) {
+              return this.refuse(method, path, 501, "cloud_not_carried", "This console cannot read earlier messages.")
+            }
+            const body = this.options.classicStatus
+              ? await client.transcriptPageForGeneration!(this.pinnedSession(session), before, init?.signal ?? undefined)
+              : await client._read?.({ machine: this.machine, session }, "transcript",
+                { limit: CLOUD_TRANSCRIPT_LIMIT, before, priority: "foreground" }, `transcript.before.${before}`)
+            const page = transcriptPage(body, session)
             this.note(method, path, "relay", undefined, { word: "transcript" })
             return json(200, page)
           }
@@ -1257,17 +1278,33 @@ export class RelayReader {
     this.sayDrift()
     const recovering = (all.scan.recovering ?? []).includes(this.machine)
     const failed = (all.scan.failures ?? []).some((f) => f.machine === this.machine)
-    const machineRows = all.sessions.filter((row) => row.machine === this.machine)
+    const statusMarker = client.statusSnapshots?.get(JSON.stringify([this.machine, "__clawdline_inventory_v1__"])) as
+      | { payload?: { complete?: unknown; inventory?: { version?: unknown; sessions?: unknown } } } | undefined
+    const statusIDs = statusMarker?.payload?.complete === true && statusMarker.payload.inventory?.version === 1 &&
+      Array.isArray(statusMarker.payload.inventory.sessions)
+      ? statusMarker.payload.inventory.sessions.filter((id): id is string => typeof id === "string" && !!id) : null
     const inventory = client.sessionInventoryByMachine?.get(this.machine)
-    const expected = inventoryRowKeys(inventory)
+    const expected = this.options.classicStatus
+      ? statusIDs === null ? null : new Set(statusIDs.map((id) => this.machine + "\u0000" + id))
+      : inventoryRowKeys(inventory)
+    const machineRows = all.sessions.filter((row) => {
+      if (row.machine !== this.machine) return false
+      if (!this.options.classicStatus) return true
+      const id = typeof row.session === "string" ? row.session : row.id
+      if (typeof id !== "string" || !expected?.has(this.machine + "\u0000" + id)) return false
+      const status = client.statusSnapshots?.get(JSON.stringify([this.machine, id])) as
+        | { payload?: { execution_generation?: unknown } } | undefined
+      return typeof status?.payload?.execution_generation === "string" &&
+        row.execution_generation === status.payload.execution_generation
+    })
     // The marker can arrive before another retained channel. Its id set is the
     // receipt: a marker alone is not yet the whole list it describes.
-    const hasInventory = inventory !== undefined
+    const hasInventory = this.options.classicStatus ? expected !== null : inventory !== undefined
     const heldKeys = new Set(machineRows.map((row) => {
       const id = typeof row.session === "string" ? row.session : typeof row.id === "string" ? row.id : ""
       return this.machine + "\u0000" + id
     }))
-    const hasEveryRow = expected === null || [...expected].every((key) => heldKeys.has(key))
+    const hasEveryRow = expected === null ? !this.options.classicStatus : [...expected].every((key) => heldKeys.has(key))
     const whole = hasInventory && hasEveryRow && !recovering && !failed
     const sessions = machineRows.filter((row) => {
       const id = typeof row.session === "string" ? row.session : typeof row.id === "string" ? row.id : ""
@@ -1303,7 +1340,9 @@ export class RelayReader {
       },
       sessions,
     }
-    return { snapshot, settled: whole || failed }
+    // The original page can show verified rich rows as they arrive. The ss/
+    // marker remains the deletion barrier; a gap never claims an empty list.
+    return { snapshot, settled: whole || failed || (this.options.classicStatus === true && hasInventory && machineRows.length > 0) }
   }
 
   /**
@@ -1354,8 +1393,12 @@ export class RelayReader {
       }
     }
     const entry: HeldTranscript = held ?? this.hold(session)
-    const asked = client
-      .transcript({ machine: this.machine, session }, undefined, { foreground: true })
+    if (this.options.classicStatus && !client.transcriptForGeneration) {
+      throw Object.assign(new Error("Pinned Session reading is unavailable"), { code: "cloud_not_carried" })
+    }
+    const asked = (this.options.classicStatus
+      ? client.transcriptForGeneration!(this.pinnedSession(session))
+      : client.transcript({ machine: this.machine, session }, undefined, { foreground: true }))
       .then((body) => transcriptPage(body, session))
     entry.inflight = asked
     this.transcripts.set(session, entry)
@@ -1545,6 +1588,35 @@ export class RelayReader {
     return this.client
   }
 
+  private pinnedSession(session: string): { machineID: string; sessionID: string; executionGeneration: string } {
+    const held = this.connected().statusSnapshots
+    const marker = held?.get(JSON.stringify([this.machine, "__clawdline_inventory_v1__"])) as
+      | { payload?: { complete?: unknown; inventory?: { sessions?: unknown }; snapshot_generation?: unknown; at?: unknown } } | undefined
+    const row = held?.get(JSON.stringify([this.machine, session])) as
+      | { payload?: { snapshot_generation?: unknown; execution_generation?: unknown; projected_at?: unknown;
+        source?: { freshness?: unknown; observed_at?: unknown } } } | undefined
+    const meta = marker?.payload
+    const data = row?.payload
+    const now = this.now() / 1000
+    const fresh = (value: unknown) => typeof value === "number" && Math.abs(now - value) <= 300
+    if (!data || meta?.complete !== true || !Array.isArray(meta.inventory?.sessions) ||
+      !meta.inventory.sessions.includes(session) || data?.snapshot_generation !== meta.snapshot_generation ||
+      typeof data.execution_generation !== "string" || !/^[0-9a-f]{32}$/u.test(data.execution_generation) ||
+      data.source?.freshness !== "current" || !fresh(meta.at) || !fresh(data.projected_at) ||
+      !fresh(data.source.observed_at)) throw Object.assign(new Error("The Session execution is no longer current"), {
+      code: "execution_generation_changed", status: 409,
+    })
+    const target = { machineID: this.machine, sessionID: session, executionGeneration: data.execution_generation }
+    const intended = this.options.fleetTarget?.()
+    if (intended && (intended.machineID !== target.machineID || intended.sessionID !== target.sessionID ||
+      intended.executionGeneration !== target.executionGeneration)) {
+      throw Object.assign(new Error("The opened Session execution has changed"), {
+        code: "execution_generation_changed", status: 409,
+      })
+    }
+    return target
+  }
+
   private bind(stream: OpenStream): void {
     stream.off?.()
     stream.off = this.client
@@ -1555,7 +1627,7 @@ export class RelayReader {
             return
           }
           const machine = event.type === "orchestrator" ? event.machine : event.identity?.machine
-          if (((this.options.statusList ? event.type === "session_status" : event.type === "sessions") ||
+          if (((event.type === "session_status" || event.type === "sessions") ||
             event.type === "orchestrator") && machine === this.machine) {
             this.queueFrame(stream)
           }

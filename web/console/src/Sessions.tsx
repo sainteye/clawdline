@@ -1,5 +1,5 @@
 import { catalogWord } from "./catalog.js"
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react"
 import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
@@ -52,6 +52,10 @@ export function SessionsPage({
   onOpen,
   onBack,
   onDid,
+  fleetList,
+  fleetDetailKey,
+  fleetDetailPending = false,
+  fleetDetailProblem,
 }: {
   rows: SessionRow[]
   /** The first reading has been answered, with a list or with a failure. */
@@ -81,6 +85,11 @@ export function SessionsPage({
   onOpen: (id: string) => void
   onBack: () => void
   onDid: () => void
+  /** The same page frame and detail, with only the list supplied by the Cloud fleet adapter. */
+  fleetList?: ReactNode
+  fleetDetailKey?: string
+  fleetDetailPending?: boolean
+  fleetDetailProblem?: string | null
 }) {
   // The task list the chips, the indent and the detail header read. Fetched
   // here rather than taken from the stream because the page's stream reader
@@ -186,7 +195,7 @@ export function SessionsPage({
   // has left the document must leave the list with it.
   const listRef = useRef<HTMLUListElement>(null)
   useEffect(() => {
-    L.registerSpinners([...(listRef.current?.querySelectorAll<HTMLCanvasElement>("canvas.spin") ?? [])])
+    if (!fleetList) L.registerSpinners([...(listRef.current?.querySelectorAll<HTMLCanvasElement>("canvas.spin") ?? [])])
   })
   useListReorderAnimation(listRef)
 
@@ -245,7 +254,7 @@ export function SessionsPage({
   const terminalPtrRef = useRef<HTMLDivElement>(null)
   const terminalReload = useRef<(() => Promise<void>) | null>(null)
   const terminalPtrWord = usePullToRefresh(terminalScrollRef, terminalPtrRef, () => terminalReload.current?.())
-  useOrderHold(scrollRef)
+  useOrderHold(scrollRef, !fleetList)
   // A row that has gone takes its uncovered action with it, rather than
   // leaving a close button standing over whatever row took its place.
   useEffect(() => {
@@ -269,7 +278,7 @@ export function SessionsPage({
         <section className="pane pane-list">
           {/* A newer release for this machine, and the way to Settings where
               it is one press (machine/UpdateBanner.tsx). */}
-          <UpdateBanner />
+          {fleetList ?? <><UpdateBanner />
           <SessionToolbar onFilter={onFilter} terminalMode={terminalMode}
             onSessions={() => chooseTerminalMode(false)} onTerminals={() => chooseTerminalMode(true)}
             onVoice={() => Command.openAndListen()} onWork={() => openNewWorkItem()}
@@ -318,10 +327,11 @@ export function SessionsPage({
             </div>
             {terminalMode && <TerminalList shown={onScreen} filter={filter} openId={terminalPane?.terminal ?? ""} reloadRef={terminalReload} />}
           </div>
-          <NotifyFooter />
+          <NotifyFooter /></>}
         </section>
 
-        <Detail row={open} tasks={tasks} onOpenSession={onOpen} onBack={onBack} onDid={onDid} listUnknown={listUnknown} />
+        <Detail key={fleetDetailKey} row={fleetDetailPending ? null : open} tasks={tasks} onOpenSession={onOpen} onBack={onBack} onDid={onDid}
+          listUnknown={listUnknown || fleetDetailPending} emptyProblem={fleetDetailProblem} />
         {/* In terminal mode the second column is the terminal's, as it is the
             open session's otherwise; the session detail stays mounted, hidden. */}
         {terminalMode && (terminalPane
@@ -440,8 +450,9 @@ function ListSkeleton() {
  * moment after a finger leaves it (`input/keys.js`): a list that sorts itself
  * can move a row out from under a press.
  */
-function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>): void {
+function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>, enabled: boolean): void {
   useEffect(() => {
+    if (!enabled) return
     const scroller = scrollRef.current
     if (!scroller) return
     const touchEnd = () => {
@@ -461,7 +472,7 @@ function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>): void {
       scroller.removeEventListener("touchstart", L.freezeOrder)
       scroller.removeEventListener("touchend", touchEnd)
     }
-  }, [scrollRef])
+  }, [scrollRef, enabled])
 }
 
 /**

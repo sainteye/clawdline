@@ -25,6 +25,8 @@ type SessionStatus struct {
 	SnapshotGeneration  string `json:"snapshot_generation"`
 	Assistant           string `json:"assistant,omitempty"`
 	Backend             string `json:"backend,omitempty"`
+	ParentSessionID     string `json:"parent_session_id,omitempty"`
+	MachineScope        bool   `json:"machine_scope,omitempty"`
 	State               string `json:"state"`
 	Source              struct {
 		Provenance string `json:"provenance"`
@@ -63,6 +65,7 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 	if v, _ := row["backend"].(string); v == "tmux" || v == "iterm" || v == "ps" {
 		out.Backend = v
 	}
+	out.MachineScope, _ = row["machine_scope"].(bool)
 	if v, _ := row["state"].(string); v == "working" || v == "waiting" || v == "idle" || v == "unknown" {
 		out.State = v
 	}
@@ -158,8 +161,10 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	_ = json.Unmarshal(reading.at, &at)
 	statuses := make([]SessionStatus, 0, len(ids))
 	identities := make([]SessionStatus, 0, len(ids))
+	parents := statusParents(rows, p.tasks)
 	for _, id := range ids {
 		status := ProjectSessionStatus(p.MachineID, id, rows[id], true, at)
+		status.ParentSessionID = parents[id]
 		statuses = append(statuses, status)
 		identity := status
 		identity.ProjectedAt = 0
@@ -226,4 +231,41 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		delete(p.sent, key)
 		p.logf("cloud: the status inventory was not published: %v", err)
 	}
+}
+
+// statusParents projects only terminal ancestry. The signed orch task list
+// already resolves dispatch roots; Epic roots use the same unique conversation
+// match as the local Session list. No task title or conversation text enters ss/.
+func statusParents(rows map[string]map[string]any, tasks []map[string]any) map[string]string {
+	parents := make(map[string]string)
+	conversations := make(map[string]string)
+	for id, row := range rows {
+		if conversation, _ := row["sessionId"].(string); conversation != "" {
+			if _, exists := conversations[conversation]; exists {
+				conversations[conversation] = ""
+			} else {
+				conversations[conversation] = id
+			}
+		}
+	}
+	for _, task := range tasks {
+		child, _ := task["child"].(map[string]any)
+		root, _ := task["root"].(map[string]any)
+		kid, _ := child["terminalId"].(string)
+		owner, _ := root["terminalId"].(string)
+		if kid != "" && owner != "" && kid != owner && rows[kid] != nil && rows[owner] != nil && rows[kid]["machine_scope"] != true {
+			parents[kid] = owner
+		}
+	}
+	for id, row := range rows {
+		if parents[id] != "" || row["machine_scope"] == true || row["coordinator"] != nil {
+			continue
+		}
+		epic, _ := row["epic_parent"].(map[string]any)
+		conversation, _ := epic["owner_session_id"].(string)
+		if owner := conversations[conversation]; conversation != "" && owner != "" && owner != id {
+			parents[id] = owner
+		}
+	}
+	return parents
 }

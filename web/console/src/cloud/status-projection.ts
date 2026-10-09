@@ -65,6 +65,9 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
       title: session,
       assistant: data.assistant === "claude" || data.assistant === "codex" ? data.assistant : undefined,
       backend: data.backend === "tmux" || data.backend === "iterm" || data.backend === "ps" ? data.backend : undefined,
+      parentSessionID: typeof data.parent_session_id === "string" && data.parent_session_id !== session
+        ? data.parent_session_id : undefined,
+      machineScope: data.machine_scope === true,
       state: String(data.state),
       freshness: stale || rowStale ? "stale" : source!.freshness === "current" ? "current" :
         source!.freshness === "unverified" ? "stale" : "unknown",
@@ -104,6 +107,21 @@ export function statusGapTarget(client: StatusProjectionClient, machine: string)
     }
   }
   return null
+}
+
+/** Rows from the next signed pass can arrive before its inventory marker. */
+export function statusPassTransition(client: StatusProjectionClient, machine: string): boolean {
+  const marker = held(client, machine, INVENTORY)
+  const payload = record(marker?.payload)
+  const inventory = record(payload?.inventory)
+  if (!marker || !inventory || !Array.isArray(inventory.sessions) ||
+    typeof payload?.snapshot_generation !== "string") return false
+  return inventory.sessions.some((sessionID) => {
+    if (typeof sessionID !== "string") return false
+    const row = held(client, machine, sessionID)
+    return !!row && row.sequence > marker.sequence &&
+      record(row.payload)?.snapshot_generation !== payload.snapshot_generation
+  })
 }
 
 function outsideFreshWindow(observedAt: number, nowMs: number): boolean {

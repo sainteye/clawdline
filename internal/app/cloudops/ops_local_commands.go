@@ -71,10 +71,11 @@ func init() {
 
 		op{name: "focus",
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request") {
+				if !b.hasOneOf([]string{"type", "session", "request"},
+					[]string{"type", "session", "request", "execution_generation"}) {
 					return plan{}, false
 				}
-				p, ok := actionPlan(b, true)
+				p, ok := pinnedActionPlan(b)
 				if !ok || p.request == "" {
 					return plan{}, false
 				}
@@ -105,10 +106,11 @@ func init() {
 
 		op{name: "smart-title",
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request") {
+				if !b.hasOneOf([]string{"type", "session", "request"},
+					[]string{"type", "session", "request", "execution_generation"}) {
 					return plan{}, false
 				}
-				p, ok := actionPlan(b, true)
+				p, ok := pinnedActionPlan(b)
 				if !ok || p.request == "" {
 					return plan{}, false
 				}

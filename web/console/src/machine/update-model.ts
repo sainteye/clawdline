@@ -555,13 +555,16 @@ export const UPDATE_BANNER_DISMISSED_KEY = "clawdline.update-banner.dismissed"
 
 /**
  * The version the session list's banner announces, or null. Only a release
- * install with a newer release and no update already moving, and only until
- * that version has been dismissed in this browser.
+ * install with a newer release and no update already moving or rolled back,
+ * and only until that version has been dismissed in this browser.
  */
 export function updateBannerVersion(status: UpdateStatus | null, dismissed: string | null): string | null {
   if (!status || status.install_kind !== "release" || status.state !== "update_available") return null
   if (applyMoving(status)) return null
   const version = buildName(status.latest)
   if (!version || version === dismissed) return null
+  // A rollback leaves the failed release in the manifest. The Settings panel
+  // offers an explicit retry; the session list must not keep advertising it.
+  if (status.apply?.state === "rolled_back" && status.apply.to === version) return null
   return version
 }

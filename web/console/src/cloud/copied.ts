@@ -62,6 +62,8 @@ export interface CloudMachine {
 
 /** The connected client, as the gate and the seam use it. */
 export interface CloudClientHandle extends CloudReadClient {
+  enableClassicSessionView?(machine: string): void
+  disableClassicSessionView?(): void
   account: string | null
   deviceID: string | null
   /** The bounded receive log; an error receipt points to the row that names its machine. */

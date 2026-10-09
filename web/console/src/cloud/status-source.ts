@@ -3,12 +3,12 @@ import type { AssistantSkill, TranscriptEntry } from "@clawdline/contract"
 import type { ArtifactRef } from "../legacy/images-bridge.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { menuFingerprint } from "../session/fingerprint.ts"
-import type { MachineSessionProjection, SessionContent, SessionDestination, SessionOlderPage,
+import type { MachineSessionProjection, SessionContent, SessionDestination, SessionListPresentation, SessionOlderPage,
   SessionProjectionSource } from "./all-machine-sessions.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { destinationAvailable, destinationKey } from "./all-machine-sessions.ts"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
-import { record, STATUS_FRESH_MS, statusGapTarget, statusProjection } from "./status-projection.ts"
+import { record, STATUS_FRESH_MS, statusGapTarget, statusPassTransition, statusProjection } from "./status-projection.ts"
 import type { CloudClientHandle } from "./copied.js"
 
 type StatusClient = CloudClientHandle & {
@@ -22,6 +22,7 @@ type StatusClient = CloudClientHandle & {
   subscribe?(channels: string[]): unknown
   unsubscribe?(channels: string[]): void
   recoverStatusRow?(machineID: string, sessionID: string, snapshotGeneration: string): Promise<boolean>
+  readTimeoutMs?: number
   cancelStatusRecoveries?(): void
   /** The daemon must atomically compare the execution generation before reading content. */
   infoForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
@@ -99,7 +100,7 @@ export function pinnedQuestion(client: Pick<StatusClient, "detailSnapshots">, de
 /** Reads current client per call so token renewal does not strand the fleet page. */
 export function statusSource(current: () => StatusClient | null): SessionProjectionSource {
   let attemptedClient: StatusClient | null = null
-  const gapAttempts = new Map<string, { generation: string; sessions: Set<string> }>()
+  const gapAttempts = new Map<string, { generation: string; sessions: Map<string, Promise<boolean>> }>()
   const opened = new Map<string, StatusClient>()
   const imageSignals = new Map<string, AbortController>()
   const visibleArtifacts = new Map<string, Set<string>>()
@@ -118,21 +119,27 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       return expired.kind === "unavailable" && (expired.reason === "stale" || expired.reason === "old_version") ? expired
         : { kind: "unavailable", reason: "unknown", observedAt: expired.observedAt }
     }
-    const projection = statusProjection(client, machineID)
-    if (projection.kind === "unavailable" && projection.reason === "event_gap" && client.recoverStatusRow) {
+    let projection = statusProjection(client, machineID)
+    if (projection.kind === "unavailable" && projection.reason === "event_gap" &&
+      !statusPassTransition(client, machineID) && client.recoverStatusRow) {
       const missing = statusGapTarget(client, machineID)
       if (missing && !signal.aborted) {
         let attempts = gapAttempts.get(machineID)
         if (!attempts || attempts.generation !== missing.snapshotGeneration) {
-          attempts = { generation: missing.snapshotGeneration, sessions: new Set() }
+          attempts = { generation: missing.snapshotGeneration, sessions: new Map() }
           gapAttempts.set(machineID, attempts)
         }
-        if (!attempts.sessions.has(missing.sessionID)) {
-          attempts.sessions.add(missing.sessionID)
-          // Keep the gap visible while the relay restates this one missing row.
-          // Its authenticated event triggers the next independent read.
-          void client.recoverStatusRow(machineID, missing.sessionID, missing.snapshotGeneration).catch(() => undefined)
+        let recovery = attempts.sessions.get(missing.sessionID)
+        if (!recovery) {
+          recovery = client.recoverStatusRow(machineID, missing.sessionID, missing.snapshotGeneration)
+            .catch(() => false)
+          attempts.sessions.set(missing.sessionID, recovery)
         }
+        // A marker can overtake one row while the relay restates its cache.
+        // Keep the previous list still until recovery settles, then show a
+        // genuine gap if the row remains absent. Detail reads still recheck ss/.
+        await recovery
+        projection = statusProjection(client, machineID)
       }
     }
     if (projection.kind !== "ready" || signal.aborted) return projection
@@ -144,7 +151,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
   }
   return {
     readMachine,
-    async readListTitle(destination, signal): Promise<string | null> {
+    async readListPresentation(destination, signal): Promise<SessionListPresentation | null> {
       const client = current()
       if (!client?.infoListForGeneration || !supportsPinnedRead(client, destination.machineID) || signal.aborted) return null
       const before = await readMachine(destination.machineID, signal)
@@ -155,9 +162,19 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         if (signal.aborted || current() !== client || after.kind !== "ready" ||
           destinationAvailable(destination, after) !== "ready" || !supportsPinnedRead(client, destination.machineID)) return null
         const session = record(record(reply?.info)?.session)
-        return session?.id === destination.sessionID && typeof session.title === "string" && session.title.trim()
-          ? session.title.trim() : null
+        if (session?.id !== destination.sessionID || typeof session.title !== "string" || !session.title.trim()) return null
+        const icon = record(session.icon)
+        return { title: session.title.trim(),
+          cwd: typeof session.cwd === "string" ? session.cwd : undefined,
+          icon: typeof icon?.accent === "string" && Array.isArray(icon.cells) &&
+            icon.cells.every((line: unknown) => Array.isArray(line) &&
+              line.every((cell: unknown) => cell === null || typeof cell === "string"))
+            ? { accent: icon.accent, cells: icon.cells as ((string | null)[])[] } : undefined }
       } catch { return null }
+    },
+    async readListTitle(destination, signal): Promise<string | null> {
+      const presentation = await this.readListPresentation?.(destination, signal)
+      return presentation?.title ?? null
     },
     async readImage(destination, artifact): Promise<{ url: string; release: () => void }> {
       const key = destinationKey(destination)
@@ -218,6 +235,12 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     },
     subscribe(listener) {
       const client = current()
+      const transitions = new Map<string, ReturnType<typeof setTimeout>>()
+      const clearTransition = (machineID: string) => {
+        const timer = transitions.get(machineID)
+        if (timer) clearTimeout(timer)
+        transitions.delete(machineID)
+      }
       const stop = client?.events((event) => {
         if ((event.type === "machine_reachability" || event.type === "orchestrator") &&
           typeof event.machine === "string") {
@@ -232,9 +255,21 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         if (event.type !== "session_status" || !event.identity?.machine) return
         const machineID = event.identity.machine
         const projection = statusProjection(client, machineID)
-        listener({ machineID, kind: projection.kind === "unavailable" && projection.reason === "event_gap" ? "gap" : "changed" })
+        if (projection.kind === "unavailable" && projection.reason === "event_gap" &&
+          statusPassTransition(client, machineID)) {
+          if (!transitions.has(machineID)) transitions.set(machineID, setTimeout(() => {
+            transitions.delete(machineID)
+            listener({ machineID, kind: "gap" })
+          }, client?.readTimeoutMs ?? STATUS_FRESH_MS))
+          return
+        }
+        clearTransition(machineID)
+        listener({ machineID, sessionID: event.identity.session === "__clawdline_inventory_v1__"
+          ? undefined : event.identity.session,
+        kind: projection.kind === "unavailable" && projection.reason === "event_gap" ? "gap" : "changed" })
       })
-      return () => { stop?.(); client?.cancelStatusRecoveries?.() }
+      return () => { stop?.(); for (const machineID of transitions.keys()) clearTransition(machineID)
+        client?.cancelStatusRecoveries?.() }
     },
     async readDetail(destination, signal): Promise<SessionContent> {
       const client = current()

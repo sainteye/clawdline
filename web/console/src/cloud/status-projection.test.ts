@@ -19,6 +19,7 @@ function fleet(machine: string, sessions: string[], generation = passOne, missin
     attention_required: true, waiting_for_reply: true, completed_unconfirmed: false, last_movement_at: 1,
     no_progress_after_ms: 1800000, no_movement: true,
     close_blocked: true, failed_agent_count: 2,
+    parent_session_id: "root", machine_scope: true,
   }, index + 1))
   hold(INVENTORY, { inventory: { version: 1, sessions }, at: 2, complete: true, snapshot_generation: generation }, sessions.length + 1)
   return { statusSnapshots }
@@ -41,6 +42,8 @@ test("a complete ss pass with the same Session id on two machines stays scoped",
   assert.equal(a.rows[0].noMovement, true)
   assert.equal(a.rows[0].closeBlocked, true)
   assert.equal(a.rows[0].failedAgentCount, 2)
+  assert.equal(a.rows[0].parentSessionID, "root")
+  assert.equal(a.rows[0].machineScope, true)
   assert.equal(a.rows[0].sourceProvenance, "session_watch")
   assert.equal(a.rows[0].inventoryComplete, true)
   assert.equal(a.snapshotGeneration, passOne)

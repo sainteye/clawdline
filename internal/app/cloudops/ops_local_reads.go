@@ -134,10 +134,10 @@ func init() {
 
 		op{name: "git", read: true,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session") {
+				if !b.hasOneOf([]string{"type", "session"}, []string{"type", "session", "expected_generation"}) {
 					return plan{}, false
 				}
-				return sessionPlan(b, "git")
+				return pinnedSessionPlan(b, "git")
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/sessions/" + segment(p.target) + "/git"}
@@ -145,10 +145,11 @@ func init() {
 
 		op{name: "git-diff", read: true,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "path") {
+				if !b.hasOneOf([]string{"type", "session", "request", "path"},
+					[]string{"type", "session", "request", "path", "expected_generation"}) {
 					return plan{}, false
 				}
-				p, ok := sessionPlan(b, "")
+				p, ok := pinnedSessionPlan(b, "")
 				if !ok {
 					return plan{}, false
 				}
@@ -170,10 +171,10 @@ func init() {
 
 		op{name: "screen", read: true,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session") {
+				if !b.hasOneOf([]string{"type", "session"}, []string{"type", "session", "expected_generation"}) {
 					return plan{}, false
 				}
-				return sessionPlan(b, "screen")
+				return pinnedSessionPlan(b, "screen")
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/sessions/" + segment(p.target) + "/screen"}
@@ -217,10 +218,10 @@ func init() {
 
 		op{name: "documents", read: true, shape: shapeDocuments,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session") {
+				if !b.hasOneOf([]string{"type", "session"}, []string{"type", "session", "expected_generation"}) {
 					return plan{}, false
 				}
-				return sessionPlan(b, "documents")
+				return pinnedSessionPlan(b, "documents")
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/sessions/" + segment(p.target) + "/documents"}
@@ -228,7 +229,8 @@ func init() {
 
 		op{name: "document", read: true, shape: shapeDocument,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "scope", "task", "path") {
+				if !b.hasOneOf([]string{"type", "session", "request", "scope", "task", "path"},
+					[]string{"type", "session", "request", "scope", "task", "path", "expected_generation"}) {
 					return plan{}, false
 				}
 				id, ok := b.nonEmpty("session")
@@ -251,8 +253,12 @@ func init() {
 				default:
 					return plan{}, false
 				}
-				return plan{session: id, target: id, request: request, name: "read:" + request,
-					scope: scope, task: task, path: path}, true
+				p, valid := pinnedSessionPlan(b, "read:"+request)
+				if !valid || p.session != id {
+					return plan{}, false
+				}
+				p.request, p.scope, p.task, p.path = request, scope, task, path
+				return p, true
 			},
 			route: func(p plan) LocalRequest {
 				route := "/v1/sessions/" + segment(p.target) + "/documents/" + p.scope

@@ -9,6 +9,74 @@ const envelope = (ch) => ({ v: 1, ch, seq: 1, ts: 1, class: "stream", key_id: "k
 const genA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const genB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
+test("the original one-machine page subscribes only exact rich rows named by that machine's status", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.statusSnapshots = new Map([
+    [JSON.stringify(["m", "__clawdline_inventory_v1__"]), { payload: {
+      complete: true, snapshot_generation: genA, inventory: { version: 1, sessions: ["s1", "s2"] },
+    } }],
+    [JSON.stringify(["m", "s1"]), { payload: { snapshot_generation: genA, execution_generation: genA } }],
+    [JSON.stringify(["m", "s2"]), { payload: { snapshot_generation: genA, execution_generation: genB } }],
+    [JSON.stringify(["other", "s1"]), { payload: { snapshot_generation: genA, execution_generation: genA } }],
+  ])
+  client.sessionSnapshots = new Map([["m\u0000s1", { execution_generation: genA }]])
+  client.classicSessionMachine = null
+  client.classicSessionReads = new Map()
+  client.classicSessionAttempted = new Map()
+  client.pendingSubscriptions = new Set()
+  client.socketSubscriptions = new Map()
+  client.subscriptionHolds = new Map()
+  client.resubscribes = new Map()
+  client.subscriptionLimit = 8
+  client.ready = true
+  client.now = () => 100
+  client.setTimeout = () => 1
+  client.clearTimeout = () => {}
+  const frames = []
+  client._sendSubscriptionFrame = (type, channels) => frames.push({ type, channels })
+  client.enableClassicSessionView("m")
+  assert.deepEqual(frames, [{ type: "subscribe", channels: ["s/m/s2"] }])
+  assert.deepEqual([...client.socketSubscriptions.keys()], ["s/m/s2"])
+  client.ready = false
+  client.disableClassicSessionView()
+  assert.equal(client.socketSubscriptions.size, 0)
+})
+
+test("the original list recovers more rows when other idle Cloud channels fill the relay budget", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.statusSnapshots = new Map([[JSON.stringify(["m", "__clawdline_inventory_v1__"]), { payload: {
+    complete: true, snapshot_generation: genA, inventory: { version: 1, sessions: ["s1", "s2", "s3"] },
+  } }]])
+  for (const id of ["s1", "s2", "s3"]) client.statusSnapshots.set(JSON.stringify(["m", id]),
+    { payload: { snapshot_generation: genA, execution_generation: genA } })
+  client.sessionSnapshots = new Map()
+  client.classicSessionMachine = null
+  client.classicSessionReads = new Map()
+  client.classicSessionAttempted = new Map()
+  client.pendingSubscriptions = new Set(Array.from({ length: 8 }, (_, i) => `t/m/old${i}`))
+  client.socketSubscriptions = new Map([...client.pendingSubscriptions].map((channel) => [channel, 100]))
+  client.subscriptionHolds = new Map()
+  client.resubscribes = new Map()
+  client.subscriptionLimit = 8
+  client.ready = true
+  client.now = () => 100
+  client.setTimeout = () => 1
+  client.clearTimeout = () => {}
+  const frames = []
+  client._sendSubscriptionFrame = (type, channels) => frames.push({ type, channels })
+  client.enableClassicSessionView("m")
+  assert.deepEqual(frames.filter((frame) => frame.type === "subscribe"), [
+    { type: "subscribe", channels: ["s/m/s1"] }, { type: "subscribe", channels: ["s/m/s2"] },
+  ])
+  assert.equal(client.socketSubscriptions.size, 8)
+  client.sessionSnapshots.set("m\u0000s1", { execution_generation: genA })
+  client.unsubscribe(["s/m/s1"])
+  client.classicSessionReads.delete("s/m/s1")
+  client._recoverClassicSessionRows()
+  assert.deepEqual(frames.filter((frame) => frame.type === "subscribe").at(-1),
+    { type: "subscribe", channels: ["s/m/s3"] })
+})
+
 test("the live signed machine descriptor keeps commands beyond the archived cache bound", () => {
   const client = Object.create(StatusCloudClient.prototype)
   const words = Array.from({ length: 65 }, (_, i) => `word-${i}`)
@@ -45,7 +113,7 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
   const payload = { machine_id: "m", session_id: "s", state: "working" }
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, masterKey,
     new TextEncoder().encode(JSON.stringify(payload)))
-  const signed = { ...envelope("ss/m/s"), nonce: Buffer.from(nonce).toString("base64"),
+  const signed = { ...envelope("ss/m/s"), ts: Date.now(), nonce: Buffer.from(nonce).toString("base64"),
     ct: Buffer.from(ct).toString("base64") }
   signed.sig = Buffer.from(await crypto.subtle.sign({ name: "Ed25519" }, keys.privateKey,
     envelopeSigningBytes(signed))).toString("base64")
@@ -53,6 +121,7 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
   client.statusSnapshots = new Map()
   client.statusSequences = new Map()
   client.machineOffline = new Map([["m", { until: Date.now() + 1000 }]])
+  client.machineObservedAt = new Map()
   client.sequenceBySender = new Map()
   client.realignSequenceByChannel = new Map()
   client._machinePairing = async () => ({ keyID: "key", senderID: "sender", senderKey: keys.publicKey, masterKey })
@@ -64,13 +133,18 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
   await client._receiveEnvelope(signed, false)
   assert.deepEqual(client.statusSnapshots.get(JSON.stringify(["m", "s"])).payload, payload)
   assert.equal(client.machineOffline.has("m"), false)
+  assert.equal(client.machineObservedAt.get("m"), signed.ts)
   assert.equal(events[0].type, "session_status")
   client.machineOffline.set("m", { until: Date.now() + 1000 })
-  const retained = { ...signed, seq: 2 }
+  client.machineObservedAt.clear()
+  const retained = { ...signed, seq: 2, ts: signed.ts - 600_000 }
   retained.sig = Buffer.from(await crypto.subtle.sign({ name: "Ed25519" }, keys.privateKey,
     envelopeSigningBytes(retained))).toString("base64")
   await client._receiveEnvelope(retained, true)
   assert.equal(client.machineOffline.has("m"), true, "a retained row does not prove the machine is online")
+  assert.equal(client.machineObservedAt.get("m"), retained.ts, "retention preserves only the signed observation time")
+  assert.ok(Date.now() - client.machineObservedAt.get("m") > 300_000,
+    "an old retained row cannot claim current machine presence")
 })
 
 test("pinned transcript sends exact generation and never coalesces another generation", async () => {
@@ -151,6 +225,32 @@ test("a transcript picture uses an exact image waiter and rejects a missing exec
   assert.equal(calls[0][3], "image.picture-1")
   assert.equal(calls[0][5].signal, signal)
   await assert.rejects(() => client.imageForGeneration({ ...destination, executionGeneration: "" }, "picture-1", signal),
+    { code: "execution_target_required" })
+})
+
+test("original detail panels retain their read names on the exact r/ target", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const calls = []
+  client._read = (...args) => { calls.push(args); return Promise.resolve({}) }
+  const target = { machineID: "m", sessionID: "s", executionGeneration: genA }
+  for (const [word, fields, answer] of [
+    ["git", {}, "git"], ["git-diff", { request: "diff-1", path: "README.md" }, "read:diff-1"],
+    ["screen", {}, "screen"], ["agent", { agent: "a", limit: 100 }, "agent:a"],
+    ["agent", { agent: "a", limit: 100, before: 17 }, "agent:a.before.17"],
+    ["shell", { shell: "sh", bytes: 4096 }, "shell:sh"], ["documents", {}, "documents"],
+    ["document", { request: "doc-1", scope: "project", task: "", path: "README.md" }, "read:doc-1"],
+  ]) {
+    await client.readForGeneration(target, word, fields)
+    const sent = calls.at(-1)
+    assert.deepEqual(sent[0], { machine: "m", session: "s" })
+    assert.equal(sent[1], word)
+    assert.deepEqual(sent[2], { ...fields, machine_id: "m", expected_generation: genA })
+    assert.equal(sent[3], answer)
+  }
+  assert.equal(calls.length, 8)
+  await assert.rejects(() => client.readForGeneration(target, "send", { request: "write-1" }),
+    { code: "read_only_channel" })
+  await assert.rejects(() => client.readForGeneration({ ...target, executionGeneration: "" }, "git"),
     { code: "execution_target_required" })
 })
 

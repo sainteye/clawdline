@@ -6317,6 +6317,7 @@ export interface SessionInfoReply {
 export interface SessionInfoSession {
   assistant?: Assistant
   cwd?: string
+  icon?: Icon
   id: string
 
   /**
@@ -6839,6 +6840,11 @@ export interface SessionStatus {
   machine_id: string
 
   /**
+   * True for the machine workspace Session, which sorts before ordinary Sessions.
+   */
+  machine_scope?: boolean
+
+  /**
    * Absent when activity or current source evidence is unknown; false is a measured
    * answer.
    */
@@ -6849,6 +6855,12 @@ export interface SessionStatus {
    * movement.
    */
   no_progress_after_ms: number
+
+  /**
+   * Terminal id of a currently listed parent Session, derived from the signed task
+   * or Epic owner relationship. No task text is copied.
+   */
+  parent_session_id?: string
 
   /**
    * Unix seconds when this status was projected.

@@ -27,6 +27,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"strings"
 )
@@ -312,7 +313,7 @@ func (b Bridge) Handle(ctx context.Context, cmd Command) (answer Answer) {
 		return b.refuse(cmd, parsed, "", Refusal{Status: 400, Code: "malformed_command",
 			Message: "This Cloud command is malformed.", fixedCopy: true})
 	}
-	if b.contentReadChannel(cmd) && word != "info" && word != "transcript" && word != "skills" && word != "image" && word != "peer-inbox" {
+	if b.contentReadChannel(cmd) && !contentReadWord(word) {
 		return b.refuse(cmd, parsed, word, Refusal{Status: 403, Code: "read_only_channel",
 			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true})
 	}
@@ -342,11 +343,20 @@ func (b Bridge) contentReadChannel(cmd Command) bool {
 	return b.MachineID != "" && cmd.Channel == "r/"+ChannelSegment(b.MachineID)
 }
 
+func contentReadWord(word string) bool {
+	switch word {
+	case "info", "transcript", "skills", "image", "git", "git-diff", "screen", "agent", "shell", "documents", "document", "peer-inbox":
+		return true
+	default:
+		return false
+	}
+}
+
 // serveContentRead is the only machine-side entrance from the read_transcript
 // rail. The exact decoded operation, fixed execution and current viewer cap
 // must all be established before the local router sees anything.
 func (b Bridge) serveContentRead(ctx context.Context, cmd Command, parsed body, o op) Answer {
-	if cmd.Class != ClassCtl || !o.read || (o.name != "info" && o.name != "transcript" && o.name != "skills" && o.name != "image" && o.name != "peer-inbox") {
+	if cmd.Class != ClassCtl || !o.read || !contentReadWord(o.name) {
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 403, Code: "read_only_channel",
 			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true})
 	}
@@ -582,6 +592,15 @@ func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer 
 			Message: "This machine could not answer that.", fixedCopy: true, Layer: layerRoute}, nil)
 	}
 	if plan.executionGeneration != "" && o.read {
+		// The local route checked the target before reading. Recheck after the
+		// read as well: a terminal can restart under the same ID while Git,
+		// screen, agent, or document content is being collected.
+		if b.AdmitExecution == nil {
+			return b.publish(cmd, plan, executionRefusal(errors.New("execution_check_unavailable")), nil)
+		}
+		if err := b.AdmitExecution(ctx, b.MachineID, plan.target, plan.executionGeneration); err != nil {
+			return b.publish(cmd, plan, executionRefusal(err), nil)
+		}
 		// A revocation while the local route was reading content must win
 		// before that content is sealed for the viewer.
 		var refusal Refusal

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -64,6 +65,25 @@ func contentReadAuthority(allowed bool) Authority {
 		WriteGateAllows: true, ReadTranscriptAllows: allowed}
 }
 
+func TestOriginalDetailCommandsAcceptAnExactExecutionPin(t *testing.T) {
+	for _, word := range []string{"focus", "smart-title"} {
+		r := &router{}
+		b := open(r)
+		cmd := request(t, ClassCtl, map[string]any{
+			"type": word, "session": pane, "request": "press-1",
+			"execution_generation": pinnedGeneration,
+		})
+		answer := b.Handle(context.Background(), cmd)
+		if !answer.OK() || len(r.seen) != 1 {
+			t.Fatalf("%s pinned command: answer=%+v routes=%+v", word, answer, r.seen)
+		}
+		if got := r.last().Header; got["X-Clawdline-Target-Machine"] != "mac-01" ||
+			got["X-Clawdline-Execution-Generation"] != pinnedGeneration {
+			t.Fatalf("%s lost its selected execution: %v", word, got)
+		}
+	}
+}
+
 func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 	for _, input := range []struct {
 		body map[string]any
@@ -100,6 +120,72 @@ func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 			got["expected_generation"] != pinnedGeneration || got["seq"] != float64(411) {
 			t.Fatalf("the read reply cannot be matched to its pinned request: %v", got)
 		}
+	}
+}
+
+func TestOriginalSessionPanelsUseThePinnedReadRail(t *testing.T) {
+	for _, tc := range []struct {
+		word string
+		body map[string]any
+		name string
+	}{
+		{"git", map[string]any{}, "git"},
+		{"git-diff", map[string]any{"request": "diff-1", "path": "README.md"}, "read:diff-1"},
+		{"screen", map[string]any{}, "screen"},
+		{"agent", map[string]any{"agent": "agent-1", "limit": 100}, "agent:agent-1"},
+		{"agent", map[string]any{"agent": "agent-1", "limit": 100, "before": 17}, "agent:agent-1.before.17"},
+		{"shell", map[string]any{"shell": "shell-1", "bytes": 4096}, "shell:shell-1"},
+		{"documents", map[string]any{}, "documents"},
+		{"document", map[string]any{"request": "doc-1", "scope": "project", "task": "", "path": "README.md"}, "read:doc-1"},
+	} {
+		t.Run(tc.name+"/"+tc.word, func(t *testing.T) {
+			r := &router{}
+			if tc.word == "documents" {
+				r.body = `{"documents":[]}`
+			}
+			if tc.word == "document" {
+				r.body, r.media = "# report\n", "text/markdown; charset=utf-8"
+			}
+			b := open(r)
+			b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+				return contentReadAuthority(true)
+			}
+			body := map[string]any{"type": tc.word, "session": pane, "expected_generation": pinnedGeneration}
+			for key, value := range tc.body {
+				body[key] = value
+			}
+			answer := b.Handle(context.Background(), contentReadRequest(t, body))
+			if !answer.OK() || answer.Name != tc.name || len(r.seen) != 1 ||
+				r.last().Header["X-Clawdline-Execution-Generation"] != pinnedGeneration {
+				t.Fatalf("pinned panel read: answer=%+v routes=%+v", answer, r.seen)
+			}
+			if got := answerOf(t, answer); got["expected_generation"] != pinnedGeneration || got["seq"] != float64(411) {
+				t.Fatalf("read reply has no request proof: %v", got)
+			}
+			delete(body, "expected_generation")
+			if stale := b.Handle(context.Background(), contentReadRequest(t, body)); stale.OK() {
+				t.Fatalf("unpinned read crossed r/: %+v", stale)
+			}
+		})
+	}
+}
+
+func TestPinnedContentReadRejectsGenerationChangedWhileReading(t *testing.T) {
+	checks := 0
+	b := open(localRouterFunc(func(context.Context, LocalRequest) (LocalResponse, error) {
+		return LocalResponse{Status: 200, ContentType: "application/json", Body: []byte(`{"secret":"old execution"}`)}, nil
+	}))
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority { return contentReadAuthority(true) }
+	b.AdmitExecution = func(context.Context, string, string, string) error {
+		checks++
+		return errors.New("execution_generation_changed")
+	}
+	answer := b.Handle(context.Background(), contentReadRequest(t, map[string]any{
+		"type": "git", "session": pane, "expected_generation": pinnedGeneration,
+	}))
+	if answer.OK() || answer.Code != "execution_generation_changed" || checks != 1 ||
+		strings.Contains(string(answer.Payload), "old execution") {
+		t.Fatalf("changed execution exposed a prior read: %+v checks=%d", answer, checks)
 	}
 }
 

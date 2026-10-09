@@ -52,13 +52,12 @@ import { machinesByCapability } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
-import { AllMachineSessions, type MachineToolbarAction } from "./AllMachineSessions.js"
+import { FleetSessionList, type MachineToolbarAction } from "./FleetSessionList.js"
 import { CloudSessionSheets, type PendingMachineAction } from "./CloudSessionSheets.js"
-import { PinnedSessionActionPanel } from "./PinnedSessionActions.js"
-import { PeerHandoffPanel, PeerRevocationPanel } from "./PeerHandoffPanel.js"
-import { destinationFromFragment, type SessionProjectionSource } from "./all-machine-sessions.js"
+import { PeerRevocationPanel } from "./PeerHandoffPanel.js"
+import { destinationAvailable, destinationFragment, destinationFromFragment, destinationKey, type SessionContent,
+  type SessionDestination, type SessionProjectionSource } from "./all-machine-sessions.js"
 import { statusSource } from "./status-source.js"
-import { statusProjection } from "./status-projection.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
 import { installScheduleWebhookManagement } from "./schedule-webhooks.js"
 import { installCloudPush, type CloudPushClient } from "./cloud-push.js"
@@ -124,6 +123,17 @@ export function readDeclaration(declared: string): Declared {
   return chooseTransport({ mock: false, origin: location.origin, config }) === "cloud"
     ? { kind: "cloud", config }
     : { kind: "blocked", config }
+}
+
+function fleetContentProblemWord(reason: Extract<SessionContent, { kind: "unavailable" }>["reason"]): string {
+  switch (reason) {
+    case "no_permission": return nextWord("cloudAllContentNoPermission")
+    case "old_version": return nextWord("cloudAllContentOldVersion")
+    case "offline": return nextWord("cloudAllOffline")
+    case "stale": return nextWord("cloudAllStaleSource")
+    case "changed": return nextWord("cloudAllChanged")
+    default: return nextWord("cloudAllContentUnknown")
+  }
 }
 
 type Screen =
@@ -212,6 +222,18 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const [problem, setProblem] = useState<AccessProblem | null>(null)
   const [chosen, setChosen] = useState<CloudMachine | null>(null)
   const [fleetScope, setFleetScope] = useState(() => location.hash === "#all-machines" || !!destinationFromFragment(location.hash))
+  const fleetScopeRef = useRef(fleetScope)
+  fleetScopeRef.current = fleetScope
+  const [fleetTarget, setFleetTarget] = useState<SessionDestination | null>(() => destinationFromFragment(location.hash))
+  const [fleetDetailProblem, setFleetDetailProblem] = useState<{ key: string; word: string } | null>(null)
+  const [readerMachine, setReaderMachine] = useState<string | null>(null)
+  const fleetTargetRef = useRef<SessionDestination | null>(null)
+  fleetTargetRef.current = fleetScope ? fleetTarget : null
+  useEffect(() => {
+    if (!chosen || screen.at !== "console") return
+    if (fleetScope) client.current?.disableClassicSessionView?.()
+    else client.current?.enableClassicSessionView?.(chosen.id)
+  }, [chosen?.id, fleetScope, screen.at])
   const [pendingTool, setPendingTool] = useState<PendingMachineAction | null>(pendingMachineTool)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const switcherRef = useRef<HTMLDivElement>(null)
@@ -268,6 +290,18 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const currentActionClient = useCallback(() => client.current, [])
   const [clientEpoch, setClientEpoch] = useState(0)
   const liveSessionSource = useMemo(() => sessionSource ?? statusSource(() => client.current), [sessionSource])
+  const admitFleetMutation = useCallback(async (target: SessionDestination) => {
+    const current = client.current
+    if (!current) throw Object.assign(new Error("The Cloud connection is unavailable."), { code: "offline" })
+    const roster = await current.machines()
+    if (!roster.machines.some((machine) => machine.id === target.machineID && machine.freshness === "current")) {
+      throw Object.assign(new Error("The destination machine is no longer current."), { code: "execution_generation_changed" })
+    }
+    const reading = await liveSessionSource.readMachine(target.machineID, new AbortController().signal)
+    if (client.current !== current || destinationAvailable(target, reading) !== "ready") {
+      throw Object.assign(new Error("The selected Session execution changed."), { code: "execution_generation_changed" })
+    }
+  }, [liveSessionSource])
   useEffect(() => clearTerminalCloseStates(), [who?.account])
   const reader = useRef<RelayReader | null>(null)
   const unlisten = useRef<(() => void) | null>(null)
@@ -375,15 +409,16 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     const next = new RelayReader(machine.id, {
       strings: () => (config ? catalog(config) : Promise.resolve({})),
       carry: CARRY_TABLE,
-      statusList: () => {
-        const result = statusProjection(client.current, machine.id)
-        return { at: result.observedAt ?? Date.now(), complete: result.kind === "ready" }
-      },
+      classicStatus: true,
+      fleetTarget: () => fleetTargetRef.current,
+      admitFleetMutation,
     })
     const writer = new RelayWriter(next.writeHost)
     next.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
     next.attach(current)
+    current.enableClassicSessionView?.(machine.id)
     reader.current = next
+    setReaderMachine(machine.id)
     setTerminalHost({ client: current as unknown as TerminalCloudClient, machine: machine.id })
     readThroughRelay(next)
     uninstallScheduleWebhooks.current?.()
@@ -707,8 +742,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           })
           unlisten.current?.()
           unlisten.current = next.events((event) => {
-            // The list is for choosing; once a machine is on screen nobody is looking at it.
+            // The fleet list stays visible beside an open Session. Refresh its
+            // machine freshness after a complete status pass, not after each
+            // row in that pass (which would churn the list while it arrives).
             if (!reader.current && (event.type === "orchestrator" || event.type === "session_status")) listMachines()
+            else if (fleetScopeRef.current && (event.type === "orchestrator" ||
+              event.type === "session_status" && event.identity?.session === "__clawdline_inventory_v1__")) listMachines()
             // A decryptable inventory clears only the problem attributed to
             // that machine. One machine answering is not evidence that a
             // different machine's key problem went away.
@@ -728,6 +767,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           if (reader.current) {
             // A renewal or a reconnect: the console keeps reading, through the new client.
             reader.current.attach(next)
+            if (fleetScopeRef.current) next.disableClassicSessionView?.()
+            else next.enableClassicSessionView?.(reader.current.machine)
             setTerminalHost({ client: next as unknown as TerminalCloudClient, machine: reader.current.machine })
             setScreen({ at: "console" })
             return
@@ -891,6 +932,46 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     [machineList, names, forgotten],
   )
   const quickMachines = shown.phase === "ready" ? shown.machines.filter((machine) => machine.selectable) : []
+
+  // The fleet scope keeps its own machine selection in the header. Only the
+  // opened three-part target changes the original Session reader underneath.
+  // Its exact s/ subscription is opened by the status source after admission.
+  useEffect(() => {
+    if (!fleetScope || !fleetTarget || !client.current || !chosen || screen.at !== "console") return
+    const key = destinationKey(fleetTarget)
+    setFleetDetailProblem(null)
+    const connected = client.current
+    if (reader.current?.machine !== fleetTarget.machineID) {
+      const config = transport.kind === "cloud" ? transport.config : null
+      const next = new RelayReader(fleetTarget.machineID, {
+        strings: () => (config ? catalog(config) : Promise.resolve({})),
+        carry: CARRY_TABLE,
+        classicStatus: true,
+        fleetTarget: () => fleetTargetRef.current,
+        admitFleetMutation,
+      })
+      const writer = new RelayWriter(next.writeHost)
+      next.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+      next.attach(connected)
+      reader.current = next
+      setTerminalHost({ client: connected as unknown as TerminalCloudClient, machine: fleetTarget.machineID })
+      readThroughRelay(next)
+      cardsAreFor(fleetTarget.machineID)
+      setReaderMachine(fleetTarget.machineID)
+    }
+    const abort = new AbortController()
+    void liveSessionSource.readDetail(fleetTarget, abort.signal).then((answer) => {
+      if (!abort.signal.aborted && answer.kind === "unavailable") {
+        setFleetDetailProblem({ key, word: fleetContentProblemWord(answer.reason) })
+      }
+    }, () => {
+      if (!abort.signal.aborted) setFleetDetailProblem({ key, word: nextWord("cloudAllContentUnknown") })
+    })
+    return () => {
+      abort.abort()
+      liveSessionSource.closeDetail?.(fleetTarget)
+    }
+  }, [fleetScope, fleetTarget && destinationKey(fleetTarget), clientEpoch, chosen?.id, screen.at, liveSessionSource])
   // Machines on the account this browser cannot read yet. They are listed
   // under the ones it can, each with its Pair press, so pairing another
   // machine does not mean finding the full machine screen first.
@@ -947,9 +1028,16 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setSwitcherOpen(false)
     history.pushState({ view: "all-machines" }, "", "#all-machines")
     setFleetScope(true)
+    setFleetTarget(null)
+    listMachines()
   }
 
-  const leaveFleet = () => setFleetScope(false)
+  const leaveFleet = () => { setFleetScope(false); setFleetTarget(null) }
+
+  const openFleetSession = (target: SessionDestination) => {
+    setFleetTarget(target)
+    history.replaceState(history.state, "", destinationFragment(target))
+  }
 
   // Which machine this is and whether it answers, in one control: the
   // console's connection light is handed in (`App`'s `aside`) and drawn as the
@@ -1013,7 +1101,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
               data-current={fleetScope ? "true" : undefined}
               onClick={openAllSessions}>{nextWord("cloudAllMachines")}</button>}
             {quickMachines.map((machine) => {
-              const current = machine.id === chosen.id
+              const current = !fleetScope && machine.id === chosen.id
               const identity = machineIdentityFacts(machine)
               return (
                 <button
@@ -1151,27 +1239,26 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           <App aside={aside} hideSessionCounts={fleetScope}
             focusCloudSessions={fleetScope}
             onLeaveCloudSessions={leaveFleet}
-            cloudSessions={<AllMachineSessions
-            key={clientEpoch + ":" + (fleetScope ? "all" : chosen.id)}
-            fleet={fleetScope}
-            machines={(fleetScope ? quickMachines : [chosen]).map((machine) => ({
+            fleetTarget={fleetScope ? fleetTarget : null}
+            fleetDetailProblem={fleetScope && fleetTarget && fleetDetailProblem?.key === destinationKey(fleetTarget)
+              ? fleetDetailProblem.word : null}
+            fleetReaderMachine={readerMachine}
+            onFleetClose={() => setFleetTarget(null)}
+            fleetList={fleetScope ? (filter, onFilter) => <FleetSessionList
+            machines={quickMachines.map((machine) => ({
               id: machine.id, name: machine.name || machine.label || machine.id,
               platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
             }))}
             source={liveSessionSource}
+            target={fleetTarget}
+            filter={filter} onFilter={onFilter}
+            onOpen={openFleetSession}
             onMachineAction={runMachineTool}
             fleetControls={<PeerRevocationPanel machines={quickMachines.map((machine) => ({
               id: machine.id, name: machine.name || machine.label || machine.id,
               platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
             }))} current={currentActionClient} />}
-            detailActions={(context) => <PinnedSessionActionPanel key={JSON.stringify(context.destination)} context={context}
-              source={liveSessionSource} current={currentActionClient} />}
-            detailExtras={(context) => <PeerHandoffPanel key={JSON.stringify(context.destination)} context={context} machines={quickMachines.map((machine) => ({
-                id: machine.id, name: machine.name || machine.label || machine.id,
-                platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
-              }))}
-                source={liveSessionSource} current={currentActionClient} />}
-          />} />
+          /> : undefined} />
           <CloudSessionSheets machineID={chosen.id} source={liveSessionSource}
             pending={pendingTool} onConsumed={consumeTool} />
         </CloudAccountContext.Provider>

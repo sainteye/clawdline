@@ -492,6 +492,23 @@ func sessionPlan(b body, name string) (plan, bool) {
 	return plan{session: id, target: id, name: name}, true
 }
 
+// pinnedSessionPlan retains the legacy read shape while carrying the optional
+// execution pin used by the read_transcript rail.
+func pinnedSessionPlan(b body, name string) (plan, bool) {
+	p, ok := sessionPlan(b, name)
+	if !ok {
+		return plan{}, false
+	}
+	if raw, named := b["expected_generation"]; named {
+		generation, valid := raw.(string)
+		if !valid || !executionGenerationValid(generation) {
+			return plan{}, false
+		}
+		p.executionGeneration = generation
+	}
+	return p, true
+}
+
 func executionGenerationValid(value string) bool {
 	if len(value) != 32 {
 		return false
@@ -634,6 +651,23 @@ func actionPlan(b body, sessionScoped bool) (plan, bool) {
 	}
 	p.request = request
 	p.name = "action:" + request
+	return p, true
+}
+
+// pinnedActionPlan keeps legacy focus and smart naming requests unchanged,
+// while allowing a fleet viewer to bind them to the selected execution.
+func pinnedActionPlan(b body) (plan, bool) {
+	p, ok := actionPlan(b, true)
+	if !ok {
+		return plan{}, false
+	}
+	if raw, named := b["execution_generation"]; named {
+		generation, valid := executionGeneration(raw)
+		if !valid {
+			return plan{}, false
+		}
+		p.executionGeneration = generation
+	}
 	return p, true
 }
 

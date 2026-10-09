@@ -63,11 +63,12 @@ var sessionFields = map[string]string{
 	"orchestrator#BrokerRoot.session_id": conversation,
 	// The calling Session of a task cancel, named only when it carries no
 	// squad capability (orchestrator.CancelTask).
-	"orchestrator#BrokerCancelRequest.session_id": conversation,
-	"projects#PlaceResumed.session":               conversation,
-	"schedules#ScheduleRequest.session_id":        conversation,
-	"sessions#SessionRow.sessionId":               conversation,
-	"session-status#SessionStatus.session_id":     "terminal: the ss/ row's terminal id, pinned by execution_generation; retire when status rows use conversation ids",
+	"orchestrator#BrokerCancelRequest.session_id":    conversation,
+	"projects#PlaceResumed.session":                  conversation,
+	"schedules#ScheduleRequest.session_id":           conversation,
+	"sessions#SessionRow.sessionId":                  conversation,
+	"session-status#SessionStatus.session_id":        "terminal: the ss/ row's terminal id, pinned by execution_generation; retire when status rows use conversation ids",
+	"session-status#SessionStatus.parent_session_id": "terminal: the listed parent terminal id for visual ancestry; retire when status ancestry uses conversation ids",
 	// The Epic assignment actor records the owner's conversation at dispatch
 	// time, even when the child runs as an independent Root.
 	"sessions#EpicSessionParent.owner_session_id": conversation,

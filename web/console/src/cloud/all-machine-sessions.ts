@@ -1,4 +1,4 @@
-import type { AssistantSkill, TranscriptEntry } from "@clawdline/contract"
+import type { AssistantSkill, Icon, TranscriptEntry } from "@clawdline/contract"
 import type { ArtifactRef } from "../legacy/images-bridge.js"
 
 /**
@@ -12,11 +12,27 @@ export interface SessionDestination {
   executionGeneration: string
 }
 
+export interface FleetMachine {
+  id: string
+  name: string
+  platform: string
+  freshness: "current" | "stale" | "unknown"
+}
+
+/** Metadata from a pinned, read_transcript-authorized list read. */
+export interface SessionListPresentation {
+  title: string
+  cwd?: string
+  icon?: Icon
+}
+
 export interface ProjectedSession {
   destination: SessionDestination
   title: string
   assistant?: "claude" | "codex"
   backend?: "tmux" | "iterm" | "ps"
+  parentSessionID?: string
+  machineScope?: boolean
   state: string
   freshness: "current" | "stale" | "unknown"
   needsAttention?: boolean
@@ -40,6 +56,15 @@ export type MachineSessionProjection =
   | { kind: "unavailable"; reason: ProjectionProblem; observedAt?: number; rows?: ProjectedSession[]; retryAt?: number;
       complete?: true; snapshotGeneration?: string; unknownTargets?: number }
 
+/** A selected status row for optional actions outside the original composer. */
+export interface DetailActionContext {
+  destination: SessionDestination
+  machine: FleetMachine
+  row: Extract<MachineSessionProjection, { kind: "ready" }>["rows"][number]
+  projection: Extract<MachineSessionProjection, { kind: "ready" }>
+  content: SessionContent | null
+}
+
 export type SessionContent =
   | { kind: "ready"; destination: SessionDestination; observedAt: number; info: { title?: string; assistant?: string; model?: string };
       entries: TranscriptEntry[];
@@ -57,6 +82,7 @@ export interface SessionProjectionSource {
   readMachine(machineID: string, signal: AbortSignal): Promise<MachineSessionProjection>
   /** An exact, read_transcript-authorized title without the full Session row. */
   readListTitle?(destination: SessionDestination, signal: AbortSignal): Promise<string | null>
+  readListPresentation?(destination: SessionDestination, signal: AbortSignal): Promise<SessionListPresentation | null>
   /** Content is requested only after a person opens an exact destination. */
   readDetail(destination: SessionDestination, signal: AbortSignal): Promise<SessionContent>
   /** A person asks for one older page on the same opened, pinned detail. */
