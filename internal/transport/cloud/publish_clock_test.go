@@ -48,14 +48,15 @@ func TestARowWhoseOnlyChangeIsTheClockIsNotRepublished(t *testing.T) {
 		t.Errorf("a row whose only change is its clock was republished: %v", names)
 	}
 
-	// The rest of the line is still content.
+	// The rest of the line is still content. (Its token count is volatile
+	// and waits for the row's window: publish_coalesce_test.go.)
 	out.reset()
-	router.set(workingScan("Thinking… (1m 25s · ↑ 9k tokens)", "current"))
+	router.set(workingScan("Pondering… (1m 25s · ↑ 3k tokens)", "current"))
 	publisher.Pass(context.Background())
 	if names := sessionChannels(out.channels()); len(names) != 1 {
 		t.Errorf("a line that said something new was not republished: %v", names)
 	}
-	if got := out.payload(t, "s/mac-01/%2519")["session"].(map[string]any)["line"]; got != "Thinking… (1m 25s · ↑ 9k tokens)" {
+	if got := out.payload(t, "s/mac-01/%2519")["session"].(map[string]any)["line"]; got != "Pondering… (1m 25s · ↑ 3k tokens)" {
 		t.Errorf("the published row is not the row as read: %v", got)
 	}
 }

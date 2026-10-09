@@ -659,6 +659,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.SessionNoMovement: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-row record-movement threshold; no retained wait"}
 		},
+		capacity.CloudSessionRowVolatile: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-row Cloud re-send window; a held change goes out on the next pass after it"}
+		},
 		capacity.StoreReceipts: func() capacity.Reading {
 			uses, err := s.store.ReceiptUses(context.Background(), store.ReceiptWindow, time.Now())
 			if err != nil {

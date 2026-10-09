@@ -9,6 +9,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // SessionNoMovementSecondsLimit is the fleet-list policy for recent record
@@ -161,6 +162,7 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	_ = json.Unmarshal(reading.at, &at)
 	statuses := make([]SessionStatus, 0, len(ids))
 	identities := make([]SessionStatus, 0, len(ids))
+	steadies := make([]SessionStatus, 0, len(ids))
 	// The viewer fetches one pinned list per machine when this pass changes.
 	// Include the original row's display facts in the local change detector,
 	// but never in ss/: a line or shell update must wake the list without
@@ -176,8 +178,18 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		identity.ProjectedAt = 0
 		identity.Source.ObservedAt = 0
 		identities = append(identities, identity)
+		steady := identity
+		steady.LastMovementAt = 0
+		steadies = append(steadies, steady)
+		// The working clock is not news here either (withoutFreshness); the
+		// token count waits for the window with the rest of the volatile
+		// fields.
+		line, _ := row["line"].(string)
+		if row["state"] == "working" {
+			line = session.WithoutElapsed(line)
+		}
 		listDisplays = append(listDisplays, map[string]any{
-			"line": row["line"], "work_state": row["work_state"],
+			"line": line, "work_state": row["work_state"],
 			"work_note": row["work_note"], "work_provenance": row["work_provenance"],
 			"work_moved_by": row["work_moved_by"], "work_person_needed": row["work_person_needed"],
 			"shells": row["shells"], "heavy_work": row["heavy_work"],
@@ -190,18 +202,24 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	// marker share a fresh pass id, so a relay-cached old row cannot satisfy
 	// a new marker merely because it has the same terminal id.
 	key := "status_snapshot"
-	if !p.changed(key, mustJSON(struct {
+	type statusIdentity struct {
 		Rows     []SessionStatus  `json:"rows"`
 		IDs      []string         `json:"ids"`
 		Displays []map[string]any `json:"displays"`
 		Complete bool             `json:"complete"`
-	}{Rows: identities, IDs: ids, Displays: listDisplays, Complete: true})) {
+	}
+	steadyDisplays := make([]map[string]any, len(listDisplays))
+	for i, display := range listDisplays {
+		steadyDisplays[i] = volatileFree(display)
+	}
+	if !p.changedCoalesced(key,
+		mustJSON(statusIdentity{Rows: identities, IDs: ids, Displays: listDisplays, Complete: true}),
+		mustJSON(statusIdentity{Rows: steadies, IDs: ids, Displays: steadyDisplays, Complete: true})) {
 		return
 	}
 	var nonce [16]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
-		delete(p.published, key)
-		delete(p.sent, key)
+		p.forget(key)
 		return
 	}
 	pass := hex.EncodeToString(nonce[:])
@@ -210,14 +228,12 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		status.SnapshotGeneration = pass
 		body, err := json.Marshal(status)
 		if err != nil {
-			delete(p.published, key)
-			delete(p.sent, key)
+			p.forget(key)
 			return
 		}
 		channel := "ss/" + cloudops.ChannelSegment(p.MachineID) + "/" + cloudops.ChannelSegment(id)
 		if err := p.Publish(ctx, Outbound{Channel: channel, Class: string(domaincloud.ClassStream), Payload: body}); err != nil {
-			delete(p.published, key)
-			delete(p.sent, key)
+			p.forget(key)
 			p.logf("cloud: the status snapshot was not published: %v", err)
 			return
 		}
@@ -237,14 +253,12 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	marker.Inventory.Sessions = append([]string{}, ids...)
 	body, err := json.Marshal(marker)
 	if err != nil {
-		delete(p.published, key)
-		delete(p.sent, key)
+		p.forget(key)
 		return
 	}
 	channel := "ss/" + cloudops.ChannelSegment(p.MachineID) + "/" + InventorySessionID
 	if err := p.Publish(ctx, Outbound{Channel: channel, Class: string(domaincloud.ClassStream), Payload: body}); err != nil {
-		delete(p.published, key)
-		delete(p.sent, key)
+		p.forget(key)
 		p.logf("cloud: the status inventory was not published: %v", err)
 	}
 }

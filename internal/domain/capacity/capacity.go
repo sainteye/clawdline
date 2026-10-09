@@ -158,6 +158,8 @@ const (
 	StoreDB           = "store.db"
 	SessionExecutions = "session.executions"
 	SessionNoMovement = "session.no_movement_seconds"
+	// How often a Cloud Session row whose only change is volatile is re-sent.
+	CloudSessionRowVolatile = "cloud.session_row_volatile_seconds"
 	// The last committed execution scan, so an unchanged one opens no write.
 	CacheSessionExecutionMemo = "cache.session_execution_memo"
 	BoardReceipts             = "board.receipts"
@@ -621,6 +623,17 @@ func Register() []Entry {
 			Limit: 1800, AtLimit: Expire,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.SessionNoMovementSecondsLimit"},
+		},
+		{
+			// A Cloud Session row (s/) or status set (ss/) whose only change is
+			// its activity time, its sub-agents or its line's token count is
+			// re-sent at most once per this interval; the next pass after it
+			// carries the newest value. Any other change goes at once and
+			// starts the window again. The local event stream is not held.
+			Name: CloudSessionRowVolatile, Class: Cache, Unit: Seconds,
+			Limit: 15, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.SessionRowVolatileSecondsLimit"},
 		},
 		{
 			// The board commands' (actor, requestId) receipts (limits N24):
