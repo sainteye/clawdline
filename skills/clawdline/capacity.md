@@ -93,6 +93,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `decisions.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `deploy.health_seconds` | 30 | `seconds` | `refuse` | `diagnostics` | — |
 | `devices.list` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `diagnostics.route_latency_samples` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `diagnostics.route_stat_keys` | 512 | `rows` | `coalesce` | `diagnostics` | — |
 | `dispatch.also_work_ids` | 7 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `epic.child_items` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `handoff.pack_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
