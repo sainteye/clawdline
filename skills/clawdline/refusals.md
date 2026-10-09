@@ -68,6 +68,8 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `gate_snapshot_required` | `internal/domain/work/v2.go` |
 | `git_failed` | `internal/transport/http/git.go` |
 | `git_file_not_changed` | `internal/transport/http/git.go` |
+| `git_no_directory` | `internal/transport/http/git.go` |
+| `git_permission_denied` | `internal/transport/http/git.go` |
 | `git_timeout` | `internal/transport/http/git.go` |
 | `git_too_large` | `internal/transport/http/git.go` |
 | `git_unavailable` | `internal/transport/http/git.go` |

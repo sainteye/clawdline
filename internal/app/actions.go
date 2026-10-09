@@ -194,6 +194,9 @@ func sourceName(source string) string {
 // acts on it, so a held reading could refuse a tab opened a second ago as
 // absent, or type into one that has since gone.
 func (a Actions) read(ctx context.Context) session.Inventory {
+	if inv, ok := useTakenReading(ctx); ok {
+		return inv
+	}
 	if a.Reading != nil {
 		return a.Reading.Fresh(ctx)
 	}

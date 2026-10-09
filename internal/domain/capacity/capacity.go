@@ -329,6 +329,13 @@ const (
 	// How old one source's own answer may be and still vouch for its rows
 	// while a slower source holds the refresh.
 	CacheSourceAnswer = "cache.source_answer"
+	// How long after a scan finished it may still answer a pinned read's
+	// execution check instead of the read waiting for a scan of its own.
+	CachePinnedRead = "cache.pinned_read"
+	// The Git panel's memory of directories git said hold no repository:
+	// how long one is believed, and how many are remembered.
+	CacheGitNotRepo     = "cache.git_not_repo"
+	CacheGitNotRepoRows = "cache.git_not_repo_rows"
 	// Minimum age before the machine dashboard refreshes grouped reclaim rows.
 	CacheReclaimSummary = "cache.reclaim_summary"
 	// The Project Timeline is a projection that stores nothing, so what is
@@ -1849,6 +1856,40 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app.SourceAnswerAgeLimit"},
+		},
+		{
+			// A pinned Cloud read (transcript, info, git, to-dos) checks that
+			// the execution it names is still the one running. A scan that
+			// finished less than this ago answers that check; an older one
+			// is replaced by a scan taken for the read, as every check was
+			// before. Three seconds: a scan started now returns rows observed
+			// as it started, so this is at most three seconds older than the
+			// fresh answer, against the 8.9 s and 13.0 s medians measured for
+			// the slow pinned reads that waited for one. Writes never use it.
+			Name: CachePinnedRead, Class: Cache, Unit: Seconds,
+			Limit: 3, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.PinnedReadAgeLimit"},
+		},
+		{
+			// A directory git answered "not a repository" for is answered
+			// that way for a minute without running git again
+			// (internal/adapters/git/notrepo.go). Only that answer is kept.
+			Name: CacheGitNotRepo, Class: Cache, Unit: Seconds,
+			Limit: 60, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/git.NotRepoAgeLimit"},
+		},
+		{
+			// How many such directories are remembered. Past it the one
+			// remembered longest ago is let go; a miss is one `git status`.
+			Name: CacheGitNotRepoRows, Class: Cache, Unit: Rows,
+			Limit: 256, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/git.NotRepoRowsLimit"},
 		},
 		{
 			// The machine dashboard polls every three seconds. Grouped reclaim

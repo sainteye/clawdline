@@ -12,7 +12,10 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
 | `cache.assistant_quota` | 32 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.background_agents` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
+| `cache.git_not_repo` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `cache.git_not_repo_rows` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.image_thumbs` | 8388608 | `bytes` | `evict_oldest` | `diagnostics` | — |
+| `cache.pinned_read` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.reclaim_summary` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.session_activity` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.session_inventory` | 120 | `seconds` | `expire` | `diagnostics` | — |

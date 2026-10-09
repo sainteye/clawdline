@@ -558,6 +558,14 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return s.readings.AnswerReading()
 		},
+		capacity.CachePinnedRead: func() capacity.Reading {
+			if s.readings == nil {
+				return capacity.Reading{Known: true, Note: "this server checks every pinned read against a scan of its own"}
+			}
+			return s.readings.PinnedReading(time.Duration(CapacityLimit(capacity.CachePinnedRead)) * time.Second)
+		},
+		capacity.CacheGitNotRepo:     func() capacity.Reading { return gitNotRepos().AgeReading() },
+		capacity.CacheGitNotRepoRows: func() capacity.Reading { return gitNotRepos().RowsReading() },
 		capacity.CacheReclaimSummary: func() capacity.Reading {
 			s.reclaimSummaryMu.Lock()
 			defer s.reclaimSummaryMu.Unlock()

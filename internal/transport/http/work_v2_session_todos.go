@@ -69,7 +69,14 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			return
 		}
 	} else {
-		sess, findErr := s.actions().Find(r.Context(), terminalID)
+		find := s.actions().Find
+		if len(parts) == 1 && r.Method == http.MethodGet {
+			// A read of the to-do list only needs the conversation id the
+			// row already showed (FindForRead); a mutation below still
+			// resolves the live terminal it acts for.
+			find = s.actions().FindForRead
+		}
+		sess, findErr := find(r.Context(), terminalID)
 		if findErr != nil || sess.ConversationID == "" {
 			writeRefusal(w, http.StatusConflict, "session_unavailable", "The Session is unavailable or has no conversation id.")
 			return
