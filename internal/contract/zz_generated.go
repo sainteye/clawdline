@@ -2627,6 +2627,7 @@ type Diagnostics struct {
 	Platform  PlatformDiagnostics  `json:"platform"`
 	Port      int64                `json:"port"`
 	Proposals *ProposalDiagnostics `json:"proposals,omitempty"`
+	Routes    *RouteStats          `json:"routes,omitempty"`
 	Scheduler SchedulerPulse       `json:"scheduler"`
 	ServedBy  string               `json:"served_by"`
 	Terminals *TerminalDiagnostics `json:"terminals,omitempty"`
@@ -4726,6 +4727,79 @@ type RootAssignmentRecord struct {
 	Label       string `json:"label"`
 	Ownership   string `json:"ownership"`
 	State       string `json:"state"`
+}
+
+// Who made the calls: `device` a paired browser or phone, `local` this
+// machine's own token (the CLI, scripts, the orchestrator), `cloud` a Cloud
+// viewer answered in process, `task` a child let in by its task secret,
+// `anonymous` nobody the gate let in (open paths and refusals).
+type RouteCallers struct {
+	Anonymous int64 `json:"anonymous"`
+	Cloud     int64 `json:"cloud"`
+	Device    int64 `json:"device"`
+	Local     int64 `json:"local"`
+	Task      int64 `json:"task"`
+}
+
+// Time to answer over the last `samples` calls, in milliseconds; `max` is since
+// the daemon started.
+type RouteLatency struct {
+	Max     float64 `json:"max"`
+	P50     float64 `json:"p50"`
+	P90     float64 `json:"p90"`
+	Samples int64   `json:"samples"`
+}
+
+// One route shape's counts. A long-lived event stream counts `opens` and `open`
+// and has no latency.
+type RouteStat struct {
+	Callers RouteCallers `json:"callers"`
+
+	// Calls answered; a stream is counted when it ends.
+	Count     int64         `json:"count"`
+	LatencyMs *RouteLatency `json:"latency_ms,omitempty"`
+
+	// The HTTP method, or OTHER.
+	Method string `json:"method"`
+
+	// Streams open now.
+	Open int64 `json:"open,omitempty"`
+
+	// Streams opened since the daemon started.
+	Opens int64 `json:"opens,omitempty"`
+
+	// The route shape, e.g. `/v1/sessions/:id/info`.
+	Route     string `json:"route"`
+	Status2xx int64  `json:"status_2xx"`
+	Status3xx int64  `json:"status_3xx"`
+	Status4xx int64  `json:"status_4xx"`
+	Status5xx int64  `json:"status_5xx"`
+
+	// This route answered as an event stream.
+	Stream bool `json:"stream"`
+}
+
+// /v1/diagnostics.routes: every API call this daemon answered since it started,
+// by route shape and caller. A key is the method and the pattern the mux
+// matched; below a prefix pattern only fixed route words are spelled out and
+// every other segment is `:id`, and the query is never read, so no session id,
+// name or text appears. Counters are never reset: compare two readings by
+// subtracting them. Absent from a daemon without the counter.
+type RouteStats struct {
+	// How many distinct route shapes are counted (capacity
+	// `diagnostics.route_stat_keys`).
+	KeyLimit int64 `json:"key_limit"`
+
+	// How many recent durations each route keeps for its percentiles (capacity
+	// `diagnostics.route_latency_samples`).
+	LatencySamples int64 `json:"latency_samples"`
+
+	// Calls not counted under a route of their own because the table was full.
+	Overflow int64       `json:"overflow"`
+	Routes   []RouteStat `json:"routes"`
+
+	// When counting started: the daemon's start, Unix seconds.
+	Since int64 `json:"since"`
 }
 
 // What the reading behind this snapshot knows about itself. Without it an empty

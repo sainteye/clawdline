@@ -3065,6 +3065,7 @@ export interface Diagnostics {
   platform: PlatformDiagnostics
   port: number
   proposals?: ProposalDiagnostics
+  routes?: RouteStats
   scheduler: SchedulerPulse
   served_by: string
   terminals?: TerminalDiagnostics
@@ -5531,6 +5532,107 @@ export interface RootAssignmentRecord {
   label: string
   ownership: string
   state: string
+}
+
+/**
+ * Who made the calls: `device` a paired browser or phone, `local` this machine's
+ * own token (the CLI, scripts, the orchestrator), `cloud` a Cloud viewer answered
+ * in process, `task` a child let in by its task secret, `anonymous` nobody the gate
+ * let in (open paths and refusals).
+ */
+export interface RouteCallers {
+  anonymous: number
+  cloud: number
+  device: number
+  local: number
+  task: number
+}
+
+/**
+ * Time to answer over the last `samples` calls, in milliseconds; `max` is since the
+ * daemon started.
+ */
+export interface RouteLatency {
+  max: number
+  p50: number
+  p90: number
+  samples: number
+}
+
+/**
+ * One route shape's counts. A long-lived event stream counts `opens` and `open` and
+ * has no latency.
+ */
+export interface RouteStat {
+  callers: RouteCallers
+
+  /**
+   * Calls answered; a stream is counted when it ends.
+   */
+  count: number
+  latency_ms?: RouteLatency
+
+  /**
+   * The HTTP method, or OTHER.
+   */
+  method: string
+
+  /**
+   * Streams open now.
+   */
+  open?: number
+
+  /**
+   * Streams opened since the daemon started.
+   */
+  opens?: number
+
+  /**
+   * The route shape, e.g. `/v1/sessions/:id/info`.
+   */
+  route: string
+  status_2xx: number
+  status_3xx: number
+  status_4xx: number
+  status_5xx: number
+
+  /**
+   * This route answered as an event stream.
+   */
+  stream: boolean
+}
+
+/**
+ * /v1/diagnostics.routes: every API call this daemon answered since it started, by
+ * route shape and caller. A key is the method and the pattern the mux matched;
+ * below a prefix pattern only fixed route words are spelled out and every other
+ * segment is `:id`, and the query is never read, so no session id, name or text
+ * appears. Counters are never reset: compare two readings by subtracting them.
+ * Absent from a daemon without the counter.
+ */
+export interface RouteStats {
+  /**
+   * How many distinct route shapes are counted (capacity
+   * `diagnostics.route_stat_keys`).
+   */
+  key_limit: number
+
+  /**
+   * How many recent durations each route keeps for its percentiles (capacity
+   * `diagnostics.route_latency_samples`).
+   */
+  latency_samples: number
+
+  /**
+   * Calls not counted under a route of their own because the table was full.
+   */
+  overflow: number
+  routes: RouteStat[]
+
+  /**
+   * When counting started: the daemon's start, Unix seconds.
+   */
+  since: number
 }
 
 /**

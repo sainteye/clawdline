@@ -420,15 +420,19 @@ const (
 	SquadEventBodyBytes          = "squad.event_body_bytes"
 	// The ordinary shells this machine holds open for a person, and what one
 	// request may type into one or read back from it (limits N59).
-	TerminalCount                     = "terminal.count"
-	TerminalInputBytes                = "terminal.input_bytes"
-	TerminalPasteBytes                = "terminal.paste_bytes"
-	TerminalHistoryLines              = "terminal.history_lines"
-	TerminalLane                      = "terminal.lane"
-	TerminalViewers                   = "terminal.viewers"
-	TerminalStreams                   = "terminal.streams"
-	TerminalLeaseSeconds              = "terminal.lease_seconds"
-	TerminalGrantsBytes               = "terminal.grants_bytes"
+	TerminalCount        = "terminal.count"
+	TerminalInputBytes   = "terminal.input_bytes"
+	TerminalPasteBytes   = "terminal.paste_bytes"
+	TerminalHistoryLines = "terminal.history_lines"
+	TerminalLane         = "terminal.lane"
+	TerminalViewers      = "terminal.viewers"
+	TerminalStreams      = "terminal.streams"
+	TerminalLeaseSeconds = "terminal.lease_seconds"
+	TerminalGrantsBytes  = "terminal.grants_bytes"
+	// Every API call this daemon answers, counted by route shape and caller
+	// (`/v1/diagnostics.routes`).
+	DiagnosticsRouteStatKeys          = "diagnostics.route_stat_keys"
+	DiagnosticsRouteLatencySamples    = "diagnostics.route_latency_samples"
 	CloudTerminalRosterRefresh        = "cloud.terminal_roster_refresh_seconds"
 	CloudTerminalRosterDeadline       = "cloud.terminal_roster_deadline_seconds"
 	CloudTerminalRosterRetry          = "cloud.terminal_roster_retry_seconds"
@@ -2529,6 +2533,23 @@ func Register() []Entry {
 			Limit: 8, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/terminals.MaxViewers"},
+		},
+		{
+			// The route shapes /v1/diagnostics.routes counts. A shape past
+			// the limit coalesces into the one `overflow` count; the call is
+			// answered as before, and only its row is missing.
+			Name: DiagnosticsRouteStatKeys, Class: Buffer, Unit: Rows,
+			Limit: 512, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.MaxRouteStatKeys"},
+		},
+		{
+			// The recent durations each counted route keeps for its p50 and
+			// p90; the oldest is overwritten first. `max` is kept apart.
+			Name: DiagnosticsRouteLatencySamples, Class: Observation, Unit: Rows,
+			Limit: 256, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.MaxRouteLatencySamples"},
 		},
 		{
 			// Terminal streams the machine serves at once, the same way.
