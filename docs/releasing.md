@@ -32,8 +32,15 @@ upgraded from and rolled back to; a release whose store change an older binary c
 2. Run the **Release** workflow (`.github/workflows/release.yml`) from `main` with the version.
    It waits for approval of the `release` environment, which holds the signing key, then tests,
    builds every artifact with `tools/release/build.sh`, signs with `tools/release sign`, verifies
-   against the keys compiled into that commit, and creates a **draft** Release. Nothing is
-   uploaded as an Actions artifact: a public repository's artifacts are public.
+   against the keys compiled into that commit, and creates a **draft** Release. Nothing built
+   from this repository is uploaded as an Actions artifact: a public repository's artifacts are
+   public. The one exception is the Linux tmux the archives carry: a macOS runner has no Docker,
+   so `.github/workflows/tmux.yml` builds it on an Ubuntu runner of each architecture from the
+   pinned, hash-checked tarballs in `tools/release/tmux/sources.sh`, checks it is a static binary
+   that serves a session, and hands it over as an artifact kept one day. The release job builds
+   the darwin tmux itself, and `build.sh --tmux-from` refuses any binary whose sha256 is not the
+   one its `tmux.json` records. The same workflow runs alone on every change to
+   `tools/release/tmux/`, so a broken build shows in the pull request.
 3. On a machine with the private word list (`.git/info/private-words`), run the gate:
 
    ```sh

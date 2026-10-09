@@ -111,7 +111,9 @@ claude            # or: codex
 
 If setup said it uses the tmux the release carries, type `clawdline tmux` where this says `tmux`:
 `clawdline tmux new -s work`, and later `clawdline tmux attach -t work`. That reaches the server
-the daemon lists. `clawdline tmux which` shows which tmux that is.
+the daemon lists. `clawdline tmux which` shows which tmux that is. If you install tmux 3.0 or later
+afterwards, the daemon keeps using the carried one until the sessions on its server have ended, so
+none of them disappears from the list; then it switches to yours.
 
 **Check:** within a few seconds the session is a row in the console with its project and state.
 Nothing was installed into Claude Code or Codex: the daemon reads what they already write under
