@@ -356,7 +356,18 @@ func TestTheCarriedServerIsAskedForItsSessions(t *testing.T) {
 	if out, err := exec.Command(real, "-S", sock, "kill-server").CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if has, known := carriedHasSessions(ctx, real, sock); has || !known {
+	// kill-server returns before the server has finished exiting; a question
+	// asked in that moment is answered "server exited unexpectedly", which is
+	// rightly not known (the resolver asks again). Under load (a full
+	// `go test ./...` on 2026-10-10) that moment was long enough to be hit, so
+	// the definite answer is waited for, briefly.
+	var has, known bool
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if has, known = carriedHasSessions(ctx, real, sock); known || time.Now().After(deadline) {
+			break
+		}
+	}
+	if has || !known {
 		t.Fatalf("a stopped server read as has=%v known=%v", has, known)
 	}
 }
