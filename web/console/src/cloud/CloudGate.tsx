@@ -742,8 +742,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           })
           unlisten.current?.()
           unlisten.current = next.events((event) => {
-            // The list is for choosing; once a machine is on screen nobody is looking at it.
+            // The fleet list stays visible beside an open Session. Refresh its
+            // machine freshness after a complete status pass, not after each
+            // row in that pass (which would churn the list while it arrives).
             if (!reader.current && (event.type === "orchestrator" || event.type === "session_status")) listMachines()
+            else if (fleetScopeRef.current && (event.type === "orchestrator" ||
+              event.type === "session_status" && event.identity?.session === "__clawdline_inventory_v1__")) listMachines()
             // A decryptable inventory clears only the problem attributed to
             // that machine. One machine answering is not evidence that a
             // different machine's key problem went away.
@@ -1025,6 +1029,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     history.pushState({ view: "all-machines" }, "", "#all-machines")
     setFleetScope(true)
     setFleetTarget(null)
+    listMachines()
   }
 
   const leaveFleet = () => { setFleetScope(false); setFleetTarget(null) }
