@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState } from "react"
 import { nextWord } from "../next-strings.js"
 import * as L from "../legacy/bridge.js"
 import { ProjectedRow } from "../session/List.js"
 import type { OrderHold } from "../session/order.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
-import { AttentionOverview } from "./AttentionOverview.js"
-import { fromListProjection } from "./attention-adapter.js"
+import { ScheduleSection } from "../pages/schedules.js"
 import { destinationKey, projectionRefreshAt, settleProjection,
-  type MachineSessionProjection, type ProjectionProblem, type SessionDestination,
+  type MachineSessionProjection, type ProjectedSession, type ProjectionProblem, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource, type FleetMachine } from "./all-machine-sessions.js"
 import { STATUS_FRESH_MS } from "./status-projection.js"
 import { arrangeFleetRows, fleetWaitingKey } from "./fleet-order.js"
@@ -17,7 +16,7 @@ type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionP
 
 /** Only the fleet list is new; the conversation and composer belong to SessionsPage. */
 export function FleetSessionList({ machines, source, target, filter, onFilter, onOpen,
-  onMachineAction, fleetControls }: {
+  onMachineAction }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
   target: SessionDestination | null
@@ -25,14 +24,15 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   onFilter: (value: string) => void
   onOpen: (target: SessionDestination) => void
   onMachineAction?: (machineID: string, action: MachineToolbarAction) => void
-  fleetControls?: ReactNode
 }) {
   const [readings, setReadings] = useState<Record<string, Reading>>({})
-  const presentations = useRef(new Map<string, { machineID: string; sessionID: string } & SessionListPresentation>())
+  const presentations = useRef(new Map<string, { machineID: string; sessionID: string; pass: string } & SessionListPresentation>())
   const presentationPasses = useRef(new Map<string, string>())
   const [presentationRevision, refreshPresentation] = useState(0)
   const [, redraw] = useState(0)
   const [machineAction, setMachineAction] = useState<MachineToolbarAction | null>(null)
+  const [attentionOnly, setAttentionOnly] = useState(false)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const machineDialog = useRef<HTMLDialogElement | null>(null)
   const searchField = useRef<HTMLInputElement | null>(null)
   const listScroll = useRef<HTMLDivElement | null>(null)
@@ -148,7 +148,8 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         inFlight.delete(machineID)
         if (rows && presentationPasses.current.get(machineID) === pass) {
           for (const row of rows) presentations.current.set(destinationKey(row.destination), {
-            machineID, sessionID: row.destination.sessionID, title: row.title, icon: row.icon, cwd: row.cwd,
+            machineID, sessionID: row.destination.sessionID, pass, title: row.title, icon: row.icon, cwd: row.cwd,
+            status: row.status,
           })
           redraw((revision) => revision + 1)
         }
@@ -167,24 +168,32 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const groups = machines.map((machine) => {
     const reading = readings[machine.id]
     const filtered = reading?.phase === "settled" && reading.value.rows
-      ? reading.value.rows.filter((row) => !search ||
-        `${machine.name} ${machine.id} ${machine.platform} ${presentations.current.get(destinationKey(row.destination))?.title ?? row.title} ${row.destination.sessionID} ${stateWord(row.state)}`
-          .toLocaleLowerCase().includes(search)) : []
-    const titles = new Map(filtered.map((row) => [row.destination.sessionID,
+      ? reading.value.rows.filter((row) => (!attentionOnly || needsAttention(row)) &&
+        (!search || `${machine.name} ${machine.id} ${machine.platform} ${presentations.current.get(destinationKey(row.destination))?.title ?? row.title} ${row.destination.sessionID} ${stateWord(row.state)}`
+          .toLocaleLowerCase().includes(search))) : []
+    const pass = reading?.phase === "settled" && reading.value.kind === "ready"
+      ? reading.value.snapshotGeneration ?? String(reading.value.observedAt) : ""
+    const shown = filtered.map((row) => {
+      const presentation = presentations.current.get(destinationKey(row.destination))
+      const status = row.freshness === "current" && presentation?.pass === pass ? presentation.status : undefined
+      return status?.state ? { ...row, state: status.state } : row
+    })
+    const waitingKey = fleetWaitingKey(shown)
+    const titles = new Map(shown.map((row) => [row.destination.sessionID,
       presentations.current.get(destinationKey(row.destination))?.title ?? row.title]))
     const hold = orderHolds.current.get(machine.id)
-    if (hold && hold.waiting !== fleetWaitingKey(reading?.phase === "settled" ? reading.value.rows ?? [] : []))
+    if (hold && hold.waiting !== waitingKey)
       orderHolds.current.delete(machine.id)
-    const rows = arrangeFleetRows(filtered, titles, orderHolds.current.get(machine.id) ?? null)
-    return { machine, reading, rows }
-  }).filter(({ machine, rows }) => !search || rows.length > 0 ||
-    `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search))
+    const rows = arrangeFleetRows(shown, titles, orderHolds.current.get(machine.id) ?? null)
+    return { machine, reading, rows, waitingKey, pass }
+  }).filter(({ machine, rows }) => (!attentionOnly || rows.length > 0) && (!search || rows.length > 0 ||
+    `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search)))
   const freezeOrder = () => {
-    for (const { machine, reading, rows } of groups) {
+    for (const { machine, rows, waitingKey } of groups) {
       if (orderHolds.current.has(machine.id)) continue
       orderHolds.current.set(machine.id, {
         order: rows.map(({ row }) => row.destination.sessionID),
-        waiting: fleetWaitingKey(reading?.phase === "settled" ? reading.value.rows ?? [] : []),
+        waiting: waitingKey,
       })
     }
   }
@@ -198,6 +207,28 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     if (machines.length === 1) onMachineAction(machines[0].id, action)
     else setMachineAction(action)
   }
+  const openScheduled = async (sessionID: string, machineID?: string) => {
+    if (!source) return
+    const candidates = machineID ? [machineID] : machines.map((machine) => machine.id)
+    const matches = candidates.flatMap((id) => {
+      const reading = readings[id]
+      return reading?.phase === "settled" && reading.value.kind === "ready"
+        ? reading.value.rows.filter((row) => row.destination.sessionID === sessionID && row.freshness === "current") : []
+    })
+    if (matches.length !== 1) return
+    const destination = matches[0].destination
+    const fresh = await source.readMachine(destination.machineID, new AbortController().signal).catch(() => null)
+    if (fresh?.kind === "ready" && fresh.rows.some((row) => destinationKey(row.destination) === destinationKey(destination) &&
+      row.freshness === "current")) onOpen(destination)
+  }
+  const canOpenScheduled = (sessionID: string, machineID?: string) => {
+    const candidates = machineID ? [machineID] : machines.map((machine) => machine.id)
+    return candidates.flatMap((id) => {
+      const reading = readings[id]
+      return reading?.phase === "settled" && reading.value.kind === "ready" &&
+        reading.value.rows.filter((row) => row.destination.sessionID === sessionID && row.freshness === "current") || []
+    }).length === 1
+  }
 
   return <>
     <SessionToolbar inputRef={searchField} filter={filter} onFilter={onFilter} terminalMode={false}
@@ -209,10 +240,17 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     <div className="scroller list-scroll cloud-all-list-scroll" id="list-scroll" ref={listScroll}
       onMouseEnter={freezeOrder} onMouseLeave={thawOrder} onTouchStart={freezeOrder}
       onTouchEnd={() => window.setTimeout(thawOrder, 1200)}>
+      <button type="button" className="cloud-all-attention-filter" aria-pressed={attentionOnly}
+        onClick={() => setAttentionOnly((value) => !value)}>{nextWord("cloudAllAttention")}</button>
       <div className="cloud-all-groups">
-        {groups.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group"
+        {groups.map(({ machine, reading, rows, pass }) => <section key={machine.id} className="cloud-all-group"
           aria-label={`${machine.name} ${machine.id}`}>
-          <h2>{machine.name} <small>{machine.platform}</small></h2>
+          <div className="cloud-all-group-heading"><h2>{machine.name} <small>{machine.platform}</small></h2>
+            <button type="button" aria-expanded={!collapsed[machine.id]}
+              aria-label={nextWord(collapsed[machine.id] ? "cloudAllExpandMachine" : "cloudAllCollapseMachine", { machine: machine.name })}
+              onClick={() => setCollapsed((before) => ({ ...before, [machine.id]: !before[machine.id] }))}>
+              <span aria-hidden="true">{collapsed[machine.id] ? "▸" : "▾"}</span></button></div>
+          {!collapsed[machine.id] && <>
           {machine.freshness !== "current" && reading?.phase === "settled" && reading.value.kind === "ready" &&
             <p role="status">{machine.freshness === "stale" ? nextWord("cloudAllStaleSource") : nextWord("cloudAllUnknownSource")}</p>}
           {!reading || reading.phase === "loading" ? <p role="status">{nextWord("cloudAllLoading")}</p> : <>
@@ -224,6 +262,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                   const presentation = presentations.current.get(destinationKey(row.destination))
                   return <ProjectedRow key={destinationKey(row.destination)}
                     title={presentation?.title ?? row.title} icon={presentation?.icon} cwd={presentation?.cwd}
+                    status={row.freshness === "current" && presentation?.pass === pass ? presentation.status : undefined}
                     sessionID={row.destination.sessionID} machineName={machine.name} platform={machine.platform}
                     assistant={row.assistant} backend={row.backend} state={row.state} stateLabel={stateWord(row.state)}
                     freshness={row.freshness === "current" ? "" : nextWord(
@@ -236,16 +275,11 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           </>}
           {reading?.phase === "settled" && !!reading.value.unknownTargets &&
             <p role="status">{nextWord("cloudAllUnknownTargets", { count: reading.value.unknownTargets })}</p>}
+          </>}
         </section>)}
       </div>
       {groups.length === 0 && <p>{nextWord("cloudAllNoMatch")}</p>}
-      <details className="cloud-all-summary"><summary>{nextWord("cloudAllAttention")}</summary>
-        <AttentionOverview reading={{ phase: "ready", machines: machines.map((machine) => fromListProjection(machine, readings[machine.id])),
-          observedNow: Date.now() }} locale={document.documentElement.lang === "zh-Hant" ? "zh-Hant-TW" : "en"}
-          onOpen={(item) => onOpen({ machineID: item.machine_id, sessionID: item.session_id,
-            executionGeneration: item.execution_generation })} />
-      </details>
-      {fleetControls && <details className="cloud-all-controls"><summary>{nextWord("cloudAllPairing")}</summary>{fleetControls}</details>}
+      <ScheduleSection arrived={true} onOpen={openScheduled} canOpen={canOpenScheduled} />
     </div>
     <dialog ref={machineDialog} className="cloud-all-machine-dialog" aria-label={nextWord("cloudSwitch")}
       onCancel={(event) => { event.preventDefault(); setMachineAction(null) }}>
@@ -279,4 +313,9 @@ function stateWord(state: string): string {
     case "idle": return nextWord("cloudAllStateIdle")
     default: return nextWord("cloudAllUnknown")
   }
+}
+
+function needsAttention(row: ProjectedSession): boolean {
+  return row.needsAttention === true || row.waitingForReply === true || row.completedUnconfirmed === true ||
+    row.closeBlocked === true || (row.failedAgentCount ?? 0) > 0 || row.noMovement === true
 }

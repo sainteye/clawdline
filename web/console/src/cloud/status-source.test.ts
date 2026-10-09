@@ -47,7 +47,8 @@ function clientFixture() {
     unsubscribe(channels: string[]) { calls.push("unsubscribe:" + channels.join(",")) },
     async listPresentationsForMachine(machine: string) {
       calls.push("sessions.list:" + machine)
-      return { sessions: [{ id: sessionID, execution_generation: executionGeneration, title: "The real title" }] }
+      return { sessions: [{ id: sessionID, execution_generation: executionGeneration, title: "The real title",
+        status: { state: "idle", work_state: "ready", work_note: "Queued heavy command finished", work_provenance: "self" } }] }
     },
     async infoForGeneration(destination: { executionGeneration: string }) {
       calls.push("info:" + destination.executionGeneration)
@@ -119,6 +120,7 @@ test("one machine list read joins only the current Session execution", async () 
   const source = statusSource(() => client as never)
   const rows = await source.readMachinePresentations?.(machineID, new AbortController().signal)
   assert.deepEqual(rows?.map((item) => item.title), ["The real title"])
+  assert.equal(rows?.[0]?.status?.work_note, "Queued heavy command finished")
   assert.deepEqual(calls, ["sessions.list:" + machineID])
   row.execution_generation = "ffffffffffffffffffffffffffffffff"
   assert.deepEqual(await source.readMachinePresentations?.(machineID, new AbortController().signal), [])

@@ -22,12 +22,13 @@ export function SessionRowLayout({ children, className, ...props }: ComponentPro
 
 /** Status-only rows keep the original list structure without inventing rich Session content. */
 export function ProjectedRow({ title, sessionID, machineName, platform, assistant, backend, state, stateLabel, icon, cwd,
-  freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, onOpen }: {
+  freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, status, onOpen }: {
   title: string; sessionID: string; machineName: string; platform: string
   assistant?: "claude" | "codex"; backend?: "tmux" | "iterm" | "ps"
   icon?: SessionRow["icon"]; cwd?: string
   state: string; stateLabel: string; freshness: string; lastMovementAt?: number; attention: boolean; open: boolean
   depth: number; branchThrough: boolean; ancestorThrough: boolean
+  status?: Partial<SessionRow>
   selectionKey: string; onOpen: (element: HTMLLIElement) => void
 }) {
   const ref = useRef<HTMLLIElement>(null)
@@ -50,9 +51,11 @@ export function ProjectedRow({ title, sessionID, machineName, platform, assistan
     <div className="meta"><span className="path">{cwd ? `${machineName} · ${L.path(cwd)}` : `${machineName} · ${platform}`}</span>
       <span className="tty">{backend || sessionID}</span>
       {lastMovementAt && <span className="session-activity">{sessionActivityWord({ activity: { known: true, at: lastMovementAt / 1000 } })}</span>}</div>
-    <div className="state">{state === "working" && <canvas className="spin" aria-hidden="true" />}
-      <span>{stateLabel}</span>{freshness && <span className="session-activity">{freshness}</span>}
-      {attention && <span className="session-attention"><span className="session-attention-dot" /></span>}</div>
+    {status ? <StateLine row={{ ...status, id: sessionID, state } as SessionRow}
+      role={null} useLocalTasks={false} suffix={freshness} />
+      : <div className="state">{state === "working" && <canvas className="spin" aria-hidden="true" />}
+        <span>{stateLabel}</span>{freshness && <span className="session-activity">{freshness}</span>}
+        {attention && <span className="session-attention"><span className="session-attention-dot" /></span>}</div>}
   </SessionRowLayout>
 }
 
@@ -91,12 +94,12 @@ export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: n
  * This console has no optimistic sends and no in-flight close, so `kind` is the
  * row's own state: the original's `closing` and `pending` branches never apply.
  */
-function stateLine(row: SessionRow): { html: string; shape: string } {
+function stateLine(row: SessionRow, useLocalTasks = true): { html: string; shape: string } {
   const T = L.strings
   const coordination = row.coordination
   const waitingOn = coordination?.waitingOn ?? []
   const waitedOnBy = coordination?.waitedOnBy ?? []
-  const roots = L.tasksOfRoot(row.id)
+  const roots = useLocalTasks ? L.tasksOfRoot(row.id) : []
   const callbackLabel = nextWord("sessionCallbackActive")
   const callbackDetail = [callbackLabel, row.heavy_work?.reason].filter(Boolean).join(" · ")
   const callbackSaid = row.heavy_work
@@ -228,9 +231,11 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
  * one, and then `stateLine`'s words. The role is written into the same markup
  * as the words so that it swipes with them and adds no line of its own.
  */
-function StateLine({ row, role }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine> }) {
+function StateLine({ row, role, useLocalTasks = true, suffix = "" }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine>;
+  useLocalTasks?: boolean; suffix?: string }) {
   const ref = useRef<HTMLDivElement>(null)
-  const { html, shape } = stateLine(row)
+  const { html, shape } = stateLine(row, useLocalTasks)
+  const statusHTML = html + (suffix ? '<span class="session-activity">' + L.escapeHTML(suffix) + "</span>" : "")
   const roleHTML = role
     ? '<span class="persona-state" title="' + L.escapeHTML(role.title) + '">' +
       '<canvas class="persona-state-bot" width="0" height="0" aria-hidden="true"></canvas>' +
@@ -239,8 +244,8 @@ function StateLine({ row, role }: { row: SessionRow; role: ReturnType<typeof row
   useLayoutEffect(() => {
     L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null)
     if (role) L.paintIcon(ref.current?.querySelector<HTMLCanvasElement>("canvas.persona-state-bot") ?? null, role.persona.icon, 2)
-  }, [html, role?.persona])
-  return <div className="state" ref={ref} data-shape={shape} dangerouslySetInnerHTML={{ __html: roleHTML + html }} />
+  }, [statusHTML, role?.persona])
+  return <div className="state" ref={ref} data-shape={shape} dangerouslySetInnerHTML={{ __html: roleHTML + statusHTML }} />
 }
 
 /**

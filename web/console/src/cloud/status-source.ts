@@ -1,5 +1,5 @@
 import { channelSegment } from "../legacy/js/net/client.js"
-import type { AssistantSkill, TranscriptEntry } from "@clawdline/contract"
+import type { AssistantSkill, SessionRow, TranscriptEntry } from "@clawdline/contract"
 import type { ArtifactRef } from "../legacy/images-bridge.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { menuFingerprint } from "../session/fingerprint.ts"
@@ -173,8 +173,13 @@ export function statusSource(current: () => StatusClient | null): SessionProject
           const key = destinationKey(destination)
           if (!visible.has(key) || !currentRows.has(key)) continue
           const icon = record(session.icon)
+          const status = record(session.status)
+          const statusState = status?.state
           result.push({ destination, title: session.title.trim(),
             cwd: typeof session.cwd === "string" ? session.cwd : undefined,
+            status: status && typeof status.work_state === "string" &&
+              (statusState === "working" || statusState === "waiting" || statusState === "idle" || statusState === "unknown")
+              ? status as Partial<SessionRow> : undefined,
             icon: typeof icon?.accent === "string" && Array.isArray(icon.cells) &&
               icon.cells.every((line: unknown) => Array.isArray(line) &&
                 line.every((cell: unknown) => cell === null || typeof cell === "string"))
