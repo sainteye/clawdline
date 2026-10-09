@@ -232,3 +232,35 @@ func TestAnUnchangedExecutionScanIsNotWritten(t *testing.T) {
 		t.Errorf("the store holds %d execution(s) (%v); the proven-absent one should be gone", n, err)
 	}
 }
+
+// The Cloud publisher reads the first task page on every pass. Inside one tick
+// that page is the stream's product; any other page is built as it was.
+func TestTheFirstTaskPageIsTheSharedProduct(t *testing.T) {
+	p := &pane{s: session.Session{ID: "%19", Backend: session.BackendTmux,
+		Assistant: session.AssistantClaude, State: session.StateIdle}}
+	s, _ := streamServer(t, p)
+	read := func(query string) int {
+		rec := httptest.NewRecorder()
+		s.tasksList(rec, httptest.NewRequest(http.MethodGet, "/v1/orchestrator/tasks"+query, nil))
+		return rec.Code
+	}
+	before := s.lists().tasks.builds.Load()
+	for i := 0; i < 4; i++ {
+		if code := read("?limit=50"); code != http.StatusOK {
+			t.Fatalf("the first page answered %d", code)
+		}
+	}
+	if built := s.lists().tasks.builds.Load() - before; built != 1 {
+		t.Errorf("four reads of the first page inside one tick built it %d times", built)
+	}
+	if code := read("?limit=50&state=running"); code != http.StatusOK {
+		t.Fatalf("a filtered first page answered %d", code)
+	}
+	before = s.lists().tasks.builds.Load()
+	if code := read("?limit=10"); code != http.StatusOK {
+		t.Fatalf("another page answered %d", code)
+	}
+	if built := s.lists().tasks.builds.Load() - before; built != 0 {
+		t.Errorf("another page was answered from the product (%d builds of it)", built)
+	}
+}

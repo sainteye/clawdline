@@ -66,6 +66,9 @@ const { result: { sessionId: S } } = await send("Target.attachToTarget", { targe
 await send("Network.enable", {}, S)
 await send("Page.enable", {}, S)
 await send("Runtime.enable", {}, S)
+await send("Target.activateTarget", { targetId })
+await send("Page.bringToFront", {}, S)
+await send("Emulation.setFocusEmulationEnabled", { enabled: true }, S)
 
 // shape is a request's route with every id taken out, and the names (never the
 // values) of its query.

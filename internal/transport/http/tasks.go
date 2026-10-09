@@ -39,7 +39,19 @@ func (s *Server) tasksList(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.Atoi(q.Get("limit")); err == nil {
 		limit = v
 	}
-	list, err := s.tasksPayload(r.Context(), cursor, limit)
+	var list contract.TaskList
+	var err error
+	if cursor == 0 && limit == 50 {
+		// The first page is the product every stream's `orchestrator` frame
+		// reads, when it is not older than one tick (producer.go). The Cloud
+		// publisher asks for exactly this page on every five-second pass
+		// (internal/transport/cloud tasklist.go): 133 in-process reads in 11
+		// minutes on the running daemon, each a build of its own.
+		list, err = s.lists().taskList()
+		list.Tasks = append([]contract.TaskRow(nil), list.Tasks...)
+	} else {
+		list, err = s.tasksPayload(r.Context(), cursor, limit)
+	}
 	if err != nil {
 		writeRawRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return
