@@ -131,7 +131,10 @@ let write = true
 let arrivedFlag = false
 
 /** How this page opens a session by row id, handed in by `Sessions.tsx`. */
-const host: { open: (id: string) => void } = { open: () => {} }
+const host: { open: (id: string, machineID?: string) => void;
+  canOpen: (id: string, machineID?: string) => boolean } = {
+  open: () => {}, canOpen: (id) => !!L.byId(id),
+}
 
 /* ---- view/schedules.js: the rows ------------------------------------------ */
 
@@ -445,7 +448,7 @@ const Schedules = (() => {
       refresh()
     },
     start(): void {
-      if (started) return
+      if (started) { Schedules.refresh(); return }
       started = true
       beginWhenAuthed(0)
       if (!pageHidden()) lane = setInterval(refresh, LANE_MS)
@@ -1784,7 +1787,7 @@ const ScheduleHistory = (() => {
     drawWebhook()
   }
 
-  const terminalIsOpen = (id: string) => !!L.byId(id)
+  const terminalIsOpen = (id: string) => host.canOpen(id, scheduleOwner(scheduleId || ""))
 
   function run(taskId: string | undefined): ScheduleRun | null {
     return ((record && record.runs) || []).filter((candidate) => candidate && candidate.task_id === taskId)[0] || null
@@ -2002,8 +2005,8 @@ const ScheduleHistory = (() => {
 
   /** `Start.began`'s last step: open the resumed session once its row has arrived. */
   function openWhenArrived(id: string, tries = 0): void {
-    if (L.byId(id)) {
-      host.open(id)
+    if (host.canOpen(id, scheduleOwner(scheduleId || ""))) {
+      host.open(id, scheduleOwner(scheduleId || ""))
       return
     }
     if (tries >= 60) return
@@ -2016,13 +2019,13 @@ const ScheduleHistory = (() => {
     if (!selected) return
 
     if (action === "open") {
-      const live = selected.terminal_id && L.byId(selected.terminal_id)
+      const live = selected.terminal_id && host.canOpen(selected.terminal_id, scheduleOwner(scheduleId || ""))
       if (!live) {
         draw()
         return
       }
       close(true)
-      host.open(live.id)
+      host.open(selected.terminal_id!, scheduleOwner(scheduleId || ""))
       return
     }
 
@@ -2268,16 +2271,22 @@ function bindSection(): () => void {
  * in the original's markup and nothing paints them; `#schedule-new`'s title
  * and label are `static.js`'s.
  */
-export function ScheduleSection({ arrived, onOpen }: { arrived: boolean; onOpen?: (id: string) => void }) {
+export function ScheduleSection({ arrived, onOpen, canOpen }: { arrived: boolean;
+  onOpen?: (id: string, machineID?: string) => void;
+  canOpen?: (id: string, machineID?: string) => boolean }) {
   arrivedFlag = arrived
   const openRef = useRef(onOpen)
   openRef.current = onOpen
+  const canOpenRef = useRef(canOpen)
+  canOpenRef.current = canOpen
 
   useLayoutEffect(() => {
     ensureOverlays()
-    host.open = (id) => openRef.current?.(id)
+    host.open = (id, machineID) => openRef.current?.(id, machineID)
+    host.canOpen = (id, machineID) => canOpenRef.current?.(id, machineID) ?? !!L.byId(id)
     paintStatic()
-    return bindSection()
+    const unbind = bindSection()
+    return () => { unbind(); host.open = () => {}; host.canOpen = (id) => !!L.byId(id) }
   }, [])
 
   // `static.js` again whenever the catalog has changed.

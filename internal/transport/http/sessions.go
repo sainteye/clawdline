@@ -61,19 +61,46 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 	snapshot := s.sessionsPayload(ctx)
 	if r.URL.Query().Get("parts") == "list" {
 		// The Cloud fleet asks once per machine. Reuse the local single-machine
-		// snapshot, but only send the display fields it joins to ss/ generations.
-		// No transcript, menu, shell or Git data leaves this route.
+		// snapshot, including the fields used by the original row status line.
+		// No transcript, menu or Git data leaves this route.
+		type status struct {
+			State            contract.SessionState         `json:"state"`
+			WorkState        contract.WorkState            `json:"work_state"`
+			WorkNote         string                        `json:"work_note,omitempty"`
+			WorkProvenance   contract.WorkProvenance       `json:"work_provenance,omitempty"`
+			WorkMovedBy      string                        `json:"work_moved_by,omitempty"`
+			WorkPersonNeeded *bool                         `json:"work_person_needed,omitempty"`
+			Line             string                        `json:"line,omitempty"`
+			Shells           []contract.SessionShell       `json:"shells,omitempty"`
+			HeavyWork        *contract.SessionHeavyWork    `json:"heavy_work,omitempty"`
+			Source           *contract.BearingsSource      `json:"source,omitempty"`
+			Activity         *contract.SessionActivity     `json:"activity,omitempty"`
+			Identity         contract.IdentityBinding      `json:"identity,omitempty"`
+			AttentionCount   *int64                        `json:"attention_count,omitempty"`
+			Owed             *contract.WorkOwed            `json:"owed,omitempty"`
+			Acceptance       *contract.SessionAcceptance   `json:"acceptance,omitempty"`
+			Disposition      *contract.WorkDisposition     `json:"disposition,omitempty"`
+			Coordination     *contract.SessionCoordination `json:"coordination,omitempty"`
+		}
 		type presentation struct {
 			ID                  string         `json:"id"`
 			Title               string         `json:"title"`
 			CWD                 string         `json:"cwd,omitempty"`
 			Icon                *contract.Icon `json:"icon,omitempty"`
 			ExecutionGeneration string         `json:"execution_generation,omitempty"`
+			Status              status         `json:"status"`
 		}
 		rows := make([]presentation, 0, len(snapshot.Sessions))
 		for _, row := range snapshot.Sessions {
 			rows = append(rows, presentation{ID: row.ID, Title: row.Label, CWD: row.CWD,
-				Icon: row.Icon, ExecutionGeneration: row.ExecutionGeneration})
+				Icon: row.Icon, ExecutionGeneration: row.ExecutionGeneration,
+				Status: status{State: row.State, WorkState: row.WorkState, WorkNote: row.WorkNote,
+					WorkProvenance: row.WorkProvenance, WorkMovedBy: row.WorkMovedBy,
+					WorkPersonNeeded: row.WorkPersonNeeded, Line: row.Line, Shells: row.Shells,
+					HeavyWork: row.HeavyWork, Source: row.Source, Activity: row.Activity,
+					Identity: row.Identity, AttentionCount: row.AttentionCount,
+					Owed: row.Owed, Acceptance: row.Acceptance,
+					Disposition: row.Disposition, Coordination: row.Coordination}})
 		}
 		_ = json.NewEncoder(w).Encode(struct {
 			At       int64          `json:"at"`

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import App from "../App.js"
 import { BRAND_MARK } from "../brand-mark.js"
 import type { ConnectionLight } from "../connection-state.js"
@@ -1254,10 +1254,6 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             filter={filter} onFilter={onFilter}
             onOpen={openFleetSession}
             onMachineAction={runMachineTool}
-            fleetControls={<PeerRevocationPanel machines={quickMachines.map((machine) => ({
-              id: machine.id, name: machine.name || machine.label || machine.id,
-              platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
-            }))} current={currentActionClient} />}
           /> : undefined} />
           <CloudSessionSheets machineID={chosen.id} source={liveSessionSource}
             pending={pendingTool} onConsumed={consumeTool} />
@@ -1287,6 +1283,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           onName={setNaming}
           onRename={rename}
           pairing={pairing}
+          peerControls={<PeerRevocationPanel machines={quickMachines.map((machine) => ({
+            id: machine.id, name: machine.name || machine.label || machine.id,
+            platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
+          }))} current={currentActionClient} />}
           onPair={openPairing}
         />
       )}
@@ -1318,6 +1318,7 @@ function GateCard(props: {
   onName: (machine: CloudMachine | null) => void
   onRename: (machine: CloudMachine, name: string) => void
   pairing: Parameters<typeof PairPanel>[0] | null
+  peerControls: ReactNode
   onPair: (machine: { id: string; name: string } | null) => void
 }) {
   const { screen, who, machineList, problem, onChoose, onRetry, recovery } = props
@@ -1790,6 +1791,7 @@ function GateCard(props: {
             )}
             {forgetOutcome()}
             {renameOutcome()}
+            {props.peerControls}
             {reading && !forgotten.includes(reading) && (
               <button className="go" type="button" id="cloud-switch-cancel" onClick={onCloseMachinePicker}>
                 {T.webCancel}

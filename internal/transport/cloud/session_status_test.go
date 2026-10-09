@@ -138,6 +138,33 @@ func TestStatusInventoryFollowsTheRows(t *testing.T) {
 	}
 }
 
+func TestStatusNotifiesOneMachineListReadWhenOnlyItsWorkLineChanges(t *testing.T) {
+	c := &collector{}
+	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
+	row := map[string]any{"id": "%19", "state": "working", "line": "private first line"}
+	reading := sessionReading{sessions: []map[string]any{row}, at: json.RawMessage(`100`), complete: true}
+	p.publishStatuses(context.Background(), reading, []string{"%19"})
+	if len(c.channels()) != 2 {
+		t.Fatalf("initial pass: %v", c.channels())
+	}
+	reading.at = json.RawMessage(`200`)
+	p.publishStatuses(context.Background(), reading, []string{"%19"})
+	if len(c.channels()) != 2 {
+		t.Fatalf("unchanged display republished before heartbeat: %v", c.channels())
+	}
+	row["line"] = "private next line"
+	p.publishStatuses(context.Background(), reading, []string{"%19"})
+	if len(c.channels()) != 4 {
+		t.Fatalf("changed work line did not publish a new status pass: %v", c.channels())
+	}
+	for _, channel := range c.channels() {
+		body, err := json.Marshal(c.payload(t, channel))
+		if err != nil || strings.Contains(string(body), "private") {
+			t.Fatalf("status channel %s copied work content: %s (%v)", channel, body, err)
+		}
+	}
+}
+
 func TestStatusCarriesOnlyExistingTaskAndEpicAncestry(t *testing.T) {
 	c := &collector{}
 	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish,

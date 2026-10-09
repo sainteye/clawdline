@@ -1,4 +1,4 @@
-import type { AssistantSkill, Icon, TranscriptEntry } from "@clawdline/contract"
+import type { AssistantSkill, Icon, SessionRow, TranscriptEntry } from "@clawdline/contract"
 import type { ArtifactRef } from "../legacy/images-bridge.js"
 
 /**
@@ -24,6 +24,8 @@ export interface SessionListPresentation {
   title: string
   cwd?: string
   icon?: Icon
+  /** Display fields from the same per-machine batch read as the title. */
+  status?: Partial<SessionRow>
 }
 
 export interface MachineListPresentation extends SessionListPresentation {
