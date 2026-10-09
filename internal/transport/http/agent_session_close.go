@@ -172,7 +172,8 @@ func (s *Server) agentAuditClose(ctx context.Context, caller, terminal string) (
 		}
 	}
 	if !found || row == nil {
-		if snapshot.Scan.Complete {
+		// The named session's own source says whether it is gone (D71).
+		if proves, _ := inv.ProvesAbsence(session.SourceForID(terminal)); proves {
 			return agentCloseAudit{}, &agentCloseRefusal{http.StatusNotFound, "session_not_found",
 				"That Session is not on this machine; it may already be closed."}
 		}

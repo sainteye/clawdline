@@ -182,14 +182,20 @@ func restorable(s session.Session) bool {
 		(s.Assistant == session.AssistantClaude || s.Assistant == session.AssistantCodex)
 }
 
-// Observe records one reading. Only a complete reading changes anything, and
-// only a changed set of conversations — or a last_seen older than SeenEvery —
-// is written. An unchanged set moves only the boot's last_seen, at most once
-// per BeatEvery.
+// Observe records one reading. Only a reading in which every source asked
+// answered changes anything, and only a changed set of conversations — or a
+// last_seen older than SeenEvery — is written. An unchanged set moves only the
+// boot's last_seen, at most once per BeatEvery.
+//
+// A source the person turned off (iTerm2's `iterm_scan`) does not stop the
+// record: the conversations the other sources see go on being recorded, and
+// the conversations of the turned-off backend are left as they were rather
+// than taken as gone, because nobody looked (docs/design-decisions.md D71).
 func (r *SessionRestore) Observe(ctx context.Context, inv session.Inventory) {
-	if r == nil || r.Store == nil || !inv.Complete {
+	if r == nil || r.Store == nil || !inv.CompleteApartFromDisabled() {
 		return
 	}
+	unread := unreadBackends(inv)
 	boot, err := r.currentBoot(ctx)
 	if err != nil {
 		return
@@ -200,7 +206,7 @@ func (r *SessionRestore) Observe(ctx context.Context, inv session.Inventory) {
 			candidates = append(candidates, s)
 		}
 	}
-	key := restoreKey(candidates)
+	key := restoreKey(candidates) + "\x1d" + strings.Join(unread, "\x1f")
 	now := r.now()
 
 	// One observer at a time: two scans finishing together must not write
@@ -257,7 +263,7 @@ func (r *SessionRestore) Observe(ctx context.Context, inv session.Inventory) {
 		})
 	}
 	evicted, err := r.Store.RecordBoot(ctx, store.BootReading{Boot: boot, Rows: rows, At: now,
-		ScannedAt: inv.ObservedAt, KeepBoots: r.bootsLimit(), KeepRows: r.rowsLimit()})
+		ScannedAt: inv.ObservedAt, KeepBoots: r.bootsLimit(), KeepRows: r.rowsLimit(), Unread: unread})
 	if err != nil {
 		r.writeErr = err
 		return
@@ -296,6 +302,19 @@ func (r *SessionRestore) Dropped() int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.dropped
+}
+
+// unreadBackends are the backends of the sources this reading did not ask,
+// sorted: a recorded conversation of one of them is not gone for being unseen.
+func unreadBackends(inv session.Inventory) []string {
+	var out []string
+	for _, b := range []session.Backend{session.BackendITerm, session.BackendTmux} {
+		if _, off := inv.DisabledSources[session.SourceFor(b)]; off {
+			out = append(out, string(b))
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func restoreKey(rows []session.Session) string {

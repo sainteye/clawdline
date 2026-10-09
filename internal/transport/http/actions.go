@@ -243,7 +243,8 @@ type processPin struct {
 }
 
 func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, expected string, force bool, pin *processPin) bool {
-	snapshot := s.sessionsPayloadFrom(ctx, s.freshReading(ctx))
+	inv := s.freshReading(ctx)
+	snapshot := s.sessionsPayloadFrom(ctx, inv)
 	for _, row := range snapshot.Sessions {
 		if row.ID != id {
 			continue
@@ -280,7 +281,9 @@ func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, e
 		}
 		return allowed
 	}
-	if snapshot.Scan.Complete {
+	// Gone is the named session's own source's word: a tmux pane tmux listed
+	// completely is gone while iTerm2 is turned off, an iTerm2 session is not.
+	if proves, _ := inv.ProvesAbsence(session.SourceForID(id)); proves {
 		writeRefusal(w, http.StatusNotFound, "session_not_found", "That Session is no longer present.")
 	} else {
 		writeRefusal(w, http.StatusConflict, "close_inventory_unavailable", "A fresh Session inventory did not complete. Try again after the next scan.")

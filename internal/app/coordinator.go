@@ -344,7 +344,9 @@ func (c *Coordinator) Bearings(ctx context.Context, st State) Bearings {
 	now := c.now()
 	out := Bearings{ObservedAt: now, Lifecycle: Lifecycle(st), SessionsFresh: "current",
 		TasksFresh: "current", LandingsFresh: "current", WaitsFresh: "current"}
-	if !st.Seen.Inventory.Complete {
+	// Freshness asks whether the machine answered what it was asked; a source
+	// the person turned off was not asked (D71).
+	if !st.Seen.Inventory.CompleteApartFromDisabled() {
 		out.SessionsFresh = "stale"
 		out.Unknown = append(out.Unknown, "sessions")
 	}

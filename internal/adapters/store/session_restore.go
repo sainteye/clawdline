@@ -142,6 +142,10 @@ type BootReading struct {
 	// KeepBoots is how many of the most recently seen boots are kept, Boot
 	// among them; KeepRows how many rows one boot keeps.
 	KeepBoots, KeepRows int
+	// Unread are the backends the reading did not look at (a terminal the
+	// person turned off). A row of one of them that the reading does not
+	// show is left as it is: not shown is not gone when nobody looked.
+	Unread []string
 }
 
 // RecordBoot brings the boot's rows up to date with one complete reading, and
@@ -149,7 +153,8 @@ type BootReading struct {
 //
 // A row in the reading is written with its latest details, keeps its
 // first_seen and its resolution, and is open (gone_at cleared). A row not in
-// it keeps everything and gets gone_at = At, unless it already had one. Past
+// it keeps everything and gets gone_at = At, unless it already had one or its
+// backend is one the reading did not look at (Unread). Past
 // KeepRows the rows that went longest ago are dropped first. The boot is
 // stamped seen At whatever the reading holds, including nothing.
 //
@@ -197,6 +202,12 @@ func (s *Store) RecordBoot(ctx context.Context, rd BootReading) (int64, error) {
 		gone := `UPDATE restore_sessions SET gone_at = ? WHERE boot_id = ? AND gone_at IS NULL`
 		if len(rd.Rows) > 0 {
 			gone += ` AND conversation_id NOT IN (` + placeholders(len(rd.Rows)) + `)`
+		}
+		if len(rd.Unread) > 0 {
+			gone += ` AND backend NOT IN (` + placeholders(len(rd.Unread)) + `)`
+			for _, b := range rd.Unread {
+				ids = append(ids, b)
+			}
 		}
 		if _, err := tx.ExecContext(ctx, gone, ids...); err != nil {
 			return 0, err
