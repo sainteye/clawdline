@@ -1,31 +1,28 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
-// @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { completeConfirmWords, openSteps } from "./complete-item.ts"
-
-const step = (done: boolean) => ({ id: "s", title: "t", done, position: 0, created_by: "", completed_by: "",
-  completed_at: null, version: 1 })
-
-test("the manual-completion confirmation says how many steps are still open", () => {
-  assert.equal(openSteps({ steps: undefined }), 0)
-  assert.equal(openSteps({ steps: [step(true), step(false), step(false)] }), 2)
-  assert.equal(completeConfirmWords({ steps: [step(true), step(false), step(false)] }), "還有 2 個步驟未完成，仍要標記完成嗎？")
-  assert.equal(completeConfirmWords({ steps: [step(true)] }), "確定要標記這個項目完成嗎？")
+test("the manual-completion confirmation includes an open-step warning", () => {
+  const helper = readFileSync(new URL("./complete-item.ts", import.meta.url), "utf8")
+  assert.match(helper, /filter\(\(step\) => !step\.done\)\.length/)
+  assert.match(helper, /open > 0 \? catalogFormat\("template", "61504537731d", \[open\]\) : catalogWord\("literal", "ee952fba0441"\)/)
 })
 
-test("the Session item detail completes through the Board card's inline confirmation", () => {
+test("the Session milestone asks before completing its own item", () => {
   const todos = readFileSync(new URL("../../session/Todos.tsx", import.meta.url), "utf8")
-  // A Session opens the Board's own card, so it has no completion of its own.
-  assert.match(todos, /onOpen=\{\(\) => openWorkItem\(item\)\}/)
-  assert.doesNotMatch(todos, /completeWorkV2/)
+  assert.match(todos, /onComplete=\{\(\) => run\(`complete-\$\{item\.id\}`, \(\) => completeWorkV2\(item\)\)\}/)
+  assert.match(todos, /onComplete=\{onComplete \? \(\) => setConfirming\(true\) : undefined\}/)
+  assert.match(todos, /confirming && onComplete && <CompleteWorkDialog/)
 })
 
-test("a Board card completes only after an inline confirmation", () => {
+test("the Board card and the completion milestone share a confirmation dialog", () => {
   const board = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
   assert.doesNotMatch(board, /window\.confirm/)
-  assert.match(board, /!item\.closed_at && <button type="button" disabled=\{!!busy\}\s+onClick=\{\(\) => \{ clearFailure\(\); setCompleting\(true\) \}\}><WorkIcon name="check" \/> 完成<\/button>/)
-  assert.match(board, /completeConfirmWords\(item\)[\s\S]*?run\(`complete-\$\{item\.id\}`, \(\) => completeWorkV2\(item\)\)[\s\S]*?確認標記完成[\s\S]*?setCompleting\(false\)[\s\S]*?取消/)
+  assert.match(board, /completing && !item\.closed_at && <CompleteWorkDialog/)
+  assert.match(board, /onConfirm=\{\(\) => \{ void run\(`complete-\$\{item\.id\}`, \(\) => completeWorkV2\(item\)\)/)
+  assert.match(board, /<WorkMilestones phase=\{item\.phase\} verifyGate=\{item\.verify_gate\}[\s\S]*?onComplete=\{!item\.closed_at/)
+  const milestones = readFileSync(new URL("./WorkMilestones.tsx", import.meta.url), "utf8")
+  assert.match(milestones, /phase !== "done" && !!onComplete/)
+  assert.match(milestones, /<button type="button" onClick=\{onComplete\}>/)
 })
 
 test("a work action chip lays its icon to the left of its words", () => {

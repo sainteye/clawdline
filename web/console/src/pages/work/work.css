@@ -579,6 +579,14 @@
     border: 1px solid var(--line); border-radius: 999px; color: var(--faint); font: 10px/1.25 var(--mono);
 }
 .work-milestones li > .work-icon { width: 11px; height: 11px; }
+.work-milestones li > button {
+    display: inline-flex; align-items: center; gap: 4px; margin: -2px -7px; padding: 2px 7px;
+    border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.work-milestones li > button:hover, .work-milestones li > button:focus-visible {
+    color: var(--ink); background: var(--accent-in);
+}
+.work-milestones li > button > .work-icon { width: 11px; height: 11px; }
 .work-milestones li[data-state="done"] {
     border-color: color-mix(in srgb, var(--ok) 42%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok);
 }

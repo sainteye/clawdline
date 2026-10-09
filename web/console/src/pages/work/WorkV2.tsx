@@ -32,7 +32,7 @@ import { VoiceTextarea } from "./VoiceTextarea.js"
 import { ItemUsageCard } from "./TokenBill.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
-import { completeConfirmWords } from "./complete-item.js"
+import { CompleteWorkDialog } from "./CompleteWorkDialog.js"
 import { phaseName } from "./phase-name.js"
 import { confirmDecisionAnswer, decisionsForWorkItem, matchingDecisionAnswer, proposalsForProject, withoutAnsweredDecision, withoutAnsweredWait, type DecisionAnswerStatus } from "./board-attention.js"
 import { conditionWords, deploymentWords, needsPerson, nextActionWords, ownerOnlineWords, phaseStayWords } from "./board-card-facts.js"
@@ -894,16 +894,9 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
           onClick={() => { clearFailure(); setDeleting(true) }}><WorkIcon name="delete" />{catalogWord("inline", "3c8f5b363ab3")}</button>}
       </div>
     </div>
-    {/* The person's override closes the item without the owning Session's
-        evidence, so it asks once more, here on the card, before it does. */}
-    {completing && !item.closed_at && <div className="work-actions" role="group" aria-label={catalogWord("inline", "5b58c9188a2f")}>
-      <p className="work-note">{completeConfirmWords(item)}</p>
-      <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === `complete-${item.id}`}
-        onClick={() => { void run(`complete-${item.id}`, () => completeWorkV2(item)).then((ok) => { if (ok) setCompleting(false) }) }}>
-        <WorkIcon name="check" />{busy === `complete-${item.id}` ? catalogWord("literal", "935d3ef2ee45") : catalogWord("literal", "5a651fa3c7ca")}</button>
-      <button className="chip" type="button" disabled={busy === `complete-${item.id}`} onClick={() => setCompleting(false)}>{catalogWord("inline", "2cd0f3be8738")}</button>
-      {failure && <p className="work-note" role="alert">{catalogLabel("inline", "a7042be56aeb")}{failure}</p>}
-    </div>}
+    {completing && !item.closed_at && <CompleteWorkDialog item={item} busy={!!busy} failure={failure}
+      onConfirm={() => { void run(`complete-${item.id}`, () => completeWorkV2(item)).then((ok) => { if (ok) setCompleting(false) }) }}
+      onCancel={() => setCompleting(false)} />}
     {epic
       ? <span className="work-state work-epic-label"><b>{catalogWord("inline", "64d13f155730")}</b> · {phaseName(item.phase)}</span>
       : plan ? <span className="work-state work-plan-label"><b>{catalogWord("inline", "589939ed89dd")}</b></span>
@@ -1004,7 +997,8 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
     <WorkEpicPlanDocuments item={item} />
     <WorkItemDocuments item={item} placement="before_steps" />
     <WorkSteps steps={item.steps} />
-    <WorkMilestones phase={item.phase} verifyGate={item.verify_gate} />
+    <WorkMilestones phase={item.phase} verifyGate={item.verify_gate}
+      onComplete={!item.closed_at ? () => { clearFailure(); setCompleting(true) } : undefined} />
     <WorkItemDocuments item={item} placement="after_steps" />
     <WorkCompletionReports item={item} expanded={reportsExpanded} />
     {!!item.images?.length && <div className="work-reference-images" role="group" aria-label={catalogWord("inline", "0d8b8b072dbd")}>
