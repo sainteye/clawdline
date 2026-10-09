@@ -15,6 +15,8 @@
 .cloud-machine-name { font-size: 14px; font-weight: 600; }
 .cloud-machine-identity { font-size: 11px; color: var(--faint); font-family: var(--mono); }
 .cloud-machine-facts { font-size: 12px; color: var(--dim); }
+.cloud-machines li > button:first-child span { overflow-wrap: anywhere; }
+.door[data-cloud-screen="machines"] .fine { overflow-wrap: anywhere; }
 
 /* In the header, shaped like the connection light it replaces (`legacy/header.css` `.conn`)
    and carrying that light's dot before the machine's name. The list opens here
@@ -152,10 +154,9 @@
    this page. Nothing in `legacy/` is touched — it is byte-for-byte copied
    (`tools/check-legacy-css.sh`), which is why the red `.confirm-go` is spelled
    here rather than added to that file's list of `data-kind`s. */
-/* The row is the card; its action group sits inside its bounds. They are
-   siblings in the markup because a button cannot be nested in a button, so
-   the list item is the positioned box and the row fills it. The row keeps
-   enough padding on the right that its facts never run under the controls. */
+/* The row and its action group are siblings because buttons cannot nest.
+   Desktop positions the controls over reserved space in the row. On narrow
+   screens the list item becomes the card and contains both parts. */
 .cloud-machines li { position: relative; }
 .cloud-machines li > button:first-child { padding-right: 110px; }
 .cloud-machines li[data-pairable] > button:first-child { padding-right: 190px; }
@@ -164,9 +165,19 @@
     display: flex; align-items: center; gap: 2px;
 }
 @media (max-width: 600px) {
+    .cloud-machines li {
+        background: #101014; border: 1px solid var(--line); border-radius: 10px;
+        overflow: hidden;
+    }
     .cloud-machines li > button:first-child,
-    .cloud-machines li[data-pairable] > button:first-child { padding-right: 12px; }
-    .cloud-machine-actions { position: static; transform: none; justify-content: flex-end; margin-top: 4px; }
+    .cloud-machines li[data-pairable] > button:first-child {
+        padding: 11px 12px 4px;
+        background: transparent; border: 0; border-radius: 0;
+    }
+    .cloud-machine-actions {
+        position: static; transform: none; justify-content: flex-end;
+        padding: 0 6px 5px;
+    }
 }
 /* `.cloud-machines button` above styles every button in the list and is more
    specific, so every action states its compact shape in full. */
