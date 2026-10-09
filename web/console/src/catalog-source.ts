@@ -1,0 +1,43 @@
+// Source-text tests name copy by what a person reads, not by its catalog hash. Copy moved out of
+// the components into catalogs, so `word("關閉")` answers the pattern for the catalog call whose
+// Taiwan Traditional Chinese value is 關閉, and refuses a phrase no catalog key translates to.
+import { readFileSync } from "node:fs"
+
+type Catalog = Record<string, string>
+
+const read = (tag: string): Catalog => JSON.parse(readFileSync(new URL(`../public/catalogs/${tag}.json`, import.meta.url), "utf8"))
+const zh = read("zh-Hant")
+const en = read("en")
+
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")
+
+/** The ids whose zh-Hant value is `text`, each also carried in English. */
+export function catalogIds(text: string): string[] {
+  const ids = Object.keys(zh).filter((id) => zh[id] === text && typeof en[id] === "string" && en[id] !== "")
+  if (ids.length === 0) throw new Error(`no catalog key reads ${JSON.stringify(text)} in zh-Hant and has an English value`)
+  return ids
+}
+
+/** A pattern for the start of a `catalogWord`, `catalogFormat` or `catalogLabel` call naming a key that reads `text`. */
+export function word(text: string): string {
+  const calls = catalogIds(text).map((id) => {
+    const dot = id.indexOf(".")
+    return `${escape(id.slice(0, dot))}", "${escape(id.slice(dot + 1))}"`
+  })
+  return `catalog(?:Word|Format|Label)\\("(?:${calls.join("|")})`
+}
+
+/** A pattern for the bare key of an id that reads `text`, as a lookup table names it. */
+export function key(text: string): string {
+  return `(?:${catalogIds(text).map((id) => escape(id.slice(id.indexOf(".") + 1))).join("|")})`
+}
+
+/** A pattern for a whole `catalogWord(...)` call, closing parenthesis included. */
+export function wordCall(text: string): string {
+  return `${word(text)}\\)`
+}
+
+/** A regular expression written raw, with `word`/`wordCall` patterns interpolated as they are. */
+export function pattern(strings: TemplateStringsArray, ...parts: string[]): RegExp {
+  return new RegExp(String.raw(strings, ...parts))
+}
