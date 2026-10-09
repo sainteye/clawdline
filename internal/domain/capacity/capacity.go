@@ -323,6 +323,9 @@ const (
 	ITermStallCooldown     = "iterm.stall_cooldown_seconds"
 	ITermStallSectionBytes = "iterm.stall_section_bytes"
 	ITermStallStepSeconds  = "iterm.stall_step_seconds"
+	// The osascript run kinds counted apart for the hourly line and
+	// /v1/diagnostics (the iTerm2 scan experiment, docs/interface.md).
+	ITermOsascriptKinds = "iterm.osascript_kinds"
 	// How old one source's own answer may be and still vouch for its rows
 	// while a slower source holds the refresh.
 	CacheSourceAnswer = "cache.source_answer"
@@ -1770,6 +1773,17 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Log},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/terminal.stallFailuresLimit"},
+		},
+		{
+			// The osascript run kinds counted apart (osascript_stats.go):
+			// the fixed script names in the terminal adapter. A kind past
+			// the limit is counted as `other`, so the counts never grow
+			// and never lose a run.
+			Name: ITermOsascriptKinds, Class: Buffer, Unit: Rows,
+			Limit: 32, AtLimit: Coalesce,
+			Told:      []Channel{Diagnostics, Log},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/terminal.osascriptKindsLimit"},
 		},
 		{
 			// The end of what osascript wrote on stderr that one failure line

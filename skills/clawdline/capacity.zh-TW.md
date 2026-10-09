@@ -97,6 +97,7 @@
 | `intent.planner_seconds` | 30 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `intent.request_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `intent.stderr_bytes` | 4096 | `bytes` | `evict_oldest` | `diagnostics` | — |
+| `iterm.osascript_kinds` | 32 | `rows` | `coalesce` | `diagnostics, log` | — |
 | `iterm.stall_cooldown_seconds` | 1800 | `seconds` | `refuse` | `diagnostics, log` | — |
 | `iterm.stall_diagnoses` | 20 | `rows` | `rotate` | `diagnostics, log` | — |
 | `iterm.stall_failures` | 32 | `rows` | `evict_oldest` | `diagnostics, log` | — |

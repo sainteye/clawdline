@@ -4023,6 +4023,69 @@ export interface ObligationList {
 }
 
 /**
+ * Every iTerm2 osascript run this daemon started, counted by kind: since it
+ * started, and since the last hourly `osascript: hour` line in daemon.log, which
+ * writes the same counts. It is how a week with `iterm_scan` off is compared with a
+ * week with it on (docs/interface.md `Turning iTerm2 scanning off`). The pasteboard
+ * reader's osascript is not an iTerm2 Apple Event and is not counted.
+ */
+export interface OsascriptDiagnostics {
+  /**
+   * Each kind since `hour_since`: what the next hourly line will say so far.
+   */
+  hour_kinds: OsascriptKind[]
+
+  /**
+   * When the current hourly window started, Unix seconds.
+   */
+  hour_since: number
+
+  /**
+   * The `iterm_scan` switch now.
+   */
+  iterm_scan: boolean
+
+  /**
+   * Each kind since `since`, ordered by kind. At most 32 kinds; any past that are
+   * counted as `other`.
+   */
+  kinds: OsascriptKind[]
+
+  /**
+   * When these counts started: the daemon's start, Unix seconds.
+   */
+  since: number
+}
+
+/**
+ * One kind of osascript run: `list` (the inventory), `capture` (a screen read),
+ * `send`, `type`, `key`, `close`, `find`, `open` (a new tab), `reveal`,
+ * `reveal-<what>`, `probe` (a stall diagnosis), or `other`.
+ */
+export interface OsascriptKind {
+  /**
+   * Runs that exited non-zero or were killed at their limit.
+   */
+  failures: number
+  kind: string
+
+  /**
+   * The longest one, milliseconds.
+   */
+  max_ms: number
+
+  /**
+   * Runs that finished, failed or not.
+   */
+  runs: number
+
+  /**
+   * Their summed wall time, milliseconds.
+   */
+  total_ms: number
+}
+
+/**
  * POST /v1/auth/pair/confirm. A wrong code is 403 wrong_code with tries_left. Five
  * wrong codes in a day, whichever pairings they were typed into, close pairing: the
  * fifth, and every confirmation after it, is 403 expired, as are a lapsed pairing
@@ -5570,6 +5633,7 @@ export interface ScanGap {
  */
 export interface ScanSource {
   complete: boolean
+  disabled?: ScanSourceDisabled
 
   /**
    * The regions of this source that could not be read, each one either sealed by
@@ -5584,6 +5648,18 @@ export interface ScanSource {
    */
   source: string
 }
+
+/**
+ * Why a source was not asked at all. `setting`: the person turned it off (iTerm2's
+ * `iterm_scan`). Such a source is `complete: false` and lists no rows, and it is
+ * neither a failure nor an empty answer: a row of that source is not gone, it is
+ * not being looked at. A client says so in one line instead of drawing those tabs
+ * as nothing. Absent on every source that was asked.
+ */
+export type ScanSourceDisabled =
+    "setting"
+
+export const ScanSourceDisabledValues: readonly ScanSourceDisabled[] = ["setting"] as const
 
 export interface ScheduleDeleted {
   deleted: string
@@ -7011,6 +7087,16 @@ export interface SettingsRequest {
   hotkey: string | null
 
   /**
+   * Whether this daemon asks iTerm2 for its sessions, their screens and their input
+   * over Apple Events. Absent means true. Off, the iTerm2 source answers `disabled:
+   * setting` instead of a list, and typing, keys, screen reads and closes on iTerm2
+   * sessions are refused before any Apple Event; opening a viewer tab for a tmux
+   * session, Reveal and closing a child tab this daemon opened still send their one
+   * Apple Event each. It takes effect on the next reading, without a restart.
+   */
+  iterm_scan: boolean | null
+
+  /**
    * Existing agent and Board authoring language and voice auto fallback.
    */
   language: string | null
@@ -7250,6 +7336,16 @@ export interface SettingsSnapshot {
    * does; an empty string means the person asked for none, and registers nothing.
    */
   hotkey: string | null
+
+  /**
+   * Whether this daemon asks iTerm2 for its sessions, their screens and their input
+   * over Apple Events. Absent means true. Off, the iTerm2 source answers `disabled:
+   * setting` instead of a list, and typing, keys, screen reads and closes on iTerm2
+   * sessions are refused before any Apple Event; opening a viewer tab for a tmux
+   * session, Reveal and closing a child tab this daemon opened still send their one
+   * Apple Event each. It takes effect on the next reading, without a restart.
+   */
+  iterm_scan: boolean | null
 
   /**
    * Existing agent and Board authoring language and voice auto fallback. Its stored
@@ -8217,6 +8313,7 @@ export interface TerminalDiagnostics {
    * Control leases held now.
    */
   leases: number
+  osascript?: OsascriptDiagnostics
 
   /**
    * Terminal streams open now, of at most 16.

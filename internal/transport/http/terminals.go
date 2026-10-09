@@ -106,7 +106,8 @@ func (s *Server) terminalStats() (leases, streams int) {
 // Its status no longer determines whether a paired sender may use terminals.
 func (s *Server) terminalDiagnostics() *contract.TerminalDiagnostics {
 	leases, streams := s.terminalStats()
-	out := &contract.TerminalDiagnostics{GrantsOK: true, Leases: int64(leases), Streams: int64(streams)}
+	out := &contract.TerminalDiagnostics{GrantsOK: true, Leases: int64(leases), Streams: int64(streams),
+		Osascript: osascriptDiagnostics()}
 	g := s.gate()
 	switch {
 	case g.grants == nil:
