@@ -394,7 +394,12 @@ export class StatusCloudClient extends CatalogCloudClient {
       const key = JSON.stringify([identity.machine, identity.session])
       if ((this.statusSequences.get(key) ?? -1) > envelope.seq) return
       this.statusSequences.set(key, envelope.seq)
-      if (!realign) this.machineOffline?.delete(identity.machine)
+      if (!realign) {
+        this.machineOffline?.delete(identity.machine)
+        // A live, paired and signed ss/ row is fresh machine evidence even
+        // when no orch/ descriptor changed. A retained replay is not.
+        this._observeMachine(identity.machine, envelope.ts)
+      }
       if (payload === null || payload?.deleted === true) this.statusSnapshots.delete(key)
       else this.statusSnapshots.set(key, { identity, payload, observedAt: envelope.ts, sequence: envelope.seq })
       this._sawAuthenticatedEnvelope(envelope, { kind: "session_status" }, identity.machine)

@@ -113,7 +113,7 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
   const payload = { machine_id: "m", session_id: "s", state: "working" }
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, masterKey,
     new TextEncoder().encode(JSON.stringify(payload)))
-  const signed = { ...envelope("ss/m/s"), nonce: Buffer.from(nonce).toString("base64"),
+  const signed = { ...envelope("ss/m/s"), ts: Date.now(), nonce: Buffer.from(nonce).toString("base64"),
     ct: Buffer.from(ct).toString("base64") }
   signed.sig = Buffer.from(await crypto.subtle.sign({ name: "Ed25519" }, keys.privateKey,
     envelopeSigningBytes(signed))).toString("base64")
@@ -121,6 +121,7 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
   client.statusSnapshots = new Map()
   client.statusSequences = new Map()
   client.machineOffline = new Map([["m", { until: Date.now() + 1000 }]])
+  client.machineObservedAt = new Map()
   client.sequenceBySender = new Map()
   client.realignSequenceByChannel = new Map()
   client._machinePairing = async () => ({ keyID: "key", senderID: "sender", senderKey: keys.publicKey, masterKey })
@@ -132,13 +133,15 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
   await client._receiveEnvelope(signed, false)
   assert.deepEqual(client.statusSnapshots.get(JSON.stringify(["m", "s"])).payload, payload)
   assert.equal(client.machineOffline.has("m"), false)
+  assert.equal(client.machineObservedAt.get("m"), signed.ts)
   assert.equal(events[0].type, "session_status")
   client.machineOffline.set("m", { until: Date.now() + 1000 })
-  const retained = { ...signed, seq: 2 }
+  const retained = { ...signed, seq: 2, ts: signed.ts + 1000 }
   retained.sig = Buffer.from(await crypto.subtle.sign({ name: "Ed25519" }, keys.privateKey,
     envelopeSigningBytes(retained))).toString("base64")
   await client._receiveEnvelope(retained, true)
   assert.equal(client.machineOffline.has("m"), true, "a retained row does not prove the machine is online")
+  assert.equal(client.machineObservedAt.get("m"), signed.ts, "a retained row does not renew presence")
 })
 
 test("pinned transcript sends exact generation and never coalesces another generation", async () => {
