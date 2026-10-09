@@ -83,6 +83,10 @@ jobs:
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-pre-push-red-main.sh
 
+      - name: Check that main turning red is told once
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
+        run: tools/test-ci-notify-red.sh
+
       - name: Check explicit CI modes
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-ci-check-modes.sh
@@ -207,3 +211,30 @@ jobs:
       - name: Run Darwin tests with four named host exclusions
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-go-ci.sh
+
+  # Runs last on every push to main and tells the person once when main goes
+  # from green to red; tools/ci-notify-red.sh says how. The URL is the
+  # repository secret CLAWDLINE_CI_NOTIFY_URL; without it the job prints a
+  # notice and succeeds.
+  notify-red:
+    name: Tell the person when main turns red
+    needs: [static, go-linux, console, darwin]
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare with the previous run on main and notify on green to red
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLAWDLINE_CI_NOTIFY_URL: ${{ secrets.CLAWDLINE_CI_NOTIFY_URL }}
+        run: >-
+          tools/ci-notify-red.sh
+          "${{ needs.static.result }}"
+          "${{ needs.go-linux.result }}"
+          "${{ needs.console.result }}"
+          "${{ needs.darwin.result }}"
