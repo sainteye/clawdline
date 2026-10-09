@@ -5,10 +5,13 @@ package terminal
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -185,5 +188,53 @@ func TestTheWordsAPersonTypesAreQuoted(t *testing.T) {
 	c := TmuxChoice{Path: "/a b/tmux", Bundled: true, Socket: "/s'ock"}
 	if got := c.Words(); got != `'/a b/tmux' -S '/s'\''ock'` {
 		t.Fatal(got)
+	}
+}
+
+// A real tmux standing in for the carried one: opened, listed, read and closed
+// on its own socket, and nothing on the default server. Skipped where there is
+// no tmux to stand in.
+func TestTheCarriedTmuxRunsOnItsOwnServer(t *testing.T) {
+	real, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux is not installed")
+	}
+	// Under /tmp: a per-user temporary directory is too deep for a socket.
+	dir, err := os.MkdirTemp("/tmp", "clt-carried-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	// The default server, were anything to reach it, is a private one too.
+	t.Setenv("TMUX_TMPDIR", dir)
+	t.Setenv("TMUX", "")
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv(BundledTmuxEnv, real)
+	sock := filepath.Join(dir, SessionsSocketName)
+	saved := defaultResolver
+	defaultResolver = &tmuxResolver{name: "tmux", fallbacks: []string{}, socket: func() string { return sock }}
+	t.Cleanup(func() { defaultResolver = saved })
+	t.Cleanup(func() { _ = exec.Command(real, "-S", sock, "kill-server").Run() })
+
+	tmux := NewTmux()
+	ctx := context.Background()
+	opened, err := tmux.Open(ctx, ports.OpenRequest{Name: "carried", Cwd: dir, Command: "printf 'carried-ok\\n'; /bin/sleep 30"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := tmux.Inventory(ctx)
+	if err != nil || !inv.Complete || len(inv.Sessions) != 1 || inv.Sessions[0].ID != opened.ID {
+		t.Fatalf("the carried server's pane was not listed: %+v %v", inv, err)
+	}
+	var screen string
+	for i := 0; i < 50 && !strings.Contains(screen, "carried-ok"); i++ {
+		screen, _ = tmux.Capture(ctx, inv.Sessions[0])
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !strings.Contains(screen, "carried-ok") {
+		t.Fatalf("the pane was not read: %q", screen)
+	}
+	if out, err := exec.Command(real, "ls").CombinedOutput(); err == nil {
+		t.Fatalf("the default server was started: %s", out)
 	}
 }
