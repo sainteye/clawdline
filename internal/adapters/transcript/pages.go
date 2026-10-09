@@ -120,7 +120,8 @@ func readBefore(path string, limit int, before int64, parse func([]byte) []Entry
 		if next == 0 && unread > 0 {
 			next = unread
 		}
-		page := Page{Entries: oldestFirst(newest, len(newest)), Signature: signature(start), Unread: unread, NextBefore: next}
+		page := Page{Entries: oldestFirst(newest, len(newest)), Signature: signature(start), Unread: unread, NextBefore: next,
+			NextAfter: completeEnd(f, start.Size())}
 		last = page
 		f.Close()
 		current, err := os.Stat(path)
