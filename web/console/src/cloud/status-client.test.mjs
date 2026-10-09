@@ -202,14 +202,16 @@ test("pinned info asks for full detail with the exact machine and generation", a
   assert.equal(calls[0][3], "info.full")
 })
 
-test("a list title uses its own pinned read waiter without requesting full detail", async () => {
+test("one machine list read uses a read-only machine reply waiter", async () => {
   const client = Object.create(StatusCloudClient.prototype)
   const calls = []
-  client._read = (...args) => { calls.push(args); return Promise.resolve({ info: { session: { id: "s", title: "Title" } } }) }
+  client._read = (...args) => { calls.push(args); return Promise.resolve({ sessions: [] }) }
   const signal = new AbortController().signal
-  await client.infoListForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA }, signal)
-  assert.deepEqual(calls[0][2], { parts: "list", machine_id: "m", expected_generation: genA })
-  assert.equal(calls[0][3], "info.list")
+  await client.listPresentationsForMachine("m", signal)
+  assert.deepEqual(calls[0][0], { machine: "m", session: "__clawdline_machine__" })
+  assert.equal(calls[0][1], "sessions.list")
+  assert.equal(calls[0][2].machine_id, "m")
+  assert.equal(calls[0][3], "read:" + calls[0][2].request)
   assert.equal(calls[0][5].signal, signal)
 })
 
@@ -350,6 +352,19 @@ test("only pinned Session content reads seal r/; send remains on ctl/", async ()
     session: "s", machine_id: "m", expected_generation: genA, request: "inbox-1",
   }, "ctl")
   assert.equal(inbox.ch, "r/m")
+  const listKey = "m\u0000__clawdline_machine__\u0000read:batch-1"
+  const listWaiters = {}
+  client.readWaiters.set(listKey, listWaiters)
+  client.pinnedReadProofs.set(listKey, { machineID: "m", sessionID: "__clawdline_machine__",
+    generation: null, read: "read:batch-1", seq: null, waiters: listWaiters })
+  const list = await client._publishCommand("m", "sessions.list", {
+    session: "__clawdline_machine__", machine_id: "m", request: "batch-1",
+  }, "ctl", { key: listKey, waiters: listWaiters })
+  assert.equal(list.ch, "r/m")
+  const listBody = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64Bytes(list.nonce, "nonce") }, masterKey, base64Bytes(list.ct, "ct"))))
+  assert.deepEqual(listBody, { type: "sessions.list", session: "__clawdline_machine__",
+    machine_id: "m", request: "batch-1" })
   await assert.rejects(() => client._publishCommand("m", "peer-inbox", {
     session: "s", machine_id: "m", request: "inbox-2",
   }, "ctl"), { code: "execution_target_required" })
@@ -374,6 +389,15 @@ test("pinned t/ replies need the machine, Session, generation and original reque
     delete missing[field]
     assert.equal(pinnedReplyMatches(missing, proof), false, "missing " + field)
   }
+})
+
+test("machine list replies use request sequence proof without pretending to pin a Session", () => {
+  const proof = { machineID: "m", sessionID: "__clawdline_machine__", generation: null,
+    read: "read:batch-1", seq: 8 }
+  const reply = { read: "read:batch-1", machine_id: "m", session_id: "__clawdline_machine__", seq: 8 }
+  assert.equal(pinnedReplyMatches(reply, proof), true)
+  assert.equal(pinnedReplyMatches({ ...reply, seq: 7 }, proof), false)
+  assert.equal(pinnedReplyMatches({ ...reply, expected_generation: genA }, proof), false)
 })
 
 test("a retained or mismatched t/ row cannot settle a new pinned execution", () => {
@@ -549,6 +573,19 @@ test("an event gap requests one retained ss row and releases it after realign", 
   listener({ type: "session_status", identity: { machine: "m", session: "s" } })
   assert.equal(await recovery, true)
   assert.deepEqual(frames[1], { type: "unsubscribe", channels: ["ss/m/s"] })
+  assert.equal(client.statusRecoveries.size, 0)
+})
+
+test("a status row arriving before recovery is used without a timeout or subscription", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.ready = true
+  client.statusSnapshots = new Map([[JSON.stringify(["m", "s"]),
+    { payload: { snapshot_generation: genA } }]])
+  client.statusRecoveries = new Map()
+  const frames = []
+  client._sendSubscriptionFrame = (type, channels) => frames.push({ type, channels })
+  assert.equal(await client.recoverStatusRow("m", "s", genA), true)
+  assert.deepEqual(frames, [])
   assert.equal(client.statusRecoveries.size, 0)
 })
 

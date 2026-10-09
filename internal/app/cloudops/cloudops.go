@@ -323,7 +323,7 @@ func (b Bridge) Handle(ctx context.Context, cmd Command) (answer Answer) {
 			Message: "This machine does not know that Cloud command.", fixedCopy: true})
 	}
 	mutating = !o.read
-	if word == "peer-inbox" && !b.contentReadChannel(cmd) {
+	if (word == "peer-inbox" || word == "sessions.list") && !b.contentReadChannel(cmd) {
 		return b.refuse(cmd, parsed, word, Refusal{Status: 403, Code: "read_only_channel",
 			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true})
 	}
@@ -345,7 +345,7 @@ func (b Bridge) contentReadChannel(cmd Command) bool {
 
 func contentReadWord(word string) bool {
 	switch word {
-	case "info", "transcript", "skills", "image", "git", "git-diff", "screen", "agent", "shell", "documents", "document", "peer-inbox":
+	case "info", "transcript", "skills", "image", "git", "git-diff", "screen", "agent", "shell", "documents", "document", "peer-inbox", "sessions.list":
 		return true
 	default:
 		return false
@@ -384,6 +384,19 @@ func (b Bridge) serveContentRead(ctx context.Context, cmd Command, parsed body, 
 	}
 	if o.name == "peer-inbox" {
 		p.id = b.MachineID
+	}
+	if o.name == "sessions.list" {
+		p.target = MachineReplySession
+		if refusal, denied := b.authorizeTranscript(ctx, cmd.Sender, cmd.VerifiedKey); denied {
+			return b.contentReadAnswer(cmd, p, b.publish(cmd, p, refusal, nil))
+		}
+		answer := b.route(ctx, cmd, p, o)
+		// A roster revocation during the list read wins before the encrypted
+		// presentation leaves this machine, just as for pinned Session content.
+		if refusal, denied := b.authorizeTranscript(ctx, cmd.Sender, cmd.VerifiedKey); denied {
+			answer = b.publish(cmd, p, refusal, nil)
+		}
+		return b.contentReadAnswer(cmd, p, answer)
 	}
 	if p.executionGeneration == "" {
 		return b.contentReadAnswer(cmd, p, b.publish(cmd, p, Refusal{Status: 400, Code: "execution_target_required",

@@ -172,6 +172,7 @@ export const CARRIED = {
   // The Shell panel (`session/ShellPanel.tsx`): the tail of one background
   // command's output, polled while the panel is open.
   shell: "GET /v1/sessions/{id}/shells/{shell}?bytes=",
+  "sessions.list": "GET /v1/sessions?parts=list (one machine-level display read)",
   // No console route asks this: the copied client does, on every connection
   // that did not take over a live socket (`_recoverSessions`), so a list
   // opened after a relay eviction is sent every row rather than whichever

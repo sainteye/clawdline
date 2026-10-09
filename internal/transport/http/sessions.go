@@ -58,7 +58,31 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(s.sessionsPayload(ctx))
+	snapshot := s.sessionsPayload(ctx)
+	if r.URL.Query().Get("parts") == "list" {
+		// The Cloud fleet asks once per machine. Reuse the local single-machine
+		// snapshot, but only send the display fields it joins to ss/ generations.
+		// No transcript, menu, shell or Git data leaves this route.
+		type presentation struct {
+			ID                  string         `json:"id"`
+			Title               string         `json:"title"`
+			CWD                 string         `json:"cwd,omitempty"`
+			Icon                *contract.Icon `json:"icon,omitempty"`
+			ExecutionGeneration string         `json:"execution_generation,omitempty"`
+		}
+		rows := make([]presentation, 0, len(snapshot.Sessions))
+		for _, row := range snapshot.Sessions {
+			rows = append(rows, presentation{ID: row.ID, Title: row.Label, CWD: row.CWD,
+				Icon: row.Icon, ExecutionGeneration: row.ExecutionGeneration})
+		}
+		_ = json.NewEncoder(w).Encode(struct {
+			At       int64          `json:"at"`
+			Complete bool           `json:"complete"`
+			Sessions []presentation `json:"sessions"`
+		}{At: snapshot.At, Complete: snapshot.Scan.Complete, Sessions: rows})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(snapshot)
 }
 
 // sessionRowWire is a row as it is sent. It exists for one key the contract

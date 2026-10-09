@@ -7,6 +7,16 @@ import (
 func init() {
 	register(
 		// MARK: reads with a local capability
+		op{name: "sessions.list", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/sessions", Query: map[string]string{"parts": "list"}}
+			}},
 
 		op{name: "skills", read: true,
 			decode: func(b body) (plan, bool) {

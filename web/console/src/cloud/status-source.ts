@@ -3,7 +3,7 @@ import type { AssistantSkill, TranscriptEntry } from "@clawdline/contract"
 import type { ArtifactRef } from "../legacy/images-bridge.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { menuFingerprint } from "../session/fingerprint.ts"
-import type { MachineSessionProjection, SessionContent, SessionDestination, SessionListPresentation, SessionOlderPage,
+import type { MachineSessionProjection, SessionContent, SessionDestination, MachineListPresentation, SessionOlderPage,
   SessionProjectionSource } from "./all-machine-sessions.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { destinationAvailable, destinationKey } from "./all-machine-sessions.ts"
@@ -26,7 +26,7 @@ type StatusClient = CloudClientHandle & {
   cancelStatusRecoveries?(): void
   /** The daemon must atomically compare the execution generation before reading content. */
   infoForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
-  infoListForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
+  listPresentationsForMachine?(machineID: string, signal: AbortSignal): Promise<unknown>
   transcriptForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
   transcriptPageForGeneration?(destination: SessionDestination, before: number, signal: AbortSignal): Promise<unknown>
   skillsForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
@@ -151,30 +151,37 @@ export function statusSource(current: () => StatusClient | null): SessionProject
   }
   return {
     readMachine,
-    async readListPresentation(destination, signal): Promise<SessionListPresentation | null> {
+    async readMachinePresentations(machineID, signal): Promise<MachineListPresentation[] | null> {
       const client = current()
-      if (!client?.infoListForGeneration || !supportsPinnedRead(client, destination.machineID) || signal.aborted) return null
-      const before = await readMachine(destination.machineID, signal)
-      if (before.kind !== "ready" || destinationAvailable(destination, before) !== "ready") return null
+      if (!client?.listPresentationsForMachine || !supportsPinnedRead(client, machineID) || signal.aborted) return null
+      const before = await readMachine(machineID, signal)
+      if (before.kind !== "ready") return null
       try {
-        const reply = record(await client.infoListForGeneration(destination, signal))
-        const after = await readMachine(destination.machineID, signal)
+        const reply = record(await client.listPresentationsForMachine(machineID, signal))
+        const after = await readMachine(machineID, signal)
         if (signal.aborted || current() !== client || after.kind !== "ready" ||
-          destinationAvailable(destination, after) !== "ready" || !supportsPinnedRead(client, destination.machineID)) return null
-        const session = record(record(reply?.info)?.session)
-        if (session?.id !== destination.sessionID || typeof session.title !== "string" || !session.title.trim()) return null
-        const icon = record(session.icon)
-        return { title: session.title.trim(),
-          cwd: typeof session.cwd === "string" ? session.cwd : undefined,
-          icon: typeof icon?.accent === "string" && Array.isArray(icon.cells) &&
-            icon.cells.every((line: unknown) => Array.isArray(line) &&
-              line.every((cell: unknown) => cell === null || typeof cell === "string"))
-            ? { accent: icon.accent, cells: icon.cells as ((string | null)[])[] } : undefined }
+          !supportsPinnedRead(client, machineID) || !Array.isArray(reply?.sessions)) return null
+        const currentRows = new Map(after.rows.map((row) => [destinationKey(row.destination), row]))
+        const visible = new Set(before.rows.map((row) => destinationKey(row.destination)))
+        const result: MachineListPresentation[] = []
+        for (const raw of reply.sessions) {
+          const session = record(raw)
+          if (!session || typeof session.id !== "string" || typeof session.execution_generation !== "string" ||
+            !/^[0-9a-f]{32}$/u.test(session.execution_generation) ||
+            typeof session.title !== "string" || !session.title.trim()) continue
+          const destination = { machineID, sessionID: session.id, executionGeneration: session.execution_generation }
+          const key = destinationKey(destination)
+          if (!visible.has(key) || !currentRows.has(key)) continue
+          const icon = record(session.icon)
+          result.push({ destination, title: session.title.trim(),
+            cwd: typeof session.cwd === "string" ? session.cwd : undefined,
+            icon: typeof icon?.accent === "string" && Array.isArray(icon.cells) &&
+              icon.cells.every((line: unknown) => Array.isArray(line) &&
+                line.every((cell: unknown) => cell === null || typeof cell === "string"))
+              ? { accent: icon.accent, cells: icon.cells as ((string | null)[])[] } : undefined })
+        }
+        return result
       } catch { return null }
-    },
-    async readListTitle(destination, signal): Promise<string | null> {
-      const presentation = await this.readListPresentation?.(destination, signal)
-      return presentation?.title ?? null
     },
     async readImage(destination, artifact): Promise<{ url: string; release: () => void }> {
       const key = destinationKey(destination)

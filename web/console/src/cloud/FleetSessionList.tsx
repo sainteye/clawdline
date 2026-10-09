@@ -29,6 +29,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
 }) {
   const [readings, setReadings] = useState<Record<string, Reading>>({})
   const presentations = useRef(new Map<string, { machineID: string; sessionID: string } & SessionListPresentation>())
+  const presentationPasses = useRef(new Map<string, string>())
   const [presentationRevision, refreshPresentation] = useState(0)
   const [, redraw] = useState(0)
   const [machineAction, setMachineAction] = useState<MachineToolbarAction | null>(null)
@@ -80,6 +81,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         for (const [key, value] of presentations.current) {
           if (value.machineID === machineID && value.sessionID === sessionID) presentations.current.delete(key)
         }
+        presentationPasses.current.delete(machineID)
         refreshPresentation((revision) => revision + 1)
         return
       }
@@ -113,40 +115,53 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     return () => { window.clearTimeout(timer); abort.abort() }
   }, [readings, source, machines.map((machine) => machine.id).join("\0")])
 
-  const titleTargets = machines.flatMap((machine) => {
+  const presentationMachines = machines.flatMap((machine) => {
     const reading = readings[machine.id]
-    return reading?.phase === "settled" && reading.value.kind === "ready"
-      ? reading.value.rows.filter((row) => row.freshness === "current").map((row) => row.destination) : []
+    return reading?.phase === "settled" && reading.value.kind === "ready" &&
+      reading.value.rows.some((row) => row.freshness === "current")
+      ? [{ machineID: machine.id, pass: reading.value.snapshotGeneration ?? String(reading.value.observedAt) }] : []
   })
-  const targetsKey = titleTargets.map(destinationKey).join("\0")
+  const passesKey = presentationMachines.map(({ machineID, pass }) => machineID + ":" + pass).join("\0")
   useEffect(() => {
-    if (!source?.readListPresentation) return
-    const currentKeys = new Set(titleTargets.map(destinationKey))
+    if (!source?.readMachinePresentations) return
+    const currentKeys = new Set(machines.flatMap((machine) => {
+      const reading = readings[machine.id]
+      return reading?.phase === "settled" && reading.value.kind === "ready"
+        ? reading.value.rows.map((row) => destinationKey(row.destination)) : []
+    }))
     for (const [key, value] of presentations.current) {
-      const reading = readings[value.machineID]
-      if (reading?.phase === "settled" && reading.value.kind === "ready" && !currentKeys.has(key))
+      if (!currentKeys.has(key))
         presentations.current.delete(key)
     }
-    const pending = titleTargets.filter((candidate) => !presentations.current.has(destinationKey(candidate)))
+    const pending = presentationMachines.filter(({ machineID, pass }) =>
+      presentationPasses.current.get(machineID) !== pass)
     if (!pending.length) return
     const abort = new AbortController()
+    for (const { machineID, pass } of pending) presentationPasses.current.set(machineID, pass)
+    const inFlight = new Set(pending.map(({ machineID }) => machineID))
     let next = 0
     const worker = async () => {
       while (!abort.signal.aborted && next < pending.length) {
-        const candidate = pending[next++]
-        const value = await source.readListPresentation!(candidate, abort.signal).catch(() => null)
+        const { machineID, pass } = pending[next++]
+        const rows = await source.readMachinePresentations!(machineID, abort.signal).catch(() => null)
         if (abort.signal.aborted) return
-        if (value) {
-          presentations.current.set(destinationKey(candidate), {
-            machineID: candidate.machineID, sessionID: candidate.sessionID, ...value,
+        inFlight.delete(machineID)
+        if (rows && presentationPasses.current.get(machineID) === pass) {
+          for (const row of rows) presentations.current.set(destinationKey(row.destination), {
+            machineID, sessionID: row.destination.sessionID, title: row.title, icon: row.icon, cwd: row.cwd,
           })
           redraw((revision) => revision + 1)
         }
       }
     }
     for (let i = 0; i < Math.min(4, pending.length); i++) void worker()
-    return () => abort.abort()
-  }, [source, targetsKey, presentationRevision])
+    return () => {
+      abort.abort()
+      for (const { machineID, pass } of pending.filter(({ machineID }) => inFlight.has(machineID))) {
+        if (presentationPasses.current.get(machineID) === pass) presentationPasses.current.delete(machineID)
+      }
+    }
+  }, [source, passesKey, presentationRevision])
 
   const search = filter.trim().toLocaleLowerCase()
   const groups = machines.map((machine) => {

@@ -14,9 +14,10 @@ function refused(code, message) {
 }
 
 function pinnedRead(type, body) {
-  return (type === "info" && (body?.parts === "full" || body?.parts === "list") ||
+  return (type === "sessions.list" && typeof body?.request === "string" ||
+    type === "info" && (body?.parts === "full" || body?.parts === "list") ||
     ["transcript", "skills", "image", "git", "git-diff", "screen", "agent", "shell", "documents", "document", "peer-inbox"].includes(type)) &&
-    body?.expected_generation !== undefined
+    (body?.expected_generation !== undefined || type === "sessions.list")
 }
 
 function pinnedReplyKey(machine, session, read) {
@@ -24,6 +25,7 @@ function pinnedReplyKey(machine, session, read) {
 }
 
 function pinnedReadName(type, body) {
+  if (type === "sessions.list" && typeof body?.request === "string" && body.request) return "read:" + body.request
   if (type === "info" && body?.parts === "full") return "info.full"
   if (type === "info" && body?.parts === "list") return "info.list"
   if (type === "skills") return "skills"
@@ -49,7 +51,9 @@ function pinnedReadName(type, body) {
 export function pinnedReplyMatches(payload, expected) {
   return !!payload && typeof payload === "object" && !Array.isArray(payload) &&
     payload.read === expected.read && payload.machine_id === expected.machineID &&
-    payload.session_id === expected.sessionID && payload.expected_generation === expected.generation &&
+    payload.session_id === expected.sessionID &&
+    (expected.generation === null ? payload.expected_generation === undefined :
+      payload.expected_generation === expected.generation) &&
     Number.isSafeInteger(payload.seq) && payload.seq === expected.seq
 }
 
@@ -195,7 +199,10 @@ export class StatusCloudClient extends CatalogCloudClient {
   /** The copied reader's local write flag predates the read-only r/ channel. */
   _read(value, type, extra, answer, timeoutMs, readOptions) {
     if (!pinnedRead(type, extra)) return super._read(value, type, extra, answer, timeoutMs, readOptions)
-    if (!GENERATION.test(extra.expected_generation) || typeof extra.machine_id !== "string" || !extra.machine_id ||
+    const machineList = type === "sessions.list" && value.session === "__clawdline_machine__"
+    if ((!machineList && !GENERATION.test(extra.expected_generation)) ||
+      (machineList && extra.expected_generation !== undefined) ||
+      typeof extra.machine_id !== "string" || !extra.machine_id ||
       answer !== pinnedReadName(type, extra)) {
       return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
     }
@@ -204,7 +211,7 @@ export class StatusCloudClient extends CatalogCloudClient {
       return Promise.reject(refused("cloud_read_busy", "another read owns this Session reply channel"))
     }
     const proof = { machineID: extra.machine_id, sessionID: value.session,
-      generation: extra.expected_generation, read: answer, seq: null, waiters: null }
+      generation: machineList ? null : extra.expected_generation, read: answer, seq: null, waiters: null }
     this.pinnedReadProofs.set(key, proof)
     // The copied _read checks allowWrites synchronously before registering its
     // t/ waiter. It is a local guard for ctl/; this one narrow call publishes
@@ -230,8 +237,10 @@ export class StatusCloudClient extends CatalogCloudClient {
       throw refused("execution_target_required", "an exact Session execution is required")
     }
     if (!pinnedRead(type, body)) return super._publishCommand(machine, type, body, envelopeClass, pending)
+    const machineList = type === "sessions.list" && body.session === "__clawdline_machine__" &&
+      body.expected_generation === undefined
     if (envelopeClass !== "ctl" || body.machine_id !== machine || typeof body.session !== "string" || !body.session ||
-      !GENERATION.test(body.expected_generation) || !pinnedReadName(type, body)) {
+      (!machineList && !GENERATION.test(body.expected_generation)) || !pinnedReadName(type, body)) {
       throw refused("execution_target_required", "an exact Session execution is required")
     }
     const unsupported = this._unsupportedRefusal(machine, type)
@@ -246,7 +255,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     if (pending?.key) {
       const proof = this.pinnedReadProofs.get(pending.key)
       if (!proof || proof.waiters !== pending.waiters || proof.machineID !== machine ||
-        proof.sessionID !== body.session || proof.generation !== body.expected_generation ||
+        proof.sessionID !== body.session || proof.generation !== (machineList ? null : body.expected_generation) ||
         proof.read !== pinnedReadName(type, body)) {
         throw refused("read_reply_mismatch", "the pinned read no longer owns its reply")
       }
@@ -425,6 +434,13 @@ export class StatusCloudClient extends CatalogCloudClient {
     if (!machineID || !sessionID || !/^[0-9a-f]{32}$/u.test(snapshotGeneration) || !this.ready) {
       return Promise.resolve(false)
     }
+    // A default ss/ row can arrive after the caller observed the gap but
+    // before this exact recovery installs its listener. In that case the
+    // cache already resolves the gap; waiting for a second event costs the
+    // entire read timeout while the list stays empty.
+    if (this.statusSnapshots.get(JSON.stringify([machineID, sessionID]))?.payload?.snapshot_generation === snapshotGeneration) {
+      return Promise.resolve(true)
+    }
     const channel = "ss/" + channelSegment(machineID) + "/" + channelSegment(sessionID)
     const previous = this.statusRecoveries.get(channel)
     if (previous?.generation === snapshotGeneration) return previous.promise
@@ -476,14 +492,14 @@ export class StatusCloudClient extends CatalogCloudClient {
   }
 
   /** The list gets only a pinned title; full detail stays on the opened Session. */
-  infoListForGeneration(destination, signal) {
-    const { machineID, sessionID, executionGeneration } = destination
-    if (!machineID || !sessionID || !GENERATION.test(executionGeneration) || signal?.aborted) {
-      return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
+  listPresentationsForMachine(machineID, signal) {
+    if (!machineID || signal?.aborted) {
+      return Promise.reject(refused("execution_target_required", "a machine is required"))
     }
-    return this._read({ machine: machineID, session: sessionID }, "info", {
-      parts: "list", machine_id: machineID, expected_generation: executionGeneration,
-    }, "info.list", undefined, { signal })
+    const request = crypto.randomUUID()
+    return this._read({ machine: machineID, session: "__clawdline_machine__" }, "sessions.list", {
+      machine_id: machineID, request,
+    }, "read:" + request, undefined, { signal })
   }
 
   /** Keep distinct generations from joining the copied client's per-session read waiter. */

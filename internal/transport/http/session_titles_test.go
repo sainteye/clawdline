@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,6 +22,30 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
+
+func TestMachineListUsesTheSingleMachineSnapshotButOnlySendsPresentation(t *testing.T) {
+	item := session.Session{ID: "%41", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
+		State: session.StateWorking, Label: "Readable title", CWD: "/project",
+		Line: "private work detail"}
+	s := paneServer(t, &pane{s: item})
+	s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
+	rec := httptest.NewRecorder()
+	s.sessions(rec, httptest.NewRequest(http.MethodGet, "/v1/sessions?parts=list", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("machine list: %d %s", rec.Code, rec.Body)
+	}
+	var payload struct {
+		Sessions []map[string]any `json:"sessions"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil || len(payload.Sessions) != 1 {
+		t.Fatalf("machine list payload: %v %s", err, rec.Body)
+	}
+	row := payload.Sessions[0]
+	if row["id"] != "%41" || row["title"] == nil || row["title"] == "" || row["line"] != nil ||
+		row["menu"] != nil || row["agents"] != nil || row["shells"] != nil {
+		t.Fatalf("machine list leaked content or lost identity: %v", row)
+	}
+}
 
 // A title chosen in Session Info is durable in this daemon's own config, is
 // the first label rung on the fleet list, and clearing it reveals the title the
