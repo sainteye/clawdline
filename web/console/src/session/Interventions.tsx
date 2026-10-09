@@ -12,7 +12,7 @@ import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
 import { deliverUntilSeen, pendingSends } from "./send.js"
-import { browserRefreshEnvironment, readWithOneRetry, watchTodoRefresh } from "./todo-refresh.js"
+import { browserRefreshEnvironment, readWithOneRetry, TODO_REFRESH_MS, TODO_SAFETY_MS, watchTodoRefresh } from "./todo-refresh.js"
 import { onWorkItemChanged } from "../pages/work/item-changed.js"
 import { samePageTarget } from "../same-page-links.js"
 import { hasDocumentIntent } from "../legacy/documents-bridge.js"
@@ -26,6 +26,10 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   const key = destination ? JSON.stringify(destination) : ""
   const latest = useRef<InterventionTarget | null>(destination)
   latest.current = destination
+  const attentionCount = typeof row?.attention_count === "number" ? row.attention_count : null
+  // Whether the row counts the notes is read when the page opens: a count
+  // that comes and goes must not restart the panel.
+  const counted = attentionCount !== null
   const ticket = useRef(0)
   const flight = useRef<{ key: string; promise: Promise<void> } | null>(null)
   const [page, setPage] = useState<HumanInterventionsV2 | null>(null)
@@ -73,11 +77,23 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     void load(destination)
     // Like the to-dos: ask again only while the page is visible, and at once
     // when it comes back.
-    const stop = watchTodoRefresh(() => { void load(destination) }, browserRefreshEnvironment(onWorkItemChanged))
+    const stop = watchTodoRefresh(() => { void load(destination) }, browserRefreshEnvironment(onWorkItemChanged),
+      counted ? TODO_SAFETY_MS : TODO_REFRESH_MS)
     return () => { ticket.current++; stop() }
   // Identity is an immutable machine / route Session / conversation tuple.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, load])
+
+  // The row counts this conversation's unresolved notes, and the count arrives
+  // on the stream: a note written or resolved elsewhere is read when it moves,
+  // not on the next tick.
+  const seenCount = useRef(attentionCount)
+  useEffect(() => {
+    if (seenCount.current === attentionCount) return
+    seenCount.current = attentionCount
+    if (destination) void load(destination)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attentionCount, load])
 
   const closeWithFocus = () => {
     setExpanded(false)

@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { appendedReadFrom, FOLLOW_MS, FOLLOW_WINDOW_MS, joinAppended, MERGED_ROWS_LIMIT, SAFETY_MS, BLIND_MS, transcriptPace } from "./transcript-follow.ts"
+import { appendedReadFrom, FOLLOW_FAST_MS, FOLLOW_LATER_MS, FOLLOW_MS, FOLLOW_WINDOW_MS, joinAppended, MERGED_ROWS_LIMIT, SAFETY_MS, BLIND_MS, transcriptPace } from "./transcript-follow.ts"
 // @ts-expect-error -- a `.ts` path, for node.
 import { SharedTranscripts } from "./transcript-share.ts"
 
@@ -23,6 +23,25 @@ test("the pace: fast for 90 s after the newest send, then the safety read; the o
   assert.equal(transcriptPace({ following: false, newestSendAt: 0, now: sent, rowTimed: false }), BLIND_MS)
   assert.equal(SAFETY_MS, 30_000)
   assert.equal(FOLLOW_MS, 2_000)
+})
+
+test("after a send: every 2 s for the first 10 s, then every 4 s, about ten reads in the first 30 s", () => {
+  const sent = 1_000_000
+  assert.equal(transcriptPace({ following: true, newestSendAt: sent, now: sent + FOLLOW_FAST_MS - 1, rowTimed: true }), FOLLOW_MS)
+  assert.equal(transcriptPace({ following: true, newestSendAt: sent, now: sent + FOLLOW_FAST_MS, rowTimed: true }), FOLLOW_LATER_MS)
+  assert.equal(transcriptPace({ following: true, newestSendAt: sent, now: sent + FOLLOW_WINDOW_MS - 1, rowTimed: false }), FOLLOW_LATER_MS)
+  let reads = 0
+  for (let at = 0; at < 30_000;) {
+    at += transcriptPace({ following: true, newestSendAt: sent, now: sent + at, rowTimed: true })
+    if (at <= 30_000) reads++
+  }
+  assert.ok(reads <= 10, `${reads} timed reads in the first 30 s`)
+  let window = 0
+  for (let at = 0; at < FOLLOW_WINDOW_MS;) {
+    at += transcriptPace({ following: true, newestSendAt: sent, now: sent + at, rowTimed: true })
+    window++
+  }
+  assert.ok(window <= 26, `${window} timed reads in the whole window`)
 })
 
 test("an appended read needs a held page that said where it ended, and is never the safety read", () => {

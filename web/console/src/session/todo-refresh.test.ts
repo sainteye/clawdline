@@ -3,7 +3,7 @@ import test, { mock } from "node:test"
 import { RefusalError, TransportError } from "@clawdline/core/refusal"
 import type { SessionRow } from "@clawdline/contract"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { isTransientReadFailure, OneRead, readFailureReason, readWithOneRetry, TODO_REFRESH_MS, todoHeaderState, TRANSIENT_READ_RETRY_MS, watchTodoRefresh, type RefreshEnvironment } from "./todo-refresh.ts"
+import { isTransientReadFailure, OneRead, readFailureReason, readWithOneRetry, TODO_REFRESH_MS, TODO_SAFETY_MS, todoHeaderState, TRANSIENT_READ_RETRY_MS, watchTodoRefresh, type RefreshEnvironment } from "./todo-refresh.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { sessionTodosReady } from "./readiness.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
@@ -222,4 +222,24 @@ test("a transient failure followed by success never surfaces; a second one, or a
   await assert.rejects(readWithOneRetry(async () => { calls++; throw missing }, wait), missing)
   assert.equal(calls, 1, "a definite refusal was retried")
   assert.deepEqual(waits, [], "a definite refusal waited before showing")
+})
+
+test("a page that hears its changes another way asks on its own pace", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] })
+  let asks = 0
+  const env: RefreshEnvironment = {
+    setInterval: (run, ms) => setInterval(run, ms),
+    clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+    visible: () => true,
+    onVisible: () => () => {},
+    onFocus: () => () => {},
+    onWorkChanged: () => () => {},
+  }
+  const stop = watchTodoRefresh(() => { asks++ }, env, TODO_SAFETY_MS)
+  assert.equal(TODO_SAFETY_MS, 60_000)
+  t.mock.timers.tick(TODO_REFRESH_MS * 3)
+  assert.equal(asks, 0, "asked on the fifteen-second pace")
+  t.mock.timers.tick(TODO_SAFETY_MS - TODO_REFRESH_MS * 3)
+  assert.equal(asks, 1)
+  stop()
 })

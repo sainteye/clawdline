@@ -70,7 +70,7 @@ test("a failed read is shown in the header, not as loading, and tapping it retri
 
 test("an open Session page refreshes its to-dos through one read at a time", () => {
   assert.match(source, /const one = new OneRead\(load\)/)
-  assert.match(source, /const stop = watchTodoRefresh\(\(\) => \{ void one\.ask\(true\) \}, browserRefreshEnvironment\(onWorkItemChanged\)\)/)
+  assert.match(source, /const stop = watchTodoRefresh\(\(\) => \{ void one\.ask\(true\) \}, browserRefreshEnvironment\(onWorkItemChanged\), TODO_SAFETY_MS\)/)
   assert.match(source, /return \(\) => \{\s*stop\(\)/)
   // An action's own re-read postdates the action.
   assert.match(source, /try \{ await task\(\); expanded\.current = true; await refresh\(true\); return true \}/)
@@ -277,7 +277,7 @@ test("the Session-added label replaces the sent/read receipt, and the controls s
 
 test("an item changed in the Board card is read again by the Session fold that opened it", () => {
   const board = readFileSync(new URL("../pages/work/WorkV2.tsx", import.meta.url), "utf8")
-  assert.match(source, /watchTodoRefresh\(\(\) => \{ void one\.ask\(true\) \}, browserRefreshEnvironment\(onWorkItemChanged\)\)/,
+  assert.match(source, /watchTodoRefresh\(\(\) => \{ void one\.ask\(true\) \}, browserRefreshEnvironment\(onWorkItemChanged\), TODO_SAFETY_MS\)/,
     "the Session fold does not listen to the Board")
   assert.match(board, /const answer = await task\(\)\n\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*announceWorkItemChanged\(\)/,
     "a Board action the machine accepted does not tell the Session fold")
@@ -286,7 +286,7 @@ test("an item changed in the Board card is read again by the Session fold that o
 test("the Note polls only while visible, rereads on return, and both reads retry one transient failure", () => {
   const note = readFileSync(new URL("./Interventions.tsx", import.meta.url), "utf8")
   assert.doesNotMatch(note, /window\.setInterval\(/, "the Note polls a hidden page")
-  assert.match(note, /watchTodoRefresh\(\(\) => \{ void load\(destination\) \}, browserRefreshEnvironment\(onWorkItemChanged\)\)/)
+  assert.match(note, /watchTodoRefresh\(\(\) => \{ void load\(destination\) \}, browserRefreshEnvironment\(onWorkItemChanged\),\s*counted \? TODO_SAFETY_MS : TODO_REFRESH_MS\)/)
   assert.match(note, /readWithOneRetry\(\(\) => readHumanInterventionsV2\(target\.conversation\)\)/)
   assert.match(source, /readWithOneRetry\(\(\) => readSessionWorkV2\(rowID, rowSessionID\)\)/)
   assert.match(source, /readWithOneRetry\(\(\) => readSessionWorkSummaryV2\(rowID, rowSessionID\)\)/)

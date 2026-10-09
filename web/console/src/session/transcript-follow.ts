@@ -16,7 +16,8 @@
  * - **Safety.** Every `SAFETY_MS` the whole page is read: it catches what no
  *   row said, and it is what refreshes what an incremental read never revisits
  *   (a picture that expired, a row whose `activity` is unknown).
- * - **A card on its way.** Every `FOLLOW_MS` for at most `FOLLOW_WINDOW_MS`
+ * - **A card on its way.** Every `FOLLOW_MS` for the first `FOLLOW_FAST_MS`,
+ *   then every `FOLLOW_LATER_MS`, for at most `FOLLOW_WINDOW_MS`
  *   after the newest send, then back to the safety pace; the card's own states
  *   and lifetime are `pending.ts`'s and do not change.
  * - **No row time.** A row with no `activity.at` cannot say when it grew, so
@@ -36,8 +37,16 @@ import type { TranscriptPage } from "@clawdline/contract"
 export const SAFETY_MS = 30_000
 /** While a card is on its way. */
 export const FOLLOW_MS = 2_000
-/** How long after the newest send `FOLLOW_MS` holds. */
+/** How long after the newest send the following pace holds. */
 export const FOLLOW_WINDOW_MS = 90_000
+/**
+ * The first stretch after a send, read every `FOLLOW_MS`; the rest of the
+ * window is read every `FOLLOW_LATER_MS`. A reply usually starts inside it;
+ * one that has not is a turn at work, whose row moves as it writes. At two
+ * seconds the whole window was 38 reads in 75 s on a phone.
+ */
+export const FOLLOW_FAST_MS = 10_000
+export const FOLLOW_LATER_MS = 4_000
 /** A row that cannot say when its record grew is read on the old pace. */
 export const BLIND_MS = 4_000
 /** One more read this long after the last change the row showed. */
@@ -52,8 +61,13 @@ export const MERGED_ROWS_LIMIT = 1_000
 
 /** The pace of the pane's own timer. */
 export function transcriptPace(o: { following: boolean; newestSendAt: number; now: number; rowTimed: boolean }): number {
-  if (o.following && o.now - o.newestSendAt < FOLLOW_WINDOW_MS) return FOLLOW_MS
+  if (followingNow(o)) return o.now - o.newestSendAt < FOLLOW_FAST_MS ? FOLLOW_MS : FOLLOW_LATER_MS
   return o.rowTimed ? SAFETY_MS : BLIND_MS
+}
+
+/** Whether the pane is inside the window after its newest send. */
+export function followingNow(o: { following: boolean; newestSendAt: number; now: number }): boolean {
+  return o.following && o.now - o.newestSendAt < FOLLOW_WINDOW_MS
 }
 
 /**

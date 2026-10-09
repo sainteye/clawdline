@@ -28,8 +28,9 @@ import {
   appendedReadFrom,
   BACKOFF,
   BLIND_MS,
-  FOLLOW_MS,
+  FOLLOW_FAST_MS,
   FOLLOW_WINDOW_MS,
+  followingNow,
   joinAppended,
   SAFETY_MS,
   TRAIL_MS,
@@ -170,16 +171,19 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   const [, setPaceClock] = useState(0)
   useEffect(() => {
     if (!following) return
-    const left = newestSendAt + FOLLOW_WINDOW_MS - Date.now()
-    if (left <= 0) return
-    const timer = setTimeout(() => setPaceClock((n) => n + 1), left + 50)
-    return () => clearTimeout(timer)
+    // Each change of pace — the first stretch ending, then the window — is a
+    // draw of its own.
+    const timers = [FOLLOW_FAST_MS, FOLLOW_WINDOW_MS]
+      .map((end) => newestSendAt + end - Date.now())
+      .filter((left) => left > 0)
+      .map((left) => setTimeout(() => setPaceClock((n) => n + 1), left + 50))
+    return () => timers.forEach(clearTimeout)
   }, [following, newestSendAt])
   const agentRow = agentId ? session?.agents?.find((agent) => agent.id === agentId) : undefined
   const agentTimed = !!agentRow && agentRow.at > 0
   const pace = agentId ? (agentTimed ? SAFETY_MS : AGENT_POLL_MS)
     : transcriptPace({ following, newestSendAt, now: Date.now(), rowTimed: typeof session?.activity?.at === "number" })
-  fast.current = pace === FOLLOW_MS
+  fast.current = !agentId && followingNow({ following, newestSendAt, now: Date.now() })
   const poll = usePoll<TranscriptPage>(read, pace, agentId ? {} : { backoff: BACKOFF })
   const { data, error } = poll
   // The row says the record grew, or the session changed what it is doing:

@@ -1116,6 +1116,18 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.ConsoleTranscriptSafetySeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
 		},
+		capacity.ConsoleTranscriptFollowFast: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
+		capacity.ConsoleTranscriptFollowLater: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
+		capacity.ConsoleHealthLive: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
+		capacity.ConsoleSessionNotesSafety: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
 		capacity.ConsoleTranscriptFollowSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
 		},
