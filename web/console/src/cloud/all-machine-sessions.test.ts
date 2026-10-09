@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment,
+  displayedPresentationStatus,
   destinationKey, prependOlderPage, projectionRefreshAt, settleProjection, SessionDetailCache,
   type MachineSessionProjection, type ProjectedSession,
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
@@ -67,6 +68,27 @@ test("a partial next status pass keeps the prior rows visible but disables their
   const next = settleProjection("one", gap, ready("one", [row("one", "s", "2")]))
   assert.deepEqual(next.rows?.map((item) => item.destination.sessionID), ["s"])
   assert.equal(destinationAvailable(row("one", "s", "2").destination, next), "ready")
+})
+
+test("a temporary status read failure retains the last list without making its rows actionable", () => {
+  const previous = ready("one", [row("one", "s", "1")])
+  for (const reason of ["unknown", "unresponsive", "stale", "offline"] as const) {
+    const held = settleProjection("one", previous, { kind: "unavailable", reason })
+    assert.equal(held.kind, "unavailable")
+    assert.deepEqual(held.rows?.map((item) => item.destination.sessionID), ["s"])
+    assert.equal(held.rows?.[0].freshness, "stale")
+    assert.equal(destinationAvailable(row("one", "s", "1").destination, held), "waiting")
+    assert.equal(checkedProjection("one", held), held)
+  }
+  assert.equal(settleProjection("one", previous, { kind: "unavailable", reason: "no_permission" }).rows, undefined)
+})
+
+test("a new pass retains the same execution's work line until fresh status contradicts it", () => {
+  const current = row("one", "s", "1")
+  const presentation = { title: "Example", status: { state: "working" as const, work_state: "working" as const } }
+  assert.equal(displayedPresentationStatus(current, presentation), presentation.status)
+  assert.equal(displayedPresentationStatus({ ...current, freshness: "stale", state: "idle" }, presentation), presentation.status)
+  assert.equal(displayedPresentationStatus({ ...current, state: "waiting" }, presentation), undefined)
 })
 
 test("retained observations remain readable but cannot authorize content", () => {
