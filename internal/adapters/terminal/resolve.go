@@ -19,11 +19,23 @@ import (
 // or reaches a different server.
 func init() {
 	projects.TmuxClient = func() string {
-		if ResolveTmux(context.Background()).Bundled {
-			return "clawdline tmux"
-		}
+		return tmuxClient(ResolveTmux(context.Background()), os.Getenv("CLAWDLINE_NEXT_DIR"))
+	}
+}
+
+// tmuxClient is the words that run choice from a person's shell. The carried
+// server's socket is under the daemon's state directory, which `clawdline
+// tmux` finds the way the daemon did: a daemon started on a directory of its
+// own names it in the line, or the line reaches the default directory's
+// server, which is not the one listing these sessions.
+func tmuxClient(choice TmuxChoice, nextDir string) string {
+	if !choice.Bundled {
 		return "tmux"
 	}
+	if nextDir == "" {
+		return "clawdline tmux"
+	}
+	return "CLAWDLINE_NEXT_DIR=" + shellQuote(nextDir) + " clawdline tmux"
 }
 
 // Which tmux this daemon runs (docs/design-decisions.md D72).

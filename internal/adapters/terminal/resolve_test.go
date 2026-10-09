@@ -360,3 +360,22 @@ func TestTheCarriedServerIsAskedForItsSessions(t *testing.T) {
 		t.Fatalf("a stopped server read as has=%v known=%v", has, known)
 	}
 }
+
+// The line a person is handed reaches the server the daemon lists: on a state
+// directory of the daemon's own, it carries that directory.
+func TestTheAttachLineReachesTheDaemonsOwnStateDirectory(t *testing.T) {
+	carried := TmuxChoice{Path: "/x/libexec/tmux", Bundled: true, Socket: "/s/tmux/sessions.sock"}
+	for _, c := range []struct {
+		choice TmuxChoice
+		dir    string
+		want   string
+	}{
+		{TmuxChoice{Path: "/usr/bin/tmux"}, "/s", "tmux"},
+		{carried, "", "clawdline tmux"},
+		{carried, "/tmp/a dir's", `CLAWDLINE_NEXT_DIR='/tmp/a dir'\''s' clawdline tmux`},
+	} {
+		if got := tmuxClient(c.choice, c.dir); got != c.want {
+			t.Errorf("tmuxClient(%+v, %q) = %q, want %q", c.choice, c.dir, got, c.want)
+		}
+	}
+}
