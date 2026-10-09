@@ -44,10 +44,21 @@ func init() {
 		// A first recovery is a separate word so a console deployed before its
 		// daemon never adds a field to sessions.snapshot that the older exact-key
 		// decoder must refuse. Only a machine advertising this word is asked it.
+		// The page sends it with the same `orchestrator: true` sessions.snapshot
+		// carries when it holds no `orch/` snapshot (`_askSessionSnapshot` in
+		// net/cloud-client.js builds `extra` the same way for both words), so
+		// the exact three keys alone refused every first recovery of a page
+		// that had not yet heard the task list.
 		op{name: sessionsSnapshotInitialWord, read: true, sessions: true,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request") {
+				if !b.hasOneOf([]string{"type", "session", "request"},
+					[]string{"type", "session", "request", "orchestrator"}) {
 					return plan{}, false
+				}
+				if value, present := b["orchestrator"]; present {
+					if asked, ok := value.(bool); !ok || !asked {
+						return plan{}, false
+					}
 				}
 				return machinePlan(b)
 			}},
