@@ -37,31 +37,22 @@ func (l Launcher) Capabilities(ctx context.Context) ports.Capabilities {
 
 // reaches asks each backend this platform has.
 func (l Launcher) reaches(ctx context.Context) []backendReach {
-	out := []backendReach{l.tmuxReach()}
+	out := []backendReach{l.tmuxReach(ctx)}
 	if runtime.GOOS == "darwin" {
 		out = append(out, l.itermReach(ctx))
 	}
 	return out
 }
 
-// tmuxReach looks for the binary the tmux backend itself runs, which is
-// `tmux` on this process's PATH (Tmux.run). The launcher also tries the places
-// package managers put tmux (Launcher.binary), and when only it finds one the
-// two disagree: a child's tab would open and the briefing typed into it would
-// fail. That is named rather than reported as either answer.
-func (l Launcher) tmuxReach() backendReach {
-	if l.Tmux == nil {
+// tmuxReach is whether the tmux backend has a tmux to run: the machine's own,
+// or the one this release carries on its own server (resolve.go). Every tmux
+// call runs that one absolute path, so the launcher and the backend cannot
+// disagree about which tmux a child's tab opens in.
+func (l Launcher) tmuxReach(ctx context.Context) backendReach {
+	if l.Tmux == nil || !l.Tmux.choice(ctx).Found() {
 		return backendReach{name: "tmux", state: ports.CapabilityUnavailable, reason: "tmux is not installed"}
 	}
-	found, onPath := l.Tmux.binary()
-	if onPath {
-		return backendReach{name: "tmux", state: ports.CapabilityAvailable}
-	}
-	if found != "" {
-		return backendReach{name: "tmux", state: ports.CapabilityUnavailable,
-			reason: tmuxOutsidePATHReason(found)}
-	}
-	return backendReach{name: "tmux", state: ports.CapabilityUnavailable, reason: "tmux is not installed"}
+	return backendReach{name: "tmux", state: ports.CapabilityAvailable}
 }
 
 // itermReach is whether iTerm2 is running: its sessions are read and typed
@@ -182,9 +173,11 @@ func TmuxNewEnough(major, minor int) bool {
 }
 
 // ownedTerminalCapability decides the answer from what was read, so every
-// platform's answer can be checked on any one of them. `found` is tmux on the
-// PATH; `version` is what `tmux -V` printed, and `versionErr` its failure.
-func ownedTerminalCapability(goos string, found bool, version string, versionErr error) ports.Capability {
+// platform's answer can be checked on any one of them. `found` is whether
+// there is a tmux to run (ResolveTmux); `version` is what `tmux -V` printed,
+// and `versionErr` its failure; `bundled` says it is the one this release
+// carries.
+func ownedTerminalCapability(goos string, found bool, version string, versionErr error, bundled bool) ports.Capability {
 	c := ports.Capability{Name: ports.CapTerminal}
 	switch {
 	case goos == "windows":
@@ -209,6 +202,9 @@ func ownedTerminalCapability(goos string, found bool, version string, versionErr
 		default:
 			c.State, c.Via = ports.CapabilityAvailable, []string{"tmux"}
 			c.Reason = "through a tmux server of this daemon's own (" + strings.TrimSpace(version) + ")"
+			if bundled {
+				c.Reason = "through a tmux server of this daemon's own (" + strings.TrimSpace(version) + ", carried by this release)"
+			}
 		}
 	}
 	return c
@@ -225,14 +221,14 @@ func tmuxInstallHint(goos string) string {
 // PATH lookup and one `tmux -V`, which starts no server.
 func OwnedTerminalCapability(ctx context.Context) ports.Capability {
 	if runtime.GOOS == "windows" {
-		return ownedTerminalCapability(runtime.GOOS, false, "", nil)
+		return ownedTerminalCapability(runtime.GOOS, false, "", nil, false)
 	}
-	path, _ := FindTmux()
-	if path == "" {
-		return ownedTerminalCapability(runtime.GOOS, false, "", nil)
+	choice := FindTmux(ctx)
+	if !choice.Found() {
+		return ownedTerminalCapability(runtime.GOOS, false, "", nil, false)
 	}
-	version, err := TmuxVersion(ctx, path)
-	return ownedTerminalCapability(runtime.GOOS, true, version, err)
+	version, err := TmuxVersion(ctx, choice.Path)
+	return ownedTerminalCapability(runtime.GOOS, true, version, err, choice.Bundled)
 }
 
 // TmuxVersion is what `tmux -V` prints, asked with a two-second ceiling.

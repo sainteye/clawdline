@@ -41,10 +41,10 @@ func TestNewTmuxPaneDoesNotInheritAssistantIdentityFromServer(t *testing.T) {
 	}
 	defer exec.Command(bin, "kill-server").Run()
 	ctx := context.Background()
-	if _, err := runTmux(ctx, bin, "new-session", "-d", "-s", "seed", "sleep 60"); err != nil {
+	if _, err := runTmux(ctx, TmuxChoice{Path: bin}, "new-session", "-d", "-s", "seed", "sleep 60"); err != nil {
 		t.Skipf("could not start private tmux: %v", err)
 	}
-	initial, err := runTmux(ctx, bin, "show-environment", "-g")
+	initial, err := runTmux(ctx, TmuxChoice{Path: bin}, "show-environment", "-g")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,11 +60,11 @@ func TestNewTmuxPaneDoesNotInheritAssistantIdentityFromServer(t *testing.T) {
 			t.Fatalf("seed %s: %v: %s", key, err, out)
 		}
 	}
-	if err := clearTmuxAssistantIdentity(ctx, bin); err != nil {
+	if err := clearTmuxAssistantIdentity(ctx, TmuxChoice{Path: bin}); err != nil {
 		t.Fatal(err)
 	}
 	output := filepath.Join(dir, "pane-env")
-	if _, err := runTmux(ctx, bin, "new-window", "-d", "-t", "seed:", "env > "+output); err != nil {
+	if _, err := runTmux(ctx, TmuxChoice{Path: bin}, "new-window", "-d", "-t", "seed:", "env > "+output); err != nil {
 		t.Fatal(err)
 	}
 	var data []byte
