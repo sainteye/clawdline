@@ -66,6 +66,11 @@ const { result: { sessionId: S } } = await send("Target.attachToTarget", { targe
 await send("Network.enable", {}, S)
 await send("Page.enable", {}, S)
 await send("Runtime.enable", {}, S)
+// A target made over CDP can start as a background tab, and a hidden page pauses
+// every poll the console has: the count would then measure a background tab.
+await send("Target.activateTarget", { targetId })
+await send("Page.bringToFront", {}, S)
+await send("Emulation.setFocusEmulationEnabled", { enabled: true }, S)
 
 // shape is a request's route with every id taken out, and the names (never the
 // values) of its query.
@@ -114,6 +119,7 @@ async function scenario(name, { w, h, mobile, setup, ms, during }) {
   const left = ms - (performance.now() - rec.t0)
   if (left > 0) await sleep(left)
   const out = { name, ms, viewport: `${w}x${h}`, visible: await evalJS("document.visibilityState"), list: rec.list, sse: rec.sse }
+  if (out.visible !== "visible") console.error(`measure: ${name} ran with the page ${out.visible}; its count is a background tab's`)
   writeFileSync(join(outdir, `${name}.json`), JSON.stringify(out, null, 1))
   console.log(name, rec.list.length, "requests", JSON.stringify(rec.sse))
   rec = null
