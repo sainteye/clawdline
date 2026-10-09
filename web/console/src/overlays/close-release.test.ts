@@ -41,3 +41,19 @@ test("only a close blocked by unstarted Board items alone may release them", () 
   // An id the reading does not name cannot be listed to the person.
   assert.deepEqual(releasableItems({ state: "blocked", reasons: [{ ...unstarted("a"), subject_id: "" }] }), [])
 })
+
+// The phone's second report (2026-10-09): a claude left running in a tmux whose
+// socket had been deleted reads `unknown`, and the daemon answers its first
+// close with `close_blocked` so that only a second, forced press signals it.
+// Over Cloud that refusal lost its reasons, the row did not read `blocked`,
+// and the sheet said "cannot confirm" with no way past it.
+test("a process-only close refused over Cloud reopens with the unknown row's reasons", () => {
+  const evidence = [
+    { code: "session_identity_unbound", kind: "evidence", mover: { kind: "broker", self: false, person_needed: false } },
+    { code: "terminal_unreadable", kind: "evidence", subject_kind: "session", subject_id: "ttys011",
+      mover: { kind: "broker", self: false, person_needed: false } },
+  ]
+  const row = { id: "ttys011", closeability: { state: "unknown", version: "v1", reasons: evidence } }
+  assert.deepEqual(refusedReasons([], row, "v1"), evidence)
+  assert.deepEqual(refusedReasons([], row, "v2"), [])
+})

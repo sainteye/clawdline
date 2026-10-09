@@ -23,12 +23,17 @@ function reasonsOf(reading: Reading): CloseReason[] {
  * `close_blocked` is not in it. The daemon answers a close against any reading
  * but the current one with `close_not_proven`, so a `close_blocked` against
  * `version` is blocked by exactly what the page's row lists at that version.
- * A row that has moved on, or no longer reads blocked, says nothing.
+ * A row that has moved on, or reads neither blocked nor unknown, says nothing.
+ *
+ * `unknown` too: the daemon answers `close_blocked` to an unknown reading only
+ * for a process it found in the process table but no terminal can reach, so
+ * that a second, forced press is the one that signals it (`closeEvidenceDecision`).
+ * Any other unknown reading is refused `closeability_unknown` and never gets here.
  */
 export function refusedReasons(refused: readonly CloseReason[], row: Row, version: string | null): CloseReason[] {
   if (refused.length) return [...refused]
   const reading = row?.closeability
-  if (!version || !reading || reading.state !== "blocked" || reading.version !== version) return []
+  if (!version || !reading || (reading.state !== "blocked" && reading.state !== "unknown") || reading.version !== version) return []
   return reasonsOf(reading)
 }
 
