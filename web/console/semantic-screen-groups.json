@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4932,
-  "riskKeys": 2151,
-  "nonRiskCount": 2781,
+  "englishContentKeys": 4935,
+  "riskKeys": 2153,
+  "nonRiskCount": 2782,
   "groups": [
     {
       "name": "bar / other",
@@ -2746,7 +2746,7 @@
     },
     {
       "name": "settings / other",
-      "count": 100,
+      "count": 101,
       "sources": [
         "src/pages/settings/window/copy.ts"
       ],
@@ -2774,6 +2774,7 @@
         "settings.settingsHooksWhatHead",
         "settings.settingsHotkey",
         "settings.settingsITermNative",
+        "settings.settingsITermScan",
         "settings.settingsLanguage",
         "settings.settingsNewestFirst",
         "settings.settingsNotch",

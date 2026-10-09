@@ -291,7 +291,34 @@
         "grants_ok": { "description": "The legacy terminal grants file could be read. It no longer controls terminal access.", "type": "boolean" },
         "grants_error": { "description": "Why the grants file could not be read.", "type": "string" },
         "leases": { "description": "Control leases held now.", "type": "integer" },
-        "streams": { "description": "Terminal streams open now, of at most 16.", "type": "integer" }
+        "streams": { "description": "Terminal streams open now, of at most 16.", "type": "integer" },
+        "osascript": { "$ref": "#/$defs/OsascriptDiagnostics" }
+      }
+    },
+    "OsascriptDiagnostics": {
+      "description": "Every iTerm2 osascript run this daemon started, counted by kind: since it started, and since the last hourly `osascript: hour` line in daemon.log, which writes the same counts. It is how a week with `iterm_scan` off is compared with a week with it on (docs/interface.md `Turning iTerm2 scanning off`). The pasteboard reader's osascript is not an iTerm2 Apple Event and is not counted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iterm_scan", "since", "kinds", "hour_since", "hour_kinds"],
+      "properties": {
+        "iterm_scan": { "description": "The `iterm_scan` switch now.", "type": "boolean" },
+        "since": { "description": "When these counts started: the daemon's start, Unix seconds.", "type": "integer" },
+        "kinds": { "description": "Each kind since `since`, ordered by kind. At most 32 kinds; any past that are counted as `other`.", "type": "array", "items": { "$ref": "#/$defs/OsascriptKind" } },
+        "hour_since": { "description": "When the current hourly window started, Unix seconds.", "type": "integer" },
+        "hour_kinds": { "description": "Each kind since `hour_since`: what the next hourly line will say so far.", "type": "array", "items": { "$ref": "#/$defs/OsascriptKind" } }
+      }
+    },
+    "OsascriptKind": {
+      "description": "One kind of osascript run: `list` (the inventory), `capture` (a screen read), `send`, `type`, `key`, `close`, `find`, `open` (a new tab), `reveal`, `reveal-<what>`, `probe` (a stall diagnosis), or `other`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "runs", "failures", "total_ms", "max_ms"],
+      "properties": {
+        "kind": { "type": "string" },
+        "runs": { "description": "Runs that finished, failed or not.", "type": "integer" },
+        "failures": { "description": "Runs that exited non-zero or were killed at their limit.", "type": "integer" },
+        "total_ms": { "description": "Their summed wall time, milliseconds.", "type": "integer" },
+        "max_ms": { "description": "The longest one, milliseconds.", "type": "integer" }
       }
     }
   }

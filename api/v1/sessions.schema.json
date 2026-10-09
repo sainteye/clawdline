@@ -460,8 +460,14 @@
       "properties": {
         "complete": { "type": "boolean" },
         "source": { "description": "The source's provenance, as the adapter names it: `ps`, `tmux`, `iterm`.", "type": "string" },
+        "disabled": { "$ref": "#/$defs/ScanSourceDisabled" },
         "gaps": { "description": "The regions of this source that could not be read, each one either sealed by another source or still open. Optional: a source that read everything omits it. A person whose machine has gone quiet reads this to find out what is in the way.", "type": "array", "items": { "$ref": "#/$defs/ScanGap" } }
       }
+    },
+    "ScanSourceDisabled": {
+      "description": "Why a source was not asked at all. `setting`: the person turned it off (iTerm2's `iterm_scan`). Such a source is `complete: false` and lists no rows, and it is neither a failure nor an empty answer: a row of that source is not gone, it is not being looked at. A client says so in one line instead of drawing those tabs as nothing. Absent on every source that was asked.",
+      "type": "string",
+      "enum": ["setting"]
     },
     "Scan": {
       "description": "What the reading behind this snapshot knows about itself. Without it an empty list cannot be told apart from a failed scan.",

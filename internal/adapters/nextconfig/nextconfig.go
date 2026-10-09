@@ -505,6 +505,9 @@ var Settables = []Settable{
 	{Name: "smart_notifications", Kind: "bool"},
 	{Name: "push_on_deploy", Kind: "bool"},
 	{Name: "orchestrator_agent_notify", Kind: "bool"},
+	// Whether the daemon polls iTerm2 over Apple Events; absent is on
+	// (docs/interface.md "Turning iTerm2 scanning off").
+	{Name: "iterm_scan", Kind: "bool"},
 	{Name: "orchestrator_enabled", Kind: "bool"},
 	{Name: "orchestrator_max_children", Kind: "int", Min: 1, Max: 10},
 	{Name: "orchestrator_permission", Kind: "string", Choices: []string{"ask", "edits", "full"},

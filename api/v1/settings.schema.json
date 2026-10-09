@@ -195,6 +195,11 @@
           "nullable": true,
           "type": "boolean"
         },
+        "iterm_scan": {
+          "description": "Whether this daemon asks iTerm2 for its sessions, their screens and their input over Apple Events. Absent means true. Off, the iTerm2 source answers `disabled: setting` instead of a list, and typing, keys, screen reads and closes on iTerm2 sessions are refused before any Apple Event; opening a viewer tab for a tmux session, Reveal and closing a child tab this daemon opened still send their one Apple Event each. It takes effect on the next reading, without a restart.",
+          "nullable": true,
+          "type": "boolean"
+        },
         "planning_gate": {
           "description": "Whether a newly assigned execution cycle captures the planning gate. Absent means true; a later setting change never rewrites an in-flight cycle's snapshot.",
           "nullable": true,
@@ -428,6 +433,11 @@
         },
         "orchestrator_agent_notify": {
           "description": "Whether an agent may push a sentence of its own.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "iterm_scan": {
+          "description": "Whether this daemon asks iTerm2 for its sessions, their screens and their input over Apple Events. Absent means true. Off, the iTerm2 source answers `disabled: setting` instead of a list, and typing, keys, screen reads and closes on iTerm2 sessions are refused before any Apple Event; opening a viewer tab for a tmux session, Reveal and closing a child tab this daemon opened still send their one Apple Event each. It takes effect on the next reading, without a restart.",
           "nullable": true,
           "type": "boolean"
         },

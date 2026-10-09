@@ -128,6 +128,8 @@ const baseW = {
   // not have a viewer tab or a native one to tell apart.
   settingsSessionTerminalHint: ownWord("settingsSessionTerminalHint"),
   settingsITermNative: ownWord("settingsITermNative"),
+  settingsITermScan: "讀取 iTerm2 分頁",
+  settingsITermScanHint: "關掉之後，Clawdline 不再定期問 iTerm2 有哪些分頁、也不讀它們的畫面或在裡面打字；清單會寫明 iTerm2 掃描已關閉。開 tmux 的檢視分頁與「顯示」仍各送一個 Apple Event。",
   settingsScopeAdd: "加入 app……",
   settingsScopeChoose: "選擇其他 app……",
   settingsScopeRunning: "現在開著的",

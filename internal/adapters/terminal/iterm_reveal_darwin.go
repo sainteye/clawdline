@@ -126,6 +126,7 @@ func itermReveal(ctx context.Context, args ...string) (map[string]any, error) {
 	}
 	run := startOsascript(ctx, kind, session)
 	out, err := cmd.Output()
+	run.done(err)
 	if err != nil {
 		return nil, osascriptFailure(ctx, run, stderr.String(), err, "iTerm2 would not show that session.")
 	}

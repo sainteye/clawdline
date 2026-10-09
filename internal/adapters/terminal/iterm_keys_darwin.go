@@ -71,6 +71,7 @@ func (i *ITerm) keyScript(ctx context.Context, args ...string) (map[string]any, 
 	}
 	run := startOsascript(ctx, kind, session)
 	out, err := cmd.Output()
+	run.done(err)
 	if err != nil {
 		return nil, osascriptFailure(ctx, run, stderr.String(), err, "iTerm2 did not do what it was asked.")
 	}
@@ -94,6 +95,9 @@ func (i *ITerm) Keystroke(ctx context.Context, s session.Session, codes []byte) 
 	if len(codes) == 0 {
 		return errors.New("there is no key to send")
 	}
+	if !ITermScan() {
+		return ITermScanOff{Op: "press a key in that iTerm2 session"}
+	}
 	args := []string{"key", s.ID}
 	for _, b := range codes {
 		args = append(args, strconv.Itoa(int(b)))
@@ -113,7 +117,9 @@ func (i *ITerm) Capture(ctx context.Context, s session.Session) (string, bool) {
 // opposed to a particular tab having gone away. The held-screen reader uses
 // that distinction to back off the whole source only during an outage.
 func (i *ITerm) CaptureWithFailure(ctx context.Context, s session.Session) (string, bool, bool) {
-	if s.Backend != session.BackendITerm || s.ID == "" {
+	// Scanning turned off reads no screen. It is not a source failure: the
+	// held-screen reader must not back off and retry a bridge nobody asked.
+	if s.Backend != session.BackendITerm || s.ID == "" || !ITermScan() {
 		return "", false, false
 	}
 	answer, err := i.keyScript(ctx, "capture", s.ID)

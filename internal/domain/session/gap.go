@@ -112,6 +112,12 @@ func SourceForID(id string) string {
 // once every one of them is sealed — by another source, in the same reading,
 // and never by how long the gap has been there.
 func (i Inventory) ProvesAbsence(source string) (bool, string) {
+	// A source the person turned off was not asked. Whatever the rest of the
+	// reading says, it cannot say a session of that source is gone
+	// (docs/design-decisions.md D56).
+	if why, off := i.DisabledSources[source]; off {
+		return false, source + " was not read: turned off by " + why
+	}
 	complete, known := i.Sources[source]
 	if source == "" || !known {
 		// Either the id is of no shape a source here issues, or no source in

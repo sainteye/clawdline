@@ -45,6 +45,8 @@ export const DEFAULTS = {
   smart_notifications: false,
   push_on_deploy: false,
   orchestrator_agent_notify: true,
+  /** On: the daemon lists iTerm2's sessions over Apple Events, as it always has. */
+  iterm_scan: true,
   orchestrator_enabled: true,
   planning_gate: true,
   verify_gate: false,
