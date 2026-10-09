@@ -54,10 +54,10 @@ import (
 )
 
 type Server struct {
-	cfg             config.Config
+	cfg config.Config
 	// routeStats counts every API call by route and caller (route_stats.go).
-	routeStats     *routeStats
-	routeStatsOnce sync.Once
+	routeStats      *routeStats
+	routeStatsOnce  sync.Once
 	viewerMu        sync.Mutex
 	viewer          *adaptercloud.ViewerClient
 	viewerSignature string
