@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { failureSentence } from "../legacy/bridge.js"
+import { failureSentence } from "../refusals/refusal-text.js"
 import { nextWord } from "../next-strings.js"
 import type { CloudClientHandle } from "./copied.js"
 import type { DetailActionContext, FleetMachine, SessionDestination, SessionProjectionSource } from "./all-machine-sessions.js"
