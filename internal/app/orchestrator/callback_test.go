@@ -69,7 +69,13 @@ func TestACallbackSettlesOnItsExitAndOwesItsRootANotice(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if out.Record.State != StateBriefed || out.Record.Callback == nil || out.Record.Kind != TaskKindCallback || out.Record.Callback.Intent != CallbackIntentWait {
+			// The answer is the task as it stands once the start has run: a
+			// command that ends before the answer is read back — dash reports
+			// a missing command in about a millisecond — is already settled,
+			// and `clawdline callback` prints that ending instead of "end
+			// your turn".
+			if (out.Record.State != StateBriefed && out.Record.State != tc.state) || out.Record.Callback == nil ||
+				out.Record.Kind != TaskKindCallback || out.Record.Callback.Intent != CallbackIntentWait {
 				t.Fatalf("started as %+v", out.Record)
 			}
 			r := settledWithin(t, b, ctx, id, 10*time.Second)
