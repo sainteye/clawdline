@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- Node's type-stripping runner loads the source directly.
-import { arrangeFleetRows } from "./fleet-order.ts"
+import { arrangeFleetRows, fleetWaitingKey } from "./fleet-order.ts"
 import type { ProjectedSession } from "./all-machine-sessions.js"
 
 function row(id: string, state: string, parentSessionID?: string): ProjectedSession {
@@ -23,4 +23,15 @@ test("an absent parent leaves its child visible without an invented branch", () 
   const arranged = arrangeFleetRows([row("child", "working", "on-another-machine")], new Map())
   assert.equal(arranged[0].depth, 0)
   assert.equal(arranged[0].row.destination.sessionID, "child")
+})
+
+test("fleet rows keep the original pointer hold until a waiting Session changes", () => {
+  const before = [row("one", "working"), row("two", "idle")]
+  const titles = new Map([["one", "A work"], ["two", "B work"]])
+  const hold = { order: arrangeFleetRows(before, titles).map(({ row }) => row.destination.sessionID),
+    waiting: fleetWaitingKey(before) }
+  const changed = [row("one", "idle"), row("two", "working")]
+  assert.deepEqual(arrangeFleetRows(changed, titles, hold).map(({ row }) => row.destination.sessionID), ["one", "two"])
+  assert.deepEqual(arrangeFleetRows(changed, titles).map(({ row }) => row.destination.sessionID), ["two", "one"])
+  assert.notEqual(fleetWaitingKey([row("one", "waiting"), changed[1]]), hold.waiting)
 })

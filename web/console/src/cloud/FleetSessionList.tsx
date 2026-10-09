@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { nextWord } from "../next-strings.js"
+import * as L from "../legacy/bridge.js"
 import { ProjectedRow } from "../session/List.js"
+import type { OrderHold } from "../session/order.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
 import { AttentionOverview } from "./AttentionOverview.js"
 import { fromListProjection } from "./attention-adapter.js"
@@ -8,7 +10,7 @@ import { destinationKey, projectionRefreshAt, settleProjection,
   type MachineSessionProjection, type ProjectionProblem, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource, type FleetMachine } from "./all-machine-sessions.js"
 import { STATUS_FRESH_MS } from "./status-projection.js"
-import { arrangeFleetRows } from "./fleet-order.js"
+import { arrangeFleetRows, fleetWaitingKey } from "./fleet-order.js"
 
 export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal"
 type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionProjection }
@@ -32,6 +34,15 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const [machineAction, setMachineAction] = useState<MachineToolbarAction | null>(null)
   const machineDialog = useRef<HTMLDialogElement | null>(null)
   const searchField = useRef<HTMLInputElement | null>(null)
+  const listScroll = useRef<HTMLDivElement | null>(null)
+  const orderHolds = useRef(new Map<string, OrderHold>())
+  const [, redrawOrder] = useState(0)
+
+  // The original Session list hands all its canvases to one page clock after
+  // every render. Fleet rows use the same clock, including after status updates.
+  useEffect(() => {
+    L.registerSpinners([...(listScroll.current?.querySelectorAll<HTMLCanvasElement>("canvas.spin") ?? [])])
+  })
 
   useEffect(() => {
     if (machineAction) machineDialog.current?.showModal()
@@ -146,10 +157,27 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           .toLocaleLowerCase().includes(search)) : []
     const titles = new Map(filtered.map((row) => [row.destination.sessionID,
       presentations.current.get(destinationKey(row.destination))?.title ?? row.title]))
-    const rows = arrangeFleetRows(filtered, titles)
+    const hold = orderHolds.current.get(machine.id)
+    if (hold && hold.waiting !== fleetWaitingKey(reading?.phase === "settled" ? reading.value.rows ?? [] : []))
+      orderHolds.current.delete(machine.id)
+    const rows = arrangeFleetRows(filtered, titles, orderHolds.current.get(machine.id) ?? null)
     return { machine, reading, rows }
   }).filter(({ machine, rows }) => !search || rows.length > 0 ||
     `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search))
+  const freezeOrder = () => {
+    for (const { machine, reading, rows } of groups) {
+      if (orderHolds.current.has(machine.id)) continue
+      orderHolds.current.set(machine.id, {
+        order: rows.map(({ row }) => row.destination.sessionID),
+        waiting: fleetWaitingKey(reading?.phase === "settled" ? reading.value.rows ?? [] : []),
+      })
+    }
+  }
+  const thawOrder = () => {
+    if (!orderHolds.current.size) return
+    orderHolds.current.clear()
+    redrawOrder((revision) => revision + 1)
+  }
   const chooseAction = (action: MachineToolbarAction) => {
     if (!onMachineAction || machines.length === 0) return
     if (machines.length === 1) onMachineAction(machines[0].id, action)
@@ -163,7 +191,9 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
       onTerminals={() => chooseAction("terminal")}
       onVoice={() => chooseAction("voice")} onWork={() => chooseAction("work")}
       onStart={() => chooseAction("start")} />
-    <div className="scroller list-scroll cloud-all-list-scroll" id="list-scroll">
+    <div className="scroller list-scroll cloud-all-list-scroll" id="list-scroll" ref={listScroll}
+      onMouseEnter={freezeOrder} onMouseLeave={thawOrder} onTouchStart={freezeOrder}
+      onTouchEnd={() => window.setTimeout(thawOrder, 1200)}>
       <div className="cloud-all-groups">
         {groups.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group"
           aria-label={`${machine.name} ${machine.id}`}>

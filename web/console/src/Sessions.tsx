@@ -195,7 +195,7 @@ export function SessionsPage({
   // has left the document must leave the list with it.
   const listRef = useRef<HTMLUListElement>(null)
   useEffect(() => {
-    L.registerSpinners([...(listRef.current?.querySelectorAll<HTMLCanvasElement>("canvas.spin") ?? [])])
+    if (!fleetList) L.registerSpinners([...(listRef.current?.querySelectorAll<HTMLCanvasElement>("canvas.spin") ?? [])])
   })
   useListReorderAnimation(listRef)
 
@@ -254,7 +254,7 @@ export function SessionsPage({
   const terminalPtrRef = useRef<HTMLDivElement>(null)
   const terminalReload = useRef<(() => Promise<void>) | null>(null)
   const terminalPtrWord = usePullToRefresh(terminalScrollRef, terminalPtrRef, () => terminalReload.current?.())
-  useOrderHold(scrollRef)
+  useOrderHold(scrollRef, !fleetList)
   // A row that has gone takes its uncovered action with it, rather than
   // leaving a close button standing over whatever row took its place.
   useEffect(() => {
@@ -450,8 +450,9 @@ function ListSkeleton() {
  * moment after a finger leaves it (`input/keys.js`): a list that sorts itself
  * can move a row out from under a press.
  */
-function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>): void {
+function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>, enabled: boolean): void {
   useEffect(() => {
+    if (!enabled) return
     const scroller = scrollRef.current
     if (!scroller) return
     const touchEnd = () => {
@@ -471,7 +472,7 @@ function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>): void {
       scroller.removeEventListener("touchstart", L.freezeOrder)
       scroller.removeEventListener("touchend", touchEnd)
     }
-  }, [scrollRef])
+  }, [scrollRef, enabled])
 }
 
 /**

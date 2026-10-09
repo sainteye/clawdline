@@ -111,7 +111,7 @@ export interface OrderHold {
  * `waitingKey`: the waiting sessions, as one comparable string. A hold is given
  * up when this changes — a new question outranks a steady list.
  */
-export function waitingKey(rows: readonly SessionRow[]): string {
+export function waitingKey(rows: readonly Pick<SessionRow, "id" | "state">[]): string {
   return rows
     .filter((row) => row.state === "waiting")
     .map((row) => row.id)
