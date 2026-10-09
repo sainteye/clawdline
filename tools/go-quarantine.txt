@@ -1,0 +1,9 @@
+# Flaky Go tests quarantined from CI, one per line:
+#
+#   file | TestName | owner | expires YYYY-MM-DD | reason
+#
+# tools/test-go-ci.sh skips each one and prints it on every run. The run fails
+# when an entry is past its expiry date or names a test its file no longer
+# defines. The owner is the board item or task that is fixing it, never a
+# person's name: this repository is public. docs/working-rules.md, "Quarantining
+# a flaky Go test".

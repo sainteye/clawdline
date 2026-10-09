@@ -89,9 +89,11 @@ check "check-machine-words.sh" tools/check-machine-words.sh
 check "check-shell-expansions.sh" tools/check-shell-expansions.sh
 check "check-private.sh" tools/check-private.sh
 check "check-private.sh -history -new" tools/check-private.sh -history -new
+check "check-console-tests.mjs" node tools/check-console-tests.mjs
 if [ "$web" = yes ]; then
   check "web: npm run check" sh -c 'cd web && npm run deps && npm run check'
   check "web: npm run build" sh -c 'cd web && npm run build'
+  check "web: npm test" sh -c 'cd web && npm test'
 else
   summary+=("SKIP  web checks  (nothing under web/ changed; --web runs them)")
 fi
