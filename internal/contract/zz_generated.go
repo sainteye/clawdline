@@ -5769,6 +5769,9 @@ type SessionStatus struct {
 	LastMovementAt int64  `json:"last_movement_at,omitempty"`
 	MachineID      string `json:"machine_id"`
 
+	// True for the machine workspace Session, which sorts before ordinary Sessions.
+	MachineScope bool `json:"machine_scope,omitempty"`
+
 	// Absent when activity or current source evidence is unknown; false is a measured
 	// answer.
 	NoMovement bool `json:"no_movement,omitempty"`
@@ -5776,6 +5779,10 @@ type SessionStatus struct {
 	// Machine policy threshold in milliseconds for classifying no recent record
 	// movement.
 	NoProgressAfterMs int64 `json:"no_progress_after_ms"`
+
+	// Terminal id of a currently listed parent Session, derived from the signed task
+	// or Epic owner relationship. No task text is copied.
+	ParentSessionID string `json:"parent_session_id,omitempty"`
 
 	// Unix seconds when this status was projected.
 	ProjectedAt int64  `json:"projected_at"`

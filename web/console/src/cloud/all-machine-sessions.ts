@@ -31,6 +31,8 @@ export interface ProjectedSession {
   title: string
   assistant?: "claude" | "codex"
   backend?: "tmux" | "iterm" | "ps"
+  parentSessionID?: string
+  machineScope?: boolean
   state: string
   freshness: "current" | "stale" | "unknown"
   needsAttention?: boolean

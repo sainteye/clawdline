@@ -25,6 +25,8 @@
         "execution_generation": { "description": "Random 128-bit machine-issued execution identity, absent unless this row's source is current and its process is pinned by PID and kernel start time.", "type": "string", "pattern": "^[0-9a-f]{32}$" },
         "assistant": { "type": "string", "enum": ["claude", "codex"] },
         "backend": { "type": "string", "enum": ["tmux", "iterm", "ps"] },
+        "parent_session_id": { "description": "Terminal id of a currently listed parent Session, derived from the signed task or Epic owner relationship. No task text is copied.", "type": "string" },
+        "machine_scope": { "description": "True for the machine workspace Session, which sorts before ordinary Sessions.", "type": "boolean" },
         "state": { "type": "string", "enum": ["working", "waiting", "idle", "unknown"] },
         "source": { "$ref": "#/$defs/SessionStatusSource" },
         "inventory_complete": { "description": "Whether the whole local scan was complete. False does not by itself revoke a currently observed row.", "type": "boolean" },

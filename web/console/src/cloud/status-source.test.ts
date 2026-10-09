@@ -83,6 +83,29 @@ test("a status row event names the Session whose list title should refresh", () 
   stop()
 })
 
+test("a newer row before its marker does not announce a transient event gap", () => {
+  const { client, emit, calls } = clientFixture()
+  const events: unknown[] = []
+  const stop = statusSource(() => client as never).subscribe((event) => events.push(event))
+  const next = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  const rowEntry = client.statusSnapshots.get(JSON.stringify([machineID, sessionID])) as {
+    payload: { snapshot_generation: string }; sequence: number
+  }
+  rowEntry.payload.snapshot_generation = next
+  rowEntry.sequence = 3
+  emit({ type: "session_status", identity: { machine: machineID, session: sessionID } })
+  assert.deepEqual(events, [])
+  const marker = client.statusSnapshots.get(JSON.stringify([machineID, inventory])) as {
+    payload: { snapshot_generation: string }; sequence: number
+  }
+  marker.payload.snapshot_generation = next
+  marker.sequence = 4
+  emit({ type: "session_status", identity: { machine: machineID, session: inventory } })
+  assert.deepEqual(events, [{ machineID, sessionID: undefined, kind: "changed" }])
+  assert.deepEqual(calls, [])
+  stop()
+})
+
 test("status-only list never subscribes to or reads rich content", async () => {
   const { client, calls } = clientFixture()
   const source = statusSource(() => client as never)
@@ -294,12 +317,12 @@ test("a stale status row refuses content without subscribing", async () => {
   assert.deepEqual(calls, [])
 })
 
-test("a missing ss row recovers only that retained status channel", async () => {
+test("a missing ss row settles before it can shake the visible list", async () => {
   const { client, calls } = clientFixture()
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
   const source = statusSource(() => client as never)
-  const gap = await source.readMachine(machineID, new AbortController().signal)
-  assert.equal(gap.kind === "unavailable" && gap.reason, "event_gap")
+  const recovered = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(recovered.kind, "ready")
   assert.deepEqual(calls, ["recover:" + [machineID, sessionID, snapshotGeneration].join(":")])
   const reading = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(reading.kind, "ready")

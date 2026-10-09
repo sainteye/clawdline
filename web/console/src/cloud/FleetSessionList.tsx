@@ -4,10 +4,11 @@ import { ProjectedRow } from "../session/List.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
 import { AttentionOverview } from "./AttentionOverview.js"
 import { fromListProjection } from "./attention-adapter.js"
-import { afterEventGap, destinationKey, projectionRefreshAt, settleProjection,
+import { destinationKey, projectionRefreshAt, settleProjection,
   type MachineSessionProjection, type ProjectionProblem, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource, type FleetMachine } from "./all-machine-sessions.js"
 import { STATUS_FRESH_MS } from "./status-projection.js"
+import { arrangeFleetRows } from "./fleet-order.js"
 
 export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal"
 type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionProjection }
@@ -63,15 +64,14 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
       })
     }
     const stop = source.subscribe(({ machineID, sessionID, kind }) => {
-      if (!machines.some((machine) => machine.id === machineID) || kind === "detail_changed") return
-      if (kind === "changed" && sessionID) {
+      if (!machines.some((machine) => machine.id === machineID)) return
+      if (kind === "detail_changed" && sessionID) {
         for (const [key, value] of presentations.current) {
           if (value.machineID === machineID && value.sessionID === sessionID) presentations.current.delete(key)
         }
         refreshPresentation((revision) => revision + 1)
+        return
       }
-      if (kind === "gap") setReadings((before) => ({ ...before, [machineID]: { phase: "settled",
-        value: afterEventGap(before[machineID]?.phase === "settled" ? before[machineID].value : undefined) } }))
       read(machineID)
     })
     for (const machine of machines) read(machine.id)
@@ -140,10 +140,13 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const search = filter.trim().toLocaleLowerCase()
   const groups = machines.map((machine) => {
     const reading = readings[machine.id]
-    const rows = reading?.phase === "settled" && reading.value.rows
+    const filtered = reading?.phase === "settled" && reading.value.rows
       ? reading.value.rows.filter((row) => !search ||
         `${machine.name} ${machine.id} ${machine.platform} ${presentations.current.get(destinationKey(row.destination))?.title ?? row.title} ${row.destination.sessionID} ${stateWord(row.state)}`
           .toLocaleLowerCase().includes(search)) : []
+    const titles = new Map(filtered.map((row) => [row.destination.sessionID,
+      presentations.current.get(destinationKey(row.destination))?.title ?? row.title]))
+    const rows = arrangeFleetRows(filtered, titles)
     return { machine, reading, rows }
   }).filter(({ machine, rows }) => !search || rows.length > 0 ||
     `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search))
@@ -172,15 +175,16 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
             {rows.length === 0 ? reading.value.unknownTargets ? null : reading.value.kind === "ready" ?
               <p>{reading.value.rows.length === 0 ? nextWord("cloudAllEmptyMachine") : nextWord("cloudAllNoMatch")}</p> : null
               : <ul className="rows" role="listbox" aria-label={`${machine.name} ${nextWord("cloudSingleSessions")}`}>
-                {rows.map((row) => {
+                {rows.map(({ row, depth, branchThrough, ancestorThrough }) => {
                   const presentation = presentations.current.get(destinationKey(row.destination))
                   return <ProjectedRow key={destinationKey(row.destination)}
                     title={presentation?.title ?? row.title} icon={presentation?.icon} cwd={presentation?.cwd}
                     sessionID={row.destination.sessionID} machineName={machine.name} platform={machine.platform}
                     assistant={row.assistant} backend={row.backend} state={row.state} stateLabel={stateWord(row.state)}
-                    freshness={nextWord(row.freshness === "current" ? "cloudAllCurrent" :
+                    freshness={row.freshness === "current" ? "" : nextWord(
                       row.freshness === "stale" ? "cloudAllStale" : "cloudAllUnknown")}
-                    observedAt={timeWord(row.observedAt)} attention={row.needsAttention === true}
+                    lastMovementAt={row.lastMovementAt} attention={row.needsAttention === true}
+                    depth={depth} branchThrough={branchThrough} ancestorThrough={ancestorThrough}
                     open={!!target && destinationKey(target) === destinationKey(row.destination)}
                     selectionKey={destinationKey(row.destination)} onOpen={() => onOpen(row.destination)} />
                 })}</ul>}
@@ -221,10 +225,6 @@ function problemWord(reason: ProjectionProblem): string {
   return nextWord(({ offline: "cloudAllOffline", stale: "cloudAllStaleSource", unknown: "cloudAllUnknownSource",
     old_version: "cloudAllOldVersion", no_permission: "cloudAllNoPermission", unresponsive: "cloudAllUnresponsive",
     event_gap: "cloudAllEventGap", bad_projection: "cloudAllBadProjection" })[reason] as "cloudAllOffline")
-}
-
-function timeWord(at: number): string {
-  return Number.isFinite(at) ? new Date(at).toLocaleString() : nextWord("cloudAllUnknown")
 }
 
 function stateWord(state: string): string {

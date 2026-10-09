@@ -138,6 +138,33 @@ func TestStatusInventoryFollowsTheRows(t *testing.T) {
 	}
 }
 
+func TestStatusCarriesOnlyExistingTaskAndEpicAncestry(t *testing.T) {
+	c := &collector{}
+	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish,
+		tasks: []map[string]any{{"child": map[string]any{"terminalId": "child"}, "root": map[string]any{"terminalId": "root"}}}}
+	reading := sessionReading{sessions: []map[string]any{
+		{"id": "root", "sessionId": "root-conversation", "state": "working", "machine_scope": true},
+		{"id": "child", "state": "working", "label": "private child title"},
+		{"id": "epic", "epic_parent": map[string]any{"owner_session_id": "root-conversation", "epic_id": "private epic"}},
+		{"id": "orphan", "epic_parent": map[string]any{"owner_session_id": "missing", "epic_id": "private epic"}},
+	}, at: json.RawMessage(`100`), complete: true}
+	p.publishStatuses(context.Background(), reading, []string{"root", "child", "epic", "orphan"})
+	if c.payload(t, "ss/mac_a/child")["parent_session_id"] != "root" ||
+		c.payload(t, "ss/mac_a/epic")["parent_session_id"] != "root" ||
+		c.payload(t, "ss/mac_a/root")["machine_scope"] != true {
+		t.Fatal("listed task, Epic, or machine workspace relationship was lost")
+	}
+	if _, ok := c.payload(t, "ss/mac_a/orphan")["parent_session_id"]; ok {
+		t.Fatal("an absent parent invented an indent")
+	}
+	for _, id := range []string{"root", "child", "epic", "orphan"} {
+		body, _ := json.Marshal(c.payload(t, "ss/mac_a/"+id))
+		if strings.Contains(string(body), "private") {
+			t.Fatalf("status ancestry copied content for %s", id)
+		}
+	}
+}
+
 func TestStatusInventoryPublishesAnEmptySet(t *testing.T) {
 	c := &collector{}
 	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
