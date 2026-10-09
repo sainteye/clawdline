@@ -89,10 +89,12 @@ case "$goos" in
     ;;
   linux)
     command -v docker >/dev/null || die "linux/$goarch builds in Docker, and there is no docker here"
+    image=$ALPINE_IMAGE_AMD64
+    [ "$goarch" = amd64 ] || image=$ALPINE_IMAGE_ARM64
     docker run --rm --platform "linux/$goarch" -v "$work:/w" \
       -e TARGET_OS=linux -e TMUX_VERSION="$TMUX_VERSION" -e LIBEVENT_VERSION="$LIBEVENT_VERSION" \
       -e UTF8PROC_VERSION="$UTF8PROC_VERSION" -e NCURSES_VERSION="$NCURSES_VERSION" \
-      "$ALPINE_IMAGE" /bin/sh /w/inside.sh /w
+      "$image" /bin/sh /w/inside.sh /w
     ;;
 esac
 
@@ -108,7 +110,7 @@ bin_sha=$(sha256 "$out/tmux")
   printf '  "utf8proc": {"version": "%s", "sha256": "%s"},\n' "$UTF8PROC_VERSION" "$UTF8PROC_SHA256"
   if [ "$goos" = linux ]; then
     printf '  "ncurses": {"version": "%s", "sha256": "%s"},\n' "$NCURSES_VERSION" "$NCURSES_SHA256"
-    printf '  "image": "%s",\n' "$ALPINE_IMAGE"
+    printf '  "image": "%s",\n' "$image"
   fi
   printf '  "binary_sha256": "%s"\n}\n' "$bin_sha"
 } >"$out/tmux.json"
