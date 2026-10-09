@@ -122,10 +122,31 @@ type tmuxResolver struct {
 	socket func() string
 	// version is `tmux -V`.
 	version func(ctx context.Context, path string) (string, error)
+	// sessions says whether the carried tmux's server holds a session
+	// (carriedHasSessions); known is false when it would not say.
+	sessions func(ctx context.Context, path, socket string) (has, known bool)
 
 	mu    sync.Mutex
 	known map[string]versionMemo
+	// kept is the last answer about the carried server, while its socket is
+	// the same file: one entry, never a list.
+	kept keptMemo
 }
+
+// keptMemo is whether the carried server held a session, asked at `asked`
+// of the socket file `ino` was.
+type keptMemo struct {
+	socket string
+	ino    uint64
+	asked  time.Time
+	has    bool
+}
+
+// keptRecheck is how long an answer that the carried server holds a session
+// stands before it is asked again. A server whose last session ends removes
+// its socket, which ends the answer at once; this is for one that was killed
+// and left the file behind.
+const keptRecheck = 10 * time.Second
 
 // versionMemo is one binary's version, kept while the file is the same file.
 // There is one entry per path the resolver ever probes, and those are the
@@ -164,6 +185,9 @@ func (r *tmuxResolver) resolve(ctx context.Context) TmuxChoice {
 		// the person's tmux stays the one used, as it was before a release
 		// carried one, and the owned terminal says it could not read it.
 		if err != nil || !ok || TmuxNewEnough(major, minor) {
+			if kept, ok := r.keepCarried(ctx, choice); ok {
+				return kept
+			}
 			return choice
 		}
 		passed = fmt.Sprintf("%s at %s is older than tmux %d.%d", choice.Version, system, TmuxMinimumMajor, TmuxMinimumMinor)
@@ -179,6 +203,79 @@ func (r *tmuxResolver) resolve(ctx context.Context) TmuxChoice {
 	// own version check.
 	old.Passed = passed
 	return old
+}
+
+// keepCarried is the carried tmux, kept while its server still holds a
+// session, on a machine whose own tmux would otherwise be chosen.
+//
+// A machine that ran on the carried tmux and then installed its own would
+// otherwise switch every call to the default server the moment the new tmux
+// appeared on the PATH, and every session still running on sessions.sock —
+// assistants included — would vanish from the list and could no longer be
+// typed into or closed. Both servers cannot be listed side by side: each
+// numbers its panes from %0, and a pane id is the whole address a session
+// has (session.SourceForID), so two servers' %3 would be one session to
+// everything above this package. The carried server is kept until its last
+// session ends, when tmux removes the socket and the next call reaches the
+// machine's own tmux.
+func (r *tmuxResolver) keepCarried(ctx context.Context, system TmuxChoice) (TmuxChoice, bool) {
+	carried := r.carried()
+	if carried == "" {
+		return TmuxChoice{}, false
+	}
+	socket := r.socketPath()
+	ino, ok := socketFile(socket)
+	if !ok {
+		return TmuxChoice{}, false
+	}
+	r.mu.Lock()
+	m := r.kept
+	r.mu.Unlock()
+	has := m.has
+	fresh := m.socket == socket && m.ino == ino && !m.asked.IsZero() &&
+		(!m.has || time.Since(m.asked) < keptRecheck)
+	if !fresh {
+		ask := r.sessions
+		if ask == nil {
+			ask = carriedHasSessions
+		}
+		answer, known := ask(ctx, carried, socket)
+		if known {
+			has = answer
+			r.mu.Lock()
+			r.kept = keptMemo{socket: socket, ino: ino, asked: time.Now(), has: has}
+			r.mu.Unlock()
+		} else if m.socket != socket || m.ino != ino {
+			// A server that would not answer has no authority to prove its
+			// sessions gone (D05 ③): the socket is there, so it is kept.
+			has = true
+		}
+	}
+	if !has {
+		return TmuxChoice{}, false
+	}
+	version, _ := r.versionOf(ctx, carried)
+	return TmuxChoice{Path: carried, Version: strings.TrimSpace(version), Bundled: true, Socket: socket,
+		Passed: fmt.Sprintf("%s at %s is used once the sessions still on %s have ended", system.Version, system.Path, socket)}, true
+}
+
+// carriedHasSessions asks the carried server whether it holds a session.
+// known is false when it would not say; "no server" is an answer, false.
+func carriedHasSessions(ctx context.Context, path, socket string) (has, known bool) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "-S", socket, "list-sessions", "-F", "#{session_id}")
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if NoServer(stderr.String()) {
+			return false, true
+		}
+		return false, false
+	}
+	return strings.TrimSpace(string(out)) != "", true
 }
 
 // system is tmux on this process's PATH, then in the places package managers

@@ -4,6 +4,7 @@ package terminal
 
 import (
 	"context"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -236,5 +237,126 @@ func TestTheCarriedTmuxRunsOnItsOwnServer(t *testing.T) {
 	}
 	if out, err := exec.Command(real, "ls").CombinedOutput(); err == nil {
 		t.Fatalf("the default server was started: %s", out)
+	}
+}
+
+// liveSocket is a listening Unix socket under /tmp, where the path is short
+// enough for one: it stands in for a carried server's sessions.sock.
+func liveSocket(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "clt-kept-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, SessionsSocketName)
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
+	return sock
+}
+
+// A machine that ran on the carried tmux and then installed its own keeps the
+// carried server while it still holds a session, so those sessions stay
+// listed and driven; it says which tmux waits and for what.
+func TestTheCarriedServerIsKeptWhileItHoldsASession(t *testing.T) {
+	system, _ := versionedTmux(t, "tmux 3.5a")
+	carried, _ := versionedTmux(t, "tmux 3.6a")
+	sock := liveSocket(t)
+	asked := 0
+	r := resolverWith(system, carried, sock)
+	r.sessions = func(_ context.Context, path, socket string) (bool, bool) {
+		asked++
+		if path != carried || socket != sock {
+			t.Fatalf("asked %s on %s", path, socket)
+		}
+		return true, true
+	}
+	for i := 0; i < 3; i++ {
+		got := r.resolve(context.Background())
+		if got.Path != carried || !got.Bundled || got.Socket != sock {
+			t.Fatalf("the carried server was dropped: %+v", got)
+		}
+		if !strings.Contains(got.Passed, system) || !strings.Contains(got.Passed, "tmux 3.5a") || !strings.Contains(got.Passed, sock) {
+			t.Fatalf("kept without saying why: %q", got.Passed)
+		}
+	}
+	if asked != 1 {
+		t.Fatalf("the carried server was asked %d times in three calls", asked)
+	}
+}
+
+// Once the carried server holds nothing, the machine's own tmux is used, and
+// the empty server is not asked again while its socket is the same file.
+func TestAnEmptyCarriedServerGivesWayToTheSystemTmux(t *testing.T) {
+	system, _ := versionedTmux(t, "tmux 3.5a")
+	carried, _ := versionedTmux(t, "tmux 3.6a")
+	sock := liveSocket(t)
+	asked := 0
+	r := resolverWith(system, carried, sock)
+	r.sessions = func(context.Context, string, string) (bool, bool) { asked++; return false, true }
+	for i := 0; i < 3; i++ {
+		if got := r.resolve(context.Background()); got.Path != system || got.Bundled || got.Passed != "" {
+			t.Fatalf("%+v", got)
+		}
+	}
+	if asked != 1 {
+		t.Fatalf("an empty server was asked %d times", asked)
+	}
+}
+
+// No socket is no carried server: nothing is asked. A server that will not
+// answer is no proof its sessions are gone, so the socket alone keeps it.
+func TestNoSocketAsksNothingAndASilentServerIsKept(t *testing.T) {
+	system, _ := versionedTmux(t, "tmux 3.5a")
+	carried, _ := versionedTmux(t, "tmux 3.6a")
+	r := resolverWith(system, carried, filepath.Join(t.TempDir(), SessionsSocketName))
+	r.sessions = func(context.Context, string, string) (bool, bool) {
+		t.Fatal("asked a server with no socket")
+		return false, false
+	}
+	if got := r.resolve(context.Background()); got.Path != system {
+		t.Fatalf("%+v", got)
+	}
+	silent := resolverWith(system, carried, liveSocket(t))
+	silent.sessions = func(context.Context, string, string) (bool, bool) { return false, false }
+	if got := silent.resolve(context.Background()); got.Path != carried || !got.Bundled {
+		t.Fatalf("a server that did not answer was dropped: %+v", got)
+	}
+}
+
+// The real question, asked of a real tmux on a private socket: a session is
+// there, then the server is gone and that is an answer too.
+func TestTheCarriedServerIsAskedForItsSessions(t *testing.T) {
+	real, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux is not installed")
+	}
+	dir, err := os.MkdirTemp("/tmp", "clt-ask-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	t.Setenv("TMUX_TMPDIR", dir)
+	t.Setenv("TMUX", "")
+	sock := filepath.Join(dir, SessionsSocketName)
+	t.Cleanup(func() { _ = exec.Command(real, "-S", sock, "kill-server").Run() })
+	ctx := context.Background()
+	if has, known := carriedHasSessions(ctx, real, sock); has || !known {
+		t.Fatalf("no server read as has=%v known=%v", has, known)
+	}
+	if out, err := exec.Command(real, "-S", sock, "-f", "/dev/null", "new-session", "-d", "-s", "kept", "/bin/sleep 30").CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if has, known := carriedHasSessions(ctx, real, sock); !has || !known {
+		t.Fatalf("a held session read as has=%v known=%v", has, known)
+	}
+	if out, err := exec.Command(real, "-S", sock, "kill-server").CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if has, known := carriedHasSessions(ctx, real, sock); has || !known {
+		t.Fatalf("a stopped server read as has=%v known=%v", has, known)
 	}
 }
