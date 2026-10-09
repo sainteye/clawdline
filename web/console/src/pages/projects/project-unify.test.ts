@@ -4,6 +4,10 @@ import {
   actionPictures, conflictViews, driftCount, lineChanges, mayApply, movesSummary, unifyColumns, unifyStatusLine,
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 } from "./project-unify.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "../../catalog-testing.ts"
+
+withCatalog("zh-Hant")
 
 // A drifting Project as the machine plans it: CLAUDE.md without the import,
 // one skill only Codex sees, one only Claude sees, one identical copy, and one

@@ -3,6 +3,10 @@ import assert from "node:assert/strict"
 import type { SquadPersona, SquadView } from "./model.ts"
 // @ts-expect-error -- Node's strip-types runner uses the source .ts extension.
 import { ACTIVE_SKILL_BYTES, activeSkillBytes, sameSkill, skillInputError } from "./skill-create.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "../../catalog-testing.ts"
+
+withCatalog("zh-Hant")
 
 test("an ambiguous catalog reply can be reconciled only with identical stored content", () => {
   const icon = { accent: "#123456", cells: [["#123456"]] }

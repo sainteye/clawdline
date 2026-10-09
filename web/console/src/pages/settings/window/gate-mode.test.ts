@@ -2,6 +2,10 @@ import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- a .ts path for Node's type-stripping test runner.
 import { gateModeOptions, gateModeText } from "./gate-mode.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "../../../catalog-testing.ts"
+
+withCatalog("zh-Hant")
 
 test("all four settings combinations explain the captured behavior", () => {
 	assert.match(gateModeText(true, true), /NEXUS.*Feature 和 Epic.*獨立 checker/)

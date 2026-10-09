@@ -5,6 +5,10 @@ import test from "node:test"
 import { invalidScheduleErrorHTML, scheduleErrorCopy } from "./schedule-errors.ts"
 // @ts-expect-error -- a `.ts` path for node's type-stripping test runner.
 import { nextWord } from "./next-strings.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "./catalog-testing.ts"
+
+withCatalog("zh-Hant")
 
 function inLanguage<T>(language: string, run: () => T): T {
   const before = Object.getOwnPropertyDescriptor(globalThis, "document")

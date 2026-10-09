@@ -2,6 +2,10 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's strip-types runner uses the source .ts extension.
 import { squadView, type WireCatalog, type WireSettings } from "./wire.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { withCatalog } from "../../catalog-testing.ts"
+
+withCatalog("zh-Hant")
 
 const icon = { accent: "#fff", cells: [["#fff"]] }
 const field = <T>(value: T, source: "default" | "global" | "project" = "default", version = 0) =>
