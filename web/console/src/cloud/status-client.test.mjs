@@ -136,12 +136,15 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
   assert.equal(client.machineObservedAt.get("m"), signed.ts)
   assert.equal(events[0].type, "session_status")
   client.machineOffline.set("m", { until: Date.now() + 1000 })
-  const retained = { ...signed, seq: 2, ts: signed.ts + 1000 }
+  client.machineObservedAt.clear()
+  const retained = { ...signed, seq: 2, ts: signed.ts - 600_000 }
   retained.sig = Buffer.from(await crypto.subtle.sign({ name: "Ed25519" }, keys.privateKey,
     envelopeSigningBytes(retained))).toString("base64")
   await client._receiveEnvelope(retained, true)
   assert.equal(client.machineOffline.has("m"), true, "a retained row does not prove the machine is online")
-  assert.equal(client.machineObservedAt.get("m"), signed.ts, "a retained row does not renew presence")
+  assert.equal(client.machineObservedAt.get("m"), retained.ts, "retention preserves only the signed observation time")
+  assert.ok(Date.now() - client.machineObservedAt.get("m") > 300_000,
+    "an old retained row cannot claim current machine presence")
 })
 
 test("pinned transcript sends exact generation and never coalesces another generation", async () => {
