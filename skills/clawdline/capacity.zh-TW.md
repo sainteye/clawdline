@@ -79,6 +79,11 @@
 | `cloud.terminal_unconfirmed_seconds` | 15 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_unverified_retire_seconds` | 10 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_viewer_connections` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
+| `console.transcript_backoff_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
+| `console.transcript_follow_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
+| `console.transcript_merged_rows` | 1000 | `rows` | `expire` | `diagnostics` | — |
+| `console.transcript_safety_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `coordinator.aliases` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `coordinator.bind_attempts` | 6 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `decisions.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
