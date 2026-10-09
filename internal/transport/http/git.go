@@ -5,10 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // gitPath recognises GET /v1/sessions/{id}/git and returns the id, decoded —
@@ -55,7 +57,7 @@ func (s *Server) sessionGitRoute(w http.ResponseWriter, r *http.Request, id stri
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	item, err := s.actions().Find(ctx, id)
+	item, err := s.actions().FindForRead(ctx, id)
 	if err != nil {
 		writeActionRefusal(w, err)
 		return
@@ -67,7 +69,12 @@ func (s *Server) sessionGitRoute(w http.ResponseWriter, r *http.Request, id stri
 		writeRefusal(w, http.StatusNotFound, "not_found", "No session named that")
 		return
 	}
+	if gitNotRepos().Known(item.CWD) {
+		writeGitRefusal(w, git.ErrNotRepository)
+		return
+	}
 	snapshot, err := git.New().Changes(ctx, item.CWD)
+	noteGitAnswer(item.CWD, err)
 	if err != nil {
 		writeGitRefusal(w, err)
 		return
@@ -90,7 +97,7 @@ func (s *Server) sessionGitDiffRoute(w http.ResponseWriter, r *http.Request, id 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	item, err := s.actions().Find(ctx, id)
+	item, err := s.actions().FindForRead(ctx, id)
 	if err != nil {
 		writeActionRefusal(w, err)
 		return
@@ -99,7 +106,12 @@ func (s *Server) sessionGitDiffRoute(w http.ResponseWriter, r *http.Request, id 
 		writeRefusal(w, http.StatusNotFound, "not_found", "No session named that")
 		return
 	}
+	if gitNotRepos().Known(item.CWD) {
+		writeGitRefusal(w, git.ErrNotRepository)
+		return
+	}
 	diff, err := git.New().FileDiff(ctx, item.CWD, path)
+	noteGitAnswer(item.CWD, err)
 	if err != nil {
 		if errors.Is(err, git.ErrFileNotChanged) {
 			writeRefusal(w, http.StatusNotFound, "git_file_not_changed", "That path is not a changed file in this repository")
@@ -124,11 +136,37 @@ func (s *Server) sessionGitDiffRoute(w http.ResponseWriter, r *http.Request, id 
 // in the Swift route's words. The panel tells `not_a_repo` from the rest —
 // "this is not a repository" is a fact about the session, and everything else
 // is a fact about this read — so the two must not arrive as one code.
+// gitNotRepos is the panel's short memory of directories git said hold no
+// repository (git.NotRepos), shared by every request on this daemon. It is
+// built on first use, so the register's overrides are read when they are.
+var gitNotRepos = sync.OnceValue(func() *git.NotRepos {
+	return git.NewNotRepos(time.Duration(CapacityLimit(capacity.CacheGitNotRepo))*time.Second,
+		int(CapacityLimit(capacity.CacheGitNotRepoRows)))
+})
+
+// noteGitAnswer keeps the panel's memory in step with what git last said.
+func noteGitAnswer(cwd string, err error) {
+	switch {
+	case errors.Is(err, git.ErrNotRepository):
+		gitNotRepos().Remember(cwd)
+	case err == nil || errors.Is(err, git.ErrFileNotChanged):
+		gitNotRepos().Forget(cwd)
+	}
+}
+
 func writeGitRefusal(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, git.ErrNotRepository):
 		writeRefusal(w, http.StatusNotFound, "not_a_repo",
 			"That session is not inside a Git repository")
+	case errors.Is(err, git.ErrNoDirectory):
+		// Not not_a_repo: the directory itself is gone, so nothing was
+		// learned about a repository.
+		writeRefusal(w, http.StatusNotFound, "git_no_directory",
+			"That session's directory does not exist")
+	case errors.Is(err, git.ErrNoPermission):
+		writeRefusal(w, http.StatusInternalServerError, "git_permission_denied",
+			"This machine may not read that session's directory")
 	case errors.Is(err, git.ErrTimedOut):
 		writeRefusal(w, http.StatusGatewayTimeout, "git_timeout",
 			"That repository did not answer inside the Git read deadline")

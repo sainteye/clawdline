@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -72,6 +73,13 @@ var (
 	// porcelain answer is not a smaller reading of the repository, it is a
 	// reading that stops mid-line, so it is refused rather than parsed.
 	ErrTooLarge = errors.New("that repository answered with more than this read takes")
+	// ErrNoDirectory is the session's working directory not existing. It used
+	// to read as ErrNotRepository, which told the person a directory that is
+	// gone was one without a repository in it.
+	ErrNoDirectory = errors.New("that directory does not exist")
+	// ErrNoPermission is this daemon not being allowed into the directory,
+	// which says nothing about whether a repository is there.
+	ErrNoPermission = errors.New("this daemon may not read that directory")
 	// ErrFileNotChanged keeps the diff route from becoming an arbitrary file
 	// reader: it serves only a path in the status snapshot taken immediately
 	// before the patch is read.
@@ -134,7 +142,8 @@ func (g *Git) Changes(ctx context.Context, cwd string) (Status, error) {
 	// must carry the actual leaf paths too.
 	status, err := g.readOnly(ctx, cwd, "status", "--porcelain=v2", "--branch", "--untracked-files=all")
 	if err != nil {
-		if errors.Is(err, ErrTimedOut) || errors.Is(err, ErrUnavailable) || errors.Is(err, ErrTooLarge) {
+		if errors.Is(err, ErrTimedOut) || errors.Is(err, ErrUnavailable) || errors.Is(err, ErrTooLarge) ||
+			errors.Is(err, ErrNoDirectory) || errors.Is(err, ErrNoPermission) {
 			return Status{}, err
 		}
 		return Status{}, ErrNotRepository
@@ -271,8 +280,19 @@ func (g *Git) readOnlyWithDifference(ctx context.Context, cwd string, allowDiffe
 		if errors.Is(err, exec.ErrNotFound) {
 			return "", ErrUnavailable
 		}
+		// git never started because the directory could not be entered: the
+		// operating system's answer about the directory, not git's about a
+		// repository.
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) {
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+				return "", ErrNoDirectory
+			case errors.Is(err, fs.ErrPermission):
+				return "", ErrNoPermission
+			}
+		}
 		if allowDifference {
-			var exit *exec.ExitError
 			if errors.As(err, &exit) && exit.ExitCode() == 1 {
 				return out.String(), nil
 			}
