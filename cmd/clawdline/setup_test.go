@@ -418,6 +418,18 @@ func TestTheInstallEndsWithWhatToDoNext(t *testing.T) {
 	}
 }
 
+// A machine that runs the tmux the release carries has no `tmux` that reaches
+// the daemon's server, so the next step names `clawdline tmux`.
+func TestTheNextStepNamesClawdlineTmuxWhenTheCarriedOneRuns(t *testing.T) {
+	h := newFakeHost(t, "linux")
+	printNext(h.setupHost, setupOptions{port: 7727}, nextStep{version: "v0.10.0", command: "~/.local/bin/clawdline",
+		opened: "your browser", found: map[string]string{"claude": "/x/claude"}, tmuxCarried: true})
+	out := h.out.String()
+	if want := "  2. Start an assistant inside tmux:   ~/.local/bin/clawdline tmux new -s work   then run   claude\n"; !strings.Contains(out, want) {
+		t.Errorf("missing %q in:\n%s", want, out)
+	}
+}
+
 // The PATH hint names the profile file of the shell in $SHELL and the full
 // path that works until the new PATH takes effect.
 func TestThePathHintNamesTheShellsProfile(t *testing.T) {

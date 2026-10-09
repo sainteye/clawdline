@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/install"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/release"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -290,7 +291,9 @@ func runSetup(h setupHost, o setupOptions) int {
 
 	// b, c. What the daemon needs, and where it was found.
 	found, pm := findTools(h)
-	report := install.Prereqs{Found: found, PackageManager: pm}.Check(h.goos)
+	prereqs := install.Prereqs{Found: found, PackageManager: pm}
+	setupTmux(h, &prereqs, place.layout.ReleaseDir(name))
+	report := prereqs.Check(h.goos)
 	for _, line := range report.Lines {
 		fmt.Fprintln(h.out, setupPrereqCopy(line))
 	}
@@ -302,7 +305,14 @@ func runSetup(h setupHost, o setupOptions) int {
 		fmt.Fprintf(h.errOut, "%s\n  (%s)\n", stopLine, install.CodeTmuxMissing)
 		return 1
 	}
-	fmt.Fprintln(h.out, cliCopy("setup", "tmux_found", "✓ tmux found"))
+	if report.TmuxCarried {
+		if prereqs.TmuxTooOld != "" {
+			fmt.Fprintf(h.out, cliCopy("setup", "tmux_too_old_carried", "note: %s; the tmux this release carries is used instead\n"), prereqs.TmuxTooOld)
+		}
+		fmt.Fprintf(h.out, cliCopy("setup", "tmux_carried", "✓ tmux: this release carries %s; it runs on Clawdline's own server, apart from any other tmux\n"), prereqs.CarriedVersion)
+	} else {
+		fmt.Fprintln(h.out, cliCopy("setup", "tmux_found", "✓ tmux found"))
+	}
 	for _, line := range report.Found {
 		o.detail(h, "  %s\n", line)
 	}
@@ -414,7 +424,8 @@ func runSetup(h setupHost, o setupOptions) int {
 		return setupRefuse(h, err)
 	}
 	opened, address := openConsole(h, place, o, desktop, sf.App)
-	printNext(h, o, nextStep{version: m.Version, command: command, opened: opened, address: address, found: found})
+	printNext(h, o, nextStep{version: m.Version, command: command, opened: opened, address: address, found: found,
+		tmuxCarried: report.TmuxCarried})
 	return 0
 }
 
@@ -483,6 +494,9 @@ type nextStep struct {
 	// address, or empty when even that could not be made.
 	opened, address string
 	found           map[string]string
+	// tmuxCarried: the daemon runs the tmux this release carries, which only
+	// `clawdline tmux` reaches.
+	tmuxCarried bool
 }
 
 // printNext ends a successful install: where it runs, how to sign in, how
@@ -519,7 +533,11 @@ func printNext(h setupHost, o setupOptions, n nextStep) {
 	case !claude && !codex:
 		assistant = "claude   (or codex), once one of them is installed"
 	}
-	fmt.Fprintf(w, cliCopy("setup", "next_assistant", "  2. Start an assistant inside tmux:   tmux new -s work   then run   %s\n"), assistant)
+	if n.tmuxCarried {
+		fmt.Fprintf(w, cliCopy("setup", "next_assistant_carried", "  2. Start an assistant inside tmux:   %s tmux new -s work   then run   %s\n"), n.command, assistant)
+	} else {
+		fmt.Fprintf(w, cliCopy("setup", "next_assistant", "  2. Start an assistant inside tmux:   tmux new -s work   then run   %s\n"), assistant)
+	}
 	fmt.Fprintln(w, cliCopy("setup", "next_assistant_appears", "     It appears in the console within a few seconds."))
 	fmt.Fprintln(w)
 	if o.noAutostart {
@@ -628,6 +646,30 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// setupTmux fills in which tmux the daemon will run: the machine's own when it
+// is 3.0 or newer, otherwise the one the release in releaseDir carries
+// (terminal.ResolveTmux decides the same way when the daemon runs). A version
+// that cannot be read is not a version proved too old.
+func setupTmux(h setupHost, p *install.Prereqs, releaseDir string) {
+	if path, ok := p.Found["tmux"]; ok {
+		if out, err := h.run(path, "-V"); err == nil {
+			version := strings.TrimSpace(string(out))
+			if major, minor, ok := terminal.ParseTmuxVersion(version); ok && !terminal.TmuxNewEnough(major, minor) {
+				p.TmuxTooOld = fmt.Sprintf("%s at %s is older than tmux %d.%d", version, path,
+					terminal.TmuxMinimumMajor, terminal.TmuxMinimumMinor)
+			}
+		}
+	}
+	carried := filepath.Join(releaseDir, "libexec", "tmux")
+	if !isExecutable(carried) {
+		return
+	}
+	p.Carried, p.CarriedVersion = carried, "tmux"
+	if out, err := h.run(carried, "-V"); err == nil {
+		p.CarriedVersion = strings.TrimSpace(string(out))
+	}
 }
 
 // findTools looks for tmux, claude and codex the way the person's own shell
@@ -1189,13 +1231,35 @@ func uninstall(h setupHost, p setupPlace) (removed, kept []string) {
 
 // openTerminals is the daemon's own tmux socket and whether a terminal it
 // started still runs there.
+//
+// When tmux cannot say — there is none on this machine and the release that
+// carried one is already removed, or it is another version than the server's
+// — a socket something still accepts on is a server, and a tmux server lives
+// exactly as long as it has a session. Only "no server" is permission to
+// remove it.
 func openTerminals(h setupHost, stateDir string) (string, bool) {
 	sock := filepath.Join(stateDir, "tmux", "term.sock")
 	if !fileExists(sock) {
 		return sock, false
 	}
 	out, err := h.run("tmux", "-S", sock, "ls")
-	return sock, err == nil && strings.TrimSpace(string(out)) != ""
+	if err == nil {
+		return sock, strings.TrimSpace(string(out)) != ""
+	}
+	if terminal.NoServer(string(out)) {
+		return sock, false
+	}
+	return sock, socketAccepts(sock)
+}
+
+// socketAccepts is whether something listens on the Unix socket at path.
+func socketAccepts(path string) bool {
+	c, err := net.DialTimeout("unix", path, time.Second)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
 }
 
 // purgeAllBut removes everything under dir except keep, one of its entries.

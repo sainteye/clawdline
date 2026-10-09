@@ -2,7 +2,6 @@ package terminal
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -104,8 +103,10 @@ func (t *Tmux) attachedClients(ctx context.Context) ([]attachedClient, bool) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	format := "#{client_tty}" + paneSeparator + "#{client_flags}" + paneSeparator + "#{client_session}"
-	cmd := exec.CommandContext(ctx, t.Binary, "-u", "list-clients", "-F", format)
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	cmd := t.command(ctx, "-u", "list-clients", "-F", format)
+	if cmd == nil {
+		return nil, false
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, false
@@ -141,8 +142,10 @@ func (t *Tmux) sessionName(ctx context.Context, paneID string) string {
 	if !IsPaneID(paneID) {
 		return ""
 	}
-	cmd := exec.CommandContext(ctx, t.Binary, "-u", "display-message", "-p", "-t", paneID, "#{session_name}")
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	cmd := t.command(ctx, "-u", "display-message", "-p", "-t", paneID, "#{session_name}")
+	if cmd == nil {
+		return ""
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -45,57 +44,26 @@ var _ ports.Launcher = Launcher{}
 
 func NewLauncher() Launcher { return Launcher{Tmux: NewTmux()} }
 
-var tmuxFallbacks = []string{
-	"/opt/homebrew/bin/tmux",
-	"/usr/local/bin/tmux",
-	"/usr/bin/tmux",
-	"/opt/local/bin/tmux",
-}
-
-// binary resolves the executable this backend names, then the package-manager
-// locations a desktop-launched daemon commonly cannot see. The bool says the
-// first lookup succeeded: only then can every operation on Tmux run the same
-// binary by name.
-func (t *Tmux) binary() (string, bool) {
-	if found, err := exec.LookPath(t.Binary); err == nil {
-		return found, true
-	}
-	fallbacks := t.fallbacks
-	if fallbacks == nil {
-		fallbacks = tmuxFallbacks
-	}
-	for _, path := range fallbacks {
-		if found, err := exec.LookPath(path); err == nil {
-			return found, false
-		}
-	}
-	return "", false
-}
-
-func tmuxOutsidePATHReason(found string) string {
-	return "tmux is at " + found + ", which is not on this daemon's PATH, and the tmux backend runs `tmux` from the PATH"
-}
-
-// binary is Tmux.binary: an app has no login PATH, so the places package
-// managers put tmux are tried after the PATH this process has.
-func (l Launcher) binary() string {
+// binary is Tmux.choice for the launcher: an app has no login PATH, so the
+// places package managers put tmux are tried after the PATH this process has,
+// and the tmux this release carries after those (resolve.go).
+func (l Launcher) binary(ctx context.Context) TmuxChoice {
 	if l.Tmux == nil {
-		return ""
+		return TmuxChoice{}
 	}
-	found, _ := l.Tmux.binary()
-	return found
+	return l.Tmux.choice(ctx)
 }
 
 // TmuxReach is StartPoints.tmuxReach. A listing that failed is read as a
 // server, not as an absent one: only "no server" is permission to start one.
 func (l Launcher) TmuxReach(ctx context.Context) int {
-	bin := l.binary()
-	if bin == "" {
+	bin := l.binary(ctx)
+	if !bin.Found() {
 		return 0
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "list-panes", "-a", "-F", "#{pane_id}")
+	cmd := bin.Command(ctx, "list-panes", "-a", "-F", "#{pane_id}")
 	cmd.Env = append(outsideTmux(cmd.Environ()), "LC_ALL=C")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -134,7 +102,8 @@ var viewerOptions = [][2]string{{"mouse", "on"}}
 // PrepareTmuxViewer sets the session called name up to be shown in a terminal
 // tab and answers the line that tab runs: `exec <tmux> attach -t '=name'`, the
 // absolute tmux this daemon runs, so the tab's shell finds it whatever its
-// PATH, and `exec`, so the tab closes when the session ends.
+// PATH — with `-S <socket>` when it is the tmux this release carries — and
+// `exec`, so the tab closes when the session ends.
 //
 // An option that would not set is logged and is not a failure: the session
 // is as usable without it. No tmux to name is a failure, since the line would
@@ -143,8 +112,8 @@ func (l Launcher) PrepareTmuxViewer(ctx context.Context, name string) (string, e
 	if name == "" {
 		return "", Failure{Message: "a viewer needs the name of the tmux session it shows."}
 	}
-	bin := l.binary()
-	if bin == "" {
+	bin := l.binary(ctx)
+	if !bin.Found() {
 		return "", Failure{Message: "tmux is not installed."}
 	}
 	// `=name:` and not `=name`: `set-option -t` reads its target as a pane,
@@ -156,7 +125,7 @@ func (l Launcher) PrepareTmuxViewer(ctx context.Context, name string) (string, e
 			log.Printf("tmux: %s was not set to %s on session %s: %v", o[0], o[1], name, err)
 		}
 	}
-	return "exec " + projects.ShellQuoted(bin) + " attach -t " + projects.ShellQuoted("="+name), nil
+	return "exec " + bin.Words() + " attach -t " + projects.ShellQuoted("="+name), nil
 }
 
 // openPane is Tmux.openPane: make the pane with no command, so tmux gives it
@@ -168,8 +137,8 @@ func (l Launcher) PrepareTmuxViewer(ctx context.Context, name string) (string, e
 // What comes back says the shell showed the line and Enter was pressed after
 // it. Whether the assistant then started is the next reading's to say.
 func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, refused string) (string, error) {
-	bin := l.binary()
-	if bin == "" {
+	bin := l.binary(ctx)
+	if !bin.Found() {
 		return "", Failure{Message: "tmux is not installed."}
 	}
 	// A new pane's shell is as young as a new iTerm2 tab's, and its tty cuts
@@ -285,7 +254,7 @@ func defaultPaneLang() string {
 
 // discard kills a pane openPane made and did not hand out. Its failure is
 // only logged: the caller is already reporting the failure that led here.
-func (l Launcher) discard(ctx context.Context, bin, paneID string) {
+func (l Launcher) discard(ctx context.Context, bin TmuxChoice, paneID string) {
 	if _, err := runTmux(context.WithoutCancel(ctx), bin, "kill-pane", "-t", paneID); err != nil {
 		log.Printf("tmux: the pane %s this spawn made could not be closed: %v", paneID, err)
 	}
@@ -311,8 +280,8 @@ func (l Launcher) CloseTmuxSession(ctx context.Context, paneID, name string) (bo
 	if !strings.HasPrefix(paneID, "%") || name == "" {
 		return false, nil
 	}
-	bin := l.binary()
-	if bin == "" {
+	bin := l.binary(ctx)
+	if !bin.Found() {
 		return false, nil
 	}
 	out, err := runTmux(ctx, bin, "display-message", "-p", "-t", paneID, "#{pane_id} #{session_name}")
@@ -337,15 +306,15 @@ func (l Launcher) CloseTmuxSession(ctx context.Context, paneID, name string) (bo
 }
 
 // runTmux is one bounded tmux call, carrying tmux's own sentence on failure.
-func runTmux(ctx context.Context, bin string, args ...string) (string, error) {
+func runTmux(ctx context.Context, bin TmuxChoice, args ...string) (string, error) {
 	return runTmuxInput(ctx, bin, "", args...)
 }
 
 // runTmuxInput is runTmux with stdin.
-func runTmuxInput(ctx context.Context, bin, stdin string, args ...string) (string, error) {
+func runTmuxInput(ctx context.Context, bin TmuxChoice, stdin string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := bin.Command(ctx, args...)
 	cmd.Env = append(outsideTmux(cmd.Environ()), "LC_ALL=C")
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
@@ -400,7 +369,7 @@ func shellVariableName(name string) bool {
 // clearTmuxAssistantIdentity removes markers an existing server may already
 // hold globally. Filtering only this client's environment cannot remove
 // variables that tmux copied when an earlier client started the server.
-func clearTmuxAssistantIdentity(ctx context.Context, bin string) error {
+func clearTmuxAssistantIdentity(ctx context.Context, bin TmuxChoice) error {
 	env, err := runTmux(ctx, bin, "show-environment", "-g")
 	if err != nil {
 		if NoServer(err.Error()) {
@@ -420,8 +389,6 @@ func clearTmuxAssistantIdentity(ctx context.Context, bin string) error {
 	return nil
 }
 
-// FindTmux is the tmux this machine has: on the PATH, or failing that in the
-// places package managers put it. The bool says it was on the PATH. A caller
-// that runs the absolute path it is given every time, as the owned terminal
-// server does, needs no more than that it was found.
-func FindTmux() (string, bool) { return NewTmux().binary() }
+// FindTmux is the tmux this daemon runs (ResolveTmux): the machine's own when
+// it is new enough, the one this release carries otherwise.
+func FindTmux(ctx context.Context) TmuxChoice { return ResolveTmux(ctx) }

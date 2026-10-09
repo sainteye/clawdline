@@ -100,7 +100,7 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 
 ## 安裝
 
-在 macOS 13 以上或 Linux，已經裝好 tmux 和 Claude Code 或 Codex：
+在 macOS 13 以上或 Linux，已經裝好 Claude Code 或 Codex（每個版本都內附 tmux，機器上沒有時就用它）：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh | sh
@@ -108,7 +108,8 @@ curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh 
 
 它會安裝簽章過的最新正式版，以使用者服務在登入時啟動（不需要 `sudo`、Go 或 Node.js），在 Mac
 上一併裝選單列 App，最後在瀏覽器打開主控台。伺服器上請在 `sh` 後面加 `-s -- --headless`。接著
-在 tmux 裡執行 `claude` 或 `codex`，Session 就會出現在清單裡。
+在 tmux 裡執行 `claude` 或 `codex`（安裝時若說用的是內附的 tmux，就用
+`clawdline tmux new -s work` 開），Session 就會出現在清單裡。
 
 每一步與確認方法、所有選項和移除方式，都在[安裝與第一次執行](docs/user/install.md)。正式版可以
 在主控台的設定頁或用 `clawdline update --apply` 更新；新版起不來時會自己退回原版本

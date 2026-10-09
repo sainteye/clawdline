@@ -40,6 +40,17 @@ go vet ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=true -o "$stage/clawdline" ./cmd/clawdline
 ( cd web && npm ci --ignore-scripts && npm run check && npm run build )
 cp -R web/console/dist "$stage/dist"
+# The tmux a release carries (docs/design-decisions.md D71), when one was
+# built for this machine with tools/release/tmux/build.sh and named in
+# CLAWDLINE_TMUX_DIR. A source deploy without it uses the machine's own tmux.
+if [ -n "${CLAWDLINE_TMUX_DIR:-}" ]; then
+  [ -x "$CLAWDLINE_TMUX_DIR/tmux" ] || { echo "no tmux in $CLAWDLINE_TMUX_DIR" >&2; exit 1; }
+  mkdir -p "$stage/libexec" "$stage/licenses"
+  cp "$CLAWDLINE_TMUX_DIR/tmux" "$CLAWDLINE_TMUX_DIR/tmux.json" "$stage/libexec/"
+  cp "$CLAWDLINE_TMUX_DIR"/licenses/*.txt "$stage/licenses/"
+else
+  echo "note: no CLAWDLINE_TMUX_DIR; this deploy carries no tmux and uses the machine's own"
+fi
 # committed_at lets a daemon say whether the cloud's build is later than its
 # own (docs/updates.md). Readers accept a BUILD.json without it.
 committed_at=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ "$commit")

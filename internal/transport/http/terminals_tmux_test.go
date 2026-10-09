@@ -3,6 +3,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -23,7 +24,7 @@ import (
 // own socket: never the person's default server.
 func realTermFixture(t *testing.T) *termFixture {
 	t.Helper()
-	binary, _ := tmuxterm.FindTmux()
+	binary := tmuxterm.FindTmux(context.Background()).Path
 	if binary == "" {
 		t.Skip("tmux is not installed")
 	}

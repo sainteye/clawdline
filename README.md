@@ -114,7 +114,8 @@ The screenshots below show the current console with sample data.
 
 ## Install
 
-On macOS 13+ or Linux, with tmux and Claude Code or Codex:
+On macOS 13+ or Linux, with Claude Code or Codex (each release carries its own tmux, used when you
+have none):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh | sh
@@ -122,8 +123,9 @@ curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh 
 
 It installs the latest signed release for your system as a per-user service that starts at login
 (no `sudo`, no Go or Node.js), adds the menu-bar app on a Mac, and opens the console in your
-browser. On a server, add `-s -- --headless` after `sh`. Run `claude` or `codex` inside tmux, and
-the session appears in the list.
+browser. On a server, add `-s -- --headless` after `sh`. Run `claude` or `codex` inside tmux
+(`clawdline tmux new -s work` when setup said it uses the carried one), and the session appears in
+the list.
 
 Each step with a check that it worked, every option, removal, and building from source are in
 [Install and first run](docs/user/install.md). A release updates itself from the console's Settings

@@ -139,5 +139,6 @@
   "usage_verdict_s": "判定：%s\n",
   "usage_wait_calls": "、%d 次等待呼叫",
   "usage_what_a_session_a_child_task": "  按類別查看工作階段、子任務或 Board 項目的花費；預設顯示此工作階段自身的花費",
-  "usage_write_the_raw_per_unit_samples": "  將此範圍每單位的原始樣本寫入儲存庫外的檔案"
+  "usage_write_the_raw_per_unit_samples": "  將此範圍每單位的原始樣本寫入儲存庫外的檔案",
+  "main_tmux_args_which": "  tmux <args…> | tmux which    此 daemon 執行的 tmux，連到它自己的伺服器：這台機器的，或此版本內附的"
 }
