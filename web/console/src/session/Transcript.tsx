@@ -21,7 +21,19 @@ import type {
   TranscriptPlanStep,
 } from "@clawdline/contract"
 import { client } from "../client.js"
+import { RefusalError } from "@clawdline/core"
 import { usePoll } from "../useFleet.js"
+import type { ReadReason } from "../poll.js"
+import {
+  appendedReadFrom,
+  BACKOFF,
+  FOLLOW_MS,
+  FOLLOW_WINDOW_MS,
+  joinAppended,
+  TRAIL_MS,
+  transcriptPace,
+} from "./transcript-follow.js"
+import { sharedTranscripts } from "./transcript-share.js"
 import * as L from "../legacy/bridge.js"
 import { ArtifactTiles, artifactTilesHTML, artifactsKey, type PictureSource } from "../legacy/images-bridge.js"
 import { byteWords, nextWord } from "../next-strings.js"
@@ -69,12 +81,11 @@ import "./history.css"
 
 /** Same as the original's `limit=200`, so both panes are reading the same stretch. */
 const LIMIT = 200
-const POLL_MS = 4000
 /**
- * While a message is on its way the next read is the one that replaces its
- * card, so it comes sooner (`followPendingTranscript` in the original).
+ * A provider subagent's page is not what the session row's times are about,
+ * so it is read on the old pace (`transcript-follow.ts` is the session's own).
  */
-const FOLLOW_MS = 1000
+const AGENT_POLL_MS = 4000
 
 /** The mark an `AskUserQuestion` call's text starts with. */
 const ASK_MARK = "\u0001ask\u0001"
@@ -118,15 +129,71 @@ export function Transcript({
 }
 
 function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; onAgent?: (id: string) => void }) {
+  // The page last read, and whether the pane is on its fast pace: the read
+  // asks only for what was appended to it unless this is the safety read of
+  // the whole page (`transcript-follow.ts`).
+  const heldPage = useRef<TranscriptPage | null>(null)
+  const fast = useRef(false)
   const read = useMemo(
-    () => () => agentId ? client.agentTranscript(id, agentId, LIMIT) : client.transcript(id, LIMIT),
+    () => async (why: ReadReason): Promise<TranscriptPage> => {
+      if (agentId) return client.agentTranscript(id, agentId, LIMIT)
+      const was = heldPage.current
+      const from = appendedReadFrom(was, why, fast.current)
+      if (was && from !== null) {
+        try {
+          const joined = joinAppended(was, await client.transcriptAfter(id, LIMIT, from))
+          if (joined) return (heldPage.current = joined)
+        } catch (err) {
+          // A cursor the daemon would not read from is answered by reading the
+          // page whole; a read nobody answered is a failed read like any other.
+          if (!(err instanceof RefusalError)) throw err
+        }
+      }
+      const page = await client.transcript(id, LIMIT)
+      heldPage.current = page
+      return page
+    },
     [id, agentId],
   )
   useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   const cards = agentId ? [] : pendingSends.of(id)
   const following = cards.some((card) => card.state !== "failed")
-  const poll = usePoll<TranscriptPage>(read, following ? FOLLOW_MS : POLL_MS)
+  const newestSendAt = cards.reduce((at, card) => (card.state !== "failed" && card.sentAt > at ? card.sentAt : at), 0)
+  const session = useSession(id)
+  // The fast pace ends FOLLOW_WINDOW_MS after the newest send; this draw is
+  // what moves the pace back when it does.
+  const [, setPaceClock] = useState(0)
+  useEffect(() => {
+    if (!following) return
+    const left = newestSendAt + FOLLOW_WINDOW_MS - Date.now()
+    if (left <= 0) return
+    const timer = setTimeout(() => setPaceClock((n) => n + 1), left + 50)
+    return () => clearTimeout(timer)
+  }, [following, newestSendAt])
+  const pace = agentId ? AGENT_POLL_MS
+    : transcriptPace({ following, newestSendAt, now: Date.now(), rowTimed: typeof session?.activity?.at === "number" })
+  fast.current = pace === FOLLOW_MS
+  const poll = usePoll<TranscriptPage>(read, pace, agentId ? {} : { backoff: BACKOFF })
   const { data, error } = poll
+  // The row says the record grew, or the session changed what it is doing:
+  // read what was appended now, and once more a little after the last such
+  // change, because the row's time is in whole seconds.
+  const rowMoved = agentId ? "" : `${session?.activity?.at ?? ""}:${session?.state ?? ""}`
+  const rowSeen = useRef(rowMoved)
+  const { poke } = poll
+  useEffect(() => {
+    if (agentId || rowMoved === rowSeen.current) return
+    rowSeen.current = rowMoved
+    poke()
+    const trail = setTimeout(poke, TRAIL_MS)
+    return () => clearTimeout(trail)
+  }, [agentId, rowMoved, poke])
+  // The "my messages" sheet reads these same entries instead of its own poll.
+  useEffect(() => {
+    if (agentId || !data) return
+    sharedTranscripts.publish(id, data)
+  }, [agentId, id, data])
+  useEffect(() => () => sharedTranscripts.forget(id), [id])
   // A read nobody answered waits out its quiet stretch before it is news
   // (`transcript-trouble.ts`); until then the skeleton, or the entries already
   // read, stay as they are.
@@ -151,7 +218,6 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   const [olderError, setOlderError] = useState(false)
   const olderBusy = useRef(false)
   const olderAnchor = useRef<{ top: number; height: number } | null>(null)
-  const session = useSession(id)
   // The list row's spinner and live line, repeated under the conversation's
   // newest end, where the reader's eye already is. Only the session's own
   // transcript: a provider subagent's page is not what the row's state is about.

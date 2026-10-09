@@ -77,6 +77,15 @@ export class ClawdlineClient {
     return this.get(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}${before ? `&before=${before}` : ""}`)
   }
 
+  /**
+   * Only what was appended to a session's record since `after`, a page's
+   * `nextAfter`. The daemon refuses a cursor it cannot read from
+   * (`transcript_cursor_stale`), and the newest page is then read whole.
+   */
+  transcriptAfter(id: string, limit: number, after: number): Promise<TranscriptPage> {
+    return this.get(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}&after=${after}`)
+  }
+
   agentTranscript(id: string, agent: string, limit = 40, before?: number): Promise<TranscriptPage> {
     return this.get(`${sessionRoutes.agent(id, agent)}?limit=${limit}${before ? `&before=${before}` : ""}`)
   }

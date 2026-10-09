@@ -324,6 +324,16 @@ export const TRANSCRIPT_MAX_REUSE_MS = 30_000
 export const TRANSCRIPT_EXPECT_MS = 45_000
 
 /**
+ * Inside `TRANSCRIPT_EXPECT_MS`, the machine is asked again when the row moved,
+ * and otherwise at most this often. The page asks every two seconds while a
+ * card is on its way (`session/transcript-follow.ts`); every one of those used
+ * to be an envelope to the machine for 45 seconds after any write, whether or
+ * not anything had been written. This is the page's old pace, so the card is
+ * replaced no later than it was.
+ */
+export const TRANSCRIPT_EXPECT_REREAD_MS = 4_000
+
+/**
  * How long a machine read waits for this page's own Cloud connection when it
  * is asked while that connection is renewing or reconnecting and `keepConnected`
  * says one is on its way; a press in that second used to fail at once as
@@ -896,6 +906,13 @@ export class RelayReader {
         case "/v1/transcript": {
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
+          // An appended read (`after=`) is the daemon's own: this seam answers
+          // from its held page, which is not "only what was appended", so it
+          // says no and the page reads whole. Pages from here never carry
+          // `nextAfter`, so a page only asks this of a daemon it reaches itself.
+          if (url.searchParams.has("after")) {
+            return this.refuse(method, path, 501, "cloud_not_carried", "Appended transcript reads are not carried over Clawdline Cloud.")
+          }
           const beforeRaw = url.searchParams.get("before")
           const before = historyCursor(beforeRaw)
           if (beforeRaw !== null && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
@@ -1384,6 +1401,10 @@ export class RelayReader {
       if (held?.inflight && held.inflight !== before) return { page: await held.inflight, reused: true }
     }
     const expecting = !!held && held.expectUntil > now && (held.answer?.signature ?? null) === held.expectFrom
+    if (expecting && held?.answer && !fresh && !held.stale && rowKey === held.rowKey &&
+      now - held.at < TRANSCRIPT_EXPECT_REREAD_MS) {
+      return { page: held.answer, reused: true }
+    }
     if (held?.answer && !fresh && !held.stale && !expecting) {
       const age = now - held.at
       const moved = rowKey !== held.rowKey
@@ -1937,7 +1958,10 @@ function transcriptPage(body: unknown, session: string): TranscriptPage {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw Object.assign(new Error("the machine's transcript answer is not an object"), { code: "bad_payload" })
   }
-  const { optimisticIdentity: _identity, ...page } = body as Record<string, unknown>
+  // `nextAfter` is a byte cursor into the machine's own record, for a page that
+  // reads the daemon directly; over the relay the transcript is this seam's
+  // held answer, so the cursor is not passed on (see the `after=` refusal).
+  const { optimisticIdentity: _identity, nextAfter: _after, ...page } = body as Record<string, unknown>
   return {
     ...page,
     id: typeof page.id === "string" && page.id ? page.id : session,

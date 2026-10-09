@@ -337,6 +337,7 @@ export function SessionsPage({
         </section>
 
         <Detail key={fleetDetailKey} row={fleetDetailPending ? null : open} tasks={tasks} onOpenSession={onOpen} onBack={onBack} onDid={onDid}
+          onSent={streamTasks !== null ? undefined : onDid}
           listUnknown={listUnknown || fleetDetailPending} emptyProblem={fleetDetailProblem} />
         {/* In terminal mode the second column is the terminal's, as it is the
             open session's otherwise; the session detail stays mounted, hidden. */}

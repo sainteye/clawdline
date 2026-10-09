@@ -249,23 +249,55 @@ function on(machine?: string): string {
   return machine ? "?machine=" + encodeURIComponent(machine) : ""
 }
 
+type ScheduleDetail = { schedule?: ScheduleRecord }
+
+/**
+ * The detail answers the list's project lookup has already had, by machine and
+ * id (`scheduleApi.knownSchedule`). The list is read every minute and a row
+ * whose list entry names no project used to be read whole again each time; a
+ * schedule's project only changes when the schedule is written, and every write
+ * from this page goes through `scheduleApi`, which forgets the row it wrote. A
+ * failed read is not remembered.
+ */
+const knownDetails = new Map<string, Promise<ScheduleDetail>>()
+const detailKey = (id: string, machine?: string) => (machine || "") + "\u0000" + id
+
+function readSchedule(id: string, machine?: string): Promise<ScheduleDetail> {
+  return jsonFetch<ScheduleDetail>("/v1/orchestrator/schedules/" + encodeURIComponent(id) + on(machine))
+}
+
 /** The transport, as `net/live.js` spells it. Each write mints its own key, once per press. */
 export const scheduleApi = {
   schedules: () => jsonFetch<ScheduleList>("/v1/orchestrator/schedules"),
-  schedule: (id: string, machine?: string) =>
-    jsonFetch<{ schedule?: ScheduleRecord }>("/v1/orchestrator/schedules/" + encodeURIComponent(id) + on(machine)),
+  /** Always asks: the editor and the history read what is there now. */
+  schedule: (id: string, machine?: string) => readSchedule(id, machine),
+  /** The list's project lookup: a row already answered is not asked again. */
+  knownSchedule: (id: string, machine?: string): Promise<ScheduleDetail> => {
+    const key = detailKey(id, machine)
+    const held = knownDetails.get(key)
+    if (held) return held
+    const asked = readSchedule(id, machine)
+    knownDetails.set(key, asked)
+    asked.catch(() => {
+      if (knownDetails.get(key) === asked) knownDetails.delete(key)
+    })
+    return asked
+  },
   createSchedule: (schedule: ScheduleBody | Record<string, unknown>) =>
     jsonFetch<ScheduleWriteAnswer>("/v1/orchestrator/schedules", post(schedule, { "Idempotency-Key": uuid() })),
   updateSchedule: (id: string, schedule: ScheduleBody | Record<string, unknown>, machine?: string) => {
+    knownDetails.delete(detailKey(id, machine))
     const opts = post(schedule, { "Idempotency-Key": uuid() })
     opts.method = "PATCH"
     return jsonFetch<ScheduleWriteAnswer>("/v1/orchestrator/schedules/" + encodeURIComponent(id) + on(machine), opts)
   },
-  deleteSchedule: (id: string, machine?: string) =>
-    jsonFetch<{ ok?: boolean; deleted?: string }>("/v1/orchestrator/schedules/" + encodeURIComponent(id) + on(machine), {
+  deleteSchedule: (id: string, machine?: string) => {
+    knownDetails.delete(detailKey(id, machine))
+    return jsonFetch<{ ok?: boolean; deleted?: string }>("/v1/orchestrator/schedules/" + encodeURIComponent(id) + on(machine), {
       method: "DELETE",
       headers: { "Idempotency-Key": uuid() },
-    }),
+    })
+  },
   runSchedule: (id: string, machine?: string, force = false) =>
     jsonFetch<Record<string, unknown>>(
       "/v1/orchestrator/schedules/" + encodeURIComponent(id) + "/run" + on(machine),

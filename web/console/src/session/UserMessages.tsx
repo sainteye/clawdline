@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type ReactElement,
@@ -13,6 +14,7 @@ import type { SessionRow, TranscriptEntry, TranscriptPage } from "@clawdline/con
 import { client } from "../client.js"
 import { usePoll } from "../useFleet.js"
 import * as L from "../legacy/bridge.js"
+import { sharedTranscripts } from "./transcript-share.js"
 import {
   OPEN_USER_MESSAGES,
   filterUserMessages,
@@ -42,9 +44,10 @@ import {
  *
  *   - The original reads `S.tx.entries`, the copy the transcript pane is
  *     already drawing, and redraws on `clawdline:rendered`. This console's
- *     transcript keeps its entries in its own component, so the sheet reads the
- *     same route while it is open and stops when it closes. The turns are the
- *     same turns; what is different is that an open sheet costs one more poll.
+ *     transcript keeps its entries in its own component and publishes the page
+ *     it read (`transcript-share.ts`), which the sheet reads; only when the pane
+ *     is not reading this session does the sheet read the same route itself
+ *     while it is open.
  *   - `Optimistic.entries` is empty here, because this console has no
  *     optimistic composer entry yet (see `session/Transcript.tsx`). The pending
  *     half of all three functions is passed as the empty list rather than
@@ -84,6 +87,30 @@ export function UserMessages({ row }: { row: SessionRow | null }) {
 const LIMIT = 200
 const POLL_MS = 4000
 
+/**
+ * The entries the sheet lists: the transcript pane's own page while the pane
+ * is reading this session (`transcript-share.ts`), and a read of its own only
+ * when it is not.
+ */
+function useSheetTranscript(session: string): { data: TranscriptPage | null; pending: boolean } {
+  const shared = useSyncExternalStore(sharedTranscripts.subscribe, () => sharedTranscripts.get(session))
+  const [own, setOwn] = useState(false)
+  // Once the sheet had to read for itself it keeps doing so while open, so the
+  // pane coming and going does not flip it between two sources.
+  useEffect(() => {
+    if (!shared) setOwn(true)
+  }, [shared])
+  const read = useMemo(
+    // Not reading for itself is a read that never settles: no request, and no
+    // timer behind it.
+    () => (own ? () => client.transcript(session, LIMIT) : () => new Promise<TranscriptPage>(() => {})),
+    [own, session],
+  )
+  const poll = usePoll<TranscriptPage>(read, POLL_MS)
+  if (!own && shared) return { data: shared, pending: false }
+  return { data: poll.data ?? shared, pending: poll.pending && !shared }
+}
+
 function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
   const words = userMessagesCopy(document.documentElement.lang || "")
   const T = L.strings
@@ -96,8 +123,7 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
   const [query, setQuery] = useState("")
   const closeButton = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
-  const read = useMemo(() => () => client.transcript(row.id, LIMIT), [row.id])
-  const { data, pending } = usePoll<TranscriptPage>(read, POLL_MS)
+  const { data, pending } = useSheetTranscript(row.id)
   const entries = useMemo(() => (data ? data.entries : []), [data])
   const newestFirst = L.settingsNewestFirst()
 

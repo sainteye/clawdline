@@ -2,6 +2,9 @@ import type { SessionsSnapshot, SessionRow, TaskList, WorkState } from "@clawdli
 import type { ClawdlineClient } from "./client.js"
 import { routes } from "./routes.js"
 import type { StreamHandle, StreamTransport } from "./stream.js"
+import { taskListFrame } from "./task-frame.js"
+
+export { taskListFrame }
 
 /**
  * What a reader knows about the fleet, including what it does not know.
@@ -140,22 +143,6 @@ export class FleetStore {
   private set(patch: Partial<FleetState>): void {
     this.state = { ...this.state, ...patch }
     for (const fn of this.listeners) fn(this.state)
-  }
-}
-
-/**
- * The `orchestrator` frame's task list, or null for one that is not a list.
- *
- * A frame that will not parse, or parses to something without a `tasks` array,
- * is not news that every task ended; it is dropped and the page keeps reading
- * the list itself.
- */
-export function taskListFrame(data: string): TaskList | null {
-  try {
-    const list = JSON.parse(data) as TaskList
-    return list && typeof list === "object" && Array.isArray(list.tasks) ? list : null
-  } catch {
-    return null
   }
 }
 
