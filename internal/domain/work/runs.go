@@ -120,9 +120,13 @@ func AcceptanceRevisionInstruction(excerpt, itemID, title string, soleOwnedItem 
 		if !change {
 			continue
 		}
+		// A replacement criterion can say that a former requirement is no
+		// longer needed. "不要求" contains "不要" as bytes, but it does not
+		// negate the earlier request to revise this item's acceptance.
+		denialScope := strings.NewReplacer("不要求", "", "do not require", "", "don't require", "").Replace(clause)
 		denied := false
 		for _, denial := range []string{"不要", "別改", "禁止", "不准", "不得", "不應", "不能", "不可以", "do not", "don't", "never", "must not", "should not"} {
-			denied = denied || strings.Contains(clause, denial)
+			denied = denied || strings.Contains(denialScope, denial)
 		}
 		if denied {
 			continue
