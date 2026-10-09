@@ -103,3 +103,30 @@ func TestAReadingThatNamedNothingStillSaysWhy(t *testing.T) {
 		t.Errorf("a reading with nothing in it: %q", got)
 	}
 }
+
+// A source the person turned off is not a source that failed: a reading in
+// which every source asked answered is complete apart from it, and still
+// proves nothing about that source's sessions.
+func TestADisabledSourceIsCompleteApartFromItselfOnly(t *testing.T) {
+	off := Inventory{Sources: map[string]bool{"ps": true, "tmux": true},
+		DisabledSources: map[string]string{"iterm": "setting"}}
+	if !off.CompleteApartFromDisabled() {
+		t.Fatal("every asked source answered")
+	}
+	if proves, _ := off.ProvesAbsence("iterm"); proves {
+		t.Fatal("a turned-off iTerm2 proved one of its sessions gone")
+	}
+	failed := off
+	failed.Sources = map[string]bool{"ps": true, "tmux": false}
+	if failed.CompleteApartFromDisabled() {
+		t.Fatal("a tmux that did not finish was taken as complete")
+	}
+	unverified := off
+	unverified.Sessions = []Session{{ID: "%1", Observation: Observation{Freshness: FreshnessUnverified}}}
+	if unverified.CompleteApartFromDisabled() {
+		t.Fatal("a row still awaiting its source was taken as complete")
+	}
+	if (Inventory{}).CompleteApartFromDisabled() || (Inventory{DisabledSources: off.DisabledSources}).CompleteApartFromDisabled() {
+		t.Fatal("a reading that asked nothing is not complete")
+	}
+}
