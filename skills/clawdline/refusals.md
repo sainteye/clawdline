@@ -68,6 +68,8 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `gate_snapshot_required` | `internal/domain/work/v2.go` |
 | `git_failed` | `internal/transport/http/git.go` |
 | `git_file_not_changed` | `internal/transport/http/git.go` |
+| `git_no_directory` | `internal/transport/http/git.go` |
+| `git_permission_denied` | `internal/transport/http/git.go` |
 | `git_timeout` | `internal/transport/http/git.go` |
 | `git_too_large` | `internal/transport/http/git.go` |
 | `git_unavailable` | `internal/transport/http/git.go` |
@@ -197,6 +199,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `title_not_saved` | `internal/transport/http/actions.go`, `internal/transport/http/session_smart_title.go` |
 | `title_required` | `internal/domain/work/v2.go` |
 | `too_large` | `internal/transport/http/actions.go`, `internal/transport/http/voice.go` |
+| `transcript_cursor_stale` | `internal/transport/http/transcript.go` |
 | `unauthorized` | `internal/transport/http/auth.go`, `internal/transport/http/gate.go`, `internal/transport/http/proposals.go`, `internal/transport/http/push.go`, `internal/transport/http/terminals.go` |
 | `unknown_definition` | `internal/transport/http/squad.go` |
 | `unknown_item` | `internal/transport/http/usage.go` |

@@ -3065,6 +3065,7 @@ export interface Diagnostics {
   platform: PlatformDiagnostics
   port: number
   proposals?: ProposalDiagnostics
+  routes?: RouteStats
   scheduler: SchedulerPulse
   served_by: string
   terminals?: TerminalDiagnostics
@@ -5534,6 +5535,107 @@ export interface RootAssignmentRecord {
 }
 
 /**
+ * Who made the calls: `device` a paired browser or phone, `local` this machine's
+ * own token (the CLI, scripts, the orchestrator), `cloud` a Cloud viewer answered
+ * in process, `task` a child let in by its task secret, `anonymous` nobody the gate
+ * let in (open paths and refusals).
+ */
+export interface RouteCallers {
+  anonymous: number
+  cloud: number
+  device: number
+  local: number
+  task: number
+}
+
+/**
+ * Time to answer over the last `samples` calls, in milliseconds; `max` is since the
+ * daemon started.
+ */
+export interface RouteLatency {
+  max: number
+  p50: number
+  p90: number
+  samples: number
+}
+
+/**
+ * One route shape's counts. A long-lived event stream counts `opens` and `open` and
+ * has no latency.
+ */
+export interface RouteStat {
+  callers: RouteCallers
+
+  /**
+   * Calls answered; a stream is counted when it ends.
+   */
+  count: number
+  latency_ms?: RouteLatency
+
+  /**
+   * The HTTP method, or OTHER.
+   */
+  method: string
+
+  /**
+   * Streams open now.
+   */
+  open?: number
+
+  /**
+   * Streams opened since the daemon started.
+   */
+  opens?: number
+
+  /**
+   * The route shape, e.g. `/v1/sessions/:id/info`.
+   */
+  route: string
+  status_2xx: number
+  status_3xx: number
+  status_4xx: number
+  status_5xx: number
+
+  /**
+   * This route answered as an event stream.
+   */
+  stream: boolean
+}
+
+/**
+ * /v1/diagnostics.routes: every API call this daemon answered since it started, by
+ * route shape and caller. A key is the method and the pattern the mux matched;
+ * below a prefix pattern only fixed route words are spelled out and every other
+ * segment is `:id`, and the query is never read, so no session id, name or text
+ * appears. Counters are never reset: compare two readings by subtracting them.
+ * Absent from a daemon without the counter.
+ */
+export interface RouteStats {
+  /**
+   * How many distinct route shapes are counted (capacity
+   * `diagnostics.route_stat_keys`).
+   */
+  key_limit: number
+
+  /**
+   * How many recent durations each route keeps for its percentiles (capacity
+   * `diagnostics.route_latency_samples`).
+   */
+  latency_samples: number
+
+  /**
+   * Calls not counted under a route of their own because the table was full.
+   */
+  overflow: number
+  routes: RouteStat[]
+
+  /**
+   * When counting started: the daemon's start, Unix seconds.
+   */
+  since: number
+}
+
+/**
  * What the reading behind this snapshot knows about itself. Without it an empty
  * list cannot be told apart from a failed scan.
  */
@@ -6806,6 +6908,15 @@ export interface SessionRow {
    */
   work_since?: number
   work_state: WorkState
+
+  /**
+   * When the turn a working session's `line` reports began, in unix seconds: when
+   * the line was read, less the assistant's own clock in it. Present only beside a
+   * `line` that carries that clock. A page that has it draws the clock itself from
+   * this instant, so `line` is republished only when something other than the clock
+   * moved; a page without it draws `line` as sent.
+   */
+  working_since?: number
 }
 
 /**
@@ -8985,8 +9096,16 @@ export interface TranscriptPage {
   leftovers?: number
 
   /**
+   * The byte offset just past the last complete row read: pass it as after= to read
+   * only what was appended since. Absent when nothing complete was read (no record
+   * yet, or an unreadable one), and from a daemon that does not take after=; a
+   * reader without it keeps reading the newest page whole.
+   */
+  nextAfter?: number
+
+  /**
    * Exclusive byte cursor for the next older page; absent at the beginning of the
-   * record.
+   * record, and on an after= page.
    */
   nextBefore?: number
   note?: string

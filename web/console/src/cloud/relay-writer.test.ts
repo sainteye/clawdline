@@ -11,7 +11,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import type { TranscriptPage } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { RelayReader, TRANSCRIPT_EXPECT_MS, type CloudEvent, type CloudIdentity, type CloudRow } from "./relay-reader.ts"
+import { RelayReader, TRANSCRIPT_EXPECT_MS, TRANSCRIPT_EXPECT_REREAD_MS, type CloudEvent, type CloudIdentity, type CloudRow } from "./relay-reader.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { CARRIED_READS, RelayWriter, writeRoute, type CloudWriteClient } from "./relay-writer.ts"
 // The copied client's own failure constructor: what the machine's refusal really becomes.
@@ -58,7 +58,7 @@ class FakeClient implements CloudWriteClient {
   }
   async transcript() {
     this.transcriptAsks += 1
-    return { id: "s1", entries: [], signature: this.signature, evidence: "transcript" }
+    return { id: "s1", entries: [], signature: this.signature, evidence: "transcript", nextAfter: 42 }
   }
   machineDescriptor(machine: string) {
     return this.descriptors.get(machine) ?? null
@@ -495,6 +495,35 @@ test("after a send, the transcript is asked for on every poll until it changes, 
   clock.t += 4_000
   await read()
   assert.equal(client.transcriptAsks, asked, "past the window the answer is reused")
+})
+
+test("after a send, a page asking every second reaches the machine when the row moves, else every four seconds", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1", { activity: { known: true, at: 100 } })]
+  const { reader, clock } = seam(client)
+  const read = async () => json<TranscriptPage>(await reader.fetch("/v1/transcript?session=s1&limit=200"))
+  await read()
+  await reader.fetch("/v1/sessions/s1/send", post({ text: "hi" }, { "Idempotency-Key": "send-7" }))
+  for (let i = 0; i < 8; i++) {
+    clock.t += 1_000
+    await read()
+  }
+  assert.equal(client.transcriptAsks, 3, `the machine is asked every ${TRANSCRIPT_EXPECT_REREAD_MS} ms, not on every poll`)
+  client.rows = [row("s1", { activity: { known: true, at: 101 } })]
+  clock.t += 1_000
+  await read()
+  assert.equal(client.transcriptAsks, 4, "the row moved: asked at once")
+})
+
+test("an appended read is not carried over the relay, and its cursor is not handed to the page", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client)
+  const page = await json<TranscriptPage & { nextAfter?: number }>(await reader.fetch("/v1/transcript?session=s1&limit=200"))
+  assert.equal(page.nextAfter, undefined)
+  const refused = await reader.fetch("/v1/transcript?session=s1&limit=200&after=10")
+  assert.equal(refused.status, 501)
+  assert.equal((await json<{ error: string }>(refused)).error, "cloud_not_carried")
 })
 
 test("a refusal costs one fresh read, not a window of them; `no-store` always asks", async () => {

@@ -2,12 +2,13 @@ package http
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // streamTick is how often this daemon looks at the machine for the stream.
@@ -60,21 +61,23 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	ticker := time.NewTicker(streamTick())
-	defer ticker.Stop()
+	// The tick is the producer's, shared by every stream and the Cloud
+	// publisher (producer.go). What this connection does with each product is
+	// its own: it sends what differs from what it last told this client.
+	lists := s.lists()
+	subscription, ticks := lists.subscribe()
+	defer lists.unsubscribe(subscription)
 	beat := time.NewTicker(heartbeat)
 	defer beat.Stop()
 
 	// last is the part of the payload that carries information, so an unchanged
 	// machine does not wake the client. The timestamp and the counters are
 	// excluded deliberately: they differ on every read by construction, and
-	// comparing them would make every tick look like news.
+	// comparing them would make every tick look like news. So is the working
+	// line's clock (changeIdentity).
 	var last []byte
-	send := func() {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		snapshot := s.sessionsPayload(ctx)
-		cancel()
-		body, err := json.Marshal(snapshot.Sessions)
+	send := func(snapshot sessionsSnapshotWire) {
+		body, err := changeIdentity(snapshot.Sessions)
 		if err != nil {
 			return
 		}
@@ -94,13 +97,7 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 	// task is briefed and finishes on its own clock, without the session list
 	// changing. Sent when its rows change, compared without `at`.
 	var lastTasks []byte
-	sendTasks := func() {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		list, err := s.tasksPayload(ctx, 0, 50)
-		cancel()
-		if err != nil {
-			return
-		}
+	sendTasks := func(list contract.TaskList) {
 		body, err := json.Marshal(struct {
 			Tasks any
 			Page  any
@@ -133,8 +130,10 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 	// The first frame goes out at once. A client that had to wait one tick to
 	// see anything would show an empty fleet for two seconds, and an empty
 	// fleet is a statement.
-	send()
-	sendTasks()
+	send(lists.snapshot())
+	if list, err := lists.taskList(); err == nil {
+		sendTasks(list)
+	}
 	feed.snapshot(r.Context(), s, w, flusher)
 
 	for {
@@ -158,9 +157,15 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		case note := <-feed.notes:
 			feed.write(w, flusher, note)
-		case <-ticker.C:
-			send()
-			sendTasks()
+		case <-ticks:
+			// The newest product, whichever tick it came from: a stream that
+			// fell behind sends the machine as it is now, once.
+			if snapshot, ok := lists.sessions.peek(); ok {
+				send(snapshot)
+			}
+			if list, ok := lists.tasks.peek(); ok {
+				sendTasks(list)
+			}
 		case <-beat.C:
 			fmt.Fprint(w, ": still here\n\n")
 			flusher.Flush()

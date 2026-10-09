@@ -170,6 +170,10 @@ type LinkOptions struct {
 	Handler        http.Handler
 	Receipts       *store.Store
 	AdmitExecution func(context.Context, string, string, string) error
+	// Sessions is the daemon's shared session list, encoded as
+	// `GET /v1/sessions` answers it; the publisher reads it instead of building
+	// its own through Handler. Nil reads the route.
+	Sessions func(context.Context) ([]byte, bool)
 	// TerminalService is the only ingress to the local terminal service from
 	// signed Cloud envelopes. The regular Router remains forbidden.
 	TerminalService   func() (*terminals.Service, error)
@@ -715,8 +719,9 @@ func (l *Link) wire() error {
 		ReadContentV1: l.service.Bridge.TranscriptAuthority != nil,
 		Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
 			AppOrigin: settings.AppOrigin},
-		Publish: l.relay.Publish,
-		Log:     opts.Log,
+		Sessions: opts.Sessions,
+		Publish:  l.relay.Publish,
+		Log:      opts.Log,
 	}
 	// The publisher hears every viewer the relay hears from, which is how a
 	// viewer that arrived after this machine's last change gets the current

@@ -84,6 +84,7 @@ export function Detail({
   onOpenSession: _onOpenSession,
   onBack,
   onDid,
+  onSent,
   listUnknown = false,
   emptyProblem,
 }: {
@@ -92,6 +93,12 @@ export function Detail({
   onOpenSession: (id: string) => void
   onBack: () => void
   onDid: () => void
+  /**
+   * After a send was delivered. Left out while the live stream carries the
+   * machine's own news: the row moving is a frame on its way, and a read of the
+   * whole session list on top of it was the same answer twice.
+   */
+  onSent?: () => void
   listUnknown?: boolean
   emptyProblem?: string | null
 }) {
@@ -319,7 +326,7 @@ export function Detail({
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
-      {selectedAgent ? null : <Composer row={row} onDid={onDid} onScreen={() => setScreenOpen(true)} restoredDraft={savedComposerDraft} suggestedDraft={suggestedDraft} />}
+      {selectedAgent ? null : <Composer row={row} onDid={onDid} onSent={onSent} onScreen={() => setScreenOpen(true)} restoredDraft={savedComposerDraft} suggestedDraft={suggestedDraft} />}
       {selectedAgent ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens

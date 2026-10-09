@@ -55,10 +55,12 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 		s.forwardUpstream(w, r)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
-	defer cancel()
 	w.Header().Set("Content-Type", "application/json")
-	snapshot := s.sessionsPayload(ctx)
+	// The product every stream reads, when it is not older than one tick
+	// (producer.go): a page's first read, the Cloud fleet's and the streams'
+	// are one build of the machine, not one each. The build keeps the eight
+	// seconds this route gave its own.
+	snapshot := s.lists().snapshot()
 	if r.URL.Query().Get("parts") == "list" {
 		// The Cloud fleet asks once per machine. Reuse the local single-machine
 		// snapshot, including the fields used by the original row status line.
@@ -305,8 +307,16 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent {
 			row.HeavyWork = heavyWork
 		}
+		if item.State == session.StateWorking && item.Line != "" {
+			at := item.Observation.ObservedAt
+			if at.IsZero() {
+				at = inv.ObservedAt
+			}
+			row.WorkingSince = s.turns.since(item.ID, item.Line, at)
+		}
 		rows = append(rows, row)
 	}
+	s.turns.keep(rows)
 
 	return sessionsSnapshotWire{
 		At:       now.Unix(),
@@ -335,6 +345,95 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			// absence unprovable and nothing could ever be tombstoned.
 			Sources: scanSources(inv.Sources, inv.Gaps, inv.DisabledSources),
 		},
+	}
+}
+
+// changeIdentity is the part of a list that a reader would read differently,
+// which is what a stream compares before it sends a frame.
+//
+// Three things move on every build and say nothing new, and they are the
+// paths the Cloud publisher has always left out of its own comparison
+// (internal/transport/cloud freshnessOnlySessionRowFields). The working line's
+// own clock moves every second a session works ("Thinking… (1m 12s)"): a page
+// that has `working_since` draws that clock itself, and one that does not gets
+// the line again on the next real change. Each row's closeability names the
+// build it came from (`session_generation`), which nothing on a page reads.
+// And a current row's reading clock (`observed_at`) moves with every reading:
+// a page reads it only as the age of a row that is not current — the retained
+// reading's note — so on an unverified row it is still compared. Measured on
+// 2026-10-09 over five minutes, the reading clock alone made every one of 150
+// frames differ from the last; without it, 80 did.
+func changeIdentity(rows []sessionRowWire) ([]byte, error) {
+	copied := make([]sessionRowWire, len(rows))
+	for i, row := range rows {
+		if row.State == contract.SessionStateWorking && row.Line != "" {
+			row.Line = session.WithoutElapsed(row.Line)
+		}
+		row.Closeability.SessionGeneration = 0
+		if row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent {
+			source := *row.Source
+			source.ObservedAt = 0
+			row.Source = &source
+			row.Closeability.ObservedAt = 0
+			row.Closeability.Source.ObservedAt = 0
+		}
+		copied[i] = row
+	}
+	return json.Marshal(copied)
+}
+
+// workingClockDriftSeconds is how far one turn's start may wander between two
+// readings and still be the same turn. The start is worked out as the moment
+// the line was read less the clock drawn in it, and both are whole seconds
+// read at slightly different moments, so one turn's start reads a second or
+// two either way from one reading to the next. A new turn starts from zero,
+// which is further from the last one than this.
+const workingClockDriftSeconds = 5
+
+// workingClock keeps each working session's turn start steady, so that it
+// can be compared: a start that wandered by a second on every reading would be
+// a change on every reading, which is what it exists to stop.
+type workingClock struct {
+	mu     sync.Mutex
+	starts map[string]int64
+}
+
+// since is when the turn a working line reports began, in unix seconds, or 0
+// when the line carries no clock or was not read at a known moment.
+func (c *workingClock) since(id, line string, at time.Time) int64 {
+	_, _, elapsed, ok := session.ElapsedSpan(line)
+	if !ok || at.IsZero() {
+		return 0
+	}
+	start := at.Unix() - int64(elapsed)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.starts == nil {
+		c.starts = map[string]int64{}
+	}
+	if held, ok := c.starts[id]; ok && held-start <= workingClockDriftSeconds && start-held <= workingClockDriftSeconds {
+		return held
+	}
+	c.starts[id] = start
+	return start
+}
+
+// keep forgets every session that is not working in this list. The map holds
+// at most one entry per row of the last list, and a session that stopped and
+// started again begins a new turn.
+func (c *workingClock) keep(rows []sessionRowWire) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	working := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		if row.WorkingSince != 0 {
+			working[row.ID] = true
+		}
+	}
+	for id := range c.starts {
+		if !working[id] {
+			delete(c.starts, id)
+		}
 	}
 }
 

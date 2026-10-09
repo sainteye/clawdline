@@ -12,9 +12,13 @@
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
 | `cache.assistant_quota` | 32 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.background_agents` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
+| `cache.git_not_repo` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `cache.git_not_repo_rows` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.image_thumbs` | 8388608 | `bytes` | `evict_oldest` | `diagnostics` | — |
+| `cache.pinned_read` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.reclaim_summary` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.session_activity` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
+| `cache.session_execution_memo` | 4096 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.session_inventory` | 120 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.session_links` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.session_skills` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
@@ -79,11 +83,18 @@
 | `cloud.terminal_unconfirmed_seconds` | 15 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_unverified_retire_seconds` | 10 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_viewer_connections` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
+| `console.transcript_backoff_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
+| `console.transcript_follow_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
+| `console.transcript_merged_rows` | 1000 | `rows` | `expire` | `diagnostics` | — |
+| `console.transcript_safety_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `coordinator.aliases` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `coordinator.bind_attempts` | 6 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `decisions.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `deploy.health_seconds` | 30 | `seconds` | `refuse` | `diagnostics` | — |
 | `devices.list` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `diagnostics.route_latency_samples` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `diagnostics.route_stat_keys` | 512 | `rows` | `coalesce` | `diagnostics` | — |
 | `dispatch.also_work_ids` | 7 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `epic.child_items` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `handoff.pack_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |

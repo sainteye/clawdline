@@ -184,6 +184,10 @@ type Page struct {
 	// NextBefore is the exclusive end for the next older page; zero means the
 	// beginning of the record was reached.
 	NextBefore int64
+	// NextAfter is the byte offset just past the last complete row at the
+	// time of the read: the cursor ReadClaudeAfter and ReadCodexAfter take to
+	// read only what is appended later.
+	NextAfter int64
 	// Unread is how many bytes before the read window were never looked at,
 	// when the window ran out before `limit` entries were found: the
 	// conversation goes back further than Entries shows. Zero when the read

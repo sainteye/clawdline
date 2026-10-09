@@ -100,6 +100,19 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// after=nextAfter asks only for what was appended since the page's last
+	// read. A reader that never saw nextAfter never sends it, so a page served
+	// by an older daemon keeps reading the newest page whole.
+	after := int64(-1)
+	if r.URL.Query().Has("after") {
+		raw := r.URL.Query().Get("after")
+		var err error
+		after, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || after < 0 || r.URL.Query().Has("before") {
+			writeRefusal(w, http.StatusBadRequest, "invalid_cursor", "after must be a nonnegative byte cursor, and not beside before")
+			return
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
@@ -108,7 +121,18 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 		writeActionRefusal(w, err)
 		return
 	}
-	page := s.transcriptPageBefore(id, item, limit, before)
+	var page contract.TranscriptPage
+	if after >= 0 {
+		var stale bool
+		page, stale = s.transcriptPageAfter(id, item, limit, after)
+		if stale {
+			writeRefusal(w, http.StatusConflict, "transcript_cursor_stale",
+				"the transcript changed in a way this cursor cannot follow; read the newest page")
+			return
+		}
+	} else {
+		page = s.transcriptPageBefore(id, item, limit, before)
+	}
 	if !s.admitPinnedTarget(w, r, id) {
 		return
 	}
@@ -162,6 +186,7 @@ func (s *Server) transcriptPageBefore(id string, item session.Session, limit int
 	kept, omitted := boundedTranscriptRows(entries, read.Entries)
 	page.Entries = kept
 	page.NextBefore = read.NextBefore
+	page.NextAfter = read.NextAfter
 	if omitted > 0 {
 		page.NextBefore = read.Entries[omitted].Before
 	}
@@ -184,6 +209,48 @@ func (s *Server) transcriptPageBefore(id string, item session.Session, limit int
 		}
 	}
 	return page
+}
+
+// transcriptPageAfter is the rows appended at or after the byte cursor
+// `after`, oldest first, for a page that already holds everything before it.
+// It answers stale, and the route refuses the cursor, whenever merging these
+// rows could show something a whole read would not: a cursor that no longer
+// meets the record, more new rows than one page, rows the byte budget would
+// cut, or a record that could not be read at all. NextBefore is left out: the
+// page keeps the one its whole read gave it.
+func (s *Server) transcriptPageAfter(id string, item session.Session, limit int, after int64) (contract.TranscriptPage, bool) {
+	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
+	path := recordPath(item)
+	if path == "" {
+		return page, true
+	}
+	var read transcript.Page
+	var err error
+	if item.Assistant == session.AssistantCodex {
+		read, err = transcript.ReadCodexAfter(path, limit, after)
+	} else {
+		read, err = transcript.ReadClaudeAfter(path, limit, after)
+	}
+	if err != nil {
+		return page, true
+	}
+	page.Path = path
+	page.Evidence = contract.EvidenceTranscript
+	page.Signature = read.Signature
+	entries := make([]contract.TranscriptEntry, 0, len(read.Entries))
+	now := time.Now()
+	for _, e := range read.Entries {
+		row := transcriptEntry(e)
+		row.Artifacts = s.pictures.wireArtifacts(e, now)
+		entries = append(entries, row)
+	}
+	kept, omitted := boundedTranscriptRows(entries, read.Entries)
+	if omitted > 0 {
+		return page, true
+	}
+	page.Entries = kept
+	page.NextAfter = read.NextAfter
+	return page, false
 }
 
 // transcriptBudget is what one transcript read may carry: the first-paint
