@@ -31,6 +31,12 @@
 #   --build-only  build and sign the bundle into that directory and stop:
 #                 nothing is installed, quit or opened (tools/release/build.sh)
 #
+# The app carries a tmux of its own in Contents/Helpers/tmux, used only when
+# the Mac has no tmux 3.0 or newer (docs/design-decisions.md D72).
+# CLAWDLINE_TMUX_DIR names one already built by tools/release/tmux/build.sh;
+# without it the one in dist/tmux/darwin-arm64 is used, and built there first
+# when it is missing or not the pinned version.
+#
 # CLAWDLINE_RELEASE_VERSION=vX.Y.Z stamps a release: the daemon is built with
 # -trimpath and that version, and BUILD.json and Info.plist carry it.
 set -euo pipefail
@@ -135,6 +141,20 @@ else
 fi
 swiftc -O -o "$BUILD/Contents/MacOS/$NAME" shell/darwin/*.swift
 
+# The tmux the app carries, with the licenses of what it is built from.
+TMUX_DIR="${CLAWDLINE_TMUX_DIR:-dist/tmux/darwin-arm64}"
+. tools/release/tmux/sources.sh
+if ! grep -q "\"version\": \"$TMUX_VERSION\", \"sha256\": \"$TMUX_SHA256\"" "$TMUX_DIR/tmux.json" 2>/dev/null; then
+  [ -z "${CLAWDLINE_TMUX_DIR:-}" ] || { echo "error: $TMUX_DIR does not hold the pinned tmux $TMUX_VERSION" >&2; exit 1; }
+  echo "building the tmux the app carries (tmux $TMUX_VERSION)…"
+  rm -rf "$TMUX_DIR"
+  tools/release/tmux/build.sh darwin arm64 "$TMUX_DIR"
+fi
+mkdir -p "$BUILD/Contents/Helpers" "$BUILD/Contents/Resources/licenses"
+cp "$TMUX_DIR/tmux" "$BUILD/Contents/Helpers/tmux"
+cp "$TMUX_DIR/tmux.json" "$BUILD/Contents/Resources/tmux.json"
+cp "$TMUX_DIR"/licenses/*.txt "$BUILD/Contents/Resources/licenses/"
+
 # The shell's own files — the mascot packs its menu lists. Copied, like the
 # console below: nothing in the bundle points outside it.
 cp -R shell/darwin/Resources/. "$BUILD/Contents/Resources/"
@@ -225,6 +245,7 @@ PLIST
 # launch at login (SMAppService) asks about the application, and an unsigned
 # bundle is one it may refuse.
 codesign --force --sign - "$BUILD/Contents/MacOS/clawdline"
+codesign --force --sign - "$BUILD/Contents/Helpers/tmux"
 codesign --force --sign - "$BUILD"
 
 echo "built $BUILD ($(du -sh "$BUILD" | cut -f1))"

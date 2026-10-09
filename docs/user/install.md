@@ -9,13 +9,18 @@ with a check.
 | You need | Check |
 | --- | --- |
 | macOS 13+ (Apple silicon or Intel) or Linux (x86-64 or ARM64) | `uname -sm` |
-| tmux | `tmux -V` |
+| *(optional)* tmux 3.0 or later — a release carries its own when you have none | `tmux -V` |
 | Claude Code or Codex | `claude --version` or `codex --version` |
 | *(optional)* a Claude Code status line that writes `~/.claude/statusline-cache/rate-limits.json` | `ls ~/.claude/statusline-cache/rate-limits.json` |
 
-You do not need Go, Node.js, Xcode, an account or `sudo`. The installer checks tmux and the
-assistants itself and prints the exact command to install anything that is missing, for the
-package manager your machine has (Homebrew, apt, dnf, pacman, zypper or apk).
+You do not need Go, Node.js, Xcode, an account or `sudo`. The installer checks the assistants
+itself and prints the exact command to install a missing one.
+
+You do not need tmux either. Every release carries tmux 3.6a. When your machine has tmux 3.0 or
+later, that one is used, because it is where your own sessions are. When it has none, or an older
+one, the daemon runs the carried tmux on a server of its own
+(`~/.config/clawdline-next/tmux/sessions.sock`), so it never meets another tmux. Setup says which
+it chose: `✓ tmux found`, or `✓ tmux: this release carries tmux 3.6a`.
 
 The last row is the only one you can skip and still lose something visible: Claude Code hands its
 `5h`/`7d` plan percentages only to the stdin of `statusLine.command`, so without one the Status
@@ -103,6 +108,12 @@ tmux new -s work
 cd ~/code/my-app
 claude            # or: codex
 ```
+
+If setup said it uses the tmux the release carries, type `clawdline tmux` where this says `tmux`:
+`clawdline tmux new -s work`, and later `clawdline tmux attach -t work`. That reaches the server
+the daemon lists. `clawdline tmux which` shows which tmux that is. If you install tmux 3.0 or later
+afterwards, the daemon keeps using the carried one until the sessions on its server have ended, so
+none of them disappears from the list; then it switches to yours.
 
 **Check:** within a few seconds the session is a row in the console with its project and state.
 Nothing was installed into Claude Code or Codex: the daemon reads what they already write under

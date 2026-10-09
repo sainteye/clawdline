@@ -139,5 +139,6 @@
   "usage_verdict_s": "verdict: %s\n",
   "usage_wait_calls": ", %d wait calls",
   "usage_what_a_session_a_child_task": "  what a session, a child task or a Board item spent, by category; this session's own by default",
-  "usage_write_the_raw_per_unit_samples": "  write the raw per-unit samples of the range to a file outside any repository"
+  "usage_write_the_raw_per_unit_samples": "  write the raw per-unit samples of the range to a file outside any repository",
+  "main_tmux_args_which": "  tmux <args…> | tmux which    the tmux this daemon runs, on its own server: this machine's, or the one this release carries"
 }

@@ -131,7 +131,11 @@ func (s *Server) ready(ctx context.Context) error {
 	if s.readied {
 		return s.readyErr
 	}
-	found, _ := tmuxterm.FindTmux()
+	// The machine's tmux when it is new enough, the one this release carries
+	// otherwise. Either way it runs with `-S` on this server's own socket
+	// (callWithOutputLimit), so the carried one never meets the default
+	// server.
+	found := tmuxterm.FindTmux(ctx).Path
 	if found == "" {
 		s.readied, s.readyErr = true, terminal.Refuse(terminal.CodeUnsupported, "tmux is not installed")
 		return s.readyErr

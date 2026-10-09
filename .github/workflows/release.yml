@@ -3,8 +3,11 @@ name: Release
 # Builds, signs and uploads one release as a DRAFT. Nothing here publishes it:
 # the draft's assets are checked against the private word list on a machine
 # that has it, and only then un-drafted (docs/releasing.md). A public
-# repository's Actions artifacts are public, so nothing is uploaded with
-# actions/upload-artifact; the assets go only to the draft Release.
+# repository's Actions artifacts are public, so nothing built from this
+# repository is uploaded with actions/upload-artifact; the assets go only to
+# the draft Release. The one exception is the Linux tmux the archives carry,
+# built from pinned public tarballs on Linux runners (tmux.yml), because a
+# macOS runner has no Docker to build it in.
 
 on:
   workflow_dispatch:
@@ -25,8 +28,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  tmux:
+    name: Carried tmux for Linux
+    uses: ./.github/workflows/tmux.yml
+    with:
+      upload: true
+
   release:
     name: Build, sign and draft the release
+    needs: tmux
     runs-on: macos-latest
     timeout-minutes: 45
     # The signing key is a secret of this environment, which waits for the
@@ -72,11 +82,30 @@ jobs:
           tools/test-go-ci.sh
           (cd web && npm ci --ignore-scripts && npm run check)
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tmux-linux-*
+          path: ${{ runner.temp }}/tmux-download
+
+      # Linux from the tmux job, darwin built here; build.sh checks that each
+      # one names the pinned tmux and that its binary is the one it describes.
+      - name: Build the carried tmux for macOS
+        run: |
+          tmux_dir="$RUNNER_TEMP/tmux"
+          mkdir -p "$tmux_dir"
+          for arch in amd64 arm64; do
+            mv "$RUNNER_TEMP/tmux-download/tmux-linux-$arch" "$tmux_dir/linux-$arch"
+            chmod +x "$tmux_dir/linux-$arch/tmux"
+          done
+          for arch in arm64 amd64; do
+            tools/release/tmux/build.sh darwin "$arch" "$tmux_dir/darwin-$arch"
+          done
+
       - name: Build every artifact
         run: |
           channel=stable
           [[ "$VERSION" == *-beta.* ]] && channel=beta
-          args=(--channel "$channel" --skip-tests)
+          args=(--channel "$channel" --skip-tests --tmux-from "$RUNNER_TEMP/tmux")
           [ -z "$MIN_VERSION" ] || args+=(--min-version "$MIN_VERSION")
           tools/release/build.sh "$VERSION" "$RUNNER_TEMP/release" "${args[@]}"
 

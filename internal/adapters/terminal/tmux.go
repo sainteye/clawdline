@@ -6,8 +6,10 @@ package terminal
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -45,6 +47,9 @@ func splitPaneFields(line string) []string {
 var sendConfirm = 6 * time.Second
 
 type Tmux struct {
+	// Binary is the name looked up on the PATH, "tmux". An absolute path pins
+	// that executable instead: it is run as it is, on the default server, and
+	// nothing else is looked for.
 	Binary string
 	// fallbacks is nil in production, where tmuxFallbacks is used. Tests set
 	// an explicit list so the Finder-style PATH case does not depend on what
@@ -53,6 +58,39 @@ type Tmux struct {
 }
 
 func NewTmux() *Tmux { return &Tmux{Binary: "tmux"} }
+
+// choice is which tmux this backend runs now, and on which server (resolve.go).
+// Every call this backend makes goes through it.
+func (t *Tmux) choice(ctx context.Context) TmuxChoice {
+	if t == nil {
+		return TmuxChoice{}
+	}
+	if filepath.IsAbs(t.Binary) {
+		if executableFile(t.Binary) {
+			return TmuxChoice{Path: t.Binary}
+		}
+		return TmuxChoice{}
+	}
+	if (t.Binary == "" || t.Binary == "tmux") && t.fallbacks == nil {
+		return defaultResolver.resolve(ctx)
+	}
+	return (&tmuxResolver{name: t.Binary, fallbacks: t.fallbacks}).resolve(ctx)
+}
+
+// command is one tmux invocation on the chosen server, under LC_ALL=C; nil
+// when there is no tmux to run.
+func (t *Tmux) command(ctx context.Context, args ...string) *exec.Cmd {
+	c := t.choice(ctx)
+	if !c.Found() {
+		return nil
+	}
+	cmd := c.Command(ctx, args...)
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	return cmd
+}
+
+// errNoTmux is what a call answers when there is no tmux to run.
+var errNoTmux = errors.New("tmux is not installed")
 
 func (t *Tmux) Name() string { return "tmux" }
 
@@ -75,18 +113,12 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 		Provenance: "tmux",
 		Complete:   true,
 	}
-	found, onPath := t.binary()
-	if found == "" {
+	// Every call below runs the same absolute tmux on the same server, so a
+	// tmux found outside this process's PATH, or the one this release
+	// carries on its own socket, is as authoritative as one on the PATH.
+	choice := t.choice(ctx)
+	if !choice.Found() {
 		inv.Notes = append(inv.Notes, "tmux is not installed")
-		return inv, nil
-	}
-	if !onPath {
-		// A package-manager tmux outside this process's PATH may have a live
-		// server, but this backend cannot ask it consistently: Capture, Send
-		// and Close still run t.Binary. This is therefore an unread source,
-		// never authoritative evidence that the server has no panes.
-		inv.Complete = false
-		inv.Notes = append(inv.Notes, tmuxOutsidePATHReason(found))
 		return inv, nil
 	}
 
@@ -100,7 +132,7 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 	// included — as `_`, so no line had six fields and every pane was
 	// dropped (tmux 3.6a). `-u` declares the client UTF-8 and leaves the
 	// separator alone; the locale stays C for everything else.
-	cmd := exec.CommandContext(ctx, t.Binary, "-u", "list-panes", "-a", "-F", format)
+	cmd := choice.Command(ctx, "-u", "list-panes", "-a", "-F", format)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -177,8 +209,10 @@ func (t *Tmux) Capture(ctx context.Context, s session.Session) (string, bool) {
 	// `-J` joins what the pane wrapped, as the Swift app's reading does: a
 	// menu option too long for the pane is one row, not a row and a
 	// description.
-	cmd := exec.CommandContext(ctx, t.Binary, "capture-pane", "-p", "-J", "-t", s.ID)
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	cmd := t.command(ctx, "capture-pane", "-p", "-J", "-t", s.ID)
+	if cmd == nil {
+		return "", false
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return "", false
@@ -291,8 +325,10 @@ func (t *Tmux) run(ctx context.Context, args ...string) error {
 
 // call is run with stdin, answering what tmux wrote.
 func (t *Tmux) call(ctx context.Context, stdin string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, t.Binary, args...)
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	cmd := t.command(ctx, args...)
+	if cmd == nil {
+		return "", fmt.Errorf("tmux %s failed: %w", args[0], errNoTmux)
+	}
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -329,8 +365,10 @@ func (t *Tmux) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 	if req.Command != "" {
 		args = append(args, req.Command)
 	}
-	cmd := exec.CommandContext(ctx, t.Binary, args...)
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	cmd := t.command(ctx, args...)
+	if cmd == nil {
+		return session.Session{}, fmt.Errorf("tmux new-session refused: %w", errNoTmux)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

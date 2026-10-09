@@ -138,6 +138,10 @@ func main() {
 		// A build or a test suite, after the machine's compile slot and
 		// enough memory (heavy.go).
 		heavyCommand(os.Args[2:])
+	case "tmux":
+		// The tmux the daemon runs, on its server: the machine's own, or the
+		// one the release carries on Clawdline's socket (tmux.go).
+		tmuxCommand(os.Args[2:])
 	case "verify":
 		verifyCommand(os.Args[2:])
 	case "setting":
@@ -479,6 +483,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_usage_session_c_task_id_item", "  usage [--session c | --task id | --item id] [--json]   what it spent, by category; this session's own by default"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_update_release_help", "  update [--apply [--version vX.Y.Z] [--force]] [--json] [--port n]   check or install a release; exit 0 current, 10 newer, 3 unknown"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_setup_help", "  setup [--headless] [--no-app] [--no-autostart] [--port n] [--uninstall [--purge]]   install this release as the per-user service; --help says more"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_tmux_args_which", "  tmux <args…> | tmux which    the tmux this daemon runs, on its own server: this machine's, or the one this release carries"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_heavy_reason_r_command_run_a", "  heavy [--reason r] -- <command…>   run a build or test suite after the machine's compile slot and enough memory"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_setting_with_auto_apply", "  setting <get|set> <key> <value>   product_language, update_auto_apply, planning_gate, verify_gate, or claude_auto_compact_window"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_dispatch_title_t_claims_a_b", "  dispatch --title <t> --claims a,b < brief   dispatch an owned child: task.json, inventory and POST in one step"))

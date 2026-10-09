@@ -40,7 +40,7 @@ func testDir(t *testing.T) string {
 
 func newServer(t *testing.T, dir string) *Server {
 	t.Helper()
-	if found, _ := tmuxterm.FindTmux(); found == "" {
+	if !tmuxterm.FindTmux(context.Background()).Found() {
 		t.Skip("tmux is not installed")
 	}
 	s, err := New(dir)

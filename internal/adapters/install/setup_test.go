@@ -70,6 +70,28 @@ func TestPrereqsStopOnlyWithoutTmux(t *testing.T) {
 	}
 }
 
+// A release that carries tmux installs on a machine without one, and on one
+// whose tmux is too old; the machine's own, new enough, is still preferred.
+func TestACarriedTmuxMeansNoStop(t *testing.T) {
+	carried := "/r/libexec/tmux"
+	r := Prereqs{Found: map[string]string{"claude": "/x/claude"}, Carried: carried}.Check("linux")
+	if r.Stop || !r.TmuxCarried || !strings.Contains(strings.Join(r.Found, "\n"), carried) {
+		t.Fatalf("no tmux with one carried: %+v", r)
+	}
+	r = Prereqs{Found: map[string]string{"tmux": "/usr/bin/tmux"}, TmuxTooOld: "tmux 2.9 is older than tmux 3.0", Carried: carried}.Check("linux")
+	if r.Stop || !r.TmuxCarried {
+		t.Fatalf("a tmux too old with one carried: %+v", r)
+	}
+	r = Prereqs{Found: map[string]string{"tmux": "/usr/bin/tmux"}, Carried: carried}.Check("linux")
+	if r.Stop || r.TmuxCarried {
+		t.Fatalf("the machine's tmux was passed over: %+v", r)
+	}
+	r = Prereqs{Found: map[string]string{"tmux": "/usr/bin/tmux"}, TmuxTooOld: "too old"}.Check("linux")
+	if r.Stop || r.TmuxCarried {
+		t.Fatalf("a tmux too old with nothing carried: %+v", r)
+	}
+}
+
 func TestServicePathPutsFoundToolsFirstOnce(t *testing.T) {
 	got := ServicePath(map[string]string{
 		"tmux":   "/opt/homebrew/bin/tmux",

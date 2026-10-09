@@ -45,13 +45,13 @@ string construction that is not an output site, tests, and generated types.
 The guide's source text is under `skills/clawdline/` and is owned by the
 separate guide feature; `cmd/clawdline/skill.go` is its CLI delivery site.
 
-At the combined integration inventory there are 1,722 sites: 550 fixed CLI human-copy
-sites, 21 composed human-output sites, 320 catalogued CLI sites, seven explicit
-machine-output sites, 34 machine or protocol passthrough sites, four original
-user/Agent/external content sites, two guide delivery sites, 58 layout/data
-sites, four builder source sites, nine
-diagnostic log sites, 556 HTTP refusal call sites, 11 notification call sites,
-and 146 notification copy sources. These are source and call sites, not distinct sentences.
+Regenerated on 2026-10-09, the inventory has 2,431 sites: 1,331 `localized_human`, 535
+`actionable_refusal_candidate`, 129 `machine_or_passthrough`, 95 `notification_copy_source`, 78
+`layout_or_data`, 50 `fixed_error_source`, 44 `cloud_bridge_fixed_copy`, 42 `agent_protocol_copy`,
+41 `human_composed`, 37 `fixed_human`, 20 `machine_output`, 15 `diagnostic`, 5
+`user_agent_or_external_original`, 5 `human_composition_source`, 2 `guide_copy`, 1
+`notification_candidate`, 1 `fixed_remediation_copy`. These are source and call sites, not distinct
+sentences.
 The `source_excerpt`, trigger function, classification, and coverage columns
 distinguish literal product copy from passed-through bodies, IDs, protocol
 tokens, and diagnostics. The
@@ -66,7 +66,7 @@ secondary-language key falls back to its English text. English and `zh-Hant`
 must be complete. `core` contains the language-option help line, while `verify`
 has 39 fixed messages, `item` has 176, and `task` has 102 initial keys. The remaining fixed CLI sites in the
 matrix still need catalog entries and wiring. The `coverage` column records
-411 covered, 114 intentionally preserved, and 1,197 pending source/call sites;
+1,857 covered, 294 intentionally preserved, and 280 pending source/call sites;
 these counts are source locations, not distinct messages.
 
 ## Wire-field structural scan

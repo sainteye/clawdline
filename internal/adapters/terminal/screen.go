@@ -2,7 +2,6 @@ package terminal
 
 import (
 	"context"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -47,9 +46,11 @@ func (t *Tmux) Screen(ctx context.Context, s session.Session, lines int) (string
 	if lines < 0 {
 		lines = 0
 	}
-	cmd := exec.CommandContext(ctx, t.Binary, "capture-pane", "-p", "-e", "-J",
+	cmd := t.command(ctx, "capture-pane", "-p", "-e", "-J",
 		"-S", "-"+strconv.Itoa(lines), "-t", s.ID)
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	if cmd == nil {
+		return "", false
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return "", false
@@ -90,9 +91,11 @@ func (t *Tmux) Unpipe(ctx context.Context, paneID string) bool {
 // than guessed at: somebody acts on this, and "unreadable" must not arrive
 // spelled the same way as "not piped".
 func (t *Tmux) PipedPanes(ctx context.Context) map[string]bool {
-	cmd := exec.CommandContext(ctx, t.Binary, "-u", "list-panes", "-a", "-F",
+	cmd := t.command(ctx, "-u", "list-panes", "-a", "-F",
 		"#{pane_id}"+paneSeparator+"#{pane_pipe}")
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	if cmd == nil {
+		return map[string]bool{}
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return map[string]bool{}

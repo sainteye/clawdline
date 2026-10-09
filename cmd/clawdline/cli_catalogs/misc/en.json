@@ -231,9 +231,11 @@
   "coordination.usage": "usage: clawdline coordination <status|pause|observed|safe|wake|resumed|retry> [options] [id or target session ids]",
   "coordination.unreadable": "Coordination status was unreadable.",
   "coordination.header": "TARGET\tSTATE\tREASON\tWAKE CONDITION\tERROR",
-  "coordination.identity": "This command needs the caller's conversation ID from its Session environment."
-  ,"coordination.run_usage": "usage: clawdline coordination run --resource landing --checkout /repo [--handoff] -- <command> [args…]; or --resource daemon_restart"
-  ,"coordination.waiting": "Waiting for %s, position %d.\n"
-  ,"coordination.timed_out": "The lease wait ended before a grant; the command did not run."
-  ,"coordination.release_failed": "The lease release could not be confirmed; inspect the holder before another exclusive operation."
+  "coordination.identity": "This command needs the caller's conversation ID from its Session environment.",
+  "coordination.run_usage": "usage: clawdline coordination run --resource landing --checkout /repo [--handoff] -- <command> [args…]; or --resource daemon_restart",
+  "coordination.waiting": "Waiting for %s, position %d.\n",
+  "coordination.timed_out": "The lease wait ended before a grant; the command did not run.",
+  "coordination.release_failed": "The lease release could not be confirmed; inspect the holder before another exclusive operation.",
+  "tmux.passed": "  (%s)\n",
+  "tmux.none": "clawdline tmux: there is no tmux on this machine, and this build carries none"
 }

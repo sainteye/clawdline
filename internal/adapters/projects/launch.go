@@ -551,13 +551,19 @@ func itermPlan(tmux TmuxReach) PlanKind {
 // daemon started for itself is given, so there is a name to attach to.
 const TmuxStartedSessionName = "clawdline"
 
+// TmuxClient is how a person runs the tmux this daemon runs: `tmux`, or
+// `clawdline tmux` when it is the one a release carries, which a bare `tmux`
+// would not reach (docs/design-decisions.md D72). The terminal adapter sets it
+// from its resolver; this default is the machine's own tmux.
+var TmuxClient = func() string { return "tmux" }
+
 // TmuxAttachCommand is Tmux.attachCommand.
-func TmuxAttachCommand() string { return "tmux attach -t " + TmuxStartedSessionName }
+func TmuxAttachCommand() string { return TmuxClient() + " attach -t " + TmuxStartedSessionName }
 
 // TmuxAttachSessionCommand is the line a person types to see the session
 // called name. The target is `=name`, which tmux matches exactly rather than
 // as a prefix, and it is quoted: zsh reads a word opening with `=` as a
 // command to look up.
 func TmuxAttachSessionCommand(name string) string {
-	return "tmux attach -t " + ShellQuoted("="+name)
+	return TmuxClient() + " attach -t " + ShellQuoted("="+name)
 }

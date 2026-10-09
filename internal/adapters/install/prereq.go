@@ -6,8 +6,10 @@ import (
 )
 
 // The prerequisites `setup` checks before it activates anything. tmux is the
-// one the daemon cannot run sessions without, so its absence stops setup with
-// the exact command for the package manager this machine actually has; a
+// one the daemon cannot run sessions without. A release carries one
+// (docs/design-decisions.md D72), used when the machine has no tmux 3.0 or
+// newer; only a build that carries none stops setup when tmux is missing, with
+// the exact command for the package manager this machine actually has. A
 // missing assistant is a warning, because either one is enough and the person
 // may add the other later. Nothing here installs anything.
 
@@ -76,6 +78,12 @@ type Prereqs struct {
 	Found map[string]string
 	// PackageManager is the one DetectPackageManager chose, or "".
 	PackageManager string
+	// TmuxTooOld is set when the found tmux is older than the floor; it is
+	// then said why, in a sentence, and the carried one is used instead.
+	TmuxTooOld string
+	// Carried is the tmux this release carries, "" when it carries none, and
+	// CarriedVersion what it says `tmux -V` is.
+	Carried, CarriedVersion string
 }
 
 // Report is the prerequisite verdict: Stop is set when setup must not go on,
@@ -87,6 +95,9 @@ type Report struct {
 	StopLine string
 	Lines    []string
 	Found    []string
+	// TmuxCarried says the daemon will run the tmux this release carries, on
+	// its own server, rather than the machine's.
+	TmuxCarried bool
 }
 
 // TmuxMissing is what setup says, last, when tmux is not installed: the
@@ -102,9 +113,17 @@ func TmuxMissing(goos, pm string) string {
 // Check turns what was found into what setup says.
 func (p Prereqs) Check(goos string) Report {
 	var r Report
-	if path, ok := p.Found["tmux"]; ok {
+	path, ok := p.Found["tmux"]
+	switch {
+	case ok && (p.TmuxTooOld == "" || p.Carried == ""):
+		// The machine's tmux, even one too old when nothing else is carried:
+		// listing and typing never needed 3.0, and the daemon refuses its own
+		// terminals on such a tmux by name.
 		r.Found = append(r.Found, "tmux: "+path)
-	} else {
+	case p.Carried != "":
+		r.TmuxCarried = true
+		r.Found = append(r.Found, "tmux: "+p.Carried+" (carried by this release)")
+	default:
 		r.Stop = true
 		r.StopLine = TmuxMissing(goos, p.PackageManager)
 	}

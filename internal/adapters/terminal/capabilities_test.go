@@ -74,11 +74,12 @@ func asUnavailable(err error, out *ports.Unavailable) bool {
 	return ok
 }
 
-// tmux is looked for on the PATH the backend runs it from. A binary that is
-// not there is not there, whatever else the launcher can find.
+// No tmux anywhere — not on the PATH, not where package managers put it, not
+// carried by this release — is not available.
 func TestATmuxTheBackendCannotRunIsNotAvailable(t *testing.T) {
-	l := Launcher{Tmux: &Tmux{Binary: "clawdline-no-such-tmux"}}
-	got := l.tmuxReach()
+	t.Setenv(BundledTmuxEnv, "")
+	l := Launcher{Tmux: &Tmux{Binary: "clawdline-no-such-tmux", fallbacks: []string{}}}
+	got := l.tmuxReach(context.Background())
 	if got.state != ports.CapabilityUnavailable || got.reason == "" {
 		t.Fatalf("%+v", got)
 	}
@@ -121,22 +122,24 @@ func TestTheTerminalCapabilityOnEachPlatform(t *testing.T) {
 		found    bool
 		version  string
 		err      error
+		bundled  bool
 		state    ports.CapabilityState
 		code     string
 		reasonIs string
 	}{
-		{"windows", "windows", false, "", nil, ports.CapabilityUnavailable, CodeNoBackend, "ConPTY"},
-		{"windows even with a tmux", "windows", true, "tmux 3.6a", nil, ports.CapabilityUnavailable, CodeNoBackend, "ConPTY"},
-		{"no tmux on macOS", "darwin", false, "", nil, ports.CapabilityUnavailable, CodeTmuxNotInstalled, "brew install tmux"},
-		{"no tmux on Linux", "linux", false, "", nil, ports.CapabilityUnavailable, CodeTmuxNotInstalled, "package manager"},
-		{"too old", "linux", true, "tmux 2.9a", nil, ports.CapabilityUnavailable, CodeTmuxTooOld, "older than tmux 3.0"},
-		{"a version that could not be read", "linux", true, "", errors.New("signal: killed"), ports.CapabilityUnknown, CodeTmuxUnread, "killed"},
-		{"a version with no number", "darwin", true, "tmux master", nil, ports.CapabilityUnknown, CodeTmuxUnread, "master"},
-		{"the floor", "linux", true, "tmux 3.0", nil, ports.CapabilityAvailable, "", "tmux 3.0"},
-		{"a current macOS tmux", "darwin", true, "tmux 3.6a\n", nil, ports.CapabilityAvailable, "", "tmux 3.6a"},
+		{"windows", "windows", false, "", nil, false, ports.CapabilityUnavailable, CodeNoBackend, "ConPTY"},
+		{"windows even with a tmux", "windows", true, "tmux 3.6a", nil, false, ports.CapabilityUnavailable, CodeNoBackend, "ConPTY"},
+		{"no tmux on macOS", "darwin", false, "", nil, false, ports.CapabilityUnavailable, CodeTmuxNotInstalled, "brew install tmux"},
+		{"no tmux on Linux", "linux", false, "", nil, false, ports.CapabilityUnavailable, CodeTmuxNotInstalled, "package manager"},
+		{"too old", "linux", true, "tmux 2.9a", nil, false, ports.CapabilityUnavailable, CodeTmuxTooOld, "older than tmux 3.0"},
+		{"a version that could not be read", "linux", true, "", errors.New("signal: killed"), false, ports.CapabilityUnknown, CodeTmuxUnread, "killed"},
+		{"a version with no number", "darwin", true, "tmux master", nil, false, ports.CapabilityUnknown, CodeTmuxUnread, "master"},
+		{"the floor", "linux", true, "tmux 3.0", nil, false, ports.CapabilityAvailable, "", "tmux 3.0"},
+		{"a current macOS tmux", "darwin", true, "tmux 3.6a\n", nil, false, ports.CapabilityAvailable, "", "tmux 3.6a"},
+		{"the tmux this release carries", "linux", true, "tmux 3.6a\n", nil, true, ports.CapabilityAvailable, "", "carried by this release"},
 	}
 	for _, c := range cases {
-		got := ownedTerminalCapability(c.goos, c.found, c.version, c.err)
+		got := ownedTerminalCapability(c.goos, c.found, c.version, c.err, c.bundled)
 		if got.Name != ports.CapTerminal || got.State != c.state || got.Code != c.code || !strings.Contains(got.Reason, c.reasonIs) {
 			t.Errorf("%s: %+v", c.name, got)
 		}
