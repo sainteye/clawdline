@@ -23,7 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
-func TestMachineListUsesTheSingleMachineSnapshotButOnlySendsPresentation(t *testing.T) {
+func TestMachineListUsesTheSingleMachineSnapshotAndItsRowStatus(t *testing.T) {
 	item := session.Session{ID: "%41", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
 		State: session.StateWorking, Label: "Readable title", CWD: "/project",
 		Line: "private work detail"}
@@ -41,9 +41,13 @@ func TestMachineListUsesTheSingleMachineSnapshotButOnlySendsPresentation(t *test
 		t.Fatalf("machine list payload: %v %s", err, rec.Body)
 	}
 	row := payload.Sessions[0]
+	status, _ := row["status"].(map[string]any)
 	if row["id"] != "%41" || row["title"] == nil || row["title"] == "" || row["line"] != nil ||
 		row["menu"] != nil || row["agents"] != nil || row["shells"] != nil {
 		t.Fatalf("machine list leaked content or lost identity: %v", row)
+	}
+	if status == nil || status["line"] != "private work detail" || status["work_state"] == nil {
+		t.Fatalf("machine list dropped the original status line: %v", row)
 	}
 }
 

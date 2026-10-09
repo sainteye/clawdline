@@ -161,25 +161,41 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	_ = json.Unmarshal(reading.at, &at)
 	statuses := make([]SessionStatus, 0, len(ids))
 	identities := make([]SessionStatus, 0, len(ids))
+	// The viewer fetches one pinned list per machine when this pass changes.
+	// Include the original row's display facts in the local change detector,
+	// but never in ss/: a line or shell update must wake the list without
+	// disclosing its words to a read_sessions-only viewer.
+	listDisplays := make([]map[string]any, 0, len(ids))
 	parents := statusParents(rows, p.tasks)
 	for _, id := range ids {
-		status := ProjectSessionStatus(p.MachineID, id, rows[id], true, at)
+		row := rows[id]
+		status := ProjectSessionStatus(p.MachineID, id, row, true, at)
 		status.ParentSessionID = parents[id]
 		statuses = append(statuses, status)
 		identity := status
 		identity.ProjectedAt = 0
 		identity.Source.ObservedAt = 0
 		identities = append(identities, identity)
+		listDisplays = append(listDisplays, map[string]any{
+			"line": row["line"], "work_state": row["work_state"],
+			"work_note": row["work_note"], "work_provenance": row["work_provenance"],
+			"work_moved_by": row["work_moved_by"], "work_person_needed": row["work_person_needed"],
+			"shells": row["shells"], "heavy_work": row["heavy_work"],
+			"attention_count": row["attention_count"], "owed": row["owed"],
+			"acceptance": row["acceptance"], "disposition": row["disposition"],
+			"coordination": row["coordination"],
+		})
 	}
 	// A changed fact or heartbeat states one whole set. Every row and its
 	// marker share a fresh pass id, so a relay-cached old row cannot satisfy
 	// a new marker merely because it has the same terminal id.
 	key := "status_snapshot"
 	if !p.changed(key, mustJSON(struct {
-		Rows     []SessionStatus `json:"rows"`
-		IDs      []string        `json:"ids"`
-		Complete bool            `json:"complete"`
-	}{Rows: identities, IDs: ids, Complete: true})) {
+		Rows     []SessionStatus  `json:"rows"`
+		IDs      []string         `json:"ids"`
+		Displays []map[string]any `json:"displays"`
+		Complete bool             `json:"complete"`
+	}{Rows: identities, IDs: ids, Displays: listDisplays, Complete: true})) {
 		return
 	}
 	var nonce [16]byte

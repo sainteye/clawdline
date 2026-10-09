@@ -142,6 +142,13 @@
 .cloud-all-list-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 12px 24px; }
 .cloud-all-groups { display: grid; gap: 16px; }
 .cloud-all-group { min-width: 0; }
+.cloud-all-attention-filter { margin: 2px 0 10px; padding: 5px 10px; border: 1px solid var(--line);
+    border-radius: 999px; color: var(--dim); font-size: 12px; }
+.cloud-all-attention-filter[aria-pressed="true"] { color: var(--accent); background: var(--card-hi); border-color: var(--accent-ed); }
+.cloud-all-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cloud-all-group-heading button { flex: 0 0 auto; min-width: 44px; min-height: 44px; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 7px; }
+.cloud-all-group-heading button:hover { color: var(--ink); background: var(--card-hi); }
 .cloud-all-group h2 { margin: 6px 0; font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
 .cloud-all-group h2 small { font-size: 11px; font-weight: normal; color: var(--faint); }
 .cloud-all-group p { margin: 6px 0; color: var(--dim); font-size: 12px; overflow-wrap: anywhere; }
