@@ -7,9 +7,10 @@ import { NeedsUpdate } from "../machine/NeedsUpdate.js"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { prepareReferencePicture } from "../legacy/shots-bridge.js"
-import { addDirectTodoV2Image, answerDecision, createDirectTodoV2, directTodoActionV2, readDecision, readSessionWorkV2, readSessionWorkSummaryV2, type Decision, type DirectTodoV2, type SessionWorkSummaryV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
+import { addDirectTodoV2Image, answerDecision, completeWorkV2, createDirectTodoV2, directTodoActionV2, readDecision, readSessionWorkV2, readSessionWorkSummaryV2, type Decision, type DirectTodoV2, type SessionWorkSummaryV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
+import { CompleteWorkDialog } from "../pages/work/CompleteWorkDialog.js"
 import { WorkSteps } from "../pages/work/WorkSteps.js"
 import { completionReports } from "../pages/work/WorkCompletionReport.js"
 import { WorkIcon } from "../pages/work/WorkIcon.js"
@@ -24,7 +25,7 @@ import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import { useInterventions } from "./Interventions.js"
 import { browserRefreshEnvironment, OneRead, readFailureReason, readWithOneRetry, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
-import { onWorkItemChanged } from "../pages/work/item-changed.js"
+import { announceWorkItemChanged, onWorkItemChanged } from "../pages/work/item-changed.js"
 import { sessionTodosReady } from "./readiness.js"
 import { nextWord } from "../next-strings.js"
 import { SessionUsage } from "../pages/work/TokenBill.js"
@@ -155,7 +156,9 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
             <p>{catalogWord("inline", "122ffc78d24e")}</p>
             {page.assigned_items.map((item) => (
               <SessionOwnedItem item={item} decisions={page.open_decisions?.filter((decision) => decision.work_id === item.id) ?? []}
-                decisionsError={page.decisions_error} key={item.id} onOpen={() => openWorkItem(item)} onAnswered={() => void refresh(true)} />
+                decisionsError={page.decisions_error} key={item.id} onOpen={() => openWorkItem(item)} onAnswered={() => void refresh(true)}
+                onComplete={() => run(`complete-${item.id}`, () => completeWorkV2(item))} completing={busy === `complete-${item.id}`}
+                completeFailure={failure} />
             ))}
           </section>}
           {page && hasRecent && <section className="session-todos-list session-recent-work" aria-label={catalogWord("inline", "fa7b5ebe86c4")}>
@@ -231,14 +234,16 @@ function ReadFailure({ state, reason, retrying, needsUpdate = false, onRetry }: 
   </button>
 }
 
-function SessionOwnedItem({ item, decisions = [], decisionsError, completed = false, onOpen, onAnswered }: {
+function SessionOwnedItem({ item, decisions = [], decisionsError, completed = false, onOpen, onAnswered, onComplete, completing = false, completeFailure = "" }: {
   item: WorkV2Item; decisions?: Decision[]; decisionsError?: string | null; completed?: boolean; onOpen: () => void; onAnswered?: () => void
+  onComplete?: () => Promise<boolean>; completing?: boolean; completeFailure?: string
 }) {
   const hasReport = completionReports(item).length > 0
   const submitting = useRef(false)
   const [pending, setPending] = useState<{ decision: string; option: string; label: string } | null>(null)
   const [receipts, setReceipts] = useState<Record<string, string>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [confirming, setConfirming] = useState(false)
   const answer = async (decision: Decision, option: { id: string; label: string }) => {
     if (submitting.current || receipts[decision.id]) return
     submitting.current = true
@@ -296,7 +301,11 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
     </section>)}
     {Object.entries(receipts).filter(([id]) => !decisions.some((decision) => decision.id === id)).map(([id, words]) =>
       <p key={id} role="status" className="session-owned-decision-note">{words}</p>)}
-    <WorkMilestones phase={item.phase} verifyGate={item.verify_gate} />
+    <WorkMilestones phase={item.phase} verifyGate={item.verify_gate}
+      onComplete={onComplete ? () => setConfirming(true) : undefined} />
+    {confirming && onComplete && <CompleteWorkDialog item={item} busy={completing} failure={completeFailure}
+      onConfirm={() => { void onComplete().then((ok) => { if (ok) { setConfirming(false); announceWorkItemChanged() } }) }}
+      onCancel={() => setConfirming(false)} />}
     <WorkSteps steps={item.steps} />
   </article>
 }
