@@ -16,7 +16,7 @@ import {
 import { nextWord } from "../next-strings.js"
 import { readSessionWorkV2, type DirectTodoV2, type WorkV2Item } from "../pages/work/api.js"
 import { toast, toastFailure } from "./toast.js"
-import { refusedReasons, releasableItems } from "./close-release.js"
+import { processRecovery, refusedReasons, releasableItems } from "./close-release.js"
 
 /**
  * The second press before a session-changing action reaches the daemon —
@@ -87,6 +87,8 @@ interface Pending {
   /** True only after the daemon disclosed the obligations this decision overrides. */
   force: boolean
   processOnly: boolean
+  /** A process no terminal reaches (`processRecovery`): one warning, one forced press. */
+  recovery: boolean
   /** The decision's own id, which is the close's `Idempotency-Key`. */
   request: string
 }
@@ -244,13 +246,17 @@ export const ActionConfirm = {
     const release = closes(kind) && pinned
       ? releasableItems((row as { closeability?: Parameters<typeof releasableItems>[0] } | null)?.closeability)
       : []
+    // A process no terminal reaches: this sheet's warning is the whole
+    // question, so its press goes forced and there is no work to look up.
+    const recovery = closes(kind) && processRecovery(id, (row as { closeability?: Parameters<typeof processRecovery>[1] } | null)?.closeability)
     this.pending = {
       id, kind, action, opener: returnFocus, ask: ask || null, lost, why,
       closeNotes: closes(kind) ? closeabilityPlainReasons(row) : [],
       closeability: closeable && closeable.state, help, work: [], recentWork: [], directTodos: [],
       closeabilityVersion: pinned,
-      workState: closes(kind) && !unstartedCodex ? "loading" : "ready", workTruncated: false,
-      release, force: release.length > 0, processOnly: /^(tty|pts\/)/.test(id), request: mintRequest(),
+      workState: closes(kind) && !unstartedCodex && !recovery ? "loading" : "ready", workTruncated: false,
+      release, force: release.length > 0 || recovery, processOnly: /^(tty|pts\/)/.test(id), recovery,
+      request: mintRequest(),
     }
     this.busy = false
     sheet.dataset.kind = kind
@@ -276,7 +282,7 @@ export const ActionConfirm = {
     const cancel = node<HTMLButtonElement>("action-confirm-cancel")
     const first = ((asked && asked.focus === "cancel") || this.pending.workState === "loading") && cancel ? cancel : go
     first.focus({ preventScroll: true })
-    if (closes(kind) && !unstartedCodex) void this.loadOpenWork(this.pending)
+    if (closes(kind) && !unstartedCodex && !recovery) void this.loadOpenWork(this.pending)
   },
 
   async loadOpenWork(pending: Pending): Promise<void> {
@@ -314,6 +320,15 @@ export const ActionConfirm = {
     lede.className = "end-work-lede"
     lede.textContent = pending.kind === "archive" ? nextWord("archiveSay") : T.webConfirmEndSay
     say.appendChild(lede)
+
+    if (pending.recovery) {
+      const status = document.createElement("p")
+      status.className = "end-work-status is-warning"
+      status.textContent = nextWord("endProcessRecoveryWarning")
+      say.appendChild(status)
+      this.renderTechnical(pending.why, pending.help?.detailsLabel)
+      return
+    }
 
     if (lost && lost.length) {
       const section = document.createElement("section")

@@ -53,3 +53,21 @@ export function releasableItems(reading: Reading): string[] {
   }
   return ids
 }
+
+/** The only reasons a process with no reachable terminal is held for. */
+const PROCESS_ONLY_EVIDENCE = new Set(["session_identity_unbound", "terminal_unreadable"])
+
+/**
+ * Whether a close is the recovery of a process found in the process table that
+ * no terminal can reach: the daemon's `recoverableProcessOnly`, which lets a
+ * forced press pinned to this version signal it. The sheet already says only
+ * the process is reachable, so that press is the person's decision and is sent
+ * forced, instead of being refused once to ask the same question again. Such a
+ * process has no bound Session, so it has no Board items or TODOs to list.
+ */
+export function processRecovery(id: string, reading: Reading): boolean {
+  if (!/^(tty|pts\/)/.test(id) || !reading || reading.state !== "unknown") return false
+  if (typeof reading.version !== "string" || !reading.version) return false
+  const reasons = reasonsOf(reading)
+  return reasons.length > 0 && reasons.every((reason) => reason.kind === "evidence" && PROCESS_ONLY_EVIDENCE.has(reason.code))
+}
