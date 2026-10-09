@@ -127,6 +127,9 @@ function daemon(): Server {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
+    if (path === "/v1/strings" && url.searchParams.get("lang") === "zh-Hant") {
+      return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
+    }
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/health") return json(res, 200, { ok: true })
     if (path === "/v1/orchestrator/tasks") return json(res, 200, { at: Date.now(), tasks: [] })
@@ -356,6 +359,9 @@ class Tab {
     const { sessionId } = await b.send("Target.attachToTarget", { targetId, flatten: true })
     await b.send("Page.enable", {}, sessionId)
     await b.send("Runtime.enable", {}, sessionId)
+    await b.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: "try { localStorage.setItem('ui_language', 'zh-Hant') } catch {}",
+    }, sessionId)
     await b.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, mobile: true, deviceScaleFactor: 2 }, sessionId)
     // Without this the page has no fingers: the swipe's listeners are never
     // bound and every gesture here would pass by doing nothing.
@@ -528,6 +534,43 @@ test("a row with a conversation swipes open to 封存 beside 關閉, both on the
     assert.equal(single.bare!.width, "126")
     assert.equal(single.bare!.close!.width, 126, "the close keeps its own width")
     void bare
+  }))
+
+test("More commands groups the reads and opens the same archive confirmation", () =>
+  inTab(async (tab) => {
+    rows = [row(KEPT, "Tidy the release notes")]
+    archived = []
+    presses = []
+    await tab.go("/")
+    await tab.until("the row is drawn", (s) => s.rows.includes(KEPT))
+    await tab.press(`#rows > li.row[data-id="${KEPT}"] .label`)
+    await tab.press("#detail-actions-trigger")
+    const main = await tab.run(`(() => ({
+      ids: [...document.querySelectorAll("#session-actions-main > button")].map((b) => b.id),
+      more: document.getElementById("session-more")?.textContent?.trim(),
+    }))()`)
+    assert.deepEqual(main.ids, ["session-interrupt", "session-focus", "session-info", "session-screen", "session-more", "session-end"])
+    assert.match(main.more, /更多指令/)
+
+    await tab.press("#session-more")
+    const submenu = await tab.run(`(() => ({
+      ids: [...document.querySelectorAll("#session-actions-more > button")].map((b) => b.id),
+      git: document.getElementById("session-git")?.textContent?.trim(),
+      archive: document.getElementById("session-archive")?.textContent?.trim(),
+      disabled: document.getElementById("session-archive")?.hasAttribute("disabled"),
+    }))()`)
+    assert.deepEqual(submenu.ids, ["session-actions-back", "session-documents", "session-user-messages", "session-snippets", "session-git", "session-archive"])
+    assert.equal(submenu.git, "Git 變更")
+    assert.equal(submenu.archive, "封存 Session")
+    assert.equal(submenu.disabled, false)
+
+    await tab.press("#session-archive")
+    await tab.until("the confirmation is shown", (s) => s.confirm?.kind === "archive")
+    assert.equal(presses.length, 0, "the menu press only asks")
+    await tab.press("#action-confirm-go")
+    await tab.until("the row is archived", (s) => !s.rows.includes(KEPT) && s.confirm === null)
+    assert.equal(presses.length, 1)
+    assert.equal(presses[0].path, "/v1/sessions/" + encodeURIComponent(KEPT) + "/archive")
   }))
 
 test("封存 asks first, sends one archive under its key, the row goes, and the Archive page brings it back", () =>

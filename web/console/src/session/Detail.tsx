@@ -32,6 +32,7 @@ import { ClawdfatherSuggestions } from "./ClawdfatherSuggestions.js"
 import { conversationNotStarted } from "./readiness.js"
 import { agentName, agentStateWord } from "./WorkTree.js"
 import { nextWord } from "../next-strings.js"
+import { archivable } from "./swipe.js"
 import { BRAND_MARK, sessionName } from "../brand-mark.js"
 import { headPersona, type HeadPersona } from "../personas.js"
 import { PersonaBot, usePersonas } from "./PersonaBot.js"
@@ -451,10 +452,8 @@ function detailSub(row: SessionRow | null): string {
  * - Session info opens the info sheet.
  * - Snippets: hidden and disabled, which is the original's own shape for a
  *   transport with no snippets route (`syncRow` in `input/snippets.js`).
- * - Git changes opens the panel over the transcript, as `#session-git` does
- *   there. commit and push are ordinary prompts behind the `#action-confirm`
- *   sheet — the daemon runs no git for them; the word is typed into the
- *   session, which is what the original's `data-action` rows do.
+ * - More commands keeps the less frequent reads together. Git changes opens
+ *   the panel over the transcript; archive uses the list swipe's confirmation.
  * - Close session opens the confirmation sheet, as the original does; a
  *   refusal is reported by the toast there, not by this menu.
  */
@@ -478,16 +477,16 @@ function Tools({
   const T = L.strings
   const steward = !!row && !!(row.machine_scope || row.coordinator)
   const [open, setOpen] = useState(false)
-  const [git, setGit] = useState(false)
+  const [more, setMore] = useState(false)
   // `level()` first runs when the menu first opens; until then the main level
   // carries no aria-hidden, as the static markup has none.
   const [leveled, setLeveled] = useState(false)
 
   const mainRef = useRef<HTMLDivElement>(null)
-  const gitRef = useRef<HTMLDivElement>(null)
-  const gitMoreRef = useRef<HTMLButtonElement>(null)
+  const moreRef = useRef<HTMLDivElement>(null)
+  const moreTriggerRef = useRef<HTMLButtonElement>(null)
   // Focus moves after the level has re-rendered, since `inert` has to be gone first.
-  const focusNext = useRef<"first" | "git-more" | "trigger" | null>(null)
+  const focusNext = useRef<"first" | "more" | "trigger" | null>(null)
   // The session open now, for an answer that arrives later: `row` inside a
   // closure is the row that was open when it was made, so comparing the two
   // asked nothing (review F13) and a toast for one session landed on another.
@@ -495,7 +494,7 @@ function Tools({
   openNow.current = row
 
   const items = () => {
-    const level = git ? gitRef.current : mainRef.current
+    const level = more ? moreRef.current : mainRef.current
     return level ? [...level.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")] : []
   }
 
@@ -504,31 +503,31 @@ function Tools({
     if (!want) return
     focusNext.current = null
     const target =
-      want === "first" ? items()[0] : want === "git-more" ? gitMoreRef.current : triggerRef.current
+      want === "first" ? items()[0] : want === "more" ? moreTriggerRef.current : triggerRef.current
     target?.focus({ preventScroll: true })
   })
 
   const openMenu = () => {
     if (!row) return
-    setGit(false)
+    setMore(false)
     setLeveled(true)
     setOpen(true)
   }
   const closeMenu = (restore: boolean) => {
     if (!open) return
     setOpen(false)
-    setGit(false)
+    setMore(false)
     if (restore) focusNext.current = "trigger"
   }
 
   // A different session, or none, is a different menu.
   useEffect(() => {
     setOpen(false)
-    setGit(false)
+    setMore(false)
   }, [row?.id])
 
   // A press anywhere else closes it, and Escape closes it from the first level;
-  // from the Git level Escape goes back one level instead (see `onMenuKey`).
+  // from More commands Escape goes back one level instead (see `onMenuKey`).
   useEffect(() => {
     if (!open) return
     const onPointer = (ev: PointerEvent) => {
@@ -536,7 +535,7 @@ function Tools({
       closeMenu(false)
     }
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key !== "Escape" || git) return
+      if (ev.key !== "Escape" || more) return
       ev.preventDefault()
       ev.stopPropagation()
       closeMenu(true)
@@ -604,11 +603,11 @@ function Tools({
   }
 
   const onMenuKey = (ev: ReactKeyboardEvent) => {
-    if ((ev.key === "ArrowLeft" || ev.key === "Escape") && git) {
+    if ((ev.key === "ArrowLeft" || ev.key === "Escape") && more) {
       ev.preventDefault()
       ev.stopPropagation()
-      setGit(false)
-      focusNext.current = "git-more"
+      setMore(false)
+      focusNext.current = "more"
       return
     }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(ev.key)) return
@@ -689,9 +688,9 @@ function Tools({
               className="session-action-level"
               id="session-actions-main"
               ref={mainRef}
-              data-place={git ? "left" : "current"}
-              aria-hidden={leveled ? git : undefined}
-              inert={git}
+              data-place={more ? "left" : "current"}
+              aria-hidden={leveled ? more : undefined}
+              inert={more}
             >
               <button
                 id="session-interrupt"
@@ -745,6 +744,54 @@ function Tools({
                 {T.webSessionScreen}
               </button>
               <button
+                id="session-more"
+                type="button"
+                role="menuitem"
+                ref={moreTriggerRef}
+                aria-haspopup="menu"
+                disabled={!row || ending}
+                onClick={() => {
+                  setMore(true)
+                  focusNext.current = "first"
+                }}
+              >{catalogWord("session", "moreCommands")} <span className="next" aria-hidden="true">›</span>
+              </button>
+              <button
+                className="end"
+                id="session-end"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending}
+                onClick={() => {
+                  if (!row) return
+                  closeMenu(false)
+                  requestConfirm({ kind: "end", id: row.id, opener: triggerRef.current })
+                }}
+              >
+                {T.webEndSession}
+              </button>
+            </div>
+            <div
+              className="session-action-level"
+              id="session-actions-more"
+              ref={moreRef}
+              data-place={more ? "current" : "right"}
+              aria-hidden={!more}
+              inert={!more}
+            >
+              <button
+                className="level-back"
+                id="session-actions-back"
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMore(false)
+                  focusNext.current = "more"
+                }}
+              >
+                ‹ {T.webSessionActions}
+              </button>
+              <button
                 id="session-documents"
                 type="button"
                 role="menuitem"
@@ -789,57 +836,7 @@ function Tools({
               >
                 {steward ? suggestionsTitle() : T.webSnippets}
               </button>
-              {/* "Git", "commit" and "push" are literal in the original's index.html, not catalog strings. */}
-              <button
-                id="session-git-more"
-                type="button"
-                role="menuitem"
-                ref={gitMoreRef}
-                aria-haspopup="menu"
-                disabled={!row || ending}
-                onClick={() => {
-                  setGit(true)
-                  focusNext.current = "first"
-                }}
-              >{catalogWord("inline", "b949c922b6ef")} <span className="next" aria-hidden="true">›</span>
-              </button>
-              <button
-                className="end"
-                id="session-end"
-                type="button"
-                role="menuitem"
-                disabled={!row || ending}
-                onClick={() => {
-                  if (!row) return
-                  closeMenu(false)
-                  requestConfirm({ kind: "end", id: row.id, opener: triggerRef.current })
-                }}
-              >
-                {T.webEndSession}
-              </button>
-            </div>
-            <div
-              className="session-action-level"
-              id="session-actions-git"
-              ref={gitRef}
-              data-place={git ? "current" : "right"}
-              aria-hidden={!git}
-              inert={!git}
-            >
-              <button
-                className="level-back"
-                id="session-actions-back"
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setGit(false)
-                  focusNext.current = "git-more"
-                }}
-              >
-                ‹ {T.webSessionActions}
-              </button>
-              {/* A read: nothing is sent, so there is no confirmation to cross.
-                  The menu closes and the panel opens over the transcript. */}
+              {/* A read: nothing is sent, so there is no confirmation to cross. */}
               <button
                 id="session-git"
                 type="button"
@@ -852,34 +849,17 @@ function Tools({
               >
                 {T.webSessionGit}
               </button>
-              {/* `data-action` in the original, read by one listener on the
-                  menu. Both are sends, so both cross the confirmation sheet,
-                  which is what types the word into the session. */}
               <button
-                id="session-commit"
+                id="session-archive"
                 type="button"
                 role="menuitem"
-                data-action="commit"
-                disabled={!row || ending}
+                disabled={!row || ending || !archivable(row.sessionId)}
                 onClick={() => {
                   if (!row) return
                   closeMenu(false)
-                  requestConfirm({ kind: "commit", id: row.id, opener: triggerRef.current })
+                  requestConfirm({ kind: "archive", id: row.id, opener: triggerRef.current })
                 }}
-              >{catalogWord("inline", "9505cacb7c71")}
-              </button>
-              <button
-                id="session-push"
-                type="button"
-                role="menuitem"
-                data-action="push"
-                disabled={!row || ending}
-                onClick={() => {
-                  if (!row) return
-                  closeMenu(false)
-                  requestConfirm({ kind: "push", id: row.id, opener: triggerRef.current })
-                }}
-              >{catalogWord("inline", "d107ea3629c3")}
+              >{catalogWord("session", "archiveCommand")}
               </button>
             </div>
           </div>
