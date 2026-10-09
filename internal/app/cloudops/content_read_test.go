@@ -65,6 +65,36 @@ func contentReadAuthority(allowed bool) Authority {
 		WriteGateAllows: true, ReadTranscriptAllows: allowed}
 }
 
+func TestMachineListReadsOneLocalSnapshotWithTranscriptAuthority(t *testing.T) {
+	r := &router{body: `{"sessions":[{"id":"%19","title":"Display","execution_generation":"0123456789abcdef0123456789abcdef"}]}`}
+	b := open(r)
+	checks := 0
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+		checks++
+		return contentReadAuthority(true)
+	}
+	body := map[string]any{"type": "sessions.list", "session": MachineReplySession, "request": "batch-1"}
+	answer := b.Handle(context.Background(), contentReadRequest(t, body))
+	if !answer.OK() || answer.Session != MachineReplySession || answer.Name != "read:batch-1" ||
+		len(r.seen) != 1 || r.last().Path != "/v1/sessions" || r.last().Query["parts"] != "list" || checks != 2 {
+		t.Fatalf("batch list: answer=%+v routes=%+v checks=%d", answer, r.seen, checks)
+	}
+	payload := answerOf(t, answer)
+	if payload["machine_id"] != "mac-01" || payload["session_id"] != MachineReplySession ||
+		payload["seq"] != float64(411) || payload["expected_generation"] != nil {
+		t.Fatalf("machine list reply correlation: %v", payload)
+	}
+	if refused := b.Handle(context.Background(), request(t, ClassCtl, body)); refused.Code != "read_only_channel" || len(r.seen) != 1 {
+		t.Fatalf("ordinary command channel read the list: %+v, %+v", refused, r.seen)
+	}
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+		return contentReadAuthority(false)
+	}
+	if refused := b.Handle(context.Background(), contentReadRequest(t, body)); refused.Code != "read_transcript_required" || len(r.seen) != 1 {
+		t.Fatalf("revoked viewer read the list: %+v, %+v", refused, r.seen)
+	}
+}
+
 func TestOriginalDetailCommandsAcceptAnExactExecutionPin(t *testing.T) {
 	for _, word := range []string{"focus", "smart-title"} {
 		r := &router{}

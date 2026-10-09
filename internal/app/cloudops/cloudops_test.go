@@ -1077,6 +1077,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body:    map[string]any{"type": "skills", "session": pane},
 		session: pane, name: "skills", method: "GET", path: "/v1/sessions/" + segment(pane) + "/skills",
 	}, {
+		word:    "sessions.list",
+		body:    map[string]any{"type": "sessions.list", "session": machine, "request": "req-list"},
+		session: machine, name: "read:req-list", code: "read_only_channel", status: 403,
+	}, {
 		// Answered by the Session publisher, not by a route; a bridge with no
 		// publisher behind it says it does not know the word, which is what
 		// stops a page asking (TestSessionsSnapshotAnswersTheIdsThePublisherStated).

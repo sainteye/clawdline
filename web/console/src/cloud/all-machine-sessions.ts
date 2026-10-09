@@ -26,6 +26,10 @@ export interface SessionListPresentation {
   icon?: Icon
 }
 
+export interface MachineListPresentation extends SessionListPresentation {
+  destination: SessionDestination
+}
+
 export interface ProjectedSession {
   destination: SessionDestination
   title: string
@@ -80,9 +84,8 @@ export type SessionOlderPage =
 export interface SessionProjectionSource {
   /** Must settle or reject; each machine is requested independently. */
   readMachine(machineID: string, signal: AbortSignal): Promise<MachineSessionProjection>
-  /** An exact, read_transcript-authorized title without the full Session row. */
-  readListTitle?(destination: SessionDestination, signal: AbortSignal): Promise<string | null>
-  readListPresentation?(destination: SessionDestination, signal: AbortSignal): Promise<SessionListPresentation | null>
+  /** One read_transcript-authorized display snapshot per machine; each row is joined by execution. */
+  readMachinePresentations?(machineID: string, signal: AbortSignal): Promise<MachineListPresentation[] | null>
   /** Content is requested only after a person opens an exact destination. */
   readDetail(destination: SessionDestination, signal: AbortSignal): Promise<SessionContent>
   /** A person asks for one older page on the same opened, pinned detail. */
