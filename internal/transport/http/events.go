@@ -157,9 +157,7 @@ func (s *Server) forward(w http.ResponseWriter, flusher http.Flusher, frame []st
 		// Upstream's own id is kept so the counter stays continuous for the
 		// client. Nothing reads it for resume, but a stream that renumbers
 		// itself mid-flight is a lie about being one stream.
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		payload, err := json.Marshal(s.sessionsPayload(ctx))
-		cancel()
+		payload, err := json.Marshal(s.lists().snapshot())
 		if err == nil {
 			fmt.Fprintf(w, "event: sessions\nid: %s\ndata: %s\n\n", id, payload)
 			flusher.Flush()
@@ -182,9 +180,7 @@ func (s *Server) forward(w http.ResponseWriter, flusher http.Flusher, frame []st
 		// such tick into a frame (docs/broker-design.md §6.2). An identity that
 		// cannot be computed is sent: not shown to be a duplicate is not the
 		// same as shown to be one.
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		list, err := s.tasksPayload(ctx, 0, 50)
-		cancel()
+		list, err := s.lists().taskList()
 		if err == nil {
 			identity := orchestratorIdentity(list)
 			if identity != nil && stream != nil && bytes.Equal(identity, stream.orchestrator) {

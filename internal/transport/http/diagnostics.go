@@ -635,6 +635,11 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return capacity.Reading{Known: true, Used: used, Note: "current Cloud machine's durable terminal executions"}
 		},
+		capacity.CacheSessionExecutionMemo: func() capacity.Reading {
+			held, skipped := s.executions.reading()
+			return capacity.Reading{Known: true, Used: int64(held),
+				Note: strconv.FormatInt(skipped, 10) + " unchanged scan(s) answered without a write"}
+		},
 		capacity.SessionNoMovement: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-row record-movement threshold; no retained wait"}
 		},

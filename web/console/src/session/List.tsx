@@ -11,6 +11,7 @@ import { conversationNotStarted } from "./readiness.js"
 import { retainedStateWords, sessionReadingChinese } from "../session-reading.js"
 import { rowPersonaLine } from "../personas.js"
 import { usePersonas } from "./PersonaBot.js"
+import { runWorkingClock } from "./working-clock.js"
 import "./list-density.css"
 import "./list-tree.css"
 import "./swipe-archive.css"
@@ -240,6 +241,16 @@ function StateLine({ row, role }: { row: SessionRow; role: ReturnType<typeof row
     L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null)
     if (role) L.paintIcon(ref.current?.querySelector<HTMLCanvasElement>("canvas.persona-state-bot") ?? null, role.persona.icon, 2)
   }, [html, role?.persona])
+  // A daemon that sends `working_since` sends the line again only when more
+  // than its clock moved, so the clock is drawn here (working-clock.ts). The
+  // markup stays as sent and only the line's text moves; without the field the
+  // line is drawn exactly as it arrives.
+  const since = row.working_since
+  useLayoutEffect(() => {
+    const live = ref.current?.querySelector<HTMLElement>(".session-live-line")
+    if (!live || !row.line || !since) return
+    return runWorkingClock(live, row.line, since)
+  }, [html, row.line, since])
   return <div className="state" ref={ref} data-shape={shape} dangerouslySetInnerHTML={{ __html: roleHTML + html }} />
 }
 

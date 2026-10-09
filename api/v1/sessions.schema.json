@@ -141,6 +141,7 @@
         "shells": { "description": "The commands this session left running in the background, newest first, at most six. Absent rather than empty when there are none, as the Swift app sends it; always absent for Codex, which keeps no record of them.", "type": "array", "items": { "$ref": "#/$defs/SessionShell" } },
         "state": { "$ref": "common.schema.json#/$defs/SessionState" },
         "tty": { "type": "string" },
+        "working_since": { "description": "When the turn a working session's `line` reports began, in unix seconds: when the line was read, less the assistant's own clock in it. Present only beside a `line` that carries that clock. A page that has it draws the clock itself from this instant, so `line` is republished only when something other than the clock moved; a page without it draws `line` as sent.", "type": "integer" },
         "work_moved_by": { "description": "Who the declaring session said will move it — a session id, or a person.", "type": "string" },
         "work_note": { "description": "The session's own words for its state, present only when its declaration decided `work_state` (then `work_provenance` is `self`).", "type": "string" },
         "work_person_needed": { "type": "boolean", "description": "Whether that mover is a person. Absent unless the declaration decided the state; present and false is a real answer." },
