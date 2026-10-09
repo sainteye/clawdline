@@ -54,7 +54,10 @@ import (
 )
 
 type Server struct {
-	cfg             config.Config
+	cfg config.Config
+	// routeStats counts every API call by route and caller (route_stats.go).
+	routeStats      *routeStats
+	routeStatsOnce  sync.Once
 	viewerMu        sync.Mutex
 	viewer          *adaptercloud.ViewerClient
 	viewerSignature string
@@ -127,6 +130,17 @@ type Server struct {
 	// their memory back, and resumable again (session_archive.go,
 	// docs/session-archive.md).
 	archive *app.SessionArchive
+	// listsProducer builds the session list and the first task page once per
+	// tick for every stream, the route and the Cloud publisher (producer.go).
+	// Made on first use by lists().
+	listsOnce     sync.Once
+	listsProducer *listProducer
+	// executions remembers what observeExecutions last committed, so an
+	// unchanged scan does not open a write transaction (execution_memo.go).
+	executions executionMemo
+	// turns keeps each working session's turn start steady across readings,
+	// so `working_since` is a change only when a new turn starts (sessions.go).
+	turns workingClock
 	// screenBus carries a moved screen's revision to every open event stream.
 	screenBus *screenBus
 	// broker is the loop from a root asking for work to a child reporting that
@@ -377,8 +391,13 @@ func (s *Server) freshReading(ctx context.Context) session.Inventory {
 
 func (s *Server) Handler() http.Handler {
 	// Every route is behind the gate, with no exception for loopback: see gate.go.
+	// Outside it, every call is counted by route and caller (route_stats.go).
 	gate := s.gate()
 	mux := http.NewServeMux()
+	stats := s.routeStatsTable()
+	wrap := func() http.Handler {
+		return stats.countRoutes(mux, gate.wrap(noteCaller(s.withDocuments(boundBodies(mux)))))
+	}
 	for _, rt := range s.routeTable() {
 		mux.HandleFunc(rt.Pattern, rt.handle)
 	}
@@ -393,16 +412,16 @@ func (s *Server) Handler() http.Handler {
 			// launch images are drawn, and everything else there is a file in
 			// the bundle that `page` already serves.
 			mux.Handle("/", s.withPWA(&fallback{page: newPage(root), miss: s.notImplemented}))
-			return gate.wrap(s.withDocuments(boundBodies(mux)))
+			return wrap()
 		}
 		// No web root is not a route this daemon has yet to write: `/` is its
 		// own, and it was not told where the files are. The page says that by
 		// name (no_web_root); an unowned /v1 route still says not_implemented.
 		mux.Handle("/", &fallback{page: newPage(""), miss: s.notImplemented})
-		return gate.wrap(s.withDocuments(boundBodies(mux)))
+		return wrap()
 	}
 	mux.Handle("/", s.proxy)
-	return gate.wrap(s.withDocuments(boundBodies(mux)))
+	return wrap()
 }
 
 // routeTable is every pattern this daemon registers for its API, in the order
@@ -721,6 +740,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		Console:   consoleReading(WebRoot()),
 		Platform:  s.platformDiagnostics(r.Context()),
 		Proposals: s.proposalDiagnostics(r.Context()),
+		Routes:    s.routeStatsTable().reading(),
 		Scheduler: s.schedulerPulse(),
 		Terminals: s.terminalDiagnostics(),
 		ServedBy:  servedBy,

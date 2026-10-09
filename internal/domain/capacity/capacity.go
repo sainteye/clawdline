@@ -154,21 +154,23 @@ const (
 // The names of the rows. Stable: they are keys on the wire and in the
 // CLAWDLINE_NEXT_CAPACITY override.
 const (
-	AuditSecurity      = "audit.security"
-	StoreDB            = "store.db"
-	SessionExecutions  = "session.executions"
-	SessionNoMovement  = "session.no_movement_seconds"
-	BoardReceipts      = "board.receipts"
-	CloudRelayQueue    = "cloud.relay_queue"
-	StoreReceipts      = "store.receipts"
-	CloudPeerPairs     = "cloud.peer_pairs"
-	CloudPeerGrants    = "cloud.peer_grants"
-	CloudPeerInbox     = "cloud.peer_inbox"
-	CloudPeerInboxPage = "cloud.peer_inbox_page"
-	CloudPeerOutbox    = "cloud.peer_outbox"
-	CloudPeerIngress   = "cloud.peer_ingress"
-	CloudPeerBody      = "cloud.peer_body_bytes"
-	CloudPeerFrame     = "cloud.peer_frame_bytes"
+	AuditSecurity     = "audit.security"
+	StoreDB           = "store.db"
+	SessionExecutions = "session.executions"
+	SessionNoMovement = "session.no_movement_seconds"
+	// The last committed execution scan, so an unchanged one opens no write.
+	CacheSessionExecutionMemo = "cache.session_execution_memo"
+	BoardReceipts             = "board.receipts"
+	CloudRelayQueue           = "cloud.relay_queue"
+	StoreReceipts             = "store.receipts"
+	CloudPeerPairs            = "cloud.peer_pairs"
+	CloudPeerGrants           = "cloud.peer_grants"
+	CloudPeerInbox            = "cloud.peer_inbox"
+	CloudPeerInboxPage        = "cloud.peer_inbox_page"
+	CloudPeerOutbox           = "cloud.peer_outbox"
+	CloudPeerIngress          = "cloud.peer_ingress"
+	CloudPeerBody             = "cloud.peer_body_bytes"
+	CloudPeerFrame            = "cloud.peer_frame_bytes"
 	// C2: the things that had no limit at all (limits §3.3, §7.2 wave 2).
 	LogDaemon             = "log.daemon"
 	DevicesList           = "devices.list"
@@ -329,6 +331,13 @@ const (
 	// How old one source's own answer may be and still vouch for its rows
 	// while a slower source holds the refresh.
 	CacheSourceAnswer = "cache.source_answer"
+	// How long after a scan finished it may still answer a pinned read's
+	// execution check instead of the read waiting for a scan of its own.
+	CachePinnedRead = "cache.pinned_read"
+	// The Git panel's memory of directories git said hold no repository:
+	// how long one is believed, and how many are remembered.
+	CacheGitNotRepo     = "cache.git_not_repo"
+	CacheGitNotRepoRows = "cache.git_not_repo_rows"
 	// Minimum age before the machine dashboard refreshes grouped reclaim rows.
 	CacheReclaimSummary = "cache.reclaim_summary"
 	// The Project Timeline is a projection that stores nothing, so what is
@@ -418,17 +427,31 @@ const (
 	SquadEventIDBytes            = "squad.event_id_bytes"
 	SquadEventPageRows           = "squad.event_page_rows"
 	SquadEventBodyBytes          = "squad.event_body_bytes"
+	// How the console's transcript pane reads (web/console/src/session/
+	// transcript-follow.ts) and how the Cloud seam answers it
+	// (web/console/src/cloud/relay-reader.ts). They bound requests, not
+	// storage: the browser enforces them, and they are registered here so a
+	// change to any of them is a change to this register.
+	ConsoleTranscriptSafetySeconds    = "console.transcript_safety_seconds"
+	ConsoleTranscriptFollowSeconds    = "console.transcript_follow_seconds"
+	ConsoleTranscriptMergedRows       = "console.transcript_merged_rows"
+	ConsoleTranscriptBackoffSeconds   = "console.transcript_backoff_seconds"
+	ConsoleRelayTranscriptExpectReask = "console.relay_transcript_expect_reask_seconds"
 	// The ordinary shells this machine holds open for a person, and what one
 	// request may type into one or read back from it (limits N59).
-	TerminalCount                     = "terminal.count"
-	TerminalInputBytes                = "terminal.input_bytes"
-	TerminalPasteBytes                = "terminal.paste_bytes"
-	TerminalHistoryLines              = "terminal.history_lines"
-	TerminalLane                      = "terminal.lane"
-	TerminalViewers                   = "terminal.viewers"
-	TerminalStreams                   = "terminal.streams"
-	TerminalLeaseSeconds              = "terminal.lease_seconds"
-	TerminalGrantsBytes               = "terminal.grants_bytes"
+	TerminalCount        = "terminal.count"
+	TerminalInputBytes   = "terminal.input_bytes"
+	TerminalPasteBytes   = "terminal.paste_bytes"
+	TerminalHistoryLines = "terminal.history_lines"
+	TerminalLane         = "terminal.lane"
+	TerminalViewers      = "terminal.viewers"
+	TerminalStreams      = "terminal.streams"
+	TerminalLeaseSeconds = "terminal.lease_seconds"
+	TerminalGrantsBytes  = "terminal.grants_bytes"
+	// Every API call this daemon answers, counted by route shape and caller
+	// (`/v1/diagnostics.routes`).
+	DiagnosticsRouteStatKeys          = "diagnostics.route_stat_keys"
+	DiagnosticsRouteLatencySamples    = "diagnostics.route_latency_samples"
 	CloudTerminalRosterRefresh        = "cloud.terminal_roster_refresh_seconds"
 	CloudTerminalRosterDeadline       = "cloud.terminal_roster_deadline_seconds"
 	CloudTerminalRosterRetry          = "cloud.terminal_roster_retry_seconds"
@@ -579,6 +602,16 @@ func Register() []Entry {
 			Limit: 4096, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Health, Sender, Log}, EvictedBy: Person,
 			Sources: []string{"internal/adapters/store.ExecutionRecordsLimit"},
+		},
+		{
+			// The one execution scan observeExecutions last committed, by
+			// terminal. A scan equal to it is answered from it and opens no
+			// write transaction; a scan naming more terminals than this is not
+			// remembered and goes to the store, as every scan did before.
+			Name: CacheSessionExecutionMemo, Class: Cache, Unit: Rows,
+			Limit: 4096, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.ExecutionMemoLimit"},
 		},
 		{
 			// A current record-movement observation stops being recent after
@@ -1847,6 +1880,40 @@ func Register() []Entry {
 			Sources:   []string{"internal/app.SourceAnswerAgeLimit"},
 		},
 		{
+			// A pinned Cloud read (transcript, info, git, to-dos) checks that
+			// the execution it names is still the one running. A scan that
+			// finished less than this ago answers that check; an older one
+			// is replaced by a scan taken for the read, as every check was
+			// before. Three seconds: a scan started now returns rows observed
+			// as it started, so this is at most three seconds older than the
+			// fresh answer, against the 8.9 s and 13.0 s medians measured for
+			// the slow pinned reads that waited for one. Writes never use it.
+			Name: CachePinnedRead, Class: Cache, Unit: Seconds,
+			Limit: 3, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.PinnedReadAgeLimit"},
+		},
+		{
+			// A directory git answered "not a repository" for is answered
+			// that way for a minute without running git again
+			// (internal/adapters/git/notrepo.go). Only that answer is kept.
+			Name: CacheGitNotRepo, Class: Cache, Unit: Seconds,
+			Limit: 60, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/git.NotRepoAgeLimit"},
+		},
+		{
+			// How many such directories are remembered. Past it the one
+			// remembered longest ago is let go; a miss is one `git status`.
+			Name: CacheGitNotRepoRows, Class: Cache, Unit: Rows,
+			Limit: 256, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/git.NotRepoRowsLimit"},
+		},
+		{
 			// The machine dashboard polls every three seconds. Grouped reclaim
 			// decisions come from the store at most once per thirty seconds.
 			Name: CacheReclaimSummary, Class: Cache, Unit: Seconds,
@@ -2333,6 +2400,49 @@ func Register() []Entry {
 			Sources: []string{"internal/domain/squad.MaxSquadConsoleActiveSkillBytes"},
 		},
 		{
+			// The transcript pane reads the whole newest page at least this
+			// often (SAFETY_MS); between, it reads only what was appended, when
+			// the session row says the record grew. Past it the held page
+			// expires and is read whole: that read is what catches a row that
+			// said nothing and refreshes pictures an appended read never
+			// revisits.
+			Name: ConsoleTranscriptSafetySeconds, Class: Cache, Unit: Seconds,
+			Limit: 30, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// After a send, the pane reads every two seconds for at most this
+			// long (FOLLOW_WINDOW_MS), then goes back to the safety pace. The
+			// card's own lifetime is session/pending.ts's and unchanged.
+			Name: ConsoleTranscriptFollowSeconds, Class: Cache, Unit: Seconds,
+			Limit: 90, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// The entries one held page may grow to by appended reads
+			// (MERGED_ROWS_LIMIT), the route's own ceiling for a page. Past it
+			// the next read is a whole one, which starts again at 200.
+			Name: ConsoleTranscriptMergedRows, Class: Cache, Unit: Rows,
+			Limit: 1000, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// A failed transcript read waits 2, 4, 8 … seconds, at most this
+			// long (BACKOFF.maxMs), before the next.
+			Name: ConsoleTranscriptBackoffSeconds, Class: Cache, Unit: Seconds,
+			Limit: 30, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// For 45 seconds after a write the Cloud seam asks the machine for
+			// the transcript again when the row moved, and otherwise at most
+			// this often (TRANSCRIPT_EXPECT_REREAD_MS); its held answer expires
+			// at this age.
+			Name: ConsoleRelayTranscriptExpectReask, Class: Cache, Unit: Seconds,
+			Limit: 4, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// One recovery query reads this many pending launch intents. Later
 			// pages continue from a cursor instead of refusing new Sessions.
 			Name: SquadRecoveryRows, Class: Buffer, Unit: Rows,
@@ -2529,6 +2639,23 @@ func Register() []Entry {
 			Limit: 8, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/terminals.MaxViewers"},
+		},
+		{
+			// The route shapes /v1/diagnostics.routes counts. A shape past
+			// the limit coalesces into the one `overflow` count; the call is
+			// answered as before, and only its row is missing.
+			Name: DiagnosticsRouteStatKeys, Class: Buffer, Unit: Rows,
+			Limit: 512, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.MaxRouteStatKeys"},
+		},
+		{
+			// The recent durations each counted route keeps for its p50 and
+			// p90; the oldest is overwritten first. `max` is kept apart.
+			Name: DiagnosticsRouteLatencySamples, Class: Observation, Unit: Rows,
+			Limit: 256, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.MaxRouteLatencySamples"},
 		},
 		{
 			// Terminal streams the machine serves at once, the same way.

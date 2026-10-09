@@ -53,7 +53,7 @@ export function quietFleetStream(): () => void {
 const QUIET_READ_MS = 5_000
 
 function quietableTransport(): StreamTransport | undefined {
-  const stream = nativeEventSourceTransport()
+  const stream = nativeEventSourceTransport(["sessions", "orchestrator"])
   if (!stream) return undefined
   const reads = pollingTransport(async () => JSON.stringify(await client.sessions()), QUIET_READ_MS)
   return {

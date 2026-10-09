@@ -468,7 +468,11 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			st := svc.Lanes().Stats()
 			return capacity.Reading{Known: true, Used: int64(st.Admitted)}
 		},
-		capacity.TerminalViewers: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-terminal guard"} },
+		capacity.TerminalViewers:          func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-terminal guard"} },
+		capacity.DiagnosticsRouteStatKeys: func() capacity.Reading { return s.routeStatsTable().keys() },
+		capacity.DiagnosticsRouteLatencySamples: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-route ring"}
+		},
 		capacity.TerminalStreams: func() capacity.Reading {
 			_, streams := s.terminalStats()
 			return capacity.Reading{Known: true, Used: int64(streams)}
@@ -554,6 +558,14 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return s.readings.AnswerReading()
 		},
+		capacity.CachePinnedRead: func() capacity.Reading {
+			if s.readings == nil {
+				return capacity.Reading{Known: true, Note: "this server checks every pinned read against a scan of its own"}
+			}
+			return s.readings.PinnedReading(time.Duration(CapacityLimit(capacity.CachePinnedRead)) * time.Second)
+		},
+		capacity.CacheGitNotRepo:     func() capacity.Reading { return gitNotRepos().AgeReading() },
+		capacity.CacheGitNotRepoRows: func() capacity.Reading { return gitNotRepos().RowsReading() },
 		capacity.CacheReclaimSummary: func() capacity.Reading {
 			s.reclaimSummaryMu.Lock()
 			defer s.reclaimSummaryMu.Unlock()
@@ -638,6 +650,11 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 				return capacity.Unmeasured(err.Error())
 			}
 			return capacity.Reading{Known: true, Used: used, Note: "current Cloud machine's durable terminal executions"}
+		},
+		capacity.CacheSessionExecutionMemo: func() capacity.Reading {
+			held, skipped := s.executions.reading()
+			return capacity.Reading{Known: true, Used: int64(held),
+				Note: strconv.FormatInt(skipped, 10) + " unchanged scan(s) answered without a write"}
 		},
 		capacity.SessionNoMovement: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-row record-movement threshold; no retained wait"}
@@ -1091,6 +1108,23 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab policy; daemon cannot measure another device's sessionStorage"}
 		},
 		capacity.CloudTerminalUnconfirmed: func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalUnconfirmed) },
+		// The console's transcript cadence lives in each open tab; the
+		// daemon serves the reads and cannot count a tab's timers.
+		capacity.ConsoleTranscriptSafetySeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
+		capacity.ConsoleTranscriptFollowSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
+		capacity.ConsoleTranscriptMergedRows: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab guard; daemon cannot measure a tab's merged page"}
+		},
+		capacity.ConsoleTranscriptBackoffSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser retries"}
+		},
+		capacity.ConsoleRelayTranscriptExpectReask: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console relay reader cadence; daemon cannot measure another device's reads"}
+		},
 		// C4: the Cloud line's outbound spool, both of its bounds.
 		capacity.CloudSpool: func() capacity.Reading {
 			rows, _ := s.spoolReadings()

@@ -345,7 +345,7 @@ const Schedules = (() => {
     return Promise.all(
       [...byMachine].map(([key, rows]) => {
         const machine = key || undefined
-        return loadScheduleProjects(rows, (id) => scheduleApi.schedule(id, machine), placesCache(machine).read)
+        return loadScheduleProjects(rows, (id) => scheduleApi.knownSchedule(id, machine), placesCache(machine).read)
       }),
     ).then((parts) => {
       const loaded = new Map<string, ScheduleListRow>()

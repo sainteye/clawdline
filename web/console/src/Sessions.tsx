@@ -1,6 +1,6 @@
 import { catalogWord } from "./catalog.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react"
-import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskRow } from "@clawdline/contract"
+import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskList, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { actionWidthOf, paintSwipe, Row } from "./session/List.js"
@@ -52,6 +52,7 @@ export function SessionsPage({
   onOpen,
   onBack,
   onDid,
+  streamTasks = null,
   fleetList,
   fleetDetailKey,
   fleetDetailPending = false,
@@ -85,16 +86,21 @@ export function SessionsPage({
   onOpen: (id: string) => void
   onBack: () => void
   onDid: () => void
+  /**
+   * The task list the live stream carries (`FleetState.tasks` while
+   * `tasksLive`), or null when the stream is not carrying one; then the list is
+   * read here on its own lane.
+   */
+  streamTasks?: TaskList | null
   /** The same page frame and detail, with only the list supplied by the Cloud fleet adapter. */
   fleetList?: ReactNode
   fleetDetailKey?: string
   fleetDetailPending?: boolean
   fleetDetailProblem?: string | null
 }) {
-  // The task list the chips, the indent and the detail header read. Fetched
-  // here rather than taken from the stream because the page's stream reader
-  // does not hand its frames to this page.
-  const tasks = useTasks(arrived, rows)
+  // The task list the chips, the indent and the detail header read: the
+  // stream's own while it carries one, fetched here while it does not.
+  const tasks = useTasks(arrived, rows, streamTasks)
   const [terminalMode, setTerminalMode] = useState(() => sessionsTerminalMode(location.hash))
   // The terminal in the second column while the list shows terminals: named
   // by the address, or (hosted) a new one being opened in a project, which is
@@ -331,6 +337,7 @@ export function SessionsPage({
         </section>
 
         <Detail key={fleetDetailKey} row={fleetDetailPending ? null : open} tasks={tasks} onOpenSession={onOpen} onBack={onBack} onDid={onDid}
+          onSent={streamTasks !== null ? undefined : onDid}
           listUnknown={listUnknown || fleetDetailPending} emptyProblem={fleetDetailProblem} />
         {/* In terminal mode the second column is the terminal's, as it is the
             open session's otherwise; the session detail stays mounted, hidden. */}
@@ -714,8 +721,10 @@ function usePullToRefresh(
  * The dispatched-work list, `S.tasks` in the original.
  *
  * The original is handed the whole list on its stream's `orchestrator` frame,
- * every time a task moves. This page's stream reader (`useFleet`, outside this
- * file) passes on only session frames, so the list is read here instead: once
+ * every time a task moves, and so is this page while its stream carries that
+ * frame (`streamTasks`): then nothing is read here at all. When it does not —
+ * the relay, the quiet reads while a terminal holds the connection, a dropped
+ * stream — the list is read here instead: once
  * when the first session list arrives, again whenever the rows change shape —
  * a tab opens or closes, a session starts or stops working, which is when a
  * task is briefed or finishes — at most every 1.5 seconds, and on a 10-second
@@ -723,11 +732,15 @@ function usePullToRefresh(
  * a chip that vanished because one request failed would be a false statement
  * that the task is over.
  */
-function useTasks(arrived: boolean, rows: SessionRow[]): TaskRow[] | null {
+function useTasks(arrived: boolean, rows: SessionRow[], streamTasks: TaskList | null): TaskRow[] | null {
   const [list, setList] = useState<TaskRow[] | null>(null)
   const readRef = useRef<() => void>(() => {})
+  const streamed = streamTasks !== null
   useEffect(() => {
-    if (!arrived) return
+    if (streamTasks) setList(streamTasks.tasks ?? [])
+  }, [streamTasks])
+  useEffect(() => {
+    if (!arrived || streamed) return
     const LANE_MS = 10000
     const GAP_MS = 1500
     let alive = true
@@ -796,7 +809,7 @@ function useTasks(arrived: boolean, rows: SessionRow[]): TaskRow[] | null {
       if (timer !== null) clearTimeout(timer)
       document.removeEventListener("visibilitychange", onVisibility)
     }
-  }, [arrived])
+  }, [arrived, streamed])
   // The rows' shape: which sessions exist and what they are doing. A working
   // line that ticks every second is not a change of shape.
   const shape = rows.map((r) => `${r.id}:${r.state}:${r.work_state}`).join("|")

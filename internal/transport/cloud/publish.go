@@ -41,6 +41,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The inventory marker's literal session id and the bound on how many ids it
@@ -109,6 +110,11 @@ type Publisher struct {
 	// read goes through, so the rows a viewer sees are the rows the local
 	// console sees.
 	Router cloudops.LocalRouter
+	// Sessions is this daemon's own session list as `GET /v1/sessions`
+	// answers it, read from the one producer every event stream reads
+	// (internal/transport/http producer.go), so this publisher no longer builds
+	// a list of its own. Nil, or false, reads the route through Router.
+	Sessions func(context.Context) ([]byte, bool)
 	// Publish is where a snapshot goes. It is the Relay in production.
 	Publish func(context.Context, Outbound) error
 	// Every is the poll interval; zero is SnapshotInterval.
@@ -589,7 +595,13 @@ func (r sessionReading) whole() bool { return r.complete || r.emptyAuthoritative
 
 // readSessions reads this machine's sessions, or answers false.
 func (p *Publisher) readSessions(ctx context.Context) (sessionReading, bool) {
-	res, err := p.Router.Do(ctx, cloudops.LocalRequest{Method: http.MethodGet, Path: "/v1/sessions"})
+	var res cloudops.LocalResponse
+	var err error
+	if body, ok := p.readProduct(ctx); ok {
+		res = cloudops.LocalResponse{Status: http.StatusOK, Body: body}
+	} else {
+		res, err = p.Router.Do(ctx, cloudops.LocalRequest{Method: http.MethodGet, Path: "/v1/sessions"})
+	}
 	if err != nil || res.Status != http.StatusOK {
 		// A machine that cannot read its own sessions publishes nothing rather
 		// than an empty list: an empty inventory is a claim, and the claim
@@ -644,6 +656,14 @@ func (p *Publisher) readSessions(ctx context.Context) (sessionReading, bool) {
 	return reading, true
 }
 
+// readProduct is the shared session list, when this publisher was given one.
+func (p *Publisher) readProduct(ctx context.Context) ([]byte, bool) {
+	if p.Sessions == nil {
+		return nil, false
+	}
+	return p.Sessions(ctx)
+}
+
 // owningSource names the source that would have seen this row again, which is
 // the only source whose silence means anything about it.
 //
@@ -680,6 +700,16 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 		identity := mustJSON(withoutFreshness(session))
 		if p.held == nil {
 			p.held = map[string]heldRow{}
+		}
+		if prior, ok := p.held[id]; ok && unverified(session) {
+			// A row from a source whose refresh is still in progress is the
+			// last reading of that source, held (internal/app
+			// inventory_reading.go): it says nothing the published row did
+			// not, and it withholds what may only be stated of a current
+			// reading. Flipping to it and back is not a change. A viewer
+			// still ages the published reading by its own clock, and the
+			// heartbeat re-states the row as it now stands.
+			identity = prior.identity
 		}
 		p.held[id] = heldRow{identity: identity, body: row}
 		if !p.changed(id, identity) {
@@ -728,7 +758,7 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 	// next partial reading has to be measured against — remembered here rather
 	// than after the send, because an unchanged marker is not re-sent and the
 	// viewer holds it just the same.
-	p.rememberInventory(reading, ids)
+	retained := p.rememberInventory(reading, ids)
 	marker := map[string]any{
 		// `inventory` must hold exactly `version` and `sessions`: the consumer
 		// compares the sorted key list literally and throws `bad_payload` on
@@ -746,6 +776,11 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 	if !p.changed(InventorySessionID, inventory) {
 		return
 	}
+	// Said only of a marker that goes out. Logged before the comparison it
+	// claimed a publication every pass: over 113.9 hours, 75,127 lines for
+	// 8,978 markers sent.
+	p.logf("cloud: inventory published: complete=%v ids=%d unseen_kept=%d incomplete_sources=[%s]",
+		reading.whole(), len(ids), retained, strings.Join(incompleteSources(reading.sources), " "))
 	p.send(ctx, InventorySessionID, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+InventorySessionID, inventory, "inventory")
 }
 
@@ -796,22 +831,21 @@ func (p *Publisher) inventoryIDs(reading sessionReading, seen []string) []string
 	return ids
 }
 
-// rememberInventory records what the marker is about to state, and says in one
-// line why.
+// rememberInventory records what the marker is about to state, and answers how
+// many of its ids this reading did not see, for the line that says it.
 //
 // The log line is not decoration. While a partial reading published nothing,
 // it also wrote nothing, so a machine that had silently stopped tombstoning
 // rows looked exactly like a machine with nothing to tombstone — which is how
-// this went unnoticed for the best part of two hours at a time.
-func (p *Publisher) rememberInventory(reading sessionReading, ids []string) {
+// this went unnoticed for the best part of two hours at a time. It is written
+// where the marker is sent (publishSessions), so it counts markers that left.
+func (p *Publisher) rememberInventory(reading sessionReading, ids []string) int {
 	retained := 0
 	for _, id := range ids {
 		if _, seen := reading.rows[id]; !seen {
 			retained++
 		}
 	}
-	p.logf("cloud: inventory published: complete=%v ids=%d unseen_kept=%d incomplete_sources=[%s]",
-		reading.whole(), len(ids), retained, strings.Join(incompleteSources(reading.sources), " "))
 
 	kept := make(map[string]inventoriedRow, len(ids))
 	for _, id := range ids {
@@ -830,6 +864,7 @@ func (p *Publisher) rememberInventory(reading sessionReading, ids []string) {
 			delete(p.held, id)
 		}
 	}
+	return retained
 }
 
 // incompleteSources names the sources that could not answer for themselves,
@@ -857,7 +892,11 @@ func (p *Publisher) changed(key string, identity []byte) bool {
 	return true
 }
 
-// withoutFreshness copies a row with the freshness-only paths removed.
+// withoutFreshness copies a row with the freshness-only paths removed, and a
+// working line with its clock cut out: the clock moves every second a session
+// works, and a page that has `working_since` draws it from there
+// (session.WithoutElapsed). A page that has not gets the line again with the
+// next real change or the heartbeat.
 func withoutFreshness(row map[string]any) map[string]any {
 	out := make(map[string]any, len(row))
 	for key, value := range row {
@@ -866,7 +905,17 @@ func withoutFreshness(row map[string]any) map[string]any {
 	for _, path := range freshnessOnlySessionRowFields {
 		removePath(out, path)
 	}
+	if line, ok := out["line"].(string); ok && out["state"] == "working" {
+		out["line"] = session.WithoutElapsed(line)
+	}
 	return out
+}
+
+// unverified is whether a row is its source's last reading, held while that
+// source's refresh is in progress.
+func unverified(row map[string]any) bool {
+	source, _ := row["source"].(map[string]any)
+	return source != nil && source["freshness"] == "unverified"
 }
 
 // removePath deletes one nested key, copying each object it descends into so

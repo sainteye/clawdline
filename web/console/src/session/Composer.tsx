@@ -80,6 +80,7 @@ import { ComposerBox } from "./ComposerBox.js"
 export function Composer({
   row,
   onDid,
+  onSent,
   onScreen,
   restoredDraft,
   suggestedDraft,
@@ -87,6 +88,8 @@ export function Composer({
 }: {
   row: SessionRow | null
   onDid: () => void
+  /** After a delivered send; nothing when left out (`Detail`'s `onSent`). */
+  onSent?: () => void
   onScreen?: () => void
   restoredDraft?: { target: InterventionTarget; text: string } | null
   suggestedDraft?: { target: InterventionTarget; text: string; id: number } | null
@@ -480,7 +483,7 @@ export function Composer({
       // enough on its own to free the box when the first never arrives.
       const code = await deliverUntilSeen(pendingSends.add(row.id, said, pictures, Date.now()))
       if (writeIsOff(code)) setBlocked({ machine, code })
-      if (!code) onDid()
+      if (!code) onSent?.()
     } catch (err) {
       const code = err instanceof RefusalError ? err.code : "unexpected_error"
       if (writeIsOff(code)) setBlocked({ machine, code })
