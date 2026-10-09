@@ -125,6 +125,7 @@
         "console": { "$ref": "#/$defs/ConsoleDiagnostics" },
         "platform": { "$ref": "#/$defs/PlatformDiagnostics" },
         "proposals": { "$ref": "#/$defs/ProposalDiagnostics" },
+        "routes": { "$ref": "#/$defs/RouteStats" },
         "dir": { "type": "string" },
         "ok": { "type": "boolean" },
         "port": { "type": "integer" },
@@ -199,6 +200,64 @@
         "matched": { "type": "boolean" },
         "oldest_pending_at": { "type": "integer", "description": "When the proposal waiting longest was made. Absent when none waits." },
         "error": { "type": "string", "description": "The counts could not be read; every number beside it is zero and means nothing." }
+      }
+    },
+    "RouteStats": {
+      "description": "/v1/diagnostics.routes: every API call this daemon answered since it started, by route shape and caller. A key is the method and the pattern the mux matched; below a prefix pattern only fixed route words are spelled out and every other segment is `:id`, and the query is never read, so no session id, name or text appears. Counters are never reset: compare two readings by subtracting them. Absent from a daemon without the counter.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["since", "key_limit", "latency_samples", "overflow", "routes"],
+      "properties": {
+        "since": { "description": "When counting started: the daemon's start, Unix seconds.", "type": "integer" },
+        "key_limit": { "description": "How many distinct route shapes are counted (capacity `diagnostics.route_stat_keys`).", "type": "integer" },
+        "latency_samples": { "description": "How many recent durations each route keeps for its percentiles (capacity `diagnostics.route_latency_samples`).", "type": "integer" },
+        "overflow": { "description": "Calls not counted under a route of their own because the table was full.", "type": "integer" },
+        "routes": { "type": "array", "items": { "$ref": "#/$defs/RouteStat" } }
+      }
+    },
+    "RouteStat": {
+      "description": "One route shape's counts. A long-lived event stream counts `opens` and `open` and has no latency.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "route", "count", "status_2xx", "status_3xx", "status_4xx", "status_5xx", "callers", "stream"],
+      "properties": {
+        "method": { "description": "The HTTP method, or OTHER.", "type": "string" },
+        "route": { "description": "The route shape, e.g. `/v1/sessions/:id/info`.", "type": "string" },
+        "count": { "description": "Calls answered; a stream is counted when it ends.", "type": "integer" },
+        "status_2xx": { "type": "integer" },
+        "status_3xx": { "type": "integer" },
+        "status_4xx": { "type": "integer" },
+        "status_5xx": { "type": "integer" },
+        "callers": { "$ref": "#/$defs/RouteCallers" },
+        "stream": { "description": "This route answered as an event stream.", "type": "boolean" },
+        "opens": { "description": "Streams opened since the daemon started.", "type": "integer" },
+        "open": { "description": "Streams open now.", "type": "integer" },
+        "latency_ms": { "$ref": "#/$defs/RouteLatency" }
+      }
+    },
+    "RouteCallers": {
+      "description": "Who made the calls: `device` a paired browser or phone, `local` this machine's own token (the CLI, scripts, the orchestrator), `cloud` a Cloud viewer answered in process, `task` a child let in by its task secret, `anonymous` nobody the gate let in (open paths and refusals).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device", "local", "cloud", "task", "anonymous"],
+      "properties": {
+        "device": { "type": "integer" },
+        "local": { "type": "integer" },
+        "cloud": { "type": "integer" },
+        "task": { "type": "integer" },
+        "anonymous": { "type": "integer" }
+      }
+    },
+    "RouteLatency": {
+      "description": "Time to answer over the last `samples` calls, in milliseconds; `max` is since the daemon started.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50", "p90", "max", "samples"],
+      "properties": {
+        "p50": { "type": "number" },
+        "p90": { "type": "number" },
+        "max": { "type": "number" },
+        "samples": { "type": "integer" }
       }
     },
     "HealthReason": {

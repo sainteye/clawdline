@@ -468,7 +468,11 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			st := svc.Lanes().Stats()
 			return capacity.Reading{Known: true, Used: int64(st.Admitted)}
 		},
-		capacity.TerminalViewers: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-terminal guard"} },
+		capacity.TerminalViewers:          func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-terminal guard"} },
+		capacity.DiagnosticsRouteStatKeys: func() capacity.Reading { return s.routeStatsTable().keys() },
+		capacity.DiagnosticsRouteLatencySamples: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-route ring"}
+		},
 		capacity.TerminalStreams: func() capacity.Reading {
 			_, streams := s.terminalStats()
 			return capacity.Reading{Known: true, Used: int64(streams)}
