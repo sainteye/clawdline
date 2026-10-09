@@ -33,6 +33,13 @@ func startOsascript(ctx context.Context, kind, session string) osascriptRun {
 	return r
 }
 
+// done counts the run once it has finished, failed or not
+// (osascript_stats.go). It is called right after the process returns, before
+// its answer is read, so the time counted is the Apple Event's.
+func (r osascriptRun) done(err error) {
+	recordOsascript(r.kind, time.Since(r.started), err != nil)
+}
+
 // saidLimit is how much of osascript's stderr one failure line carries; the
 // end is kept, because that is where the error number is.
 const saidLimit = 512
@@ -76,7 +83,10 @@ func itermStallSteps(dir string) []stallStep {
 	return []stallStep{
 		{Title: "probe: iTerm2 windows().length", Timeout: stallProbeTimeout, Run: func(ctx context.Context) ([]byte, error) {
 			cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-e", itermProbe)
-			return stallRun(cmd)
+			run := startOsascript(ctx, "probe", "")
+			out, err := stallRun(cmd)
+			run.done(err)
+			return out, err
 		}},
 		{Title: fmt.Sprintf("sample: iTerm2 for %d s", stallSampleSeconds), Run: func(ctx context.Context) ([]byte, error) {
 			return sampleITerm(ctx, dir)

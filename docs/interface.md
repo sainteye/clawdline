@@ -251,6 +251,40 @@ terminal: a scope naming iTerm2 — or an empty one, which is a global hotkey an
 sessions have always gone. The next save writes the answer down, and after that the scope is never
 consulted about a terminal again: move the hotkey wherever you like and the sessions stay put.
 
+## Turning iTerm2 scanning off
+
+**Settings → Read iTerm2 tabs** (`iterm_scan` in `config.json`, on unless set to `false`) decides
+whether Clawdline asks iTerm2 about its tabs at all. It is there to measure, not to drop support:
+the person decided on 2026-10-09 to run one week with it off and compare it with a week with it on
+(docs/design-decisions.md D71). It takes effect on the next reading; nothing restarts.
+
+**Off, no Apple Event is sent to list iTerm2's sessions, read their screens, type into them, press
+keys in them, interrupt them or close them.** Those actions on an iTerm2 session are refused
+before anything is sent, with "iTerm2 scanning is turned off in Settings". The iTerm2 source
+answers `disabled: setting` instead of a list: the session list says in one line that iTerm2
+scanning is off, an assistant in a tab opened by hand is shown only with what the process table
+knows, and nothing about those tabs is concluded — no tab is called gone, and no last reading is
+kept and aged into `missing`. Sessions in tmux, including every session Clawdline opens with tmux
+installed, are read and typed into as usual.
+
+**Still sent, one Apple Event each, when off:** opening the iTerm2 viewer tab for a tmux session
+(above), **Reveal**, and closing a dispatched child's tab that this daemon opened itself. Each is
+something a person or the broker asked for at that moment, not a poll, and refusing them would
+leave a tmux session with no window to show it. A child started with **iTerm2 (native tab)** runs
+in iTerm2 itself and cannot be briefed with scanning off; use auto or tmux for that week.
+
+**The numbers.** Every iTerm2 osascript run is counted by kind (`list`, `capture`, `send`, `type`,
+`key`, `close`, `find`, `open`, `reveal…`, `probe`), with its failures, summed time and longest
+run. `/v1/diagnostics` has them under `terminals.osascript`, since the daemon started and since
+the last hourly line, and `daemon.log` gets one line an hour:
+
+```text
+osascript: hour iterm_scan=on seconds=3600 runs=1203 failures=2 total_ms=281455 max_ms=10012 kinds=capture=3/0/412/180,list=1200/2/281043/10012
+```
+
+Each kind is `runs/failures/total_ms/max_ms`; `kinds=-` is an hour without one. A week is 168
+lines, comparable with `grep 'osascript: hour' daemon.log`; D71 says which numbers decide it.
+
 ## When there is no tmux server yet
 
 With **tmux** chosen above — which is how Ghostty, Terminal.app, Warp and everything else Clawdline

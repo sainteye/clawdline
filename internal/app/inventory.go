@@ -86,6 +86,19 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 	order := []string{}
 
 	add := func(src session.Inventory) {
+		// A source turned off answered nothing: it makes the reading
+		// incomplete — the list is not all there is — and is recorded by
+		// name, but it is not a source answer to retain or expire (D55) and
+		// it lists no rows.
+		if src.Disabled != "" {
+			merged.Complete = false
+			if merged.DisabledSources == nil {
+				merged.DisabledSources = map[string]string{}
+			}
+			merged.DisabledSources[src.Provenance] = src.Disabled
+			merged.Notes = append(merged.Notes, src.Notes...)
+			return
+		}
 		if !src.Complete {
 			merged.Complete = false
 		}

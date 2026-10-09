@@ -83,6 +83,7 @@ func (l Launcher) NewITermTab(ctx context.Context, line string) (string, error) 
 	}
 	run := startOsascript(ctx, "open", "")
 	out, stderr, err := itermOpenTab(ctx, line)
+	run.done(err)
 	if err != nil {
 		return "", osascriptFailure(ctx, run, stderr, err, "iTerm2 would not open a tab.")
 	}
@@ -257,6 +258,7 @@ func findITermSession(ctx context.Context, id string) (sighting, string) {
 	cmd.Stderr = &stderr
 	run := startOsascript(ctx, "find", id)
 	out, err := cmd.Output()
+	run.done(err)
 	if err != nil {
 		run.failed(ctx, stderr.String(), err)
 		return sightingUnknown, ""

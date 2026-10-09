@@ -35,5 +35,8 @@ func (i *ITerm) Type(ctx context.Context, s session.Session, text string) error 
 	if text == "" {
 		return nil
 	}
+	if !ITermScan() {
+		return ITermScanOff{Op: "type into that iTerm2 session"}
+	}
 	return itermCall(ctx, "type", itermTypeScript, 6*time.Second, s.ID, text)
 }

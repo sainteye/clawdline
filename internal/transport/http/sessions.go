@@ -320,7 +320,9 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			// An empty list is only authoritative when the reading was
 			// complete. Saying so here is what stops a client from treating a
 			// failed scan as "every session went away".
-			EmptyAuthoritative: inv.Complete && len(rows) == 0,
+			// A source turned off was not looked at, so an empty list says
+			// nothing about it either.
+			EmptyAuthoritative: inv.Complete && len(inv.DisabledSources) == 0 && len(rows) == 0,
 			Completed: contract.ScanCompleted{
 				Sequence: gen,
 				Complete: inv.Complete,
@@ -331,7 +333,7 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			// answer of the source that would have seen it: the AND is false
 			// whenever any source failed, so on its own it would make every
 			// absence unprovable and nothing could ever be tombstoned.
-			Sources: scanSources(inv.Sources, inv.Gaps),
+			Sources: scanSources(inv.Sources, inv.Gaps, inv.DisabledSources),
 		},
 	}
 }
@@ -363,18 +365,32 @@ func sourceCompleteRow(inv session.Inventory, item session.Session) bool {
 // scanSources orders the per-source answers by name, because this snapshot is
 // compared byte for byte against the last one published (the Cloud publisher
 // skips a row nobody would read differently) and a map's order is not stable.
-func scanSources(sources map[string]bool, gaps []session.Gap) []contract.ScanSource {
-	if len(sources) == 0 {
+//
+// A source turned off (disabled) travels as one more entry, incomplete and
+// saying why, so a client can say "iTerm2 scanning is off" instead of drawing
+// those tabs as nothing.
+func scanSources(sources map[string]bool, gaps []session.Gap, disabled map[string]string) []contract.ScanSource {
+	if len(sources) == 0 && len(disabled) == 0 {
 		return nil
 	}
-	names := make([]string, 0, len(sources))
+	names := make([]string, 0, len(sources)+len(disabled))
 	for name := range sources {
 		names = append(names, name)
+	}
+	for name := range disabled {
+		if _, asked := sources[name]; !asked {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 	out := make([]contract.ScanSource, 0, len(names))
 	for _, name := range names {
-		out = append(out, contract.ScanSource{Source: name, Complete: sources[name], Gaps: scanGaps(name, gaps)})
+		row := contract.ScanSource{Source: name, Complete: sources[name], Gaps: scanGaps(name, gaps)}
+		if why, off := disabled[name]; off {
+			row.Complete = false
+			row.Disabled = contract.ScanSourceDisabled(why)
+		}
+		out = append(out, row)
 	}
 	return out
 }

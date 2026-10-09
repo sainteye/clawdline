@@ -26,7 +26,7 @@ import { NewBuild } from "./NewBuild.js"
 import { MachineDashboard } from "./machine/MachineDashboard.js"
 import { Start } from "./session/Start.js"
 import { SidebarIcon, type SidebarIconName } from "./SidebarIcon.js"
-import { sessionCountState, sessionReadingChinese, totalSessionWords } from "./session-reading.js"
+import { scanRecovering, sessionCountState, sessionReadingChinese, totalSessionWords } from "./session-reading.js"
 import {
   ActionConfirm,
   BEFORE_PAGE_CHANGE,
@@ -804,7 +804,7 @@ export default function App({ aside, cloudSessions, fleetList, fleetTarget = nul
         </button>
         {!hideSessionCounts && <Counts
           reading={sessionCountState(fleet)}
-          recovering={!!fleet.snapshot && !fleet.snapshot.scan.complete}
+          recovering={!!fleet.snapshot && scanRecovering(fleet.snapshot.scan)}
           onOpen={() => setMachine(true)}
         />}
         {typeof aside === "function" ? aside(light) : (

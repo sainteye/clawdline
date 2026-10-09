@@ -279,6 +279,16 @@ type Inventory struct {
 	// their own because a merged reading may contain current tmux rows beside
 	// retained iTerm2 rows.
 	Observation Observation `json:"-"`
+	// Disabled, on one source's reading, is why that source was not asked at
+	// all: "setting" when the person turned it off (iTerm2's `iterm_scan`).
+	// Such a reading is incomplete and lists nothing, and it is neither a
+	// failure to age into `missing` nor an empty answer. Not on the wire.
+	Disabled string `json:"-"`
+	// DisabledSources is the same, on a merged reading, by provenance. A
+	// disabled source is not in Sources: it gave no answer to retain or
+	// expire, and ProvesAbsence refuses it by name. Not on the wire in this
+	// shape; the transport puts it beside the source it belongs to.
+	DisabledSources map[string]string `json:"-"`
 }
 
 func (i Inventory) Assistants() []Session {
