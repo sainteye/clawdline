@@ -6,6 +6,7 @@ import { client } from "./client.js"
 import { BRAND_MARK } from "./brand-mark.js"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
 import { useFleet, usePoll } from "./useFleet.js"
+import { publishHealth } from "./health-feed.js"
 import { SessionsPage } from "./Sessions.js"
 import { toggleOrder } from "./session/Transcript.js"
 import { conversationNotStarted } from "./session/readiness.js"
@@ -937,6 +938,7 @@ export default function App({ aside, cloudSessions, fleetList, fleetTarget = nul
         onOpen={(id) => openSession(id)}
         onBack={() => closeDetail()}
         onDid={fleet.refresh}
+        streamTasks={fleet.tasksLive ? fleet.tasks : null}
         fleetList={fleetList?.(filter, setFilter)}
         fleetDetailKey={fleetList && fleetTarget ? destinationKey(fleetTarget) : undefined}
         fleetDetailPending={!!fleetList && !!fleetTarget &&
@@ -1079,7 +1081,10 @@ function useConnectionLight(live: boolean, onRetry: () => void): ConnectionLight
   // (machine/NeedsUpdate.tsx): one health read, not a second poll. A failed
   // read keeps the last reading, as the light keeps its last state.
   useEffect(() => {
-    if (data) publishMachineVersion(machineVersionFromHealth(data))
+    if (!data) return
+    publishMachineVersion(machineVersionFromHealth(data))
+    // The door listens to this reading instead of polling health itself.
+    publishHealth(data)
   }, [data])
   return { state, ...connectionLightWords(state, L.strings, version), onRetry }
 }
