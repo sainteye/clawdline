@@ -608,6 +608,13 @@ export default function App({ aside, cloudSessions, localViewer = false, hideSes
       return
     }
 
+    // Cloud's status list has its own rows, search and pinned destination in
+    // both scopes. The original list's shortcuts must not move a hidden row.
+    if (cloudSessions && pageRef.current === "sessions") {
+      if (key === "Escape" && menuRef.current) { ev.preventDefault(); closeMenu() }
+      return
+    }
+
     if (meta && (key === "k" || key === "K")) {
       ev.preventDefault()
       rowsEl?.focus()

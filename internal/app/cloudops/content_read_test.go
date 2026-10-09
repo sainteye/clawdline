@@ -28,6 +28,7 @@ func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 		name string
 	}{
 		{map[string]any{"type": "info", "session": pane, "parts": "full", "expected_generation": pinnedGeneration}, "info.full"},
+		{map[string]any{"type": "skills", "session": pane, "expected_generation": pinnedGeneration}, "skills"},
 		{map[string]any{"type": "transcript", "session": pane, "limit": 100, "expected_generation": pinnedGeneration}, "transcript"},
 		{map[string]any{"type": "transcript", "session": pane, "limit": 100, "before": 12345,
 			"expected_generation": pinnedGeneration}, "transcript.before.12345"},
@@ -84,6 +85,7 @@ func TestReadContentRailRejectsUnpinnedAndUnauthorizedRequests(t *testing.T) {
 		code  string
 	}{
 		{"missing generation", map[string]any{"type": "transcript", "session": pane, "limit": 10}, true, true, "execution_target_required"},
+		{"skills missing generation", map[string]any{"type": "skills", "session": pane}, true, true, "execution_target_required"},
 		{"missing cap", map[string]any{"type": "transcript", "session": pane, "limit": 10, "expected_generation": pinnedGeneration}, false, true, "read_transcript_required"},
 		{"missing bridge", map[string]any{"type": "info", "session": pane, "parts": "full", "expected_generation": pinnedGeneration}, true, false, "read_transcript_unavailable"},
 		{"summary", map[string]any{"type": "info", "session": pane, "parts": "summary", "expected_generation": pinnedGeneration}, true, true, "read_only_channel"},

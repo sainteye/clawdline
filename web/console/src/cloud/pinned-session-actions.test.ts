@@ -53,6 +53,17 @@ test("two machines with the same Session ID keep independent destinations and re
   assert.equal(f.service.load(bContext, "send")?.destination.machineID, "machine-b")
 })
 
+test("a pinned picture send reuses the existing images wire and binds the idempotency digest", async () => {
+  const f = fixture()
+  const image = "data:image/png;base64,iVBORw0KGgo="
+  await f.service.perform(context, "send", { text: "", images: [image] })
+  assert.deepEqual(f.calls.find((call) => call.type === "send")?.body, {
+    request: "request-1", execution_generation: generationA, text: "", images: [image],
+  })
+  await assert.rejects(f.service.perform(context, "send", { text: "", images: [image + "changed"] }),
+    { code: "idempotency_key_reused" })
+})
+
 test("a new execution generation, stale, offline and unknown projections stop the original target", async () => {
   const f = fixture()
   f.projections.set("machine-a", { kind: "ready", rows: [{ destination: { ...target, executionGeneration: generationB }, freshness: "current" }] })

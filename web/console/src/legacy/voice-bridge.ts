@@ -100,6 +100,8 @@ export interface VoiceJob {
   composer: HTMLElement | null
   /** What the words are for. Nothing on this path sends. */
   sink: (said: string) => void
+  /** A Cloud composer can use the account's existing voice host. Dictation never sends to a Session. */
+  transcribe?: (audio: string, rate: number) => Promise<{ text?: string; ms?: number }>
   /** This job's own reason to give up early — the composer gone, a sheet shut. */
   guard: () => boolean
   /** A non-composer microphone can own its own icon and messages. */
@@ -433,7 +435,7 @@ function landed(mine: number): void {
   prepare(new Blob(got))
     .then((audio) => {
       if (mine !== token) return null
-      return postVoice(audio, RATE)
+      return job?.transcribe ? job.transcribe(audio, RATE) : postVoice(audio, RATE)
     })
     .then((answer) => {
       if (mine !== token || !answer) return

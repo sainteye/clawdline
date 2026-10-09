@@ -1,4 +1,5 @@
 import { channelSegment } from "../legacy/js/net/client.js"
+import type { AssistantSkill, TranscriptEntry } from "@clawdline/contract"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { menuFingerprint } from "../session/fingerprint.ts"
 import type { MachineSessionProjection, SessionContent, SessionDestination, SessionOlderPage,
@@ -25,6 +26,7 @@ type StatusClient = CloudClientHandle & {
   infoForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
   transcriptForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
   transcriptPageForGeneration?(destination: SessionDestination, before: number, signal: AbortSignal): Promise<unknown>
+  skillsForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
 }
 
 function channels(destination: SessionDestination): string[] {
@@ -35,7 +37,7 @@ function channels(destination: SessionDestination): string[] {
 type Question = Extract<SessionContent, { kind: "ready" }>["question"]
 
 function transcriptPage(reply: unknown, sessionID: string, before?: number):
-  { entries: { speaker: string; text: string }[]; nextBefore?: number } | null {
+  { entries: TranscriptEntry[]; nextBefore?: number } | null {
   const page = record(reply)
   if (!page || !Array.isArray(page.entries) ||
     (page.id !== undefined && page.id !== sessionID) ||
@@ -43,7 +45,9 @@ function transcriptPage(reply: unknown, sessionID: string, before?: number):
       (before !== undefined && Number(page.nextBefore) >= before)))) return null
   const entries = page.entries.map((entry: unknown) => record(entry))
   if (entries.some((entry) => !entry || typeof entry.role !== "string" || typeof entry.text !== "string")) return null
-  return { entries: entries.map((entry) => ({ speaker: String(entry!.role), text: String(entry!.text) })),
+  // The pinned r/ reply uses the same TranscriptEntry wire as the local reader.
+  // Keep its structured cards and Unix-second timestamps for the shared renderer.
+  return { entries: entries as unknown as TranscriptEntry[],
     nextBefore: page.nextBefore === undefined ? undefined : Number(page.nextBefore) }
 }
 
@@ -135,6 +139,26 @@ export function statusSource(current: () => StatusClient | null): SessionProject
   }
   return {
     readMachine,
+    async readSkills(destination, signal): Promise<AssistantSkill[]> {
+      const client = current()
+      if (!client || opened.get(destinationKey(destination)) !== client || !client.skillsForGeneration || signal.aborted ||
+        !supportsPinnedRead(client, destination.machineID)) throw Object.assign(new Error("Session skills are unavailable"), { code: "old_version" })
+      const before = await readMachine(destination.machineID, signal)
+      if (before.kind !== "ready" || destinationAvailable(destination, before) !== "ready") {
+        throw Object.assign(new Error("Session execution changed"), { code: "execution_generation_changed" })
+      }
+      const reply = record(await client.skillsForGeneration(destination, signal))
+      const after = await readMachine(destination.machineID, signal)
+      if (signal.aborted || opened.get(destinationKey(destination)) !== client || after.kind !== "ready" ||
+        destinationAvailable(destination, after) !== "ready" || !supportsPinnedRead(client, destination.machineID)) {
+        throw Object.assign(new Error("Session execution changed"), { code: "execution_generation_changed" })
+      }
+      if (!Array.isArray(reply?.skills) || reply.skills.some((item: unknown) => {
+        const skill = record(item)
+        return !skill || typeof skill.name !== "string" || typeof skill.description !== "string" || typeof skill.source !== "string"
+      })) throw Object.assign(new Error("Invalid Session skills"), { code: "malformed_reply" })
+      return reply.skills as AssistantSkill[]
+    },
     async readQuestion(destination, signal) {
       const client = current()
       if (!client || signal.aborted) return null
@@ -177,9 +201,14 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         return { kind: "unavailable", reason: "old_version" }
       }
       const pinned = channels(destination)
-      client.openDetail(destination)
-      client.subscribe(pinned)
-      opened.set(destinationKey(destination), client)
+      const key = destinationKey(destination)
+      // Rich-row changes reread the already opened destination. Keep its exact
+      // subscription in place so a retained s/ replay cannot trigger a loop.
+      if (opened.get(key) !== client) {
+        client.openDetail(destination)
+        client.subscribe(pinned)
+        opened.set(key, client)
+      }
       if (signal.aborted) return { kind: "unavailable", reason: "unknown" }
       try {
         const infoReply = record(await client.infoForGeneration(destination, signal))

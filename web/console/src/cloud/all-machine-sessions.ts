@@ -1,3 +1,5 @@
+import type { AssistantSkill, TranscriptEntry } from "@clawdline/contract"
+
 /**
  * The hosted fleet view consumes only the content-free session status projection.
  * The Cloud client adapter belongs to the projection feature. A missing adapter
@@ -37,14 +39,14 @@ export type MachineSessionProjection =
 
 export type SessionContent =
   | { kind: "ready"; destination: SessionDestination; observedAt: number; info: { title?: string; assistant?: string; model?: string };
-      entries: { speaker: string; text: string }[];
+      entries: TranscriptEntry[];
       nextBefore?: number;
       question: { text?: string; fingerprint: string; options: { key: string; label: string }[]; observedAt: number } | null }
   | { kind: "unavailable"; reason: "no_permission" | "old_version" | "unknown" | "offline" | "stale" | "changed" }
 
 export type SessionOlderPage =
   | { kind: "ready"; destination: SessionDestination; before: number;
-      entries: { speaker: string; text: string }[]; nextBefore?: number }
+      entries: TranscriptEntry[]; nextBefore?: number }
   | Extract<SessionContent, { kind: "unavailable" }>
 
 export interface SessionProjectionSource {
@@ -56,18 +58,12 @@ export interface SessionProjectionSource {
   readOlder?(destination: SessionDestination, before: number, signal: AbortSignal): Promise<SessionOlderPage>
   /** Recheck the signed rich row when an opened detail receives a new menu. */
   readQuestion?(destination: SessionDestination, signal: AbortSignal): Promise<Extract<SessionContent, { kind: "ready" }>["question"]>
+  /** Read slash-menu metadata only for the open, exact execution. */
+  readSkills?(destination: SessionDestination, signal: AbortSignal): Promise<AssistantSkill[]>
   /** Release both the rich Session and transcript channels on detail exit. */
   closeDetail?(destination: SessionDestination): void
   /** An event gap invalidates that machine's current projection and detail cache. */
   subscribe(listener: (event: { machineID: string; kind: "changed" | "gap" | "detail_changed"; sessionID?: string }) => void): () => void
-}
-
-export interface SessionFilters {
-  machine: string
-  platform: string
-  state: string
-  freshness: "all" | "current" | "stale" | "unknown"
-  attention: "all" | "needed"
 }
 
 const DESTINATION = /^#machine=([^&]+)&session=([^&]+)&generation=([^&]+)$/
@@ -118,12 +114,6 @@ export function destinationAvailable(destination: SessionDestination, projection
   if (!projection || projection.kind !== "ready") return "waiting"
   const row = projection.rows.find((item) => destinationKey(item.destination) === destinationKey(destination))
   return row ? row.freshness === "current" ? "ready" : row.freshness : "changed"
-}
-
-export function matchesSession(row: ProjectedSession, platform: string, filters: SessionFilters): boolean {
-  return (!filters.platform || platform === filters.platform) && (!filters.state || row.state === filters.state) &&
-    (filters.attention !== "needed" || row.needsAttention === true) &&
-    (filters.freshness === "all" || row.freshness === filters.freshness)
 }
 
 export function afterEventGap(before: MachineSessionProjection | undefined): MachineSessionProjection {

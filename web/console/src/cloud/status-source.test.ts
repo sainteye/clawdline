@@ -56,6 +56,10 @@ function clientFixture() {
       calls.push("older:" + destination.executionGeneration + ":" + before)
       return { id: sessionID, entries: [{ role: "user", text: "Earlier" }], nextBefore: 40 }
     },
+    async skillsForGeneration(destination: { executionGeneration: string }) {
+      calls.push("skills:" + destination.executionGeneration)
+      return { skills: [{ name: "review", description: "Review work", source: "project" }] }
+    },
   }
   return { client, calls, row }
 }
@@ -108,6 +112,45 @@ test("opening and leaving an exact detail subscribes, reads pinned content, and 
     "transcript:" + executionGeneration, "unsubscribe:s/one/same,t/one/same"])
 })
 
+test("slash-menu skills belong to the opened execution and stop when that execution changes", async () => {
+  const { client, calls, row } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  await assert.rejects(() => source.readSkills!(destination, new AbortController().signal), { code: "old_version" })
+  await source.readDetail(destination, new AbortController().signal)
+  assert.deepEqual((await source.readSkills!(destination, new AbortController().signal)).map((skill) => skill.name), ["review"])
+  row.execution_generation = "ffffffffffffffffffffffffffffffff"
+  await assert.rejects(() => source.readSkills!(destination, new AbortController().signal),
+    { code: "execution_generation_changed" })
+  assert.deepEqual(calls.filter((call) => call.startsWith("skills:")), ["skills:" + executionGeneration])
+  source.closeDetail?.(destination)
+})
+
+test("an opened rich-row change rereads pinned content without replaying its subscription", async () => {
+  const { client, calls } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  await source.readDetail(destination, new AbortController().signal)
+  await source.readDetail(destination, new AbortController().signal)
+  assert.equal(calls.filter((call) => call.startsWith("subscribe:")).length, 1)
+  assert.equal(calls.filter((call) => call.startsWith("transcript:")).length, 2)
+  source.closeDetail?.(destination)
+  assert.equal(calls.filter((call) => call.startsWith("unsubscribe:")).length, 1)
+})
+
+test("a pinned read keeps the local transcript's structured cards and Unix-second times", async () => {
+  const { client } = clientFixture()
+  const entry = { role: "tool", text: "Edited a file", tool: "Edit", at: 123,
+    fileChanges: [{ kind: "edit", path: "sample.ts", unifiedDiff: "+line" }],
+    plan: [{ step: "Review", status: "completed" }],
+    activity: { kind: "explored", title: "Files" } }
+  client.transcriptForGeneration = async () => ({ id: sessionID, entries: [entry], nextBefore: 123 })
+  const detail = await statusSource(() => client as never).readDetail(
+    { machineID, sessionID, executionGeneration }, new AbortController().signal)
+  assert.equal(detail.kind, "ready")
+  if (detail.kind === "ready") assert.deepEqual(detail.entries, [entry])
+})
+
 test("an opened detail reads an older page with the same execution and a decreasing cursor", async () => {
   const { client, calls } = clientFixture()
   const source = statusSource(() => client as never)
@@ -115,7 +158,7 @@ test("an opened detail reads an older page with the same execution and a decreas
   await source.readDetail(destination, new AbortController().signal)
   const older = await source.readOlder?.(destination, 123, new AbortController().signal)
   assert.deepEqual(older, { kind: "ready", destination, before: 123,
-    entries: [{ speaker: "user", text: "Earlier" }], nextBefore: 40 })
+    entries: [{ role: "user", text: "Earlier" }], nextBefore: 40 })
   assert.deepEqual(calls.filter((call) => call.startsWith("older:")), ["older:" + executionGeneration + ":123"])
   source.closeDetail?.(destination)
   assert.deepEqual(await source.readOlder?.(destination, 40, new AbortController().signal),

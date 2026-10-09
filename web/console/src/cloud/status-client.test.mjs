@@ -201,6 +201,13 @@ test("only pinned Session content reads seal r/; send remains on ctl/", async ()
   assert.equal(pending.registered.ref.seq, 8)
   assert.equal(client.pinnedReadProofs.get(key).seq, 8)
   assert.equal(client.pendingBySequence.get(8), pending.registered)
+  const skills = await client._publishCommand("m", "skills", {
+    session: "s", machine_id: "m", expected_generation: genA,
+  }, "ctl")
+  assert.equal(skills.ch, "r/m")
+  const skillsBody = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64Bytes(skills.nonce, "nonce") }, masterKey, base64Bytes(skills.ct, "ct"))))
+  assert.deepEqual(skillsBody, { type: "skills", session: "s", machine_id: "m", expected_generation: genA })
   const inbox = await client._publishCommand("m", "peer-inbox", {
     session: "s", machine_id: "m", expected_generation: genA, request: "inbox-1",
   }, "ctl")

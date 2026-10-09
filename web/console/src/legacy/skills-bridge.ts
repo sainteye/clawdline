@@ -85,17 +85,19 @@ export function heldSkills(id: string): AssistantSkill[] | undefined {
  * menu, and an unknown command may still be sent — the assistant gives the
  * authoritative answer.
  */
-export function loadSkills(id: string): Promise<AssistantSkill[]> {
+export function loadSkills(id: string, reader?: () => Promise<AssistantSkill[]>): Promise<AssistantSkill[]> {
   const held = heldSkills(id)
   if (held) return Promise.resolve(held)
   const pending = loading.get(id)
   if (pending) return pending
-  const asked = fetch("/v1/sessions/" + encodeURIComponent(id) + "/skills")
+  let resolved = false
+  const asked = (reader ? reader() : fetch("/v1/sessions/" + encodeURIComponent(id) + "/skills")
     .then((res) => (res.ok ? (res.json() as Promise<SkillsReply>) : null))
-    .then((answer) => (answer && Array.isArray(answer.skills) ? answer.skills : []))
+    .then((answer) => (answer && Array.isArray(answer.skills) ? answer.skills : [])))
+    .then((skills) => { resolved = true; return skills })
     .catch(() => [] as AssistantSkill[])
     .then((skills) => {
-      catalogs.set(id, { at: Date.now(), skills })
+      if (resolved) catalogs.set(id, { at: Date.now(), skills })
       loading.delete(id)
       return skills
     })

@@ -746,14 +746,13 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		}
 	}
 	// The daemon's published list must not promise what it refuses.
-	for _, word := range []string{"skills",
-		"diagnostics.report", "diagnostics.events", "dispatch"} {
+	for _, word := range []string{"diagnostics.report", "diagnostics.events", "dispatch"} {
 		if implemented[word] {
 			t.Fatalf("%s is advertised and has no local capability", word)
 		}
 	}
 	for _, word := range []string{"send", "answer", "end", "focus", "interrupt", "smart-title", "start", "resume", "voice", "intents", "agent", "shell",
-		"transcript", "info", "git", "git-diff", "screen", "image", "documents", "document", "places",
+		"transcript", "info", "skills", "git", "git-diff", "screen", "image", "documents", "document", "places",
 		"past-sessions", "schedules", "coordination.leases", "coordination.waits", "coordination.pauses", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",

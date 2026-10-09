@@ -294,6 +294,7 @@ type ViewerMutation struct {
 	Action      string            `json:"action"`
 	Request     string            `json:"request"`
 	Text        string            `json:"text,omitempty"`
+	Images      []string          `json:"images,omitempty"`
 	Answer      string            `json:"answer,omitempty"`
 	Expect      string            `json:"expect,omitempty"`
 }
@@ -325,10 +326,14 @@ func (c *ViewerClient) Mutate(ctx context.Context, input ViewerMutation) (Viewer
 		"request": input.Request, "execution_generation": input.Destination.ExecutionGeneration}
 	switch input.Action {
 	case "send":
-		if strings.TrimSpace(input.Text) == "" {
+		if strings.TrimSpace(input.Text) == "" && len(input.Images) == 0 {
 			return ViewerMutationResult{}, ViewerRefusal{Code: "empty"}
 		}
-		command["text"], command["images"] = strings.TrimSpace(input.Text), []any{}
+		images := input.Images
+		if images == nil {
+			images = []string{}
+		}
+		command["text"], command["images"] = strings.TrimSpace(input.Text), images
 	case "answer":
 		if input.Answer == "" || input.Expect == "" {
 			return ViewerMutationResult{}, ViewerRefusal{Code: "menu_unverified"}
@@ -499,6 +504,41 @@ func (c *ViewerClient) ReadTranscriptPage(ctx context.Context, destination Viewe
 		return ViewerTranscriptPage{}, err
 	}
 	return ViewerTranscriptPage{Destination: destination, Transcript: transcript, NextBefore: nextBefore}, nil
+}
+
+// ReadSkills uses the Session's current execution for the shared slash menu.
+// The machine returns only skill names and descriptions; its local HTTP reader
+// checks the execution again after collecting them.
+func (c *ViewerClient) ReadSkills(ctx context.Context, destination ViewerDestination) (json.RawMessage, error) {
+	if err := c.requireCurrentDestination(ctx, destination); err != nil {
+		return nil, err
+	}
+	path := "t/" + viewerChannelSegment(destination.MachineID) + "/" + viewerChannelSegment(destination.SessionID)
+	if err := c.transport.Subscribe(path); err != nil {
+		return nil, err
+	}
+	defer func() { _ = c.transport.Unsubscribe(path) }()
+	body, err := c.request(ctx, destination, "r", "skills", map[string]any{
+		"type": "skills", "session": destination.SessionID,
+		"machine_id": destination.MachineID, "expected_generation": destination.ExecutionGeneration,
+	}, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.requireCurrentDestination(ctx, destination); err != nil {
+		return nil, err
+	}
+	var reply struct {
+		Skills []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Source      string `json:"source"`
+		} `json:"skills"`
+	}
+	if json.Unmarshal(body, &reply) != nil || reply.Skills == nil {
+		return nil, ViewerRefusal{Code: "malformed_reply"}
+	}
+	return body, nil
 }
 
 func (c *ViewerClient) requireCurrentDestination(ctx context.Context, destination ViewerDestination) error {

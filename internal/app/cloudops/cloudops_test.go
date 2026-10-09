@@ -1071,13 +1071,9 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 			"target_request": "press-1", "execution_generation": testExecution, "action": "send"},
 		session: pane, name: "read:lookup-1", code: "receipt_unavailable", status: 503,
 	}, {
-		// The words this daemon knows and cannot answer. `unknown_command` is
-		// not a guess at a code: it is the one the hosted console learns from
-		// (`machineLacks` in net/cloud-client.js), so a machine that says it stops
-		// being asked.
 		word:    "skills",
 		body:    map[string]any{"type": "skills", "session": pane},
-		session: pane, name: "skills", code: "unknown_command", status: 400,
+		session: pane, name: "skills", method: "GET", path: "/v1/sessions/" + segment(pane) + "/skills",
 	}, {
 		// Answered by the Session publisher, not by a route; a bridge with no
 		// publisher behind it says it does not know the word, which is what

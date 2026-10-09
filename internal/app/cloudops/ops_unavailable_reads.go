@@ -8,14 +8,6 @@ func init() {
 	register(
 		// MARK: reads this daemon has no local capability for
 
-		op{name: "skills", read: true,
-			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session") {
-					return plan{}, false
-				}
-				return sessionPlan(b, "skills")
-			}},
-
 		// The rows again, for a page that has just (re)connected.
 		//
 		// The relay replays each channel's last envelope from memory, that

@@ -52,7 +52,8 @@ import { machinesByCapability } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
-import { AllMachineSessions } from "./AllMachineSessions.js"
+import { AllMachineSessions, type MachineToolbarAction } from "./AllMachineSessions.js"
+import { CloudSessionSheets, type PendingMachineAction } from "./CloudSessionSheets.js"
 import { PinnedSessionActionPanel } from "./PinnedSessionActions.js"
 import { PeerHandoffPanel, PeerRevocationPanel } from "./PeerHandoffPanel.js"
 import { destinationFromFragment, type SessionProjectionSource } from "./all-machine-sessions.js"
@@ -136,12 +137,21 @@ type Screen =
   | { at: "revoked"; url: string }
   | { at: "machines" }
   | { at: "console" }
-  | { at: "all_sessions" }
   | { at: "blocked"; origin: string }
   | { at: "misdeclared"; reason: string }
 
 /** The machine a tab chose, so a reload reads the same one. Per account, per tab. */
 const CHOSEN = "clawdline.cloud.machine:"
+const PENDING_TOOL = "clawdline.cloud.pending-session-tool"
+
+function pendingMachineTool(): PendingMachineAction | null {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(PENDING_TOOL) ?? "null") as PendingMachineAction | null
+    return value && typeof value.machineID === "string" &&
+      ["terminal", "voice", "work", "start", "start_terminal"].includes(value.action) &&
+      Number.isFinite(value.at) && Math.abs(Date.now() - value.at) <= 30_000 ? value : null
+  } catch { return null }
+}
 
 /** The screens on which this browser is signed in with a device key, so a pairing can start. */
 const SIGNED_IN = new Set<Screen["at"]>(["machines", "console", "pairing"])
@@ -201,10 +211,11 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const machines = machineList.phase === "ready" ? machineList.machines : null
   const [problem, setProblem] = useState<AccessProblem | null>(null)
   const [chosen, setChosen] = useState<CloudMachine | null>(null)
+  const [fleetScope, setFleetScope] = useState(() => location.hash === "#all-machines" || !!destinationFromFragment(location.hash))
+  const [pendingTool, setPendingTool] = useState<PendingMachineAction | null>(pendingMachineTool)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const switcherRef = useRef<HTMLDivElement>(null)
   const switchButtonRef = useRef<HTMLButtonElement>(null)
-  const beforeAllHash = useRef("")
   // Forgetting a machine (`forget.ts`): which one is being asked about, which
   // ones this tab or the account says are forgotten, and what the account
   // answered about the last one. The relay can retain an old snapshot after
@@ -807,13 +818,15 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     if (exact) {
       const target = machines.find((machine) => machine.id === exact.machineID && machine.selectable)
       if (!target) return
-      if (machines.filter((machine) => machine.selectable).length >= 2) setScreen({ at: "all_sessions" })
-      else choose(target)
+      setFleetScope(machines.filter((machine) => machine.selectable).length >= 2)
+      choose(target)
       return
     }
     if (machines.filter((machine) => machine.selectable).length >= 2 &&
       location.hash === "#all-machines") {
-      setScreen({ at: "all_sessions" })
+      setFleetScope(true)
+      choose(machines.find((machine) => machine.id === remembered() && machine.selectable) ??
+        machines.find((machine) => machine.selectable)!)
       return
     }
     const id = machineForAddress(location.hash, remembered())
@@ -908,20 +921,35 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
 
   const switchMachine = (machine: CloudMachine) => {
     setSwitcherOpen(false)
+    setFleetScope(false)
+    if (location.hash === "#all-machines" || destinationFromFragment(location.hash)) {
+      history.replaceState(history.state, "", location.pathname + location.search + "#page=sessions")
+    }
     choose(machine)
+  }
+
+  const consumeTool = useCallback(() => {
+    sessionStorage.removeItem(PENDING_TOOL)
+    setPendingTool(null)
+  }, [])
+
+  const runMachineTool = (machineID: string, action: MachineToolbarAction) => {
+    const machine = quickMachines.find((candidate) => candidate.id === machineID)
+    if (!machine) return
+    const pending = { machineID, action, at: Date.now() }
+    try { sessionStorage.setItem(PENDING_TOOL, JSON.stringify(pending)) }
+    catch { /* same-machine actions can still open without tab storage */ }
+    setPendingTool(pending)
+    switchMachine(machine)
   }
 
   const openAllSessions = () => {
     setSwitcherOpen(false)
-    beforeAllHash.current = location.hash
     history.pushState({ view: "all-machines" }, "", "#all-machines")
-    setScreen({ at: "all_sessions" })
+    setFleetScope(true)
   }
 
-  const closeAllSessions = () => {
-    history.replaceState(history.state, "", location.pathname + location.search + beforeAllHash.current)
-    setScreen({ at: chosen ? "console" : "machines" })
-  }
+  const leaveFleet = () => setFleetScope(false)
 
   // Which machine this is and whether it answers, in one control: the
   // console's connection light is handed in (`App`'s `aside`) and drawn as the
@@ -936,14 +964,14 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         className="cloud-switch"
         id="cloud-switch"
         type="button"
-        data-state={screen.at === "all_sessions" ? "unknown" : light.state}
+        data-state={fleetScope ? "unknown" : light.state}
         // Down, the light's own tip says "press to retry", which this press
         // does not do; the retry is in the menu.
         title={
-          (screen.at === "all_sessions" ? nextWord("cloudAllMachines") : chosen.label || chosen.id) +
+          (fleetScope ? nextWord("cloudAllMachines") : chosen.label || chosen.id) +
           " · " +
-          (screen.at === "all_sessions" ? nextWord("cloudMachinesLede") : light.label) +
-          (screen.at !== "all_sessions" && light.state === "live" ? " — " + light.tip : "") +
+          (fleetScope ? nextWord("cloudMachinesLede") : light.label) +
+          (!fleetScope && light.state === "live" ? " — " + light.tip : "") +
           " · " +
           nextWord("cloudSwitch")
         }
@@ -954,7 +982,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         onClick={() => setSwitcherOpen((open) => !open)}
       >
         <span className="dot" aria-hidden="true" />
-        <span className="cloud-switch-name">{screen.at === "all_sessions" ? nextWord("cloudAllMachines") : chosen.name || chosen.label || chosen.id}</span>
+        <span className="cloud-switch-name">{fleetScope ? nextWord("cloudAllMachines") : chosen.name || chosen.label || chosen.id}</span>
         {/* Drawn, not typed: "⌄" sits at the bottom of its font box, so the
             text glyph hung low beside the name and high once turned over. */}
         <svg className="cloud-switch-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
@@ -968,10 +996,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           role="dialog"
           aria-label={nextWord("cloudSwitch")}
         >
-          <div className="cloud-switch-conn" data-state={screen.at === "all_sessions" ? "unknown" : light.state}>
+          <div className="cloud-switch-conn" data-state={fleetScope ? "unknown" : light.state}>
             <span className="dot" aria-hidden="true" />
-            <span className="cloud-switch-conn-word">{screen.at === "all_sessions" ? nextWord("cloudAllMachines") : light.label}</span>
-            {screen.at === "all_sessions" ? null : light.state === "live" ? (
+            <span className="cloud-switch-conn-word">{fleetScope ? nextWord("cloudAllMachines") : light.label}</span>
+            {fleetScope ? null : light.state === "live" ? (
               <span className="cloud-switch-conn-tip">{light.tip}</span>
             ) : (
               <button type="button" className="cloud-switch-retry" onClick={light.onRetry}>
@@ -982,7 +1010,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           <p className="cloud-switch-title">{nextWord("cloudMachinesLede")}</p>
           <div className="cloud-switch-options">
             {quickMachines.length >= 2 && <button type="button" className="cloud-switch-option"
-              data-current={screen.at === "all_sessions" ? "true" : undefined}
+              data-current={fleetScope ? "true" : undefined}
               onClick={openAllSessions}>{nextWord("cloudAllMachines")}</button>}
             {quickMachines.map((machine) => {
               const current = machine.id === chosen.id
@@ -1118,36 +1146,36 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // drawn over it, as the door is over a local console (`door/Door.tsx`).
   return (
     <>
-      {chosen && who && transport.kind === "cloud" && (screen.at === "console" || screen.at === "all_sessions") && (
+      {chosen && who && transport.kind === "cloud" && screen.at === "console" && (
         <CloudAccountContext.Provider value={{ apiOrigin: transport.config.apiOrigin, deviceID: who.device }}>
-          <App aside={aside} hideSessionCounts={screen.at === "all_sessions"}
-            focusCloudSessions={screen.at === "all_sessions"}
-            onLeaveCloudSessions={() => setScreen({ at: "console" })}
+          <App aside={aside} hideSessionCounts={fleetScope}
+            focusCloudSessions={fleetScope}
+            onLeaveCloudSessions={leaveFleet}
             cloudSessions={<AllMachineSessions
-            key={clientEpoch + ":" + (screen.at === "all_sessions" ? "all" : chosen.id)}
-            embedded={screen.at !== "all_sessions"}
-            machines={(screen.at === "all_sessions" ? quickMachines : [chosen]).map((machine) => ({
+            key={clientEpoch + ":" + (fleetScope ? "all" : chosen.id)}
+            machines={(fleetScope ? quickMachines : [chosen]).map((machine) => ({
               id: machine.id, name: machine.name || machine.label || machine.id,
               platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
             }))}
             source={liveSessionSource}
+            onMachineAction={runMachineTool}
             fleetControls={<PeerRevocationPanel machines={quickMachines.map((machine) => ({
               id: machine.id, name: machine.name || machine.label || machine.id,
               platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
             }))} current={currentActionClient} />}
-            detailActions={(context) => <>
-              <PinnedSessionActionPanel context={context} source={liveSessionSource} current={currentActionClient} />
-              <PeerHandoffPanel context={context} machines={quickMachines.map((machine) => ({
+            detailActions={(context) => <PinnedSessionActionPanel key={JSON.stringify(context.destination)} context={context}
+              source={liveSessionSource} current={currentActionClient} />}
+            detailExtras={(context) => <PeerHandoffPanel key={JSON.stringify(context.destination)} context={context} machines={quickMachines.map((machine) => ({
                 id: machine.id, name: machine.name || machine.label || machine.id,
                 platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
               }))}
-                source={liveSessionSource} current={currentActionClient} />
-            </>}
-            onClose={screen.at === "all_sessions" ? closeAllSessions : undefined}
+                source={liveSessionSource} current={currentActionClient} />}
           />} />
+          <CloudSessionSheets machineID={chosen.id} source={liveSessionSource}
+            pending={pendingTool} onConsumed={consumeTool} />
         </CloudAccountContext.Provider>
       )}
-      {words && (screen.at !== "console" && screen.at !== "all_sessions" || pairing) && (
+      {words && (screen.at !== "console" || pairing) && (
         <GateCard
           screen={screen}
           who={who}

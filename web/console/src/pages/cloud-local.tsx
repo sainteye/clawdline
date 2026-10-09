@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import type { AssistantSkill, TranscriptEntry } from "@clawdline/contract"
 import type { PageModule } from "./types.js"
 import { destinationFragment, destinationFromFragment } from "../cloud/all-machine-sessions.js"
+import { Composer } from "../session/Composer.js"
+import { TranscriptEntries } from "../session/Transcript.js"
+import { PendingRemoteTurn } from "../cloud/PendingRemoteTurn.js"
 import "./cloud-local.css"
 
 interface Destination { machine_id: string; session_id: string; execution_generation: string }
@@ -8,7 +12,6 @@ interface StatusRow { destination: Destination; state: string; freshness: string
 interface Projection { kind: string; reason?: string; rows?: StatusRow[]; unknown_targets?: number }
 interface Machine { id: string; name: string; fingerprint: string; pairing: string; status: string; reason?: string }
 interface Question { text?: string; fingerprint: string; options: { key: string; label: string }[] }
-interface TranscriptEntry { role: string; text: string; at?: number }
 interface TranscriptPage { entries: TranscriptEntry[]; nextBefore?: number }
 interface Detail { destination: Destination; info: unknown; transcript: TranscriptPage; next_before?: number; question?: Question | null }
 interface OlderPage { destination: Destination; transcript: TranscriptPage; next_before?: number }
@@ -29,6 +32,7 @@ const copy = {
     receipt: "Machine execution", uncertain: "The outcome is unknown. Check the receipt before another action.",
     pending: "An earlier request is unresolved. Check and acknowledge its receipt before another action.",
     acknowledge: "Acknowledge result", action: "Action",
+    generation: "Execution generation", machineIdentity: "Machine identity",
     changed: "This Session changed execution. Select its current row again.",
     stale: "The Session is not current. Refresh before acting.",
   },
@@ -46,6 +50,7 @@ const copy = {
     receipt: "機器執行結果", uncertain: "結果尚未確定。再次操作前請先查詢收據。",
     pending: "前一筆請求尚未解決。再次操作前請先查詢並確認收據。",
     acknowledge: "確認結果", action: "操作",
+    generation: "執行世代", machineIdentity: "機器身分",
     changed: "此工作階段已換成新的執行世代，請重新選取目前的資料列。",
     stale: "工作階段狀態已過期；操作前請重新整理。",
   },
@@ -91,10 +96,12 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
   selectedRef.current = selected
   const [problem, setProblem] = useState("")
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState("")
+  const [pending, setPending] = useState<{ text: string; pictures: number; sentAt: number; status: string } | null>(null)
   const [request, setRequest] = useState("")
   const [lastAction, setLastAction] = useState("send")
   const [receipt, setReceipt] = useState<Receipt | null>(null)
+
+  useEffect(() => { setPending(null) }, [selected?.machine_id, selected?.session_id, selected?.execution_generation])
 
   const clearSelectedContent = useCallback(() => {
     detailEpoch.current++
@@ -179,6 +186,9 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
 
   const current = selected ? projections[selected.machine_id]?.rows?.find((row) => same(row.destination, selected)) : null
   const canAct = !!selected && !!current && current.freshness === "current" && !busy
+  let sendUnresolved = false
+  try { sendUnresolved = !!selected && !!localStorage.getItem(receiptStorage(selected, "send")) }
+  catch { sendUnresolved = true }
   const targetKey = selected ? JSON.stringify(selected) : ""
   const loadedOlder = olderPages?.target === targetKey ? olderPages.pages : []
   const nextBefore = loadedOlder.length ? loadedOlder[loadedOlder.length - 1].next_before : detail?.next_before
@@ -215,7 +225,8 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
     catch (error) { setProblem(String(error instanceof Error ? error.message : error)) }
   }
 
-  async function act(action: "send" | "answer" | "interrupt" | "end", answerKey = "", fingerprint = "") {
+  async function act(action: "send" | "answer" | "interrupt" | "end", answerKey = "", fingerprint = "",
+    text = "", pictures: readonly string[] = []) {
     if (!selected) return
     if (!canAct) { setProblem(current ? t.stale : t.changed); return }
     try {
@@ -230,16 +241,20 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
     try { localStorage.setItem(receiptStorage(selected, action), id) }
     catch { setProblem("storage_unavailable"); return }
     setLastAction(action); setRequest(id); setReceipt(null); setProblem(""); setBusy(true)
+    if (action === "send") setPending({ text, pictures: pictures.length, sentAt: Date.now(), status: t.loading })
     try {
       await localViewerFetch("/v1/cloud/viewer/actions", undefined,
-        { destination: selected, action, request: id, text: message, answer: answerKey, expect: fingerprint })
+        { destination: selected, action, request: id, text, images: pictures, answer: answerKey, expect: fingerprint })
       await lookup(selected, action, id)
+      if (action === "send") setPending((before) => before ? { ...before, status: t.receipt } : before)
     } catch (error) {
       setProblem(String(error instanceof Error ? error.message : error) + ". " + t.uncertain)
+      if (action === "send") setPending((before) => before ? { ...before, status: t.uncertain } : before)
     } finally { setBusy(false) }
   }
 
-  return <section className="page page-cloud-local" id="cloud" data-page-view="cloud" hidden={!shown}>
+  return <section className="page page-cloud-local" id="cloud" data-page-view="cloud"
+    data-detail={selected ? "on" : "off"} hidden={!shown}>
     <div className="sheet">
       <h2>{t.title}</h2>
       <button className="chip" type="button" disabled={busy} onClick={() => void refresh()}>{t.refresh}</button>
@@ -252,7 +267,9 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
         {machines.map((machine) => {
           const projection = projections[machine.id]
           return <div className="block" key={machine.id}>
-            <h3>{machine.name || machine.id}</h3><small>{machine.id} · {machine.fingerprint}</small>
+            <h3>{machine.name || machine.id}</h3>
+            <details className="cloud-local-identity"><summary>{t.machineIdentity}</summary>
+              <small>{machine.id} · {machine.fingerprint}</small></details>
             {machine.pairing !== "paired" ? <p>{t.pair} ({machine.pairing})</p> :
               projection?.kind !== "ready" ? <p role="status">{projection?.reason || machine.reason || t.loading}</p> : <>
                 {projection.unknown_targets ? <p>{t.unknown}</p> : null}
@@ -264,7 +281,6 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
                     try { setRequest(localStorage.getItem(receiptStorage(row.destination, lastAction)) || "") } catch { setRequest("") } }}>
                     {row.destination.session_id} · {row.state} · {row.freshness} {row.needs_attention ? "!" : ""}
                   </button>
-                  <small>{row.destination.execution_generation}</small>
                 </li>)}</ul>
               </>}
           </div>
@@ -272,36 +288,43 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
       </div>}
       {enabled && authorized && selected && <div className="block cloud-local-detail">
         <button className="chip" type="button" onClick={() => { location.hash = "#page=cloud"; setSelected(null); setDetail(null) }}>{t.back}</button>
-        <h3>{selected.machine_id} / {selected.session_id}</h3><small>{selected.execution_generation}</small>
+        <h3>{machines.find((machine) => machine.id === selected.machine_id)?.name || selected.machine_id} / {selected.session_id}</h3>
+        <details className="cloud-local-identity"><summary>{t.generation}</summary>
+          <small>{selected.machine_id} · {selected.execution_generation}</small></details>
         {!current && <p role="alert">{t.changed}</p>}
         {current && current.freshness !== "current" && <p role="alert">{t.stale}</p>}
         {detail ? <>
-          <h4>{t.info}</h4><pre>{JSON.stringify(detail.info, null, 2)}</pre>
-          <h4>{t.transcript}</h4>
-          <div className="cloud-local-transcript">
-            {[...loadedOlder].reverse().map((page, pageIndex) =>
-              page.transcript.entries.map((entry, index) => <article key={`older-${pageIndex}-${index}`}>
-                <strong>{entry.role}</strong><p>{entry.text}</p>
-              </article>))}
-            {detail.transcript.entries.map((entry, index) => <article key={`latest-${index}`}>
-              <strong>{entry.role}</strong><p>{entry.text}</p>
-            </article>)}
+          <details className="cloud-local-info"><summary>{t.info}</summary><pre>{JSON.stringify(detail.info, null, 2)}</pre></details>
+          <div className="cloud-local-transcript tx" aria-label={t.transcript}>
+            <TranscriptEntries key={JSON.stringify(selected)} entries={[...loadedOlder].reverse().flatMap((page) => page.transcript.entries)
+              .concat(detail.transcript.entries)} />
           </div>
           {typeof nextBefore === "number" && Number.isSafeInteger(nextBefore) && nextBefore > 0 ?
             <button className="chip" type="button" disabled={olderBusy || busy || !current || current.freshness !== "current"}
               onClick={() => void loadOlder()}>{olderBusy ? t.loadingOlder : t.older}</button> :
             <p>{t.allLoaded}</p>}
         </> : <p>{t.read}…</p>}
-        <label>{t.text}<textarea value={message} onChange={(event) => setMessage(event.target.value)} /></label>
-        <div className="cloud-local-actions">
-          <button className="chip" type="button" disabled={!canAct || !message.trim()} onClick={() => void act("send")}>{t.send}</button>
-          <button className="chip" type="button" disabled={!canAct} onClick={() => void act("interrupt")}>{t.interrupt}</button>
-          <button className="chip" type="button" disabled={!canAct} onClick={() => void act("end")}>{t.end}</button>
-        </div>
         {detail?.question && <div className="cloud-local-question"><h4>{detail.question.text || t.answer}</h4>
           {detail.question.options.map((option) => <button className="chip" key={option.key} type="button" disabled={!canAct}
             onClick={() => void act("answer", option.key, detail.question!.fingerprint)}>{option.label}</button>)}
         </div>}
+        {pending && <PendingRemoteTurn text={pending.text} pictures={pending.pictures} sentAt={pending.sentAt}
+          status={pending.status} state={busy ? "sending" : receipt?.machine_execution === "completed" ? "accepted" : "unknown"} />}
+        {shown && selected && <div className="cloud-local-composer"><Composer key={targetKey} row={null} onDid={() => undefined}
+          remote={{ key: targetKey, machineID: selected.machine_id,
+            assistant: (detail?.info as { info?: { session?: { assistant?: string } } } | null)?.info?.session?.assistant,
+            canSend: canAct && !sendUnresolved, allowPictures: true,
+            loadSkills: async () => {
+              const reply = await localViewerFetch<{ skills: AssistantSkill[] }>("/v1/cloud/viewer/skills?" + query(selected))
+              return Array.isArray(reply.skills) ? reply.skills : []
+            },
+            onSend: async (text, pictures) => { await act("send", "", "", text, pictures) } }} /></div>}
+        {sendUnresolved && <p role="status">{t.pending}</p>}
+        <details className="cloud-local-more"><summary>{t.action}</summary>
+          <div className="cloud-local-actions">
+            <button className="chip" type="button" disabled={!canAct} onClick={() => void act("interrupt")}>{t.interrupt}</button>
+            <button className="chip" type="button" disabled={!canAct} onClick={() => void act("end")}>{t.end}</button>
+          </div>
         <div className="cloud-local-receipt">
           <label>{t.action}<select value={lastAction} onChange={(event) => { const next = event.target.value; setLastAction(next); setReceipt(null)
             try { setRequest(localStorage.getItem(receiptStorage(selected, next)) || "") } catch { setRequest("") } }}>
@@ -315,6 +338,7 @@ function CloudLocalPage({ shown }: { shown: boolean }) {
             <button className="chip" type="button" onClick={() => { try { localStorage.removeItem(receiptStorage(selected, lastAction)) } catch { return }
               setRequest(""); setReceipt(null); setProblem("") }}>{t.acknowledge}</button>}
         </div>
+        </details>
       </div>}
     </div>
   </section>

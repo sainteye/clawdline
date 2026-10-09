@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment,
-  destinationKey, matchesSession, prependOlderPage, projectionRefreshAt, SessionDetailCache,
+  destinationKey, prependOlderPage, projectionRefreshAt, SessionDetailCache,
   type MachineSessionProjection, type ProjectedSession,
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
 } from "./all-machine-sessions.ts"
@@ -78,22 +78,12 @@ test("malformed projection and URLs are refused without content reads", () => {
   assert.equal(destinationAvailable(row("one", "s", "1").destination, undefined), "waiting")
 })
 
-test("the five filters operate on status only", () => {
-  const item = row("one", "s", "1")
-  const filters = { machine: "one", platform: "macOS", state: "working", freshness: "current" as const, attention: "needed" as const }
-  assert.equal(matchesSession(item, "macOS", filters), true)
-  assert.equal(matchesSession(item, "Linux", filters), false)
-  assert.equal(matchesSession({ ...item, needsAttention: false }, "macOS", filters), false)
-  assert.equal(matchesSession({ ...item, freshness: "stale" }, "macOS", filters), false)
-  assert.equal(matchesSession({ ...item, state: "waiting" }, "macOS", filters), false)
-})
-
 test("older pages prepend only to the exact execution and requested cursor", () => {
   const destination = row("one", "same", "1").destination
   const current = { kind: "ready" as const, destination, observedAt: 1000, info: {},
-    entries: [{ speaker: "assistant", text: "newest" }], nextBefore: 123, question: null }
+    entries: [{ role: "assistant", text: "newest" }], nextBefore: 123, question: null }
   const older = { kind: "ready" as const, destination, before: 123,
-    entries: [{ speaker: "user", text: "older" }], nextBefore: 40 }
+    entries: [{ role: "user", text: "older" }], nextBefore: 40 }
   assert.deepEqual(prependOlderPage(current, older)?.entries.map((entry) => entry.text), ["older", "newest"])
   assert.equal(prependOlderPage(current, older)?.nextBefore, 40)
   assert.equal(prependOlderPage(current, { ...older, before: 122 }), null)
@@ -102,7 +92,7 @@ test("older pages prepend only to the exact execution and requested cursor", () 
   assert.equal(prependOlderPage(current, { ...older, destination: row("one", "same", "2").destination }), null)
   assert.equal(prependOlderPage(current, { ...older, nextBefore: undefined })?.nextBefore, undefined)
   assert.equal(prependOlderPage(current, { kind: "unavailable", reason: "old_version" }), null)
-  assert.deepEqual(current.entries, [{ speaker: "assistant", text: "newest" }])
+  assert.deepEqual(current.entries, [{ role: "assistant", text: "newest" }])
 })
 
 test("current status is reread when its earliest status time expires", () => {

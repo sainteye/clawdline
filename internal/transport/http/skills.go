@@ -35,6 +35,9 @@ func (s *Server) sessionSkillsRoute(w http.ResponseWriter, r *http.Request, id s
 		s.forwardUpstream(w, r)
 		return
 	}
+	if !s.admitPinnedTarget(w, r, id) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	item, err := s.actions().Find(ctx, id)
@@ -61,6 +64,9 @@ func (s *Server) sessionSkillsRoute(w http.ResponseWriter, r *http.Request, id s
 		// be named: an empty menu, as the Swift app answers it. The rollout is
 		// looked for only on a miss — finding it walks ~/.codex/sessions.
 		if item.ConversationID == "" {
+			if !s.admitPinnedTarget(w, r, id) {
+				return
+			}
 			writeSkills(w, skillmenu.Reading{Skills: []skillmenu.Skill{}}, time.Now())
 			return
 		}
@@ -73,14 +79,24 @@ func (s *Server) sessionSkillsRoute(w http.ResponseWriter, r *http.Request, id s
 			return skillmenu.Codex(path, home)
 		}
 	default:
+		if !s.admitPinnedTarget(w, r, id) {
+			return
+		}
 		writeSkills(w, skillmenu.Reading{Skills: []skillmenu.Skill{}}, time.Now())
 		return
 	}
 	if s.skillMenu == nil {
-		writeSkills(w, read(), time.Now())
+		reading := read()
+		if !s.admitPinnedTarget(w, r, id) {
+			return
+		}
+		writeSkills(w, reading, time.Now())
 		return
 	}
 	reading, at := s.skillMenu.Get(key, read)
+	if !s.admitPinnedTarget(w, r, id) {
+		return
+	}
 	writeSkills(w, reading, at)
 }
 

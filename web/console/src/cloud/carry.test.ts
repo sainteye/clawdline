@@ -84,6 +84,10 @@ class FakeMac implements CloudWriteClient {
     this.asked.push("info:" + identity.session)
     return Promise.resolve(INFO)
   }
+  skills(identity: CloudIdentity) {
+    this.asked.push("skills:" + identity.session)
+    return Promise.resolve({ skills: [{ name: "review", description: "Review work", source: "project" }] })
+  }
   infoSummary(identity: CloudIdentity) {
     this.asked.push("infoSummary:" + identity.session)
     return Promise.resolve(INFO)
@@ -304,7 +308,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-unify-apply" in CARRIED)
   assert.ok(!("project-unify-plan" in DEFERRED))
   assert.ok(!("project-unify-apply" in DEFERRED))
-  assert.equal(Object.keys(CARRIED).length, 144)
+  assert.equal(Object.keys(CARRIED).length, 148)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {
@@ -359,16 +363,10 @@ test("every route the table says is answered here is answered here, with no word
 test("a route this console does not carry is refused by the word it stands for", async () => {
   const mac = new FakeMac()
   const reader = seam(mac)
-  // 常用句 used to be here — a word this machine knew and had no route for, so
-  // the page refused the read to itself. It is carried now, and the shape it
-  // left behind is the one this asserts on a word that still is not: a
-  // session's skills.
   const res = await reader.fetch("/v1/sessions/s1/skills")
-  assert.equal(res.status, 501)
-  const body = (await res.json()) as { error: string; detail: string }
-  assert.equal(body.error, "cloud_not_carried", "the code the screens choose their sentence by")
-  assert.equal(body.detail, NO_MACHINE_ROUTE.skills)
-  assert.match(body.detail, /on the machine/, "a named refusal says what can be done instead")
+  assert.equal(res.status, 200)
+  assert.deepEqual((await res.json() as { skills: { name: string }[] }).skills.map((skill) => skill.name), ["review"])
+  assert.ok(mac.asked.includes("skills:s1"))
   assert.equal(uncarriedWordOf("GET", "/v1/snippets"), "", "the snippet list is carried, so it stands for nothing here")
   assert.equal(uncarried("snippets"), "", "a carried word has no refusal sentence")
   assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/documents"), "", "the document listing is carried")
@@ -684,19 +682,19 @@ test("the seam says what this machine can do that this bundle never asks for", a
   // Every pair this test has used before — `board`, `snippets`, `git`,
   // `screen`, and then `shell` — became a carried word, which is exactly the
   // drift this assertion is about.
-  mac.commands = [...Object.keys(CARRIED), "skills"]
-  assert.deepEqual(reader.drift(), { notCarried: ["skills"], notOnThisMachine: [] })
+  mac.commands = [...Object.keys(CARRIED), "diagnostics.events"]
+  assert.deepEqual(reader.drift(), { notCarried: ["diagnostics.events"], notOnThisMachine: [] })
   mac.commands = Object.keys(CARRIED).filter((word) => word !== "info")
   assert.deepEqual(reader.drift(), { notCarried: [], notOnThisMachine: ["info"] })
 
   // And it reaches this page's own log, once, the first time the list is read.
-  mac.commands = [...Object.keys(CARRIED), "skills"]
+  mac.commands = [...Object.keys(CARRIED), "diagnostics.events"]
   const fresh = seam(mac)
   await fresh.fetch("/v1/sessions")
   await fresh.fetch("/v1/sessions")
   const said = fresh.log.filter((row) => row.code === "cloud_vocabulary_drift")
   assert.equal(said.length, 1, "said once, not on every reading")
-  assert.equal(said[0].word, "skills")
+  assert.equal(said[0].word, "diagnostics.events")
 })
 
 test("the words are this build's own catalog, and the document says which", async () => {

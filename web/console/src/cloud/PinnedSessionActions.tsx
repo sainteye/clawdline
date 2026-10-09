@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { nextWord } from "../next-strings.js"
+import { Composer } from "../session/Composer.js"
+import { PendingRemoteTurn } from "./PendingRemoteTurn.js"
 import {
   PinnedSessionActions, problemCode, receiptPath, receiptStages, watchActionAvailability, type Action, type ActionContext,
   type ActionAvailability, type ActionInput, type ActionProblem, type ActionRecord, type ActionSource, type PinnedClient,
@@ -39,7 +41,7 @@ export function PinnedSessionActionPanel({ context, source, current }: {
   const [records, setRecords] = useState<Partial<Record<Action, ActionRecord>>>({})
   const [busy, setBusy] = useState<Action | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState("")
+  const [pending, setPending] = useState<{ text: string; pictures: number; sentAt: number; problem: string | null } | null>(null)
   const [confirm, setConfirm] = useState<Action | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
   const confirmDialog = useRef<HTMLDialogElement>(null)
@@ -47,11 +49,41 @@ export function PinnedSessionActionPanel({ context, source, current }: {
   const destination = context.destination
   const question = context.content?.kind === "ready" ? context.content.question : null
   const key = JSON.stringify([destination.machineID, destination.sessionID, destination.executionGeneration])
+  const skillsAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => skillsAbort.current?.abort(), [key])
+  const loadSkills = useCallback(() => {
+    if (!source.readSkills) return Promise.reject(Object.assign(new Error("Session skills are unavailable"), { code: "old_version" }))
+    skillsAbort.current?.abort()
+    const controller = new AbortController()
+    skillsAbort.current = controller
+    return source.readSkills(destination, controller.signal)
+  }, [source, key])
+  // Dictation uses the account's existing Cloud voice host and only inserts
+  // text into the shared composer. The subsequent send still pins this target.
+  const transcribe = useCallback(async (audio: string, rate: number) => {
+    const client = current()
+    if (!client?.voice) throw Object.assign(new Error("Cloud voice is unavailable"), { code: "cloud_voice_unavailable" })
+    try { return await client.voice(audio, rate) }
+    catch (error) {
+      if ((error as { code?: string })?.code !== "cloud_voice_host_ambiguous" || !client.setVoiceHost) throw error
+      await client.setVoiceHost(destination.machineID)
+      return client.voice(audio, rate)
+    }
+  }, [current, destination.machineID])
 
   useEffect(() => {
     setRecords(Object.fromEntries(actions.map((action) => [action, service.load(context, action)]).filter(([, record]) => !!record)))
     setError(null)
+    setPending(null)
   }, [service, key])
+
+  useEffect(() => {
+    if (!pending?.text || context.content?.kind !== "ready") return
+    const found = context.content.entries?.some((entry) => entry.role === "user" &&
+      typeof entry.at === "number" && entry.at * 1000 >= pending.sentAt - 120_000 &&
+      entry.text.replace(/\[Image #\d+\]/gu, "").trim() === pending.text.trim())
+    if (found) setPending(null)
+  }, [context.content, pending])
 
   useEffect(() => {
     return watchActionAvailability(context, source, service, setAvailability)
@@ -67,13 +99,19 @@ export function PinnedSessionActionPanel({ context, source, current }: {
 
   async function run(action: Action, input: ActionInput = {}) {
     if (busy) return
+    if (action === "send") setPending({ text: input.text ?? "", pictures: input.images?.length ?? 0,
+      sentAt: Date.now(), problem: null })
     setConfirm(null)
     setBusy(action)
     setError(null)
     try {
       const record = await service.perform(context, action, input)
       setRecords((before) => ({ ...before, [action]: record }))
-    } catch (problem) { setError(problemCode(problem)) }
+    } catch (problem) {
+      const code = problemCode(problem)
+      setError(code)
+      if (action === "send") setPending((before) => before ? { ...before, problem: code } : before)
+    }
     finally { setBusy(null) }
   }
 
@@ -104,30 +142,67 @@ export function PinnedSessionActionPanel({ context, source, current }: {
   return <section className="cloud-pinned-actions" aria-label={nextWord("cloudActionHeading")}>
     <h2>{nextWord("cloudActionHeading")}</h2>
     <p className="cloud-pinned-target">{targetLabel(context)}</p>
-    <form onSubmit={(event) => { event.preventDefault(); void run("send", { text: message }) }}>
-      <label htmlFor="cloud-pinned-message">{nextWord("cloudActionMessage")}</label>
-      <textarea id="cloud-pinned-message" value={message} onChange={(event) => setMessage(event.target.value)} rows={3} />
-      <button type="submit" disabled={disabled("send") || !message.trim()}>{nextWord(labels.send)}</button>
-      {reason("send") && <p role="status" data-code={availability.send}>{reason("send")}</p>}
-    </form>
-    <div className="cloud-pinned-question">
-      <h3>{nextWord(labels.answer)}</h3>
-      {question?.options.length ? <div role="group" aria-label={nextWord("cloudActionQuestion")}>
-        {question.text && <p>{question.text}</p>}
+    {question?.options.length ? <div className="cloud-pinned-question">
+      {question.text && <p>{question.text}</p>}
+      <div role="group" aria-label={nextWord("cloudActionQuestion")}>
         {question.options.map((option) => <button key={option.key} type="button" disabled={disabled("answer")}
           onClick={() => void run("answer", { answer: option.key, expect: question.fingerprint })}>{option.label}</button>)}
-      </div> : <p>{nextWord("cloudActionNoQuestion")}</p>}
+      </div>
       {reason("answer") && <p role="status" data-code={availability.answer}>{reason("answer")}</p>}
+    </div> : null}
+    {pending && <PendingRemoteTurn text={pending.text} pictures={pending.pictures} sentAt={pending.sentAt}
+      state={busy === "send" ? "sending" : records.send?.receipt?.machine_execution === "completed" ? "accepted" : "unknown"}
+      status={pending.problem || (busy === "send" ? nextWord("cloudActionChecking") :
+        nextWord(stageLabels[records.send?.receipt?.machine_execution ?? "unknown"]))} />}
+    <div className="cloud-pinned-composer"><Composer key={key} row={null} onDid={() => undefined}
+      remote={{ key, machineID: destination.machineID, assistant: context.content?.kind === "ready"
+        ? context.content.info?.assistant : undefined, canSend: !disabled("send"), allowPictures: true,
+        transcribe, loadSkills,
+        onSend: async (text, pictures) => { await run("send", { text, images: pictures }) } }} />
+      {reason("send") && <p role="status" data-code={availability.send}>{reason("send")}</p>}
     </div>
-    <div className="cloud-pinned-risk">
-      {(["interrupt", "end"] as const).map((action) => <div key={action}>
-        <button type="button" disabled={disabled(action)} onClick={(event) => {
-          confirmTrigger.current = event.currentTarget
-          setConfirm(action)
-        }}>{nextWord(labels[action])}</button>
-        {reason(action) && <p role="status" data-code={availability[action]}>{reason(action)}</p>}
-      </div>)}
-    </div>
+    <div className="cloud-pinned-status" aria-live="polite">{actions.map((action) => records[action] &&
+      <p key={action}>{nextWord(labels[action])} · {nextWord(stageLabels[receiptStages(records[action]!)[1]])}</p>)}</div>
+    <details className="cloud-pinned-more"><summary>{nextWord("cloudActionHeading")}</summary>
+      {!question?.options.length && <div className="cloud-pinned-question">
+        <h3>{nextWord(labels.answer)}</h3>
+        <p>{nextWord("cloudActionNoQuestion")}</p>
+        {reason("answer") && <p role="status" data-code={availability.answer}>{reason("answer")}</p>}
+      </div>}
+      <div className="cloud-pinned-risk">
+        {(["interrupt", "end"] as const).map((action) => <div key={action}>
+          <button type="button" disabled={disabled(action)} onClick={(event) => {
+            confirmTrigger.current = event.currentTarget
+            setConfirm(action)
+          }}>{nextWord(labels[action])}</button>
+          {reason(action) && <p role="status" data-code={availability[action]}>{reason(action)}</p>}
+        </div>)}
+      </div>
+      <div className="cloud-pinned-receipts" aria-live="polite">
+        {actions.map((action) => records[action] && <article key={action}>
+          <h3>{nextWord(labels[action])}</h3>
+          <p>{targetLabel(context)}</p>
+          <p>{nextWord("cloudActionRequest", { request: records[action]!.request })}</p>
+          <p>{nextWord("cloudActionReceiptPath", { path: receiptPath(records[action]!) })}</p>
+          <ol>
+            {receiptStages(records[action]!).map((stage, index) => <li key={index}>
+              {nextWord((["cloudActionRelayAccepted", "cloudActionMachineExecution", "cloudActionReplyDelivered",
+                "cloudActionViewerObserved", "cloudActionUserAcknowledged"] as const)[index])}: {nextWord(stageLabels[stage])}
+            </li>)}
+          </ol>
+          {records[action]!.problem && <p role="status" data-code={records[action]!.problem}>
+            {records[action]!.problem === "receipt_check_required" ? nextWord("cloudActionCheckRequired") :
+              nextWord("cloudActionReceiptProblem", { code: records[action]!.problem! })}</p>}
+          {records[action]!.receipt?.code && <p role="status" data-code={records[action]!.receipt!.code}>
+            {nextWord("cloudActionReceiptProblem", { code: records[action]!.receipt!.code })}</p>}
+          <button type="button" disabled={busy !== null} onClick={() => void checkReceipt(action, records[action]!)}>
+            {nextWord("cloudActionCheckReceipt")}</button>
+          {!records[action]!.acknowledged && ["completed", "rejected"].includes(records[action]!.receipt?.machine_execution ?? "") &&
+            <button type="button" onClick={() => setRecords((before) => ({ ...before,
+              [action]: service.acknowledge(records[action]!) }))}>{nextWord("cloudActionAcknowledge")}</button>}
+        </article>)}
+      </div>
+    </details>
     {confirm && <dialog ref={confirmDialog} role="alertdialog" aria-modal="true" aria-label={nextWord("cloudActionConfirm")}
       onCancel={(event) => { event.preventDefault(); setConfirm(null) }}>
       <p>{nextWord("cloudActionConfirmQuestion", { action: nextWord(labels[confirm]) })}</p>
@@ -136,29 +211,5 @@ export function PinnedSessionActionPanel({ context, source, current }: {
       <button type="button" onClick={() => void run(confirm)}>{nextWord("cloudActionConfirm")}</button>
     </dialog>}
     {error && <p role="alert" data-code={error}>{nextWord("cloudActionFailure", { code: error })}</p>}
-    <div className="cloud-pinned-receipts" aria-live="polite">
-      {actions.map((action) => records[action] && <article key={action}>
-        <h3>{nextWord(labels[action])}</h3>
-        <p>{targetLabel(context)}</p>
-        <p>{nextWord("cloudActionRequest", { request: records[action]!.request })}</p>
-        <p>{nextWord("cloudActionReceiptPath", { path: receiptPath(records[action]!) })}</p>
-        <ol>
-          {receiptStages(records[action]!).map((stage, index) => <li key={index}>
-            {nextWord((["cloudActionRelayAccepted", "cloudActionMachineExecution", "cloudActionReplyDelivered",
-              "cloudActionViewerObserved", "cloudActionUserAcknowledged"] as const)[index])}: {nextWord(stageLabels[stage])}
-          </li>)}
-        </ol>
-        {records[action]!.problem && <p role="status" data-code={records[action]!.problem}>
-          {records[action]!.problem === "receipt_check_required" ? nextWord("cloudActionCheckRequired") :
-            nextWord("cloudActionReceiptProblem", { code: records[action]!.problem! })}</p>}
-        {records[action]!.receipt?.code && <p role="status" data-code={records[action]!.receipt!.code}>
-          {nextWord("cloudActionReceiptProblem", { code: records[action]!.receipt!.code })}</p>}
-        <button type="button" disabled={busy !== null} onClick={() => void checkReceipt(action, records[action]!)}>
-          {nextWord("cloudActionCheckReceipt")}</button>
-        {!records[action]!.acknowledged && ["completed", "rejected"].includes(records[action]!.receipt?.machine_execution ?? "") &&
-          <button type="button" onClick={() => setRecords((before) => ({ ...before,
-            [action]: service.acknowledge(records[action]!) }))}>{nextWord("cloudActionAcknowledge")}</button>}
-      </article>)}
-    </div>
   </section>
 }

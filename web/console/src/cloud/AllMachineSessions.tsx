@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { nextWord } from "../next-strings.js"
+import { TranscriptEntries } from "../session/Transcript.js"
+import { SessionToolbar } from "../session/SessionToolbar.js"
+import { CloudAllTerminalList } from "../session/CloudAllTerminalList.js"
+import { sessionsTerminalMode } from "../page-route.js"
+import "../session/terminal-list.css"
 import { AttentionOverview } from "./AttentionOverview.js"
 import { fromListProjection } from "./attention-adapter.js"
 import {
@@ -28,16 +33,21 @@ export interface DetailActionContext {
 type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionProjection }
 
 /** Only the hosted Cloud gate mounts this view; its source is the ss/ adapter. */
-export function AllMachineSessions({ machines, source, onClose, embedded = false, detailActions, fleetControls }: {
+export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal"
+
+export function AllMachineSessions({ machines, source, detailActions, detailExtras, fleetControls, onMachineAction }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
-  onClose?: () => void
-  embedded?: boolean
   detailActions?: (context: DetailActionContext) => ReactNode
+  detailExtras?: (context: DetailActionContext) => ReactNode
   fleetControls?: ReactNode
+  onMachineAction?: (machineID: string, action: MachineToolbarAction) => void
 }) {
   const [readings, setReadings] = useState<Record<string, Reading>>({})
   const [query, setQuery] = useState("")
+  const [terminalMode, setTerminalMode] = useState(() => sessionsTerminalMode(location.hash))
+  const [machineAction, setMachineAction] = useState<MachineToolbarAction | null>(null)
+  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 899px)").matches)
   const [destination, setDestination] = useState<SessionDestination | null>(() => destinationFromFragment(location.hash))
   const [detail, setDetail] = useState<{ key: string; value: SessionContent | null; loading: boolean } | null>(null)
   const [older, setOlder] = useState<{ key: string; loading: boolean; error: Extract<SessionContent,
@@ -47,14 +57,27 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
   const destinationRef = useRef(destination)
   const detailRef = useRef(detail)
   const olderAbort = useRef<AbortController | null>(null)
+  const refreshAbort = useRef<AbortController | null>(null)
   const heading = useRef<HTMLHeadingElement | null>(null)
   const listHeading = useRef<HTMLHeadingElement | null>(null)
+  const searchField = useRef<HTMLInputElement | null>(null)
+  const machineDialog = useRef<HTMLDialogElement | null>(null)
   const returnFocus = useRef<HTMLElement | null>(null)
   destinationRef.current = destination
   detailRef.current = detail
 
   useEffect(() => {
-    const route = () => setDestination(destinationFromFragment(location.hash))
+    const media = window.matchMedia("(max-width: 899px)")
+    const change = () => setCompact(media.matches)
+    media.addEventListener("change", change)
+    return () => media.removeEventListener("change", change)
+  }, [])
+
+  useEffect(() => {
+    const route = () => {
+      setTerminalMode(sessionsTerminalMode(location.hash))
+      setDestination(destinationFromFragment(location.hash))
+    }
     window.addEventListener("hashchange", route)
     window.addEventListener("popstate", route)
     return () => {
@@ -62,6 +85,17 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
       window.removeEventListener("popstate", route)
     }
   }, [])
+
+  useEffect(() => {
+    if (machineAction) machineDialog.current?.showModal()
+    else machineDialog.current?.close()
+  }, [machineAction])
+
+  const chooseAction = (action: MachineToolbarAction) => {
+    if (!onMachineAction || machines.length === 0) return
+    if (machines.length === 1) onMachineAction(machines[0].id, action)
+    else setMachineAction(action)
+  }
 
   useEffect(() => {
     if (!destination) return
@@ -104,6 +138,23 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
         setDetail((before) => before?.key === key && before.value?.kind === "ready"
           ? { ...before, value: { ...before.value, question: null } } : before)
         setQuestionRevision((before) => before + 1)
+        if (detailRef.current?.key !== key || detailRef.current.value?.kind !== "ready") return
+        refreshAbort.current?.abort()
+        olderAbort.current?.abort()
+        olderAbort.current = null
+        setOlder(null)
+        const abort = new AbortController()
+        refreshAbort.current = abort
+        void source.readDetail(selected, abort.signal).then((value) => {
+          if (abort.signal.aborted || !destinationRef.current || destinationKey(destinationRef.current) !== key) return
+          if (value.kind === "ready" && (destinationKey(value.destination) !== key || !cache.current.put(value))) {
+            setDetail({ key, value: { kind: "unavailable", reason: "unknown" }, loading: false })
+            return
+          }
+          setDetail({ key, value, loading: false })
+        }, (error: unknown) => {
+          if (!abort.signal.aborted) setDetail({ key, value: { kind: "unavailable", reason: contentProblemOf(error) }, loading: false })
+        }).finally(() => { if (refreshAbort.current === abort) refreshAbort.current = null })
         return
       }
       if (!machines.some((machine) => machine.id === machineID)) return
@@ -120,6 +171,7 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     return () => {
       live = false
       stop()
+      refreshAbort.current?.abort()
       for (const abort of aborts.values()) abort.abort()
     }
   }, [source, machines.map((machine) => machine.id + ":" + machine.freshness).join("\0")])
@@ -160,6 +212,8 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     : observedProjection
   const availability = destination ? destinationAvailable(destination, projection) : "waiting"
   useEffect(() => {
+    refreshAbort.current?.abort()
+    refreshAbort.current = null
     olderAbort.current?.abort()
     olderAbort.current = null
     setOlder(null)
@@ -184,6 +238,7 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     })
     return () => {
       abort.abort()
+      refreshAbort.current?.abort()
       olderAbort.current?.abort()
       source.closeDetail?.(destination)
     }
@@ -215,6 +270,11 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
     `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search))
   const row = projection?.rows && destination
     ? projection.rows.find((candidate) => destinationKey(candidate.destination) === destinationKey(destination)) : null
+  const actionContext: DetailActionContext | null = availability === "ready" && destination && named &&
+    projection?.kind === "ready" && row ? {
+      destination, machine: named, row, projection,
+      content: detail?.key === destinationKey(destination) ? detail.value : null,
+    } : null
 
   const closeDetail = () => {
     olderAbort.current?.abort()
@@ -226,6 +286,34 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
       returnFocus.current = null
     })
   }
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const modal = [...document.querySelectorAll('dialog[open], [role="dialog"][aria-modal="true"]')]
+        .some((element) => element.getClientRects().length > 0)
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || modal) return
+      const active = document.activeElement
+      const typing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ||
+        (active instanceof HTMLElement && active.isContentEditable)
+      if (event.key === "Escape") {
+        if (destinationRef.current) { event.preventDefault(); closeDetail(); return }
+        if (active === searchField.current) {
+          event.preventDefault()
+          if (query) setQuery("")
+          else searchField.current?.blur()
+        }
+        return
+      }
+      if (typing) return
+      if (event.key === "/") {
+        event.preventDefault()
+        searchField.current?.focus()
+        searchField.current?.select()
+        return
+      }
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [query])
   const loadOlder = () => {
     const current = detailRef.current
     if (!destination || !source?.readOlder || availability !== "ready" || current?.value?.kind !== "ready" ||
@@ -255,12 +343,16 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
       if (!abort.signal.aborted) setOlder({ key, loading: false, error: contentProblemOf(error) })
     }).finally(() => { if (olderAbort.current === abort) olderAbort.current = null })
   }
-  const listPane = <section className="pane pane-list cloud-all-list">
-    <div className="filter-row">
-      <input type="search" value={query} onChange={(event) => setQuery(event.target.value)}
-        placeholder={nextWord("cloudAllSearch")} aria-label={nextWord("cloudAllSearch")} />
-    </div>
+  const listPane = <section className="pane pane-list cloud-all-list" inert={compact && !!destination}
+    aria-hidden={compact && !!destination ? true : undefined}>
+    <SessionToolbar inputRef={searchField} filter={query} onFilter={setQuery} terminalMode={terminalMode}
+      placeholder={nextWord("cloudAllSearch")} label={nextWord("cloudAllSearch")}
+      onSessions={() => { location.hash = machines.length > 1 ? "#all-machines" : "#page=sessions"; setTerminalMode(false) }}
+      onTerminals={() => chooseAction("terminal")}
+      onVoice={() => chooseAction("voice")} onWork={() => chooseAction("work")}
+      onStart={() => chooseAction(terminalMode ? "start_terminal" : "start")} />
     <div className="scroller list-scroll cloud-all-list-scroll">
+    {terminalMode ? <CloudAllTerminalList shown={true} filter={query} /> : <>
     <div className="cloud-all-groups">
       {shown.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group" aria-label={`${machine.name} ${machine.id}`}>
         <h2>{machine.name} <small>{machine.platform}</small></h2>
@@ -291,26 +383,27 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
       </section>)}
     </div>
     {shown.length === 0 && <p>{nextWord("cloudAllNoMatch")}</p>}
+    </>}
     </div>
   </section>
   return <main className="app cloud-all" data-page-view="sessions" data-view={destination ? "detail" : "list"}
-    data-pane="on" data-embedded={embedded ? "true" : undefined} data-step="all-sessions">
+    data-pane="on" data-mode={terminalMode ? "terminal" : undefined} data-step="all-sessions">
     <header className="cloud-all-header">
-      {onClose && <button type="button" onClick={onClose}>{nextWord("cloudAllBack")}</button>}
       <h1 ref={listHeading} tabIndex={-1}>{machines.length === 1 ? nextWord("cloudSingleSessions") : nextWord("cloudAllMachines")}</h1>
     </header>
     {listPane}
     {destination && <section className="pane pane-detail cloud-all-main" aria-live="polite">
       <header className="cloud-all-detail-head">
         <button type="button" className="cloud-all-detail-back" onClick={closeDetail}>{nextWord("cloudAllBack")}</button>
-        <h2 ref={heading} tabIndex={-1}>{row?.title || destination.sessionID}</h2>
+        <h2 ref={heading} tabIndex={-1}>{detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
+          ? detail.value.info.title || row?.title || destination.sessionID : row?.title || destination.sessionID}</h2>
         <span>{named?.name ?? destination.machineID}</span>
       </header>
       <div className="cloud-all-detail-scroll">
       <dl className="cloud-all-target">
-        <div><dt>{nextWord("cloudAllMachine")}</dt><dd>{named?.name ?? destination.machineID}</dd></div>
         <div><dt>{nextWord("cloudAllSessionID")}</dt><dd className="cloud-all-id">{destination.sessionID}</dd></div>
-        <div><dt>{nextWord("cloudAllDataTime")}</dt><dd>{row ? timeWord(row.observedAt) : nextWord("cloudAllUnknown")}</dd></div>
+        <div><dt>{nextWord("cloudAllDataTime")}</dt><dd>{detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
+          ? timeWord(detail.value.observedAt) : row ? timeWord(row.observedAt) : nextWord("cloudAllUnknown")}</dd></div>
       </dl>
       <details className="cloud-all-identity"><summary>{nextWord("cloudAllGeneration")}</summary>
         <p>{nextWord("cloudAllMachineID")}: <code>{destination.machineID}</code></p>
@@ -340,9 +433,7 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
         : !detail || detail.loading || detail.key !== destinationKey(destination) ? <p role="status">{nextWord("cloudAllLoadingDetail")}</p>
         : detail.value?.kind === "unavailable" ? <p role="alert">{contentWord(detail.value.reason)}</p>
         : <section aria-label={nextWord("cloudAllConversation")} className="cloud-all-content">
-          <p className="cloud-all-time">{nextWord("cloudAllDataAt", { time: timeWord(detail.value!.observedAt) })}</p>
-          {detail.value!.info.title && <h2>{detail.value!.info.title}</h2>}
-          {(detail.value!.info.assistant || detail.value!.info.model) && <p>{[detail.value!.info.assistant,
+          {(detail.value!.info.assistant || detail.value!.info.model) && <p className="cloud-all-provider">{[detail.value!.info.assistant,
             detail.value!.info.model].filter(Boolean).join(" · ")}</p>}
           {detail.value!.nextBefore !== undefined && source?.readOlder && <div className="cloud-all-older">
             <button type="button" onClick={loadOlder} disabled={older?.key === detail.key && older.loading}
@@ -352,20 +443,21 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
             {older?.key === detail.key && older.error && <p role="alert">{older.error === "old_version"
               ? nextWord("cloudAllOlderOldVersion") : contentWord(older.error)}</p>}
           </div>}
-          {detail.value!.entries.length === 0 ? <p>{nextWord("cloudAllNoContent")}</p> : detail.value!.entries.map((entry, index) =>
-            <article key={index}><h2>{entry.speaker}</h2><p>{entry.text}</p></article>)}
+          {detail.value!.entries.length === 0 ? <p>{nextWord("cloudAllNoContent")}</p> :
+            <div className="tx cloud-all-transcript"><TranscriptEntries key={destinationKey(destination)}
+              entries={detail.value!.entries} assistant={detail.value!.info.assistant}
+              working={row?.state === "working"} /></div>}
         </section>}
-      {availability === "ready" && named && projection?.kind === "ready" && row && detailActions?.({
-        destination, machine: named, row, projection,
-        content: detail?.key === destinationKey(destination) ? detail.value : null,
-      })}
+      {actionContext && detailExtras?.(actionContext)}
       </div>
+      {actionContext && detailActions && <div className="cloud-all-action-bar">{detailActions(actionContext)}</div>}
     </section>}
-    {!destination && <section className="pane pane-detail cloud-all-overview">
+    {!destination && !terminalMode && <section className="pane pane-detail cloud-all-overview" inert={compact}
+      aria-hidden={compact ? true : undefined}>
       <div className="cloud-all-overview-scroll">
         <h2>{machines.length === 1 ? nextWord("cloudSingleSessions") : nextWord("cloudAllMachines")}</h2>
         <p className="cloud-all-lede">{nextWord("cloudAllLede")}</p>
-        {!embedded && <AttentionOverview
+        <AttentionOverview
           reading={{ phase: "ready", machines: machines.map((machine) => fromListProjection(machine, readings[machine.id])), observedNow: Date.now() }}
           locale={document.documentElement.lang === "zh-Hant" ? "zh-Hant-TW" : "en"}
           onOpen={(target) => {
@@ -375,10 +467,24 @@ export function AllMachineSessions({ machines, source, onClose, embedded = false
             location.hash = destinationFragment(selected)
             setDestination(selected)
           }}
-        />}
+        />
         {fleetControls}
       </div>
     </section>}
+    {terminalMode && <section className="pane pane-detail cloud-all-overview" inert={compact}
+      aria-hidden={compact ? true : undefined}><div className="cloud-all-overview-scroll">
+        <h2>{nextWord("terminalListMode")}</h2>
+      </div></section>}
+    <dialog ref={machineDialog} className="cloud-all-machine-dialog" aria-label={nextWord("cloudSwitch")}
+      onCancel={(event) => { event.preventDefault(); setMachineAction(null) }}>
+      <h2>{nextWord("cloudSwitch")}</h2>
+      {machines.map((machine) => <button key={machine.id} type="button" onClick={() => {
+        const action = machineAction
+        setMachineAction(null)
+        if (action) onMachineAction?.(machine.id, action)
+      }}>{machine.name} · {machine.platform}</button>)}
+      <button type="button" onClick={() => setMachineAction(null)}>{nextWord("cloudActionCancel")}</button>
+    </dialog>
   </main>
 }
 
