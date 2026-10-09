@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment,
-  destinationKey, prependOlderPage, projectionRefreshAt, SessionDetailCache,
+  destinationKey, prependOlderPage, projectionRefreshAt, settleProjection, SessionDetailCache,
   type MachineSessionProjection, type ProjectedSession,
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
 } from "./all-machine-sessions.ts"
@@ -56,6 +56,17 @@ test("an event gap marks only its machine unknown until an authoritative reread"
   assert.equal(gap.observedAt, 1000)
   assert.equal(destinationAvailable(row("one", "s", "1").destination, gap), "waiting")
   assert.equal(destinationAvailable(row("two", "s", "1").destination, ready("two", [row("two", "s", "1")])), "ready")
+})
+
+test("a partial next status pass keeps the prior rows visible but disables their actions", () => {
+  const previous = ready("one", [row("one", "s", "1")])
+  const gap = settleProjection("one", previous, { kind: "unavailable", reason: "event_gap", observedAt: 1200 })
+  assert.deepEqual(gap.rows?.map((item) => item.destination.sessionID), ["s"])
+  assert.equal(gap.rows?.[0].freshness, "stale")
+  assert.equal(destinationAvailable(row("one", "s", "1").destination, gap), "waiting")
+  const next = settleProjection("one", gap, ready("one", [row("one", "s", "2")]))
+  assert.deepEqual(next.rows?.map((item) => item.destination.sessionID), ["s"])
+  assert.equal(destinationAvailable(row("one", "s", "2").destination, next), "ready")
 })
 
 test("retained observations remain readable but cannot authorize content", () => {

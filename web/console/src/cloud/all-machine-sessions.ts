@@ -55,6 +55,8 @@ export type SessionOlderPage =
 export interface SessionProjectionSource {
   /** Must settle or reject; each machine is requested independently. */
   readMachine(machineID: string, signal: AbortSignal): Promise<MachineSessionProjection>
+  /** An exact, read_transcript-authorized title without the full Session row. */
+  readListTitle?(destination: SessionDestination, signal: AbortSignal): Promise<string | null>
   /** Content is requested only after a person opens an exact destination. */
   readDetail(destination: SessionDestination, signal: AbortSignal): Promise<SessionContent>
   /** A person asks for one older page on the same opened, pinned detail. */
@@ -128,6 +130,13 @@ export function afterEventGap(before: MachineSessionProjection | undefined): Mac
     observedAt: before?.observedAt,
     snapshotGeneration: before?.snapshotGeneration,
   }
+}
+
+/** A partial status pass cannot erase the last visible list or authorize its actions. */
+export function settleProjection(machineID: string, before: MachineSessionProjection | undefined,
+  incoming: MachineSessionProjection): MachineSessionProjection {
+  const checked = checkedProjection(machineID, incoming)
+  return checked.kind === "unavailable" && checked.reason === "event_gap" ? afterEventGap(before) : checked
 }
 
 /** Schedule a status-only read when the earliest trusted status time expires. */

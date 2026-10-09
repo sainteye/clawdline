@@ -14,7 +14,7 @@ function refused(code, message) {
 }
 
 function pinnedRead(type, body) {
-  return (type === "info" && body?.parts === "full" || type === "transcript" || type === "skills" || type === "image" || type === "peer-inbox") &&
+  return (type === "info" && (body?.parts === "full" || body?.parts === "list") || type === "transcript" || type === "skills" || type === "image" || type === "peer-inbox") &&
     body?.expected_generation !== undefined
 }
 
@@ -24,6 +24,7 @@ function pinnedReplyKey(machine, session, read) {
 
 function pinnedReadName(type, body) {
   if (type === "info" && body?.parts === "full") return "info.full"
+  if (type === "info" && body?.parts === "list") return "info.list"
   if (type === "skills") return "skills"
   if (type === "image" && typeof body?.id === "string" && body.id) return "image." + body.id
   if (type === "transcript") {
@@ -64,6 +65,19 @@ export class StatusCloudClient extends CatalogCloudClient {
     this.pinnedInfoFlights = new Map()
     this.pinnedTranscriptFlights = new Map()
     this.pinnedReadProofs = new Map()
+  }
+
+  // The archived client keeps only the first 64 advertised command words in
+  // its display cache. A current daemon advertises more than that, so words
+  // near the end (including session-receipt) disappear from machineDescriptor
+  // even while the authenticated orch/ snapshot still holds the complete list.
+  // Use that live snapshot for capability checks; the cache remains a fallback
+  // until this connection receives its own descriptor.
+  machineDescriptor(machine) {
+    const remembered = super.machineDescriptor(machine)
+    const live = this.orchestratorSnapshots?.get(machine)
+    if (!live?.machine || typeof live.machine !== "object" || Array.isArray(live.machine)) return remembered
+    return { ...remembered, machine: { ...live.machine } }
   }
 
   // A status list must not cause the old, content-bearing sessions.snapshot
@@ -355,6 +369,17 @@ export class StatusCloudClient extends CatalogCloudClient {
 
   cancelStatusRecoveries() {
     for (const recovery of [...this.statusRecoveries.values()]) recovery.finish(false)
+  }
+
+  /** The list gets only a pinned title; full detail stays on the opened Session. */
+  infoListForGeneration(destination, signal) {
+    const { machineID, sessionID, executionGeneration } = destination
+    if (!machineID || !sessionID || !GENERATION.test(executionGeneration) || signal?.aborted) {
+      return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
+    }
+    return this._read({ machine: machineID, session: sessionID }, "info", {
+      parts: "list", machine_id: machineID, expected_generation: executionGeneration,
+    }, "info.list", undefined, { signal })
   }
 
   /** Keep distinct generations from joining the copied client's per-session read waiter. */

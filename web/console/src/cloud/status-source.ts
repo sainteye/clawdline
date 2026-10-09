@@ -25,6 +25,7 @@ type StatusClient = CloudClientHandle & {
   cancelStatusRecoveries?(): void
   /** The daemon must atomically compare the execution generation before reading content. */
   infoForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
+  infoListForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
   transcriptForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
   transcriptPageForGeneration?(destination: SessionDestination, before: number, signal: AbortSignal): Promise<unknown>
   skillsForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
@@ -143,6 +144,21 @@ export function statusSource(current: () => StatusClient | null): SessionProject
   }
   return {
     readMachine,
+    async readListTitle(destination, signal): Promise<string | null> {
+      const client = current()
+      if (!client?.infoListForGeneration || !supportsPinnedRead(client, destination.machineID) || signal.aborted) return null
+      const before = await readMachine(destination.machineID, signal)
+      if (before.kind !== "ready" || destinationAvailable(destination, before) !== "ready") return null
+      try {
+        const reply = record(await client.infoListForGeneration(destination, signal))
+        const after = await readMachine(destination.machineID, signal)
+        if (signal.aborted || current() !== client || after.kind !== "ready" ||
+          destinationAvailable(destination, after) !== "ready" || !supportsPinnedRead(client, destination.machineID)) return null
+        const session = record(record(reply?.info)?.session)
+        return session?.id === destination.sessionID && typeof session.title === "string" && session.title.trim()
+          ? session.title.trim() : null
+      } catch { return null }
+    },
     async readImage(destination, artifact): Promise<{ url: string; release: () => void }> {
       const key = destinationKey(destination)
       const client = current()

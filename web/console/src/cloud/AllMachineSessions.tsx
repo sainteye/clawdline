@@ -4,7 +4,7 @@ import { TranscriptEntries } from "../session/Transcript.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
 import { ProjectedRow } from "../session/List.js"
 import { Mark } from "../session/List.js"
-import { DetailPane } from "../session/Detail.js"
+import { DetailPane, HomeHero } from "../session/Detail.js"
 import { BRAND_MARK } from "../brand-mark.js"
 import { CloudAllTerminalList } from "../session/CloudAllTerminalList.js"
 import { sessionsTerminalMode } from "../page-route.js"
@@ -12,8 +12,8 @@ import "../session/terminal-list.css"
 import { AttentionOverview } from "./AttentionOverview.js"
 import { fromListProjection } from "./attention-adapter.js"
 import {
-  afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
-  prependOlderPage, projectionRefreshAt, SessionDetailCache, type MachineSessionProjection, type ProjectionProblem,
+  afterEventGap, destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
+  prependOlderPage, projectionRefreshAt, settleProjection, SessionDetailCache, type MachineSessionProjection, type ProjectionProblem,
   type SessionContent, type SessionDestination, type SessionProjectionSource,
 } from "./all-machine-sessions.js"
 import { STATUS_FRESH_MS } from "./status-projection.js"
@@ -39,16 +39,19 @@ type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionP
 /** Only the hosted Cloud gate mounts this view; its source is the ss/ adapter. */
 export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal"
 
-export function AllMachineSessions({ machines, source, detailActions, detailExtras, fleetControls, onMachineAction }: {
+export function AllMachineSessions({ machines, source, detailActions, detailExtras, fleetControls, onMachineAction, fleet = true }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
   detailActions?: (context: DetailActionContext) => ReactNode
   detailExtras?: (context: DetailActionContext) => ReactNode
   fleetControls?: ReactNode
   onMachineAction?: (machineID: string, action: MachineToolbarAction) => void
+  fleet?: boolean
 }) {
   const [readings, setReadings] = useState<Record<string, Reading>>({})
   const [query, setQuery] = useState("")
+  const titles = useRef(new Map<string, { machineID: string; title: string }>())
+  const [, refreshTitles] = useState(0)
   const [terminalMode, setTerminalMode] = useState(() => sessionsTerminalMode(location.hash))
   const [machineAction, setMachineAction] = useState<MachineToolbarAction | null>(null)
   const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 899px)").matches)
@@ -120,13 +123,16 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
       aborts.get(id)?.abort()
       const abort = new AbortController()
       aborts.set(id, abort)
-      setReadings((before) => ({ ...before, [id]: before[id]?.phase === "settled" &&
-        before[id].value.kind === "unavailable" && before[id].value.reason === "event_gap"
-        ? before[id] : { phase: "loading" } }))
+      // Keep the last observed list on screen while one status row or marker
+      // is arriving. A new pass publishes its rows before its marker; briefly
+      // replacing a settled machine with a loading placeholder hid every row.
+      setReadings((before) => before[id]?.phase === "settled" ? before :
+        ({ ...before, [id]: { phase: "loading" } }))
       void source.readMachine(id, abort.signal).then((value) => {
-        if (live && !abort.signal.aborted) setReadings((before) => ({
-          ...before, [id]: { phase: "settled", value: checkedProjection(id, value) },
-        }))
+        if (live && !abort.signal.aborted) setReadings((before) => {
+          return { ...before, [id]: { phase: "settled", value: settleProjection(id,
+            before[id]?.phase === "settled" ? before[id].value : undefined, value) } }
+        })
       }, (error: unknown) => {
         if (live && !abort.signal.aborted) setReadings((before) => ({
           ...before, [id]: { phase: "settled", value: { kind: "unavailable", reason: problemOf(error) } },
@@ -193,9 +199,10 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
       for (const { machineID, at } of deadlines) {
         if (at !== earliest || !machines.some((machine) => machine.id === machineID)) continue
         void source.readMachine(machineID, abort.signal).then((value) => {
-          if (!abort.signal.aborted) setReadings((before) => ({ ...before,
-            [machineID]: { phase: "settled", value: checkedProjection(machineID, value) },
-          }))
+          if (!abort.signal.aborted) setReadings((before) => {
+            return { ...before, [machineID]: { phase: "settled", value: settleProjection(machineID,
+              before[machineID]?.phase === "settled" ? before[machineID].value : undefined, value) } }
+          })
         }, (error: unknown) => {
           if (!abort.signal.aborted) setReadings((before) => ({ ...before,
             [machineID]: { phase: "settled", value: { kind: "unavailable", reason: problemOf(error) } },
@@ -262,12 +269,45 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
   }, [source, destination?.machineID, destination?.sessionID, destination?.executionGeneration,
     detail?.key, detail?.loading, detail?.value?.kind, availability, questionRevision])
 
+  const titleTargets = machines.flatMap((machine) => {
+    const reading = readings[machine.id]
+    return reading?.phase === "settled" && reading.value.kind === "ready"
+      ? reading.value.rows.filter((row) => row.freshness === "current").map((row) => row.destination) : []
+  })
+  const titleTargetsKey = titleTargets.map(destinationKey).join("\0")
+  useEffect(() => {
+    if (!source?.readListTitle) return
+    const currentKeys = new Set(titleTargets.map(destinationKey))
+    for (const [key, value] of titles.current) {
+      const reading = readings[value.machineID]
+      const machineReady = reading?.phase === "settled" && reading.value.kind === "ready"
+      if (machineReady && !currentKeys.has(key)) titles.current.delete(key)
+    }
+    const pending = titleTargets.filter((target) => !titles.current.has(destinationKey(target)))
+    if (!pending.length) return
+    const abort = new AbortController()
+    let next = 0
+    const worker = async () => {
+      while (!abort.signal.aborted && next < pending.length) {
+        const target = pending[next++]
+        const title = await source.readListTitle!(target, abort.signal).catch(() => null)
+        if (abort.signal.aborted) return
+        if (title) {
+          titles.current.set(destinationKey(target), { machineID: target.machineID, title })
+          refreshTitles((revision) => revision + 1)
+        }
+      }
+    }
+    for (let i = 0; i < Math.min(4, pending.length); i++) void worker()
+    return () => abort.abort()
+  }, [source, titleTargetsKey])
+
   const search = query.trim().toLocaleLowerCase()
   const shown = machines.map((machine) => {
     const reading = readings[machine.id]
     const rows = reading?.phase === "settled" && reading.value.rows
       ? reading.value.rows.filter((row) => !search ||
-        `${machine.name} ${machine.id} ${machine.platform} ${row.title} ${row.destination.sessionID} ${stateWord(row.state)}`
+        `${machine.name} ${machine.id} ${machine.platform} ${titles.current.get(destinationKey(row.destination))?.title ?? row.title} ${row.destination.sessionID} ${stateWord(row.state)}`
           .toLocaleLowerCase().includes(search)) : []
     return { machine, reading, rows }
   }).filter(({ machine, rows }) => !search || rows.length > 0 ||
@@ -359,8 +399,8 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
     {terminalMode ? <CloudAllTerminalList shown={true} filter={query} /> : <>
     <div className="cloud-all-groups">
       {shown.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group" aria-label={`${machine.name} ${machine.id}`}>
-        <h2>{machine.name} <small>{machine.platform}</small></h2>
-        <p className="cloud-all-id">{nextWord("cloudAllMachineID")}: {machine.id}</p>
+        {fleet && <><h2>{machine.name} <small>{machine.platform}</small></h2>
+        <p className="cloud-all-id">{nextWord("cloudAllMachineID")}: {machine.id}</p></>}
         {machine.freshness !== "current" && reading?.phase === "settled" && reading.value.kind === "ready" && <p role="status">{machine.freshness === "stale"
           ? nextWord("cloudAllStaleSource") : nextWord("cloudAllUnknownSource")}</p>}
         {!reading || reading.phase === "loading" ? <p role="status">{nextWord("cloudAllLoading")}</p>
@@ -372,7 +412,8 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
             {rows.map((row) => <ProjectedRow key={destinationKey(row.destination)}
               title={destination && destinationKey(destination) === destinationKey(row.destination) &&
                 detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
-                ? detail.value.info.title || row.title : row.title}
+                ? detail.value.info.title || titles.current.get(destinationKey(row.destination))?.title || row.title
+                : titles.current.get(destinationKey(row.destination))?.title || row.title}
               sessionID={row.destination.sessionID} machineName={machine.name} platform={machine.platform}
               assistant={row.assistant} backend={row.backend} state={stateWord(row.state)}
               freshness={nextWord(row.freshness === "current" ? "cloudAllCurrent" :
@@ -394,10 +435,10 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
     </div>
   </section>
   return <main className="app cloud-all" data-page-view="sessions" data-view={destination ? "detail" : "list"}
-    data-pane="on" data-mode={terminalMode ? "terminal" : undefined} data-step="all-sessions">
-    <header className="cloud-all-header">
+    data-pane="on" data-fleet={fleet ? "true" : "false"} data-mode={terminalMode ? "terminal" : undefined} data-step="all-sessions">
+    {fleet && <header className="cloud-all-header">
       <h1 ref={listHeading} tabIndex={-1}>{machines.length === 1 ? nextWord("cloudSingleSessions") : nextWord("cloudAllMachines")}</h1>
-    </header>
+    </header>}
     {listPane}
     {destination && <DetailPane id="pane-detail" className="cloud-all-main" aria-live="polite">
       <div className="detail-head cloud-all-detail-head">
@@ -407,7 +448,8 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
             <Mark icon={BRAND_MARK} cellPx={5} id="detail-mark" /></span></span>
           <div className="detail-session"><span className="who detail-who">
             <h2 className="name" ref={heading} tabIndex={-1}>{detail?.key === destinationKey(destination) && detail.value?.kind === "ready"
-              ? detail.value.info.title || row?.title || destination.sessionID : row?.title || destination.sessionID}</h2>
+              ? detail.value.info.title || titles.current.get(destinationKey(destination))?.title || row?.title || destination.sessionID
+              : titles.current.get(destinationKey(destination))?.title || row?.title || destination.sessionID}</h2>
             <span className="sub">{named?.name ?? destination.machineID} · {row ? stateWord(row.state) : nextWord("cloudAllUnknown")}</span>
           </span></div>
         </div>
@@ -471,7 +513,7 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
     {!destination && !terminalMode && <section className="pane pane-detail cloud-all-overview" inert={compact}
       aria-hidden={compact ? true : undefined}>
       <div className="cloud-all-overview-scroll">
-        <h2>{machines.length === 1 ? nextWord("cloudSingleSessions") : nextWord("cloudAllMachines")}</h2>
+        {fleet ? <><h2>{nextWord("cloudAllMachines")}</h2>
         <p className="cloud-all-lede">{nextWord("cloudAllLede")}</p>
         <AttentionOverview
           reading={{ phase: "ready", machines: machines.map((machine) => fromListProjection(machine, readings[machine.id])), observedNow: Date.now() }}
@@ -484,7 +526,7 @@ export function AllMachineSessions({ machines, source, detailActions, detailExtr
             setDestination(selected)
           }}
         />
-        {fleetControls}
+        {fleetControls}</> : <HomeHero />}
       </div>
     </section>}
     {terminalMode && <section className="pane pane-detail cloud-all-overview" inert={compact}

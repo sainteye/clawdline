@@ -2,11 +2,36 @@ package http
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
+
+func TestListInfoReturnsOnlyTheSessionDisplayIdentity(t *testing.T) {
+	p := &pane{s: session.Session{ID: "%19", Backend: session.BackendTmux,
+		Assistant: session.AssistantCodex, Label: "A named session", CWD: "/private/project", State: session.StateWorking}}
+	s := paneServer(t, p)
+	req := httptest.NewRequest("GET", "/v1/sessions/%2519/info?parts=list", nil)
+	rec := httptest.NewRecorder()
+	s.sessionInfoRoute(rec, req, "%19")
+	if rec.Code != 200 {
+		t.Fatalf("list info: %d %s", rec.Code, rec.Body.String())
+	}
+	var reply map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := reply["info"].(map[string]any)
+	if len(info) != 2 {
+		t.Fatalf("list info carries more than its session and empty models: %v", info)
+	}
+	identity, _ := info["session"].(map[string]any)
+	if identity["id"] != "%19" || identity["title"] == "" || identity["assistant"] != "codex" || len(identity) != 3 {
+		t.Fatalf("list info exposes wrong or excess identity fields: %v", identity)
+	}
+}
 
 // What `/v1/sessions/{id}/info` may say about a context window, and what it
 // may not. The Swift app's `SessionInfo.infoPayload` draws the same line.

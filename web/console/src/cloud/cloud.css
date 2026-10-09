@@ -150,6 +150,10 @@
 .cloud-all-group .projected-row .title { color: var(--accent); }
 .cloud-all-group .projected-row .state { color: var(--dim); font-size: 11px; }
 .cloud-all-group .projected-row .session-activity { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cloud-all[data-fleet="false"] { grid-template-rows: minmax(0, 1fr); }
+.cloud-all[data-fleet="false"] .cloud-all-list { grid-row: 1; }
+.cloud-all[data-fleet="false"] .cloud-all-list-scroll { padding: 8px 12px 24px; }
+.cloud-all[data-fleet="false"] .cloud-all-overview-scroll { display: flex; align-items: center; justify-content: center; }
 .cloud-all-detail-head { flex: 0 0 auto; border-bottom: 1px solid var(--line); }
 .cloud-all-detail-head .detail-session { cursor: default; }
 .cloud-all-detail-head .detail-session:hover { background: transparent; }

@@ -9,6 +9,18 @@ const envelope = (ch) => ({ v: 1, ch, seq: 1, ts: 1, class: "stream", key_id: "k
 const genA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const genB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
+test("the live signed machine descriptor keeps commands beyond the archived cache bound", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const words = Array.from({ length: 65 }, (_, i) => `word-${i}`)
+  words.push("send", "session-receipt")
+  client.machineDescriptors = new Map([["m", { machine: { commands: words.slice(0, 64) }, build: "old" }]])
+  client.orchestratorSnapshots = new Map([["m", { machine: { commands: words }, app: { build: "current" } }]])
+  assert.equal(client.machineDescriptor("m").machine.commands.includes("session-receipt"), true)
+  assert.equal(client.machineDescriptor("m").machine.commands.includes("send"), true)
+  client.orchestratorSnapshots.clear()
+  assert.equal(client.machineDescriptor("m").machine.commands.includes("session-receipt"), false)
+})
+
 test("ss channel keeps both opaque machine and Session ids after envelope validation", () => {
   assert.deepEqual(statusChannel(envelope("ss/machine%2Fa/%2514")), { machine: "machine/a", session: "%14" })
   assert.equal(statusChannel(envelope("s/machine/session")), null)
@@ -114,6 +126,17 @@ test("pinned info asks for full detail with the exact machine and generation", a
   assert.equal(calls[0][1], "info")
   assert.deepEqual(calls[0][2], { parts: "full", machine_id: "m", expected_generation: genA })
   assert.equal(calls[0][3], "info.full")
+})
+
+test("a list title uses its own pinned read waiter without requesting full detail", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const calls = []
+  client._read = (...args) => { calls.push(args); return Promise.resolve({ info: { session: { id: "s", title: "Title" } } }) }
+  const signal = new AbortController().signal
+  await client.infoListForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA }, signal)
+  assert.deepEqual(calls[0][2], { parts: "list", machine_id: "m", expected_generation: genA })
+  assert.equal(calls[0][3], "info.list")
+  assert.equal(calls[0][5].signal, signal)
 })
 
 test("a transcript picture uses an exact image waiter and rejects a missing execution", async () => {

@@ -1153,6 +1153,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             onLeaveCloudSessions={leaveFleet}
             cloudSessions={<AllMachineSessions
             key={clientEpoch + ":" + (fleetScope ? "all" : chosen.id)}
+            fleet={fleetScope}
             machines={(fleetScope ? quickMachines : [chosen]).map((machine) => ({
               id: machine.id, name: machine.name || machine.label || machine.id,
               platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,

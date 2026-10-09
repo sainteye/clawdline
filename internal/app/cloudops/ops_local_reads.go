@@ -96,8 +96,7 @@ func init() {
 			}},
 
 		op{name: "info", read: true,
-			divergence: "`parts` travels as a query and this daemon's info route answers the " +
-				"same body for both halves, so a summary is a full answer here",
+			divergence: "`parts` travels as a query; the pinned list part returns only a display title",
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "parts") {
 					if !b.has("type", "session", "parts", "expected_generation") {
@@ -105,7 +104,7 @@ func init() {
 					}
 				}
 				parts, ok := b.str("parts")
-				if !ok || (parts != "full" && parts != "summary") {
+				if !ok || (parts != "full" && parts != "summary" && parts != "list") {
 					return plan{}, false
 				}
 				// The two halves are separate names because they are separate
@@ -127,8 +126,8 @@ func init() {
 			},
 			route: func(p plan) LocalRequest {
 				req := LocalRequest{Method: "GET", Path: "/v1/sessions/" + segment(p.target) + "/info"}
-				if p.parts == "summary" {
-					req.Query = map[string]string{"parts": "summary"}
+				if p.parts == "summary" || p.parts == "list" {
+					req.Query = map[string]string{"parts": p.parts}
 				}
 				return req
 			}},

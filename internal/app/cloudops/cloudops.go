@@ -368,7 +368,7 @@ func (b Bridge) serveContentRead(ctx context.Context, cmd Command, parsed body, 
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "malformed_read",
 			Message: "This Cloud read is malformed.", fixedCopy: true})
 	}
-	if o.name == "info" && p.parts != "full" {
+	if o.name == "info" && p.parts != "full" && p.parts != "list" {
 		return b.contentReadAnswer(cmd, p, b.publish(cmd, p, Refusal{Status: 403, Code: "read_only_channel",
 			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true}, nil))
 	}

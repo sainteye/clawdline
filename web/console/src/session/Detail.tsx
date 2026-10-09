@@ -359,7 +359,7 @@ function AgentHead({
 }
 
 /** The home screen `renderTranscript` writes into `#tx` when no session is open. */
-function HomeHero() {
+export function HomeHero() {
   const T = L.strings
   return (
     <section className="home-hero" aria-labelledby="home-hero-title">

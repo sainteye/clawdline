@@ -44,6 +44,10 @@ function clientFixture() {
     },
     subscribe(channels: string[]) { calls.push("subscribe:" + channels.join(",")) },
     unsubscribe(channels: string[]) { calls.push("unsubscribe:" + channels.join(",")) },
+    async infoListForGeneration(destination: { executionGeneration: string }) {
+      calls.push("info.list:" + destination.executionGeneration)
+      return { info: { session: { id: sessionID, title: "The real title" } } }
+    },
     async infoForGeneration(destination: { executionGeneration: string }) {
       calls.push("info:" + destination.executionGeneration)
       return { info: { session: { title: "Pinned" } } }
@@ -75,6 +79,17 @@ test("status-only list never subscribes to or reads rich content", async () => {
   const read = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(read.kind, "ready")
   assert.deepEqual(calls, [])
+})
+
+test("a list title is read through the pinned content rail only for a current execution", async () => {
+  const { client, calls, row } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  assert.equal(await source.readListTitle?.(destination, new AbortController().signal), "The real title")
+  assert.deepEqual(calls, ["info.list:" + executionGeneration])
+  row.execution_generation = "ffffffffffffffffffffffffffffffff"
+  assert.equal(await source.readListTitle?.(destination, new AbortController().signal), null)
+  assert.deepEqual(calls, ["info.list:" + executionGeneration])
 })
 
 test("Relay-confirmed offline applies to one machine only and expires to unknown", async () => {
