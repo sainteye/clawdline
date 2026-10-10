@@ -3440,6 +3440,7 @@
   "next.cloudAllUnknownSource": "The source of this Session cannot be confirmed.",
   "next.cloudAllChanged": "The assistant on {machine} restarted, so this is no longer the execution that is running.",
   "next.cloudAllLoading": "Reading this machine’s Session status…",
+  "next.cloudAllNameUnread": "Reading this Session’s name…",
   "next.cloudAllLoadingDetail": "Reading this Session’s conversation…",
   "next.cloudAllLoadOlder": "Load earlier messages",
   "next.cloudAllLoadingOlder": "Loading earlier messages…",

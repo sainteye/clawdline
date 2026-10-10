@@ -42,7 +42,18 @@ export function displayedPresentationStatus(row: ProjectedSession,
 
 export interface ProjectedSession {
   destination: SessionDestination
-  title: string
+  /**
+   * There is no name here, and there never was.
+   *
+   * These rows come from the content-free `ss/` status projection, which
+   * carries no content by design — a name is content. The field used to hold
+   * the session id so the list always had *something* to draw, and what it
+   * drew was `%12` where a person expected the Session they named. A name
+   * arrives only with the pinned list read (`readMachinePresentations`), so
+   * until it does there is no name, and the list says so instead of showing
+   * a tmux pane id as one.
+   */
+  title?: undefined
   assistant?: "claude" | "codex"
   backend?: "tmux" | "iterm" | "ps"
   parentSessionID?: string

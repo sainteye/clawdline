@@ -62,7 +62,6 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     }
     rows.push({
       destination: { machineID: machine, sessionID: session, executionGeneration: data.execution_generation },
-      title: session,
       assistant: data.assistant === "claude" || data.assistant === "codex" ? data.assistant : undefined,
       backend: data.backend === "tmux" || data.backend === "iterm" || data.backend === "ps" ? data.backend : undefined,
       parentSessionID: typeof data.parent_session_id === "string" && data.parent_session_id !== session

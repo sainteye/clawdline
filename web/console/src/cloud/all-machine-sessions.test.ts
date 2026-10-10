@@ -10,7 +10,7 @@ import {
 } from "./all-machine-sessions.ts"
 
 const row = (machineID: string, sessionID: string, executionGeneration: string): ProjectedSession => ({
-  destination: { machineID, sessionID, executionGeneration: executionGeneration.padStart(32, "0") }, title: "Example", state: "working",
+  destination: { machineID, sessionID, executionGeneration: executionGeneration.padStart(32, "0") }, state: "working",
   freshness: "current", needsAttention: true, observedAt: 1000,
 })
 const ready = (machine: string, rows: ProjectedSession[]): MachineSessionProjection =>
