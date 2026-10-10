@@ -1,15 +1,16 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path for Node's test runner.
-import { bindPlan, PLAN_ELEMENT_IDS } from "./plan-bridge.ts"
+import { bindPlan, filterPlanDetails, PLAN_ELEMENT_IDS } from "./plan-bridge.ts"
+import { T } from "./js/core/i18n.js"
 
 function page() {
   const nodes = new Map<string, {
     textContent: string; hidden: boolean; disabled: boolean; dataset: Record<string, string>
-    setAttribute(): void; addEventListener(): void
+    setAttribute(): void; addEventListener(): void; querySelectorAll(): unknown[]
   }>(PLAN_ELEMENT_IDS.map((id) => [id, {
     textContent: "", hidden: false, disabled: false, dataset: {} as Record<string, string>,
-    setAttribute() {}, addEventListener() {},
+    setAttribute() {}, addEventListener() {}, querySelectorAll() { return [] },
   }]))
   return { doc: { getElementById: (id: string) => nodes.get(id) ?? null } as unknown as Document, nodes }
 }
@@ -45,4 +46,30 @@ test("the hosted Plan page reads the signed-in account while the local page make
   } finally {
     globalThis.fetch = original
   }
+})
+
+test("the Plan page shows only limits that apply to each tier", () => {
+  function rows() {
+    const terms = [T.webPlanRowMacs, T.webPlanRowSessions, T.webPlanRowViewers,
+      T.webPlanRowDispatches, T.webPlanRowHistory, T.webPlanRowFleet, T.webPlanRowTeam]
+    const entries = terms.map((text) => {
+      const value = { remove() {} }
+      return { textContent: text, nextElementSibling: value, removed: false,
+        remove() { this.removed = true } }
+    })
+    return { entries, list: { querySelectorAll: () => entries } as unknown as HTMLElement }
+  }
+  const free = rows()
+  filterPlanDetails(free.list, { tier: "free", entitlements: {
+    max_concurrent_sessions: 3, dispatches_per_month: 50 } })
+  assert.deepEqual(free.entries.filter((row) => !row.removed).map((row) => row.textContent), [
+    T.webPlanRowMacs, T.webPlanRowSessions, T.webPlanRowViewers,
+    T.webPlanRowDispatches, T.webPlanRowHistory,
+  ])
+  const pro = rows()
+  filterPlanDetails(pro.list, { tier: "pro", entitlements: {
+    max_concurrent_sessions: null, dispatches_per_month: 1000 } })
+  assert.deepEqual(pro.entries.filter((row) => !row.removed).map((row) => row.textContent), [
+    T.webPlanRowMacs, T.webPlanRowViewers, T.webPlanRowHistory,
+  ])
 })

@@ -13,6 +13,7 @@
 // - `navigate` is left to the module's default for checkout and portal URLs.
 import { bindPlanPage as bindPlanPageOriginal } from "./js/view/plan.js"
 import { createBillingClient } from "./js/net/billing.js"
+import { T } from "./js/core/i18n.js"
 
 /** What `bindPlanPage` hands back. */
 export interface PlanPage {
@@ -53,12 +54,34 @@ export const PLAN_ELEMENT_IDS = [
 /** `main.js`'s default when there is no Cloud configuration. */
 export const PLAN_CONSOLE_ORIGIN = "https://app.clawdline.com"
 
+type PlanAnswer = { tier?: string; entitlements?: {
+  max_concurrent_sessions?: number | null
+  dispatches_per_month?: number | null
+} }
+
+/** Keep the retired Plan renderer intact and remove rows that do not describe this tier. */
+export function filterPlanDetails(list: HTMLElement | null, answer: PlanAnswer | null): void {
+  if (!list || !answer) return
+  const hidden = new Set([T.webPlanRowFleet, T.webPlanRowTeam])
+  if (answer.tier === "pro" || answer.entitlements?.max_concurrent_sessions == null) {
+    hidden.add(T.webPlanRowSessions)
+  }
+  if (answer.tier === "pro" || answer.entitlements?.dispatches_per_month == null) {
+    hidden.add(T.webPlanRowDispatches)
+  }
+  for (const term of list.querySelectorAll("dt")) {
+    if (!hidden.has(term.textContent ?? "")) continue
+    term.nextElementSibling?.remove()
+    term.remove()
+  }
+}
+
 /** Bind the page once its markup is in the document, with the account if there is one. */
 export function bindPlan(doc: Document, apiOrigin: string | null = null): PlanPage {
   const elements: Record<string, HTMLElement | null> = {}
   for (const id of PLAN_ELEMENT_IDS) elements[id] = doc.getElementById(id)
   const billing = apiOrigin ? createBillingClient({ apiOrigin }) : null
-  return (bindPlanPageOriginal as (elements: Record<string, HTMLElement | null>, seams: Record<string, unknown>) => PlanPage)(
+  const original = (bindPlanPageOriginal as (elements: Record<string, HTMLElement | null>, seams: Record<string, unknown>) => PlanPage)(
     elements,
     {
       billing,
@@ -68,4 +91,20 @@ export function bindPlan(doc: Document, apiOrigin: string | null = null): PlanPa
       consoleOrigin: PLAN_CONSOLE_ORIGIN,
     },
   )
+  const list = elements["plan-limits"]
+  const filter = () => filterPlanDetails(list, original.plan() as PlanAnswer | null)
+  const observer = list && typeof MutationObserver !== "undefined"
+    ? new MutationObserver(filter) : null
+  return {
+    ...original,
+    async enter(options) {
+      observer?.observe(list!, { childList: true })
+      await original.enter(options)
+      filter()
+    },
+    leave() {
+      observer?.disconnect()
+      original.leave()
+    },
+  }
 }
