@@ -21,7 +21,7 @@
       "properties": {
         "machine_id": { "type": "string" },
         "session_id": { "type": "string" },
-        "snapshot_generation": { "description": "Random pass id shared by every status row and the inventory marker of one publication. A viewer discards rows with a different value.", "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "snapshot_generation": { "description": "Pass id shared by every status row and the inventory marker of one set: which Sessions are listed and which execution each row speaks for. A viewer discards rows with a different value. It is stable while the set is, so an unchanged row is not re-sent and the one the relay retains remains the newest.", "type": "string", "pattern": "^[0-9a-f]{32}$" },
         "execution_generation": { "description": "Random 128-bit machine-issued execution identity, absent unless this row's source is current and its process is pinned by PID and kernel start time.", "type": "string", "pattern": "^[0-9a-f]{32}$" },
         "assistant": { "type": "string", "enum": ["claude", "codex"] },
         "backend": { "type": "string", "enum": ["tmux", "iterm", "ps"] },
@@ -58,7 +58,8 @@
         "inventory": { "$ref": "#/$defs/SessionStatusInventoryList" },
         "at": { "description": "Unix seconds of this inventory reading.", "type": "integer" },
         "complete": { "type": "boolean" },
-        "snapshot_generation": { "type": "string", "pattern": "^[0-9a-f]{32}$" }
+        "snapshot_generation": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "presentation_generation": { "description": "Id of the machine's display facts, which carry no content here: a viewer re-reads the pinned machine list when it changes. Absent on an older machine, whose snapshot_generation moves with every display change instead.", "type": "string", "pattern": "^[0-9a-f]{32}$" }
       }
     }
   }

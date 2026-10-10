@@ -5926,8 +5926,10 @@ type SessionStatus struct {
 	ProjectedAt int64  `json:"projected_at"`
 	SessionID   string `json:"session_id"`
 
-	// Random pass id shared by every status row and the inventory marker of one
-	// publication. A viewer discards rows with a different value.
+	// Pass id shared by every status row and the inventory marker of one set: which
+	// Sessions are listed and which execution each row speaks for. A viewer discards
+	// rows with a different value. It is stable while the set is, so an unchanged row
+	// is not re-sent and the one the relay retains remains the newest.
 	SnapshotGeneration string              `json:"snapshot_generation"`
 	Source             SessionStatusSource `json:"source"`
 	State              string              `json:"state"`
@@ -5941,10 +5943,15 @@ type SessionStatus struct {
 
 type SessionStatusInventory struct {
 	// Unix seconds of this inventory reading.
-	At                 int64                      `json:"at"`
-	Complete           bool                       `json:"complete"`
-	Inventory          SessionStatusInventoryList `json:"inventory"`
-	SnapshotGeneration string                     `json:"snapshot_generation"`
+	At        int64                      `json:"at"`
+	Complete  bool                       `json:"complete"`
+	Inventory SessionStatusInventoryList `json:"inventory"`
+
+	// Id of the machine's display facts, which carry no content here: a viewer
+	// re-reads the pinned machine list when it changes. Absent on an older machine,
+	// whose snapshot_generation moves with every display change instead.
+	PresentationGeneration string `json:"presentation_generation,omitempty"`
+	SnapshotGeneration     string `json:"snapshot_generation"`
 }
 
 type SessionStatusInventoryList struct {

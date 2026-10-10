@@ -7056,8 +7056,10 @@ export interface SessionStatus {
   session_id: string
 
   /**
-   * Random pass id shared by every status row and the inventory marker of one
-   * publication. A viewer discards rows with a different value.
+   * Pass id shared by every status row and the inventory marker of one set: which
+   * Sessions are listed and which execution each row speaks for. A viewer discards
+   * rows with a different value. It is stable while the set is, so an unchanged row
+   * is not re-sent and the one the relay retains remains the newest.
    */
   snapshot_generation: string
   source: SessionStatusSource
@@ -7079,6 +7081,13 @@ export interface SessionStatusInventory {
   at: number
   complete: boolean
   inventory: SessionStatusInventoryList
+
+  /**
+   * Id of the machine's display facts, which carry no content here: a viewer
+   * re-reads the pinned machine list when it changes. Absent on an older machine,
+   * whose snapshot_generation moves with every display change instead.
+   */
+  presentation_generation?: string
   snapshot_generation: string
 }
 
