@@ -43,5 +43,10 @@
   .cloud-peer-access-sheet { padding-inline: 16px; }
   .cloud-peer-access-section-head { align-items: stretch; flex-direction: column; }
   .cloud-peer-access-section-head > button { align-self: start; }
-  .cloud-peer-machine-row { padding: 16px; flex-wrap: wrap; }
+  .cloud-peer-machine-row { display: grid; grid-template-columns: minmax(0, 1fr) 60px;
+    align-items: center; gap: 12px; padding: 16px; }
+  .cloud-peer-machine-names { grid-column: 1 / -1; grid-row: 1; }
+  .cloud-peer-machine-row > .peer-secondary { grid-column: 1; grid-row: 2; justify-self: start; }
+  .cloud-peer-machine-switch, .cloud-peer-machine-unknown { grid-column: 2; grid-row: 2;
+    justify-self: end; }
 }
