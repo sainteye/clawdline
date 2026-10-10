@@ -49,6 +49,17 @@ test("a complete ss pass with the same Session id on two machines stays scoped",
   assert.equal(a.snapshotGeneration, passOne)
 })
 
+test("a content-free row carries no name, and never the Session id as one", () => {
+  // The id was written into `title` so the list always had something to draw,
+  // and what the fleet drew was `%12` where a person expected the Session
+  // they had named. A name is content; this projection carries none.
+  const a = statusProjection(fleet("a", ["%12"]), "a", 2000)
+  assert.equal(a.kind, "ready")
+  if (a.kind !== "ready") return
+  assert.equal(a.rows[0].destination.sessionID, "%12", "the id is still the destination's")
+  assert.equal("title" in a.rows[0], false, "nothing here may be mistaken for a name")
+})
+
 test("old rows cannot complete a new inventory pass", () => {
   const source = fleet("a", ["same"])
   const marker = source.statusSnapshots.get(JSON.stringify(["a", INVENTORY])) as { payload: { snapshot_generation: string } }

@@ -6,7 +6,7 @@ import type { ProjectedSession } from "./all-machine-sessions.js"
 
 const row: ProjectedSession = {
   destination: { machineID: "machine", sessionID: "session", executionGeneration: "a".repeat(32) },
-  title: "Session", state: "idle", freshness: "current", observedAt: 1,
+  state: "idle", freshness: "current", observedAt: 1,
 }
 
 test("attention shows replies and user notes, not other status problems", () => {
@@ -22,4 +22,10 @@ test("working shows only a current working state", () => {
   assert.equal(matchesFleetFilter({ ...row, state: "working", freshness: "stale" }, "working"), false)
   assert.equal(matchesFleetFilter({ ...row, state: "waiting" }, "working"), false)
   assert.equal(matchesFleetFilter(row, "all"), true)
+})
+
+test("idle shows only a current idle state", () => {
+  assert.equal(matchesFleetFilter(row, "idle"), true)
+  assert.equal(matchesFleetFilter({ ...row, freshness: "stale" }, "idle"), false)
+  assert.equal(matchesFleetFilter({ ...row, state: "working" }, "idle"), false)
 })

@@ -14,7 +14,9 @@ export function arrangeFleetRows(rows: readonly ProjectedSession[], titles: Read
   const byID = new Map(rows.map((row) => [row.destination.sessionID, row]))
   const sessions = rows.map((row) => ({
     id: row.destination.sessionID,
-    label: titles.get(row.destination.sessionID) ?? row.title,
+    // No name has arrived for this row yet; it orders by state and activity
+    // like any other, and the list draws its own "still reading" word.
+    label: titles.get(row.destination.sessionID) ?? "",
     state: row.state,
     machine_scope: row.machineScope === true,
     activity: row.lastMovementAt === undefined ? undefined : { known: true, at: row.lastMovementAt / 1000 },

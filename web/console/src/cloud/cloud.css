@@ -153,6 +153,9 @@
 .cloud-all-group-heading button:hover { color: var(--ink); }
 .cloud-all-group-name { min-width: 0; margin: 6px 0; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
 .cloud-all-group-name small { font-size: 11px; font-weight: normal; color: var(--faint); }
+.cloud-all-group-count { display: inline-block; min-width: 16px; margin-left: 8px; padding: 1px 5px;
+    border: 1px solid var(--line); border-radius: 999px; color: var(--dim); font-size: 11px;
+    font-weight: normal; line-height: 16px; text-align: center; vertical-align: middle; }
 .cloud-all-group-heading svg { flex: 0 0 auto; width: 18px; height: 18px; fill: none;
     stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .cloud-all-group-heading button[aria-expanded="false"] svg { transform: rotate(-90deg); }
