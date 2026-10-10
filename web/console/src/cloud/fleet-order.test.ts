@@ -7,7 +7,7 @@ import type { ProjectedSession } from "./all-machine-sessions.js"
 function row(id: string, state: string, parentSessionID?: string): ProjectedSession {
   return { destination: { machineID: "machine-a", sessionID: id,
     executionGeneration: "0123456789abcdef0123456789abcdef" },
-  title: id, state, freshness: "current", observedAt: 1000, parentSessionID }
+  state, freshness: "current", observedAt: 1000, parentSessionID }
 }
 
 test("the fleet adapter uses the original state and title order while keeping children under their root", () => {

@@ -6,7 +6,7 @@ import type { ProjectedSession } from "./all-machine-sessions.js"
 
 const row: ProjectedSession = {
   destination: { machineID: "machine", sessionID: "session", executionGeneration: "a".repeat(32) },
-  title: "Session", state: "idle", freshness: "current", observedAt: 1,
+  state: "idle", freshness: "current", observedAt: 1,
 }
 
 test("attention shows replies and user notes, not other status problems", () => {

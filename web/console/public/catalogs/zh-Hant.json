@@ -3440,6 +3440,7 @@
   "next.cloudAllUnknownSource": "無法確認這個 Session 的來源。",
   "next.cloudAllChanged": "{machine} 上的助理重新啟動過，這個畫面已經不是正在執行的那一個。",
   "next.cloudAllLoading": "正在讀取這台機器的 Session 狀態…",
+  "next.cloudAllNameUnread": "正在讀這個 Session 的名稱……",
   "next.cloudAllLoadingDetail": "正在讀取這個 Session 的對話…",
   "next.cloudAllLoadOlder": "載入較早的對話",
   "next.cloudAllLoadingOlder": "正在載入較早的對話…",

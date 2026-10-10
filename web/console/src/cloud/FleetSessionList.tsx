@@ -177,7 +177,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     const reading = readings[machine.id]
     const filtered = reading?.phase === "settled" && reading.value.rows
       ? reading.value.rows.filter((row) => matchesFleetFilter(row, statusFilter) &&
-        (!search || `${machine.name} ${machine.id} ${machine.platform} ${presentations.current.get(destinationKey(row.destination))?.title ?? row.title} ${row.destination.sessionID} ${stateWord(row.state)}`
+        (!search || `${machine.name} ${machine.id} ${machine.platform} ${presentations.current.get(destinationKey(row.destination))?.title ?? ""} ${row.destination.sessionID} ${stateWord(row.state)}`
           .toLocaleLowerCase().includes(search))) : []
     const shown = filtered.map((row) => {
       const presentation = presentations.current.get(destinationKey(row.destination))
@@ -188,7 +188,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     })
     const waitingKey = fleetWaitingKey(shown)
     const titles = new Map(shown.map((row) => [row.destination.sessionID,
-      presentations.current.get(destinationKey(row.destination))?.title ?? row.title]))
+      presentations.current.get(destinationKey(row.destination))?.title ?? ""]))
     const hold = orderHolds.current.get(machine.id)
     if (hold && hold.waiting !== waitingKey)
       orderHolds.current.delete(machine.id)
@@ -275,7 +275,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                 {rows.map(({ row, depth, branchThrough, ancestorThrough }) => {
                   const presentation = presentations.current.get(destinationKey(row.destination))
                   return <ProjectedRow key={destinationKey(row.destination)}
-                    title={presentation?.title ?? row.title} icon={presentation?.icon} cwd={presentation?.cwd}
+                    title={presentation?.title || nextWord("cloudAllNameUnread")} icon={presentation?.icon} cwd={presentation?.cwd}
                     status={displayedPresentationStatus(row, presentation)}
                     sessionID={row.destination.sessionID} machineName={machine.name} platform={machine.platform}
                     assistant={row.assistant} backend={row.backend} state={row.state} stateLabel={stateWord(row.state)}
