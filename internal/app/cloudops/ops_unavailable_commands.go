@@ -58,7 +58,7 @@ func init() {
 				if !ok || p.request == "" {
 					return plan{}, false
 				}
-				batch, ok := b.object("batch", 256<<10)
+				batch, ok := b.object("batch", ViewerEventsBatchBytesLimit)
 				if !ok {
 					return plan{}, false
 				}

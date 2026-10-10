@@ -706,6 +706,7 @@ func (l *Link) wire() error {
 			AllowCommands:       l.allowCommands,
 			Authority:           l.authority,
 			TranscriptAuthority: l.transcriptAuthority,
+			ViewerEvents:        &cloudops.ViewerEventLog{Log: l.logf, Now: opts.Now},
 		},
 		Transport: l.relay,
 		Log:       opts.Log,

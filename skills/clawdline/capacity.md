@@ -84,6 +84,10 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.terminal_unconfirmed_seconds` | 15 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_unverified_retire_seconds` | 10 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_viewer_connections` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `cloud.viewer_events_batch_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `cloud.viewer_events_line_bytes` | 1024 | `bytes` | `coalesce` | `diagnostics, log` | — |
+| `cloud.viewer_events_logged_rows` | 128 | `rows` | `coalesce` | `diagnostics, log` | — |
+| `cloud.viewer_events_seen_batches` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.health_live_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
 | `console.session_notes_safety_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |

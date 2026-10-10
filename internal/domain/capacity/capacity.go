@@ -173,6 +173,11 @@ const (
 	CloudPeerIngress          = "cloud.peer_ingress"
 	CloudPeerBody             = "cloud.peer_body_bytes"
 	CloudPeerFrame            = "cloud.peer_frame_bytes"
+	// What a hosted page may report about its own failures (`diagnostics.events`).
+	CloudViewerEventsBatch = "cloud.viewer_events_batch_bytes"
+	CloudViewerEventsRows  = "cloud.viewer_events_logged_rows"
+	CloudViewerEventsLine  = "cloud.viewer_events_line_bytes"
+	CloudViewerEventsSeen  = "cloud.viewer_events_seen_batches"
 	// C2: the things that had no limit at all (limits §3.3, §7.2 wave 2).
 	LogDaemon             = "log.daemon"
 	DevicesList           = "devices.list"
@@ -703,6 +708,43 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice, Sender},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/domain/agenthandoff.MaxBodyBytes"},
+		},
+		{
+			// One batch of a hosted page's own failure rows. Larger is
+			// refused `viewer_events_too_large`; the page drops it, counts
+			// it, and sends the rows behind it.
+			Name: CloudViewerEventsBatch, Class: Buffer, Unit: Bytes,
+			Limit: 256 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app/cloudops.ViewerEventsBatchBytesLimit"},
+		},
+		{
+			// Rows of one batch written as a log line each; the rest are one
+			// count on the batch's summary line.
+			Name: CloudViewerEventsRows, Class: Buffer, Unit: Rows,
+			Limit: 128, AtLimit: Coalesce,
+			Told:      []Channel{Diagnostics, Log},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app/cloudops.ViewerEventsLoggedRowsLimit"},
+		},
+		{
+			// One reported row's log line; a longer one is cut and says so.
+			Name: CloudViewerEventsLine, Class: Buffer, Unit: Bytes,
+			Limit: 1024, AtLimit: Coalesce,
+			Told:      []Channel{Diagnostics, Log},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app/cloudops.ViewerEventsLineBytesLimit"},
+		},
+		{
+			// Delivered batch ids remembered so a resent batch is not
+			// written twice. The oldest is forgotten first; a batch resent
+			// after that is written again, never lost.
+			Name: CloudViewerEventsSeen, Class: Cache, Unit: Rows,
+			Limit: 256, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app/cloudops.ViewerEventsSeenBatchesLimit"},
 		},
 		{
 			Name: CloudPeerFrame, Class: Buffer, Unit: Bytes,

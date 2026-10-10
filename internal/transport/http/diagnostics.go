@@ -1045,6 +1045,18 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.CloudPeerBody: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-message body guard; no retained buffer"}
 		},
+		capacity.CloudViewerEventsBatch: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-batch guard on a page's diagnostic events; no retained buffer"}
+		},
+		capacity.CloudViewerEventsRows: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-batch log guard; no retained buffer"}
+		},
+		capacity.CloudViewerEventsLine: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-row log line guard; no retained buffer"}
+		},
+		capacity.CloudViewerEventsSeen: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "batch ids live in the Cloud link and reset with it; not measured here"}
+		},
 		capacity.CloudPeerFrame: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-frame ingress guard; no retained buffer"}
 		},

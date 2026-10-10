@@ -220,6 +220,10 @@ type Bridge struct {
 	// SessionsFor carries the authenticated sender and first-attempt bit to
 	// the publisher. Sessions remains for callers using the older bridge seam.
 	SessionsFor func(ctx context.Context, sender string, first bool) (SessionsStated, *Refusal)
+	// ViewerEvents writes the failures a hosted page reports about itself
+	// (`diagnostics.events`) to this daemon's log. Nil answers that word
+	// `unknown_command`, which the page holds its rows on and does not retry.
+	ViewerEvents *ViewerEventLog
 }
 
 // AsksForSessions reports whether this plaintext is a `sessions.snapshot`
@@ -277,7 +281,9 @@ func Vocabulary() []string { return opNames(func(o op) bool { return true }) }
 // the hosted console learns from: it stops asking this machine for that word
 // (`machineLacks` in `net/cloud-client.js`).
 func Implemented() []string {
-	return opNames(func(o op) bool { return o.route != nil || o.sessions || o.name == "session-receipt" })
+	return opNames(func(o op) bool {
+		return o.route != nil || o.sessions || o.name == "session-receipt" || o.name == viewerEventsWord
+	})
 }
 
 // Divergences names every routed word whose answer is not the one the hosted
@@ -566,6 +572,9 @@ func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op
 		if refusal := o.guard(plan); refusal != nil {
 			return b.publish(cmd, plan, *refusal, nil)
 		}
+	}
+	if o.name == viewerEventsWord {
+		return b.viewerEvents(cmd, plan)
 	}
 	if o.route == nil {
 		return b.publish(cmd, plan, Refusal{Status: 400, Code: "unknown_command",
