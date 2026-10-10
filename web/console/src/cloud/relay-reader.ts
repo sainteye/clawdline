@@ -315,6 +315,14 @@ export const CLOUD_SHELL_BYTES = 64 * 1024
 export const TRANSCRIPT_MAX_REUSE_MS = 30_000
 
 /**
+ * How long a pinned read waits for the rest of a pass when the page holds a
+ * Session row newer than its marker (`coherentSession`). A pass is ten-odd
+ * envelopes sent back to back, so its marker follows within milliseconds; a
+ * pass the machine stopped sending is still refused after this.
+ */
+export const PASS_SETTLE_MS = 2_000
+
+/**
  * How long, after this page did something to a session, every poll asks the
  * machine again until the transcript it answers has changed. A message just
  * typed is the turn the page is waiting to see (`session/pending.ts`); reusing
@@ -727,8 +735,8 @@ export class RelayReader {
         const before = historyCursor(q.before)
         if (q.before !== undefined && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
         return await this.sessionRead(init?.signal, method, path, "agent", (client) =>
-          this.options.fleetTarget?.() ? client.readForGeneration?.(this.pinnedSession(agent.session), "agent",
-            { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, ...(before ? { before } : {}) }, init?.signal ?? undefined)
+          this.options.fleetTarget?.() ? this.coherentSession(agent.session, init?.signal, "agent").then((target) => client.readForGeneration?.(target, "agent",
+            { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, ...(before ? { before } : {}) }, init?.signal ?? undefined))
             : before ? client._read?.({ machine: this.machine, session: agent.session }, "agent",
             { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, before }, `agent:${agent.agent}.before.${before}`)
             : client.agent?.({ machine: this.machine, session: agent.session }, agent.agent))
@@ -738,8 +746,8 @@ export class RelayReader {
         const q = this.only(url, path, "bytes")
         this.window(path, "bytes", q.bytes, CLOUD_SHELL_BYTES)
         return await this.sessionRead(init?.signal, method, path, "shell", (client) =>
-          this.options.fleetTarget?.() ? client.readForGeneration?.(this.pinnedSession(shell.session), "shell",
-            { shell: shell.shell, bytes: CLOUD_SHELL_BYTES }, init?.signal ?? undefined)
+          this.options.fleetTarget?.() ? this.coherentSession(shell.session, init?.signal, "shell").then((target) => client.readForGeneration?.(target, "shell",
+            { shell: shell.shell, bytes: CLOUD_SHELL_BYTES }, init?.signal ?? undefined))
             : client.shell?.({ machine: this.machine, session: shell.session }, shell.shell))
       }
       const workTerminal = workV2SessionTodosTerminal(path)
@@ -946,7 +954,7 @@ export class RelayReader {
               return this.refuse(method, path, 501, "cloud_not_carried", "This console cannot read earlier messages.")
             }
             const body = this.options.classicStatus
-              ? await client.transcriptPageForGeneration!(this.pinnedSession(session), before, init?.signal ?? undefined)
+              ? await client.transcriptPageForGeneration!(await this.coherentSession(session, init?.signal), before, init?.signal ?? undefined)
               : await client._read?.({ machine: this.machine, session }, "transcript",
                 { limit: CLOUD_TRANSCRIPT_LIMIT, before, priority: "foreground" }, `transcript.before.${before}`)
             const page = transcriptPage(body, session)
@@ -1443,7 +1451,7 @@ export class RelayReader {
       throw Object.assign(new Error("Pinned Session reading is unavailable"), { code: "cloud_not_carried" })
     }
     const asked = (this.options.classicStatus
-      ? client.transcriptForGeneration!(this.pinnedSession(session))
+      ? this.coherentSession(session).then((target) => client.transcriptForGeneration!(target))
       : client.transcript({ machine: this.machine, session }, undefined, { foreground: true }))
       .then((body) => transcriptPage(body, session))
     entry.inflight = asked
@@ -1632,6 +1640,48 @@ export class RelayReader {
   private connected(): CloudReadClient {
     if (!this.client || this.client.ready === false) throw new NotConnected()
     return this.client
+  }
+
+  /**
+   * `pinnedSession`, after the pass it is reading has finished arriving.
+   *
+   * The machine sends a pass as every Session's ss/ row and then the marker,
+   * all with one new pass id (`internal/transport/cloud/session_status.go`).
+   * A page opens them one at a time, so for the few milliseconds the rest of
+   * a pass is on its way it holds a row from the new pass beside the marker
+   * of the old one, and a read asked then was refused here as
+   * `pass_mismatch` — on the page, before anything was sent, so the machine
+   * never saw it. A replay of an hour of 15-second passes refused 2 to 7
+   * polls of the open Session this way (`read-replay.test.ts`).
+   *
+   * Only that condition waits, and only for the marker: the next envelope of
+   * this machine's marker, or `PASS_SETTLE_MS`, whichever comes first. Then
+   * the same checks decide, so a pass that never completes is still refused.
+   */
+  private async coherentSession(session: string, signal?: AbortSignal | null, word = "transcript"): Promise<{ machineID: string; sessionID: string; executionGeneration: string }> {
+    try {
+      return this.pinnedSession(session)
+    } catch (error) {
+      if ((error as { condition?: unknown })?.condition !== "pass_mismatch") throw error
+    }
+    const client = this.connected()
+    await new Promise<void>((resolve) => {
+      let off: (() => void) | null = null
+      const done = () => {
+        clearTimeout(timer)
+        off?.()
+        signal?.removeEventListener("abort", done)
+        resolve()
+      }
+      const timer = setTimeout(done, PASS_SETTLE_MS)
+      signal?.addEventListener("abort", done)
+      off = client.events((event) => {
+        if (event.type === "session_status" && event.identity?.machine === this.machine &&
+          event.identity?.session === "__clawdline_inventory_v1__") done()
+      }) as (() => void) | null
+    })
+    if (signal?.aborted) throw new AbandonedRead(word)
+    return this.pinnedSession(session)
   }
 
   private pinnedSession(session: string): { machineID: string; sessionID: string; executionGeneration: string } {

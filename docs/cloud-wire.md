@@ -520,6 +520,8 @@ Go daemon 另外發布 `ss/<machine>/<session>`。每個 JSON 僅有 `machine_id
 
 狀態清單標記放在 `ss/<machine>/__clawdline_inventory_v1__`，其 JSON 是 `inventory:{version:1,sessions:[終端 ID]}`、`at`（Unix 秒）、`complete`（布林）及隨機 128-bit 的 `snapshot_generation`。每批狀態列都帶相同值，viewer 必須丟棄與標記不符的舊快取列；狀態集合改變或 heartbeat 時整批列先發、標記後發。舊 relay 拒絕 `ss/` 時，新頻道自行重試，不阻斷既有 `s/` 標記。狀態列的 `source.observed_at`、`projected_at` 與 `last_movement_at` 都是 Unix 秒，`no_progress_after_ms` 是毫秒。
 
+因為列先發、標記後發，瀏覽器逐封開啟時，同一批還沒到齊的那幾毫秒裡會同時持有「新一批的列」與「舊一批的標記」。固定世代讀取遇到這種 `pass_mismatch` 時，頁面會等這台機器的下一個標記（最多 `PASS_SETTLE_MS`，2 秒）再判斷一次；等不到仍照舊拒絕，且不送出任何請求（`web/console/src/cloud/relay-reader.ts` `coherentSession`）。2026-10-10 以一小時、每 15 秒一批、十個 Session 重播：封包間隔 20 ms 時頁面原本自己拒絕 2 次、50 ms 時 7 次，修正後皆為 0（`read-replay.test.ts`）。
+
 私有 Cloud relay 的相容版 `b6d3740` 已部署，允許並預設推送 `ss/`，同時保留現有 `s/` 接收方式。`f7e309e` 已實作表中的目標接收規則，但尚未部署；Console 用 `ss/` 清單、按需訂閱 `s/` 詳情後，再啟用 `s/` 明確訂閱與 `read_transcript` 權限。權限收緊前 relay 仍依 `read_sessions` 接收完整 `s/`；不能把該 row 當成僅狀態資料。完整 `s/` 可選擇發布時仍帶 `execution_generation`，舊快取缺這欄時不得用於固定世代的內容讀取。
 
 機器端世代以 Cloud machine id、終端 id 及隨機 128-bit 值固定；同一核心程序的 PID 與啟動時間持續可證時不變，確認消失再現或程序指紋變動時換新。`Server.AdmitExecutionTarget` 在新鮮的權威終端讀取後比對三者；`execution_target_required`、`execution_machine_mismatch`、`execution_target_missing`、`execution_source_unknown`、`execution_generation_changed`、`execution_check_unavailable` 均是拒絕，不可把來源未知當成空集合。呼叫端仍須另驗 viewer 能力與撤銷。沒有世代的舊版請求維持舊路徑行為，不具備固定目標保證。
@@ -648,6 +650,12 @@ JSON 壞掉、不是物件、channel 或 sequence 壞掉，只會得到
 #### 9.5.2 Read refusal measurements
 
 See the [dated read-refusal record](records/cloud-wire-implementation-2026-09.md#952-every-refused-read-is-told-and-small-answers-keep-a-reserve-2026-09-25).
+
+#### 9.5.3 頁面自己的讀取失敗回到機器的 log（`diagnostics.events`，2026-10-10）
+
+Hosted 頁面讀取失敗時，如果失敗發生在送出之前或回答離開機器之後，機器的 log 原本什麼都看不到。現在 relay-reader 把每次 Session 讀取失敗記成一列 `cloud.read.failed`（`word`、`stage`＝`viewer_refused`／`timeout`／`relay_refused`／`answered`、`code`、`cond`、`status`、`layer`、`ms`、`connection`、`marker_age_s`、`row_age_s`、`offline_hold_ms`、`machine`、`session`；沒有標題、文字或內容），由頁面既有的 viewer event 投遞（`legacy/js/net/cloud-client.js` `_deliverViewerEvents`）以 `diagnostics.events` 送到有宣告這個字的那台機器。Go daemon 現在回答它（`internal/app/cloudops/viewer_events.go`）：每列寫成一行 `cloud: viewer reported: event=… age_s=… <欄位依名稱排序> sender=… batch=<前 8 字> n=…`，每批再一行 `cloud: viewer events delivered: …`，同一批重送只回收據不重寫。上限登錄在 `internal/domain/capacity`（`cloud.viewer_events_*`）。
+
+相容：這是新增的指令字。舊 daemon 不在描述的 `commands` 裡宣告它，頁面就不送，列留在瀏覽器自己的保存與上限內，不會重試到天荒地老；新 daemon 對今天已上線的頁面只是多一個沒人呼叫的字。
 
 ### 9.6 本機 broker 的 typed 拒絕
 
