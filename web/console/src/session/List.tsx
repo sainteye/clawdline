@@ -23,7 +23,7 @@ export function SessionRowLayout({ children, className, ...props }: ComponentPro
 
 /** Status-only rows keep the original list structure without inventing rich Session content. */
 export function ProjectedRow({ title, sessionID, machineName, platform, assistant, backend, state, stateLabel, icon, cwd,
-  freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, status, onOpen }: {
+  freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, status, swiped = false, onOpen, onClose, consumePress }: {
   title: string; sessionID: string; machineName: string; platform: string
   assistant?: "claude" | "codex"; backend?: "tmux" | "iterm" | "ps"
   icon?: SessionRow["icon"]; cwd?: string
@@ -31,12 +31,14 @@ export function ProjectedRow({ title, sessionID, machineName, platform, assistan
   depth: number; branchThrough: boolean; ancestorThrough: boolean
   status?: Partial<SessionRow>
   selectionKey: string; onOpen: (element: HTMLLIElement) => void
+  swiped?: boolean; onClose?: (element: HTMLButtonElement) => void; consumePress?: () => boolean
 }) {
   const ref = useRef<HTMLLIElement>(null)
   const mark = icon ?? BRAND_MARK
   useLayoutEffect(() => { if (state === "working") L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null) }, [state])
-  const activate = () => { if (ref.current) onOpen(ref.current) }
-  return <SessionRowLayout ref={ref} role="option" tabIndex={0} data-selection-key={selectionKey}
+  useLayoutEffect(() => { if (ref.current) paintSwipe(ref.current, swiped ? "open" : "", swiped ? ACTION_WIDTH : 0) }, [swiped, selectionKey])
+  const activate = () => { if (!consumePress?.() && ref.current) onOpen(ref.current) }
+  return <SessionRowLayout ref={ref} role="option" tabIndex={0} data-id={selectionKey} data-swipe-width={ACTION_WIDTH} data-selection-key={selectionKey}
     data-state={state} data-attention={attention ? "open" : undefined}
     data-depth={depth ? String(depth) : undefined} data-tree-through={branchThrough ? "1" : undefined}
     aria-selected={open ? "true" : "false"} aria-label={`${title}, ${machineName}, ${stateLabel}, ${freshness}`}
@@ -57,6 +59,12 @@ export function ProjectedRow({ title, sessionID, machineName, platform, assistan
       : <div className="state">{state === "working" && <canvas className="spin" aria-hidden="true" />}
         <span>{stateLabel}</span>{freshness && <span className="session-activity">{freshness}</span>}
         {attention && <span className="session-attention"><span className="session-attention-dot" /></span>}</div>}
+    {onClose && <button className="swipe-end" type="button" hidden={!swiped}
+      aria-label={nextWord("swipeEndLabel", { session: title })}
+      title={nextWord("swipeEndLabel", { session: title })}
+      onClick={(event) => { event.stopPropagation(); onClose(event.currentTarget) }}>
+      <span className="word">{nextWord("swipeCloseAction")}</span>
+    </button>}
   </SessionRowLayout>
 }
 

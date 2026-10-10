@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskList, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
-import { actionWidthOf, paintSwipe, Row } from "./session/List.js"
+import { Row } from "./session/List.js"
 import { visualBranches, visualDepths } from "./session/order.js"
 import { Detail } from "./session/Detail.js"
 import type { FleetDetailProblem } from "./cloud/all-machine-sessions.js"
@@ -17,6 +17,7 @@ import { offerShape } from "./session/restore-offer.js"
 import "./session/empty-list.css"
 import { taskReads } from "./session/task-read.js"
 import { swipes } from "./session/swipe.js"
+import { useSwipeToEnd } from "./session/use-swipe.js"
 import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
 import { ScheduleSection } from "./pages/schedules.js"
 import { nextWord } from "./next-strings.js"
@@ -253,7 +254,7 @@ export function SessionsPage({
   const ptrRef = useRef<HTMLDivElement>(null)
   // The swipe binds first, so that by the time pull-to-refresh reads a move
   // the axis has been decided and it knows whether the gesture is its own.
-  const swipedId = useSwipeToEnd(scrollRef)
+  const swipedId = useSwipeToEnd(scrollRef, swipes)
   const ptrWord = usePullToRefresh(scrollRef, ptrRef, onDid)
   // The terminal list has the same pull, in its own scroller, so reading it
   // again needs no button on the list.
@@ -564,74 +565,6 @@ function useListReorderAnimation(listRef: RefObject<HTMLUListElement | null>): v
  * every frame the daemon sends, and a listener per row would be rebound with
  * them, mid-gesture.
  */
-function useSwipeToEnd(scrollRef: RefObject<HTMLDivElement | null>): string | null {
-  const swiped = useSyncExternalStore(swipes.subscribe, swipes.openId, swipes.openId)
-  useEffect(() => {
-    const scroller = scrollRef.current
-    if (!scroller) return
-    let node: HTMLElement | null = null
-    const rowAt = (target: EventTarget | null): HTMLElement | null => {
-      const el = target instanceof Element ? target.closest<HTMLElement>("li.row") : null
-      return el && scroller.contains(el) ? el : null
-    }
-    /** The row is ready to be dragged before it is dragged; see above. */
-    const arm = (el: HTMLElement) => {
-      if (!el.dataset.swipe) el.dataset.swipe = "dragging"
-    }
-    const paint = (el: HTMLElement, id: string) => {
-      paintSwipe(el, swipes.stateOf(id), swipes.offsetOf(id))
-    }
-    const start = (ev: TouchEvent) => {
-      if (ev.touches.length !== 1) return
-      const el = rowAt(ev.target)
-      const id = el?.dataset.id ?? null
-      const width = el ? actionWidthOf(el) : undefined
-      const closed = swipes.begin(id, ev.touches[0].clientX, ev.touches[0].clientY, ev.timeStamp, width)
-      if (closed) {
-        for (const other of scroller.querySelectorAll<HTMLElement>("li.row[data-swipe]")) paintSwipe(other, "", 0)
-        node = null
-        return
-      }
-      node = el
-      if (el) arm(el)
-    }
-    const move = (ev: TouchEvent) => {
-      if (!node || ev.touches.length !== 1) return
-      const axis = swipes.move(ev.touches[0].clientX, ev.touches[0].clientY, ev.timeStamp)
-      if (axis === "list") {
-        // The scroller's after all: put the row back exactly as it was, so a
-        // scroll that started over a row leaves no trace of having been armed.
-        paintSwipe(node, swipes.stateOf(node.dataset.id ?? ""), swipes.offsetOf(node.dataset.id ?? ""))
-        node = null
-        return
-      }
-      if (axis !== "row") return
-      // The order is frozen by the list's own `touchstart` listener; this only
-      // has to not fight it.
-      paint(node, node.dataset.id ?? "")
-    }
-    const end = () => {
-      const settled = swipes.end()
-      const el = node
-      node = null
-      if (!settled || !el) return
-      paint(el, settled.id)
-    }
-    scroller.addEventListener("touchstart", start, { passive: true })
-    scroller.addEventListener("touchmove", move, { passive: true })
-    scroller.addEventListener("touchend", end, { passive: true })
-    scroller.addEventListener("touchcancel", end, { passive: true })
-    return () => {
-      scroller.removeEventListener("touchstart", start)
-      scroller.removeEventListener("touchmove", move)
-      scroller.removeEventListener("touchend", end)
-      scroller.removeEventListener("touchcancel", end)
-      swipes.closeOpen()
-    }
-  }, [scrollRef])
-  return swiped
-}
-
 /**
  * Pull to refresh, phones only (`input/edges.js`): with resistance, released
  * past 62px it reads again and holds a 34px pad until the answer is in. The
