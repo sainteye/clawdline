@@ -659,6 +659,25 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.SessionNoMovement: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-row record-movement threshold; no retained wait"}
 		},
+		capacity.CloudTaskListReread: func() capacity.Reading {
+			line, ok := cloudLines.Load(s.cfg.Dir)
+			if !ok {
+				return capacity.Reading{Known: true,
+					Note: "the Cloud line is off: this machine's own task list is not read for Cloud at all"}
+			}
+			reader, ok := line.(interface {
+				TaskListReading() (capacity.Reading, bool)
+			})
+			if !ok {
+				return capacity.Unmeasured("this Cloud line does not report its task-list reads")
+			}
+			reading, built := reader.TaskListReading()
+			if !built {
+				return capacity.Reading{Known: true,
+					Note: "the Cloud line was never built: the task list has not been read"}
+			}
+			return reading
+		},
 		capacity.CloudSessionRowVolatile: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-row Cloud re-send window; a held change goes out on the next pass after it"}
 		},

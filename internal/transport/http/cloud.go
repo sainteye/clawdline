@@ -59,6 +59,34 @@ func cloudTerminalLine(dir string) CloudTerminalLine {
 	return terminalLine
 }
 
+// CloudTaskLine is the half of a Cloud link that is told this machine's task
+// list has moved. A link that carries a task list on its machine descriptor
+// implements it; one that does not is simply not told, and a build with no
+// link at all is the same answer.
+//
+// It is separate from CloudLine for the reason CloudPairingLine is: a test
+// line that answers only a status must stay a valid line.
+type CloudTaskLine interface {
+	TaskListChanged()
+}
+
+// noteTaskListChanged is the broker's Broker.TaskListChanged: it tells the
+// registered Cloud link that a task row was written, so the link's publisher
+// reads the list again on its next pass instead of reading it on every pass
+// (internal/transport/cloud tasklist.go).
+//
+// It must return at once — the broker calls it on the goroutine that has just
+// committed — so it looks one key up and hands over a flag.
+func (s *Server) noteTaskListChanged() {
+	line, ok := cloudLines.Load(s.cfg.Dir)
+	if !ok {
+		return
+	}
+	if tasks, ok := line.(CloudTaskLine); ok {
+		tasks.TaskListChanged()
+	}
+}
+
 var cloudLines sync.Map // dir -> CloudLine
 
 // SetCloudLine registers the link that answers for a state directory. Passing

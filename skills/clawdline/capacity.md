@@ -48,6 +48,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.spool_channel_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, notice, log` | — |
 | `cloud.spool_receipts` | 4096 | `rows` | `expire` | `diagnostics, log` | — |
 | `cloud.spool_refusals` | 64 | `rows` | `refuse` | `diagnostics, log` | — |
+| `cloud.task_list_reread_seconds` | 240 | `seconds` | `expire` | `diagnostics` | — |
 | `cloud.terminal_connections` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_ack_seconds` | 3 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_candidates` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |

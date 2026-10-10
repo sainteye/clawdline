@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
@@ -48,6 +49,20 @@ func (r *pathRouter) Do(_ context.Context, req cloudops.LocalRequest) (cloudops.
 	return cloudops.LocalResponse{Status: status, Body: []byte(body), ContentType: "application/json"}, nil
 }
 
+// reads is how many times one route was asked, which is the measurement this
+// file's cadence rests on.
+func (r *pathRouter) reads(path string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, asked := range r.asked {
+		if asked.Path == path {
+			n++
+		}
+	}
+	return n
+}
+
 func (r *pathRouter) set(path, body string, status int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -77,6 +92,25 @@ func tasksBody(rows ...map[string]any) string {
 	body, _ := json.Marshal(map[string]any{"at": 17, "tasks": rows, "store": "absent",
 		"page": map[string]any{"cursor": 0, "limit": 50, "fields": "list"}})
 	return string(body)
+}
+
+// newTaskPublisher is a publisher that is told when this machine wrote a task
+// row, as the link tells the real one (link.go `TaskListChanged`, from the
+// broker's own write paths). It answers the publisher and the signal: calling
+// it is what the broker does after a commit. A publisher built without the
+// signal — every other test here — is told nothing, so it reads on its first
+// pass, on a re-statement and on the floor, and that is deliberate: the fact
+// is taken, so a test that forgets to signal a write sees a stale list rather
+// than a read nobody asked for.
+func newTaskPublisher(router cloudops.LocalRouter, out *collector) (*Publisher, func()) {
+	moved := false
+	publisher := newPublisher(router, out)
+	publisher.TaskListMoved = func() bool {
+		was := moved
+		moved = false
+		return was
+	}
+	return publisher, func() { moved = true }
 }
 
 // Fixture ids: one hex digit is most of each, so none of them can be a real
@@ -259,13 +293,16 @@ func TestTheTaskListIsSentOnChangeAndKeptThroughAFailedRead(t *testing.T) {
 		"child": map[string]any{"terminalId": childID(1)}, "executor": map[string]any{"observed_at": 1}}
 	router := newPathRouter(sessionsBody(true, childID(1)), tasksBody(live))
 	out := &collector{}
-	publisher := newPublisher(router, out)
+	publisher, wrote := newTaskPublisher(router, out)
 	publisher.firstPass(context.Background())
 
-	// Only what the projection does not carry moved.
+	// Only what the projection does not carry moved. The write is signalled,
+	// because the broker signals every write: what is asserted is that the
+	// read it causes publishes nothing.
 	out.reset()
 	live["executor"] = map[string]any{"observed_at": 99}
 	router.set("/v1/orchestrator/tasks", tasksBody(live), 0)
+	wrote()
 	publisher.Pass(context.Background())
 	if len(out.channels()) != 0 {
 		t.Errorf("an executor reading republished: %v", out.channels())
@@ -273,6 +310,7 @@ func TestTheTaskListIsSentOnChangeAndKeptThroughAFailedRead(t *testing.T) {
 
 	// The route fails: nothing is sent, and what is held is the last list.
 	router.set("/v1/orchestrator/tasks", `{}`, http.StatusInternalServerError)
+	wrote()
 	publisher.Pass(context.Background())
 	if len(out.channels()) != 0 {
 		t.Errorf("a failed task read republished: %v", out.channels())
@@ -281,7 +319,8 @@ func TestTheTaskListIsSentOnChangeAndKeptThroughAFailedRead(t *testing.T) {
 		t.Errorf("a failed task read dropped the list a viewer holds: %v", publisher.tasks)
 	}
 
-	// The task finishes: that is a change.
+	// The task finishes: that is a change. Nothing is signalled here — the
+	// read that failed is still owed, so this pass takes it.
 	live["state"], live["finishedAt"] = "success", 5
 	router.set("/v1/orchestrator/tasks", tasksBody(live), 0)
 	publisher.Pass(context.Background())
@@ -289,6 +328,129 @@ func TestTheTaskListIsSentOnChangeAndKeptThroughAFailedRead(t *testing.T) {
 	if len(tasks) != 1 || tasks[0].(map[string]any)["state"] != "success" {
 		t.Errorf("the finished state was not published: %v", tasks)
 	}
+}
+
+// **The list is read when something moved it, and a machine nobody is
+// dispatching on stops asking.** Measured on the running daemon on
+// 2026-10-10, this publisher took 288 of the 289 reads
+// `GET /v1/orchestrator/tasks` answered in 1,426 seconds — one every 4.95 s,
+// with no task changing — because going out only on a change had been paid
+// for by finding out on every pass. This is each of the four reasons a pass
+// still reads, and the passes in between that do not.
+func TestTheTaskListIsReadWhenSomethingMovedItAndNotOnEveryPass(t *testing.T) {
+	// The floor is the descriptor's own heartbeat pass: a read on a pass that
+	// publishes nothing is the one thing this must not add.
+	if TaskListRereadSecondsLimit*time.Second != Heartbeat {
+		t.Fatalf("the re-read floor is %ds and the descriptor's heartbeat is %s; the floor must be a pass that re-states anyway",
+			TaskListRereadSecondsLimit, Heartbeat)
+	}
+
+	live := map[string]any{"id": taskID(1), "state": "briefed", "title": "t", "created": 1,
+		"child": map[string]any{"terminalId": childID(1)}}
+	router := newPathRouter(sessionsBody(true, childID(1)), tasksBody(live))
+	out := &collector{}
+	publisher, wrote := newTaskPublisher(router, out)
+	clock := time.Unix(1_789_800_000, 0)
+	publisher.Now = func() time.Time { return clock }
+
+	passes := 1
+	tick := func() {
+		clock = clock.Add(SnapshotInterval)
+		passes++
+		publisher.Pass(context.Background())
+	}
+	reads := func() int { return router.reads("/v1/orchestrator/tasks") }
+
+	publisher.firstPass(context.Background())
+	if reads() != 1 {
+		t.Fatalf("the first pass read the list %d times; it has nothing to project otherwise", reads())
+	}
+
+	// Nobody dispatches anything for just under the floor. This is the stretch
+	// the measurement found: 47 passes, 235 seconds.
+	for i := 0; i < 47; i++ {
+		tick()
+	}
+	if reads() != 1 {
+		t.Errorf("%d reads in %s of passes with nothing written; this is the waste the change is for",
+			reads(), 47*SnapshotInterval)
+	}
+
+	// The floor: the pass that re-states the descriptor re-reads the list,
+	// because `root.terminalId` comes from this machine's screen and a second
+	// writer on the same store owes this process no signal.
+	tick()
+	if reads() != 2 {
+		t.Errorf("the list was read %d times after %s; the floor is %ds", reads(), 48*SnapshotInterval, TaskListRereadSecondsLimit)
+	}
+
+	// A row moves and nothing says so: the list a viewer holds is the one
+	// that was read. That is the trade this makes, and the floor is what
+	// bounds it.
+	out.reset()
+	live["state"], live["finishedAt"] = "success", 5
+	router.set("/v1/orchestrator/tasks", tasksBody(live), 0)
+	tick()
+	if reads() != 2 {
+		t.Errorf("the list was read %d times for a write nothing signalled", reads())
+	}
+	if len(out.channels()) != 0 {
+		t.Errorf("a write nothing signalled was published: %v", out.channels())
+	}
+
+	// The broker commits and signals: the next pass reads it and it goes out.
+	wrote()
+	tick()
+	if reads() != 3 {
+		t.Fatalf("the list was read %d times after a signalled write", reads())
+	}
+	tasks, _ := out.payload(t, "orch/mac-01")["tasks"].([]any)
+	if len(tasks) != 1 || tasks[0].(map[string]any)["state"] != "success" {
+		t.Errorf("the finished state was not published: %v", tasks)
+	}
+
+	// A read that failed is still owed: the next pass asks again without
+	// another signal, and what is held in between is the last list.
+	out.reset()
+	router.set("/v1/orchestrator/tasks", `{}`, http.StatusInternalServerError)
+	wrote()
+	tick()
+	if reads() != 4 || len(publisher.tasks) != 1 {
+		t.Errorf("a failed read: %d reads, %d records held", reads(), len(publisher.tasks))
+	}
+	router.set("/v1/orchestrator/tasks", tasksBody(live), 0)
+	tick()
+	if reads() != 5 {
+		t.Errorf("the list was read %d times; a failed read owes the next pass a read", reads())
+	}
+
+	// A viewer that holds nothing has been heard from: that pass states
+	// everything again, so it reads again.
+	out.reset()
+	publisher.Seen("viewer-01")
+	tick()
+	if reads() != 6 {
+		t.Errorf("a page that has just opened read the list %d times", reads())
+	}
+
+	// The child's tab closes with nothing written: the finished task leaves
+	// the list, and no read was needed to know it.
+	out.reset()
+	router.set("/v1/sessions", sessionsBody(true, childID(2)), 0)
+	tick()
+	if reads() != 6 {
+		t.Errorf("a closed tab cost %d reads; which rows a viewer holds is this machine's own reading", reads())
+	}
+	if _, ok := out.payload(t, "orch/mac-01")["tasks"]; ok {
+		t.Error("the finished task whose tab closed is still in the snapshot")
+	}
+
+	// The whole run, which is the number the change is measured by.
+	if reads() != 6 || passes != 55 {
+		t.Errorf("%d passes took %d reads", passes, reads())
+	}
+	t.Logf("%d passes over %s took %d reads of /v1/orchestrator/tasks; every pass reading it would be %d",
+		passes, time.Duration(passes-1)*SnapshotInterval, reads(), passes)
 }
 
 // Past the row bound the oldest finished records go first, and every
@@ -481,5 +643,37 @@ func TestMeasureTheOrchSnapshotThroughTheRelay(t *testing.T) {
 			t.Errorf("%s: the list is %d bytes, past the %d byte bound the row bound was meant to keep it under",
 				c.name, with.tasksBytes, TaskListBytesLimit)
 		}
+	}
+}
+
+// **The link tells its publisher, and taking the fact clears it.** This is the
+// last hop of the signal: the broker tells the HTTP server, the server tells
+// the link, and the link is what the publisher asks. A publisher built without
+// it reads the route on every pass, so the wiring is asserted and not assumed.
+func TestTheLinkTellsItsPublisherWhenTheTaskListMoved(t *testing.T) {
+	dir := t.TempDir()
+	// Production settings and an enrolled identity, which is what it takes to
+	// reach `wire`. Nothing here dials: that is `Run`.
+	writeSettings(t, dir, `{"cloud_enabled":true}`)
+	writeIdentity(t, dir, "")
+	link, err := Open(LinkOptions{Dir: dir})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if link.publisher == nil {
+		t.Fatalf("the link built no publisher: %s", link.Status().LastError)
+	}
+	if link.publisher.TaskListMoved == nil {
+		t.Fatal("the publisher was not given the signal, so it would read its own task list on every five-second pass")
+	}
+	if link.publisher.TaskListMoved() {
+		t.Error("a link nobody has written to says the list moved")
+	}
+	link.TaskListChanged()
+	if !link.publisher.TaskListMoved() {
+		t.Error("a committed write did not reach the publisher")
+	}
+	if link.publisher.TaskListMoved() {
+		t.Error("the fact was not taken: every later pass would read the list again")
 	}
 }
