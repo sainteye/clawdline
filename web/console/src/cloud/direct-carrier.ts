@@ -71,10 +71,22 @@ export async function openCarrierAnswer(raw: Uint8Array, connection: string, sea
   return dec.decode(clear)
 }
 
-/** `term`/`termd`/`termr` go to the terminal; a read's answer goes to the Session reader. */
+/**
+ * `term`/`termd`/`termr` go to the terminal; a read's answer and a Session row go to the reader.
+ *
+ * `ss/` is deliberately not carried. Measured on 2026-10-11, the machine's own log recorded
+ * `ch=ss/<machine>/<session> status=delivered fanout=2` while this page held no subscription at
+ * all, so those rows already reach every paired page of the account for free; copying them would
+ * repeat each row every five seconds to save one relay hop. `s/` is the channel that costs a
+ * subscription — the same log recorded `fanout=0` for it while the page was holding a rich row —
+ * and it is the one the page can only ask for two at a time.
+ *
+ * A page built before this returns null for `s/` and drops the copy, which is why the relay keeps
+ * publishing it: the carrier is a second road for the same envelope, not a replacement.
+ */
 function carrierAudience(channel: string): "terminal" | "session" | null {
   if (channel.startsWith("term/") || channel.startsWith("termd/") || channel.startsWith("termr/")) return "terminal"
-  if (channel.startsWith("t/")) return "session"
+  if (channel.startsWith("t/") || channel.startsWith("s/")) return "session"
   return null
 }
 

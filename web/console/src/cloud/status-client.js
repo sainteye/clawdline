@@ -19,6 +19,8 @@ const GENERATION = /^[0-9a-f]{32}$/u
  */
 const CARRIER_WORD = "carrier-offer"
 const CARRIER_SESSION = "__clawdline_machine__"
+/** The machine's whole-list channel, which the carrier never carries. */
+const INVENTORY_SESSION = "__clawdline_inventory_v1__"
 /** A carrier either negotiates in a few seconds or is not available on this network. */
 const CARRIER_TIMEOUT_MS = 15_000
 
@@ -99,6 +101,12 @@ export class StatusCloudClient extends CatalogCloudClient {
     // carrier cannot cross.
     this.carrierCapabilities = new Map()
     this.carrierSequences = new Map()
+    // A Session row copied onto the carrier keeps the relay's own envelope number, because that
+    // is the number the store compares it against. It therefore cannot share the floor above,
+    // which counts the carrier's answers from one for every channel: one row would put the floor
+    // thousands ahead and every answer after it would read as a replay. One floor per carried
+    // channel, in the relay's number space.
+    this.carrierRowSequences = new Map()
     this.carrierReads = new Map()
     this.directCarriers = null
     this.carrierWatched = new WeakSet()
@@ -377,10 +385,19 @@ export class StatusCloudClient extends CatalogCloudClient {
     const probe = { stage: "channel_parse", original: null, cause: null, senderKeyFound: null,
       senderKeySource: null, senderKeyLookupMs: null, routedMachine: machine,
       pairing: undefined, pairingSource: null, pairingLookupMs: null, pairingFoundBefore: null }
+    let row = false
     try {
       const channel = validateEnvelope(envelope)
-      if (channel.kind !== "transcript" || decodedChannelSegment(channel.machine) !== machine) {
+      row = channel.kind === "session"
+      if ((channel.kind !== "transcript" && !row) || decodedChannelSegment(channel.machine) !== machine) {
         throw refused("bad_channel", "the carrier delivered a channel it may not carry")
+      }
+      // The machine's whole-list inventory stays on the relay. Applying one here would fill
+      // `sessionInventoryByMachine` and raise the authoritative `sessions` event, which drives
+      // the older whole-list recovery this list deliberately does not use — and an inventory
+      // this page then believed would delete every row it does not name.
+      if (row && decodedChannelSegment(channel.session) === INVENTORY_SESSION) {
+        throw refused("bad_channel", "the carrier may not carry a machine's Session inventory")
       }
       probe.stage = "machine_pairing_lookup"
       const pairing = await this._machinePairing(machine, probe)
@@ -393,17 +410,28 @@ export class StatusCloudClient extends CatalogCloudClient {
       probe.stage = "signature_verify"
       const clear = await openEnvelope(envelope, pairing.masterKey, pairing.senderKey, probe)
       probe.stage = "sequence"
-      const previous = this.carrierSequences.get(machine)
-      if (previous !== undefined && (previous.channel > channelGeneration ||
-        (previous.channel === channelGeneration && envelope.seq <= previous.seq))) {
-        throw refused("replay", "the carrier sequence did not advance")
+      if (row) {
+        const floor = this.carrierRowSequences.get(envelope.ch)
+        if (floor !== undefined && envelope.seq <= floor) {
+          throw refused("replay", "the carried row sequence did not advance")
+        }
+        this.carrierRowSequences.set(envelope.ch, envelope.seq)
+      } else {
+        const previous = this.carrierSequences.get(machine)
+        if (previous !== undefined && (previous.channel > channelGeneration ||
+          (previous.channel === channelGeneration && envelope.seq <= previous.seq))) {
+          throw refused("replay", "the carrier sequence did not advance")
+        }
+        this.carrierSequences.set(machine, { channel: channelGeneration, seq: envelope.seq })
       }
-      this.carrierSequences.set(machine, { channel: channelGeneration, seq: envelope.seq })
       probe.stage = "payload"
       const payload = clear.length ? JSON.parse(decoder.decode(clear)) : null
       this.machineOffline?.delete(machine)
       this._sawAuthenticatedEnvelope(envelope, channel, machine)
       probe.stage = "apply"
+      // `sequenceBySender` is not raised here, and must not be: it is one floor for everything a
+      // sender publishes, and the relay will publish this very envelope again on its own road.
+      // A row arrives because the machine published it just now, so it is not a realignment.
       this._applySnapshot(channel, payload, envelope, false)
     } catch (error) {
       this._recordReceiveFailure(error, envelope, false, probe)
@@ -411,8 +439,14 @@ export class StatusCloudClient extends CatalogCloudClient {
       // answer the same way. Nothing has failed from the read's point of view — the carrier is
       // open and its request was written to it — so it is this that has to end the channel, and
       // closing it is what asks every read it holds again on the relay.
-      try { this._carrierFor(machine)?.failed(channelGeneration, "carrier_unusable") }
-      catch { /* a carrier this page no longer has is already gone */ }
+      //
+      // A row is the exception: nothing waits for it, the relay is still publishing it, and the
+      // page still has its own way of asking for one. If the channel is broken rather than the
+      // row, the next answer fails here too and closes it then.
+      if (!row) {
+        try { this._carrierFor(machine)?.failed(channelGeneration, "carrier_unusable") }
+        catch { /* a carrier this page no longer has is already gone */ }
+      }
     }
   }
 

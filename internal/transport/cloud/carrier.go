@@ -221,6 +221,42 @@ func (l *Link) sendCarrierEnvelope(viewer, channel string, class domaincloud.Cla
 	return peer.send(data)
 }
 
+// mirrorStatusRow puts one Session row this machine has just published on
+// every open carrier as well. This is `Relay.MirrorStatus`.
+//
+// It sends the very envelope the relay will deliver — same channel, same
+// sequence, same seal — rather than resealing it per peer the way an answer is
+// resealed. The browser orders a row against this machine's other rows by that
+// number, so a carrier number would make a current row look older than the
+// list it belongs to. The carrier is a second road for the envelope, not a
+// second numbering, and the page accepts it from either road.
+//
+// Measured on 2026-10-11: the relay publish of `s/<machine>/<session>` settled
+// `fanout=0` — no device was subscribed — while the page that wanted that row
+// was spending a relay round trip and one of its eight subscription channels
+// to ask for it. Nothing is spooled here and nothing is retried: a data
+// channel either delivers the row or is gone, and the page that loses one is
+// the page that goes back to the relay for it.
+func (l *Link) mirrorStatusRow(channel string, sealed []byte) {
+	data, err := json.Marshal(directMessage{T: "env", E: sealed})
+	if err != nil {
+		return
+	}
+	l.directMu.Lock()
+	peers := make([]*directPeer, 0, len(l.directPeers))
+	for _, peer := range l.directPeers {
+		if peer != nil {
+			peers = append(peers, peer)
+		}
+	}
+	l.directMu.Unlock()
+	for _, peer := range peers {
+		// A channel that will not take it is not a failure of this publish:
+		// the row is on the relay, where that page reads it.
+		_ = peer.send(data)
+	}
+}
+
 // supersedeCarrier lets go of the carrier a viewer already holds, because that
 // viewer is asking for a new one.
 //

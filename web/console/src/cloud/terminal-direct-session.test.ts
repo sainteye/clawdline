@@ -361,6 +361,18 @@ test("a terminal that finds the page's carrier already open borrows it instead o
     await settle()
     assert.deepEqual(m.sessionEnvelopes.map((envelope) => envelope.ch), [`t/${machine}/session`],
       "a Session answer on the shared channel did not reach the reader")
+
+    // And a Session row the machine copied onto the same channel, which is what spares the page
+    // the subscription it would otherwise spend to read one. The account-wide `ss/` rows are not
+    // carried: they already reach every paired page without any subscription at all.
+    const envelope = (ch: string) => ({ v: 1, ch, seq: 2, ts: 1, class: "stream",
+      key_id: "ms-1", nonce: "", ct: "", sender: machine, sig: "" })
+    m.peer.channel.onmessage?.({ data: JSON.stringify({ t: "env", e: envelope(`s/${machine}/row`) }) })
+    m.peer.channel.onmessage?.({ data: JSON.stringify({ t: "env", e: envelope(`ss/${machine}/row`) }) })
+    await settle()
+    assert.deepEqual(m.sessionEnvelopes.map((envelope) => envelope.ch),
+      [`t/${machine}/session`, `s/${machine}/row`],
+      "the shared channel carried the wrong Session rows")
   } finally { session.dispose(); m.transport.dispose() }
 })
 

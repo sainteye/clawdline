@@ -750,6 +750,10 @@ func (l *Link) wire() error {
 	// holds the hook rather than the carrier holding the relay, because what
 	// decides the route is the request, and only the relay sees both.
 	l.relay.Direct = l.sendCarrierEnvelope
+	// A Session row goes to the relay as it always did and to every open
+	// carrier at the same time, so a page reads a row it would otherwise
+	// spend a subscription and a round trip asking for.
+	l.relay.MirrorStatus = l.mirrorStatusRow
 	// `sessions.snapshot` is answered by the publisher, which is the only
 	// thing that can put the rows back on their channels.
 	l.service.Bridge.Sessions = l.publisher.Snapshot

@@ -85,6 +85,12 @@ type Relay struct {
 	// the relay when its carrier goes (docs/cloud-terminal-wire.md).
 	Direct func(viewer, channel string, class domaincloud.Class, payload []byte) error
 
+	// MirrorStatus puts one sealed Session row on every open carrier as well.
+	// It is set by the link, and it is not a route: the row goes to the relay
+	// exactly as it always did, and this is a second road for the same
+	// envelope. A nil hook means this machine has no carriers.
+	MirrorStatus func(channel string, sealed []byte)
+
 	once     sync.Once
 	requests chan Inbound
 	// refusals is the requests the queue turned away, waiting to be told so.
@@ -331,7 +337,30 @@ func (r *Relay) PublishTracked(ctx context.Context, out Outbound) (uint64, error
 	if err := r.Spool.Seal(seq, sealed, now); err != nil {
 		return 0, err
 	}
+	// A Session row the relay is about to deliver also goes straight to every
+	// viewer whose carrier is open. It is the same envelope under the same
+	// number, so a page may read it from either road and the row is ordered
+	// against this machine's others either way (`mirrorStatusRow`).
+	if r.MirrorStatus != nil && mirroredStatusChannel(out.Channel) {
+		r.MirrorStatus(out.Channel, sealed)
+	}
 	return seq, nil
+}
+
+// mirroredStatusChannel is one Session's row, the only channel a carrier
+// carries besides a read's answer.
+//
+// The content-free `ss/` feed is deliberately not one: it reaches every device
+// of the account without a subscription, so a copy on the carrier would
+// duplicate every row to save one relay hop. Neither is the `s/` inventory,
+// which drives the older whole-list recovery the hosted list does not use.
+func mirroredStatusChannel(channel string) bool {
+	rest, ok := strings.CutPrefix(channel, "s/")
+	if !ok {
+		return false
+	}
+	_, session, ok := strings.Cut(rest, "/")
+	return ok && session != "" && session != InventorySessionID && !strings.Contains(session, "/")
 }
 
 // ChannelFull reports whether this error is one channel at its cap.

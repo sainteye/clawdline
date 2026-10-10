@@ -339,3 +339,47 @@ func TestAPageWhoseCarrierDiedUnheardOpensAnother(t *testing.T) {
 	}
 	_ = first
 }
+
+// A Session row this machine publishes takes every open carrier as well as the
+// relay, as the very envelope the relay will deliver: the browser orders a row
+// against this machine's other rows by that sequence, so the carrier is a
+// second road for the envelope and not a second numbering.
+func TestAPublishedSessionRowTakesTheCarrierToo(t *testing.T) {
+	f := newDirectFixture(t)
+	b, _, _ := f.carrier(t)
+	// What `wire` installs on the real link; this fixture builds one by hand.
+	f.l.relay.MirrorStatus = f.l.mirrorStatusRow
+
+	row := func(channel string) Outbound {
+		return Outbound{Channel: channel, Class: string(domaincloud.ClassStream),
+			Payload: []byte(`{"session":{"id":"session"},"at":1}`)}
+	}
+	seq, err := f.l.relay.PublishTracked(context.Background(), row("s/machine/session"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, body := f.openMaster(t, b.next(t))
+	if env.Ch != "s/machine/session" || env.Seq != seq || body["at"] != float64(1) {
+		t.Fatalf("the row on the carrier: ch=%s seq=%d (published %d) %v", env.Ch, env.Seq, seq, body)
+	}
+	// The relay still has its own copy: a page with no carrier, and every other
+	// device of the account, reads the row exactly as before.
+	if _, ok := f.spool.Row(seq); !ok {
+		t.Fatal("a mirrored row was not spooled for the relay")
+	}
+
+	// The content-free status feed costs no subscription and reaches every
+	// device of the account without one, so mirroring it would only duplicate
+	// it. The `s/` inventory drives the older whole-list recovery, which the
+	// hosted list does not use. Both stay on the relay.
+	for _, channel := range []string{"ss/machine/session", "s/machine/" + InventorySessionID, "orch/machine"} {
+		if _, err := f.l.relay.PublishTracked(context.Background(), row(channel)); err != nil {
+			t.Fatalf("%s: %v", channel, err)
+		}
+	}
+	select {
+	case raw := <-b.msgs:
+		t.Fatalf("a channel that stays on the relay reached the carrier: %s", raw)
+	case <-time.After(500 * time.Millisecond):
+	}
+}

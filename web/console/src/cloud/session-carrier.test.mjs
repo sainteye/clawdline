@@ -20,6 +20,7 @@ function carrierClient(carrier) {
     readTimeoutMs: 60_000, subscriptionLimit: 8, subscriptionIdleMs: 30_000,
     readWaiters: new Map(), pinnedReadProofs: new Map(), pendingBySequence: new Map(),
     carrierReads: new Map(), carrierSequences: new Map(), carrierCapabilities: new Map(),
+    carrierRowSequences: new Map(),
     carrierWatched: new WeakSet(), carrierMachines: new Set(),
     machineOffline: new Map(), machineLacks: new Map(),
     orchestratorSnapshots: new Map(), machineDescriptors: new Map(), macCapabilities: new Map(),
@@ -79,12 +80,19 @@ async function sealedClient() {
     _machinePairing: async () => ({ masterKey, keyID: "mk", senderKey: signing.publicKey, senderID: "m" }),
     _compareKeyID() { },
     _sawAuthenticatedEnvelope() { },
-    _applySnapshot(channel, payload) { applied.push([channel.kind, payload?.read]) },
+    _applySnapshot(channel, payload, envelope, realign) {
+      if (channel.kind === "session") { applied.push(["row", channel.session, realign]); return }
+      applied.push([channel.kind, payload?.read])
+    },
     _recordReceiveFailure(error) { applied.push(["failed", error.code ?? error.message]) },
   })
   const envelope = (seq, read) => sealEnvelope({ ch: "t/m/s", seq, ts: 1, class: "stream",
     key_id: "mk", sender: "m" }, JSON.stringify({ read, status: 200 }), masterKey, signing.privateKey)
-  return { client, carrier, applied, envelope, masterKey, signing, raw }
+  /** A rich Session row as the relay would deliver it, with the relay's own envelope number. */
+  const row = (session, seq, body = { session: { id: session, label: "a row" }, at: 1 }) =>
+    sealEnvelope({ ch: "s/m/" + session, seq, ts: 1, class: "stream", key_id: "mk", sender: "m" },
+      JSON.stringify(body), masterKey, signing.privateKey)
+  return { client, carrier, applied, envelope, row, masterKey, signing, raw }
 }
 
 const read = (client) => client._read({ machine: "m", session: "s" }, "transcript",
@@ -183,9 +191,11 @@ test("the carrier numbers its envelopes apart from the relay, so a low one is no
   await client.receiveCarrierEnvelope("m", await envelope(2, "transcript"), 1)
   assert.deepEqual(applied, [["failed", "replay"]])
 
-  // A channel the carrier may not carry is refused whatever its signature says.
+  // A channel the carrier may not carry is refused whatever its signature says. The machine's
+  // descriptor is one of them: it is how a page learns what the machine can do, and it stays on
+  // the road that reaches a page with no carrier at all.
   applied.length = 0
-  await client.receiveCarrierEnvelope("m", await sealEnvelope({ ch: "s/m/s", seq: 9, ts: 1,
+  await client.receiveCarrierEnvelope("m", await sealEnvelope({ ch: "orch/m", seq: 9, ts: 1,
     class: "stream", key_id: "mk", sender: "m" }, "{}", masterKey, signing.privateKey), 1)
   assert.deepEqual(applied, [["failed", "bad_channel"]])
   assert.equal(bytesBase64(raw).length, 44)
@@ -259,4 +269,76 @@ test("a client that renews its credentials lets go of its carrier, so the machin
   client.retire()
   assert.equal(carrier.closed, "carrier_client_retired")
   assert.equal(client.retired, true)
+})
+
+test("a Session row the machine copies onto the carrier needs no subscription at all", async () => {
+  const { client, carrier, applied, row } = await sealedClient()
+
+  // The row the page would otherwise have to subscribe for, two sessions at a time. It arrives
+  // as the machine published it — the relay's own envelope, number and seal — because the store
+  // compares that number against the relay's, and it is not a realignment: the machine is
+  // publishing now, which is the whole reason the copy exists.
+  await client.receiveCarrierEnvelope("m", await row("s2", 40), 1)
+  assert.deepEqual(applied, [["row", "s2", false]])
+  assert.deepEqual([...client.subscribed], [], "a carried row spent a relay subscription")
+  assert.equal(client.socketSubscriptions.size, 0)
+  assert.equal(carrier.closed, null)
+
+  // The whole-list channel is not one of them. An inventory this page believed would delete
+  // every row it does not name, and it is the older recovery this list does not use.
+  applied.length = 0
+  await client.receiveCarrierEnvelope("m", await row("__clawdline_inventory_v1__", 41), 1)
+  assert.deepEqual(applied, [["failed", "bad_channel"]])
+
+  // Nothing waits for a row, the relay is still publishing it, and this page can still ask for
+  // one itself, so a row it cannot use does not take the carrier — and the reads — down with it.
+  assert.equal(carrier.closed, null)
+  assert.equal(client.carrierReads.size, 0)
+})
+
+test("a copied row and the carrier's own answers do not share one sequence floor", async () => {
+  const { client, applied, envelope, row } = await sealedClient()
+
+  // A row carries the relay's number, which is as high as that machine has ever published; an
+  // answer carries the carrier's own, which starts at one for every channel. One floor for both
+  // would let the first row refuse every answer after it as a replay.
+  await client.receiveCarrierEnvelope("m", await row("s2", 5000), 1)
+  await client.receiveCarrierEnvelope("m", await envelope(1, "transcript"), 1)
+  await client.receiveCarrierEnvelope("m", await envelope(2, "info.full"), 1)
+  assert.deepEqual(applied, [["row", "s2", false], ["transcript", "transcript"], ["transcript", "info.full"]])
+
+  // Each carried channel keeps its own floor, so one session's rows cannot hold back another's.
+  applied.length = 0
+  await client.receiveCarrierEnvelope("m", await row("s3", 12), 1)
+  await client.receiveCarrierEnvelope("m", await row("s2", 5001), 1)
+  assert.deepEqual(applied, [["row", "s3", false], ["row", "s2", false]])
+
+  // A row the page has already applied is still refused, and a replaced channel does not reset
+  // it: the relay's numbers belong to the machine, not to the road the copy took.
+  applied.length = 0
+  await client.receiveCarrierEnvelope("m", await row("s2", 5001), 2)
+  assert.deepEqual(applied, [["failed", "replay"]])
+})
+
+test("a copied row lands in the list the relay's own row would have filled", async () => {
+  const { client, row } = await sealedClient()
+  // Everything the reader's own snapshot store needs, and the store itself is the real one.
+  Object.assign(client, {
+    handlers: null, sessionSnapshots: new Map(), sessionKeysHeard: new Set(),
+    sessionInventoryByMachine: new Map(), inventoriesHeard: new Set(), sessionRecovery: new Map(),
+    openedDetails: new Set(), detailSnapshots: new Map(), statusSnapshots: new Map(),
+    statusSequences: new Map(), sessionsAtMs: 0,
+  })
+  delete client._applySnapshot
+
+  await client.receiveCarrierEnvelope("m", await row("s2", 40), 1)
+  assert.deepEqual(client.sessionSnapshots.get("m\u0000s2"), { id: "s2", label: "a row",
+    machine: "m", session: "s2", identity: { machine: "m", session: "s2" } })
+  assert.equal(client.sessionSequenceByKey.get("m\u0000s2"), 40)
+
+  // The relay publishes the same envelope on its own road, so the copy cannot be what stops the
+  // original from being applied: the store compares the relay's number and lands on the same row.
+  await client._applySnapshot({ kind: "session", machine: "m", session: "s2" },
+    { session: { id: "s2", label: "a row" }, at: 1 }, { seq: 40, ts: 1 }, true)
+  assert.equal(client.sessionSnapshots.get("m\u0000s2").label, "a row")
 })
