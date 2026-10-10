@@ -50,8 +50,7 @@ export interface ProjectedSession {
    * the session id so the list always had *something* to draw, and what it
    * drew was `%12` where a person expected the Session they named. A name
    * arrives only with the pinned list read (`readMachinePresentations`), so
-   * until it does there is no name, and the list says so instead of showing
-   * a tmux pane id as one.
+   * until it does the list waits for its authorized presentation read.
    */
   title?: undefined
   assistant?: "claude" | "codex"
@@ -128,7 +127,7 @@ export interface SessionProjectionSource {
   /** Release both the rich Session and transcript channels on detail exit. */
   closeDetail?(destination: SessionDestination): void
   /** An event gap invalidates that machine's current projection and detail cache. */
-  subscribe(listener: (event: { machineID: string; kind: "changed" | "gap" | "detail_changed"; sessionID?: string }) => void): () => void
+  subscribe(listener: (event: { machineID: string; kind: "changed" | "gap" | "detail_changed" | "access_changed"; sessionID?: string }) => void): () => void
 }
 
 const DESTINATION = /^#machine=([^&]+)&session=([^&]+)&generation=([^&]+)$/

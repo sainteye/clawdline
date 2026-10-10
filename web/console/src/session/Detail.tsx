@@ -87,6 +87,7 @@ export function Detail({
   onDid,
   onSent,
   listUnknown = false,
+  loadingDetail = false,
   emptyProblem,
 }: {
   row: SessionRow | null
@@ -101,6 +102,7 @@ export function Detail({
    */
   onSent?: () => void
   listUnknown?: boolean
+  loadingDetail?: boolean
   emptyProblem?: FleetDetailProblem | null
 }) {
   const T = L.strings
@@ -323,7 +325,8 @@ export function Detail({
               <p>{emptyProblem.text}</p>
               {emptyProblem.action && <button type="button" className="cloud-detail-act"
                 onClick={emptyProblem.action.run}>{emptyProblem.action.label}</button>}
-            </div> : home ? <HomeHero /> : null}
+            </div> : loadingDetail ? <p className="cloud-detail-problem" role="status">{nextWord("cloudAllLoadingDetail")}</p>
+              : home ? <HomeHero /> : null}
         </div>
       </div>
 

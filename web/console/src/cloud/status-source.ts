@@ -274,7 +274,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       const stop = client?.events((event) => {
         if ((event.type === "machine_reachability" || event.type === "orchestrator") &&
           typeof event.machine === "string") {
-          listener({ machineID: event.machine, kind: "changed" })
+          listener({ machineID: event.machine, kind: event.type === "orchestrator" ? "access_changed" : "changed" })
           return
         }
         if (event.type === "sessions" && event.identity?.machine && event.identity?.session &&

@@ -127,10 +127,11 @@ export class StatusCloudClient extends CatalogCloudClient {
   _recoverSessions() {}
 
   /** Feed the original one-machine Session page from exact, authorized s/ rows. */
-  enableClassicSessionView(machineID) {
-    if (this.classicSessionMachine === machineID) return
+  enableClassicSessionView(machineID, sessionID = null) {
+    if (this.classicSessionMachine === machineID && this.classicSessionTarget === sessionID) return
     this.disableClassicSessionView()
     this.classicSessionMachine = machineID
+    this.classicSessionTarget = sessionID
     this._recoverClassicSessionRows()
   }
 
@@ -143,6 +144,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     this.classicSessionAttempted.clear()
     this.classicSessionPass = null
     this.classicSessionMachine = null
+    this.classicSessionTarget = null
   }
 
   _recoverClassicSessionRows() {
@@ -156,7 +158,8 @@ export class StatusCloudClient extends CatalogCloudClient {
       this.classicSessionAttempted.clear()
       this.classicSessionPass = marker.snapshot_generation
     }
-    const expected = new Set(ids)
+    const selected = this.classicSessionTarget ? ids.filter((id) => id === this.classicSessionTarget) : ids
+    const expected = new Set(selected)
     for (const [channel, timer] of this.classicSessionReads) {
       const id = decodedChannelSegment(channel.split("/")[2])
       if (expected.has(id)) continue
@@ -170,7 +173,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     // rolling window instead; each signed row frees its slot for the next one.
     const available = Math.max(0, 2 - this.classicSessionReads.size)
     let opened = 0
-    for (const id of ids) {
+    for (const id of selected) {
       if (typeof id !== "string" || !id || id === "__clawdline_inventory_v1__") return
       const status = this.statusSnapshots.get(JSON.stringify([machine, id]))?.payload
       if (!status || status.snapshot_generation !== marker.snapshot_generation ||

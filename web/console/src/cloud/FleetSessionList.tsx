@@ -29,6 +29,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const [readings, setReadings] = useState<Record<string, Reading>>({})
   const presentations = useRef(new Map<string, { machineID: string; sessionID: string; pass: string } & SessionListPresentation>())
   const presentationPasses = useRef(new Map<string, string>())
+  const presentationFailures = useRef(new Map<string, string>())
   const [presentationRevision, refreshPresentation] = useState(0)
   const [, redraw] = useState(0)
   const [machineAction, setMachineAction] = useState<MachineToolbarAction | null>(null)
@@ -79,11 +80,12 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     }
     const stop = source.subscribe(({ machineID, sessionID, kind }) => {
       if (!machines.some((machine) => machine.id === machineID)) return
-      if (kind === "detail_changed" && sessionID) {
+      if (kind === "access_changed" || kind === "detail_changed" && sessionID) {
         // Keep the verified label visible while its replacement is read. The
         // presentation key includes the execution generation, so a restarted
         // Session cannot reuse this label for a different execution.
         presentationPasses.current.delete(machineID)
+        presentationFailures.current.delete(machineID)
         refreshPresentation((revision) => revision + 1)
         return
       }
@@ -141,6 +143,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     if (!pending.length) return
     const abort = new AbortController()
     for (const { machineID, pass } of pending) presentationPasses.current.set(machineID, pass)
+    for (const { machineID } of pending) presentationFailures.current.delete(machineID)
     const inFlight = new Set(pending.map(({ machineID }) => machineID))
     let next = 0
     const worker = async () => {
@@ -159,6 +162,14 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
               status: row.status ?? previous?.status,
             })
           }
+          const expected = readings[machineID]
+          const missing = expected?.phase === "settled" && expected.value.kind === "ready" &&
+            expected.value.rows.some((row) => row.freshness === "current" &&
+              !presentations.current.has(destinationKey(row.destination)))
+          if (missing) presentationFailures.current.set(machineID, pass)
+          redraw((revision) => revision + 1)
+        } else if (presentationPasses.current.get(machineID) === pass) {
+          presentationFailures.current.set(machineID, pass)
           redraw((revision) => revision + 1)
         }
       }
@@ -175,6 +186,13 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const search = filter.trim().toLocaleLowerCase()
   const groups = machines.map((machine) => {
     const reading = readings[machine.id]
+    const pass = reading?.phase === "settled" && reading.value.kind === "ready"
+      ? reading.value.snapshotGeneration ?? String(reading.value.observedAt) : ""
+    const missingTitle = reading?.phase === "settled" && reading.value.kind === "ready" &&
+      reading.value.rows.some((row) => row.freshness === "current" &&
+        !presentations.current.has(destinationKey(row.destination)))
+    const presentationFailed = !!missingTitle && presentationFailures.current.get(machine.id) === pass
+    const presentationLoading = !!missingTitle && !presentationFailed
     const filtered = reading?.phase === "settled" && reading.value.rows
       ? reading.value.rows.filter((row) => matchesFleetFilter(row, statusFilter) &&
         (!search || `${machine.name} ${machine.id} ${machine.platform} ${presentations.current.get(destinationKey(row.destination))?.title ?? ""} ${row.destination.sessionID} ${stateWord(row.state)}`
@@ -193,7 +211,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     if (hold && hold.waiting !== waitingKey)
       orderHolds.current.delete(machine.id)
     const rows = arrangeFleetRows(shown, titles, orderHolds.current.get(machine.id) ?? null)
-    return { machine, reading, rows, waitingKey }
+    return { machine, reading, rows, waitingKey, presentationFailed, presentationLoading }
   }).filter(({ machine, rows }) => (statusFilter === "all" || rows.length > 0) && (!search || rows.length > 0 ||
     `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search)))
   const freezeOrder = () => {
@@ -257,7 +275,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           onClick={() => setStatusFilter((value) => value === "idle" ? "all" : "idle")}>{nextWord("cloudAllFilterIdle")}</button>
       </div>
       <div className="cloud-all-groups">
-        {groups.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group"
+        {groups.map(({ machine, reading, rows, presentationFailed, presentationLoading }) => <section key={machine.id} className="cloud-all-group"
           aria-label={`${machine.name} ${machine.id}`}>
           <h2 className="cloud-all-group-heading">
             <button type="button" aria-expanded={!collapsed[machine.id]}
@@ -274,13 +292,17 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
             <p role="status">{machine.freshness === "stale" ? nextWord("cloudAllStaleSource") : nextWord("cloudAllUnknownSource")}</p>}
           {!reading || reading.phase === "loading" ? <p role="status">{nextWord("cloudAllLoading")}</p> : <>
             {reading.value.kind === "unavailable" && <p role="status">{problemWord(reading.value.reason)}</p>}
-            {rows.length === 0 ? reading.value.unknownTargets ? null : reading.value.kind === "ready" ?
+            {presentationLoading && <p role="status">{nextWord("cloudAllLoading")}</p>}
+            {presentationFailed && <p role="alert">{nextWord("cloudAllNameUnavailable")} <button type="button"
+              onClick={() => { presentationPasses.current.delete(machine.id); presentationFailures.current.delete(machine.id)
+                refreshPresentation((revision) => revision + 1) }}>{nextWord("cloudAllTryAgain")}</button></p>}
+            {presentationLoading || presentationFailed ? null : rows.length === 0 ? reading.value.unknownTargets ? null : reading.value.kind === "ready" ?
               <p>{reading.value.rows.length === 0 ? nextWord("cloudAllEmptyMachine") : nextWord("cloudAllNoMatch")}</p> : null
               : <ul className="rows" role="listbox" aria-label={`${machine.name} ${nextWord("cloudSingleSessions")}`}>
                 {rows.map(({ row, depth, branchThrough, ancestorThrough }) => {
                   const presentation = presentations.current.get(destinationKey(row.destination))
                   return <ProjectedRow key={destinationKey(row.destination)}
-                    title={presentation?.title || nextWord("cloudAllNameUnread")} icon={presentation?.icon} cwd={presentation?.cwd}
+                    title={presentation?.title || row.destination.sessionID} icon={presentation?.icon} cwd={presentation?.cwd}
                     status={displayedPresentationStatus(row, presentation)}
                     sessionID={row.destination.sessionID} machineName={machine.name} platform={machine.platform}
                     assistant={row.assistant} backend={row.backend} state={row.state} stateLabel={stateWord(row.state)}

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 5020,
+  "englishKeys": 5021,
   "counts": {
-    "negation": 1445,
+    "negation": 1446,
     "state": 694,
     "permission": 293,
     "deletion": 90,
     "uncertainty": 145
   },
-  "unionCount": 2195,
+  "unionCount": 2196,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -1003,6 +1003,7 @@
       "next.cloudAllContentUnknown",
       "next.cloudAllEmptyMachine",
       "next.cloudAllGone",
+      "next.cloudAllNameUnavailable",
       "next.cloudAllNo",
       "next.cloudAllNoContent",
       "next.cloudAllNoContentPermission",
@@ -4110,6 +4111,7 @@
     "next.cloudAllFailedAgents",
     "next.cloudAllGone",
     "next.cloudAllLede",
+    "next.cloudAllNameUnavailable",
     "next.cloudAllNo",
     "next.cloudAllNoContent",
     "next.cloudAllNoContentPermission",

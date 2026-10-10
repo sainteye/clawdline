@@ -40,6 +40,12 @@ test("the original one-machine page subscribes only exact rich rows named by tha
   client.ready = false
   client.disableClassicSessionView()
   assert.equal(client.socketSubscriptions.size, 0)
+  client.sessionSnapshots.clear()
+  client.ready = true
+  client.enableClassicSessionView("m", "s2")
+  assert.deepEqual(frames.at(-1), { type: "subscribe", channels: ["s/m/s2"] })
+  assert.deepEqual([...client.socketSubscriptions.keys()], ["s/m/s2"],
+    "opening one fleet Session does not recover every rich row on its machine")
 })
 
 test("the original list recovers more rows when other idle Cloud channels fill the relay budget", () => {
