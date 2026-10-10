@@ -465,6 +465,14 @@ export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, 
   // row before it may open; an equal terminal ID on another machine is ignored.
   const openedFleetKey = useRef<string | null>(null)
   useEffect(() => {
+    if (!fleetList || !fleetTarget) return
+    go("sessions", { hash: false })
+    if (phone()) {
+      setView("detail")
+      stepIntoDetail(fleetTarget.sessionID, listAddress() + destinationFragment(fleetTarget), true)
+    } else if (!paneRef.current) setPane(true)
+  }, [fleetList && fleetTarget ? destinationKey(fleetTarget) : null])
+  useEffect(() => {
     if (!fleetList || !fleetTarget) { openedFleetKey.current = null; return }
     if (fleetReaderMachine !== fleetTarget.machineID) return
     const row = rows.find((candidate) => candidate.id === fleetTarget.sessionID &&
@@ -517,7 +525,10 @@ export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, 
     // (`SessionActions.gone`), and it settles before the detail is given back.
     endedIfGone(new Set(rows.map((r) => r.id)))
     if (selectedRef.current && !rows.some((r) => r.id === selectedRef.current)) setSelected(null)
-    if (openRef.current && !rows.some((r) => r.id === openRef.current)) closeDetail()
+    if (openRef.current && !rows.some((r) => r.id === openRef.current)) {
+      if (fleetList && fleetTarget) setOpen(null)
+      else closeDetail()
+    }
     const asked = openAsked()
     if (firstList.current && (rows.length || asked === "gone")) {
       firstList.current = false

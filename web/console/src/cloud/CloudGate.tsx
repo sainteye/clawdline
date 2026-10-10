@@ -279,10 +279,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
    */
   const reading = readerMachine ?? chosen?.id ?? null
   useEffect(() => {
-    if (!consoleUp || !reading) return
-    if (fleetScope) client.current?.disableClassicSessionView?.()
-    else client.current?.enableClassicSessionView?.(reading)
-  }, [reading, fleetScope, consoleUp])
+    const machine = fleetScope && fleetTarget ? fleetTarget.machineID : reading
+    if (!consoleUp || !machine) return
+    if (fleetScope && !fleetTarget) client.current?.disableClassicSessionView?.()
+    else client.current?.enableClassicSessionView?.(machine,
+      fleetScope ? fleetTarget?.sessionID : undefined)
+  }, [reading, fleetScope, fleetTarget && destinationKey(fleetTarget), consoleUp])
   const [pendingTool, setPendingTool] = useState<PendingMachineAction | null>(pendingMachineTool)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const switcherRef = useRef<HTMLDivElement>(null)
@@ -850,8 +852,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           if (reader.current) {
             // A renewal or a reconnect: the console keeps reading, through the new client.
             reader.current.attach(next)
-            if (fleetScopeRef.current) next.disableClassicSessionView?.()
-            else next.enableClassicSessionView?.(reader.current.machine)
+            const target = fleetTargetRef.current
+            if (fleetScopeRef.current && !target) next.disableClassicSessionView?.()
+            else next.enableClassicSessionView?.(reader.current.machine,
+              fleetScopeRef.current ? target?.sessionID : undefined)
             setTerminalHost({ client: next as unknown as TerminalCloudClient, machine: reader.current.machine })
             setScreen({ at: "console" })
             return

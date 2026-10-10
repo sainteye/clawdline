@@ -84,6 +84,15 @@ test("a status row event names the Session whose list title should refresh", () 
   stop()
 })
 
+test("a late content capability tells the fleet to retry its pending names", () => {
+  const { client, emit } = clientFixture()
+  const events: unknown[] = []
+  const stop = statusSource(() => client as never).subscribe((event) => events.push(event))
+  emit({ type: "orchestrator", machine: machineID })
+  assert.deepEqual(events, [{ machineID, kind: "access_changed" }])
+  stop()
+})
+
 test("a newer row before its marker does not announce a transient event gap", () => {
   const { client, emit, calls } = clientFixture()
   const events: unknown[] = []
