@@ -479,14 +479,22 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     return next
   }, [transport, admitFleetMutation])
 
-  const choose = useCallback((machine: CloudMachine) => {
+  /**
+   * Read `machine`, and — unless `remember` says otherwise — record it as the
+   * machine this tab chose.
+   *
+   * `remember` is false for the machine the fleet reads underneath itself: it
+   * is `opening.ts`'s pick, not the person's, and writing it down made the
+   * fleet last exactly one page load.
+   */
+  const choose = useCallback((machine: CloudMachine, remember = true) => {
     const current = client.current
     if (!current || !machine.selectable) return
     // A machine this tab has forgotten still has decrypted snapshots behind it
     // and would open a console reading a line the account has stopped routing.
     if (forgotten.includes(machine.id)) return
     try {
-      sessionStorage.setItem(CHOSEN + (current.account ?? ""), machine.id)
+      if (remember) sessionStorage.setItem(CHOSEN + (current.account ?? ""), machine.id)
     } catch {
       /* a tab that cannot remember asks again after a reload */
     }
@@ -945,7 +953,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     })
     if (opening.at !== "console") return
     setFleetScope(opening.fleet)
-    choose(machines.find((machine) => machine.id === opening.machine)!)
+    choose(machines.find((machine) => machine.id === opening.machine)!, opening.remember)
   }, [screen, machines, who, choose, remembered])
 
   /**
@@ -1138,6 +1146,14 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
 
   const openAllSessions = () => {
     setSwitcherOpen(false)
+    // Every machine is this tab's choice now, so the one machine it chose
+    // before is not: leaving it recorded would reopen that machine alone on
+    // the next load from any address but this one.
+    try {
+      sessionStorage.removeItem(CHOSEN + (who?.account ?? ""))
+    } catch {
+      /* a tab that cannot forget still shows the fleet until it is reloaded */
+    }
     history.pushState({ view: "all-machines" }, "", "#all-machines")
     setFleetScope(true)
     setFleetTarget(null)
