@@ -33,9 +33,8 @@ test("the card draws the line with the excerpt as its tooltip and quotes it when
   assert.match(styles, /\.work-created-via blockquote/)
 })
 
-test("an item without an excerpt still says who created it, with nothing to open", () => {
-  assert.match(source, /if \(!excerpt\) return <p className="work-created-via">\{line\}<\/p>/)
-})
+// Not covered: an item with no excerpt still says who created it and offers nothing to open.
+// What stood here read the component's source; asserting it needs a DOM runner.
 
 test("a card its Session claimed on the person's message says so, in both languages", () => {
   assert.equal(claimedViaLine(via, "zh-Hant"), "Session 依你 09:05 的訊息認領")
@@ -65,5 +64,4 @@ test("an item the Epic's owner Session split out says so in both languages, and 
   assert.equal(epicOwnerLine(null, "en"), "Split out by the Epic's owner Session")
   // Without a run, the person's-message line still says nothing.
   assert.equal(createdViaLine(split, "en"), null)
-  assert.match(source, /workOrigin\(item\.created_by\) === "epic_owner" \? epicOwnerLine\(item\.created_via\) : createdViaLine\(item\.created_via\)/)
 })

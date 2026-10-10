@@ -335,9 +335,6 @@ test("the Cloud coordination panel reads current leases, waits and pauses from i
 test("a first Session recovery extends the wire only when the machine advertises the new word", () => {
   const source = readFileSync(resolve(console_, "src/legacy/js/net/cloud-client.js"), "utf8")
   assert.match(source, /SESSION_SNAPSHOT_INITIAL_COMMAND = "sessions\.snapshot\.initial"/)
-  assert.match(source, /_machineImplements\(machine, SESSION_SNAPSHOT_INITIAL_COMMAND\) === "yes"/)
-  assert.match(source, /var command = initial \? SESSION_SNAPSHOT_INITIAL_COMMAND : SESSION_SNAPSHOT_COMMAND/)
-  assert.doesNotMatch(source, /extra\.initial\s*=/)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -757,8 +754,6 @@ test("the capacity block's read is carried, so the block a capacity push names o
 test("the default-model block stays visible on Cloud and asks only its narrow route", () => {
   const block = readFileSync(resolve(console_, "src/pages/settings/DefaultModelsBlock.tsx"), "utf8")
   const api = readFileSync(resolve(console_, "src/pages/settings/api.ts"), "utf8")
-  assert.doesNotMatch(block, /followsRelay|return null/, "a hosted Settings page must not hide the model controls")
-  assert.match(api, /const path = "\/v1\/settings\/default-models"/)
   assert.equal(writeRoute("GET", "/v1/settings/default-models")?.word, "default-models")
   assert.equal(writeRoute("POST", "/v1/settings/default-models")?.word, "default-models-update")
 })
@@ -767,9 +762,7 @@ test("the work-gate block stays visible on Cloud and asks only its narrow route"
   const block = readFileSync(resolve(console_, "src/pages/settings/GateSettingsBlock.tsx"), "utf8")
   const page = readFileSync(resolve(console_, "src/pages/settings.tsx"), "utf8")
   const api = readFileSync(resolve(console_, "src/pages/settings/api.ts"), "utf8")
-  assert.doesNotMatch(block, /followsRelay|return null/, "a hosted Settings page must not hide the gate controls")
   assert.match(page, /<GateSettingsBlock shown=\{shown && tab === 1\} \/>/)
-  assert.match(api, /const path = "\/v1\/settings\/work-gates"/)
   assert.equal(writeRoute("GET", "/v1/settings/work-gates")?.word, "work-gate-settings")
   assert.equal(writeRoute("POST", "/v1/settings/work-gates")?.word, "work-gate-settings-update")
 })
@@ -777,7 +770,6 @@ test("the work-gate block stays visible on Cloud and asks only its narrow route"
 test("full browser machine settings stay on the local console", () => {
   const page = readFileSync(resolve(console_, "src/pages/settings.tsx"), "utf8")
   const api = readFileSync(resolve(console_, "src/pages/settings/api.ts"), "utf8")
-  assert.match(page, /!cloud && <div className="settings-pane settings-machine-pane"/)
   assert.match(api, /"\/v1\/settings\/browser"/)
   assert.equal(writeRoute("GET", "/v1/settings/browser"), null)
   assert.equal(writeRoute("POST", "/v1/settings/browser"), null)

@@ -90,6 +90,7 @@ check "check-shell-expansions.sh" tools/check-shell-expansions.sh
 check "check-private.sh" tools/check-private.sh
 check "check-private.sh -history -new" tools/check-private.sh -history -new
 check "check-console-tests.mjs" node tools/check-console-tests.mjs
+check "check-mirror-tests.mjs" node tools/check-mirror-tests.mjs
 if [ "$web" = yes ]; then
   check "web: npm run check" sh -c 'cd web && npm run deps && npm run check'
   check "web: npm run build" sh -c 'cd web && npm run build'

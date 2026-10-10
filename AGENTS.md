@@ -52,6 +52,7 @@ tools/check-shell-expansions.sh         # no $name runs into a non-ASCII charact
 tools/check-private.sh                  # nothing of the person's is in a public repo
 tools/check-private.sh -history -new    # no commit behind it added one either
 node tools/check-console-tests.mjs      # every console test file is run by npm test or npm run check
+node tools/check-mirror-tests.mjs       # no console test asserts on the shape of the code
 ( cd web && npm run check && ../tools/heavy.sh npm run build && ../tools/heavy.sh npm test )   # when anything under web/ changed
 ```
 

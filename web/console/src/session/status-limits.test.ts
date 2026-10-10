@@ -15,7 +15,6 @@ test("a Codex weekly window reaches the Status Line", () => {
 
 test("phones keep provider limits visible alongside Git status", () => {
   assert.match(responsiveStyles, /@media \(max-width: 520px\)[\s\S]*?footer\.status-line \.limits \{[\s\S]*?display: flex;/)
-  assert.doesNotMatch(responsiveStyles, /footer\.status-line \.limits \{\s*display: none;/)
 })
 
 test("Status Line percentages are rounded, bounded and honest about unknown values", () => {
@@ -76,9 +75,5 @@ test("a reading with windows draws them and never the unknown cell", () => {
   ])
 })
 
-test("the Session info card passes the daemon's reason on rather than saying only 'unknown'", () => {
-  // The status-line cell is one word wide; the card is where the sentence
-  // naming the file has to land, because that is the only place a person
-  // finds out a status line is what writes it.
-  assert.match(infoCard, /if \(!limits\.windows\.length\) return note\(limits\.detail \|\| T\.webInfoUnknown\)/)
-})
+// Not covered: the Session info card passes the daemon's own reason on instead of saying only
+// unknown. What stood here read the component's source; asserting it needs a DOM runner.

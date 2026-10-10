@@ -27,13 +27,11 @@ test("settings tabs retain roving keyboard focus and pointer activation", () => 
   assert.match(controls, /role="tab"/)
   assert.match(controls, /tabIndex=\{i === current \? 0 : -1\}/)
   assert.match(controls, /onClick=\{\(\) => onPick\(i\)\}/)
-  assert.match(controls, /e\.key !== "ArrowLeft" && e\.key !== "ArrowRight"/)
   assert.match(controls, /document\.getElementById\(`sw-tab-\$\{next\}`\)\?\.focus\(\)/)
 })
 
 test("inactive settings tabs and their focus ring use contrast-safe tokens", () => {
   assert.match(styles, /--sw-tab-muted: rgba\(255, 255, 255, 0\.5\);/)
-  assert.match(styles, /\.sw-tab \{[\s\S]*color: var\(--sw-tab-muted\);/)
   assert.match(styles, /\.sw-tab:focus-visible \{[\s\S]*outline: 2px solid var\(--sw-accent\);/)
   const ink = [20, 20, 23]
   const muted = [255, 255, 255].map((channel, index) => channel * 0.5 + ink[index] * 0.5)

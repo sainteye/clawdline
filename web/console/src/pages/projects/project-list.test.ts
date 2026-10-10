@@ -67,7 +67,6 @@ test("Project maintenance is one secondary group while the Project list stays ou
   const page = readFileSync(new URL("../projects.tsx", import.meta.url), "utf8")
   const tools = readFileSync(new URL("./ProjectTools.tsx", import.meta.url), "utf8")
   assert.match(page, /<ProjectTools/)
-  assert.doesNotMatch(page, /<ProjectSetup\b/)
   assert.match(tools, /<details className="project-tools"/)
   assert.match(tools, /<ProjectSetup\b/)
   assert.match(tools, /<ProjectSync/)

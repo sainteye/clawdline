@@ -116,7 +116,6 @@ test("a machine that sends no unify status shows unknown without a zero count", 
 
 test("the readiness card's unify row opens the scoped Project view and its unify preview", () => {
   const source = readFileSync(new URL("./ProjectSetup.tsx", import.meta.url), "utf8")
-  assert.match(source, /row\.action === "unify"/)
   assert.match(source, /openUnify\(place\)/)
   assert.match(source, /<ProjectUnify [^>]*openRequest=/)
 })

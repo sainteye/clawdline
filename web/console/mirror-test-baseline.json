@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "total": 1,
+  "files": {
+    "src/pages/work/v2-ui.test.ts": {
+      "count": 1,
+      "patterns": {
+        "/const opener = back\\.opener[\\s\\S]*if \\(opener\\?\\.isConnected\\) opener\\.focus\\(\\{ preventScroll: true \\}\\)/": 1
+      }
+    }
+  }
+}
