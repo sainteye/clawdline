@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -263,4 +264,78 @@ func TestACarrierClosesOnlyWhenItsDeviceIsDenied(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+// A page whose carrier died without this machine hearing it opens another.
+//
+// The machine keeps one carrier per viewer and gives it no idle bound, so a
+// peer it still believes in is a peer nothing retires. Before this, every
+// offer that page made afterwards was refused `busy` and it read over the
+// relay for as long as it lived (measured 2026-10-11: 63 reads, 922-1031 ms,
+// against 610 ms on the carrier it could not reopen).
+func TestAPageWhoseCarrierDiedUnheardOpensAnother(t *testing.T) {
+	f := newDirectFixture(t)
+	first, _, firstConnection := f.carrier(t)
+	f.l.directMu.Lock()
+	stale := f.l.directPeers["viewer"]
+	f.l.directMu.Unlock()
+
+	// The page's side is gone, and nothing told this machine: no data channel
+	// close, no connection state change. `first` is deliberately left open so
+	// the machine's own view of the carrier stays exactly as it was.
+	b, offer := newTestBrowser(t)
+	key, err := domaincloud.NewContentKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := carrierID(t)
+	body, _ := json.Marshal(map[string]string{"sdp": offer})
+	second := strings.Join([]string{"87654321", "4321", "4321", "8321", "cba987654321"}, "-")
+	f.l.handleCarrierOffer(context.Background(), f.svc, f.p, terminalRequest{V: 1, Type: "terminal_request",
+		RequestID: second, Connection: connection, Operation: carrierOfferOperation,
+		KeyID: "rk-" + carrierID(t), Key: base64.StdEncoding.EncodeToString(key.Bytes()), Body: body})
+	answer := f.answerAt(t, 1)
+	if answer["read"] != "read:"+second || answer["status"] != float64(200) {
+		t.Fatalf("the second carrier offer was not answered: %v", answer)
+	}
+	got, _ := answer["body"].(map[string]any)
+	if got["carrier"] != connection {
+		t.Fatalf("the answer named %v, want the new carrier %q", got["carrier"], connection)
+	}
+	if connection == firstConnection {
+		t.Fatal("the new carrier reused the stale carrier's id")
+	}
+	sdp := openCarrierAnswer(t, key, connection, got["sdp_sealed"].(string))
+	if err := b.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: sdp}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-b.opened:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the replacement carrier's data channel did not open")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for !f.l.directPeerOpen("viewer") {
+		if time.Now().After(deadline) {
+			t.Fatal("the machine did not see the replacement carrier open")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	f.l.directMu.Lock()
+	now := f.l.directPeers["viewer"]
+	peers := len(f.l.directPeers)
+	f.l.directMu.Unlock()
+	if now == stale {
+		t.Fatal("the stale carrier is still the viewer's peer")
+	}
+	if peers != 1 {
+		t.Fatalf("the viewer holds %d peers, want one carrier", peers)
+	}
+	stale.mu.Lock()
+	closed := stale.closed
+	stale.mu.Unlock()
+	if !closed {
+		t.Fatal("the superseded carrier was left open")
+	}
+	_ = first
 }

@@ -393,5 +393,37 @@ test("a terminal that negotiated the channel itself hands it to the page, and ke
     // The terminal goes. The channel is the page's now, and reads keep taking it.
     m.transport.dispose()
     assert.equal(carrier.open, true, "disposing the terminal closed the page's carrier")
+
+    // Closing the terminal view releases the terminal's own offer. Releasing a
+    // terminal releases the terminal: the channel it handed to the carrier is
+    // what every later read travels on, and closing it would leave this page
+    // reading over the relay with the machine still holding the carrier.
+    session.dispose()
+    assert.equal(carrier.open, true, "closing the terminal closed the page's carrier")
   } finally { session.dispose() }
+})
+
+// The machine keeps one carrier per viewer and gives it no idle bound, so a
+// channel this page stops using while the machine still believes in it is a
+// page that can never open another: every offer is refused `terminal_busy`
+// (`internal/transport/cloud/carrier.go`, `supersedeCarrier`). Letting go is
+// therefore always a close, never only a forget.
+test("a carrier told its channel is gone closes it, so the machine hears it go", async () => {
+  const peer = new FakePeer()
+  const client = { deviceID: viewer, ready: true, retired: false,
+    publishCarrierOffer: async () => { throw new Error("this test negotiates nothing") },
+    receiveCarrierEnvelope: () => { }, carrierSupported: () => true }
+  const carrier = DirectCarrier.for(client, machine + "_lost", () => peer)
+  const down: string[] = []
+  const link = new DirectLink(() => peer, () => { }, (code: string) => down.push(code))
+  await link.offer()
+  await link.answer("v=0 answer")
+  await until(() => link.open)
+  carrier.adopt(link, true)
+  assert.equal(carrier.open, true)
+
+  carrier.dropped(link, "terminal_direct_closed")
+  assert.equal(carrier.open, false, "the carrier still offers a channel it let go")
+  assert.equal(peer.channel.readyState, "closed", "the channel was forgotten instead of closed")
+  assert.deepEqual(down, ["terminal_direct_closed"], "the link reported down once")
 })

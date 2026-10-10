@@ -217,6 +217,13 @@ export class DirectCarrier implements SharedCarrier {
   private lost(link: DirectLink, code: string): void {
     if (this.link === link) this.link = null
     this.receipts = false
+    // A carrier this page lets go is closed, never only forgotten. The machine
+    // keeps one carrier per viewer and has no idle bound to fall back on, so a
+    // channel this page stops using while the other end still believes in it is
+    // a page that can never open another (`supersedeCarrier`, which is the other
+    // half of this). `close` is idempotent, so the usual order — the link closed,
+    // which is why we are here — is unchanged.
+    link.close(code)
     this.retryAt = Date.now() + (code === "terminal_busy" ? DIRECT_BUSY_RETRY_MS : DIRECT_RETRY_MS)
     for (const listener of [...this.down]) listener(code)
   }

@@ -315,7 +315,10 @@ export class TerminalChannelTransport {
           // offers receipts on it (`internal/transport/cloud/direct.go`).
           if (link.open && shared) { shared.adopt(link, true); this.ownLink = null; this.listenShared(shared) }
         },
-        close: () => link.close("terminal_direct_released"),
+        // A terminal that handed this link to the page's carrier is no longer the
+        // one that may close it: the reads are using it. Releasing the terminal
+        // only releases the terminal.
+        close: () => { if (!held()) link.close("terminal_direct_released") },
       }
     } catch (error) {
       link.close("terminal_direct_failed")

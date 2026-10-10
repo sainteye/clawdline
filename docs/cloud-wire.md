@@ -159,6 +159,14 @@ the carrier」。
    撤銷或網路打不通時，同一筆讀取改在 relay 上重問一次（讀取沒有副作用，所以可以重問），畫面上
    不會出現「讀不到」。
 
+2026-10-11 實測（Chrome 在機器本機，同一個 Session 的 transcript）：走 relay 中位數 1004 ms
+（p95 1035 ms，22 筆），走直連中位數 610 ms（p95 625 ms，20 筆）。直連本身的往返是 0 ms，所以
+relay 那一段值 394 ms，剩下的 610 ms 全是機器自己回答的時間——其中絕大部分是每一筆 pinned 讀取
+都會先打一次 `GET /v1/devices` 向帳號 API 重讀 roster（本機實測 507–710 ms）。那是刻意的設計，
+撤銷才能在下一筆讀取就生效；terminal 對同一件事選了另一種答案（成功的 roster 讀取在
+`CloudTerminalRosterRefreshLimit` 內有效）。數字與取捨記在
+[Cloud terminal wire](cloud-terminal-wire.md)「What a read costs, measured」。
+
 ## 3. Canonical JSON（RFC 8785 的安全整數子集）
 
 這串位元組同時是三樣東西：簽章的輸入、pairing wire body 的唯一合法拼法、以及每一個
