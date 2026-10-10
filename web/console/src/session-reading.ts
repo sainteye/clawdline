@@ -101,12 +101,9 @@ export function scanFailureWords(
   if (openGap) {
     return catalogWord("literal", "2811b1d9d660")
   }
-  // A source the person turned off was not looked at: say so in one line,
-  // rather than draw its tabs as nothing or call the list broken.
-  if ((sources ?? []).some((source) => source.disabled === "setting" && source.source === "iterm")) {
-    return catalogWord("session", "itermScanOff")
-  }
   if (inventoryRefreshInProgress(notes)) return null
+  // A source the person turned off in Settings is not a failure, and the list
+  // does not repeat their own setting back at them: it says nothing about it.
   const incomplete = (sources ?? []).find((source) => !source.complete && !source.disabled)
   if (incomplete) {
     return catalogFormat("template", "cdf164a88db5", [incomplete.source])
