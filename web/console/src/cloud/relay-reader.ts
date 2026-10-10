@@ -315,6 +315,14 @@ export const CLOUD_SHELL_BYTES = 64 * 1024
 export const TRANSCRIPT_MAX_REUSE_MS = 30_000
 
 /**
+ * How long a pinned read waits for the rest of a pass when the page holds a
+ * Session row newer than its marker (`coherentSession`). A pass is ten-odd
+ * envelopes sent back to back, so its marker follows within milliseconds; a
+ * pass the machine stopped sending is still refused after this.
+ */
+export const PASS_SETTLE_MS = 2_000
+
+/**
  * How long, after this page did something to a session, every poll asks the
  * machine again until the transcript it answers has changed. A message just
  * typed is the turn the page is waiting to see (`session/pending.ts`); reusing
@@ -639,8 +647,32 @@ export class RelayReader {
     for (const stream of this.streams) stream.handlers.onError?.(new Error("the relay connection is down"))
   }
 
-  /** `fetch`, for the console's own-origin `/v1/…` requests. */
+  /**
+   * `fetch`, for the console's own-origin `/v1/…` requests.
+   *
+   * A Session read that fails — the conversation, an older page of it, its
+   * to-dos, its info, the Session list — is also recorded in the copied
+   * client's own failure log (`cloud.read.failed`), which that client delivers
+   * to the paired machine's log by itself (`diagnostics.events`). On
+   * 2026-10-10 the hosted page said "could not read the conversation" several
+   * times an hour while the machine's log held no refused or slow read: the
+   * row says where it failed, so the machine's log can say which side it was.
+   */
   readonly fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const started = this.now()
+    const seen: { error?: unknown } = {}
+    const read = readFailureWord(input, init)
+    try {
+      const answer = await this.answerFetch(input, init, seen)
+      if (read && answer.status >= 400) this.reportReadFailure(read, started, seen.error, answer)
+      return answer
+    } catch (error) {
+      if (read) this.reportReadFailure(read, started, seen.error ?? error, null)
+      throw error
+    }
+  }
+
+  private readonly answerFetch = async (input: RequestInfo | URL, init: RequestInit | undefined, seen: { error?: unknown }): Promise<Response> => {
     const method = (init?.method ?? (typeof input === "object" && "method" in input ? input.method : "GET")).toUpperCase()
     const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
     const url = new URL(href, "http://relay.invalid/")
@@ -703,8 +735,8 @@ export class RelayReader {
         const before = historyCursor(q.before)
         if (q.before !== undefined && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
         return await this.sessionRead(init?.signal, method, path, "agent", (client) =>
-          this.options.fleetTarget?.() ? client.readForGeneration?.(this.pinnedSession(agent.session), "agent",
-            { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, ...(before ? { before } : {}) }, init?.signal ?? undefined)
+          this.options.fleetTarget?.() ? this.coherentSession(agent.session, init?.signal, "agent").then((target) => client.readForGeneration?.(target, "agent",
+            { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, ...(before ? { before } : {}) }, init?.signal ?? undefined))
             : before ? client._read?.({ machine: this.machine, session: agent.session }, "agent",
             { agent: agent.agent, limit: CLOUD_AGENT_LIMIT, before }, `agent:${agent.agent}.before.${before}`)
             : client.agent?.({ machine: this.machine, session: agent.session }, agent.agent))
@@ -714,8 +746,8 @@ export class RelayReader {
         const q = this.only(url, path, "bytes")
         this.window(path, "bytes", q.bytes, CLOUD_SHELL_BYTES)
         return await this.sessionRead(init?.signal, method, path, "shell", (client) =>
-          this.options.fleetTarget?.() ? client.readForGeneration?.(this.pinnedSession(shell.session), "shell",
-            { shell: shell.shell, bytes: CLOUD_SHELL_BYTES }, init?.signal ?? undefined)
+          this.options.fleetTarget?.() ? this.coherentSession(shell.session, init?.signal, "shell").then((target) => client.readForGeneration?.(target, "shell",
+            { shell: shell.shell, bytes: CLOUD_SHELL_BYTES }, init?.signal ?? undefined))
             : client.shell?.({ machine: this.machine, session: shell.session }, shell.shell))
       }
       const workTerminal = workV2SessionTodosTerminal(path)
@@ -922,7 +954,7 @@ export class RelayReader {
               return this.refuse(method, path, 501, "cloud_not_carried", "This console cannot read earlier messages.")
             }
             const body = this.options.classicStatus
-              ? await client.transcriptPageForGeneration!(this.pinnedSession(session), before, init?.signal ?? undefined)
+              ? await client.transcriptPageForGeneration!(await this.coherentSession(session, init?.signal), before, init?.signal ?? undefined)
               : await client._read?.({ machine: this.machine, session }, "transcript",
                 { limit: CLOUD_TRANSCRIPT_LIMIT, before, priority: "foreground" }, `transcript.before.${before}`)
             const page = transcriptPage(body, session)
@@ -1116,6 +1148,7 @@ export class RelayReader {
           return this.refuse(method, path, 501, "cloud_not_carried", this.notCarried(method, path))
       }
     } catch (error) {
+      seen.error = error
       if (error instanceof AbandonedRead) {
         // A fetch whose signal fired rejects; it does not answer.
         this.note(method, path, "unanswered", error.code, { word: error.word })
@@ -1418,7 +1451,7 @@ export class RelayReader {
       throw Object.assign(new Error("Pinned Session reading is unavailable"), { code: "cloud_not_carried" })
     }
     const asked = (this.options.classicStatus
-      ? client.transcriptForGeneration!(this.pinnedSession(session))
+      ? this.coherentSession(session).then((target) => client.transcriptForGeneration!(target))
       : client.transcript({ machine: this.machine, session }, undefined, { foreground: true }))
       .then((body) => transcriptPage(body, session))
     entry.inflight = asked
@@ -1609,6 +1642,48 @@ export class RelayReader {
     return this.client
   }
 
+  /**
+   * `pinnedSession`, after the pass it is reading has finished arriving.
+   *
+   * The machine sends a pass as every Session's ss/ row and then the marker,
+   * all with one new pass id (`internal/transport/cloud/session_status.go`).
+   * A page opens them one at a time, so for the few milliseconds the rest of
+   * a pass is on its way it holds a row from the new pass beside the marker
+   * of the old one, and a read asked then was refused here as
+   * `pass_mismatch` — on the page, before anything was sent, so the machine
+   * never saw it. A replay of an hour of 15-second passes refused 2 to 7
+   * polls of the open Session this way (`read-replay.test.ts`).
+   *
+   * Only that condition waits, and only for the marker: the next envelope of
+   * this machine's marker, or `PASS_SETTLE_MS`, whichever comes first. Then
+   * the same checks decide, so a pass that never completes is still refused.
+   */
+  private async coherentSession(session: string, signal?: AbortSignal | null, word = "transcript"): Promise<{ machineID: string; sessionID: string; executionGeneration: string }> {
+    try {
+      return this.pinnedSession(session)
+    } catch (error) {
+      if ((error as { condition?: unknown })?.condition !== "pass_mismatch") throw error
+    }
+    const client = this.connected()
+    await new Promise<void>((resolve) => {
+      let off: (() => void) | null = null
+      const done = () => {
+        clearTimeout(timer)
+        off?.()
+        signal?.removeEventListener("abort", done)
+        resolve()
+      }
+      const timer = setTimeout(done, PASS_SETTLE_MS)
+      signal?.addEventListener("abort", done)
+      off = client.events((event) => {
+        if (event.type === "session_status" && event.identity?.machine === this.machine &&
+          event.identity?.session === "__clawdline_inventory_v1__") done()
+      }) as (() => void) | null
+    })
+    if (signal?.aborted) throw new AbandonedRead(word)
+    return this.pinnedSession(session)
+  }
+
   private pinnedSession(session: string): { machineID: string; sessionID: string; executionGeneration: string } {
     const held = this.connected().statusSnapshots
     const marker = held?.get(JSON.stringify([this.machine, "__clawdline_inventory_v1__"])) as
@@ -1620,19 +1695,28 @@ export class RelayReader {
     const data = row?.payload
     const now = this.now() / 1000
     const fresh = (value: unknown) => typeof value === "number" && Math.abs(now - value) <= 300
-    if (!data || meta?.complete !== true || !Array.isArray(meta.inventory?.sessions) ||
-      !meta.inventory.sessions.includes(session) || data?.snapshot_generation !== meta.snapshot_generation ||
-      typeof data.execution_generation !== "string" || !/^[0-9a-f]{32}$/u.test(data.execution_generation) ||
-      data.source?.freshness !== "current" || !fresh(meta.at) || !fresh(data.projected_at) ||
-      !fresh(data.source.observed_at)) throw Object.assign(new Error("The Session execution is no longer current"), {
-      code: "execution_generation_changed", status: 409,
+    // The first condition that fails names the refusal, so a page's report can
+    // say which one it was (`reportReadFailure`). The refusal is unchanged.
+    const condition = !marker ? "no_marker"
+      : meta?.complete !== true || !Array.isArray(meta.inventory?.sessions) ? "marker_incomplete"
+      : !meta.inventory.sessions.includes(session) ? "not_listed"
+      : !data ? "no_row"
+      : data.snapshot_generation !== meta.snapshot_generation ? "pass_mismatch"
+      : typeof data.execution_generation !== "string" || !/^[0-9a-f]{32}$/u.test(data.execution_generation) ? "no_execution"
+      : data.source?.freshness !== "current" ? "not_current"
+      : !fresh(meta.at) ? "marker_stale"
+      : !fresh(data.projected_at) ? "row_stale"
+      : !fresh(data.source?.observed_at) ? "observed_stale"
+      : null
+    if (condition !== null || !data) throw Object.assign(new Error("The Session execution is no longer current"), {
+      code: "execution_generation_changed", status: 409, condition: condition ?? "no_row",
     })
-    const target = { machineID: this.machine, sessionID: session, executionGeneration: data.execution_generation }
+    const target = { machineID: this.machine, sessionID: session, executionGeneration: data.execution_generation as string }
     const intended = this.options.fleetTarget?.()
     if (intended && (intended.machineID !== target.machineID || intended.sessionID !== target.sessionID ||
       intended.executionGeneration !== target.executionGeneration)) {
       throw Object.assign(new Error("The opened Session execution has changed"), {
-        code: "execution_generation_changed", status: 409,
+        code: "execution_generation_changed", status: 409, condition: "target_changed",
       })
     }
     return target
@@ -1695,6 +1779,55 @@ export class RelayReader {
   private refuse(method: string, path: string, status: number, code: string, detail: string, detailKey: string | null = null, version?: string): Response {
     this.note(method, path, "refused", code)
     return json(status, { error: code, detail, route: path, ...(detailKey ? { detail_key: detailKey } : {}), ...(version ? { version } : {}) })
+  }
+
+  /**
+   * One `cloud.read.failed` row in the copied client's failure log: which read,
+   * where it stopped, and what this page held when it did. Content-free: no
+   * message text, no title, no line — the terminal id is the only id.
+   *
+   * `stage` is the side of the wire it stopped on, read from the failure the
+   * copied client settled it with: a failure carrying no envelope sequence was
+   * never sent (`viewer_refused`), `cloud_read_timeout` is `timeout`, the
+   * relay's own layer is `relay_refused`, and a machine's is `answered`. A read
+   * the page itself stopped waiting for is not a failure and is not recorded.
+   */
+  private reportReadFailure(read: { word: string; session: string | null }, started: number, error: unknown, answer: Response | null): void {
+    try {
+      const log = (this.client as { viewerEvents?: { record?(event: string, data: Record<string, unknown>, key?: string): unknown } } | null)?.viewerEvents
+      if (typeof log?.record !== "function") return
+      const failure = (error ?? null) as { code?: unknown; layer?: unknown; status?: unknown; condition?: unknown;
+        ref?: { seq?: unknown } | null; name?: unknown } | null
+      if (error instanceof AbandonedRead || failure?.code === "cloud_read_abandoned" || failure?.name === "AbortError") return
+      const code = typeof failure?.code === "string" ? failure.code : error instanceof NotConnected ? "offline"
+        : answer ? "http_" + answer.status : "cloud_failed"
+      const layer = typeof failure?.layer === "string" ? failure.layer : null
+      const sent = Number.isSafeInteger(failure?.ref?.seq)
+      const stage = code === "cloud_read_timeout" ? "timeout"
+        : !sent ? "viewer_refused"
+        : layer === "relay" ? "relay_refused"
+        : "answered"
+      const client = this.client
+      const held = client?.statusSnapshots
+      const marker = held?.get(JSON.stringify([this.machine, "__clawdline_inventory_v1__"])) as { payload?: { at?: unknown } } | undefined
+      const row = read.session ? held?.get(JSON.stringify([this.machine, read.session])) as { payload?: { projected_at?: unknown } } | undefined : undefined
+      const nowS = this.now() / 1000
+      const age = (at: unknown) => typeof at === "number" && Number.isFinite(at) ? Math.round(nowS - at) : null
+      const offline = (client as { machineOffline?: ReadonlyMap<string, { until?: unknown }> } | null)?.machineOffline?.get(this.machine)
+      const data: Record<string, unknown> = {
+        word: read.word, stage, code,
+        cond: typeof failure?.condition === "string" ? failure.condition : null,
+        status: answer?.status ?? (typeof failure?.status === "number" ? failure.status : null),
+        layer, ms: Math.max(0, Math.round(this.now() - started)),
+        connection: !client ? "none" : client.ready === false ? "not_ready" : "ready",
+        marker_age_s: age(marker?.payload?.at), row_age_s: age(row?.payload?.projected_at),
+        offline_hold_ms: offline && typeof offline.until === "number" ? Math.max(0, Math.round(offline.until - this.now())) : null,
+        machine: this.machine, session: read.session,
+      }
+      log.record("cloud.read.failed", data, ["cloud.read.failed", read.word, stage, code].join("|"))
+    } catch {
+      // A recorder cannot fail the read it is recording.
+    }
   }
 
   private note(method: string, path: string, answer: SeamRow["answer"], code?: string, extra?: Partial<SeamRow>): void {
@@ -1797,6 +1930,31 @@ function sessionAgent(path: string): { session: string; agent: string } | null {
 }
 
 /** A typed failure's code, as a machine that did not answer the list is named by. */
+/**
+ * The Session reads a failure of which is reported to the machine
+ * (`reportReadFailure`), by the route the page asked for, or null.
+ */
+function readFailureWord(input: RequestInfo | URL, init?: RequestInit): { word: string; session: string | null } | null {
+  try {
+    const method = (init?.method ?? (typeof input === "object" && "method" in input ? input.method : "GET")).toUpperCase()
+    if (method !== "GET") return null
+    const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+    const url = new URL(href, "http://relay.invalid/")
+    const path = url.pathname
+    if (path === "/v1/transcript") {
+      return { word: url.searchParams.has("before") ? "transcript_page" : "transcript", session: url.searchParams.get("session") }
+    }
+    if (path === "/v1/sessions") return { word: "session_list", session: null }
+    const todos = workV2SessionTodosTerminal(path)
+    if (todos) return { word: "session_todos", session: todos }
+    const info = /^\/v1\/sessions\/([^/]+)\/info$/u.exec(path)
+    if (info) return { word: "info", session: decodeURIComponent(info[1]!) }
+    return null
+  } catch {
+    return null
+  }
+}
+
 function failureCode(error: unknown): string {
   const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined
   return typeof code === "string" && code ? code : "unanswered"

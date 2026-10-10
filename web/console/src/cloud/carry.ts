@@ -178,6 +178,10 @@ export const CARRIED = {
   // opened after a relay eviction is sent every row rather than whichever
   // changed.
   "sessions.snapshot": "cloud-client.js _recoverSessions (on connect)",
+  // A page's own failures, delivered by the copied client with nobody
+  // pressing anything once a row is recorded (`cloud-viewer-events.js`);
+  // a failed carried read is one (`cloud.read.failed`, `relay-reader.ts`).
+  "diagnostics.events": "cloud-client.js _deliverViewerEvents (after a recorded failure)",
   "sessions.snapshot.initial": "cloud-client.js first _recoverSessions attempt (when advertised)",
   "smart-title": "POST /v1/sessions/{id}/smart-title",
   "snippet-create": "POST /v1/snippets",
@@ -307,7 +311,6 @@ export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = []
  * and not a comment.
  */
 export const NO_MACHINE_ROUTE = {
-  "diagnostics.events": "This machine does not take a page's diagnostic events over Clawdline Cloud.",
   "diagnostics.report": "This machine does not take a diagnostic report over Clawdline Cloud.",
   dispatch: "Dispatching a task over Clawdline Cloud has no pinned wire shape on this machine: dispatch it on the machine.",
 } as const
