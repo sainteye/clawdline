@@ -104,6 +104,16 @@ let placesGeneration = 0
 let landed: string | null = null
 let opener: HTMLElement | null = null
 let machineOnly = false
+/**
+ * The machine this sheet starts on, when it is not the one the console reads.
+ *
+ * The hosted fleet shows every machine's Sessions at once, so "new Session"
+ * there is a question about where, not an instruction to go somewhere: the
+ * console stays on every machine and this sheet reads the named machine's
+ * Projects and roles. The place ids that come back carry their own machine, so
+ * the start, the resume and the past list that follow need nothing from here.
+ */
+let onMachine: { id: string; name: string } | null = null
 type StartMode = "session" | "terminal"
 let mode: StartMode = "session"
 let terminalAccess: { state: "loading" | "ready" | "blocked"; reason: string } = { state: "loading", reason: "" }
@@ -289,13 +299,13 @@ function drawWith(): void {
 /** The chosen persona, when the catalog still names it; "" for none. */
 function chosenPersona(): string {
   const id = at ? resumeAs : persona
-  return personaById(personasNow(), id) ? id : ""
+  return personaById(personasNow(onMachine?.id ?? null), id) ? id : ""
 }
 
 /** The role chips; see the header. */
 function drawPersona(): void {
   const row = el("start-persona")
-  const catalog = personasNow() ?? []
+  const catalog = personasNow(onMachine?.id ?? null) ?? []
   // Every draw rebuilds the chips; the sideways scroll is kept across it, so a
   // press on a chip the person scrolled to does not throw the row back.
   const scrolled = row.scrollLeft
@@ -338,11 +348,23 @@ function drawPersona(): void {
   }
 }
 
-/** `drawMachines`: this transport has no machine read, so the row is hidden. */
+/**
+ * `drawMachines`: which machine this start will run on.
+ *
+ * Hidden on a console that reads one machine, as it is on the Mac's own page:
+ * there is only one answer and the header already gives it. Shown when the
+ * fleet opened this sheet for a machine other than the one underneath, because
+ * then the Projects below are not the ones the header names.
+ */
 function drawMachines(): void {
   const row = el("start-machine")
-  row.hidden = true
   row.innerHTML = ""
+  row.hidden = !onMachine
+  if (!onMachine) return
+  const said = document.createElement("span")
+  said.className = "start-on-machine"
+  said.textContent = nextWord("cloudStartOn", { machine: onMachine.name })
+  row.appendChild(said)
 }
 
 function drawResume(): void {
@@ -597,7 +619,7 @@ function load(background = false): void {
   const generation = ++placesGeneration
   loading = true
   if (!background) draw()
-  asked(() => api.places())
+  asked(() => api.places(onMachine?.id))
     .then((d) => {
       if (generation !== placesGeneration) return
       places = (d && d.places) || []
@@ -802,7 +824,8 @@ function hideBand(): void {
   L.setBandSpin(null)
 }
 
-function openMode(machine: boolean, requested: StartMode = "session"): void {
+function openMode(machine: boolean, requested: StartMode = "session", on: { id: string; name: string } | null = null): void {
+  onMachine = on
   const active = document.activeElement
   opener = machine ? el("counts") : active instanceof HTMLElement && active !== document.body ? active : el("start-go")
   machineOnly = machine
@@ -813,7 +836,7 @@ function openMode(machine: boolean, requested: StartMode = "session"): void {
   leave()
   persona = rememberedPersona()
   team = rememberedTeam()
-  if (mode === "session") void loadPersonas().then(() => draw())
+  if (mode === "session") void loadPersonas(undefined, onMachine?.id ?? null).then(() => draw())
   if (!wait) load()
   if (mode === "terminal") checkTerminalAccess()
   draw()
@@ -822,8 +845,12 @@ function openMode(machine: boolean, requested: StartMode = "session"): void {
 
 function open(): void { openMode(false) }
 
+/** Open the sheet to start on `machine`, leaving the console where it is. */
+function openOn(machine: { id: string; name: string }): void { openMode(false, "session", machine) }
+
 function close(): void {
   if (pressing) return
+  onMachine = null
   placesGeneration += 1
   loading = false
   el("start").hidden = true
@@ -842,6 +869,7 @@ function arrived(id: string) {
 
 export const Start = {
   open,
+  openOn,
   openTerminal: () => openMode(false, "terminal"),
   openMachine: () => openMode(true),
   close,

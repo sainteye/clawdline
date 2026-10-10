@@ -1101,15 +1101,21 @@ export class RelayReader {
           this.only(url, path)
           return await this.machineRead(init?.signal, method, path, "projects", {})
         }
-        case "/v1/personas":
+        case "/v1/personas": {
           // The built-in personas a start may name (docs/personas.md). A
           // machine whose descriptor does not list the word is a daemon from
           // before them, and the copied client refuses the read before it
           // leaves (`_unsupportedRefusal`: `cloud_machine_unsupported`, or
           // `cloud_feature_unavailable` from a Mac), so the start sheet hears
           // "none" now rather than at the read timeout.
-          this.only(url, path)
-          return await this.machineRead(init?.signal, method, path, "personas", {})
+          //
+          // `?machine=` is the start sheet's, for a Session being started on a
+          // machine other than the one this page reads: the roles offered have
+          // to be the roles the machine that will run it knows. It is the same
+          // naming `/v1/places` takes for that sheet's Projects.
+          const q = this.only(url, path, "machine")
+          return await this.machineRead(init?.signal, method, path, "personas", {}, q.machine || undefined)
+        }
         // Project settings sync (docs/project-sync.md): this machine's offer,
         // one offered project in full, and what this machine mirrors.
         case "/v1/project-sync/manifest":

@@ -3426,6 +3426,8 @@
   "next.cloudSignInLede": "登入後就能讀取你的機器",
   "next.cloudSwitch": "換一台機器",
   "next.cloudAllMachines": "所有機器",
+  "next.cloudStartWhere": "要開在哪一台機器？",
+  "next.cloudStartOn": "要開在 {machine}",
   "next.cloudSingleSessions": "這台機器的 Session",
   "next.cloudAllBack": "返回",
   "next.cloudAllDetail": "Session 詳細資料",
