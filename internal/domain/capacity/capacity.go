@@ -634,11 +634,14 @@ func Register() []Entry {
 			Sources: []string{"internal/transport/cloud.SessionNoMovementSecondsLimit"},
 		},
 		{
-			// A Cloud Session row (s/) or status set (ss/) whose only change is
-			// its activity time, its sub-agents or its line's token count is
-			// re-sent at most once per this interval; the next pass after it
-			// carries the newest value. Any other change goes at once and
-			// starts the window again. The local event stream is not held.
+			// A Cloud Session row (s/), status row (ss/) or status marker
+			// whose only change is its activity time, its sub-agents or its
+			// line's token count is re-sent at most once per this interval;
+			// the next pass after it carries the newest value. Any other
+			// change goes at once and starts that row's window again. Each
+			// row has its own window: a status row is published only when it
+			// changed, never because another row in the set did. The local
+			// event stream is not held.
 			Name: CloudSessionRowVolatile, Class: Cache, Unit: Seconds,
 			Limit: 15, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,

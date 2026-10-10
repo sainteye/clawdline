@@ -138,6 +138,10 @@ func TestStatusInventoryFollowsTheRows(t *testing.T) {
 	}
 }
 
+// A work line the viewer must re-read is not a status change: the row says the
+// same thing, and only the marker's presentation id moves. It used to restate
+// every row of the machine for it, which is what made one working Session cost
+// its nine idle neighbours a frame each every fifteen seconds.
 func TestStatusNotifiesOneMachineListReadWhenOnlyItsWorkLineChanges(t *testing.T) {
 	c := &collector{}
 	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
@@ -147,6 +151,7 @@ func TestStatusNotifiesOneMachineListReadWhenOnlyItsWorkLineChanges(t *testing.T
 	if len(c.channels()) != 2 {
 		t.Fatalf("initial pass: %v", c.channels())
 	}
+	first := c.payload(t, "ss/mac_a/"+InventorySessionID)
 	reading.at = json.RawMessage(`200`)
 	p.publishStatuses(context.Background(), reading, []string{"%19"})
 	if len(c.channels()) != 2 {
@@ -154,14 +159,100 @@ func TestStatusNotifiesOneMachineListReadWhenOnlyItsWorkLineChanges(t *testing.T
 	}
 	row["line"] = "private next line"
 	p.publishStatuses(context.Background(), reading, []string{"%19"})
-	if len(c.channels()) != 4 {
-		t.Fatalf("changed work line did not publish a new status pass: %v", c.channels())
+	if got := c.channels(); len(got) != 3 || got[2] != "ss/mac_a/"+InventorySessionID {
+		t.Fatalf("a changed work line did not state the marker alone: %v", got)
+	}
+	next := c.payload(t, "ss/mac_a/"+InventorySessionID)
+	if next["presentation_generation"] == first["presentation_generation"] {
+		t.Fatalf("the machine list was not told to read again: %v", next)
+	}
+	if next["snapshot_generation"] != first["snapshot_generation"] {
+		t.Fatalf("a work line changed the pass the rows are trusted by: %v -> %v", first, next)
+	}
+	if c.payload(t, "ss/mac_a/%2519")["snapshot_generation"] != next["snapshot_generation"] {
+		t.Fatal("the retained row no longer matches the newest marker")
 	}
 	for _, channel := range c.channels() {
 		body, err := json.Marshal(c.payload(t, channel))
 		if err != nil || strings.Contains(string(body), "private") {
 			t.Fatalf("status channel %s copied work content: %s (%v)", channel, body, err)
 		}
+	}
+}
+
+// What the pass id is for: a row the relay still retains for a Session that
+// has closed, or that is running a different execution, cannot satisfy the
+// newest marker. The id is derived from the set rather than drawn fresh every
+// pass, so this is the property that had to be proved again.
+func TestARetainedStatusRowOfAnotherSetCannotSatisfyTheMarker(t *testing.T) {
+	c := &collector{}
+	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
+	first := "0123456789abcdef0123456789abcdef"
+	second := "fedcba9876543210fedcba9876543210"
+	alive := map[string]any{"id": "%19", "state": "idle", "execution_generation": first,
+		"source": map[string]any{"freshness": "current", "observed_at": float64(90), "provenance": "tmux"}}
+	gone := map[string]any{"id": "%20", "state": "idle", "execution_generation": second,
+		"source": map[string]any{"freshness": "current", "observed_at": float64(90), "provenance": "tmux"}}
+	reading := sessionReading{sessions: []map[string]any{alive, gone}, at: json.RawMessage(`100`), complete: true}
+	p.publishStatuses(context.Background(), reading, []string{"%19", "%20"})
+	retained := c.payload(t, "ss/mac_a/%2520")
+	marker := c.payload(t, "ss/mac_a/"+InventorySessionID)
+	if retained["snapshot_generation"] != marker["snapshot_generation"] {
+		t.Fatalf("the first pass did not state one set: %v %v", retained, marker)
+	}
+
+	// %20 closes. Its row stays on the relay; the marker stops naming it and
+	// says a different pass, so a viewer holding that row cannot count it.
+	reading.sessions = []map[string]any{alive}
+	reading.at = json.RawMessage(`105`)
+	p.publishStatuses(context.Background(), reading, []string{"%19"})
+	smaller := c.payload(t, "ss/mac_a/"+InventorySessionID)
+	if smaller["snapshot_generation"] == marker["snapshot_generation"] {
+		t.Fatalf("a Session leaving the set kept its pass id: %v", smaller)
+	}
+	if c.payload(t, "ss/mac_a/%2519")["snapshot_generation"] != smaller["snapshot_generation"] {
+		t.Fatal("the remaining row was not restated for the new set")
+	}
+	if retained["snapshot_generation"] == smaller["snapshot_generation"] {
+		t.Fatal("the retained row of the closed Session still matches the marker")
+	}
+
+	// %19 restarts. The set is the same ids as the pass before it, and the row
+	// a viewer may still hold is the old execution's, so the id has to move.
+	alive["execution_generation"] = second
+	reading.at = json.RawMessage(`110`)
+	p.publishStatuses(context.Background(), reading, []string{"%19"})
+	restarted := c.payload(t, "ss/mac_a/"+InventorySessionID)
+	if restarted["snapshot_generation"] == smaller["snapshot_generation"] {
+		t.Fatalf("a restarted execution kept its pass id: %v", restarted)
+	}
+	row := c.payload(t, "ss/mac_a/%2519")
+	if row["execution_generation"] != second || row["snapshot_generation"] != restarted["snapshot_generation"] {
+		t.Fatalf("the restarted row did not state the new set: %v", row)
+	}
+}
+
+// A Session that leaves the set and comes back is stated again. Its row is
+// forgotten when the marker stops naming it, so an id whose execution never
+// changed cannot be skipped against a row the relay has held since before it
+// went away.
+func TestAReturningSessionIsStatedAgainRatherThanLeftToTheRelay(t *testing.T) {
+	c := &collector{}
+	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
+	row := map[string]any{"id": "%19", "state": "idle", "execution_generation": "0123456789abcdef0123456789abcdef",
+		"source": map[string]any{"freshness": "current", "observed_at": float64(90), "provenance": "tmux"}}
+	other := map[string]any{"id": "%20", "state": "idle"}
+	reading := sessionReading{sessions: []map[string]any{row, other}, at: json.RawMessage(`100`), complete: true}
+	p.publishStatuses(context.Background(), reading, []string{"%19", "%20"})
+	reading.sessions = []map[string]any{other}
+	reading.at = json.RawMessage(`105`)
+	p.publishStatuses(context.Background(), reading, []string{"%20"})
+	c.reset()
+	reading.sessions = []map[string]any{row, other}
+	reading.at = json.RawMessage(`110`)
+	p.publishStatuses(context.Background(), reading, []string{"%19", "%20"})
+	if got := c.payload(t, "ss/mac_a/%2519"); got["projected_at"] != float64(110) {
+		t.Fatalf("the returning Session was not stated again: %v", got)
 	}
 }
 
@@ -229,8 +320,14 @@ func TestPartialScanCannotReplaceTheLastCompleteStatusSet(t *testing.T) {
 	}
 	partial.complete = true
 	p.publishStatuses(context.Background(), partial, []string{id})
-	if len(c.channels()) != 4 {
-		t.Fatalf("next complete pass did not replace the set: %v", c.channels())
+	// The set is the same one Session, so the barrier stands and only the row
+	// that now says something else goes out.
+	if got := c.channels(); len(got) != 3 || got[2] != "ss/mac_a/%2519" {
+		t.Fatalf("next complete pass did not replace the row: %v", got)
+	}
+	if got := c.payload(t, "ss/mac_a/%2519"); got["state"] != "working" ||
+		got["snapshot_generation"] != first["snapshot_generation"] {
+		t.Fatalf("the replaced row is not the newest reading of this set: %v", got)
 	}
 }
 

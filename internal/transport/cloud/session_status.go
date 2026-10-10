@@ -2,7 +2,7 @@ package cloud
 
 import (
 	"context"
-	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
@@ -140,6 +140,27 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 	return out
 }
 
+// statusRowKey is where the publisher remembers one status row. It is
+// namespaced because the same Session's full s/ row is remembered under the
+// bare terminal id (publishSessions), and the two must not evict each other.
+func statusRowKey(id string) string { return "ss/" + id }
+
+// statusMarkerKey is where the status inventory marker is remembered.
+var statusMarkerKey = statusRowKey(InventorySessionID)
+
+// statusGeneration is a 128-bit id derived from what it names, so the same
+// answer states the same id every pass.
+//
+// The pass id used to be a fresh random value, and every row carried it, so a
+// pass had to restate the whole set: one row's clock moving re-sent nine rows
+// that said exactly what the viewer already held (266 status frames per
+// Session-hour in the replay below). Derived, it changes only when the thing
+// it names changes, which is what lets a row be left alone.
+func statusGeneration(value any) string {
+	sum := sha256.Sum256(mustJSON(value))
+	return hex.EncodeToString(sum[:16])
+}
+
 // publishStatuses uses its own failure lane: an older relay that does not yet
 // accept ss/ must not prevent the existing s/ inventory marker from moving.
 func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading, ids []string) {
@@ -161,26 +182,20 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 	var at int64
 	_ = json.Unmarshal(reading.at, &at)
 	statuses := make([]SessionStatus, 0, len(ids))
-	identities := make([]SessionStatus, 0, len(ids))
-	steadies := make([]SessionStatus, 0, len(ids))
-	// The viewer fetches one pinned list per machine when this pass changes.
-	// Include the original row's display facts in the local change detector,
-	// but never in ss/: a line or shell update must wake the list without
-	// disclosing its words to a read_sessions-only viewer.
-	listDisplays := make([]map[string]any, 0, len(ids))
+	executions := make([]string, 0, len(ids))
+	// The viewer fetches one pinned list per machine when the presentation id
+	// changes. Include the original row's display facts in that id, but never
+	// in ss/: a line or shell update must wake the list without disclosing its
+	// words to a read_sessions-only viewer.
+	displays := make([]map[string]any, 0, len(ids))
+	steadyDisplays := make([]map[string]any, 0, len(ids))
 	parents := statusParents(rows, p.tasks)
 	for _, id := range ids {
 		row := rows[id]
 		status := ProjectSessionStatus(p.MachineID, id, row, true, at)
 		status.ParentSessionID = parents[id]
 		statuses = append(statuses, status)
-		identity := status
-		identity.ProjectedAt = 0
-		identity.Source.ObservedAt = 0
-		identities = append(identities, identity)
-		steady := identity
-		steady.LastMovementAt = 0
-		steadies = append(steadies, steady)
+		executions = append(executions, status.ExecutionGeneration)
 		// The working clock is not news here either (withoutFreshness); the
 		// token count waits for the window with the rest of the volatile
 		// fields.
@@ -188,7 +203,7 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		if row["state"] == "working" {
 			line = session.WithoutElapsed(line)
 		}
-		listDisplays = append(listDisplays, map[string]any{
+		display := map[string]any{
 			"line": line, "work_state": row["work_state"],
 			"work_note": row["work_note"], "work_provenance": row["work_provenance"],
 			"work_moved_by": row["work_moved_by"], "work_person_needed": row["work_person_needed"],
@@ -196,45 +211,63 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 			"attention_count": row["attention_count"], "owed": row["owed"],
 			"acceptance": row["acceptance"], "disposition": row["disposition"],
 			"coordination": row["coordination"],
-		})
+		}
+		displays = append(displays, display)
+		steadyDisplays = append(steadyDisplays, volatileFree(display))
 	}
-	// A changed fact or heartbeat states one whole set. Every row and its
-	// marker share a fresh pass id, so a relay-cached old row cannot satisfy
-	// a new marker merely because it has the same terminal id.
-	key := "status_snapshot"
-	type statusIdentity struct {
-		Rows     []SessionStatus  `json:"rows"`
-		IDs      []string         `json:"ids"`
-		Displays []map[string]any `json:"displays"`
-		Complete bool             `json:"complete"`
+	// The pass id the rows and the marker share. It names the set: which
+	// Sessions are listed and which execution each row speaks for. While both
+	// stand still an unchanged row that the relay still retains is exactly
+	// what the newest marker means, so it is not re-sent; a closed Session's
+	// id leaves the set and a restarted one brings a new execution, and either
+	// way the id changes and every row states the new one before the marker
+	// does. That is the property the marker was introduced for: a relay-cached
+	// row cannot satisfy a marker of a different set merely because it has the
+	// same terminal id.
+	pass := statusGeneration(struct {
+		IDs        []string `json:"ids"`
+		Executions []string `json:"executions"`
+	}{IDs: ids, Executions: executions})
+	presentation := statusGeneration(displays)
+	// A row of a Session that has left the set is forgotten, so the id that
+	// comes back is stated again rather than left to whatever the relay still
+	// retains under it.
+	if p.statusRows == nil {
+		p.statusRows = map[string]bool{}
 	}
-	steadyDisplays := make([]map[string]any, len(listDisplays))
-	for i, display := range listDisplays {
-		steadyDisplays[i] = volatileFree(display)
+	listed := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		listed[id] = true
 	}
-	if !p.changedCoalesced(key,
-		mustJSON(statusIdentity{Rows: identities, IDs: ids, Displays: listDisplays, Complete: true}),
-		mustJSON(statusIdentity{Rows: steadies, IDs: ids, Displays: steadyDisplays, Complete: true})) {
-		return
+	for id := range p.statusRows {
+		if !listed[id] {
+			p.forget(statusRowKey(id))
+			delete(p.statusRows, id)
+		}
 	}
-	var nonce [16]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		p.forget(key)
-		return
-	}
-	pass := hex.EncodeToString(nonce[:])
 	for i, id := range ids {
 		status := statuses[i]
 		status.SnapshotGeneration = pass
+		p.statusRows[id] = true
+		// The pass id is part of each row's identity, so a set that changed
+		// republishes every row without being asked to.
+		identity := status
+		identity.ProjectedAt = 0
+		identity.Source.ObservedAt = 0
+		steady := identity
+		steady.LastMovementAt = 0
+		if !p.changedCoalesced(statusRowKey(id), mustJSON(identity), mustJSON(steady)) {
+			continue
+		}
 		body, err := json.Marshal(status)
 		if err != nil {
-			p.forget(key)
+			p.forget(statusRowKey(id))
 			return
 		}
 		channel := "ss/" + cloudops.ChannelSegment(p.MachineID) + "/" + cloudops.ChannelSegment(id)
 		if err := p.Publish(ctx, Outbound{Channel: channel, Class: string(domaincloud.ClassStream), Payload: body}); err != nil {
-			p.forget(key)
-			p.logf("cloud: the status snapshot was not published: %v", err)
+			p.forget(statusRowKey(id))
+			p.logf("cloud: the status row was not published: %v", err)
 			return
 		}
 	}
@@ -245,20 +278,37 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 			Version  int      `json:"version"`
 			Sessions []string `json:"sessions"`
 		} `json:"inventory"`
-		At                 int64  `json:"at"`
-		Complete           bool   `json:"complete"`
-		SnapshotGeneration string `json:"snapshot_generation"`
-	}{At: at, Complete: true, SnapshotGeneration: pass}
+		At                     int64  `json:"at"`
+		Complete               bool   `json:"complete"`
+		SnapshotGeneration     string `json:"snapshot_generation"`
+		PresentationGeneration string `json:"presentation_generation"`
+	}{At: at, Complete: true, SnapshotGeneration: pass, PresentationGeneration: presentation}
 	marker.Inventory.Version = 1
 	marker.Inventory.Sessions = append([]string{}, ids...)
+	// `at` is left out of the marker's identity: a pass where only the clock
+	// moved says nothing, and the heartbeat restates it before any viewer's
+	// freshness window closes. The presentation id is the volatile half, so a
+	// token count alone waits for the row window while a line that says
+	// something new wakes the list at once.
+	type markerIdentity struct {
+		IDs          []string `json:"ids"`
+		Pass         string   `json:"pass"`
+		Presentation string   `json:"presentation"`
+		Complete     bool     `json:"complete"`
+	}
+	if !p.changedCoalesced(statusMarkerKey,
+		mustJSON(markerIdentity{IDs: ids, Pass: pass, Presentation: presentation, Complete: true}),
+		mustJSON(markerIdentity{IDs: ids, Pass: pass, Presentation: statusGeneration(steadyDisplays), Complete: true})) {
+		return
+	}
 	body, err := json.Marshal(marker)
 	if err != nil {
-		p.forget(key)
+		p.forget(statusMarkerKey)
 		return
 	}
 	channel := "ss/" + cloudops.ChannelSegment(p.MachineID) + "/" + InventorySessionID
 	if err := p.Publish(ctx, Outbound{Channel: channel, Class: string(domaincloud.ClassStream), Payload: body}); err != nil {
-		p.forget(key)
+		p.forget(statusMarkerKey)
 		p.logf("cloud: the status inventory was not published: %v", err)
 	}
 }

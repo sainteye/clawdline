@@ -143,6 +143,11 @@ type Publisher struct {
 	// (volatileFree), so a change in those fields alone waits for the row's
 	// window while any other change goes at once.
 	steady map[string][32]byte
+	// statusRows is the ids the status channel (ss/) has a remembered row for,
+	// so the row of an id that leaves the set is forgotten rather than left to
+	// be skipped against whatever the relay still retains under it. It is the
+	// inventory's own set and so bounded by InventoryLimit.
+	statusRows map[string]bool
 
 	// listed is the sessions a viewer holds rows for, which decides whether a
 	// finished task is still reachable (tasklist.go).
