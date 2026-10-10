@@ -90,6 +90,7 @@
 | `cloud.viewer_events_logged_rows` | 128 | `rows` | `coalesce` | `diagnostics, log` | — |
 | `cloud.viewer_events_seen_batches` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.health_live_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
+| `console.relay_feature_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
 | `console.session_notes_safety_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_backoff_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |

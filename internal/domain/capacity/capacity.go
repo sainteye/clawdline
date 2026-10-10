@@ -447,6 +447,7 @@ const (
 	ConsoleTranscriptMergedRows       = "console.transcript_merged_rows"
 	ConsoleTranscriptBackoffSeconds   = "console.transcript_backoff_seconds"
 	ConsoleRelayTranscriptExpectReask = "console.relay_transcript_expect_reask_seconds"
+	ConsoleRelayFeatureWait           = "console.relay_feature_wait_seconds"
 	ConsoleTranscriptFollowFast       = "console.transcript_follow_fast_seconds"
 	ConsoleTranscriptFollowLater      = "console.transcript_follow_later_seconds"
 	ConsoleHealthLive                 = "console.health_live_seconds"
@@ -2516,6 +2517,24 @@ func Register() []Entry {
 			// at this age.
 			Name: ConsoleRelayTranscriptExpectReask, Class: Cache, Unit: Seconds,
 			Limit: 4, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// How long a read waits for the chosen machine's own list of
+			// words before it is asked or refused (FEATURE_WAIT_MS,
+			// web/console/src/cloud/relay-reader.ts).
+			//
+			// A page that has just opened decides a word from the descriptor
+			// it remembered last time, whose command list the copied client
+			// cut to 64 words while this daemon publishes 151, so a read of a
+			// word past the cut refused itself before anything was sent: 11 of
+			// 21 read failures on this machine between 11:30 and 14:22 on
+			// 2026-10-10, every one of them `transcript` or
+			// `work.v2.session-todos`. This is how long such a read may wait
+			// for the live descriptor instead; past it the refusal is the one
+			// it always had.
+			Name: ConsoleRelayFeatureWait, Class: Cache, Unit: Seconds,
+			Limit: 5, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{

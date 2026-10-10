@@ -1171,6 +1171,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.ConsoleRelayTranscriptExpectReask: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console relay reader cadence; daemon cannot measure another device's reads"}
 		},
+		capacity.ConsoleRelayFeatureWait: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console relay reader wait for this machine's own word list; daemon cannot measure another device's reads"}
+		},
 		// C4: the Cloud line's outbound spool, both of its bounds.
 		capacity.CloudSpool: func() capacity.Reading {
 			rows, _ := s.spoolReadings()
