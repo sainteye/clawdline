@@ -38,3 +38,14 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* Where this start will run, when the sheet was opened from the fleet for a
+   machine other than the one the console reads. The header says "所有機器"
+   then, so the Projects below have nothing else naming whose they are. */
+.sheet #start-machine .start-on-machine {
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.4;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

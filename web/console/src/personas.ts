@@ -1,11 +1,16 @@
 import type { Persona, PersonaCatalog } from "@clawdline/contract"
 
 /**
- * The machine's persona catalog (docs/personas.md), read once per page.
+ * A machine's persona catalog (docs/personas.md), read once per machine.
  *
- * A console shows one machine for its whole life (`cloud/install.ts`), so one
- * read is one read per machine. The catalog is compiled into the daemon and
- * does not change while it runs.
+ * It used to be read once per page, because a console showed one machine for
+ * its whole life. It no longer does: the hosted console repoints its reader at
+ * the machine of an opened fleet Session and at a machine chosen in the header
+ * (`cloud/CloudGate.tsx` `pointAt`), and a start sheet opened for another
+ * machine offers that machine's roles. So the catalog is held per machine, and
+ * `forgetPersonas` drops every one of them when the account behind them
+ * changes. The catalog is compiled into the daemon and does not change while
+ * it runs, so nothing else expires it.
  *
  * A read that fails for any reason — an older daemon without the route, a
  * machine on Clawdline Cloud that does not list `personas` among its commands,
@@ -13,8 +18,11 @@ import type { Persona, PersonaCatalog } from "@clawdline/contract"
  * a sheet that breaks. Nothing here says a persona the machine did not name.
  */
 
-let catalog: Persona[] | null = null
-let reading: Promise<Persona[]> | null = null
+/** The machine's own key; the console's current machine has no name to give. */
+const HERE = ""
+
+const catalogs = new Map<string, Persona[]>()
+const readings = new Map<string, Promise<Persona[]>>()
 const listeners = new Set<() => void>()
 
 function wellFormed(p: unknown): p is Persona {
@@ -22,12 +30,22 @@ function wellFormed(p: unknown): p is Persona {
   return !!q && typeof q.id === "string" && !!q.id && !!q.name && typeof q.name.en === "string" && !!q.icon
 }
 
-/** Read the catalog, once; every later call answers from the first read. */
-export function loadPersonas(read: typeof fetch = (...args) => fetch(...args)): Promise<Persona[]> {
-  if (reading) return reading
-  reading = (async () => {
+/**
+ * Read a catalog, once per machine; every later call answers from that read.
+ *
+ * `machine` names a machine other than the one this console is reading — a
+ * start sheet opened for another machine on the account. Without it the read
+ * is this page's own machine, as it has always been.
+ */
+export function loadPersonas(read: typeof fetch = (...args) => fetch(...args),
+  machine: string | null = null): Promise<Persona[]> {
+  const key = machine || HERE
+  const held = readings.get(key)
+  if (held) return held
+  const reading = (async () => {
     try {
-      const res = await read("/v1/personas", { credentials: "same-origin" })
+      const res = await read("/v1/personas" + (machine ? "?machine=" + encodeURIComponent(machine) : ""),
+        { credentials: "same-origin" })
       if (!res.ok) return []
       const body = (await res.json()) as PersonaCatalog | null
       return Array.isArray(body?.personas) ? body.personas.filter(wellFormed).map(withTeams) : []
@@ -36,16 +54,31 @@ export function loadPersonas(read: typeof fetch = (...args) => fetch(...args)): 
       return []
     }
   })().then((list) => {
-    catalog = list
+    catalogs.set(key, list)
     listeners.forEach((fn) => fn())
     return list
   })
+  readings.set(key, reading)
   return reading
 }
 
 /** The catalog if it has been read, or null while it has not. */
-export function personasNow(): Persona[] | null {
-  return catalog
+export function personasNow(machine: string | null = null): Persona[] | null {
+  return catalogs.get(machine || HERE) ?? null
+}
+
+/**
+ * Drop every catalog read so far.
+ *
+ * The console changed which machine it reads, so "this page's machine" now
+ * means a different daemon, and a named machine may be one this browser can no
+ * longer read. Nothing is re-read here; the next sheet that needs a catalog
+ * asks for it.
+ */
+export function forgetPersonas(): void {
+  catalogs.clear()
+  readings.clear()
+  listeners.forEach((fn) => fn())
 }
 
 /** Called once the catalog arrives. */

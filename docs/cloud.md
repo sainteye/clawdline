@@ -50,6 +50,37 @@ Every signed-in viewer paired with the target machine may send. The machine veri
 
 The connection backs off and reconnects. An outbound spool owns publish order and capacity, while inbound queues and per-channel answer reserves produce typed busy or refusal answers where possible. An accepted relay write is not the same as an executed command or an observed answer. Logs and status counters separate published, acknowledged, answered, refused and undeliverable work. Protocol and capacity details are in [cloud-wire.md](cloud-wire.md), [limits.md](limits.md), and the transport code; this overview does not promise delivery after every network or process failure.
 
+## Which machine the hosted console is on
+
+An account with more than one readable machine opens on **all of them**: the fleet list is the
+way in, and the machine list — which is where pairing, renaming and forgetting live — is one press
+away under the header's name. A tab that has chosen a single machine keeps it, because the choice
+is that tab's own (`sessionStorage`); a new tab has made none. An account with one readable machine
+still opens its list once, so the first thing a person sees names the machine and offers its
+pairing. The rules are `web/console/src/cloud/opening.ts` and are tested there.
+
+Underneath the fleet the console still reads **one** machine: the original Session page, its
+Projects, its schedules and its terminals are one daemon's. `CloudGate`'s `pointAt` moves every
+seam — the `/v1/` fetches, the session stream, the transcript pictures, the terminal host, the kept
+cards, the persona catalog — onto another machine in place, and it is the same code whether the
+move was made by opening a fleet Session on another machine or by naming one in the header. It used
+to be `location.reload()` for the second case, which threw the console away to arrive where it
+arrives directly now.
+
+Two things follow, and both were wrong before:
+
+- **The header names the machine being read**, not the machine the tab first chose. The fleet
+  repoints the reader under an opened Session, so those two drift apart; the header, the
+  one-machine list, the schedule form's machine and the machine-list highlight all read the
+  reader's.
+- **Naming a machine for "new Session" is a destination, not a move.** The sheet reads that
+  machine's Projects (`/v1/places?machine=`) and roles (`/v1/personas?machine=`) and starts there —
+  a place id carries its own machine, so the start, the resume and the past list follow it — and
+  the fleet list stays on every machine, with the new Session appearing under its machine's
+  heading. The voice command, a new work item and the terminal list are still that machine's own
+  console features, so naming a machine for one of them does move the console onto it.
+  `web/console/src/cloud/machine-tool.ts` holds the rule.
+
 ## Hosted console and operations
 
 The hosted and daemon consoles share source but require different builds. The hosted build must set `VITE_HOSTED_CONSOLE` so its entry point selects `CloudGate`; an ordinary local build selects `DoorGate`. [Deploying the hosted console](hosted-console.md) documents the build, production ancestry check, `BUILD.json` stamp, served-bundle `CloudGate` check and rollback procedure. A build stamp alone does not show that the served bundle is the Cloud one. This page makes no claim that the currently deployed bundle or private service matches this checkout.

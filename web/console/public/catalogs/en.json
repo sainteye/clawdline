@@ -3426,6 +3426,8 @@
   "next.cloudSignInLede": "Sign in to read your machines",
   "next.cloudSwitch": "Other machines",
   "next.cloudAllMachines": "All machines",
+  "next.cloudStartWhere": "Start it on which machine?",
+  "next.cloudStartOn": "Starting on {machine}",
   "next.cloudSingleSessions": "Sessions on this machine",
   "next.cloudAllBack": "Back",
   "next.cloudAllDetail": "Session detail",

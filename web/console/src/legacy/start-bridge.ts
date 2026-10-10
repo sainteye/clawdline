@@ -96,7 +96,15 @@ function post(key: string): RequestInit {
 
 /** The transport, as `net/live.js` spells it. */
 export const startApi = {
-  places: () => jsonFetch<{ places?: StartPlaceRow[]; assistants?: StartAssistantRow[] }>("/v1/places"),
+  /**
+   * This page's machine's Projects, or — from a start sheet opened for another
+   * machine on the account — that machine's, which is the naming the schedule
+   * form already uses (`relay-writer.ts` `namedMachine`). Each place id the
+   * hosted client answers carries its own machine, so the start, the resume
+   * and the past list that follow need no machine of their own.
+   */
+  places: (machine?: string | null) => jsonFetch<{ places?: StartPlaceRow[]; assistants?: StartAssistantRow[] }>(
+    "/v1/places" + (machine ? "?machine=" + encodeURIComponent(machine) : "")),
   pastSessions: (id: string, assistant?: string | null) => {
     let path = "/v1/places/" + encodeURIComponent(id) + "/sessions"
     if (assistant) path += "/" + encodeURIComponent(assistant)

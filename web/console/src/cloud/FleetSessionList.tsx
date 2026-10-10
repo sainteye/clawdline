@@ -295,9 +295,13 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
       {groups.length === 0 && <p>{nextWord("cloudAllNoMatch")}</p>}
       <ScheduleSection arrived={true} onOpen={openScheduled} canOpen={canOpenScheduled} />
     </div>
-    <dialog ref={machineDialog} className="cloud-all-machine-dialog" aria-label={nextWord("cloudSwitch")}
+    {/* Which machine, asked once for an action that needs one. Starting asks
+        where to start and leaves this list where it is; the others move the
+        console onto the machine, which is what their sheets read. */}
+    <dialog ref={machineDialog} className="cloud-all-machine-dialog"
+      aria-label={nextWord(machineAction === "start" ? "cloudStartWhere" : "cloudSwitch")}
       onCancel={(event) => { event.preventDefault(); setMachineAction(null) }}>
-      <h2>{nextWord("cloudSwitch")}</h2>
+      <h2>{nextWord(machineAction === "start" ? "cloudStartWhere" : "cloudSwitch")}</h2>
       {machines.map((machine) => <button key={machine.id} type="button" onClick={() => {
         const action = machineAction
         setMachineAction(null)
