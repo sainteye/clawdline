@@ -23,3 +23,9 @@ test("working shows only a current working state", () => {
   assert.equal(matchesFleetFilter({ ...row, state: "waiting" }, "working"), false)
   assert.equal(matchesFleetFilter(row, "all"), true)
 })
+
+test("idle shows only a current idle state", () => {
+  assert.equal(matchesFleetFilter(row, "idle"), true)
+  assert.equal(matchesFleetFilter({ ...row, freshness: "stale" }, "idle"), false)
+  assert.equal(matchesFleetFilter({ ...row, state: "working" }, "idle"), false)
+})

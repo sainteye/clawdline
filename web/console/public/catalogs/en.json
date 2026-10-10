@@ -4114,6 +4114,8 @@
   "next.cloudActionRestoreDraft": "Return rejected message and pictures to the composer",
   "next.cloudAllUnconfirmed": "Still checking what {machine} can do. Nothing needs updating yet.",
   "next.cloudAllTryAgain": "Try again",
+  "next.cloudAllFilterIdle": "Idle",
+  "next.cloudAllSessionCount": "{count} Sessions",
   "projects.activityInProgress": "{n} in progress",
   "projects.activityLastKnown": "Last known: {n}",
   "projects.activityNone": "None in progress",

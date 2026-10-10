@@ -4114,6 +4114,8 @@
   "next.cloudActionRestoreDraft": "將遭拒的訊息與圖片放回輸入框",
   "next.cloudAllUnconfirmed": "還在確認 {machine} 支援哪些功能，目前沒有東西需要更新。",
   "next.cloudAllTryAgain": "再試一次",
+  "next.cloudAllFilterIdle": "靜置",
+  "next.cloudAllSessionCount": "{count} 個 Session",
   "projects.activityInProgress": "{n} 項進行中",
   "projects.activityLastKnown": "上次紀錄：{n}",
   "projects.activityNone": "目前無進行中項目",

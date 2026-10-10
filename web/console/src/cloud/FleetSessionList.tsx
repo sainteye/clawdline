@@ -253,6 +253,8 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           onClick={() => setStatusFilter((value) => value === "attention" ? "all" : "attention")}>{nextWord("cloudAllAttention")}</button>
         <button type="button" className="cloud-all-status-filter" aria-pressed={statusFilter === "working"}
           onClick={() => setStatusFilter((value) => value === "working" ? "all" : "working")}>{nextWord("cloudAllStateWorking")}</button>
+        <button type="button" className="cloud-all-status-filter" aria-pressed={statusFilter === "idle"}
+          onClick={() => setStatusFilter((value) => value === "idle" ? "all" : "idle")}>{nextWord("cloudAllFilterIdle")}</button>
       </div>
       <div className="cloud-all-groups">
         {groups.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group"
@@ -261,7 +263,10 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
             <button type="button" aria-expanded={!collapsed[machine.id]}
               aria-label={nextWord(collapsed[machine.id] ? "cloudAllExpandMachine" : "cloudAllCollapseMachine", { machine: machine.name })}
               onClick={() => setCollapsed((before) => ({ ...before, [machine.id]: !before[machine.id] }))}>
-              <span className="cloud-all-group-name">{machine.name} <small>{machine.platform}</small></span>
+              <span className="cloud-all-group-name">{machine.name} <small>{machine.platform}</small>
+                {rows.length > 0 && <span className="cloud-all-group-count"
+                  aria-label={nextWord("cloudAllSessionCount", { count: rows.length })}>{rows.length}</span>}
+              </span>
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
             </button></h2>
           {!collapsed[machine.id] && <>
