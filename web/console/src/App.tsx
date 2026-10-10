@@ -42,6 +42,7 @@ import {
   getClosingId,
   hostConfirm,
   hostInfo,
+  requestConfirm,
   shown,
   toast,
   toggleKeys,
@@ -195,7 +196,7 @@ function rowNode(id: string): HTMLElement | null {
  * pills beside each other left the counts no room to be read.
  */
 export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, fleetTarget = null, fleetReaderMachine = null,
-  fleetDetailProblem = null, onFleetClose, hideSessionCounts = false,
+  fleetDetailProblem = null, onFleetClose, fleetCloseIntent = null, onFleetCloseIntentHandled, hideSessionCounts = false,
   focusCloudSessions = false, onLeaveCloudSessions }: {
   aside?: ReactNode | ((light: ConnectionLight) => ReactNode)
   cloudSessions?: ReactNode
@@ -205,6 +206,8 @@ export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, 
   fleetReaderMachine?: string | null
   fleetDetailProblem?: FleetDetailProblem | null
   onFleetClose?: () => void
+  fleetCloseIntent?: { target: SessionDestination; title: string } | null
+  onFleetCloseIntentHandled?: () => void
   hideSessionCounts?: boolean
   focusCloudSessions?: boolean
   onLeaveCloudSessions?: () => void
@@ -484,6 +487,19 @@ export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, 
     }
   }, [fleetList, fleetReaderMachine, fleetTarget?.machineID, fleetTarget?.sessionID,
     fleetTarget?.executionGeneration, rows])
+
+  // A fleet swipe names an exact execution. Wait until its machine's rich
+  // session row has arrived before opening the ordinary close confirmation.
+  useEffect(() => {
+    if (!fleetList || !fleetCloseIntent || !fleetTarget ||
+      destinationKey(fleetCloseIntent.target) !== destinationKey(fleetTarget) ||
+      fleetReaderMachine !== fleetCloseIntent.target.machineID) return
+    const row = rows.find((candidate) => candidate.id === fleetCloseIntent.target.sessionID &&
+      candidate.execution_generation === fleetCloseIntent.target.executionGeneration)
+    if (!row) return
+    onFleetCloseIntentHandled?.()
+    requestConfirm({ kind: "end", id: row.id, subject: fleetCloseIntent.title, focus: "cancel" })
+  }, [fleetList, fleetCloseIntent, fleetTarget, fleetReaderMachine, rows])
 
   // `closeDetail`: the session goes, the highlight stays. On a phone the list
   // comes back and a `#session=…` or `#page=…` address goes with the detail,

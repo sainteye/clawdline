@@ -1024,6 +1024,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const leaveFleet = () => { setFleetScope(false); setFleetTarget(null) }
 
   const openFleetSession = (target: SessionDestination) => {
+    setFleetCloseIntent(null)
     setFleetTarget(target)
     history.replaceState(history.state, "", destinationFragment(target))
   }
@@ -1035,7 +1036,9 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
    * reloading the page restored the same unreadable target and the same
    * sentence, with nothing on screen that could change either.
    */
+  const [fleetCloseIntent, setFleetCloseIntent] = useState<{ target: SessionDestination; title: string } | null>(null)
   const closeFleetTarget = useCallback(() => {
+    setFleetCloseIntent(null)
     setFleetTarget(null)
     setFleetDetailProblem(null)
     if (destinationFromFragment(location.hash)) {
@@ -1393,6 +1396,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
               ? { text: fleetDetailProblem.text, action: fleetDetailProblem.action } : null}
             fleetReaderMachine={readerMachine}
             onFleetClose={closeFleetTarget}
+            fleetCloseIntent={fleetCloseIntent}
+            onFleetCloseIntentHandled={() => setFleetCloseIntent(null)}
             fleetList={fleetScope ? (filter, onFilter) => <FleetSessionList
             machines={quickMachines.map((machine) => ({
               id: machine.id, name: machine.name || machine.label || machine.id,
@@ -1402,6 +1407,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             target={fleetTarget}
             filter={filter} onFilter={onFilter}
             onOpen={openFleetSession}
+            onCloseRequest={(target, title) => { openFleetSession(target); setFleetCloseIntent({ target, title }) }}
             onMachineAction={runMachineTool}
           /> : undefined} />
           <CloudSessionSheets machineID={reading ?? chosen.id}
