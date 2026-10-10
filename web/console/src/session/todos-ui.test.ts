@@ -231,7 +231,8 @@ test("an item changed in the Board card is read again by the Session fold that o
 test("the Note polls only while visible, rereads on return, and both reads retry one transient failure", () => {
   const note = readFileSync(new URL("./Interventions.tsx", import.meta.url), "utf8")
   assert.doesNotMatch(note, /window\.setInterval\(/, "the Note polls a hidden page")
-  assert.match(note, /watchTodoRefresh\(\(\) => \{ void load\(destination\) \}, browserRefreshEnvironment\(onWorkItemChanged\),\s*counted \? TODO_SAFETY_MS : TODO_REFRESH_MS\)/)
+  // Which pace, and whether there is a lane at all, is `attentionReads`;
+  // `attention-reads.test.ts` holds that.
   assert.match(note, /readWithOneRetry\(\(\) => readHumanInterventionsV2\(target\.conversation\)\)/)
   assert.match(source, /readWithOneRetry\(\(\) => readSessionWorkV2\(rowID, rowSessionID\)\)/)
   assert.match(source, /readWithOneRetry\(\(\) => readSessionWorkSummaryV2\(rowID, rowSessionID\)\)/)

@@ -7,6 +7,7 @@ import { invalidScheduleErrorHTML } from "../schedule-errors.js"
 import { isTriggerOnly, scheduleNextLine, scheduleTimeZone, scheduleWhenFields } from "../schedule-when.js"
 import { historyRecordFor, shouldOpenHistory } from "../schedule-history-open.js"
 import { runScheduleWithForce } from "../schedule-force-run.js"
+import { laneOnScreen, laneOwesRead } from "./schedules-lane.js"
 import "../schedule-errors.css"
 import {
   createPlacesCache,
@@ -359,6 +360,33 @@ const Schedules = (() => {
 
   const pageHidden = () => document.hidden === true
 
+  /**
+   * Whether this section is on somebody's screen, from the layout the
+   * stylesheet decided (`schedules-lane.ts` says why it is asked this way).
+   */
+  function sectionOnScreen(): boolean {
+    if (typeof document === "undefined") return true
+    const host = document.getElementById("schedules")?.parentElement
+    if (!host) return true
+    return laneOnScreen({
+      laidOut: host.getClientRects().length > 0,
+      visibility: typeof getComputedStyle === "function" ? getComputedStyle(host).visibility : "visible",
+    })
+  }
+
+  /**
+   * The lane's tick, and every other reason to look again: the section may have
+   * come on screen — the phone's other pane, a window widened past the
+   * breakpoint, the page seen again — or it may have been off it all along.
+   * Read when what the section holds is older than the lane's own pace and
+   * somebody can see it, and nothing otherwise, so a tick a moment after a
+   * read of its own waits for the next one instead of asking twice.
+   */
+  function look(): void {
+    if (!laneOwesRead({ pageHidden: pageHidden(), lastRefreshAt, now: Date.now(), everyMs: LANE_MS, onScreen: sectionOnScreen })) return
+    refresh()
+  }
+
   function refresh(): void {
     if (inFlight || !arrivedFlag) return
     inFlight = true
@@ -419,7 +447,7 @@ const Schedules = (() => {
       setTimeout(() => beginWhenAuthed(attempt + 1), 250)
       return
     }
-    refresh()
+    look()
   }
 
   function watchVisibility(): void {
@@ -431,10 +459,16 @@ const Schedules = (() => {
         }
         return
       }
-      if (lane !== null) return
-      lane = setInterval(refresh, LANE_MS)
-      if (lastRefreshAt === null || Date.now() - lastRefreshAt >= LANE_MS) refresh()
+      if (lane === null) lane = setInterval(look, LANE_MS)
+      look()
     })
+    // The phone's one screen at a time is in the address and in the history
+    // entry, and the desk's second column appears when the window is wide
+    // enough: each of those can put this section back on screen without the
+    // page ever being hidden.
+    window.addEventListener("hashchange", look)
+    window.addEventListener("popstate", look)
+    window.addEventListener("resize", look)
   }
 
   return {
@@ -448,10 +482,10 @@ const Schedules = (() => {
       refresh()
     },
     start(): void {
-      if (started) { Schedules.refresh(); return }
+      if (started) { look(); return }
       started = true
       beginWhenAuthed(0)
-      if (!pageHidden()) lane = setInterval(refresh, LANE_MS)
+      if (!pageHidden()) lane = setInterval(look, LANE_MS)
       watchVisibility()
       // The hosted gate learns the account's machines after this lane may have
       // drawn; the list is drawn again in groups once it knows them.

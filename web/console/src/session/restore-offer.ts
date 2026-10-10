@@ -190,6 +190,34 @@ export function lastSeenRelative(at: number, now: number, locale?: string): stri
   }
 }
 
+/**
+ * Whether the line coming up owes a read of the offer.
+ *
+ * The page reads the offer as it opens, and the line comes up a moment after:
+ * on this machine's own console that first read has already come back by then,
+ * so reading again was the same answer twice — 2 of an open Session's 32
+ * requests in three minutes on a phone. The first time the line comes up is
+ * therefore read only when the opening read has no offer to show yet, which
+ * includes every way it can fail — over Cloud it is refused until the relay is
+ * up, and the line coming up is exactly when to ask again.
+ *
+ * A line that comes **back** after it dropped is a different question: the
+ * machine may have rebooted while it was down, which is the whole subject of
+ * this offer, so that is always read.
+ */
+export function liveOwesOffer(o: { firstTime: boolean; answered: boolean }): boolean {
+  return !o.firstTime || !o.answered
+}
+
+/**
+ * Whether a failed read was the machine's answer about the offer. A fetch that
+ * never reached anything (`offline`) says nothing about it, and the page keeps
+ * what it had; any other refusal is an answer.
+ */
+export function offerWasAnswered(error: unknown): boolean {
+  return !(error instanceof RestoreRefusal) || error.code !== "offline"
+}
+
 /** A refusal from one of the three routes, kept whole: the code is what is branched on. */
 export class RestoreRefusal extends Error {
   readonly code: string

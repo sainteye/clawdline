@@ -8,6 +8,8 @@ import {
   allTicked,
   assistantName,
   lastSeenRelative,
+  liveOwesOffer,
+  offerWasAnswered,
   outcomeLine,
   outcomes,
   readOffer,
@@ -47,6 +49,9 @@ export function useRestoreOffer(live: boolean): { offer: RestorableSessions | nu
   const [offer, setOffer] = useState<RestorableSessions | null>(null)
   const seq = useRef(0)
   const last = useRef(0)
+  // Whether a read has come back with an offer to draw. A read that failed,
+  // however it failed, leaves the line's own read owing: it is the retry.
+  const answered = useRef(false)
   const refresh = useCallback((force = true) => {
     const now = Date.now()
     if (!force && now - last.current < REREAD_GAP_MS) return
@@ -54,16 +59,24 @@ export function useRestoreOffer(live: boolean): { offer: RestorableSessions | nu
     const n = ++seq.current
     readOffer(fetchNow).then(
       (answer) => {
+        answered.current = true
         if (n === seq.current) setOffer(answer)
       },
       (error: unknown) => {
         if (n !== seq.current) return
-        if (!(error instanceof RestoreRefusal) || error.code !== "offline") setOffer(null)
+        if (offerWasAnswered(error)) setOffer(null)
       },
     )
   }, [])
+  // The line coming up for the first time is the mount read's own moment, and
+  // one of the two is enough; a line that came back after dropping is read
+  // (`liveOwesOffer`).
+  const wasLive = useRef(false)
   useEffect(() => {
-    if (live) refresh()
+    if (!live) return
+    const firstTime = !wasLive.current
+    wasLive.current = true
+    if (liveOwesOffer({ firstTime, answered: answered.current })) refresh()
   }, [live, refresh])
   useEffect(() => {
     refresh()

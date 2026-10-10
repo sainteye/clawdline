@@ -17,6 +17,12 @@ const CONVERSATION = "10000000-0000-4000-8000-000000000031"
 const NOTE = "10000000-0000-4000-8000-000000000032"
 const now = Math.floor(Date.now() / 1000)
 let sendRequests = 0
+// How many times the panel read this conversation's notes: a counted row
+// reads none while its head is closed (`attention-reads.ts`).
+let noteReads = 0
+// How many times the page read this Session's to-dos: the fold reads them as it
+// mounts, which is a test's signal that the panel has had its chance to read.
+let todoReads = 0
 let sentTexts: string[] = []
 let sentBeforeResolve: number[] = []
 let failSends = false
@@ -259,7 +265,7 @@ function fixture(): Server {
   const publish = () => { for (const client of eventClients) client.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n") }
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
-    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteCount = 1; showOptions = true; singleOption = false; listWaiting = false; listAttentionCount = 1; documentMode = "ready"; documentListMode = "ready"; documentReadDelay = 0; sendRequests = 0; sentTexts = []; sentBeforeResolve = []; failSends = false; sendDelay = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteReads = 0; todoReads = 0; noteCount = 1; showOptions = true; singleOption = false; listWaiting = false; listAttentionCount = 1; documentMode = "ready"; documentListMode = "ready"; documentReadDelay = 0; sendRequests = 0; sentTexts = []; sentBeforeResolve = []; failSends = false; sendDelay = 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/document-mode") { const mode = new URL(req.url ?? "/", "http://fixture").searchParams.get("value"); documentMode = mode === "refused" || mode === "keyed" ? mode : "ready"; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/document-list-mode") { const value = new URL(req.url ?? "/", "http://fixture").searchParams.get("value"); documentListMode = value === "empty" || value === "starting" ? value : "ready"; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/document-read-delay") { documentReadDelay = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("ms")) || 0; return json(res, 200, { ok: true }) }
@@ -315,7 +321,7 @@ function fixture(): Server {
       if (documentMode === "keyed") return json(res, 404, { error: "not_found", detail: "No document named that.", detail_key: "http.1e31c72f0db9eb5b" })
       res.writeHead(200, { "content-type": "text/markdown; charset=utf-8" }); return res.end("# Demo document\n\nThe document opened directly.\n")
     }
-    if (path.startsWith("/v1/work/v2/session-todos/")) return json(res, 200, { ok: true, direct_todos: [], assigned_items: [], recent_items: [], truncated: false })
+    if (path.startsWith("/v1/work/v2/session-todos/")) { todoReads++; return json(res, 200, { ok: true, direct_todos: [], assigned_items: [], recent_items: [], truncated: false }) }
     if (path.startsWith("/v1/work/v2/human-interventions/")) {
       const note = { id: NOTE, source_conversation: "10000000-0000-4000-8000-000000000001", source_label: "Manager Session",
         target_conversation: CONVERSATION, target_session: SESSION, kind: "answer", title: "Choose a release day",
@@ -325,6 +331,7 @@ function fixture(): Server {
           { label: "Tuesday", draft: "Tuesday works for me." }, ...singleOption ? [] : [{ label: "Wednesday", draft: "Wednesday works for me." }] ] : [],
         created_at: now, read_at: readAt, resolved_at: resolvedAt, version }
       if (req.method === "GET") {
+        noteReads++
         const answer = () => failReads ? json(res, 503, { error: "read_failed" }) : json(res, 200, { ok: true, rows: Array.from({ length: noteCount }, (_, index) => ({ ...note, id: `10000000-0000-4000-8000-${String(32 + index).padStart(12, "0")}` })), pruned_resolved: 0 })
         if (readDelay) setTimeout(answer, readDelay); else answer()
         return
@@ -490,9 +497,17 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: name === "phone" }, id)
       const mark = browser.loadCount; await browser.send("Page.navigate", { url: origin + "/#session=" + SESSION }, id); await browser.loaded(id, mark)
       await until(`!!document.querySelector(".human-interventions-head")`)
-      assert.match(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /載入中/)
-      assert.doesNotMatch(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /0 筆/)
       await until(`!!document.querySelector(".human-interventions-dot")`)
+      // The count arrived with the row, so the closed head draws the dot and
+      // the number before anything is read, and keeps drawing them while the
+      // notes themselves are read: never 載入中 over a number already there.
+      assert.equal(await run(`!!document.querySelector(".human-interventions-count")`), true)
+      assert.doesNotMatch(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /載入中/)
+      assert.doesNotMatch(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /0 筆/)
+      const readDeadline = Date.now() + 8_000
+      while (noteReads === 0) { if (Date.now() > readDeadline) assert.fail("the notes were never read"); await new Promise((r) => setTimeout(r, 50)) }
+      assert.equal(noteReads, 1, "one read as the page opens, not two")
+      assert.doesNotMatch(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /載入中/)
       await fetch(origin + "/__fixture/read-delay?ms=0")
       assert.match(await run(`document.querySelector(".human-interventions-live").textContent`), /1 筆未處理/)
       assert.equal(await run(`document.querySelector(".session-todos").open`), false)
@@ -507,6 +522,9 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, id)
       await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 }, id)
       await until(`!!document.querySelector(".human-intervention-card")`)
+      // The words were read as the page opened, so opening the panel asks
+      // for nothing more.
+      assert.equal(noteReads, 1)
       assert.equal(await run(`document.querySelector(".session-todos").open`), false)
       assert.match(await run(`document.querySelector(".human-intervention-card").innerText`), /Manager Session/)
       const deliveredISO = new Date(now * 1000).toISOString()
@@ -640,6 +658,9 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await until(`!!document.querySelector(".human-interventions-dot")`)
 
       await run(`fetch("/__fixture/fail-reads?on=1")`)
+      // A count that moves asks for the page again, so a read can fail with
+      // the panel closed; the head says so without anything being opened.
+      await fetch(origin + "/__fixture/list-count?value=7")
       await until(`document.querySelector(".human-interventions-head").innerText.includes("讀取失敗")`, 20000)
       await run(`fetch("/__fixture/fail-reads?on=0")`)
       await run(`document.querySelector(".human-interventions-head").click()`)
@@ -694,6 +715,13 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
         await new Promise((r) => setTimeout(r, 50))
       }
       await run(`document.querySelector(".human-interventions-head").click()`)
+      // The dot is the row's count, so the notes' own words can still be on
+      // their way when the panel opens.
+      const cardDeadline = Date.now() + 8000
+      while (!(await run(`!!document.querySelector(".human-intervention-document")`))) {
+        if (Date.now() > cardDeadline) assert.fail("the note card did not open")
+        await new Promise((r) => setTimeout(r, 50))
+      }
       assert.equal(await run(`document.querySelector(".human-intervention-document").textContent`), "閱讀文件")
       assert.equal(await run(`document.querySelector(".human-intervention-document").target`), "")
       if (name === "phone") await run(`Object.defineProperty(navigator, "standalone", { value: true, configurable: true })`)
@@ -721,3 +749,83 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
     }
   })
 }
+// A machine from before `attention_count`, or a conversation whose identity
+// could not be established: the row carries no number, so the panel keeps what
+// it had — a read as the page opens, and the head saying it is reading rather
+// than showing a zero nobody established (`attention-reads.ts`).
+test("a Session whose row does not count its notes reads them as it opens", async () => {
+  const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+  const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+  const run = async (expression: string) => {
+    const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, id)
+    if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+    return result.value
+  }
+  const until = async (expression: string, timeout = 8_000) => {
+    const deadline = Date.now() + timeout
+    while (!(await run(expression))) { if (Date.now() > deadline) assert.fail("UI did not reach " + expression); await new Promise((r) => setTimeout(r, 50)) }
+  }
+  const label = `document.querySelector(".human-interventions-head").getAttribute("aria-label")`
+  try {
+    await fetch(origin + "/__fixture/reset")
+    await fetch(origin + "/__fixture/list-count?value=-1")
+    await fetch(origin + "/__fixture/read-delay?ms=1200")
+    await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
+    await browser.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true }, id)
+    const mark = browser.loadCount; await browser.send("Page.navigate", { url: origin + "/#session=" + SESSION }, id); await browser.loaded(id, mark)
+    await until(`!!document.querySelector(".human-interventions-head")`)
+    assert.match(await run(label), /載入中/)
+    assert.doesNotMatch(await run(label), /0 筆/)
+    assert.equal(await run(`!!document.querySelector(".human-interventions-dot")`), false, "no dot before anybody has said")
+    await until(`!!document.querySelector(".human-interventions-dot")`)
+    assert.ok(noteReads >= 1, "the panel read the notes with no count to draw from")
+    assert.match(await run(`document.querySelector(".human-interventions-live").textContent`), /1 筆未處理/)
+    assert.match(await run(`document.querySelector(".human-interventions-head").innerText`), /待處理：1/)
+    assert.doesNotMatch(await run(label), /載入中/)
+  } finally {
+    await fetch(origin + "/__fixture/reset")
+    await browser.send("Target.closeTarget", { targetId })
+  }
+})
+// The ordinary Session: the row says zero unresolved notes, so the page reads
+// none of them — not when it opens and not on any clock — and the head draws
+// the row's own count. Opening the panel is what reads them.
+test("a Session the row says has no notes reads none of them until the panel is opened", async () => {
+  const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+  const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+  const run = async (expression: string) => {
+    const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, id)
+    if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+    return result.value
+  }
+  const until = async (expression: string, timeout = 8_000) => {
+    const deadline = Date.now() + timeout
+    while (!(await run(expression))) { if (Date.now() > deadline) assert.fail("UI did not reach " + expression); await new Promise((r) => setTimeout(r, 50)) }
+  }
+  // The to-dos beside the notes are read as the fold mounts: once that has
+  // happened the panel has had its own chance to read, and did not take it.
+  const untilTodoRead = async (timeout = 8_000) => {
+    const deadline = Date.now() + timeout
+    while (todoReads === 0) { if (Date.now() > deadline) assert.fail("the Session fold never read its to-dos"); await new Promise((r) => setTimeout(r, 50)) }
+  }
+  try {
+    await fetch(origin + "/__fixture/reset")
+    await fetch(origin + "/__fixture/list-count?value=0")
+    await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
+    await browser.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true }, id)
+    const mark = browser.loadCount; await browser.send("Page.navigate", { url: origin + "/#session=" + SESSION }, id); await browser.loaded(id, mark)
+    await until(`!!document.querySelector(".human-interventions-head")`)
+    await untilTodoRead()
+    await new Promise((r) => setTimeout(r, 300))
+    assert.equal(noteReads, 0, "the notes were read for a Session the row said had none")
+    assert.equal(await run(`!!document.querySelector(".human-interventions-dot")`), false)
+    assert.equal(await run(`!!document.querySelector(".human-interventions-count")`), false)
+    assert.doesNotMatch(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /載入中/)
+    await run(`document.querySelector(".human-interventions-head").click()`)
+    await until(`!!document.querySelector(".human-intervention-card")`)
+    assert.equal(noteReads, 1, "opening the panel is the read")
+  } finally {
+    await fetch(origin + "/__fixture/reset")
+    await browser.send("Target.closeTarget", { targetId })
+  }
+})
