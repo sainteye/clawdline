@@ -87,6 +87,8 @@ export class CloudTerminalSession {
   private openingNew = false
   private rotationAttempted = false
   private rotationRetryAt = 0
+  private recovering = false
+  private recoverRetryAt = 0
   private retiringConnection = ""
   private rotationReady = false
   private activating = false
@@ -252,6 +254,22 @@ export class CloudTerminalSession {
       this.set({})
       if (this.fallbackWanted) { this.fallbackWanted = false; queueMicrotask(() => void this.fallback()) }
     }
+  }
+
+  /** Restore a displayed terminal after its relay connection disappeared, without resending input. */
+  async reconnect(displayedTerminal = this.terminal): Promise<void> {
+    if (this.recovering) return
+    this.recovering = true
+    try {
+      try { await this.start() }
+      catch (error) {
+        const refusal = error as { code?: string; receiptStatus?: string }
+        if (refusal.receiptStatus !== "refused" ||
+          (refusal.code !== "terminal_invalid" && refusal.code !== "terminal_old_connection")) throw error
+        await this.start({ abandon: true })
+      }
+      if (displayedTerminal && displayedTerminal === this.terminal) await this.attach(displayedTerminal, false)
+    } finally { this.recovering = false }
   }
 
   /**
@@ -840,6 +858,14 @@ export class CloudTerminalSession {
     }
     if (Date.now() >= this.expiresAt || (this.s.frame && Date.now() - this.frameSeenAt > STALE_MS)) {
       this.set({ state: "stale", reason: "terminal_stale" })
+    }
+    // One late heartbeat is normal. After the type-ahead window, a still stale screen needs a
+    // read-only reconnection; the old connection may have been retired while the relay was away.
+    if (this.terminal && this.s.frame && Date.now() - this.frameSeenAt >= TYPE_AHEAD_MS &&
+      this.s.state === "stale" && !this.recovering && !this.openingNew &&
+      Date.now() >= this.recoverRetryAt) {
+      this.recoverRetryAt = Date.now() + ROTATION_RETRY_MS
+      void this.reconnect().catch(() => { this.recoverRetryAt = Date.now() + ROTATION_RETRY_MS })
     }
     this.maybeUpgrade()
   }

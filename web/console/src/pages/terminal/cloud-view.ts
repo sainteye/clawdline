@@ -12,6 +12,7 @@ export function cloudTerminalBody(host: unknown, channelProject: string, id: str
 /** The part of a Cloud terminal session a fresh start uses. */
 export interface CloudTerminalStarter {
   start(): Promise<void>
+  reconnect(terminal: string): Promise<void>
   attach(terminal: string, reset?: boolean): Promise<{ result?: Record<string, unknown> }>
   request(operation: string, fields?: Record<string, unknown>): Promise<{ result?: Record<string, unknown> }>
 }
@@ -73,8 +74,7 @@ export function shownKeyRefusal<T extends { control: string }>(refusal: T | null
 
 /** Reconnect the displayed terminal without repeating a create or input request. */
 export async function reconnectCloudTerminal(session: CloudTerminalStarter, id: string): Promise<void> {
-  await session.start()
-  await session.attach(id, false)
+  await session.reconnect(id)
 }
 
 /** Take control on entry when it is free or already belongs to this tab. */

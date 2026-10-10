@@ -10,6 +10,7 @@ class CountingSession implements CloudTerminalStarter {
   operations: string[] = []
   projects: unknown[] = []
   async start(): Promise<void> { this.operations.push("open_connection") }
+  async reconnect(terminal: string): Promise<void> { this.operations.push("rekey_connection", `read:${terminal}`, "capture") }
   async attach(terminal: string): Promise<{ result?: Record<string, unknown> }> {
     this.operations.push("read", "capture")
     return { result: { id: terminal, status: "running" } }
@@ -57,7 +58,7 @@ test("a new session after a host change reads or lists, and never sends open or 
 test("reconnect reads and captures again without replaying open or input", async () => {
   const session = new CountingSession()
   await reconnectCloudTerminal(session, "trm_one")
-  assert.deepEqual(session.operations, ["open_connection", "read", "capture"])
+  assert.deepEqual(session.operations, ["rekey_connection", "read:trm_one", "capture"])
 })
 
 test("entry acquires a free terminal or this tab's old lease, but never another viewer's lease or uncertain input", async () => {

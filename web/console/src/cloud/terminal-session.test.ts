@@ -960,6 +960,30 @@ test("a still screen on a machine whose clock is behind keeps beating and stays 
   } finally { session.dispose(); Date.now = realNow }
 })
 
+test("a retired relay connection reopens automatically after a stale screen and only reads the terminal", async () => {
+  const realNow = Date.now
+  let now = realNow()
+  Date.now = () => now
+  const wire = new Wire()
+  wire.lease = { ...held, expires_at: now / 1000 + 90 }
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const old = wire.latest()
+    wire.frame(old, 1, "before outage")
+    wire.refusals.set("rekey_connection", "terminal_invalid")
+    now += 8_100
+    ;(session as unknown as { checkFreshness(): void }).checkFreshness()
+    await until(() => wire.requests.some((request) => request.operation === "capture" && request.connection === wire.latest() && wire.latest() !== old))
+    const after = wire.requests.filter((request) => request.connection !== old)
+    assert.deepEqual(after.map((request) => request.operation), ["rekey_connection", "open_connection", "control", "read", "capture"])
+    assert.equal(wire.channels.has(old), false)
+    assert.equal(after.some((request) => request.operation === "open" || request.operation === "input" || request.operation === "paste"), false)
+    wire.frame(wire.latest(), 1, "after outage")
+    await until(() => session.snapshot.frame?.rev === "after outage" && session.snapshot.hasLease)
+  } finally { session.dispose(); Date.now = realNow }
+})
+
 test("a key typed while a still screen's next beat is late waits for it instead of being refused", async () => {
   const realNow = Date.now
   let now = realNow()
