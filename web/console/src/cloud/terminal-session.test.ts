@@ -43,6 +43,7 @@ class Wire implements TerminalWire {
    * time in arrival order, and answers each after `pacedMs`, the next only after the previous.
    */
   machineInputs: { applied: number; typed: string[]; pacedMs: number; queue: Array<() => void>; busy: boolean } | null = null
+  delayFirstInputMs = 0
   private paceMachine(): void {
     const machine = this.machineInputs!
     if (machine.busy) return
@@ -89,7 +90,7 @@ class Wire implements TerminalWire {
     })
     if (operation === "input" && this.machineInputs) {
       const machine = this.machineInputs
-      machine.queue.push(() => {
+      const apply = () => {
         const seq = request.seq as number
         const duplicate = seq <= machine.applied
         if (seq === machine.applied + 1) {
@@ -100,8 +101,10 @@ class Wire implements TerminalWire {
         this.emit(connection, "termr", { v: 1, type: "terminal_receipt", request_id: request.request_id, connection, operation,
           terminal_id: request.terminal_id, ...(gap ? { status: "refused", error: "input_gap" }
             : { status: "ok", result: { applied_through: machine.applied, duplicate } }) })
-      })
-      this.paceMachine()
+      }
+      const enqueue = () => { machine.queue.push(apply); this.paceMachine() }
+      if (request.seq === 1 && this.delayFirstInputMs) setTimeout(enqueue, this.delayFirstInputMs)
+      else enqueue()
     } else if (this.delayed.has(operation)) this.replies.push(reply)
     else queueMicrotask(reply)
     return { sender: viewer, seq: this.requests.length }
@@ -198,7 +201,7 @@ test("a close exposes its request id and an unknown receipt does not claim succe
   } finally { session.dispose() }
 })
 
-test("several numbered keys publish before receipts while later keys wait for the bounded window", async () => {
+test("numbered keys wait for each machine receipt before publishing the next", async () => {
   const wire = new Wire()
   const session = new CloudTerminalSession(wire, "stable-tab")
   try {
@@ -209,20 +212,20 @@ test("several numbered keys publish before receipts while later keys wait for th
     wire.delayed.add("input")
     const inputs = Array.from({ length: 5 }, (_, i) => session.input(new TextEncoder().encode(String(i))))
     const inputCount = () => wire.requests.filter((request) => request.operation === "input").length
-    await until(() => inputCount() >= 4)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    const sent = wire.requests.filter((request) => request.operation === "input")
-    assert.equal(sent.length, 4)
-    assert.deepEqual(sent.map((request) => request.seq), [1, 2, 3, 4])
-    wire.releaseReplies()
-    await until(() => inputCount() === 5)
+    await until(() => inputCount() === 1)
+    for (let count = 1; count < 5; count++) {
+      assert.equal(inputCount(), count, "the next key waits for the previous receipt")
+      wire.releaseReplies()
+      await until(() => inputCount() === count + 1)
+    }
+    assert.deepEqual(wire.requests.filter((request) => request.operation === "input").map((request) => request.seq), [1, 2, 3, 4, 5])
     assert.equal(wire.requests.filter((request) => request.operation === "input").length, 5)
     wire.releaseReplies()
     await Promise.all(inputs)
   } finally { session.dispose() }
 })
 
-test("a burst longer than the in-flight window arrives complete and in order when receipts come back one by one", async () => {
+test("a burst arrives complete and in order when receipts come back one by one", async () => {
   const wire = new Wire()
   const session = new CloudTerminalSession(wire, "stable-tab")
   try {
@@ -245,6 +248,22 @@ test("a burst longer than the in-flight window arrives complete and in order whe
     assert.deepEqual(seqs, Array.from({ length: text.length }, (_, i) => i + 1))
     assert.deepEqual(outcomes.filter((outcome) => outcome.status === "rejected"), [])
     assert.equal(session.snapshot.canType, true)
+  } finally { session.dispose() }
+})
+
+test("a delayed first input never lets a later numbered key overtake it", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "ready")
+    wire.machineInputs = { applied: 0, typed: [], pacedMs: 0, queue: [], busy: false }
+    wire.delayFirstInputMs = 30
+    const first = session.input(new TextEncoder().encode("a"))
+    const second = session.input(new TextEncoder().encode("b"))
+    const outcomes = await Promise.allSettled([first, second])
+    assert.deepEqual(outcomes.map((outcome) => outcome.status), ["fulfilled", "fulfilled"])
+    assert.equal(wire.machineInputs.typed.join(""), "ab")
   } finally { session.dispose() }
 })
 
@@ -290,7 +309,7 @@ test("a key typed while taking control that another tab holds is refused as not_
   } finally { session.dispose() }
 })
 
-test("an unknown pipelined input outcome stops the waiting key without replay", async () => {
+test("an unknown input outcome stops the waiting keys without replay", async () => {
   const wire = new Wire()
   const session = new CloudTerminalSession(wire, "stable-tab")
   try {
@@ -301,11 +320,11 @@ test("an unknown pipelined input outcome stops the waiting key without replay", 
     wire.delayed.add("input")
     const inputs = Array.from({ length: 5 }, (_, i) => session.input(new TextEncoder().encode(String(i))))
     for (const pending of inputs) void pending.catch(() => undefined)
-    await until(() => wire.requests.filter((request) => request.operation === "input").length >= 4)
+    await until(() => wire.requests.filter((request) => request.operation === "input").length === 1)
     wire.inputResult = "unknown"
     wire.releaseReplies()
     await Promise.allSettled(inputs)
-    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 4)
+    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 1)
     assert.equal(session.snapshot.canType, false)
   } finally { session.dispose() }
 })
@@ -456,18 +475,19 @@ test("rekey keeps the lease client and checks a read-only high-water mark before
   session.dispose()
 })
 
-test("a key still awaiting its receipt across a rekey keeps its number; the next key gets the one after", async () => {
+test("a key awaiting its receipt across a rekey settles before the next key is numbered", async () => {
   const wire = new Wire()
   const session = new CloudTerminalSession(wire, "stable-tab")
   try {
     await session.start(); await session.attach(terminalID); await session.acquire("acquire")
     wire.frame(wire.latest(), 1, "first")
     wire.delayed.add("input")
-    // Its receipt is never released here: only the numbering is under test.
-    void session.input(new TextEncoder().encode("a")).catch(() => undefined)
+    const first = session.input(new TextEncoder().encode("a"))
     await until(() => wire.requests.some((request) => request.operation === "input"))
     // The machine has not decided "a" yet: the lease proof still says nothing was applied.
     await session.start()
+    wire.releaseReplies()
+    await first
     wire.frame(wire.latest(), 1, "new connection")
     await until(() => session.snapshot.canType)
     void session.input(new TextEncoder().encode("b")).catch(() => undefined)
@@ -1179,6 +1199,27 @@ test("a connection discarded for a bad delta reads its terminal again and proves
   } finally { session.dispose() }
 })
 
+test("a discarded screen waits for an accepted key's receipt before releasing its connection", async () => {
+  const wire = new Wire()
+  wire.deltaSubscribed = true; wire.deltaMachine = true
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const old = wire.latest()
+    wire.frame(old, 1, "first")
+    wire.delayed.add("input")
+    const key = session.input(new TextEncoder().encode("a"))
+    await until(() => wire.requests.some((request) => request.operation === "input"))
+    wire.emit(old, "termd", { ...(await delta(old, 2, 1, "first", "second")), screen_hash: "0".repeat(64) })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(wire.requests.some((request) => request.operation === "release_connection"), false)
+    wire.releaseReplies()
+    await key
+    await until(() => wire.requests.some((request) => request.operation === "release_connection"))
+    await until(() => wire.latest() !== old)
+  } finally { session.dispose() }
+})
+
 test("keys whose envelopes the machine drops unanswered are each refused, none left waiting unsaid", async (t) => {
   // 2026-10-06 21:01: the machine dropped a page's envelopes as replays and answered nothing.
   // The only way the page can know is the receipt timeout; every key from then on must be refused.
@@ -1196,7 +1237,7 @@ test("keys whose envelopes the machine drops unanswered are each refused, none l
     t.mock.timers.tick(10_000)
     const settled = await Promise.all(outcomes)
     assert.deepEqual(settled, Array(6).fill("terminal_input_state_unknown"))
-    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 4, "nothing past the in-flight window was sent")
+    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 1, "later keys were not sent after an unanswered input")
   } finally { t.mock.timers.reset(); session.dispose() }
 })
 

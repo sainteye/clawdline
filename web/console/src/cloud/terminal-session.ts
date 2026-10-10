@@ -506,9 +506,9 @@ export class CloudTerminalSession {
     let settle!: (error?: unknown) => void
     const result = new Promise<void>((resolve, reject) => { settle = (error) => error ? reject(error) : resolve() })
     const send = this.sendQueue.then(async () => {
-      // Bound unacknowledged inputs while allowing several keystrokes to cross
-      // a high-latency link without a full receipt round trip between them.
-      if (this.inFlightInput.length >= 4) await this.inFlightInput[0]!.catch(() => undefined)
+      // Relay budget retries can let a later numbered key reach the machine first. Wait for the
+      // previous machine receipt before numbering the next key, so a delayed one cannot be skipped.
+      if (this.inFlightInput.length) await this.inFlightInput[0]!.catch(() => undefined)
       for (;;) {
         await this.untilTypeable()
         if (!this.s.canType || this.epoch === null) throw this.paused()
@@ -576,9 +576,8 @@ export class CloudTerminalSession {
       this.set({ state: "unknown", reason: "terminal_input_state_unknown" })
       throw fail("terminal_input_state_unknown")
     }
-    // Keys after this one may already be numbered and in flight: the next number only moves forward.
-    // Resetting it to seq + 1 here handed a later key the number of one still in flight, which the
-    // machine then answered as a duplicate and never typed (a burst lost its fifth key and more).
+    // A rekey can reconcile a higher applied number while this receipt is on its way.
+    // The next number only moves forward.
     this.confirmed = Math.max(this.confirmed, seq)
     this.nextSeq = Math.max(this.nextSeq, seq + 1)
   }
@@ -761,6 +760,10 @@ export class CloudTerminalSession {
    */
   private async reopen(terminal: string): Promise<void> {
     try {
+      // Releasing this connection first makes the machine refuse a key already accepted by the
+      // relay as terminal_forbidden, which the page would mistake for revoked device pairing.
+      await Promise.allSettled([...this.inFlightInput])
+      if ((this.s.state as CloudTerminalState) === "revoked") return
       // The machine counts two connections per viewer: the discarded one is given back first, or
       // the new one is refused as busy while it lingers (2026-10-06, 20:41:04). Receipts of keys
       // sent before it still arrive ahead of this one, on the connection still subscribed.
