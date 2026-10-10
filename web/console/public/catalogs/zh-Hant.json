@@ -2228,7 +2228,7 @@
   "legacy.webPlanPortalNone": "這個帳號還沒有訂閱可以管理。",
   "legacy.webPlanPortalOpening": "正在打開客戶入口⋯",
   "legacy.webPlanPortalProvider": "這份訂閱的付款商，Clawdline 沒辦法幫你開客戶入口。",
-  "legacy.webPlanProvisional": "這些數字還會調整，因為計數本身還在建。真正由 relay 執行的是結構性的上限：機器數量、同時連線數、檢視裝置。",
+  "legacy.webPlanProvisional": "計數功能仍在建置，方案數字可能調整。上方列出的機器、檢視裝置及適用的同時連線上限，由 relay 執行。",
   "legacy.webPlanRecheck": "再查一次",
   "legacy.webPlanRetry": "再試一次",
   "legacy.webPlanRowDispatches": "每月分派次數",

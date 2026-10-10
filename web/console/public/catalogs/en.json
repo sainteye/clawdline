@@ -2228,7 +2228,7 @@
   "legacy.webPlanPortalNone": "This account has no subscription to manage yet.",
   "legacy.webPlanPortalOpening": "Opening the customer portal…",
   "legacy.webPlanPortalProvider": "This subscription is with a billing provider Clawdline cannot open a portal for.",
-  "legacy.webPlanProvisional": "These numbers are provisional while the counters are still being built. The structural limits — machines, concurrent sessions, viewer devices — are the ones the relay enforces.",
+  "legacy.webPlanProvisional": "Plan numbers may change while counting is still being built. The machine, viewer device, and any concurrent session limits shown above are enforced by the relay.",
   "legacy.webPlanRecheck": "Check again",
   "legacy.webPlanRetry": "Try again",
   "legacy.webPlanRowDispatches": "Dispatches a month",
