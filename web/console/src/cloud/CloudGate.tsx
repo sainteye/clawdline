@@ -1114,7 +1114,6 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
                 >
                   <span className="cloud-switch-option-name">{machine.name || machine.label || machine.id}</span>
                   <span className="cloud-switch-option-platform">{platformWord(identity.platform)}</span>
-                  <span className="cloud-switch-option-id">{machine.id}</span>
                   {current && <span className="cloud-switch-current">{nextWord("cloudCurrentMachine")}</span>}
                 </button>
               )
