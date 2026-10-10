@@ -1,5 +1,6 @@
 import type { CloudClientHandle } from "./copied.js"
 import { destinationKey, type SessionDestination, type SessionProjectionSource } from "./all-machine-sessions.js"
+import { STATUS_FRESH_MS } from "./status-projection.js"
 
 export interface PeerPairStatus {
   pair_id: string
@@ -25,6 +26,17 @@ export interface PeerAccessSnapshot {
   observedAt: number
   pairs: PeerPairStatus[]
   grants: PeerGrantStatus[]
+}
+
+/** A checked box represents current machine authority, never a proposed grant. */
+export function effectivePeerScopes(snapshot: PeerAccessSnapshot, grant: PeerGrantStatus,
+  now = Date.now()): readonly ("message" | "handoff")[] {
+  if (now < snapshot.observedAt || now - snapshot.observedAt > STATUS_FRESH_MS ||
+    now >= Date.parse(grant.expires_at)) return []
+  const pair = snapshot.pairs.find((entry) => entry.pair_id === grant.pair_id)
+  if (!pair || pair.state !== "active" || now >= Date.parse(pair.expires_at) ||
+    pair.source_machine_id !== grant.source.machine_id || pair.target_machine_id !== grant.target.machine_id) return []
+  return grant.scopes
 }
 
 /** Never treat an old or malformed machine authority response as an empty list. */

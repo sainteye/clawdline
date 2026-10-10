@@ -1,0 +1,6 @@
+.cloud-peer-access-sheet { display: grid; gap: 1rem; max-width: 960px; }
+.cloud-peer-access-sheet > p { margin: 0; }
+.cloud-peer-access-create { display: grid; gap: .75rem; }
+.cloud-peer-access-create > label { display: grid; gap: .35rem; }
+.cloud-peer-access-create select { max-width: 100%; }
+.cloud-peer-access-create .cloud-peer-panel { margin-top: .25rem; }

@@ -4936,5 +4936,18 @@
   "next.cloudActionStageObserved": "已觀察",
   "next.cloudActionStageAcknowledged": "已確認",
   "next.gitNoDirectory": "這個 Session 的資料夾在它的機器上已經不存在，所以沒有 Git 變更可以顯示。",
-  "next.gitPermissionDenied": "它的機器沒有權限讀取這個 Session 的資料夾，所以無法顯示 Git 變更。"
+  "next.gitPermissionDenied": "它的機器沒有權限讀取這個 Session 的資料夾，所以無法顯示 Git 變更。",
+  "next.cloudPeerAccessActive": "已生效",
+  "next.cloudPeerAccessChooseSession": "選擇目標 Session",
+  "next.cloudPeerAccessCreate": "配對機器與授權 Session 工作",
+  "next.cloudPeerAccessEffectiveScopes": "機器回報的授權範圍",
+  "next.cloudPeerAccessInactive": "待確認或已過期",
+  "next.cloudPeerAccessIntro": "檢視各機器回報的配對與 Session 授權。下方勾選的是新授權請求；只有重新讀取的機器紀錄才能證明授權已生效。",
+  "next.cloudPeerAccessLoading": "正在讀取目前的 Session…",
+  "next.cloudPeerAccessNav": "跨機器權限",
+  "next.cloudPeerAccessOffline": "這台機器離線；它重新回報前無法變更權限。",
+  "next.cloudPeerAccessTargetMachine": "目標機器",
+  "next.cloudPeerAccessTargetSession": "目標 Session",
+  "next.cloudPeerAccessUnpaired": "這個瀏覽器尚未與此機器配對。請先從機器切換器完成配對。",
+  "next.cloudPeerAccessUnread": "讀不到這台機器的 Session（{code}）。"
 }

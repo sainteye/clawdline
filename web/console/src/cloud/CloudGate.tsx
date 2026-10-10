@@ -55,6 +55,7 @@ import { RelayReader } from "./relay-reader.js"
 import { FleetSessionList, type MachineToolbarAction } from "./FleetSessionList.js"
 import { CloudSessionSheets, type PendingMachineAction } from "./CloudSessionSheets.js"
 import { PeerRevocationPanel } from "./PeerHandoffPanel.js"
+import { PeerAccessPage } from "./PeerAccessPage.js"
 import { destinationAvailable, destinationFragment, destinationFromFragment, destinationKey, type SessionContent,
   type SessionDestination, type SessionProjectionSource } from "./all-machine-sessions.js"
 import { statusSource } from "./status-source.js"
@@ -1236,6 +1237,11 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       {chosen && who && transport.kind === "cloud" && screen.at === "console" && (
         <CloudAccountContext.Provider value={{ apiOrigin: transport.config.apiOrigin, deviceID: who.device }}>
           <App aside={aside} hideSessionCounts={fleetScope}
+            cloudPeerAccess={<PeerAccessPage machines={(shown.phase === "ready" ? shown.machines : []).map((machine) => ({
+              id: machine.id, name: machine.name || machine.label || machine.id,
+              platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
+              paired: machine.pairing === "paired",
+            }))} source={liveSessionSource} current={currentActionClient} />}
             focusCloudSessions={fleetScope}
             onLeaveCloudSessions={leaveFleet}
             fleetTarget={fleetScope ? fleetTarget : null}

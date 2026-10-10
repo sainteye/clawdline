@@ -3,7 +3,7 @@ import { failureSentence } from "../refusals/refusal-text.js"
 import { nextWord } from "../next-strings.js"
 import type { CloudClientHandle } from "./copied.js"
 import type { DetailActionContext, FleetMachine, SessionDestination, SessionProjectionSource } from "./all-machine-sessions.js"
-import { checkedPeerAccessStatus, ensurePeerEndpointCurrent, type PeerAccessSnapshot } from "./peer-handoff-admission.js"
+import { checkedPeerAccessStatus, effectivePeerScopes, ensurePeerEndpointCurrent, type PeerAccessSnapshot } from "./peer-handoff-admission.js"
 import { STATUS_FRESH_MS } from "./status-projection.js"
 import "./peer-handoff.css"
 
@@ -59,11 +59,12 @@ function decodeInboxBody(encoded: string): string {
   return new TextDecoder().decode(bytes)
 }
 
-export function PeerHandoffPanel({ context, machines, source, current }: {
+export function PeerHandoffPanel({ context, machines, source, current, accessOnly = false }: {
   context: DetailActionContext
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
   current: () => CloudClientHandle | null
+  accessOnly?: boolean
 }) {
   const [sources, setSources] = useState<SessionDestination[]>([])
   const [sourcesProblem, setSourcesProblem] = useState("")
@@ -104,19 +105,25 @@ export function PeerHandoffPanel({ context, machines, source, current }: {
     setSourcesProblem("")
     if (!source) { setSources([]); return }
     const abort = new AbortController()
-    void Promise.all(machines.filter((machine) => machine.id !== target.machineID && machine.freshness === "current")
-      .map(async (machine) => ({ machine, reading: await source.readMachine(machine.id, abort.signal) })))
+    void Promise.all(machines.filter((machine) => machine.id !== target.machineID && machine.freshness === "current" && machine.paired !== false)
+      .map(async (machine) => {
+        try { return { reading: await source.readMachine(machine.id, abort.signal), failed: false } }
+        catch { return { reading: null, failed: true } }
+      }))
       .then((rows) => {
         if (abort.signal.aborted) return
-        setSources(rows.flatMap(({ reading }) => reading.kind === "ready" ? reading.rows
+        setSources(rows.flatMap(({ reading }) => reading?.kind === "ready" ? reading.rows
           .filter((row) => row.freshness === "current").map((row) => row.destination) : []))
+        if (rows.some(({ reading, failed }) => failed || reading?.kind !== "ready")) {
+          setSourcesProblem(nextWord("cloudPeerSourcesUnread"))
+        }
       }).catch((error: unknown) => {
         if (abort.signal.aborted) return
         setSources([])
         setSourcesProblem(failureSentence(error, nextWord("cloudPeerSourcesUnread")))
       })
     return () => abort.abort()
-  }, [source, machines.map((machine) => machine.id + ":" + machine.freshness).join("\0"), target.machineID])
+  }, [source, machines.map((machine) => machine.id + ":" + machine.freshness + ":" + machine.paired).join("\0"), target.machineID])
 
   const chosen = sources.find((entry) => JSON.stringify(entry) === selected)
   const sourceMachine = machines.find((machine) => machine.id === chosen?.machineID)
@@ -305,7 +312,7 @@ export function PeerHandoffPanel({ context, machines, source, current }: {
       <button disabled={busy || !targetCanControl || !grantID} onClick={() => askRevoke(target.machineID,
         "revoke_grant", grantID)}>{nextWord("cloudPeerRevokeGrant")}</button>
     </div>
-    <div className="cloud-peer-compose">
+    {!accessOnly && <div className="cloud-peer-compose">
       <label>{nextWord("cloudPeerKind")}<select value={kind} disabled={busy} onChange={(event) => setKind(event.target.value as typeof kind)}>
         <option value="message">{nextWord("cloudPeerMessage")}</option><option value="handoff">{nextWord("cloudPeerHandoff")}</option>
       </select></label>
@@ -313,19 +320,19 @@ export function PeerHandoffPanel({ context, machines, source, current }: {
       <button disabled={busy || !chosen || !sourceCanSend || !grantID || !body.trim() || sourceMachine?.freshness !== "current" ||
         context.machine.freshness !== "current"}
         onClick={() => void send()}>{nextWord("cloudPeerSend")}</button>
-    </div>
-    <button disabled={busy} onClick={() => void readInbox()}>{nextWord("cloudPeerReadInbox")}</button>
-    {inboxBefore && <button disabled={busy} onClick={() => void readInbox(inboxBefore)}>{nextWord("cloudPeerOlderInbox")}</button>}
-    <button disabled={busy || !chosen || !lastRequest} onClick={() => void checkRelay()}>{nextWord("cloudPeerCheckRelay")}</button>
+    </div>}
+    {!accessOnly && <button disabled={busy} onClick={() => void readInbox()}>{nextWord("cloudPeerReadInbox")}</button>}
+    {!accessOnly && inboxBefore && <button disabled={busy} onClick={() => void readInbox(inboxBefore)}>{nextWord("cloudPeerOlderInbox")}</button>}
+    {!accessOnly && <button disabled={busy || !chosen || !lastRequest} onClick={() => void checkRelay()}>{nextWord("cloudPeerCheckRelay")}</button>}
     {answer && <p role="status">{answer}</p>}
-    <ul>{inbox.map((item) => <li key={item.request.request_id}>
+    {!accessOnly && <ul>{inbox.map((item) => <li key={item.request.request_id}>
       <strong>{item.request.kind}</strong> {item.request.source.machine_id}/{item.request.source.session_id} →
       {item.request.target.machine_id}/{item.request.target.session_id}: {item.body}
       <p>{nextWord("cloudPeerTargetReceipt", { execution: item.receipt?.machine_execution ?? "unknown",
         delivered: item.receipt?.session_delivered ?? "unknown", observed: item.receipt?.agent_observed ?? "unknown",
         acknowledged: item.receipt?.agent_acknowledged ?? "unknown" })}</p>
-    </li>)}</ul>
-    <p>{nextWord("cloudPeerObservationUnknown")}</p>
+    </li>)}</ul>}
+    {!accessOnly && <p>{nextWord("cloudPeerObservationUnknown")}</p>}
     {pendingRevoke && <RevokeConfirmation pending={pendingRevoke} onCancel={() => setPendingRevoke(null)}
       onConfirm={() => { const pending = pendingRevoke; setPendingRevoke(null); void control(pending.machineID,
         { action: pending.action, ...(pending.action === "revoke_pair" ? { pair_id: pending.id } : { grant_id: pending.id }) }) }} />}
@@ -333,11 +340,13 @@ export function PeerHandoffPanel({ context, machines, source, current }: {
 }
 
 /** Pair and grant revocation remain reachable after a Session disappears. */
-export function PeerRevocationPanel({ machines, current }: {
+export function PeerRevocationPanel({ machines, current, selectedMachineID }: {
   machines: readonly FleetMachine[]
   current: () => CloudClientHandle | null
+  selectedMachineID?: string
 }) {
-  const [machineID, setMachineID] = useState("")
+  const [localMachineID, setLocalMachineID] = useState("")
+  const machineID = selectedMachineID ?? localMachineID
   const [pairID, setPairID] = useState("")
   const [grantID, setGrantID] = useState("")
   const [busy, setBusy] = useState(false)
@@ -349,6 +358,19 @@ export function PeerRevocationPanel({ machines, current }: {
   const canManage = !!machineID && !!viewer?.allowWrites && !!viewer._machineRequestAs &&
     !!viewer.viewerVerified?.has(machineID) &&
     !!viewer.machineDescriptor?.(machineID)?.machine?.commands?.includes("peer-control")
+
+  useEffect(() => { setAccess(null); setAnswer(""); setPairID(""); setGrantID("") }, [machineID])
+  useEffect(() => {
+    if (!canManage || machine?.freshness !== "current") setAccess(null)
+  }, [canManage, machine?.freshness])
+  useEffect(() => {
+    if (!access) return
+    const expiry = Math.min(access.observedAt + STATUS_FRESH_MS,
+      ...access.pairs.map((pair) => Date.parse(pair.expires_at)),
+      ...access.grants.map((grant) => Date.parse(grant.expires_at)))
+    const timer = window.setTimeout(() => setAccess(null), Math.max(0, expiry - Date.now()))
+    return () => window.clearTimeout(timer)
+  }, [access])
 
   async function clientForAccess(): Promise<CloudClientHandle> {
     const client = current()
@@ -377,6 +399,11 @@ export function PeerRevocationPanel({ machines, current }: {
     finally { setBusy(false) }
   }
 
+  useEffect(() => {
+    if (selectedMachineID && machineID && machine?.freshness === "current" && canManage) void readAccess()
+    // A machine change always invalidates the previous response. The explicit refresh button handles later changes.
+  }, [selectedMachineID, machineID, machine?.freshness, canManage])
+
   async function revoke(action: "revoke_pair" | "revoke_grant", id: string) {
     if (busy || !machineID || !id) return
     setBusy(true)
@@ -394,16 +421,16 @@ export function PeerRevocationPanel({ machines, current }: {
     finally { setBusy(false) }
   }
 
-  return <details className="cloud-peer-panel cloud-peer-revocation">
+  return <details className="cloud-peer-panel cloud-peer-revocation" open={selectedMachineID !== undefined ? true : undefined}>
     <summary>{nextWord("cloudPeerManageAccess")}</summary>
-    <label>{nextWord("cloudPeerAccessMachine")}
+    {selectedMachineID === undefined && <label>{nextWord("cloudPeerAccessMachine")}
       <select value={machineID} disabled={busy} onChange={(event) => {
-        setMachineID(event.target.value); setPairID(""); setGrantID(""); setAccess(null); setAnswer("")
+        setLocalMachineID(event.target.value); setPairID(""); setGrantID(""); setAccess(null); setAnswer("")
       }}>
         <option value="">{nextWord("cloudPeerChooseMachine")}</option>
         {machines.map((entry) => <option key={entry.id} value={entry.id}>{entry.name || entry.id} · {entry.id}</option>)}
       </select>
-    </label>
+    </label>}
     {machineID && !canManage && <p role="status">{nextWord("cloudPeerWriteUnavailable", { machine: machineID })}</p>}
     <button type="button" disabled={busy || !canManage || machine?.freshness !== "current"}
       onClick={() => void readAccess()}>{nextWord("cloudPeerAccessRefresh")}</button>
@@ -414,7 +441,10 @@ export function PeerRevocationPanel({ machines, current }: {
         <h3>{nextWord("cloudPeerAccessPairs")}</h3>
         <ul>{access.pairs.map((pair) => <li key={pair.pair_id}>
           <strong>{pair.pair_id}</strong>
-          <span>{pair.source_machine_id} → {pair.target_machine_id} · {pair.state} · {new Date(pair.expires_at).toLocaleString()}</span>
+          <span>{pair.source_machine_id} → {pair.target_machine_id} ·
+            {pair.state === "active" && Date.parse(pair.expires_at) > access.observedAt
+              ? nextWord("cloudPeerAccessActive") : nextWord("cloudPeerAccessInactive")} ·
+            {new Date(pair.expires_at).toLocaleString()}</span>
           <button type="button" disabled={busy || !canManage || machine?.freshness !== "current"}
             onClick={() => setPendingRevoke({ machineID, action: "revoke_pair", id: pair.pair_id,
               context: `${pair.source_machine_id} → ${pair.target_machine_id}` })}>{nextWord("cloudPeerRevokePair")}</button>
@@ -426,7 +456,13 @@ export function PeerRevocationPanel({ machines, current }: {
           <strong>{grant.grant_id}</strong>
           <span>{grant.source.machine_id}/{grant.source.session_id}/{grant.source.execution_generation} →
             {grant.target.machine_id}/{grant.target.session_id}/{grant.target.execution_generation} ·
-            {grant.scopes.join(", ")} · {new Date(grant.expires_at).toLocaleString()}</span>
+            {new Date(grant.expires_at).toLocaleString()}</span>
+          <span className="cloud-peer-scopes" aria-label={nextWord("cloudPeerAccessEffectiveScopes")}>
+            {(["message", "handoff"] as const).map((scope) => <label key={scope}>
+              <input type="checkbox" checked={effectivePeerScopes(access, grant).includes(scope)} disabled />
+              {nextWord(scope === "message" ? "cloudPeerMessage" : "cloudPeerHandoff")}
+            </label>)}
+          </span>
           <button type="button" disabled={busy || !canManage || machine?.freshness !== "current"}
             onClick={() => setPendingRevoke({ machineID, action: "revoke_grant", id: grant.grant_id,
               context: `${grant.source.machine_id}/${grant.source.session_id} → ${grant.target.machine_id}/${grant.target.session_id} · ${grant.scopes.join(", ")}` })}>{nextWord("cloudPeerRevokeGrant")}</button>
