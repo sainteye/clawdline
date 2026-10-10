@@ -17,6 +17,8 @@ export interface TerminalWire {
   /** The direct carrier; a wire without these keeps every connection on the relay. */
   directSupported?(): boolean
   prepareDirect?(connection: string, onDown: (code: string) => void): Promise<TerminalDirectOffer>
+  /** Whether the open channel's machine offered everyday receipts on it. */
+  directReceipts?(): boolean
   setCarrier?(connection: string, carrier: TerminalCarrier): void
 }
 
@@ -297,11 +299,18 @@ export class CloudTerminalSession {
     try {
       offer = await this.transport.prepareDirect!(connection, (code) => this.directDown(attempt, code))
       if (this.directAttempt !== attempt || connection !== this.connection || !this.active) throw fail("terminal_direct_stale")
-      const answer = await this.request("direct_offer", { body: { sealed: offer.sealed } })
-      const sdp = answer.result?.sdp
-      if (typeof sdp !== "string" || !sdp) throw fail("terminal_bad_receipt")
-      this.directReceipts = answer.result?.direct_receipts === true
-      await offer.answer(sdp)
+      if (offer.borrowed) {
+        // The page's channel to this machine is already open, so this terminal has nothing to
+        // offer and nothing to wait for: it rekeys straight onto it. What the machine said about
+        // receipts when that channel was opened is what holds here (`cloud/direct-carrier.ts`).
+        this.directReceipts = this.transport.directReceipts?.() === true
+      } else {
+        const answer = await this.request("direct_offer", { body: { sealed: offer.sealed } })
+        const sdp = answer.result?.sdp
+        if (typeof sdp !== "string" || !sdp) throw fail("terminal_bad_receipt")
+        this.directReceipts = answer.result?.direct_receipts === true
+        await offer.answer(sdp)
+      }
       if (this.directAttempt !== attempt || connection !== this.connection || this.openingNew || this.retiringConnection || !this.active)
         throw fail("terminal_direct_stale")
       this.direct = offer

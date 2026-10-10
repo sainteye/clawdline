@@ -562,6 +562,7 @@ func (l *Link) runTerminal(ctx context.Context) {
 				return
 			case <-ticker.C:
 				l.sweepTerminalConnections()
+				l.sweepDirectCarriers()
 			}
 		}
 	}()
@@ -790,6 +791,12 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 	p := terminals.Principal{Device: in.Sender, Name: name, Cloud: true}
 	if req.Operation == "open_connection" || req.Operation == "rekey_connection" {
 		l.openTerminalConnection(ctx, svc, p, req)
+		return
+	}
+	// A carrier offer names no connection of its own: it opens the one data
+	// channel this viewer gets, which a terminal then borrows (carrier.go).
+	if req.Operation == carrierOfferOperation {
+		l.handleCarrierOffer(ctx, svc, p, req)
 		return
 	}
 	c := l.getTerminalConnection(in.Sender, req.Connection)

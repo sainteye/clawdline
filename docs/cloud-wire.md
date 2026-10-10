@@ -108,7 +108,7 @@ sequence 與重送視窗。`internal/adapters/cloudkeys` 因此拒絕 `~/.config
 | `t/<machine>/<session>` | 2 | `stream` | transcript 片段，viewer 打開 session 才要 |
 | `orch/<machine>` | 1 | `stream` | orchestrator 快照：tasks、schedules、waits |
 | `ctl/<machine>` | 1 | `ctl`, `dispatch` | viewer → Mac 的指令 |
-| `r/<machine>` | 1 | `ctl` | viewer → machine 的加密唯讀內容請求；固定目標的對話、技能、Git、畫面、Agent、Shell、文件與圖片讀取 |
+| `r/<machine>` | 1 | `ctl` | viewer → machine 的加密唯讀內容請求；固定目標的對話、技能、Git、畫面、Agent、Shell、文件與圖片讀取。打得通時這一條與它的回應可以不經 relay，走 viewer 的直連（§2.4） |
 | `ctlr/<machine>/<viewer_device>` | 2 | `ctl` | Mac → 指定 viewer 的指令回應 |
 | `ho/<account>/<handoff_id>` | 2 | `ho` | 交接包與交接收據 |
 | `wh/` | — | **保留，一律拒絕** | §10 留給 v1 的 webhook-out |
@@ -139,6 +139,25 @@ Go 端把前兩個放成常數 `MaxCiphertextBytes` 與 `AccountEnvelopeBytes`�
 而非 wire 規則。
 
 ---
+
+### 2.4 讀取可以不經 relay
+
+`r/<machine>` 的請求與它在 `t/<machine>/<session>` 上的回應，在瀏覽器與機器打得通時可以走同一條
+WebRTC 資料通道（直連），envelope 一個位元都不變：同樣的簽章、同樣的端到端加密、機器端同樣逐筆
+授權。這條直連一個頁面對一台機器只有一條，由 terminal 與 Session 讀取共用，誰先開都可以；
+協定、開通與退回規則全部在 [Cloud terminal wire](cloud-terminal-wire.md) 的「Session reads on
+the carrier」。
+
+對本文件其餘部分只有三件事要記住：
+
+1. **回應走請求來的那一條路。** 直連來的請求，回應就從直連回去，不進 spool；relay 來的請求照舊。
+   所以走直連的讀取完全不需要訂閱 `t/`，§8.2 的八條訂閱額度留給別的。
+2. **直連的 envelope 自己數序號**，與 relay 的序號互不相干（兩邊都是）。瀏覽器把同一個 sender 的
+   序號當嚴格遞增讀，兩條路共用一個計數器會讓走短路徑的那一筆擠在前面，使 relay 那一筆被當成
+   replay。
+3. **relay 仍然是權限的仲裁者與退路。** 直連不能讓 relay 會拒絕的讀取成功；直連拒絕、斷掉、裝置被
+   撤銷或網路打不通時，同一筆讀取改在 relay 上重問一次（讀取沒有副作用，所以可以重問），畫面上
+   不會出現「讀不到」。
 
 ## 3. Canonical JSON（RFC 8785 的安全整數子集）
 

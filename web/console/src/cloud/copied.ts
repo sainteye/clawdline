@@ -24,6 +24,8 @@ import type { CloudReadClient } from "./relay-reader.js"
 import type { OpenedPairing, PendingOffer } from "./pair.js"
 import type { RecoverySession } from "./device-limit.js"
 import { StatusCloudClient } from "./status-client.js"
+// @ts-expect-error -- a `.ts` path, so Node's strip-types runner can load this file in its suite.
+import { directCarriers, type CarrierClient } from "./direct-carrier.ts"
 
 // The archived bootstrap derives allowWrites from a device capability that
 // older Cloud tokens can omit. The current contract makes every signed-in
@@ -31,6 +33,11 @@ import { StatusCloudClient } from "./status-client.js"
 class PairedCloudClient extends StatusCloudClient {
   constructor(options: Record<string, unknown>) {
     super({ ...options, allowWrites: true })
+    // The one direct channel this page may have to each machine. The reader above knows nothing
+    // of WebRTC; it is given the carrier here, and a build or a test without one reads over the
+    // relay exactly as before (`cloud/direct-carrier.ts`).
+    // `StatusCloudClient` is the untyped copied reader, so the shape it satisfies is named here.
+    this.useDirectCarriers(directCarriers(this as unknown as CarrierClient))
   }
 }
 

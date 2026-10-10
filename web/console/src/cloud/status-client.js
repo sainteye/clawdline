@@ -3,11 +3,24 @@
 // validation for any existing channel.
 import { CatalogCloudClient } from "./refusal-client.js"
 import { channelSegment, decodedChannelSegment } from "../legacy/js/net/client.js"
-import { base64Bytes, bytesBase64, envelopeSigningBytes, importMasterSecret, sealEnvelope, validateEnvelope } from "../legacy/js/net/cloud-crypto.js"
+import { base64Bytes, bytesBase64, envelopeSigningBytes, importMasterSecret, openEnvelope, sealEnvelope, validateEnvelope } from "../legacy/js/net/cloud-crypto.js"
 
 const decoder = new TextDecoder()
 const STATUS = /^ss\/([^/]+)\/([^/]+)$/u
 const GENERATION = /^[0-9a-f]{32}$/u
+/**
+ * The read word a carrier offer is published and answered as.
+ *
+ * It is not one of the machine's routed words: the offer leaves as a signed `termi` request,
+ * which the machine answers from its terminal lane rather than its read queue, and the only
+ * reason it has a read word at all is that the answer is an ordinary read answer and the whole
+ * waiter, timeout and settle machinery then works unchanged. `_machineImplements` below is what
+ * decides whether a machine has it, from the one flag its descriptor carries.
+ */
+const CARRIER_WORD = "carrier-offer"
+const CARRIER_SESSION = "__clawdline_machine__"
+/** A carrier either negotiates in a few seconds or is not available on this network. */
+const CARRIER_TIMEOUT_MS = 15_000
 
 function refused(code, message) {
   return Object.assign(new Error(message), { code })
@@ -79,6 +92,16 @@ export class StatusCloudClient extends CatalogCloudClient {
     this.pinnedInfoFlights = new Map()
     this.pinnedTranscriptFlights = new Map()
     this.pinnedReadProofs = new Map()
+    // The direct carrier: what each machine said it can do, the carrier's own
+    // inbound envelope sequence, and the reads waiting on one right now. A
+    // page whose typed layer gave it no provider has no carrier and every
+    // read of it takes the relay, which is also what happens on a network the
+    // carrier cannot cross.
+    this.carrierCapabilities = new Map()
+    this.carrierSequences = new Map()
+    this.carrierReads = new Map()
+    this.directCarriers = null
+    this.carrierWatched = new WeakSet()
     this.classicSessionMachine = null
     this.classicSessionReads = new Map()
     this.classicSessionAttempted = new Map()
@@ -213,13 +236,266 @@ export class StatusCloudClient extends CatalogCloudClient {
       const proof = pending?.key && this.pinnedReadProofs?.get(pending.key)
       if (!proof || proof.seq !== seq || proof.machineID !== machine) return
     }
+    // A carrier offer leaves on `termi/<machine>/<viewer>`. The copied handler returns
+    // early on a channel it does not know, and an offer to a machine that is not
+    // connected would then wait out its whole timeout instead of failing at once.
+    const isCarrierOffer = !!machine && !!this.deviceID &&
+      frame?.ch === "termi/" + channelSegment(machine) + "/" + channelSegment(this.deviceID)
     const ctlMachine = typeof frame?.ch === "string" ? /^ctl\/([^/]+)$/u.exec(frame.ch) : null
     const target = machine || (ctlMachine ? decodedChannelSegment(ctlMachine[1]) : null)
     const before = target ? this.machineOffline?.get(target) : null
-    super._relayAnswered(isPinnedRead ? { ...frame, ch: "ctl/" + channelSegment(machine) } : frame, refusal)
+    super._relayAnswered(isPinnedRead || isCarrierOffer
+      ? { ...frame, ch: "ctl/" + channelSegment(machine) } : frame, refusal)
     if (target && (frame?.status === "machine_offline" || frame?.status === "delivered") &&
       this.machineOffline?.get(target) !== before) {
       this._emit({ type: "machine_reachability", machine: target })
+    }
+  }
+
+  // ----- The direct carrier -----
+  //
+  // A read normally travels to the machine through relay.clawdline.com in San
+  // Jose and back: about 290 ms of network for a phone on the same desk as the
+  // machine, and one of this connection's eight subscription channels while it
+  // waits. When the two ends can reach each other the same request goes
+  // straight over a WebRTC data channel: the same signed, end-to-end encrypted
+  // envelope, the same machine-side authorization one read at a time, and no
+  // subscription at all, because the answer comes back on the channel it was
+  // asked on (docs/cloud-terminal-wire.md).
+  //
+  // The relay stays the authority and the fallback. Nothing here can make a
+  // read succeed that the relay would have refused, and every way the carrier
+  // can fail ends with the same read asked again on the relay.
+
+  /** Given the carrier provider by the typed layer; without it this client has no carrier. */
+  useDirectCarriers(provider) {
+    this.directCarriers = provider && typeof provider.for === "function" ? provider : null
+  }
+
+  /** Whether this machine's own descriptor says it opens carriers. */
+  carrierSupported(machine) {
+    if (this.carrierCapabilities?.get(machine)?.supported === true) return true
+    return this.machineDescriptor(machine)?.machine?.session_carrier_v1 === true
+  }
+
+  /** The carrier for this machine, or null when this page has none to offer. */
+  _carrierFor(machine) {
+    if (!this.directCarriers || typeof machine !== "string" || !machine) return null
+    let carrier = null
+    try { carrier = this.directCarriers.for(machine) } catch { return null }
+    if (carrier && !this.carrierWatched.has(carrier)) {
+      this.carrierWatched.add(carrier)
+      carrier.whenDown(() => this._carrierDown(machine))
+    }
+    return carrier
+  }
+
+  /**
+   * The carrier word is answered from the machine's terminal lane, so it is not in the routed
+   * vocabulary a descriptor lists. Answer for it from the one flag that does say, which is also
+   * how an older daemon is never sent an offer at all: it publishes no flag, so this says no and
+   * the copied reader refuses the offer before a sequence is spent.
+   */
+  _machineImplements(machine, type, options) {
+    if (type === CARRIER_WORD) return this.carrierSupported(machine) ? "yes" : "no"
+    return super._machineImplements(machine, type, options)
+  }
+
+  /**
+   * Publishes one `carrier_offer` and resolves with the machine's answer.
+   *
+   * The offer is a signed `termi` request because that lane is the machine's own, off its read
+   * queue: gathering ICE candidates takes a round trip to a STUN server and a transcript waiting
+   * in the read queue must not wait behind it. The answer is an ordinary read answer on the
+   * machine reply channel, which this page already reads `sessions.list` from.
+   */
+  async publishCarrierOffer(machine, offer) {
+    const body = { request: offer.request, connection: offer.connection,
+      key_id: offer.keyID, key: bytesBase64(offer.key), sdp: offer.sdp }
+    const answer = await this._read({ machine, session: CARRIER_SESSION }, CARRIER_WORD, body,
+      "read:" + offer.request, CARRIER_TIMEOUT_MS, { probe: false })
+    if (!answer || typeof answer !== "object" || typeof answer.sdp_sealed !== "string" ||
+      !answer.sdp_sealed || answer.carrier !== offer.connection) {
+      throw refused("carrier_bad_answer", "this machine's carrier answer is not usable")
+    }
+    return { sdpSealed: answer.sdp_sealed, directReceipts: answer.direct_receipts === true }
+  }
+
+  /** Seals and signs the `termi` offer. The frozen sealer validates only ctl/, so sign the renamed bytes. */
+  async _publishCarrierOffer(machine, body, pending) {
+    if (!this.ready) throw this.closedFailure || refused("offline", "the Cloud connection is not ready")
+    if (!this.devicePrivateKey || !this.deviceID) throw refused("missing_device_key", "the viewer key is unavailable")
+    const offline = this._offlineRefusal(machine)
+    if (offline) throw offline
+    const pairing = await this._outboundMachinePairing(machine)
+    const sequence = await this.nextSequence(this.deviceID)
+    if (!Number.isSafeInteger(sequence) || sequence < 0) throw refused("bad_sequence", "invalid envelope sequence")
+    const request = { v: 1, type: "terminal_request", request_id: body.request, connection: body.connection,
+      operation: "carrier_offer", key_id: body.key_id, key: body.key, body: { sdp: body.sdp } }
+    const envelope = await sealEnvelope({
+      ch: "ctl/" + channelSegment(machine), seq: sequence, ts: Date.now(), class: "ctl",
+      key_id: pairing.keyID, sender: this.deviceID,
+    }, JSON.stringify(request), pairing.masterKey, this.devicePrivateKey)
+    envelope.ch = "termi/" + channelSegment(machine) + "/" + channelSegment(this.deviceID)
+    envelope.sig = bytesBase64(await crypto.subtle.sign({ name: "Ed25519" }, this.devicePrivateKey,
+      envelopeSigningBytes(envelope)))
+    const ref = { sender: this.deviceID, seq: sequence, request: body.request }
+    if (pending?.waiters) {
+      if (this.readWaiters.get(pending.key) !== pending.waiters) {
+        throw refused("cloud_read_settled", "the carrier offer settled before it was sent")
+      }
+      pending.waiters.ref = ref
+      pending.registered = { ref, machine, key: pending.key || null, ack: null }
+      this.pendingBySequence.set(sequence, pending.registered)
+    }
+    try { this._send({ type: "publish", envelope }) }
+    catch (error) {
+      this.pendingBySequence.delete(sequence)
+      if (pending?.waiters) pending.waiters.ref = null
+      throw this.closedFailure || error
+    }
+    return envelope
+  }
+
+  /**
+   * One envelope the carrier delivered.
+   *
+   * Everything the relay path checks is checked here — the ten envelope fields, the channel, the
+   * machine's pairing and key id, its signature, the account content key — except the sequence,
+   * which is the carrier's own. A sender's sequence is read as strictly increasing, and the two
+   * carriers cannot share one counter: the answer that took the short path would arrive in front
+   * of a relay envelope with a lower number and that envelope would be read as a replay. The
+   * machine counts separately for the same reason (`directPeer.carrierSeq`).
+   */
+  async receiveCarrierEnvelope(machine, envelope) {
+    const probe = { stage: "channel_parse", original: null, cause: null, senderKeyFound: null,
+      senderKeySource: null, senderKeyLookupMs: null, routedMachine: machine,
+      pairing: undefined, pairingSource: null, pairingLookupMs: null, pairingFoundBefore: null }
+    try {
+      const channel = validateEnvelope(envelope)
+      if (channel.kind !== "transcript" || decodedChannelSegment(channel.machine) !== machine) {
+        throw refused("bad_channel", "the carrier delivered a channel it may not carry")
+      }
+      probe.stage = "machine_pairing_lookup"
+      const pairing = await this._machinePairing(machine, probe)
+      if (!pairing) throw refused("machine_not_paired", "this browser is not paired with the carrier's machine")
+      probe.stage = "pairing_key_id"
+      this._compareKeyID(envelope, machine, pairing.keyID)
+      if (pairing.keyID !== envelope.key_id || pairing.senderID !== envelope.sender) {
+        throw refused("unknown_sender", "the carrier's machine does not match its pairing")
+      }
+      probe.stage = "signature_verify"
+      const clear = await openEnvelope(envelope, pairing.masterKey, pairing.senderKey, probe)
+      probe.stage = "sequence"
+      const previous = this.carrierSequences.get(machine)
+      if (previous !== undefined && envelope.seq <= previous) {
+        throw refused("replay", "the carrier sequence did not advance")
+      }
+      this.carrierSequences.set(machine, envelope.seq)
+      probe.stage = "payload"
+      const payload = clear.length ? JSON.parse(decoder.decode(clear)) : null
+      this.machineOffline?.delete(machine)
+      this._sawAuthenticatedEnvelope(envelope, channel, machine)
+      probe.stage = "apply"
+      this._applySnapshot(channel, payload, envelope, false)
+    } catch (error) {
+      this._recordReceiveFailure(error, envelope, false, probe)
+    }
+  }
+
+  /**
+   * A read on the carrier: the copied reader's waiter, timeout and abort machinery, with no
+   * subscription and the request written to the data channel.
+   *
+   * This is the one thing that could not be reused from the copied `_read`, which always
+   * subscribes to the answer channel before publishing. On the carrier there is nothing to
+   * subscribe to — and not spending one of the eight relay subscription channels is half of why
+   * the carrier is here.
+   */
+  _readOnCarrier(identity, carrier, type, extra, answer, timeoutMs, readOptions) {
+    const key = identity.machine + "\u0000" + identity.session + "\u0000" + answer
+    const self = this
+    return new Promise(function (resolve, reject) {
+      const signal = readOptions && readOptions.signal
+      if (signal && signal.aborted) { reject(self._abortedRead()); return }
+      const waiter = { resolve, reject, signal, aborted: null }
+      const existing = self.readWaiters.get(key)
+      if (existing) {
+        existing.waiting.push(waiter)
+        self._watchReadAbort(key, existing, waiter)
+        return
+      }
+      const waiters = { waiting: [waiter], timer: null, ref: null, machine: identity.machine, type,
+        request: extra && typeof extra.request === "string" ? extra.request : null,
+        action: false, channel: null, retireUncertain: !!(readOptions && readOptions.retireUncertain) }
+      self.readWaiters.set(key, waiters)
+      self._watchReadAbort(key, waiters, waiter)
+      if (self.readWaiters.get(key) !== waiters) return
+      waiters.timer = self.setTimeout(function () {
+        if (self.readWaiters.get(key) !== waiters) return
+        waiters.timer = null
+        self.carrierReads.delete(key)
+        self._readTimedOut(key, waiters, !(readOptions && readOptions.probe === false))
+      }, timeoutMs || self.readTimeoutMs)
+      self.carrierReads.set(key, { identity, type, extra, waiters })
+      Promise.resolve()
+        .then(function () {
+          return self._publishCommand(identity.machine, type,
+            Object.assign({ session: identity.session }, extra), "ctl", { key, waiters, carrier })
+        })
+        .catch(function (error) {
+          if (self.readWaiters.get(key) !== waiters) return
+          // Nothing was written, so nothing is replayed: the request is simply
+          // asked on the relay instead, and the page never learns there was a
+          // carrier to fail.
+          self._relayAfterCarrier(key, error)
+        })
+    })
+  }
+
+  /**
+   * Asks a carrier read again on the relay, keeping the waiter the caller already holds.
+   *
+   * A read has no effect, which is what makes this different from terminal input: re-sending one
+   * cannot do anything twice. So a request the carrier refused — or one it took and then died
+   * holding — is published again on the relay rather than left to time out, and the page shows an
+   * answer instead of "could not read". `_publishCommand` re-pins the proof to the new sequence.
+   */
+  _relayAfterCarrier(key, cause) {
+    const flight = this.carrierReads.get(key)
+    if (!flight) return
+    this.carrierReads.delete(key)
+    const waiters = flight.waiters
+    if (this.readWaiters.get(key) !== waiters) return
+    // The sequence the carrier was given is spent. Nothing on the relay will ever
+    // acknowledge it, so stop waiting for an ACK under that number before the
+    // resend pins a new one.
+    if (waiters.ref) { this.pendingBySequence?.delete(waiters.ref.seq); waiters.ref = null }
+    const settle = (error) => { if (this.readWaiters.get(key) === waiters) this._settleRead(key, null, error) }
+    const channel = "t/" + channelSegment(flight.identity.machine) + "/" + channelSegment(flight.identity.session)
+    let full = null
+    try {
+      full = this._subscriptionRoom(channel)
+      if (!full) {
+        this.subscribe([channel])
+        waiters.channel = channel
+        this.subscriptionHolds.set(channel, (this.subscriptionHolds.get(channel) || 0) + 1)
+      }
+    } catch (error) {
+      settle(cause || refused("malformed_read", error.message))
+      return
+    }
+    if (full) { settle(cause || full); return }
+    Promise.resolve()
+      .then(() => this._publishCommand(flight.identity.machine, flight.type,
+        Object.assign({ session: flight.identity.session }, flight.extra), "ctl", { key, waiters }))
+      .catch((error) => settle(error))
+  }
+
+  /** The carrier went: every read it was holding is asked again on the relay. */
+  _carrierDown(machine) {
+    for (const [key, flight] of [...this.carrierReads]) {
+      if (flight.identity.machine === machine) this._relayAfterCarrier(key, null)
     }
   }
 
@@ -246,7 +522,17 @@ export class StatusCloudClient extends CatalogCloudClient {
     const previous = this.allowWrites
     this.allowWrites = true
     try {
-      const promise = super._read(value, type, extra, answer, timeoutMs, readOptions)
+      // The carrier is taken only when it is already open. Negotiating one takes a
+      // round trip to a STUN server and a publish, and a transcript must not wait
+      // for that: the first read of a machine goes over the relay while the carrier
+      // opens behind it, and the reads after it take the short path.
+      const carrier = this._carrierFor(extra.machine_id)
+      const direct = carrier?.open ? carrier : null
+      if (carrier && !direct) carrier.ensure().catch(() => {})
+      const promise = direct
+        ? this._readOnCarrier({ machine: extra.machine_id, session: value.session },
+          direct, type, extra, answer, timeoutMs, readOptions)
+        : super._read(value, type, extra, answer, timeoutMs, readOptions)
       proof.waiters = this.readWaiters.get(key) || null
       if (!proof.waiters) this.pinnedReadProofs.delete(key)
       return promise
@@ -260,6 +546,7 @@ export class StatusCloudClient extends CatalogCloudClient {
 
   /** Only pinned content reads may leave on the read_transcript-authorized r/ channel. */
   async _publishCommand(machine, type, body, envelopeClass, pending) {
+    if (type === CARRIER_WORD) return this._publishCarrierOffer(machine, body, pending)
     if (type === "peer-inbox" && !GENERATION.test(body?.expected_generation)) {
       throw refused("execution_target_required", "an exact Session execution is required")
     }
@@ -272,8 +559,13 @@ export class StatusCloudClient extends CatalogCloudClient {
     }
     const unsupported = this._unsupportedRefusal(machine, type)
     if (unsupported) throw unsupported
-    const offline = this._offlineRefusal(machine)
-    if (offline) throw offline
+    // `machineOffline` is the relay's word that this machine is not connected to
+    // it. An open carrier is this page's own evidence to the contrary, so a read
+    // about to travel on one is not refused by it.
+    if (!pending?.carrier) {
+      const offline = this._offlineRefusal(machine)
+      if (offline) throw offline
+    }
     if (!this.ready) throw this.closedFailure || refused("offline", "the Cloud connection is not ready")
     if (!this.devicePrivateKey || !this.deviceID) throw refused("missing_device_key", "the viewer key is unavailable")
     const pairing = await this._outboundMachinePairing(machine)
@@ -310,11 +602,14 @@ export class StatusCloudClient extends CatalogCloudClient {
       this.pendingBySequence.set(sequence, pending.registered)
     }
     this.trail.sealed({ sender: ref.sender, seq: sequence, request: ref.request, type, machine })
-    try { this._send({ type: "publish", envelope }) }
+    try {
+      if (pending?.carrier) pending.carrier.send(envelope)
+      else this._send({ type: "publish", envelope })
+    }
     catch (error) {
       this.pendingBySequence.delete(sequence)
       if (pending?.waiters) pending.waiters.ref = null
-      throw this.closedFailure || error
+      throw pending?.carrier ? error : (this.closedFailure || error)
     }
     return envelope
   }
@@ -377,6 +672,9 @@ export class StatusCloudClient extends CatalogCloudClient {
       const payload = event.data
       this.readContentCapabilities?.set(event.machine, {
         at: payload?.at, supported: payload?.machine?.read_content_v1 === true,
+      })
+      this.carrierCapabilities?.set(event.machine, {
+        at: payload?.at, supported: payload?.machine?.session_carrier_v1 === true,
       })
     }
     if (event?.type === "sessions" && event.identity?.machine && event.identity?.session) {

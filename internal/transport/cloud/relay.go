@@ -77,6 +77,13 @@ type Relay struct {
 	// Terminal receives signed, decrypted termi envelopes on its own lane.
 	// Terminal traffic never consumes the ordinary Cloud request queue.
 	Terminal func(Inbound)
+	// Direct writes one sealed answer to a viewer's direct carrier. It is set
+	// when this machine has carriers at all; a nil one, or one that answers an
+	// error, sends the answer nowhere, which is the honest outcome — a direct
+	// read's page is not subscribed to the relay channel, so an answer put
+	// there would spend a spool row and reach nobody. The page asks again on
+	// the relay when its carrier goes (docs/cloud-terminal-wire.md).
+	Direct func(viewer, channel string, class domaincloud.Class, payload []byte) error
 
 	once     sync.Once
 	requests chan Inbound
@@ -101,6 +108,12 @@ const refusalLane = 16
 // ErrRelayNotReady is what Publish answers before Start has run.
 var ErrRelayNotReady = errors.New("this relay has no queue yet")
 
+// ErrNoDirectCarrier is what Publish answers for an answer owed to a carrier
+// this machine no longer has. Nothing is retried onto the relay: the page that
+// asked over its carrier is not subscribed to the answer's relay channel, and
+// it asks again there itself when the carrier goes.
+var ErrNoDirectCarrier = errors.New("this viewer has no direct carrier for its answer")
+
 func (r *Relay) start() {
 	r.once.Do(func() {
 		r.requests = make(chan Inbound, r.depth())
@@ -123,6 +136,17 @@ func (r *Relay) Requests() <-chan Inbound {
 
 // Deliver is what the transport's Inbound callback calls. It never blocks.
 func (r *Relay) Deliver(envelope domaincloud.Envelope, plaintext []byte, verifiedKey ed25519.PublicKey) {
+	r.deliver(envelope, plaintext, verifiedKey, false)
+}
+
+// DeliverDirect is Deliver for an envelope that came off the sender's own
+// direct carrier. The request takes the same queue, the same bridge and the
+// same authorization; only where its answer goes differs.
+func (r *Relay) DeliverDirect(envelope domaincloud.Envelope, plaintext []byte, verifiedKey ed25519.PublicKey) {
+	r.deliver(envelope, plaintext, verifiedKey, true)
+}
+
+func (r *Relay) deliver(envelope domaincloud.Envelope, plaintext []byte, verifiedKey ed25519.PublicKey, direct bool) {
 	r.start()
 	in := Inbound{
 		Channel:     envelope.Ch,
@@ -131,6 +155,7 @@ func (r *Relay) Deliver(envelope domaincloud.Envelope, plaintext []byte, verifie
 		Sequence:    envelope.Seq,
 		Plaintext:   plaintext,
 		VerifiedKey: verifiedKey,
+		Direct:      direct,
 	}
 	if r.Audience != nil {
 		r.Audience(envelope.Sender)
@@ -240,6 +265,16 @@ func (r *Relay) PublishTracked(ctx context.Context, out Outbound) (uint64, error
 	class := domaincloud.Class(out.Class)
 	if out.Class == "" {
 		class = classes[0]
+	}
+	// An answer to a request that arrived on a carrier is sealed by the
+	// carrier, against the carrier's own envelope sequence, and never enters
+	// the spool: the spool exists to re-send what the relay did not
+	// acknowledge, and a data channel either delivers an answer or is gone.
+	if out.Direct {
+		if r.Direct == nil || out.Reply.Sender == "" {
+			return 0, ErrNoDirectCarrier
+		}
+		return 0, r.Direct(out.Reply.Sender, out.Channel, class, out.Payload)
 	}
 	key, keyID := r.Secret, r.keyID()
 	if strings.HasPrefix(out.Channel, "term/") || strings.HasPrefix(out.Channel, "termd/") || strings.HasPrefix(out.Channel, "termr/") {

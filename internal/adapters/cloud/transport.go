@@ -53,6 +53,13 @@ type Options struct {
 	// Inbound is called for every envelope that passed decoding, the channel
 	// check, signature verification and the replay window. It must not block.
 	Inbound func(cloud.Envelope, []byte, ed25519.PublicKey)
+	// DirectInbound is Inbound for an envelope that arrived on a viewer's
+	// direct carrier rather than on the relay socket. It is a second callback
+	// rather than a flag because where a request came from decides where its
+	// answer goes, and that fact must not be guessable from the envelope: the
+	// bytes of a direct `r/` request and a relay one are identical. A nil one
+	// falls back to Inbound, which answers everything on the relay.
+	DirectInbound func(cloud.Envelope, []byte, ed25519.PublicKey)
 	// PeerInbound receives opaque machine-to-machine frames. It must enqueue
 	// rather than perform a Cloud authorization read on the socket reader.
 	PeerInbound func([]byte)
@@ -597,15 +604,24 @@ func (t *Transport) handleEnvelope(data []byte) {
 	t.admitEnvelope(frame.Envelope, "")
 }
 
-// AcceptDirect admits one envelope that arrived on a terminal data channel
+// AcceptDirect admits one envelope that arrived on a viewer's data channel
 // rather than on the relay socket (docs/cloud-terminal-wire.md, Direct
 // carrier). It runs the same ladder with the same replay window, so an
 // envelope already taken from the relay is a replay here and the other way
-// round, and it also requires a `termi` envelope from the one viewer whose
-// signed offer created that channel. It reports whether the envelope was
-// admitted.
+// round, and it also requires one of the two channels that viewer may address
+// the machine on: its own `termi`, or the read-only `r/` this machine answers
+// Session reads from. It reports whether the envelope was admitted.
 func (t *Transport) AcceptDirect(viewer string, raw []byte) bool {
 	return viewer != "" && t.admitEnvelope(raw, viewer)
+}
+
+// directChannelAllowed is which channels a viewer may publish on its carrier.
+// `r/` is here and `ctl/` is not: a read has no effect, so a request that
+// arrives off the relay's record can be answered from the same carrier, while
+// a command — send, end, dispatch — keeps the relay's own receipt and audit.
+func (t *Transport) directChannelAllowed(channel, viewer string) bool {
+	return channel == "termi/"+t.opts.Identity.MachineID+"/"+viewer ||
+		channel == "r/"+t.opts.Identity.MachineID
 }
 
 func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
@@ -616,7 +632,7 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 		return false
 	}
 	if directViewer != "" && (envelope.Sender != directViewer ||
-		envelope.Ch != "termi/"+t.opts.Identity.MachineID+"/"+directViewer) {
+		!t.directChannelAllowed(envelope.Ch, directViewer)) {
 		t.opts.Status.Dropped(DropWrongChannel)
 		return false
 	}
@@ -689,6 +705,10 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 		}
 	}
 	t.opts.Status.Inbound()
+	if directViewer != "" && t.opts.DirectInbound != nil {
+		t.opts.DirectInbound(envelope, plaintext, verifiedKey)
+		return true
+	}
 	if t.opts.Inbound != nil {
 		t.opts.Inbound(envelope, plaintext, verifiedKey)
 	}

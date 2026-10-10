@@ -683,20 +683,21 @@ func (l *Link) wire() error {
 			Client:     adaptercloud.NewAccountClient(settings.APIBase),
 			Credential: identity.MachineCredential,
 		},
-		Identity:     identity,
-		Signer:       key,
-		Spool:        spool,
-		Status:       status,
-		Replay:       domaincloud.NewReplayWindow(0),
-		Inbound:      l.relay.Deliver,
-		PeerInbound:  l.enqueuePeer,
-		PeerAck:      l.enqueuePeerAck,
-		OnDisconnect: l.closeAllTerminalConnections,
-		OnSettled:    l.terminalReceiptSettled,
-		PublicKeyFor: l.publicKeyFor,
-		ContentKey:   secret,
-		Log:          func(line string) { l.logf("%s", line) },
-		Now:          opts.Now,
+		Identity:      identity,
+		Signer:        key,
+		Spool:         spool,
+		Status:        status,
+		Replay:        domaincloud.NewReplayWindow(0),
+		Inbound:       l.relay.Deliver,
+		DirectInbound: l.relay.DeliverDirect,
+		PeerInbound:   l.enqueuePeer,
+		PeerAck:       l.enqueuePeerAck,
+		OnDisconnect:  l.closeAllTerminalConnections,
+		OnSettled:     l.terminalReceiptSettled,
+		PublicKeyFor:  l.publicKeyFor,
+		ContentKey:    secret,
+		Log:           func(line string) { l.logf("%s", line) },
+		Now:           opts.Now,
 	})
 	if err != nil {
 		return err
@@ -727,6 +728,9 @@ func (l *Link) wire() error {
 		Version:       opts.Version,
 		APILevel:      opts.APILevel,
 		ReadContentV1: l.service.Bridge.TranscriptAuthority != nil,
+		// A carrier is offered on the same switch the terminal's direct path
+		// is, because it is the same channel and the same authority.
+		SessionCarrierV1: settings.TerminalDirect,
 		Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
 			AppOrigin: settings.AppOrigin},
 		Sessions: opts.Sessions,
@@ -742,6 +746,10 @@ func (l *Link) wire() error {
 	// state instead of waiting for the heartbeat (`Publisher.Seen`).
 	l.relay.Audience = l.publisher.Seen
 	l.relay.Terminal = l.deliverTerminal
+	// A read that arrived on a viewer's carrier is answered there. The relay
+	// holds the hook rather than the carrier holding the relay, because what
+	// decides the route is the request, and only the relay sees both.
+	l.relay.Direct = l.sendCarrierEnvelope
 	// `sessions.snapshot` is answered by the publisher, which is the only
 	// thing that can put the rows back on their channels.
 	l.service.Bridge.Sessions = l.publisher.Snapshot

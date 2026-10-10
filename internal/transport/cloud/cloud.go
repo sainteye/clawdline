@@ -34,6 +34,12 @@ type Inbound struct {
 	Sequence    uint64
 	Plaintext   []byte
 	VerifiedKey ed25519.PublicKey
+	// Direct marks a request that arrived on the sender's own direct carrier
+	// instead of the relay socket. Its answer goes back the same way, which is
+	// the whole of the routing rule: nothing else about the request differs,
+	// and a carrier that dies between the two is a request the page asks
+	// again on the relay (docs/cloud-terminal-wire.md, Session reads).
+	Direct bool
 }
 
 // Outbound is one answer, ready to seal: the channel it belongs on, the class
@@ -60,6 +66,13 @@ type Outbound struct {
 	// the machine-read reply channel, where every Board, to-do and
 	// reference-image read of this machine answers.
 	Headroom bool
+	// Direct asks for this answer to travel on `Reply.Sender`'s direct
+	// carrier rather than the relay. It is set only for the answer to a
+	// request that arrived there. A transport without a carrier for that
+	// viewer answers that it could not deliver it: the page is not subscribed
+	// to the relay channel for a direct read, so putting the answer there
+	// would spend a spool row on something nobody receives.
+	Direct bool
 }
 
 // Reply is who an answer is for, which the payload itself does not say.
@@ -214,7 +227,7 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 		return answer
 	}
 	out := Outbound{Channel: channel, Class: string(cloud.ClassStream), Payload: answer.Payload,
-		Headroom: answer.Session == cloudops.MachineReplySession,
+		Headroom: answer.Session == cloudops.MachineReplySession, Direct: request.Direct,
 		Reply: Reply{Sender: request.Sender, Sequence: request.Sequence, Name: answer.Name,
 			Status: answer.Status, Code: answer.Code}}
 	if err := s.Transport.Publish(ctx, out); err != nil {
@@ -357,6 +370,7 @@ func (s Service) Busy(ctx context.Context, request Inbound, limit int) string {
 		return err.Error()
 	}
 	out := Outbound{Channel: channel, Class: string(cloud.ClassStream), Payload: answer.Payload,
+		Direct: request.Direct,
 		Reply: Reply{Sender: request.Sender, Sequence: request.Sequence, Name: answer.Name,
 			Status: answer.Status, Code: answer.Code}}
 	if err := s.Transport.Publish(ctx, out); err != nil {

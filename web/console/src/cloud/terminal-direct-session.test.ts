@@ -10,6 +10,10 @@ import { TerminalObservation } from "./terminal-observation.ts"
 import { settled, until } from "./until.ts"
 import { bytesBase64, base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
 import type { DirectChannelLike, DirectPeerLike } from "./terminal-direct.js"
+// @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
+import { DirectLink } from "./terminal-direct.ts"
+// @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
+import { DirectCarrier } from "./direct-carrier.ts"
 
 // The session and the transport together, against a machine played by the test: the real
 // verification, carrier and ack paths, with only the relay socket and the DC faked.
@@ -44,12 +48,17 @@ class FakePeer implements DirectPeerLike {
 type Request = { request_id: string; connection: string; operation: string; terminal_id?: string; key?: string; key_id?: string;
   body?: Record<string, unknown> }
 
-async function machineFixture() {
+/**
+ * `shared` gives the page a carrier that is already open, as a Session read leaves behind: the
+ * terminal then has one channel to borrow instead of a second to negotiate.
+ */
+async function machineFixture({ shared = false } = {}) {
   const master = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
   const sender = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
   const machineKey = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
   const events = new Set<(event: { type: string; channels?: string[] }) => void>()
   const relayRequests: TerminalEnvelope[] = []
+  const sessionEnvelopes: TerminalEnvelope[] = []
   const peer = new FakePeer()
   const client: TerminalCloudClient = {
     deviceID: viewer, devicePrivateKey: sender.privateKey, ready: true, retired: false,
@@ -64,6 +73,20 @@ async function machineFixture() {
   }
   const stages: string[] = []
   const observation = new TerminalObservation((row) => stages.push(`${row.stage}:${row.code ?? ""}`))
+  let carrier: DirectCarrier | null = null
+  if (shared) {
+    carrier = DirectCarrier.for({
+      deviceID: viewer, ready: true, retired: false,
+      publishCarrierOffer: async () => { throw new Error("a page with an open carrier offered a second") },
+      receiveCarrierEnvelope: (_machine, envelope) => { sessionEnvelopes.push(envelope) },
+      carrierSupported: () => true,
+    }, machine, () => peer)
+    const link = new DirectLink(() => peer, (envelope) => carrier!.receive(envelope), () => { })
+    await link.offer()
+    await link.answer("v=0 answer")
+    carrier.adopt(link, true)
+    ;(client as { _carrierFor?: unknown })._carrierFor = () => carrier
+  }
   const transport = new TerminalChannelTransport(client, machine, observation, () => peer)
   const keys = new Map<string, { key: Uint8Array; keyID: string }>()
   let seq = 0
@@ -131,7 +154,8 @@ async function machineFixture() {
     { v: 1, type: "terminal_carrier_probe", connection, n }), false)
   /** The connections whose relay channels the tab still listens on. */
   const listening = () => [...(transport as unknown as { listeners: Map<string, unknown> }).listeners.keys()]
-  return { transport, requests, answer, frame, probe, acks, stages, observation, peer, listening, sent }
+  return { transport, requests, answer, frame, probe, acks, stages, observation, peer, listening, sent,
+    carrier, sessionEnvelopes }
 }
 
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 10))
@@ -297,4 +321,77 @@ test("a frame set aside without drawing leaves a row saying why", async () => {
     assert.ok(m.stages.includes("frame_dropped:terminal_frame_stale"), m.stages.join(" "))
     assert.equal(session.snapshot.frame, null)
   } finally { session.dispose(); m.transport.dispose() }
+})
+
+test("a terminal that finds the page's carrier already open borrows it instead of negotiating a second", async () => {
+  const m = await machineFixture({ shared: true })
+  const session = new CloudTerminalSession(m.transport, "stable-tab", m.observation)
+  try {
+    const starting = session.start()
+    await serve(m, () => false, settled(starting))
+    await starting
+    const attaching = session.attach(terminalID)
+    await serve(m, () => false, settled(attaching))
+    await attaching
+    const acquiring = session.acquire("acquire")
+    await serve(m, () => false, settled(acquiring))
+    await acquiring
+    const relay = (session as unknown as { connection: string }).connection
+    await m.frame(relay, false)
+    await serve(m, () => false, () => session.snapshot.carrier === "direct")
+    assert.equal(session.snapshot.carrier, "direct")
+
+    // The machine allows one peer per viewer, so the upgrade that offered a second would be
+    // refused. Nothing was offered: the terminal rekeyed straight onto the open channel.
+    assert.equal(m.sent.filter((request) => request.operation === "direct_offer").length, 0,
+      "the terminal offered a second channel while the page already had one")
+    const rekey = m.sent.find((request) => request.operation === "rekey_connection")
+    assert.equal((rekey?.body as { carrier?: unknown; direct_receipts?: unknown } | undefined)?.carrier, "direct")
+    assert.equal((rekey?.body as { direct_receipts?: unknown } | undefined)?.direct_receipts, true,
+      "the receipts the carrier's machine offered were not asked for")
+
+    // The one channel carries both: a terminal frame reaches the terminal, and a Session answer
+    // on the same channel reaches the reader.
+    const direct = (session as unknown as { connection: string }).connection
+    await m.frame(direct, true)
+    await serve(m, () => false, () => m.acks().length === 1)
+    assert.equal(m.acks().length, 1, "a frame on the shared channel was not acknowledged on it")
+    m.peer.channel.onmessage?.({ data: JSON.stringify({ t: "env", e: { v: 1, ch: `t/${machine}/session`, seq: 1,
+      ts: 1, class: "stream", key_id: "ms-1", nonce: "", ct: "", sender: machine, sig: "" } }) })
+    await settle()
+    assert.deepEqual(m.sessionEnvelopes.map((envelope) => envelope.ch), [`t/${machine}/session`],
+      "a Session answer on the shared channel did not reach the reader")
+  } finally { session.dispose(); m.transport.dispose() }
+})
+
+test("a terminal that negotiated the channel itself hands it to the page, and keeps it when the terminal goes", async () => {
+  const m = await machineFixture()
+  const client = { deviceID: viewer, ready: true, retired: false,
+    publishCarrierOffer: async () => { throw new Error("a page with an open carrier offered a second") },
+    receiveCarrierEnvelope: (_machine: string, envelope: TerminalEnvelope) => { m.sessionEnvelopes.push(envelope) },
+    carrierSupported: () => true }
+  const carrier = DirectCarrier.for(client, machine, () => m.peer)
+  ;(m.transport as unknown as { client: { _carrierFor?: unknown } }).client._carrierFor = () => carrier
+  const session = new CloudTerminalSession(m.transport, "stable-tab", m.observation)
+  try {
+    const starting = session.start()
+    await serve(m, () => false, settled(starting))
+    await starting
+    const attaching = session.attach(terminalID)
+    await serve(m, () => false, settled(attaching))
+    await attaching
+    const acquiring = session.acquire("acquire")
+    await serve(m, () => false, settled(acquiring))
+    await acquiring
+    await m.frame((session as unknown as { connection: string }).connection, false)
+    await serve(m, () => false, () => session.snapshot.carrier === "direct")
+    assert.equal(m.sent.filter((request) => request.operation === "direct_offer").length, 1,
+      "a page with no carrier yet must offer one")
+    assert.equal(carrier.open, true, "the terminal's own channel did not become the page's carrier")
+    assert.equal(carrier.directReceipts, true)
+
+    // The terminal goes. The channel is the page's now, and reads keep taking it.
+    m.transport.dispose()
+    assert.equal(carrier.open, true, "disposing the terminal closed the page's carrier")
+  } finally { session.dispose() }
 })

@@ -55,19 +55,38 @@ const (
 // end's public address and nothing else (docs/design-decisions.md).
 var directSTUN = []string{"stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"}
 
-// directPeer is one viewer's data channel. It belongs to one connection,
-// `owner`; see moveDirectOwner and closeTerminalConnection.
+// directPeer is one viewer's data channel.
+//
+// A peer opened by a terminal's `direct_offer` belongs to one connection,
+// `owner`; see moveDirectOwner and closeTerminalConnection. A peer opened by a
+// `carrier_offer` belongs to the viewer itself: `carrier` is set, `owner` stays
+// empty, and no terminal connection's retirement takes it away — a page
+// reading Session transcripts has no terminal to tie its carrier to, and that
+// is the case this exists for. A terminal that opens later **borrows** the
+// same peer rather than negotiating a second one, which is what
+// `rekey_connection` with `carrier:"direct"` already asks for: it requires
+// only that this viewer have an open peer.
 type directPeer struct {
-	l      *Link
-	viewer string
-	owner  string
-	pc     *webrtc.PeerConnection
-	dc     *webrtc.DataChannel
+	l       *Link
+	viewer  string
+	owner   string
+	carrier bool
+	pc      *webrtc.PeerConnection
+	dc      *webrtc.DataChannel
 
 	mu      sync.Mutex
 	open    bool
 	closed  bool
 	chunkID uint64
+	// carrierSeq is this peer's own envelope sequence for Session answers.
+	//
+	// It is separate from the relay's because the browser reads a sender's
+	// envelope sequence as strictly increasing, and two carriers drawing from
+	// one counter reorder against each other: the answer that arrived second
+	// would be read as a replay of a sequence already seen. The terminal
+	// settled this the same way, with a per-connection counter checked on its
+	// own (docs/cloud-terminal-wire.md).
+	carrierSeq uint64
 
 	// sendMu keeps one message's chunks contiguous on the channel.
 	sendMu sync.Mutex
@@ -229,8 +248,10 @@ func (l *Link) directEnabled() bool {
 }
 
 // answerDirectOffer makes this machine's answer to one admitted offer. The
-// caller holds the viewer's reservation and gives it back on error.
-func (l *Link) answerDirectOffer(c *terminalConnection, sdp string) (string, error) {
+// caller holds the viewer's reservation and gives it back on error. `owner` is
+// the terminal connection the peer belongs to, or "" with `carrier` set for a
+// peer the viewer itself owns.
+func (l *Link) answerDirectOffer(viewer, owner string, carrier bool, sdp string) (string, error) {
 	sdp, err := l.filterDirectOffer(sdp)
 	if err != nil {
 		return "", err
@@ -243,7 +264,7 @@ func (l *Link) answerDirectOffer(c *terminalConnection, sdp string) (string, err
 	if err != nil {
 		return "", terminal.Refuse(terminal.CodeUnreachable, "the direct connection could not be created")
 	}
-	peer := &directPeer{l: l, viewer: c.viewer, owner: c.id, pc: pc}
+	peer := &directPeer{l: l, viewer: viewer, owner: owner, carrier: carrier, pc: pc}
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		if dc.Label() != directLabel || dc.Ordered() != true {
 			_ = dc.Close()
@@ -261,7 +282,11 @@ func (l *Link) answerDirectOffer(c *terminalConnection, sdp string) (string, err
 			peer.mu.Lock()
 			peer.open = !peer.closed
 			peer.mu.Unlock()
-			l.logf("cloud terminal carrier=direct opened")
+			if carrier {
+				l.logf("cloud carrier=direct opened for a viewer's Session reads")
+			} else {
+				l.logf("cloud terminal carrier=direct opened")
+			}
 		})
 		dc.OnClose(func() { l.closeDirectPeer(peer, "the data channel closed") })
 		dc.OnMessage(func(m webrtc.DataChannelMessage) { peer.receive(m) })
@@ -295,12 +320,12 @@ func (l *Link) answerDirectOffer(c *terminalConnection, sdp string) (string, err
 		return "", terminal.Refuse(terminal.CodeUnreachable, "the answer could not be prepared")
 	}
 	l.directMu.Lock()
-	if existing, reserved := l.directPeers[c.viewer]; !reserved || existing != nil {
+	if existing, reserved := l.directPeers[viewer]; !reserved || existing != nil {
 		l.directMu.Unlock()
 		_ = pc.Close()
 		return "", terminal.Refuse(terminal.CodeBusy, "this device already has a direct connection")
 	}
-	l.directPeers[c.viewer] = peer
+	l.directPeers[viewer] = peer
 	l.directMu.Unlock()
 	time.AfterFunc(CloudTerminalDirectNegotiateSecondsLimit*time.Second, func() {
 		peer.mu.Lock()
@@ -359,7 +384,7 @@ func (l *Link) handleDirectOffer(ctx context.Context, svc *terminals.Service, p 
 		return
 	}
 	go func() {
-		answer, err := l.answerDirectOffer(c, sdp)
+		answer, err := l.answerDirectOffer(c.viewer, c.id, false, sdp)
 		if err != nil {
 			l.releaseDirectReservation(c.viewer)
 			refuse(err)
@@ -387,12 +412,16 @@ func (l *Link) directPeerOpen(viewer string) bool {
 }
 
 // moveDirectOwner hands the viewer's peer to connection, the direct
-// connection whose activation the machine has just accepted.
+// connection whose activation the machine has just accepted. A carrier peer
+// is the viewer's own and is only borrowed by a terminal, so it keeps no
+// owner: the terminal's connections come and go while the carrier stays.
 func (l *Link) moveDirectOwner(viewer, connection string) {
 	l.directMu.Lock()
 	if peer := l.directPeers[viewer]; peer != nil {
 		peer.mu.Lock()
-		peer.owner = connection
+		if !peer.carrier {
+			peer.owner = connection
+		}
 		peer.mu.Unlock()
 	}
 	l.directMu.Unlock()
@@ -400,7 +429,7 @@ func (l *Link) moveDirectOwner(viewer, connection string) {
 
 // directOwnerRetired runs after c left the connection table. A peer owned by
 // c moves to another live direct connection of the same viewer (a rekey in
-// flight), or closes.
+// flight), or closes. A carrier peer has no owner and outlives every terminal.
 func (l *Link) directOwnerRetired(c *terminalConnection) {
 	l.directMu.Lock()
 	peer := l.directPeers[c.viewer]
@@ -409,7 +438,7 @@ func (l *Link) directOwnerRetired(c *terminalConnection) {
 		return
 	}
 	peer.mu.Lock()
-	owned := peer.owner == c.id
+	owned := !peer.carrier && peer.owner == c.id
 	peer.mu.Unlock()
 	if !owned {
 		return

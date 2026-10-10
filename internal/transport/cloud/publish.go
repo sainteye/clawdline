@@ -108,6 +108,11 @@ type Publisher struct {
 	// ReadContentV1 is true only when this machine has the pinned r/ read
 	// bridge wired. A status publisher alone must not claim it can answer r/.
 	ReadContentV1 bool
+	// SessionCarrierV1 is true only when this machine opens a shared direct
+	// carrier for a viewer's Session reads (carrier.go). A page reads it
+	// before offering one: an older daemon says nothing here, so no offer is
+	// ever sent to one and every read of it stays on the relay.
+	SessionCarrierV1 bool
 	// Router is this daemon's own routes — the same in-process dispatch a Cloud
 	// read goes through, so the rows a viewer sees are the rows the local
 	// console sees.
@@ -588,6 +593,9 @@ func (p *Publisher) publishDescriptor(ctx context.Context) {
 	}
 	if p.ReadContentV1 {
 		machine["read_content_v1"] = true
+	}
+	if p.SessionCarrierV1 {
+		machine["session_carrier_v1"] = true
 	}
 	snapshot := map[string]any{
 		"at":      time.Now().Unix(),

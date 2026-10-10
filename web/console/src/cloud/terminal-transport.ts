@@ -25,6 +25,27 @@ export interface TerminalCloudClient {
   _sendSubscriptionFrame(type: string, channels: string[]): void
   _receiveEnvelope(envelope: TerminalEnvelope, realign: boolean): Promise<unknown>
   events(listener: (event: RelayEvent) => void): () => void
+  /** This page's one shared carrier to `machine`, when it has one (`cloud/direct-carrier.ts`). */
+  _carrierFor?(machine: string): SharedCarrier | null
+}
+/**
+ * The page's one direct channel to a machine, as this transport uses it.
+ *
+ * It is a shape rather than an import so this file keeps no dependency on the carrier, and a
+ * client that provides none behaves exactly as it did when the terminal owned its own channel.
+ * The machine allows one peer per viewer, so there is one of these per page and machine: a
+ * terminal that upgrades while a Session read already opened it **borrows** it rather than
+ * negotiate a second that would be refused.
+ */
+export interface SharedCarrier {
+  readonly open: boolean
+  readonly directReceipts: boolean
+  current(): DirectLink | null
+  adopt(link: DirectLink, directReceipts: boolean): void
+  receive(envelope: TerminalEnvelope): void
+  dropped(link: DirectLink, code: string): void
+  listen(audience: "terminal" | "session", listener: (envelope: TerminalEnvelope) => void): () => void
+  whenDown(listener: (code: string) => void): () => void
 }
 /** Which carrier brings a connection's `term`/`termd`; `pending` is a direct rekey awaiting its receipt. */
 export type TerminalCarrier = "relay" | "direct"
@@ -34,6 +55,8 @@ export interface TerminalDirectOffer {
   readonly open: boolean
   answer(sdp: string): Promise<void>
   close(): void
+  /** The channel was already open and is being borrowed: there is nothing to offer the machine. */
+  borrowed?: boolean
 }
 export type TerminalChannelEvent = { envelope: TerminalEnvelope; plaintext: unknown; realign: boolean } | { error: string; requestID?: string }
 const enc = new TextEncoder()
@@ -107,7 +130,9 @@ export class TerminalChannelTransport {
   private readonly listeners = new Map<string, (event: TerminalChannelEvent) => void>()
   private readonly verifiedFrames = new Map<string, { seq: number; frameSeq: number; direct: boolean }>()
   private readonly carriers = new Map<string, "direct" | "pending">()
-  private link: DirectLink | null = null
+  /** The channel this transport negotiated itself, for a client that has no shared carrier. */
+  private ownLink: DirectLink | null = null
+  private stopShared: (() => void) | null = null
   private readonly waiting = new Map<string, { resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private readonly receiveTails = new Map<string, Promise<void>>()
 
@@ -222,6 +247,16 @@ export class TerminalChannelTransport {
   }
 
   directSupported(): boolean { return !!this.peers }
+  /** Whether the open channel's machine offered everyday receipts on it. */
+  directReceipts(): boolean { return this.shared?.directReceipts === true }
+  /** The page's shared carrier to this machine, or null when this client provides none. */
+  private get shared(): SharedCarrier | null { return this.client._carrierFor?.(this.machine) ?? null }
+  /** The channel frames travel on: the shared carrier's when there is one, else this transport's own. */
+  private get link(): DirectLink | null {
+    const shared = this.shared
+    return shared ? shared.current() : this.ownLink
+  }
+
   carrierOf(connection: string): TerminalCarrier { return this.carriers.get(connection) === "direct" ? "direct" : "relay" }
   /** A connection is direct only after its rekey receipt said so; anything else keeps it on the relay. */
   setCarrier(connection: string, carrier: TerminalCarrier): void {
@@ -236,20 +271,62 @@ export class TerminalChannelTransport {
   async prepareDirect(connection: string, onDown: (code: string) => void): Promise<TerminalDirectOffer> {
     const state = this.keys.get(connection)
     if (!this.peers || !state || !this.confirmed.has(connection)) throw fail("terminal_direct_unavailable")
-    this.link?.close("terminal_direct_replaced")
-    const link: DirectLink = new DirectLink(this.peers, (envelope) => this.receiveDirect(link, envelope), (code) => {
-      if (this.link === link) this.link = null
+    const shared = this.shared
+    // The shared carrier is already open — a Session read of this machine opened it. The machine
+    // would refuse a second peer for this viewer, and there is nothing to negotiate: the terminal
+    // rekeys onto the channel that is already there.
+    if (shared?.open) {
+      this.listenShared(shared)
+      let stop: (() => void) | null = shared.whenDown((code) => {
+        this.observation?.record("direct_down", { connection, code })
+        onDown(code)
+      })
+      const release = () => { stop?.(); stop = null }
+      return { sealed: "", borrowed: true, get open() { return shared.open },
+        answer: async () => { }, close: release }
+    }
+    this.ownLink?.close("terminal_direct_replaced")
+    // A link this transport made and then handed to the carrier still calls back here, so what
+    // arrives on it and the news that it is gone are passed on to the carrier that now holds it.
+    const held = (): SharedCarrier | null => {
+      const carrier = this.shared
+      return carrier && carrier.current() === link ? carrier : null
+    }
+    const link: DirectLink = new DirectLink(this.peers, (envelope) => {
+      const carrier = held()
+      if (carrier) carrier.receive(envelope)
+      else this.receiveDirect(link, envelope)
+    }, (code) => {
+      const carrier = this.shared
+      if (this.ownLink === link) this.ownLink = null
+      if (carrier) carrier.dropped(link, code)
       this.observation?.record("direct_down", { connection, code })
       onDown(code)
     })
-    this.link = link
+    this.ownLink = link
     try {
       const sealed = await sealDirectOffer(state.key, connection, await link.offer())
-      return { sealed, get open() { return link.open }, answer: (sdp) => link.answer(sdp), close: () => link.close("terminal_direct_released") }
+      return {
+        sealed, get open() { return link.open },
+        answer: async (sdp: string) => {
+          await link.answer(sdp)
+          // The channel this terminal just negotiated becomes the page's shared carrier, so a
+          // Session read that follows takes it too. The machine's `direct_offer` answer always
+          // offers receipts on it (`internal/transport/cloud/direct.go`).
+          if (link.open && shared) { shared.adopt(link, true); this.ownLink = null; this.listenShared(shared) }
+        },
+        close: () => link.close("terminal_direct_released"),
+      }
     } catch (error) {
       link.close("terminal_direct_failed")
       throw error
     }
+  }
+
+  /** Terminal frames the shared carrier delivers come here instead of to a link this file owns. */
+  private listenShared(shared: SharedCarrier): void {
+    this.stopShared?.()
+    this.stopShared = shared.listen("terminal", (envelope) => this.receiveDirect(null, envelope))
   }
 
   deltaAvailable(connection: string): boolean { return this.deltaConfirmed.has(connection) }
@@ -381,8 +458,9 @@ export class TerminalChannelTransport {
    * A DC envelope: `term`/`termd` of this viewer's connections, or `termr` of a direct one (the
    * machine sends everyday receipts there when asked), then the relay's checks.
    */
-  private receiveDirect(link: DirectLink, envelope: TerminalEnvelope): void {
-    if (link !== this.link) return
+  private receiveDirect(link: DirectLink | null, envelope: TerminalEnvelope): void {
+    // A null link is the shared carrier, which only ever delivers from its own open channel.
+    if (link && link !== this.link) return
     const parts = envelope.ch.split("/")
     const receipt = parts[0] === "termr" && !!this.carriers.get(parts[3])
     if (parts.length !== 4 || (parts[0] !== "term" && parts[0] !== "termd" && !receipt) || !this.receives(envelope)) {
@@ -519,7 +597,11 @@ export class TerminalChannelTransport {
   dispose(): void {
     for (const timer of this.busyRetries) clearTimeout(timer)
     this.busyRetries.clear()
-    this.link?.close("terminal_direct_released")
+    // Only a channel this transport still owns is closed. One handed to the shared carrier is
+    // the page's, and Session reads may be travelling on it after this terminal is gone.
+    this.ownLink?.close("terminal_direct_released")
+    this.stopShared?.()
+    this.stopShared = null
     for (const connection of [...this.keys.keys()]) this.unsubscribeTerminal(connection)
     this.stopEvents()
     const receiver = TerminalChannelTransport.receivers.get(this.client)
