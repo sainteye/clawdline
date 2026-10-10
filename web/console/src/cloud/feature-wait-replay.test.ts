@@ -1,7 +1,7 @@
 // A replay of the page opening before the machine's word list has arrived:
 // `node --test web/console/src/cloud/feature-wait-replay.test.ts`.
 //
-// What a phone hit: "this Mac answered that it does not know transcript" for a
+// What a phone hit: "this machine answered that it does not know transcript" for a
 // few seconds after opening the console, with nothing refused on the machine.
 // The refusal was the page's own. A hosted page decides whether a machine
 // answers a word from the descriptor it remembered last time
@@ -99,7 +99,7 @@ class OpeningClient implements CloudReadClient {
   private answer(word: string, body: unknown): Promise<unknown> {
     if (this.implemented(word) === "no") {
       this.refused.push(word)
-      return Promise.reject(Object.assign(new Error("this Mac answered that it does not know " + word),
+      return Promise.reject(Object.assign(new Error("this machine answered that it does not know " + word),
         { code: "cloud_feature_unavailable", status: 502, layer: "browser" }))
     }
     this.sent.push(word)
