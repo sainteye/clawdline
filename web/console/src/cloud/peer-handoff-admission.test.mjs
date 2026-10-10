@@ -104,7 +104,7 @@ test("pair and grant revocation remain accessible without a current Session", as
   }
 })
 
-test("the Cloud access page lists paired, unpaired, and offline machines without sending a write", async () => {
+test("the Cloud access page explains its purpose before any machine read or write", async () => {
   const output = resolve(here, `.peer-access-page-test-${process.pid}.mjs`)
   try {
     await build({ entryPoints: [resolve(here, "PeerAccessPage.tsx")], outfile: output,
@@ -118,10 +118,10 @@ test("the Cloud access page lists paired, unpaired, and offline machines without
       source: null, current: () => { writes++; return null },
     }))
     assert.match(html, /Cross-machine access/)
-    assert.match(html, /Main · mac/)
-    assert.match(html, /Other · linux/)
-    assert.match(html, /Unpaired · new/)
-    assert.doesNotMatch(html, /Scopes reported by the machine/)
+    assert.match(html, /Choose which Sessions on two machines/)
+    assert.match(html, /Current permissions/)
+    assert.match(html, /Create a new permission/)
+    assert.doesNotMatch(html, /Main · mac|Other · linux|Unpaired · new/)
     assert.equal(writes, 0)
   } finally {
     try { unlinkSync(output) } catch { /* build failed before writing */ }

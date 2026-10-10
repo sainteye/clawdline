@@ -199,7 +199,7 @@ export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, 
   focusCloudSessions = false, onLeaveCloudSessions }: {
   aside?: ReactNode | ((light: ConnectionLight) => ReactNode)
   cloudSessions?: ReactNode
-  cloudPeerAccess?: ReactNode
+  cloudPeerAccess?: ReactNode | ((active: boolean) => ReactNode)
   fleetList?: (filter: string, onFilter: (value: string) => void) => ReactNode
   fleetTarget?: SessionDestination | null
   fleetReaderMachine?: string | null
@@ -951,7 +951,7 @@ export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, 
       />}
       {cloudPeerAccess && <section id="peer-access" className="page cloud-peer-access-page"
         data-page-view="peer-access" hidden={page !== "peer-access"} aria-labelledby="peer-access-title">
-        {cloudPeerAccess}
+        {typeof cloudPeerAccess === "function" ? cloudPeerAccess(page === "peer-access") : cloudPeerAccess}
       </section>}
       {Object.values(PAGE_MODULES).map(({ id, Component }) => (
         // Mounted once opened and kept, as the original keeps its sections in
