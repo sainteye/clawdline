@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import { nextWord } from "../next-strings.js"
 import * as L from "../legacy/bridge.js"
 import { ProjectedRow } from "../session/List.js"
+import { Swipes } from "../session/swipe.js"
+import { useSwipeToEnd } from "../session/use-swipe.js"
 import type { OrderHold } from "../session/order.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
 import { ScheduleSection } from "../pages/schedules.js"
@@ -17,7 +19,7 @@ type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionP
 
 /** Only the fleet list is new; the conversation and composer belong to SessionsPage. */
 export function FleetSessionList({ machines, source, target, filter, onFilter, onOpen,
-  onMachineAction }: {
+  onMachineAction, onCloseRequest }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
   target: SessionDestination | null
@@ -25,6 +27,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   onFilter: (value: string) => void
   onOpen: (target: SessionDestination) => void
   onMachineAction?: (machineID: string, action: MachineToolbarAction) => void
+  onCloseRequest: (target: SessionDestination, title: string) => void
 }) {
   const [readings, setReadings] = useState<Record<string, Reading>>({})
   const presentations = useRef(new Map<string, { machineID: string; sessionID: string; pass: string } & SessionListPresentation>())
@@ -38,6 +41,8 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const machineDialog = useRef<HTMLDialogElement | null>(null)
   const searchField = useRef<HTMLInputElement | null>(null)
   const listScroll = useRef<HTMLDivElement | null>(null)
+  const swipe = useRef(new Swipes()).current
+  const swiped = useSwipeToEnd(listScroll, swipe)
   const orderHolds = useRef(new Map<string, OrderHold>())
   const [, redrawOrder] = useState(0)
 
@@ -214,6 +219,11 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     return { machine, reading, rows, waitingKey, presentationFailed, presentationLoading }
   }).filter(({ machine, rows }) => (statusFilter === "all" || rows.length > 0) && (!search || rows.length > 0 ||
     `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search)))
+  useEffect(() => {
+    if (swiped && !groups.some(({ machine, rows }) => !collapsed[machine.id] && machine.freshness === "current" &&
+      rows.some(({ row }) => destinationKey(row.destination) === swiped && row.freshness === "current"))) swipe.closeOpen()
+  }, [swiped, groups.map(({ machine, rows }) => machine.id + ":" + machine.freshness + ":" + !!collapsed[machine.id] + ":" +
+    rows.map(({ row }) => destinationKey(row.destination) + ":" + row.freshness).join(",")).join("|")])
   const freezeOrder = () => {
     for (const { machine, rows, waitingKey } of groups) {
       if (orderHolds.current.has(machine.id)) continue
@@ -265,7 +275,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
       onStart={() => chooseAction("start")} />
     <div className="scroller list-scroll cloud-all-list-scroll" id="list-scroll" ref={listScroll}
       onMouseEnter={freezeOrder} onMouseLeave={thawOrder} onTouchStart={freezeOrder}
-      onTouchEnd={() => window.setTimeout(thawOrder, 1200)}>
+      onTouchEnd={() => window.setTimeout(() => { if (swipe.openId() === null) thawOrder() }, 1200)}>
       <div className="cloud-all-status-filters" role="group" aria-label={nextWord("cloudAllState")}>
         <button type="button" className="cloud-all-status-filter" aria-pressed={statusFilter === "attention"}
           onClick={() => setStatusFilter((value) => value === "attention" ? "all" : "attention")}>{nextWord("cloudAllAttention")}</button>
@@ -311,7 +321,12 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                     lastMovementAt={row.lastMovementAt} attention={row.needsAttention === true}
                     depth={depth} branchThrough={branchThrough} ancestorThrough={ancestorThrough}
                     open={!!target && destinationKey(target) === destinationKey(row.destination)}
-                    selectionKey={destinationKey(row.destination)} onOpen={() => onOpen(row.destination)} />
+                    selectionKey={destinationKey(row.destination)}
+                    swiped={swiped === destinationKey(row.destination)}
+                    consumePress={() => swipe.tookThePress()}
+                    onClose={row.freshness === "current" && machine.freshness === "current"
+                      ? () => { swipe.closeOpen(); thawOrder(); onCloseRequest(row.destination, presentation?.title || row.destination.sessionID) } : undefined}
+                    onOpen={() => onOpen(row.destination)} />
                 })}</ul>}
           </>}
           {reading?.phase === "settled" && !!reading.value.unknownTargets &&
