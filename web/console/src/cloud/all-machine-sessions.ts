@@ -63,6 +63,14 @@ export interface ProjectedSession {
   failedAgentCount?: number
 }
 
+/**
+ * Why a Session's conversation is not on screen, and the one press that
+ * answers it. A reason with nothing a person can do about it carries no
+ * action; a reason that has one must carry it, because the sentence alone
+ * used to be the whole screen.
+ */
+export type FleetDetailProblem = { text: string; action?: { label: string; run: () => void } }
+
 export type ProjectionProblem = "offline" | "stale" | "unknown" | "old_version" | "no_permission" | "unresponsive" | "event_gap" | "bad_projection"
 
 export type MachineSessionProjection =
@@ -84,7 +92,7 @@ export type SessionContent =
       entries: TranscriptEntry[];
       nextBefore?: number;
       question: { text?: string; fingerprint: string; options: { key: string; label: string }[]; observedAt: number } | null }
-  | { kind: "unavailable"; reason: "no_permission" | "old_version" | "unknown" | "offline" | "stale" | "changed" }
+  | { kind: "unavailable"; reason: "no_permission" | "old_version" | "unknown" | "offline" | "stale" | "changed" | "unconfirmed" }
 
 export type SessionOlderPage =
   | { kind: "ready"; destination: SessionDestination; before: number;
@@ -161,6 +169,31 @@ export function destinationAvailable(destination: SessionDestination, projection
   if (!projection || projection.kind !== "ready") return "waiting"
   const row = projection.rows.find((item) => destinationKey(item.destination) === destinationKey(destination))
   return row ? row.freshness === "current" ? "ready" : row.freshness : "changed"
+}
+
+/**
+ * The same Session's current execution, when the one a person opened is gone.
+ *
+ * An assistant that restarts keeps its terminal id and gets a new generation
+ * (`docs/cloud-wire.md`), so a pinned read that was fine a minute ago refuses.
+ * Refusing the read is right; stranding the person on it is not. This names
+ * the row that replaced it, so the console can re-pin to a generation the
+ * machine itself published as current instead of showing a dead sentence.
+ *
+ * It is not a way around the pin: the answer is a complete three-part
+ * destination from a fresh `ready` projection, and the caller reads it exactly
+ * as it reads any other opened row. Ambiguity refuses — with no single current
+ * row for that Session there is nothing to follow.
+ */
+export function supersedingDestination(destination: SessionDestination,
+  projection: MachineSessionProjection | undefined): SessionDestination | null {
+  if (!projection || projection.kind !== "ready") return null
+  if (destinationAvailable(destination, projection) !== "changed") return null
+  const rows = projection.rows.filter((row) =>
+    row.destination.machineID === destination.machineID &&
+    row.destination.sessionID === destination.sessionID &&
+    row.freshness === "current")
+  return rows.length === 1 ? rows[0].destination : null
 }
 
 export function afterEventGap(before: MachineSessionProjection | undefined): MachineSessionProjection {

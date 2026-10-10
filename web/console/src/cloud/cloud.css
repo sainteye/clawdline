@@ -379,3 +379,13 @@
 .cloud-device-ask .confirm-go:hover:not(:disabled) { background: #2f2322; color: #f0b6a2; }
 .cloud-device-limit .go { margin-top: 14px; }
 .cloud-detail-problem { margin: 24px; color: var(--dim); line-height: 1.5; }
+.cloud-detail-problem p { margin: 0; }
+/* The sentence used to be the whole screen. The press that answers it stands
+   under the sentence, at the touch size the rest of the console uses. */
+.cloud-detail-act {
+    min-height: 44px; margin-top: 14px; padding: 10px 14px;
+    background: #101014; border: 1px solid var(--line); border-radius: 10px;
+    color: var(--ink);
+}
+.cloud-detail-act:hover { border-color: var(--accent-ed); }
+.cloud-detail-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

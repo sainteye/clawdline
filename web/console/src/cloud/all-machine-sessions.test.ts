@@ -4,6 +4,7 @@ import {
   afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment,
   displayedPresentationStatus,
   destinationKey, prependOlderPage, projectionRefreshAt, settleProjection, SessionDetailCache,
+  supersedingDestination,
   type MachineSessionProjection, type ProjectedSession,
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
 } from "./all-machine-sessions.ts"
@@ -137,4 +138,28 @@ test("current status is reread when its earliest status time expires", () => {
     300_000), 301_001)
   assert.equal(projectionRefreshAt({ kind: "unavailable", reason: "stale" }, 300_000), null)
   assert.equal(projectionRefreshAt({ kind: "unavailable", reason: "offline", retryAt: 1200 }, 300_000), 1200)
+})
+
+test("a restarted assistant names the execution that replaced the one a person opened", () => {
+  const old = row("machine/a", "%14", "7")
+  const current = row("machine/a", "%14", "8")
+  const projection = ready("machine/a", [current])
+  assert.equal(destinationAvailable(old.destination, projection), "changed")
+  assert.deepEqual(supersedingDestination(old.destination, projection), current.destination)
+  // The row that is still readable is not superseded by itself.
+  assert.equal(supersedingDestination(current.destination, projection), null)
+})
+
+test("nothing is followed when the Session is gone, unproven, or ambiguous", () => {
+  const old = row("machine/a", "%14", "7")
+  // Closed on that machine: no row to follow, so the person is told it is gone.
+  assert.equal(supersedingDestination(old.destination, ready("machine/a", [row("machine/a", "%15", "8")])), null)
+  // A stale reading is not proof that the old execution was replaced.
+  assert.equal(supersedingDestination(old.destination,
+    ready("machine/a", [{ ...row("machine/a", "%14", "8"), freshness: "stale" }])), null)
+  // Never from a projection that is not a complete, current reading.
+  assert.equal(supersedingDestination(old.destination, { kind: "unavailable", reason: "offline" }), null)
+  assert.equal(supersedingDestination(old.destination, undefined), null)
+  // Never across machines, even with the same Session id.
+  assert.equal(supersedingDestination(old.destination, ready("machine/b", [row("machine/b", "%14", "8")])), null)
 })
