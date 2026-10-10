@@ -28,6 +28,8 @@ The account roster and the machine's local pinned-device record are distinct evi
 
 Machine-to-machine Agent messages and work handoffs require a separate peer pairing and revocable grant. The current receiver admission contract and the remaining integration points are in [cross-machine Agent handoff](cross-machine-agent-handoff.md). A Cloud account or viewer pairing does not grant one machine authority to act as another machine's Agent.
 
+The hosted Console's **Cross-machine access** sidebar page selects a machine and reads that machine's reported pairs and Session grants. It shows message and handoff scopes as checked only while the reported pair and grant are active and the status read is fresh. A person can choose a target Session, compare both machine fingerprints, pair the machines, select scopes for a new grant, and revoke a pair or grant. Scope checkboxes in the creation form are a request; the machine's refreshed grant list is the authority. An offline, unpaired, unreadable, or write-disabled machine cannot be changed from the page. Pairing this browser as a viewer remains a separate prerequisite in the machine switcher.
+
 ## Publications, reads and commands
 
 The publisher sends a machine descriptor on `orch/<machine>`, one complete row per session on `s/<machine>/<session>`, a content-free status projection on `ss/<machine>/<session>`, and an inventory marker after the rows. It polls the daemon's local routes, skips unchanged session content, and periodically restates values so an idle machine does not appear stale. A `sessions.snapshot` request can ask the machine to restate rows after a reconnect. The publisher preserves previously known rows when a partial local scan cannot prove they disappeared. The descriptor includes the supported command words. See [`publish.go`](../internal/transport/cloud/publish.go) for current timing, freshness and inventory rules.
@@ -49,6 +51,37 @@ An incoming request arrives on `ctl/<machine>`. The transport verifies and decry
 Every signed-in viewer paired with the target machine may send. The machine verifies the viewer's account identity and decrypts its request with that machine's content key before handling it. A machine-local key pin, when present, takes precedence over the account roster; a local or account revocation refuses the viewer. This also admits older browsers that hold the machine key from a pairing completed before local pins existed. `cloud_commands` is checked for each effectful request. `clawdline cloud commands on|off` changes that machine switch without restarting the daemon. A Cloud command uses the same in-process HTTP handler and authorization gate as a direct request.
 
 The connection backs off and reconnects. An outbound spool owns publish order and capacity, while inbound queues and per-channel answer reserves produce typed busy or refusal answers where possible. An accepted relay write is not the same as an executed command or an observed answer. Logs and status counters separate published, acknowledged, answered, refused and undeliverable work. Protocol and capacity details are in [cloud-wire.md](cloud-wire.md), [limits.md](limits.md), and the transport code; this overview does not promise delivery after every network or process failure.
+
+## Which machine the hosted console is on
+
+An account with more than one readable machine opens on **all of them**: the fleet list is the
+way in, and the machine list — which is where pairing, renaming and forgetting live — is one press
+away under the header's name. A tab that has chosen a single machine keeps it, because the choice
+is that tab's own (`sessionStorage`); a new tab has made none. An account with one readable machine
+still opens its list once, so the first thing a person sees names the machine and offers its
+pairing. The rules are `web/console/src/cloud/opening.ts` and are tested there.
+
+Underneath the fleet the console still reads **one** machine: the original Session page, its
+Projects, its schedules and its terminals are one daemon's. `CloudGate`'s `pointAt` moves every
+seam — the `/v1/` fetches, the session stream, the transcript pictures, the terminal host, the kept
+cards, the persona catalog — onto another machine in place, and it is the same code whether the
+move was made by opening a fleet Session on another machine or by naming one in the header. It used
+to be `location.reload()` for the second case, which threw the console away to arrive where it
+arrives directly now.
+
+Two things follow, and both were wrong before:
+
+- **The header names the machine being read**, not the machine the tab first chose. The fleet
+  repoints the reader under an opened Session, so those two drift apart; the header, the
+  one-machine list, the schedule form's machine and the machine-list highlight all read the
+  reader's.
+- **Naming a machine for "new Session" is a destination, not a move.** The sheet reads that
+  machine's Projects (`/v1/places?machine=`) and roles (`/v1/personas?machine=`) and starts there —
+  a place id carries its own machine, so the start, the resume and the past list follow it — and
+  the fleet list stays on every machine, with the new Session appearing under its machine's
+  heading. The voice command, a new work item and the terminal list are still that machine's own
+  console features, so naming a machine for one of them does move the console onto it.
+  `web/console/src/cloud/machine-tool.ts` holds the rule.
 
 ## Hosted console and operations
 

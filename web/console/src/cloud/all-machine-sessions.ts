@@ -17,6 +17,7 @@ export interface FleetMachine {
   name: string
   platform: string
   freshness: "current" | "stale" | "unknown"
+  paired?: boolean
 }
 
 /** Metadata from a pinned, read_transcript-authorized list read. */

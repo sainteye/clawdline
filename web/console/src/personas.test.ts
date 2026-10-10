@@ -170,3 +170,25 @@ test("switching team keeps a choice when the new team holds it too", () => {
   assert.deepEqual(switchTeam(teams, "code-reviewer", "design"), { team: "design", chosen: "" })
   assert.deepEqual(switchTeam(teams, "", "engineering"), { team: "engineering", chosen: "" })
 })
+
+test("a named machine is read and held on its own, and a changed console drops both", async () => {
+  // @ts-expect-error -- a `.ts` path is required by Node's native type stripping.
+  const fresh = (await import("./personas.ts?permachine")) as typeof import("./personas.js")
+  const asked: string[] = []
+  const answered = (async (url: string) => {
+    asked.push(url)
+    return new Response(JSON.stringify({ personas: [catalog[0]] }), { status: 200 })
+  }) as unknown as typeof fetch
+  await fresh.loadPersonas(answered)
+  await fresh.loadPersonas(answered, "linux-1")
+  await fresh.loadPersonas(answered, "linux-1")
+  assert.deepEqual(asked, ["/v1/personas", "/v1/personas?machine=linux-1"])
+  assert.equal(fresh.personasNow()?.length, 1)
+  assert.equal(fresh.personasNow("linux-1")?.length, 1)
+  assert.equal(fresh.personasNow("never-read"), null)
+  fresh.forgetPersonas()
+  assert.equal(fresh.personasNow(), null, "the console reads another machine now")
+  assert.equal(fresh.personasNow("linux-1"), null)
+  await fresh.loadPersonas(answered)
+  assert.equal(asked.length, 3)
+})

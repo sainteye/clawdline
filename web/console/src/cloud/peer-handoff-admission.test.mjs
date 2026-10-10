@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 const here = dirname(fileURLToPath(import.meta.url))
 const { outputFiles } = await build({ entryPoints: [resolve(here, "peer-handoff-admission.ts")],
   bundle: true, platform: "node", format: "esm", write: false })
-const { checkedPeerAccessStatus, ensurePeerEndpointCurrent } = await import(
+const { checkedPeerAccessStatus, effectivePeerScopes, ensurePeerEndpointCurrent } = await import(
   `data:text/javascript;base64,${Buffer.from(outputFiles[0].contents).toString("base64")}`)
 const generationA = "0123456789abcdef0123456789abcdef"
 const generationB = "fedcba9876543210fedcba9876543210"
@@ -69,6 +69,21 @@ test("peer access discovery accepts only the named machine and explicit complete
   { code: "peer_access_bad_status" })
 })
 
+test("effective scope boxes require a fresh active pair and unexpired grant", () => {
+  const now = Date.parse("2026-10-10T00:00:00Z")
+  const pair = { pair_id: "pair-1", source_machine_id: "machine-a", target_machine_id: "machine-b",
+    state: "active", expires_at: "2026-10-10T00:10:00Z" }
+  const grant = { grant_id: "grant-1", pair_id: pair.pair_id,
+    source: { machine_id: "machine-a" }, target: { machine_id: "machine-b" },
+    scopes: ["message"], expires_at: "2026-10-10T00:05:00Z" }
+  const snapshot = { machineID: "machine-a", observedAt: now, pairs: [pair], grants: [grant] }
+  assert.deepEqual(effectivePeerScopes(snapshot, grant, now + 1_000), ["message"])
+  assert.deepEqual(effectivePeerScopes(snapshot, grant, now + 301_000), [])
+  assert.deepEqual(effectivePeerScopes({ ...snapshot, pairs: [{ ...pair, state: "waiting_for_target" }] }, grant, now + 1_000), [])
+  assert.deepEqual(effectivePeerScopes({ ...snapshot, pairs: [] }, grant, now + 1_000), [])
+  assert.deepEqual(effectivePeerScopes(snapshot, { ...grant, expires_at: "2026-10-09T23:59:59Z" }, now + 1_000), [])
+})
+
 test("pair and grant revocation remain accessible without a current Session", async () => {
   const output = resolve(here, `.peer-revocation-test-${process.pid}.mjs`)
   try {
@@ -84,6 +99,30 @@ test("pair and grant revocation remain accessible without a current Session", as
     assert.match(html, /Revoke pair/)
     assert.match(html, /Revoke grant/)
     assert.doesNotMatch(html, /execution generation/)
+  } finally {
+    try { unlinkSync(output) } catch { /* build failed before writing */ }
+  }
+})
+
+test("the Cloud access page lists paired, unpaired, and offline machines without sending a write", async () => {
+  const output = resolve(here, `.peer-access-page-test-${process.pid}.mjs`)
+  try {
+    await build({ entryPoints: [resolve(here, "PeerAccessPage.tsx")], outfile: output,
+      bundle: true, platform: "node", format: "esm", packages: "external", loader: { ".css": "empty" } })
+    const { PeerAccessPage } = await import(pathToFileURL(output).href)
+    let writes = 0
+    const html = renderToStaticMarkup(React.createElement(PeerAccessPage, {
+      machines: [{ id: "mac", name: "Main", freshness: "current", paired: true },
+        { id: "linux", name: "Other", freshness: "stale", paired: true },
+        { id: "new", name: "Unpaired", freshness: "unknown", paired: false }],
+      source: null, current: () => { writes++; return null },
+    }))
+    assert.match(html, /Cross-machine access/)
+    assert.match(html, /Main · mac/)
+    assert.match(html, /Other · linux/)
+    assert.match(html, /Unpaired · new/)
+    assert.doesNotMatch(html, /Scopes reported by the machine/)
+    assert.equal(writes, 0)
   } finally {
     try { unlinkSync(output) } catch { /* build failed before writing */ }
   }

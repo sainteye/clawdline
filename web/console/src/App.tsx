@@ -57,7 +57,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify" | "archive" | "squad" | "documents"
+type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify" | "archive" | "squad" | "documents" | "peer-access"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -194,11 +194,12 @@ function rowNode(id: string): HTMLElement | null {
  * light and draws both in one control (`cloud/CloudGate.tsx`) — on a phone two
  * pills beside each other left the counts no room to be read.
  */
-export default function App({ aside, cloudSessions, fleetList, fleetTarget = null, fleetReaderMachine = null,
+export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, fleetTarget = null, fleetReaderMachine = null,
   fleetDetailProblem = null, onFleetClose, hideSessionCounts = false,
   focusCloudSessions = false, onLeaveCloudSessions }: {
   aside?: ReactNode | ((light: ConnectionLight) => ReactNode)
   cloudSessions?: ReactNode
+  cloudPeerAccess?: ReactNode
   fleetList?: (filter: string, onFilter: (value: string) => void) => ReactNode
   fleetTarget?: SessionDestination | null
   fleetReaderMachine?: string | null
@@ -214,8 +215,8 @@ export default function App({ aside, cloudSessions, fleetList, fleetTarget = nul
   // A page this machine reports too low a route level for is offered disabled
   // and says why, rather than missing (pages/registry.ts `pageNeedsUpdate`).
   const tooOld = (id: string) => pageNeedsUpdate(id, PAGE_MODULES, machineVersion.apiLevel)
-  const offered = (id: string) => ready(id) && !tooOld(id)
-  const knowsHere = knows
+  const offered = (id: string) => (id === "peer-access" ? !!cloudPeerAccess : ready(id) && !tooOld(id))
+  const knowsHere = (name: string): name is Page => name === "peer-access" ? !!cloudPeerAccess : knows(name)
   const tooOldTitle = (id: string) => tooOld(id) ? nextWord("machineNeedsUpdate") : undefined
   const tooOldMark = (id: string) => tooOld(id) ? <small className="sidebar-needs-update"> · {nextWord("machineNeedsUpdateShort")}</small> : null
   const [page, setPage] = useState<Page>(() => location.pathname === "/billing/done"
@@ -851,6 +852,11 @@ export default function App({ aside, cloudSessions, fleetList, fleetTarget = nul
               {tooOldMark(p.id)}
             </button>
           ))}
+          {cloudPeerAccess && <button className="sidebar-item" id="nav-peer-access" type="button"
+            data-page-to="peer-access" aria-current={page === "peer-access" ? "page" : undefined}
+            onClick={() => go("peer-access")}>
+            <SidebarIcon name="devices" />{nextWord("cloudPeerAccessNav")}
+          </button>}
           {/* The work system (design-decisions T6): not one of the retired app's
               pages, so it remains a row of its own at the end. */}
           <button
@@ -943,6 +949,10 @@ export default function App({ aside, cloudSessions, fleetList, fleetTarget = nul
             row.id === fleetTarget.sessionID && row.execution_generation === fleetTarget.executionGeneration))}
         fleetDetailProblem={fleetList && fleetTarget ? fleetDetailProblem : null}
       />}
+      {cloudPeerAccess && <section id="peer-access" className="page cloud-peer-access-page"
+        data-page-view="peer-access" hidden={page !== "peer-access"} aria-labelledby="peer-access-title">
+        {cloudPeerAccess}
+      </section>}
       {Object.values(PAGE_MODULES).map(({ id, Component }) => (
         // Mounted once opened and kept, as the original keeps its sections in
         // the document and only hides them.

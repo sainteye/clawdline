@@ -3426,6 +3426,8 @@
   "next.cloudSignInLede": "Sign in to read your machines",
   "next.cloudSwitch": "Other machines",
   "next.cloudAllMachines": "All machines",
+  "next.cloudStartWhere": "Start it on which machine?",
+  "next.cloudStartOn": "Starting on {machine}",
   "next.cloudSingleSessions": "Sessions on this machine",
   "next.cloudAllBack": "Back",
   "next.cloudAllDetail": "Session detail",
@@ -4946,5 +4948,18 @@
   "next.cloudActionStageObserved": "Observed",
   "next.cloudActionStageAcknowledged": "Acknowledged",
   "next.gitNoDirectory": "This Session's folder no longer exists on its machine, so there are no Git changes to show.",
-  "next.gitPermissionDenied": "Its machine is not allowed to read this Session's folder, so its Git changes cannot be shown."
+  "next.gitPermissionDenied": "Its machine is not allowed to read this Session's folder, so its Git changes cannot be shown.",
+  "next.cloudPeerAccessActive": "active",
+  "next.cloudPeerAccessChooseSession": "Choose a target Session",
+  "next.cloudPeerAccessCreate": "Pair machines and grant Session work",
+  "next.cloudPeerAccessEffectiveScopes": "Scopes reported by the machine",
+  "next.cloudPeerAccessInactive": "pending or expired",
+  "next.cloudPeerAccessIntro": "Review each machine's reported pairs and Session grants. Check the scopes below to request a new grant; only the machine's refreshed record proves it is active.",
+  "next.cloudPeerAccessLoading": "Reading current Sessions…",
+  "next.cloudPeerAccessNav": "Cross-machine access",
+  "next.cloudPeerAccessOffline": "This machine is offline. Access cannot be changed until it reports in.",
+  "next.cloudPeerAccessTargetMachine": "Target machine",
+  "next.cloudPeerAccessTargetSession": "Target Session",
+  "next.cloudPeerAccessUnpaired": "This browser is not paired with this machine. Pair it from the machine switcher before managing access.",
+  "next.cloudPeerAccessUnread": "This machine's Sessions could not be read ({code})."
 }
