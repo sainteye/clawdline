@@ -46,6 +46,8 @@ export interface CloudTerminalSnapshot {
 }
 type Pending = { operation: string; connection: string; terminal: string | null; resolve: (receipt: Receipt) => void; reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout> }
+type QueuedInput = ({ operation: "input"; data: Uint8Array } | { operation: "paste"; text: string }) &
+  { size: number; settle: (error?: unknown) => void }
 type EarlyFrame = { value: Frame; envelope: TerminalEnvelope }
 /** No verified frame has arrived for this long, by this browser's own clock: the screen is stale. */
 const STALE_MS = 6_000
@@ -107,7 +109,8 @@ export class CloudTerminalSession {
   /** The machine offered, in its direct answer, to send everyday receipts on the DC. */
   private directReceipts = false
   private readonly directRetryAt = new Map<string, number>()
-  private sendQueue: Promise<void> = Promise.resolve()
+  private inputQueue: QueuedInput[] = []
+  private drainingInput = false
   private inFlightInput: Promise<void>[] = []
   private queuedBytes = 0
   private pending = new Map<string, Pending>()
@@ -494,50 +497,94 @@ export class CloudTerminalSession {
   input(data: Uint8Array): Promise<void> {
     if (data.length > 4096 || this.queuedBytes + data.length > 65536) return Promise.reject(fail("input_too_large"))
     this.queuedBytes += data.length
-    return this.queueInput("input", { data: bytesBase64(data) }, data.length)
+    return this.queueInput({ operation: "input", data: new Uint8Array(data), size: data.length })
   }
   paste(text: string): Promise<void> {
     const size = new TextEncoder().encode(text).length
     if (size > 65536 || this.queuedBytes + size > 65536) return Promise.reject(fail("input_too_large"))
     this.queuedBytes += size
-    return this.queueInput("paste", { text }, size)
+    return this.queueInput({ operation: "paste", text, size })
   }
-  private queueInput(operation: "input" | "paste", body: Record<string, unknown>, size: number): Promise<void> {
+  private queueInput(item: { operation: "input"; data: Uint8Array; size: number } | { operation: "paste"; text: string; size: number }): Promise<void> {
     let settle!: (error?: unknown) => void
     const result = new Promise<void>((resolve, reject) => { settle = (error) => error ? reject(error) : resolve() })
-    const send = this.sendQueue.then(async () => {
-      // Relay budget retries can let a later numbered key reach the machine first. Wait for the
-      // previous machine receipt before numbering the next key, so a delayed one cannot be skipped.
-      if (this.inFlightInput.length) await this.inFlightInput[0]!.catch(() => undefined)
-      for (;;) {
-        await this.untilTypeable()
-        if (!this.s.canType || this.epoch === null) throw this.paused()
-        const seq = this.nextSeq++
-        let issued: { sent: Promise<void>; receipt: Promise<Receipt> }
-        try {
-          issued = this.issueRequest(operation, { terminal_id: this.terminal, client: this.client, epoch: this.epoch, seq, body })
-          await issued.sent
-        } catch (error) {
-          // Never published (see issueRequest): the same numbered key waits for the relay connection.
-          // Were it somehow applied, the machine's high-water mark for this epoch and seq absorbs it.
-          if ((error as { code?: string })?.code !== "terminal_direct_closed") throw error
-          if (this.nextSeq === seq + 1) this.nextSeq = seq
-          continue
+    this.inputQueue.push({ ...item, settle })
+    if (!this.drainingInput) {
+      this.drainingInput = true
+      void this.drainInput()
+    }
+    return result.finally(() => { this.queuedBytes -= item.size })
+  }
+  private async drainInput(): Promise<void> {
+    try {
+      while (this.inputQueue.length) {
+        const batch = [this.inputQueue.shift()!]
+        // Keys typed while the last receipt was pending can share one numbered request. Paste is
+        // a separate operation, and the existing 4096-byte input limit still bounds each batch.
+        if (batch[0]!.operation === "input") {
+          let bytes = batch[0]!.size
+          while (this.inputQueue[0]?.operation === "input" && bytes + this.inputQueue[0].size <= 4096) {
+            const next = this.inputQueue.shift()!
+            batch.push(next)
+            bytes += next.size
+          }
         }
-        const settled = issued.receipt.then((receipt) => {
-          try { this.applied(receipt, seq); settle() } catch (error) { settle(error) }
-        }, settle)
-        this.inFlightInput.push(settled)
-        void settled.finally(() => {
-          const at = this.inFlightInput.indexOf(settled)
-          if (at >= 0) this.inFlightInput.splice(at, 1)
-        })
-        return
+        try {
+          await this.sendInputBatch(batch)
+          for (const item of batch) item.settle()
+        } catch (error) {
+          for (const item of batch) item.settle(error)
+        }
       }
-    })
-    this.sendQueue = send.catch(() => undefined)
-    void send.catch(settle)
-    return result.finally(() => { this.queuedBytes -= size })
+    } finally {
+      this.drainingInput = false
+      if (this.inputQueue.length) {
+        this.drainingInput = true
+        void this.drainInput()
+      }
+    }
+  }
+  private async sendInputBatch(batch: QueuedInput[]): Promise<void> {
+    const first = batch[0]!
+    let body: Record<string, unknown>
+    if (first.operation === "paste") body = { text: first.text }
+    else {
+      const data = new Uint8Array(batch.reduce((size, item) => size + item.size, 0))
+      let offset = 0
+      for (const item of batch) {
+        if (item.operation !== "input") throw new Error("mixed_input_batch")
+        data.set(item.data, offset)
+        offset += item.size
+      }
+      body = { data: bytesBase64(data) }
+    }
+    // Relay budget retries can let a later numbered key reach the machine first. Wait for the
+    // prior receipt before numbering this batch, so a delayed one cannot be skipped.
+    for (;;) {
+      await this.untilTypeable()
+      if (!this.s.canType || this.epoch === null) throw this.paused()
+      const seq = this.nextSeq++
+      let issued: { sent: Promise<void>; receipt: Promise<Receipt> }
+      try {
+        issued = this.issueRequest(first.operation, { terminal_id: this.terminal, client: this.client, epoch: this.epoch, seq, body })
+        await issued.sent
+      } catch (error) {
+        // Never published (see issueRequest): the same numbered key waits for the relay connection.
+        // Were it somehow applied, the machine's high-water mark for this epoch and seq absorbs it.
+        if ((error as { code?: string })?.code !== "terminal_direct_closed") throw error
+        if (this.nextSeq === seq + 1) this.nextSeq = seq
+        continue
+      }
+      const settled = issued.receipt.then((receipt) => this.applied(receipt, seq))
+      this.inFlightInput.push(settled)
+      try {
+        await settled
+      } finally {
+        const at = this.inFlightInput.indexOf(settled)
+        if (at >= 0) this.inFlightInput.splice(at, 1)
+      }
+      return
+    }
   }
   /** Waits out a brief pause (`typeAhead`); a key typed then was never sent, so sending it later replays nothing. */
   private untilTypeable(): Promise<void> {

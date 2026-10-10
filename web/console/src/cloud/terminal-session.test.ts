@@ -78,7 +78,7 @@ class Wire implements TerminalWire {
           : operation === "control" ? { control: this.lease }
             : operation === "list" ? { terminals: [] }
               : operation === "history" ? this.historyResult
-                : operation === "input" ? { applied_through: request.seq, duplicate: false } : {}
+              : operation === "input" || operation === "paste" ? { applied_through: request.seq, duplicate: false } : {}
     const refusal = this.refusals.get(operation + ((request.body as { carrier?: string } | undefined)?.carrier ? ":direct" : ""))
     const reply = () => this.emit(connection, "termr", {
       v: 1, type: "terminal_receipt", request_id: request.request_id, connection, operation,
@@ -201,7 +201,7 @@ test("a close exposes its request id and an unknown receipt does not claim succe
   } finally { session.dispose() }
 })
 
-test("numbered keys wait for each machine receipt before publishing the next", async () => {
+test("numbered keys wait for the prior receipt and combine a pending burst", async () => {
   const wire = new Wire()
   const session = new CloudTerminalSession(wire, "stable-tab")
   try {
@@ -210,18 +210,42 @@ test("numbered keys wait for each machine receipt before publishing the next", a
     await session.acquire("acquire")
     wire.frame(wire.latest(), 1, "ready")
     wire.delayed.add("input")
-    const inputs = Array.from({ length: 5 }, (_, i) => session.input(new TextEncoder().encode(String(i))))
+    const inputs = [session.input(new TextEncoder().encode("0"))]
     const inputCount = () => wire.requests.filter((request) => request.operation === "input").length
     await until(() => inputCount() === 1)
-    for (let count = 1; count < 5; count++) {
-      assert.equal(inputCount(), count, "the next key waits for the previous receipt")
-      wire.releaseReplies()
-      await until(() => inputCount() === count + 1)
-    }
-    assert.deepEqual(wire.requests.filter((request) => request.operation === "input").map((request) => request.seq), [1, 2, 3, 4, 5])
-    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 5)
+    for (let i = 1; i < 5; i++) inputs.push(session.input(new TextEncoder().encode(String(i))))
+    assert.equal(inputCount(), 1, "the pending keys wait for the previous receipt")
+    wire.releaseReplies()
+    await until(() => inputCount() === 2)
+    const requests = wire.requests.filter((request) => request.operation === "input")
+    assert.deepEqual(requests.map((request) => request.seq), [1, 2])
+    assert.equal(atob((requests[1]!.body as { data: string }).data), "1234")
     wire.releaseReplies()
     await Promise.all(inputs)
+  } finally { session.dispose() }
+})
+
+test("a paste stays between queued key batches", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "ready")
+    wire.delayed.add("input"); wire.delayed.add("paste")
+    const first = session.input(new TextEncoder().encode("a"))
+    const sent = () => wire.requests.filter((request) => request.operation === "input" || request.operation === "paste")
+    await until(() => sent().length === 1)
+    const middle = session.paste("paste")
+    const after = [session.input(new TextEncoder().encode("b")), session.input(new TextEncoder().encode("c"))]
+    wire.releaseReplies()
+    await until(() => sent().length === 2)
+    assert.deepEqual(sent().map((request) => request.operation), ["input", "paste"])
+    wire.releaseReplies()
+    await until(() => sent().length === 3)
+    assert.deepEqual(sent().map((request) => request.seq), [1, 2, 3])
+    assert.equal(atob((sent()[2]!.body as { data: string }).data), "bc")
+    wire.releaseReplies()
+    await Promise.all([first, middle, ...after])
   } finally { session.dispose() }
 })
 
@@ -245,7 +269,8 @@ test("a burst arrives complete and in order when receipts come back one by one",
     const outcomes = await Promise.allSettled(inputs)
     const seqs = wire.requests.filter((request) => request.operation === "input").map((request) => request.seq)
     assert.equal(wire.machineInputs.typed.join(""), text, `seqs sent ${seqs.join(",")}`)
-    assert.deepEqual(seqs, Array.from({ length: text.length }, (_, i) => i + 1))
+    assert.deepEqual(seqs, Array.from({ length: seqs.length }, (_, i) => i + 1))
+    assert.ok(seqs.length < text.length, "pending keys share a machine receipt")
     assert.deepEqual(outcomes.filter((outcome) => outcome.status === "rejected"), [])
     assert.equal(session.snapshot.canType, true)
   } finally { session.dispose() }
