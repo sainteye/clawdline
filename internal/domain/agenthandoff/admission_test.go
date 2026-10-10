@@ -91,6 +91,34 @@ func TestAdmissionRequiresExplicitMachinePeerAndCurrentGrant(t *testing.T) {
 	}
 }
 
+func TestMachinePairCoversCurrentSessionsAndBothKinds(t *testing.T) {
+	request, body, facts := validRequestAndFacts()
+	request.GrantID = facts.Principal.PairID
+	request.Source.SessionID = "another-source"
+	request.Target.SessionID = "another-target"
+	facts.MachineAccess, facts.GrantReadable = true, false
+	for _, kind := range []Kind{Message, Handoff} {
+		request.Kind = kind
+		if err := Admit(request, body, facts); err != nil {
+			t.Fatalf("%s on signed machine pair refused: %v", kind, err)
+		}
+	}
+	facts.TargetCurrent = false
+	if got := Admit(request, body, facts); got != ExecutionUnverified {
+		t.Fatalf("changed target execution = %v", got)
+	}
+	facts.TargetCurrent = true
+	facts.PairActive = false
+	if got := Admit(request, body, facts); got != PairInactive {
+		t.Fatalf("revoked pair = %v", got)
+	}
+	facts.PairActive = true
+	request.GrantID = "another-pair"
+	if got := Admit(request, body, facts); got != GrantDenied {
+		t.Fatalf("different pair = %v", got)
+	}
+}
+
 func TestPeerTextMustRoundTripThroughTheDurableInbox(t *testing.T) {
 	request, _, _ := validRequestAndFacts()
 	body := []byte{0xff}

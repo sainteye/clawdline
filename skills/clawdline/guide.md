@@ -219,21 +219,24 @@ These commands go through the running local daemon. If one fails, report its exa
 turn Cloud on, log in, enable commands, rotate keys, or replace the supplied offer unless the
 person separately asked for that change.
 
-**Pair machines for Agent work.** Browser pairing never grants machine-to-machine authority.
-Run `clawdline cloud peer fingerprint` on each machine and have the person compare the two
-signing fingerprints on their respective machines. A source starts a pair with
+**Connect machines for Agent work.** Browser pairing alone never grants machine-to-machine authority.
+In the hosted Console's Cross-machine access page, turn on the switch between two online, viewer-verified
+machines. The page reads both machine fingerprints through their verified viewer channels, creates
+signed pairs in both directions, and confirms both local pins before showing the switch on. A pair
+permits both Agent messages and handoffs among current Sessions on its named machines. Turning the
+switch off revokes both directions locally and in Cloud. No Session grant is needed in this flow.
+For a CLI-only directed pair, read `clawdline cloud peer fingerprint` on each machine and compare
+the signing fingerprints on their respective machines. A source starts a pair with
 `clawdline cloud peer start <target-machine-id> <target-fingerprint>`; the target accepts with
 `clawdline cloud peer accept <pair-id> <source-fingerprint>`; the source pins it with
-`clawdline cloud peer sync <pair-id> <target-fingerprint>`. The target creates an exact
-source/target Session execution grant with `clawdline cloud peer grant`, and the source pins
-it with `clawdline cloud peer grant-sync`. `clawdline cloud peer revoke-pair` and
-`revoke-grant` deny locally before asking Cloud to revoke. The Cloud Console offers the same
-flow in a fixed target Session detail. A shared account and a viewer key never stand in for
-the peer machine signature, its explicit `message` or `handoff` scope, or a current generation.
+`clawdline cloud peer sync <pair-id> <target-fingerprint>`. Repeat in reverse for two-way access.
+`clawdline cloud peer revoke-pair` denies locally before asking Cloud to revoke. Legacy
+Session-specific grants remain readable for old requests. A shared account and viewer key never
+stand in for the peer machine signature or a current execution generation.
 
 The local routes are `POST /v1/cloud/peer/control` (`action`, pair/grant id, compared fingerprint,
 exact Session ids and generations, scopes), `POST /v1/cloud/peer/send` (`request` with both
-machine/Session/generation endpoints, kind, grant id and body digest, plus `body`),
+machine/Session/generation endpoints, kind, pair id in the wire `grant_id` field and body digest, plus `body`),
 `GET /v1/cloud/peer/outbox/<request-id>` (source relay evidence), and
 `GET /v1/cloud/peer/inbox?machine_id=&session_id=&execution_generation=&before=` (one target item and durable
 target receipt). The inbox body is `body_base64`; `next_before` pages older items without

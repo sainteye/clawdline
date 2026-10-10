@@ -195,19 +195,21 @@ roster 與本機信任狀態；配對後要唯讀複查，也用這條。
 這些指令都透過本機正在執行的 daemon。失敗時回報 stderr 原文。除非使用者另外要求，否則不要順手
 開啟 Cloud、登入、開啟 commands、rotate key，也不要替換使用者給的 offer。
 
-**為 Agent 工作配對兩台機器。** 瀏覽器配對不會授予機器間權限。請在兩台機器各執行
+**讓兩台機器互通以處理 Agent 工作。** 瀏覽器配對本身不會授予機器間權限。在 Cloud
+側邊欄的「跨機器權限」頁，打開兩台在線且已由瀏覽器驗證的機器之間的開關。頁面會經由
+各機器已驗證的通道讀取指紋、自動建立雙向簽章配對，並在兩端都回報有效配對後顯示已開啟。
+這讓兩台機器目前的 Session 可互傳 Agent 訊息與交接工作；關閉開關會撤銷雙向配對，
+不需要逐一建立 Session 授權。若只用 CLI 建立單向配對，先在兩台機器各執行
 `clawdline cloud peer fingerprint`，由當事人在各自機器上核對簽章指紋。來源機器執行
 `clawdline cloud peer start <target-machine-id> <target-fingerprint>` 開始配對；目標機器執行
 `clawdline cloud peer accept <pair-id> <source-fingerprint>` 接受；來源機器執行
-`clawdline cloud peer sync <pair-id> <target-fingerprint>` 固定配對。目標機器用
-`clawdline cloud peer grant` 建立指定來源與目標 Session 執行世代的授權，再由來源機器用
-`clawdline cloud peer grant-sync` 固定授權。`clawdline cloud peer revoke-pair` 與
-`revoke-grant` 先在本機拒絕，再要求 Cloud 撤銷。Cloud Console 的固定目標 Session 詳情也提供
-同一流程。同帳號與 viewer key 都不能取代機器簽章、明示的 `message`／`handoff` 範圍或目前世代。
+`clawdline cloud peer sync <pair-id> <target-fingerprint>` 固定配對；要雙向互通則反向再做一次。
+`clawdline cloud peer revoke-pair` 先在本機拒絕，再要求 Cloud 撤銷。舊的 Session 授權
+仍可供既有請求使用。同帳號與 viewer key 都不能取代機器簽章或目前的執行世代。
 
 本機路由為 `POST /v1/cloud/peer/control`（`action`、配對或授權 ID、核對過的指紋、指定
 Session ID 與世代、範圍）、`POST /v1/cloud/peer/send`（`request` 內含兩端機器／Session／
-世代、類型、授權 ID、內容摘要，另附 `body`）、`GET /v1/cloud/peer/outbox/<request-id>`
+世代、類型、以配對 ID 填入 wire `grant_id` 欄位、內容摘要，另附 `body`）、`GET /v1/cloud/peer/outbox/<request-id>`
 （來源 Relay 證據），以及
 `GET /v1/cloud/peer/inbox?machine_id=&session_id=&execution_generation=&before=`（單筆目標工作與持久收據；before 可省略）。
 收件正文是 `body_base64`，`next_before` 可讀取較早項目，其他執行的游標不能共用。

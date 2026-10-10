@@ -73,9 +73,12 @@ type Grant struct {
 // GrantReadable means the local grant store was read successfully; a zero
 // Grant with that bit false is never interpreted as an empty grant list.
 type Facts struct {
-	LocalMachineID       string
-	Principal            Principal
-	PairActive           bool
+	LocalMachineID string
+	Principal      Principal
+	PairActive     bool
+	// MachineAccess is a signed, locally pinned machine pair whose ID is the
+	// request authority. It covers either kind for current Sessions on the pair.
+	MachineAccess        bool
 	GrantReadable        bool
 	Grant                Grant
 	PeerCapability       bool
@@ -148,29 +151,34 @@ func Admit(request Request, body []byte, facts Facts) error {
 	if !facts.PairActive || facts.Principal.PairID == "" {
 		return PairInactive
 	}
-	if !facts.GrantReadable {
+	if facts.MachineAccess && request.GrantID != facts.Principal.PairID {
+		return GrantDenied
+	}
+	if !facts.MachineAccess && !facts.GrantReadable {
 		return GrantUnavailable
 	}
 	grant := facts.Grant
-	if grant.Revoked {
-		return GrantRevoked
-	}
-	if facts.Now.IsZero() || grant.ExpiresAt.IsZero() ||
-		!facts.Now.Before(grant.ExpiresAt) {
-		return GrantExpired
-	}
-	if grant.ID == "" || grant.ID != request.GrantID ||
-		grant.PairID != facts.Principal.PairID ||
-		grant.SourceMachineID != request.Source.MachineID ||
-		grant.SourceSessionID != request.Source.SessionID ||
-		grant.SourceGeneration != request.Source.ExecutionGeneration ||
-		grant.TargetMachineID != request.Target.MachineID ||
-		grant.TargetSessionID != request.Target.SessionID ||
-		grant.TargetGeneration != request.Target.ExecutionGeneration ||
-		grant.PeerKeyFingerprint != facts.Principal.KeyFingerprint ||
-		(request.Kind == Message && !grant.AllowMessage) ||
-		(request.Kind == Handoff && !grant.AllowHandoff) {
-		return GrantDenied
+	if !facts.MachineAccess {
+		if grant.Revoked {
+			return GrantRevoked
+		}
+		if facts.Now.IsZero() || grant.ExpiresAt.IsZero() ||
+			!facts.Now.Before(grant.ExpiresAt) {
+			return GrantExpired
+		}
+		if grant.ID == "" || grant.ID != request.GrantID ||
+			grant.PairID != facts.Principal.PairID ||
+			grant.SourceMachineID != request.Source.MachineID ||
+			grant.SourceSessionID != request.Source.SessionID ||
+			grant.SourceGeneration != request.Source.ExecutionGeneration ||
+			grant.TargetMachineID != request.Target.MachineID ||
+			grant.TargetSessionID != request.Target.SessionID ||
+			grant.TargetGeneration != request.Target.ExecutionGeneration ||
+			grant.PeerKeyFingerprint != facts.Principal.KeyFingerprint ||
+			(request.Kind == Message && !grant.AllowMessage) ||
+			(request.Kind == Handoff && !grant.AllowHandoff) {
+			return GrantDenied
+		}
 	}
 	if !facts.PeerCapability || !facts.LocalCapability {
 		return CapabilityUnavailable

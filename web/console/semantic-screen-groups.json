@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 5021,
-  "riskKeys": 2196,
-  "nonRiskCount": 2825,
+  "englishContentKeys": 5037,
+  "riskKeys": 2206,
+  "nonRiskCount": 2831,
   "groups": [
     {
       "name": "bar / other",
@@ -1638,7 +1638,7 @@
     },
     {
       "name": "next / cloud",
-      "count": 197,
+      "count": 203,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1806,6 +1806,12 @@
         "next.cloudPeerHandoff",
         "next.cloudPeerHeading",
         "next.cloudPeerKind",
+        "next.cloudPeerMachineHint",
+        "next.cloudPeerMachineList",
+        "next.cloudPeerMachineOffline",
+        "next.cloudPeerMachineOn",
+        "next.cloudPeerMachineSwitch",
+        "next.cloudPeerMachineUnnamed",
         "next.cloudPeerMessage",
         "next.cloudPeerNextFingerprint",
         "next.cloudPeerOlderInbox",

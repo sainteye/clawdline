@@ -115,11 +115,7 @@ func (l *Link) receivePeer(ctx context.Context, raw []byte) {
 		return
 	}
 	defer st.Close()
-	grant, err := st.Grant(ctx, frame.Request.GrantID)
-	if err != nil || !grant.RevokedAt.IsZero() {
-		return
-	}
-	pair, err := st.Pair(ctx, grant.PairID)
+	pair, _, err := peerAuthorityRows(ctx, st, frame.Request.GrantID)
 	if err != nil || pair.TargetMachineID != l.identity.MachineID ||
 		pair.SourceMachineID != frame.Request.Source.MachineID ||
 		pair.TargetSignature == "" || !pair.RevokedAt.IsZero() ||
@@ -158,6 +154,24 @@ func pairKeys(pair peerstore.Pair) peercontract.PairKeys {
 		TargetEncryptionKey: pair.TargetEncryptionKey}
 }
 
+// A machine pair is the authority for every current Session on its directed
+// edge. Older, Session-specific grants remain readable for in-flight work.
+func peerAuthorityRows(ctx context.Context, st *peerstore.Store, id string) (peerstore.Pair, *peerstore.Grant, error) {
+	pair, err := st.Pair(ctx, id)
+	if err == nil {
+		return pair, nil, nil
+	}
+	if !errors.Is(err, peerstore.ErrNotFound) {
+		return peerstore.Pair{}, nil, err
+	}
+	grant, err := st.Grant(ctx, id)
+	if err != nil || !grant.RevokedAt.IsZero() {
+		return peerstore.Pair{}, nil, errors.New("peer_grant_denied")
+	}
+	pair, err = st.Pair(ctx, grant.PairID)
+	return pair, &grant, err
+}
+
 func (l *Link) peerFacts(ctx context.Context, request peercontract.Request,
 	principal peercontract.Principal) (peercontract.Facts, error) {
 	st, err := peerstore.Open(l.keys.Dir())
@@ -165,11 +179,7 @@ func (l *Link) peerFacts(ctx context.Context, request peercontract.Request,
 		return peercontract.Facts{}, err
 	}
 	defer st.Close()
-	grant, err := st.Grant(ctx, request.GrantID)
-	if err != nil {
-		return peercontract.Facts{}, err
-	}
-	pair, err := st.Pair(ctx, grant.PairID)
+	pair, grant, err := peerAuthorityRows(ctx, st, request.GrantID)
 	if err != nil {
 		return peercontract.Facts{}, err
 	}
@@ -183,21 +193,29 @@ func (l *Link) peerFacts(ctx context.Context, request peercontract.Request,
 		l.identity.MachineCredential, request, pair.SourcePublicKey)
 	if err != nil || !authority.Authorized || authority.SourcePublicKey != pair.SourcePublicKey ||
 		authority.SourceKeyFingerprint != pair.SourceFingerprint ||
-		authority.TargetMachineID != l.identity.MachineID || authority.GrantID != grant.ID {
+		authority.TargetMachineID != l.identity.MachineID || authority.GrantID != request.GrantID {
 		return peercontract.Facts{}, errors.New("peer_authority_unavailable")
 	}
 	current := l.opts.PeerAdmitTarget(ctx, request.Target.MachineID,
 		request.Target.SessionID, request.Target.ExecutionGeneration) == nil
 	return peercontract.Facts{LocalMachineID: l.identity.MachineID,
 		Principal: principal, PairActive: pair.TargetSignature != "" && pair.RevokedAt.IsZero() && l.opts.Now().Before(pair.ExpiresAt),
-		GrantReadable: true, Grant: peercontract.Grant{ID: grant.ID, PairID: grant.PairID,
-			SourceMachineID: grant.Source.MachineID, SourceSessionID: grant.Source.SessionID,
-			SourceGeneration: grant.Source.ExecutionGeneration, TargetMachineID: grant.Target.MachineID,
-			TargetSessionID: grant.Target.SessionID, TargetGeneration: grant.Target.ExecutionGeneration,
-			PeerKeyFingerprint: grant.SourceKeyFingerprint, AllowMessage: grant.AllowMessage,
-			AllowHandoff: grant.AllowHandoff, Revoked: !grant.RevokedAt.IsZero(), ExpiresAt: grant.ExpiresAt},
+		MachineAccess: grant == nil, GrantReadable: grant != nil,
+		Grant:          peerGrantFacts(grant),
 		PeerCapability: true, LocalCapability: true,
 		MachineWritesAllowed: l.allowCommands(), TargetCurrent: current, Now: l.opts.Now()}, nil
+}
+
+func peerGrantFacts(grant *peerstore.Grant) peercontract.Grant {
+	if grant == nil {
+		return peercontract.Grant{}
+	}
+	return peercontract.Grant{ID: grant.ID, PairID: grant.PairID,
+		SourceMachineID: grant.Source.MachineID, SourceSessionID: grant.Source.SessionID,
+		SourceGeneration: grant.Source.ExecutionGeneration, TargetMachineID: grant.Target.MachineID,
+		TargetSessionID: grant.Target.SessionID, TargetGeneration: grant.Target.ExecutionGeneration,
+		PeerKeyFingerprint: grant.SourceKeyFingerprint, AllowMessage: grant.AllowMessage,
+		AllowHandoff: grant.AllowHandoff, Revoked: !grant.RevokedAt.IsZero(), ExpiresAt: grant.ExpiresAt}
 }
 
 // PublishPeer signs and encrypts a fixed source and target. The result reports
@@ -222,17 +240,16 @@ func (l *Link) PublishPeer(ctx context.Context, request peercontract.Request, bo
 		return answer, err
 	}
 	defer st.Close()
-	grant, err := st.Grant(ctx, request.GrantID)
-	if err != nil || !grant.RevokedAt.IsZero() || !l.opts.Now().Before(grant.ExpiresAt) ||
+	pair, grant, err := peerAuthorityRows(ctx, st, request.GrantID)
+	if grant != nil && (!l.opts.Now().Before(grant.ExpiresAt) ||
 		grant.Source != request.Source || grant.Target != request.Target ||
 		(request.Kind == peercontract.Message && !grant.AllowMessage) ||
-		(request.Kind == peercontract.Handoff && !grant.AllowHandoff) {
+		(request.Kind == peercontract.Handoff && !grant.AllowHandoff)) {
 		return answer, errors.New("peer_grant_denied")
 	}
-	pair, err := st.Pair(ctx, grant.PairID)
 	if err != nil || pair.SourceMachineID != l.identity.MachineID ||
 		pair.TargetMachineID != request.Target.MachineID || pair.TargetSignature == "" ||
-		grant.SourceKeyFingerprint != pair.SourceFingerprint || grant.ExpiresAt.After(pair.ExpiresAt) ||
+		(grant != nil && (grant.SourceKeyFingerprint != pair.SourceFingerprint || grant.ExpiresAt.After(pair.ExpiresAt))) ||
 		!pair.RevokedAt.IsZero() || !l.opts.Now().Before(pair.ExpiresAt) {
 		return answer, errors.New("peer_pair_inactive")
 	}
@@ -244,7 +261,7 @@ func (l *Link) PublishPeer(ctx context.Context, request peercontract.Request, bo
 		l.identity.MachineCredential, request, pair.SourcePublicKey)
 	if err != nil || !auth.Authorized || auth.SourcePublicKey != pair.SourcePublicKey ||
 		auth.SourceKeyFingerprint != pair.SourceFingerprint ||
-		auth.TargetMachineID != request.Target.MachineID || auth.GrantID != grant.ID {
+		auth.TargetMachineID != request.Target.MachineID || auth.GrantID != request.GrantID {
 		return answer, errors.New("peer_authority_unavailable")
 	}
 	private, err := ecdh.X25519().NewPrivateKey(pair.LocalPrivateKey)

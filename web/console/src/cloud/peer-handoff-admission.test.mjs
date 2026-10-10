@@ -84,26 +84,6 @@ test("effective scope boxes require a fresh active pair and unexpired grant", ()
   assert.deepEqual(effectivePeerScopes(snapshot, { ...grant, expires_at: "2026-10-09T23:59:59Z" }, now + 1_000), [])
 })
 
-test("pair and grant revocation remain accessible without a current Session", async () => {
-  const output = resolve(here, `.peer-revocation-test-${process.pid}.mjs`)
-  try {
-    await build({ entryPoints: [resolve(here, "PeerHandoffPanel.tsx")], outfile: output,
-      bundle: true, platform: "node", format: "esm", packages: "external", loader: { ".css": "empty" } })
-    const { PeerRevocationPanel } = await import(pathToFileURL(output).href)
-    const html = renderToStaticMarkup(React.createElement(PeerRevocationPanel, {
-      machines: [{ id: "machine-a", name: "First machine", freshness: "current" }], current: () => null,
-    }))
-    assert.match(html, /<details[^>]*class="cloud-peer-panel cloud-peer-revocation"/)
-    assert.match(html, /Revoke machine pair or grant/)
-    assert.match(html, /First machine/)
-    assert.match(html, /Revoke pair/)
-    assert.match(html, /Revoke grant/)
-    assert.doesNotMatch(html, /execution generation/)
-  } finally {
-    try { unlinkSync(output) } catch { /* build failed before writing */ }
-  }
-})
-
 test("the Cloud access page explains its purpose before any machine read or write", async () => {
   const output = resolve(here, `.peer-access-page-test-${process.pid}.mjs`)
   try {
@@ -118,9 +98,9 @@ test("the Cloud access page explains its purpose before any machine read or writ
       source: null, current: () => { writes++; return null },
     }))
     assert.match(html, /Cross-machine access/)
-    assert.match(html, /Choose which Sessions on two machines/)
-    assert.match(html, /Current permissions/)
-    assert.match(html, /Create a new permission/)
+    assert.match(html, /Choose which machines can exchange Agent messages/)
+    assert.match(html, /Your machines/)
+    assert.doesNotMatch(html, /Choose a Session|fingerprint|grant ID/i)
     assert.doesNotMatch(html, /Main · mac|Other · linux|Unpaired · new/)
     assert.equal(writes, 0)
   } finally {

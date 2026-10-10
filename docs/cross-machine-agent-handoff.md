@@ -1,191 +1,103 @@
 # Cross-machine Agent messages and Session handoff
 
-The public daemon uses a dedicated machine peer rail. A Cloud account, viewer
-pairing, or the account content key does not authorize Agent work between
-machines. A person compares each machine's Ed25519 signing fingerprint on
-that machine, starts a source offer, accepts it on the target, and pins the
-signed transcript on both sides. The target then grants `message`, `handoff`,
-or both for exact source and target Session executions. Either machine may
-revoke the pair or grant. A failed Cloud revocation leaves the local denial in
-force; a failed Cloud authorization read closes admission.
+## Person-facing permission
 
-The private control plane contract is `docs/PEER-ROUTING.md` in the Cloud
-service. It supplies machine-authenticated pair and grant APIs and the
-`peer_publish` / `peer_envelope` / `peer_ack` WebSocket frames. The daemon
-derives a pair-specific X25519/HKDF/AES-GCM key, signs the canonical request
-and ciphertext with its machine Ed25519 key, and opens an incoming envelope
-only with the locally pinned source key. The relay's `source_public_key` is a
-lookup hint; it cannot create a Principal. `ctl/` and `ho/` remain viewer and
-account channels and are never a fallback for peer work.
+The hosted Console's **Cross-machine access** page lists each unordered pair of
+machines. One switch controls whether their current Sessions may exchange Agent
+messages and hand off work in **both directions**. There is no Session picker,
+operation-scope picker, grant ID, or fingerprint entry in this flow. Turning a
+switch on asks the two online machines, already verified and writable by this
+browser, to create two directed signed pairs. Each machine independently
+reports its signing fingerprint through the verified viewer channel; the
+other's reported fingerprint is checked against the Cloud machine roster and
+included in its signed pair transcript. The Console marks a switch on only
+after fresh status reads from both machines show both directions pinned at
+both ends. A partial result is shown as incomplete. If either machine cannot
+be read, the page shows an unknown state instead of an off switch and names
+the machine and reason; it never infers revocation from missing status.
 
-## Fixed target and authorization
+Turning a switch off revokes every pair between the two machines on both
+local stores and in Cloud. If either machine is offline, unpaired with this
+browser, unreadable, or write-disabled, the switch cannot be changed. The
+page does not infer a negative authority from an unreadable machine. Local
+pins may remain after another machine revokes the Cloud pair; send, relay and
+receive authorization still fail closed on the Cloud revocation. Refresh
+reconciles the visible local state. A partially completed setup can be
+continued or cleared from the page.
 
-Each request carries a stable ID, operation kind, grant ID, body SHA-256,
-and both endpoints as `machine_id`, `session_id`, and a 32-character lowercase
-hex `execution_generation`. The body is valid UTF-8 text so the durable JSON
-inbox preserves the bytes covered by its digest. A source checks its own current execution before
-signing. The target rechecks its local pair and grant, the Cloud grant, the
-write switch and its current execution before claiming a durable receipt and
-again before the inbox effect. A changed generation or revoked grant refuses
-the work even if an older ciphertext is still valid.
+A directed pair is the authority for either operation and any **current**
+source and target Session on its named machines. It is not a general remote
+shell or account-wide command permission. Each message still names the exact
+source and target machine, Session, and execution generation, and both
+daemons validate their own current execution. New and restarted Sessions work
+without a new grant. The Cloud pair lasts at most ten years, expires on a
+signing-key change, and can be revoked immediately; it never becomes trusted
+only because two machines share an account. Legacy per-Session grants remain
+readable for existing in-flight requests but the Console does not create new
+ones.
 
-The target stores received work in a structured peer inbox, not as a chat
-message. `message` and `handoff` have separate grant bits and retain the
-source and target identities. An Agent reads its target Session inbox with
-`clawdline cloud peer inbox <session> <generation> [before-request-id]` or the fixed-target
-Console detail. Reading through the Console is not treated as proof that an
-Agent observed or acknowledged the work.
+## Trust and routing
 
-## Product entries
+The two machines sign and pin the pairing transcript with their Ed25519
+identity keys. The source and target exchange X25519 keys and encrypt peer
+content end to end with pair-specific HKDF/AES-GCM material. Cloud checks
+machine-authenticated pair metadata and routes ciphertext; it cannot read the
+Agent message or handoff body. The relay's `source_public_key` is only a
+lookup hint: the receiver builds its principal from its locally pinned
+signature key. Cloud authorization is checked at send, relay delivery, and
+receiver admission, so a revoked pair cannot be reactivated by replaying old
+ciphertext or a stale browser status. The receiver's local write switch and
+current execution are separate requirements. Offline machines do not queue
+mutating work for later.
 
-The Cloud Console's all-machine Session detail names a fixed target and asks
-the person to choose a distinct current source Session. It offers pair start,
-accept and source sync with fingerprint entry; target grant and source sync;
-local-first revoke; message or handoff send; relay receipt check; and target
-inbox read. The selected Console machine is never used as an implicit source
-or destination. The same actions are available from `clawdline cloud peer`.
-The CLI `send` requires the source and target IDs and generations on the
-command line even though the grant stores them, so a changed choice cannot
-silently retarget a request. `clawdline cloud peer outbox <request-id>` reads
-the saved relay receipt; a successful socket write alone leaves relay
-acceptance unknown until `peer_ack` arrives.
-Run `clawdline cloud peer fingerprint` on each machine to compare its signing
-fingerprint from that machine before entering the opposite fingerprint in the
-pair flow.
+A request's wire field remains `grant_id` for compatibility. New machine-level
+requests put the directed **pair ID** there; the sender and receiver resolve it
+as a locally pinned pair before attempting a legacy grant lookup. Cloud
+resolves the same field as a pair ID when no legacy grant has that ID. The
+signed request still binds operation kind, both complete endpoints, request
+ID and body SHA-256. The receipt identity binds the complete request and its
+body digest; resends cannot silently change the target or operation.
 
-`peer-control` with `{"action":"status"}` returns the local machine ID and
-signing fingerprint plus `pairs` and `grants` arrays. A pair row contains its
-revocable `pair_id`, source and target machine IDs and fingerprints, expiration,
-and `state` (`waiting_for_target` or `active`). A grant row contains its
-revocable `grant_id`, `pair_id`, exact source and target machine/Session/execution
-triples, `scopes`, and expiration. The arrays contain only unexpired,
-unrevoked local records for this machine and account. The entire durable
-tables are read within the registered 128-pair and 512-grant bounds; an
-unreadable or oversized table is an error, never a successful empty list.
-No signing or encryption key, signature, request body, or inbox content is
-returned. `active` describes the local pin; every attempted send or receive
-still requires fresh Cloud grant authorization. The status list lets a person
-recover IDs for revocation after a Session disappears or the Console reloads.
+`peer-control` `status` returns each machine's local fingerprint and bounded
+`pairs` and `grants` arrays. The current Console uses pairs for the switches;
+old grants are returned for compatibility. `start`, `accept`, `sync`, and
+`revoke_pair` remain machine-authenticated control actions. The Console
+orchestrates them automatically for both directions after reading each
+machine through its verified viewer channel. No signing key, private key,
+message body or inbox content is present in the status reply. Pair IDs are
+implementation details and are never required in the normal page.
 
-The local HTTP routes are:
+The local HTTP routes are `POST /v1/cloud/peer/control`, `POST
+/v1/cloud/peer/send`, `GET /v1/cloud/peer/outbox/:id`, and `GET
+/v1/cloud/peer/inbox?machine_id=&session_id=&execution_generation=&before=`.
+The hosted viewer reaches them through the matching advertised Cloud
+operations on the explicitly named machine. Inbox content uses the separate
+content-read rail with `read_transcript` authority and a pinned target
+execution. Viewer pairing and send permission allow the person to ask a
+machine to change peer access; the machine-to-machine principal is proved
+separately by the signed pair and fresh Cloud authorization.
 
-- `POST /v1/cloud/peer/control` for an explicit pair or grant action;
-- `POST /v1/cloud/peer/send` for one fixed, content-digested request;
-- `GET /v1/cloud/peer/outbox/:id` for source relay evidence;
-- `GET /v1/cloud/peer/inbox?machine_id=&session_id=&execution_generation=&before=`
-  for structured target work. Each page has at most one item, an optional
-  `next_before` cursor, and a `body_base64` field so JSON escaping cannot
-  exceed the Cloud frame bound. A cursor from another execution is refused.
+## Receipts and acceptance
 
-The hosted viewer reaches those routes only through advertised `peer-control`,
-`peer-send`, `peer-outbox` and `peer-inbox` Cloud operations on the named
-machine. The content-bearing inbox read uses the separate `r/` rail, a fresh
-`read_content_v1` descriptor, `read_transcript` authority, and a pinned
-execution generation; it is refused on the ordinary `ctl/` read rail. The
-viewer must already be paired with that machine and have send permission for
-changes. That viewer permission is authority to ask the
-machine to act; the peer Principal is established separately by the pinned
-machine signature, exact grant, Cloud authorization and generation checks.
+The receiver claims a durable request receipt before the inbox effect, then
+rechecks authority at the effect boundary. Exact repeats replay a completed
+receipt; conflicting repeats are refused; orphaned claims remain unknown.
+The source outbox distinguishes socket submission and relay delivery from
+target execution. `peer_ack` can report `delivered`, `machine_offline`, or
+`unknown` about relay delivery; none proves that a target Agent observed or
+acknowledged the work. The target inbox and durable receipt provide local
+execution and Session delivery evidence.
 
-## Receipts and unknown outcomes
-
-The receiver claims the daemon's persistent `request_receipts` record under
-scope `cloud.agent_handoff` before the inbox effect. The actor is the
-source/target machine and Session tuple; the request digest binds generations,
-grant, operation and body digest. Exact repeats replay a completed receipt;
-changed repeats conflict; orphaned claims report unknown and never rerun the
-effect. The source stores its request and relay evidence in a separate local
-outbox. `peer_ack` can say `delivered`, `machine_offline` or `unknown` about
-relay socket delivery only. `machine_offline` does not queue work for later.
-
-The current private wire has no target-machine-to-source execution receipt
-frame. A source result therefore leaves target execution, Session delivery,
-Agent observation and Agent acknowledgement `unknown`. The target's durable
-receipt and inbox provide local execution and Session delivery evidence; no
-Console inbox read fills Agent observation or acknowledgement. The inbox API
-returns the saved target receipt beside each item, so a person can distinguish
-machine execution and Session delivery from an Agent's later observation. A timeout or
-unknown relay result must be checked by the original request ID, not retried
-with a new ID.
-
-## Verification boundary
-
-The public tests cover request validation, E2EE bytes, signed pair pins,
-local revocation, generation refusal and durable receipt replay. A production
-claim also requires a deployed private peer rail and a two-machine end-to-end
-check; a local test or a relay `delivered` ack cannot replace that check.
-
-## Isolated two-machine acceptance run
-
-Use two disposable machines or VMs with separate process namespaces, `A`
-(source) and `B` (target), connected to a dedicated test Cloud account. Use
-the candidate public daemon and private peer API/relay on both. Never copy a
-machine state directory or signing key to the other machine, and do not use a
-person's existing Sessions. Keep an absolute, private `CLAWDLINE_NEXT_DIR` on
-each machine for the whole run, including daemon restarts; choose its path
-once and record it with the test evidence. Set `CLAWDLINE_NEXT_PORT` to an
-unused loopback port on each machine. Record each `serve` PID and stop only
-that PID. The existing production daemon and port 7727 are outside this run.
-
-1. On both machines, set those two environment variables and start one
-   disposable `tmux new-session -d -s peer-e2e` pane. Run `clawdline sessions
-   --json` against each isolated daemon after it starts. Continue only when
-   both panes appear as current Sessions with the same visible `peer-e2e`
-   name but separate machine and Session IDs and nonempty, 32-character
-   lowercase `execution_generation` values. Keep each pane alive for the
-   exchange. This checks that a shared display name does not select a target.
-2. Run `clawdline cloud login --name peer-e2e-source --wait 10m` on A and
-   `clawdline cloud login --name peer-e2e-target --wait 10m` on B, using their
-   own persistent directories. **A person must approve each device code in
-   the account browser.** Run `clawdline cloud on` and `clawdline cloud
-   commands on` on both, restart only the two fixture daemons, and wait for
-   `clawdline cloud status` to report connected. Record the two machine IDs.
-   For Console checks, pair the test viewer to both machines and give it
-   `send` and `read_transcript` as separate explicit permissions; the
-   browser pairing and grant step also needs the person. Confirm each
-   descriptor advertises `machine.read_content_v1` before reading an inbox.
-3. Read `clawdline cloud peer fingerprint` on A and B at their own consoles.
-   Compare each displayed value over that independent view, record both
-   values, then on A run `clawdline cloud peer start <B-machine-id>
-   <B-fingerprint>`. Record its pair ID. On B run `clawdline cloud peer
-   accept <pair-id> <A-fingerprint>`; on A run `clawdline cloud peer sync
-   <pair-id> <B-fingerprint>`. Refuse to continue if either side shows a
-   different fingerprint or the signed transcript cannot be pinned.
-4. On B run `clawdline cloud peer grant <pair-id> <A-session-id>
-   <A-generation> <B-session-id> <B-generation> both`. Record the grant ID.
-   On A run `clawdline cloud peer grant-sync <grant-id>`. Restart both fixture
-   daemons without changing their state directories, verify that their
-   fingerprints and Session generations are still current, and use the same
-   pair and grant. This tests durable identity, pins and grants.
-5. On A run `clawdline cloud peer send <grant-id> <A-session-id>
-   <A-generation> <B-machine-id> <B-session-id> <B-generation> message
-   fixture-message-1` and then the same command with `handoff
-   fixture-handoff-1`. Record both request IDs. Read each with `clawdline
-   cloud peer outbox <request-id>` on A; this reports relay acceptance and
-   socket delivery only. Read `clawdline cloud peer inbox <B-session-id>
-   <B-generation>` on B and follow any printed `before-request-id` command
-   until both items appear. Check their exact source and target triples, kind,
-   body and durable target receipt. The target receipt may prove machine
-   execution and Session delivery; Agent observation and acknowledgement
-   remain unknown. Repeat the read in the Console's fixed B Session detail
-   using its `r/` rail, and confirm an unpaired or `read_transcript`-denied
-   viewer cannot read it.
-6. On B run `clawdline cloud peer revoke-grant <grant-id>`. Attempt another
-   send from A with the old grant and a fresh body. It must be refused before
-   a new B inbox item appears. Restore a fresh grant only if needed to test
-   generation replacement; then end B's fixture pane and create another
-   same-named pane. A request pinned to the former B Session or generation
-   must be refused, without a new inbox item. A relay `delivered` status alone
-   does not override either denial. Finally revoke the pair on B and A with
-   `clawdline cloud peer revoke-pair <pair-id>` and verify that no old grant
-   or ciphertext can reestablish admission.
-
-Capture redacted machine IDs, Session IDs, generations, fingerprint comparison
-result, pair/grant IDs, request IDs, both local receipts, typed refusals and
-the Console read gate. Keep credentials, keys, message bodies from real work
-and browser approval URLs out of the report. For cleanup, turn Cloud off in
-both fixture configurations, stop only the recorded fixture daemon PIDs,
-kill only the two `peer-e2e` tmux sessions, revoke both test machines and the
-test viewer in the Cloud account, and remove the two dedicated state
-directories only after the redacted evidence is saved. A browser approval
-that was not completed is a blocked preflight, not a failed peer exchange.
+A two-machine production acceptance run needs two isolated machine identities
+under a dedicated Cloud account, each with its own persistent state directory,
+current Session and verified browser pairing. Turn on their connection in the
+hosted page and confirm both machines report both directed pairs. Send a
+message and a handoff from A to B, then reverse the direction using different
+Sessions. Verify both target inboxes and their durable receipts. Replace a
+target execution and check that an old targeted request is refused. Turn the
+switch off, verify local and Cloud revocation, then attempt a fresh send in
+both directions; neither may create an inbox item. Keep the fixture daemons
+and port 7727 separate, stop only their recorded PIDs, and do not mistake a
+relay `delivered` ack or a healthy API for completed target execution. The
+private API and relay protocol is specified in the Cloud repository's
+`docs/PEER-ROUTING.md`.
