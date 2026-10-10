@@ -34,6 +34,20 @@ export interface MachineListPresentation extends SessionListPresentation {
 }
 
 /** Keep a prior list reading for the same execution, unless fresh ss/ contradicts its state. */
+/**
+ * The key one machine's pinned list is re-read on.
+ *
+ * The pinned read is what carries titles, icons and work notes, and the fleet
+ * list asks for it again whenever this changes. `presentationGeneration` is
+ * the machine's display facts as one id; a machine that does not send it is
+ * one whose `snapshotGeneration` still moves with every display change, so
+ * that is the fallback, and the observation time is the fallback for a reading
+ * with neither.
+ */
+export function presentationPass(reading: Extract<MachineSessionProjection, { kind: "ready" }>): string {
+  return reading.presentationGeneration ?? reading.snapshotGeneration ?? String(reading.observedAt)
+}
+
 export function displayedPresentationStatus(row: ProjectedSession,
   presentation: SessionListPresentation | undefined): Partial<SessionRow> | undefined {
   const status = presentation?.status
@@ -85,7 +99,17 @@ export type FleetDetailProblem = { text: string; action?: { label: string; run: 
 export type ProjectionProblem = "offline" | "stale" | "unknown" | "old_version" | "no_permission" | "unresponsive" | "event_gap" | "bad_projection"
 
 export type MachineSessionProjection =
-  | { kind: "ready"; complete: true; observedAt: number; snapshotGeneration?: string; rows: ProjectedSession[]; unknownTargets?: number }
+  /**
+   * `presentationGeneration` is the machine's display facts as one id, and the
+   * fleet list re-reads its pinned machine list when it changes. It used to key
+   * that read on `snapshotGeneration`, which moved with every display change
+   * because the machine drew a fresh pass id for each one; a machine that
+   * states the pass id of a *set* keeps it still while a work line moves, so
+   * the list needs this to know a title or work note may have changed. Absent
+   * against a machine that does not send it, and the key falls back.
+   */
+  | { kind: "ready"; complete: true; observedAt: number; snapshotGeneration?: string; presentationGeneration?: string;
+      rows: ProjectedSession[]; unknownTargets?: number }
   | { kind: "unavailable"; reason: ProjectionProblem; observedAt?: number; rows?: ProjectedSession[]; retryAt?: number;
       complete?: true; snapshotGeneration?: string; unknownTargets?: number }
 

@@ -5,7 +5,7 @@ import { ProjectedRow } from "../session/List.js"
 import type { OrderHold } from "../session/order.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
 import { ScheduleSection } from "../pages/schedules.js"
-import { destinationKey, displayedPresentationStatus, projectionRefreshAt, settleProjection,
+import { destinationKey, displayedPresentationStatus, presentationPass, projectionRefreshAt, settleProjection,
   type MachineSessionProjection, type ProjectionProblem, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource, type FleetMachine } from "./all-machine-sessions.js"
 import { STATUS_FRESH_MS } from "./status-projection.js"
@@ -122,7 +122,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     const reading = readings[machine.id]
     return reading?.phase === "settled" && reading.value.kind === "ready" &&
       reading.value.rows.some((row) => row.freshness === "current")
-      ? [{ machineID: machine.id, pass: reading.value.snapshotGeneration ?? String(reading.value.observedAt) }] : []
+      ? [{ machineID: machine.id, pass: presentationPass(reading.value) }] : []
   })
   const passesKey = presentationMachines.map(({ machineID, pass }) => machineID + ":" + pass).join("\0")
   useEffect(() => {

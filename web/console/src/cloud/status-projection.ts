@@ -89,7 +89,10 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     observedAt: Number(marker.at) * 1000, snapshotGeneration: marker.snapshot_generation as string,
     rows: rows.map((row) => ({ ...row, freshness: "stale" })), unknownTargets }
   return { kind: "ready", complete: true, observedAt: Number(marker.at) * 1000,
-    snapshotGeneration: marker.snapshot_generation as string, rows, unknownTargets }
+    snapshotGeneration: marker.snapshot_generation as string,
+    presentationGeneration: typeof marker.presentation_generation === "string" &&
+      /^[0-9a-f]{32}$/u.test(marker.presentation_generation) ? marker.presentation_generation : undefined,
+    rows, unknownTargets }
 }
 
 /** One exact retained row whose absence prevents this marker from settling. */

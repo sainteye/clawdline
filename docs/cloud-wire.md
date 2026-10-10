@@ -518,7 +518,11 @@ Go daemon 另外發布 `ss/<machine>/<session>`。每個 JSON 僅有 `machine_id
 
 `waiting_for_reply` 是額外的正面布林訊號：只有當前 `waiting` 列真的帶選項，且 `screen_reading=read` 證實畫面選單，或 `screen_reading=unavailable`、`menu.source=transcript` 證實仍開啟的單題問句時才為 true。投影只帶布林，不帶問句與選項文字。只有 `state=waiting` 或 `work_person_needed` 不足以推論問句；缺欄表示無法分類。
 
-狀態清單標記放在 `ss/<machine>/__clawdline_inventory_v1__`，其 JSON 是 `inventory:{version:1,sessions:[終端 ID]}`、`at`（Unix 秒）、`complete`（布林）及隨機 128-bit 的 `snapshot_generation`。每批狀態列都帶相同值，viewer 必須丟棄與標記不符的舊快取列；狀態集合改變或 heartbeat 時整批列先發、標記後發。舊 relay 拒絕 `ss/` 時，新頻道自行重試，不阻斷既有 `s/` 標記。狀態列的 `source.observed_at`、`projected_at` 與 `last_movement_at` 都是 Unix 秒，`no_progress_after_ms` 是毫秒。
+狀態清單標記放在 `ss/<machine>/__clawdline_inventory_v1__`，其 JSON 是 `inventory:{version:1,sessions:[終端 ID]}`、`at`（Unix 秒）、`complete`（布林）、128-bit 的 `snapshot_generation`，以及同樣 128-bit 的 `presentation_generation`。同一組的每個狀態列都帶相同的 `snapshot_generation`，viewer 必須丟棄與標記不符的舊快取列。舊 relay 拒絕 `ss/` 時，新頻道自行重試，不阻斷既有 `s/` 標記。狀態列的 `source.observed_at`、`projected_at` 與 `last_movement_at` 都是 Unix 秒，`no_progress_after_ms` 是毫秒。
+
+`snapshot_generation` 是**這一組的身分**：被列出的終端 ID，加上每一列所代表的 `execution_generation`。兩者都沒變時它不變，所以沒變化的狀態列不重發，relay 留存的那一列就是最新標記所指的那一列；Session 關閉會離開集合，重新執行會帶新的執行世代，兩種情況下這個值都會變，而且每一列都先帶著新值發出、標記才發。這就是標記存在的理由：relay 快取的列不能只因終端 ID 相同就滿足另一組的標記。每一列各有自己的視窗（`internal/domain/capacity` 的 `cloud.session_row_volatile_seconds`），加上 240 秒 heartbeat。2026-10-10 量到的理由：這台機器最忙的一小時發出 3,725 個 `ss/` frame，只為 13 個 Session，其中九成是 viewer 已經持有的內容；改成逐列後，十個 Session（2 工作、8 閒置）半小時的重播從 1,331 降到 337 個 frame（`session_status_coalesce_test.go`）。
+
+`presentation_generation` 是機器端顯示事實（工作行、work state、shell、attention 等）的雜湊，本身不含內容。viewer 看到它變才重讀該機器的 pinned 清單（標題、圖示、work note）。這一欄是可加的：沒有這一欄的頁面沿用 `snapshot_generation` 當重讀鍵，而沒有這一欄的機器其 `snapshot_generation` 本來就隨每次顯示變動而變，所以新頁面對舊機器會退回同樣的行為（`web/console/src/cloud/all-machine-sessions.ts` 的 `presentationPass`）。
 
 因為列先發、標記後發，瀏覽器逐封開啟時，同一批還沒到齊的那幾毫秒裡會同時持有「新一批的列」與「舊一批的標記」。固定世代讀取遇到這種 `pass_mismatch` 時，頁面會等這台機器的下一個標記（最多 `PASS_SETTLE_MS`，2 秒）再判斷一次；等不到仍照舊拒絕，且不送出任何請求（`web/console/src/cloud/relay-reader.ts` `coherentSession`）。2026-10-10 以一小時、每 15 秒一批、十個 Session 重播：封包間隔 20 ms 時頁面原本自己拒絕 2 次、50 ms 時 7 次，修正後皆為 0（`read-replay.test.ts`）。
 
