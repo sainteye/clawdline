@@ -261,11 +261,11 @@ the person decided on 2026-10-09 to run one week with it off and compare it with
 **Off, no Apple Event is sent to list iTerm2's sessions, read their screens, type into them, press
 keys in them, interrupt them or close them.** Those actions on an iTerm2 session are refused
 before anything is sent, with "iTerm2 scanning is turned off in Settings". The iTerm2 source
-answers `disabled: setting` instead of a list: the session list says in one line that iTerm2
-scanning is off, an assistant in a tab opened by hand is shown only with what the process table
-knows, and nothing about those tabs is concluded — no tab is called gone, and no last reading is
-kept and aged into `missing`. Sessions in tmux, including every session Clawdline opens with tmux
-installed, are read and typed into as usual.
+answers `disabled: setting` instead of a list. The session list does not repeat the setting back
+at the person who made it: it says nothing about iTerm2, an assistant in a tab opened by hand is
+shown with what the process table knows, and nothing about those tabs is concluded — no tab is
+called gone, and no last reading is kept and aged into `missing`. Sessions in tmux, including
+every session Clawdline opens with tmux installed, are read and typed into as usual.
 
 **Still sent, one Apple Event each, when off:** opening the iTerm2 viewer tab for a tmux session
 (above), **Reveal**, and closing a dispatched child's tab that this daemon opened itself. Each is

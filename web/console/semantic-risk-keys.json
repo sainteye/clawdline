@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 4937,
+  "englishKeys": 4936,
   "counts": {
-    "negation": 1425,
+    "negation": 1424,
     "state": 686,
     "permission": 271,
     "deletion": 90,
     "uncertainty": 144
   },
-  "unionCount": 2155,
+  "unionCount": 2154,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -1289,7 +1289,6 @@
       "resourceCoordination.none",
       "resourceCoordination.prompt",
       "resourceCoordination.unavailable",
-      "session.itermScanOff",
       "settings.settingsCodexAutoNameHint",
       "settings.settingsCodexDefaultEffortHint",
       "settings.settingsCompactWindowHint",
@@ -4526,7 +4525,6 @@
     "resourceCoordination.unknown",
     "session.attentionAria",
     "session.attentionText",
-    "session.itermScanOff",
     "settings.settingsAgentNotify",
     "settings.settingsCodexAutoNameHint",
     "settings.settingsCodexDefaultEffortHint",
