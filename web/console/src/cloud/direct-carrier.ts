@@ -50,8 +50,9 @@ export interface CarrierClient {
   retired: boolean
   /** Publishes one signed `carrier_offer` and resolves with the machine's answer. */
   publishCarrierOffer(machine: string, offer: CarrierOffer): Promise<CarrierAnswer>
-  /** Hands one envelope that arrived on the carrier to the read machinery. */
-  receiveCarrierEnvelope(machine: string, envelope: TerminalEnvelope): void
+  /** Hands one envelope that arrived on the carrier to the read machinery, with the channel it
+   *  arrived on: the machine's envelope sequence is that channel's own. */
+  receiveCarrierEnvelope(machine: string, envelope: TerminalEnvelope, channelGeneration: number): void
   /** Whether this machine's own descriptor says it opens carriers. */
   carrierSupported(machine: string): boolean
 }
@@ -86,6 +87,16 @@ export class DirectCarrier implements SharedCarrier {
   private link: DirectLink | null = null
   /** Set while this carrier's own negotiation is in flight, so two reads make one offer. */
   private opening: Promise<boolean> | null = null
+  /**
+   * How many channels this carrier has had, counted from one.
+   *
+   * The machine numbers a carrier's envelopes per peer (`directPeer.carrierSeq`), so a channel
+   * that replaced another starts again at one. Measured on 2026-10-11: a reader that kept one
+   * sequence floor per machine read every answer on the second channel as a replay, dropped it,
+   * and the read waiting for it timed out on a carrier that was open — which nothing falls back
+   * from, because nothing had failed. The floor belongs to the channel, and this is its name.
+   */
+  private gen = 0
   private retryAt = 0
   private receipts = false
   private readonly listeners = new Map<"terminal" | "session", (envelope: TerminalEnvelope) => void>()
@@ -110,6 +121,8 @@ export class DirectCarrier implements SharedCarrier {
   }
 
   get open(): boolean { return !!this.link?.open }
+  /** Which channel this carrier is on. A read answer's sequence is only a number within it. */
+  get channelGeneration(): number { return this.gen }
   /** True when a borrowing terminal may ask for its everyday receipts on the DC. */
   get directReceipts(): boolean { return this.open && this.receipts }
   supported(): boolean { return !!this.peers && this.client.carrierSupported(this.machine) }
@@ -153,8 +166,7 @@ export class DirectCarrier implements SharedCarrier {
       const answer = await this.client.publishCarrierOffer(this.machine, { request, connection, keyID, key, sdp })
       await link.answer(await openCarrierAnswer(key, connection, answer.sdpSealed))
       if (!link.open) throw fail("carrier_not_open")
-      this.link = link
-      this.receipts = answer.directReceipts
+      this.install(link, answer.directReceipts)
       return true
     } catch (error) {
       link.close("carrier_failed")
@@ -175,8 +187,27 @@ export class DirectCarrier implements SharedCarrier {
    */
   adopt(link: DirectLink, directReceipts: boolean): void {
     if (this.link && this.link !== link) this.link.close("carrier_replaced")
+    this.install(link, directReceipts)
+  }
+
+  /** One channel becomes this carrier's, and counts its envelopes from one. */
+  private install(link: DirectLink, directReceipts: boolean): void {
     this.link = link
     this.receipts = directReceipts
+    this.gen++
+  }
+
+  /**
+   * The reader could not accept what this channel delivered, so the channel goes.
+   *
+   * An open carrier whose envelopes a page refuses answers no read ever again, and because
+   * nothing failed nothing falls back: closing it is what tells the machine and what hands the
+   * reads it is holding back to the relay. A number from a channel this carrier has already
+   * replaced says nothing about the one in use, and closes nothing.
+   */
+  failed(channelGeneration: number, code: string): void {
+    if (channelGeneration !== this.gen) return
+    this.close(code)
   }
 
   /** One envelope an adopted link delivered, routed as this carrier's own would be. */
@@ -208,7 +239,7 @@ export class DirectCarrier implements SharedCarrier {
     const audience = typeof envelope?.ch === "string" ? carrierAudience(envelope.ch) : null
     if (!audience) return
     if (audience === "session") {
-      this.client.receiveCarrierEnvelope(this.machine, envelope)
+      this.client.receiveCarrierEnvelope(this.machine, envelope, this.gen)
       return
     }
     this.listeners.get("terminal")?.(envelope)

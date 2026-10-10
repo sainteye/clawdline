@@ -20,7 +20,8 @@ function carrierClient(carrier) {
     readTimeoutMs: 60_000, subscriptionLimit: 8, subscriptionIdleMs: 30_000,
     readWaiters: new Map(), pinnedReadProofs: new Map(), pendingBySequence: new Map(),
     carrierReads: new Map(), carrierSequences: new Map(), carrierCapabilities: new Map(),
-    carrierWatched: new WeakSet(), machineOffline: new Map(), machineLacks: new Map(),
+    carrierWatched: new WeakSet(), carrierMachines: new Set(),
+    machineOffline: new Map(), machineLacks: new Map(),
     orchestratorSnapshots: new Map(), machineDescriptors: new Map(), macCapabilities: new Map(),
     socketSubscriptions: new Map(), subscriptionHolds: new Map(), pendingSubscriptions: new Set(),
     resubscribes: new Map(), transcriptSnapshots: new Map(), sessionSequenceByKey: new Map(),
@@ -50,12 +51,40 @@ function carrierClient(carrier) {
 function openCarrier() {
   const down = []
   return {
-    open: true, written: [], down,
+    open: true, written: [], down, closed: null, generation: 1,
     whenDown(listener) { down.push(listener); return () => { } },
     send(envelope) { this.written.push(envelope) },
     async ensure() { return this.open },
     current() { return this.open ? {} : null },
+    // The real carrier's close: the channel goes, and everyone waiting on it is told once.
+    close(code = "carrier_closed") {
+      if (this.closed) return
+      this.closed = code
+      this.open = false
+      for (const listener of [...down]) listener(code)
+    },
+    failed(generation, code) { if (generation === this.generation) this.close(code) },
   }
+}
+
+/** The carrier path with real envelopes: everything but the pairing and the snapshot is the reader's own. */
+async function sealedClient() {
+  const signing = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])
+  const raw = new Uint8Array(32).fill(7)
+  const masterKey = await importMasterSecret(raw)
+  const carrier = openCarrier()
+  const client = carrierClient(carrier)
+  const applied = []
+  Object.assign(client, {
+    _machinePairing: async () => ({ masterKey, keyID: "mk", senderKey: signing.publicKey, senderID: "m" }),
+    _compareKeyID() { },
+    _sawAuthenticatedEnvelope() { },
+    _applySnapshot(channel, payload) { applied.push([channel.kind, payload?.read]) },
+    _recordReceiveFailure(error) { applied.push(["failed", error.code ?? error.message]) },
+  })
+  const envelope = (seq, read) => sealEnvelope({ ch: "t/m/s", seq, ts: 1, class: "stream",
+    key_id: "mk", sender: "m" }, JSON.stringify({ read, status: 200 }), masterKey, signing.privateKey)
+  return { client, carrier, applied, envelope, masterKey, signing, raw }
 }
 
 const read = (client) => client._read({ machine: "m", session: "s" }, "transcript",
@@ -74,9 +103,11 @@ test("a read on an open carrier spends no relay subscription channel", async () 
   client._settleRead(KEY, { entries: [] }, null)
   assert.deepEqual(await answer, { entries: [] })
 
-  // Nothing is left behind: the next read of the same session is not refused as busy.
+  // Nothing is left behind: the next read of the same session is not refused as busy, and the
+  // flight the carrier was given does not outlive the answer it was waiting for.
   assert.equal(client.readWaiters.size, 0)
   assert.equal(client.pendingBySequence.size, 0)
+  assert.equal(client.carrierReads.size, 0)
 })
 
 test("fault injection: a carrier that dies holding a read has it asked again on the relay", async () => {
@@ -139,38 +170,93 @@ test("a machine that says nothing about carriers is never offered one, and its r
 })
 
 test("the carrier numbers its envelopes apart from the relay, so a low one is not a replay", async () => {
-  const signing = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])
-  const raw = new Uint8Array(32).fill(7)
-  const masterKey = await importMasterSecret(raw)
-  const senderKey = signing.publicKey
-  const client = carrierClient(openCarrier())
-  const applied = []
-  Object.assign(client, {
-    _machinePairing: async () => ({ masterKey, keyID: "mk", senderKey, senderID: "m" }),
-    _compareKeyID() { },
-    _sawAuthenticatedEnvelope() { },
-    _applySnapshot(channel, payload) { applied.push([channel.kind, payload?.read]) },
-    _recordReceiveFailure(error) { applied.push(["failed", error.code ?? error.message]) },
-  })
-  const envelope = async (seq, read) => sealEnvelope({ ch: "t/m/s", seq, ts: 1, class: "stream",
-    key_id: "mk", sender: "m" }, JSON.stringify({ read, status: 200 }), masterKey, signing.privateKey)
+  const { client, applied, envelope, masterKey, signing, raw } = await sealedClient()
 
   // The relay's sender sequence is far ahead; the carrier's own starts at one.
   client.sequenceBySender = new Map([["m", 900]])
-  await client.receiveCarrierEnvelope("m", await envelope(1, "transcript"))
-  await client.receiveCarrierEnvelope("m", await envelope(2, "info.full"))
+  await client.receiveCarrierEnvelope("m", await envelope(1, "transcript"), 1)
+  await client.receiveCarrierEnvelope("m", await envelope(2, "info.full"), 1)
   assert.deepEqual(applied, [["transcript", "transcript"], ["transcript", "info.full"]])
-  assert.equal(client.carrierSequences.get("m"), 2)
 
   // Its own sequence still has to advance.
   applied.length = 0
-  await client.receiveCarrierEnvelope("m", await envelope(2, "transcript"))
+  await client.receiveCarrierEnvelope("m", await envelope(2, "transcript"), 1)
   assert.deepEqual(applied, [["failed", "replay"]])
 
   // A channel the carrier may not carry is refused whatever its signature says.
   applied.length = 0
   await client.receiveCarrierEnvelope("m", await sealEnvelope({ ch: "s/m/s", seq: 9, ts: 1,
-    class: "stream", key_id: "mk", sender: "m" }, "{}", masterKey, signing.privateKey))
+    class: "stream", key_id: "mk", sender: "m" }, "{}", masterKey, signing.privateKey), 1)
   assert.deepEqual(applied, [["failed", "bad_channel"]])
   assert.equal(bytesBase64(raw).length, 44)
+})
+
+test("a carrier the page replaced counts from one again, and its answers are not replays", async () => {
+  const { client, applied, envelope } = await sealedClient()
+
+  // Two answers on the carrier this page opened first.
+  await client.receiveCarrierEnvelope("m", await envelope(1, "transcript"), 1)
+  await client.receiveCarrierEnvelope("m", await envelope(2, "info.full"), 1)
+  assert.deepEqual(applied, [["transcript", "transcript"], ["transcript", "info.full"]])
+
+  // That channel died without this page hearing it go, and the page opened another. The machine
+  // counts per peer, so the new channel's first answer is number one again. Measured on
+  // 2026-10-11: a floor kept per machine read it as a replay, the answer was dropped, and the
+  // read that was waiting for it timed out on a carrier that was open — which nothing falls
+  // back from, because nothing had failed.
+  applied.length = 0
+  await client.receiveCarrierEnvelope("m", await envelope(1, "transcript"), 2)
+  assert.deepEqual(applied, [["transcript", "transcript"]])
+
+  // The channel that was replaced cannot push the floor back under the one in use.
+  applied.length = 0
+  await client.receiveCarrierEnvelope("m", await envelope(9, "transcript"), 1)
+  assert.deepEqual(applied, [["failed", "replay"]])
+
+  // And the one in use still has to advance.
+  applied.length = 0
+  await client.receiveCarrierEnvelope("m", await envelope(1, "transcript"), 2)
+  assert.deepEqual(applied, [["failed", "replay"]])
+})
+
+test("fault injection: a carrier whose answer this page cannot accept is closed, and the read is asked again on the relay", async () => {
+  const { client, carrier, applied, envelope } = await sealedClient()
+  const answer = read(client)
+  await flush()
+  assert.equal(client.sent.length, 1)
+  assert.equal(client.sent[0].carrier, carrier)
+
+  // The machine's pairing is gone from under this page, so what the carrier delivers cannot be
+  // opened. An open carrier whose envelopes this page refuses answers no read ever again, so it
+  // is closed rather than left in place: closing it is what tells the machine, and what hands
+  // every read it was holding back to the relay.
+  client._machinePairing = async () => null
+  await client.receiveCarrierEnvelope("m", await envelope(1, "transcript"), 1)
+  await flush()
+  assert.deepEqual(applied, [["failed", "machine_not_paired"]])
+  assert.equal(carrier.closed, "carrier_unusable")
+  assert.deepEqual([...client.subscribed], [{ type: "subscribe", channels: ["t/m/s"] }])
+  assert.deepEqual(client.sent.map((row) => row.carrier === null), [false, true],
+    "the read was not asked again on the relay")
+  client._settleRead(KEY, { entries: ["from the relay"] }, null)
+  assert.deepEqual(await answer, { entries: ["from the relay"] })
+})
+
+test("a client that renews its credentials lets go of its carrier, so the machine hears it go", () => {
+  const carrier = openCarrier()
+  const client = carrierClient(carrier)
+  Object.assign(client, {
+    handlers: null, readyWaiters: [],
+    _forgetSocketSubscriptions() { }, _disarmViewerEvents() { }, _closeTabChannel() { },
+    _settleReady() { }, _endSessionRecovery() { }, _failAllReads() { },
+  })
+  assert.ok(client._carrierFor("m"))
+
+  // A renewal hands the page to a replacement client, which opens its own carrier. The machine
+  // keeps one carrier per viewer and has no idle bound, so the retired client's channel has to
+  // go with it: measured on 2026-10-11, a channel left behind by a renewal was still held by the
+  // machine, and the replacement's offer was refused as busy.
+  client.retire()
+  assert.equal(carrier.closed, "carrier_client_retired")
+  assert.equal(client.retired, true)
 })

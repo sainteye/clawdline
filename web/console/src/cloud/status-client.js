@@ -102,6 +102,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     this.carrierReads = new Map()
     this.directCarriers = null
     this.carrierWatched = new WeakSet()
+    this.carrierMachines = new Set()
     this.classicSessionMachine = null
     this.classicSessionReads = new Map()
     this.classicSessionAttempted = new Map()
@@ -285,6 +286,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     try { carrier = this.directCarriers.for(machine) } catch { return null }
     if (carrier && !this.carrierWatched.has(carrier)) {
       this.carrierWatched.add(carrier)
+      this.carrierMachines.add(machine)
       carrier.whenDown(() => this._carrierDown(machine))
     }
     return carrier
@@ -366,8 +368,12 @@ export class StatusCloudClient extends CatalogCloudClient {
    * carriers cannot share one counter: the answer that took the short path would arrive in front
    * of a relay envelope with a lower number and that envelope would be read as a replay. The
    * machine counts separately for the same reason (`directPeer.carrierSeq`).
+   *
+   * It counts per peer, so the floor is kept per channel and not per machine: a carrier that
+   * replaced another starts at one again, and one number is only comparable with another from
+   * the same channel (`DirectCarrier.channelGeneration`).
    */
-  async receiveCarrierEnvelope(machine, envelope) {
+  async receiveCarrierEnvelope(machine, envelope, channelGeneration = 0) {
     const probe = { stage: "channel_parse", original: null, cause: null, senderKeyFound: null,
       senderKeySource: null, senderKeyLookupMs: null, routedMachine: machine,
       pairing: undefined, pairingSource: null, pairingLookupMs: null, pairingFoundBefore: null }
@@ -388,10 +394,11 @@ export class StatusCloudClient extends CatalogCloudClient {
       const clear = await openEnvelope(envelope, pairing.masterKey, pairing.senderKey, probe)
       probe.stage = "sequence"
       const previous = this.carrierSequences.get(machine)
-      if (previous !== undefined && envelope.seq <= previous) {
+      if (previous !== undefined && (previous.channel > channelGeneration ||
+        (previous.channel === channelGeneration && envelope.seq <= previous.seq))) {
         throw refused("replay", "the carrier sequence did not advance")
       }
-      this.carrierSequences.set(machine, envelope.seq)
+      this.carrierSequences.set(machine, { channel: channelGeneration, seq: envelope.seq })
       probe.stage = "payload"
       const payload = clear.length ? JSON.parse(decoder.decode(clear)) : null
       this.machineOffline?.delete(machine)
@@ -400,6 +407,12 @@ export class StatusCloudClient extends CatalogCloudClient {
       this._applySnapshot(channel, payload, envelope, false)
     } catch (error) {
       this._recordReceiveFailure(error, envelope, false, probe)
+      // This channel delivered something this page cannot use, and it will deliver the next
+      // answer the same way. Nothing has failed from the read's point of view — the carrier is
+      // open and its request was written to it — so it is this that has to end the channel, and
+      // closing it is what asks every read it holds again on the relay.
+      try { this._carrierFor(machine)?.failed(channelGeneration, "carrier_unusable") }
+      catch { /* a carrier this page no longer has is already gone */ }
     }
   }
 
@@ -638,7 +651,35 @@ export class StatusCloudClient extends CatalogCloudClient {
 
   _settleRead(key, body, error) {
     this.pinnedReadProofs?.delete(key)
+    this.carrierReads?.delete(key)
     return super._settleRead(key, body, error)
+  }
+
+  /**
+   * A renewal hands the page to a replacement client, and this one's carrier goes with it.
+   *
+   * The machine keeps one carrier per viewer and gives it no idle bound, so a channel a retired
+   * client leaves open is a channel the machine still believes in: measured on 2026-10-11, the
+   * replacement's offer was refused as busy and that page read over the relay for the rest of
+   * its life. The machine supersedes such a carrier now, and this is the other half of it — the
+   * page says so itself rather than leaving the machine to work it out.
+   */
+  retire() {
+    this._closeCarriers("carrier_client_retired")
+    return super.retire()
+  }
+
+  /** The cloud connection was stopped on purpose: no read is waiting for the short path. */
+  stop() {
+    this._closeCarriers("carrier_client_stopped")
+    return super.stop()
+  }
+
+  _closeCarriers(code) {
+    for (const machine of [...this.carrierMachines]) {
+      try { this._carrierFor(machine)?.close(code) } catch { /* already gone */ }
+    }
+    this.carrierMachines.clear()
   }
 
   openDetail(destination) {
