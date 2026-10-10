@@ -29,12 +29,17 @@
 .cloud-peer-machine-reasons { display: grid; gap: 2px; }
 .cloud-peer-access-sheet .cloud-peer-machine-switch { flex: none; width: 60px; height: 44px; min-height: 44px;
   padding: 5px 3px; border: 0; background: transparent; }
-.cloud-peer-machine-switch span { display: block; width: 52px; height: 32px; padding: 4px;
+.cloud-peer-access-sheet .cloud-peer-machine-switch:hover:not(:disabled) { border-color: transparent; background: transparent; }
+.cloud-peer-machine-switch span { position: relative; display: block; width: 52px; height: 32px; padding: 4px;
   border: 1px solid var(--line); border-radius: 999px; background: var(--card-hi); transition: background .15s; }
 .cloud-peer-machine-switch span::after { content: ""; display: block; width: 22px; height: 22px; border-radius: 50%;
   background: var(--dim); transition: transform .15s, background .15s; }
-.cloud-peer-access-sheet .cloud-peer-machine-switch[aria-checked="true"] span { background: var(--peer-in); border-color: var(--peer-ed); }
-.cloud-peer-machine-switch[aria-checked="true"] span::after { transform: translateX(20px); background: var(--peer); }
+.cloud-peer-machine-switch svg { position: absolute; z-index: 1; top: 8px; right: 8px; width: 16px; height: 16px;
+  color: var(--bg); opacity: 0; pointer-events: none; transition: opacity .15s; }
+.cloud-peer-access-sheet .cloud-peer-machine-switch[aria-checked="true"] span {
+  background: rgba(95, 158, 115, .16); border-color: rgba(95, 158, 115, .55); }
+.cloud-peer-machine-switch[aria-checked="true"] span::after { transform: translateX(20px); background: var(--ok); }
+.cloud-peer-machine-switch[aria-checked="true"] svg { opacity: 1; }
 .cloud-peer-machine-unknown { flex: none; width: 60px; height: 44px; display: grid; place-items: center;
   color: var(--dim); font-size: 23px; }
 .cloud-peer-access-empty, .cloud-peer-access-message { margin: 0; padding: 18px 20px;

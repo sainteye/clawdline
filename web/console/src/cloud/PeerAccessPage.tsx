@@ -170,7 +170,10 @@ export function PeerAccessPage({ machines, current, active = true }: {
         {available ? <button role="switch" type="button" aria-checked={!!on} aria-label={nextWord("cloudPeerMachineSwitch", {
           first: name(first), second: name(second) })} disabled={!!busy}
           className="cloud-peer-machine-switch" onClick={() => void change(first, second, !on)}>
-          <span aria-hidden="true" /></button> : <span className="cloud-peer-machine-unknown" aria-hidden="true">—</span>}
+          <span aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" focusable="false">
+            <path d="m4.5 10 3.7 3.7 7.3-7.4" stroke="currentColor" strokeWidth="2.4"
+              strokeLinecap="round" strokeLinejoin="round" />
+          </svg></span></button> : <span className="cloud-peer-machine-unknown" aria-hidden="true">—</span>}
       </article>
     })}</div>}
     {message && <p className="cloud-peer-access-message" role="alert">{message}</p>}
