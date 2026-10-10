@@ -27,7 +27,22 @@ export interface ListedMachine {
 export type Opening =
   /** Nothing can be opened yet: stay on the list, and ask again when it changes. */
   | { at: "list" }
-  | { at: "console"; machine: string; fleet: boolean }
+  | {
+      at: "console"
+      machine: string
+      fleet: boolean
+      /**
+       * Whether this machine is a choice to write down for the next load.
+       *
+       * The fleet reads one machine underneath it, and that machine is this
+       * file's pick, not the person's. Recording it made the fleet last
+       * exactly one page load: the reload after it found a remembered machine
+       * and opened that machine alone. Only a machine the person actually
+       * named is remembered, and pressing "所有機器" forgets the last one
+       * (`CloudGate.tsx` `openAllSessions`).
+       */
+      remember: boolean
+    }
 
 export function openingFor(said: {
   machines: readonly ListedMachine[]
@@ -50,21 +65,21 @@ export function openingFor(said: {
   // An address names its machine, and only that machine will do: a Session
   // this browser cannot read yet is waited for, not replaced with another.
   if (said.addressed) {
-    return readable.includes(said.addressed.machine)
-      ? { at: "console", machine: said.addressed.machine, fleet: fleet && said.addressed.inFleet === true }
-      : { at: "list" }
+    if (!readable.includes(said.addressed.machine)) return { at: "list" }
+    const inFleet = fleet && said.addressed.inFleet === true
+    return { at: "console", machine: said.addressed.machine, fleet: inFleet, remember: !inFleet }
   }
 
   const remembered = said.remembered && readable.includes(said.remembered) ? said.remembered : null
   if (said.everyMachineAddressed && fleet) {
-    return { at: "console", machine: remembered ?? readable[0]!, fleet: true }
+    return { at: "console", machine: remembered ?? readable[0]!, fleet: true, remember: false }
   }
   // A tab that chose one machine keeps it. The choice is this tab's own
   // (`sessionStorage`), so a new tab has made none and gets the fleet.
-  if (remembered) return { at: "console", machine: remembered, fleet: false }
+  if (remembered) return { at: "console", machine: remembered, fleet: false, remember: true }
   // Nothing addressed, nothing chosen, and more than one machine to read:
   // the fleet, rather than a question.
-  if (fleet) return { at: "console", machine: readable[0]!, fleet: true }
+  if (fleet) return { at: "console", machine: readable[0]!, fleet: true, remember: false }
   // One machine and no choice recorded. The list is still the way in: its row
   // carries this machine's own name, its pairing and the way to forget it, and
   // a person who has never picked it has not yet seen any of that.
