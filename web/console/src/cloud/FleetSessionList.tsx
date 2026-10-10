@@ -6,10 +6,11 @@ import type { OrderHold } from "../session/order.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
 import { ScheduleSection } from "../pages/schedules.js"
 import { destinationKey, displayedPresentationStatus, projectionRefreshAt, settleProjection,
-  type MachineSessionProjection, type ProjectedSession, type ProjectionProblem, type SessionDestination,
+  type MachineSessionProjection, type ProjectionProblem, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource, type FleetMachine } from "./all-machine-sessions.js"
 import { STATUS_FRESH_MS } from "./status-projection.js"
 import { arrangeFleetRows, fleetWaitingKey } from "./fleet-order.js"
+import { matchesFleetFilter, type FleetFilter } from "./fleet-filters.js"
 
 export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal"
 type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionProjection }
@@ -31,7 +32,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const [presentationRevision, refreshPresentation] = useState(0)
   const [, redraw] = useState(0)
   const [machineAction, setMachineAction] = useState<MachineToolbarAction | null>(null)
-  const [attentionOnly, setAttentionOnly] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<FleetFilter>("all")
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const machineDialog = useRef<HTMLDialogElement | null>(null)
   const searchField = useRef<HTMLInputElement | null>(null)
@@ -175,7 +176,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const groups = machines.map((machine) => {
     const reading = readings[machine.id]
     const filtered = reading?.phase === "settled" && reading.value.rows
-      ? reading.value.rows.filter((row) => (!attentionOnly || needsAttention(row)) &&
+      ? reading.value.rows.filter((row) => matchesFleetFilter(row, statusFilter) &&
         (!search || `${machine.name} ${machine.id} ${machine.platform} ${presentations.current.get(destinationKey(row.destination))?.title ?? row.title} ${row.destination.sessionID} ${stateWord(row.state)}`
           .toLocaleLowerCase().includes(search))) : []
     const shown = filtered.map((row) => {
@@ -193,7 +194,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
       orderHolds.current.delete(machine.id)
     const rows = arrangeFleetRows(shown, titles, orderHolds.current.get(machine.id) ?? null)
     return { machine, reading, rows, waitingKey }
-  }).filter(({ machine, rows }) => (!attentionOnly || rows.length > 0) && (!search || rows.length > 0 ||
+  }).filter(({ machine, rows }) => (statusFilter === "all" || rows.length > 0) && (!search || rows.length > 0 ||
     `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search)))
   const freezeOrder = () => {
     for (const { machine, rows, waitingKey } of groups) {
@@ -247,8 +248,12 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     <div className="scroller list-scroll cloud-all-list-scroll" id="list-scroll" ref={listScroll}
       onMouseEnter={freezeOrder} onMouseLeave={thawOrder} onTouchStart={freezeOrder}
       onTouchEnd={() => window.setTimeout(thawOrder, 1200)}>
-      <button type="button" className="cloud-all-attention-filter" aria-pressed={attentionOnly}
-        onClick={() => setAttentionOnly((value) => !value)}>{nextWord("cloudAllAttention")}</button>
+      <div className="cloud-all-status-filters" role="group" aria-label={nextWord("cloudAllState")}>
+        <button type="button" className="cloud-all-status-filter" aria-pressed={statusFilter === "attention"}
+          onClick={() => setStatusFilter((value) => value === "attention" ? "all" : "attention")}>{nextWord("cloudAllAttention")}</button>
+        <button type="button" className="cloud-all-status-filter" aria-pressed={statusFilter === "working"}
+          onClick={() => setStatusFilter((value) => value === "working" ? "all" : "working")}>{nextWord("cloudAllStateWorking")}</button>
+      </div>
       <div className="cloud-all-groups">
         {groups.map(({ machine, reading, rows }) => <section key={machine.id} className="cloud-all-group"
           aria-label={`${machine.name} ${machine.id}`}>
@@ -322,9 +327,4 @@ function stateWord(state: string): string {
     case "idle": return nextWord("cloudAllStateIdle")
     default: return nextWord("cloudAllUnknown")
   }
-}
-
-function needsAttention(row: ProjectedSession): boolean {
-  return row.needsAttention === true || row.waitingForReply === true || row.completedUnconfirmed === true ||
-    row.closeBlocked === true || (row.failedAgentCount ?? 0) > 0 || row.noMovement === true
 }
