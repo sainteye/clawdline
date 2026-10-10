@@ -55,7 +55,8 @@ import { RelayReader } from "./relay-reader.js"
 import { FleetSessionList, type MachineToolbarAction } from "./FleetSessionList.js"
 import { CloudSessionSheets, type PendingMachineAction } from "./CloudSessionSheets.js"
 import { PeerRevocationPanel } from "./PeerHandoffPanel.js"
-import { destinationAvailable, destinationFragment, destinationFromFragment, destinationKey, type SessionContent,
+import { destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
+  supersedingDestination, type FleetDetailProblem, type SessionContent,
   type SessionDestination, type SessionProjectionSource } from "./all-machine-sessions.js"
 import { statusSource } from "./status-source.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
@@ -125,14 +126,33 @@ export function readDeclaration(declared: string): Declared {
     : { kind: "blocked", config }
 }
 
-function fleetContentProblemWord(reason: Extract<SessionContent, { kind: "unavailable" }>["reason"]): string {
+/**
+ * Why this Session's conversation is not on screen, and what the person can do
+ * about it. One place decides both, so no caller invents a sentence of its own.
+ *
+ * Each sentence names the machine holding the Session — not this browser and
+ * not Cloud — because "this machine cannot read it yet" left a person with no
+ * way to tell whose version was wrong or what to update. A reason that may
+ * pass on a second look carries the press that looks again; a replaced
+ * execution carries the one that opens the execution now running, and a
+ * Session that is gone carries the one that puts it away.
+ */
+function fleetDetailAnswer(reason: Extract<SessionContent, { kind: "unavailable" }>["reason"],
+  machine: string, running: SessionDestination | null,
+  presses: { open: (target: SessionDestination) => void; close: () => void; again: () => void }): FleetDetailProblem {
+  const again = { label: nextWord("cloudAllTryAgain"), run: presses.again }
   switch (reason) {
-    case "no_permission": return nextWord("cloudAllContentNoPermission")
-    case "old_version": return nextWord("cloudAllContentOldVersion")
-    case "offline": return nextWord("cloudAllOffline")
-    case "stale": return nextWord("cloudAllStaleSource")
-    case "changed": return nextWord("cloudAllChanged")
-    default: return nextWord("cloudAllContentUnknown")
+    case "changed": return running
+      ? { text: nextWord("cloudAllChanged", { machine }),
+        action: { label: nextWord("cloudAllOpenCurrent"), run: () => presses.open(running) } }
+      : { text: nextWord("cloudAllGone", { machine }),
+        action: { label: nextWord("cloudAllCloseGone"), run: presses.close } }
+    case "no_permission": return { text: nextWord("cloudAllContentNoPermission", { machine }) }
+    case "old_version": return { text: nextWord("cloudAllContentOldVersion", { machine }) }
+    case "unconfirmed": return { text: nextWord("cloudAllUnconfirmed", { machine }), action: again }
+    case "offline": return { text: nextWord("cloudAllOffline") }
+    case "stale": return { text: nextWord("cloudAllStaleSource"), action: again }
+    default: return { text: nextWord("cloudAllContentUnknown"), action: again }
   }
 }
 
@@ -225,7 +245,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const fleetScopeRef = useRef(fleetScope)
   fleetScopeRef.current = fleetScope
   const [fleetTarget, setFleetTarget] = useState<SessionDestination | null>(() => destinationFromFragment(location.hash))
-  const [fleetDetailProblem, setFleetDetailProblem] = useState<{ key: string; word: string } | null>(null)
+  const [fleetDetailProblem, setFleetDetailProblem] = useState<{ key: string } & FleetDetailProblem | null>(null)
+  // A detail read that failed for a reason that may pass — a capability not
+  // published yet, a status reading still settling — is read again on a press.
+  // Without this the first answer was the last one until the whole page was
+  // reloaded, which restored the same unreadable target.
+  const [fleetReadAgain, setFleetReadAgain] = useState(0)
   const [readerMachine, setReaderMachine] = useState<string | null>(null)
   const fleetTargetRef = useRef<SessionDestination | null>(null)
   fleetTargetRef.current = fleetScope ? fleetTarget : null
@@ -932,6 +957,32 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     [machineList, names, forgotten],
   )
   const quickMachines = shown.phase === "ready" ? shown.machines.filter((machine) => machine.selectable) : []
+  // The names the detail's own sentences use, read when one is written rather
+  // than captured when the effect below was last built.
+  const machineNames = useRef(new Map<string, string>())
+  machineNames.current = new Map(quickMachines.map((machine) => [machine.id, machine.name || machine.label || machine.id]))
+
+  const leaveFleet = () => { setFleetScope(false); setFleetTarget(null) }
+
+  const openFleetSession = (target: SessionDestination) => {
+    setFleetTarget(target)
+    history.replaceState(history.state, "", destinationFragment(target))
+  }
+
+  /**
+   * Put the opened Session away, and take it out of the address with it.
+   *
+   * A destination that can no longer be read used to stay in the fragment, so
+   * reloading the page restored the same unreadable target and the same
+   * sentence, with nothing on screen that could change either.
+   */
+  const closeFleetTarget = useCallback(() => {
+    setFleetTarget(null)
+    setFleetDetailProblem(null)
+    if (destinationFromFragment(location.hash)) {
+      history.replaceState(history.state, "", location.pathname + location.search + "#all-machines")
+    }
+  }, [])
 
   // The fleet scope keeps its own machine selection in the header. Only the
   // opened three-part target changes the original Session reader underneath.
@@ -960,18 +1011,31 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       setReaderMachine(fleetTarget.machineID)
     }
     const abort = new AbortController()
-    void liveSessionSource.readDetail(fleetTarget, abort.signal).then((answer) => {
-      if (!abort.signal.aborted && answer.kind === "unavailable") {
-        setFleetDetailProblem({ key, word: fleetContentProblemWord(answer.reason) })
-      }
+    const target = fleetTarget
+    const machine = machineNames.current.get(target.machineID) ?? target.machineID
+    void liveSessionSource.readDetail(target, abort.signal).then(async (answer) => {
+      if (abort.signal.aborted || answer.kind !== "unavailable") return
+      // An assistant that restarts keeps its terminal and takes a new
+      // generation, so a read pinned to the old one refuses — correctly. What
+      // was missing is the way out, so a refused-as-replaced read asks the
+      // machine which row took its place. Re-pinning stays a press, so nobody
+      // is moved to another execution without being told.
+      const replaced = answer.reason === "changed"
+        ? await liveSessionSource.readMachine(target.machineID, abort.signal).catch(() => null)
+        : null
+      if (abort.signal.aborted) return
+      setFleetDetailProblem({ key, ...fleetDetailAnswer(answer.reason, machine,
+        replaced ? supersedingDestination(target, replaced) : null,
+        { open: openFleetSession, close: closeFleetTarget, again: () => setFleetReadAgain((count) => count + 1) }) })
     }, (error: unknown) => {
-      if (!abort.signal.aborted) setFleetDetailProblem({ key, word: L.failureSentence(error, nextWord("cloudAllContentUnknown")) })
+      if (!abort.signal.aborted) setFleetDetailProblem({ key, text: L.failureSentence(error, nextWord("cloudAllContentUnknown")) })
     })
     return () => {
       abort.abort()
       liveSessionSource.closeDetail?.(fleetTarget)
     }
-  }, [fleetScope, fleetTarget && destinationKey(fleetTarget), clientEpoch, chosen?.id, screen.at, liveSessionSource])
+  }, [fleetScope, fleetTarget && destinationKey(fleetTarget), clientEpoch, chosen?.id, screen.at, liveSessionSource,
+    fleetReadAgain])
   // Machines on the account this browser cannot read yet. They are listed
   // under the ones it can, each with its Pair press, so pairing another
   // machine does not mean finding the full machine screen first.
@@ -1030,13 +1094,6 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setFleetScope(true)
     setFleetTarget(null)
     listMachines()
-  }
-
-  const leaveFleet = () => { setFleetScope(false); setFleetTarget(null) }
-
-  const openFleetSession = (target: SessionDestination) => {
-    setFleetTarget(target)
-    history.replaceState(history.state, "", destinationFragment(target))
   }
 
   // Which machine this is and whether it answers, in one control: the
@@ -1240,9 +1297,9 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             onLeaveCloudSessions={leaveFleet}
             fleetTarget={fleetScope ? fleetTarget : null}
             fleetDetailProblem={fleetScope && fleetTarget && fleetDetailProblem?.key === destinationKey(fleetTarget)
-              ? fleetDetailProblem.word : null}
+              ? { text: fleetDetailProblem.text, action: fleetDetailProblem.action } : null}
             fleetReaderMachine={readerMachine}
-            onFleetClose={() => setFleetTarget(null)}
+            onFleetClose={closeFleetTarget}
             fleetList={fleetScope ? (filter, onFilter) => <FleetSessionList
             machines={quickMachines.map((machine) => ({
               id: machine.id, name: machine.name || machine.label || machine.id,

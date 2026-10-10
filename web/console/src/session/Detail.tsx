@@ -17,6 +17,7 @@ import { requestDocuments } from "../legacy/documents-bridge.js"
 import { requestUserMessages } from "../legacy/user-messages-bridge.js"
 import { SNIPPET_PROJECT_KNOWN, requestSnippets, snippetProjectFor } from "../legacy/snippets-bridge.js"
 import { askFocus, askInterrupt } from "../legacy/screen-bridge.js"
+import type { FleetDetailProblem } from "../cloud/all-machine-sessions.js"
 import { Transcript } from "./Transcript.js"
 import { GitPanel } from "./GitPanel.js"
 import { Composer } from "./Composer.js"
@@ -100,7 +101,7 @@ export function Detail({
    */
   onSent?: () => void
   listUnknown?: boolean
-  emptyProblem?: string | null
+  emptyProblem?: FleetDetailProblem | null
 }) {
   const T = L.strings
   const [agentId, setAgentId] = useState<string | null>(null)
@@ -318,7 +319,11 @@ export function Detail({
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
           {row ? <Transcript id={row.id} agentId={selectedAgent?.id} onAgent={chooseAgent} /> :
-            emptyProblem ? <p className="cloud-detail-problem" role="status">{emptyProblem}</p> : home ? <HomeHero /> : null}
+            emptyProblem ? <div className="cloud-detail-problem" role="status">
+              <p>{emptyProblem.text}</p>
+              {emptyProblem.action && <button type="button" className="cloud-detail-act"
+                onClick={emptyProblem.action.run}>{emptyProblem.action.label}</button>}
+            </div> : home ? <HomeHero /> : null}
         </div>
       </div>
 

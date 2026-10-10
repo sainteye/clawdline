@@ -360,20 +360,29 @@ test("a stale machine refuses detail before subscribing to content", async () =>
   assert.deepEqual(calls, [])
 })
 
-test("an old or stale r/ capability blocks only detail, not the ss/ list", async () => {
+test("an r/ capability blocks only detail, and an unread one is not called an old machine", async () => {
   const { client, calls } = clientFixture()
   const source = statusSource(() => client as never)
   const destination = { machineID, sessionID, executionGeneration }
   const list = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(list.kind, "ready")
   const descriptor = client.readContentCapabilities.get(machineID) as { at: number; supported?: boolean }
+  // Published, and it says this machine has no r/ reader: it really is too old.
   delete descriptor.supported
   assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
     { kind: "unavailable", reason: "old_version" })
+  // Published but no longer fresh, and never published at all, are the same
+  // thing: this browser does not know yet. Calling either one an old machine
+  // sent a person to update a machine that was current, which is what they
+  // could neither understand nor act on.
   descriptor.supported = true
   descriptor.at -= 301
   assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
-    { kind: "unavailable", reason: "old_version" })
+    { kind: "unavailable", reason: "unconfirmed" })
+  client.readContentCapabilities.delete(machineID)
+  assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
+    { kind: "unavailable", reason: "unconfirmed" })
+  // Neither answer may reach for content on the wire.
   assert.deepEqual(calls, [])
 })
 

@@ -136,6 +136,24 @@ rendering surface allows. Cloud Bridge refusals authored before a local HTTP
 route follow the same source and catalog rules. None of this changes the
 machine-readable code, status, outcome, or acknowledgement reference.
 
+## Keys the code asks for
+
+A typed source table is not what a person reads. `catalogWord` reads
+`public/catalogs/`, and its last fallback is the key's own id, so a key added
+to `next-strings.ts` (or the work, verify, settings and bar tables) but not to
+the catalogs reaches the screen as `next.cloudAllContentOldVersion` — in every
+language, with nothing failing to announce it. The hosted catalog check cannot
+see it either: that one validates the other languages against `en.json`, so a
+hole in `en.json` is a hole in its own reference. This was shipped: two fleet
+sentences were on screen as their key names, and a third served copy two
+revisions behind its source.
+
+`web/console/tools/check-source-catalog.mjs` closes it. Every source key must
+exist in `en.json` and `zh-Hant.json`, and every English source value must be
+the one `en.json` serves; `--write` adds what is missing and resynchronises
+English. It runs inside `npm run check`. The other seven languages keep falling
+back to English by design and are not checked by it.
+
 ## Delivery checks
 
 The Console and daemon/CLI inventories must each enumerate the source of every

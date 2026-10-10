@@ -6,6 +6,7 @@ import * as L from "./legacy/bridge.js"
 import { actionWidthOf, paintSwipe, Row } from "./session/List.js"
 import { visualBranches, visualDepths } from "./session/order.js"
 import { Detail } from "./session/Detail.js"
+import type { FleetDetailProblem } from "./cloud/all-machine-sessions.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { SessionToolbar } from "./session/SessionToolbar.js"
 import { Command, CommandSheet } from "./session/Command.js"
@@ -96,7 +97,7 @@ export function SessionsPage({
   fleetList?: ReactNode
   fleetDetailKey?: string
   fleetDetailPending?: boolean
-  fleetDetailProblem?: string | null
+  fleetDetailProblem?: FleetDetailProblem | null
 }) {
   // The task list the chips, the indent and the detail header read: the
   // stream's own while it carries one, fetched here while it does not.

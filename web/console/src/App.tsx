@@ -21,7 +21,7 @@ import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
 import { bootLocalCatalog } from "./catalog.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
-import { destinationFragment, destinationFromFragment, destinationKey, type SessionDestination } from "./cloud/all-machine-sessions.js"
+import { destinationFragment, destinationFromFragment, destinationKey, type FleetDetailProblem, type SessionDestination } from "./cloud/all-machine-sessions.js"
 import { hasDocumentIntent } from "./legacy/documents-bridge.js"
 import { NewBuild } from "./NewBuild.js"
 import { MachineDashboard } from "./machine/MachineDashboard.js"
@@ -202,7 +202,7 @@ export default function App({ aside, cloudSessions, fleetList, fleetTarget = nul
   fleetList?: (filter: string, onFilter: (value: string) => void) => ReactNode
   fleetTarget?: SessionDestination | null
   fleetReaderMachine?: string | null
-  fleetDetailProblem?: string | null
+  fleetDetailProblem?: FleetDetailProblem | null
   onFleetClose?: () => void
   hideSessionCounts?: boolean
   focusCloudSessions?: boolean
