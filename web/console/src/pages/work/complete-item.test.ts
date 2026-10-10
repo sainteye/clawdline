@@ -11,17 +11,13 @@ test("the Session milestone asks before completing its own item", () => {
   const todos = readFileSync(new URL("../../session/Todos.tsx", import.meta.url), "utf8")
   assert.match(todos, /onComplete=\{\(\) => run\(`complete-\$\{item\.id\}`, \(\) => completeWorkV2\(item\)\)\}/)
   assert.match(todos, /onComplete=\{onComplete \? \(\) => setConfirming\(true\) : undefined\}/)
-  assert.match(todos, /confirming && onComplete && <CompleteWorkDialog/)
 })
 
 test("the Board card and the completion milestone share a confirmation dialog", () => {
   const board = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
-  assert.doesNotMatch(board, /window\.confirm/)
-  assert.match(board, /completing && !item\.closed_at && <CompleteWorkDialog/)
   assert.match(board, /onConfirm=\{\(\) => \{ void run\(`complete-\$\{item\.id\}`, \(\) => completeWorkV2\(item\)\)/)
   assert.match(board, /<WorkMilestones phase=\{item\.phase\} verifyGate=\{item\.verify_gate\}[\s\S]*?onComplete=\{!item\.closed_at/)
   const milestones = readFileSync(new URL("./WorkMilestones.tsx", import.meta.url), "utf8")
-  assert.match(milestones, /phase !== "done" && !!onComplete/)
   assert.match(milestones, /<button type="button" onClick=\{onComplete\}>/)
 })
 

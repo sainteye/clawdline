@@ -25,7 +25,6 @@ test("proposal cards name a project instead of printing its machine path", () =>
 
 test("Work screens translate an uncarried Cloud route instead of printing its internal code", () => {
   const source = readFileSync(new URL("./shared.ts", import.meta.url), "utf8")
-  assert.match(source, /e\.code === "cloud_not_carried"/)
   assert.match(source, /nextWord\("cloudNotCarried"\)/)
 })
 

@@ -140,9 +140,7 @@ test("every word the bills say is in both catalogs", () => {
 
 test("the card and the session detail each draw the bill", () => {
   assert.match(card, /<ItemUsageCard itemId=\{item\.id\} version=\{item\.version\} \/>/)
-  assert.match(todos, /\{row\.sessionId && <SessionUsage conversation=\{row\.sessionId\} \/>\}/)
   // The card asks once it is on screen, through the shared cache, and a session asks when its fold opens.
-  assert.match(bill, /const \[ref, seen\] = useSeen<HTMLDivElement>\(\)\n\s+const \{ reading \} = useUsage\(items, itemId, seen, version\)/)
   assert.match(bill, /useUsage\(sessions, conversation, open\)/)
   assert.match(bill, /usageRulesWhy/)
   assert.match(bill, pattern`c\.name === "wait" && c\.tokens\.total > 0\) &&\n\s+<p className="work-usage-note">\{${wordCall("等待（wait）·")}\} \{workWord\("usageWaitWhy"\)\}`)

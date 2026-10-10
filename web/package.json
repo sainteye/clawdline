@@ -2,7 +2,11 @@
   "name": "clawdline-web",
   "private": true,
   "version": "0.0.0",
-  "workspaces": ["contract", "core", "console"],
+  "workspaces": [
+    "contract",
+    "core",
+    "console"
+  ],
   "scripts": {
     "deps": "node ../tools/ensure-web-deps.mjs",
     "predev": "npm run deps --silent",
@@ -10,7 +14,7 @@
     "prebuild": "npm run deps --silent",
     "build": "npm run build --workspace @clawdline/console",
     "precheck": "npm run deps --silent",
-    "check": "tsc --noEmit -p console && node console/tools/check-catalogs.mjs && node console/tools/semantic-risk-keys.mjs --check && node console/tools/group-semantic-keys.mjs --check && node --test console/src/cloud/refusal-client.test.mjs console/src/cloud/status-client.test.mjs console/src/cloud/peer-handoff-admission.test.mjs console/tools/documents-copy.test.mjs console/tools/http-refusal-display.test.mjs console/tools/proposal-hint.test.mjs console/tools/semantic-risk-keys.test.mjs && node --experimental-strip-types --test --test-name-pattern=signed.Cloud console/src/cloud/relay-reader.test.ts console/src/cloud/relay-writer.test.ts && node --experimental-strip-types --test console/src/cloud/all-machine-sessions.test.ts console/src/cloud/fleet-order.test.ts console/src/cloud/status-projection.test.ts console/src/cloud/status-source.test.ts console/src/pages/projects/refusal-detail.test.ts console/src/pages/projects/pinned-worktree-copy.test.ts console/src/punctuation.test.ts && node console/tools/check-refusal-text.mjs",
+    "check": "tsc --noEmit -p console && node console/tools/check-catalogs.mjs && node console/tools/semantic-risk-keys.mjs --check && node console/tools/group-semantic-keys.mjs --check && node --test console/src/cloud/refusal-client.test.mjs console/src/cloud/status-client.test.mjs console/src/cloud/peer-handoff-admission.test.mjs console/tools/documents-copy.test.mjs console/tools/http-refusal-display.test.mjs console/tools/proposal-hint.test.mjs console/tools/semantic-risk-keys.test.mjs console/tools/mirror-tests-guard.test.mjs && node --experimental-strip-types --test --test-name-pattern=signed.Cloud console/src/cloud/relay-reader.test.ts console/src/cloud/relay-writer.test.ts && node --experimental-strip-types --test console/src/cloud/all-machine-sessions.test.ts console/src/cloud/fleet-order.test.ts console/src/cloud/status-projection.test.ts console/src/cloud/status-source.test.ts console/src/pages/projects/refusal-detail.test.ts console/src/pages/projects/pinned-worktree-copy.test.ts console/src/punctuation.test.ts && node console/tools/check-refusal-text.mjs && node ../tools/check-mirror-tests.mjs",
     "pretest": "npm run deps --silent",
     "test": "node ../tools/console-tests.mjs",
     "test:deps": "node --test ../tools/ensure-web-deps.test.mjs"
