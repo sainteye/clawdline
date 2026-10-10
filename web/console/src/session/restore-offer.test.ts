@@ -3,7 +3,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { RestorableSession, RestorableSessions } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see `order.test.ts`.
-import { allOpened, allTicked, offerShape, outcomeLine, outcomes, readOffer, restoreBatches, restoreBody, rowName, RESTORE_BATCH, RestoreRefusal, sendDismissAll, sendRestore } from "./restore-offer.ts"
+import { allOpened, allTicked, liveOwesOffer, offerShape, offerWasAnswered, outcomeLine, outcomes, readOffer, restoreBatches, restoreBody, rowName, RESTORE_BATCH, RestoreRefusal, sendDismissAll, sendRestore } from "./restore-offer.ts"
 
 function session(id: string, extra: Partial<RestorableSession> = {}): RestorableSession {
   return {
@@ -141,4 +141,27 @@ test("a refusal keeps its code in either spelling, and a fetch that threw is off
     throw new TypeError("Failed to fetch")
   }
   await assert.rejects(readOffer(thrown), (e: unknown) => e instanceof RestoreRefusal && e.code === "offline")
+})
+
+test("the line coming up for the first time does not re-read an answered offer", () => {
+  // The page reads as it opens; the line comes up a moment later with the same
+  // answer already in hand.
+  assert.equal(liveOwesOffer({ firstTime: true, answered: true }), false)
+})
+
+test("the line coming up is read when the opening read has no answer yet", () => {
+  assert.equal(liveOwesOffer({ firstTime: true, answered: false }), true)
+})
+
+test("a line that came back after dropping is always read", () => {
+  // The machine may have rebooted while it was down, which is this offer's
+  // whole subject.
+  assert.equal(liveOwesOffer({ firstTime: false, answered: true }), true)
+  assert.equal(liveOwesOffer({ firstTime: false, answered: false }), true)
+})
+
+test("offline is not an answer about the offer; any other refusal is", () => {
+  assert.equal(offerWasAnswered(new RestoreRefusal(0, "offline", "")), false)
+  assert.equal(offerWasAnswered(new RestoreRefusal(403, "cloud_read_only", "")), true)
+  assert.equal(offerWasAnswered(new TypeError("boom")), true)
 })

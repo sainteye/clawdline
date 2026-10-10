@@ -22,13 +22,15 @@ import { RefusalError, TransportError } from "@clawdline/core/refusal"
 export const TODO_REFRESH_MS = 15_000
 
 /**
- * The open Session page's own pace for its to-dos and attention notes. It asks
- * at once when the page is seen again, focused, or a Board item changed
- * through it, and the attention notes also when the row's `attention_count`
- * moves (`Interventions.tsx`); between those, this is the safety read. A row
- * with no `attention_count` (an older daemon) keeps `TODO_REFRESH_MS` for its
- * notes. On a phone the two reads at fifteen seconds were 24 of a detail
- * page's 59 requests in three minutes.
+ * The open Session page's own pace for its to-dos, and for its attention notes
+ * while their panel is open. It asks at once when the page is seen again,
+ * focused, or a Board item changed through it; between those, this is the
+ * safety read. A closed attention panel has no pace of its own: the row's
+ * `attention_count` says whether there is anything to read and a move in it
+ * asks again (`session/attention-reads.ts`), and a row with no count — an
+ * older daemon — keeps `TODO_REFRESH_MS` for its notes. On a phone the two
+ * reads at fifteen seconds were 24 of a detail page's 59 requests in three
+ * minutes.
  */
 export const TODO_SAFETY_MS = 60_000
 

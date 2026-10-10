@@ -13,6 +13,7 @@ import { interventionTarget, sameInterventionTarget, type InterventionTarget } f
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
 import { deliverUntilSeen, pendingSends } from "./send.js"
 import { browserRefreshEnvironment, readWithOneRetry, TODO_REFRESH_MS, TODO_SAFETY_MS, watchTodoRefresh } from "./todo-refresh.js"
+import { attentionReads, countMoveNeedsRead, unresolvedNoteCount } from "./attention-reads.js"
 import { onWorkItemChanged } from "../pages/work/item-changed.js"
 import { samePageTarget } from "../same-page-links.js"
 import { hasDocumentIntent } from "../legacy/documents-bridge.js"
@@ -28,8 +29,11 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   latest.current = destination
   const attentionCount = typeof row?.attention_count === "number" ? row.attention_count : null
   // Whether the row counts the notes is read when the page opens: a count
-  // that comes and goes must not restart the panel.
-  const counted = attentionCount !== null
+  // that comes and goes must not restart the panel, or move where its news
+  // comes from half way through.
+  const opening = useRef({ key, counted: attentionCount !== null })
+  if (opening.current.key !== key) opening.current = { key, counted: attentionCount !== null }
+  const counted = opening.current.counted
   const ticket = useRef(0)
   const flight = useRef<{ key: string; promise: Promise<void> } | null>(null)
   const [page, setPage] = useState<HumanInterventionsV2 | null>(null)
@@ -73,16 +77,36 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     actionSerial.current++
     busyRef.current = false
     setPage(null); setPageKey(""); setReadError(""); setReadUpdate(null); setActionError(""); setActionStatus(""); setBusy(""); setExpanded(false)
-    if (!destination) return
-    void load(destination)
-    // Like the to-dos: ask again only while the page is visible, and at once
-    // when it comes back.
-    const stop = watchTodoRefresh(() => { void load(destination) }, browserRefreshEnvironment(onWorkItemChanged),
-      counted ? TODO_SAFETY_MS : TODO_REFRESH_MS)
-    return () => { ticket.current++; stop() }
+    return () => { ticket.current++ }
   // Identity is an immutable machine / route Session / conversation tuple.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, load])
+  }, [key])
+
+  // What this panel reads: the notes themselves when there are any to show or
+  // the panel is open, and a lane only where the row cannot say
+  // (attention-reads.ts).
+  const { page: needsNotes, lane } = attentionReads({ counted, expanded, count: attentionCount })
+  const hasPage = pageKey === key && page !== null
+
+  // A Session with notes reads them as the page opens, so that opening the
+  // panel shows the words and not a wait; a Session with none reads nothing,
+  // and the head's dot and number are the row's own count.
+  useEffect(() => {
+    if (!destination || !needsNotes || hasPage) return
+    void load(destination)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, needsNotes, hasPage, load])
+
+  // The safety lane: like the to-dos, ask again only while the page is
+  // visible, and at once when it comes back, is focused, or a Board item
+  // changed through this page. There is none while a counted row's panel is
+  // closed — the count it would be read for is already arriving.
+  const everyMs = lane === "none" ? null : lane === "safety" ? TODO_SAFETY_MS : TODO_REFRESH_MS
+  useEffect(() => {
+    if (!destination || everyMs === null) return
+    return watchTodoRefresh(() => { void load(destination) }, browserRefreshEnvironment(onWorkItemChanged), everyMs)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, everyMs, load])
 
   // The row counts this conversation's unresolved notes, and the count arrives
   // on the stream: a note written or resolved elsewhere is read when it moves,
@@ -91,9 +115,13 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   useEffect(() => {
     if (seenCount.current === attentionCount) return
     seenCount.current = attentionCount
+    // A count that arrives where the head had none, or moves while this panel
+    // has read nothing, needs no read: the head is drawing that number
+    // (attention-reads.ts).
+    if (!countMoveNeedsRead({ expanded, hasPage })) return
     if (destination) void load(destination)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attentionCount, load])
+  }, [attentionCount, expanded, hasPage, load])
 
   const closeWithFocus = () => {
     setExpanded(false)
@@ -112,9 +140,12 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   }, [expanded])
 
   if (!row || !destination) return { head: null, live: null, body: null, close: () => setExpanded(false) }
-  const shown = pageKey === key ? page : null
+  const shown = hasPage ? page : null
   const active = shown?.rows.filter((note) => !note.resolved_at) ?? []
   const recent = shown?.rows.filter((note) => !!note.resolved_at) ?? []
+  // How many notes the head says are unresolved: the page this panel read, or
+  // the row's own count off the stream, or null while nobody has said.
+  const unresolved = unresolvedNoteCount(shown ? active.length : null, counted ? attentionCount : null)
   const run = async (note: HumanInterventionV2, action: "resolve" | "reopen") => {
     if (busyRef.current || readError || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
     const serial = ++actionSerial.current
@@ -198,19 +229,19 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     setActionError("")
   }
 
-  const countWords = readUpdate ? `${catalogWord("inline", "a4f8e0fcaaf8")}: ${nextWord("machineNeedsUpdate")}` : readError ? catalogWord("literal", "ff569bc2e31d") : shown ? catalogFormat("template", "f16df8b87a41", [active.length]) : catalogWord("literal", "e44c005aa593")
+  const countWords = readUpdate ? `${catalogWord("inline", "a4f8e0fcaaf8")}: ${nextWord("machineNeedsUpdate")}` : readError ? catalogWord("literal", "ff569bc2e31d") : unresolved !== null ? catalogFormat("template", "f16df8b87a41", [unresolved]) : catalogWord("literal", "e44c005aa593")
   const head = <button className="human-interventions-head" type="button" aria-expanded={expanded} aria-controls={expanded ? "human-interventions-body" : undefined}
     aria-label={`${countWords}${actionError ? catalogWord("literal", "f095f6af37ff") : ""}`}
     onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (readError) { void load(destination); return } if (!expanded) { onExpand?.(); setActionStatus("") } setExpanded(!expanded) }}>
       <span>{catalogWord("inline", "a4f8e0fcaaf8")}</span>
-      {active.length > 0 && <span className="human-interventions-dot" aria-hidden="true" />}
-      {shown && active.length > 0 && <span className="human-interventions-count">{catalogFormat("count", "pendingInterventions", [active.length])}</span>}
+      {(unresolved ?? 0) > 0 && <span className="human-interventions-dot" aria-hidden="true" />}
+      {unresolved !== null && unresolved > 0 && <span className="human-interventions-count">{catalogFormat("count", "pendingInterventions", [unresolved])}</span>}
       {actionError && <span className="human-interventions-count human-interventions-failed">{catalogWord("inline", "aa065ac6118d")}</span>}
       {readError && <span className="human-interventions-count">{readUpdate ? nextWord("machineNeedsUpdateShort") : catalogWord("inline", "88cd4f4d97f1")}</span>}
-      {reading && !shown && !readError && <span className="human-interventions-count">{catalogWord("inline", "656c48dad32b")}</span>}
+      {reading && unresolved === null && !readError && <span className="human-interventions-count">{catalogWord("inline", "656c48dad32b")}</span>}
     </button>
   const live = <>
-    <span className="human-interventions-live" role="status" aria-live="polite" aria-atomic="true">{shown || readError ? countWords : ""}</span>
+    <span className="human-interventions-live" role="status" aria-live="polite" aria-atomic="true">{unresolved !== null || readError ? countWords : ""}</span>
     {actionError && <span className="human-interventions-live" role="alert">{catalogWord("inline", "9aaa26b21b0c")}</span>}
   </>
   const body = expanded && <section className="human-interventions" aria-labelledby="human-interventions-title">
@@ -219,6 +250,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
       {readUpdate ? <NeedsUpdate update={readUpdate} className="human-interventions-error" /> : readError && <p className="human-interventions-error" role="alert">{shown ? catalogWord("literal", "5789b797c9ef") : catalogWord("literal", "24fe20ab6d4d")} {readError} <button type="button" onClick={() => { void load(destination) }}>{catalogWord("inline", "7e59d0f16293")}</button></p>}
       {actionError && <p className="human-interventions-error" role="alert">{actionError}</p>}
       {actionStatus && <p className="human-interventions-status" role="status">{actionStatus}</p>}
+      {!shown && !readError && <p className="human-interventions-empty">{catalogWord("inline", "656c48dad32b")}</p>}
       {shown && active.length === 0 && <p className="human-interventions-empty">{catalogWord("inline", "e43b3c54e4b6")}</p>}
       {active.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} sending={busy === note.id} onAction={run} onReply={reply} onCompose={compose} />)}
       {recent.length > 0 && <details className="human-interventions-recent"><summary>{catalogFormat("count", "recentInterventions", [recent.length])}</summary>

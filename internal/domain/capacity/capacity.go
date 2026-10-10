@@ -2564,9 +2564,15 @@ func Register() []Entry {
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
-			// An open Session page's to-dos, and its attention notes when the
-			// row counts them, are read at least this often (TODO_SAFETY_MS),
-			// and at once when the page is seen, focused, or the count moves.
+			// An open Session page's to-dos are read at least this often
+			// (TODO_SAFETY_MS), and at once when the page is seen or focused.
+			// Its attention notes are read on this pace only while their panel
+			// is open. A row that carries `attention_count` says whether there
+			// are any: none is read for a Session with none, a Session with
+			// some reads them as the page opens so that opening the panel
+			// shows words, and a count that moves on the stream is what asks
+			// again (web/console/src/session/attention-reads.ts). A row
+			// without the count keeps the faster TODO_REFRESH_MS it had.
 			Name: ConsoleSessionNotesSafety, Class: Cache, Unit: Seconds,
 			Limit: 60, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
