@@ -512,6 +512,51 @@ The fleet list uses the machine-scoped exception `sessions.list`: `{type:"sessio
 
 Successful reads and refusals with a safe reply target use a `stream` envelope on `t/<machine>/<session>`. The payload's `read` field is `info.full`, `info.list`, `transcript`, `transcript.before.<cursor>`, `skills`, `image.<id>`, `git`, `read:<request>` for machine list, Git diffs and documents, `screen`, `agent:<id>[.before.<cursor>]`, `shell:<id>`, or `documents`, alongside `status` and `body` or `error`. Decoded Session-scoped `r/` replies also carry top-level `machine_id`, `session_id`, `expected_generation`, and `seq`, where `seq` is the request envelope's sequence. The machine-list reply carries the same proof without `expected_generation`. A viewer first subscribes to the exact `t/` channel, then sends `r/`; it must match the reply's read name and proof fields to its request before showing content. The machine passes `before` and `expected_generation` through the same local Session read and repeats execution admission after reading.
 
+#### 8.2.1 `orch/` 的任務清單：有人寫才讀（2026-10-10）
+
+`orch/<machine>` 的描述帶 `tasks`，照「有變才發、240 秒 heartbeat 再發一次」的規則送。發是這樣，
+但「有沒有變」以前是每一輪（`SnapshotInterval`，5 秒）打一次本機的 `GET /v1/orchestrator/tasks` 去
+看。2026-10-10 在跑著的 daemon 上以 `GET /v1/diagnostics` 量到：這條路由在 1,426 秒內被呼叫 289
+次，其中 288 次是 `callers.cloud`（p50 0.26 ms、p90 0.33、max 35.49），而那段時間沒有任何 task 變
+過。頁面不問這條路由——hosted console 用它已經持有的描述自己回答
+（`web/console/src/cloud/relay-reader.ts` 的 `tasks()`，log 記成 `local`）——所以這條路由上的
+Cloud caller 就是發布者本身，沒有別人。
+
+現在一輪會讀，只有四種情況：第一輪；這台機器提交過 task row（broker 的 `TaskListChanged` →
+`internal/transport/http` 的 `noteTaskListChanged` → link 的旗標 → publisher 的 `TaskListMoved`，
+取走即清掉）；這一輪要把所有東西重新宣告一次（頁面剛打開、relay 清掉過、或線剛回來）；以及
+`cloud.task_list_reread_seconds`（240 秒，與描述的 heartbeat 同一輪）。中間的輪次把上一次讀到的列
+重新投影到「viewer 現在持有哪些 session 列」，因為完成的 task 只在它的 child 分頁還在清單裡時才帶
+——分頁關掉這件事沒有人寫、也不需要讀。測試裡 4 分 30 秒的 55 輪取 6 次讀，原本是 55 次
+（`internal/transport/cloud/tasklist_test.go`）。
+
+相容：wire 上沒有任何變動，欄位、頻道、形狀都沒動，頁面也不需要知道這件事。唯一可觀察的差別是
+「沒有人告知這個行程的改動」最多晚 240 秒才反映——另一個 writer 直接改同一個 store 檔，或
+`root.terminalId` 這種由機器自己的畫面讀取解析出來、不在紀錄裡的值變了——這也正是那個下限存在的
+理由。`/v1/diagnostics` 的 capacity 列 `cloud.task_list_reread_seconds` 帶上次讀取的秒數，備註是
+「n 次讀 / m 輪」。
+
+#### 8.2.2 頁面等這台機器的字再讀（`FEATURE_WAIT_MS`，2026-10-10）
+
+描述裡的 `commands` 是頁面判斷「這台機器會不會這個字」的依據（copied client 的
+`_machineImplements`：有這個陣列就是是／否，沒有才是「未知」而不拒絕）。頁面會把描述記下來給下一次
+開啟用，而記下來的那份把 `commands` 切到前 64 個字（`legacy/js/net/cloud-client.js` 的
+`descriptorCommands`）；這個 daemon 宣告 151 個（`cloudops.Implemented()`），`transcript` 是第
+101 個、`work.v2.session-todos` 是第 148 個。所以在「socket 剛起來、第一封 `orch/` 還沒開完」的那
+段時間裡，這兩個字會被**頁面自己**拒絕成 `cloud_feature_unavailable`，機器完全沒收到請求。
+2026-10-10 11:30–14:22 這台機器的 21 次讀取失敗裡有 11 次是這個（§9.5.3 的 `stage=viewer_refused`
+回報），叢發在 12:08:43、12:41:34、13:29:00，字只有 `session_todos` 與 `transcript` 兩種。
+
+現在這種讀取會先等這台機器的活描述：下一封帶描述的 `orch/`，或 `FEATURE_WAIT_MS`（5 秒，登錄為
+`console.relay_feature_wait_seconds`），哪個先到算哪個，然後同一組檢查再判斷一次。只有「記住的清單
+剛好是被切過的長度、而且沒有這個字」會等；真的沒有這個字——記住的清單短於切點、活描述已經到了、或
+機器自己回過 `unknown_command`——還是立刻拒絕，拒絕的字句也沒有變。重播：頁面打開的同時發 6 個讀，
+描述在 0.5／1.5／3 秒後到，原本 6 個全被頁面自己拒絕、0 個送出；等待之後 0 個失敗、6 個送出
+（`web/console/src/cloud/feature-wait-replay.test.ts`）。
+
+相容：wire 沒有變動，等的是 daemon 本來就會發的那一封。新頁面碰到只宣告少數字、或完全沒有描述的舊
+daemon，行為與今天完全相同（沒有描述是「未知」，不拒絕也不等）。
+
 ### 8.3 Session 狀態頻道的分階段契約
 
 Go daemon 另外發布 `ss/<machine>/<session>`。每個 JSON 僅有 `machine_id`、`session_id`、可驗證時的 `execution_generation`、同批的 `snapshot_generation`、`assistant`、`backend`、`state`、`source`（`provenance`、`observed_at`、`freshness`）、`inventory_complete`、`projected_at`、`last_movement_at`、`no_progress_after_ms`、可判定時的 `no_movement`，以及有來源證據時的 `completed_unconfirmed`、`attention_required`、`close_blocked`、`failed_agent_count`。`completed_unconfirmed` 只在未讀 Board 交付已到 `done` 時為真；`deploying` 不算完成。`close_blocked` 在新鮮且狀態已知的關閉可行性讀值時帶 true/false；`failed_agent_count` 在完整且未截斷的 provider-native 子代理讀值時帶整數，包含 0。缺欄即未知，兩者都不宣稱整個 Session 工作失敗。`last_movement_at` 只表示助理自己的紀錄新增位元組，並非推論工作已進展；門檻由 `internal/domain/capacity` 登錄。不傳標題、對話、畫面、選單、Shell、Git、工作目錄或內容衍生摘要。來源不是 `current` 時省略執行世代與這些狀態事實；`scan.generation` 仍只是清單讀取序號，不能作為執行世代。

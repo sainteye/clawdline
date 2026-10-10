@@ -48,6 +48,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.spool_channel_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, notice, log` | — |
 | `cloud.spool_receipts` | 4096 | `rows` | `expire` | `diagnostics, log` | — |
 | `cloud.spool_refusals` | 64 | `rows` | `refuse` | `diagnostics, log` | — |
+| `cloud.task_list_reread_seconds` | 240 | `seconds` | `expire` | `diagnostics` | — |
 | `cloud.terminal_connections` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_ack_seconds` | 3 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_candidates` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -89,6 +90,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.viewer_events_logged_rows` | 128 | `rows` | `coalesce` | `diagnostics, log` | — |
 | `cloud.viewer_events_seen_batches` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.health_live_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
+| `console.relay_feature_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
 | `console.session_notes_safety_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_backoff_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |

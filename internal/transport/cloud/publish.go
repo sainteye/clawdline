@@ -38,6 +38,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
@@ -116,6 +117,11 @@ type Publisher struct {
 	// (internal/transport/http producer.go), so this publisher no longer builds
 	// a list of its own. Nil, or false, reads the route through Router.
 	Sessions func(context.Context) ([]byte, bool)
+	// TaskListMoved answers whether this machine has written a task row since
+	// it was last asked, and clears the fact (link.go, takeTaskListMoved).
+	// Nil answers no, which leaves the list to be read on the first pass, on
+	// every re-statement and on the heartbeat (tasklist.go).
+	TaskListMoved func() bool
 	// Publish is where a snapshot goes. It is the Relay in production.
 	Publish func(context.Context, Outbound) error
 	// Every is the poll interval; zero is SnapshotInterval.
@@ -155,6 +161,28 @@ type Publisher struct {
 	// tasks is the task list as last projected, carried on the descriptor.
 	// Nil or empty is no `tasks` key at all.
 	tasks []map[string]any
+	// taskRows is the machine's own task list as the last read answered it,
+	// before the projection. It is kept so that a pass nobody told about a
+	// task change can project the same rows over a changed set of listed
+	// sessions without reading the route again (tasklist.go).
+	taskRows []map[string]any
+	// taskReadAt is when that read happened, and taskRowsStale whether
+	// something has happened since that the rows do not account for. Both are
+	// the publisher goroutine's.
+	taskReadAt    time.Time
+	taskRowsStale bool
+	// taskListed is the set the kept rows were last projected over, so a pass
+	// whose listed sessions are unchanged does not reproject them either.
+	taskListed map[string]bool
+	// What the task list's reads have cost, for the capacity register's
+	// `cloud.task_list_reread_seconds` row: when the route was last asked
+	// (Unix seconds; zero is never), how many times it has been asked and how
+	// many passes have been made. The diagnostics route reads them from its
+	// own goroutine while a pass is running, so they are atomics rather than
+	// the pass's own fields above.
+	taskReadUnix atomic.Int64
+	taskReads    atomic.Int64
+	taskPasses   atomic.Int64
 	// omitted is how many reachable records the last projection's bounds left
 	// out, so the log says it when it changes rather than every pass.
 	omitted int

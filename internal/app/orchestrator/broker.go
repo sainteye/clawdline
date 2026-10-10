@@ -163,6 +163,24 @@ type Broker struct {
 	// token ledger can take a cursor (docs/token-ledger.md "One unit of
 	// work"). It must return at once; nil tells nobody.
 	WorkUnitEdge func(taskID, edge, outcome string, at time.Time)
+	// TaskListChanged is told, after a task row has been written, that this
+	// machine's task list is no longer what a reader last read. It must return
+	// at once; nil tells nobody.
+	//
+	// It exists so that nobody has to poll for the answer. The Cloud publisher
+	// carries the task list on its machine descriptor and used to read
+	// `GET /v1/orchestrator/tasks` on every five-second pass to find out
+	// whether it had moved: measured on the running daemon on 2026-10-10, 288
+	// of those reads in 1,426 seconds, one every 4.95 s, every one of them on
+	// a machine where no task had changed at all. This is the signal it waits
+	// for instead (internal/transport/cloud tasklist.go).
+	//
+	// It is told about a write, not about a change a reader would notice: a
+	// note appended to a task moves no field the Cloud projection carries. One
+	// read too many costs a route call; a change nobody was told about is a
+	// chip that stays on the wrong row, so the cheap error is the one made
+	// here.
+	TaskListChanged func()
 	// pushed is a test's signal that a dead letter's push, which runs off the
 	// beat's pass, has finished. Nil in production.
 	pushed func()
@@ -278,6 +296,17 @@ type Broker struct {
 	// it is taken around every effect and mu is taken around dispatch.
 	effectsMu sync.Mutex
 	held      map[int64]bool
+}
+
+// taskListChanged tells whoever is watching that a task row was written. It
+// is called after the commit, never from inside the write transaction: the
+// watcher reads the list back, and a read of the table from inside its own
+// write would be the deadlock this broker's transaction rules exist to
+// prevent.
+func (b *Broker) taskListChanged() {
+	if b.TaskListChanged != nil {
+		b.TaskListChanged()
+	}
 }
 
 // hold and release are this process's claim on an effect row: taken before
@@ -594,6 +623,7 @@ func (b *Broker) create(ctx context.Context, r Record, secretHash string, effect
 	if b.WorkUnitEdge != nil && r.Callback == nil {
 		b.WorkUnitEdge(r.ID, "start", string(r.State), r.CreatedAt)
 	}
+	b.taskListChanged()
 	return ids, nil
 }
 
@@ -609,7 +639,7 @@ func (b *Broker) saveWith(ctx context.Context, r Record, secretHash string, kind
 func (b *Broker) saveAt(ctx context.Context, r Record, secretHash string, kind string, notice *store.BrokerNotice, version int64) error {
 	payload, _ := json.Marshal(map[string]any{"state": r.State, "task": r.ID})
 	record, texts := r.stored()
-	return b.Store.SaveBrokerTaskWithNotice(ctx, store.BrokerRow{
+	err := b.Store.SaveBrokerTaskWithNotice(ctx, store.BrokerRow{
 		ID:         r.ID,
 		Project:    r.ProjectDir,
 		Repository: r.Repository,
@@ -622,6 +652,10 @@ func (b *Broker) saveAt(ctx context.Context, r Record, secretHash string, kind s
 		Texts:      texts,
 		Version:    version,
 	}, notice, []store.Event{{Kind: kind, Subject: r.ID, Payload: payload}})
+	if err == nil {
+		b.taskListChanged()
+	}
+	return err
 }
 
 // row is a record as the store holds it, for a write.
@@ -700,6 +734,11 @@ func (b *Broker) mutateEvent(ctx context.Context, id, kind string, extra map[str
 	// transaction — a refusal, errAlreadyTerminal — which is returned as it
 	// is. Anything else is the store's, and is said as a store refusal.
 	var decided error
+	// wrote is whether a row was handed over to be stored at all. A change
+	// that answered errUnchanged commits nothing, and the beat makes that call
+	// on every pass, so telling a watcher about it would put the five-second
+	// poll back under another name.
+	wrote := false
 	_, ids, err := b.Store.UpdateBrokerTask(ctx, id, func(tx *store.Tx, row store.BrokerRow) (*store.BrokerWrite, error) {
 		r, err := Decode(row.Record)
 		if err != nil {
@@ -751,6 +790,7 @@ func (b *Broker) mutateEvent(ctx context.Context, id, kind string, extra map[str
 		}
 		payload, _ := json.Marshal(body)
 		out = r
+		wrote = true
 		return &store.BrokerWrite{
 			Row:     b.storedRow(r),
 			Notice:  opened,
@@ -763,6 +803,9 @@ func (b *Broker) mutateEvent(ctx context.Context, id, kind string, extra map[str
 			return out, nil, err
 		}
 		return out, nil, storeError(err)
+	}
+	if wrote {
+		b.taskListChanged()
 	}
 	return out, ids, nil
 }

@@ -34,6 +34,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
@@ -242,6 +243,14 @@ type Link struct {
 	// at most CloudReadConcurrencyLimit.
 	reading     int
 	fingerprint string
+	// taskListMoved is set when this machine has written a task row and
+	// cleared by the publisher pass that reads the list because of it
+	// (TaskListChanged, tasklist.go). It is on the Link rather than on the
+	// publisher because the broker calls in from its own goroutine at any
+	// moment, including while a key rotation is building a new publisher, and
+	// a flag that outlives both of them needs no lock and loses no signal.
+	taskListMoved atomic.Bool
+
 	// stopRun cancels the socket currently up, and rotated says the next
 	// `Run` iteration should rebuild rather than return. They are one pair:
 	// a cancel with no flag is a shutdown, a cancel with it is a rotation.
@@ -721,8 +730,12 @@ func (l *Link) wire() error {
 		Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
 			AppOrigin: settings.AppOrigin},
 		Sessions: opts.Sessions,
-		Publish:  l.relay.Publish,
-		Log:      opts.Log,
+		// Whether a task row was written since the last pass asked. Without
+		// it the publisher cannot tell a list that moved from one that did
+		// not, and read it on every pass to find out (tasklist.go).
+		TaskListMoved: l.takeTaskListMoved,
+		Publish:       l.relay.Publish,
+		Log:           opts.Log,
 	}
 	// The publisher hears every viewer the relay hears from, which is how a
 	// viewer that arrived after this machine's last change gets the current
@@ -747,6 +760,27 @@ func (l *Link) wire() error {
 // login registers (name.go).
 func machineName(identity adaptercloud.Identity, settings adaptercloud.Settings, host, goos string) string {
 	return MachineName(host, goos, settings.MachineName, identity.Name)
+}
+
+// TaskListChanged is `http.CloudTaskLine`: this machine has written a task
+// row, so the list a viewer reads off the machine descriptor is not what the
+// publisher last projected. It records the fact and returns — the publisher's
+// own pass is what reads and publishes, at the cadence it always had.
+func (l *Link) TaskListChanged() { l.taskListMoved.Store(true) }
+
+// takeTaskListMoved answers whether a task row was written since it was last
+// asked, and clears the fact. Only the publisher's pass asks.
+func (l *Link) takeTaskListMoved() bool { return l.taskListMoved.Swap(false) }
+
+// TaskListReading is the `cloud.task_list_reread_seconds` row: how long ago
+// the publisher last asked this machine for its own task list, and what the
+// asking has cost. ok is false when this link has no publisher, which is a
+// line that was never built.
+func (l *Link) TaskListReading() (capacity.Reading, bool) {
+	if l.publisher == nil {
+		return capacity.Reading{}, false
+	}
+	return l.publisher.TaskListReading(), true
 }
 
 // Enabled reports whether the switch was on when this link was opened.

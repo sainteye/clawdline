@@ -65,16 +65,57 @@ package cloud
 // a presence re-send every three minutes) on this daemon's clock. An executor's
 // `observed_at` or a record's `landing` moving is not a change here, because
 // the projection does not carry them.
+//
+// **The list is read when something moved it, not every pass.** Going out only
+// on a change was never the same as finding out only on a change: this file
+// read `GET /v1/orchestrator/tasks` on every pass to see whether there was
+// anything to send. Measured on the running daemon on 2026-10-10, that was 288
+// of the 289 reads the route answered in 1,426 seconds — one every 4.95 s, on
+// a machine where no task had changed at all — and every one of them went
+// through the gate, the broker's ledger and the Swift store's page. The route
+// is the page's too, and the page does not ask for it: a hosted console
+// answers `/v1/orchestrator/tasks` from the descriptor it already holds
+// (`web/console/src/cloud/relay-reader.ts`, `tasks()`), so a Cloud caller on
+// that route is this file and nothing else.
+//
+// So a read is taken when one of four things is true, and otherwise the rows
+// of the last read are projected again over the sessions a viewer now holds:
+//
+//   - nothing has been read yet — the publisher's first pass;
+//   - this machine has written a task row since the last read (TaskListMoved,
+//     the broker's `TaskListChanged`). A write, not a change a viewer would
+//     notice: a note appended to a task moves no field this projection
+//     carries, and one read too many is cheaper than a chip left on the wrong
+//     row;
+//   - this pass states everything again — a viewer that holds nothing has been
+//     heard from, or the socket has just come up. A page that has just opened
+//     and a line that has just come back are both that pass;
+//   - the last read is TaskListRereadSecondsLimit old. This is the floor, not
+//     the cadence: `root.terminalId` is resolved from the machine's own screen
+//     rather than from the record (transport/http `ownTaskLinks`), and a
+//     second writer on the same store file owes this process no signal at all,
+//     so the list cannot be left to a signal that may never come. It is the
+//     descriptor's own heartbeat, so the pass that re-reads is the pass that
+//     re-states.
+//
+// The rows a viewer can reach also change when the session inventory changes
+// with no task written — a finished task is drawn only while its child's row
+// is listed — and that is the projection's half, not the read's: it is redone
+// whenever the listed set differs from the one the kept rows were last
+// projected over.
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 const (
@@ -88,6 +129,18 @@ const (
 	// taskReadLimit is the finished tasks one pass reads: the page the local
 	// console's stream reads (transport/http's tasksPayload(ctx, 0, 50)).
 	taskReadLimit = 50
+	// TaskListRereadSecondsLimit is how long this publisher may go without
+	// reading its own task list when nothing has told it the list moved.
+	//
+	// It is the descriptor's heartbeat (Heartbeat), so the pass that re-reads
+	// the list is the pass that re-states the descriptor anyway: a machine
+	// nobody is dispatching on reads the route once every four minutes instead
+	// of forty-eight times a minute. It is a floor and not a cadence — a task
+	// this machine wrote is published on the next pass, as it always was — and
+	// it is what keeps the list honest about the two changes nothing here is
+	// told about: a row's `root.terminalId`, which the route resolves from the
+	// machine's own screen, and a write by a second daemon on the same store.
+	TaskListRereadSecondsLimit = 240
 )
 
 // cloudTaskFields are the task-record paths a Cloud viewer reads
@@ -107,6 +160,10 @@ var cloudTaskFields = [][]string{
 // empty list** (DG-7): the caller keeps the last one it projected, because a
 // snapshot without `tasks` tells a viewer this machine has none running.
 func (p *Publisher) readTasks(ctx context.Context) ([]map[string]any, bool) {
+	// Counted before the answer, because what the route is asked is the
+	// measurement: a read that failed cost the same call.
+	p.taskReads.Add(1)
+	p.taskReadUnix.Store(p.now().Unix())
 	res, err := p.Router.Do(ctx, cloudops.LocalRequest{
 		Method: http.MethodGet, Path: "/v1/orchestrator/tasks",
 		Query: map[string]string{"limit": strconv.Itoa(taskReadLimit)},
@@ -218,14 +275,71 @@ func (p *Publisher) noteListed(ids []string, authoritative bool) {
 	}
 }
 
-// refreshTasks reads and projects the task list for this pass. A failed read
-// keeps the last projection; a changed number of records left out is logged.
+// refreshTasks projects the task list for this pass, reading this machine's
+// own list only when something could have moved it (the header's *Cadence*).
+// A failed read keeps the last projection and stays due, so the next pass asks
+// again rather than waiting out the floor.
 func (p *Publisher) refreshTasks(ctx context.Context) {
-	rows, ok := p.readTasks(ctx)
-	if !ok {
+	p.taskPasses.Add(1)
+	// Asked on every pass and not only when a read is otherwise due, because
+	// taking the fact clears it: a write that happened while a read was
+	// failing, or between two passes, must not be forgotten.
+	if p.TaskListMoved != nil && p.TaskListMoved() {
+		p.taskRowsStale = true
+	}
+	if p.taskReadDue() {
+		if rows, ok := p.readTasks(ctx); ok {
+			p.taskRows, p.taskReadAt, p.taskRowsStale = rows, p.now(), false
+			// New rows: the kept projection is of other ones.
+			p.taskListed = nil
+		}
+	}
+	p.projectKeptTasks()
+}
+
+// taskReadDue is whether this pass reads this machine's own task list.
+func (p *Publisher) taskReadDue() bool {
+	switch {
+	case p.taskRows == nil || p.taskReadAt.IsZero():
+		return true
+	case p.taskRowsStale:
+		return true
+	case p.restating():
+		return true
+	default:
+		return p.now().Sub(p.taskReadAt) >= TaskListRereadSecondsLimit*time.Second
+	}
+}
+
+// restating is whether this pass will state everything this machine has again.
+//
+// The pass clears every memory of what it last published when a viewer that
+// holds nothing has been heard from, and `Run` starts with those memories
+// empty on a new socket (publish.go). So the descriptor having no entry in
+// that memory is the one fact in hand that says "this pass is a first
+// statement" — a page that has just opened, a relay eviction, a reconnect —
+// and it is also true after a descriptor that did not leave, which is a pass
+// that owes the same read.
+func (p *Publisher) restating() bool {
+	_, stated := p.published[descriptorKey]
+	return !stated
+}
+
+// projectKeptTasks projects the rows of the last read over the sessions a
+// viewer now holds rows for, and leaves the projection alone when neither has
+// changed. A changed number of records left out is logged.
+//
+// This is the half that has to run after a read it did not take: a finished
+// task is carried only while its child's row is listed (cloudTaskRelevant), so
+// a tab closing takes it off the list with nothing written and nothing read.
+func (p *Publisher) projectKeptTasks() {
+	if p.taskRows == nil {
 		return
 	}
-	projected, omitted := projectTasks(rows, p.listed)
+	if p.taskListed != nil && sameListed(p.taskListed, p.listed) {
+		return
+	}
+	projected, omitted := projectTasks(p.taskRows, p.listed)
 	if omitted != p.omitted {
 		if omitted > 0 {
 			p.logf("cloud: the orch snapshot carries %d task records and leaves out the %d oldest, past %d records or %d bytes",
@@ -236,4 +350,42 @@ func (p *Publisher) refreshTasks(ctx context.Context) {
 		p.omitted = omitted
 	}
 	p.tasks = projected
+	p.taskListed = make(map[string]bool, len(p.listed))
+	for id := range p.listed {
+		p.taskListed[id] = true
+	}
+}
+
+// sameListed is whether two readings name the same sessions.
+func sameListed(a, b map[string]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for id := range a {
+		if !b[id] {
+			return false
+		}
+	}
+	return true
+}
+
+// TaskListReading is the capacity register's `cloud.task_list_reread_seconds`
+// row as this publisher can answer it: how long ago it last asked for its own
+// task list, against the floor, and what the asking has cost — reads taken
+// over passes made since this line came up. On the running daemon before this
+// change those two numbers were equal; a machine nobody is dispatching on now
+// reads once per floor.
+//
+// It is read from the diagnostics route's goroutine, so it touches only the
+// three atomics and never the pass's own fields.
+func (p *Publisher) TaskListReading() capacity.Reading {
+	reads, passes := p.taskReads.Load(), p.taskPasses.Load()
+	cost := fmt.Sprintf("%d read(s) of this machine's own task list in %d pass(es)", reads, passes)
+	at := p.taskReadUnix.Load()
+	if at == 0 {
+		return capacity.Reading{Known: true, Note: "the task list has not been read yet; " + cost}
+	}
+	read := time.Unix(at, 0)
+	return capacity.Reading{Known: true, Used: int64(p.now().Sub(read).Seconds()),
+		OldestAt: read, Note: cost}
 }

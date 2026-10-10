@@ -147,6 +147,25 @@ export interface CloudReadClient {
    * says nothing, never zero.
    */
   readonly orchestratorSnapshots?: Map<string, unknown>
+  /**
+   * machine → the descriptor this browser remembered from an earlier
+   * connection, as `{ machine: { …, commands } }`
+   * (`machineDescriptors`/`_loadMachineDescriptors`, legacy/js/net/cloud-client.js).
+   * It is what decides a word before any snapshot has arrived, and its
+   * `commands` list was cut to the first 64 words on the way into storage, so
+   * it is read here for one thing only: to tell a word the machine does not
+   * answer from a word the cut never reached (`machineWordPending`).
+   *
+   * Duck-typed like `orchestratorSnapshots`: a copied client that keeps no
+   * such map says nothing, and nothing waits.
+   */
+  readonly machineDescriptors?: Map<string, unknown>
+  /**
+   * machine → the words it answered `unknown_command` to (`machineLacks`).
+   * One client's own memory, emptied when a descriptor arrives; a word in it
+   * is a machine that has itself said no, which is never waited for.
+   */
+  readonly machineLacks?: Map<string, unknown>
   events(listener: (event: CloudEvent) => void): () => void
   /** The current account rows, used here only to answer health for the chosen machine. */
   machines?(): Promise<{
@@ -298,6 +317,76 @@ export function machineApp(client: CloudReadClient, machine: string): { version?
   }
 }
 
+/**
+ * How long a read waits for the chosen machine's own list of words before it
+ * is asked or refused (`machineWordPending`). Registered as
+ * `console.relay_feature_wait_seconds`.
+ *
+ * A page that has just opened holds the descriptor it remembered from last
+ * time, and the copied client cut that list to its first 64 words on the way
+ * into storage while this daemon publishes 151 (`cloudops.Implemented()`). So
+ * for the moment between the socket coming up and the first `orch/` envelope
+ * being opened, a read of a word past the cut was refused by the page itself,
+ * before anything was sent: measured from this machine's daemon log on
+ * 2026-10-10, 11 of 21 read failures between 11:30 and 14:22 were
+ * `cloud_feature_unavailable` with `stage=viewer_refused`, in bursts at 12:08,
+ * 12:41 and 13:29, every one of them for `transcript` or
+ * `work.v2.session-todos` — the two words the page reads first and the cut
+ * does not reach.
+ *
+ * Five seconds is the descriptor's own arrival, not a retry budget: the
+ * envelope is on its way as part of the pass the socket starts with. A machine
+ * that never sends one is refused exactly as it is today, and nothing else
+ * waits.
+ */
+export const FEATURE_WAIT_MS = 5_000
+
+/**
+ * The words a remembered descriptor can hold: `descriptorCommands` in the
+ * copied client keeps `value.slice(0, 64)`. A remembered list this long is one
+ * that was cut, so it says nothing about the words past it — and a shorter one
+ * is the whole truth, which is why a machine that really lacks a word is still
+ * refused at once.
+ */
+export const REMEMBERED_COMMANDS_CUT = 64
+
+/** An object that is not an array, which is what a descriptor is. */
+function descriptorObject(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+/**
+ * Whether this page is about to refuse itself a word on evidence that was cut
+ * short, and the machine's own word list could still arrive.
+ *
+ * It mirrors the copied client's `_descriptorFor` and `_machineImplements`,
+ * because what it has to answer is what that pair is about to answer and why:
+ *
+ * - a live `orch/` snapshot's descriptor is the machine's current word list,
+ *   whole, so there is nothing to wait for — including when it carries no
+ *   `commands` at all, which is a machine the client judges by platform;
+ * - a word the machine itself answered `unknown_command` to is a fact, not a
+ *   cut, so it is refused now as it is today;
+ * - with nothing remembered the client answers "unknown", which it does not
+ *   refuse, so again nothing waits;
+ * - a remembered list that names the word answers "yes" — nothing waits;
+ * - what is left is a remembered list that does not name the word. If the
+ *   list is at the cut it is not evidence of anything and the live descriptor
+ *   is worth waiting for; shorter than the cut, it is the whole list and the
+ *   machine really does not answer the word.
+ */
+export function machineWordPending(client: CloudReadClient, machine: string, word: string): boolean {
+  if (!machine || !word) return false
+  const snapshot = descriptorObject(client.orchestratorSnapshots?.get?.(machine))
+  if (snapshot && descriptorObject(snapshot.machine)) return false
+  const lacks = client.machineLacks?.get?.(machine) as { has?(word: string): unknown } | undefined
+  if (typeof lacks?.has === "function" && lacks.has(word)) return false
+  const remembered = descriptorObject(descriptorObject(client.machineDescriptors?.get?.(machine))?.machine)
+  const commands = remembered?.commands
+  if (!Array.isArray(commands) || commands.includes(word)) return false
+  return commands.length >= REMEMBERED_COMMANDS_CUT
+}
+
 /** The copied client's `AGENT_LIMIT`: the entries one subagent read carries. */
 export const CLOUD_AGENT_LIMIT = 200
 /** The copied client's `TRANSCRIPT_LIMIT`: the entries one session read carries. */
@@ -444,6 +533,8 @@ export interface RelayReaderOptions {
   carry?: CarryTable
   /** `RECONNECT_WAIT_MS`, for a test. */
   reconnectWaitMs?: number
+  /** `FEATURE_WAIT_MS`, for a test. */
+  featureWaitMs?: number
   /** Hosted ss/ compatibility clock; no rich s/ snapshot is read when supplied. */
   statusList?: () => { at: number; complete: boolean }
   /** The original one-machine page reads exact rich rows named by ss/. */
@@ -1453,6 +1544,9 @@ export class RelayReader {
       }
     }
     const entry: HeldTranscript = held ?? this.hold(session)
+    // `transcript` is past the remembered descriptor's cut too, and this read
+    // does not go through `machineRead` (`client.transcript`).
+    await this.settledWords("transcript")
     if (this.options.classicStatus && !client.transcriptForGeneration) {
       throw Object.assign(new Error("Pinned Session reading is unavailable"), { code: "cloud_not_carried" })
     }
@@ -1527,6 +1621,14 @@ export class RelayReader {
     // fifteen-second bound (`pages/work/api.ts`) silently became the copied
     // client's sixty-second read timeout plus its ten-second status probe:
     // a Session's to-do fold said "loading" for over a minute per try.
+    if (signal?.aborted) {
+      mark("caller_canceled", "cloud_read_abandoned")
+      throw new AbandonedRead(word)
+    }
+    // The reads a page fires the moment it opens are the ones that used to be
+    // refused here for a word the remembered descriptor's cut list did not
+    // reach. Nothing else waits, and a caller that gave up is not kept.
+    await this.settledWords(word, signal, machine)
     if (signal?.aborted) {
       mark("caller_canceled", "cloud_read_abandoned")
       throw new AbandonedRead(word)
@@ -1688,6 +1790,42 @@ export class RelayReader {
     })
     if (signal?.aborted) throw new AbandonedRead(word)
     return this.pinnedSession(session)
+  }
+
+  /**
+   * Hold a read until the chosen machine's own word list has arrived, when the
+   * page would otherwise refuse it on a word list that was cut short
+   * (`machineWordPending`).
+   *
+   * Only that condition waits, and only for the descriptor: the next `orch/`
+   * envelope of this machine that carries one, or `FEATURE_WAIT_MS`, whichever
+   * comes first. Then the same checks decide, so a machine that really does
+   * not answer the word is refused exactly as it was — with the refusal it
+   * always had, and after this wait at the worst.
+   */
+  private async settledWords(word: string, signal?: AbortSignal | null, machine: string = this.machine): Promise<void> {
+    const client = this.client
+    if (!client || signal?.aborted) return
+    if (!machineWordPending(client, machine, word)) return
+    const bound = this.options.featureWaitMs ?? FEATURE_WAIT_MS
+    await new Promise<void>((resolve) => {
+      let off: (() => void) | null = null
+      const done = () => {
+        clearTimeout(timer)
+        off?.()
+        signal?.removeEventListener("abort", done)
+        resolve()
+      }
+      const timer = setTimeout(done, bound)
+      signal?.addEventListener("abort", done)
+      // A status-only `orch/` notice carries no descriptor and sets no
+      // snapshot (`_applySnapshot`), so the condition is asked again rather
+      // than the first envelope being taken for the answer.
+      off = client.events((event) => {
+        if (event.type === "orchestrator" && event.machine === machine &&
+          !machineWordPending(client, machine, word)) done()
+      }) as (() => void) | null
+    })
   }
 
   private pinnedSession(session: string): { machineID: string; sessionID: string; executionGeneration: string } {

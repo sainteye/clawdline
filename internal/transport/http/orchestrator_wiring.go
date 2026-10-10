@@ -67,7 +67,11 @@ func newBroker(s *Server) *orchestrator.Broker {
 		Store:       s.store,
 		// A task's admission and end, for the token ledger's work-unit
 		// cursors (docs/token-ledger.md "One unit of work").
-		WorkUnitEdge:         s.workUnitEdge(),
+		WorkUnitEdge: s.workUnitEdge(),
+		// A written task row, for the Cloud publisher that carries the task
+		// list on its machine descriptor and otherwise has no way to know the
+		// list moved but to read it (cloud.go, noteTaskListChanged).
+		TaskListChanged:      s.noteTaskListChanged,
 		SquadActorRequired:   true,
 		ResolveSquadSnapshot: s.resolveSquadSnapshot,
 		SquadAutoAssignable: func(ctx context.Context, personaID, projectPath string) (bool, error) {
