@@ -967,7 +967,7 @@ func decodeWorkV2TodoAction(b body) (plan, bool) {
 	action, actionOK := b.nonEmpty("action")
 	document, documentOK := b.object("item", workV2CloudBodyLimit)
 	if !ok || p.request == "" || !terminalOK || len(terminal) > 256 || !idOK || len(id) > 256 ||
-		!actionOK || !documentOK || (action != "send" && action != "complete" && action != "reopen" && action != "delete") {
+		!actionOK || !documentOK || (action != "send" && action != "complete" && action != "reopen" && action != "delete" && action != "edit") {
 		return plan{}, false
 	}
 	p.target, p.id, p.kind, p.document = terminal, id, action, document

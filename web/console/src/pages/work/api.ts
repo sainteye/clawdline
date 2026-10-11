@@ -508,5 +508,11 @@ export const directTodoActionV2 = (terminalID: string, todoID: string, action: "
     {},
   )
 
+export const editDirectTodoV2 = (terminalID: string, todoID: string, text: string, expectedVersion: number) =>
+  mutate<{ todo: DirectTodoV2 }>(
+    `/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}/${todoID}/edit`,
+    { text, expected_version: expectedVersion },
+  )
+
 export const answerDecision = (id: string, option: string) =>
   decide<unknown>(`/v1/work/decisions/${id}`, { answer: option })

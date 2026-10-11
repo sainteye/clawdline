@@ -142,6 +142,10 @@ const words = {
     failedNetwork: "The daemon did not answer; nothing is known to have been done.",
 
     todosTitle: "Session to-dos",
+    todoEdit: "Edit to-do",
+    todoEditHint: "The Session will see the new wording when it next reads to-dos. You can also send it now.",
+    todoSave: "Save changes",
+    todoCancel: "Cancel",
     todoAddedBySession: "Added by Session",
     todoAddedBySessionLabel: "Added by this Session at your request; you did not send it",
     todosOpen: "{n} open",
@@ -352,6 +356,10 @@ const words = {
     failedNetwork: "daemon 沒有回應；不知道有沒有做成。",
 
     todosTitle: "Session 待辦",
+    todoEdit: "編輯待辦",
+    todoEditHint: "儲存後，Session 下次讀取待辦就會看到新內容；也可以立即送出。",
+    todoSave: "儲存變更",
+    todoCancel: "取消",
     todoAddedBySession: "Session 建立",
     todoAddedBySessionLabel: "這個 Session 依你的要求自己建立，不是你傳送的",
     todosOpen: "{n} 項未完成",
