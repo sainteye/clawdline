@@ -68,6 +68,9 @@ function transcriptPage(reply: unknown, sessionID: string, before?: number):
  */
 type PinnedReadSupport = "yes" | "no" | "unconfirmed"
 
+/** Retry a missing retained status row after a refused or timed-out recovery. */
+export const STATUS_GAP_RETRY_MS = 5_000
+
 function pinnedReadSupport(client: StatusClient, machineID: string, nowMs = Date.now()): PinnedReadSupport {
   const capability = record(client.readContentCapabilities?.get(machineID))
   if (!capability || !Number.isFinite(capability.at) ||
@@ -118,7 +121,8 @@ export function pinnedQuestion(client: Pick<StatusClient, "detailSnapshots">, de
 /** Reads current client per call so token renewal does not strand the fleet page. */
 export function statusSource(current: () => StatusClient | null): SessionProjectionSource {
   let attemptedClient: StatusClient | null = null
-  const gapAttempts = new Map<string, { generation: string; sessions: Map<string, Promise<boolean>> }>()
+  const gapAttempts = new Map<string, { generation: string;
+    sessions: Map<string, { promise: Promise<boolean>; retryAt: number }> }>()
   const opened = new Map<string, StatusClient>()
   const imageSignals = new Map<string, AbortController>()
   const visibleArtifacts = new Map<string, Set<string>>()
@@ -147,17 +151,25 @@ export function statusSource(current: () => StatusClient | null): SessionProject
           attempts = { generation: missing.snapshotGeneration, sessions: new Map() }
           gapAttempts.set(machineID, attempts)
         }
+        const now = client.now?.() ?? Date.now()
         let recovery = attempts.sessions.get(missing.sessionID)
-        if (!recovery) {
-          recovery = client.recoverStatusRow(machineID, missing.sessionID, missing.snapshotGeneration)
-            .catch(() => false)
+        if (!recovery || recovery.retryAt <= now) {
+          recovery = { promise: client.recoverStatusRow(machineID, missing.sessionID, missing.snapshotGeneration)
+            .catch(() => false), retryAt: Number.POSITIVE_INFINITY }
           attempts.sessions.set(missing.sessionID, recovery)
         }
         // A marker can overtake one row while the relay restates its cache.
         // Keep the previous list still until recovery settles, then show a
         // genuine gap if the row remains absent. Detail reads still recheck ss/.
-        await recovery
+        if (await recovery.promise) attempts.sessions.delete(missing.sessionID)
+        else if (recovery.retryAt === Number.POSITIVE_INFINITY)
+          recovery.retryAt = (client.now?.() ?? Date.now()) + STATUS_GAP_RETRY_MS
         projection = statusProjection(client, machineID)
+        if (projection.kind === "unavailable" && projection.reason === "event_gap") {
+          const retryAt = attempts.sessions.get(missing.sessionID)?.retryAt ??
+            (client.now?.() ?? Date.now()) + STATUS_GAP_RETRY_MS
+          return { ...projection, retryAt }
+        }
       }
     }
     if (projection.kind !== "ready" || signal.aborted) return projection

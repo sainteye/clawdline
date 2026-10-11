@@ -308,6 +308,15 @@ export class StatusCloudClient extends CatalogCloudClient {
    */
   _machineImplements(machine, type, options) {
     if (type === CARRIER_WORD) return this.carrierSupported(machine) ? "yes" : "no"
+    // The archived client persists only the first 64 command words. Absence
+    // from that prefix is not a machine refusal, even for a Linux machine.
+    // A named read may ask the machine; its signed answer is authoritative.
+    const live = this.orchestratorSnapshots?.get(machine)?.machine
+    const remembered = this.machineDescriptors?.get(machine)?.machine?.commands
+    const lacks = this.machineLacks?.get(machine)
+    if ((!live || typeof live !== "object" || Array.isArray(live)) &&
+      Array.isArray(remembered) && remembered.length >= 64 && !remembered.includes(type) &&
+      !lacks?.has(type)) return "unknown"
     return super._machineImplements(machine, type, options)
   }
 
@@ -879,6 +888,9 @@ export class StatusCloudClient extends CatalogCloudClient {
     })
     this.statusRecoveries.set(channel, { generation: snapshotGeneration, promise, finish })
     try {
+      // Rich rows and transcripts often occupy every relay slot when a page
+      // opens. Free idle subscriptions the same way an ordinary read does.
+      this._trimSubscriptions(1, [channel])
       if (this.socketSubscriptions.size >= this.subscriptionLimit) finish(false)
       else {
         this.pendingSubscriptions.add(channel)

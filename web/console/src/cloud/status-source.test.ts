@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
-import { pinnedQuestion, statusSource } from "./status-source.ts"
+import { pinnedQuestion, statusSource, STATUS_GAP_RETRY_MS } from "./status-source.ts"
 
 const machineID = "one"
 const sessionID = "same"
@@ -341,6 +341,8 @@ test("a missing ss row settles before it can shake the visible list", async () =
 
 test("a failed retained-row request keeps the machine in event_gap", async () => {
   const { client, calls } = clientFixture()
+  let now = Date.now()
+  client.now = () => now
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]));
   (client as { recoverStatusRow: (machine: string, session: string, generation: string) => Promise<boolean> }).recoverStatusRow = async () => {
     calls.push("recover-refused")
@@ -351,11 +353,15 @@ test("a failed retained-row request keeps the machine in event_gap", async () =>
   assert.equal(reading.kind === "unavailable" && reading.reason, "event_gap")
   const repeated = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(repeated.kind === "unavailable" && repeated.reason, "event_gap")
+  assert.equal(repeated.kind === "unavailable" ? repeated.retryAt : undefined, now + STATUS_GAP_RETRY_MS)
   assert.deepEqual(calls, ["recover-refused"])
+  now += STATUS_GAP_RETRY_MS
+  await source.readMachine(machineID, new AbortController().signal)
+  assert.deepEqual(calls, ["recover-refused", "recover-refused"])
   const marker = client.statusSnapshots.get(JSON.stringify([machineID, inventory])) as { payload: { snapshot_generation: string } }
   marker.payload.snapshot_generation = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   await source.readMachine(machineID, new AbortController().signal)
-  assert.deepEqual(calls, ["recover-refused", "recover-refused"])
+  assert.deepEqual(calls, ["recover-refused", "recover-refused", "recover-refused"])
 })
 
 test("a stale machine refuses detail before subscribing to content", async () => {

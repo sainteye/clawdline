@@ -334,10 +334,9 @@ export function machineApp(client: CloudReadClient, machine: string): { version?
  * `work.v2.session-todos` — the two words the page reads first and the cut
  * does not reach.
  *
- * Five seconds is the descriptor's own arrival, not a retry budget: the
- * envelope is on its way as part of the pass the socket starts with. A machine
- * that never sends one is refused exactly as it is today, and nothing else
- * waits.
+ * Five seconds gives the live descriptor a chance to arrive. If it does not,
+ * a cut remembered list is still inconclusive: StatusCloudClient asks the
+ * named machine and lets its signed answer decide.
  */
 export const FEATURE_WAIT_MS = 5_000
 
@@ -1813,13 +1812,13 @@ export class RelayReader {
   /**
    * Hold a read until the chosen machine's own word list has arrived, when the
    * page would otherwise refuse it on a word list that was cut short
-   * (`machineWordPending`).
+   * (`machineWordPending`). A cut remembered list alone cannot refuse the
+   * read when this wait ends; the named machine answers it instead.
    *
    * Only that condition waits, and only for the descriptor: the next `orch/`
    * envelope of this machine that carries one, or `FEATURE_WAIT_MS`, whichever
-   * comes first. Then the same checks decide, so a machine that really does
-   * not answer the word is refused exactly as it was — with the refusal it
-   * always had, and after this wait at the worst.
+   * comes first. A live descriptor or a machine's signed refusal remains
+   * authoritative. The stored 64-word prefix is not.
    */
   private async settledWords(word: string, signal?: AbortSignal | null, machine: string = this.machine): Promise<void> {
     const client = this.client

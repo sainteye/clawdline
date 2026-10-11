@@ -448,6 +448,7 @@ const (
 	ConsoleTranscriptBackoffSeconds   = "console.transcript_backoff_seconds"
 	ConsoleRelayTranscriptExpectReask = "console.relay_transcript_expect_reask_seconds"
 	ConsoleRelayFeatureWait           = "console.relay_feature_wait_seconds"
+	ConsoleStatusGapRetry             = "console.status_gap_retry_seconds"
 	ConsoleTranscriptFollowFast       = "console.transcript_follow_fast_seconds"
 	ConsoleTranscriptFollowLater      = "console.transcript_follow_later_seconds"
 	ConsoleHealthLive                 = "console.health_live_seconds"
@@ -2562,9 +2563,18 @@ func Register() []Entry {
 			// 21 read failures on this machine between 11:30 and 14:22 on
 			// 2026-10-10, every one of them `transcript` or
 			// `work.v2.session-todos`. This is how long such a read may wait
-			// for the live descriptor instead; past it the refusal is the one
-			// it always had.
+			// for the live descriptor instead; past it the cut list cannot
+			// refuse the read, so the machine's signed answer decides.
 			Name: ConsoleRelayFeatureWait, Class: Cache, Unit: Seconds,
+			Limit: 5, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// A browser retries a missing retained ss/ row after a recovery
+			// was refused or timed out (STATUS_GAP_RETRY_MS,
+			// web/console/src/cloud/status-source.ts). A failed attempt must
+			// not pin the list in event_gap for the rest of the status pass.
+			Name: ConsoleStatusGapRetry, Class: Cache, Unit: Seconds,
 			Limit: 5, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
