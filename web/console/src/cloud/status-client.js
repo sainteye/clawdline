@@ -613,7 +613,17 @@ export class StatusCloudClient extends CatalogCloudClient {
       const offline = this._offlineRefusal(machine)
       if (offline) throw offline
     }
-    if (!this.ready) throw this.closedFailure || refused("offline", "the Cloud connection is not ready")
+    // The same reasoning as `machineOffline` above, for this page's own socket: a read on an open
+    // carrier does not touch the relay, so a relay socket between connections is not its problem.
+    // Measured on 2026-10-11 at 08:39, while this page renewed its credentials: three reads in a
+    // row were refused `offline` inside a second, which is the residual failure the Cloud
+    // read-failure observation keeps recording as `connection=not_ready`. A retired or stopped
+    // client closes its carriers, so an open carrier here means the socket is reconnecting --
+    // exactly when a second road is worth having. The machine still authorizes every carrier read
+    // by itself.
+    if (!this.ready && !pending?.carrier) {
+      throw this.closedFailure || refused("offline", "the Cloud connection is not ready")
+    }
     if (!this.devicePrivateKey || !this.deviceID) throw refused("missing_device_key", "the viewer key is unavailable")
     const pairing = await this._outboundMachinePairing(machine)
     const sequence = await this.nextSequence(this.deviceID)

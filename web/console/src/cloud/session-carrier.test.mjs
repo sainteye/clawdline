@@ -342,3 +342,29 @@ test("a copied row lands in the list the relay's own row would have filled", asy
     { session: { id: "s2", label: "a row" }, at: 1 }, { seq: 40, ts: 1 }, true)
   assert.equal(client.sessionSnapshots.get("m\u0000s2").label, "a row")
 })
+
+test("fault injection: a read takes the carrier while this page's own socket is between connections", async () => {
+  const { client, carrier, masterKey, signing } = await sealedClient()
+  // The real publisher this time, because the refusal being tested is inside it.
+  delete client._publishCommand
+  Object.assign(client, {
+    ready: false, devicePrivateKey: signing.privateKey,
+    nextSequence: async () => 11,
+    _outboundMachinePairing: async () => ({ keyID: "mk", masterKey }),
+  })
+
+  // Measured on 2026-10-11 at 08:39: while this page renewed its relay credentials, three reads
+  // in a row were refused `offline` in under a second. A read on an open carrier never touches
+  // the relay, so the socket being between connections is not its failure.
+  const answer = read(client)
+  for (let i = 0; i < 6; i++) await flush()
+  assert.equal(carrier.written.length, 1, "the read was refused instead of taking the open carrier")
+  assert.equal(carrier.written[0].ch, "r/m")
+  assert.deepEqual([...client.subscribed], [], "the carrier read subscribed to a relay channel")
+  client._settleRead(KEY, { entries: ["from the carrier"] }, null)
+  assert.deepEqual(await answer, { entries: ["from the carrier"] })
+
+  // Without a carrier there is nothing to read on, and the refusal stands.
+  carrier.close("gone for this test")
+  await assert.rejects(read(client), (error) => error.code === "offline")
+})
