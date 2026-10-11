@@ -26,6 +26,7 @@ import {
   skillQuery,
 } from "../legacy/skills-bridge.js"
 import { nextWord } from "../next-strings.js"
+import { pressKey } from "../press-key.js"
 import { STACKS_REFRESH_MS, readStacks, stackLinks, stackStateSaid, stackTip } from "./stacks.js"
 
 /**
@@ -456,7 +457,9 @@ export default function Bar() {
     remember(body)
     setText("")
     void client
-      .send(target.id, body)
+      // One press, one request: the bar has no card to keep a durable one, and
+      // a Session write across Clawdline Cloud is refused without a key.
+      .send(target.id, body, pressKey("bar"))
       .then(() => {
         // "Let the jump finish before closing": the original waits 0.18s so
         // that pressing Enter has a result on screen. Here the wait is the

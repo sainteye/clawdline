@@ -810,6 +810,17 @@ through `GET /v1/sessions/{id}/cloud-receipts/{request}` with `action` and
 `execution_generation` query fields. A lost reply must be reconciled by this
 read under the original request ID, never by minting another write ID.
 
+Every console caller of those words therefore has to name a request, and each
+one says where it got it: the composer sends its card's durable request, which
+survives an unanswered attempt (`session/sender.ts`); a waiting card's press
+sends the press's own; a single press that has no card — the model switch on a
+Session card, a `/clear` from the action sheet, a line typed into the command
+bar, a start sheet's first instructions — mints one per press
+(`console/src/press-key.ts`). `ClawdlineClient.send` takes the request as a
+required parameter so there is no unkeyed send to write: between 20f03679 and
+this, the four keyless callers reached a machine read through Cloud only to be
+refused `idempotency_key_required`, and the model switch did nothing at all.
+
 ### 10.4 派工就是 task.json
 
 遠端派工的加密載荷帶的就是本機 orchestrator 已經在講的 wire format：**task.json 就是協定**。

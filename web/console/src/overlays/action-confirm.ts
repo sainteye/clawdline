@@ -14,6 +14,7 @@ import {
   type Closeable,
 } from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
+import { pressKey } from "../press-key.js"
 import { readSessionWorkV2, type DirectTodoV2, type WorkV2Item } from "../pages/work/api.js"
 import { toast, toastFailure } from "./toast.js"
 import { processRecovery, refusedReasons, releasableItems } from "./close-release.js"
@@ -690,27 +691,9 @@ let endWasOpen = false
 /** Which close is in flight: the words of its ending and where a refusal reopens. */
 let endKind: CloseKind = "end"
 
-/**
- * A fresh request id for one decision.
- *
- * `crypto.randomUUID` only exists in a secure context, and this console is
- * served over plain http on a LAN, so the fallback is the one `press-holds.ts`
- * uses: it has to be unrepeated, not unguessable.
- */
-let minted = 0
+/** A fresh request id for one decision; the console's own (`press-key.ts`). */
 function mintRequest(): string {
-  const c = globalThis.crypto
-  if (typeof c?.randomUUID === "function") {
-    try {
-      return c.randomUUID()
-    } catch {
-      /* below */
-    }
-  }
-  minted += 1
-  const bytes = new Uint8Array(8)
-  c.getRandomValues(bytes)
-  return "close-" + minted + "-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+  return pressKey("close")
 }
 
 /** `false` is the only answer that tells the sheet nothing is coming back. */
@@ -770,10 +753,14 @@ export function endedIfGone(ids: ReadonlySet<string>): void {
   if (id && !ids.has(id) && endKind !== "archive") finishEnd(id, endTicket, true)
 }
 
-/** `SessionActions.prompt`: one command typed into the session, acknowledged with a toast. */
+/**
+ * `SessionActions.prompt`: one command typed into the session, acknowledged
+ * with a toast, under the press's own key — a machine read through Clawdline
+ * Cloud refuses a `send` that names no request.
+ */
 function prompt(action: string, id: string): void {
   if (!id || !host.writable()) return
-  client.send(id, action).then(
+  client.send(id, action, pressKey("command")).then(
     () => toast(action + " ✓"),
     (e) => toastFailure(e, T.webRequestFailed),
   )
