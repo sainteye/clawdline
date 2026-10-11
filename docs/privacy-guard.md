@@ -82,13 +82,26 @@ of it.** Every ref, every commit, nothing skipped, no notion of standing. What c
 list of everything the repository could publish, and every line is a decision somebody has to
 take before replacing public history and not after.
 
-**Before a routine push: do not run that full scan.** The tracked pre-push hook reads the history
-at the remote commit and at the proposed local commit, then refuses the push if the latter carries
-more findings. That comparison asks the routine question directly — whether this push adds a
-finding — without printing and rereading every standing finding in every local ref. Measured on
-2026-09-22 after old refs had accumulated: `-history -full -revs=--all` read 2,254 commits,
-13,809 objects and 923.1 MB in 602.1 seconds. Requiring it for every push added ten minutes while
-the range comparison in `tools/git-hooks/pre-push` already guarded the actual ref update.
+**Before a routine push: `-history -revs=<local> -since=<remote>`.** That is what the tracked
+pre-push hook runs, and it is the routine question itself: *do the commits this push would add
+carry anything private?* `-since` reads only the commits the remote does not already have, and
+keeps no checkpoint, so nothing it reports is recorded as read — which is what made `-new` wrong
+in a hook, where a refused push passed on the second attempt. What the remote already publishes is
+not re-judged: taking it back out is a history rewrite, not a push refusal.
+
+The hook used to answer the same question by comparison — read the whole history at the remote
+commit, read it again at the local one, refuse when the second carried more findings — because
+`-checkpoint -` forces a full read and drops the excluded end of a range. It was correct and it
+cost two full reads a push. Measured on this machine, 2026-10-11: the range scan of a four-commit
+push read 4 commits, 23 objects, 744 KB in **12 seconds**; the two full scans it replaced took
+about **five minutes each**. That is not only the wait — a ten-minute push gets started beside a
+build, and one did, and the two together wedged a push for two and a half hours. For scale after
+old refs had accumulated, 2026-09-22: `-history -full -revs=--all` read 2,254 commits, 13,809
+objects and 923.1 MB in 602.1 seconds.
+
+`tools/test-pre-push-privacy.sh` holds the hook to it: one history call per push, over the range,
+with no checkpoint, and every answer but clean — a finding, could-not-check, undetermined —
+refuses the push and leaves the remote ref where it was.
 
 ## What a finding says, and what it never says
 

@@ -15,10 +15,13 @@ tools/configure-public-remote.sh
 
 It adds `origin` with the public fetch URL and sets this checkout's
 `core.hooksPath` to `tools/git-hooks`. The tracked `pre-push` hook permits only
-the public `main` and `swift` branches, and checks `main` for private material
-that is not already in the published history. `tools/test-public-remote-guard.sh`
+the public `main` and `swift` branches, and reads the commits a push to `main`
+would add — `-history -revs=<local> -since=<remote>`, the commits the remote
+does not already carry — for private material. `tools/test-public-remote-guard.sh`
 proves that another branch is rejected against a disposable local bare
-repository and that no remote ref was created.
+repository and that no remote ref was created;
+`tools/test-pre-push-privacy.sh` proves that the privacy answer is asked once,
+over that range, and that anything but clean refuses the push.
 
 The hook prevents an accidental push of an unsafe ref or newly detected
 private history; Git's deliberate `--no-verify` option can bypass any pre-push

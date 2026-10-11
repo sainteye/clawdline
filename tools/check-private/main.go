@@ -35,6 +35,7 @@
 //	tools/check-private.sh -history        # every commit, from the last checkpoint
 //	tools/check-private.sh -history -new   # red only if today's commits added one
 //	tools/check-private.sh -history -full  # every commit, whatever the checkpoint says
+//	tools/check-private.sh -history -revs=HEAD -since=origin/main   # only what a push would add
 package main
 
 import (
@@ -58,10 +59,11 @@ func main() {
 	revs := flag.String("revs", "HEAD", "what -history reads, as git rev-list spells it (e.g. --all)")
 	full := flag.Bool("full", false, "-history reads every commit, whatever the checkpoint says")
 	checkpoint := flag.String("checkpoint", "", "where -history remembers what it read; - keeps none")
+	since := flag.String("since", "", "-history reads only what -revs reaches and this does not (a push: the commit the remote already carries); it writes no checkpoint")
 	onlyNew := flag.Bool("new", false, "-history is red only for a finding the checkpoint had not already recorded")
 	dir := flag.String("dir", "", "read every file under this directory instead of the repository, and the printable strings of a binary (a release's unpacked artifacts, docs/releasing.md)")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: check-private [-rules] [-history [-revs R] [-full] [-new] [-checkpoint P]] [-dir D] [-- git-pathspec...]")
+		fmt.Fprintln(os.Stderr, "usage: check-private [-rules] [-history [-revs R] [-since R] [-full] [-new] [-checkpoint P]] [-dir D] [-- git-pathspec...]")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -70,7 +72,7 @@ func main() {
 		return
 	}
 	if *history {
-		os.Exit(int(runHistory(historyOptions{revs: *revs, full: *full, checkpoint: *checkpoint, onlyNew: *onlyNew})))
+		os.Exit(int(runHistory(historyOptions{revs: *revs, since: *since, full: *full, checkpoint: *checkpoint, onlyNew: *onlyNew})))
 	}
 	os.Exit(int(run(flag.Args(), *dir)))
 }

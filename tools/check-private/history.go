@@ -37,6 +37,7 @@ import (
 // historyOptions are the flags that only mean something in -history mode.
 type historyOptions struct {
 	revs       string // what to scan, as git rev-list spells it
+	since      string // read only what revs reaches and this does not; writes no checkpoint
 	full       bool   // read everything, whatever the checkpoint says
 	checkpoint string // where the checkpoint is; "-" is none
 	onlyNew    bool   // red only for a finding the checkpoint had not already recorded
@@ -80,6 +81,23 @@ func runHistory(o historyOptions) privacy.Answer {
 		return privacy.CannotCheck
 	}
 
+	// -since: the other end of a range, asked for by name rather than spelled
+	// `A..B`, because the tips above are resolved with --no-walk and a
+	// `^exclude` does not survive that. A push asks this: read the commits
+	// this push would add to what the remote already carries, and nothing
+	// else. It is not a checkpoint — nothing is remembered, and a partial read
+	// may not move one — and whether the commit exists here is answered
+	// rather than assumed, because "it was not in this clone" read as "there
+	// is nothing to compare with" would wave a push through.
+	var excluded []string
+	if o.since != "" {
+		excluded, err = g.lines("rev-list", append([]string{"--no-walk"}, strings.Fields(o.since)...)...)
+		if err != nil || len(excluded) == 0 {
+			fmt.Fprintf(os.Stderr, "cannot check: -since %s names no commit here: %v\n", o.since, err)
+			return privacy.CannotCheck
+		}
+	}
+
 	// The checkpoint, and the one thing it is allowed to do: name commits
 	// whose objects this run may skip. Every way of not believing it ends in
 	// the same place — a full scan — and says which way it was.
@@ -89,9 +107,12 @@ func runHistory(o historyOptions) privacy.Answer {
 		salt     string
 		cpNote   = "no checkpoint: reading the whole history"
 		cpPath   = o.checkpoint
-		writeCP  = cpPath != "-"
+		writeCP  = cpPath != "-" && o.since == ""
 		previous *privacy.Checkpoint
 	)
+	if o.since != "" {
+		cpNote = "no checkpoint: -since " + short(excluded[0]) + " asked for a partial read"
+	}
 	if writeCP {
 		if cpPath == "" {
 			cpPath = g.infoFile("private-history")
@@ -100,7 +121,7 @@ func runHistory(o historyOptions) privacy.Answer {
 			writeCP = false
 			cpNote = "no checkpoint: this clone has no git info directory"
 		}
-	} else {
+	} else if o.since == "" {
 		cpNote = "no checkpoint: -checkpoint=- asked for a full read"
 	}
 	if writeCP {
@@ -135,9 +156,9 @@ func runHistory(o historyOptions) privacy.Answer {
 	// What to read. `--not` makes git do the set difference: every object
 	// reachable from the tips and not from what was already scanned.
 	rangeArgs := append([]string{}, tips...)
-	if len(base) > 0 {
+	if skip := append(append([]string{}, base...), excluded...); len(skip) > 0 {
 		rangeArgs = append(rangeArgs, "--not")
-		rangeArgs = append(rangeArgs, base...)
+		rangeArgs = append(rangeArgs, skip...)
 	}
 	commits, err := g.lines("rev-list", rangeArgs...)
 	if err != nil {

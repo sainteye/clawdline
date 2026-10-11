@@ -100,6 +100,17 @@ script once; a nested `heavy` runs directly.
 enables it by default for roots. End that turn and wait for the notice. Children and failed
 handoffs keep the in-turn wait.
 
+## A push is not a background chore to run beside a build
+
+The pre-push hook reads the commits a push would add (`docs/privacy-guard.md`) and asks GitHub
+about main's latest CI run. It used to read the whole history twice instead, about five minutes a
+side. On 2026-10-11 a push started while the full check run and an app package build held the
+machine took **two and a half hours**: its TCP socket was `CLOSED` and git never noticed. Killing
+that git process and pushing again, alone, took 5m16s. The range scan took the same push to 12
+seconds, so the wait is no longer the problem — but the lesson stands for anything that holds a
+remote connection open: start it when nothing else is compiling, and confirm what landed with
+`git ls-remote` rather than by reading a hung command's output.
+
 ## When main is red
 
 From 2026-10-07 04:12 to 2026-10-09, 160 of the last 200 CI runs on main failed. A red Go test
