@@ -100,14 +100,23 @@ and why (the machine opens no direct path, or there is none right now), and says
 dispatches take the relay whatever the dot shows (`carrier-state.ts`, `CarrierDot.tsx`). Nothing
 is opened to draw it: the dot reads the carrier this page already holds.
 
-A hollow dot on a machine is usually its build, not its kind. `session_carrier_v1` is
-`cloud_terminal_direct`, which is on unless the settings file says otherwise, and this path has
-no build tags and no platform test — pion is pure Go. Measured on 2026-10-11 against this
-account: the Mac on that day's build published the capability, while the two Linux machines'
-descriptors did not carry the key at all, one of them stamped three days older than the carrier
-and the other built as `devel`. Updating such a machine is what fills its dot — if the two ends
-can then reach each other at all, since there is no TURN and a host whose network refuses UDP
-stays on the relay with the capability on.
+A hollow dot on a machine is usually its build or its switch, not its kind. `session_carrier_v1`
+is `cloud_terminal_direct`, which is on unless the settings file says otherwise, and this path has
+no build tags and no platform test — pion is pure Go. Measured on 2026-10-11 against one account's
+two Linux machines, neither of which carried the key at all: one was three days older than the
+carrier and one was built as `devel`, and after both were updated to the same commit as the Mac,
+one of them published the key and the other did not, because its own settings file had turned the
+switch off. With the switch on it opened a carrier in 927 ms.
+
+**A machine that cannot send UDP answers the offer and still cannot connect.** The other updated
+machine, a cloud host whose network allows outbound TCP and DNS and no other UDP, answered every
+`carrier_offer` in about 3.5 s with a sealed answer SDP — authority, signalling and capability all
+working — and its answer carried only private host candidates, because the STUN servers it would
+have learned its public address from are reached over UDP it may not send. Nothing could be tried,
+the data channel never opened, and each attempt cost about 9.3 seconds (3 s gathering plus the
+negotiate bound) before the page went back to the relay for the next `DIRECT_RETRY_MS`. There is no
+TURN, so that machine's dot stays hollow until its network lets it speak UDP, and the page's own
+sentence for it is the right one: there is no direct path to it right now.
 
 ## Measured after the change (2026-10-05)
 
