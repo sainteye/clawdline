@@ -13,15 +13,19 @@ import { destinationKey, displayedPresentationStatus, presentationPass, projecti
 import { STATUS_FRESH_MS } from "./status-projection.js"
 import { arrangeFleetRows, fleetWaitingKey } from "./fleet-order.js"
 import { matchesFleetFilter, type FleetFilter } from "./fleet-filters.js"
+import { CarrierDot } from "./CarrierDot.js"
+import type { CarrierReading } from "./carrier-state.js"
 
 export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal"
 type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionProjection }
 
 /** Only the fleet list is new; the conversation and composer belong to SessionsPage. */
 export function FleetSessionList({ machines, source, target, filter, onFilter, onOpen,
-  onMachineAction, onCloseRequest }: {
+  carrierOf, onMachineAction, onCloseRequest }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
+  /** Which road this page's reads of that machine take, read as the row is drawn. */
+  carrierOf?: (machineID: string) => CarrierReading | null
   target: SessionDestination | null
   filter: string
   onFilter: (value: string) => void
@@ -285,8 +289,10 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           onClick={() => setStatusFilter((value) => value === "idle" ? "all" : "idle")}>{nextWord("cloudAllFilterIdle")}</button>
       </div>
       <div className="cloud-all-groups">
-        {groups.map(({ machine, reading, rows, presentationFailed, presentationLoading }) => <section key={machine.id} className="cloud-all-group"
-          aria-label={`${machine.name} ${machine.id}`}>
+        {groups.map(({ machine, reading, rows, presentationFailed, presentationLoading }) => {
+          const carrier = carrierOf?.(machine.id) ?? null
+          return <section key={machine.id} className="cloud-all-group"
+          aria-label={`${machine.name} ${machine.id}` + (carrier ? ` · ${nextWord(carrier.word, { machine: machine.name })}` : "")}>
           <h2 className="cloud-all-group-heading">
             <button type="button" aria-expanded={!collapsed[machine.id]}
               aria-label={nextWord(collapsed[machine.id] ? "cloudAllExpandMachine" : "cloudAllCollapseMachine", { machine: machine.name })}
@@ -295,6 +301,10 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                 {rows.length > 0 && <span className="cloud-all-group-count"
                   aria-label={nextWord("cloudAllSessionCount", { count: rows.length })}>{rows.length}</span>}
               </span>
+              {/* The dot the machine's own row carries. Inside the button it can
+                  only be seen, because the button states its own label; the
+                  section's name below says it for a reader. */}
+              {carrier && <CarrierDot reading={carrier} machine={machine.name} />}
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
             </button></h2>
           {!collapsed[machine.id] && <>
@@ -332,7 +342,8 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           {reading?.phase === "settled" && !!reading.value.unknownTargets &&
             <p role="status">{nextWord("cloudAllUnknownTargets", { count: reading.value.unknownTargets })}</p>}
           </>}
-        </section>)}
+        </section>
+        })}
       </div>
       {groups.length === 0 && <p>{nextWord("cloudAllNoMatch")}</p>}
       <ScheduleSection arrived={true} onOpen={openScheduled} canOpen={canOpenScheduled} />

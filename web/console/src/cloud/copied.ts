@@ -93,6 +93,11 @@ export interface CloudClientHandle extends CloudReadClient {
    * paired with (`cloud-client.js`).
    */
   machineDescriptor?(machine: string): { machine?: { name?: string; platform?: string; commands?: string[] } } | null
+  /**
+   * What this page's own direct carrier to that machine is doing, for the dot
+   * the machine's row draws (`carrier-state.ts`). It opens nothing.
+   */
+  carrierFacts?(machine: string): { known: boolean; supported: boolean; open: boolean }
   /** A request with a stable id, answered on the encrypted machine channel. */
   _machineRequestAs?(
     request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number,

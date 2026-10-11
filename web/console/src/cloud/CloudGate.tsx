@@ -58,6 +58,8 @@ import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { OPENED_ROW_QUIET_MS, openedRowShow } from "./opened-row.js"
 import { FleetSessionList, type MachineToolbarAction } from "./FleetSessionList.js"
+import { CarrierDot } from "./CarrierDot.js"
+import { carrierReading, type CarrierReading } from "./carrier-state.js"
 import { CloudSessionSheets, type PendingMachineAction } from "./CloudSessionSheets.js"
 import { PeerAccessPage } from "./PeerAccessPage.js"
 import { destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
@@ -351,6 +353,15 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const currentActionClient = useCallback(() => client.current, [])
   const [clientEpoch, setClientEpoch] = useState(0)
   const liveSessionSource = useMemo(() => sessionSource ?? statusSource(() => client.current), [sessionSource])
+  /**
+   * Which road this page's reads of one machine take, read while the row is
+   * drawn rather than held in state: the carrier opens and closes on its own,
+   * and every pass of the list redraws these rows anyway. It opens nothing.
+   */
+  const carrierOf = useCallback((machine: string): CarrierReading | null => {
+    const facts = client.current?.carrierFacts?.(machine)
+    return facts ? carrierReading(facts) : null
+  }, [])
   const admitFleetMutation = useCallback(async (target: SessionDestination) => {
     const current = client.current
     if (!current) throw Object.assign(new Error("The Cloud connection is unavailable."), { code: "offline" })
@@ -1275,6 +1286,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             {quickMachines.map((machine) => {
               const current = !fleetScope && machine.id === reading
               const identity = machineIdentityFacts(machine)
+              const carrier = carrierOf(machine.id)
               return (
                 <button
                   type="button"
@@ -1286,6 +1298,9 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
                 >
                   <span className="cloud-switch-option-name">{machine.name || machine.label || machine.id}</span>
                   <span className="cloud-switch-option-platform">{platformWord(identity.platform)}</span>
+                  {/* This row is a button whose name is its own content, so the
+                      dot's sentence belongs in it. */}
+                  {carrier && <CarrierDot reading={carrier} machine={machine.name || machine.label || machine.id} spoken />}
                   {current && <span className="cloud-switch-current">{nextWord("cloudCurrentMachine")}</span>}
                 </button>
               )
@@ -1440,6 +1455,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             target={fleetTarget}
             filter={filter} onFilter={onFilter}
             onOpen={openFleetSession}
+            carrierOf={carrierOf}
             onCloseRequest={(target, title) => { openFleetSession(target); setFleetCloseIntent({ target, title }) }}
             onMachineAction={runMachineTool}
           /> : undefined} />

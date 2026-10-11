@@ -132,6 +132,17 @@ export class DirectCarrier implements SharedCarrier {
     return carrier
   }
 
+  /**
+   * The carrier this client already holds for that machine, or null.
+   *
+   * Unlike `for`, it creates none: the machine's row draws a dot from what the
+   * page already has, and a page that has never needed a carrier to a machine
+   * must not open one because a list was drawn.
+   */
+  static held(client: CarrierClient, machine: string): DirectCarrier | null {
+    return registry.get(client)?.get(machine) ?? null
+  }
+
   get open(): boolean { return !!this.link?.open }
   /** Which channel this carrier is on. A read answer's sequence is only a number within it. */
   get channelGeneration(): number { return this.gen }
@@ -278,6 +289,11 @@ export function directCarriers(client: CarrierClient, peers?: DirectPeerFactory 
     for(machine: string): DirectCarrier | null {
       if (typeof machine !== "string" || !machine) return null
       return DirectCarrier.for(client, machine, peers)
+    },
+    /** Whether a carrier this page already holds for that machine is open. It opens none. */
+    open(machine: string): boolean {
+      if (typeof machine !== "string" || !machine) return false
+      return DirectCarrier.held(client, machine)?.open === true
     },
   }
 }

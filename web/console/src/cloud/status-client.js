@@ -287,6 +287,21 @@ export class StatusCloudClient extends CatalogCloudClient {
     return this.machineDescriptor(machine)?.machine?.session_carrier_v1 === true
   }
 
+  /**
+   * What this page's carrier to that machine is doing, for the dot the machine's
+   * row draws. It opens nothing and asks nothing: both facts are already here,
+   * and `known` is false until this browser has read that machine's descriptor,
+   * because "not supported" and "not read yet" are different sentences.
+   */
+  carrierFacts(machine) {
+    const known = this.carrierCapabilities?.has(machine) === true || !!this.machineDescriptor(machine)
+    return {
+      known,
+      supported: this.carrierSupported(machine),
+      open: typeof this.directCarriers?.open === "function" && this.directCarriers.open(machine) === true,
+    }
+  }
+
   /** The carrier for this machine, or null when this page has none to offer. */
   _carrierFor(machine) {
     if (!this.directCarriers || typeof machine !== "string" || !machine) return null

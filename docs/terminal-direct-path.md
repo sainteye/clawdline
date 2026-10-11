@@ -89,6 +89,17 @@ by its relay receipt, so nothing is replayed. The browser waits 30 s before tryi
 The page shows "direct" next to a terminal on the direct carrier, and the wire contract with every
 number is in `docs/cloud-terminal-wire.md`, Direct carrier.
 
+**Where the person sees which road a machine is on.** The carrier is one channel per page and
+machine, shared by that machine's terminal and by every Session read of it, so it is a fact about
+a machine and never about a Session: two Sessions on one machine cannot take different roads, and
+two machines routinely do. It is therefore drawn on the machine's own row — the fleet list's
+machine heading and the switcher's machine rows — as one dot and no word: filled when this page's
+reads of that machine take the channel, hollow when they take the relay, faint when this browser
+has not read that machine's descriptor yet, which is not the same as relay. The tip says which
+and why (the machine opens no direct path, or there is none right now), and says that sends and
+dispatches take the relay whatever the dot shows (`carrier-state.ts`, `CarrierDot.tsx`). Nothing
+is opened to draw it: the dot reads the carrier this page already holds.
+
 ## Measured after the change (2026-10-05)
 
 In app.clawdline.com in Chrome, against the fixture terminal, on one page load per carrier. Each
