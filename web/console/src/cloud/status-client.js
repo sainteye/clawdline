@@ -980,6 +980,45 @@ export class StatusCloudClient extends CatalogCloudClient {
     }, "read:" + request, undefined, { signal })
   }
 
+  /** Let each schedule machine answer independently of its slower peers. */
+  schedules(options) {
+    if (!options?.fresh || !options.machine) return super.schedules(options)
+    if (this.retired) return this._viaSuccessor((next) => next.schedules(options))
+    const machine = options.machine
+    const found = this._machinesFor("schedules")
+    if (found.pairable.some((row) => row.id === machine)) {
+      return Promise.reject(refused("machine_pairing_required", "this browser is not paired with this machine"))
+    }
+    if (!found.rows.some((row) => row.id === machine)) {
+      return Promise.reject(refused("cloud_read_unavailable", "this machine is not in the viewer's roster"))
+    }
+    if (!found.capable.some((row) => row.id === machine)) {
+      if (found.rows.some((row) => row.id === machine) &&
+        this._machineImplements(machine, "schedules", { learned: false }) === "no") {
+        return Promise.resolve({ schedules: [], at: Math.floor(this.now() / 1000) })
+      }
+      // The roster can precede orch/. A named, paired machine may answer one
+      // bounded authenticated read before its capability descriptor arrives.
+      if (this._machineImplements(machine, "schedules", { learned: false }) === "no") {
+        return Promise.reject(refused("cloud_read_unavailable", "this machine's schedule reader is not confirmed"))
+      }
+    }
+    return this._machineRequest(machine, "schedules", {}, "read").then((answer) => {
+      const rows = Array.isArray(answer?.schedules) ? answer.schedules : []
+      const at = typeof answer?.at === "number" ? answer.at : 0
+      const previous = this.orchestratorSnapshots.get(machine) || {}
+      this.orchestratorSnapshots.set(machine,
+        Object.assign({}, previous, { schedules: rows, at: at || previous.at || 0 }))
+      return { schedules: rows.map((row) => Object.assign({}, row, { machine })),
+        at: at || Math.floor(this.now() / 1000) }
+    }).catch((error) => {
+      if (["unknown_command", "cloud_machine_unsupported"].includes(error?.code)) {
+        return { schedules: [], at: Math.floor(this.now() / 1000) }
+      }
+      throw error
+    })
+  }
+
   /** Keep distinct generations from joining the copied client's per-session read waiter. */
   infoForGeneration(destination, signal) {
     const { machineID, sessionID, executionGeneration } = destination

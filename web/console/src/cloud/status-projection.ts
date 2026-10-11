@@ -95,6 +95,19 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     rows, unknownTargets }
 }
 
+/** A signed, fresh inventory can complete a partial direct list only when their Session sets agree. */
+export function statusInventoryIDs(client: StatusProjectionClient, machine: string, nowMs = Date.now()): readonly string[] | null {
+  const marker = record(held(client, machine, INVENTORY)?.payload)
+  const inventory = record(marker?.inventory)
+  const ids = inventory?.sessions
+  if (!marker || !inventory || inventory.version !== 1 || marker.complete !== true ||
+    !Number.isFinite(marker.at) || outsideFreshWindow(Number(marker.at) * 1000, nowMs) ||
+    typeof marker.snapshot_generation !== "string" || !/^[0-9a-f]{32}$/u.test(marker.snapshot_generation) ||
+    !Array.isArray(ids) || ids.some((id) => typeof id !== "string" || !id || id === INVENTORY) ||
+    new Set(ids).size !== ids.length) return null
+  return ids as string[]
+}
+
 /** One exact retained row whose absence prevents this marker from settling. */
 export function statusGapTarget(client: StatusProjectionClient, machine: string): { sessionID: string; snapshotGeneration: string } | null {
   const marker = record(held(client, machine, INVENTORY)?.payload)

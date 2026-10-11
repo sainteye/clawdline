@@ -334,7 +334,8 @@ A schedule lives on the machine that runs it: its row is in that machine's SQLit
 clock fires it. There is no shared schedule and no machine-to-machine channel, and none is added here.
 
 **The list.** On an account with more than one selectable machine, the Cloud Schedules panel reads every
-machine (`cloud/relay-reader.ts`, `_freshSchedules`) and draws one group per machine, the header's first,
+machine independently (`cloud/relay-reader.ts`, `pages/schedules.tsx`) and draws each answered group without
+waiting for its peers, the header's first,
 each headed by the machine's name and platform word as the header switcher says it. A machine that did not
 answer is a named line — "offline (last seen HH:MM)" when a last-seen time is known, "offline or unreadable"
 otherwise — never an empty group. Every action on a row (history, Run now, Edit, Delete, the webhook

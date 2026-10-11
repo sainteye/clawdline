@@ -8,7 +8,7 @@ import type { MachineSessionProjection, SessionContent, SessionDestination, Mach
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { destinationAvailable, destinationKey } from "./all-machine-sessions.ts"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
-import { record, STATUS_FRESH_MS, statusGapTarget, statusPassTransition, statusProjection } from "./status-projection.ts"
+import { record, STATUS_FRESH_MS, statusGapTarget, statusInventoryIDs, statusPassTransition, statusProjection } from "./status-projection.ts"
 import type { CloudClientHandle } from "./copied.js"
 
 type StatusClient = CloudClientHandle & {
@@ -77,9 +77,9 @@ export const STATUS_MARKER_RETRY_MS = 60_000
 type DirectList = { projection: Extract<MachineSessionProjection, { kind: "ready" }>; reply: Record<string, unknown> }
 
 /** A pinned machine reply is a complete, authenticated fallback while ss/ replays a missing row. */
-function directList(machineID: string, reply: unknown, nowMs: number): DirectList | null {
+function directList(machineID: string, reply: unknown, nowMs: number, inventoryIDs: readonly string[] | null): DirectList | null {
   const body = record(reply)
-  if (!body || body.complete !== true || !Number.isFinite(body.at) ||
+  if (!body || (body.complete !== true && body.complete !== false) || !Number.isFinite(body.at) ||
     Math.abs(nowMs - Number(body.at) * 1000) > STATUS_FRESH_MS ||
     !Array.isArray(body.sessions) || body.sessions.length > 512) return null
   const sessions = body.sessions.map((value: unknown) => record(value))
@@ -89,6 +89,10 @@ function directList(machineID: string, reply: unknown, nowMs: number): DirectLis
     !["working", "waiting", "idle", "unknown"].includes(String(record(row.status)?.state)))) return null
   const ids = sessions.map((row: Record<string, unknown> | null) => String(row!.id))
   if (new Set(ids).size !== ids.length) return null
+  // An incomplete local scan can still fill a gap in the signed ss/ set.
+  // A different or missing ID cannot silently become a complete list.
+  if (body.complete === false && (!inventoryIDs || ids.length !== inventoryIDs.length ||
+    ids.some((id) => !inventoryIDs.includes(id)))) return null
   return { reply: body, projection: { kind: "ready", complete: true, observedAt: nowMs,
     snapshotGeneration: "direct:" + nowMs,
     rows: sessions.map((row: Record<string, unknown> | null) => {
@@ -107,7 +111,7 @@ function pinnedReadSupport(client: StatusClient, machineID: string, nowMs = Date
 }
 
 function supportsPinnedRead(client: StatusClient, machineID: string, nowMs = Date.now()): boolean {
-  return pinnedReadSupport(client, machineID, nowMs) === "yes"
+  return pinnedReadSupport(client, machineID, nowMs) !== "no"
 }
 
 function retainedStatus(reading: MachineSessionProjection, reason: "offline" | "stale", retryAt?: number): MachineSessionProjection {
@@ -175,13 +179,17 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         : { kind: "unavailable", reason: "unknown", observedAt: expired.observedAt }
     }
     let projection = statusProjection(client, machineID)
+    // The roster can arrive before orch/ advertises the reader. One bounded
+    // authenticated attempt is safe: an older machine refuses sessions.list,
+    // while waiting for the descriptor can hold a cold browser for a minute.
     if (projection.kind === "unavailable" && (projection.reason === "unknown" || projection.reason === "event_gap") &&
-      client.listPresentationsForMachine && pinnedReadSupport(client, machineID) === "yes" && !signal.aborted) {
+      client.listPresentationsForMachine && pinnedReadSupport(client, machineID) !== "no" && !signal.aborted) {
       const now = client.now?.() ?? Date.now()
       let cached = directLists.get(machineID)
       if (!cached || cached.client !== client || cached.until <= now) {
         const promise = client.listPresentationsForMachine(machineID, new AbortController().signal)
-          .then((reply) => directList(machineID, reply, client.now?.() ?? Date.now()), () => null)
+          .then((reply) => directList(machineID, reply, client.now?.() ?? Date.now(),
+            statusInventoryIDs(client, machineID, client.now?.() ?? Date.now())), () => null)
         cached = { client, until: now + STATUS_MARKER_RETRY_MS, value: null, promise }
         directLists.set(machineID, cached)
         void promise.then((value) => { if (directLists.get(machineID) === cached) {
@@ -256,7 +264,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     readMachine,
     async readMachinePresentations(machineID, signal): Promise<MachineListPresentation[] | null> {
       const client = current()
-      if (!client?.listPresentationsForMachine || !supportsPinnedRead(client, machineID) || signal.aborted) return null
+      if (!client?.listPresentationsForMachine || pinnedReadSupport(client, machineID) === "no" || signal.aborted) return null
       const before = await readMachine(machineID, signal)
       if (before.kind !== "ready") return null
       try {
@@ -266,7 +274,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
           ? held.reply : record(await client.listPresentationsForMachine(machineID, signal))
         const after = await readMachine(machineID, signal)
         if (signal.aborted || current() !== client || after.kind !== "ready" ||
-          !supportsPinnedRead(client, machineID) || !Array.isArray(reply?.sessions)) return null
+          pinnedReadSupport(client, machineID) === "no" || !Array.isArray(reply?.sessions)) return null
         const currentRows = new Map(after.rows.map((row) => [destinationKey(row.destination), row]))
         const visible = new Set(before.rows.map((row) => destinationKey(row.destination)))
         const result: MachineListPresentation[] = []
@@ -401,7 +409,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       // machine — but refuse it as what it is, never calling an unread
       // capability an old machine.
       const support = pinnedReadSupport(client, destination.machineID)
-      if (support !== "yes") return { kind: "unavailable", reason: support === "no" ? "old_version" : "unconfirmed" }
+      if (support === "no") return { kind: "unavailable", reason: "old_version" }
       if (!client.infoForGeneration || !client.transcriptForGeneration || !client.subscribe || !client.unsubscribe ||
         !client.openDetail || !client.closeDetail) {
         return { kind: "unavailable", reason: "old_version" }
@@ -455,8 +463,8 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       const availability = destinationAvailable(destination, initial)
       if (availability !== "ready") return { kind: "unavailable", reason: availability === "waiting" ? "unknown" : availability }
       const support = pinnedReadSupport(client, destination.machineID)
-      if (support !== "yes" || !client.transcriptPageForGeneration) {
-        return { kind: "unavailable", reason: support === "unconfirmed" ? "unconfirmed" : "old_version" }
+      if (support === "no" || !client.transcriptPageForGeneration) {
+        return { kind: "unavailable", reason: "old_version" }
       }
       try {
         const reply = await client.transcriptPageForGeneration(destination, before, signal)

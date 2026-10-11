@@ -9,7 +9,8 @@
   overflow-wrap: anywhere;
 }
 
-.schedule-machine[data-state="unanswered"] {
+.schedule-machine[data-state="unanswered"],
+.schedule-machine[data-state="loading"] {
   padding-bottom: 10px;
   font-weight: 400;
 }

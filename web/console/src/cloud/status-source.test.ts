@@ -87,6 +87,7 @@ test("a status row event names the Session whose list title should refresh", () 
 test("a new browser replays a missing status marker once and recovers the Session list", async () => {
   const { client } = clientFixture()
   client.readContentCapabilities.delete(machineID)
+  client.listPresentationsForMachine = async () => { throw new Error("older machine") }
   const key = JSON.stringify([machineID, inventory])
   const marker = client.statusSnapshots.get(key)
   client.statusSnapshots.delete(key)
@@ -107,6 +108,7 @@ test("a new browser replays a missing status marker once and recovers the Sessio
 test("an unanswered marker is retried at most once per minute", async () => {
   const { client } = clientFixture()
   client.readContentCapabilities.delete(machineID)
+  client.listPresentationsForMachine = async () => { throw new Error("older machine") }
   client.statusSnapshots.delete(JSON.stringify([machineID, inventory]))
   let reads = 0
   ;(client as typeof client & { recoverStatusMarker: (machine: string) => Promise<boolean> }).recoverStatusMarker = async () => {
@@ -173,6 +175,39 @@ test("a cold status gap uses one complete pinned machine list for rows and title
   assert.deepEqual(calls, ["sessions.list:" + machineID])
 })
 
+test("a cold browser asks once before the machine descriptor arrives", async () => {
+  const { client, calls } = clientFixture()
+  client.readContentCapabilities.delete(machineID)
+  client.statusSnapshots.delete(JSON.stringify([machineID, inventory]))
+  const source = statusSource(() => client as never)
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
+  assert.deepEqual(calls, ["sessions.list:" + machineID])
+})
+
+test("an incomplete machine scan fills a gap only with the signed inventory's exact Session set", async () => {
+  const { client, calls } = clientFixture()
+  client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
+  client.listPresentationsForMachine = async (machine: string) => {
+    calls.push("sessions.list:" + machine)
+    return { at: Math.floor(Date.now() / 1000), complete: false,
+      sessions: [{ id: sessionID, execution_generation: executionGeneration, title: "The real title",
+        status: { state: "idle", work_state: "ready", work_note: "", work_provenance: "self" } }] }
+  }
+  const source = statusSource(() => client as never)
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
+  assert.deepEqual(calls, ["sessions.list:" + machineID])
+
+  const other = clientFixture()
+  other.client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
+  other.client.listPresentationsForMachine = async () => ({ at: Math.floor(Date.now() / 1000), complete: false,
+    sessions: [{ id: "different", execution_generation: executionGeneration, title: "Wrong set",
+      status: { state: "idle", work_state: "ready", work_note: "", work_provenance: "self" } }] })
+  other.client.recoverStatusRow = async () => false
+  assert.equal((await statusSource(() => other.client as never).readMachine(machineID, new AbortController().signal)).kind,
+    "unavailable")
+})
+
 test("a refused pinned list falls back to exact retained-row recovery", async () => {
   const { client, calls } = clientFixture()
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
@@ -196,6 +231,15 @@ test("one machine list read joins only the current Session execution", async () 
   row.execution_generation = "ffffffffffffffffffffffffffffffff"
   assert.deepEqual(await source.readMachinePresentations?.(machineID, new AbortController().signal), [])
   assert.deepEqual(calls, ["sessions.list:" + machineID, "sessions.list:" + machineID])
+})
+
+test("a cold browser reads current Session names before the content descriptor arrives", async () => {
+  const { client, calls } = clientFixture()
+  client.readContentCapabilities.delete(machineID)
+  const rows = await statusSource(() => client as never).readMachinePresentations?.(
+    machineID, new AbortController().signal)
+  assert.deepEqual(rows?.map((row) => row.title), ["The real title"])
+  assert.deepEqual(calls, ["sessions.list:" + machineID])
 })
 
 test("Relay-confirmed offline applies to one machine only and expires to unknown", async () => {
@@ -393,6 +437,7 @@ test("a stale status row refuses content without subscribing", async () => {
 test("a missing ss row settles before it can shake the visible list", async () => {
   const { client, calls } = clientFixture()
   client.readContentCapabilities.delete(machineID)
+  client.listPresentationsForMachine = async () => { throw new Error("older machine") }
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
   const source = statusSource(() => client as never)
   const recovered = await source.readMachine(machineID, new AbortController().signal)
@@ -405,6 +450,7 @@ test("a missing ss row settles before it can shake the visible list", async () =
 test("a failed retained-row request keeps the machine in event_gap", async () => {
   const { client, calls } = clientFixture()
   client.readContentCapabilities.delete(machineID)
+  client.listPresentationsForMachine = async () => { throw new Error("older machine") }
   let now = Date.now()
   client.now = () => now
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]));
@@ -439,7 +485,7 @@ test("a stale machine refuses detail before subscribing to content", async () =>
   assert.deepEqual(calls, [])
 })
 
-test("an r/ capability blocks only detail, and an unread one is not called an old machine", async () => {
+test("an explicit r/ refusal blocks detail while an unread descriptor permits an exact attempt", async () => {
   const { client, calls } = clientFixture()
   const source = statusSource(() => client as never)
   const destination = { machineID, sessionID, executionGeneration }
@@ -450,19 +496,16 @@ test("an r/ capability blocks only detail, and an unread one is not called an ol
   delete descriptor.supported
   assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
     { kind: "unavailable", reason: "old_version" })
-  // Published but no longer fresh, and never published at all, are the same
-  // thing: this browser does not know yet. Calling either one an old machine
-  // sent a person to update a machine that was current, which is what they
-  // could neither understand nor act on.
+  // A signed, current execution can ask its own machine before orch/ arrives.
+  // The machine still checks the exact execution and read permission.
   descriptor.supported = true
   descriptor.at -= 301
-  assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
-    { kind: "unavailable", reason: "unconfirmed" })
+  assert.equal((await source.readDetail(destination, new AbortController().signal)).kind, "ready")
   client.readContentCapabilities.delete(machineID)
-  assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
-    { kind: "unavailable", reason: "unconfirmed" })
-  // Neither answer may reach for content on the wire.
-  assert.deepEqual(calls, [])
+  assert.equal((await source.readDetail(destination, new AbortController().signal)).kind, "ready")
+  assert.equal((await source.readOlder?.(destination, 123, new AbortController().signal))?.kind, "ready")
+  assert.deepEqual(calls.filter((call) => call.startsWith("info:")), ["info:" + executionGeneration,
+    "info:" + executionGeneration])
 })
 
 test("an opened rich row names only the same execution and current question", async () => {

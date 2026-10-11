@@ -268,7 +268,7 @@ function readSchedule(id: string, machine?: string): Promise<ScheduleDetail> {
 
 /** The transport, as `net/live.js` spells it. Each write mints its own key, once per press. */
 export const scheduleApi = {
-  schedules: () => jsonFetch<ScheduleList>("/v1/orchestrator/schedules"),
+  schedules: (machine?: string) => jsonFetch<ScheduleList>("/v1/orchestrator/schedules" + on(machine)),
   /** Always asks: the editor and the history read what is there now. */
   schedule: (id: string, machine?: string) => readSchedule(id, machine),
   /** The list's project lookup: a row already answered is not asked again. */

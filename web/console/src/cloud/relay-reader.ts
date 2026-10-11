@@ -202,7 +202,7 @@ export interface CloudReadClient {
    * older than the word must be refused by name rather than throw where
    * nobody is catching.
    */
-  schedules?(options?: { fresh?: boolean }): Promise<CloudSchedules>
+  schedules?(options?: { fresh?: boolean; machine?: string }): Promise<CloudSchedules>
   /**
    * One machine's snippets. The identity names which — only its `machine` is
    * read (`_snippetRequest`), and the session travels so that what is asked
@@ -986,13 +986,13 @@ export class RelayReader {
           // and moved between them from this list (docs/schedules.md). A
           // person with a Mac and a Linux machine sees both machines'
           // schedules without switching the whole console.
-          this.only(url, path)
+          const query = this.only(url, path, "machine")
           const client = this.connected()
           if (typeof client.schedules !== "function") {
             return this.refuse(method, path, 501, "cloud_not_carried",
               "This console cannot read this machine's schedules.")
           }
-          const answer = await client.schedules({ fresh: true })
+          const answer = await client.schedules(query.machine ? { fresh: true, machine: query.machine } : { fresh: true })
           // **A resolved answer is not every machine's answer.** The read fans
           // out and settles as long as one machine replied, so a machine that
           // refused, timed out or was never asked would otherwise come back as
@@ -1006,7 +1006,8 @@ export class RelayReader {
               : []),
             ...(answer.unconfirmed ?? []).map((machine) => ({ machine, label: machine, code: "cloud_read_unavailable" })),
           ]
-          const schedules = (answer.schedules ?? []).filter((row) => typeof row?.machine === "string" && row.machine)
+          const schedules = (answer.schedules ?? []).filter((row) => typeof row?.machine === "string" && row.machine &&
+            (!query.machine || row.machine === query.machine))
           // Typed against the table, as `transcript` below is: dropping it
           // from `CARRIED` is a compile error here rather than a silent
           // disagreement.
