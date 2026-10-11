@@ -256,7 +256,14 @@ func Clone(ctx context.Context, url, dest string) error {
 		if ctx.Err() != nil {
 			return fmt.Errorf("git clone did not finish within %s", CloneTimeout)
 		}
-		return fmt.Errorf("git clone: %s", lastLine(errOut.String()))
+		// A clone that never started — no git on this machine — prints
+		// nothing on git's standard error, and "git clone: " is a sentence
+		// with its reason missing. Then the error of the run itself is the
+		// only thing that says what happened.
+		if line := lastLine(errOut.String()); line != "" {
+			return fmt.Errorf("git clone: %s", line)
+		}
+		return fmt.Errorf("git clone: %v", err)
 	}
 	return nil
 }
