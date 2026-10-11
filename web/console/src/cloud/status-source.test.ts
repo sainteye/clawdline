@@ -233,6 +233,15 @@ test("one machine list read joins only the current Session execution", async () 
   assert.deepEqual(calls, ["sessions.list:" + machineID, "sessions.list:" + machineID])
 })
 
+test("a cold browser reads current Session names before the content descriptor arrives", async () => {
+  const { client, calls } = clientFixture()
+  client.readContentCapabilities.delete(machineID)
+  const rows = await statusSource(() => client as never).readMachinePresentations?.(
+    machineID, new AbortController().signal)
+  assert.deepEqual(rows?.map((row) => row.title), ["The real title"])
+  assert.deepEqual(calls, ["sessions.list:" + machineID])
+})
+
 test("Relay-confirmed offline applies to one machine only and expires to unknown", async () => {
   const { client } = clientFixture()
   let now = Date.now()

@@ -989,12 +989,19 @@ export class StatusCloudClient extends CatalogCloudClient {
     if (found.pairable.some((row) => row.id === machine)) {
       return Promise.reject(refused("machine_pairing_required", "this browser is not paired with this machine"))
     }
+    if (!found.rows.some((row) => row.id === machine)) {
+      return Promise.reject(refused("cloud_read_unavailable", "this machine is not in the viewer's roster"))
+    }
     if (!found.capable.some((row) => row.id === machine)) {
       if (found.rows.some((row) => row.id === machine) &&
         this._machineImplements(machine, "schedules", { learned: false }) === "no") {
         return Promise.resolve({ schedules: [], at: Math.floor(this.now() / 1000) })
       }
-      return Promise.reject(refused("cloud_read_unavailable", "this machine's schedule reader is not confirmed"))
+      // The roster can precede orch/. A named, paired machine may answer one
+      // bounded authenticated read before its capability descriptor arrives.
+      if (this._machineImplements(machine, "schedules", { learned: false }) === "no") {
+        return Promise.reject(refused("cloud_read_unavailable", "this machine's schedule reader is not confirmed"))
+      }
     }
     return this._machineRequest(machine, "schedules", {}, "read").then((answer) => {
       const rows = Array.isArray(answer?.schedules) ? answer.schedules : []

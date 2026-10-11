@@ -28,6 +28,23 @@ test("one schedule machine paints without waiting for another machine", async ()
   assert.deepEqual(client.orchestratorSnapshots.get("mac-a").schedules, [{ id: "first" }])
 })
 
+test("a cold browser asks a named paired schedule machine before its descriptor arrives", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.retired = false
+  client.now = () => 1_700_000
+  client.orchestratorSnapshots = new Map()
+  client._machinesFor = () => ({ rows: [{ id: "mac-a" }, { id: "linux-b" }], capable: [], pairable: [] })
+  client._machineImplements = () => "unknown"
+  const asked = []
+  client._machineRequest = async (machine) => {
+    asked.push(machine)
+    return { schedules: [{ id: "first" }], at: 1_700 }
+  }
+  const answer = await client.schedules({ fresh: true, machine: "mac-a" })
+  assert.deepEqual(answer.schedules, [{ id: "first", machine: "mac-a" }])
+  assert.deepEqual(asked, ["mac-a"])
+})
+
 test("the original one-machine page subscribes only exact rich rows named by that machine's status", () => {
   const client = Object.create(StatusCloudClient.prototype)
   client.statusSnapshots = new Map([

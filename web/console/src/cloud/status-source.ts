@@ -264,7 +264,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     readMachine,
     async readMachinePresentations(machineID, signal): Promise<MachineListPresentation[] | null> {
       const client = current()
-      if (!client?.listPresentationsForMachine || !supportsPinnedRead(client, machineID) || signal.aborted) return null
+      if (!client?.listPresentationsForMachine || pinnedReadSupport(client, machineID) === "no" || signal.aborted) return null
       const before = await readMachine(machineID, signal)
       if (before.kind !== "ready") return null
       try {
@@ -274,7 +274,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
           ? held.reply : record(await client.listPresentationsForMachine(machineID, signal))
         const after = await readMachine(machineID, signal)
         if (signal.aborted || current() !== client || after.kind !== "ready" ||
-          !supportsPinnedRead(client, machineID) || !Array.isArray(reply?.sessions)) return null
+          pinnedReadSupport(client, machineID) === "no" || !Array.isArray(reply?.sessions)) return null
         const currentRows = new Map(after.rows.map((row) => [destinationKey(row.destination), row]))
         const visible = new Set(before.rows.map((row) => destinationKey(row.destination)))
         const result: MachineListPresentation[] = []
