@@ -9,6 +9,7 @@ import { openScheduleFrom } from "../pages/schedules.js"
 import { openNewWorkItem, type NewWorkItemDraft } from "../pages/work/new-item.js"
 import { toast } from "../overlays/toast.js"
 import { nextWord } from "../next-strings.js"
+import { pressKey } from "../press-key.js"
 import "./command.css"
 
 type Place = L.StartPlaceRow
@@ -311,7 +312,10 @@ async function sendInstructions(id: string, instructions: string, tries: number,
   if (mine !== run) return
   sayStatus(T().webSending, true)
   try {
-    await client.send(id, instructions)
+    // A key per attempt, not per start: the only answer waited on and asked
+    // again is `showing_a_menu`, which proves the line was not typed, and a
+    // Cloud receipt would hand back that same refusal under the old key.
+    await client.send(id, instructions, pressKey("start"))
     if (mine === run) arrive(id, mine)
   } catch (error) {
     if (mine !== run) return

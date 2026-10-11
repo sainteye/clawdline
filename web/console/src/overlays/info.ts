@@ -3,6 +3,7 @@ import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { smartTitle as requestSmartTitle } from "../legacy/command-bridge.js"
 import { nextWord } from "../next-strings.js"
+import { pressKey } from "../press-key.js"
 import { contextCell } from "../session/context.js"
 import { resetWhen } from "../session/reset-when.js"
 import { repositoryNote } from "./links-note.js"
@@ -691,7 +692,15 @@ export const Info = {
     if (data && s && statusShape(s) !== stateSeen) draw()
   },
 
-  /** `/model <word>`, typed into the session as one line. One word: a second would be typed as part of it. */
+  /**
+   * `/model <word>`, typed into the session as one line. One word: a second
+   * would be typed as part of it.
+   *
+   * The press mints its own key, as every Session write does: a machine read
+   * through Clawdline Cloud refuses a `send` without one, and this chip had
+   * nothing to send under it — the card said `idempotency_key_required` and
+   * the model never changed.
+   */
   switchTo(raw: string, name: string): void {
     const id = forId
     const word = String(raw || "").trim().split(/\s+/)[0] || ""
@@ -699,7 +708,7 @@ export const Info = {
     busy = true
     said("")
     draw()
-    client.send(id, "/model " + word).then(
+    client.send(id, "/model " + word, pressKey("model")).then(
       () => {
         if (forId !== id) return
         busy = false
