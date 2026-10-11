@@ -677,9 +677,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body2: `{"data_url":"data:image/png;base64,cG5n","expected_version":1,"title":"screen.png"}`,
 	}, {
 		word: "work.v2.todo-action",
-		body: map[string]any{"type": "work.v2.todo-action", "session": machine, "request": "req-work-v2-todo-action",
-			"terminal": pane, "id": "td1", "action": "send", "item": map[string]any{}},
-		session: machine, name: "action:req-work-v2-todo-action", method: "POST", path: "/v1/work/v2/session-todos/%2519/td1/send", body2: `{}`,
+		body: map[string]any{"type": "work.v2.todo-action", "session": machine, "request": "req-work-v2-todo-edit",
+			"terminal": pane, "id": "td1", "action": "edit", "item": map[string]any{"text": "Revised", "expected_version": 2}},
+		session: machine, name: "action:req-work-v2-todo-edit", method: "POST", path: "/v1/work/v2/session-todos/%2519/td1/edit",
+		body2: `{"expected_version":2,"text":"Revised"}`,
 	}, {
 		word: "work.v2.human-intervention-action",
 		body: map[string]any{"type": "work.v2.human-intervention-action", "session": machine,

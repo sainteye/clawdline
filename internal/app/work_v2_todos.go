@@ -103,6 +103,54 @@ func (w *WorkSystemV2) DirectTodos(ctx context.Context, session string, includeC
 	return rows, truncated, mapWorkV2Error(err)
 }
 
+// EditDirectTodo changes an open row's text. An earlier delivery described
+// the old text, so its receipt cannot describe the revision; the Session can
+// read the revised row on its next queue read.
+func (w *WorkSystemV2) EditDirectTodo(ctx context.Context, id, session, actor, text string, expectedVersion int64, file TodoV2Filer) (work.DirectTodoV2, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return work.DirectTodoV2{}, workV2Error(http.StatusBadRequest, "todo_text_required", "Enter what the Session should do.")
+	}
+	if len(text) > directTodoTextLimit {
+		return work.DirectTodoV2{}, workV2Error(http.StatusRequestEntityTooLarge, "todo_too_large", "A direct to-do is at most 8 KiB.")
+	}
+	var out work.DirectTodoV2
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.DirectTodo(id)
+		if err != nil {
+			return err
+		}
+		if prev.SessionID != session {
+			return work.RefuseV2("todo_session_mismatch", "That to-do belongs to another Session.")
+		}
+		if prev.Version != expectedVersion {
+			return store.ErrConflict
+		}
+		if !prev.CompletedAt.IsZero() {
+			return work.RefuseV2("todo_completed", "Reopen this to-do before editing it.")
+		}
+		if prev.Text == text {
+			out = prev
+		} else {
+			next := prev
+			next.Text, next.CreatedBy = text, actor
+			next.SentAt, next.ReadAt = time.Time{}, time.Time{}
+			if err := tx.PutDirectTodo(prev, next); err != nil {
+				return err
+			}
+			next.Version++
+			out = next
+		}
+		if file != nil {
+			if k, ans, ok := file(out); ok {
+				return tx.CompleteReceipt(k, ans)
+			}
+		}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
 type AddDirectTodoImageV2 struct {
 	ExpectedVersion int64
 	SessionID       string
@@ -247,7 +295,7 @@ func TodoPreview(text string) string {
 	return string(r[:reportOpenTodoTextLimit-1]) + "…"
 }
 
-func (w *WorkSystemV2) MarkDirectTodoSent(ctx context.Context, id, session string, at time.Time) (work.DirectTodoV2, error) {
+func (w *WorkSystemV2) MarkDirectTodoSent(ctx context.Context, id, session string, at time.Time, expectedVersion ...int64) (work.DirectTodoV2, error) {
 	var out work.DirectTodoV2
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
 		prev, err := tx.DirectTodo(id)
@@ -256,6 +304,9 @@ func (w *WorkSystemV2) MarkDirectTodoSent(ctx context.Context, id, session strin
 		}
 		if err := CheckDirectTodoSend(prev, session, at); err != nil {
 			return err
+		}
+		if len(expectedVersion) != 0 && prev.Version != expectedVersion[0] {
+			return store.ErrConflict
 		}
 		next := prev
 		next.SentAt, next.ReadAt = time.Unix(at.Unix(), 0), time.Time{}
