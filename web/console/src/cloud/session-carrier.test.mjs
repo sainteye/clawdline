@@ -356,8 +356,13 @@ test("fault injection: a read takes the carrier while this page's own socket is 
   // Measured on 2026-10-11 at 08:39: while this page renewed its relay credentials, three reads
   // in a row were refused `offline` in under a second. A read on an open carrier never touches
   // the relay, so the socket being between connections is not its failure.
+  //
+  // Waited for rather than counted: the real publisher signs and seals, and how many turns of the
+  // loop that takes is the platform's WebCrypto's business. Six flushes were enough here and were
+  // not on CI (run 38099929548, Linux), where the read was still in flight when the assertion ran
+  // and the test called a slow seal a refusal.
   const answer = read(client)
-  for (let i = 0; i < 6; i++) await flush()
+  for (let i = 0; i < 500 && carrier.written.length === 0; i++) await flush()
   assert.equal(carrier.written.length, 1, "the read was refused instead of taking the open carrier")
   assert.equal(carrier.written[0].ch, "r/m")
   assert.deepEqual([...client.subscribed], [], "the carrier read subscribed to a relay channel")
