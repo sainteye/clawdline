@@ -626,6 +626,36 @@ test("an event gap requests one retained ss row and releases it after realign", 
   assert.equal(client.statusRecoveries.size, 0)
 })
 
+test("a cold browser replays one missing inventory marker and shares the pending read", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.ready = true
+  client.statusSnapshots = new Map()
+  client.statusRecoveries = new Map()
+  client.socketSubscriptions = new Map()
+  client.pendingSubscriptions = new Set()
+  client.resubscribes = new Map()
+  client.subscriptionLimit = 8
+  client.readTimeoutMs = 60000
+  client.now = () => 0
+  client._trimSubscriptions = () => {}
+  client.setTimeout = () => 1
+  client.clearTimeout = () => {}
+  const frames = []
+  client._sendSubscriptionFrame = (type, channels) => frames.push({ type, channels })
+  let listener
+  client.events = (callback) => { listener = callback; return () => { listener = null } }
+  const first = client.recoverStatusMarker("m")
+  const second = client.recoverStatusMarker("m")
+  assert.equal(first, second)
+  assert.deepEqual(frames, [{ type: "subscribe", channels: ["ss/m/__clawdline_inventory_v1__"] }])
+  client.statusSnapshots.set(JSON.stringify(["m", "__clawdline_inventory_v1__"]), { payload: { inventory: { version: 1 } } })
+  listener({ type: "session_status", identity: { machine: "m", session: "__clawdline_inventory_v1__" } })
+  assert.equal(await first, true)
+  assert.deepEqual(frames[1], { type: "unsubscribe", channels: ["ss/m/__clawdline_inventory_v1__"] })
+  assert.equal(await client.recoverStatusMarker("m"), true)
+  assert.equal(frames.length, 2)
+})
+
 test("a status row arriving before recovery is used without a timeout or subscription", async () => {
   const client = Object.create(StatusCloudClient.prototype)
   client.ready = true

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
-import { pinnedQuestion, statusSource, STATUS_GAP_RETRY_MS } from "./status-source.ts"
+import { pinnedQuestion, statusSource, STATUS_GAP_RETRY_MS, STATUS_MARKER_RETRY_MS } from "./status-source.ts"
 
 const machineID = "one"
 const sessionID = "same"
@@ -82,6 +82,41 @@ test("a status row event names the Session whose list title should refresh", () 
   emit({ type: "session_status", identity: { machine: machineID, session: sessionID } })
   assert.deepEqual(events, [{ machineID, sessionID, kind: "changed" }])
   stop()
+})
+
+test("a new browser replays a missing status marker once and recovers the Session list", async () => {
+  const { client } = clientFixture()
+  const key = JSON.stringify([machineID, inventory])
+  const marker = client.statusSnapshots.get(key)
+  client.statusSnapshots.delete(key)
+  let reads = 0
+  ;(client as typeof client & { recoverStatusMarker: (machine: string) => Promise<boolean> }).recoverStatusMarker = async () => {
+    reads++
+    client.statusSnapshots.set(key, marker)
+    return true
+  }
+  const source = statusSource(() => client as never)
+  const result = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(result.kind, "ready")
+  assert.equal(reads, 1)
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
+  assert.equal(reads, 1)
+})
+
+test("an unanswered marker is retried at most once per minute", async () => {
+  const { client } = clientFixture()
+  client.statusSnapshots.delete(JSON.stringify([machineID, inventory]))
+  let reads = 0
+  ;(client as typeof client & { recoverStatusMarker: (machine: string) => Promise<boolean> }).recoverStatusMarker = async () => {
+    reads++
+    return false
+  }
+  const source = statusSource(() => client as never)
+  const first = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(first.kind, "unavailable")
+  if (first.kind === "unavailable") assert.ok(first.retryAt! > Date.now() + STATUS_MARKER_RETRY_MS - 1000)
+  await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(reads, 1)
 })
 
 test("a late content capability tells the fleet to retry its pending names", () => {

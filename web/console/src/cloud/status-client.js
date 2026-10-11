@@ -902,6 +902,47 @@ export class StatusCloudClient extends CatalogCloudClient {
     return promise
   }
 
+  /** A cold browser may know a machine from orch/ before its default ss/ marker arrives. */
+  recoverStatusMarker(machineID) {
+    const sessionID = INVENTORY_SESSION
+    if (!machineID || !this.ready) return Promise.resolve(false)
+    const key = JSON.stringify([machineID, sessionID])
+    if (this.statusSnapshots.get(key)?.payload?.inventory) return Promise.resolve(true)
+    const channel = "ss/" + channelSegment(machineID) + "/" + sessionID
+    const previous = this.statusRecoveries.get(channel)
+    if (previous) return previous.promise
+    let resolve
+    const promise = new Promise((answer) => { resolve = answer })
+    let done = false
+    let timer = null
+    let stop = () => {}
+    const finish = (received) => {
+      if (done) return
+      done = true
+      if (timer !== null) this.clearTimeout(timer)
+      stop()
+      this.unsubscribe([channel])
+      if (this.statusRecoveries.get(channel)?.promise === promise) this.statusRecoveries.delete(channel)
+      resolve(received)
+    }
+    stop = this.events((event) => {
+      if (event.type === "session_status" && event.identity?.machine === machineID &&
+        event.identity?.session === sessionID && this.statusSnapshots.get(key)?.payload?.inventory) finish(true)
+    })
+    this.statusRecoveries.set(channel, { generation: "marker", promise, finish })
+    try {
+      this._trimSubscriptions(1, [channel])
+      if (this.socketSubscriptions.size >= this.subscriptionLimit) finish(false)
+      else {
+        this.pendingSubscriptions.add(channel)
+        this._sendSubscriptionFrame("subscribe", [channel])
+        this.socketSubscriptions.set(channel, this.now())
+        timer = this.setTimeout(() => finish(false), this.readTimeoutMs)
+      }
+    } catch { finish(false) }
+    return promise
+  }
+
   _subscriptionRefused(code) {
     const channels = this.subscriptionFrames[0]?.channels ?? []
     const result = super._subscriptionRefused(code)

@@ -449,6 +449,7 @@ const (
 	ConsoleRelayTranscriptExpectReask = "console.relay_transcript_expect_reask_seconds"
 	ConsoleRelayFeatureWait           = "console.relay_feature_wait_seconds"
 	ConsoleStatusGapRetry             = "console.status_gap_retry_seconds"
+	ConsoleStatusMarkerRetry          = "console.status_marker_retry_seconds"
 	ConsoleTranscriptFollowFast       = "console.transcript_follow_fast_seconds"
 	ConsoleTranscriptFollowLater      = "console.transcript_follow_later_seconds"
 	ConsoleHealthLive                 = "console.health_live_seconds"
@@ -2576,6 +2577,13 @@ func Register() []Entry {
 			// not pin the list in event_gap for the rest of the status pass.
 			Name: ConsoleStatusGapRetry, Class: Cache, Unit: Seconds,
 			Limit: 5, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// A cold browser replays one missing ss/ inventory marker, then
+			// waits before asking again while default status pushes may arrive.
+			Name: ConsoleStatusMarkerRetry, Class: Cache, Unit: Seconds,
+			Limit: 60, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{

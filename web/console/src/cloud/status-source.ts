@@ -22,6 +22,7 @@ type StatusClient = CloudClientHandle & {
   subscribe?(channels: string[]): unknown
   unsubscribe?(channels: string[]): void
   recoverStatusRow?(machineID: string, sessionID: string, snapshotGeneration: string): Promise<boolean>
+  recoverStatusMarker?(machineID: string): Promise<boolean>
   readTimeoutMs?: number
   cancelStatusRecoveries?(): void
   /** The daemon must atomically compare the execution generation before reading content. */
@@ -70,6 +71,8 @@ type PinnedReadSupport = "yes" | "no" | "unconfirmed"
 
 /** Retry a missing retained status row after a refused or timed-out recovery. */
 export const STATUS_GAP_RETRY_MS = 5_000
+/** Missing inventory markers need a bounded replay, then a slower retry than a row gap. */
+export const STATUS_MARKER_RETRY_MS = 60_000
 
 function pinnedReadSupport(client: StatusClient, machineID: string, nowMs = Date.now()): PinnedReadSupport {
   const capability = record(client.readContentCapabilities?.get(machineID))
@@ -123,6 +126,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
   let attemptedClient: StatusClient | null = null
   const gapAttempts = new Map<string, { generation: string;
     sessions: Map<string, { promise: Promise<boolean>; retryAt: number }> }>()
+  const markerAttempts = new Map<string, { promise: Promise<boolean>; retryAt: number }>()
   const opened = new Map<string, StatusClient>()
   const imageSignals = new Map<string, AbortController>()
   const visibleArtifacts = new Map<string, Set<string>>()
@@ -132,6 +136,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     if (client !== attemptedClient) {
       attemptedClient = client
       gapAttempts.clear()
+      markerAttempts.clear()
     }
     const offline = client.machineOffline?.get(machineID)
     if (offline && Number.isFinite(offline.until)) {
@@ -142,6 +147,24 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         : { kind: "unavailable", reason: "unknown", observedAt: expired.observedAt }
     }
     let projection = statusProjection(client, machineID)
+    if (projection.kind === "unavailable" && projection.reason === "unknown" &&
+      !client.statusSnapshots?.has(JSON.stringify([machineID, "__clawdline_inventory_v1__"])) &&
+      client.recoverStatusMarker && !signal.aborted) {
+      const now = client.now?.() ?? Date.now()
+      let attempt = markerAttempts.get(machineID)
+      if (!attempt || attempt.retryAt <= now) {
+        attempt = { promise: client.recoverStatusMarker(machineID).catch(() => false),
+          retryAt: Number.POSITIVE_INFINITY }
+        markerAttempts.set(machineID, attempt)
+      }
+      if (await attempt.promise) markerAttempts.delete(machineID)
+      else if (attempt.retryAt === Number.POSITIVE_INFINITY)
+        attempt.retryAt = (client.now?.() ?? Date.now()) + STATUS_MARKER_RETRY_MS
+      projection = statusProjection(client, machineID)
+      if (projection.kind === "unavailable" && projection.reason === "unknown")
+        return { ...projection, retryAt: markerAttempts.get(machineID)?.retryAt ??
+          (client.now?.() ?? Date.now()) + STATUS_MARKER_RETRY_MS }
+    }
     if (projection.kind === "unavailable" && projection.reason === "event_gap" &&
       !statusPassTransition(client, machineID) && client.recoverStatusRow) {
       const missing = statusGapTarget(client, machineID)
