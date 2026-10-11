@@ -2809,9 +2809,12 @@ func Register() []Entry {
 			Sources: []string{"internal/app/terminals.MaxLeaseSeconds"},
 		},
 		{
-			// Active Cloud terminal authority expires after this many seconds.
-			// The next terminal operation waits for one bounded refresh or is
-			// refused; ordinary Cloud Session traffic does not depend on it.
+			// A roster read this machine made stands behind an answer for
+			// this many seconds. The next terminal operation or Session
+			// content read waits for one bounded refresh or is refused; one
+			// read serves both lanes, and a revocation takes effect at most
+			// this long after the account records it. The ordinary Cloud
+			// command path keeps the 60 s adaptercloud.RosterRefresh.
 			Name: CloudTerminalRosterRefresh, Class: Cache, Unit: Seconds,
 			Limit: 2, AtLimit: Expire,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,

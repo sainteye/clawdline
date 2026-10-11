@@ -257,13 +257,19 @@ type Link struct {
 	stopRun context.CancelFunc
 	rotated bool
 
-	terminalRosterMu   sync.Mutex
-	terminalRosterAt   time.Time
-	terminalRosterErr  error
-	terminalRosterWait chan struct{}
-	// terminalRosterFailures counts consecutive failed terminal roster reads,
-	// so a failure streak is logged once.
-	terminalRosterFailures int
+	// One roster read serves both lanes that need a fresh one: terminal
+	// authority and a Session content read. They used to be separate — a read
+	// refetched the roster on every request while a terminal frame reused a
+	// read up to CloudTerminalRosterRefreshLimit old — which cost a read the
+	// whole round trip to the control plane even when a terminal had just
+	// fetched the same answer a frame ago.
+	rosterReadMu   sync.Mutex
+	rosterReadAt   time.Time
+	rosterReadErr  error
+	rosterReadWait chan struct{}
+	// rosterReadFailures counts consecutive failed roster reads, so a failure
+	// streak is logged once.
+	rosterReadFailures int
 
 	// The direct carrier (direct.go). directMu is never held while
 	// terminalMu is taken, nor the other way round.
@@ -331,9 +337,9 @@ const (
 	TerminalDenied
 )
 
-// errTerminalRosterWait is the answer of a check that waited the whole
+// errRosterReadWait is the answer of a check that waited the whole
 // deadline for another check's roster read.
-var errTerminalRosterWait = errors.New("the device roster read did not finish within its deadline")
+var errRosterReadWait = errors.New("the device roster read did not finish within its deadline")
 
 // PinnedTerminalViewer names a locally pinned, unrevoked Cloud viewer for the
 // local-only grant page. An account roster row alone never creates a grantable
@@ -428,7 +434,7 @@ func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, 
 	if l.roster == nil {
 		return TerminalUnverified, "this machine holds no credential to read the device roster"
 	}
-	if err := l.terminalRosterRead(); err != nil {
+	if err := l.rosterRead(); err != nil {
 		return TerminalUnverified, "the device roster could not be read"
 	}
 	for _, row := range l.roster.Devices() {
@@ -454,48 +460,51 @@ func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, 
 	return TerminalDenied, "the account has no such device"
 }
 
-// terminalRosterFresh is terminalRosterRead as a yes or no.
-func (l *Link) terminalRosterFresh() bool { return l.terminalRosterRead() == nil }
+// rosterFresh is rosterRead as a yes or no.
+func (l *Link) rosterFresh() bool { return l.rosterRead() == nil }
 
-// terminalRosterRead singleflights the active terminal roster read and says
-// whether a read that succeeded within CloudTerminalRosterRefreshLimit stands
-// behind the answer. A failed or timed-out read expires terminal authority
-// only; the normal Cloud command path keeps its own roster policy and never
-// waits for this one.
-func (l *Link) terminalRosterRead() error {
+// rosterRead singleflights the active roster read and says whether a read
+// that succeeded within CloudTerminalRosterRefreshLimit stands behind the
+// answer. Terminal authority and Session content reads both ask it, so two
+// lanes a frame apart cost one GET /v1/devices and a revocation reaches both
+// within that window. A failed or timed-out read expires only what asked for
+// it; the ordinary Cloud command path keeps its own roster policy (the 60 s
+// adaptercloud.RosterRefresh and the background ticker) and never waits for
+// this one.
+func (l *Link) rosterRead() error {
 	now := l.opts.Now()
-	l.terminalRosterMu.Lock()
-	if !l.terminalRosterAt.IsZero() {
-		age := now.Sub(l.terminalRosterAt)
-		if l.terminalRosterErr == nil && age < CloudTerminalRosterRefreshLimit*time.Second {
-			l.terminalRosterMu.Unlock()
+	l.rosterReadMu.Lock()
+	if !l.rosterReadAt.IsZero() {
+		age := now.Sub(l.rosterReadAt)
+		if l.rosterReadErr == nil && age < CloudTerminalRosterRefreshLimit*time.Second {
+			l.rosterReadMu.Unlock()
 			return nil
 		}
-		if err := l.terminalRosterErr; err != nil && age < CloudTerminalRosterRetrySecondsLimit*time.Second {
-			l.terminalRosterMu.Unlock()
+		if err := l.rosterReadErr; err != nil && age < CloudTerminalRosterRetrySecondsLimit*time.Second {
+			l.rosterReadMu.Unlock()
 			return err
 		}
 	}
-	if wait := l.terminalRosterWait; wait != nil {
-		l.terminalRosterMu.Unlock()
+	if wait := l.rosterReadWait; wait != nil {
+		l.rosterReadMu.Unlock()
 		select {
 		case <-wait:
 		case <-time.After(CloudTerminalRosterDeadlineLimit * time.Second):
-			return errTerminalRosterWait
+			return errRosterReadWait
 		}
-		l.terminalRosterMu.Lock()
-		defer l.terminalRosterMu.Unlock()
-		if l.terminalRosterErr != nil {
-			return l.terminalRosterErr
+		l.rosterReadMu.Lock()
+		defer l.rosterReadMu.Unlock()
+		if l.rosterReadErr != nil {
+			return l.rosterReadErr
 		}
-		if now.Sub(l.terminalRosterAt) >= CloudTerminalRosterRefreshLimit*time.Second {
-			return errTerminalRosterWait
+		if now.Sub(l.rosterReadAt) >= CloudTerminalRosterRefreshLimit*time.Second {
+			return errRosterReadWait
 		}
 		return nil
 	}
 	wait := make(chan struct{})
-	l.terminalRosterWait = wait
-	l.terminalRosterMu.Unlock()
+	l.rosterReadWait = wait
+	l.rosterReadMu.Unlock()
 	// A successful read is as fresh as the moment it began, which is all it
 	// can prove about a revocation, so a revocation still reaches frames
 	// within four seconds and an idle connection's notice within five
@@ -506,28 +515,28 @@ func (l *Link) terminalRosterRead() error {
 	ctx, cancel := context.WithTimeout(context.Background(), CloudTerminalRosterDeadlineLimit*time.Second)
 	err := l.roster.Refresh(ctx)
 	cancel()
-	l.terminalRosterMu.Lock()
-	l.terminalRosterAt, l.terminalRosterErr = started, err
+	l.rosterReadMu.Lock()
+	l.rosterReadAt, l.rosterReadErr = started, err
 	if err != nil {
-		l.terminalRosterAt = l.opts.Now()
+		l.rosterReadAt = l.opts.Now()
 	}
 	// One line per failure streak, and one when it ends, so daemon.log shows
 	// why terminals paused without a line per frame.
-	startedFailing := err != nil && l.terminalRosterFailures == 0
-	recovered := err == nil && l.terminalRosterFailures > 0
-	failures := l.terminalRosterFailures
+	startedFailing := err != nil && l.rosterReadFailures == 0
+	recovered := err == nil && l.rosterReadFailures > 0
+	failures := l.rosterReadFailures
 	if err != nil {
-		l.terminalRosterFailures++
+		l.rosterReadFailures++
 	} else {
-		l.terminalRosterFailures = 0
+		l.rosterReadFailures = 0
 	}
-	l.terminalRosterWait = nil
+	l.rosterReadWait = nil
 	close(wait)
-	l.terminalRosterMu.Unlock()
+	l.rosterReadMu.Unlock()
 	if startedFailing {
-		l.logf("cloud terminal: the device roster could not be read, so Cloud terminals pause (refused as terminal_busy, not revoked) until it can: %v", err)
+		l.logf("cloud: the device roster could not be read, so Cloud terminals pause (refused as terminal_busy, not revoked) and Session reads are refused until it can: %v", err)
 	} else if recovered {
-		l.logf("cloud terminal: the device roster is readable again after %d failed reads", failures)
+		l.logf("cloud: the device roster is readable again after %d failed reads", failures)
 	}
 	return err
 }
@@ -1230,10 +1239,20 @@ func (l *Link) authority(ctx context.Context, sender string, verifiedKey ed25519
 // transcriptAuthority never relies on the relay's earlier capability check.
 // A viewer can lose its key, pairing or read_transcript cap while a local
 // transcript route is running, so the bridge calls this before and after it.
+//
+// It asks rosterRead rather than refetching: a read used to carry one
+// GET /v1/devices of its own, which was the largest part of what a Session
+// read cost once the request itself took the direct carrier — 570 ms of a
+// 580 ms read, measured 2026-10-11. The person chose the terminal lane's rule
+// for reads too (2026-10-11): a roster read that succeeded within
+// CloudTerminalRosterRefreshLimit stands behind the answer, so a revocation
+// takes effect up to that long after the account records it. Longer than that
+// cannot happen here; a shorter window is what the direct carrier cannot buy
+// back.
 func (l *Link) transcriptAuthority(ctx context.Context, sender string, verifiedKey ed25519.PublicKey) cloudops.Authority {
 	a := cloudops.Authority{ClockReady: true}
-	if l.roster == nil || l.roster.Refresh(ctx) != nil {
-		return a // A failed fresh roster read cannot authorize old content.
+	if l.roster == nil || l.rosterRead() != nil {
+		return a // A roster this machine could not read cannot authorize old content.
 	}
 	a = l.authority(ctx, sender, verifiedKey, false)
 	if !a.RosterAllowsSender {

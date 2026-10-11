@@ -173,7 +173,16 @@ Chrome on the machine itself, reading one Session's transcript through `app.claw
 | Relay (`relay.clawdline.com`, San Jose) | 1004 ms | 1035 ms | 22 |
 | Carrier (host candidate, same machine) | 610 ms | 625 ms | 20 |
 
-The carrier's own round trip is **0 ms** — the candidate pair is `host`↔`host` with `currentRoundTripTime: 0`, and `getStats` confirms one message out and one message in per read — so the relay was costing 394 ms and what is left is this machine's own answer time. Reads of very different work cost nearly the same: `git`, which shells out, 613 ms; `transcript`, which reads a file tail, 610 ms; `info` 658 ms; `skills` 707 ms. That floor is **one `GET /v1/devices` to the account API per read**: `transcriptAuthority` refreshes the roster before every pinned content read, and that request measured 507–710 ms from here. It is deliberate — `TestContentAuthorityRefreshesCapabilityKeyAndRevocation` asserts one fresh read per authority check, so a revocation takes effect on the very next read — and it is now the whole remaining cost of reading a conversation. Terminals already decided this differently: a successful roster read stands for `CloudTerminalRosterRefreshLimit`, which is why a keystroke on the same channel is 18.5 ms and a read is 610 ms.
+The carrier's own round trip is **0 ms** — the candidate pair is `host`↔`host` with `currentRoundTripTime: 0`, and `getStats` confirms one message out and one message in per read — so the relay was costing 394 ms and what is left is this machine's own answer time. Reads of very different work cost nearly the same: `git`, which shells out, 613 ms; `transcript`, which reads a file tail, 610 ms; `info` 658 ms; `skills` 707 ms. That floor was **one `GET /v1/devices` to the account API per read**: `transcriptAuthority` refreshed the roster before every pinned content read, and that request measured 507–710 ms from here. Terminals had already decided this differently — a successful roster read stands for `CloudTerminalRosterRefreshLimit` — which is why a keystroke on the same channel was 18.5 ms and a read was 610 ms.
+
+The person chose the terminal lane's rule for reads too (2026-10-11), accepting that a revocation takes effect up to `CloudTerminalRosterRefreshLimit` after the account records it. `transcriptAuthority` now asks `rosterRead`, which is the gate terminal authority already used, so **one roster read serves both lanes**: a read a frame after a terminal check pays nothing, and `TestASessionReadInsideTheRosterWindowCostsNoDeviceRead` holds six reads inside the window to one `GET /v1/devices`.
+
+| Pinned transcript read, carrier | Median | Min | Max | Samples |
+|---|---|---|---|---|
+| Before, roster read per read | 580 ms | 569 ms | 590 ms | 10 |
+| After, roster read shared | **132 ms** | 129 ms | 344 ms | 12 |
+
+Measured the same way, three hours apart, on the same page and Session; every sample answered `ok`. Twenty reads taken back to back on the shipped build show the window itself: eighteen cost **121 ms** (115–135 ms) and two cost 342 ms and 343 ms, and those two began **2,021 ms** apart — `CloudTerminalRosterRefreshLimit`, one `GET /v1/devices` per two seconds no matter how many reads are asked in between. Taking the reads in pairs says the same thing without the gap between runs: a read 2.5 s after the one before it (past the window) and a read 120 ms after it (inside the window) differ by **9.5 ms** across ten pairs, 132 ms against 125 ms. Eight of the ten past-the-window reads still cost about 130 ms, because something else on this machine — a terminal's own check, or the one-second sweep — had refreshed the window inside the gap; the two that paid for the refresh themselves cost 466 ms and 823 ms, which is what one `GET /v1/devices` costs from here. One read in twenty was refused `cloud_reconnecting`: a credential renewal retires the client that holds the read, which is not this change and not the carrier (the relay path does it too).
 
 ### Numbers
 
@@ -193,7 +202,7 @@ The carrier's own round trip is **0 ms** — the candidate pair is `host`↔`hos
 | `CloudTerminalDirectBusyRetrySecondsLimit` | 5 s before another upgrade attempt after a relay `rate_limited` or `over_capacity` | browser |
 | `CloudTerminalRelayBusyRetrySecondsLimit` | 2.1 s before resending a request the relay refused with `rate_limited` or `over_capacity`, up to three times | browser |
 | `CloudTerminalSweepSecondsLimit` | 1 s terminal sweep | machine |
-| `CloudTerminalRosterRefreshLimit` | 2 s a successful terminal roster read is trusted, from its start | machine |
+| `CloudTerminalRosterRefreshLimit` | 2 s a successful roster read is trusted, from its start, for terminal authority and for a Session content read | machine |
 | `CloudTerminalRosterDeadlineLimit` | 2 s for a terminal roster read, or for a check waiting on one | machine |
 | `CloudTerminalRosterRetrySecondsLimit` | 1 s after a failed roster read before the next check reads again | machine |
 | `CloudTerminalUnverifiedRetireSecondsLimit` | 10 s a connection stays paused while not verified before it is retired without a notice | machine |

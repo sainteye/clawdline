@@ -83,6 +83,10 @@ jobs:
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-pre-push-red-main.sh
 
+      - name: Check that pre-push reads the commits a push would add
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
+        run: tools/test-pre-push-privacy.sh
+
       - name: Check that main turning red is told once
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-ci-notify-red.sh

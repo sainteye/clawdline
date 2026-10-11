@@ -358,3 +358,80 @@ func TestADailyRunIsRedForWhatTodayAdded(t *testing.T) {
 		t.Errorf("the summary does not count them apart:\n%s", printed)
 	}
 }
+
+// TestAPushIsJudgedByWhatItWouldAdd is what the pre-push hook asks. Reading
+// the whole history twice to compare counts was right and cost ten minutes a
+// push, which is how a push came to be run beside a build and wedged for
+// hours. -since reads the commits the remote does not have, and only those:
+// what is already published is a history rewrite's problem, not a push's.
+func TestAPushIsJudgedByWhatItWouldAdd(t *testing.T) {
+	r := fixtureRepo(t)
+	r.words(fixtureWord)
+	published := r.commit("the note", map[string]string{"docs/note.md": "a " + fixtureWord + " line\n"})
+	r.commit("a clean change", map[string]string{"docs/other.md": "a line\n"})
+
+	// What the remote already carries is not re-judged.
+	answer, printed := r.scan(historyOptions{revs: "HEAD", since: published, checkpoint: "-"})
+	if answer != privacy.Clean {
+		t.Fatalf("a clean push: %s, want clean\n%s", answer, printed)
+	}
+	if !strings.Contains(printed, "read 1 commit(s)") {
+		t.Errorf("it did not read exactly the commit the push would add:\n%s", printed)
+	}
+	if !strings.Contains(printed, "-since "+published[:8]+" asked for a partial read") {
+		t.Errorf("it did not say it kept no checkpoint:\n%s", printed)
+	}
+
+	// And a commit the push would add is caught. The line is spelled
+	// differently on purpose: the same bytes under a new path are the same
+	// blob, which the remote already publishes, so a push that adds only a
+	// path to it adds nothing to read.
+	added := r.commit("and the word again", map[string]string{"docs/third.md": "another " + fixtureWord + " line, spelled its own way\n"})
+	answer, printed = r.scan(historyOptions{revs: "HEAD", since: published, checkpoint: "-"})
+	if answer != privacy.Found {
+		t.Fatalf("a push that adds one: %s, want found\n%s", answer, printed)
+	}
+	if !strings.Contains(printed, added[:8]+" ") || !strings.Contains(printed, "docs/third.md:1: private-word") {
+		t.Errorf("it did not name the commit this push would add:\n%s", printed)
+	}
+	// Not by the commit's name: the note that says what -since excluded
+	// spells it too, and an earlier shape of this assertion matched that.
+	if strings.Contains(printed, "docs/note.md") {
+		t.Errorf("it judged a file only an already published commit carries:\n%s", printed)
+	}
+	if n := strings.Count(printed, ": private-word"); n != 1 {
+		t.Errorf("it reported %d finding(s), want only the one this push adds:\n%s", n, printed)
+	}
+
+	// A -since that names nothing here is not a pass: "it was not in this
+	// clone" read as "there is nothing to compare with" waves a push through.
+	answer, printed = r.scan(historyOptions{revs: "HEAD", since: "0123456789012345678901234567890123456789", checkpoint: "-"})
+	if answer != privacy.CannotCheck {
+		t.Fatalf("an unknown -since: %s, want cannot-check\n%s", answer, printed)
+	}
+}
+
+// A partial read may not move the checkpoint: the next full run would skip
+// commits nobody read.
+func TestAPartialReadLeavesTheCheckpointAlone(t *testing.T) {
+	r := fixtureRepo(t)
+	r.words(fixtureWord)
+	first := r.commit("a clean change", map[string]string{"docs/other.md": "a line\n"})
+	r.commit("the note", map[string]string{"docs/note.md": "a " + fixtureWord + " line\n"})
+	cp := filepath.Join(t.TempDir(), "cp")
+
+	if answer, printed := r.scan(historyOptions{revs: "HEAD", since: first, checkpoint: cp}); answer != privacy.Found {
+		t.Fatalf("the range scan: %s, want found\n%s", answer, printed)
+	}
+	if _, err := os.Stat(cp); err == nil {
+		t.Fatal("a partial read wrote a checkpoint")
+	}
+	// So the next ordinary run still reads everything and still finds it.
+	answer, printed := r.scan(historyOptions{revs: "HEAD", checkpoint: cp})
+	if answer != privacy.Found {
+		t.Fatalf("the full run after it: %s, want found\n%s", answer, printed)
+	}
+	if !strings.Contains(printed, "read 2 commit(s)") {
+		t.Errorf("the full run did not read both commits:\n%s", printed)
+	}
+}
