@@ -249,7 +249,32 @@ func sameSource(a, b domain.Source) bool {
 }
 
 // Apply writes one project into this machine's mirror.
+//
+// Every answer names its three lists. A Go nil slice crosses the wire as
+// `null`, and the page that draws the answer counts the files each list
+// names, so one branch that forgot to make them empty turned a plain "this
+// machine does not have that repository" into a failure the page could not
+// name (docs/project-sync.md).
 func (s *Service) Apply(ctx context.Context, req ApplyRequest) (ApplyResult, error) {
+	res, err := s.applyProject(ctx, req)
+	return listed(res), err
+}
+
+// listed is the one place a result's lists are made sayable.
+func listed(r ApplyResult) ApplyResult {
+	if r.Written == nil {
+		r.Written = []string{}
+	}
+	if r.Deleted == nil {
+		r.Deleted = []string{}
+	}
+	if r.Kept == nil {
+		r.Kept = []domain.Kept{}
+	}
+	return r
+}
+
+func (s *Service) applyProject(ctx context.Context, req ApplyRequest) (ApplyResult, error) {
 	e := req.Project
 	if err := domain.Check(e, true); err != nil {
 		return ApplyResult{}, fmt.Errorf("%w: %v", ErrInvalid, err)

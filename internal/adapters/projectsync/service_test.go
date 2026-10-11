@@ -2,6 +2,7 @@ package projectsync
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -347,5 +348,38 @@ func TestAnApplyWhileCloningDoesNotWriteIntoTheHalfMadeCheckout(t *testing.T) {
 	}
 	if len(dst.State().Clones) != 1 {
 		t.Fatal("the running clone was forgotten")
+	}
+}
+
+// An apply that wrote nothing still answers three lists. A Go nil slice
+// crosses the wire as `null`, and the page that draws the answer counts the
+// files it names: on 2026-10-11 eighteen projects a mirror did not have were
+// each applied, answered 200 with `"written":null`, and every row on the
+// hosted console read "無法完成專案同步，請重試。（unexpected_error）" — the
+// page's own TypeError, wearing the sentence for a failure that never
+// happened.
+func TestAnAnswerNamesItsThreeListsWhenNothingWasWritten(t *testing.T) {
+	ctx := context.Background()
+	content := []byte("notes")
+	e := domain.Entry{Repo: "git.example.test/acme/absent", CloneURL: "https://git.example.test/acme/absent.git",
+		Icon: colour("#000000"), Label: "absent",
+		Files: []domain.File{{Path: "CLAUDE.local.md", Content: content, Size: int64(len(content)), SHA256: domain.Sum(content)}}}
+	dst := service(t)
+	res, err := dst.Apply(ctx, ApplyRequest{Project: e})
+	if err != nil || res.State != StateMissing {
+		t.Fatalf("a repository this machine does not have: %+v %v", res, err)
+	}
+	data, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"written", "deleted", "kept"} {
+		if got := string(wire[field]); got != "[]" {
+			t.Errorf("%s is %s, not an empty list", field, got)
+		}
 	}
 }
