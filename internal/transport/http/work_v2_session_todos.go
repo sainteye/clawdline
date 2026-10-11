@@ -217,6 +217,34 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 		_, _ = w.Write(answer)
 		return
 	}
+	if len(parts) == 3 && parts[2] == "edit" && r.Method == http.MethodPost {
+		var body struct {
+			Text            string `json:"text"`
+			ExpectedVersion int64  `json:"expected_version"`
+		}
+		raw, ok := readWorkV2Body(w, r, &body)
+		if !ok {
+			return
+		}
+		k, ok := s.beginWorkV2Write(w, r, actor, raw)
+		if !ok {
+			return
+		}
+		var answer []byte
+		_, err := s.workV2().EditDirectTodo(r.Context(), parts[1], conversation, actor, body.Text, body.ExpectedVersion,
+			func(td work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+				answer = directTodoAnswer(td, nil)
+				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+			})
+		if err != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write(answer)
+		return
+	}
 	if len(parts) != 3 || r.Method != http.MethodPost {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Use GET, POST, or a to-do action.")
 		return
@@ -272,7 +300,7 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			break
 		}
 		var td work.DirectTodoV2
-		td, err = s.workV2().MarkDirectTodoSent(r.Context(), id, conversation, time.Now())
+		td, err = s.workV2().MarkDirectTodoSent(r.Context(), id, conversation, time.Now(), found.Version)
 		if err == nil {
 			answer = directTodoAnswer(td, nil)
 			_ = s.store.CompleteReceipt(r.Context(), k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer})

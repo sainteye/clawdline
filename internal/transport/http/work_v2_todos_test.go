@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,44 @@ func directTodoServer(t *testing.T) (*Server, *pane, string) {
 		t.Fatal(err)
 	}
 	return s, p, todo.ID
+}
+
+func TestPersonEditsDirectTodoAndMustSendTheRevision(t *testing.T) {
+	s, p, id := directTodoServer(t)
+	first, err := s.workV2().MarkDirectTodoSent(context.Background(), id, p.s.ConversationID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.workV2().DirectTodos(context.Background(), p.s.ConversationID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	path := "/v1/work/v2/session-todos/pane-4/" + id + "/edit"
+	body := `{"text":"  handle the revised task  ","expected_version":` + strconv.FormatInt(first.Version+1, 10) + `}`
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, personWorkV2Request(http.MethodPost, path, body, "todo-edit"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("edit: %d %s", rec.Code, rec.Body)
+	}
+	var answer struct {
+		Todo directTodoV2Wire `json:"todo"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	if answer.Todo.Text != "handle the revised task" || answer.Todo.SentAt != nil || answer.Todo.ReadAt != nil ||
+		answer.Todo.Version != first.Version+2 {
+		t.Fatalf("revised todo: %+v", answer.Todo)
+	}
+	stale := httptest.NewRecorder()
+	s.workV2Route(stale, personWorkV2Request(http.MethodPost, path, body, "todo-edit-stale"))
+	if stale.Code != http.StatusConflict || !strings.Contains(stale.Body.String(), "version_conflict") {
+		t.Fatalf("stale edit: %d %s", stale.Code, stale.Body)
+	}
+	replay := httptest.NewRecorder()
+	s.workV2Route(replay, personWorkV2Request(http.MethodPost, path, body, "todo-edit"))
+	if replay.Code != http.StatusOK || replay.Body.String() != rec.Body.String() {
+		t.Fatalf("idempotent edit: %d %s", replay.Code, replay.Body)
+	}
 }
 
 func TestPersonTodoReadRetainsACompletedDirectTodo(t *testing.T) {

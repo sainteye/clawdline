@@ -7,7 +7,7 @@ import { NeedsUpdate } from "../machine/NeedsUpdate.js"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { prepareReferencePicture } from "../legacy/shots-bridge.js"
-import { addDirectTodoV2Image, answerDecision, completeWorkV2, createDirectTodoV2, directTodoActionV2, readDecision, readSessionWorkV2, readSessionWorkSummaryV2, type Decision, type DirectTodoV2, type SessionWorkSummaryV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
+import { addDirectTodoV2Image, answerDecision, completeWorkV2, createDirectTodoV2, directTodoActionV2, editDirectTodoV2, readDecision, readSessionWorkV2, readSessionWorkSummaryV2, type Decision, type DirectTodoV2, type SessionWorkSummaryV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { CompleteWorkDialog } from "../pages/work/CompleteWorkDialog.js"
@@ -37,6 +37,8 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
   const [open, setOpen] = useState(false)
   const attention = useInterventions(row, onReplySent, () => setOpen(false), onCompose)
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<DirectTodoV2 | null>(null)
+  const [editText, setEditText] = useState("")
   const [text, setText] = useState("")
   const [images, setImages] = useState<File[]>([])
   const [page, setPage] = useState<SessionWorkV2 | null>(null)
@@ -86,7 +88,7 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
     // clears a good answer, flashes "loading", and asks the work API again.
     ticket.current += 1
     expanded.current = false
-    setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setSummary(null); setFailure("")
+    setOpen(false); setAdding(false); setEditing(null); setEditText(""); setText(""); setImages([]); setPage(null); setSummary(null); setFailure("")
     setReadFailure(null); setReading(false)
     if (!readReady) return
     // One read in flight per Session; the page asks again every minute while
@@ -135,7 +137,7 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
         <summary>
           <b>{workWord("todosTitle")}</b>
           <button className="session-todos-add" type="button" aria-label={catalogWord("inline", "aab5446b4b41")}
-            onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setAdding(true) }}><WorkIcon name="add" /></button>
+            onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setEditing(null); setAdding(true) }}><WorkIcon name="add" /></button>
           {!readReady ? <span id="session-todos-count">{nextWord("sessionNotStartedShort")}</span>
             : summary ? <TodoProgressSummary progress={summary} />
             : page ? <TodoProgressSummary progress={todoProgress(page, row.sessionId)} />
@@ -169,12 +171,14 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
           {page && hasDirect && <section className="session-todos-list" aria-label={catalogWord("inline", "fc3806d4036b")}>
             {openDirect.map((todo) => (
               <DirectTodo key={todo.id} todo={todo} conversation={row.sessionId} busy={busy === todo.id}
+                onEdit={() => { setAdding(false); setEditing(todo); setEditText(todo.text); setFailure("") }}
                 onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />
             ))}
           </section>}
           {page && hasCompletedDirect && <section className="session-todos-list session-recent-todos" aria-label={catalogWord("inline", "13430167252e")}>
             <p>{catalogWord("inline", "13430167252e")}</p>
             {completedDirect.map((todo) => <DirectTodo key={todo.id} todo={todo} conversation={row.sessionId} busy={busy === todo.id}
+              onEdit={() => { setAdding(false); setEditing(todo); setEditText(todo.text); setFailure("") }}
               onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />)}
           </section>}
           {empty && <p className="session-todos-empty">{catalogWord("inline", "7fdc5e3bf06f")}</p>}
@@ -204,6 +208,25 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
           <div className="work-actions">
             <button className="chip on" type="submit" disabled={busy === "new" || !text.trim()}>{catalogWord("inline", "0006d696d8e1")}</button>
             <button className="chip" type="button" onClick={() => { setAdding(false); setImages([]) }}>{catalogWord("inline", "2cd0f3be8738")}</button>
+          </div>
+        </form>
+      </div>}
+      {editing && <div className="session-todo-modal" role="dialog" aria-modal="true" aria-labelledby="session-todo-edit-title">
+        <form onSubmit={(ev) => {
+          ev.preventDefault()
+          const value = editText.trim()
+          if (!value) return
+          if (value === editing.text) { setEditing(null); return }
+          void run(editing.id, () => editDirectTodoV2(rowID, editing.id, value, editing.version))
+            .then((ok) => { if (ok) setEditing(null) })
+        }}>
+          <h2 id="session-todo-edit-title">{workWord("todoEdit")}</h2>
+          <p>{workWord("todoEditHint")}</p>
+          <VoiceTextarea value={editText} autoFocus maxLength={8192} aria-label={workWord("todoEdit")} onValue={setEditText} />
+          {failure && <p role="alert" className="work-note">{failure}</p>}
+          <div className="work-actions">
+            <button className="chip on" type="submit" disabled={busy === editing.id || !editText.trim()}>{workWord("todoSave")}</button>
+            <button className="chip" type="button" disabled={busy === editing.id} onClick={() => setEditing(null)}>{workWord("todoCancel")}</button>
           </div>
         </form>
       </div>}
@@ -311,7 +334,7 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
   </article>
 }
 
-function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2; conversation?: string; busy: boolean; onAction: (action: "send" | "complete" | "reopen" | "delete") => void }) {
+function DirectTodo({ todo, conversation, busy, onEdit, onAction }: { todo: DirectTodoV2; conversation?: string; busy: boolean; onEdit: () => void; onAction: (action: "send" | "complete" | "reopen" | "delete") => void }) {
   const completed = !!todo.completed_at
   const own = addedBySession(todo, conversation)
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
@@ -342,6 +365,8 @@ function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2
       {send.kind !== "none" && <button className={`chip session-todo-send${send.kind === "send" ? " on danger" : ""}`} type="button" disabled={busy || send.kind === "wait"}
         title={send.kind === "wait" ? catalogWord("literal", "d433aa4d8170") : undefined}
         onClick={() => onAction("send")}><WorkIcon name="send" />{send.label}</button>}
+      {!completed && <button className="session-todo-edit" type="button" disabled={busy} aria-label={workWord("todoEdit")} title={workWord("todoEdit")}
+        onClick={onEdit}><WorkIcon name="edit" /></button>}
       <button className="session-todo-delete" type="button" disabled={busy} aria-label={catalogWord("inline", "18d1c08576de")} title={catalogWord("inline", "18d1c08576de")}
         onClick={() => onAction("delete")}><WorkIcon name="delete" /></button>
     </div>
