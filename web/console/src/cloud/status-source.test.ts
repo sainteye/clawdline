@@ -485,7 +485,7 @@ test("a stale machine refuses detail before subscribing to content", async () =>
   assert.deepEqual(calls, [])
 })
 
-test("an r/ capability blocks only detail, and an unread one is not called an old machine", async () => {
+test("an explicit r/ refusal blocks detail while an unread descriptor permits an exact attempt", async () => {
   const { client, calls } = clientFixture()
   const source = statusSource(() => client as never)
   const destination = { machineID, sessionID, executionGeneration }
@@ -496,19 +496,16 @@ test("an r/ capability blocks only detail, and an unread one is not called an ol
   delete descriptor.supported
   assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
     { kind: "unavailable", reason: "old_version" })
-  // Published but no longer fresh, and never published at all, are the same
-  // thing: this browser does not know yet. Calling either one an old machine
-  // sent a person to update a machine that was current, which is what they
-  // could neither understand nor act on.
+  // A signed, current execution can ask its own machine before orch/ arrives.
+  // The machine still checks the exact execution and read permission.
   descriptor.supported = true
   descriptor.at -= 301
-  assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
-    { kind: "unavailable", reason: "unconfirmed" })
+  assert.equal((await source.readDetail(destination, new AbortController().signal)).kind, "ready")
   client.readContentCapabilities.delete(machineID)
-  assert.deepEqual(await source.readDetail(destination, new AbortController().signal),
-    { kind: "unavailable", reason: "unconfirmed" })
-  // Neither answer may reach for content on the wire.
-  assert.deepEqual(calls, [])
+  assert.equal((await source.readDetail(destination, new AbortController().signal)).kind, "ready")
+  assert.equal((await source.readOlder?.(destination, 123, new AbortController().signal))?.kind, "ready")
+  assert.deepEqual(calls.filter((call) => call.startsWith("info:")), ["info:" + executionGeneration,
+    "info:" + executionGeneration])
 })
 
 test("an opened rich row names only the same execution and current question", async () => {

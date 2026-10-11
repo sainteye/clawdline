@@ -111,7 +111,7 @@ function pinnedReadSupport(client: StatusClient, machineID: string, nowMs = Date
 }
 
 function supportsPinnedRead(client: StatusClient, machineID: string, nowMs = Date.now()): boolean {
-  return pinnedReadSupport(client, machineID, nowMs) === "yes"
+  return pinnedReadSupport(client, machineID, nowMs) !== "no"
 }
 
 function retainedStatus(reading: MachineSessionProjection, reason: "offline" | "stale", retryAt?: number): MachineSessionProjection {
@@ -409,7 +409,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       // machine — but refuse it as what it is, never calling an unread
       // capability an old machine.
       const support = pinnedReadSupport(client, destination.machineID)
-      if (support !== "yes") return { kind: "unavailable", reason: support === "no" ? "old_version" : "unconfirmed" }
+      if (support === "no") return { kind: "unavailable", reason: "old_version" }
       if (!client.infoForGeneration || !client.transcriptForGeneration || !client.subscribe || !client.unsubscribe ||
         !client.openDetail || !client.closeDetail) {
         return { kind: "unavailable", reason: "old_version" }
@@ -463,8 +463,8 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       const availability = destinationAvailable(destination, initial)
       if (availability !== "ready") return { kind: "unavailable", reason: availability === "waiting" ? "unknown" : availability }
       const support = pinnedReadSupport(client, destination.machineID)
-      if (support !== "yes" || !client.transcriptPageForGeneration) {
-        return { kind: "unavailable", reason: support === "unconfirmed" ? "unconfirmed" : "old_version" }
+      if (support === "no" || !client.transcriptPageForGeneration) {
+        return { kind: "unavailable", reason: "old_version" }
       }
       try {
         const reply = await client.transcriptPageForGeneration(destination, before, signal)
