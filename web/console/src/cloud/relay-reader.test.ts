@@ -8,7 +8,7 @@ import assert from "node:assert/strict"
 import type { SessionsSnapshot, TranscriptPage } from "@clawdline/contract"
 import { documentIdentityForSession } from "../legacy/js/net/document-links.js"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { RelayReader, headerReadDiagnostics, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudIdentity, type CloudReadClient, type CloudRow, type CloudSchedules, type CloudSnippets } from "./relay-reader.ts"
+import { RelayReader, headerReadDiagnostics, ROW_RESTATE_MS, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudIdentity, type CloudReadClient, type CloudRow, type CloudSchedules, type CloudSnippets } from "./relay-reader.ts"
 import { failureFromMac } from "../legacy/js/net/cloud-failure.js"
 import { CatalogCloudClient } from "./refusal-client.js"
 import japanese from "../../public/catalogs/ja.json" with { type: "json" }
@@ -220,6 +220,65 @@ test("the original page keeps rich titles only for current executions named by s
   assert.deepEqual(snap.sessions.map((session) => session.label), ["Project title"])
   assert.equal(snap.scan.complete, false)
   assert.equal(snap.scan.emptyAuthoritative, false)
+})
+
+/** The ss/ pass as a machine publishes it: the marker, then one row per Session. */
+function statusPass(machine: string, generation: string, ...sessions: string[]) {
+  return new Map<string, unknown>([
+    [JSON.stringify([machine, "__clawdline_inventory_v1__"]),
+      { payload: { complete: true, inventory: { version: 1, sessions } } }],
+    ...sessions.map((session) => [JSON.stringify([machine, session]),
+      { payload: { execution_generation: generation } }] as [string, unknown]),
+  ])
+}
+
+const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+test("the row under an opened Session is asked for, not waited for", async () => {
+  const client = new FakeClient()
+  const generation = "a".repeat(32)
+  // The machine's pass names both Sessions; only one rich row is held, and the
+  // one a person has open is the other.
+  client.rows = [row("mac-a", "s1", { execution_generation: generation })]
+  client.statusSnapshots = statusPass("mac-a", generation, "s1", "s2")
+  const clock = { t: 1000 }
+  const r = new RelayReader("mac-a", { classicStatus: true, now: () => clock.t,
+    fleetTarget: () => ({ machineID: "mac-a", sessionID: "s2", executionGeneration: generation }) })
+  r.attach(client)
+  await r.snapshot()
+  await settled()
+  assert.deepEqual(client.reads, [{ machine: "mac-a", word: "sessions.snapshot", body: {} }],
+    "the opened Session's row is asked for")
+
+  await r.snapshot()
+  await settled()
+  assert.equal(client.reads.length, 1, "and not asked for again within ROW_RESTATE_MS")
+
+  clock.t += ROW_RESTATE_MS
+  await r.snapshot()
+  await settled()
+  assert.equal(client.reads.length, 2, "and asked again once that has passed")
+
+  client.rows = [...client.rows, row("mac-a", "s2", { execution_generation: generation })]
+  clock.t += ROW_RESTATE_MS
+  const snap = await r.snapshot()
+  await settled()
+  assert.deepEqual(snap.sessions.map((session) => session.id), ["s1", "s2"])
+  assert.equal(client.reads.length, 2, "a row that is here is not asked for")
+})
+
+test("a replaced execution is not asked for again: the page is told it changed", async () => {
+  const client = new FakeClient()
+  const running = "b".repeat(32)
+  client.rows = [row("mac-a", "s1", { execution_generation: running })]
+  client.statusSnapshots = statusPass("mac-a", running, "s1", "s2")
+  const r = new RelayReader("mac-a", { classicStatus: true, now: () => 1000,
+    // What a person opened before the assistant restarted.
+    fleetTarget: () => ({ machineID: "mac-a", sessionID: "s2", executionGeneration: "c".repeat(32) }) })
+  r.attach(client)
+  await r.snapshot()
+  await settled()
+  assert.deepEqual(client.reads, [], "the machine says a different execution is running; asking cannot produce this one")
 })
 
 test("refresh asks the machine to restate quiet Sessions after the first list", async () => {

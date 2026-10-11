@@ -56,6 +56,7 @@ import { machinesByCapability } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
+import { OPENED_ROW_QUIET_MS, openedRowShow } from "./opened-row.js"
 import { FleetSessionList, type MachineToolbarAction } from "./FleetSessionList.js"
 import { CloudSessionSheets, type PendingMachineAction } from "./CloudSessionSheets.js"
 import { PeerAccessPage } from "./PeerAccessPage.js"
@@ -141,7 +142,7 @@ export function readDeclaration(declared: string): Declared {
  * execution carries the one that opens the execution now running, and a
  * Session that is gone carries the one that puts it away.
  */
-function fleetDetailAnswer(reason: Extract<SessionContent, { kind: "unavailable" }>["reason"],
+function fleetDetailAnswer(reason: Extract<SessionContent, { kind: "unavailable" }>["reason"] | "no_row",
   machine: string, running: SessionDestination | null,
   presses: { open: (target: SessionDestination) => void; close: () => void; again: () => void }): FleetDetailProblem {
   const again = { label: nextWord("cloudAllTryAgain"), run: presses.again }
@@ -151,6 +152,9 @@ function fleetDetailAnswer(reason: Extract<SessionContent, { kind: "unavailable"
         action: { label: nextWord("cloudAllOpenCurrent"), run: () => presses.open(running) } }
       : { text: nextWord("cloudAllGone", { machine }),
         action: { label: nextWord("cloudAllCloseGone"), run: presses.close } }
+    // The conversation was read; what is missing is the Session's own rich
+    // row, which only its machine publishes.
+    case "no_row": return { text: nextWord("cloudAllNoRow", { machine }), action: again }
     case "no_permission": return { text: nextWord("cloudAllContentNoPermission", { machine }) }
     case "old_version": return { text: nextWord("cloudAllContentOldVersion", { machine }) }
     case "unconfirmed": return { text: nextWord("cloudAllUnconfirmed", { machine }), action: again }
@@ -263,6 +267,13 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // Without this the first answer was the last one until the whole page was
   // reloaded, which restored the same unreadable target.
   const [fleetReadAgain, setFleetReadAgain] = useState(0)
+  /**
+   * The opened Session whose own row has not arrived, and the one this browser
+   * has waited long enough for to say so (`opened-row.ts`).
+   */
+  const [rowPending, setRowPending] = useState(false)
+  const [rowAbsent, setRowAbsent] = useState<string | null>(null)
+  const noteRowPending = useCallback((pending: boolean) => setRowPending(pending), [])
   const [readerMachine, setReaderMachine] = useState<string | null>(null)
   const fleetTargetRef = useRef<SessionDestination | null>(null)
   fleetTargetRef.current = fleetScope ? fleetTarget : null
@@ -1082,6 +1093,20 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     }
   }, [fleetScope, fleetTarget && destinationKey(fleetTarget), clientEpoch, consoleUp, liveSessionSource, pointAt,
     fleetReadAgain])
+  // A row that has not come is news, not a longer wait. The conversation is
+  // read and held by then; what is missing is the Session's own rich row, and
+  // only the machine can send it, so the sentence names that machine and the
+  // press asks it again.
+  useEffect(() => {
+    setRowAbsent(null)
+    if (!rowPending || !fleetScope || !fleetTarget) return
+    const key = destinationKey(fleetTarget)
+    const since = Date.now()
+    const timer = setTimeout(() => {
+      if (openedRowShow(Date.now() - since) === "absent") setRowAbsent(key)
+    }, OPENED_ROW_QUIET_MS)
+    return () => clearTimeout(timer)
+  }, [rowPending, fleetScope, fleetTarget && destinationKey(fleetTarget), fleetReadAgain])
   // Machines on the account this browser cannot read yet. They are listed
   // under the ones it can, each with its Pair press, so pairing another
   // machine does not mean finding the full machine screen first.
@@ -1392,8 +1417,16 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             focusCloudSessions={fleetScope}
             onLeaveCloudSessions={leaveFleet}
             fleetTarget={fleetScope ? fleetTarget : null}
-            fleetDetailProblem={fleetScope && fleetTarget && fleetDetailProblem?.key === destinationKey(fleetTarget)
-              ? { text: fleetDetailProblem.text, action: fleetDetailProblem.action } : null}
+            fleetDetailProblem={fleetScope && fleetTarget
+              ? fleetDetailProblem?.key === destinationKey(fleetTarget)
+                ? { text: fleetDetailProblem.text, action: fleetDetailProblem.action }
+                : rowAbsent === destinationKey(fleetTarget)
+                  ? fleetDetailAnswer("no_row",
+                    machineNames.current.get(fleetTarget.machineID) ?? fleetTarget.machineID, null,
+                    { open: openFleetSession, close: closeFleetTarget, again: () => setFleetReadAgain((count) => count + 1) })
+                  : null
+              : null}
+            onFleetDetailPending={noteRowPending}
             fleetReaderMachine={readerMachine}
             onFleetClose={closeFleetTarget}
             fleetCloseIntent={fleetCloseIntent}

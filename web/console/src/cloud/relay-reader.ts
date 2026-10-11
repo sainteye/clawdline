@@ -412,6 +412,21 @@ export const TRANSCRIPT_MAX_REUSE_MS = 30_000
 export const PASS_SETTLE_MS = 2_000
 
 /**
+ * How often, at most, a reader asks the machine to restate its rows because the
+ * Session a person has open is not among them.
+ *
+ * A row is published when the machine has something to say about that Session
+ * and restated on its Cloud status cadence; an idle Session's row is therefore
+ * minutes old and arrives again only when that cadence comes round. A page that
+ * does not hold it has nothing to draw the opened Session with, and used to
+ * wait: measured on 2026-10-11, re-reading one from the relay's retained
+ * channel took 19.6 seconds, with the pane saying "Reading this Session's
+ * conversation" for all of it, while the conversation itself answered in 131 ms.
+ * Asking the machine for its list instead put the row back in one second.
+ */
+export const ROW_RESTATE_MS = 5_000
+
+/**
  * How long, after this page did something to a session, every poll asks the
  * machine again until the transcript it answers has changed. A message just
  * typed is the turn the page is waiting to see (`session/pending.ts`); reusing
@@ -598,6 +613,8 @@ export class RelayReader {
   private readonly awaitingClient = new Set<() => void>()
   /** Whether this page has already said what it and the machine disagree about (`drift`). */
   private saidDrift = false
+  /** The opened destination this reader last asked the machine to restate, and when. */
+  private rowAsked: { key: string; at: number } | null = null
   /** The one machine this reads. */
   readonly machine: string
 
@@ -1444,6 +1461,7 @@ export class RelayReader {
       return typeof status?.payload?.execution_generation === "string" &&
         row.execution_generation === status.payload.execution_generation
     })
+    this.askForOpenedRow(client, machineRows)
     // The marker can arrive before another retained channel. Its id set is the
     // receipt: a marker alone is not yet the whole list it describes.
     const hasInventory = this.options.classicStatus ? expected !== null : inventory !== undefined
@@ -1864,6 +1882,41 @@ export class RelayReader {
       })
     }
     return target
+  }
+
+  /**
+   * The row under the Session a person has open, asked for rather than waited for.
+   *
+   * The machine's ss/ pass says this execution is the one running, and the page
+   * has no rich row for it: that is the one case where asking the machine for
+   * its list answers a question nobody else will. The reply arrives on the
+   * direct carrier when there is one, so the row is back within a second
+   * instead of on the next status pass (`ROW_RESTATE_MS`).
+   *
+   * Only when the two agree about the execution. A ss/ row naming a different
+   * one is a replaced execution, which `readDetail` already refuses as
+   * `changed` and offers the running Session for; asking again would not
+   * produce the row a person is looking at.
+   */
+  private askForOpenedRow(client: CloudReadClient, rows: readonly CloudRow[]): void {
+    const target = this.options.fleetTarget?.()
+    if (!this.options.classicStatus || !target || target.machineID !== this.machine) return
+    const held = rows.some((row) => {
+      const id = typeof row.session === "string" ? row.session : row.id
+      return id === target.sessionID && row.execution_generation === target.executionGeneration
+    })
+    if (held) {
+      this.rowAsked = null
+      return
+    }
+    const status = client.statusSnapshots?.get(JSON.stringify([this.machine, target.sessionID])) as
+      | { payload?: { execution_generation?: unknown } } | undefined
+    if (status?.payload?.execution_generation !== target.executionGeneration) return
+    const key = target.sessionID + "\u0000" + target.executionGeneration
+    const now = this.now()
+    if (this.rowAsked?.key === key && now - this.rowAsked.at < ROW_RESTATE_MS) return
+    this.rowAsked = { key, at: now }
+    void this.machineRead(null, "GET", "/v1/sessions", "sessions.snapshot", {}).catch(() => undefined)
   }
 
   private bind(stream: OpenStream): void {

@@ -196,8 +196,8 @@ function rowNode(id: string): HTMLElement | null {
  * pills beside each other left the counts no room to be read.
  */
 export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, fleetTarget = null, fleetReaderMachine = null,
-  fleetDetailProblem = null, onFleetClose, fleetCloseIntent = null, onFleetCloseIntentHandled, hideSessionCounts = false,
-  focusCloudSessions = false, onLeaveCloudSessions }: {
+  fleetDetailProblem = null, onFleetDetailPending, onFleetClose, fleetCloseIntent = null, onFleetCloseIntentHandled,
+  hideSessionCounts = false, focusCloudSessions = false, onLeaveCloudSessions }: {
   aside?: ReactNode | ((light: ConnectionLight) => ReactNode)
   cloudSessions?: ReactNode
   cloudPeerAccess?: ReactNode | ((active: boolean) => ReactNode)
@@ -205,6 +205,8 @@ export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, 
   fleetTarget?: SessionDestination | null
   fleetReaderMachine?: string | null
   fleetDetailProblem?: FleetDetailProblem | null
+  /** Whether the opened fleet Session's own row is still missing from this machine's rows. */
+  onFleetDetailPending?: (pending: boolean) => void
   onFleetClose?: () => void
   fleetCloseIntent?: { target: SessionDestination; title: string } | null
   onFleetCloseIntentHandled?: () => void
@@ -376,6 +378,15 @@ export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, 
   }, [!!cloudSessions, !!fleetList])
 
   const rows = fleet.snapshot?.sessions ?? []
+  // The opened fleet Session, waiting for its own row. The pane has nothing to
+  // draw until the row is here, and the cloud layer decides how long that may
+  // go on without being said (`cloud/opened-row.ts`).
+  const fleetDetailPending = !!fleetList && !!fleetTarget &&
+    (fleetReaderMachine !== fleetTarget.machineID || !rows.some((row) =>
+      row.id === fleetTarget.sessionID && row.execution_generation === fleetTarget.executionGeneration))
+  useEffect(() => {
+    onFleetDetailPending?.(fleetDetailPending)
+  }, [fleetDetailPending, onFleetDetailPending])
   const rowsRef = useRef(rows)
   rowsRef.current = rows
   const snapshotRef = useRef(fleet.snapshot)
@@ -971,9 +982,7 @@ export default function App({ aside, cloudSessions, cloudPeerAccess, fleetList, 
         streamTasks={fleet.tasksLive ? fleet.tasks : null}
         fleetList={fleetList?.(filter, setFilter)}
         fleetDetailKey={fleetList && fleetTarget ? destinationKey(fleetTarget) : undefined}
-        fleetDetailPending={!!fleetList && !!fleetTarget &&
-          (fleetReaderMachine !== fleetTarget.machineID || !rows.some((row) =>
-            row.id === fleetTarget.sessionID && row.execution_generation === fleetTarget.executionGeneration))}
+        fleetDetailPending={fleetDetailPending}
         fleetDetailProblem={fleetList && fleetTarget ? fleetDetailProblem : null}
       />}
       {cloudPeerAccess && <section id="peer-access" className="page cloud-peer-access-page"

@@ -4189,6 +4189,7 @@
   "next.cloudPeerScopeHandoffWhat": "將 Session 工作交接給目標 Session。",
   "next.cloudPeerGrantBuild": "建立權限",
   "next.cloudPeerCopy": "複製",
+  "next.cloudAllNoRow": "{machine} 還沒送出這個 Session 的那一列，所以還沒有東西可以打開它。",
   "projects.activityInProgress": "{n} 項進行中",
   "projects.activityLastKnown": "上次紀錄：{n}",
   "projects.activityNone": "目前無進行中項目",

@@ -4189,6 +4189,7 @@
   "next.cloudPeerScopeHandoffWhat": "Hand off a Session's work to the receiving Session.",
   "next.cloudPeerGrantBuild": "Create permission",
   "next.cloudPeerCopy": "Copy",
+  "next.cloudAllNoRow": "{machine} has not sent this Session’s row yet, so there is nothing to open it with.",
   "projects.activityInProgress": "{n} in progress",
   "projects.activityLastKnown": "Last known: {n}",
   "projects.activityNone": "None in progress",

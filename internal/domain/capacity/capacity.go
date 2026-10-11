@@ -452,6 +452,8 @@ const (
 	ConsoleTranscriptFollowLater      = "console.transcript_follow_later_seconds"
 	ConsoleHealthLive                 = "console.health_live_seconds"
 	ConsoleSessionNotesSafety         = "console.session_notes_safety_seconds"
+	ConsoleOpenedRowRestate           = "console.opened_row_restate_seconds"
+	ConsoleOpenedRowQuiet             = "console.opened_row_quiet_seconds"
 	// The ordinary shells this machine holds open for a person, and what one
 	// request may type into one or read back from it (limits N59).
 	TerminalCount        = "terminal.count"
@@ -2520,6 +2522,32 @@ func Register() []Entry {
 			// at this age.
 			Name: ConsoleRelayTranscriptExpectReask, Class: Cache, Unit: Seconds,
 			Limit: 4, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// How often, at most, a page asks the machine to restate its rows
+			// because the Session a person has open is not among them
+			// (ROW_RESTATE_MS, web/console/src/cloud/relay-reader.ts).
+			//
+			// A Session's rich row is published when the machine has
+			// something to say about it and restated on the Cloud status
+			// cadence, so a page that does not hold the opened one has
+			// nothing to draw it with. Measured on 2026-10-11: re-reading one
+			// from the relay's retained channel took 19.6 seconds, against
+			// 131 ms for the conversation itself; asking the machine put the
+			// row back in one second.
+			Name: ConsoleOpenedRowRestate, Class: Cache, Unit: Seconds,
+			Limit: 5, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// How long the opened Session's row may be missing before the
+			// pane stops saying it is reading and says the machine has not
+			// sent it (OPENED_ROW_QUIET_MS,
+			// web/console/src/cloud/opened-row.ts). Longer than the ask and
+			// its answer, twice over.
+			Name: ConsoleOpenedRowQuiet, Class: Cache, Unit: Seconds,
+			Limit: 8, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
