@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 5038,
-  "riskKeys": 2207,
-  "nonRiskCount": 2831,
+  "englishContentKeys": 5042,
+  "riskKeys": 2210,
+  "nonRiskCount": 2832,
   "groups": [
     {
       "name": "bar / other",
@@ -1916,7 +1916,7 @@
     },
     {
       "name": "next / other",
-      "count": 104,
+      "count": 105,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1965,6 +1965,7 @@
         "next.pushCloudReached",
         "next.schedulesHeading",
         "next.schedulesListLabel",
+        "next.schedulesLoading",
         "next.screenSessionGone",
         "next.sessionCallbackActive",
         "next.sessionCallbackUnverified",

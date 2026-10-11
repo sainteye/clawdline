@@ -335,7 +335,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         </section>)}
       </div>
       {groups.length === 0 && <p>{nextWord("cloudAllNoMatch")}</p>}
-      <ScheduleSection arrived={true} onOpen={openScheduled} canOpen={canOpenScheduled} />
+      <ScheduleSection arrived={true} waitForFleet onOpen={openScheduled} canOpen={canOpenScheduled} />
     </div>
     {/* Which machine, asked once for an action that needs one. Starting asks
         where to start and leaves this list where it is; the others move the

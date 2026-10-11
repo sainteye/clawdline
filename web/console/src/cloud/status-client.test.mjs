@@ -95,6 +95,50 @@ test("the live signed machine descriptor keeps commands beyond the archived cach
   assert.equal(client.machineDescriptor("m").machine.commands.includes("session-receipt"), false)
 })
 
+test("a cut remembered Linux command list cannot refuse a named transcript read", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.machineDescriptors = new Map([["m", { machine: {
+    platform: "linux", commands: Array.from({ length: 64 }, (_, i) => `word-${i}`),
+  } }]])
+  client.orchestratorSnapshots = new Map()
+  client.machineLacks = new Map()
+  client.macCapabilities = new Map()
+  assert.equal(client._machineImplements("m", "transcript"), "unknown")
+  client.orchestratorSnapshots.set("m", { machine: { platform: "linux", commands: ["transcript"] } })
+  assert.equal(client._machineImplements("m", "transcript"), "yes")
+  client.orchestratorSnapshots.clear()
+  client.machineLacks.set("m", new Set(["transcript"]))
+  assert.equal(client._machineImplements("m", "transcript"), "no")
+})
+
+test("status recovery frees idle relay channels before declaring an event gap", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.ready = true
+  client.statusSnapshots = new Map()
+  client.statusRecoveries = new Map()
+  client.pendingSubscriptions = new Set(Array.from({ length: 8 }, (_, i) => `t/m/old${i}`))
+  client.socketSubscriptions = new Map([...client.pendingSubscriptions].map((channel) => [channel, 100]))
+  client.subscriptionHolds = new Map()
+  client.resubscribes = new Map()
+  client.subscriptionLimit = 8
+  client.subscriptionIdleMs = 60_000
+  client.readTimeoutMs = 60_000
+  client.now = () => 100
+  client.setTimeout = () => 1
+  client.clearTimeout = () => {}
+  client.events = () => () => {}
+  const frames = []
+  client._sendSubscriptionFrame = (type, channels) => frames.push({ type, channels })
+  const recovery = client.recoverStatusRow("m", "s", genA)
+  assert.deepEqual(frames, [
+    { type: "unsubscribe", channels: ["t/m/old0"] },
+    { type: "subscribe", channels: ["ss/m/s"] },
+  ])
+  assert.equal(client.socketSubscriptions.size, 8)
+  client.cancelStatusRecoveries()
+  assert.equal(await recovery, false)
+})
+
 test("ss channel keeps both opaque machine and Session ids after envelope validation", () => {
   assert.deepEqual(statusChannel(envelope("ss/machine%2Fa/%2514")), { machine: "machine/a", session: "%14" })
   assert.equal(statusChannel(envelope("s/machine/session")), null)
@@ -580,6 +624,36 @@ test("an event gap requests one retained ss row and releases it after realign", 
   assert.equal(await recovery, true)
   assert.deepEqual(frames[1], { type: "unsubscribe", channels: ["ss/m/s"] })
   assert.equal(client.statusRecoveries.size, 0)
+})
+
+test("a cold browser replays one missing inventory marker and shares the pending read", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.ready = true
+  client.statusSnapshots = new Map()
+  client.statusRecoveries = new Map()
+  client.socketSubscriptions = new Map()
+  client.pendingSubscriptions = new Set()
+  client.resubscribes = new Map()
+  client.subscriptionLimit = 8
+  client.readTimeoutMs = 60000
+  client.now = () => 0
+  client._trimSubscriptions = () => {}
+  client.setTimeout = () => 1
+  client.clearTimeout = () => {}
+  const frames = []
+  client._sendSubscriptionFrame = (type, channels) => frames.push({ type, channels })
+  let listener
+  client.events = (callback) => { listener = callback; return () => { listener = null } }
+  const first = client.recoverStatusMarker("m")
+  const second = client.recoverStatusMarker("m")
+  assert.equal(first, second)
+  assert.deepEqual(frames, [{ type: "subscribe", channels: ["ss/m/__clawdline_inventory_v1__"] }])
+  client.statusSnapshots.set(JSON.stringify(["m", "__clawdline_inventory_v1__"]), { payload: { inventory: { version: 1 } } })
+  listener({ type: "session_status", identity: { machine: "m", session: "__clawdline_inventory_v1__" } })
+  assert.equal(await first, true)
+  assert.deepEqual(frames[1], { type: "unsubscribe", channels: ["ss/m/__clawdline_inventory_v1__"] })
+  assert.equal(await client.recoverStatusMarker("m"), true)
+  assert.equal(frames.length, 2)
 })
 
 test("a status row arriving before recovery is used without a timeout or subscription", async () => {

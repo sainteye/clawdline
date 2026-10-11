@@ -308,6 +308,15 @@ export class StatusCloudClient extends CatalogCloudClient {
    */
   _machineImplements(machine, type, options) {
     if (type === CARRIER_WORD) return this.carrierSupported(machine) ? "yes" : "no"
+    // The archived client persists only the first 64 command words. Absence
+    // from that prefix is not a machine refusal, even for a Linux machine.
+    // A named read may ask the machine; its signed answer is authoritative.
+    const live = this.orchestratorSnapshots?.get(machine)?.machine
+    const remembered = this.machineDescriptors?.get(machine)?.machine?.commands
+    const lacks = this.machineLacks?.get(machine)
+    if ((!live || typeof live !== "object" || Array.isArray(live)) &&
+      Array.isArray(remembered) && remembered.length >= 64 && !remembered.includes(type) &&
+      !lacks?.has(type)) return "unknown"
     return super._machineImplements(machine, type, options)
   }
 
@@ -879,6 +888,50 @@ export class StatusCloudClient extends CatalogCloudClient {
     })
     this.statusRecoveries.set(channel, { generation: snapshotGeneration, promise, finish })
     try {
+      // Rich rows and transcripts often occupy every relay slot when a page
+      // opens. Free idle subscriptions the same way an ordinary read does.
+      this._trimSubscriptions(1, [channel])
+      if (this.socketSubscriptions.size >= this.subscriptionLimit) finish(false)
+      else {
+        this.pendingSubscriptions.add(channel)
+        this._sendSubscriptionFrame("subscribe", [channel])
+        this.socketSubscriptions.set(channel, this.now())
+        timer = this.setTimeout(() => finish(false), this.readTimeoutMs)
+      }
+    } catch { finish(false) }
+    return promise
+  }
+
+  /** A cold browser may know a machine from orch/ before its default ss/ marker arrives. */
+  recoverStatusMarker(machineID) {
+    const sessionID = INVENTORY_SESSION
+    if (!machineID || !this.ready) return Promise.resolve(false)
+    const key = JSON.stringify([machineID, sessionID])
+    if (this.statusSnapshots.get(key)?.payload?.inventory) return Promise.resolve(true)
+    const channel = "ss/" + channelSegment(machineID) + "/" + sessionID
+    const previous = this.statusRecoveries.get(channel)
+    if (previous) return previous.promise
+    let resolve
+    const promise = new Promise((answer) => { resolve = answer })
+    let done = false
+    let timer = null
+    let stop = () => {}
+    const finish = (received) => {
+      if (done) return
+      done = true
+      if (timer !== null) this.clearTimeout(timer)
+      stop()
+      this.unsubscribe([channel])
+      if (this.statusRecoveries.get(channel)?.promise === promise) this.statusRecoveries.delete(channel)
+      resolve(received)
+    }
+    stop = this.events((event) => {
+      if (event.type === "session_status" && event.identity?.machine === machineID &&
+        event.identity?.session === sessionID && this.statusSnapshots.get(key)?.payload?.inventory) finish(true)
+    })
+    this.statusRecoveries.set(channel, { generation: "marker", promise, finish })
+    try {
+      this._trimSubscriptions(1, [channel])
       if (this.socketSubscriptions.size >= this.subscriptionLimit) finish(false)
       else {
         this.pendingSubscriptions.add(channel)

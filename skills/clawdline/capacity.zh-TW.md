@@ -95,6 +95,8 @@
 | `console.relay_feature_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
 | `console.session_notes_safety_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.status_gap_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
+| `console.status_marker_retry_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_backoff_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_follow_fast_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_follow_later_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |

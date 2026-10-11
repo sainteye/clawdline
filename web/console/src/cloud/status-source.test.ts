@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
-import { pinnedQuestion, statusSource } from "./status-source.ts"
+import { pinnedQuestion, statusSource, STATUS_GAP_RETRY_MS, STATUS_MARKER_RETRY_MS } from "./status-source.ts"
 
 const machineID = "one"
 const sessionID = "same"
@@ -82,6 +82,41 @@ test("a status row event names the Session whose list title should refresh", () 
   emit({ type: "session_status", identity: { machine: machineID, session: sessionID } })
   assert.deepEqual(events, [{ machineID, sessionID, kind: "changed" }])
   stop()
+})
+
+test("a new browser replays a missing status marker once and recovers the Session list", async () => {
+  const { client } = clientFixture()
+  const key = JSON.stringify([machineID, inventory])
+  const marker = client.statusSnapshots.get(key)
+  client.statusSnapshots.delete(key)
+  let reads = 0
+  ;(client as typeof client & { recoverStatusMarker: (machine: string) => Promise<boolean> }).recoverStatusMarker = async () => {
+    reads++
+    client.statusSnapshots.set(key, marker)
+    return true
+  }
+  const source = statusSource(() => client as never)
+  const result = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(result.kind, "ready")
+  assert.equal(reads, 1)
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
+  assert.equal(reads, 1)
+})
+
+test("an unanswered marker is retried at most once per minute", async () => {
+  const { client } = clientFixture()
+  client.statusSnapshots.delete(JSON.stringify([machineID, inventory]))
+  let reads = 0
+  ;(client as typeof client & { recoverStatusMarker: (machine: string) => Promise<boolean> }).recoverStatusMarker = async () => {
+    reads++
+    return false
+  }
+  const source = statusSource(() => client as never)
+  const first = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(first.kind, "unavailable")
+  if (first.kind === "unavailable") assert.ok(first.retryAt! > Date.now() + STATUS_MARKER_RETRY_MS - 1000)
+  await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(reads, 1)
 })
 
 test("a late content capability tells the fleet to retry its pending names", () => {
@@ -341,6 +376,8 @@ test("a missing ss row settles before it can shake the visible list", async () =
 
 test("a failed retained-row request keeps the machine in event_gap", async () => {
   const { client, calls } = clientFixture()
+  let now = Date.now()
+  client.now = () => now
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]));
   (client as { recoverStatusRow: (machine: string, session: string, generation: string) => Promise<boolean> }).recoverStatusRow = async () => {
     calls.push("recover-refused")
@@ -351,11 +388,15 @@ test("a failed retained-row request keeps the machine in event_gap", async () =>
   assert.equal(reading.kind === "unavailable" && reading.reason, "event_gap")
   const repeated = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(repeated.kind === "unavailable" && repeated.reason, "event_gap")
+  assert.equal(repeated.kind === "unavailable" ? repeated.retryAt : undefined, now + STATUS_GAP_RETRY_MS)
   assert.deepEqual(calls, ["recover-refused"])
+  now += STATUS_GAP_RETRY_MS
+  await source.readMachine(machineID, new AbortController().signal)
+  assert.deepEqual(calls, ["recover-refused", "recover-refused"])
   const marker = client.statusSnapshots.get(JSON.stringify([machineID, inventory])) as { payload: { snapshot_generation: string } }
   marker.payload.snapshot_generation = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   await source.readMachine(machineID, new AbortController().signal)
-  assert.deepEqual(calls, ["recover-refused", "recover-refused"])
+  assert.deepEqual(calls, ["recover-refused", "recover-refused", "recover-refused"])
 })
 
 test("a stale machine refuses detail before subscribing to content", async () => {
