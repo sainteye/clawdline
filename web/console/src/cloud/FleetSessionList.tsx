@@ -19,13 +19,14 @@ type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionP
 
 /** Only the fleet list is new; the conversation and composer belong to SessionsPage. */
 export function FleetSessionList({ machines, source, target, filter, onFilter, onOpen,
-  onMachineAction, onCloseRequest }: {
+  onMachineAction, onCloseRequest, onPresentations }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
   target: SessionDestination | null
   filter: string
   onFilter: (value: string) => void
   onOpen: (target: SessionDestination) => void
+  onPresentations?: (machineID: string, rows: readonly (SessionListPresentation & { destination: SessionDestination })[]) => void
   onMachineAction?: (machineID: string, action: MachineToolbarAction) => void
   onCloseRequest: (target: SessionDestination, title: string) => void
 }) {
@@ -167,6 +168,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
               status: row.status ?? previous?.status,
             })
           }
+          onPresentations?.(machineID, rows)
           const expected = readings[machineID]
           const missing = expected?.phase === "settled" && expected.value.kind === "ready" &&
             expected.value.rows.some((row) => row.freshness === "current" &&
@@ -186,7 +188,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         if (presentationPasses.current.get(machineID) === pass) presentationPasses.current.delete(machineID)
       }
     }
-  }, [source, passesKey, presentationRevision])
+  }, [source, passesKey, presentationRevision, onPresentations])
 
   const search = filter.trim().toLocaleLowerCase()
   const groups = machines.map((machine) => {

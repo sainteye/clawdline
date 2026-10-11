@@ -267,6 +267,41 @@ test("the row under an opened Session is asked for, not waited for", async () =>
   assert.equal(client.reads.length, 2, "a row that is here is not asked for")
 })
 
+test("an authorized fleet presentation opens a conversation when rich replay is missing", async () => {
+  const client = new FakeClient()
+  const generation = "a".repeat(32)
+  const pass = "b".repeat(32)
+  const target = { machineID: "mac-a", sessionID: "s2", executionGeneration: generation }
+  client.statusSnapshots = new Map([
+    [JSON.stringify(["mac-a", "__clawdline_inventory_v1__"]), { payload: {
+      complete: true, snapshot_generation: pass, inventory: { version: 1, sessions: ["s2"] },
+    } }],
+    [JSON.stringify(["mac-a", "s2"]), { payload: {
+      machine_id: "mac-a", session_id: "s2", snapshot_generation: pass,
+      execution_generation: generation, state: "idle", assistant: "claude", backend: "tmux",
+      source: { freshness: "current", observed_at: 1 },
+    } }],
+  ])
+  const r = new RelayReader("mac-a", { classicStatus: true, now: () => 1000,
+    fleetTarget: () => target,
+    fleetPresentation: () => ({ title: "Opened on Linux" }),
+  })
+  r.attach(client)
+  const snapshot = await r.snapshot()
+  await settled()
+  assert.deepEqual(snapshot.sessions.map((session) => [session.id, session.label, session.execution_generation]),
+    [["s2", "Opened on Linux", generation]])
+  assert.deepEqual(client.reads, [], "the already authorized list does not request a second rich list")
+
+  const changed = new Map(client.statusSnapshots)
+  changed.set(JSON.stringify(["mac-a", "s2"]), { payload: {
+    machine_id: "mac-a", session_id: "s2", snapshot_generation: pass,
+    execution_generation: "c".repeat(32), state: "idle", source: { freshness: "current", observed_at: 1 },
+  } })
+  client.statusSnapshots = changed
+  assert.deepEqual((await r.snapshot()).sessions, [], "a later execution never inherits the opened row")
+})
+
 test("a replaced execution is not asked for again: the page is told it changed", async () => {
   const client = new FakeClient()
   const running = "b".repeat(32)
