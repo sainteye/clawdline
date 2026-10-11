@@ -6,7 +6,7 @@ import { Swipes } from "../session/swipe.js"
 import { useSwipeToEnd } from "../session/use-swipe.js"
 import type { OrderHold } from "../session/order.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
-import { ScheduleSection } from "../pages/schedules.js"
+import { ScheduleSection, scheduleMachineReady } from "../pages/schedules.js"
 import { destinationKey, displayedPresentationStatus, presentationPass, projectionRefreshAt, settleProjection,
   type MachineSessionProjection, type ProjectionProblem, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource, type FleetMachine } from "./all-machine-sessions.js"
@@ -76,6 +76,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         ({ ...before, [machineID]: { phase: "loading" } }))
       void source.readMachine(machineID, abort.signal).then((value) => {
         if (!live || abort.signal.aborted) return
+        if (value.kind === "ready") scheduleMachineReady(machineID)
         setReadings((before) => ({ ...before, [machineID]: { phase: "settled",
           value: settleProjection(machineID, before[machineID]?.phase === "settled" ? before[machineID].value : undefined, value) } }))
       }, (error: unknown) => {
@@ -117,8 +118,11 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
       for (const { machineID, at } of deadlines) {
         if (at !== earliest || !machines.some((machine) => machine.id === machineID)) continue
         void source.readMachine(machineID, abort.signal).then((value) => {
-          if (!abort.signal.aborted) setReadings((before) => ({ ...before, [machineID]: { phase: "settled",
-            value: settleProjection(machineID, before[machineID]?.phase === "settled" ? before[machineID].value : undefined, value) } }))
+          if (!abort.signal.aborted) {
+            if (value.kind === "ready") scheduleMachineReady(machineID)
+            setReadings((before) => ({ ...before, [machineID]: { phase: "settled",
+              value: settleProjection(machineID, before[machineID]?.phase === "settled" ? before[machineID].value : undefined, value) } }))
+          }
         }, (error: unknown) => {
           if (!abort.signal.aborted) setReadings((before) => ({ ...before, [machineID]: { phase: "settled",
             value: settleProjection(machineID, before[machineID]?.phase === "settled" ? before[machineID].value : undefined,

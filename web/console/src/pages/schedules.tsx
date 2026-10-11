@@ -326,6 +326,9 @@ const Schedules = (() => {
     unanswered: NonNullable<ScheduleList["unanswered"]> } | null = null
   let lastAnswerMachines = ""
   let readState: "loading" | "ready" | "failed" = "loading"
+  let answerVersion = 0
+  const readyMachines = new Set<string>()
+  const retriedMissing = new Set<string>()
   const machineKey = () => scheduleFleet()?.machines.map((machine) => machine.id).join(" ") ?? ""
   const paintReadState = () => {
     const state = document.getElementById("schedules-state")
@@ -426,8 +429,11 @@ const Schedules = (() => {
         readState = "ready"
         renderSchedules(lastAnswer.schedules, at, unanswered)
         paintReadState()
-        return loadProjects(schedules).then((withProjects) => {
-          if (requestedMachines !== machineKey()) return
+        const version = ++answerVersion
+        // Labels are optional. A slow project read must not hold the inventory
+        // lane open when another machine becomes readable.
+        void loadProjects(schedules).then((withProjects) => {
+          if (requestedMachines !== machineKey() || version !== answerVersion) return
           withProjects.forEach((schedule) => {
             if (schedule && schedule.id && schedule.project) projectBySchedule[schedule.id] = schedule.project
           })
@@ -455,7 +461,17 @@ const Schedules = (() => {
       .then(() => {
         inFlight = false
         if (requestedMachines !== machineKey()) refresh()
+        else retryReadyMissing()
       })
+  }
+
+  function retryReadyMissing(): void {
+    if (inFlight || !lastAnswer || !arrivedFlag) return
+    const missing = lastAnswer.unanswered.flatMap(({ machine }) =>
+      machine && readyMachines.has(machine) && !retriedMissing.has(machine) ? [machine] : [])
+    if (!missing.length) return
+    for (const machine of missing) retriedMissing.add(machine)
+    refresh()
   }
 
   function beginWhenAuthed(attempt: number): void {
@@ -489,6 +505,10 @@ const Schedules = (() => {
   }
 
   return {
+    machineReady(machine: string): void {
+      readyMachines.add(machine)
+      retryReadyMissing()
+    },
     /** Read again now: a read already in the air cannot contain the row just made, so it lands first. */
     refresh(tries?: number): void {
       const n = tries || 0
@@ -521,6 +541,8 @@ const Schedules = (() => {
         const next = machineKey()
         if (next === machines) return
         machines = next
+        retriedMissing.clear()
+        answerVersion++
         lastAnswer = null
         readState = "loading"
         const rows = document.getElementById("schedule-rows")
@@ -531,6 +553,11 @@ const Schedules = (() => {
     },
   }
 })()
+
+/** A Session answer can make a previously unanswered schedule machine worth one fresh read. */
+export function scheduleMachineReady(machine: string): void {
+  Schedules.machineReady(machine)
+}
 
 /* ---- input/schedule.js: making, changing and removing a schedule ------------ */
 
