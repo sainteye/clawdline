@@ -1,7 +1,7 @@
 import { localizedLiteralMap } from "../../catalog.js"
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord } from "../../catalog.js"
-import { clauseSeparator, fullStop, labelled, listSeparator, openingMark, parenthesized, wordGap } from "../../punctuation.js"
+import { fullStop, labelled, listSeparator, openingMark, parenthesized, wordGap } from "../../punctuation.js"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { Icon } from "@clawdline/contract"
 import { Mark } from "../../session/List.js"
@@ -9,25 +9,12 @@ import { failureSentence } from "../../legacy/bridge.js"
 import { projectSyncSeam, type SyncMachine } from "../../cloud/project-sync.js"
 import {
   applyProjectMirror, detachProjectMirror, readProjectMirror,
-  type SyncEntry, type SyncManifest, type SyncMirror, type SyncResult, type SyncSource,
+  type SyncEntry, type SyncManifest, type SyncMirror, type SyncSource,
 } from "../work/api.js"
+import { describeSyncResult, syncStateWord } from "./project-sync-result.js"
 import "./project-sync.css"
 
 const failed = () => catalogWord("literal", "796b25ecda67")
-
-const STATE_WORDS: Record<string, string> = localizedLiteralMap({
-  applied: "3d74d47e0b33",
-  unchanged: "860ee16cc39a",
-  missing: "ea1537ae1e96",
-  cloning: "8b07863dbce6",
-  clone_failed: "75615ead8829",
-})
-
-const KEPT_WORDS: Record<string, string> = localizedLiteralMap({
-  local_edit: "fbf7406f4710",
-  tracked: "7e64e54d2baa",
-  unsafe_path: "1d9552acce79",
-})
 
 const SKIP_WORDS: Record<string, string> = localizedLiteralMap({
   no_remote: "00fae213888a",
@@ -38,14 +25,6 @@ const SKIP_WORDS: Record<string, string> = localizedLiteralMap({
   duplicate_repository: "7b0ab080b9e0",
   manifest_full: "de1c2e60a0be",
 })
-
-function describe(r: SyncResult): string {
-  const parts = [STATE_WORDS[r.state] ?? r.state]
-  if (r.written.length) parts.push(catalogFormat("template", "407ed506af73", [r.written.length]))
-  if (r.deleted.length) parts.push(catalogFormat("template", "be0401614399", [r.deleted.length]))
-  for (const k of r.kept) parts.push(labelled(k.path, KEPT_WORDS[k.reason] ?? k.reason))
-  return parts.join(clauseSeparator())
-}
 
 function when(at: number): string {
   return at ? new Date(at * 1000).toLocaleString() : ""
@@ -109,7 +88,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
           if (!now || now.revision === record.revision) continue
           const entry = await seam.read<{ project: SyncEntry }>(machine, "project-entry", { repo: record.repo })
           const answer = await applyProjectMirror(record.source, entry.project, false)
-          done.push(labelled(entry.project.label + parenthesized(record.repo), describe(answer.result)))
+          done.push(labelled(entry.project.label + parenthesized(record.repo), describeSyncResult(answer.result)))
         }
       } catch (e) {
         const name = others.find((x) => x.id === machine)?.name || records[0]?.source.name || machine
@@ -162,7 +141,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
         const entry = await seam.read<{ project: SyncEntry }>(source.id, "project-entry", { repo: p.repo })
           .catch((e) => { throw Object.assign(new Error(labelled(source.name, failureSentence(e, failed()))), { named: true }) })
         const answer = await applyProjectMirror(from, entry.project, clone)
-        out.push(labelled(p.label + parenthesized(p.repo), describe(answer.result)))
+        out.push(labelled(p.label + parenthesized(p.repo), describeSyncResult(answer.result)))
       } catch (e) {
         const why = (e as { named?: boolean }).named ? (e as Error).message : failureSentence(e, failed())
         out.push(labelled(p.label + parenthesized(p.repo), why))
@@ -207,7 +186,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
     </div>}
     {mirror && mirror.clones.length > 0 && <div className="project-sync-list">
       {mirror.clones.map((c) => <p key={c.repo} role={c.state === "clone_failed" ? "alert" : "status"}>
-        {labelled(c.repo, STATE_WORDS[c.state] ?? c.state)}{c.error ? parenthesized(c.error) : ""} → {c.dest}
+        {labelled(c.repo, syncStateWord(c.state))}{c.error ? parenthesized(c.error) : ""} → {c.dest}
       </p>)}
     </div>}
 
