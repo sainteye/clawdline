@@ -8,7 +8,7 @@ import type { MachineSessionProjection, SessionContent, SessionDestination, Mach
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { destinationAvailable, destinationKey } from "./all-machine-sessions.ts"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
-import { record, STATUS_FRESH_MS, statusGapTarget, statusPassTransition, statusProjection } from "./status-projection.ts"
+import { record, STATUS_FRESH_MS, statusGapTarget, statusInventoryIDs, statusPassTransition, statusProjection } from "./status-projection.ts"
 import type { CloudClientHandle } from "./copied.js"
 
 type StatusClient = CloudClientHandle & {
@@ -77,9 +77,9 @@ export const STATUS_MARKER_RETRY_MS = 60_000
 type DirectList = { projection: Extract<MachineSessionProjection, { kind: "ready" }>; reply: Record<string, unknown> }
 
 /** A pinned machine reply is a complete, authenticated fallback while ss/ replays a missing row. */
-function directList(machineID: string, reply: unknown, nowMs: number): DirectList | null {
+function directList(machineID: string, reply: unknown, nowMs: number, inventoryIDs: readonly string[] | null): DirectList | null {
   const body = record(reply)
-  if (!body || body.complete !== true || !Number.isFinite(body.at) ||
+  if (!body || (body.complete !== true && body.complete !== false) || !Number.isFinite(body.at) ||
     Math.abs(nowMs - Number(body.at) * 1000) > STATUS_FRESH_MS ||
     !Array.isArray(body.sessions) || body.sessions.length > 512) return null
   const sessions = body.sessions.map((value: unknown) => record(value))
@@ -89,6 +89,10 @@ function directList(machineID: string, reply: unknown, nowMs: number): DirectLis
     !["working", "waiting", "idle", "unknown"].includes(String(record(row.status)?.state)))) return null
   const ids = sessions.map((row: Record<string, unknown> | null) => String(row!.id))
   if (new Set(ids).size !== ids.length) return null
+  // An incomplete local scan can still fill a gap in the signed ss/ set.
+  // A different or missing ID cannot silently become a complete list.
+  if (body.complete === false && (!inventoryIDs || ids.length !== inventoryIDs.length ||
+    ids.some((id) => !inventoryIDs.includes(id)))) return null
   return { reply: body, projection: { kind: "ready", complete: true, observedAt: nowMs,
     snapshotGeneration: "direct:" + nowMs,
     rows: sessions.map((row: Record<string, unknown> | null) => {
@@ -181,7 +185,8 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       let cached = directLists.get(machineID)
       if (!cached || cached.client !== client || cached.until <= now) {
         const promise = client.listPresentationsForMachine(machineID, new AbortController().signal)
-          .then((reply) => directList(machineID, reply, client.now?.() ?? Date.now()), () => null)
+          .then((reply) => directList(machineID, reply, client.now?.() ?? Date.now(),
+            statusInventoryIDs(client, machineID, client.now?.() ?? Date.now())), () => null)
         cached = { client, until: now + STATUS_MARKER_RETRY_MS, value: null, promise }
         directLists.set(machineID, cached)
         void promise.then((value) => { if (directLists.get(machineID) === cached) {
