@@ -39,6 +39,7 @@ Start with the [task-based user index](user/README.md). It leads to a first Sess
 | [user/clawdfather-and-dispatch.md](user/clawdfather-and-dispatch.md) | User page | English | The Agent skill, dispatching children, callbacks for long commands, landing, handoff, and machine coordination |
 | [clawdfather-role.md](clawdfather-role.md) | Decision | English | Board ownership and Clawdfather machine stewardship |
 | [user/projects.md](user/projects.md) | User page | English | Adding projects, the Projects page, and bringing project settings to another machine |
+| [user/new-machine.md](user/new-machine.md) | User page | English | One prompt, in English and Traditional Chinese, that has an Agent set up a second machine: git, credentials, clones and project settings |
 | [user/usage.md](user/usage.md) | User page | English | Token bills by category, assistant quotas, the compaction window and capacity |
 | [user/troubleshooting.md](user/troubleshooting.md) | User page | English | From a symptom to its cause and fix |
 

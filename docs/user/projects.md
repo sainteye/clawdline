@@ -92,6 +92,10 @@ commands and agents you keep untracked under `.claude/`, and `CLAUDE.local.md`. 
 those settings; the others mirror them read-only. Projects are matched by their git `origin`, so
 the checkouts may sit at different paths.
 
+A machine that has none of this yet — no git, no credentials, no checkouts — can be set up by
+an Agent instead of by hand: [Set up another machine with an Agent](new-machine.md) is the prompt
+for it.
+
 ### Before you start
 
 - Both machines run this version. An older one is listed with **需要更新 Clawdline** (needs a newer
