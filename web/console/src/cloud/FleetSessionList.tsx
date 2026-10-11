@@ -299,14 +299,15 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
             <button type="button" aria-expanded={!collapsed[machine.id]}
               aria-label={nextWord(collapsed[machine.id] ? "cloudAllExpandMachine" : "cloudAllCollapseMachine", { machine: machine.name })}
               onClick={() => setCollapsed((before) => ({ ...before, [machine.id]: !before[machine.id] }))}>
-              <span className="cloud-all-group-name">{machine.name} <small>{machine.platform}</small>
+              {/* The dot leads the machine's name, so every machine's light
+                  lines up in one column down the list. Inside the button it can
+                  only be seen, because the button states its own label; the
+                  section's name below says it for a reader. */}
+              <span className="cloud-all-group-name">{carrier && <CarrierDot reading={carrier} machine={machine.name} />}
+                {machine.name} <small>{machine.platform}</small>
                 {rows.length > 0 && <span className="cloud-all-group-count"
                   aria-label={nextWord("cloudAllSessionCount", { count: rows.length })}>{rows.length}</span>}
               </span>
-              {/* The dot the machine's own row carries. Inside the button it can
-                  only be seen, because the button states its own label; the
-                  section's name below says it for a reader. */}
-              {carrier && <CarrierDot reading={carrier} machine={machine.name} />}
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
             </button></h2>
           {!collapsed[machine.id] && <>

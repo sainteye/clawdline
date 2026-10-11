@@ -1308,11 +1308,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
                   key={machine.id}
                   onClick={() => switchMachine(machine)}
                 >
-                  <span className="cloud-switch-option-name">{machine.name || machine.label || machine.id}</span>
-                  <span className="cloud-switch-option-platform">{platformWord(identity.platform)}</span>
                   {/* This row is a button whose name is its own content, so the
                       dot's sentence belongs in it. */}
-                  {carrier && <CarrierDot reading={carrier} machine={machine.name || machine.label || machine.id} spoken />}
+                  <span className="cloud-switch-option-name">
+                    {carrier && <CarrierDot reading={carrier} machine={machine.name || machine.label || machine.id} spoken />}
+                    {machine.name || machine.label || machine.id}</span>
+                  <span className="cloud-switch-option-platform">{platformWord(identity.platform)}</span>
                   {current && <span className="cloud-switch-current">{nextWord("cloudCurrentMachine")}</span>}
                 </button>
               )

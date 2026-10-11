@@ -100,6 +100,15 @@ and why (the machine opens no direct path, or there is none right now), and says
 dispatches take the relay whatever the dot shows (`carrier-state.ts`, `CarrierDot.tsx`). Nothing
 is opened to draw it: the dot reads the carrier this page already holds.
 
+A hollow dot on a machine is usually its build, not its kind. `session_carrier_v1` is
+`cloud_terminal_direct`, which is on unless the settings file says otherwise, and this path has
+no build tags and no platform test — pion is pure Go. Measured on 2026-10-11 against this
+account: the Mac on that day's build published the capability, while the two Linux machines'
+descriptors did not carry the key at all, one of them stamped three days older than the carrier
+and the other built as `devel`. Updating such a machine is what fills its dot — if the two ends
+can then reach each other at all, since there is no TURN and a host whose network refuses UDP
+stays on the relay with the capability on.
+
 ## Measured after the change (2026-10-05)
 
 In app.clawdline.com in Chrome, against the fixture terminal, on one page load per carrier. Each

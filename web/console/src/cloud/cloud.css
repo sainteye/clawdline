@@ -159,11 +159,11 @@
 /* The machine's carrier: filled is the direct channel, hollow is the relay,
    faint is a machine this browser has not read yet. A dot and no word, so a
    list of machines stays a list of machines. */
-.cloud-carrier-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
-    box-sizing: border-box; background: transparent; border: 1.5px solid var(--faint); }
+.cloud-carrier-dot { display: inline-block; flex: 0 0 auto; width: 7px; height: 7px; margin-right: 7px;
+    border-radius: 50%; box-sizing: border-box; vertical-align: 1px;
+    background: transparent; border: 1.5px solid var(--faint); }
 .cloud-carrier-dot[data-carrier="direct"] { background: var(--ok); border-color: var(--ok); }
 .cloud-carrier-dot[data-carrier="relay"] { background: transparent; border-color: var(--ok); }
-.cloud-switch-option .cloud-carrier-dot { margin-left: 2px; }
 .cloud-all-group-heading svg { flex: 0 0 auto; width: 18px; height: 18px; fill: none;
     stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .cloud-all-group-heading button[aria-expanded="false"] svg { transform: rotate(-90deg); }
