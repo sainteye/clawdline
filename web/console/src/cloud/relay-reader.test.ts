@@ -102,11 +102,11 @@ class FakeClient implements CloudReadClient {
     return { key: "BPk" }
   }
   /** Every reading of the schedule list, with the options it was asked under. */
-  scheduleAsks: ({ fresh?: boolean } | undefined)[] = []
-  scheduleAnswer: () => Promise<CloudSchedules> = async () => ({ schedules: [], at: 0 })
-  schedules?: (options?: { fresh?: boolean }) => Promise<CloudSchedules> = (options) => {
+  scheduleAsks: ({ fresh?: boolean; machine?: string } | undefined)[] = []
+  scheduleAnswer: (options?: { fresh?: boolean; machine?: string }) => Promise<CloudSchedules> = async () => ({ schedules: [], at: 0 })
+  schedules?: (options?: { fresh?: boolean; machine?: string }) => Promise<CloudSchedules> = (options) => {
     this.scheduleAsks.push(options)
-    return this.scheduleAnswer()
+    return this.scheduleAnswer(options)
   }
   /** Every reading of the snippet list: the identity it named and the options. */
   snippetAsks: { identity: CloudIdentity; options?: { fresh?: boolean } }[] = []
@@ -815,6 +815,17 @@ test("the schedule list is every machine's rows, each with its machine", async (
   const last = r.log[r.log.length - 1]
   assert.equal(last.answer, "relay")
   assert.equal(last.word, "schedules")
+})
+
+test("a machine-scoped schedule read can finish without another machine's answer", async () => {
+  const client = new FakeClient()
+  client.scheduleAnswer = async (options) => ({
+    schedules: [schedule(options?.machine || "mac-a", "own"), schedule("mac-b", "other")], at: 1_700,
+  })
+  const res = await reader(client, { t: 1000 }).fetch("/v1/orchestrator/schedules?machine=mac-a")
+  assert.equal(res.status, 200)
+  assert.deepEqual((await body<{ schedules: { id: string }[] }>(res)).schedules.map((row) => row.id), ["own"])
+  assert.deepEqual(client.scheduleAsks, [{ fresh: true, machine: "mac-a" }])
 })
 
 test("one schedule is asked of the chosen machine so its history and webhook panel can open", async () => {

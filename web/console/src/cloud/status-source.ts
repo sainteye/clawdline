@@ -179,8 +179,11 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         : { kind: "unavailable", reason: "unknown", observedAt: expired.observedAt }
     }
     let projection = statusProjection(client, machineID)
+    // The roster can arrive before orch/ advertises the reader. One bounded
+    // authenticated attempt is safe: an older machine refuses sessions.list,
+    // while waiting for the descriptor can hold a cold browser for a minute.
     if (projection.kind === "unavailable" && (projection.reason === "unknown" || projection.reason === "event_gap") &&
-      client.listPresentationsForMachine && pinnedReadSupport(client, machineID) === "yes" && !signal.aborted) {
+      client.listPresentationsForMachine && pinnedReadSupport(client, machineID) !== "no" && !signal.aborted) {
       const now = client.now?.() ?? Date.now()
       let cached = directLists.get(machineID)
       if (!cached || cached.client !== client || cached.until <= now) {

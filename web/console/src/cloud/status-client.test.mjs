@@ -9,6 +9,25 @@ const envelope = (ch) => ({ v: 1, ch, seq: 1, ts: 1, class: "stream", key_id: "k
 const genA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const genB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
+test("one schedule machine paints without waiting for another machine", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.retired = false
+  client.now = () => 1_700_000
+  client.orchestratorSnapshots = new Map()
+  client._machinesFor = () => ({ rows: [{ id: "mac-a" }, { id: "linux-b" }],
+    capable: [{ id: "mac-a" }, { id: "linux-b" }], pairable: [] })
+  const asked = []
+  client._machineRequest = async (machine) => {
+    asked.push(machine)
+    if (machine !== "mac-a") throw new Error("another machine is slow")
+    return { schedules: [{ id: "first" }], at: 1_700 }
+  }
+  const answer = await client.schedules({ fresh: true, machine: "mac-a" })
+  assert.deepEqual(answer.schedules, [{ id: "first", machine: "mac-a" }])
+  assert.deepEqual(asked, ["mac-a"])
+  assert.deepEqual(client.orchestratorSnapshots.get("mac-a").schedules, [{ id: "first" }])
+})
+
 test("the original one-machine page subscribes only exact rich rows named by that machine's status", () => {
   const client = Object.create(StatusCloudClient.prototype)
   client.statusSnapshots = new Map([

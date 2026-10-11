@@ -87,6 +87,7 @@ test("a status row event names the Session whose list title should refresh", () 
 test("a new browser replays a missing status marker once and recovers the Session list", async () => {
   const { client } = clientFixture()
   client.readContentCapabilities.delete(machineID)
+  client.listPresentationsForMachine = async () => { throw new Error("older machine") }
   const key = JSON.stringify([machineID, inventory])
   const marker = client.statusSnapshots.get(key)
   client.statusSnapshots.delete(key)
@@ -107,6 +108,7 @@ test("a new browser replays a missing status marker once and recovers the Sessio
 test("an unanswered marker is retried at most once per minute", async () => {
   const { client } = clientFixture()
   client.readContentCapabilities.delete(machineID)
+  client.listPresentationsForMachine = async () => { throw new Error("older machine") }
   client.statusSnapshots.delete(JSON.stringify([machineID, inventory]))
   let reads = 0
   ;(client as typeof client & { recoverStatusMarker: (machine: string) => Promise<boolean> }).recoverStatusMarker = async () => {
@@ -170,6 +172,16 @@ test("a cold status gap uses one complete pinned machine list for rows and title
   assert.equal(reading.rows?.[0]?.destination.executionGeneration, executionGeneration)
   const titles = await source.readMachinePresentations?.(machineID, new AbortController().signal)
   assert.deepEqual(titles?.map((row) => row.title), ["The real title"])
+  assert.deepEqual(calls, ["sessions.list:" + machineID])
+})
+
+test("a cold browser asks once before the machine descriptor arrives", async () => {
+  const { client, calls } = clientFixture()
+  client.readContentCapabilities.delete(machineID)
+  client.statusSnapshots.delete(JSON.stringify([machineID, inventory]))
+  const source = statusSource(() => client as never)
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
   assert.deepEqual(calls, ["sessions.list:" + machineID])
 })
 
@@ -416,6 +428,7 @@ test("a stale status row refuses content without subscribing", async () => {
 test("a missing ss row settles before it can shake the visible list", async () => {
   const { client, calls } = clientFixture()
   client.readContentCapabilities.delete(machineID)
+  client.listPresentationsForMachine = async () => { throw new Error("older machine") }
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
   const source = statusSource(() => client as never)
   const recovered = await source.readMachine(machineID, new AbortController().signal)
@@ -428,6 +441,7 @@ test("a missing ss row settles before it can shake the visible list", async () =
 test("a failed retained-row request keeps the machine in event_gap", async () => {
   const { client, calls } = clientFixture()
   client.readContentCapabilities.delete(machineID)
+  client.listPresentationsForMachine = async () => { throw new Error("older machine") }
   let now = Date.now()
   client.now = () => now
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]));

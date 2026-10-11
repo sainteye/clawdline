@@ -275,9 +275,10 @@ function renderSchedules(
         .map(
           (group) =>
             '<li class="schedule-machine" role="presentation"' +
-            (group.unanswered ? ' data-state="unanswered"' : "") +
+            (group.unanswered ? ' data-state="' + (group.unanswered === "loading" ? "loading" : "unanswered") + '"' : "") +
             ">" +
-            esc(group.unanswered ? silentMachine(group.machine) : machineWords(group.machine)) +
+            esc(group.unanswered === "loading" ? machineWords(group.machine) + " · " + nextWord("schedulesLoading") :
+              group.unanswered ? silentMachine(group.machine) : machineWords(group.machine)) +
             "</li>" +
             group.rows.map(row).join(""),
         )
@@ -405,6 +406,8 @@ const Schedules = (() => {
 
   function refresh(): void {
     if (inFlight || !arrivedFlag) return
+    const fleet = scheduleFleet()
+    if (choosesMachine(fleet)) { refreshFleet(fleet); return }
     inFlight = true
     lastRefreshAt = Date.now()
     const requestedMachines = machineKey()
@@ -463,6 +466,75 @@ const Schedules = (() => {
         if (requestedMachines !== machineKey()) refresh()
         else retryReadyMissing()
       })
+  }
+
+  /** Each machine paints when it answers; a slow peer does not hold the other groups. */
+  function refreshFleet(fleet: NonNullable<ReturnType<typeof scheduleFleet>>): void {
+    inFlight = true
+    lastRefreshAt = Date.now()
+    const requestedMachines = machineKey()
+    const pending = new Set(fleet.machines.map((machine) => machine.id))
+    const answers = new Map<string, ScheduleListRow[]>()
+    const failures = new Map<string, NonNullable<ScheduleList["unanswered"]>[number]>()
+    let at = 0
+    const paint = () => {
+      if (requestedMachines !== machineKey()) return
+      const schedules = [...answers.values()].flat()
+      const unanswered = [
+        ...fleet.machines.filter((machine) => pending.has(machine.id)).map((machine) =>
+          ({ machine: machine.id, code: "loading" })),
+        ...failures.values(),
+      ]
+      if (answers.size) {
+        rememberScheduleOwners(schedules)
+        lastAnswer = { schedules: schedules.map((schedule) => {
+          const project = schedule.id ? projectBySchedule[schedule.id] : undefined
+          return project ? { ...schedule, project } : schedule
+        }), at, unanswered }
+        lastAnswerMachines = requestedMachines
+        readState = pending.size ? "loading" : "ready"
+        renderSchedules(lastAnswer.schedules, at, unanswered)
+      } else if (!lastAnswer) {
+        readState = pending.size ? "loading" : "failed"
+        renderSchedules([], undefined, unanswered)
+      } else {
+        readState = pending.size ? "ready" : "failed"
+        renderSchedules(lastAnswer.schedules, lastAnswer.at, unanswered)
+      }
+      paintReadState()
+    }
+    paint()
+    void Promise.all(fleet.machines.map(async (machine) => {
+      try {
+        const data = await scheduleApi.schedules(machine.id)
+        if (requestedMachines !== machineKey()) return
+        answers.set(machine.id, (data.schedules ?? []).filter((row) => row.machine === machine.id))
+        at = Math.max(at, data.at ?? 0)
+      } catch (error) {
+        failures.set(machine.id, { machine: machine.id,
+          code: typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+            ? error.code : "cloud_read_unavailable" })
+      } finally {
+        pending.delete(machine.id)
+        paint()
+      }
+    })).then(() => {
+      inFlight = false
+      if (requestedMachines !== machineKey()) { refresh(); return }
+      if (lastAnswer && answers.size) {
+        const version = ++answerVersion
+        const rows = lastAnswer.schedules
+        void loadProjects(rows).then((withProjects) => {
+          if (requestedMachines !== machineKey() || version !== answerVersion || !lastAnswer) return
+          withProjects.forEach((schedule) => {
+            if (schedule.id && schedule.project) projectBySchedule[schedule.id] = schedule.project
+          })
+          lastAnswer.schedules = withProjects
+          renderSchedules(withProjects, lastAnswer.at, lastAnswer.unanswered)
+        }).catch(() => {})
+      }
+      retryReadyMissing()
+    })
   }
 
   function retryReadyMissing(): void {
