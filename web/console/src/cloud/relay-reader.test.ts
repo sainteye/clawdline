@@ -69,6 +69,15 @@ class FakeClient implements CloudReadClient {
   ]
   rows: CloudRow[] = []
   recovering: string[] = []
+  /** Set by the tests that need the one retained ss/ row a read is pinned to. */
+  recoverStatusRow?: (machineID: string, sessionID: string, snapshotGeneration: string) => Promise<boolean>
+  /** The pinned read a classic page makes; the destination it was given. */
+  pinnedReads: { machineID: string; sessionID: string; executionGeneration: string }[] = []
+  transcriptForGeneration?: (destination: { machineID: string; sessionID: string; executionGeneration: string }) => Promise<unknown> =
+    async (destination) => {
+      this.pinnedReads.push(destination)
+      return this.answer()
+    }
   asks = 0
   answer: () => Promise<unknown> = async () => ({ id: "s1", entries: [{ role: "user", text: "hi" }], signature: "1-1", evidence: "transcript" })
   private listeners = new Set<(event: CloudEvent) => void>()
@@ -300,6 +309,56 @@ test("an authorized fleet presentation opens a conversation when rich replay is 
   } })
   client.statusSnapshots = changed
   assert.deepEqual((await r.snapshot()).sessions, [], "a later execution never inherits the opened row")
+})
+
+/** One machine's pass with the marker only: every row is still on its way. */
+function markerOnly(machine: string, pass: string, at: number, ...sessions: string[]) {
+  return new Map<string, unknown>([
+    [JSON.stringify([machine, "__clawdline_inventory_v1__"]), { payload: {
+      complete: true, inventory: { version: 1, sessions }, at, snapshot_generation: pass } }],
+  ])
+}
+
+/** The row the machine publishes for one Session of that pass. */
+function statusRow(pass: string, generation: string, at: number) {
+  return { payload: { snapshot_generation: pass, execution_generation: generation, projected_at: at,
+    source: { freshness: "current", observed_at: at } } }
+}
+
+test("a Session whose status row has not come is asked for, not called a changed execution", async () => {
+  const client = new FakeClient()
+  const pass = "c".repeat(32)
+  const generation = "a".repeat(32)
+  const now = 1_000_000
+  client.statusSnapshots = markerOnly("mac-a", pass, now / 1000, "s1")
+  const asked: string[] = []
+  client.recoverStatusRow = async (machine, session, wanted) => {
+    asked.push(machine + "/" + session + "/" + wanted)
+    ;(client.statusSnapshots as Map<string, unknown>)
+      .set(JSON.stringify([machine, session]), statusRow(wanted, generation, now / 1000))
+    return true
+  }
+  const r = new RelayReader("mac-a", { classicStatus: true, now: () => now })
+  r.attach(client)
+  const answer = await r.fetch("/v1/transcript?session=s1&limit=200")
+  assert.equal(answer.status, 200, "the read goes through once the row is here")
+  assert.deepEqual(asked, ["mac-a/s1/" + pass], "the row of this pass is the one asked for")
+  assert.deepEqual(client.pinnedReads, [{ machineID: "mac-a", sessionID: "s1", executionGeneration: generation }],
+    "and it is pinned to the execution that row names")
+})
+
+test("a status row that still does not come is the refusal it always was", async () => {
+  const client = new FakeClient()
+  const now = 1_000_000
+  client.statusSnapshots = markerOnly("mac-a", "c".repeat(32), now / 1000, "s1")
+  let asks = 0
+  client.recoverStatusRow = async () => { asks += 1; return false }
+  const r = new RelayReader("mac-a", { classicStatus: true, now: () => now })
+  r.attach(client)
+  const answer = await r.fetch("/v1/transcript?session=s1&limit=200")
+  assert.equal(answer.status, 409)
+  assert.equal(((await answer.json()) as { error?: string }).error, "execution_generation_changed")
+  assert.equal(asks, 1, "asked once; the page refuses rather than asking again inside one read")
 })
 
 test("a replaced execution is not asked for again: the page is told it changed", async () => {

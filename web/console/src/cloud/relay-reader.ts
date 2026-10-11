@@ -140,6 +140,13 @@ export interface CloudReadClient {
   /** Content-free ss/ envelopes; the hosted Session list reads only these. */
   readonly statusSnapshots?: ReadonlyMap<string, unknown>
   /**
+   * Asks the relay to replay one retained ss/ row, the recovery the list uses
+   * for an event gap (`status-source.ts`). A read uses it for the one row it
+   * is pinned to (`coherentSession`); it resolves false when the row did not
+   * come, and never asks for a rich s/ row.
+   */
+  recoverStatusRow?(machineID: string, sessionID: string, snapshotGeneration: string): Promise<boolean>
+  /**
    * machine → its last decrypted `orch/` snapshot. Read here only for
    * `snapshot.app`'s `version` and `api_level` (`publishDescriptor`,
    * internal/transport/cloud/publish.go), duck-typed: a machine from before
@@ -1815,7 +1822,19 @@ export class RelayReader {
     try {
       return this.pinnedSession(session)
     } catch (error) {
-      if ((error as { condition?: unknown })?.condition !== "pass_mismatch") throw error
+      const condition = (error as { condition?: unknown })?.condition
+      // The marker lists this Session and its row is not here. That is a row
+      // to ask for, not an execution that changed: the relay retains it, the
+      // list already recovers it this way for a gap in its own pass, and
+      // saying "this execution is no longer current" of a page that simply
+      // has not been sent the row names the wrong thing to a person. Measured
+      // on this machine's log for 2026-10-11, it was the commonest read
+      // refusal of the day: 23 of them, every one `no_row`.
+      if (condition === "no_row") {
+        if (await this.askForStatusRow(session, signal)) return this.pinnedSession(session)
+        throw error
+      }
+      if (condition !== "pass_mismatch") throw error
     }
     const client = this.connected()
     await new Promise<void>((resolve) => {
@@ -1871,6 +1890,25 @@ export class RelayReader {
           !machineWordPending(client, machine, word)) done()
       }) as (() => void) | null
     })
+  }
+
+  /**
+   * One retained ss/ row, asked for because the read is pinned to it.
+   *
+   * Answers whether the row this read needs is here now. It asks only when
+   * the marker names the pass it belongs to, so the recovery can tell the row
+   * it wants from an older one, and it asks once: a row that does not come is
+   * a refusal the caller still makes.
+   */
+  private async askForStatusRow(session: string, signal?: AbortSignal | null): Promise<boolean> {
+    if (signal?.aborted) return false
+    const client = this.connected()
+    if (typeof client.recoverStatusRow !== "function") return false
+    const marker = client.statusSnapshots?.get(JSON.stringify([this.machine, "__clawdline_inventory_v1__"])) as
+      | { payload?: { snapshot_generation?: unknown } } | undefined
+    const pass = marker?.payload?.snapshot_generation
+    if (typeof pass !== "string" || !/^[0-9a-f]{32}$/u.test(pass)) return false
+    return await client.recoverStatusRow(this.machine, session, pass).catch(() => false)
   }
 
   private pinnedSession(session: string): { machineID: string; sessionID: string; executionGeneration: string } {
