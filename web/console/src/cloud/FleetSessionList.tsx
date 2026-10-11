@@ -6,11 +6,12 @@ import { Swipes } from "../session/swipe.js"
 import { useSwipeToEnd } from "../session/use-swipe.js"
 import type { OrderHold } from "../session/order.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
-import { ScheduleSection } from "../pages/schedules.js"
+import { ScheduleSection, scheduleMachineReady } from "../pages/schedules.js"
 import { destinationKey, displayedPresentationStatus, presentationPass, projectionRefreshAt, settleProjection,
   type MachineSessionProjection, type ProjectionProblem, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource, type FleetMachine } from "./all-machine-sessions.js"
 import { STATUS_FRESH_MS } from "./status-projection.js"
+import { STATUS_MARKER_RETRY_MS } from "./status-source.js"
 import { arrangeFleetRows, fleetWaitingKey } from "./fleet-order.js"
 import { matchesFleetFilter, type FleetFilter } from "./fleet-filters.js"
 import { CarrierDot } from "./CarrierDot.js"
@@ -79,6 +80,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         ({ ...before, [machineID]: { phase: "loading" } }))
       void source.readMachine(machineID, abort.signal).then((value) => {
         if (!live || abort.signal.aborted) return
+        if (value.kind === "ready") scheduleMachineReady(machineID)
         setReadings((before) => ({ ...before, [machineID]: { phase: "settled",
           value: settleProjection(machineID, before[machineID]?.phase === "settled" ? before[machineID].value : undefined, value) } }))
       }, (error: unknown) => {
@@ -97,6 +99,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         presentationPasses.current.delete(machineID)
         presentationFailures.current.delete(machineID)
         refreshPresentation((revision) => revision + 1)
+        if (kind === "access_changed") read(machineID)
         return
       }
       read(machineID)
@@ -108,7 +111,8 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   useEffect(() => {
     if (!source) return
     const deadlines = Object.entries(readings).flatMap(([machineID, reading]) => {
-      const at = reading.phase === "settled" ? projectionRefreshAt(reading.value, STATUS_FRESH_MS) : null
+      const at = reading.phase === "settled" ? projectionRefreshAt(reading.value, STATUS_FRESH_MS,
+        STATUS_MARKER_RETRY_MS) : null
       return at === null ? [] : [{ machineID, at }]
     })
     if (!deadlines.length) return
@@ -118,8 +122,11 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
       for (const { machineID, at } of deadlines) {
         if (at !== earliest || !machines.some((machine) => machine.id === machineID)) continue
         void source.readMachine(machineID, abort.signal).then((value) => {
-          if (!abort.signal.aborted) setReadings((before) => ({ ...before, [machineID]: { phase: "settled",
-            value: settleProjection(machineID, before[machineID]?.phase === "settled" ? before[machineID].value : undefined, value) } }))
+          if (!abort.signal.aborted) {
+            if (value.kind === "ready") scheduleMachineReady(machineID)
+            setReadings((before) => ({ ...before, [machineID]: { phase: "settled",
+              value: settleProjection(machineID, before[machineID]?.phase === "settled" ? before[machineID].value : undefined, value) } }))
+          }
         }, (error: unknown) => {
           if (!abort.signal.aborted) setReadings((before) => ({ ...before, [machineID]: { phase: "settled",
             value: settleProjection(machineID, before[machineID]?.phase === "settled" ? before[machineID].value : undefined,
