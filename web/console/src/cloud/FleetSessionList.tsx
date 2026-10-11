@@ -21,7 +21,7 @@ type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionP
 
 /** Only the fleet list is new; the conversation and composer belong to SessionsPage. */
 export function FleetSessionList({ machines, source, target, filter, onFilter, onOpen,
-  carrierOf, onMachineAction, onCloseRequest }: {
+  carrierOf, onMachineAction, onCloseRequest, onPresentations }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
   /** Which road this page's reads of that machine take, read as the row is drawn. */
@@ -30,6 +30,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   filter: string
   onFilter: (value: string) => void
   onOpen: (target: SessionDestination) => void
+  onPresentations?: (machineID: string, rows: readonly (SessionListPresentation & { destination: SessionDestination })[]) => void
   onMachineAction?: (machineID: string, action: MachineToolbarAction) => void
   onCloseRequest: (target: SessionDestination, title: string) => void
 }) {
@@ -171,6 +172,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
               status: row.status ?? previous?.status,
             })
           }
+          onPresentations?.(machineID, rows)
           const expected = readings[machineID]
           const missing = expected?.phase === "settled" && expected.value.kind === "ready" &&
             expected.value.rows.some((row) => row.freshness === "current" &&
@@ -190,7 +192,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         if (presentationPasses.current.get(machineID) === pass) presentationPasses.current.delete(machineID)
       }
     }
-  }, [source, passesKey, presentationRevision])
+  }, [source, passesKey, presentationRevision, onPresentations])
 
   const search = filter.trim().toLocaleLowerCase()
   const groups = machines.map((machine) => {
@@ -346,7 +348,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         })}
       </div>
       {groups.length === 0 && <p>{nextWord("cloudAllNoMatch")}</p>}
-      <ScheduleSection arrived={true} onOpen={openScheduled} canOpen={canOpenScheduled} />
+      <ScheduleSection arrived={true} waitForFleet onOpen={openScheduled} canOpen={canOpenScheduled} />
     </div>
     {/* Which machine, asked once for an action that needs one. Starting asks
         where to start and leaves this list where it is; the others move the

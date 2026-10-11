@@ -1174,6 +1174,12 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.ConsoleRelayFeatureWait: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console relay reader wait for this machine's own word list; daemon cannot measure another device's reads"}
 		},
+		capacity.ConsoleStatusGapRetry: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console retry of a missing Cloud status row; daemon cannot measure another device's reads"}
+		},
+		capacity.ConsoleStatusMarkerRetry: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console retry of a missing Cloud status inventory; daemon cannot measure another device's reads"}
+		},
 		capacity.ConsoleOpenedRowRestate: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console relay reader cadence for the opened Session's own row; daemon cannot measure another device's reads"}
 		},

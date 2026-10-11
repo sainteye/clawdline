@@ -230,9 +230,10 @@ export function supersedingDestination(destination: SessionDestination,
   return rows.length === 1 ? rows[0].destination : null
 }
 
-export function afterEventGap(before: MachineSessionProjection | undefined): MachineSessionProjection {
+export function afterEventGap(before: MachineSessionProjection | undefined, retryAt?: number): MachineSessionProjection {
   return {
     kind: "unavailable", reason: "event_gap",
+    ...(retryAt === undefined ? {} : { retryAt }),
     rows: before?.rows?.map((row) => ({ ...row, freshness: "stale" })),
     observedAt: before?.observedAt,
     snapshotGeneration: before?.snapshotGeneration,
@@ -245,7 +246,7 @@ export function settleProjection(machineID: string, before: MachineSessionProjec
   const checked = checkedProjection(machineID, incoming)
   if (checked.kind !== "unavailable" || checked.rows ||
     !["event_gap", "unknown", "unresponsive", "stale", "offline"].includes(checked.reason)) return checked
-  if (checked.reason === "event_gap") return afterEventGap(before)
+  if (checked.reason === "event_gap") return afterEventGap(before, checked.retryAt)
   return before?.rows?.length ? {
     kind: "unavailable", reason: checked.reason,
     rows: before.rows.map((row) => ({ ...row, freshness: "stale" })),
@@ -256,7 +257,8 @@ export function settleProjection(machineID: string, before: MachineSessionProjec
 
 /** Schedule a status-only read when the earliest trusted status time expires. */
 export function projectionRefreshAt(projection: MachineSessionProjection, freshnessMs: number): number | null {
-  if (projection.kind !== "ready") return projection.reason === "offline" && Number.isFinite(projection.retryAt)
+  if (projection.kind !== "ready") return (projection.reason === "offline" || projection.reason === "event_gap" ||
+    projection.reason === "unknown") && Number.isFinite(projection.retryAt)
     ? projection.retryAt! : null
   return Math.min(projection.observedAt, ...projection.rows.filter((row) => row.freshness === "current")
     .map((row) => row.observedAt)) + freshnessMs + 1

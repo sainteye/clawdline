@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 5042,
-  "riskKeys": 2211,
-  "nonRiskCount": 2831,
+  "englishContentKeys": 5050,
+  "riskKeys": 2214,
+  "nonRiskCount": 2836,
   "groups": [
     {
       "name": "bar / other",
@@ -1916,7 +1916,7 @@
     },
     {
       "name": "next / other",
-      "count": 104,
+      "count": 105,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1965,6 +1965,7 @@
         "next.pushCloudReached",
         "next.schedulesHeading",
         "next.schedulesListLabel",
+        "next.schedulesLoading",
         "next.screenSessionGone",
         "next.sessionCallbackActive",
         "next.sessionCallbackUnverified",
@@ -3435,17 +3436,21 @@
     },
     {
       "name": "work / todo",
-      "count": 6,
+      "count": 10,
       "sources": [
         "src/pages/work/words.ts"
       ],
       "keys": [
         "work.todoAddedBySession",
+        "work.todoCancel",
         "work.todoDispatch",
         "work.todoDropped",
+        "work.todoEdit",
+        "work.todoEditHint",
         "work.todoEscalated",
         "work.todoHandedOff",
-        "work.todoIncorporated"
+        "work.todoIncorporated",
+        "work.todoSave"
       ]
     },
     {

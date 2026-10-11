@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 5042,
+  "englishKeys": 5050,
   "counts": {
-    "negation": 1457,
+    "negation": 1460,
     "state": 696,
     "permission": 298,
     "deletion": 90,
     "uncertainty": 147
   },
-  "unionCount": 2211,
+  "unionCount": 2214,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -1199,6 +1199,9 @@
       "next.scheduleTriggerOnly",
       "next.scheduleUnreadable",
       "next.scheduleUnreadableJSON",
+      "next.schedulesEmpty",
+      "next.schedulesReadFailed",
+      "next.schedulesRefreshFailed",
       "next.screenForbidden",
       "next.screenUnanswered",
       "next.sendAbsent",
@@ -4467,6 +4470,9 @@
     "next.scheduleTriggerOnly",
     "next.scheduleUnreadable",
     "next.scheduleUnreadableJSON",
+    "next.schedulesEmpty",
+    "next.schedulesReadFailed",
+    "next.schedulesRefreshFailed",
     "next.screenForbidden",
     "next.screenUnanswered",
     "next.sendAbsent",

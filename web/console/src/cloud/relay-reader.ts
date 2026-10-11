@@ -26,7 +26,7 @@ import type { CarriedWord, CarryTable } from "./carry.js"
 import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
-import type { SessionDestination } from "./all-machine-sessions.js"
+import type { SessionDestination, SessionListPresentation } from "./all-machine-sessions.js"
 import { authenticatedRefusalKey } from "./refusal-client.js"
 
 /** One machine and one of its sessions, as the relay's channels name them. */
@@ -334,10 +334,9 @@ export function machineApp(client: CloudReadClient, machine: string): { version?
  * `work.v2.session-todos` — the two words the page reads first and the cut
  * does not reach.
  *
- * Five seconds is the descriptor's own arrival, not a retry budget: the
- * envelope is on its way as part of the pass the socket starts with. A machine
- * that never sends one is refused exactly as it is today, and nothing else
- * waits.
+ * Five seconds gives the live descriptor a chance to arrive. If it does not,
+ * a cut remembered list is still inconclusive: StatusCloudClient asks the
+ * named machine and lets its signed answer decide.
  */
 export const FEATURE_WAIT_MS = 5_000
 
@@ -556,6 +555,8 @@ export interface RelayReaderOptions {
   classicStatus?: boolean
   /** The fleet detail currently admitted for this reader; absent in single-machine mode. */
   fleetTarget?: () => SessionDestination | null
+  /** Display facts from the already authorized per-machine list read. */
+  fleetPresentation?: (target: SessionDestination) => SessionListPresentation | null
   /** Recheck one visible fleet mutation against the latest ss/ pass. */
   admitFleetMutation?: (target: SessionDestination) => Promise<void>
 }
@@ -1443,7 +1444,8 @@ export class RelayReader {
     const recovering = (all.scan.recovering ?? []).includes(this.machine)
     const failed = (all.scan.failures ?? []).some((f) => f.machine === this.machine)
     const statusMarker = client.statusSnapshots?.get(JSON.stringify([this.machine, "__clawdline_inventory_v1__"])) as
-      | { payload?: { complete?: unknown; inventory?: { version?: unknown; sessions?: unknown } } } | undefined
+      | { payload?: { complete?: unknown; snapshot_generation?: unknown;
+        inventory?: { version?: unknown; sessions?: unknown } } } | undefined
     const statusIDs = statusMarker?.payload?.complete === true && statusMarker.payload.inventory?.version === 1 &&
       Array.isArray(statusMarker.payload.inventory.sessions)
       ? statusMarker.payload.inventory.sessions.filter((id): id is string => typeof id === "string" && !!id) : null
@@ -1461,6 +1463,30 @@ export class RelayReader {
       return typeof status?.payload?.execution_generation === "string" &&
         row.execution_generation === status.payload.execution_generation
     })
+    const target = this.options.classicStatus ? this.options.fleetTarget?.() : null
+    if (target?.machineID === this.machine && expected?.has(this.machine + "\u0000" + target.sessionID) &&
+      !machineRows.some((row) => (row.session ?? row.id) === target.sessionID &&
+        row.execution_generation === target.executionGeneration)) {
+      const presentation = this.options.fleetPresentation?.(target)
+      const status = client.statusSnapshots?.get(JSON.stringify([this.machine, target.sessionID])) as
+        | { payload?: { snapshot_generation?: unknown; execution_generation?: unknown;
+          machine_id?: unknown; session_id?: unknown; state?: unknown; assistant?: unknown; backend?: unknown;
+          source?: { freshness?: unknown; observed_at?: unknown } } } | undefined
+      const data = status?.payload
+      if (presentation?.title && data?.machine_id === this.machine && data.session_id === target.sessionID &&
+        data.execution_generation === target.executionGeneration &&
+        data.snapshot_generation === statusMarker?.payload?.snapshot_generation &&
+        data.source?.freshness === "current") {
+        // The fleet has already paid for an authorized display read and a
+        // signed ss/ pass. The old Session pane still needs a row to open its
+        // transcript; a missing rich s/ replay must not hide that answer.
+        const { identity: _displayIdentity, ...displayStatus } = presentation.status ?? {}
+        machineRows.push({ ...displayStatus, id: target.sessionID, session: target.sessionID,
+          machine: this.machine, execution_generation: target.executionGeneration,
+          label: presentation.title, cwd: presentation.cwd, icon: presentation.icon,
+          assistant: data.assistant, backend: data.backend, state: data.state, source: data.source })
+      }
+    }
     this.askForOpenedRow(client, machineRows)
     // The marker can arrive before another retained channel. Its id set is the
     // receipt: a marker alone is not yet the whole list it describes.
@@ -1813,13 +1839,13 @@ export class RelayReader {
   /**
    * Hold a read until the chosen machine's own word list has arrived, when the
    * page would otherwise refuse it on a word list that was cut short
-   * (`machineWordPending`).
+   * (`machineWordPending`). A cut remembered list alone cannot refuse the
+   * read when this wait ends; the named machine answers it instead.
    *
    * Only that condition waits, and only for the descriptor: the next `orch/`
    * envelope of this machine that carries one, or `FEATURE_WAIT_MS`, whichever
-   * comes first. Then the same checks decide, so a machine that really does
-   * not answer the word is refused exactly as it was — with the refusal it
-   * always had, and after this wait at the worst.
+   * comes first. A live descriptor or a machine's signed refusal remains
+   * authoritative. The stored 64-word prefix is not.
    */
   private async settledWords(word: string, signal?: AbortSignal | null, machine: string = this.machine): Promise<void> {
     const client = this.client

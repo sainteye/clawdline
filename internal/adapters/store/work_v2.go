@@ -2074,9 +2074,9 @@ func (t *WorkV2Tx) DirectTodo(id string) (work.DirectTodoV2, error) {
 }
 
 func (t *WorkV2Tx) PutDirectTodo(prev, next work.DirectTodoV2) error {
-	res, err := t.tx.ExecContext(t.ctx, `UPDATE session_direct_todos SET sent_at=?,read_at=?,completed_at=?,
-    completed_by=?,version=version+1 WHERE id=? AND version=?`, zeroOrUnix(next.SentAt), zeroOrUnix(next.ReadAt),
-		zeroOrUnix(next.CompletedAt), next.CompletedBy, prev.ID, prev.Version)
+	res, err := t.tx.ExecContext(t.ctx, `UPDATE session_direct_todos SET text=?,created_by=?,sent_at=?,read_at=?,completed_at=?,
+    completed_by=?,version=version+1 WHERE id=? AND version=?`, next.Text, next.CreatedBy,
+		zeroOrUnix(next.SentAt), zeroOrUnix(next.ReadAt), zeroOrUnix(next.CompletedAt), next.CompletedBy, prev.ID, prev.Version)
 	if err != nil {
 		return err
 	}
