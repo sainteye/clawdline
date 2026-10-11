@@ -79,6 +79,10 @@ clawdline project export --out projects.json          # on the source
 clawdline project import --clone projects.json        # on the mirror
 ```
 
+A machine with none of the prerequisites yet — no git, no credentials, no checkouts — is set up
+by an Agent driving it over the person's own access, from the prompt in
+[user/new-machine.md](user/new-machine.md).
+
 The bundle contains file contents; treat it like the files themselves. A source that is on a Cloud
 account writes its Cloud machine id into the bundle, so a mirror imported by hand is still
 followed from that source when the Projects page is opened in the hosted console.
