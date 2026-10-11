@@ -2582,6 +2582,8 @@ func Register() []Entry {
 		{
 			// A cold browser replays one missing ss/ inventory marker, then
 			// waits before asking again while default status pushes may arrive.
+			// The same interval revalidates a complete pinned machine list used
+			// while a cold browser still has an ss/ row gap.
 			Name: ConsoleStatusMarkerRetry, Class: Cache, Unit: Seconds,
 			Limit: 60, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
