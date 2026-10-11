@@ -256,10 +256,12 @@ export function settleProjection(machineID: string, before: MachineSessionProjec
 }
 
 /** Schedule a status-only read when the earliest trusted status time expires. */
-export function projectionRefreshAt(projection: MachineSessionProjection, freshnessMs: number): number | null {
+export function projectionRefreshAt(projection: MachineSessionProjection, freshnessMs: number,
+  directRefreshMs = freshnessMs): number | null {
   if (projection.kind !== "ready") return (projection.reason === "offline" || projection.reason === "event_gap" ||
     projection.reason === "unknown") && Number.isFinite(projection.retryAt)
     ? projection.retryAt! : null
+  if (projection.snapshotGeneration?.startsWith("direct:")) return projection.observedAt + directRefreshMs + 1
   return Math.min(projection.observedAt, ...projection.rows.filter((row) => row.freshness === "current")
     .map((row) => row.observedAt)) + freshnessMs + 1
 }

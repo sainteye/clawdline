@@ -74,6 +74,31 @@ export const STATUS_GAP_RETRY_MS = 5_000
 /** Missing inventory markers need a bounded replay, then a slower retry than a row gap. */
 export const STATUS_MARKER_RETRY_MS = 60_000
 
+type DirectList = { projection: Extract<MachineSessionProjection, { kind: "ready" }>; reply: Record<string, unknown> }
+
+/** A pinned machine reply is a complete, authenticated fallback while ss/ replays a missing row. */
+function directList(machineID: string, reply: unknown, nowMs: number): DirectList | null {
+  const body = record(reply)
+  if (!body || body.complete !== true || !Number.isFinite(body.at) ||
+    Math.abs(nowMs - Number(body.at) * 1000) > STATUS_FRESH_MS ||
+    !Array.isArray(body.sessions) || body.sessions.length > 512) return null
+  const sessions = body.sessions.map((value: unknown) => record(value))
+  if (sessions.some((row: Record<string, unknown> | null) => !row || typeof row.id !== "string" || !row.id ||
+    typeof row.execution_generation !== "string" || !/^[0-9a-f]{32}$/u.test(row.execution_generation) ||
+    typeof row.title !== "string" || !row.title.trim() || !record(row.status) ||
+    !["working", "waiting", "idle", "unknown"].includes(String(record(row.status)?.state)))) return null
+  const ids = sessions.map((row: Record<string, unknown> | null) => String(row!.id))
+  if (new Set(ids).size !== ids.length) return null
+  return { reply: body, projection: { kind: "ready", complete: true, observedAt: nowMs,
+    snapshotGeneration: "direct:" + nowMs,
+    rows: sessions.map((row: Record<string, unknown> | null) => {
+      const status = record(row!.status)!
+      return { destination: { machineID, sessionID: String(row!.id),
+        executionGeneration: String(row!.execution_generation) }, state: String(status.state),
+      freshness: "current" as const, observedAt: nowMs }
+    }) } }
+}
+
 function pinnedReadSupport(client: StatusClient, machineID: string, nowMs = Date.now()): PinnedReadSupport {
   const capability = record(client.readContentCapabilities?.get(machineID))
   if (!capability || !Number.isFinite(capability.at) ||
@@ -128,6 +153,8 @@ export function statusSource(current: () => StatusClient | null): SessionProject
     sessions: Map<string, { promise: Promise<boolean>; retryAt: number }> }>()
   const markerAttempts = new Map<string, { promise: Promise<boolean>; retryAt: number }>()
   const opened = new Map<string, StatusClient>()
+  const directLists = new Map<string, { client: StatusClient; until: number; value: DirectList | null;
+    promise?: Promise<DirectList | null> }>()
   const imageSignals = new Map<string, AbortController>()
   const visibleArtifacts = new Map<string, Set<string>>()
   const readMachine = async (machineID: string, signal: AbortSignal): Promise<MachineSessionProjection> => {
@@ -137,6 +164,7 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       attemptedClient = client
       gapAttempts.clear()
       markerAttempts.clear()
+      directLists.clear()
     }
     const offline = client.machineOffline?.get(machineID)
     if (offline && Number.isFinite(offline.until)) {
@@ -147,6 +175,28 @@ export function statusSource(current: () => StatusClient | null): SessionProject
         : { kind: "unavailable", reason: "unknown", observedAt: expired.observedAt }
     }
     let projection = statusProjection(client, machineID)
+    if (projection.kind === "unavailable" && (projection.reason === "unknown" || projection.reason === "event_gap") &&
+      client.listPresentationsForMachine && pinnedReadSupport(client, machineID) === "yes" && !signal.aborted) {
+      const now = client.now?.() ?? Date.now()
+      let cached = directLists.get(machineID)
+      if (!cached || cached.client !== client || cached.until <= now) {
+        const promise = client.listPresentationsForMachine(machineID, new AbortController().signal)
+          .then((reply) => directList(machineID, reply, client.now?.() ?? Date.now()), () => null)
+        cached = { client, until: now + STATUS_MARKER_RETRY_MS, value: null, promise }
+        directLists.set(machineID, cached)
+        void promise.then((value) => { if (directLists.get(machineID) === cached) {
+          cached!.value = value
+          cached!.promise = undefined
+        } })
+      }
+      const direct = cached.promise ? await cached.promise : cached.value
+      if (direct && !signal.aborted && current() === client) {
+        const answer = await client.machines()
+        if (answer.machines.some((machine) => machine.id === machineID && machine.freshness === "current"))
+          return direct.projection
+      }
+      projection = statusProjection(client, machineID)
+    }
     if (projection.kind === "unavailable" && projection.reason === "unknown" &&
       !client.statusSnapshots?.has(JSON.stringify([machineID, "__clawdline_inventory_v1__"])) &&
       client.recoverStatusMarker && !signal.aborted) {
@@ -210,7 +260,10 @@ export function statusSource(current: () => StatusClient | null): SessionProject
       const before = await readMachine(machineID, signal)
       if (before.kind !== "ready") return null
       try {
-        const reply = record(await client.listPresentationsForMachine(machineID, signal))
+        const direct = before.snapshotGeneration?.startsWith("direct:") ? directLists.get(machineID) : null
+        const held = direct?.client === client ? direct.value : null
+        const reply = held && held.projection.snapshotGeneration === before.snapshotGeneration
+          ? held.reply : record(await client.listPresentationsForMachine(machineID, signal))
         const after = await readMachine(machineID, signal)
         if (signal.aborted || current() !== client || after.kind !== "ready" ||
           !supportsPinnedRead(client, machineID) || !Array.isArray(reply?.sessions)) return null

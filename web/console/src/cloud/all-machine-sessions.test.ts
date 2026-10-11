@@ -139,6 +139,8 @@ test("current status is reread when its earliest status time expires", () => {
   assert.equal(projectionRefreshAt({ kind: "unavailable", reason: "stale" }, 300_000), null)
   assert.equal(projectionRefreshAt({ kind: "unavailable", reason: "offline", retryAt: 1200 }, 300_000), 1200)
   assert.equal(projectionRefreshAt({ kind: "unavailable", reason: "event_gap", retryAt: 1200 }, 300_000), 1200)
+  assert.equal(projectionRefreshAt({ ...one, observedAt: 900, snapshotGeneration: "direct:900" },
+    300_000, 60_000), 60_901)
 })
 
 test("a restarted assistant names the execution that replaced the one a person opened", () => {

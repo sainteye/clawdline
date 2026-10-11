@@ -42,7 +42,7 @@ The publisher sends a machine descriptor on `orch/<machine>`, one complete row p
 
 The status inventory is `ss/<machine>/__clawdline_inventory_v1__` with `inventory: {version: 1, sessions: [terminal ids]}`, `at` (Unix seconds), `complete` (boolean), `snapshot_generation` (a 128-bit pass id) and `presentation_generation` (a 128-bit display id). All the rows of one set carry that same pass id; a viewer discards a row with a different pass id. If `ss/` publication fails against an older relay, its retry remains separate from the legacy `s/` inventory, so the older list keeps moving.
 
-**Cold browser reads are per machine and bounded.** The account's encrypted descriptors establish the machine roster; each machine's signed `ss/` marker establishes its Session set. A new browser can receive the roster before the default status replay. It explicitly subscribes to one missing marker, shares that pending request across callers, and releases the subscription after the marker arrives or the read times out. A failed replay is retried at most once per `console.status_marker_retry_seconds` while the list is on screen; an arriving status event reads the new pass immediately. A marker that names a row the browser missed gets one exact retained-row replay and a shorter bounded retry. Neither absence is an empty Session set. Once a complete pass arrives, the list reads one generation-checked presentation batch per machine for titles and work notes; content and transcript reads begin only when a person opens an exact Session. This makes each machine's loading, stale, offline and failed states independent, and keeps a previous list visible without authorizing actions from stale rows.
+**Cold browser reads are per machine and bounded.** The account's encrypted descriptors establish the machine roster; each machine's signed `ss/` marker establishes its Session set. A new browser can receive the roster before the default status replay. When that marker or a named row is missing and the machine advertises pinned reads, one authenticated `sessions.list` answer can supply the complete Session set and display facts immediately. The answer must declare a complete, fresh scan and give every Session a valid execution generation; it is shared by concurrent callers and reused for the presentation pass rather than read twice. The fallback is revalidated at most once per `console.status_marker_retry_seconds` while visible. If the pinned read is refused, the page explicitly subscribes to one missing marker or row, shares that pending request across callers, and releases the subscription after an answer or timeout. Neither absence nor refusal is an empty Session set. Once a complete pass arrives, content and transcript reads begin only when a person opens an exact Session; the machine rechecks the execution generation for each pinned read. Each machine's loading, stale, offline and failed states remain independent, and a previous list stays visible without authorizing actions from stale rows.
 
 Scheduled Tasks uses a separate machine fan-out because schedules are not in the Go daemon's `orch/` snapshot. The hosted section waits for the machine roster before its first fan-out, holds the last answered inventory when a refresh fails, and names loading, empty and failed states. A section remount paints its last answer from memory; a changed roster invalidates that answer before requesting the new set. The visible page reads at most once per minute unless the roster changes or a local action explicitly asks for an update. A machine that did not answer is named as unreadable rather than silently counted as empty.
 
@@ -73,11 +73,12 @@ is that tab's own (`sessionStorage`); a new tab has made none. An account with o
 still opens its list once, so the first thing a person sees names the machine and offers its
 pairing. The rules are `web/console/src/cloud/opening.ts` and are tested there.
 
-A cold browser load has two bounded reads. The signed `ss/` inventory marker names the complete
-Session set for each machine; the page replays a missing marker once per machine, then recovers
-missing rows one at a time with a retry floor. One authorized `sessions.list` read per machine and
-presentation pass supplies titles and display status. The fleet keeps that answer while a later
-refresh is pending. An opened conversation is pinned to the `ss/` execution generation; its
+A cold browser load has two bounded paths. The signed `ss/` inventory marker names the complete
+Session set for each machine. If its marker or a row is missing, a complete, fresh, authorized
+`sessions.list` answer supplies the set and its titles in one read; an unanswered list falls back
+to exact retained marker and row recovery. The fleet keeps its last answer while a later
+refresh is pending. An opened conversation is pinned to the execution generation from the
+complete `ss/` set or authenticated machine list; its
 already authorized presentation can supply the original Session pane's display row when a rich
 `s/` replay is absent. The pane then reads `info` and transcript for that exact execution. This
 keeps a quiet Session readable without asking every machine to restate its whole rich list.

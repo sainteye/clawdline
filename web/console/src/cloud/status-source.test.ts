@@ -47,7 +47,7 @@ function clientFixture() {
     unsubscribe(channels: string[]) { calls.push("unsubscribe:" + channels.join(",")) },
     async listPresentationsForMachine(machine: string) {
       calls.push("sessions.list:" + machine)
-      return { sessions: [{ id: sessionID, execution_generation: executionGeneration, title: "The real title",
+      return { at, complete: true, sessions: [{ id: sessionID, execution_generation: executionGeneration, title: "The real title",
         status: { state: "idle", work_state: "ready", work_note: "Queued heavy command finished", work_provenance: "self" } }] }
     },
     async infoForGeneration(destination: { executionGeneration: string }) {
@@ -86,6 +86,7 @@ test("a status row event names the Session whose list title should refresh", () 
 
 test("a new browser replays a missing status marker once and recovers the Session list", async () => {
   const { client } = clientFixture()
+  client.readContentCapabilities.delete(machineID)
   const key = JSON.stringify([machineID, inventory])
   const marker = client.statusSnapshots.get(key)
   client.statusSnapshots.delete(key)
@@ -105,6 +106,7 @@ test("a new browser replays a missing status marker once and recovers the Sessio
 
 test("an unanswered marker is retried at most once per minute", async () => {
   const { client } = clientFixture()
+  client.readContentCapabilities.delete(machineID)
   client.statusSnapshots.delete(JSON.stringify([machineID, inventory]))
   let reads = 0
   ;(client as typeof client & { recoverStatusMarker: (machine: string) => Promise<boolean> }).recoverStatusMarker = async () => {
@@ -157,6 +159,31 @@ test("status-only list never subscribes to or reads rich content", async () => {
   const read = await source.readMachine(machineID, new AbortController().signal)
   assert.equal(read.kind, "ready")
   assert.deepEqual(calls, [])
+})
+
+test("a cold status gap uses one complete pinned machine list for rows and titles", async () => {
+  const { client, calls } = clientFixture()
+  client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
+  const source = statusSource(() => client as never)
+  const reading = await source.readMachine(machineID, new AbortController().signal)
+  assert.equal(reading.kind, "ready")
+  assert.equal(reading.rows?.[0]?.destination.executionGeneration, executionGeneration)
+  const titles = await source.readMachinePresentations?.(machineID, new AbortController().signal)
+  assert.deepEqual(titles?.map((row) => row.title), ["The real title"])
+  assert.deepEqual(calls, ["sessions.list:" + machineID])
+})
+
+test("a refused pinned list falls back to exact retained-row recovery", async () => {
+  const { client, calls } = clientFixture()
+  client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
+  client.listPresentationsForMachine = async () => {
+    calls.push("sessions.list-refused")
+    throw Object.assign(new Error("refused"), { code: "cloud_read_busy" })
+  }
+  const source = statusSource(() => client as never)
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
+  assert.equal((await source.readMachine(machineID, new AbortController().signal)).kind, "ready")
+  assert.deepEqual(calls, ["sessions.list-refused", "recover:" + [machineID, sessionID, snapshotGeneration].join(":")])
 })
 
 test("one machine list read joins only the current Session execution", async () => {
@@ -365,6 +392,7 @@ test("a stale status row refuses content without subscribing", async () => {
 
 test("a missing ss row settles before it can shake the visible list", async () => {
   const { client, calls } = clientFixture()
+  client.readContentCapabilities.delete(machineID)
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
   const source = statusSource(() => client as never)
   const recovered = await source.readMachine(machineID, new AbortController().signal)
@@ -376,6 +404,7 @@ test("a missing ss row settles before it can shake the visible list", async () =
 
 test("a failed retained-row request keeps the machine in event_gap", async () => {
   const { client, calls } = clientFixture()
+  client.readContentCapabilities.delete(machineID)
   let now = Date.now()
   client.now = () => now
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]));
