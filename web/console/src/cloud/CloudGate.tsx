@@ -62,7 +62,7 @@ import { CloudSessionSheets, type PendingMachineAction } from "./CloudSessionShe
 import { PeerAccessPage } from "./PeerAccessPage.js"
 import { destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
   supersedingDestination, type FleetDetailProblem, type SessionContent,
-  type SessionDestination, type SessionProjectionSource } from "./all-machine-sessions.js"
+  type SessionDestination, type SessionListPresentation, type SessionProjectionSource } from "./all-machine-sessions.js"
 import { statusSource } from "./status-source.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
 import { installScheduleWebhookManagement } from "./schedule-webhooks.js"
@@ -277,6 +277,17 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const [readerMachine, setReaderMachine] = useState<string | null>(null)
   const fleetTargetRef = useRef<SessionDestination | null>(null)
   fleetTargetRef.current = fleetScope ? fleetTarget : null
+  const fleetPresentations = useRef(new Map<string, SessionListPresentation & { destination: SessionDestination }>())
+  const noteFleetPresentations = useCallback((machineID: string,
+    rows: readonly (SessionListPresentation & { destination: SessionDestination })[]) => {
+    for (const [key, row] of fleetPresentations.current) {
+      if (row.destination.machineID === machineID) fleetPresentations.current.delete(key)
+    }
+    for (const row of rows) fleetPresentations.current.set(destinationKey(row.destination), row)
+    const target = fleetTargetRef.current
+    if (target?.machineID === machineID && reader.current?.machine === machineID && client.current)
+      reader.current.attach(client.current)
+  }, [])
   /** A console is on screen, for a machine this browser can read. */
   const consoleUp = !!chosen && screen.at === "console"
   /**
@@ -467,6 +478,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       carry: CARRY_TABLE,
       classicStatus: true,
       fleetTarget: () => fleetTargetRef.current,
+      fleetPresentation: (target) => fleetPresentations.current.get(destinationKey(target)) ?? null,
       admitFleetMutation,
     })
     const writer = new RelayWriter(next.writeHost)
@@ -1440,6 +1452,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             target={fleetTarget}
             filter={filter} onFilter={onFilter}
             onOpen={openFleetSession}
+            onPresentations={noteFleetPresentations}
             onCloseRequest={(target, title) => { openFleetSession(target); setFleetCloseIntent({ target, title }) }}
             onMachineAction={runMachineTool}
           /> : undefined} />

@@ -73,6 +73,20 @@ is that tab's own (`sessionStorage`); a new tab has made none. An account with o
 still opens its list once, so the first thing a person sees names the machine and offers its
 pairing. The rules are `web/console/src/cloud/opening.ts` and are tested there.
 
+A cold browser load has two bounded reads. The signed `ss/` inventory marker names the complete
+Session set for each machine; the page replays a missing marker once per machine, then recovers
+missing rows one at a time with a retry floor. One authorized `sessions.list` read per machine and
+presentation pass supplies titles and display status. The fleet keeps that answer while a later
+refresh is pending. An opened conversation is pinned to the `ss/` execution generation; its
+already authorized presentation can supply the original Session pane's display row when a rich
+`s/` replay is absent. The pane then reads `info` and transcript for that exact execution. This
+keeps a quiet Session readable without asking every machine to restate its whole rich list.
+
+Scheduled Tasks wait for the fleet roster, then ask each eligible machine independently. The
+section shows loading, empty, partial failure and last answered rows separately; remounting the
+same roster reuses the last answer until its refresh is due. `FleetSessionList`, `status-source`,
+`relay-reader` and `ScheduleSection` own these steps respectively.
+
 Underneath the fleet the console still reads **one** machine: the original Session page, its
 Projects, its schedules and its terminals are one daemon's. `CloudGate`'s `pointAt` moves every
 seam — the `/v1/` fetches, the session stream, the transcript pictures, the terminal host, the kept
