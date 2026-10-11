@@ -394,7 +394,7 @@ func TestTerminalAdmissionUsesCommandKeyPinAndFreshRoster(t *testing.T) {
 	mu.Lock()
 	row.Caps = []string{"read_sessions"}
 	mu.Unlock()
-	l.terminalRosterAt = time.Time{}
+	l.rosterReadAt = time.Time{}
 	if !l.TerminalViewerAllowed("viewer") {
 		t.Fatal("legacy read-only viewer was refused")
 	}
@@ -402,14 +402,14 @@ func TestTerminalAdmissionUsesCommandKeyPinAndFreshRoster(t *testing.T) {
 	row.Caps = []string{"send_prompt"}
 	row.PublicKey = base64.StdEncoding.EncodeToString(make([]byte, 32))
 	mu.Unlock()
-	l.terminalRosterAt = time.Time{}
+	l.rosterReadAt = time.Time{}
 	if l.TerminalViewerAllowed("viewer") {
 		t.Fatal("roster key substitution beat the local pin")
 	}
 	mu.Lock()
 	failed = true
 	mu.Unlock()
-	l.terminalRosterAt = time.Time{}
+	l.rosterReadAt = time.Time{}
 	if l.TerminalViewerAllowed("viewer") {
 		t.Fatal("failed roster refresh kept terminal authority")
 	}
@@ -427,7 +427,7 @@ func TestTerminalAdmissionUsesCommandKeyPinAndFreshRoster(t *testing.T) {
 	if revoked, err := pinned.Revoke("viewer", time.Now()); err != nil || !revoked {
 		t.Fatalf("revoke pinned viewer: changed=%v err=%v", revoked, err)
 	}
-	l.terminalRosterAt = time.Time{}
+	l.rosterReadAt = time.Time{}
 	if l.TerminalViewerAllowed("viewer") {
 		t.Fatal("local revocation did not beat the roster fallback")
 	}
