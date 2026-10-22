@@ -10,6 +10,8 @@
 | `antigravity.hook_timeout_seconds` | 3 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.live_bindings` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.managed_launches` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.native_process_file_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.native_tty_entries` | 4096 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.observation_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.process_read_seconds` | 3 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.retention_seconds` | 86400 | `seconds` | `expire` | `diagnostics, sender` | — |

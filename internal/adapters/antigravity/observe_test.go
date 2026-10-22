@@ -70,12 +70,17 @@ func fixture(t *testing.T) *bridgeFixture {
 		51: {PID: 51, ParentPID: 1, Birth: "birth-b", Executable: f.exe, TTY: "ttyB", TerminalID: "%2"},
 		52: {PID: 52, ParentPID: 51, Birth: "helper-b", Executable: "/synthetic/helper", TTY: "ttyB", TerminalID: "%2"},
 	}
+	for pid, p := range f.procs {
+		p.BootID = "boot-fixture"
+		p.KernelGeneration = fmt.Sprintf("generation-%d", pid)
+		f.procs[pid] = p
+	}
 	f.b, err = NewBridge(home, f.state, f.exe, f.procs, func(_ string, id string) (string, bool) { p, ok := paths[id]; return p, ok })
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.b.now = func() time.Time { return f.now }
-	f.w = Witness{HelperPID: 42, HelperBirth: "helper-a", At: f.now, Sequence: 1}
+	f.w = Witness{HelperPID: 42, HelperBirth: "helper-a", HelperBootID: "boot-fixture", HelperGeneration: "generation-42", At: f.now, Sequence: 1}
 	f.s = session.Session{PID: 41, ID: "%1", TTY: "ttyA", Backend: session.BackendTmux, Assistant: session.AssistantAntigravity}
 	return f
 }
@@ -105,7 +110,7 @@ func TestObservationExactIdentityAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := Witness{HelperPID: 52, HelperBirth: "helper-b", At: f.now, Sequence: 1}
+	w := Witness{HelperPID: 52, HelperBirth: "helper-b", HelperBootID: "boot-fixture", HelperGeneration: "generation-52", At: f.now, Sequence: 1}
 	b, err := f.b.Observe(context.Background(), w, "PreInvocation", payload(conversationB, f.pathB, nil))
 	if err != nil {
 		t.Fatal(err)
@@ -142,6 +147,8 @@ func TestObservationRejectsUnprovedFacts(t *testing.T) {
 		mutate     func(*bridgeFixture)
 	}{
 		{"helper birth", "antigravity_helper_unverified", func(f *bridgeFixture) { f.w.HelperBirth = "forged" }},
+		{"helper generation", "antigravity_helper_unverified", func(f *bridgeFixture) { f.w.HelperGeneration = "" }},
+		{"helper boot", "antigravity_helper_unverified", func(f *bridgeFixture) { f.w.HelperBootID = "different-boot" }},
 		{"missing ancestry", "antigravity_process_unreadable", func(f *bridgeFixture) { delete(f.procs, 41) }},
 		{"old IDE", "antigravity_ancestry_unverified", func(f *bridgeFixture) { p := f.procs[41]; p.Executable = "/synthetic/ide/agy"; f.procs[41] = p }},
 		{"TTY", "antigravity_terminal_mismatch", func(f *bridgeFixture) { p := f.procs[42]; p.TTY = "ttyB"; f.procs[42] = p }},
@@ -425,9 +432,9 @@ func TestObservationWarmInventory(t *testing.T) {
 				paths[id] = path
 				pid := 101 + i*2
 				tty, pane := fmt.Sprintf("tty%d", i), fmt.Sprintf("%%%d", i+100)
-				f.procs[pid] = ports.AntigravityProcess{PID: pid, ParentPID: 1, Birth: fmt.Sprintf("birth-%d", i), Executable: f.exe, TTY: tty, TerminalID: pane}
-				f.procs[pid+1] = ports.AntigravityProcess{PID: pid + 1, ParentPID: pid, Birth: fmt.Sprintf("helper-%d", i), Executable: "/synthetic/helper", TTY: tty, TerminalID: pane}
-				w := Witness{HelperPID: pid + 1, HelperBirth: f.procs[pid+1].Birth, At: f.now, Sequence: 1}
+				f.procs[pid] = ports.AntigravityProcess{BootID: "boot-fixture", KernelGeneration: fmt.Sprintf("generation-%d", pid), PID: pid, ParentPID: 1, Birth: fmt.Sprintf("birth-%d", i), Executable: f.exe, TTY: tty, TerminalID: pane}
+				f.procs[pid+1] = ports.AntigravityProcess{BootID: "boot-fixture", KernelGeneration: fmt.Sprintf("generation-%d", pid+1), PID: pid + 1, ParentPID: pid, Birth: fmt.Sprintf("helper-%d", i), Executable: "/synthetic/helper", TTY: tty, TerminalID: pane}
+				w := Witness{HelperPID: pid + 1, HelperBirth: f.procs[pid+1].Birth, HelperBootID: f.procs[pid+1].BootID, HelperGeneration: f.procs[pid+1].KernelGeneration, At: f.now, Sequence: 1}
 				if _, err := f.b.Observe(context.Background(), w, "PreInvocation", payload(id, path, nil)); err != nil {
 					t.Fatal(err)
 				}
@@ -451,6 +458,27 @@ func TestObservationWarmInventory(t *testing.T) {
 				t.Fatalf("unexpected process work: %d", reader.reads)
 			}
 			t.Logf("rows=%d polls=100 process_reads=%d elapsed=%s", count, reader.reads, time.Since(start))
+		})
+	}
+}
+
+func TestObservationRejectsChangedBootAndExecGeneration(t *testing.T) {
+	for _, field := range []string{"boot", "generation"} {
+		t.Run(field, func(t *testing.T) {
+			f := fixture(t)
+			if _, err := observeA(f, "PreInvocation", nil); err != nil {
+				t.Fatal(err)
+			}
+			p := f.procs[41]
+			if field == "boot" {
+				p.BootID = "different-boot"
+			} else {
+				p.KernelGeneration = "different-exec"
+			}
+			f.procs[41] = p
+			if _, err := f.b.AntigravityBinding(context.Background(), f.s); err == nil {
+				t.Fatal("old observation survived a changed kernel generation")
+			}
 		})
 	}
 }
