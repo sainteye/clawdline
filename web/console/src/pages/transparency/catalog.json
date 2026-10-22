@@ -2141,11 +2141,11 @@
         },
         {
           "path": "internal/adapters/antigravitylaunch/response.go",
-          "line": 74
+          "line": 82
         },
         {
           "path": "internal/adapters/antigravitylaunch/store.go",
-          "line": 662
+          "line": 669
         },
         {
           "path": "internal/adapters/antigravity/hook_service.go",
@@ -2223,8 +2223,8 @@
     "cmd/clawdline/main.go": "ef80f8f2bcee633896bf5cb8d7c601efc774fddcc8e8cfad29011477552f974a",
     "cmd/clawdline/session.go": "de2e47caf092efedfb633b4f5242ee9cb0989fdf5d7f97dd95a1ff33667f5efc",
     "internal/adapters/antigravity/hook_service.go": "fb942eb1374e98bde47fe28aec187380124374aa1fcec128de69c2d4105ca999",
-    "internal/adapters/antigravitylaunch/response.go": "e218b8efde043db111c71988a06968513c498608a90c33665b5f7dee6b286def",
-    "internal/adapters/antigravitylaunch/store.go": "48920e7346b2c5f67b91f4a8c0c3cfb60f46e3f633c6c937dbf657ad8b9fff69",
+    "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
+    "internal/adapters/antigravitylaunch/store.go": "63a170bc2b9f51a4753187419c6b2ed2c77c54dc1fd9013634a565a2f0bafdb8",
     "internal/adapters/memory/memory.go": "b85b11cd849f61bcb55c449acc868a4605950dcb5a408ac65a228babbfab9fb0",
     "internal/adapters/nextconfig/nextconfig.go": "854b65137d603c892cb04fbbd486eed1d54b0ca48a2c8e71d8361f1cdc666dce",
     "internal/adapters/projects/antigravity_context.go": "af2f72bca504765de63bc45bbeb208e201c063bacf51ff3ff5cbe0fd5e5aac1a",

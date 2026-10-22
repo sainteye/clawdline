@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 )
@@ -105,7 +106,7 @@ func validHash(s string) bool {
 	return e == nil && len(b) == 32 && hex.EncodeToString(b) == s
 }
 func emptyIndex() index {
-	return index{Version: 2, Records: map[string]Record{}, History: map[string]history{}, Receipts: map[string]ResponseReceipt{}, FirstInputs: map[string]FirstInputReceipt{}}
+	return index{Version: 3, Records: map[string]Record{}, History: map[string]history{}, Receipts: map[string]ResponseReceipt{}, FirstInputs: map[string]FirstInputReceipt{}}
 }
 
 func Open(c Config) (*Store, error) {
@@ -143,11 +144,17 @@ func Open(c Config) (*Store, error) {
 			return nil, fail("index_invalid")
 		}
 		s.state = loaded
-		// v1 contained no first-input authority. Upgrade in memory; the next
-		// atomic write publishes v2, which old readers refuse rather than drop
-		// a consumed input slot. Open itself never writes a migration.
-		if s.state.Version == 1 && len(s.state.FirstInputs) == 0 {
-			s.state.Version = 2
+		// Migrate only known legacy states in memory. The next atomic
+		// write publishes v3; old readers refuse rather than drop proof or
+		// consumed input authority. Open itself never rewrites an index.
+		legacyProofFree := true
+		for _, receipt := range s.state.Receipts {
+			if receipt.Fenced || receipt.Loaded || receipt.Fence != (transcript.AntigravityContextFence{}) || receipt.Proof != (transcript.AntigravityContextProof{}) {
+				legacyProofFree = false
+			}
+		}
+		if legacyProofFree && (s.state.Version == 2 || (s.state.Version == 1 && len(s.state.FirstInputs) == 0)) {
+			s.state.Version = 3
 		}
 		if s.state.FirstInputs == nil {
 			s.state.FirstInputs = map[string]FirstInputReceipt{}
@@ -211,7 +218,7 @@ func (s *Store) ready(ctx context.Context) error {
 
 func (s *Store) validateIndex() error {
 	i := s.state
-	if i.Version != 2 || i.Records == nil || i.History == nil || i.Receipts == nil || i.FirstInputs == nil || len(i.Records) > MaxLaunches || len(i.History) > MaxHistory || len(i.Receipts) > MaxReceipts || len(i.FirstInputs) > MaxFirstInputs {
+	if i.Version != 3 || i.Records == nil || i.History == nil || i.Receipts == nil || i.FirstInputs == nil || len(i.Records) > MaxLaunches || len(i.History) > MaxHistory || len(i.Receipts) > MaxReceipts || len(i.FirstInputs) > MaxFirstInputs {
 		return fail("index_invalid")
 	}
 	for id, r := range i.Records {
@@ -242,7 +249,7 @@ func (s *Store) validateIndex() error {
 	}
 	for id, r := range i.Receipts {
 		launch, ok := i.Records[id]
-		if !ok || r.LaunchID != id || r.Status != "PREPARED" || r.Sequence == 0 || !validID(r.ConversationID) || r.Process != launch.Process || !validHash(r.InjectionDigest) || !validHash(r.ResponseDigest) {
+		if !ok || r.LaunchID != id || r.Status != "PREPARED" || r.Sequence == 0 || !validID(r.ConversationID) || r.Process != launch.Process || !validHash(r.InjectionDigest) || !validHash(r.ResponseDigest) || !validContextReceipt(r) {
 			return fail("index_invalid")
 		}
 	}

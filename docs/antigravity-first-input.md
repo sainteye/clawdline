@@ -1,7 +1,10 @@
 # Antigravity first-input contract
 Root accepted the process-bound input and durable slot design. The launch
 Store and private app/terminal path are implemented; HTTP capability enablement,
-real process/policy composition and native loaded-context proof remain pending.
+real process/policy composition and native loaded-context proof composition remain pending.
+The private [native proof reader and Store](antigravity-context-proof.md) now
+retain a pre-response fence and revalidate loaded evidence; the live hook path
+does not yet use them.
 This document does not declare the complete integration ready. Format follows
 docs/design-decisions.md.
 
@@ -28,14 +31,14 @@ Proposed private APIs:
     (*FirstInputAttempt).BeforeEnter(ctx) error
     FirstInputStatus(ctx, launchID, requestID) (Receipt, error)
     // private transcript adapter
-    // Proposed, not implemented below:
+    // Implemented privately; live hook composition still pending:
     CaptureBaseline(ctx, verifiedBinding) (Fence, error)
     VerifyLoaded(ctx, preparedProofRequest) (Evidence, error)
     // launch Store: atomic fence/receipt preparation, then CAS evidence
     PrepareResponse(ctx, verifiedBinding, fence) ([]byte, error)
     RecordLoaded(ctx, evidence) error
 
-Only the durable creator gets an unforgeable-by-construction volatile Go attempt with an unexported Store owner; existing/recovered receipts return a nil attempt. Closing that owner invalidates its attempts. The index moves from version 1 to version 2 on the next atomic write; old version-1 readers refuse version 2 instead of dropping consumed slots. Unknown index fields are refused. Slot: request ID/text SHA256/full process/terminal/backend/context digest/phase. Proof: launch/process/UUID/path/binding sequence+digest/injection+response digests/fence. RecordLoaded CAS matches latest receipt. No private text/capabilities in public outcomes/logs.
+Only the durable creator gets an unforgeable-by-construction volatile Go attempt with an unexported Store owner; existing/recovered receipts return a nil attempt. Closing that owner invalidates its attempts. The index now moves from known legacy versions to version 3 on the next atomic write; older readers refuse version 3 instead of dropping consumed slots or context proof. Unknown index fields are refused. Slot: request ID/text SHA256/full process/terminal/backend/context digest/phase. Proof: launch/process/UUID/path/binding sequence+digest/injection+response digests/fence. RecordLoaded CAS matches latest receipt. No private text/capabilities in public outcomes/logs.
 
 Reuse PinProcess/LookupProcess/Commitment, Bridge, parser/helper/lane. Core imports ports; HTTP authenticates; adapters own IO/storage. Todo-ID reservation cannot guard arbitrary input (internal/app/work_v2_todos.go:470-523; internal/adapters/store/work_v2.go:2547-2564); launch slot grants effects. Seconds-only pending owner is insufficient (internal/app/actions.go:979-989).
 
@@ -75,7 +78,7 @@ Private raw-row VerifyLoaded requires same live complete process/launch, positiv
 
 Missing/partial/oversized file, unknown generation or wrapper grammar: antigravity_context_proof_unavailable. Changed prefix/generation: antigravity_context_proof_stale. Missing file at PreInvocation REFUSES fenced response preparation: absence is not generation+offset zero. Preserve input uncertainty; Root must prove boundary availability or design native creation fence/private supported transport, not poller.
 
-Evidence: docs/antigravity-launch-context.md:160-168; persisted docs/antigravity-cli.md:359-362. Inspected source lacks exact sanitized wrapper grammar: Root needs raw fixture and file timing/first-response ordering; do not invent keys. Without native request correlation, proof establishes context in this execution, not particular invocation. One outstanding first response excludes another from this launch; same-UID forgery is outside native-log trust.
+Evidence: docs/antigravity-launch-context.md:160-168; persisted docs/antigravity-cli.md:359-362. The sanitized native fixture now pins the exact wrapper grammar. Native file timing/first-response ordering still needs evidence. Without native request correlation, proof establishes context in this execution, not particular invocation. One outstanding first response excludes another from this launch; same-UID forgery is outside native-log trust.
 
 ## Options, compatibility and bounds
 | Option | Gain | Cost/decision | Reversibility |
@@ -108,4 +111,4 @@ Irreversible: stored phases/fence/loaded receipt/index migration. Version migrat
 | Truncate/rewrite/replace after loaded | Invalidate current badge; retain history |
 | Exact fenced SYSTEM_SDK/DONE | Record once; verify idempotently |
 
-Outside the current private input implementation: live process/policy composition, permission/login/vendor probes, native proof, deployment and full-feature/UI acceptance. Root retains these. Open proof: wrapper fixture/file timing.
+Outside the current private input implementation: live process/policy composition, permission/login/vendor probes, native proof composition, deployment and full-feature/UI acceptance. Root retains these. The private proof reader and Store are implemented separately; open native evidence concerns file timing.

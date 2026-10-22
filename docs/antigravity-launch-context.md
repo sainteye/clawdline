@@ -164,8 +164,9 @@ identifying a PreInvocation-injected system message. Root must match the exact
 injected text inside that native envelope, scoped to the exact conversation,
 process/execution and transcript generation/offset after preparation. Reject
 model-authored echoes, user text, other system sources, errors, stale receipts
-and another conversation's matching text. That reader and any loaded role badge
-are outside this adapter's scope.
+and another conversation's matching text. The private reader and fenced Store
+APIs are now implemented in [native context proof](antigravity-context-proof.md);
+live hook composition and any role badge remain pending.
 
 ## Durability, limits and failures
 
@@ -252,10 +253,11 @@ execution grant. `BeforePaste` and `BeforeEnter` persist their respective
 uncertain phases before terminal IO and refuse repeats. There is no release,
 reset, expiry or automatic retry.
 
-The index is version 2. Legacy version-1 indexes with no input authority open
-without migration writes; the next atomic state write upgrades them. Old
-version-1 readers refuse version 2. New readers refuse unknown fields and invalid
-input phases instead of silently discarding future safety metadata.
+The index is now version 3. Known legacy version-1 and version-2 indexes open
+without migration writes; the next atomic state write upgrades them. Consumed
+input slots survive version-2 migration. Older readers refuse version 3. New
+readers refuse unknown fields and invalid input phases instead of silently
+discarding future safety metadata.
 
 `Actions.SendAntigravityFirst` uses this private port under the existing terminal
 lane, without manufacturing a conversation UUID. It requires fresh native
@@ -267,3 +269,11 @@ paste confirmation immediately. A possible paste or Enter never authorizes
 replay. HTTP and frontend foundation guards remain: the live composition port,
 free-use/permission policy and native loaded-context fence must be connected and
 verified before this private path becomes an available product capability.
+
+## Native loaded-context evidence
+
+The private [context proof reader and Store](antigravity-context-proof.md) persist
+a synchronous pre-response native fence and compare exact attributed system
+rows with original injection bytes. A persisted Loaded bit is historical only;
+current eligibility requires fresh process and complete file revalidation.
+Managed-hook composition and actual native boundary timing remain pending.

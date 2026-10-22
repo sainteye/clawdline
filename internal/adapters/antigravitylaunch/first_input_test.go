@@ -231,7 +231,7 @@ func TestFirstInputRequiresFreshPinAndANewUnboundLaunch(t *testing.T) {
 	code(t, err, "first_input_not_new")
 }
 
-func TestFirstInputLegacyIndexOpensWithoutWritingAndPublishesVersionTwo(t *testing.T) {
+func TestFirstInputLegacyIndexOpensWithoutWritingAndPublishesCurrentVersion(t *testing.T) {
 	f := setup(t)
 	p := prep(t, f)
 	native := pin(t, f.store, p)
@@ -274,7 +274,7 @@ func TestFirstInputLegacyIndexOpensWithoutWritingAndPublishesVersionTwo(t *testi
 	}
 	var next map[string]any
 	json.Unmarshal(data, &next)
-	if next["version"] != float64(2) || next["first_inputs"] == nil {
+	if next["version"] != float64(3) || next["first_inputs"] == nil {
 		t.Fatal("reservation is readable by old v1 reader")
 	}
 	stats, err := s.Stats(context.Background())
