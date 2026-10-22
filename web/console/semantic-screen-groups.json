@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8960,
-  "riskKeys": 3994,
-  "nonRiskCount": 4966,
+  "englishContentKeys": 8967,
+  "riskKeys": 3997,
+  "nonRiskCount": 4970,
   "groups": [
     {
       "name": "admin / other",
@@ -238,12 +238,15 @@
     },
     {
       "name": "antigravity / other",
-      "count": 1,
+      "count": 4,
       "sources": [
         null
       ],
       "keys": [
-        "antigravity.ready"
+        "antigravity.loading",
+        "antigravity.placeholder",
+        "antigravity.ready",
+        "antigravity.stale"
       ]
     },
     {
@@ -312,7 +315,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 277,
+      "count": 278,
       "sources": [
         null
       ],
@@ -426,6 +429,7 @@
         "capacityRow.cloud.terminal_viewer_connections.full",
         "capacityRow.cloud.terminal_viewer_connections.what",
         "capacityRow.cloud.viewer_events_batch_bytes.what",
+        "capacityRow.console.assistant_facts_read_milliseconds.what",
         "capacityRow.console.direct_history_machines.what",
         "capacityRow.console.health_ui_body_bytes.what",
         "capacityRow.console.health_ui_budget_seconds.what",

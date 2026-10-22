@@ -870,6 +870,11 @@
     "Note": true
   },
   {
+    "Name": "console.assistant_facts_read_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.carrier_receive_bytes",
     "Known": true,
     "Note": true
