@@ -119,10 +119,14 @@ func cloudViewerSessionCommand(out, errs io.Writer, args []string) int {
 	action := fs.String("action", "", "action for receipt lookup")
 	request := fs.String("request", "", "durable request ID")
 	before := fs.String("before", "", "next older transcript cursor")
+	revision := fs.String("revision", "", "held transcript revision")
 	asJSON := fs.Bool("json", false, "print JSON")
 	if fs.Parse(args[1:]) != nil || fs.NArg() != 0 {
-		fmt.Fprintln(errs, cliCopy("viewer", "sessions.usage", "usage: clawdline cloud viewer <sessions|read|send|answer|interrupt|end|receipt> [--machine ID] [--session ID --generation HEX] [--before CURSOR for read]"))
+		fmt.Fprintln(errs, cliCopy("viewer", "sessions.usage", "usage: clawdline cloud viewer <sessions|read|send|answer|interrupt|end|receipt> [--machine ID] [--session ID --generation HEX] [--before CURSOR [--revision SIGNATURE] for read]"))
 		return 2
+	}
+	if (*revision != "" && (word != "read" || *before == "")) || (*before != "" && word != "read") {
+		return viewerCLIUsage(errs)
 	}
 	destination := cloud.ViewerDestination{MachineID: *machine, SessionID: *session, ExecutionGeneration: *generation}
 	if word == "sessions" {
@@ -142,6 +146,9 @@ func cloudViewerSessionCommand(out, errs io.Writer, args []string) int {
 				return viewerCLIUsage(errs)
 			}
 			path += "&before=" + strconv.FormatInt(cursor, 10)
+			if *revision != "" {
+				path += "&revision=" + url.QueryEscape(*revision)
+			}
 			var page cloud.ViewerTranscriptPage
 			if err := viewerDaemonRequest(http.MethodGet, path, nil, &page); err != nil {
 				fmt.Fprintln(errs, viewerCLIRefusal(err))
@@ -216,7 +223,7 @@ func cloudViewerSessionCommand(out, errs io.Writer, args []string) int {
 }
 
 func viewerCLIUsage(errs io.Writer) int {
-	fmt.Fprintln(errs, cliCopy("viewer", "sessions.usage", "usage: clawdline cloud viewer <sessions|read|send|answer|interrupt|end|receipt> [--machine ID] [--session ID --generation HEX] [--before CURSOR for read]"))
+	fmt.Fprintln(errs, cliCopy("viewer", "sessions.usage", "usage: clawdline cloud viewer <sessions|read|send|answer|interrupt|end|receipt> [--machine ID] [--session ID --generation HEX] [--before CURSOR [--revision SIGNATURE] for read]"))
 	return 2
 }
 

@@ -33,6 +33,37 @@
  */
 import type { TranscriptPage } from "@clawdline/contract"
 
+/** The revision must belong to this cursor's page, even while the tail refreshes. */
+export function olderTranscriptPage(newest: TranscriptPage | null, earlier: { base: TranscriptPage; pages: TranscriptPage[] } | null): TranscriptPage | null {
+  return earlier ? earlier.pages.at(-1) ?? earlier.base : newest
+}
+
+export function transcriptCursorStale(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === "transcript_cursor_stale"
+}
+
+/** A whole native reread cannot prove retained older entries still match. */
+export function nativeHistoryChanged(held: TranscriptPage | null, newest: TranscriptPage): boolean {
+  return !!held?.signature.startsWith("agy1:") && held.signature !== newest.signature
+}
+
+/** Restart an incompatible chain once. A second stale read is exposed for manual retry. */
+export async function readOlderRecovering(
+  held: TranscriptPage,
+  older: (before: number, revision: string) => Promise<TranscriptPage>,
+  newest: () => Promise<TranscriptPage>,
+  restart: (page: TranscriptPage | null) => void,
+): Promise<TranscriptPage | null> {
+  if (!held.nextBefore) return null
+  try { return await older(held.nextBefore, held.signature) } catch (error) {
+    if (!transcriptCursorStale(error)) throw error
+    restart(null)
+    const page = await newest()
+    restart(page)
+    return page.nextBefore ? older(page.nextBefore, page.signature) : null
+  }
+}
+
 /** The whole page, read on this pace whatever the row says. */
 export const SAFETY_MS = 30_000
 /** While a card is on its way. */

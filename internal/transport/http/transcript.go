@@ -70,6 +70,8 @@ func recordNote(err error) string {
 		return transcript.ErrNoRecord.Error()
 	case errors.Is(err, transcript.ErrNotFound):
 		return transcript.ErrNotFound.Error()
+	case errors.Is(err, transcript.ErrCursorStale):
+		return transcript.ErrCursorStale.Error()
 	}
 	return "this session's record could not be read"
 }
@@ -125,14 +127,18 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 	var page contract.TranscriptPage
 	if after >= 0 {
 		var stale bool
-		page, stale = s.transcriptPageAfter(id, item, limit, after)
+		page, stale = s.transcriptPageAfter(id, item, limit, after, r.URL.Query().Get("revision"))
 		if stale {
 			writeRefusal(w, http.StatusConflict, "transcript_cursor_stale",
 				"the transcript changed in a way this cursor cannot follow; read the newest page")
 			return
 		}
 	} else {
-		page = s.transcriptPageBefore(id, item, limit, before)
+		page = s.transcriptPageBefore(id, item, limit, before, r.URL.Query().Get("revision"))
+		if item.Assistant == session.AssistantAntigravity && page.Note == recordNote(transcript.ErrCursorStale) {
+			writeRefusal(w, http.StatusConflict, "transcript_cursor_stale", "the transcript changed in a way this cursor cannot follow; read the newest page")
+			return
+		}
 	}
 	if !s.admitPinnedTarget(w, r, id) {
 		return
@@ -145,7 +151,7 @@ func (s *Server) transcriptPage(id string, item session.Session, limit int) cont
 	return s.transcriptPageBefore(id, item, limit, 0)
 }
 
-func (s *Server) transcriptPageBefore(id string, item session.Session, limit int, before int64) contract.TranscriptPage {
+func (s *Server) transcriptPageBefore(id string, item session.Session, limit int, before int64, revision ...string) contract.TranscriptPage {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	path := s.recordPath(item)
 	if path == "" {
@@ -164,11 +170,7 @@ func (s *Server) transcriptPageBefore(id string, item session.Session, limit int
 
 	var read transcript.Page
 	var err error
-	if item.Assistant == session.AssistantCodex {
-		read, err = transcript.ReadCodexBefore(path, limit, before)
-	} else {
-		read, err = transcript.ReadClaudeBefore(path, limit, before)
-	}
+	read, err = readTranscriptBefore(path, item.Assistant, limit, before, revision...)
 	if errors.Is(err, transcript.ErrNoRecord) {
 		// A session that has just started has not written its record yet.
 		// That is a conversation with nothing in it, answered as the Swift
@@ -227,7 +229,7 @@ func (s *Server) transcriptPageBefore(id string, item session.Session, limit int
 // meets the record, more new rows than one page, rows the byte budget would
 // cut, or a record that could not be read at all. NextBefore is left out: the
 // page keeps the one its whole read gave it.
-func (s *Server) transcriptPageAfter(id string, item session.Session, limit int, after int64) (contract.TranscriptPage, bool) {
+func (s *Server) transcriptPageAfter(id string, item session.Session, limit int, after int64, revision ...string) (contract.TranscriptPage, bool) {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	path := s.recordPath(item)
 	if path == "" {
@@ -235,10 +237,15 @@ func (s *Server) transcriptPageAfter(id string, item session.Session, limit int,
 	}
 	var read transcript.Page
 	var err error
-	if item.Assistant == session.AssistantCodex {
+	switch item.Assistant {
+	case session.AssistantCodex:
 		read, err = transcript.ReadCodexAfter(path, limit, after)
-	} else {
+	case session.AssistantAntigravity:
+		read, err = transcript.ReadAntigravityAfter(path, limit, after, revision...)
+	case session.AssistantClaude:
 		read, err = transcript.ReadClaudeAfter(path, limit, after)
+	default:
+		return page, true
 	}
 	if err != nil {
 		return page, true
@@ -261,6 +268,18 @@ func (s *Server) transcriptPageAfter(id string, item session.Session, limit int,
 	page.Entries = kept
 	page.NextAfter = read.NextAfter
 	return page, false
+}
+
+func readTranscriptBefore(path string, assistant session.Assistant, limit int, before int64, revision ...string) (transcript.Page, error) {
+	switch assistant {
+	case session.AssistantCodex:
+		return transcript.ReadCodexBefore(path, limit, before)
+	case session.AssistantAntigravity:
+		return transcript.ReadAntigravityBefore(path, limit, before, revision...)
+	case session.AssistantClaude:
+		return transcript.ReadClaudeBefore(path, limit, before)
+	}
+	return transcript.Page{}, &transcript.UnreadableError{Cause: errors.New("unsupported assistant record")}
 }
 
 // transcriptBudget is what one transcript read may carry: the first-paint

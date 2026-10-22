@@ -134,12 +134,15 @@ func admitReasoningEffort(raw json.RawMessage, assistant string) (string, error)
 	if len(raw) == 0 || string(raw) == "null" {
 		return "", nil
 	}
-	if assistant != projects.AssistantCodex {
+	if assistant != projects.AssistantCodex && assistant != projects.AssistantAntigravity {
 		return "", refuse(http.StatusUnprocessableEntity, "bad_task",
 			"reasoning_effort is only valid when assistant is codex")
 	}
 	var name string
-	if json.Unmarshal(raw, &name) != nil || !projects.KnownReasoningEffort(name) {
+	if json.Unmarshal(raw, &name) != nil || !(assistant == projects.AssistantCodex && projects.KnownReasoningEffort(name) || assistant == projects.AssistantAntigravity && projects.KnownAntigravityEffort(name)) {
+		if assistant == projects.AssistantAntigravity {
+			return "", refuse(http.StatusUnprocessableEntity, "bad_task", "reasoning_effort must be one of: low, medium, high, xhigh, max")
+		}
 		return "", refuse(http.StatusUnprocessableEntity, "bad_task",
 			"reasoning_effort must be one of: "+strings.Join(projects.ReasoningEfforts, ", "))
 	}
@@ -248,8 +251,8 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	if d.TaskID != id {
 		return bad("task_id must be a lowercase UUID and match the dispatch")
 	}
-	if d.Assistant != "claude" && d.Assistant != "codex" {
-		return bad("assistant must be claude or codex")
+	if !projects.KnownAssistant(d.Assistant) {
+		return bad("assistant must be claude, codex or antigravity")
 	}
 	if !usableDir(d.ProjectDir) {
 		return bad("project_dir must be an absolute path to a directory")
@@ -288,6 +291,10 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	case "ask", "edits", "full":
 	default:
 		return bad("permission_mode must be one of: ask, edits, full")
+	}
+	if d.Assistant == projects.AssistantAntigravity {
+		return Record{}, refuse(http.StatusUnprocessableEntity, "provider_permission_unsupported",
+			"Antigravity has no verified session-local mapping for this dispatch permission ceiling.")
 	}
 	timeout := timeoutDefault
 	if d.TimeoutMinutes != nil {
@@ -545,7 +552,7 @@ func admitRoot(raw *json.RawMessage) (*RootRef, error) {
 	if sessionID == "" {
 		return nil, refuse(http.StatusUnprocessableEntity, "root_session_required", rootRequiredMessage)
 	}
-	if d.Assistant == nil || (*d.Assistant != "claude" && *d.Assistant != "codex") {
+	if d.Assistant == nil || !projects.KnownAssistant(*d.Assistant) {
 		return nil, refuse(http.StatusUnprocessableEntity, "root_assistant_required", rootAssistantMessage)
 	}
 	return &RootRef{
@@ -584,7 +591,7 @@ const (
 	rootRequiredMessage = "root.session_id is required for API dispatch so the child can be grouped, closed and " +
 		"reported back to its owner. Resolve this interactive Root with GET /v1/orchestrator/whoami, then resend " +
 		"with its current process-bound conversation id and assistant."
-	rootAssistantMessage = "root.assistant is required when root.session_id names an owner; send claude or codex. " +
+	rootAssistantMessage = "root.assistant is required when root.session_id names an owner; send claude, codex or antigravity. " +
 		"The historical Claude fallback exists only in persisted legacy compatibility readers, not ownership decisions."
 	detachedRouteMessage = "POST /v1/orchestrator/tasks creates an owned Child and never accepts root.poll_only. " +
 		"Resolve this interactive Root with GET /v1/orchestrator/whoami and resend with root.session_id plus " +

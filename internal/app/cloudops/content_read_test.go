@@ -184,6 +184,47 @@ func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 	}
 }
 
+func TestNativeTranscriptRevisionRoutesAndNames(t *testing.T) {
+	var routes []LocalRequest
+	b := open(localRouterFunc(func(_ context.Context, req LocalRequest) (LocalResponse, error) {
+		routes = append(routes, req)
+		if req.Query["revision"] == "agy1:stale" {
+			return LocalResponse{Status: 409, ContentType: "application/json", Body: []byte(`{"error":"transcript_cursor_stale","detail":"Read the newest page"}`)}, nil
+		}
+		return LocalResponse{Status: 200, ContentType: "application/json", Body: []byte(`{"id":"synthetic","entries":[],"signature":"agy1:new"}`)}, nil
+	}))
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority { return contentReadAuthority(true) }
+	for _, revision := range []string{"agy1:first", "agy1:second", "agy1:stale"} {
+		cmd := contentReadRequest(t, map[string]any{"type": "transcript", "session": pane, "limit": 100,
+			"before": 123, "revision": revision, "expected_generation": pinnedGeneration})
+		answer := b.Handle(context.Background(), cmd)
+		if answer.Name != "transcript.before.123.revision."+revision || len(routes) == 0 || routes[len(routes)-1].Query["revision"] != revision {
+			t.Fatalf("revision lost its route or reply identity: answer=%+v routes=%+v", answer, routes)
+		}
+		if revision == "agy1:stale" {
+			if answer.Code != "transcript_cursor_stale" {
+				t.Fatalf("stale reply lost its code: %+v", answer)
+			}
+		} else if !answer.OK() {
+			t.Fatalf("native page refused: %+v", answer)
+		}
+		// Effect-free duplicate reads preserve their exact reply identity.
+		repeated := b.Handle(context.Background(), cmd)
+		if repeated.Name != answer.Name || repeated.Code != answer.Code {
+			t.Fatalf("duplicate changed identity: %+v %+v", answer, repeated)
+		}
+	}
+	count := len(routes)
+	for _, invalid := range []any{42, strings.Repeat("x", 257), "bad\nrevision"} {
+		answer := b.Handle(context.Background(), contentReadRequest(t, map[string]any{
+			"type": "transcript", "session": pane, "limit": 100, "before": 123,
+			"revision": invalid, "expected_generation": pinnedGeneration}))
+		if answer.OK() || len(routes) != count {
+			t.Fatalf("invalid revision reached the route: %+v", answer)
+		}
+	}
+}
+
 func TestOriginalSessionPanelsUseThePinnedReadRail(t *testing.T) {
 	for _, tc := range []struct {
 		word string

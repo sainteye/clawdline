@@ -156,7 +156,7 @@ func (s *Server) cloudViewerRoute(w http.ResponseWriter, r *http.Request) {
 				if err != nil || before <= 0 {
 					return nil, adaptercloud.ViewerRefusal{Code: "bad_request"}
 				}
-				return client.ReadTranscriptPage(ctx, viewerDestination(r), before)
+				return client.ReadTranscriptPage(ctx, viewerDestination(r), before, r.URL.Query().Get("revision"))
 			}
 			return client.ReadDetail(ctx, viewerDestination(r))
 		case "/v1/cloud/viewer/actions":

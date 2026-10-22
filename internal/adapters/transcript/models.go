@@ -10,7 +10,26 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 )
+
+// AntigravityFacts uses only the exact model supplied by a validated hook
+// observation. A native JSONL record does not name a model. Attaching this
+// observation never enables a guessed price or a context window.
+func AntigravityFacts(path, observedModel string) (Facts, error) {
+	info, err := ReadAntigravityInfo(path)
+	if err != nil {
+		return Facts{}, err
+	}
+	facts := Facts{Usage: info.Usage}
+	if strings.TrimSpace(observedModel) == observedModel && !strings.ContainsAny(observedModel, "\r\n\t\x00") {
+		facts.Model = observedModel
+		if facts.Usage != nil {
+			facts.Usage.Model = observedModel
+		}
+	}
+	return facts, nil
+}
 
 var claudeModelPattern = regexp.MustCompile(`claude-(fable|opus|sonnet|haiku)-([0-9]+)(?:-([0-9]+))?`)
 
