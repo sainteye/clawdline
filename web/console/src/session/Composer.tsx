@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { ReactNode, RefObject } from "react"
 import type { AssistantSkill, SessionRow } from "@clawdline/contract"
+import { antigravitySlashDraft, assistantComposeAdmits, assistantLabel, type AssistantFacts } from "./antigravity-ui.js"
+import { catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client, followsRelay } from "../client.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
@@ -37,6 +39,7 @@ import { ImageMarkup } from "./ImageMarkup.js"
 import { ComposerBox } from "./ComposerBox.js"
 import { voiceSource } from "./voice-source.js"
 import "./voice-source.css"
+import "./drop-target.css"
 
 /**
  * The composer, as the original's `form#composer` is built.
@@ -92,7 +95,10 @@ export function Composer({
   suggestedDraft,
   remote,
   draftHandoff,
+  assistantFacts,
 }: {
+  /** Fresh readiness for the selected machine's provider, supplied by the Session host. */
+  assistantFacts?: AssistantFacts
   draftHandoff?: ComposerDraftHandoff
   row: SessionRow | null
   onDid: () => void
@@ -103,6 +109,7 @@ export function Composer({
   suggestedDraft?: { target: InterventionTarget; text: string; id: number } | null
   /** A fixed remote destination uses this same editor and picture path. */
   remote?: { key: string; machineID: string; assistant?: string; canSend: boolean; allowPictures: boolean;
+    assistantFacts?: AssistantFacts; state?: string; hasMenu?: boolean;
     transcribe?: (audio: string, rate: number) => Promise<{ text?: string; ms?: number }>;
     loadSkills?: () => Promise<AssistantSkill[]>;
     restoreDraft?: { id: number; text: string; images: readonly string[] } | null;
@@ -162,7 +169,9 @@ export function Composer({
   const machine = remote?.machineID ?? (row ? L.machineFor(row).id : "")
   const blockedCode = !remote && blocked?.machine === machine ? blocked.code : ""
   const write = remote ? remote.canSend : !blockedCode
-  const on = remote ? remote.canSend : write && !!row
+  const providerOn = assistantComposeAdmits(remote?.assistant ?? row?.assistant, remote?.assistantFacts ?? assistantFacts,
+    remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu)
+  const on = (remote ? remote.canSend : write && !!row) && providerOn
   // The picture listeners are bound once, and ask what is open when they fire.
   const open = useRef({ on })
   open.current = { on: on && (!remote || remote.allowPictures) }
@@ -273,9 +282,10 @@ export function Composer({
   const voiceBusy = voice !== "off"
   const voiceLive = voice === "recording"
   let placeholder = T.placeholder
-  if ((remote?.assistant ?? row?.assistant) === "codex") {
-    placeholder = placeholder.replace("Claude Code", "Codex").replace("Claude", "Codex")
-    if (placeholder === T.placeholder) placeholder = "Codex…"
+  if (["codex", "antigravity"].includes(remote?.assistant ?? row?.assistant ?? "")) {
+    const name = assistantLabel(remote?.assistant ?? row?.assistant)
+    placeholder = placeholder.replace("Claude Code", name).replace("Claude", name)
+    if (placeholder === T.placeholder) placeholder = name + "…"
   }
   const keyboard = L.keyboard()
 
@@ -490,12 +500,17 @@ export function Composer({
     if (acceptSkill()) return
     const said = rawText().trim()
     const pictures = Shots.urls().slice()
+    if (antigravitySlashDraft(remote?.assistant ?? row?.assistant, said)) {
+      setFailure(catalogWord("antigravity", "slashDraft"))
+      return
+    }
     if ((!said && !pictures.length) || (!row && !remote) || !on ||
       (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
     // A quit line is not a message: the original ends the session instead, while
     // its terminal is still known. Exact and per assistant, so a sentence that
     // mentions `/exit` is still an ordinary prompt.
-    const quit = !remote && !!row && !pictures.length && said === (row.assistant === "codex" ? "/quit" : "/exit")
+    const quit = !remote && !!row && !pictures.length &&
+      (row.assistant === "codex" && said === "/quit" || row.assistant === "claude" && said === "/exit")
     // **The box empties here, before the request exists**, and nothing puts the
     // words or the pictures back: a send that fails at this end may already
     // have been delivered. They move to a card at the end of the transcript
@@ -545,7 +560,7 @@ export function Composer({
     }
   }
 
-  const why: ReactNode = failure || (!remote && blockedCode
+  const why: ReactNode = failure || (!providerOn ? catalogWord("antigravity", "sendUnavailable") : "") || (!remote && blockedCode
     ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)
     : "")
   const pinned = sending && sendWidth.current.px ? { minWidth: `${sendWidth.current.px}px` } : undefined
@@ -593,7 +608,7 @@ export function Composer({
         data-motion-id="AN-009"
         id="skill-menu"
         role="listbox"
-        aria-label={`${(remote?.assistant ?? row?.assistant) === "codex" ? "Codex" : "Claude Code"} skills`}
+        aria-label={`${assistantLabel(remote?.assistant ?? row?.assistant)} skills`}
         hidden={!skills.shown}
         inert={!skills.shown}
       >
@@ -740,7 +755,7 @@ export function Composer({
           e.currentTarget.value = ""
         }}
       />
-      <div className="why" id="why">
+      <div className="why" id="why" role="status" aria-live="polite">
         {why}
         {blockedCode === "unknown_sender" && canOpenMachinePairing() && (
           <button type="button" onClick={() => openMachinePairing(machine)}>{nextWord("sessionPairToSend")}</button>

@@ -41,3 +41,10 @@ test("an unknown hand-back names its source instead of becoming the user", () =>
   assert.equal(got.speaker, "背景 agent")
   assert.equal(got.detail, "來源是 missing-fixture，這台機器不認得它")
 })
+
+test("Antigravity background reports preserve their native name without a Codex fallback", () => {
+  const got = agentReportIdentity("agent-fixture", [{ ...agent, what: "Explore" }], "antigravity", "zh-Hant")
+  assert.equal(got.known, true)
+  assert.equal(got.label, "Explore")
+  assert.equal(got.detail, "agent-fixture")
+})
