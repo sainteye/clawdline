@@ -1110,6 +1110,11 @@
     "Note": true
   },
   {
+    "Name": "console.transcript_revision_restarts",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.transcript_safety_seconds",
     "Known": true,
     "Note": true

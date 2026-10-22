@@ -8,6 +8,9 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"console.transcript_revision_restarts": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console older-page recovery guard; daemon cannot measure another device's restart count"}
+		},
 		"console.assistant_facts_read_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console inventory read deadline; daemon cannot measure another device's pending read"}
 		},

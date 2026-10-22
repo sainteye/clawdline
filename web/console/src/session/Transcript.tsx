@@ -34,6 +34,9 @@ import {
   FOLLOW_WINDOW_MS,
   followingNow,
   joinAppended,
+  olderTranscriptPage,
+  readOlderRecovering,
+  nativeHistoryChanged,
   SAFETY_MS,
   TRAIL_MS,
   transcriptPace,
@@ -153,16 +156,23 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   // asks only for what was appended to it unless this is the safety read of
   // the whole page (`transcript-follow.ts`).
   const heldPage = useRef<TranscriptPage | null>(null)
+  const readEpoch = useRef(0)
+  const [restartedPage, setRestartedPage] = useState<TranscriptPage | null>(null)
   const fast = useRef(false)
   const read = useMemo(
     () => async (why: ReadReason): Promise<TranscriptPage> => {
       if (agentId) return client.agentTranscript(id, agentId, LIMIT)
+      const epoch = readEpoch.current
       const was = heldPage.current
       const from = appendedReadFrom(was, why, fast.current)
       if (was && from !== null) {
         try {
-          const joined = joinAppended(was, await client.transcriptAfter(id, LIMIT, from))
-          if (joined) return (heldPage.current = joined)
+          const joined = joinAppended(was, await client.transcriptAfter(id, LIMIT, from, was.signature))
+          if (epoch !== readEpoch.current) {
+            if (heldPage.current) return heldPage.current
+            throw Object.assign(new Error(nextWord("transcriptEarlierFailed")), { code: "read_aborted" })
+          }
+          if (joined) { setRestartedPage(null); return (heldPage.current = joined) }
         } catch (err) {
           // A cursor the daemon would not read from is answered by reading the
           // page whole; a read nobody answered is a failed read like any other.
@@ -170,7 +180,18 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
         }
       }
       const page = await client.transcript(id, LIMIT)
+      if (epoch !== readEpoch.current) {
+        if (heldPage.current) return heldPage.current
+        throw Object.assign(new Error(nextWord("transcriptEarlierFailed")), { code: "read_aborted" })
+      }
+      if (nativeHistoryChanged(was, page)) {
+        readEpoch.current++
+        const scroll = document.getElementById("tx-scroll")
+        if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
+        setEarlier(null)
+      }
       heldPage.current = page
+      setRestartedPage(null)
       return page
     },
     [id, agentId],
@@ -199,7 +220,8 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
     : transcriptPace({ following, newestSendAt, now: Date.now(), rowTimed: typeof session?.activity?.at === "number" })
   fast.current = !agentId && followingNow({ following, newestSendAt, now: Date.now() })
   const poll = usePoll<TranscriptPage>(read, pace, agentId ? {} : { backoff: BACKOFF })
-  const { data, error } = poll
+  const { error } = poll
+  const data = restartedPage ?? poll.data
   // The row says the record grew, or the session changed what it is doing:
   // read what was appended now, and once more a little after the last such
   // change, because the row's time is in whole seconds.
@@ -272,37 +294,54 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   // reads them, and a draw of their own when either changes.
   const newestFirst = useSyncExternalStore(L.subscribeSettings, L.settingsNewestFirst)
   const icons = useSyncExternalStore(L.subscribeSettings, L.settingsAssistantIcons)
-  const olderCursor = earlier
-    ? earlier.pages.length ? earlier.pages[earlier.pages.length - 1].nextBefore : earlier.base.nextBefore
-    : data?.nextBefore
+  const olderHeld = olderTranscriptPage(data, earlier)
+  const olderCursor = olderHeld?.nextBefore
   const loadOlder = useCallback(async (automatic = false) => {
-    if (!olderCursor || olderBusy.current || !data) return
+    if (!olderCursor || olderBusy.current || !data || !olderHeld) return
     olderBusy.current = true
     historyFill.current.begin(automatic)
     onFilling(true)
     setOlderLoading(true)
     setOlderError(null)
     const scroll = document.getElementById("tx-scroll")
+    let base = earlier?.base ?? data
+    let epoch = readEpoch.current
+    let requestedCursor = olderCursor
     try {
       const page = agentId
         ? await client.agentTranscript(id, agentId, LIMIT, olderCursor)
-        : await client.transcript(id, LIMIT, olderCursor)
-      if (!alive.current) return
-      if (!historyAdvanced(olderCursor, page.nextBefore)) {
+        : await readOlderRecovering(olderHeld,
+          (before, revision) => {
+            requestedCursor = before
+            return client.transcript(id, LIMIT, before, revision)
+          },
+          () => client.transcript(id, LIMIT),
+          (newest) => {
+            if (!alive.current) return
+            readEpoch.current++
+            epoch = readEpoch.current
+            heldPage.current = newest
+            setEarlier(null)
+            if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
+            if (newest) { base = newest; setRestartedPage(newest) }
+          })
+      if (!alive.current || epoch !== readEpoch.current) return
+      if (!page) return
+      if (!historyAdvanced(requestedCursor, page.nextBefore)) {
         setOlderError(nextWord("transcriptEarlierStalled"))
         return
       }
       if (page.evidence !== "transcript") throw new Error(page.note || "Earlier conversation could not be read")
       if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
-      setEarlier((was) => ({ base: was?.base ?? data, pages: [...(was?.pages ?? []), page] }))
+      setEarlier((was) => ({ base: was?.base ?? base, pages: [...(was?.pages ?? []), page] }))
     } catch (error) {
-      if (!alive.current) return
+      if (!alive.current || epoch !== readEpoch.current) return
       setOlderError(L.failureSentence(error, nextWord("transcriptEarlierFailed")))
     } finally {
       olderBusy.current = false
       if (alive.current) setOlderLoading(false)
     }
-  }, [agentId, data, id, olderCursor, onFilling])
+  }, [agentId, data, earlier, id, olderCursor, olderHeld, onFilling])
   // Empty raw-record windows and compact tool groups may leave no scrollbar.
   // Fill after layout without requiring a scroll gesture. The per-opening
   // budget survives polling and resizes; only the person can restart it.
@@ -343,7 +382,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
     olderAnchor.current = null
     const scroll = document.getElementById("tx-scroll")
     if (scroll) scroll.scrollTop = anchor.top + (newestFirst ? 0 : scroll.scrollHeight - anchor.height)
-  }, [earlier, newestFirst])
+  }, [earlier, restartedPage, newestFirst])
   useEffect(() => {
     const scroll = document.getElementById("tx-scroll")
     if (!scroll || !olderCursor) return

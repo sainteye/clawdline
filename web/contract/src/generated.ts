@@ -9337,8 +9337,11 @@ export interface TranscriptPage {
   path?: string
 
   /**
-   * The record's size and modification time, `<bytes>-<unix seconds>`, and empty
-   * when nothing was read. It changes whenever the entries could have.
+   * Opaque record revision, empty when nothing was read. Claude/Codex use size and
+   * modification time; native Antigravity uses
+   * agy1:file-generation:prefix-bytes:sha256. Return this exact held page signature
+   * as revision with its before/after cursor; never substitute another page's
+   * signature.
    */
   signature: string
   truncation?: TranscriptTruncation

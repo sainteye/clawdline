@@ -970,6 +970,8 @@
   "capacityRow.console.transcript_follow_seconds.what": "After you send a message, the conversation checks for the reply more often for this long, so the answer appears quickly. It ends so that a message with no reply does not keep a phone checking rapidly.",
   "capacityRow.console.transcript_merged_rows.full": "The next read replaces the page with the newest part of the conversation, so the oldest messages on screen may drop off. Nothing for you to do.",
   "capacityRow.console.transcript_merged_rows.what": "How many messages an open conversation may pile onto its page from small \"what's new\" reads before it starts that page over. Without it, a conversation left open for hours would keep growing in the browser's memory.",
+  "capacityRow.console.transcript_revision_restarts.full": "Clear incompatible history, read the newest page once, then retry the older page once. A second failure stays visible with manual retry.",
+  "capacityRow.console.transcript_revision_restarts.what": "Limits automatic recovery when a held older-page cursor belongs to an outdated native transcript revision.",
   "capacityRow.console.transcript_safety_seconds.full": "When the time is up the page simply rereads the whole page; a missed message or an expired picture shows up then. Nothing for you to do.",
   "capacityRow.console.transcript_safety_seconds.what": "The longest an open conversation goes without rereading its newest page in full. In between it fetches only what was added, which saves data, but that can miss a change, so a full read happens at least this often.",
   "capacityRow.console.viewer_health_attempts.full": "After the last try the report is dropped and counted on this page.",

@@ -970,6 +970,8 @@
   "capacityRow.console.transcript_follow_seconds.what": "你送出訊息後，這段時間內對話頁會比較頻繁地查有沒有回覆，讓回答盡快出現。設上限是避免一則一直沒等到回覆的訊息讓手機持續密集查詢。",
   "capacityRow.console.transcript_merged_rows.full": "下一次讀取會改成整頁重讀，只留對話最新的一段，畫面上最舊的訊息可能因此不見。你不用做任何事。",
   "capacityRow.console.transcript_merged_rows.what": "打開中的對話靠「只抓新增」累積在頁面上的訊息，最多累積多少筆就重新來過。沒有這個上限，開著好幾個小時的對話會在瀏覽器記憶體裡一直變大。",
+  "capacityRow.console.transcript_revision_restarts.full": "清除不相容的歷史、讀取最新一頁後，重試較早訊息一次；第二次失敗會保留錯誤與手動重試操作。",
+  "capacityRow.console.transcript_revision_restarts.what": "限制較早訊息游標屬於過期原生紀錄版本時的自動復原次數。",
   "capacityRow.console.transcript_safety_seconds.full": "時間到就自動整頁重讀，漏掉的訊息或過期的圖片會在這時補上。你不用做任何事。",
   "capacityRow.console.transcript_safety_seconds.what": "打開中的對話最久多久要把最新一頁完整重讀一次。平常只抓新增的部分比較省流量，但這樣可能漏掉變動，所以至少每隔這段時間整頁讀一次。",
   "capacityRow.console.viewer_health_attempts.full": "最後一次仍失敗時，這份回報會被丟棄並在這個頁面計數。",
