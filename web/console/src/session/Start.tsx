@@ -311,7 +311,8 @@ function assistantStatus(operation: AssistantOperation): string {
   const reason = assistantUnavailable(selected, operation)
   if (!selected || (!reason && selected.id !== "antigravity")) return ""
   const name = (selected.label || assistantLabel(selected.id)) + (selected.version ? " " + selected.version : "")
-  return catalogWord("antigravity", reason || "ready").replace("{assistant}", name)
+  const status = !reason && selected.id === "antigravity" && selected.authState !== "ready" ? "bootstrap" : reason || "ready"
+  return catalogWord("antigravity", status).replace("{assistant}", name)
 }
 
 function when(unix: number | undefined): string {

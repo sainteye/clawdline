@@ -1,7 +1,8 @@
+import type { AssistantFactsReading } from "./assistant-facts.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { ReactNode, RefObject } from "react"
 import type { AssistantSkill, SessionRow } from "@clawdline/contract"
-import { antigravitySlashDraft, assistantComposeAdmits, assistantLabel, type AssistantFacts } from "./antigravity-ui.js"
+import { antigravitySlashDraft, assistantComposeAdmits, assistantLabel, assistantUnavailable, assistantStateCurrent, type AssistantFacts } from "./antigravity-ui.js"
 import { catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client, followsRelay } from "../client.js"
@@ -96,9 +97,11 @@ export function Composer({
   remote,
   draftHandoff,
   assistantFacts,
+  assistantReadiness,
 }: {
   /** Fresh readiness for the selected machine's provider, supplied by the Session host. */
   assistantFacts?: AssistantFacts
+  assistantReadiness?: AssistantFactsReading["kind"]
   draftHandoff?: ComposerDraftHandoff
   row: SessionRow | null
   onDid: () => void
@@ -282,7 +285,8 @@ export function Composer({
   const voiceBusy = voice !== "off"
   const voiceLive = voice === "recording"
   let placeholder = T.placeholder
-  if (["codex", "antigravity"].includes(remote?.assistant ?? row?.assistant ?? "")) {
+  if ((remote?.assistant ?? row?.assistant) === "antigravity") placeholder = catalogWord("antigravity", "placeholder")
+  else if ((remote?.assistant ?? row?.assistant) === "codex") {
     const name = assistantLabel(remote?.assistant ?? row?.assistant)
     placeholder = placeholder.replace("Claude Code", name).replace("Claude", name)
     if (placeholder === T.placeholder) placeholder = name + "…"
@@ -496,6 +500,7 @@ export function Composer({
     // A picture still shrinking is part of this message and has not arrived
     // yet; Return comes through here as well as the button.
     if (inFlight.current || Shots.busy()) return
+    if (!remote && row?.assistant === "antigravity" && !assistantStateCurrent(row)) return
     // With the menu up, Return and the button choose the highlighted skill.
     if (acceptSkill()) return
     const said = rawText().trim()
@@ -560,7 +565,11 @@ export function Composer({
     }
   }
 
-  const why: ReactNode = failure || (!providerOn ? catalogWord("antigravity", "sendUnavailable") : "") || (!remote && blockedCode
+  const providerReason = assistantReadiness && assistantReadiness !== "ready" ? assistantReadiness
+    : assistantUnavailable(remote?.assistantFacts ?? assistantFacts, "send")
+  const providerWords = providerReason ? catalogWord("antigravity", providerReason).replace("{assistant}", assistantLabel(remote?.assistant ?? row?.assistant))
+    : catalogWord("antigravity", "sendUnavailable")
+  const why: ReactNode = failure || (!providerOn ? providerWords : "") || (!remote && blockedCode
     ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)
     : "")
   const pinned = sending && sendWidth.current.px ? { minWidth: `${sendWidth.current.px}px` } : undefined
@@ -579,7 +588,7 @@ export function Composer({
         void submit()
       }}
     >
-      {!remote && <Waiting row={row} write={write} onScreen={onScreen} />}
+      {!remote && <Waiting row={row} assistantFacts={assistantFacts} write={write} onScreen={onScreen} />}
       <div
         className="shots"
         id="shots"

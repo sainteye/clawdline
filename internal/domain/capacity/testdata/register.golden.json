@@ -3473,6 +3473,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.assistant_facts_read_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 15000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.carrier_receive_bytes",
     "Class": "buffer",
     "Unit": "bytes",
