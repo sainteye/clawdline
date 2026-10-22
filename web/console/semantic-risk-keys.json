@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9094,
+  "englishKeys": 9096,
   "counts": {
     "negation": 2631,
-    "state": 1505,
+    "state": 1506,
     "permission": 542,
     "deletion": 201,
     "uncertainty": 285
   },
-  "unionCount": 4057,
+  "unionCount": 4058,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2937,6 +2937,7 @@
       "capacityRow.projectfiles.tree_path_bytes.full",
       "capacityRow.projectfiles.tree_path_bytes.what",
       "capacityRow.projectfiles.write_bytes.full",
+      "capacityRow.projects.workspace_metadata_bytes.full",
       "capacityRow.projectsync.clones.full",
       "capacityRow.projectsync.entry_bytes.full",
       "capacityRow.projectsync.entry_bytes.what",
@@ -5762,6 +5763,7 @@
     "capacityRow.projectfiles.tree_path_bytes.full",
     "capacityRow.projectfiles.tree_path_bytes.what",
     "capacityRow.projectfiles.write_bytes.full",
+    "capacityRow.projects.workspace_metadata_bytes.full",
     "capacityRow.projectsync.clones.full",
     "capacityRow.projectsync.entry_bytes.full",
     "capacityRow.projectsync.entry_bytes.what",

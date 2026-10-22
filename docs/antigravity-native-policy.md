@@ -11,9 +11,10 @@ No compatibility row is enabled by this storage change.
 Local Project consent now has a [SQLite storage contract](antigravity-project-consent.md):
 preparing, activation and revocation are durable CAS transitions with atomic
 request receipts. A private coordinator now composes filesystem installation, recovery,
-revocation and per-worktree checks. Authenticated consent UI, concrete catalog
-composition and the live policy publisher remain to be connected; an active
-historical command answer is never current authority.
+revocation and per-worktree checks. A lifecycle-owned private server manager
+now resolves current catalog membership and bounded Git worktree registration.
+Authenticated consent UI and the live policy publisher remain to be connected;
+an active historical command answer is never current authority.
 
 ## Decision and alternatives
 

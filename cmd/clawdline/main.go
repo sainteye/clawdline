@@ -293,6 +293,10 @@ func serve() {
 	if err := srv.AuthReady(); err != nil {
 		refuseToServe(1, err.Error())
 	}
+	stopAntigravityProjects, projectConsentErr := srv.StartAntigravityProjectConsent(cloudCtx)
+	if projectConsentErr != nil {
+		log.Print("antigravity: antigravity_project_consent_unavailable")
+	}
 	stopAntigravityContext, contextErr := srv.StartAntigravityLaunchStore(cloudCtx)
 	if contextErr != nil {
 		log.Print("antigravity: antigravity_context_unavailable")
@@ -312,6 +316,9 @@ func serve() {
 		}
 		if stopAntigravityContext != nil {
 			stopAntigravityContext()
+		}
+		if stopAntigravityProjects != nil {
+			stopAntigravityProjects()
 		}
 	}
 	defer stopAntigravityAll()

@@ -1162,6 +1162,8 @@
   "capacityRow.projectfiles.write_bytes.what": "How large one save from the instruction and skill editor may be. It is a ceiling on a single save, so an oversized upload is turned away before it is read into memory.",
   "capacityRow.projects.folder_rows.full": "The list stops early and says it is cut short. Type the folder's full path directly instead of picking it.",
   "capacityRow.projects.folder_rows.what": "How many subfolders the folder picker shows in one directory when you add a project, for example from your phone. A ceiling keeps one page quick to send and scroll even in a huge directory.",
+  "capacityRow.projects.workspace_metadata_bytes.full": "An oversized registration file is refused; linked-worktree membership remains unverified.",
+  "capacityRow.projects.workspace_metadata_bytes.what": "The maximum size of one Git registration file read to confirm which Project a working directory belongs to.",
   "capacityRow.projectsync.clones.full": "Asking for another clone is refused while the slots are busy. Wait for one to finish, then ask again.",
   "capacityRow.projectsync.clones.what": "How many repositories this machine may be cloning at the same time while syncing project settings. Clones use network and disk heavily, so a ceiling stops a big selection from starting them all at once.",
   "capacityRow.projectsync.entry_bytes.full": "Files that would push a project over its budget are not sent and are named as withheld; the receiving machine keeps its own copy. A request over the ceiling is refused.",

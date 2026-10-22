@@ -1162,6 +1162,8 @@
   "capacityRow.projectfiles.write_bytes.what": "從指示檔與 skill 編輯器存檔時，單次最多能送多大。這是單次存檔的上限，過大的內容在讀進記憶體之前就會被擋下。",
   "capacityRow.projects.folder_rows.full": "清單會提早截斷並標示不完整。請直接輸入資料夾的完整路徑，不用從清單挑。",
   "capacityRow.projects.folder_rows.what": "新增專案時（例如從手機）資料夾挑選器在一個目錄裡最多列出幾個子資料夾。設上限是讓目錄再大，這一頁也能快速傳送和捲動。",
+  "capacityRow.projects.workspace_metadata_bytes.full": "登記檔過大時會拒絕讀取，不會據此確認 linked worktree 的專案歸屬。",
+  "capacityRow.projects.workspace_metadata_bytes.what": "確認工作目錄所屬專案時，讀取單一 Git 登記檔的大小上限。",
   "capacityRow.projectsync.clones.full": "名額都在用時，再要求 clone 會被拒絕。等其中一個完成後再試一次。",
   "capacityRow.projectsync.clones.what": "同步專案設定時，這台機器最多同時 clone 幾個 repository。clone 很吃網路和硬碟，設上限是避免一次選很多時全部同時開始。",
   "capacityRow.projectsync.entry_bytes.full": "會讓專案超出預算的檔案不會送出，並標示為「未傳送」；接收端保留自己那份。超過上限的請求會被拒絕。",

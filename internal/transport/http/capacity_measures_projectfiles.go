@@ -8,6 +8,9 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) projectFilesCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"projects.workspace_metadata_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-file Git membership metadata read guard; no retained buffer"}
+		},
 		"projects.folder_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-directory folder listing guard"}
 		},

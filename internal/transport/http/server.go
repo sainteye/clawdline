@@ -20,6 +20,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/antigravitylaunch"
+	"github.com/sainteye/clawdline/internal/adapters/antigravityproject"
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
@@ -53,6 +54,8 @@ import (
 )
 
 type Server struct {
+	antigravityProjectMu      sync.Mutex
+	antigravityProjectOwner   atomic.Pointer[antigravityproject.Manager]
 	antigravityPolicyInputs   atomic.Pointer[antigravityPolicyInputs]
 	antigravityRuntimeMu      sync.Mutex
 	antigravityRuntimeStarted bool

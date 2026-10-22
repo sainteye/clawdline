@@ -324,6 +324,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `projectfiles.tree_path_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectfiles.write_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projects.folder_rows` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.workspace_metadata_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.clones` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.entry_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.file_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |

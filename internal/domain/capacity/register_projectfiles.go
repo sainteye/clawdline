@@ -4,6 +4,9 @@ package capacity
 // projects.*.
 func projectFilesBounds() []Entry {
 	return []Entry{
+		{Name: "projects.workspace_metadata_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/projects.WorkspaceMetadataBytesLimit"}},
 		{
 			Name: "projects.folder_rows", Class: Buffer, Unit: Rows,
 			Limit: 128, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,

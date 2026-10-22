@@ -186,6 +186,34 @@ the separate file digest binds each workspace. Neither digest proves native
 permission semantics, role loading or a tool decision. No public production
 policy publisher is enabled by this coordinator.
 
+## Catalog membership and lifecycle
+
+The server now owns one private consent manager and immutable helper pin for
+its boot. Stopping or cancelling that owner makes its captured resolver refuse;
+a new boot cannot be borrowed by a stale owner. Startup publishes neither a
+native behavior row nor production permission inputs. This provides the owner
+for the forthcoming authenticated Project settings route, without enabling a
+public grant endpoint in this change. Missing helper bytes leave revocation
+available while preview and live authority remain unavailable.
+
+The resolver requires the current Project catalog and
+`projects.VerifyProjectWorkspace`. A registered Project root is exact; a nested
+Git directory must belong to its nearest checkout. Linked worktrees require
+regular bounded metadata files, the exact Project `.git/worktrees` registration,
+its backlink to that worktree, its common-directory link and an existing HEAD.
+A copied `.git` pointer alone, another nested repository, a symlinked marker,
+missing metadata or a mismatched backlink cannot borrow the Project grant.
+This observes local membership; it is not native trust or a Git integrity audit.
+No Git command, repository hook/config, account or network is read by the verifier.
+
+The pre-existing catalog identity lookup now uses the same regular-file bounded
+reader for Git pointer/common-directory files, so lookup does not perform an
+unbounded preliminary read before verification. Each metadata file is bounded
+by `projects.workspace_metadata_bytes` (4,096 bytes); that input guard has its
+registered measurement, both snapshots and English/Taiwan Traditional Chinese
+capacity explanations. The capacity guard was observed rejecting the new
+unregistered declaration before its registration was added.
+
 ## Behavioral verification
 
 `TestAntigravityConsent*` runs real SQLite transactions, trigger-injected write

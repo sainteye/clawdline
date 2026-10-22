@@ -15,6 +15,7 @@
 package projects
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -111,12 +112,15 @@ func CanonicalProjectKey(projectDir string) (string, bool) {
 	}
 	for {
 		marker := filepath.Join(cursor, ".git")
-		if st, err := os.Stat(marker); err == nil {
+		if st, err := os.Lstat(marker); err == nil {
 			if st.IsDir() {
 				return canonicalFilesystemPath(cursor), true
 			}
-			if data, err := os.ReadFile(marker); err == nil {
-				line, _, _ := strings.Cut(string(data), "\n")
+			if st.Mode()&os.ModeSymlink != 0 {
+				return canonicalFilesystemPath(cursor), true
+			}
+			if data, err := workspaceMetadata(context.Background(), marker); err == nil {
+				line, _, _ := strings.Cut(data, "\n")
 				line = strings.TrimSuffix(line, "\r")
 				if rawGit, ok := strings.CutPrefix(line, "gitdir:"); ok {
 					rawGit = strings.TrimSpace(rawGit)
@@ -125,8 +129,8 @@ func CanonicalProjectKey(projectDir string) (string, bool) {
 						gitDir = filepath.Join(cursor, rawGit)
 					}
 					gitDir = standardized(gitDir)
-					if rel, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
-						if relative := strings.TrimSpace(string(rel)); relative != "" {
+					if rel, err := workspaceMetadata(context.Background(), filepath.Join(gitDir, "commondir")); err == nil {
+						if relative := strings.TrimSpace(rel); relative != "" {
 							common := relative
 							if !filepath.IsAbs(relative) {
 								common = filepath.Join(gitDir, relative)

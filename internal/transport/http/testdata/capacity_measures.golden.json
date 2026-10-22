@@ -1567,6 +1567,11 @@
     "Note": true
   },
   {
+    "Name": "projects.workspace_metadata_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "projectsync.clones",
     "Known": true,
     "Note": true

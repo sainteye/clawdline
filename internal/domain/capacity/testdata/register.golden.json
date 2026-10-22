@@ -6163,6 +6163,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "projects.workspace_metadata_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/projects.WorkspaceMetadataBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "projectsync.clones",
     "Class": "buffer",
     "Unit": "rows",
