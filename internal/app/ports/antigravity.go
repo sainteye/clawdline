@@ -13,6 +13,9 @@ import (
 type AntigravityProcess struct {
 	PID, ParentPID                     int
 	Birth, Executable, TTY, TerminalID string
+	// KernelGeneration fences exec; BootID is required by the Linux reader.
+	// Darwin has no boot UUID here and leaves BootID empty.
+	BootID, KernelGeneration string
 }
 
 type AntigravityProcessReader interface {

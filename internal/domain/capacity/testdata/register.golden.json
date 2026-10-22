@@ -121,6 +121,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "antigravity.native_process_file_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxNativeProcessFileBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.native_tty_entries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxNativeTTYEntries"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "antigravity.observation_bytes",
     "Class": "buffer",
     "Unit": "bytes",

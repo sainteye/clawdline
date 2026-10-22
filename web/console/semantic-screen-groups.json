@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8956,
-  "riskKeys": 3992,
-  "nonRiskCount": 4964,
+  "englishContentKeys": 8960,
+  "riskKeys": 3994,
+  "nonRiskCount": 4966,
   "groups": [
     {
       "name": "admin / other",
@@ -312,7 +312,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 275,
+      "count": 277,
       "sources": [
         null
       ],
@@ -323,6 +323,8 @@
         "capacityRow.antigravity.hook_timeout_seconds.what",
         "capacityRow.antigravity.live_bindings.what",
         "capacityRow.antigravity.managed_launches.what",
+        "capacityRow.antigravity.native_process_file_bytes.what",
+        "capacityRow.antigravity.native_tty_entries.what",
         "capacityRow.antigravity.observation_bytes.full",
         "capacityRow.antigravity.process_read_seconds.what",
         "capacityRow.antigravity.retention_seconds.what",
