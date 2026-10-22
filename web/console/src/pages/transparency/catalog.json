@@ -2145,7 +2145,7 @@
         },
         {
           "path": "internal/adapters/antigravitylaunch/store.go",
-          "line": 669
+          "line": 689
         },
         {
           "path": "internal/adapters/antigravity/hook_service.go",
@@ -2233,7 +2233,7 @@
     "internal/adapters/antigravity/hook_service.go": "86d4bbfbdf33f8e942e9f8e1a1a860f8b0e7d040a86fe7c37eae48f2d4eba1b8",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
-    "internal/adapters/antigravitylaunch/store.go": "63a170bc2b9f51a4753187419c6b2ed2c77c54dc1fd9013634a565a2f0bafdb8",
+    "internal/adapters/antigravitylaunch/store.go": "e3a2344fda42de6142bc0d8646cb73527211c3eaea6547cf03107a21bd430a12",
     "internal/adapters/memory/memory.go": "b85b11cd849f61bcb55c449acc868a4605950dcb5a408ac65a228babbfab9fb0",
     "internal/adapters/nextconfig/nextconfig.go": "854b65137d603c892cb04fbbd486eed1d54b0ca48a2c8e71d8361f1cdc666dce",
     "internal/adapters/projects/antigravity_context.go": "af2f72bca504765de63bc45bbeb208e201c063bacf51ff3ff5cbe0fd5e5aac1a",
@@ -2256,7 +2256,7 @@
     "internal/app/orchestrator/scheduled.go": "21d1e8c60de795ba9fa31e27a423ef3ceceaf6170170aaff625870e3a8f3941e",
     "internal/app/orchestrator/session_pause.go": "f1407a0ece5a3d54ee45062e71c688ffdd844c5aefe0fabaf4d1b3fdc3d6a164",
     "internal/app/squad_launch.go": "1ec83ebede904f62d9ad82471743702829e85a66f87ad575e9ee03408ee8065d",
-    "internal/app/start.go": "a1fb010b9d9d669b3607c364ca2750679a8a95a5eba6e2ec1d766e9798165bca",
+    "internal/app/start.go": "6372d443897d6c8eeba4bc9f6eafefee239ee54b2d0ce5f21bfa21ca1be37492",
     "internal/app/work_v2_todos.go": "fb992a3c595450d28507e6b8de14fe0c4be72e0cb84e398445f8c2622e0e171a",
     "internal/config/config.go": "25f547d482792bb8bc1cfef1ad6b9d8355d289104bf1f0842efe5002c7f6ab6c",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",

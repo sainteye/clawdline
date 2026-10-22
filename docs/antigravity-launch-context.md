@@ -51,6 +51,9 @@ Open(Config{StateDir: providerStateDir, SquadLaunchRoot: squadLaunchRoot}) (*Sto
 (*Store).Close() error
 (*Store).Prepare(context.Context, projects.LaunchRequest) (Prepared, error)
 (*Store).PrepareLaunch(context.Context, string, projects.LaunchRequest) (Prepared, error)
+(*Store).PrepareLaunchWithPolicy(context.Context, string, projects.LaunchRequest, NativePolicy) (Prepared, error)
+(*Store).PolicyForLaunch(context.Context, string) (NativePolicy, error)
+(*Store).RevokeLaunch(context.Context, string) error
 (*Store).AttachTerminal(context.Context, string, string, string) error
 (*Store).PinProcess(context.Context, string, ports.AntigravityProcess) error
 (*Store).LookupProcess(context.Context, ports.AntigravityProcess) (Record, error)
@@ -94,7 +97,9 @@ RFC3339Nano UTC birth, executable, controlling TTY, exact terminal ID, exec
 generation, and Linux boot ID. The terminal must match its durable receipt.
 Conflicting active terminal/PID associations and replacement generations are
 refused. `Deactivate` withdraws this instance's live authority when Root proves
-a process is gone; it does not delete historical context.
+a process is gone; it does not delete historical context or durably revoke the
+launch. `RevokeLaunch` provides that separate persistent operation. See
+[native policy](antigravity-native-policy.md) for its failure and history semantics.
 
 `Open` starts no goroutines and never activates recovered process records.
 `LookupProcess` and `Commitment` work only after explicit fresh `PinProcess` in
@@ -216,8 +221,8 @@ attaches the real store owner. Root must add the owner in server composition
 and map these fields, using `LargestContextBytes` for the per-document size rather than the sum,
 before claiming runtime capacity measurement.
 
-No schema migration of old providers or Squad SQLite occurs. The new index has
-version 1; an unknown version is refused. Removing this adapter leaves its
+No schema migration of old providers or Squad SQLite occurs. The private index
+is now version 4; an unknown index version is refused. Removing this adapter leaves its
 private historical files intact; process, terminal, initial-send and public
 release acceptance remain with Root.
 
@@ -254,10 +259,11 @@ execution grant. `BeforePaste` and `BeforeEnter` persist their respective
 uncertain phases before terminal IO and refuse repeats. There is no release,
 reset, expiry or automatic retry.
 
-The index is now version 3. Known legacy version-1 and version-2 indexes open
-without migration writes; the next atomic state write upgrades them. Consumed
-input slots survive version-2 migration. Older readers refuse version 3. New
-readers refuse unknown fields and invalid input phases instead of silently
+The index is now version 4. Known policy-free legacy version-1, version-2 and
+version-3 indexes open without migration writes; the next atomic state write
+upgrades them. Consumed input slots and version-3 loaded proofs survive. Older
+readers refuse version 4. New readers refuse unknown fields, invalid input
+phases and legacy versions claiming new policy fields instead of silently
 discarding future safety metadata.
 
 `Actions.SendAntigravityFirst` uses this private port under the existing terminal

@@ -269,7 +269,7 @@ func TestContextProofVersionTwoMigrationPreservesConsumedSlot(t *testing.T) {
 	if err != nil || string(after) != string(data) {
 		t.Fatal("Open rewrote legacy index", err)
 	}
-	if len(reopened.state.FirstInputs) != 1 || reopened.state.Version != 3 {
+	if len(reopened.state.FirstInputs) != 1 || reopened.state.Version != 4 {
 		t.Fatal("migration dropped consumed slot")
 	}
 	if err := reopened.PinProcess(ctx, p.Record.ID, native); err != nil {

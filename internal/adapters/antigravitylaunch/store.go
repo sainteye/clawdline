@@ -43,6 +43,8 @@ type Config struct {
 // Record is private daemon metadata. Do not return it to a browser. It carries
 // no capability bytes. Prepared is durability, not context-loaded authority.
 type Record struct {
+	Policy           *NativePolicy            `json:"policy,omitempty"`
+	Revoked          bool                     `json:"revoked,omitempty"`
 	ID               string                   `json:"id"`
 	Workspace        string                   `json:"workspace"`
 	ContextPath      string                   `json:"context_path"`
@@ -106,7 +108,7 @@ func validHash(s string) bool {
 	return e == nil && len(b) == 32 && hex.EncodeToString(b) == s
 }
 func emptyIndex() index {
-	return index{Version: 3, Records: map[string]Record{}, History: map[string]history{}, Receipts: map[string]ResponseReceipt{}, FirstInputs: map[string]FirstInputReceipt{}}
+	return index{Version: 4, Records: map[string]Record{}, History: map[string]history{}, Receipts: map[string]ResponseReceipt{}, FirstInputs: map[string]FirstInputReceipt{}}
 }
 
 func Open(c Config) (*Store, error) {
@@ -145,7 +147,7 @@ func Open(c Config) (*Store, error) {
 		}
 		s.state = loaded
 		// Migrate only known legacy states in memory. The next atomic
-		// write publishes v3; old readers refuse rather than drop proof or
+		// write publishes v4; old readers refuse rather than drop policy or
 		// consumed input authority. Open itself never rewrites an index.
 		legacyProofFree := true
 		for _, receipt := range s.state.Receipts {
@@ -153,8 +155,14 @@ func Open(c Config) (*Store, error) {
 				legacyProofFree = false
 			}
 		}
-		if legacyProofFree && (s.state.Version == 2 || (s.state.Version == 1 && len(s.state.FirstInputs) == 0)) {
-			s.state.Version = 3
+		legacyPolicyFree := true
+		for _, record := range s.state.Records {
+			if record.Policy != nil || record.Revoked {
+				legacyPolicyFree = false
+			}
+		}
+		if legacyPolicyFree && (s.state.Version == 3 || (legacyProofFree && (s.state.Version == 2 || (s.state.Version == 1 && len(s.state.FirstInputs) == 0)))) {
+			s.state.Version = 4
 		}
 		if s.state.FirstInputs == nil {
 			s.state.FirstInputs = map[string]FirstInputReceipt{}
@@ -218,14 +226,14 @@ func (s *Store) ready(ctx context.Context) error {
 
 func (s *Store) validateIndex() error {
 	i := s.state
-	if i.Version != 3 || i.Records == nil || i.History == nil || i.Receipts == nil || i.FirstInputs == nil || len(i.Records) > MaxLaunches || len(i.History) > MaxHistory || len(i.Receipts) > MaxReceipts || len(i.FirstInputs) > MaxFirstInputs {
+	if i.Version != 4 || i.Records == nil || i.History == nil || i.Receipts == nil || i.FirstInputs == nil || len(i.Records) > MaxLaunches || len(i.History) > MaxHistory || len(i.Receipts) > MaxReceipts || len(i.FirstInputs) > MaxFirstInputs {
 		return fail("index_invalid")
 	}
 	for id, r := range i.Records {
 		if id != r.ID || !validID(id) || !absolute(r.Workspace) || !validHash(r.ContextHash) || !validHash(r.CapabilityDigest) || r.ContextPath != filepath.Join(s.launches.path, id, "context.json") || r.CapabilityPath != filepath.Join(s.launches.path, id, "capability") || (r.RequestedResume != "" && !validID(r.RequestedResume)) || (r.NativeID != "" && !validID(r.NativeID)) {
 			return fail("index_invalid")
 		}
-		if !validHash(r.RequestDigest) {
+		if !validHash(r.RequestDigest) || (r.Policy != nil && !r.Policy.wellFormed()) {
 			return fail("index_invalid")
 		}
 		if r.Process.PID != 0 && (!completeProcess(r.Process) || r.Process.TerminalID != r.TerminalID || !backend(r.Backend)) {
@@ -258,7 +266,7 @@ func (s *Store) validateIndex() error {
 func clone(i index) index {
 	n := emptyIndex()
 	for k, v := range i.Records {
-		n.Records[k] = v
+		n.Records[k] = cloneRecord(v)
 	}
 	for k, v := range i.History {
 		n.History[k] = v
@@ -365,6 +373,10 @@ func (s *Store) Prepare(ctx context.Context, req projects.LaunchRequest) (Prepar
 	return s.PrepareLaunch(ctx, id.String(), req)
 }
 func (s *Store) PrepareLaunch(ctx context.Context, id string, req projects.LaunchRequest) (Prepared, error) {
+	return s.prepareLaunch(ctx, id, req, nil)
+}
+
+func (s *Store) prepareLaunch(ctx context.Context, id string, req projects.LaunchRequest, policy *NativePolicy) (Prepared, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ready(ctx); err != nil {
@@ -415,13 +427,17 @@ func (s *Store) PrepareLaunch(ctx context.Context, id string, req projects.Launc
 	}
 	req.AntigravityContext = &c
 	req.Memory, req.Language, req.SquadPromptPath = c.Memory, c.Language, c.PromptPath
-	requestBytes, err := json.Marshal(req)
+	requestDigest, err := launchRequestDigest(req, policy)
 	if err != nil {
-		return Prepared{}, fail("request_invalid")
+		return Prepared{}, err
 	}
-	requestDigest := hash(requestBytes)
 	r, exists := s.state.Records[id]
-	if exists && (r.Workspace != req.ProjectRoot || r.ContextHash != digest || r.RequestedResume != req.Resume || r.RequestDigest != requestDigest) {
+	if exists {
+		if err := recordAuthority(r); err != nil {
+			return Prepared{}, err
+		}
+	}
+	if exists && (r.Workspace != req.ProjectRoot || r.ContextHash != digest || r.RequestedResume != req.Resume || r.RequestDigest != requestDigest || !samePolicy(r.Policy, policy)) {
 		return Prepared{}, fail("launch_conflict")
 	}
 	if !exists {
@@ -430,6 +446,7 @@ func (s *Store) PrepareLaunch(ctx context.Context, id string, req projects.Launc
 		}
 		r = Record{ID: id, Workspace: req.ProjectRoot, ContextPath: filepath.Join(s.launches.path, id, "context.json"), ContextHash: digest, CapabilityPath: filepath.Join(s.launches.path, id, "capability"), RequestedResume: req.Resume}
 		r.RequestDigest = requestDigest
+		r.Policy = copyPolicy(policy)
 		// Reserve a bounded slot before creating per-launch files. A crash can
 		// leave only this slot's two bounded files, never an unindexed orphan.
 		secret := make([]byte, 32)
@@ -509,7 +526,7 @@ func (s *Store) PrepareLaunch(ctx context.Context, id string, req projects.Launc
 	if err := cancelled(ctx); err != nil {
 		return Prepared{}, err
 	}
-	return Prepared{Record: r, Request: req, PrivateEnv: []string{"CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE=" + projects.ShellQuoted(r.CapabilityPath)}}, nil
+	return Prepared{Record: cloneRecord(r), Request: req, PrivateEnv: []string{"CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE=" + projects.ShellQuoted(r.CapabilityPath)}}, nil
 }
 
 func backend(s string) bool { return s == "tmux" || s == "iterm" || s == "iterm-tmux" }
@@ -525,7 +542,10 @@ func (s *Store) record(id string) (Record, error) {
 	if !r.Prepared {
 		return Record{}, fail("not_prepared")
 	}
-	return r, nil
+	if err := recordAuthority(r); err != nil {
+		return Record{}, err
+	}
+	return cloneRecord(r), nil
 }
 func (s *Store) AttachTerminal(ctx context.Context, id, kind, terminal string) error {
 	s.mu.Lock()
@@ -702,7 +722,7 @@ func (s *Store) Commitment(ctx context.Context, r Record) (antigravity.LaunchCom
 		return antigravity.LaunchCommitment{}, antigravity.HookLaunch{}, err
 	}
 	current, err := s.lookup(r.Process)
-	if err != nil || current != r {
+	if err != nil || !sameRecord(current, r) {
 		return antigravity.LaunchCommitment{}, antigravity.HookLaunch{}, fail("process_unverified")
 	}
 	if _, err := s.load(r); err != nil {

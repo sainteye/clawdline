@@ -58,11 +58,14 @@ or merely changes its timestamp. A normal complete append preserves it.
 Persisted Loaded is historical evidence only. Reopening the Store never
 reactivates a process; fresh native pinning and proof checks are required.
 
-The private index advances to version 3 when next atomically written. Known v1
-and v2 states migrate in memory without rewriting on Open; v2 consumed input
-slots survive. Legacy documents claiming new proof fields are rejected, as are
-unknown fields. Old versioned readers refuse the new index instead of dropping
-proof or consumed-input authority. Uncertain publication requires reopening.
+The private index advances to version 4 when next atomically written. Known
+policy-free v1/v2 states and v3 proof states migrate in memory without rewriting
+on Open; consumed input slots and original loaded proofs survive. Legacy
+documents claiming newer proof or policy fields are rejected, as are unknown
+fields. Old versioned readers refuse the new index instead of dropping proof,
+consumed-input or revocation authority. Uncertain publication requires reopening.
+See [native policy](antigravity-native-policy.md) for persistent revocation;
+historical proof remains readable after revocation but grants no live authority.
 Proof remains inside the existing bounded response receipt, with no new map,
 poller, retry queue or eviction policy; the existing whole-index byte budget
 can refuse a full store.

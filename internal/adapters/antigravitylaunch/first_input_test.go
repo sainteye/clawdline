@@ -277,7 +277,7 @@ func TestFirstInputLegacyIndexOpensWithoutWritingAndPublishesCurrentVersion(t *t
 	}
 	var next map[string]any
 	json.Unmarshal(data, &next)
-	if next["version"] != float64(3) || next["first_inputs"] == nil {
+	if next["version"] != float64(4) || next["first_inputs"] == nil {
 		t.Fatal("reservation is readable by old v1 reader")
 	}
 	stats, err := s.Stats(context.Background())

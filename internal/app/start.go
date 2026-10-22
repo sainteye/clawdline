@@ -11,6 +11,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/app/launchplan"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/app/tmuxview"
 )
@@ -74,11 +75,7 @@ type Starter struct {
 // PreparedAntigravity is one private durable launch intent. AttachTerminal
 // closes over that intent's ID; it must never allocate another intent or open a
 // terminal. Nil refuses admission before the terminal can be created.
-type PreparedAntigravity struct {
-	Request        projects.LaunchRequest
-	PrivateEnv     []string
-	AttachTerminal func(context.Context, string, string) error
-}
+type PreparedAntigravity = launchplan.PreparedAntigravity
 
 // Started is StartPoints.Outcome.started. Attach is filled for the one plan
 // that puts a session where nobody is looking: a tmux server started detached.
