@@ -236,3 +236,28 @@ func TestAntigravityContextCaptureNeverManufacturesMissingBaseline(t *testing.T)
 		t.Fatal("revocation after capture ignored")
 	}
 }
+
+func TestAntigravityContextFirstNativeTurnKeepsTrailingNewline(t *testing.T) {
+	home, path, binding, check, _ := contextFixture(t)
+	row, err := os.ReadFile("testdata/antigravity-first-input-context.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The wrapper and context bytes come from one native first-turn probe;
+	// only its timestamp was sanitized. The context ends with a newline.
+	const expected = "Synthetic immutable protocol context. Role marker ROLE_COPPER; language marker LANG_TAIWAN; memory marker MEMORY_FIR. Do not use tools, network, search, browser, connectors or paid credits. Reply only to the synthetic prompt.\n"
+	initial := antigravityTestUser(0, "synthetic first input")
+	writeAntigravityTest(t, path, initial)
+	fence, err := CaptureAntigravityContextFence(context.Background(), home, binding, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeAntigravityTest(t, path, initial+string(row))
+	proof, err := VerifyAntigravityContextLoaded(context.Background(), home, fence, expected, check)
+	if err != nil || proof.RowStart != int64(len(initial)) || proof.StepIndex != 1 {
+		t.Fatal("first native system row did not verify", err)
+	}
+	if _, err := VerifyAntigravityContextLoaded(context.Background(), home, fence, strings.TrimSuffix(expected, "\n"), check); err == nil {
+		t.Fatal("trimmed context was accepted")
+	}
+}

@@ -26,6 +26,7 @@ func (s *Server) ManagedAntigravityOptions() AntigravityRuntimeOptions {
 	return AntigravityRuntimeOptions{
 		Admit:                 s.admitManagedAntigravity,
 		PreInvocationResponse: s.managedAntigravityResponse,
+		AfterObservation:      s.observeManagedAntigravityCompletion,
 	}
 }
 
@@ -178,4 +179,52 @@ func (s *Server) checkManagedAntigravityContext(ctx context.Context, launchID st
 		return managedAntigravityFailure()
 	}
 	return ctx.Err()
+}
+
+// Completion verifies the most recent fenced response without preparing another
+// injection. The first model turn can therefore retain loaded evidence without
+// requiring a second PreInvocation. It does not create Squad skill receipts.
+func (s *Server) observeManagedAntigravityCompletion(ctx context.Context, binding ports.AntigravityBinding) error {
+	if binding.Event != "PostInvocation" && binding.Event != "Stop" {
+		return ctx.Err()
+	}
+	if !binding.Verified {
+		return managedAntigravityFailure()
+	}
+	owner := s.antigravityLaunchStore.Load()
+	if owner == nil {
+		return ctx.Err()
+	}
+	record, err := owner.LookupProcess(ctx, binding.Process)
+	if err != nil {
+		var typed *antigravitylaunch.Error
+		if errors.As(err, &typed) && typed.Code == "antigravity_context_process_unverified" {
+			return ctx.Err() // explicit unmanaged observation; no loaded receipt
+		}
+		return err
+	}
+	receipt, found, err := owner.Receipt(ctx, record.ID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ctx.Err() // no response was prepared; never manufacture proof
+	}
+	if !receipt.Fenced {
+		return managedAntigravityFailure()
+	}
+	if err := s.checkManagedAntigravityContext(ctx, record.ID, binding); err != nil {
+		return err
+	}
+	home, err := s.antigravityRecordHome()
+	if err != nil {
+		return managedAntigravityFailure()
+	}
+	check := func(c context.Context, evidence ports.AntigravityBinding) error {
+		return s.checkManagedAntigravityContext(c, record.ID, evidence)
+	}
+	if err := owner.VerifyContextLoaded(ctx, record.ID, home, check); err != nil {
+		return err
+	}
+	return check(ctx, binding)
 }

@@ -47,6 +47,10 @@ type hookReply struct {
 // observing a binding does not prove that context was loaded by the provider.
 type HookResponse func(context.Context, ports.AntigravityBinding) ([]byte, error)
 
+// HookObservation runs after a verified observation has been persisted. It
+// must honor ctx; successful observation alone never establishes loaded context.
+type HookObservation func(context.Context, ports.AntigravityBinding) error
+
 // HookAdmission runs after bounded decoding and kernel/process verification,
 // before Observe. It may register a private prepared LaunchCommitment through
 // the bridge and return its trusted launch capability. It cannot replace the
@@ -62,6 +66,7 @@ type HookServiceConfig struct {
 	Bridge                *Bridge
 	Admit                 HookAdmission
 	PreInvocationResponse HookResponse
+	AfterObservation      HookObservation
 }
 
 // HookService owns its listener and accepted connections. Serve owns all
@@ -295,6 +300,14 @@ func (s *HookService) receive(ctx context.Context, conn *net.UnixConn) ([]byte, 
 	binding, err := s.config.Bridge.Observe(ctx, w, r.Event, bytes.NewReader(r.Payload))
 	if err != nil {
 		return nil, err
+	}
+	if s.config.AfterObservation != nil {
+		if err := s.config.AfterObservation(ctx, binding); err != nil {
+			return nil, refuse("antigravity_hook_response_failed")
+		}
+		if ctx.Err() != nil {
+			return nil, refuse("antigravity_hook_timeout")
+		}
 	}
 	var response []byte
 	if r.Event == "PreInvocation" && s.config.PreInvocationResponse != nil {

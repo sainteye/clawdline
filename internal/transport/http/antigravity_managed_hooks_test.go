@@ -15,10 +15,11 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T) {
-	for _, name := range []string{"original_workspace", "wrong_workspace", "partial_native_record", "missing_loaded_row", "model_echo", "replaced_transcript"} {
+	for _, name := range []string{"original_workspace", "wrong_workspace", "partial_native_record", "missing_loaded_row", "model_echo", "replaced_transcript", "completed_post", "completed_stop", "completion_missing", "completion_model_echo", "completion_replaced"} {
 		wrongWorkspace := name == "wrong_workspace"
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("TMUX", "")
@@ -94,7 +95,13 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 			if wrongWorkspace {
 				cwd = root
 			}
-			command := "exec env AG_RUNTIME_SYNTHETIC_ROOT=" + projects.ShellQuoted(root) + " AG_RUNTIME_MANAGED=1 AG_RUNTIME_CONTEXT_FOLLOWUP=1 " + strings.Join(prepared.PrivateEnv, " ") + " " + projects.ShellQuoted(executable) + " -test.run=^TestAntigravityRuntimeSyntheticProvider$"
+			followup := "PreInvocation"
+			if name == "completed_post" {
+				followup = "PostInvocation"
+			} else if strings.HasPrefix(name, "completion_") || name == "completed_stop" {
+				followup = "Stop"
+			}
+			command := "exec env AG_RUNTIME_FOLLOWUP_EVENT=" + followup + " AG_RUNTIME_SYNTHETIC_ROOT=" + projects.ShellQuoted(root) + " AG_RUNTIME_MANAGED=1 AG_RUNTIME_CONTEXT_FOLLOWUP=1 " + strings.Join(prepared.PrivateEnv, " ") + " " + projects.ShellQuoted(executable) + " -test.run=^TestAntigravityRuntimeSyntheticProvider$"
 			run("-f", "/dev/null", "new-session", "-d", "-s", "managed", "-c", cwd, command)
 			defer func() {
 				cmd := exec.Command(binary, "-S", tmux.Socket, "kill-server")
@@ -203,7 +210,7 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 			}
 			row["content"] = strings.Replace(content, synthetic, response.InjectSteps[0].SystemMessage.SystemMessage, 1)
 			row["step_index"] = 0
-			if name == "model_echo" {
+			if name == "model_echo" || name == "completion_model_echo" {
 				row["source"] = "MODEL"
 			}
 			data, err := json.Marshal(row)
@@ -211,9 +218,9 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 				t.Fatal(err)
 			}
 			data = append(data, '\n')
-			if name != "missing_loaded_row" {
+			if name != "missing_loaded_row" && name != "completion_missing" {
 				target := path
-				if name == "replaced_transcript" {
+				if name == "replaced_transcript" || name == "completion_replaced" {
 					target = path + ".replacement"
 				}
 				if err := os.WriteFile(target, data, 0600); err != nil {
@@ -231,12 +238,24 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 			if err != nil || !found {
 				t.Fatal("response receipt lost", err)
 			}
-			if name != "original_workspace" {
+			if name != "original_workspace" && name != "completed_post" && name != "completed_stop" {
 				if !bytes.Contains(nextOutput, []byte("antigravity_hook_response_failed")) {
 					t.Fatalf("missing/stale/non-native proof advanced: %s", nextOutput)
 				}
 				if nextReceipt != receipt {
 					t.Fatal("failed proof replaced its original baseline")
+				}
+				return
+			}
+			if name == "completed_post" || name == "completed_stop" {
+				if string(bytes.TrimSpace(nextOutput)) != "{}" || !nextReceipt.Loaded || nextReceipt.Sequence != receipt.Sequence || nextReceipt.Fence != receipt.Fence || nextReceipt.Proof.RowEnd <= nextReceipt.Proof.RowStart {
+					t.Fatal("completion did not verify the existing response", nextReceipt.Loaded, string(nextOutput))
+				}
+				check := func(c context.Context, b ports.AntigravityBinding) error {
+					return s.checkManagedAntigravityContext(c, record.ID, b)
+				}
+				if err := owner.CheckContextLoaded(ctx, record.ID, home, check); err != nil {
+					t.Fatal("completion proof was not currently verifiable", err)
 				}
 				return
 			}

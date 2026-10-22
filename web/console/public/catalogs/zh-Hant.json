@@ -8373,7 +8373,7 @@
   "transparency.board": "看板指派",
   "transparency.boundary": "僅列 Clawdline 新增的內容，不含 Agent 原生指示與使用者原有規則。查核引文保留原文。",
   "transparency.card.antigravity-context.condition": "受管理的原生 hook 通過驗證，且保存的啟動內容不為空",
-  "transparency.card.antigravity-context.effect": "為該次模型輸入準備內容。PREPARED 收據不代表供應商已載入，仍須另有原生紀錄證據；這條路徑不變更工具權限政策。",
+  "transparency.card.antigravity-context.effect": "PREPARED 只記錄內容已準備。後續原生系統訊息必須符合回應前保存的檔案基準與完整原文；PostInvocation 或 Stop 可保存這份證明，不需另一次模型呼叫。這不會產生技能套用收據，也不改變工具權限。",
   "transparency.card.antigravity-context.how": "daemon 核對私有啟動憑證、原生程序、終端與核心觀察到的工作目錄後，準備 PreInvocation 的 injectSteps；未受管理的觀察不會取得 Clawdline 內容。",
   "transparency.card.antigravity-context.summary": "使用保存的角色提示、專案記憶、看板語言與回覆便條規則；明確續接時保留原始技能路徑，不讀取目前的角色、記憶或語言設定。",
   "transparency.card.antigravity-context.title": "Antigravity 原始啟動內容",

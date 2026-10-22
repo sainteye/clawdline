@@ -20,6 +20,7 @@ import (
 type AntigravityRuntimeOptions struct {
 	Admit                 antigravity.HookAdmission
 	PreInvocationResponse antigravity.HookResponse
+	AfterObservation      antigravity.HookObservation
 }
 
 type antigravityRuntimePort struct{ server *Server }
@@ -129,7 +130,7 @@ func (s *Server) StartAntigravity(ctx context.Context, options AntigravityRuntim
 	if err != nil {
 		return nil, err
 	}
-	service, err := antigravity.ListenHookService(antigravity.HookServiceConfig{StateDir: dir, Bridge: bridge, Admit: options.Admit, PreInvocationResponse: options.PreInvocationResponse})
+	service, err := antigravity.ListenHookService(antigravity.HookServiceConfig{StateDir: dir, Bridge: bridge, Admit: options.Admit, PreInvocationResponse: options.PreInvocationResponse, AfterObservation: options.AfterObservation})
 	if err != nil {
 		return nil, err
 	}

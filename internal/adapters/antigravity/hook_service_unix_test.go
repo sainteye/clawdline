@@ -654,3 +654,56 @@ func TestHookServiceTrustedAdmissionPrecedesObservation(t *testing.T) {
 		})
 	}
 }
+
+func TestHookServiceCompletesObservationBeforeAcknowledging(t *testing.T) {
+	for _, which := range []string{"complete", "callback_failure", "unverified_peer"} {
+		t.Run(which, func(t *testing.T) {
+			f := hookFixture(t)
+			dir := hookTestDir(t)
+			seen := make(chan ports.AntigravityBinding, 1)
+			s, err := ListenHookService(HookServiceConfig{StateDir: dir, Bridge: f.b,
+				AfterObservation: func(ctx context.Context, b ports.AntigravityBinding) error {
+					current, err := f.b.AntigravityBinding(ctx, f.s)
+					if err != nil || !b.Verified || current.Sequence != b.Sequence || current.ConversationID != b.ConversationID {
+						return fmt.Errorf("observation was not persisted")
+					}
+					seen <- b
+					if which == "callback_failure" {
+						return fmt.Errorf("synthetic completion failure")
+					}
+					return nil
+				}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if which == "unverified_peer" {
+				s.peer = func(context.Context, *net.UnixConn) (NativeUnixPeer, error) {
+					return NativeUnixPeer{}, nil
+				}
+			}
+			startHookTest(t, s)
+			reply := hookExchange(t, dir, hookRequestFor(f, "Stop", 1))
+			if which == "unverified_peer" {
+				if reply.Code == "" || len(seen) != 0 {
+					t.Fatal("unverified peer reached completion")
+				}
+				return
+			}
+			select {
+			case b := <-seen:
+				if b.Event != "Stop" {
+					t.Fatal("completion received the wrong event")
+				}
+			default:
+				t.Fatal("hook returned before observation completed")
+			}
+			if which == "callback_failure" {
+				if reply.Code != "antigravity_hook_response_failed" || len(reply.Response) != 0 {
+					t.Fatal("failed completion was acknowledged", reply)
+				}
+			} else if reply.Code != "" || string(reply.Response) != "{}" {
+				t.Fatal("completion changed the native response", reply)
+			}
+		})
+	}
+}

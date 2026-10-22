@@ -35,3 +35,10 @@ The guard discovers both native `injectSteps` strings and calls through
 miss this transport. The public filter preserves the explicit Antigravity
 provider while stripping Session and machine identifiers from documentation
 links. Website publication still requires importing the reviewed product tree.
+
+Managed Antigravity completion hooks can verify the already prepared response
+against a later native system row and retain its exact-prefix proof. They do
+not inject another response or synthesize a skill-applied receipt. PostInvocation
+and Stop therefore do not require another model call to validate the first
+response. The explanation distinguishes PREPARED from loaded evidence in both
+languages; live role badges and public capabilities remain independently gated.

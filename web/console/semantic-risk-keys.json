@@ -3,8 +3,8 @@
   "englishKeys": 9013,
   "counts": {
     "negation": 2622,
-    "state": 1483,
-    "permission": 522,
+    "state": 1484,
+    "permission": 521,
     "deletion": 201,
     "uncertainty": 285
   },
@@ -4033,6 +4033,7 @@
       "template.f5dc01fdffbd",
       "template.fda343356bac",
       "transparency.card.antigravity-context.condition",
+      "transparency.card.antigravity-context.effect",
       "transparency.card.antigravity-context.summary",
       "transparency.card.close.summary",
       "transparency.card.core.summary",
@@ -4628,7 +4629,6 @@
       "survey.intro",
       "survey.paired",
       "template.5c513a465185",
-      "transparency.card.antigravity-context.effect",
       "transparency.card.investigation.how",
       "transparency.card.runtime.how",
       "transparency.card.runtime.summary",

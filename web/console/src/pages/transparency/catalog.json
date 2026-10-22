@@ -2149,11 +2149,11 @@
         },
         {
           "path": "internal/adapters/antigravity/hook_service.go",
-          "line": 235
+          "line": 240
         },
         {
           "path": "internal/transport/http/antigravity_managed_hooks.go",
-          "line": 87
+          "line": 91
         },
         {
           "path": "internal/transport/http/antigravity_launch_store.go",
@@ -2170,6 +2170,14 @@
         {
           "path": "internal/app/squad_launch.go",
           "line": 78
+        },
+        {
+          "path": "internal/adapters/transcript/antigravity_context.go",
+          "line": 95
+        },
+        {
+          "path": "internal/adapters/antigravitylaunch/context_proof.go",
+          "line": 64
         }
       ],
       "original": [
@@ -2222,7 +2230,8 @@
   "sourceChecks": {
     "cmd/clawdline/main.go": "ef80f8f2bcee633896bf5cb8d7c601efc774fddcc8e8cfad29011477552f974a",
     "cmd/clawdline/session.go": "de2e47caf092efedfb633b4f5242ee9cb0989fdf5d7f97dd95a1ff33667f5efc",
-    "internal/adapters/antigravity/hook_service.go": "fb942eb1374e98bde47fe28aec187380124374aa1fcec128de69c2d4105ca999",
+    "internal/adapters/antigravity/hook_service.go": "86d4bbfbdf33f8e942e9f8e1a1a860f8b0e7d040a86fe7c37eae48f2d4eba1b8",
+    "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
     "internal/adapters/antigravitylaunch/store.go": "63a170bc2b9f51a4753187419c6b2ed2c77c54dc1fd9013634a565a2f0bafdb8",
     "internal/adapters/memory/memory.go": "b85b11cd849f61bcb55c449acc868a4605950dcb5a408ac65a228babbfab9fb0",
@@ -2233,6 +2242,7 @@
     "internal/adapters/skillfile/skillfile.go": "a10a410e8966b71a8c4d6666e0155a4b0b12cb3f513d9843038e3e2e2118ffde",
     "internal/adapters/squadfiles/launch.go": "8f3e51f35df23fc2c34537eab07a58857f81eaac0cf1c3236c6c2d9253ac4e6a",
     "internal/adapters/taskdir/broker.go": "9f5c355354c0ea181b1dcefcbaec3fe2431f867d09abc7cd03356c06866b4968",
+    "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
     "internal/app/orchestrator/brief.go": "bffb5769b7b2dd66a738d593f8c1c9b9191018e57155267009d6d73ebbf74931",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
@@ -2254,7 +2264,7 @@
     "internal/domain/snippet/default_workflow.go": "3a4d21963243a0b6dd2af553b4cd67b0d1bfaeabedfc2d43d629ba8b02e0bf08",
     "internal/transport/http/agent_session_close.go": "4cfb1d376e50119026dc079346a7253e826472305263e66ade6982b8e8b958f3",
     "internal/transport/http/antigravity_launch_store.go": "dab909d4ec4afcc99164859095df75ef1af4e059a505ea705a1227d2c9447ea5",
-    "internal/transport/http/antigravity_managed_hooks.go": "18b207aca0dc4868b013988eeabffee80d2c1e4835da04980baf2a35a939a5ce",
+    "internal/transport/http/antigravity_managed_hooks.go": "38a6d786a94dab6e75341eaf2b4accca020a896fd55095c91648d2e554cc54be",
     "internal/transport/http/coordinator.go": "5f139556883583d34320783d063ee1e6a4a1124a726f69510cc4a9324a6cb3df",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/start.go": "6195fa0a66dff17f09b9b424a09ffda30958c2147e96de628be125dfa10a9cfb",
@@ -2267,7 +2277,7 @@
     "web/console/src/session/Start.tsx": "e14aa5a64c4421538d4f69ce2638e5b1eaf87a43f1db6219655163603223727d"
   },
   "copyChecks": {
-    "en": "2a4f92b569fca2df7f75ba656446ca1cabf01b3e1a856ffa0214a0f8925ea4b6",
-    "zh-Hant": "d2a5705c900782e6582e29ac04e37280ad08e8dcce8d6a1216bbe45e181dc8ed"
+    "en": "7aad83013bff1c0763e77c790a69261b0a73ad359181eaf9e0660ce6f0694b3b",
+    "zh-Hant": "90bcc1170b3f5c33bdeb70acd69ec9ad0aa5555c8dbdf8826188123dfd4c0fad"
   }
 }

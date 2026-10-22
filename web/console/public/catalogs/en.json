@@ -8373,7 +8373,7 @@
   "transparency.board": "Board assignment",
   "transparency.boundary": "Clawdline additions only; excludes agent system prompts and existing user rules. Source excerpts are not translated.",
   "transparency.card.antigravity-context.condition": "A managed native hook authenticates a saved launch with nonempty context",
-  "transparency.card.antigravity-context.effect": "Prepared for that model invocation. A PREPARED receipt does not prove provider loading; separate native transcript evidence is required. This path does not change tool-permission policy.",
+  "transparency.card.antigravity-context.effect": "PREPARED records preparation. A later native system row must match the saved pre-response file boundary and exact context; PostInvocation or Stop can retain that proof without another model call. This does not create skill-applied receipts or change tool permissions.",
   "transparency.card.antigravity-context.how": "The daemon verifies the private launch capability, native process, terminal and kernel workspace before preparing PreInvocation injectSteps. Unmanaged observations receive no Clawdline context.",
   "transparency.card.antigravity-context.summary": "Uses the saved role prompt, Project memory, Board language and answer-Note rule. Exact resume preserves original skill paths and does not read current role, memory or language settings.",
   "transparency.card.antigravity-context.title": "Antigravity original launch context",

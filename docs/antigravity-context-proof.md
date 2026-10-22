@@ -3,7 +3,8 @@
 The private transcript reader and launch Store support a durable proof that
 original context appeared in a native execution. They do not enable the public
 start/send path or a role badge. Synchronous managed-hook composition is now
-implemented; its actual vendor timing verification remains pending. See [first input](antigravity-first-input.md)
+implemented; its end-to-end managed transport verification remains pending. Standalone
+protocol timing is recorded below. See [first input](antigravity-first-input.md)
 and [launch context](antigravity-launch-context.md) for the surrounding owners.
 
 ## What is proved
@@ -121,7 +122,69 @@ had a payload-reaped acknowledgement followed by a supervisor wait timeout;
 this is not accepted as stopped. A separate two-group diagnostic reproduced
 that timeout, then both owned supervisor Popen handles joined after lease EOF.
 A final exact-command-path process inspection found no remaining test commands.
-The discrepancy remains open; the child report alone does not establish native
-readiness. PTY/global-stop acceptance is required before a native CLI batch.
+The failed evidence was retained for correction. The later Root shutdown-order
+results are recorded below; this earlier child report alone did not establish
+native readiness.
 These controls use local fake processes only. They do not authorize or establish
 native CLI timing, free-plan eligibility, a product role badge or UI acceptance.
+
+## First native boundary and completion composition
+
+One bounded standalone 1.4.5 probe confirmed Starter quota and the actual
+configuration panel's Use AI Credits off before input. It allocated one model
+prompt, sent one Enter and recorded one received/admitted PreInvocation and one
+native model outcome; no tool request occurred. The first child attempt stopped
+on state/token persistence denial with zero prompts. Root used the already
+authorized native state-write surface; an initial configuration-only startup
+also used zero prompts, then the corrected `/config` harness completed the probe.
+No model prompt was retried. The successful process lifetime was 88.305 seconds,
+including configuration; its prompt stayed within its 45-second watchdog.
+All owned groups were absent, direct handles joined and terminal/listener/threads
+closed. No paid API or fallback was enabled. NTD0 is the observed Starter/credits-off
+budget boundary, not an invoice; native HTTP request count was not measured.
+
+At PreInvocation, before injection response bytes, the confined regular native
+file had one complete USER_EXPLICIT/USER_INPUT/DONE row, 613 bytes. PostInvocation
+and Stop both saw the same 1425-byte file and generation. Its first 613 bytes
+remained exact; the SYSTEM_SDK/SYSTEM_MESSAGE/DONE row occupied [613,1218) and
+matched the wrapper plus immutable injection byte-for-byte, including its final
+newline. A MODEL/PLANNER_RESPONSE row followed. The model's literal answer was
+not used as loaded proof. The new first-input native fixture preserves the
+system attribution, wrapper and synthetic context; only timestamp is sanitized.
+Its local reader test refuses a trimmed context.
+
+This private Python helper establishes this native protocol ordering, not the
+product's kernel-authenticated managed transport, role identity, skill-applied
+receipts or UI acceptance. Original raw native/account evidence remains private;
+no real UUID, terminal, path or account is included here.
+
+The managed service now invokes an optional completion observer only after its
+native binding has been verified and persisted. PostInvocation and Stop verify
+the latest fenced response against current process, terminal, workspace,
+capability, original context and full-prefix native proof. They retain Loaded
+without creating another response, baseline, input grant or model call. Missing,
+echoed or replaced native rows refuse; an absent response creates no proof.
+Ordinary response/permission decisions remain unchanged. Cancellation and
+callback failure are hook failures; the callback uses existing listener bounds
+and joins, with no poller, retry, queue or new resource bound.
+
+Local Unix-peer tests verify completion ordering, callback failure and exclusion
+of an unverified peer. Private tmux/native-helper cases verify PostInvocation and
+Stop retain the original receipt/fence, while missing rows, model echoes and
+file replacement refuse. These are synthetic product-composition checks; the
+independent native protocol probe above remains separate. Public capability and
+role badges remain guarded pending complete acceptance.
+
+For the private probe controller, Root's lease-only and direct-signal variants
+still failed. Closing the owned PTY master before joining its session leader
+passed the single-variable control, then 11 PTY/13 original/2 ordering controls once
+(1.329/1.832/0.212 seconds). This establishes the tested shutdown order, not an
+unmeasured kernel cause or scheduler fanout. Earlier failed logs remain retained.
+
+The first full completion gate passed native tests/builds, privacy and console
+build/tests, but the console check refused an outdated semantic-review index
+after the reviewed copy update. Regeneration moves this one explanation from
+the permission category into the state category; the risk union remains 4017,
+with 96 non-risk groups and 4996 non-risk keys unchanged. The complete console
+`npm run check` then passed. The full commit gate is rerun against the exact
+candidate including the generated index, without changing guard rules.

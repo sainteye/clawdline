@@ -148,7 +148,11 @@ func TestAntigravityRuntimeSyntheticHook(t *testing.T) {
 			launch.Capability = replacement + launch.Capability[1:]
 		}
 	}
-	err := antigravity.ObserveHook(context.Background(), filepath.Join(root, "antigravity"), "PreInvocation", launch, bytes.NewReader(payload), &out)
+	event := "PreInvocation"
+	if invocation == 2 && os.Getenv("AG_RUNTIME_FOLLOWUP_EVENT") != "" {
+		event = os.Getenv("AG_RUNTIME_FOLLOWUP_EVENT")
+	}
+	err := antigravity.ObserveHook(context.Background(), filepath.Join(root, "antigravity"), event, launch, bytes.NewReader(payload), &out)
 	if err != nil {
 		fmt.Print(err.Error())
 		os.Exit(1)

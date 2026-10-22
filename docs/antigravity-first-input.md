@@ -3,7 +3,7 @@ Root accepted the process-bound input and durable slot design. The launch
 Store and private app/terminal path are implemented. The private HTTP composition
 now resolves the attached native tmux pane and rechecks process, foreground,
 workspace, capability and an explicit local policy. Public capability enablement,
-production policy composition and actual vendor timing remain pending.
+production policy composition and end-to-end managed CLI verification remain pending.
 The private [native proof reader, Store and managed hook](antigravity-context-proof.md)
 retain a pre-response fence and revalidate loaded evidence; role/Squad projection
 and real CLI acceptance are still pending.
@@ -151,7 +151,10 @@ These are local test durations, not application latency measurements.
 Outside this private implementation: production permission/usage policy,
 permission/login/vendor probes, role/Squad loaded-proof projection, deployment
 and full-feature/UI acceptance. Public start/resume/send routes stay guarded.
-The open native evidence includes transcript file availability and hook timing.
+A later single standalone 1.4.5 probe confirmed a complete file at the first
+PreInvocation and the exact injected system row by PostInvocation and Stop;
+see [native boundary evidence](antigravity-context-proof.md). Product managed
+transport, resume timing and complete acceptance remain pending.
 
 The first full local gate passed Go vet/build/tests, Linux and Windows builds,
 repository/contract checks and console checks/build/tests, but refused a fixed
