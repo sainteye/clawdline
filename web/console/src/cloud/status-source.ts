@@ -31,7 +31,7 @@ type StatusClient = CloudClientHandle & {
   listPresentationsForMachine?(machineID: string, signal: AbortSignal): Promise<unknown>
   refreshSessionStatus?(machineID: string, sessionID: string, signal: AbortSignal): Promise<unknown>
   transcriptForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
-  transcriptPageForGeneration?(destination: SessionDestination, before: number, signal: AbortSignal): Promise<unknown>
+  transcriptPageForGeneration?(destination: SessionDestination, before: number, signal: AbortSignal, revision?: string): Promise<unknown>
   skillsForGeneration?(destination: SessionDestination, signal: AbortSignal): Promise<unknown>
   imageForGeneration?(destination: SessionDestination, id: string, signal: AbortSignal, size?: "thumb"): Promise<unknown>
 }
@@ -71,7 +71,7 @@ function channels(destination: SessionDestination): string[] {
 type Question = Extract<SessionContent, { kind: "ready" }>["question"]
 
 function transcriptPage(reply: unknown, sessionID: string, before?: number):
-  { entries: TranscriptEntry[]; nextBefore?: number } | null {
+  { entries: TranscriptEntry[]; nextBefore?: number; signature?: string } | null {
   const page = record(reply)
   if (!page || !Array.isArray(page.entries) ||
     (page.id !== undefined && page.id !== sessionID) ||
@@ -82,6 +82,7 @@ function transcriptPage(reply: unknown, sessionID: string, before?: number):
   // The pinned r/ reply uses the same TranscriptEntry wire as the local reader.
   // Keep its structured cards and Unix-second timestamps for the shared renderer.
   return { entries: entries as unknown as TranscriptEntry[],
+    ...(typeof page.signature === "string" ? { signature: page.signature } : {}),
     nextBefore: page.nextBefore === undefined ? undefined : Number(page.nextBefore) }
 }
 
@@ -154,7 +155,7 @@ function directList(client: StatusClient, machineID: string, reply: unknown, now
           status.screen_reading === "unavailable" && menu?.source === "transcript")
       return { destination: { machineID, sessionID: String(row!.id),
         executionGeneration: String(row!.execution_generation) }, state: String(status.state),
-      assistant: row!.assistant === "claude" || row!.assistant === "codex" ? row!.assistant : before?.assistant,
+      assistant: row!.assistant === "claude" || row!.assistant === "codex" || row!.assistant === "antigravity" ? row!.assistant : before?.assistant,
       parentSessionID: parentSessionID && parentSessionID !== row!.id ? parentSessionID : before?.parentSessionID,
       machineScope: status.machine_scope === true || before?.machineScope === true,
       coordinatorBound: status.coordinator_bound === true || before?.coordinatorBound === true,
@@ -422,7 +423,7 @@ export function statusSource(current: () => StatusClient | null,
           const statusState = status?.state
           result.push({ destination, projection: currentRows.get(key), title: session.title.trim(),
             observedAt: trustworthyListTime ? listObservedAt : undefined,
-            assistant: session.assistant === "claude" || session.assistant === "codex" ? session.assistant : undefined,
+            assistant: session.assistant === "claude" || session.assistant === "codex" || session.assistant === "antigravity" ? session.assistant : undefined,
             cwd: typeof session.cwd === "string" ? session.cwd : undefined,
             projectKey: typeof session.project_key === "string" ? session.project_key : undefined,
             status: status && typeof status.work_state === "string" &&
@@ -620,7 +621,7 @@ export function statusSource(current: () => StatusClient | null,
           info: { title: typeof session?.title === "string" ? session.title : undefined,
             assistant: typeof session?.assistant === "string" ? session.assistant : undefined,
             model: typeof session?.model === "string" ? session.model : undefined },
-          entries: page.entries, nextBefore: page.nextBefore,
+          ...page,
           question: pinnedQuestion(client, destination) }
       } catch (error) {
         outcome = typeof (error as { code?: unknown } | null)?.code === "string"
@@ -639,7 +640,7 @@ export function statusSource(current: () => StatusClient | null,
         }
       }
     },
-    async readOlder(destination, before, signal): Promise<SessionOlderPage> {
+    async readOlder(destination, before, signal, revision): Promise<SessionOlderPage> {
       const client = current()
       if (!client || opened.get(destinationKey(destination)) !== client || signal.aborted ||
         !Number.isSafeInteger(before) || before < 1) return { kind: "unavailable", reason: "unknown" }
@@ -652,7 +653,7 @@ export function statusSource(current: () => StatusClient | null,
         return { kind: "unavailable", reason: "old_version" }
       }
       try {
-        const reply = await client.transcriptPageForGeneration(destination, before, signal)
+        const reply = await client.transcriptPageForGeneration(destination, before, signal, revision)
         if (signal.aborted || opened.get(destinationKey(destination)) !== client) {
           return { kind: "unavailable", reason: "unknown" }
         }
@@ -665,9 +666,11 @@ export function statusSource(current: () => StatusClient | null,
         if (page) for (const entry of page.entries) for (const artifact of entry.artifacts ?? []) {
           visibleArtifacts.get(destinationKey(destination))?.add(artifact.id)
         }
-        return page ? { kind: "ready", destination, before, ...page } : { kind: "unavailable", reason: "unknown" }
+        return page ? { kind: "ready", destination, before, ...page,
+          ...(revision ? { requestedRevision: revision } : {}) } : { kind: "unavailable", reason: "unknown" }
       } catch (error) {
-        return { kind: "unavailable", reason: olderFailure(error) }
+        return { kind: "unavailable", reason: olderFailure(error),
+          ...((error as { code?: unknown } | null)?.code === "transcript_cursor_stale" ? { code: "transcript_cursor_stale" } : {}) }
       }
     },
     closeDetail(destination) {

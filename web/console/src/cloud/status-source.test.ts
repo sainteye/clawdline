@@ -717,6 +717,27 @@ test("an opened detail reads an older page with the same execution and a decreas
     { kind: "unavailable", reason: "unknown" })
 })
 
+test("native detail signatures survive the source and pin the exact older request", async () => {
+  const { client } = clientFixture()
+  const source = statusSource(() => client as never)
+  const destination = { machineID, sessionID, executionGeneration }
+  const signature = "agy1:synthetic:123:abc"
+  client.transcriptForGeneration = async () => ({ id: sessionID, entries: [], nextBefore: 123, signature })
+  const detail = await source.readDetail(destination, new AbortController().signal)
+  assert.equal(detail.kind === "ready" && detail.signature, signature)
+  let sent: unknown
+  Object.assign(client, { transcriptPageForGeneration: async (_destination: unknown, _before: number, _signal: AbortSignal, revision: string) => {
+    sent = revision
+    return { id: sessionID, entries: [], signature, nextBefore: 40 }
+  } })
+  const older = await source.readOlder?.(destination, 123, new AbortController().signal, signature)
+  assert.equal(sent, signature)
+  assert.equal(older?.kind === "ready" && older.requestedRevision, signature)
+  Object.assign(client, { transcriptPageForGeneration: async () => { throw Object.assign(new Error("changed"), { code: "transcript_cursor_stale" }) } })
+  const stale = await source.readOlder?.(destination, 40, new AbortController().signal, signature)
+  assert.equal(stale?.kind === "unavailable" && stale.code, "transcript_cursor_stale")
+})
+
 test("an older page is refused if status changes during its machine read", async () => {
   const { client, calls, row } = clientFixture()
   const source = statusSource(() => client as never)

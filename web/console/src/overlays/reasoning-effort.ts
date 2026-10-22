@@ -9,7 +9,7 @@ export function reasoningEffortHTML(
     ? ["low", "medium", "high", "xhigh", "max", "ultra"]
     : ["low", "medium", "high", "xhigh", "max"]
   // Preserve readings from older Codex models without adding irrelevant ticks to every model.
-  if (effort === "none" || effort === "minimal") levels.unshift("none", "minimal")
+  if (assistant !== "antigravity" && (effort === "none" || effort === "minimal")) levels.unshift("none", "minimal")
   const keys = { none: "None", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Xhigh", max: "Max", ultra: "Ultra" } as const
   const index = levels.indexOf(effort || "")
   if (index < 0) {

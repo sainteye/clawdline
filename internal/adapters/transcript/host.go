@@ -22,10 +22,11 @@ import (
 type Host struct {
 	Home string
 
-	mu        sync.RWMutex
-	claude    map[int]ClaudeRegistry
-	codex     map[string]string
-	codexLive map[string]codexLiveIdentity
+	mu          sync.RWMutex
+	antigravity ports.AntigravityBindings
+	claude      map[int]ClaudeRegistry
+	codex       map[string]string
+	codexLive   map[string]codexLiveIdentity
 	// codexRollouts remembers paths only while their writer locks are live.
 	// An ended thread leaves on the next refresh, so this cannot accumulate
 	// historical conversations behind the session list.
@@ -90,6 +91,12 @@ func (h *Host) codexIndexes() (map[string]string, map[string]codexLiveIdentity) 
 // weak from strong needs the conversation's first message, which is not read.
 func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identity, bool) {
 	switch s.Assistant {
+	case session.AssistantAntigravity:
+		b, binding, ok := h.antigravityBinding(ctx, s)
+		if !ok {
+			return ports.Identity{Binding: binding}, false
+		}
+		return ports.Identity{ConversationID: b.ConversationID, Pane: b.Process.TerminalID, Binding: session.BindingLaunchHook}, true
 	case session.AssistantClaude:
 		r, ok := h.claudeFor(s.PID)
 		if !ok {
@@ -181,6 +188,12 @@ func (h *Host) ShellOutput(ctx context.Context, s session.Session, id string, wi
 // A Codex thread's rollout is found by walking the tree for its id.
 func (h *Host) RecordPath(s session.Session) string {
 	switch s.Assistant {
+	case session.AssistantAntigravity:
+		b, _, ok := h.antigravityBinding(context.Background(), s)
+		if ok {
+			return b.TranscriptPath
+		}
+		return ""
 	case session.AssistantClaude:
 		path, _ := h.claudeTranscript(s)
 		return path

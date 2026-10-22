@@ -134,8 +134,9 @@ export interface ArchivedSessions {
 export type Assistant =
     "claude"
   | "codex"
+  | "antigravity"
 
-export const AssistantValues: readonly Assistant[] = ["claude", "codex"] as const
+export const AssistantValues: readonly Assistant[] = ["claude", "codex", "antigravity"] as const
 
 /**
  * One of four things this Mac can honestly say about an assistant's account-level
@@ -2429,8 +2430,9 @@ export type CapacityUnit =
   | "characters"
   | "rows"
   | "seconds"
+  | "milliseconds"
 
-export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "characters", "rows", "seconds"] as const
+export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "characters", "rows", "seconds", "milliseconds"] as const
 
 export interface CatalogError {
   code: string
@@ -3522,11 +3524,12 @@ export type IdentityBinding =
   | "open_file"
   | "live_title"
   | "registry"
+  | "launch_hook"
   | "no_record"
   | "unreadable"
   | "ambiguous"
 
-export const IdentityBindingValues: readonly IdentityBinding[] = ["command_line", "open_file", "live_title", "registry", "no_record", "unreadable", "ambiguous"] as const
+export const IdentityBindingValues: readonly IdentityBinding[] = ["command_line", "open_file", "live_title", "registry", "launch_hook", "no_record", "unreadable", "ambiguous"] as const
 
 /**
  * Why a reference has no picture behind it: `expired` when the store held it and no
@@ -4402,6 +4405,12 @@ export interface PlaceError {
    */
   app?: string
   code: string
+
+  /**
+   * Producer catalog key for a known fixed refusal; omitted for raw or external
+   * messages.
+   */
+  detail_key?: string
   message: string
   request_id: string
 }
@@ -8391,10 +8400,37 @@ export interface SquadWriteReply {
 }
 
 export interface StartAssistant {
+  authState?: StartAuthState
   availability: StartAvailability
+  capabilities?: StartCapabilities
   id: string
+
+  /**
+   * Whether a local executable was found; null when not checked. Does not prove
+   * protocol compatibility or authentication.
+   */
+  installed: boolean | null
+  integrationState?: StartIntegrationState
   label: string
+
+  /**
+   * Validated standalone CLI version, absent when compatibility could not be
+   * established.
+   */
+  version?: string
 }
+
+/**
+ * Authentication evidence, separate from executable presence and quota. Unknown
+ * never means ready.
+ */
+export type StartAuthState =
+    "ready"
+  | "required"
+  | "unknown"
+  | "unsupported_account"
+
+export const StartAuthStateValues: readonly StartAuthState[] = ["ready", "required", "unknown", "unsupported_account"] as const
 
 /**
  * AssistantQuota.Availability. This daemon reads no quota, so it answers unknown.
@@ -8406,6 +8442,26 @@ export type StartAvailability =
   | "unknown"
 
 export const StartAvailabilityValues: readonly StartAvailability[] = ["ok", "low", "exhausted", "unknown"] as const
+
+/**
+ * Operations admitted by this daemon's verified integration. CLI syntax alone never
+ * makes an operation available.
+ */
+export interface StartCapabilities {
+  menus: boolean
+  resume: boolean
+  send: boolean
+  start: boolean
+  transcript: boolean
+}
+
+export type StartIntegrationState =
+    "active"
+  | "disabled"
+  | "missing"
+  | "incompatible"
+
+export const StartIntegrationStateValues: readonly StartIntegrationState[] = ["active", "disabled", "missing", "incompatible"] as const
 
 /**
  * One directory a session can be started in. `id` is sixteen hex characters of the
@@ -9281,8 +9337,11 @@ export interface TranscriptPage {
   path?: string
 
   /**
-   * The record's size and modification time, `<bytes>-<unix seconds>`, and empty
-   * when nothing was read. It changes whenever the entries could have.
+   * Opaque record revision, empty when nothing was read. Claude/Codex use size and
+   * modification time; native Antigravity uses
+   * agy1:file-generation:prefix-bytes:sha256. Return this exact held page signature
+   * as revision with its before/after cursor; never substitute another page's
+   * signature.
    */
   signature: string
   truncation?: TranscriptTruncation

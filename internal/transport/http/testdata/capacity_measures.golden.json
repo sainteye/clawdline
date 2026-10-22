@@ -1,5 +1,80 @@
 [
   {
+    "Name": "antigravity.ancestry_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_config_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_connections",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_frame_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_payload_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_request_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_timeout_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.live_bindings",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.managed_launches",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.native_process_file_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.native_tty_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.observation_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.process_read_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.retention_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.state_age_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "artifacts.drops",
     "Known": true,
     "Note": true,
@@ -810,6 +885,11 @@
     "Note": true
   },
   {
+    "Name": "console.assistant_facts_read_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.carrier_receive_bytes",
     "Known": true,
     "Note": true
@@ -1041,6 +1121,11 @@
   },
   {
     "Name": "console.transcript_merged_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.transcript_revision_restarts",
     "Known": true,
     "Note": true
   },
@@ -1329,6 +1414,36 @@
   },
   {
     "Name": "personas.text_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_history_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_history_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_history_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_history_title_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_probe_output_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_probe_seconds",
     "Known": true,
     "Note": true
   },

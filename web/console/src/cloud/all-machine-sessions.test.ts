@@ -223,6 +223,16 @@ test("older pages prepend only to the exact execution and requested cursor", () 
   assert.deepEqual(current.entries, [{ role: "assistant", text: "newest" }])
 })
 
+test("an old transcript revision cannot fill an equal cursor from a newer held page", () => {
+  const destination = row("one", "same", "1").destination
+  const current = { kind: "ready" as const, destination, observedAt: 1000, info: {}, signature: "agy1:new",
+    entries: [{ role: "assistant", text: "newest" }], nextBefore: 123, question: null }
+  const older = { kind: "ready" as const, destination, before: 123, signature: "agy1:old", requestedRevision: "agy1:old",
+    entries: [{ role: "user", text: "older" }], nextBefore: 40 }
+  assert.equal(prependOlderPage(current, older), null)
+  assert.equal(prependOlderPage(current, { ...older, requestedRevision: "agy1:new", signature: "agy1:new" })?.signature, "agy1:new")
+})
+
 test("current status is reread when its earliest status time expires", () => {
   const one = ready("one", [{ ...row("one", "s", "1"), observedAt: 900 }])
   const two = ready("two", [{ ...row("two", "s", "1"), observedAt: 950 }])

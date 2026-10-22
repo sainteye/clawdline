@@ -1,0 +1,4 @@
+{
+  "observe.usage": "用法：clawdline provider observe antigravity --event EVENT\n",
+  "observe.failed": "Antigravity hook 失敗（%s）。\n"
+}

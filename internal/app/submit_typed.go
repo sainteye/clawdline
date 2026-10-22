@@ -56,6 +56,9 @@ func (a Actions) SubmitTyped(ctx context.Context, id, typed string) (session.Ses
 		return s, err
 	}
 	defer release()
+	if s.Assistant == session.AssistantAntigravity {
+		return a.submitAntigravityTyped(ctx, s, h, typed)
+	}
 	note := map[string]any{"key": KeyEnter}
 	screen, ok := a.Inventory.Screen.Capture(ctx, s)
 	if !ok {

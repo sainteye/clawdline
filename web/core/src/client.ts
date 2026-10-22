@@ -77,8 +77,8 @@ export class ClawdlineClient {
   coordinator(): Promise<CoordinatorSnapshot> {
     return this.get(routes.coordinator)
   }
-  transcript(id: string, limit = 40, before?: number): Promise<TranscriptPage> {
-    return this.get(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}${before ? `&before=${before}` : ""}`)
+  transcript(id: string, limit = 40, before?: number, revision?: string): Promise<TranscriptPage> {
+    return this.get(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}${before ? `&before=${before}` : ""}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`)
   }
 
   /**
@@ -86,8 +86,8 @@ export class ClawdlineClient {
    * `nextAfter`. The daemon refuses a cursor it cannot read from
    * (`transcript_cursor_stale`), and the newest page is then read whole.
    */
-  transcriptAfter(id: string, limit: number, after: number): Promise<TranscriptPage> {
-    return this.get(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}&after=${after}`)
+  transcriptAfter(id: string, limit: number, after: number, revision?: string): Promise<TranscriptPage> {
+    return this.get(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}&after=${after}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`)
   }
 
   agentTranscript(id: string, agent: string, limit = 40, before?: number): Promise<TranscriptPage> {

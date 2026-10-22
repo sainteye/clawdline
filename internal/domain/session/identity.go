@@ -19,6 +19,8 @@ import (
 type Binding string
 
 const (
+	// BindingLaunchHook ties a native conversation to independently verified process facts.
+	BindingLaunchHook Binding = "launch_hook"
 	// BindingCommandLine: the conversation id is in the process's own argv,
 	// which is how a resumed session of either assistant carries it.
 	BindingCommandLine Binding = "command_line"
@@ -58,7 +60,7 @@ const (
 // not are deliberately not one value: see Binding.
 func (b Binding) Bound() bool {
 	switch b {
-	case BindingCommandLine, BindingOpenFile, BindingLiveTitle, BindingRegistry:
+	case BindingCommandLine, BindingOpenFile, BindingLiveTitle, BindingRegistry, BindingLaunchHook:
 		return true
 	}
 	return false

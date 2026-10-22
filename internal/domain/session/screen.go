@@ -10,6 +10,17 @@ import "strings"
 // wrong answer a fleet list must not give, because "nothing is happening" is
 // exactly what somebody acts on.
 func ReadState(screen string, assistant Assistant) (State, bool) {
+	if assistant == AssistantAntigravity {
+		switch ReadAntigravityScreen(screen, false).Kind {
+		case AntigravityIdle, AntigravityDraft:
+			return StateIdle, true
+		case AntigravityWorking:
+			return StateWorking, true
+		case AntigravityMenu:
+			return StateWaiting, true
+		}
+		return StateUnknown, false
+	}
 	if strings.TrimSpace(screen) == "" {
 		return StateUnknown, false
 	}
