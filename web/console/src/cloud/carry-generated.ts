@@ -67,6 +67,8 @@ export const CARRIED = {
   personas: "GET /v1/personas",
   places: "GET /v1/places",
   "project-add": "POST /v1/places?machine=",
+  "project-antigravity-consent-change": "POST /v1/projects/{project}/antigravity-consent",
+  "project-antigravity-consent-status": "GET /v1/projects/{project}/antigravity-consent",
   "project-entry": "GET /v1/project-sync/entry?repo=",
   "project-file-list": "GET /v1/projects/{project}/files",
   "project-file-read": "GET /v1/projects/{project}/files/{file}",

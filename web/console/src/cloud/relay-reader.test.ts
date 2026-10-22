@@ -1850,6 +1850,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/projects", "projects", {}],
   ["/v1/projects/cloud-p1/files", "project-file-list", { project: "p1" }],
   ["/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-read", { project: "p1", file: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
+  ["/v1/projects/cloud-p1/antigravity-consent", "project-antigravity-consent-status", { project: "p1" }],
   ["/v1/projects/cloud-p1/unify", "project-unify-plan", { project: "p1" }],
   ["/v1/projects/cloud-p1/tree?directory=", "project-tree-list", { project: "p1", directory: "" }],
   ["/v1/projects/cloud-p1/tree?directory=src%2Fnested", "project-tree-list", { project: "p1", directory: "src/nested" }],

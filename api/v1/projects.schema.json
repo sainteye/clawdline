@@ -715,6 +715,105 @@
         "error": { "type": "string" },
         "detail": { "type": "string" }
       }
+    },
+    "AntigravityConsentPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "before_digest",
+        "helper_digest",
+        "managed_digest"
+      ],
+      "properties": {
+        "before_digest": {
+          "type": "string"
+        },
+        "helper_digest": {
+          "type": "string"
+        },
+        "managed_digest": {
+          "type": "string"
+        }
+      }
+    },
+    "AntigravityConsentStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "revision",
+        "scope",
+        "hooks"
+      ],
+      "properties": {
+        "phase": {
+          "$ref": "#/$defs/AntigravityConsentStatusPhase"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scope": {
+          "type": "string"
+        },
+        "hooks": {
+          "$ref": "#/$defs/AntigravityConsentStatusHooks"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "preview": {
+          "$ref": "#/$defs/AntigravityConsentPreview"
+        }
+      }
+    },
+    "AntigravityConsentChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "revision",
+        "scope"
+      ],
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/AntigravityConsentChangeAction"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scope": {
+          "type": "string"
+        },
+        "preview": {
+          "$ref": "#/$defs/AntigravityConsentPreview"
+        }
+      }
+    },
+    "AntigravityConsentStatusPhase": {
+      "type": "string",
+      "enum": [
+        "absent",
+        "preparing",
+        "active",
+        "disabled"
+      ]
+    },
+    "AntigravityConsentStatusHooks": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "installed",
+        "removed"
+      ]
+    },
+    "AntigravityConsentChangeAction": {
+      "type": "string",
+      "enum": [
+        "enable",
+        "disable"
+      ]
     }
   }
 }

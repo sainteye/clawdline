@@ -654,6 +654,104 @@
       "decode": {"reply": "action", "fields": {"path": {"type": "string", "non_empty": true, "max_bytes": 4096, "checks": ["printable", "absolute_path"]}}, "route": {"path": "/v1/places", "body": {"fields": {"paths": {"from": "path", "list": true}}}}}
     },
     {
+      "op": "project-antigravity-consent-change",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/projects/{project}/antigravity-consent",
+      "console_seam": "writer",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "item": {
+          "action": "disable",
+          "revision": 0,
+          "scope": "project-and-linked-worktrees"
+        },
+        "project": "p1",
+        "request": "apply-1",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "item",
+            "project",
+            "request",
+            "session"
+          ],
+          "path": "/v1/projects/{project}/antigravity-consent",
+          "local_body": [
+            "action",
+            "revision",
+            "scope"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "project": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 200
+          },
+          "item": {
+            "type": "object",
+            "max_bytes": 4096,
+            "copies": {"max_bytes": "capacity.AntigravityConsentRequestBytesLimit"}
+          }
+        },
+        "route": {
+          "path": "/v1/projects/{project}/antigravity-consent",
+          "body": {
+            "object": "item"
+          }
+        }
+      }
+    },
+    {
+      "op": "project-antigravity-consent-status",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/antigravity-consent",
+      "console_seam": "reader",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "project": "p1",
+        "request": "plan-1",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "project",
+            "request",
+            "session"
+          ],
+          "path": "/v1/projects/{project}/antigravity-consent"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "project": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 200
+          }
+        },
+        "route": {
+          "path": "/v1/projects/{project}/antigravity-consent"
+        }
+      }
+    },
+    {
       "op": "project-entry",
       "kind": "read",
       "write_gate": false,

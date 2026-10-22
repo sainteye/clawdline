@@ -429,3 +429,29 @@ func TestConsentPlanCannotBeRedirectedOrUsedAfterFileChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestConsentStatusRejectsARevokedSnapshotAndAllowsMissingHelperRevocation(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	enable(t, f, preview(t, f), "enable")
+	f.m.image = nil
+	out, err := f.m.Status(ctx, f.workspace)
+	if err != nil || out.Consent.Phase != store.AntigravityConsentActive || out.Preview != nil || out.Hooks != "unknown" {
+		t.Fatal(out, err)
+	}
+	f.m.store = &afterReadStore{Store: f.st, after: func(cur store.AntigravityProjectConsent) {
+		if _, err := f.st.ApplyAntigravityProjectConsent(ctx, store.AntigravityConsentCommand{ProjectRoot: f.workspace, Action: store.AntigravityConsentDisable, ExpectedRevision: cur.Revision, Actor: "device", Key: "status-race", OperationID: "status-race"}); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	if _, err := f.m.Status(ctx, f.workspace); err != Changed {
+		t.Fatal("stale display snapshot", err)
+	}
+	if state(t, f).Phase != store.AntigravityConsentDisabled {
+		t.Fatal("revocation did not commit")
+	}
+	out, err = f.m.Status(ctx, f.workspace)
+	if err != nil || out.Consent.Phase != store.AntigravityConsentDisabled || out.Preview != nil {
+		t.Fatal(out, err)
+	}
+}

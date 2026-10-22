@@ -312,6 +312,10 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		s.projectMemoryGroupRoute(w, r, parts[0], parts[2])
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "antigravity-consent" {
+		s.antigravityProjectConsentRoute(w, r, parts[0])
+		return
+	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "unify" {
 		s.projectUnifyRoute(w, r, parts[0])
 		return

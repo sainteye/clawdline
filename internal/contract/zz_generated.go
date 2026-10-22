@@ -55,6 +55,61 @@ type AdoptRequest struct {
 	Token string `json:"token"`
 }
 
+type AntigravityConsentChange struct {
+	Action   AntigravityConsentChangeAction `json:"action"`
+	Preview  *AntigravityConsentPreview     `json:"preview,omitempty"`
+	Revision int64                          `json:"revision"`
+	Scope    string                         `json:"scope"`
+}
+
+type AntigravityConsentChangeAction string
+
+const (
+	AntigravityConsentChangeActionEnable  AntigravityConsentChangeAction = "enable"
+	AntigravityConsentChangeActionDisable AntigravityConsentChangeAction = "disable"
+)
+
+// AntigravityConsentChangeActionValues is every value the contract allows, in contract order.
+var AntigravityConsentChangeActionValues = []AntigravityConsentChangeAction{AntigravityConsentChangeActionEnable, AntigravityConsentChangeActionDisable}
+
+type AntigravityConsentPreview struct {
+	BeforeDigest  string `json:"before_digest"`
+	HelperDigest  string `json:"helper_digest"`
+	ManagedDigest string `json:"managed_digest"`
+}
+
+type AntigravityConsentStatus struct {
+	Hooks    AntigravityConsentStatusHooks `json:"hooks"`
+	Phase    AntigravityConsentStatusPhase `json:"phase"`
+	Preview  *AntigravityConsentPreview    `json:"preview,omitempty"`
+	Reason   string                        `json:"reason,omitempty"`
+	Revision int64                         `json:"revision"`
+	Scope    string                        `json:"scope"`
+}
+
+type AntigravityConsentStatusHooks string
+
+const (
+	AntigravityConsentStatusHooksUnknown   AntigravityConsentStatusHooks = "unknown"
+	AntigravityConsentStatusHooksInstalled AntigravityConsentStatusHooks = "installed"
+	AntigravityConsentStatusHooksRemoved   AntigravityConsentStatusHooks = "removed"
+)
+
+// AntigravityConsentStatusHooksValues is every value the contract allows, in contract order.
+var AntigravityConsentStatusHooksValues = []AntigravityConsentStatusHooks{AntigravityConsentStatusHooksUnknown, AntigravityConsentStatusHooksInstalled, AntigravityConsentStatusHooksRemoved}
+
+type AntigravityConsentStatusPhase string
+
+const (
+	AntigravityConsentStatusPhaseAbsent    AntigravityConsentStatusPhase = "absent"
+	AntigravityConsentStatusPhasePreparing AntigravityConsentStatusPhase = "preparing"
+	AntigravityConsentStatusPhaseActive    AntigravityConsentStatusPhase = "active"
+	AntigravityConsentStatusPhaseDisabled  AntigravityConsentStatusPhase = "disabled"
+)
+
+// AntigravityConsentStatusPhaseValues is every value the contract allows, in contract order.
+var AntigravityConsentStatusPhaseValues = []AntigravityConsentStatusPhase{AntigravityConsentStatusPhaseAbsent, AntigravityConsentStatusPhasePreparing, AntigravityConsentStatusPhaseActive, AntigravityConsentStatusPhaseDisabled}
+
 // The answer to an archive: the close's answer (`ok`, `id`, `action` =
 // `archived`, `forced`) and the row it recorded.
 type ArchiveAnswer struct {

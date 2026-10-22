@@ -415,3 +415,49 @@ func (m *Manager) Disable(ctx context.Context, workspace string, revision int64,
 	out.Hooks = "removed"
 	return out, nil
 }
+
+// Snapshot is a fresh display projection, never launch authority. A failed
+// preview or file inspection remains explicit while durable revocation stays
+// available. No path or private operation identity crosses the HTTP boundary.
+type Snapshot struct {
+	Consent       store.AntigravityProjectConsent
+	Preview       *Plan
+	Hooks, Reason string
+}
+
+func (m *Manager) Status(ctx context.Context, workspace string) (Snapshot, error) {
+	root, err := m.root(ctx, workspace)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	cur, err := m.store.AntigravityProjectConsent(ctx, root)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	out := Snapshot{Consent: cur, Hooks: "unknown"}
+	if p, e := m.Preview(ctx, workspace); e == nil {
+		if p.Revision != cur.Revision {
+			return Snapshot{}, Changed
+		}
+		out.Preview = &p
+	} else {
+		out.Reason = string(HelperUnavailable)
+		if e == HooksUnverified {
+			out.Reason = string(HooksUnverified)
+		}
+	}
+	if cur.Phase == store.AntigravityConsentActive {
+		checked, e := m.Check(ctx, workspace)
+		if e == nil && checked.Consent == cur {
+			out.Hooks = "installed"
+		} else {
+			out.Reason = string(HooksUnverified)
+		}
+	} else if _, e := antigravity.InspectRemovedForState(workspace, m.helper, m.configRoot); e == nil {
+		out.Hooks = "removed"
+	}
+	if err := m.stable(ctx, root, workspace, cur, false); err != nil {
+		return Snapshot{}, err
+	}
+	return out, nil
+}

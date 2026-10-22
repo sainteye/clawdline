@@ -1562,6 +1562,16 @@
     "Note": true
   },
   {
+    "Name": "projects.antigravity_consent_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.antigravity_consent_request_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "projects.folder_rows",
     "Known": true,
     "Note": true

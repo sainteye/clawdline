@@ -1,8 +1,9 @@
 # Local Antigravity Project hook consent
 
-This page covers local consent storage and its private filesystem coordinator.
-No public HTTP endpoint, consent screen or production launch permission is
-enabled by this work. The provider is fixed to Antigravity. State lives in the
+This page covers local consent storage, its filesystem coordinator and the
+authenticated website/Cloud consent interface. Production Session launch
+permission remains disabled until its native behavior and policy are verified.
+The provider is fixed to Antigravity. State lives in the
 private local SQLite store, never in repository files, shared Project Unify
 settings, a Cloud mirror, or native workspace trust.
 
@@ -129,9 +130,9 @@ file/change-stamp checks with future helper ownership. Replacement, in-place
 rewrites with restored mtime, mode changes, removal and cancellation refuse.
 Subsequent fingerprint reads use metadata, not repeated full executable reads.
 These primitives start no vendor process or worker and publish no production
-policy. Their private transactional coordinator is described below. Authenticated
-UI, concrete catalog composition and effective-mode proof remain required before
-production launch admission can be enabled.
+policy. Their private transactional coordinator is described below. Authenticated Project settings and catalog composition are implemented below.
+Effective-mode evidence and the production launch policy publisher remain required
+before Session launch admission can be enabled.
 
 ## Private transactional coordinator
 
@@ -140,8 +141,8 @@ native filesystem adapter, with no worker, queue, map or new resource limit.
 Its constructor receives one immutable helper pin and one trusted catalog
 resolver. The resolver must prove canonical Project and linked-worktree
 membership; a path prefix is insufficient. The manager authenticates no person.
-A future HTTP owner must enforce explicit person/device consent and recover its
-own durable operation identity. Its `Plan` is a private preview and must never
+The HTTP owner enforces person/device send access and derives its stable operation
+identity from the authenticated actor, route, key and approved change. Its `Plan` is a private preview and must never
 be accepted as caller-chosen roots, workspace membership or helper paths.
 
 The fixed scope is `project-and-linked-worktrees`. The consent screen must
@@ -191,9 +192,7 @@ policy publisher is enabled by this coordinator.
 The server now owns one private consent manager and immutable helper pin for
 its boot. Stopping or cancelling that owner makes its captured resolver refuse;
 a new boot cannot be borrowed by a stale owner. Startup publishes neither a
-native behavior row nor production permission inputs. This provides the owner
-for the forthcoming authenticated Project settings route, without enabling a
-public grant endpoint in this change. Missing helper bytes leave revocation
+native behavior row nor production permission inputs. This owner now backs the authenticated Project settings route. Missing helper bytes leave revocation
 available while preview and live authority remain unavailable.
 
 The resolver requires the current Project catalog and
@@ -226,5 +225,61 @@ replays, revocation during installation, helper loss, cleanup uncertainty,
 linked-worktree revision stability and cross-Project refusal. A one-time source
 counterfactual removes the final live read: the targeted test fails after the
 revocation actually commits. The original sources remain untouched by that
-experiment. Root still owns authenticated HTTP/catalog composition, UI and
-native effective-mode acceptance and any release.
+experiment. Root still owns production launch policy publication, native effective-mode
+acceptance, independent full UI/UX/brand review and any release.
+
+## Website consent and Cloud transport
+
+Project settings now contain an Antigravity CLI connection block. The unchecked
+approval describes this machine, the selected Project and its verified linked
+worktrees, including later preparation under that Project-wide grant. The
+changed file is `.agents/hooks.json`; unrelated settings are preserved. Neither
+viewing settings nor checking the approval box installs anything. The explicit
+connect/update button sends the displayed revision and three preview values.
+The prior-file digest may be the literal `absent`, not a fabricated SHA256.
+This consent starts no model, signs into no account, grants no vendor-native
+workspace trust and approves no API spending.
+
+`GET /v1/projects/{place}/antigravity-consent` reads a fresh, path-free display
+snapshot with `Cache-Control: no-store`: durable phase/revision, fixed scope,
+current checkout hook inspection and an optional approved-plan preview. Status
+rereads catalog membership and the exact durable row after its dependencies;
+revocation during a read refuses the stale snapshot. Helper loss or malformed
+files makes the preview unavailable without hiding a known disabled state.
+Hook inspection and durable consent are separate from Session availability.
+
+`POST` on that route needs a person's authenticated send access and a visible
+ASCII `Idempotency-Key` of at most the store's existing 128-byte identity bound.
+The orchestrator token cannot grant consent. A closed 4096-byte JSON input accepts
+only enable/disable, revision, exact scope and (for enable) the three digests.
+The server owns the catalog root, workspace, executable and actor. Route-scoped
+hashed keys retain the same namespace across enable and disable: changing the
+body under a key conflicts. Manager phase receipts recover the same approved
+operation after a lost answer without a second outer pending receipt. Success
+is reread for display, never copied from a historical command receipt.
+
+The Cloud vocabulary carries `project-antigravity-consent-status` as a read and
+`project-antigravity-consent-change` through its command gate. The console resolves
+the selected Project's owning machine and preserves the exact body and request
+key. No Cloud consent replication or credential fields are introduced.
+
+The website bounds the whole answer, including a hanging JSON body, to 15 seconds.
+Expiry aborts its request and leaves a mutation uncertain. After a mutation it
+reads current status. An uncertain operation offers an explicit same-body,
+same-key retry; this page never retries automatically. Browser transports can
+repeat an HTTP POST independently: a synthetic Chrome connection-cut experiment
+observed two identical requests with the same key and only one revision change.
+The original observation is retained privately, not generalized to all browsers.
+Reloading/reviewing a pending page is not a rollback. Revocation persists loss of
+authority before cleanup, applies to the Project and its verified worktrees, and
+does not stop existing native processes. Cleanup checks only the displayed
+checkout; other worktrees may retain inactive files, and failed cleanup remains
+explicitly unknown while the saved revocation remains effective.
+
+Tests use real local SQLite/files and the actual HTTP gate plus Cloud bridge,
+with synthetic credentials and no provider process. Browser component checks
+cover desktop/phone widths, English/Taiwan Traditional Chinese, both system theme
+preferences, explicit unchecked consent, unknown status, lost acknowledgment and
+manual same-operation retry. The product's existing dark palette is retained for
+both preferences. This is component acceptance, not deployed Cloud, full Project
+settings integration or the independent final brand review.

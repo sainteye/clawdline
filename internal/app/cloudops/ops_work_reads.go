@@ -84,6 +84,8 @@ func init() {
 		op{name: "project-tree-read", read: true},
 		// Unify (docs/project-files.md): the plan is a read a paired device
 		// may make with remote writes off; apply is a write and needs the gate.
+		op{name: "project-antigravity-consent-status", read: true},
+		op{name: "project-antigravity-consent-change"},
 		op{name: "project-unify-plan", read: true},
 		op{name: "project-unify-apply",
 			partial: stoppedUnify},

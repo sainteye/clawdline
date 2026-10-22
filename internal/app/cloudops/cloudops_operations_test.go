@@ -232,6 +232,33 @@ func TestProjectFileCloudReadsDoNotGrantRemoteWrites(t *testing.T) {
 	}
 }
 
+func TestAntigravityConsentCloudReadAndExplicitChangeGate(t *testing.T) {
+	r := &router{}
+	closed := Bridge{MachineID: "mac-01", Router: r}
+	read := closed.Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "project-antigravity-consent-status", "session": MachineReplySession, "request": "plan-1", "project": "p1"}))
+	if read.Status != 200 || len(r.seen) != 1 {
+		t.Fatalf("plan with remote writes off: %+v; requests: %+v", read, r.seen)
+	}
+	apply := map[string]any{"type": "project-antigravity-consent-change", "session": MachineReplySession, "request": "apply-1", "project": "p1",
+		"item": map[string]any{"action": "disable", "revision": 0, "scope": "project-and-linked-worktrees"}}
+	refused := closed.Handle(context.Background(), request(t, ClassCtl, apply))
+	if refused.Code != "cloud_commands_disabled" || len(r.seen) != 1 {
+		t.Fatalf("apply with remote writes off: %+v; requests: %+v", refused, r.seen)
+	}
+	open := Bridge{MachineID: "mac-01", Router: r, AllowCommands: func() bool { return true }}
+	if answer := open.Handle(context.Background(), request(t, ClassCtl, apply)); answer.Status != 200 || len(r.seen) != 2 {
+		t.Fatalf("apply with remote writes on: %+v; requests: %+v", answer, r.seen)
+	}
+	if key := r.last().Header["Idempotency-Key"]; key != "apply-1" {
+		t.Fatalf("apply carried idempotency key %q", key)
+	}
+	if answer := open.Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "project-antigravity-consent-change",
+		"session": MachineReplySession, "request": "apply-2", "project": "p1"})); answer.Code != "malformed_command" {
+		t.Fatalf("apply without a version body: %+v", answer)
+	}
+}
+
 func TestProjectUnifyCloudPlanIsAReadAndApplyNeedsTheWriteGate(t *testing.T) {
 	r := &router{}
 	closed := Bridge{MachineID: "mac-01", Router: r}
@@ -776,7 +803,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"past-sessions", "schedules", "coordination.leases", "coordination.waits", "coordination.pauses", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "session-snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test", "diagnostics.events",
-		"board", "board-command", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-unify-plan", "project-unify-apply", "project-worktree-lifecycle",
+		"board", "board-command", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-antigravity-consent-status", "project-antigravity-consent-change", "project-unify-plan", "project-unify-apply", "project-worktree-lifecycle",
 		"project-worktree-lifecycle-refresh", "project-worktree-remove", "capacity", "provider-quotas", "default-models", "default-models-update", "notification-rules", "notification-rules-update", "work-gate-settings", "work-gate-settings-update", "notification-settings", "notification-settings-update", "machine-usage", "update", "update-apply", "personas",
 		"work.proposals", "work.decisions", "work.decision", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",

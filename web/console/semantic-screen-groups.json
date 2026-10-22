@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9096,
-  "riskKeys": 4058,
-  "nonRiskCount": 5038,
+  "englishContentKeys": 9131,
+  "riskKeys": 4075,
+  "nonRiskCount": 5056,
   "groups": [
     {
       "name": "admin / other",
@@ -250,6 +250,26 @@
       ]
     },
     {
+      "name": "antigravityConsent / other",
+      "count": 11,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "antigravityConsent.approve",
+        "antigravityConsent.cleanup",
+        "antigravityConsent.enable",
+        "antigravityConsent.hooksInstalled",
+        "antigravityConsent.loading",
+        "antigravityConsent.refresh",
+        "antigravityConsent.repair",
+        "antigravityConsent.retry",
+        "antigravityConsent.review",
+        "antigravityConsent.scope",
+        "antigravityConsent.title"
+      ]
+    },
+    {
       "name": "bar / other",
       "count": 15,
       "sources": [
@@ -315,7 +335,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 291,
+      "count": 294,
       "sources": [
         null
       ],
@@ -533,6 +553,9 @@
         "capacityRow.projectfiles.skill_summary_runes.what",
         "capacityRow.projectfiles.tree_depth.what",
         "capacityRow.projectfiles.write_bytes.what",
+        "capacityRow.projects.antigravity_consent_body_bytes.full",
+        "capacityRow.projects.antigravity_consent_body_bytes.what",
+        "capacityRow.projects.antigravity_consent_request_ms.what",
         "capacityRow.projects.folder_rows.full",
         "capacityRow.projects.folder_rows.what",
         "capacityRow.projects.workspace_metadata_bytes.what",
@@ -1679,7 +1702,7 @@
     },
     {
       "name": "http / other",
-      "count": 567,
+      "count": 571,
       "sources": [
         "internal/productcopy/http_refusals/en.json"
       ],
@@ -1960,6 +1983,7 @@
         "http.7bed3fef7770d790",
         "http.7c15e7448e6f4d1c",
         "http.7e2c5d9ffaec4584",
+        "http.7e74308ff28b5de2",
         "http.7f274d7c058b1244",
         "http.7f3611c4961fe4b4",
         "http.8068f2909056c688",
@@ -1980,6 +2004,7 @@
         "http.87cdc6f672c5e3a4",
         "http.883ab34a982800c7",
         "http.88923f7e3568dcbd",
+        "http.88b3df1d14e88824",
         "http.8924121abe71d8d4",
         "http.8957e11c71b39b11",
         "http.899c65606db16cc9",
@@ -2074,11 +2099,13 @@
         "http.af79924236eb68ed",
         "http.b1360348d1cda7a1",
         "http.b13d3d63b05a4fc8",
+        "http.b1ba2b428054e819",
         "http.b1ceb0bb0f74b5cb",
         "http.b3e9295369e80a66",
         "http.b3fa6fd90e94068a",
         "http.b503622ebdfbbe50",
         "http.b504d5730afb2919",
+        "http.b546a536f0b348ad",
         "http.b5501cf58d3798e6",
         "http.b561485f2007e697",
         "http.b5ed11ce440c1543",

@@ -6143,6 +6143,45 @@
   },
   {
     "Register": "daemon",
+    "Name": "projects.antigravity_consent_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.antigravityConsentBodyBytesLimit",
+      "internal/domain/capacity.AntigravityConsentRequestBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.antigravity_consent_request_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 15000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "projects.folder_rows",
     "Class": "buffer",
     "Unit": "rows",

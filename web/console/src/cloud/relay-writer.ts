@@ -253,6 +253,7 @@ export type WriteRoute =
   | { op: "project-hide"; word: Carried<"project-hide"> }
   | { op: "project-add"; word: Carried<"project-add"> }
   | { op: "project-file-save"; word: Carried<"project-file-save">; project: string; file: string }
+  | { op: "project-antigravity-consent-change"; word: Carried<"project-antigravity-consent-change">; project: string }
   | { op: "project-unify-apply"; word: Carried<"project-unify-apply">; project: string }
   | { op: "project-mirror-apply"; word: Carried<"project-mirror-apply"> }
   | { op: "project-mirror-detach"; word: Carried<"project-mirror-detach"> }
@@ -647,6 +648,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "projects" && a && b === "files" && c && segments.length === 4 && method === "PUT" && /^[0-9a-f]{32}$/.test(c)) {
     return { op: "project-file-save", word: "project-file-save", project: a, file: c }
   }
+  if (head === "projects" && a && b === "antigravity-consent" && segments.length === 3 && method === "POST") {
+    return { op: "project-antigravity-consent-change", word: "project-antigravity-consent-change", project: a }
+  }
   if (head === "projects" && a && b === "unify" && segments.length === 3 && method === "POST") {
     return { op: "project-unify-apply", word: "project-unify-apply", project: a }
   }
@@ -926,6 +930,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "project-hide":
     case "project-add":
     case "project-file-save":
+    case "project-antigravity-consent-change":
     case "project-unify-apply":
     case "project-mirror-apply":
     case "project-mirror-detach":
@@ -1829,13 +1834,14 @@ export class RelayWriter {
         return client._machineRequestAs(request, place.machine, route.word,
           { project: place.id, file: route.file, item: await bodyOf(init) }, "action")
       }
+      case "project-antigravity-consent-change":
       case "project-unify-apply": {
         if (typeof client._place !== "function" || typeof client._machineRequestAs !== "function") throw failure("cloud_not_carried", route.word, 501)
-        if ([...url.searchParams].length) throw failure("cloud_not_carried", "Applying a unify plan takes no query fields.", 501)
+        if ([...url.searchParams].length) throw failure("cloud_not_carried", "Project settings changes take no query fields.", 501)
         const place = client._place(route.project)
         if (place.machine !== this.host.machine) throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
         const request = headerOf(init, "idempotency-key")
-        if (!request) throw failure("idempotency_key_required", "Applying a unify plan needs an Idempotency-Key.", 400)
+        if (!request) throw failure("idempotency_key_required", "Changing Project settings needs an Idempotency-Key.", 400)
         return client._machineRequestAs(request, place.machine, route.word, { project: place.id, item: await bodyOf(init) }, "action")
       }
       case "project-mirror-apply":

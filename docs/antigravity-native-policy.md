@@ -1,9 +1,10 @@
 # Antigravity native policy and launch ownership
 
 Status: private storage, native execution-plan observation, shared preparation
-and live policy checks are implemented. Publishing the actual project-consent
-and effective-mode owners, HTTP/broker entrypoints and native behavior activation
-remain pending. This supplements decision A07 in
+and live policy checks are implemented. Authenticated Project consent now has
+website and Cloud entrypoints. Publishing the actual launch policy and
+effective-mode owners, Session HTTP/broker entrypoints and native behavior
+activation remain pending. This supplements decision A07 in
 [the integration design](antigravity-cli.md#decisions-and-alternatives), without
 replacing the existing work, receipt, claims or final acceptance policies.
 No compatibility row is enabled by this storage change.
@@ -13,7 +14,8 @@ preparing, activation and revocation are durable CAS transitions with atomic
 request receipts. A private coordinator now composes filesystem installation, recovery,
 revocation and per-worktree checks. A lifecycle-owned private server manager
 now resolves current catalog membership and bounded Git worktree registration.
-Authenticated consent UI and the live policy publisher remain to be connected;
+Authenticated Project consent UI and Cloud operations now use this owner;
+the live launch policy publisher remains to be connected;
 an active historical command answer is never current authority.
 
 ## Decision and alternatives
@@ -151,8 +153,8 @@ proof reads recheck current policy. Managed PreToolUse selects the dedicated
 response only after the same policy checks. A missing dependency or behavior
 row refuses; all real rows remain inactive. The private dependency snapshot has
 no browser setter or production publisher in this stage: the actual narrow
-project-consent owner and proven effective-mode implementation are still
-required. Tests inject explicit synthetic adapter contracts, not real consent
+project-consent owner must still be bound into that publication alongside a
+proven effective-mode implementation. Tests inject explicit synthetic adapter contracts, not real consent
 or native permission evidence. No existing hooks file is treated as opt-in.
 
 `ManagedRecordForProcess` distinguishes positively unowned native processes

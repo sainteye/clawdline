@@ -323,7 +323,11 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("session-snippets" in CARRIED)
   assert.ok("usage.overview" in CARRIED)
   assert.ok("direct-local-network-enable" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 165)
+  assert.equal(CARRIED["project-antigravity-consent-status"], "GET /v1/projects/{project}/antigravity-consent")
+  assert.equal(CARRIED["project-antigravity-consent-change"], "POST /v1/projects/{project}/antigravity-consent")
+  assert.ok(!("project-antigravity-consent-status" in DEFERRED))
+  assert.ok(!("project-antigravity-consent-change" in DEFERRED))
+  assert.equal(Object.keys(CARRIED).length, 167)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

@@ -323,6 +323,8 @@
 | `projectfiles.tree_depth` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projectfiles.tree_path_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectfiles.write_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.antigravity_consent_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.antigravity_consent_request_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `projects.folder_rows` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projects.workspace_metadata_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.clones` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |

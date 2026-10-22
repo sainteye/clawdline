@@ -1,0 +1,15 @@
+.antigravity-consent { margin-top: 20px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.antigravity-consent-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.antigravity-consent h3 { margin: 0; font-size: 17px; }
+.antigravity-consent p { margin: 10px 0; line-height: 1.5; overflow-wrap: anywhere; }
+.antigravity-consent-boundary, .antigravity-consent-files { color: var(--dim); font-size: 13px; }
+.antigravity-consent-approval { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; margin: 14px 0; line-height: 1.5; }
+.antigravity-consent-approval input { flex: none; margin-top: 5px; accent-color: var(--accent); }
+.antigravity-consent-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.antigravity-consent button { min-height: 44px; max-width: 100%; white-space: normal; }
+.antigravity-consent-notice { padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+
+.antigravity-consent button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card-hi); }
+.antigravity-consent button:hover:not(:disabled) { border-color: var(--accent-ed); }
+.antigravity-consent button:disabled { opacity: .5; cursor: default; }
+.antigravity-consent .antigravity-consent-connect:not(:disabled) { color: #fff; background: var(--accent); border-color: var(--accent); }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/projectfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/cloudvocab"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/domain/squadpack"
@@ -15,22 +16,23 @@ import (
 // copy of, by the name the table's `copies` gives it. The generated decoders
 // read the table's number; this is what keeps that number the constant's.
 var copiedConstants = map[string]int64{
-	"ViewerEventsBatchBytesLimit":   ViewerEventsBatchBytesLimit,
-	"SessionRowIDBytesLimit":        SessionRowIDBytesLimit,
-	"defaultModelsCloudBodyLimit":   defaultModelsCloudBodyLimit,
-	"intentTextLimit":               intentTextLimit,
-	"projectSyncCloudBodyLimit":     projectSyncCloudBodyLimit,
-	"scheduleMaximumBytes":          scheduleMaximumBytes,
-	"snippetMaximumBytes":           snippetMaximumBytes,
-	"verificationCloudBodyLimit":    verificationCloudBodyLimit,
-	"verificationCriteriaMaximum-1": verificationCriteriaMaximum - 1,
-	"voiceRate":                     voiceRate,
-	"workV2CloudBodyLimit":          workV2CloudBodyLimit,
-	"workV2CloudImageBodyLimit":     workV2CloudImageBodyLimit,
-	"projectfiles.MaxWriteBytes":    projectfiles.MaxWriteBytes,
-	"squad.MaxSquadRequestBytes":    squad.MaxSquadRequestBytes,
-	"squadpack.MaxRequestBytes":     squadpack.MaxRequestBytes,
-	"store.MaxSquadEventPageRows":   store.MaxSquadEventPageRows,
+	"capacity.AntigravityConsentRequestBytesLimit": capacity.AntigravityConsentRequestBytesLimit,
+	"ViewerEventsBatchBytesLimit":                  ViewerEventsBatchBytesLimit,
+	"SessionRowIDBytesLimit":                       SessionRowIDBytesLimit,
+	"defaultModelsCloudBodyLimit":                  defaultModelsCloudBodyLimit,
+	"intentTextLimit":                              intentTextLimit,
+	"projectSyncCloudBodyLimit":                    projectSyncCloudBodyLimit,
+	"scheduleMaximumBytes":                         scheduleMaximumBytes,
+	"snippetMaximumBytes":                          snippetMaximumBytes,
+	"verificationCloudBodyLimit":                   verificationCloudBodyLimit,
+	"verificationCriteriaMaximum-1":                verificationCriteriaMaximum - 1,
+	"voiceRate":                                    voiceRate,
+	"workV2CloudBodyLimit":                         workV2CloudBodyLimit,
+	"workV2CloudImageBodyLimit":                    workV2CloudImageBodyLimit,
+	"projectfiles.MaxWriteBytes":                   projectfiles.MaxWriteBytes,
+	"squad.MaxSquadRequestBytes":                   squad.MaxSquadRequestBytes,
+	"squadpack.MaxRequestBytes":                    squadpack.MaxRequestBytes,
+	"store.MaxSquadEventPageRows":                  store.MaxSquadEventPageRows,
 }
 
 // Every limit the table copies equals the constant it names, and every

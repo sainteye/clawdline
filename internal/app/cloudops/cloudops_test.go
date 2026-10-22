@@ -753,6 +753,15 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-file-save", method: "PUT", path: "/v1/projects/p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		body2: `{"content":"updated","expected_version":"v1"}`,
 	}, {
+		word:    "project-antigravity-consent-status",
+		body:    map[string]any{"type": "project-antigravity-consent-status", "session": machine, "request": "req-consent-status", "project": "p1"},
+		session: machine, name: "read:req-consent-status", method: "GET", path: "/v1/projects/p1/antigravity-consent",
+	}, {
+		word:    "project-antigravity-consent-change",
+		body:    map[string]any{"type": "project-antigravity-consent-change", "session": machine, "request": "req-consent-change", "project": "p1", "item": map[string]any{"action": "disable", "revision": 0, "scope": "project-and-linked-worktrees"}},
+		session: machine, name: "action:req-consent-change", method: "POST", path: "/v1/projects/p1/antigravity-consent",
+		body2: `{"action":"disable","revision":0,"scope":"project-and-linked-worktrees"}`,
+	}, {
 		word:    "project-unify-plan",
 		body:    map[string]any{"type": "project-unify-plan", "session": machine, "request": "req-unify-plan", "project": "p1"},
 		session: machine, name: "read:req-unify-plan", method: "GET", path: "/v1/projects/p1/unify",

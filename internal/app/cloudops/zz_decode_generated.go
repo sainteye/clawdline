@@ -44,6 +44,8 @@ var generatedDecoders = map[string]genDecoder{
 	"personas":                           genDecodePersonas,
 	"places":                             genDecodePlaces,
 	"project-add":                        genDecodeProjectAdd,
+	"project-antigravity-consent-change": genDecodeProjectAntigravityConsentChange,
+	"project-antigravity-consent-status": genDecodeProjectAntigravityConsentStatus,
 	"project-entry":                      genDecodeProjectEntry,
 	"project-file-list":                  genDecodeProjectFileList,
 	"project-file-read":                  genDecodeProjectFileRead,
@@ -1080,6 +1082,49 @@ func genDecodeProjectAdd(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genFields(map[string]genValue{"paths": genValue{from: "path", list: true}})
+	return p, req, true
+}
+
+// genDecodeProjectAntigravityConsentChange is the `project-antigravity-consent-change` row's decode.
+func genDecodeProjectAntigravityConsentChange(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "item", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("item", genRule{kind: "object", maxBytes: 4096}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/antigravity-consent"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("item")
+	return p, req, true
+}
+
+// genDecodeProjectAntigravityConsentStatus is the `project-antigravity-consent-status` row's decode.
+func genDecodeProjectAntigravityConsentStatus(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/antigravity-consent"
+	req := LocalRequest{Method: "GET", Path: path}
 	return p, req, true
 }
 

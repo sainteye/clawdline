@@ -915,6 +915,15 @@ export class RelayReader {
           projectFile.file ? "project-file-read" : "project-file-list",
           { project: place.id, ...(projectFile.file ? { file: projectFile.file } : {}) })
       }
+      const consentProject = projectUnifyRoute(path, "antigravity-consent")
+      if (consentProject) {
+        this.only(url, path)
+        const client = this.connected()
+        if (typeof client._place !== "function") throw Object.assign(new Error("the Cloud client cannot resolve this Project"), { code: "cloud_not_carried", status: 501 })
+        const place = client._place(consentProject)
+        if (place.machine !== this.machine) throw Object.assign(new Error("this Project belongs to another machine"), { code: "cloud_project_machine_mismatch", status: 409 })
+        return await this.machineRead(init?.signal, method, path, "project-antigravity-consent-status", { project: place.id })
+      }
       const unifyProject = projectUnifyRoute(path)
       if (unifyProject) {
         this.only(url, path)
@@ -2984,9 +2993,9 @@ function projectFileRoute(path: string): { project: string; file?: string } | nu
 }
 
 /** The Project a unify plan read names, or "" for any other path. */
-function projectUnifyRoute(path: string): string {
+function projectUnifyRoute(path: string, suffix = "unify"): string {
   const parts = path.split("/")
-  if (parts.length !== 5 || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== "unify") return ""
+  if (parts.length !== 5 || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== suffix) return ""
   try { return decodeURIComponent(parts[3]) } catch { return "" }
 }
 

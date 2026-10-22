@@ -53,6 +53,49 @@ export interface AdoptRequest {
   token: string
 }
 
+export interface AntigravityConsentChange {
+  action: AntigravityConsentChangeAction
+  preview?: AntigravityConsentPreview
+  revision: number
+  scope: string
+}
+
+export type AntigravityConsentChangeAction =
+    "enable"
+  | "disable"
+
+export const AntigravityConsentChangeActionValues: readonly AntigravityConsentChangeAction[] = ["enable", "disable"] as const
+
+export interface AntigravityConsentPreview {
+  before_digest: string
+  helper_digest: string
+  managed_digest: string
+}
+
+export interface AntigravityConsentStatus {
+  hooks: AntigravityConsentStatusHooks
+  phase: AntigravityConsentStatusPhase
+  preview?: AntigravityConsentPreview
+  reason?: string
+  revision: number
+  scope: string
+}
+
+export type AntigravityConsentStatusHooks =
+    "unknown"
+  | "installed"
+  | "removed"
+
+export const AntigravityConsentStatusHooksValues: readonly AntigravityConsentStatusHooks[] = ["unknown", "installed", "removed"] as const
+
+export type AntigravityConsentStatusPhase =
+    "absent"
+  | "preparing"
+  | "active"
+  | "disabled"
+
+export const AntigravityConsentStatusPhaseValues: readonly AntigravityConsentStatusPhase[] = ["absent", "preparing", "active", "disabled"] as const
+
 /**
  * The answer to an archive: the close's answer (`ok`, `id`, `action` = `archived`,
  * `forced`) and the row it recorded.
