@@ -2,8 +2,8 @@
 
 The private transcript reader and launch Store support a durable proof that
 original context appeared in a native execution. They do not enable the public
-start/send path or a role badge. Synchronous managed-hook composition and its
-native timing verification remain pending. See [first input](antigravity-first-input.md)
+start/send path or a role badge. Synchronous managed-hook composition is now
+implemented; its actual vendor timing verification remains pending. See [first input](antigravity-first-input.md)
 and [launch context](antigravity-launch-context.md) for the surrounding owners.
 
 ## What is proved
@@ -76,9 +76,44 @@ migration with a consumed input slot. No model or paid API call is involved.
 The first targeted run found a test-only cancelled context shared by successive
 failure cases; each case now owns its own context.
 
-The production hook path still uses PREPARED-only responses. It must be changed
-to capture this baseline synchronously before returning context, prove native
-file availability at that moment, and check previous proof before advancing a
-response. Original skill loading and Squad applied receipts need their own
-verified composition. These APIs alone do not mean that the product has loaded
-a role, nor that the complete Antigravity integration has passed acceptance.
+The managed PreInvocation hook now captures this baseline synchronously before
+returning context. A repeated invocation first verifies the preceding response's
+native loaded proof; missing, stale or non-native evidence refuses the new
+response. The fresh verifier repeats complete kernel process, exact terminal,
+workspace, capability, immutable files and positive native conversation checks
+around the read. Runtime construction and proof use the same transcript home.
+No terminal lane is acquired by this hook, and no poller or retry is introduced.
+
+The six-case private-tmux/Unix-helper composition test passed in 3.182 seconds.
+It uses real kernel process ancestry and the saved sanitized wrapper with
+synthetic data, not a vendor process. It verifies original context across two
+separate hooks and refuses wrong workspace, partial baseline, missing loaded
+row, model echo and file replacement. Every returned response has its own
+persisted PREPARED fence, rather than inheriting a Loaded bit from its predecessor.
+The existing bridge already requires a present regular transcript at admission;
+the new capture additionally requires complete native JSONL. Actual standalone
+1.4.5 file timing must still be measured with the managed hook. Original skill
+loading and Squad applied receipts need their own verified composition. No role
+badge is enabled, and the complete integration has not passed acceptance.
+
+## Bounded local probe controls
+
+The private verification controller now stops every registered owned process
+group on a budget or input deadline. A deterministic two-process control first
+reproduced the old 31st event from a still-live second process; the fixed suite
+passed 13 cases ten times. Root verified all 22 delivered hashes and independently
+ran the same 13 cases once. A separate macOS owner-SIGKILL test observed four
+kernel process-exit events and both registered groups absent. This does not
+establish power-loss behavior, group-escaping descendant containment or another
+platform's runtime behavior.
+
+Received hook events, admitted model steps, allocated input, terminal delivery
+and stopped processes remain separate counts. A finite registry does not prove
+a native scheduler's in-flight event bound: a deliberately excessive late
+receipt is honestly recorded as event 31, never relabelled as an admission.
+The controller therefore proves global stop and refusal of further admission,
+not an unconditional ceiling on every raw native event or vendor HTTP request.
+Its current subprocess transport discards standard IO; interactive PTY forwarding
+and its process-group behavior must be verified before a native CLI batch.
+These controls use local fake processes only. They do not authorize or establish
+native CLI timing, free-plan eligibility, a product role badge or UI acceptance.

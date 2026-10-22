@@ -152,7 +152,8 @@ same bytes; older/conflicting observations cannot recreate an earlier response.
 The bridge already rejects repeated observations before this layer.
 
 Cancellation and write failure return a typed error and no response. An earlier
-receipt remains `PREPARED`; no callback path creates delivered/loaded status.
+latest response remains `PREPARED`. The managed hook can verify its predecessor's
+native loaded proof before advancing; preparation alone never grants loaded status.
 If a rename may have occurred but sync/cancellation makes the transaction
 uncertain, this Store refuses further work until reopened. Retrying the same
 key after reopening resolves the durable state without inferring rollback.
@@ -276,4 +277,6 @@ The private [context proof reader and Store](antigravity-context-proof.md) persi
 a synchronous pre-response native fence and compare exact attributed system
 rows with original injection bytes. A persisted Loaded bit is historical only;
 current eligibility requires fresh process and complete file revalidation.
-Managed-hook composition and actual native boundary timing remain pending.
+Managed PreInvocation composition now captures the baseline synchronously and
+verifies its predecessor before advancing. Actual vendor boundary timing and
+role/Squad projection remain pending.

@@ -121,10 +121,7 @@ func (s *Server) StartAntigravity(ctx context.Context, options AntigravityRuntim
 		}
 		return "", nil
 	})
-	home, err := os.UserHomeDir()
-	if host, ok := s.inventory.Identity.(*transcript.Host); ok && host.Home != "" {
-		home, err = host.Home, nil
-	}
+	home, err := s.antigravityRecordHome()
 	if err != nil {
 		return nil, &antigravity.BridgeError{Code: "antigravity_configuration_invalid"}
 	}
@@ -163,4 +160,13 @@ func (s *Server) StartAntigravity(ctx context.Context, options AntigravityRuntim
 			s.antigravityRuntimeMu.Unlock()
 		})
 	}, nil
+}
+
+// Runtime identity and private proof use the same native record home. Tests
+// supply an isolated transcript Host; production never guesses from a payload.
+func (s *Server) antigravityRecordHome() (string, error) {
+	if host, ok := s.inventory.Identity.(*transcript.Host); ok && host.Home != "" {
+		return host.Home, nil
+	}
+	return os.UserHomeDir()
 }

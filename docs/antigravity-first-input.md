@@ -1,10 +1,10 @@
 # Antigravity first-input contract
 Root accepted the process-bound input and durable slot design. The launch
 Store and private app/terminal path are implemented; HTTP capability enablement,
-real process/policy composition and native loaded-context proof composition remain pending.
-The private [native proof reader and Store](antigravity-context-proof.md) now
-retain a pre-response fence and revalidate loaded evidence; the live hook path
-does not yet use them.
+real first-input process/policy composition and actual native timing remain pending.
+The private [native proof reader, Store and managed hook](antigravity-context-proof.md)
+retain a pre-response fence and revalidate loaded evidence; role/Squad projection
+and real CLI acceptance are still pending.
 This document does not declare the complete integration ready. Format follows
 docs/design-decisions.md.
 
@@ -111,4 +111,4 @@ Irreversible: stored phases/fence/loaded receipt/index migration. Version migrat
 | Truncate/rewrite/replace after loaded | Invalidate current badge; retain history |
 | Exact fenced SYSTEM_SDK/DONE | Record once; verify idempotently |
 
-Outside the current private input implementation: live process/policy composition, permission/login/vendor probes, native proof composition, deployment and full-feature/UI acceptance. Root retains these. The private proof reader and Store are implemented separately; open native evidence concerns file timing.
+Outside the current private input implementation: live process/policy composition, permission/login/vendor probes, role/Squad loaded-proof projection, deployment and full-feature/UI acceptance. Root retains these. The private proof reader and Store are implemented separately; open native evidence concerns file timing.

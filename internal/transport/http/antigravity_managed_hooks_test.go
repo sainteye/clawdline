@@ -18,11 +18,8 @@ import (
 )
 
 func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T) {
-	for _, wrongWorkspace := range []bool{false, true} {
-		name := "original_workspace"
-		if wrongWorkspace {
-			name = "wrong_workspace"
-		}
+	for _, name := range []string{"original_workspace", "wrong_workspace", "partial_native_record", "missing_loaded_row", "model_echo", "replaced_transcript"} {
+		wrongWorkspace := name == "wrong_workspace"
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("TMUX", "")
 			t.Setenv("TMUX_PANE", "")
@@ -68,7 +65,11 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(path, []byte("{}\n"), 0600); err != nil {
+			initial := []byte{}
+			if name == "partial_native_record" {
+				initial = []byte("{")
+			}
+			if err := os.WriteFile(path, initial, 0600); err != nil {
 				t.Fatal(err)
 			}
 			tmux := s.terminals[0].(*terminal.Tmux)
@@ -93,7 +94,7 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 			if wrongWorkspace {
 				cwd = root
 			}
-			command := "exec env AG_RUNTIME_SYNTHETIC_ROOT=" + projects.ShellQuoted(root) + " AG_RUNTIME_MANAGED=1 " + strings.Join(prepared.PrivateEnv, " ") + " " + projects.ShellQuoted(executable) + " -test.run=^TestAntigravityRuntimeSyntheticProvider$"
+			command := "exec env AG_RUNTIME_SYNTHETIC_ROOT=" + projects.ShellQuoted(root) + " AG_RUNTIME_MANAGED=1 AG_RUNTIME_CONTEXT_FOLLOWUP=1 " + strings.Join(prepared.PrivateEnv, " ") + " " + projects.ShellQuoted(executable) + " -test.run=^TestAntigravityRuntimeSyntheticProvider$"
 			run("-f", "/dev/null", "new-session", "-d", "-s", "managed", "-c", cwd, command)
 			defer func() {
 				cmd := exec.Command(binary, "-S", tmux.Socket, "kill-server")
@@ -152,6 +153,15 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 				}
 				return
 			}
+			if name == "partial_native_record" {
+				if !bytes.Contains(output, []byte("antigravity_hook_response_failed")) {
+					t.Fatalf("partial native baseline accepted: %s", output)
+				}
+				if _, found, err := owner.Receipt(ctx, prepared.Record.ID); err != nil || found {
+					t.Fatal("invalid baseline acquired a prepared response", err)
+				}
+				return
+			}
 			var response struct {
 				InjectSteps []struct {
 					SystemMessage struct {
@@ -167,12 +177,74 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 				t.Fatal("native binding not retained", err)
 			}
 			receipt, found, err := owner.Receipt(ctx, prepared.Record.ID)
-			if err != nil || !found || receipt.Status != "PREPARED" {
+			if err != nil || !found || receipt.Status != "PREPARED" || !receipt.Fenced || receipt.Loaded || receipt.Fence.Bytes != 0 {
 				t.Fatal("response became a false loaded receipt", err)
 			}
 			history, err := owner.WorkspaceBindings(ctx)
 			if err != nil || history[conversation] != project {
 				t.Fatal("positive native workspace evidence missing", err)
+			}
+
+			// A second real Unix helper is descended from the same owned
+			// foreground test executable. Only a native system row appended
+			// AFTER the first response permits the next fenced response.
+			fixture, err := os.ReadFile(filepath.Join("..", "..", "adapters", "transcript", "testdata", "antigravity-context.jsonl"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var row map[string]any
+			if err := json.Unmarshal(fixture, &row); err != nil {
+				t.Fatal(err)
+			}
+			const synthetic = "Synthetic immutable context.\nRole ALDER; language zh-Hant-TW; memory MAPLE."
+			content := row["content"].(string)
+			if strings.Count(content, synthetic) != 1 {
+				t.Fatal("native fixture context missing")
+			}
+			row["content"] = strings.Replace(content, synthetic, response.InjectSteps[0].SystemMessage.SystemMessage, 1)
+			row["step_index"] = 0
+			if name == "model_echo" {
+				row["source"] = "MODEL"
+			}
+			data, err := json.Marshal(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = append(data, '\n')
+			if name != "missing_loaded_row" {
+				target := path
+				if name == "replaced_transcript" {
+					target = path + ".replacement"
+				}
+				if err := os.WriteFile(target, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if target != path {
+					if err := os.Rename(target, path); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			signal("managed-next")
+			nextOutput := wait("hook-next-result")
+			nextReceipt, found, err := owner.Receipt(ctx, prepared.Record.ID)
+			if err != nil || !found {
+				t.Fatal("response receipt lost", err)
+			}
+			if name != "original_workspace" {
+				if !bytes.Contains(nextOutput, []byte("antigravity_hook_response_failed")) {
+					t.Fatalf("missing/stale/non-native proof advanced: %s", nextOutput)
+				}
+				if nextReceipt != receipt {
+					t.Fatal("failed proof replaced its original baseline")
+				}
+				return
+			}
+			if !json.Valid(nextOutput) || !bytes.Contains(nextOutput, []byte("injectSteps")) {
+				t.Fatalf("native proof could not advance response: %s", nextOutput)
+			}
+			if nextReceipt.Sequence <= receipt.Sequence || !nextReceipt.Fenced || nextReceipt.Loaded || nextReceipt.Fence.Bytes != int64(len(data)) || nextReceipt.Fence.LastStep != 0 {
+				t.Fatal("next response did not retain its own pre-response baseline")
 			}
 		})
 	}

@@ -92,6 +92,29 @@ func TestAntigravityRuntimeSyntheticProvider(t *testing.T) {
 	if publishAntigravitySyntheticResult(filepath.Join(root, "hook-result"), output, nil) != nil {
 		os.Exit(2)
 	}
+	if os.Getenv("AG_RUNTIME_CONTEXT_FOLLOWUP") == "1" {
+		until := time.Now().Add(10 * time.Second)
+		ready := false
+		for time.Now().Before(until) {
+			if _, err := os.Stat(filepath.Join(root, "managed-next")); err == nil {
+				ready = true
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if !ready {
+			os.Exit(2)
+		}
+		next := exec.Command(os.Args[0], "-test.run=^TestAntigravityRuntimeSyntheticHook$")
+		next.Env = append(os.Environ(), "AG_RUNTIME_INVOCATION=2")
+		output, err := next.CombinedOutput()
+		if err != nil {
+			output = append(output, []byte(err.Error())...)
+		}
+		if publishAntigravitySyntheticResult(filepath.Join(root, "hook-next-result"), output, nil) != nil {
+			os.Exit(2)
+		}
+	}
 	// Keep the positively observed provider alive until its private pane is closed.
 	<-time.After(20 * time.Second)
 	os.Exit(0)
@@ -103,7 +126,11 @@ func TestAntigravityRuntimeSyntheticHook(t *testing.T) {
 		return
 	}
 	path, _ := transcript.AntigravityPath(filepath.Join(root, "home"), "74000000-0000-4000-8000-000000000003")
-	payload, _ := json.Marshal(map[string]any{"conversationId": "74000000-0000-4000-8000-000000000003", "transcriptPath": path, "invocationNum": 1})
+	invocation := 1
+	if os.Getenv("AG_RUNTIME_INVOCATION") == "2" {
+		invocation = 2
+	}
+	payload, _ := json.Marshal(map[string]any{"conversationId": "74000000-0000-4000-8000-000000000003", "transcriptPath": path, "invocationNum": invocation})
 	var out bytes.Buffer
 	var launch *antigravity.HookLaunch
 	if os.Getenv("AG_RUNTIME_MANAGED") == "1" {

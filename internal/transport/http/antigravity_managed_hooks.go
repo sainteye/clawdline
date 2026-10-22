@@ -6,10 +6,13 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/antigravitylaunch"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 func managedAntigravityFailure() error {
@@ -100,11 +103,79 @@ func (s *Server) managedAntigravityResponse(ctx context.Context, binding ports.A
 	if err := verifyManagedAntigravityWorkspace(ctx, binding.Process, record.Workspace); err != nil {
 		return nil, err
 	}
-	// Native conversation evidence is recorded before preparing original context.
-	// The response receipt remains PREPARED; only a separate native transcript
-	// proof may mark context loaded or attach a role badge.
+	home, err := s.antigravityRecordHome()
+	if err != nil {
+		return nil, managedAntigravityFailure()
+	}
+	check := func(c context.Context, evidence ports.AntigravityBinding) error {
+		return s.checkManagedAntigravityContext(c, record.ID, evidence)
+	}
+	// A second response cannot overwrite the unresolved baseline of the first.
+	// Verify its native system row synchronously; no poller or automatic retry.
+	previous, found, err := owner.Receipt(ctx, record.ID)
+	if err != nil {
+		return nil, err
+	}
+	if found && previous.Fenced {
+		if err := owner.VerifyContextLoaded(ctx, record.ID, home, check); err != nil {
+			return nil, err
+		}
+	}
+	// Positive native identity and the complete baseline precede response
+	// publication. PREPARED is still not a loaded role or an applied receipt.
+	if err := check(ctx, binding); err != nil {
+		return nil, err
+	}
 	if err := owner.RecordBinding(ctx, record.ID, binding, antigravitylaunch.KeepConversation); err != nil {
 		return nil, err
 	}
-	return owner.PreInvocationResponse(ctx, binding)
+	fence, err := transcript.CaptureAntigravityContextFence(ctx, home, binding, check)
+	if err != nil {
+		return nil, err
+	}
+	return owner.PrepareFencedResponse(ctx, binding, fence)
+}
+
+// checkManagedAntigravityContext rechecks complete kernel execution, exact
+// terminal, capability, original files, kernel workspace and positive native
+// identity around every proof read. Later events may advance the sequence but
+// may not switch the execution or conversation. State freshness is unrelated
+// to original context having been loaded into this still-current execution.
+func (s *Server) checkManagedAntigravityContext(ctx context.Context, launchID string, evidence ports.AntigravityBinding) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	owner, bridge := s.antigravityLaunchStore.Load(), s.antigravityBridge.Load()
+	if owner == nil || bridge == nil || !evidence.Verified {
+		return managedAntigravityFailure()
+	}
+	fresh, err := bridge.VerifyAntigravityProcess(ctx, evidence.Process.PID)
+	if err != nil {
+		return err
+	}
+	if fresh != evidence.Process {
+		return managedAntigravityFailure()
+	}
+	record, err := owner.LookupProcess(ctx, fresh)
+	if err != nil {
+		return err
+	}
+	if record.ID != launchID || (record.NativeID != "" && record.NativeID != evidence.ConversationID) {
+		return managedAntigravityFailure()
+	}
+	if err := verifyManagedAntigravityWorkspace(ctx, fresh, record.Workspace); err != nil {
+		return err
+	}
+	birth, err := time.Parse(time.RFC3339Nano, fresh.Birth)
+	if err != nil {
+		return managedAntigravityFailure()
+	}
+	native, err := bridge.AntigravityBinding(ctx, session.Session{ID: fresh.TerminalID, PID: fresh.PID, TTY: fresh.TTY, Backend: session.Backend(record.Backend), Assistant: session.AssistantAntigravity, ExpectedStart: birth, ConversationID: evidence.ConversationID})
+	if err != nil {
+		return err
+	}
+	if !native.Verified || native.Process != fresh || native.ConversationID != evidence.ConversationID || native.TranscriptPath != evidence.TranscriptPath || native.Sequence < evidence.Sequence || s.antigravityLaunchStore.Load() != owner || s.antigravityBridge.Load() != bridge {
+		return managedAntigravityFailure()
+	}
+	return ctx.Err()
 }
