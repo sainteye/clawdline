@@ -5,6 +5,18 @@
     "Note": true
   },
   {
+    "Name": "antigravity.context_history",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.context_index_bytes",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.context_receipts",
+    "Known": true
+  },
+  {
     "Name": "antigravity.hook_config_bytes",
     "Known": true,
     "Note": true
@@ -33,6 +45,10 @@
     "Name": "antigravity.hook_timeout_seconds",
     "Known": true,
     "Note": true
+  },
+  {
+    "Name": "antigravity.launch_context_bytes",
+    "Known": true
   },
   {
     "Name": "antigravity.live_bindings",
@@ -68,6 +84,10 @@
     "Name": "antigravity.retention_seconds",
     "Known": true,
     "Note": true
+  },
+  {
+    "Name": "antigravity.saved_launches",
+    "Known": true
   },
   {
     "Name": "antigravity.state_age_seconds",

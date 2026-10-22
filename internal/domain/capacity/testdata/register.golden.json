@@ -21,6 +21,66 @@
   },
   {
     "Register": "daemon",
+    "Name": "antigravity.context_history",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxHistory"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.context_index_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4194304,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxIndexBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.context_receipts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxReceipts"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "antigravity.hook_config_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -137,6 +197,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/antigravity.MaxHookTimeoutSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.launch_context_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 262144,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxContextBytes"
     ]
   },
   {
@@ -277,6 +357,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/antigravity.MaxObservationRetention"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.saved_launches",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxLaunches"
     ]
   },
   {
