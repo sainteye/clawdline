@@ -184,11 +184,11 @@ func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 4 || got["codex_default_effort"] != "xhigh" || got["codex_default_model"] != "gpt-6" || got["claude_default_model"] != "claude-sonnet-4-5" {
+	if len(got) != 6 || got["codex_default_effort"] != "xhigh" || got["codex_default_model"] != "gpt-6" || got["claude_default_model"] != "claude-sonnet-4-5" {
 		t.Fatalf("narrow answer: %#v", got)
 	}
 	models, ok := got["models"].(map[string]any)
-	if !ok || len(models) != 2 || !strings.Contains(rec.Body.String(), `"value":"gpt-6-sol","label":"GPT-6 Sol"`) ||
+	if !ok || len(models) != 3 || !strings.Contains(rec.Body.String(), `"value":"gpt-6-sol","label":"GPT-6 Sol"`) ||
 		strings.Contains(rec.Body.String(), "gpt-hidden") ||
 		!strings.Contains(rec.Body.String(), `"value":"opus","label":"Opus 5.5"`) ||
 		!strings.Contains(rec.Body.String(), `"value":"fable","label":"Fable 5.1"`) ||
@@ -343,6 +343,8 @@ func TestSettingsEveryWindowRow(t *testing.T) {
 			switch {
 			case len(key.Choices) > 0:
 				sent[key.Name] = key.Choices[len(key.Choices)-1]
+			case key.Name == "antigravity_default_effort":
+				sent[key.Name] = "max"
 			case key.Name == "hotkey":
 				sent[key.Name] = "cmd+shift+k"
 			case key.Name == "scope_app":

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "settings.schema.json",
   "title": "This app's settings file",
-  "description": "GET and POST /v1/settings. The file is ~/.config/clawdline-next/config.json, never the Swift app's; its keys are the Swift app's spellings. A write is a merge onto what is on disk, atomic, and leaves every other key as it was. A file that is not a JSON object is refused rather than replaced. Every key here has a row in the native settings window, whose layout is a web page (web/console/src/pages/settings/window) drawn inside a shell window — see docs/shell-bridge.md.",
+  "description": "GET and POST /v1/settings. The file is ~/.config/clawdline-next/config.json, never the Swift app's; its keys are the Swift app's spellings. A write is a merge onto what is on disk, atomic, and leaves every other key as it was. A file that is not a JSON object is refused rather than replaced. Website Settings is the primary entry. The narrow /v1/settings/default-models route carries launch defaults over the paired Cloud read/write path; retained settings window types remain compatible.",
   "$defs": {
     "SettingsSnapshot": {
       "type": "object",
@@ -55,6 +55,8 @@
           "nullable": true,
           "type": "string"
         },
+        "antigravity_default_model": {"description": "Native Antigravity model slug. Empty leaves the choice to Antigravity; no fallback to another provider.", "nullable": true, "type": "string"},
+        "antigravity_default_effort": {"description": "Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the choice to Antigravity.", "nullable": true, "type": "string"},
         "codex_default_effort": {
           "description": "Codex reasoning effort for new Sessions when the launch does not name one. Empty leaves the choice to Codex.",
           "nullable": true,
@@ -304,6 +306,8 @@
           "nullable": true,
           "type": "string"
         },
+        "antigravity_default_model": {"description": "Native Antigravity model slug. Empty leaves the choice to Antigravity; no fallback to another provider.", "nullable": true, "type": "string"},
+        "antigravity_default_effort": {"description": "Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the choice to Antigravity.", "nullable": true, "type": "string"},
         "codex_default_effort": {
           "description": "Empty, high or xhigh for a new Codex Session.",
           "nullable": true,

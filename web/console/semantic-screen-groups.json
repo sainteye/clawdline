@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8969,
-  "riskKeys": 3997,
-  "nonRiskCount": 4972,
+  "englishContentKeys": 8975,
+  "riskKeys": 3999,
+  "nonRiskCount": 4976,
   "groups": [
     {
       "name": "admin / other",
@@ -3235,11 +3235,14 @@
     },
     {
       "name": "next / default",
-      "count": 7,
+      "count": 10,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
+        "next.defaultAntigravityEffort",
+        "next.defaultAntigravityEffortInvalid",
+        "next.defaultAntigravityModel",
         "next.defaultClaudeModel",
         "next.defaultCodexEffort",
         "next.defaultCodexModel",
@@ -3774,11 +3777,12 @@
     },
     {
       "name": "next / schedule",
-      "count": 30,
+      "count": 31,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
+        "next.scheduleAntigravityEffortField",
         "next.scheduleEffortField",
         "next.scheduleEveryDays",
         "next.scheduleInterval",

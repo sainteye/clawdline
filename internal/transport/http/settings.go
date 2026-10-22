@@ -186,7 +186,7 @@ func (s *Server) defaultModelsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for name := range body {
-			if name != "codex_default_model" && name != "claude_default_model" && name != "codex_default_effort" {
+			if name != "codex_default_model" && name != "claude_default_model" && name != "codex_default_effort" && name != "antigravity_default_model" && name != "antigravity_default_effort" {
 				writeRawRefusal(w, http.StatusBadRequest, "bad_request", "not a default model key: "+name)
 				return
 			}
@@ -434,10 +434,12 @@ func (s *Server) notificationSettingsRoute(w http.ResponseWriter, r *http.Reques
 }
 
 type defaultModelsAnswer struct {
-	CodexEffort *string                         `json:"codex_default_effort"`
-	Codex       *string                         `json:"codex_default_model"`
-	Claude      *string                         `json:"claude_default_model"`
-	Models      map[string][]defaultModelOption `json:"models"`
+	Antigravity       *string                         `json:"antigravity_default_model"`
+	AntigravityEffort *string                         `json:"antigravity_default_effort"`
+	CodexEffort       *string                         `json:"codex_default_effort"`
+	Codex             *string                         `json:"codex_default_model"`
+	Claude            *string                         `json:"claude_default_model"`
+	Models            map[string][]defaultModelOption `json:"models"`
 }
 
 type defaultModelOption struct {
@@ -448,13 +450,22 @@ type defaultModelOption struct {
 func defaultModelsSnapshot(f *nextconfig.File, v nextconfig.Values) defaultModelsAnswer {
 	snapshot := settingsSnapshot(f, v)
 	home, _ := os.UserHomeDir()
-	models := map[string][]defaultModelOption{"codex": {}, "claude": {}}
+	models := map[string][]defaultModelOption{"codex": {}, "claude": {}, "antigravity": {}}
 	for _, assistant := range []string{"codex", "claude"} {
 		for _, model := range transcript.Models(home, assistant) {
 			models[assistant] = append(models[assistant], defaultModelOption{Value: model.Command, Label: model.Name})
 		}
 	}
+	// No installed native model-list source: an empty catalog means unknown.
+	var nativeModel, nativeEffort *string
+	if model, ok := v.String("antigravity_default_model"); ok && nextconfig.ValidDefaultModel(model) {
+		nativeModel = &model
+	}
+	if effort, ok := v.String("antigravity_default_effort"); ok {
+		nativeEffort = &effort
+	}
 	return defaultModelsAnswer{
+		Antigravity: nativeModel, AntigravityEffort: nativeEffort,
 		Codex: snapshot.CodexDefaultModel, CodexEffort: snapshot.CodexDefaultEffort, Claude: snapshot.ClaudeDefaultModel, Models: models,
 	}
 }

@@ -9,9 +9,9 @@ import type {
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"
 
-export type DefaultModelAssistant = "codex" | "claude"
+export type DefaultModelAssistant = "codex" | "claude" | "antigravity"
 export type DefaultModelOption = { value: string; label: string }
-type DefaultModelValues = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model" | "codex_default_effort">
+type DefaultModelValues = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model" | "codex_default_effort" | "antigravity_default_model" | "antigravity_default_effort">
 export type DefaultModelsSnapshot = DefaultModelValues & {
   models: Record<DefaultModelAssistant, DefaultModelOption[]>
 }

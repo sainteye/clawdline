@@ -184,7 +184,7 @@
       "shapes": [
         {"body": ["changes", "request", "session"], "path": "/v1/settings/default-models", "local_body": ["claude_default_model"]}
       ],
-      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 3, "properties": {"codex_default_model": {"type": "string", "nullable": true}, "claude_default_model": {"type": "string", "nullable": true}, "codex_default_effort": {"type": "string", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/default-models", "body": {"object": "changes"}}}
+      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 5, "properties": {"antigravity_default_model": {"type": "string", "nullable": true}, "antigravity_default_effort": {"type": "string", "nullable": true}, "codex_default_model": {"type": "string", "nullable": true}, "claude_default_model": {"type": "string", "nullable": true}, "codex_default_effort": {"type": "string", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/default-models", "body": {"object": "changes"}}}
     },
     {
       "op": "diagnostics.events",

@@ -5999,8 +5999,9 @@ export interface ScheduleRequest {
   place_id: string
 
   /**
-   * Codex high or xhigh; no key keeps the saved value, an empty string takes it
-   * off.
+   * Codex high or xhigh; Antigravity low, medium, high, xhigh or max. No key keeps
+   * the saved value for the same provider; changing provider does not inherit
+   * another provider's effort. An empty string takes it off.
    */
   reasoning_effort?: string
 
@@ -6163,7 +6164,8 @@ export interface ScheduleTask {
  * has no type for it). `permission_mode` is refused by name
  * (`template_permission_mode`): it is sent as the form's own field, where who may
  * set it is checked. Any other key is refused by name. `reasoning_effort` is kept
- * only when the assistant is codex, as a save keeps it.
+ * for codex or antigravity and validated against that provider's vocabulary, as a
+ * save keeps it.
  */
 export interface ScheduleTemplate {
   claims?: string[]
@@ -7360,6 +7362,18 @@ export interface SessionsSnapshot {
  */
 export interface SettingsRequest {
   /**
+   * Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the
+   * choice to Antigravity.
+   */
+  antigravity_default_effort: string | null
+
+  /**
+   * Native Antigravity model slug. Empty leaves the choice to Antigravity; no
+   * fallback to another provider.
+   */
+  antigravity_default_model: string | null
+
+  /**
    * `claude` or `codex`.
    */
   auto_name_assistant: string | null
@@ -7661,6 +7675,18 @@ export interface SettingsRequest {
 }
 
 export interface SettingsSnapshot {
+  /**
+   * Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the
+   * choice to Antigravity.
+   */
+  antigravity_default_effort: string | null
+
+  /**
+   * Native Antigravity model slug. Empty leaves the choice to Antigravity; no
+   * fallback to another provider.
+   */
+  antigravity_default_model: string | null
+
   /**
    * Whose quota that naming turn spends, `claude` or `codex`. Remembered while the
    * switch above is off, so turning it back on does not quietly change providers.

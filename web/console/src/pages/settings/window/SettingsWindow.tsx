@@ -529,6 +529,16 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
               disabled={!defaultModels}
               onPick={(value) => void change({ claude_default_model: value })}
             />
+          </Row>
+          <Row label={catalogWord("next", "defaultAntigravityModel")} hint={catalogWord("next", "defaultAntigravityCatalogUnknown")}>
+            <PopUp label={catalogWord("next", "defaultAntigravityModel")} value={String(now("antigravity_default_model"))}
+              options={defaultModelOptions(defaultModels, "antigravity", String(now("antigravity_default_model")), W.settingsProviderDefault)}
+              disabled={!defaultModels} onPick={value => void change({ antigravity_default_model: value })} />
+          </Row>
+          <Row label={catalogWord("next", "defaultAntigravityEffort")}>
+            <PopUp label={catalogWord("next", "defaultAntigravityEffort")} value={String(now("antigravity_default_effort"))}
+              options={Array.from(new Set(["", "low", "medium", "high", "xhigh", "max", String(now("antigravity_default_effort"))])).map(value => ({value,label:value || W.settingsProviderDefault}))}
+              onPick={value => void change({ antigravity_default_effort: value })} />
           </Row></>}
           <Row label={W.settingsCodexAutoName} hint={W.settingsCodexAutoNameHint}>
             <PopUp
