@@ -87,6 +87,9 @@ func (a Actions) Key(ctx context.Context, id, key, expect string) (session.Sessi
 		return s, err
 	}
 	defer release()
+	if s.Assistant == session.AssistantAntigravity {
+		return a.keyAntigravity(ctx, s, h, digit, expect)
+	}
 	p := presser{keys: keys, screen: a.Inventory.Screen, s: s, note: map[string]any{"key": key},
 		refill: func(ctx context.Context, m session.Menu) session.Menu { return a.Inventory.refillMenu(ctx, s, m) }}
 	// Read once, before any byte, and that reading is the one the answer is

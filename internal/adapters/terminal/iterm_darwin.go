@@ -509,6 +509,9 @@ var itermSendLimit = sendConfirm + 6*time.Second
 // on a current macOS, and iTerm2's own `write` does not bring the window
 // forward, which is the whole point.
 func (i *ITerm) Send(ctx context.Context, s session.Session, text string) error {
+	if s.Assistant == session.AssistantAntigravity {
+		return Unsent{Why: ErrAntigravityInputUnavailable.Error()}
+	}
 	if !itermMayAct(ctx) {
 		return ITermScanOff{Op: "type into that iTerm2 session"}
 	}
