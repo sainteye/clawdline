@@ -275,6 +275,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `personas.catalog` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `personas.suggestion_context_bytes` | 16384 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `personas.text_bytes` | 8192 | `bytes` | `refuse` | `diagnostics` | — |
+| `places.antigravity_probe_output_bytes` | 65536 | `bytes` | `refuse` | `diagnostics` | — |
+| `places.antigravity_probe_seconds` | 3 | `seconds` | `refuse` | `diagnostics` | — |
 | `places.git_config_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `places.registered` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `places.repo_lookups` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |
