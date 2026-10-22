@@ -25,6 +25,7 @@ struct ShellCopy {
     var menuClose: String { word("menuClose") }
     var menuHome: String { word("menuHome") }
     var menuHelpDocumentation: String { word("menuHelpDocumentation") }
+    var menuHelpSetup: String { word("menuHelpSetup") }
     func menuAbout(_ app: String) -> String { word("menuAbout", [app]) }
     var menuServices: String { word("menuServices") }
     func menuHide(_ app: String) -> String { word("menuHide", [app]) }

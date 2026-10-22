@@ -6336,6 +6336,23 @@ type SettingsRequest struct {
 	ScopeApp             *string `json:"scope_app"`
 	SessionAutoDiscovery *bool   `json:"session_auto_discovery"`
 
+	// The Cloud device id the macOS app's own tab paired as, recorded by the setup
+	// wizard from the invitation it handed the app. Empty or absent is not known.
+	SetupAppDevice *string `json:"setup_app_device"`
+
+	// Unix seconds when the console first saw all three setup items paired; 0 or
+	// absent is not complete. The header setup button folds away one day later.
+	SetupCompletedAt *int64 `json:"setup_completed_at"`
+
+	// Empty, cloud or local. What the person chose in the setup wizard: local keeps
+	// the header from showing unfinished Cloud setup. Empty or absent is not chosen
+	// yet.
+	SetupMode *string `json:"setup_mode"`
+
+	// Setup items the person chose to skip, comma separated: app, browser, phone. A
+	// skipped item counts as settled.
+	SetupSkipped *string `json:"setup_skipped"`
+
 	// Have a model write the sentence a notification carries.
 	SmartNotifications *bool `json:"smart_notifications"`
 
@@ -6558,6 +6575,23 @@ type SettingsSnapshot struct {
 	// com.googlecode.iterm2. Empty is every app.
 	ScopeApp             *string `json:"scope_app"`
 	SessionAutoDiscovery *bool   `json:"session_auto_discovery"`
+
+	// The Cloud device id the macOS app's own tab paired as, recorded by the setup
+	// wizard from the invitation it handed the app. Empty or absent is not known.
+	SetupAppDevice *string `json:"setup_app_device"`
+
+	// Unix seconds when the console first saw all three setup items paired; 0 or
+	// absent is not complete. The header setup button folds away one day later.
+	SetupCompletedAt *int64 `json:"setup_completed_at"`
+
+	// Empty, cloud or local. What the person chose in the setup wizard: local keeps
+	// the header from showing unfinished Cloud setup. Empty or absent is not chosen
+	// yet.
+	SetupMode *string `json:"setup_mode"`
+
+	// Setup items the person chose to skip, comma separated: app, browser, phone. A
+	// skipped item counts as settled.
+	SetupSkipped *string `json:"setup_skipped"`
 
 	// Have a model write the sentence a notification carries.
 	SmartNotifications *bool `json:"smart_notifications"`

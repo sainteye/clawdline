@@ -203,6 +203,27 @@ func cloudBounds() []Entry {
 				"internal/transport/cloud.(*Link).runOnce:chan(PeerProbeIngressLimit)"},
 		},
 		{
+			// Busy replies must not synchronously hold the request dispatcher.
+			// One worker sends them while this FIFO bounds what may wait; an
+			// unsent reply is counted and logged instead of spawning a goroutine.
+			Name: CloudLaneRefusals, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Log}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudLaneRefusalsLimit",
+				"internal/transport/cloud.(*Link).runService:chan(refusalDepth)"},
+		},
+		{
+			// Eight workers execute reads while a separate FIFO absorbs finite
+			// viewer bursts. A full worker pool does not refuse an ordinary read;
+			// a full waiting queue answers the new request, by name, with 429
+			// cloud_ingress_busy and retry_after. Commands never wait on reads.
+			Name: CloudReadQueue, Class: Buffer, Unit: Rows,
+			Limit: 64, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Log, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudReadQueueLimit",
+				"internal/transport/cloud.(*Link).runService:chan(readDepth)"},
+		},
+		{
 			// Decrypted Cloud requests waiting for the bridge (limits N20).
 			// At the limit the new request is refused and nothing already
 			// taken is let go: the sender is answered 429 cloud_ingress_busy

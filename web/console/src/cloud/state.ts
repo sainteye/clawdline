@@ -130,6 +130,27 @@ function string(value: unknown): string | null {
   return typeof value === "string" && value ? value : null
 }
 
+/** How long reads to a reporting machine must have failed before pairing again is offered. */
+export const READ_PAIR_OFFER_AFTER_MS = 30_000
+
+/**
+ * Whether the read problem should offer to pair this browser with the machine
+ * again.
+ *
+ * A machine that revoked this device cannot tell it so: the device's envelope
+ * no longer verifies, so the machine drops it unanswered and every read times
+ * out. A busy or slow machine times out too, but some reads in between
+ * succeed, and any success clears the problem. So a timeout offers pairing
+ * only once reads to a machine that still reports to the account have failed
+ * for `READ_PAIR_OFFER_AFTER_MS` without one success. A failure already named
+ * as a pairing problem offers it at once; an offline machine never does.
+ */
+export function readProblemOffersPairing(code: string, presence: "current" | "stale" | "unknown" | undefined, heldMs: number): boolean {
+  if (PAIR_CODES.has(code)) return true
+  return presence === "current" && heldMs >= READ_PAIR_OFFER_AFTER_MS &&
+    (code === "cloud_read_timeout" || code === "cloud_read_unavailable")
+}
+
 /** Cached publications and another machine answering cannot repair this read path. */
 export function accessProblemAfterRead(held: AccessProblem | null, event: AccessEvent): AccessProblem | null {
   const machine = event.machine ?? event.identity?.machine

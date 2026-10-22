@@ -397,7 +397,9 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		APILevel: httptransport.APILevel,
 		Log:      func(format string, args ...any) { log.Printf(format, args...) },
 		// The request queue is the register's `cloud.relay_queue` row.
-		QueueDepth: int(httptransport.CapacityLimit(capacity.CloudRelayQueue)),
+		QueueDepth:        int(httptransport.CapacityLimit(capacity.CloudRelayQueue)),
+		ReadQueueDepth:    int(httptransport.CapacityLimit(capacity.CloudReadQueue)),
+		RefusalQueueDepth: int(httptransport.CapacityLimit(capacity.CloudLaneRefusals)),
 		// The outbound spool is its four rows: two global, one per wire
 		// channel, and the receipt table.
 		SpoolRows:         int(httptransport.CapacityLimit(capacity.CloudSpool)),

@@ -593,3 +593,4 @@
 .cloud-read-problem span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .cloud-read-problem button { flex: none; min-height: 36px; padding: 4px 8px; color: var(--ink); background: transparent; border: 0; cursor: pointer; }
 .cloud-read-problem button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cloud-read-problem button[data-pair] { color: var(--accent); font-weight: 600; }

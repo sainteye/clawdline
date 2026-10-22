@@ -194,13 +194,17 @@ func TestAReadPastTheBoundIsRefusedByNameAndCommandsStillGo(t *testing.T) {
 	hold := make(chan struct{})
 	router.holdRead = hold
 	l, fake := laneLink(t, router)
+	l.relay.Depth = 1
 	serve(t, l)
 	defer close(hold)
 
 	for i := 0; i < CloudReadConcurrencyLimit; i++ {
 		deliver(t, l, uint64(10+i), placesRead(sprintf("held-%d", i)))
+		waitFor(t, "each read to leave the ingress queue", func() bool { return router.readsInside() == i+1 })
 	}
 	waitFor(t, "every slot to be taken", func() bool { return router.readsInside() == CloudReadConcurrencyLimit })
+	deliver(t, l, 99, placesRead("waits"))
+	waitFor(t, "the read queue to fill", func() bool { _, queued := l.ReadLaneReadings(); return queued.Used == 1 })
 
 	deliver(t, l, 100, placesRead("over"))
 	waitFor(t, "the read past the bound to be told", func() bool {
@@ -215,7 +219,7 @@ func TestAReadPastTheBoundIsRefusedByNameAndCommandsStillGo(t *testing.T) {
 	if err := json.Unmarshal(out.Payload, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Error.Detail["limit"] != float64(CloudReadConcurrencyLimit) || payload.Error.Detail["retry_after"] != float64(1) {
+	if payload.Error.Detail["limit"] != float64(1) || payload.Error.Detail["retry_after"] != float64(1) {
 		t.Fatalf("detail %v", payload.Error.Detail)
 	}
 	if router.readsInside() != CloudReadConcurrencyLimit {

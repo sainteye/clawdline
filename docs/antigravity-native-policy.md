@@ -8,6 +8,12 @@ remain pending. This supplements decision A07 in
 replacing the existing work, receipt, claims or final acceptance policies.
 No compatibility row is enabled by this storage change.
 
+Local Project consent now has a [SQLite storage contract](antigravity-project-consent.md):
+preparing, activation and revocation are durable CAS transitions with atomic
+request receipts. Filesystem installation, authenticated consent UI and the live
+policy publisher remain to be connected; an active historical command answer
+is never current authority.
+
 ## Decision and alternatives
 
 Use one server-owned native policy for HTTP Starter, broker children, handoff

@@ -2313,6 +2313,27 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.lane_refusals",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 16,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "log"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.CloudLaneRefusalsLimit",
+      "internal/transport/cloud.(*Link).runService:chan(refusalDepth)"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cloud.peer_body_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -2504,6 +2525,28 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/peerstore.PairLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.read_queue",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "log",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.CloudReadQueueLimit",
+      "internal/transport/cloud.(*Link).runService:chan(readDepth)"
     ]
   },
   {
@@ -8163,6 +8206,65 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "store.antigravity_consent_identity_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.AntigravityConsentIdentityBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "store.antigravity_consent_root_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.AntigravityConsentRootBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "store.antigravity_project_consents",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 1024,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "notice",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.AntigravityProjectConsentLimit"
+    ]
   },
   {
     "Register": "daemon",

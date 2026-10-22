@@ -42,10 +42,64 @@ from the newest published non-prerelease. `min_version` is the oldest version a 
 upgraded from and rolled back to; a release whose store change an older binary cannot read sets
 `non_additive_migration` and raises it.
 
-The README and install guide deliberately pin both the installer source commit and a published
-release version. When promoting a later release, update those examples together after verifying
-the chosen public installer revision and the signed release manifest. The installer revision
-may be newer than the program release; do not present them as the same source tree.
+The README and quick installation use `https://clawdline.com/install.sh`, which redirects over
+HTTPS to a reviewed installer commit and selects the latest signed stable release. The advanced
+install guide retains the fixed-script, fixed-version path. The marketing repository pins the
+redirect target in `marketing/marketing-claude/scripts/write-localized-404.mjs`; promote it only
+after comparing the public script bytes with the reviewed commit and verifying the signed release.
+A changing official entry point is not an immutable script pin. The installer revision may be
+newer than the program release; do not present them as the same source tree.
+
+## A release from start to finish
+
+The sections below explain each mechanism. This is the order a root follows, with what proves
+each step done. v2.2.0 was cut this way ([acceptance record](records/release-v2.2.0-acceptance.md)).
+
+1. **Choose the commit and version.** Everything to ship is merged on `main` and passed
+   `tools/check.sh`; read the gate's `check:` line in its log, not the exit code of a wrapper
+   around it. A new feature is a minor version (`vX.Y.0`), fixes only a patch.
+2. **Write the release notes** at `docs/release-notes/<version>.md` and push them to `main`. List
+   everything since the previous tag, not only your own work:
+   `git log --oneline --first-parent <previous-tag>..HEAD`, then check which commits the previous
+   tag already contains with `git merge-base --is-ancestor`.
+3. **Wait for CI on that exact commit**: `gh run watch <run-id> --exit-status`, and confirm the
+   run's `headSha` is the commit you will release.
+4. **Dispatch the Release workflow**: `gh workflow run release.yml --ref main -f version=<version>`.
+   It builds the Linux tmux first, then stops for the `release` environment. Watch
+   `repos/sainteye/clawdline/actions/runs/<run>/pending_deployments`; when it is not empty, the
+   person must approve it in GitHub. Send them the run link with `clawdline notify`: they are
+   often away from the conversation.
+5. **Wait for the draft**: the run concludes `success`, and `gh release view <version>` shows a
+   draft whose `targetCommitish` is the released commit.
+6. **Gate, then publish** (step 3 of *Cutting a release*): `tools/release/gate.sh <version>`, then
+   `--publish`, which repeats every check and publishes only if all pass. `stapler validate`
+   queries Apple (`api.apple-cloudkit.com`) on every run; if it reports *no stapled notarization
+   ticket*, run `xcrun stapler validate -v` on the App it names a few times. A ticket that
+   validates there makes the failure a failed query: run the gate again unchanged. A ticket that
+   never validates is a real failure; do not publish.
+7. **Install the actual DMG**: `tools/release/dmg-install-smoke.sh --dmg <file> --version <version>
+   --commit <commit> --work-dir <dir> --evidence-dir <new-dir> --mode release`. Its `result.json`
+   must say `"accepted": true` and `"cleanup": true`. It runs on its own port and never touches
+   the person's daemon.
+8. **Deploy the hosted console** from the released commit
+   ([hosted-console.md](hosted-console.md)), and verify `BUILD.json` and the `CloudGate` check.
+9. **Move this machine to the release**: `clawdline update --apply --version <version>`. Name the
+   version: a plain `--apply` shortly after publication can still act on the updater's earlier
+   check and install the previous release. Confirm `/v1/health` reports the version and `GET /`
+   answers 200. The new App is staged until the person quits and reopens it.
+10. **Refresh installation references**: update the README download badges and the fixed-version
+    alternative in `docs/user/install.md`. Keep the quick command on the official short URL.
+    Review and promote its verifier pin in the marketing repository. Check the public installer bytes
+    (`raw.githubusercontent.com/.../<commit>/install.sh`) against `git show <commit>:install.sh`,
+    and whether `install.sh` changed since the previous pin. Add
+    `docs/records/release-<version>-acceptance.md` with the evidence and the boundaries not
+    checked, and link it under *Recent acceptance records*.
+11. **Update clawdline.com**: the website's download links and anything it marks as a preview of
+    this version live in the private Cloud service repository; its owner changes them, and the
+    live page is checked, not the repository.
+
+Report each destination separately at the end: GitHub, `app.clawdline.com`, this machine, the
+public Release and `clawdline.com` can each be ahead of or behind the others.
 
 ## Cutting a release
 
@@ -289,4 +343,5 @@ compilation if the selected identity is not Developer ID Application.
 
 ## Recent acceptance records
 
+- [v2.2.0 installation and publication evidence](records/release-v2.2.0-acceptance.md).
 - [v2.1.3 installation and publication evidence](records/release-v2.1.3-acceptance.md), including the explicitly accepted fresh-account boundary.

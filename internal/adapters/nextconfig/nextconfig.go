@@ -553,6 +553,24 @@ var Settables = []Settable{
 	// (docs/interface.md "Turning iTerm2 scanning off").
 	{Name: "iterm_scan", Kind: "bool"},
 	{Name: "session_auto_discovery", Kind: "bool"},
+	// The console's setup wizard (web/console/src/setup): `local` is the
+	// person choosing to use this machine only, so the header shows a quiet
+	// local mark instead of unfinished Cloud steps.
+	{Name: "setup_mode", Kind: "string", Choices: []string{"", "cloud", "local"},
+		Refusal: "invalid_setup_mode", Because: "empty, cloud or local"},
+	// When the console first saw all three setup items paired, Unix seconds;
+	// 0 is not complete. The header button folds away a day after it.
+	{Name: "setup_completed_at", Kind: "int", Min: 1, Max: 1 << 40, Zero: true,
+		Refusal: "invalid_setup_completed_at", Because: "0, or Unix seconds"},
+	// The Cloud device the macOS app's own tab paired as, recorded by the
+	// setup wizard from the invitation it handed the app. An app paired
+	// before its tab named itself is still known by this.
+	{Name: "setup_app_device", Kind: "string", Check: ValidSetupDevice,
+		Refusal: "invalid_setup_app_device", Because: "empty, or a Cloud device id"},
+	// The setup items the person chose to skip, comma separated: app, browser,
+	// phone. A skipped item counts as settled, so setup can finish without it.
+	{Name: "setup_skipped", Kind: "string", Check: ValidSetupSkipped,
+		Refusal: "invalid_setup_skipped", Because: "empty, or app, browser and phone separated by commas"},
 	{Name: "orchestrator_enabled", Kind: "bool"},
 	{Name: "orchestrator_max_children", Kind: "int", Min: 1, Max: 10},
 	{Name: "orchestrator_permission", Kind: "string", Choices: []string{"ask", "edits", "full"},
@@ -565,6 +583,35 @@ var Settables = []Settable{
 	{Name: "claude_auto_compact_window", Kind: "int", Min: 50_000, Max: 1_000_000, Zero: true,
 		Refusal: "invalid_auto_compact_window",
 		Because: "0 for none, or a whole number of tokens from 50000 to 1000000"},
+}
+
+// ValidSetupSkipped is empty or a comma-separated list of distinct setup items.
+func ValidSetupSkipped(list string) bool {
+	if list == "" {
+		return true
+	}
+	seen := map[string]bool{}
+	for _, item := range strings.Split(list, ",") {
+		if (item != "app" && item != "browser" && item != "phone") || seen[item] {
+			return false
+		}
+		seen[item] = true
+	}
+	return true
+}
+
+// ValidSetupDevice is empty or a Cloud device id: letters, digits, dash and
+// underscore, at most 128 characters.
+func ValidSetupDevice(id string) bool {
+	if len(id) > 128 {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidDefaultModel is the launch policy's model-name gate, plus empty for

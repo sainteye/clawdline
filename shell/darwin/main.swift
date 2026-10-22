@@ -497,6 +497,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         content.add(WeakMessageHandler(self), name: "shellLanguage")
         content.add(WeakMessageHandler(self), name: "shellAgentSetup")
         content.add(WeakMessageHandler(self), name: "shellRestartApp")
+        content.add(WeakMessageHandler(self), name: "shellCloudPair")
         // The notch island listens to the same stream and opens this window
         // when its character is pressed (NotchIsland.swift).
         NotchIsland.shared.attach(to: content, open: { [weak self] in self?.showConsole() })
@@ -830,6 +831,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         let documentation = NSMenuItem(title: L.t.menuHelpDocumentation,
                                        action: #selector(openDocumentation), keyEquivalent: "?")
         documentation.target = self
+        let setup = NSMenuItem(title: L.t.menuHelpSetup, action: #selector(openSetupGuide), keyEquivalent: "")
+        setup.target = self
+        helpMenu.addItem(setup)
         helpMenu.addItem(documentation)
         helpItem.submenu = helpMenu
         main.addItem(helpItem)
@@ -915,6 +919,21 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
                   page.host == home.host, page.port == home.port,
                   !showingCloud else { return }
             showAgentSetup()
+            return
+        }
+        // The setup wizard pairing this app: the console made a pairing
+        // invitation (`POST /v1/cloud/pairing`) and asks for its link to be
+        // opened in the Cloud tab, which is the device being paired. Only a
+        // Cloud link carrying a pairing fragment is accepted, so the console
+        // cannot use this to aim the Cloud tab anywhere else.
+        if message.name == "shellCloudPair" {
+            guard message.frameInfo.isMainFrame, message.webView === web,
+                  let page = web.url, isConsole(page),
+                  let body = message.body as? [String: String],
+                  let raw = body["link"], let link = URL(string: raw), isCloud(link),
+                  link.fragment?.hasPrefix("pair=") == true else { return }
+            showTab(cloud: true)
+            cloud.load(link)
             return
         }
         if message.name == "shellSettings" {
@@ -1104,6 +1123,15 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
     @objc private func openCompatibility() {
         NSWorkspace.shared.open(URL(string: "https://github.com/sainteye/clawdline/blob/main/docs/compatibility.md")!)
+    }
+
+    /// The console's setup wizard (web/console/src/setup), over the console
+    /// tab: the page listens for this event rather than being navigated, so
+    /// whatever the person had open stays where it was.
+    @objc private func openSetupGuide() {
+        if showingCloud { showTab(cloud: false) }
+        showConsole()
+        web.evaluateJavaScript("window.dispatchEvent(new Event('clawdline-open-setup'))")
     }
 
     @objc private func openDocumentation() {

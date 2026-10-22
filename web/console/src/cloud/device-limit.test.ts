@@ -297,6 +297,11 @@ test("a new browser is named by its browser and its system, never by its user ag
     named("MacIntel", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"),
     { kind: "browser", name: "Chrome · macOS" },
   )
+  assert.deepEqual(
+    named("MacIntel", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) ClawdlineApp/1"),
+    { kind: "browser", name: "Clawdline App · macOS" },
+    "the macOS app's Cloud tab is named as the app, not as an unnamed browser",
+  )
   assert.deepEqual(named("", ""), { kind: "browser", name: "Web browser" }, "nothing to go on keeps the old name")
 })
 

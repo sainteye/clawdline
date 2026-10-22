@@ -28,6 +28,10 @@ import CryptoKit
 import UniformTypeIdentifiers
 import WebKit
 
+/// What the Cloud tab adds to its user agent; `web/console/src/legacy/js/net/cloud-onboarding.js`
+/// looks for the same word.
+let cloudAppUserAgentToken = "ClawdlineApp/1"
+
 /// The Cloud console. `CLAWDLINE_NEXT_CLOUD` points the Cloud tab at something
 /// else, which is how a development build opens a test service.
 let cloudHome: URL = {
@@ -456,6 +460,12 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
             CloudPairAgent(), contentWorld: .page, name: CloudPairAgent.name)
         config.userContentController.addScriptMessageHandler(
             CloudPairLocal(), contentWorld: .page, name: CloudPairLocal.name)
+        // Cloud's page names the device it registers from the user agent
+        // (`cloudViewerDeviceMetadata`). This token is how it tells this
+        // tab from Safari on the same Mac, so the console's setup progress
+        // can say whether the app itself is paired. It names no version and
+        // carries no authority: it only labels a device the person pairs.
+        config.applicationNameForUserAgent = cloudAppUserAgentToken
         view = WKWebView(frame: .zero, configuration: config)
         super.init()
         view.navigationDelegate = self

@@ -11,6 +11,7 @@ import { ClawdlineClient } from "@clawdline/core"
 import { client, followsRelay } from "./client.js"
 import { BRAND_MARK } from "./brand-mark.js"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
+import { SetupGuide } from "./setup/SetupGuide.js"
 import { useFleet, usePoll } from "./useFleet.js"
 import { onAttentionRead } from "./session/attention-changed.js"
 import { askHealthNow, healthPace, publishHealth, setHealthAsker } from "./health-feed.js"
@@ -1021,6 +1022,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         {typeof aside === "function" ? aside(light) : (
           <>
             {aside}
+            <SetupGuide />
             <Conn light={light} />
           </>
         )}

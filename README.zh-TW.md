@@ -54,19 +54,19 @@ Clawdline 在你自己的機器上讀取 Claude Code 與 Codex 對話、終端�
 
 ## 安裝
 
-[![下載 Clawdline v2.1.3 macOS 版 — Apple Silicon、macOS 13 以上](docs/assets/download-macos-zh-TW.svg)](https://github.com/sainteye/clawdline/releases/download/v2.1.3/Clawdline-v2.1.3-macos-arm64.dmg)
+[![下載 Clawdline v2.2.0 macOS 版 — Apple Silicon、macOS 13 以上](docs/assets/download-macos-zh-TW.svg)](https://github.com/sainteye/clawdline/releases/download/v2.2.0/Clawdline-v2.2.0-macos-arm64.dmg)
 
 Apple Silicon · macOS 13+ · [安裝教學](https://clawdline.com/docs/install/#mac-dmg)
 
 使用 macOS 13 以上或 Linux 的命令列安裝器時，先安裝 Claude Code 或 Codex、受信任的 Python 3 與 OpenSSL 3 以上版本。macOS 內建的 LibreSSL 不足以驗證；請看[驗證工具需求](docs/user/install.md#before-you-start)。接著執行：
 
 ```sh
-curl --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/sainteye/clawdline/fcc9059142485514d54683adb769710abb96e1ab/install.sh | sh -s -- --version v2.1.3
+curl -fsSL https://clawdline.com/install.sh | sh
 ```
 
 安裝腳本會先用本機 OpenSSL，對照已審查腳本內固定的公鑰驗證 manifest 簽章，再核對已簽署的壓縮檔大小與 SHA-256；通過後才解壓縮、執行下載的程式。缺少驗證工具或檢查失敗都會停止安裝。你仍須信任安裝腳本與本機工具；驗證通過的程式才會啟動使用者服務並開啟主控台。你可以從主控台開 Session，或在 tmux 執行 `claude` 或 `codex`；需要時可用發行版內附的 tmux。[安裝與首次使用](docs/user/install.md)・[第一個 Session](docs/user/first-session.md)
 
-這個指令同時固定**驗簽腳本**與 `v2.1.3` 發行版。腳本版本與安裝程式的版本是兩個獨立來源；已簽署的發行 manifest 會標明程式的原始碼版本。安裝器不會默默改裝最新發行版。[先審查再固定版本安裝](docs/user/install.md#review-and-pin-an-installation)說明操作方式與首次安裝的信任邊界。
+短網址指向經審查的驗簽腳本，並安裝最新穩定版。腳本版本與安裝程式的版本是兩個獨立來源；已簽署的發行 manifest 會標明程式的原始碼版本。入口會隨經審查的安裝器更新。[先審查再固定版本安裝](docs/user/install.md#review-and-pin-an-installation)保留固定腳本與發行版的替代方式，並說明首次安裝的信任邊界。
 
 ## 支援範圍
 

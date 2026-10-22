@@ -2111,7 +2111,7 @@
         },
         {
           "path": "internal/adapters/nextconfig/nextconfig.go",
-          "line": 615
+          "line": 662
         }
       ],
       "original": [],
@@ -2228,14 +2228,14 @@
     }
   ],
   "sourceChecks": {
-    "cmd/clawdline/main.go": "ef80f8f2bcee633896bf5cb8d7c601efc774fddcc8e8cfad29011477552f974a",
+    "cmd/clawdline/main.go": "d8a59dba88c1c0c7412a4ea1ecd03959430dfa1d9758d2eec2519e4566c35332",
     "cmd/clawdline/session.go": "de2e47caf092efedfb633b4f5242ee9cb0989fdf5d7f97dd95a1ff33667f5efc",
     "internal/adapters/antigravity/hook_service.go": "e243be5f1bd3887359feb13d3aca7679c20ca3810812ebd1c4ed02d68d475f26",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
     "internal/adapters/antigravitylaunch/store.go": "e3a2344fda42de6142bc0d8646cb73527211c3eaea6547cf03107a21bd430a12",
     "internal/adapters/memory/memory.go": "b85b11cd849f61bcb55c449acc868a4605950dcb5a408ac65a228babbfab9fb0",
-    "internal/adapters/nextconfig/nextconfig.go": "854b65137d603c892cb04fbbd486eed1d54b0ca48a2c8e71d8361f1cdc666dce",
+    "internal/adapters/nextconfig/nextconfig.go": "aa82a75d236592c194c8b4b5fa81f76e1d83416d395ef9a1666dfcf5dc6d8587",
     "internal/adapters/projects/antigravity_context.go": "af2f72bca504765de63bc45bbeb208e201c063bacf51ff3ff5cbe0fd5e5aac1a",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "11473172607d2736aa2b46f85dc7126331814e659f8654e3e3f8f4f5dcd4122b",

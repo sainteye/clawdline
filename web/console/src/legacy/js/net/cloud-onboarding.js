@@ -31,6 +31,9 @@ export function cloudOnboardingMode(scope) {
     return isStandaloneWebApp(scope) ? "pwa" : "install";
 }
 
+/** The name a device registered from the macOS app's Cloud tab starts with. */
+export const CLAWDLINE_APP_DEVICE_NAME = "Clawdline App";
+
 /** Safe, coarse labels for recovery; never sends a user-agent string to the control plane. */
 export function cloudViewerDeviceMetadata(scope) {
     scope = scope || {};
@@ -42,8 +45,14 @@ export function cloudViewerDeviceMetadata(scope) {
         return { kind: "ios", name: "iPad" };
     }
     if (/Android/i.test(platform + " " + userAgent)) return { kind: "android", name: "Android device" };
-    var browser = browserName(userAgent);
     var system = systemName(platform + " " + userAgent);
+    // The macOS app's Cloud tab adds this word to its user agent
+    // (`cloudAppUserAgentToken`, shell/darwin/Browser.swift), so the console's
+    // setup progress can tell the app from a browser on the same machine.
+    if (/(^|\s)ClawdlineApp\//.test(userAgent)) {
+        return { kind: "browser", name: CLAWDLINE_APP_DEVICE_NAME + (system ? " · " + system : "") };
+    }
+    var browser = browserName(userAgent);
     return { kind: "browser", name: browser && system ? browser + " · " + system : "Web browser" };
 }
 

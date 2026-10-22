@@ -94,6 +94,31 @@ func (s *Server) cloudCapacityMeasures() map[string]func() capacity.Reading {
 			}
 			return r
 		},
+		capacity.CloudReadQueue: func() capacity.Reading {
+			line, ok := cloudLines.Load(s.cfg.Dir)
+			if !ok {
+				return capacity.Reading{Known: true, Note: "the Cloud line is off: there is no read queue"}
+			}
+			reader, ok := line.(interface {
+				ReadLaneReadings() (active, waiting capacity.Reading)
+			})
+			if !ok {
+				return capacity.Unmeasured("this Cloud line does not report its read queue")
+			}
+			_, waiting := reader.ReadLaneReadings()
+			return waiting
+		},
+		capacity.CloudLaneRefusals: func() capacity.Reading {
+			line, ok := cloudLines.Load(s.cfg.Dir)
+			if !ok {
+				return capacity.Reading{Known: true, Note: "the Cloud line is off: there is no busy reply queue"}
+			}
+			reader, ok := line.(interface{ LaneRefusalReading() capacity.Reading })
+			if !ok {
+				return capacity.Unmeasured("this Cloud line does not report its busy reply queue")
+			}
+			return reader.LaneRefusalReading()
+		},
 		capacity.CloudPeerPairs:  func() capacity.Reading { return s.peerStoreCapacity(capacity.CloudPeerPairs) },
 		capacity.CloudPeerGrants: func() capacity.Reading { return s.peerStoreCapacity(capacity.CloudPeerGrants) },
 		capacity.CloudPeerInbox:  func() capacity.Reading { return s.peerStoreCapacity(capacity.CloudPeerInbox) },

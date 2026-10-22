@@ -41,16 +41,13 @@ Line's right edge reads `Plan limits unknown`. [usage.md](usage.md) says what to
 ## 1. Install
 
 ```sh
-curl --proto '=https' --proto-redir '=https' -fL \
-  https://raw.githubusercontent.com/sainteye/clawdline/fcc9059142485514d54683adb769710abb96e1ab/install.sh \
-  -o clawdline-install.sh
+curl -fsSL https://clawdline.com/install.sh | sh
 ```
 
-Read the downloaded script, then run it:
-
-```sh
-sh ./clawdline-install.sh --version v2.1.3
-```
+The official short URL redirects over HTTPS to a reviewed installer at a fixed source commit.
+The command installs the latest stable release. The entry point can change when a reviewed
+installer is promoted; use [Review and pin an installation](#review-and-pin-an-installation)
+when you want to fix both the verifier script and the release version.
 
 The installer checks local verification tools, downloads the release manifest and signatures,
 and uses local OpenSSL to verify Ed25519 against the release public keys pinned in the script.
@@ -89,10 +86,10 @@ autostart off or remove Clawdline, each with `--port` when you chose another por
 "Next" in `Clawdline Next.app`, `clawdline-next.service` and `~/.config/clawdline-next` is this
 generation's internal name; the product is Clawdline.
 
-Pass options to the downloaded script:
+Pass options through the one-line installer:
 
 ```sh
-sh ./clawdline-install.sh --version v2.1.3 --headless
+curl -fsSL https://clawdline.com/install.sh | sh -s -- --headless
 ```
 
 | Option | Does |
@@ -116,14 +113,13 @@ answers with the version you installed.
 
 ### Review and pin an installation
 
-The steps above pin installer commit `fcc9059142485514d54683adb769710abb96e1ab`
-and release `v2.1.3`. The release's signed manifest identifies program source commit
-`fcc9059142485514d54683adb769710abb96e1ab`. These are separate identities: the pinned script verifies the
-selected signed release before it starts. Reading the installer does not amount to auditing
+The quick installation above follows a moving official entry point and the latest stable
+release. For a fixed installation, the reviewed verifier commit and release version below
+are separate identities: installer commit `eece0f1d49b388ec37f3b37496f856ea27bf9a65` can verify
+release `v2.2.0`, whose signed manifest identifies program source commit
+`eece0f1d49b388ec37f3b37496f856ea27bf9a65`. Reading the installer does not amount to auditing
 the release's program source or proving the binary reproducible.
 
-Calling the script without `--version` still selects the latest release; using a `main` URL
-still follows a moving script. Neither is the default installation example on this page.
 To select a reviewed release, use a reviewed installer with pre-execution verification and pass
 the release version explicitly. Replace `REVIEWED_INSTALLER_COMMIT` with that installer's full
 commit hash and `vX.Y.Z` with the published release you reviewed. The installer can verify

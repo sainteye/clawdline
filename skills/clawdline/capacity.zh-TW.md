@@ -122,6 +122,7 @@
 | `cloud.identity_pairing_decision_bytes` | 1024 | `bytes` | `refuse` | `diagnostics` | — |
 | `cloud.identity_pairing_poll_attempts` | 600 | `rows` | `refuse` | `diagnostics` | — |
 | `cloud.identity_pairing_run_seconds` | 660 | `seconds` | `disconnect` | `diagnostics` | — |
+| `cloud.lane_refusals` | 16 | `rows` | `refuse` | `diagnostics, log` | — |
 | `cloud.peer_body_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, notice, sender` | — |
 | `cloud.peer_discovery_reply` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `cloud.peer_frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, log, sender` | — |
@@ -131,6 +132,7 @@
 | `cloud.peer_ingress` | 16 | `rows` | `refuse` | `diagnostics, log, sender` | — |
 | `cloud.peer_outbox` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `cloud.peer_pairs` | 128 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `cloud.read_queue` | 64 | `rows` | `refuse` | `diagnostics, log, sender` | — |
 | `cloud.rekey_body` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.rekey_interval` | 2 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `cloud.rekey_lifetime` | 120 | `seconds` | `expire` | `diagnostics, sender` | — |
@@ -426,6 +428,9 @@
 | `squadpackage.preview_rows` | 1024 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `squadpackage.request_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `sse.screen_pending` | 64 | `rows` | `disconnect` | `diagnostics, notice` | — |
+| `store.antigravity_consent_identity_bytes` | 128 | `bytes` | `refuse` | `diagnostics` | — |
+| `store.antigravity_consent_root_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
+| `store.antigravity_project_consents` | 1024 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `store.db` | 1073741824 | `bytes` | `none` | `diagnostics, notice, health` | limits §7.1: C1 only measures this row. Its class refuses new writes at the limit (limits §4.4 step 5, 507 storage_exhausted); nothing refuses yet, and ok:false on /v1/health is the only effect of full. |
 | `store.done_effect_retention_seconds` | 604800 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `store.events` | 150000 | `rows` | `evict_oldest` | `diagnostics` | — |

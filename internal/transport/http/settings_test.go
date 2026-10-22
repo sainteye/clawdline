@@ -353,6 +353,8 @@ func TestSettingsEveryWindowRow(t *testing.T) {
 				sent[key.Name] = "Menlo"
 			case key.Name == "tailscale_hostname":
 				sent[key.Name] = "mac.tailnet-example.ts.net"
+			case key.Name == "setup_skipped":
+				sent[key.Name] = "browser,phone"
 			default:
 				sent[key.Name] = "clawd"
 			}

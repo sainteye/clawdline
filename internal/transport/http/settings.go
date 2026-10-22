@@ -40,6 +40,7 @@ var browserSettings = map[string]bool{
 	"orchestrator_max_children": true, "orchestrator_permission": true,
 	"orchestrator_notify_root": true, "orchestrator_child_linger": true,
 	"claude_auto_compact_window": true, "iterm_scan": true, "iterm_integration": true, "session_auto_discovery": true,
+	"setup_mode": true, "setup_completed_at": true, "setup_app_device": true, "setup_skipped": true,
 }
 
 // notificationSettings is the machine-wide event policy. A device's ability
