@@ -3021,13 +3021,14 @@ const (
 	IdentityBindingOpenFile    IdentityBinding = "open_file"
 	IdentityBindingLiveTitle   IdentityBinding = "live_title"
 	IdentityBindingRegistry    IdentityBinding = "registry"
+	IdentityBindingLaunchHook  IdentityBinding = "launch_hook"
 	IdentityBindingNoRecord    IdentityBinding = "no_record"
 	IdentityBindingUnreadable  IdentityBinding = "unreadable"
 	IdentityBindingAmbiguous   IdentityBinding = "ambiguous"
 )
 
 // IdentityBindingValues is every value the contract allows, in contract order.
-var IdentityBindingValues = []IdentityBinding{IdentityBindingCommandLine, IdentityBindingOpenFile, IdentityBindingLiveTitle, IdentityBindingRegistry, IdentityBindingNoRecord, IdentityBindingUnreadable, IdentityBindingAmbiguous}
+var IdentityBindingValues = []IdentityBinding{IdentityBindingCommandLine, IdentityBindingOpenFile, IdentityBindingLiveTitle, IdentityBindingRegistry, IdentityBindingLaunchHook, IdentityBindingNoRecord, IdentityBindingUnreadable, IdentityBindingAmbiguous}
 
 // Why a reference has no picture behind it: `expired` when the store held it
 // and no longer does, `unknown` when no store here ever held that id.
