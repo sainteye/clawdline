@@ -5392,6 +5392,86 @@
   },
   {
     "Register": "daemon",
+    "Name": "places.antigravity_history_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 67108864,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/projects.AntigravityHistoryByteLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "places.antigravity_history_entries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/projects.AntigravityHistoryEntryLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "places.antigravity_history_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 250,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/projects.AntigravityHistoryTimeLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "places.antigravity_history_title_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 80,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/projects.AntigravityHistoryTitleLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "places.antigravity_probe_output_bytes",
     "Class": "buffer",
     "Unit": "bytes",

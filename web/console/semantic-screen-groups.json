@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8940,
-  "riskKeys": 3983,
-  "nonRiskCount": 4957,
+  "englishContentKeys": 8949,
+  "riskKeys": 3986,
+  "nonRiskCount": 4963,
   "groups": [
     {
       "name": "admin / other",
@@ -288,6 +288,16 @@
       ]
     },
     {
+      "name": "capacity / other",
+      "count": 1,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "capacity.milliseconds"
+      ]
+    },
+    {
       "name": "capacityHelp / other",
       "count": 4,
       "sources": [
@@ -302,7 +312,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 270,
+      "count": 275,
       "sources": [
         null
       ],
@@ -490,6 +500,11 @@
         "capacityRow.naming.tail_entries.what",
         "capacityRow.notification.rule_wait_seconds.what",
         "capacityRow.personas.text_bytes.what",
+        "capacityRow.places.antigravity_history_bytes.what",
+        "capacityRow.places.antigravity_history_entries.what",
+        "capacityRow.places.antigravity_history_milliseconds.what",
+        "capacityRow.places.antigravity_history_title_characters.full",
+        "capacityRow.places.antigravity_history_title_characters.what",
         "capacityRow.places.antigravity_probe_output_bytes.what",
         "capacityRow.places.antigravity_probe_seconds.what",
         "capacityRow.places.git_config_bytes.what",
