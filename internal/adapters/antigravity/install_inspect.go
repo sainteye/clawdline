@@ -68,3 +68,26 @@ func InspectInstallForState(workspace, helper, configRoot string) (InstalledHook
 	}
 	return InstalledHooks{Digest: p.BeforeDigest, PlanDigest: plan}, nil
 }
+
+// InspectRemovedForState positively verifies removal of the known managed
+// commands. An unreadable, disabled or changed file is not a removal receipt.
+func InspectRemovedForState(workspace, helper, configRoot string) (string, error) {
+	p, err := PreviewInstallForState(workspace, helper, configRoot, true)
+	if err != nil {
+		return "", err
+	}
+	if p.Disabled {
+		return "", refuse("antigravity_hooks_disabled")
+	}
+	data, exists, err := readHookConfig(p.Path)
+	if err != nil {
+		return "", err
+	}
+	if configDigest(data, exists) != p.BeforeDigest {
+		return "", refuse("antigravity_config_changed")
+	}
+	if exists && !bytes.Equal(data, p.After) {
+		return "", refuse("antigravity_hooks_not_removed")
+	}
+	return p.BeforeDigest, nil
+}

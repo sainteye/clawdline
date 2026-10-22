@@ -1,9 +1,10 @@
 # Local Antigravity Project hook consent
 
-This is the storage contract only. It does not install hooks, launch helpers,
-expose an HTTP endpoint, or provide a consent screen. The provider is fixed to
-Antigravity. State lives in the private local SQLite store, never in repository
-files, shared Project Unify settings, a Cloud mirror, or native workspace trust.
+This page covers local consent storage and its private filesystem coordinator.
+No public HTTP endpoint, consent screen or production launch permission is
+enabled by this work. The provider is fixed to Antigravity. State lives in the
+private local SQLite store, never in repository files, shared Project Unify
+settings, a Cloud mirror, or native workspace trust.
 
 ## Caller contract
 
@@ -128,8 +129,62 @@ file/change-stamp checks with future helper ownership. Replacement, in-place
 rewrites with restored mtime, mode changes, removal and cancellation refuse.
 Subsequent fingerprint reads use metadata, not repeated full executable reads.
 These primitives start no vendor process or worker and publish no production
-policy. The transactional consent owner, authenticated UI and effective-mode
-proof still must compose them before launch admission can be enabled.
+policy. Their private transactional coordinator is described below. Authenticated
+UI, concrete catalog composition and effective-mode proof remain required before
+production launch admission can be enabled.
+
+## Private transactional coordinator
+
+`internal/adapters/antigravityproject.Manager` composes the existing store and
+native filesystem adapter, with no worker, queue, map or new resource limit.
+Its constructor receives one immutable helper pin and one trusted catalog
+resolver. The resolver must prove canonical Project and linked-worktree
+membership; a path prefix is insufficient. The manager authenticates no person.
+A future HTTP owner must enforce explicit person/device consent and recover its
+own durable operation identity. Its `Plan` is a private preview and must never
+be accepted as caller-chosen roots, workspace membership or helper paths.
+
+The fixed scope is `project-and-linked-worktrees`. The consent screen must
+explicitly describe that scope before enabling it. An active Project grant can
+cover verified linked worktrees without implicitly trusting them in the vendor.
+`EnsureWorkspace` installs and independently checks that workspace's managed
+block under the current grant; it does not create a new grant or advance the
+Project revision, so preparing one worktree does not invalidate existing
+Sessions. A newly created worktree is not ready until its own block is verified.
+Another Project, or an unverified path, cannot borrow the grant. This contract
+does not enable automatic installation in any current public launch path.
+
+`Enable` binds the whole approved plan, including the prior file digest, scope
+and caller-owned operation identity, into the SQLite operation digest. Stable
+phase keys use the existing receipt table; enable and disable share the initial
+key namespace so changing the action under the same key conflicts. Prepare
+commits before filesystem installation; activation requires the exact current
+preparation, helper pin, managed block and catalog binding. A changed preview
+is refused before a new preparation. A crash or uncertain installation answer
+leaves preparing without authority. The same operation can recover by inspecting
+an already installed block rather than writing it again. A lost activation
+answer recovers as a status read, not another activation.
+
+`Disable` commits disabled before inspecting or removing files. A missing or
+replaced helper cannot block revocation; a manager constructed with a nil helper
+pin supports disable while refusing preview, enable, workspace preparation and
+live policy checks. Cleanup errors return disabled with hooks `unknown`, not a
+successful removal receipt. `InspectRemovedForState` positively verifies removal.
+Retries can recognize completed cleanup without another write. A historical
+disable cannot remove the files of a newer grant, and a historical enable cannot
+restore a revoked grant. Cleanup covers the selected workspace; other covered
+workspaces immediately lose authority through the shared durable revision even
+when their inactive hook files remain for later cleanup.
+
+A revocation racing filesystem installation can leave inactive hook residue,
+but activation CAS refuses and current policy stays disabled. There is no
+rollback that re-enables a grant and no automatic model or filesystem retry.
+`Check` validates current active state, exact helper image, named plan, current
+whole-file digest and catalog membership, then rereads durable consent after
+its dependencies. Its revision digest binds the Project and current consent;
+the separate file digest binds each workspace. Neither digest proves native
+permission semantics, role loading or a tool decision. No public production
+policy publisher is enabled by this coordinator.
 
 ## Behavioral verification
 
@@ -137,5 +192,11 @@ proof still must compose them before launch admission can be enabled.
 failures, two handles, reopen, exact cap and CAS races. Transport tests check a
 real disabled-row count and unreadable/missing-store readings. Artifacts retained
 by the task contain guard-red and behavioral mutation evidence; they are not
-part of the public repository. Root still owns authenticated HTTP wiring,
-filesystem installation/verification, UI acceptance and any release.
+part of the public repository. `TestConsent*` in the coordinator additionally
+covers actual file effects, lost storage/file acknowledgments, reopen, stale
+replays, revocation during installation, helper loss, cleanup uncertainty,
+linked-worktree revision stability and cross-Project refusal. A one-time source
+counterfactual removes the final live read: the targeted test fails after the
+revocation actually commits. The original sources remain untouched by that
+experiment. Root still owns authenticated HTTP/catalog composition, UI and
+native effective-mode acceptance and any release.
