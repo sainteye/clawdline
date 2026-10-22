@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9008,
-  "riskKeys": 4013,
-  "nonRiskCount": 4995,
+  "englishContentKeys": 9013,
+  "riskKeys": 4017,
+  "nonRiskCount": 4996,
   "groups": [
     {
       "name": "admin / other",
@@ -1677,7 +1677,7 @@
     },
     {
       "name": "http / other",
-      "count": 566,
+      "count": 567,
       "sources": [
         "internal/productcopy/http_refusals/en.json"
       ],
@@ -1815,6 +1815,7 @@
         "http.3dfd715e6994b156",
         "http.3e9263201dd719ee",
         "http.3f2f5200b2fd3231",
+        "http.3f367009c857700c",
         "http.3f3e39e2d8c0779a",
         "http.3f45b288d65db920",
         "http.3fd254231acc0e0b",

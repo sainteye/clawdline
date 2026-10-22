@@ -3,11 +3,13 @@
 package antigravitylaunch
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,6 +27,7 @@ import (
 // Full means refusal, never eviction of an original resumable context.
 const (
 	MaxLaunches     = antigravity.MaxLiveBindings
+	MaxFirstInputs  = MaxLaunches
 	MaxHistory      = antigravity.MaxLiveBindings
 	MaxReceipts     = antigravity.MaxLiveBindings
 	MaxIndexBytes   = antigravity.MaxObservationBytes
@@ -72,10 +75,11 @@ type history struct {
 	Evidence ports.AntigravityBinding `json:"evidence"`
 }
 type index struct {
-	Version  int                        `json:"version"`
-	Records  map[string]Record          `json:"records"`
-	History  map[string]history         `json:"history"`
-	Receipts map[string]ResponseReceipt `json:"receipts"`
+	Version     int                          `json:"version"`
+	Records     map[string]Record            `json:"records"`
+	History     map[string]history           `json:"history"`
+	Receipts    map[string]ResponseReceipt   `json:"receipts"`
+	FirstInputs map[string]FirstInputReceipt `json:"first_inputs,omitempty"`
 }
 
 // Store serializes transactions with one mutex and a lifetime nonblocking OS
@@ -101,7 +105,7 @@ func validHash(s string) bool {
 	return e == nil && len(b) == 32 && hex.EncodeToString(b) == s
 }
 func emptyIndex() index {
-	return index{Version: 1, Records: map[string]Record{}, History: map[string]history{}, Receipts: map[string]ResponseReceipt{}}
+	return index{Version: 2, Records: map[string]Record{}, History: map[string]history{}, Receipts: map[string]ResponseReceipt{}, FirstInputs: map[string]FirstInputReceipt{}}
 }
 
 func Open(c Config) (*Store, error) {
@@ -132,7 +136,23 @@ func Open(c Config) (*Store, error) {
 	s.squad = &privateDir{path: c.SquadLaunchRoot}
 	b, err := root.read("context-index.json", MaxIndexBytes)
 	if err == nil {
-		if json.Unmarshal(b, &s.state) != nil || s.validateIndex() != nil {
+		decoder := json.NewDecoder(bytes.NewReader(b))
+		decoder.DisallowUnknownFields()
+		var loaded index
+		if decoder.Decode(&loaded) != nil || decoder.Decode(new(any)) != io.EOF {
+			return nil, fail("index_invalid")
+		}
+		s.state = loaded
+		// v1 contained no first-input authority. Upgrade in memory; the next
+		// atomic write publishes v2, which old readers refuse rather than drop
+		// a consumed input slot. Open itself never writes a migration.
+		if s.state.Version == 1 && len(s.state.FirstInputs) == 0 {
+			s.state.Version = 2
+		}
+		if s.state.FirstInputs == nil {
+			s.state.FirstInputs = map[string]FirstInputReceipt{}
+		}
+		if s.validateIndex() != nil {
 			return nil, fail("index_invalid")
 		}
 		s.bytes = int64(len(b))
@@ -191,7 +211,7 @@ func (s *Store) ready(ctx context.Context) error {
 
 func (s *Store) validateIndex() error {
 	i := s.state
-	if i.Version != 1 || i.Records == nil || i.History == nil || i.Receipts == nil || len(i.Records) > MaxLaunches || len(i.History) > MaxHistory || len(i.Receipts) > MaxReceipts {
+	if i.Version != 2 || i.Records == nil || i.History == nil || i.Receipts == nil || i.FirstInputs == nil || len(i.Records) > MaxLaunches || len(i.History) > MaxHistory || len(i.Receipts) > MaxReceipts || len(i.FirstInputs) > MaxFirstInputs {
 		return fail("index_invalid")
 	}
 	for id, r := range i.Records {
@@ -208,6 +228,15 @@ func (s *Store) validateIndex() error {
 	for id, h := range i.History {
 		r, ok := i.Records[h.LaunchID]
 		if !validID(id) || !ok || !r.Prepared || !completeProcess(h.Evidence.Process) || h.ContextHash != r.ContextHash || h.Workspace != r.Workspace || !h.Evidence.Verified || h.Evidence.ConversationID != id || h.Evidence.Sequence == 0 || h.Evidence.Process != r.Process {
+			return fail("index_invalid")
+		}
+	}
+	for id, receipt := range i.FirstInputs {
+		r, ok := i.Records[id]
+		if !ok || !r.Prepared || r.RequestedResume != "" || receipt.LaunchID != id ||
+			!validID(receipt.RequestID) || !validHash(receipt.TextDigest) || receipt.ContextHash != r.ContextHash ||
+			!completeProcess(receipt.Process) || receipt.Process != r.Process || receipt.Backend != r.Backend ||
+			!firstInputPhase(receipt.Phase) {
 			return fail("index_invalid")
 		}
 	}
@@ -229,6 +258,9 @@ func clone(i index) index {
 	}
 	for k, v := range i.Receipts {
 		n.Receipts[k] = v
+	}
+	for k, v := range i.FirstInputs {
+		n.FirstInputs[k] = v
 	}
 	return n
 }
@@ -778,9 +810,9 @@ func (s *Store) WorkspaceBindings(ctx context.Context) (map[string]string, error
 }
 
 type Stats struct {
-	Launches, Pending, Active, History, Receipts int
-	IndexBytes, ContextBytes                     int64
-	LargestContextBytes                          int64
+	Launches, Pending, Active, History, Receipts, FirstInputs int
+	IndexBytes, ContextBytes                                  int64
+	LargestContextBytes                                       int64
 }
 
 func (s *Store) Stats(ctx context.Context) (Stats, error) {
@@ -789,7 +821,7 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	if err := s.ready(ctx); err != nil {
 		return Stats{}, err
 	}
-	out := Stats{Launches: len(s.state.Records), Active: len(s.active), History: len(s.state.History), Receipts: len(s.state.Receipts), IndexBytes: s.bytes}
+	out := Stats{Launches: len(s.state.Records), Active: len(s.active), History: len(s.state.History), Receipts: len(s.state.Receipts), FirstInputs: len(s.state.FirstInputs), IndexBytes: s.bytes}
 	for _, r := range s.state.Records {
 		if err := cancelled(ctx); err != nil {
 			return Stats{}, err

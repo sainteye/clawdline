@@ -46,8 +46,23 @@ func SubmitAntigravityText(ctx context.Context, read func(context.Context) (stri
 	if err := paste(ctx, text); err != nil {
 		return err
 	}
-	in := antigravityInput{read: read}
-	confirmed, err := awaitShown(ctx, in, before, text, window)
+	// A lost live fence is not a screen that may become ready on a later
+	// poll. Stop observation immediately and retain the original typed error.
+	observe, stop := context.WithCancel(ctx)
+	defer stop()
+	var readErr error
+	in := antigravityInput{read: func(c context.Context) (string, error) {
+		screen, err := read(c)
+		if err != nil {
+			readErr = err
+			stop()
+		}
+		return screen, err
+	}}
+	confirmed, err := awaitShown(observe, in, before, text, window)
+	if readErr != nil {
+		return readErr
+	}
 	if err != nil {
 		return err
 	}

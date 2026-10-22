@@ -239,3 +239,31 @@ initial input, native load proof and final Cloud/UI acceptance remain required.
 The private store's `VerifyLaunchCapability` authenticates a prepared record
 without changing its process or binding state. It verifies the immutable context
 and capability files, honors cancellation and returns no capability bytes.
+
+
+## First-input authority
+
+[The first-input contract](antigravity-first-input.md) separates an opened
+terminal from a positive native UUID. `ReserveFirstInput` stores at most one
+private text digest/request/process reservation per launch before returning its
+creator a volatile `FirstInputAttempt`. Identical requests return the retained
+receipt with a nil attempt. Neither fresh pinning nor reopening restores that
+execution grant. `BeforePaste` and `BeforeEnter` persist their respective
+uncertain phases before terminal IO and refuse repeats. There is no release,
+reset, expiry or automatic retry.
+
+The index is version 2. Legacy version-1 indexes with no input authority open
+without migration writes; the next atomic state write upgrades them. Old
+version-1 readers refuse version 2. New readers refuse unknown fields and invalid
+input phases instead of silently discarding future safety metadata.
+
+`Actions.SendAntigravityFirst` uses this private port under the existing terminal
+lane, without manufacturing a conversation UUID. It requires fresh native
+process/foreground/workspace/context/policy checks from its composition port and
+a positively empty composer. The tmux adapter checks again between buffer load
+and paste; revocation removes only its private buffer. Before Enter, the app
+persists the attempt phase and rereads the exact draft again. Lost reads stop
+paste confirmation immediately. A possible paste or Enter never authorizes
+replay. HTTP and frontend foundation guards remain: the live composition port,
+free-use/permission policy and native loaded-context fence must be connected and
+verified before this private path becomes an available product capability.

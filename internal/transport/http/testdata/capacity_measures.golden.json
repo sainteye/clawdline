@@ -17,6 +17,10 @@
     "Known": true
   },
   {
+    "Name": "antigravity.first_input_slots",
+    "Known": true
+  },
+  {
     "Name": "antigravity.hook_config_bytes",
     "Known": true,
     "Note": true

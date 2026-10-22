@@ -431,3 +431,22 @@ func TestLooksWithinCountsTheLooksAWindowHolds(t *testing.T) {
 		t.Fatalf("%d looks span %s of a %s window", looksWithin(sendConfirm), spent, sendConfirm)
 	}
 }
+
+func TestAntigravityTextStopsWhenTheLiveReadLosesItsFence(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	lost := errors.New("synthetic live authorization lost")
+	reads, pastes, keys := 0, 0, 0
+	read := func(context.Context) (string, error) {
+		reads++
+		if reads > 1 {
+			return "", lost
+		}
+		frame := strings.Repeat("─", 60)
+		return "Antigravity CLI 1.4.5\n" + frame + "\n> \n" + frame + "\n? for shortcuts                  Gemini 3.8 Flash · high", nil
+	}
+	err := SubmitAntigravityText(ctx, read, func(context.Context, string) error { pastes++; return nil }, func(context.Context, string) error { keys++; return nil }, "synthetic message", false, time.Second)
+	if !errors.Is(err, lost) || reads != 2 || pastes != 1 || keys != 0 {
+		t.Fatalf("lost fence was polled or submitted: err=%v reads=%d pastes=%d keys=%d", err, reads, pastes, keys)
+	}
+}

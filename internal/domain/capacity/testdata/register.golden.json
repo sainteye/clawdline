@@ -81,6 +81,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "antigravity.first_input_slots",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxFirstInputs"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "antigravity.hook_config_bytes",
     "Class": "buffer",
     "Unit": "bytes",

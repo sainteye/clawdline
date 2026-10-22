@@ -8,6 +8,7 @@
 | `antigravity.context_history` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.context_index_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.context_receipts` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.first_input_slots` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.hook_config_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.hook_connections` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.hook_frame_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics, sender` | — |

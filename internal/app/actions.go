@@ -38,8 +38,9 @@ type Actions struct {
 	Reading   *InventoryReading
 	Terminals []ports.TerminalHost
 	// Antigravity verifies the live native conversation before every terminal effect.
-	Antigravity ports.AntigravityBindings
-	Store       *store.Store
+	Antigravity           ports.AntigravityBindings
+	AntigravityFirstInput ports.AntigravityFirstInputs
+	Store                 *store.Store
 	// Owed is what the sessions on this machine still owe — the broker's
 	// pending landings, read at the moment of asking (D01). Nil is a daemon
 	// that cannot say, and a close is then refused as unknown rather than

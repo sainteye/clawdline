@@ -15,7 +15,7 @@ func (s *Server) SetAntigravityBridge(bridge *antigravity.Bridge) { s.antigravit
 
 func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Reading {
 	// Each capacity pass rebuilds this map. Share one integrity-checked snapshot
-	// across its five rows, never five complete filesystem reads or a boot cache.
+	// across its owned rows, never five complete filesystem reads or a boot cache.
 	var once sync.Once
 	var launchStats antigravitylaunch.Stats
 	var launchErr error
@@ -39,6 +39,8 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 			n = int64(launchStats.Launches)
 		case "history":
 			n = int64(launchStats.History)
+		case "first_inputs":
+			n = int64(launchStats.FirstInputs)
 		case "receipts":
 			n = int64(launchStats.Receipts)
 		case "index":
@@ -75,6 +77,7 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 	}
 	return map[string]func() capacity.Reading{
 		// Missing, closed or unreadable owners remain unknown.
+		"antigravity.first_input_slots":    func() capacity.Reading { return launchReading("first_inputs") },
 		"antigravity.saved_launches":       func() capacity.Reading { return launchReading("launches") },
 		"antigravity.context_history":      func() capacity.Reading { return launchReading("history") },
 		"antigravity.context_receipts":     func() capacity.Reading { return launchReading("receipts") },
