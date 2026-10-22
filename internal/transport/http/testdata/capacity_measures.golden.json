@@ -1333,6 +1333,16 @@
     "Note": true
   },
   {
+    "Name": "places.antigravity_probe_output_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_probe_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "places.git_config_bytes",
     "Known": true,
     "Note": true

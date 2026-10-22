@@ -5192,6 +5192,44 @@
   },
   {
     "Register": "daemon",
+    "Name": "places.antigravity_probe_output_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.CLIProbeOutputLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "places.antigravity_probe_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.CLIProbeTimeLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "places.git_config_bytes",
     "Class": "buffer",
     "Unit": "bytes",
