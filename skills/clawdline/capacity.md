@@ -4,6 +4,16 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 
 | Name | Default bound | Unit | At limit | Told through | Current deviation |
 | --- | ---: | --- | --- | --- | --- |
+| `antigravity.ancestry_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_config_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_payload_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_timeout_seconds` | 3 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.live_bindings` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.managed_launches` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.observation_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.process_read_seconds` | 3 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.retention_seconds` | 86400 | `seconds` | `expire` | `diagnostics, sender` | — |
+| `antigravity.state_age_seconds` | 15 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `artifacts.drops` | 268435456 | `bytes` | `evict_oldest` | `diagnostics, log` | — |
 | `artifacts.drops_young` | 1 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
 | `artifacts.image_bytes` | 67108864 | `bytes` | `evict_oldest` | `diagnostics, notice, log` | — |

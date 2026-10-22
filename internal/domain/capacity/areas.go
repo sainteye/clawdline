@@ -24,6 +24,7 @@ type area struct {
 }
 
 var areas = []area{
+	{"antigravity", []string{"antigravity"}, antigravityBounds},
 	{"artifacts", []string{"artifacts", "icons", "screens", "voice"}, artifactsBounds},
 	{"board", []string{"board", "decisions", "epic", "planreview", "proposals", "run", "usage"}, boardBounds},
 	{"broker", []string{"coordinator", "dispatch", "handoff", "leases", "orchestrator", "waits"}, brokerBounds},

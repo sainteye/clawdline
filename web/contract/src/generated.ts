@@ -3523,11 +3523,12 @@ export type IdentityBinding =
   | "open_file"
   | "live_title"
   | "registry"
+  | "launch_hook"
   | "no_record"
   | "unreadable"
   | "ambiguous"
 
-export const IdentityBindingValues: readonly IdentityBinding[] = ["command_line", "open_file", "live_title", "registry", "no_record", "unreadable", "ambiguous"] as const
+export const IdentityBindingValues: readonly IdentityBinding[] = ["command_line", "open_file", "live_title", "registry", "launch_hook", "no_record", "unreadable", "ambiguous"] as const
 
 /**
  * Why a reference has no picture behind it: `expired` when the store held it and no
