@@ -476,8 +476,8 @@ func validateTask(task map[string]any, isDirectory func(string) bool) error {
 		}
 	}
 	assistant, _ := task["assistant"].(string)
-	if assistant != "claude" && assistant != "codex" {
-		return bad("task.assistant must be claude or codex")
+	if assistant != "claude" && assistant != "codex" && assistant != "antigravity" {
+		return bad("task.assistant must be claude, codex or antigravity")
 	}
 	dir, _ := task["project_dir"].(string)
 	if !usablePath(dir) || isDirectory == nil || !isDirectory(dir) {
@@ -491,13 +491,23 @@ func validateTask(task map[string]any, isDirectory func(string) bool) error {
 		return bad("task.model must be a model name: lower-case letters, digits, . _ -, at most 64 characters")
 	}
 	if raw, present := task["reasoning_effort"]; present {
-		if assistant != "codex" {
-			return bad("task.reasoning_effort is only valid when assistant is codex")
-		}
-		if name, _ := raw.(string); name != "high" && name != "xhigh" {
-			return bad("task.reasoning_effort must be one of: high, xhigh")
+		name, _ := raw.(string)
+		switch assistant {
+		case "codex":
+			if name != "high" && name != "xhigh" {
+				return bad("task.reasoning_effort must be one of: high, xhigh")
+			}
+		case "antigravity":
+			switch name {
+			case "low", "medium", "high", "xhigh", "max":
+			default:
+				return bad("task.reasoning_effort must be one of: low, medium, high, xhigh, max")
+			}
+		default:
+			return bad("task.reasoning_effort is only valid when assistant is codex or antigravity")
 		}
 	}
+
 	if plan, _ := task["plan"].(string); len(plan) > 64*1024 {
 		return bad("task.plan must be at most 64 KiB")
 	}

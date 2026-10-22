@@ -8986,5 +8986,11 @@
   "worktree.taskTemporary": "任務擁有的暫存工作樹",
   "worktree.unknown": "未知",
   "worktree.unlanded": "尚未落地的工作",
-  "worktree.untracked": "未追蹤"
+  "worktree.untracked": "未追蹤",
+  "next.defaultAntigravityModel": "Antigravity 預設模型",
+  "next.defaultAntigravityEffort": "Antigravity 預設推理強度",
+  "next.defaultAntigravityEffortInvalid": "請選 low、medium、high、xhigh、max，或由助理決定。",
+  "next.defaultAntigravityCatalogUnknown": "無法取得原生模型清單。可保留已儲存的模型或由助理決定；儲存選項不代表授權付費呼叫。",
+  "next.scheduleAntigravityUnavailable": "無法確認這台機器的 Antigravity 就緒狀態，請重新讀取機器清單後再儲存。",
+  "next.scheduleAntigravityEffortField": "Antigravity 推理強度"
 }

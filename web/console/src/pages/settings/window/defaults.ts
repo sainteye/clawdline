@@ -16,6 +16,8 @@ export const DEFAULTS = {
   language: "auto",
   mascot: "clawd",
   terminal: "auto",
+  antigravity_default_model: "",
+  antigravity_default_effort: "",
   codex_default_model: "",
   codex_default_effort: "",
   claude_default_model: "",

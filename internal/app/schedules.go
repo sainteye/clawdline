@@ -570,7 +570,7 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 		if s, isString := model.(string); !isString || s != "" {
 			tmpl["model"] = model
 		}
-	} else if kept, ok := carried["model"]; ok {
+	} else if kept, ok := carried["model"]; ok && (carried["assistant"] == nil || carried["assistant"] == tmpl["assistant"]) {
 		tmpl["model"] = kept
 	}
 	// `permission_mode` as `model`: no key keeps what the file says, `""`
@@ -598,16 +598,16 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 			tmpl[key] = kept
 		}
 	}
-	if tmpl["assistant"] == "codex" {
+	if tmpl["assistant"] == "codex" || tmpl["assistant"] == "antigravity" {
 		if effort, ok := body["reasoning_effort"]; ok {
 			if name, isString := effort.(string); !isString || name != "" {
 				tmpl["reasoning_effort"] = effort
 			}
-		} else if kept, ok := carried["reasoning_effort"]; ok {
+		} else if kept, ok := carried["reasoning_effort"]; ok && (carried["assistant"] == nil || carried["assistant"] == tmpl["assistant"]) {
 			tmpl["reasoning_effort"] = kept
 		}
 	} else if effort, ok := body["reasoning_effort"]; ok && effort != "" {
-		r := refusedSchedule(400, "bad_request", "reasoning_effort is only valid when assistant is codex")
+		r := refusedSchedule(400, "bad_request", "reasoning_effort is only valid when assistant is codex or antigravity")
 		return nil, schedule.Schedule{}, &r
 	}
 	when := map[string]any{"at": orEmpty(body, "at"), "days": orEmpty(body, "days")}

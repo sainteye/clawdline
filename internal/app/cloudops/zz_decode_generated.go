@@ -438,7 +438,7 @@ func genDecodeDefaultModelsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"claude_default_model": genRule{kind: "string", nullable: true}, "codex_default_effort": genRule{kind: "string", nullable: true}, "codex_default_model": genRule{kind: "string", nullable: true}}, closed: true, maxKeys: 3}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"antigravity_default_effort": genRule{kind: "string", nullable: true}, "antigravity_default_model": genRule{kind: "string", nullable: true}, "claude_default_model": genRule{kind: "string", nullable: true}, "codex_default_effort": genRule{kind: "string", nullable: true}, "codex_default_model": genRule{kind: "string", nullable: true}}, closed: true, maxKeys: 5}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)

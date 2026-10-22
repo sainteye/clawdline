@@ -5116,7 +5116,9 @@ type ScheduleRequest struct {
 	PermissionMode string `json:"permission_mode,omitempty"`
 	PlaceID        string `json:"place_id"`
 
-	// Codex high or xhigh; no key keeps the saved value, an empty string takes it off.
+	// Codex high or xhigh; Antigravity low, medium, high, xhigh or max. No key keeps
+	// the saved value for the same provider; changing provider does not inherit
+	// another provider's effort. An empty string takes it off.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 
 	// The conversation the person's message was sent to. Required with via for a
@@ -5245,7 +5247,8 @@ type ScheduleTask struct {
 // generator has no type for it). `permission_mode` is refused by name
 // (`template_permission_mode`): it is sent as the form's own field, where who
 // may set it is checked. Any other key is refused by name. `reasoning_effort`
-// is kept only when the assistant is codex, as a save keeps it.
+// is kept for codex or antigravity and validated against that provider's
+// vocabulary, as a save keeps it.
 type ScheduleTemplate struct {
 	Claims          []string `json:"claims,omitempty"`
 	Deliverables    []string `json:"deliverables,omitempty"`
@@ -6173,6 +6176,14 @@ type SessionsSnapshot struct {
 
 // The keys to change. A null key is left as it is.
 type SettingsRequest struct {
+	// Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the
+	// choice to Antigravity.
+	AntigravityDefaultEffort *string `json:"antigravity_default_effort"`
+
+	// Native Antigravity model slug. Empty leaves the choice to Antigravity; no
+	// fallback to another provider.
+	AntigravityDefaultModel *string `json:"antigravity_default_model"`
+
 	// `claude` or `codex`.
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
@@ -6361,6 +6372,14 @@ type SettingsRequest struct {
 }
 
 type SettingsSnapshot struct {
+	// Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the
+	// choice to Antigravity.
+	AntigravityDefaultEffort *string `json:"antigravity_default_effort"`
+
+	// Native Antigravity model slug. Empty leaves the choice to Antigravity; no
+	// fallback to another provider.
+	AntigravityDefaultModel *string `json:"antigravity_default_model"`
+
 	// Whose quota that naming turn spends, `claude` or `codex`. Remembered while the
 	// switch above is off, so turning it back on does not quietly change providers.
 	AutoNameAssistant *string `json:"auto_name_assistant"`

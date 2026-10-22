@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 8986,
+  "englishKeys": 8992,
   "counts": {
-    "negation": 2613,
-    "state": 1474,
+    "negation": 2614,
+    "state": 1475,
     "permission": 521,
     "deletion": 201,
-    "uncertainty": 283
+    "uncertainty": 285
   },
-  "unionCount": 4003,
+  "unionCount": 4005,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2033,6 +2033,7 @@
       "next.cloudTerminalPermissionConnectionFailed",
       "next.cloudTerminalPermissionDeviceMissing",
       "next.codexAsyncAnswerHint",
+      "next.defaultAntigravityCatalogUnknown",
       "next.defaultModelInvalid",
       "next.defaultModelsFailed",
       "next.defaultModelsHint",
@@ -3735,6 +3736,7 @@
       "next.cloudPeerTargetReceipt",
       "next.cloudRenameRefused",
       "next.cloudRosterFailed",
+      "next.defaultAntigravityCatalogUnknown",
       "next.defaultModelsSaved",
       "next.devicesPairHelp",
       "next.documentsWalked",
@@ -5055,6 +5057,7 @@
       "next.cloudPeerMachineClear",
       "next.cloudPeerMachinePartial",
       "next.cloudPeerObservationUnknown",
+      "next.defaultAntigravityCatalogUnknown",
       "next.devicesRosterFailed",
       "next.fleetUpdateUnknown",
       "next.linksDeployUnreadable",
@@ -5073,6 +5076,7 @@
       "next.personaSkillUnavailable",
       "next.processOnlyShort",
       "next.projectsActivityHelpTitle",
+      "next.scheduleAntigravityUnavailable",
       "next.scheduleMachineUnread",
       "next.scheduleProjectUnavailable",
       "next.sessionStateFilterIncomplete",
@@ -8131,6 +8135,7 @@
     "next.cloudTerminalPermissionTitle",
     "next.codexAsyncAnswerHint",
     "next.codexAsyncChoiceHint",
+    "next.defaultAntigravityCatalogUnknown",
     "next.defaultModelInvalid",
     "next.defaultModelsFailed",
     "next.defaultModelsHint",
@@ -8376,6 +8381,7 @@
     "next.roleCreateIntro",
     "next.roleIconErase",
     "next.roleIconReload",
+    "next.scheduleAntigravityUnavailable",
     "next.scheduleForceRunConfirmation",
     "next.scheduleIntervalHelp",
     "next.scheduleMachineReadFailed",

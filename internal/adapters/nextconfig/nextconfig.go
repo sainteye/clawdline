@@ -481,6 +481,10 @@ var Settables = []Settable{
 		Refusal: "invalid_default_model", Because: "empty, or a model name made of lower-case letters, digits, dot, dash or underscore"},
 	{Name: "codex_default_effort", Kind: "string", Choices: []string{"", "high", "xhigh"},
 		Refusal: "invalid_default_effort", Because: "empty, high or xhigh"},
+	{Name: "antigravity_default_model", Kind: "string", Check: ValidDefaultModel,
+		Refusal: "invalid_default_model", Because: "empty, or a model name made of lower-case letters, digits, dot, dash or underscore"},
+	{Name: "antigravity_default_effort", Kind: "string", Check: func(value string) bool { return value == "" || projects.KnownAntigravityEffort(value) },
+		Refusal: "invalid_default_effort", Because: "empty, low, medium, high, xhigh or max"},
 	{Name: "claude_default_model", Kind: "string", Check: ValidDefaultModel,
 		Refusal: "invalid_default_model", Because: "empty, or a model name made of lower-case letters, digits, dot, dash or underscore"},
 	{Name: "reopen_on_return", Kind: "bool"},
@@ -585,6 +589,8 @@ func DefaultModel(values Values, assistant string) string {
 		key = "codex_default_model"
 	case projects.AssistantClaude:
 		key = "claude_default_model"
+	case projects.AssistantAntigravity:
+		key = "antigravity_default_model"
 	default:
 		return ""
 	}
@@ -599,6 +605,16 @@ func DefaultModel(values Values, assistant string) string {
 func DefaultReasoningEffort(values Values) string {
 	effort, ok := values.String("codex_default_effort")
 	if ok && projects.KnownReasoningEffort(effort) {
+		return effort
+	}
+	return ""
+}
+
+// DefaultAntigravityEffort reads only the native provider default, never Codex's.
+// Empty, absent and malformed values leave the native choice unchanged.
+func DefaultAntigravityEffort(values Values) string {
+	effort, ok := values.String("antigravity_default_effort")
+	if ok && projects.KnownAntigravityEffort(effort) {
 		return effort
 	}
 	return ""

@@ -1701,6 +1701,39 @@ func TestDefaultModelsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 	}
 }
 
+func TestAntigravityDefaultsCrossTheSameNarrowCloudRoute(t *testing.T) {
+	for _, changes := range []map[string]any{
+		{"antigravity_default_model": "native-synthetic", "antigravity_default_effort": "max"},
+		{"antigravity_default_model": nil, "antigravity_default_effort": ""},
+		{"antigravity_default_model": "native-synthetic", "antigravity_default_effort": "low", "codex_default_model": "gpt-synthetic", "codex_default_effort": "xhigh", "claude_default_model": "opus"},
+	} {
+		r := &router{}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "default-models-update", "session": MachineReplySession, "request": "req-native-defaults", "changes": changes,
+		}))
+		if answer.Status != 200 || len(r.seen) != 1 {
+			t.Fatalf("native changes did not reach HTTP: %+v, asked %+v", answer, r.seen)
+		}
+		got := r.last()
+		var body map[string]any
+		if json.Unmarshal(got.Body, &body) != nil || !reflect.DeepEqual(body, changes) || got.Method != "POST" || got.Path != "/v1/settings/default-models" || got.Header[actorHeader] != actorDevice || got.Header["Idempotency-Key"] != "req-native-defaults" {
+			t.Fatalf("native changes crossed the wrong boundary: %+v", got)
+		}
+	}
+	for _, changes := range []map[string]any{
+		{"antigravity_default_model": 12}, {"antigravity_default_effort": true},
+		{"antigravity_default_model": "native-synthetic", "remote": true},
+	} {
+		r := &router{}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "default-models-update", "session": MachineReplySession, "request": "req-native-bad", "changes": changes,
+		}))
+		if answer.Code != "malformed_command" || len(r.seen) != 0 {
+			t.Fatalf("bad native changes escaped decoding: %+v", answer)
+		}
+	}
+}
+
 func TestWorkGateSettingsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 	r := &router{}
 	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,

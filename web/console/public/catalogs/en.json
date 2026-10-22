@@ -8986,5 +8986,11 @@
   "worktree.taskTemporary": "Task-owned temporary",
   "worktree.unknown": "unknown",
   "worktree.unlanded": "Unlanded work",
-  "worktree.untracked": "Untracked"
+  "worktree.untracked": "Untracked",
+  "next.defaultAntigravityModel": "Antigravity default model",
+  "next.defaultAntigravityEffort": "Antigravity default reasoning effort",
+  "next.defaultAntigravityEffortInvalid": "Choose low, medium, high, xhigh, max, or the assistant default.",
+  "next.defaultAntigravityCatalogUnknown": "The native model list is unavailable. Keep the saved model or use the assistant default. Saving a choice does not authorize paid calls.",
+  "next.scheduleAntigravityUnavailable": "Antigravity readiness on this machine is unavailable. Refresh the machine inventory before saving.",
+  "next.scheduleAntigravityEffortField": "Antigravity reasoning effort"
 }

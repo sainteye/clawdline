@@ -1,3 +1,6 @@
+import { catalogWord } from "../catalog.js"
+import { assistantAdmits, type AssistantFacts } from "../session/antigravity-ui.js"
+import { STATUS_FRESH_MS } from "../cloud/status-projection.js"
 import { loadingSkeletonHTML } from "../loading-skeleton.js"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import * as L from "../legacy/bridge.js"
@@ -668,6 +671,7 @@ export interface SpokenScheduleDraft {
   place_id?: string | null
   assistant?: string
   model?: string
+  reasoning_effort?: string
   question?: string
 }
 
@@ -688,6 +692,7 @@ const Schedule = (() => {
   const TIMEOUT_DEFAULT = 30
   const MODELS = ["haiku", "sonnet", "opus"]
   const EFFORTS = ["high", "xhigh"]
+  const NATIVE_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
   // `task.permission_mode` as the parser reads it; "" is no key, the machine's default.
   const PERMISSIONS: [string, NextWord][] = [
     ["", "schedulePermissionDefault"],
@@ -705,6 +710,8 @@ const Schedule = (() => {
   let chosenAssistant: string | null = null
   let chosenModel = ""
   let chosenEffort = ""
+  const providerValues = new Map<string, { model: string; effort: string }>()
+  let inventoryAt = 0
   let chosenPermission = ""
   // What the schedule being edited has, so a save to "not set" sends "" to take it off.
   let storedPermission = ""
@@ -746,6 +753,8 @@ const Schedule = (() => {
   function hint(): string {
     const reading = placeReadProblem()
     if (reading) return reading
+    const native = nativeReadinessProblem()
+    if (native) return native
     if (!triggerOnly && !el<HTMLInputElement>("schedule-at").value) return T().webScheduleNeedsTime
     if (!chosenPlace) return T().webScheduleNeedsPlace
     return ""
@@ -768,7 +777,7 @@ const Schedule = (() => {
     ].forEach((id) => {
       const placesReady = readReady(placesReading) && (places?.length ?? 0) > 0
       // A move says why it cannot go (`move`), so an unreadable target does not grey Save out.
-      el<HTMLInputElement>(id).disabled = b || (id === "schedule-go" && !placesReady && !moving())
+      el<HTMLInputElement>(id).disabled = b || (id === "schedule-go" && (!placesReady || !!nativeReadinessProblem()) && !moving())
     })
     ;[
       "schedule-machine",
@@ -820,18 +829,26 @@ const Schedule = (() => {
     const path = picked?.path || chosenPlacePath
     machine = id
     places = null
+    inventoryAt = 0
+    placesTicket += 1
+    assistants = []
+    placesReading = { phase: "loading" }
     placesNote = ""
     chosenPlace = null
     chosenPlacePath = null
     said("")
     drawMachines()
     drawPlaces()
+    const target = id
     ensurePlaces().then(() => {
+      if (machine !== target) return
       const again =
         (machine === ownerMachine && path ? (places || []).find((p) => p.path === path) : undefined) ||
         (repo ? (places || []).find((p) => p.repo === repo) : undefined)
       chosenPlace = again ? again.id : null
-      if (!assistants.some((a) => a.id === chosenAssistant)) defaultAssistant(null)
+      // Keep an explicitly selected provider when the target cannot report it.
+      // Saving then names the unavailable readiness instead of changing providers.
+      if (!chosenAssistant) defaultAssistant(null)
       drawWith()
       drawModel()
       drawPlaces()
@@ -855,9 +872,11 @@ const Schedule = (() => {
       chip.textContent = a.label || a.id
       chip.setAttribute("aria-pressed", a.id === chosenAssistant ? "true" : "false")
       chip.onclick = () => {
+        if (chosenAssistant) providerValues.set(chosenAssistant, { model: chosenModel, effort: chosenEffort })
         chosenAssistant = a.id
-        if (chosenAssistant !== "claude") chosenModel = ""
-        if (chosenAssistant !== "codex") chosenEffort = ""
+        const kept = providerValues.get(a.id)
+        chosenModel = kept?.model || ""
+        chosenEffort = kept?.effort || ""
         drawWith()
         drawModel()
       }
@@ -869,27 +888,49 @@ const Schedule = (() => {
   function drawModel(): void {
     const row = el("schedule-model")
     row.innerHTML = ""
-    const show = chosenAssistant === "claude" || chosenAssistant === "codex"
+    const native = chosenAssistant === "antigravity"
+    const show = chosenAssistant === "claude" || chosenAssistant === "codex" || native
     el("schedule-model-label").hidden = !show
-    el("schedule-model-label").textContent = chosenAssistant === "codex" ? nextWord("scheduleEffortField") : T().webScheduleModel
+    el("schedule-model-label").textContent = native ? T().webScheduleModel + " / " + catalogWord("next", "scheduleAntigravityEffortField") : chosenAssistant === "codex" ? nextWord("scheduleEffortField") : T().webScheduleModel
     row.hidden = !show
     row.setAttribute("data-kind", chosenAssistant || "")
     if (!show) return
-    ;(chosenAssistant === "codex" ? EFFORTS : MODELS).forEach((m) => {
-      const chip = document.createElement("button")
-      chip.type = "button"
-      const selected = chosenAssistant === "codex" ? chosenEffort : chosenModel
-      chip.className = "chip" + (m === selected ? " on" : "")
-      chip.textContent = m
-      chip.setAttribute("aria-pressed", m === selected ? "true" : "false")
-      chip.onclick = () => {
-        if (chosenAssistant === "codex") chosenEffort = chosenEffort === m ? "" : m
-        else chosenModel = chosenModel === m ? "" : m
-        drawModel()
+    const chips = (values: string[], effort: boolean) => {
+      const selected = effort ? chosenEffort : chosenModel
+      for (const m of Array.from(new Set(["", ...values, ...(selected ? [selected] : [])]))) {
+        const chip = document.createElement("button")
+        chip.type = "button"
+        chip.className = "chip" + (m === selected ? " on" : "")
+        chip.textContent = m || nextWord("defaultModelPlaceholder")
+        chip.setAttribute("aria-label", (effort ? (native ? catalogWord("next", "scheduleAntigravityEffortField") : nextWord("scheduleEffortField")) : T().webScheduleModel) + ": " + chip.textContent)
+        chip.setAttribute("aria-pressed", m === selected ? "true" : "false")
+        chip.dataset.field = effort ? "effort" : "model"
+        chip.dataset.value = m
+        chip.onclick = () => {
+          if (effort) chosenEffort = !native && chosenEffort === m ? "" : m
+          else chosenModel = !native && chosenModel === m ? "" : m
+          drawModel()
+        }
+        row.appendChild(chip)
       }
-      row.appendChild(chip)
-    })
+    }
+    if (native) {
+      // No installed native model catalog: never substitute another provider's list.
+      chips([], false)
+      const note = document.createElement("p")
+      note.className = "note"
+      note.textContent = catalogWord("next", "defaultAntigravityCatalogUnknown")
+      row.appendChild(note)
+      chips(NATIVE_EFFORTS, true)
+    } else chips(chosenAssistant === "codex" ? EFFORTS : MODELS, chosenAssistant === "codex")
     paint()
+  }
+
+  function nativeReadinessProblem(): string {
+    if (chosenAssistant !== "antigravity") return ""
+    const facts = assistants.find(a => a.id === chosenAssistant) as AssistantFacts | undefined
+    return readReady(placesReading) && Number.isFinite(inventoryAt) && inventoryAt > 0 && Math.abs(Date.now() - inventoryAt * 1000) <= STATUS_FRESH_MS && assistantAdmits(facts, "start")
+      ? "" : catalogWord("next", "scheduleAntigravityUnavailable")
   }
 
   function drawPermission(): void {
@@ -1140,6 +1181,7 @@ const Schedule = (() => {
         places = (d && d.places) || []
         if (from === ownerMachine && editingId) ownerPlaces = places
         assistants = (d && d.assistants) || []
+        inventoryAt = Number((d as SchedulePlaces & { at?: number })?.at)
         placesNote = unansweredSentence(d)
         placesReading = readAnswer(d, places.length === 0 && placesNote === "")
       })
@@ -1187,6 +1229,8 @@ const Schedule = (() => {
     chosenAssistant = null
     chosenModel = ""
     chosenEffort = ""
+    providerValues.clear()
+    inventoryAt = 0
     chosenPermission = ""
     storedPermission = ""
     intervalOn = false
@@ -1258,8 +1302,8 @@ const Schedule = (() => {
     focusModalContainer(el("schedule-form"))
     ensurePlaces().then(() => {
       defaultAssistant(draft.assistant)
-      chosenModel = chosenAssistant === "claude" && MODELS.includes(draft.model || "") ? draft.model || "" : ""
-      chosenEffort = ""
+      chosenModel = draft.model || ""
+      chosenEffort = draft.reasoning_effort || ""
       drawWith()
       drawModel()
       drawPlaces()
@@ -1324,7 +1368,7 @@ const Schedule = (() => {
     storedPermission = typeof task.permission_mode === "string" ? task.permission_mode : ""
     chosenPermission = PERMISSIONS.some(([value]) => value === storedPermission) ? storedPermission : ""
     // A schedule that has a permission shows it, rather than keeping it folded away.
-    if (storedPermission || (task.assistant === "codex" && typeof task.reasoning_effort === "string" && EFFORTS.includes(task.reasoning_effort))) el<HTMLDetailsElement>("schedule-more").open = true
+    if (storedPermission || ((task.assistant === "codex" || task.assistant === "antigravity") && typeof task.reasoning_effort === "string" && task.reasoning_effort !== "")) el<HTMLDetailsElement>("schedule-more").open = true
     el<HTMLInputElement>("schedule-catch").value = String(record.catch_up_hours != null ? record.catch_up_hours : CATCH_DEFAULT)
     el<HTMLInputElement>("schedule-timeout").value = String(
       task.timeout_minutes != null ? task.timeout_minutes : TIMEOUT_DEFAULT,
@@ -1339,8 +1383,8 @@ const Schedule = (() => {
       chosenPlace = placeIdForPath(task.project_dir)
       chosenPlacePath = chosenPlace ? null : task.project_dir || null
       defaultAssistant(task.assistant)
-      chosenModel = chosenAssistant === "claude" && task.model && MODELS.indexOf(task.model) >= 0 ? task.model : ""
-      chosenEffort = chosenAssistant === "codex" && typeof task.reasoning_effort === "string" && EFFORTS.includes(task.reasoning_effort) ? task.reasoning_effort : ""
+      chosenModel = typeof task.model === "string" ? task.model : ""
+      chosenEffort = (chosenAssistant === "codex" || chosenAssistant === "antigravity") && typeof task.reasoning_effort === "string" ? task.reasoning_effort : ""
       loadingEdit = false
       drawWith()
       drawModel()
@@ -1439,6 +1483,8 @@ const Schedule = (() => {
     // A move names its own refusals — an offline machine, no clone of the
     // project there — which are more use than "pick a project".
     const needsTime = !triggerOnly && !el<HTMLInputElement>("schedule-at").value
+    const readiness = nativeReadinessProblem()
+    if (readiness) { said(readiness); return }
     const problem = moving() ? (needsTime ? T().webScheduleNeedsTime : "") : hint()
     if (problem) {
       said(problem)
@@ -1468,7 +1514,7 @@ const Schedule = (() => {
       place_id: chosenPlace,
       assistant: chosenAssistant,
       model: chosenModel,
-      ...(chosenAssistant === "codex" ? { reasoning_effort: chosenEffort } : {}),
+      ...((chosenAssistant === "codex" || chosenAssistant === "antigravity") ? { reasoning_effort: chosenEffort } : {}),
       instructions: el<HTMLTextAreaElement>("schedule-instructions").value,
       enabled,
       close_tab: closeTab,
@@ -1621,6 +1667,7 @@ const Schedule = (() => {
         placesTicket += 1
         places = targetAnswer.places || []
         assistants = targetAnswer.assistants || []
+        inventoryAt = Number((targetAnswer as SchedulePlaces & { at?: number })?.at)
         placesNote = ""
         placesReading = readAnswer(targetAnswer, places.length === 0)
         noteScheduleMachineAnswered(target)
