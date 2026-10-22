@@ -2,8 +2,6 @@ package antigravity
 
 import (
 	"context"
-	"os"
-	"runtime"
 
 	"github.com/sainteye/clawdline/internal/app/ports"
 )
@@ -16,17 +14,7 @@ type ImageFingerprint struct {
 }
 
 func (b *Bridge) imageFingerprint(ctx context.Context) (ImageFingerprint, error) {
-	if err := nativeContext(ctx); err != nil {
-		return ImageFingerprint{}, err
-	}
-	info, err := os.Lstat(b.executable)
-	if err != nil || !info.Mode().IsRegular() || !sameExecutable(info, b.executableInfo) {
-		return ImageFingerprint{}, refuse("antigravity_executable_changed")
-	}
-	if err := nativeContext(ctx); err != nil {
-		return ImageFingerprint{}, err
-	}
-	return ImageFingerprint{Executable: b.executable, Digest: b.executableDigest, Platform: runtime.GOOS, Architecture: runtime.GOARCH}, nil
+	return b.image.Fingerprint(ctx)
 }
 func (b *Bridge) ImageFingerprint(ctx context.Context) (ImageFingerprint, error) {
 	if err := nativeContext(ctx); err != nil {

@@ -99,8 +99,7 @@ type Bridge struct {
 	hookConnections             atomic.Int64
 	mu                          sync.Mutex
 	home, statePath, executable string
-	executableInfo              os.FileInfo
-	executableDigest            string
+	image                       *PinnedExecutable
 	reader                      ports.AntigravityProcessReader
 	resolve                     PathResolver
 	now                         func() time.Time
@@ -115,22 +114,11 @@ func NewBridge(home, statePath, executable string, reader ports.AntigravityProce
 	if reader == nil || resolve == nil || !filepath.IsAbs(executable) || !filepath.IsAbs(statePath) {
 		return nil, refuse("antigravity_configuration_invalid")
 	}
-	info, err := os.Lstat(executable)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&0111 == 0 {
-		return nil, refuse("antigravity_executable_invalid")
-	}
-	digest, err := fileDigest(executable)
+	image, err := NewPinnedExecutable(context.Background(), executable)
 	if err != nil {
-		return nil, refuse("antigravity_executable_unreadable")
+		return nil, err
 	}
-	// Hash once, then pin the post-read kernel change stamp. Inventory must
-	// not reread the entire executable for every session on every poll.
-	after, err := os.Lstat(executable)
-	if err != nil || !sameExecutable(info, after) {
-		return nil, refuse("antigravity_executable_changed")
-	}
-	info = after
-	b := &Bridge{home: home, statePath: statePath, executable: executable, executableInfo: info, executableDigest: digest, reader: reader, resolve: resolve, now: time.Now, entries: map[string]retained{}, launches: map[string]LaunchCommitment{}}
+	b := &Bridge{home: home, statePath: statePath, executable: executable, image: image, reader: reader, resolve: resolve, now: time.Now, entries: map[string]retained{}, launches: map[string]LaunchCommitment{}}
 	f, err := os.Open(statePath)
 	if errors.Is(err, os.ErrNotExist) {
 		return b, nil
@@ -139,7 +127,7 @@ func NewBridge(home, statePath, executable string, reader ports.AntigravityProce
 		return nil, refuse("antigravity_store_unreadable")
 	}
 	defer f.Close()
-	info, err = os.Lstat(statePath)
+	info, err := os.Lstat(statePath)
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
 		return nil, refuse("antigravity_store_invalid")
 	}
@@ -192,11 +180,7 @@ func (b *Bridge) supported(p ports.AntigravityProcess) bool {
 	if p.Executable != b.executable || p.PID <= 0 || p.Birth == "" || p.KernelGeneration == "" || p.TTY == "" || p.TerminalID == "" {
 		return false
 	}
-	info, err := os.Lstat(p.Executable)
-	if err != nil || !info.Mode().IsRegular() || !sameExecutable(info, b.executableInfo) {
-		return false
-	}
-	return true
+	return b.image.current()
 }
 
 // Kernel ctime catches same-inode writes even if size and mtime are restored.

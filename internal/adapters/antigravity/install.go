@@ -22,6 +22,7 @@ const (
 // regenerates the proposed bytes from the command and current document.
 type InstallPreview struct {
 	Path, BeforeDigest, Helper string
+	ConfigRoot                 string
 	After                      []byte
 	Disabled, Remove           bool
 }
@@ -131,10 +132,14 @@ func writeRawObject(m map[string]json.RawMessage) []byte {
 	return out.Bytes()
 }
 func shellWord(s string) string { return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'" }
-func desiredHooks(helper string) map[string]json.RawMessage {
+func desiredHooks(helper, configRoot string) map[string]json.RawMessage {
+	command := shellWord(helper)
+	if configRoot != "" {
+		command = "/usr/bin/env CLAWDLINE_NEXT_DIR=" + shellWord(configRoot) + " " + command
+	}
 	result := map[string]json.RawMessage{}
 	for _, event := range []string{"SessionStart", "PreInvocation", "PostInvocation", "PreToolUse", "PostToolUse", "Stop"} {
-		hook := map[string]any{"type": "command", "command": shellWord(helper) + " provider observe antigravity --event " + event, "timeout": MaxHookTimeoutSeconds}
+		hook := map[string]any{"type": "command", "command": command + " provider observe antigravity --event " + event, "timeout": MaxHookTimeoutSeconds}
 		var value any = []any{hook}
 		if event == "PreToolUse" || event == "PostToolUse" {
 			value = []any{map[string]any{"matcher": "*", "hooks": []any{hook}}}
@@ -147,6 +152,19 @@ func desiredHooks(helper string) map[string]json.RawMessage {
 // PreviewInstall only proposes the named workspace block. It never touches
 // global preferences, status-line commands, credentials or vendor accounts.
 func PreviewInstall(workspace, helper string, remove bool) (InstallPreview, error) {
+	return previewInstall(workspace, helper, "", remove)
+}
+
+// PreviewInstallForState binds every managed command to this daemon's private
+// config root. An inherited/default root cannot redirect the native callback.
+func PreviewInstallForState(workspace, helper, configRoot string, remove bool) (InstallPreview, error) {
+	if _, err := ProviderStateDir(configRoot); err != nil {
+		return InstallPreview{}, err
+	}
+	return previewInstall(workspace, helper, configRoot, remove)
+}
+
+func previewInstall(workspace, helper, configRoot string, remove bool) (InstallPreview, error) {
 	path, err := hookConfigPath(workspace)
 	if err != nil {
 		return InstallPreview{}, err
@@ -172,13 +190,13 @@ func PreviewInstall(workspace, helper string, remove bool) (InstallPreview, erro
 			return InstallPreview{}, refuse("antigravity_owned_block_conflict")
 		}
 	}
-	p := InstallPreview{Path: path, BeforeDigest: configDigest(data, exists), Helper: helper, Remove: remove}
+	p := InstallPreview{Path: path, BeforeDigest: configDigest(data, exists), Helper: helper, ConfigRoot: configRoot, Remove: remove}
 	if string(owned["enabled"]) == "false" || string(owned["disabled"]) == "true" {
 		p.Disabled = true
 		p.After = append([]byte(nil), data...)
 		return p, nil
 	}
-	wanted := desiredHooks(helper)
+	wanted := desiredHooks(helper, configRoot)
 	for key, value := range wanted {
 		if old, ok := owned[key]; ok {
 			var a, b bytes.Buffer
@@ -224,7 +242,10 @@ func ApplyInstall(p InstallPreview) error {
 	}
 	defer os.Remove(lock.Name())
 	_ = lock.Close()
-	fresh, err := PreviewInstall(workspace, p.Helper, p.Remove)
+	fresh, err := previewInstall(workspace, p.Helper, p.ConfigRoot, p.Remove)
+	if err == nil && p.ConfigRoot != "" {
+		_, err = ProviderStateDir(p.ConfigRoot)
+	}
 	if err != nil {
 		return err
 	}

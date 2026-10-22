@@ -105,6 +105,32 @@ settings and receipts remain intact. Older binaries ignore the added table;
 rollback preserves these rows but cannot enforce or use the new feature. No
 irreversible migration, filesystem operation or new background worker is added.
 
+## Managed filesystem primitives
+
+The native adapter now provides `PreviewInstallForState` and
+`InspectInstallForState` for a caller-selected canonical private config root.
+Each managed command explicitly selects that root through a safely quoted
+`CLAWDLINE_NEXT_DIR` environment assignment before invoking the helper. This is
+per-command routing; it does not change global preferences or account files.
+`ApplyInstall` regenerates the proposal with that same root before replacing
+bytes. Legacy default-root proposals remain available to existing private
+fixtures, but cannot pass explicit-root installation inspection.
+
+Inspection reads the exact six managed events, refuses absent, partial,
+disabled, conflicting or unknown owned fields, and returns both the named plan
+digest and the current whole-file digest. Unowned top-level blocks are preserved
+and contribute to the whole-file digest; changing one invalidates a launch's old
+file snapshot without changing the named helper/root plan. An installed block
+is not explicit consent or proof of effective native permissions.
+
+`PinnedExecutable` shares the existing bridge's one-time SHA256 and kernel
+file/change-stamp checks with future helper ownership. Replacement, in-place
+rewrites with restored mtime, mode changes, removal and cancellation refuse.
+Subsequent fingerprint reads use metadata, not repeated full executable reads.
+These primitives start no vendor process or worker and publish no production
+policy. The transactional consent owner, authenticated UI and effective-mode
+proof still must compose them before launch admission can be enabled.
+
 ## Behavioral verification
 
 `TestAntigravityConsent*` runs real SQLite transactions, trigger-injected write
