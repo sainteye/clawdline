@@ -6,8 +6,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 const firstInputKey = "74000000-0000-4000-8000-000000000090"
@@ -321,5 +324,40 @@ func TestFirstInputIndexRejectsFutureFieldsAndForgedPhases(t *testing.T) {
 			}
 			code(t, err, "index_invalid")
 		})
+	}
+}
+
+func TestPreparedMetadataDoesNotReactivateOrGrantInput(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p := prep(t, f)
+	record, err := f.store.PreparedRecord(ctx, p.Record.ID)
+	if err != nil || record != p.Record {
+		t.Fatal(record, err)
+	}
+	if _, found, err := f.store.FirstInputForLaunch(ctx, p.Record.ID); err != nil || found {
+		t.Fatal("metadata created a reservation", err)
+	}
+	native := pin(t, f.store, p)
+	if err := f.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(f.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if _, err := reopened.PreparedRecord(ctx, p.Record.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reopened.LookupProcess(ctx, native); err == nil {
+		t.Fatal("metadata reactivated persisted process")
+	}
+	if _, found, err := reopened.FirstInputForLaunch(ctx, uuid.NewString()); err == nil || found {
+		t.Fatal("unknown launch became empty slot")
+	}
+	put(t, p.Record.CapabilityPath, []byte(strings.Repeat("a", 64)))
+	if _, err := reopened.PreparedRecord(ctx, p.Record.ID); err == nil {
+		t.Fatal("changed capability retained prepared authority")
 	}
 }

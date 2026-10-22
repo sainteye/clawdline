@@ -512,3 +512,41 @@ func TestObservationRejectsChangedBootAndExecGeneration(t *testing.T) {
 		})
 	}
 }
+
+func TestPreparedTmuxBindingSeparatesAbsentFromUnknown(t *testing.T) {
+	f := fixture(t)
+	native := f.procs[41]
+	native.Birth = "2026-10-01T12:00:00Z"
+	f.procs[41] = native
+	got, found, err := f.b.PreparedTmuxBinding(context.Background(), native)
+	if err != nil || found || got.Verified || len(f.b.entries) != 0 {
+		t.Fatal("absence manufactured a native identity", got, found, err)
+	}
+	binding, err := observeA(f, "PreInvocation", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, found, err = f.b.PreparedTmuxBinding(context.Background(), native)
+	if err != nil || !found || got != binding {
+		t.Fatal("positive native binding lost", got, found, err)
+	}
+	reopened, err := NewBridge(f.home, f.state, f.exe, f.procs, f.b.resolve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err = reopened.PreparedTmuxBinding(context.Background(), native); err == nil || !found {
+		t.Fatal("persisted unverified entry became absence/live authority", found, err)
+	}
+	if err := os.Remove(f.pathA); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err = f.b.PreparedTmuxBinding(context.Background(), native); err == nil || !found {
+		t.Fatal("missing transcript became absence", found, err)
+	}
+	changed := native
+	changed.ParentPID++
+	f.procs[41] = changed
+	if _, _, err = f.b.PreparedTmuxBinding(context.Background(), native); err == nil {
+		t.Fatal("changed native parent accepted")
+	}
+}

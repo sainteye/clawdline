@@ -557,6 +557,12 @@ func (b *Bridge) AntigravityBinding(ctx context.Context, s session.Session) (por
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.bindingLocked(ctx, s)
+}
+
+// The caller owns b.mu. Bootstrap absence and ordinary binding use the same
+// native validation; unknown persisted entries can never become absence.
+func (b *Bridge) bindingLocked(ctx context.Context, s session.Session) (ports.AntigravityBinding, error) {
 	ctx, cancel := context.WithTimeout(ctx, MaxProcessReadTime)
 	defer cancel()
 	p, err := b.reader.ReadAntigravityProcess(ctx, s.PID)
@@ -630,4 +636,36 @@ func atomicReplace(path string, data []byte, mode os.FileMode) error {
 	}
 	defer dir.Close()
 	return dir.Sync()
+}
+
+// PreparedTmuxBinding performs a fresh process read and distinguishes a truly
+// absent observation from an unreadable/stale entry. It creates no UUID or
+// binding and cannot reactivate observations persisted by another runtime.
+func (b *Bridge) PreparedTmuxBinding(ctx context.Context, expected ports.AntigravityProcess) (ports.AntigravityBinding, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return ports.AntigravityBinding{}, false, err
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, MaxProcessReadTime)
+	defer cancel()
+	fresh, err := b.reader.ReadAntigravityProcess(ctx, expected.PID)
+	if err != nil || fresh != expected || !b.supported(fresh) {
+		return ports.AntigravityBinding{}, false, refuse("antigravity_process_unverified")
+	}
+	if _, found := b.entries[processKey(fresh)]; !found {
+		return ports.AntigravityBinding{}, false, ctx.Err()
+	}
+	birth, err := time.Parse(time.RFC3339Nano, fresh.Birth)
+	if err != nil {
+		return ports.AntigravityBinding{}, true, refuse("antigravity_process_unverified")
+	}
+	binding, err := b.bindingLocked(ctx, session.Session{ID: fresh.TerminalID, PID: fresh.PID, TTY: fresh.TTY, Backend: session.BackendTmux, Assistant: session.AssistantAntigravity, ExpectedStart: birth})
+	if err != nil {
+		return ports.AntigravityBinding{}, true, err
+	}
+	if binding.Process != expected {
+		return ports.AntigravityBinding{}, true, refuse("antigravity_process_unverified")
+	}
+	return binding, true, ctx.Err()
 }

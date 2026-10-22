@@ -1,7 +1,9 @@
 # Antigravity first-input contract
 Root accepted the process-bound input and durable slot design. The launch
-Store and private app/terminal path are implemented; HTTP capability enablement,
-real first-input process/policy composition and actual native timing remain pending.
+Store and private app/terminal path are implemented. The private HTTP composition
+now resolves the attached native tmux pane and rechecks process, foreground,
+workspace, capability and an explicit local policy. Public capability enablement,
+production policy composition and actual vendor timing remain pending.
 The private [native proof reader, Store and managed hook](antigravity-context-proof.md)
 retain a pre-response fence and revalidate loaded evidence; role/Squad projection
 and real CLI acceptance are still pending.
@@ -31,7 +33,7 @@ Proposed private APIs:
     (*FirstInputAttempt).BeforeEnter(ctx) error
     FirstInputStatus(ctx, launchID, requestID) (Receipt, error)
     // private transcript adapter
-    // Implemented privately; live hook composition still pending:
+    // Implemented privately, including managed hook composition:
     CaptureBaseline(ctx, verifiedBinding) (Fence, error)
     VerifyLoaded(ctx, preparedProofRequest) (Evidence, error)
     // launch Store: atomic fence/receipt preparation, then CAS evidence
@@ -111,4 +113,50 @@ Irreversible: stored phases/fence/loaded receipt/index migration. Version migrat
 | Truncate/rewrite/replace after loaded | Invalidate current badge; retain history |
 | Exact fenced SYSTEM_SDK/DONE | Record once; verify idempotently |
 
-Outside the current private input implementation: live process/policy composition, permission/login/vendor probes, role/Squad loaded-proof projection, deployment and full-feature/UI acceptance. Root retains these. The private proof reader and Store are implemented separately; open native evidence concerns file timing.
+## Private native first-input composition
+
+`managedAntigravityFirstInputs` resolves only the prepared launch's attached tmux
+pane. It brackets discovery with identical pane ID/TTY/root metadata and uses
+the existing pinned executable, kernel ancestry and foreground verifier. Neither
+caller-selected session IDs nor inventory listings supply a native UUID.
+Duplicate tmux hosts and unsupported terminal backends refuse.
+
+The launch Store exposes integrity-checked private preparation metadata and
+reservation status without restoring execution authority. The bridge separately
+distinguishes no observation from an unreadable, recovered or invalid binding.
+The target checks canonical native workspace and the explicit trusted local
+policy before pinning the process and committing the launch. Every subsequent
+read/effect repeats those checks. Owner replacement or shutdown refuses.
+
+A positive UUID arriving before reservation or before the durable Enter-attempt
+phase refuses. After that phase, only the exact same process and existing
+consumed slot can latch its native UUID and increasing binding sequence. The
+final check again resolves foreground after any durable latch. This admits
+same-execution identity without granting another paste or Enter. A current
+binding projection is not a loaded-context receipt.
+
+Local tests use actual isolated tmux panes, kernel process identity and a Unix
+hook helper with a synthetic executable; they do not invoke the vendor. They
+cover no invented UUID, one consumed slot, same-key status only, conflicting
+requests, early binding, missing policy, wrong workspace/pane/backend, duplicate
+hosts, tampered context/capability, policy revocation, stopped runtime and pane
+process replacement. The tests advance durable phases explicitly without
+pasting text or submitting Enter; app/terminal transport checks remain separate.
+The first targeted run failed on missing test imports and an incorrect assertion
+that tampered context should be reported as known zero usage. Those tests were
+corrected; the unchanged integrity check correctly reports that usage as unknown.
+The three affected targeted packages then passed (0.170, 0.308 and 3.626 seconds).
+These are local test durations, not application latency measurements.
+
+Outside this private implementation: production permission/usage policy,
+permission/login/vendor probes, role/Squad loaded-proof projection, deployment
+and full-feature/UI acceptance. Public start/resume/send routes stay guarded.
+The open native evidence includes transcript file availability and hook timing.
+
+The first full local gate passed Go vet/build/tests, Linux and Windows builds,
+repository/contract checks and console checks/build/tests, but refused a fixed
+synthetic pane ID in the wrong-pane fixture under the privacy guard. The fixture
+now allocates a second pane inside the owned private server and asserts it differs
+from the provider pane. No privacy rule was changed. The affected wrong-pane
+test passed in 0.562 seconds and the same file privacy check passed; a new exact
+candidate is required for the full commit gate.

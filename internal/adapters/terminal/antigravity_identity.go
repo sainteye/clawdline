@@ -164,3 +164,42 @@ func (t *Tmux) AntigravityPaneProcess(ctx context.Context, id, tty string, verif
 	}
 	return found, nil
 }
+
+// PreparedAntigravityPaneProcess resolves only the exact attached pane before
+// a native conversation exists. Pane TTY/root metadata and native foreground
+// proof are rechecked; a target name is never substituted for its actual ID.
+func (t *Tmux) PreparedAntigravityPaneProcess(ctx context.Context, id string, verifier ports.AntigravityProcessVerifier) (ports.AntigravityProcess, error) {
+	ctx, cancel := context.WithTimeout(ctx, antigravity.MaxProcessReadTime)
+	defer cancel()
+	if id == "" || verifier == nil {
+		return ports.AntigravityProcess{}, identityUnavailable()
+	}
+	choice := t.choice(ctx)
+	if !choice.Found() {
+		return ports.AntigravityProcess{}, identityUnavailable()
+	}
+	query := func() ([]byte, error) {
+		return nativeMetadata(choice.Command(ctx, "-u", "display-message", "-p", "-t", id, "#{pane_id}"+paneSeparator+"#{pane_tty}"+paneSeparator+"#{pane_pid}"))
+	}
+	before, err := query()
+	if err != nil {
+		return ports.AntigravityProcess{}, err
+	}
+	fields := splitPaneFields(strings.TrimSpace(string(before)))
+	if len(fields) != 3 || fields[0] != id || !strings.HasPrefix(fields[1], "/dev/") {
+		return ports.AntigravityProcess{}, identityUnavailable()
+	}
+	root, err := strconv.Atoi(fields[2])
+	if err != nil || root <= 0 {
+		return ports.AntigravityProcess{}, identityUnavailable()
+	}
+	process, err := t.AntigravityPaneProcess(ctx, id, strings.TrimPrefix(fields[1], "/dev/"), verifier)
+	if err != nil {
+		return ports.AntigravityProcess{}, err
+	}
+	after, err := query()
+	if err != nil || !bytes.Equal(before, after) {
+		return ports.AntigravityProcess{}, identityUnavailable()
+	}
+	return process, ctx.Err()
+}

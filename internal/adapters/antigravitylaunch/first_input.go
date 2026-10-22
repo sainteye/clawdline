@@ -172,3 +172,42 @@ func (a *FirstInputAttempt) BeforePaste(ctx context.Context) error {
 func (a *FirstInputAttempt) BeforeEnter(ctx context.Context) error {
 	return a.advance(ctx, FirstInputPastePossible, FirstInputEnterAttempted)
 }
+
+// PreparedRecord returns integrity-checked private metadata, not live authority.
+// It cannot reconstruct a capability, process pin or first-input execution grant.
+func (s *Store) PreparedRecord(ctx context.Context, id string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ready(ctx); err != nil {
+		return Record{}, err
+	}
+	r, err := s.record(id)
+	if err != nil {
+		return Record{}, err
+	}
+	if _, err := s.load(r); err != nil {
+		return Record{}, err
+	}
+	if _, err := s.capability(r); err != nil {
+		return Record{}, err
+	}
+	if err := cancelled(ctx); err != nil {
+		return Record{}, err
+	}
+	return r, nil
+}
+
+// FirstInputForLaunch distinguishes an absent reservation from unreadable
+// private state. Historical metadata never reconstructs an execution grant.
+func (s *Store) FirstInputForLaunch(ctx context.Context, id string) (FirstInputReceipt, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ready(ctx); err != nil {
+		return FirstInputReceipt{}, false, err
+	}
+	if _, err := s.record(id); err != nil {
+		return FirstInputReceipt{}, false, err
+	}
+	receipt, found := s.state.FirstInputs[id]
+	return receipt, found, cancelled(ctx)
+}

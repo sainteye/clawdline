@@ -113,7 +113,15 @@ a native scheduler's in-flight event bound: a deliberately excessive late
 receipt is honestly recorded as event 31, never relabelled as an admission.
 The controller therefore proves global stop and refusal of further admission,
 not an unconditional ceiling on every raw native event or vendor HTTP request.
-Its current subprocess transport discards standard IO; interactive PTY forwarding
-and its process-group behavior must be verified before a native CLI batch.
+A later artifact-only PTY extension reported 11 new controls passing ten times
+and 13 original controls passing once. Root verified all 29 artifact hashes, then
+independently ran the unchanged PTY suite in a new private directory: 11 tests
+finished in 53.656 seconds with 17 failures and one error. Multiple stop receipts
+had a payload-reaped acknowledgement followed by a supervisor wait timeout;
+this is not accepted as stopped. A separate two-group diagnostic reproduced
+that timeout, then both owned supervisor Popen handles joined after lease EOF.
+A final exact-command-path process inspection found no remaining test commands.
+The discrepancy remains open; the child report alone does not establish native
+readiness. PTY/global-stop acceptance is required before a native CLI batch.
 These controls use local fake processes only. They do not authorize or establish
 native CLI timing, free-plan eligibility, a product role badge or UI acceptance.
