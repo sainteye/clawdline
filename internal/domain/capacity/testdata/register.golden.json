@@ -7635,6 +7635,65 @@
   },
   {
     "Register": "daemon",
+    "Name": "store.antigravity_consent_identity_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.AntigravityConsentIdentityBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "store.antigravity_consent_root_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.AntigravityConsentRootBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "store.antigravity_project_consents",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 1024,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "notice",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.AntigravityProjectConsentLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "store.db",
     "Class": "evidence",
     "Unit": "bytes",

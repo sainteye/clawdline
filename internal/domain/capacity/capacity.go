@@ -346,9 +346,12 @@ const (
 	// at once, and how many screens are held between them.
 	ScreensCaptureSlots = "screens.capture_slots"
 	// The store's read-only connections for reads made outside a write.
-	StoreReadConnections  = "store.read_connections"
-	CacheTerminalScreens  = "cache.terminal_screens"
-	CacheSessionInventory = "cache.session_inventory"
+	StoreReadConnections                 = "store.read_connections"
+	StoreAntigravityProjectConsents      = "store.antigravity_project_consents"
+	StoreAntigravityConsentRootBytes     = "store.antigravity_consent_root_bytes"
+	StoreAntigravityConsentIdentityBytes = "store.antigravity_consent_identity_bytes"
+	CacheTerminalScreens                 = "cache.terminal_screens"
+	CacheSessionInventory                = "cache.session_inventory"
 	// An iTerm2 that stops answering Apple Events writes its own diagnosis:
 	// the failures held for it, the files kept, how often one is written,
 	// and what each of its steps may take (docs/limits.md N64).

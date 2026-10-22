@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,19 @@ import (
 
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
+
+// AntigravityProjectConsentCount includes disabled tombstones: revocations
+// never lose their revision or make room for a new Project grant.
+func (s *Store) AntigravityProjectConsentCount(ctx context.Context) (int64, error) {
+	if err := reading(); err != nil {
+		return 0, AntigravityConsentUnreadable
+	}
+	var n int64
+	if err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM antigravity_project_consent`).Scan(&n); err != nil {
+		return 0, AntigravityConsentUnreadable
+	}
+	return n, nil
+}
 
 // DBFile is the store's database, under the state directory.
 const DBFile = "clawdline.sqlite3"

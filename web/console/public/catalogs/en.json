@@ -8978,5 +8978,11 @@
   "browserPairing.mismatch": "The fingerprints differ. Do not continue. On the machine, revoke this browser with the command below, then generate a new QR code. This does not remove the machine from your account.",
   "browserPairing.retry": "Try again",
   "next.quotaSettingDesktopTitle": "Show quota bar on desktop",
-  "next.quotaSettingMobileTitle": "Show quota bar in the mobile Session list"
+  "next.quotaSettingMobileTitle": "Show quota bar in the mobile Session list",
+  "capacityRow.store.antigravity_project_consents.what": "Local Antigravity Project hook consent records, including pending preparations and disabled records that preserve revocation revisions. Consent is never imported from repository files or workspace trust.",
+  "capacityRow.store.antigravity_project_consents.full": "New Projects are refused when full. Existing Projects can still revoke consent; no consent record is evicted automatically.",
+  "capacityRow.store.antigravity_consent_root_bytes.what": "The byte limit for the canonical local Project root in an Antigravity consent request.",
+  "capacityRow.store.antigravity_consent_root_bytes.full": "An oversized root is refused before changing consent or writing a receipt.",
+  "capacityRow.store.antigravity_consent_identity_bytes.what": "The byte limit for each actor, request key and operation identity in an Antigravity consent request. An actor label alone does not authenticate a person.",
+  "capacityRow.store.antigravity_consent_identity_bytes.full": "An oversized or malformed identity is refused before changing consent or writing a receipt."
 }

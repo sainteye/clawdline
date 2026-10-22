@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8978,
-  "riskKeys": 3994,
-  "nonRiskCount": 4984,
+  "englishContentKeys": 8984,
+  "riskKeys": 3999,
+  "nonRiskCount": 4985,
   "groups": [
     {
       "name": "admin / other",
@@ -292,7 +292,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 258,
+      "count": 259,
       "sources": [
         null
       ],
@@ -530,6 +530,7 @@
         "capacityRow.squadpackage.file_bytes.what",
         "capacityRow.squadpackage.manifest_bytes.what",
         "capacityRow.squadpackage.request_bytes.what",
+        "capacityRow.store.antigravity_consent_root_bytes.what",
         "capacityRow.store.db.what",
         "capacityRow.terminal.history_lines.what",
         "capacityRow.terminal.input_bytes.what",

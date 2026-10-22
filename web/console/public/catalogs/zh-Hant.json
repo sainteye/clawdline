@@ -8978,5 +8978,11 @@
   "browserPairing.mismatch": "指紋不一致，請勿繼續。在機器執行下方指令撤銷這個瀏覽器，再產生新的 QR Code。這不會從帳號移除機器。",
   "browserPairing.retry": "再試一次",
   "next.quotaSettingDesktopTitle": "桌機顯示額度列",
-  "next.quotaSettingMobileTitle": "手機 Session 列表顯示額度列"
+  "next.quotaSettingMobileTitle": "手機 Session 列表顯示額度列",
+  "capacityRow.store.antigravity_project_consents.what": "本機 Antigravity 專案 Hook 的同意紀錄，包含準備中及已停用的紀錄；停用後仍保留撤回版本。同意不會從儲存庫檔案或工作區信任匯入。",
+  "capacityRow.store.antigravity_project_consents.full": "容量已滿時拒絕新增專案。既有專案仍可撤回同意；系統不會自動淘汰同意紀錄。",
+  "capacityRow.store.antigravity_consent_root_bytes.what": "Antigravity 同意請求中，本機專案標準根路徑的位元組上限。",
+  "capacityRow.store.antigravity_consent_root_bytes.full": "路徑過長時會先拒絕，不變更同意狀態，也不寫入收據。",
+  "capacityRow.store.antigravity_consent_identity_bytes.what": "Antigravity 同意請求中，操作者、請求金鑰及操作識別各自的位元組上限。單憑操作者標籤不代表已驗證本人。",
+  "capacityRow.store.antigravity_consent_identity_bytes.full": "識別過長或格式錯誤時會先拒絕，不變更同意狀態，也不寫入收據。"
 }

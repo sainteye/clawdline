@@ -1935,6 +1935,20 @@
     "Note": true
   },
   {
+    "Name": "store.antigravity_consent_identity_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "store.antigravity_consent_root_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "store.antigravity_project_consents",
+    "Known": true
+  },
+  {
     "Name": "store.db",
     "Known": true,
     "HasDiskFree": true
