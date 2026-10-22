@@ -1,6 +1,6 @@
 # Project instruction and skill files
 
-The gear on each Project row opens that Project's settings. Its first section inventories disk candidates for Codex instructions, Claude Code instructions, and Skills. It shows each filename, its path relative to the Project or the machine's home directory, its source, and whether it can be read or edited. The inventory does not claim that a running assistant has loaded a file: overrides, plugins, and the time a Session started can change the effective instructions.
+The gear on each Project row opens that Project's settings. Its first section inventories disk candidates for shared Codex/Antigravity instructions, Claude Code instructions, Antigravity-only candidates, and Skills. It shows each filename, its path relative to the Project or the machine's home directory, its source, and whether it can be read or edited. The inventory does not claim that a running assistant has loaded a file: overrides, plugins, and the time a Session started can change the effective instructions.
 
 The Project scope runs from the nearest repository root through the selected place. It includes `AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, `.claude/CLAUDE.local.md`, direct `SKILL.md` children under `.agents/skills` or `.claude/skills`, and direct `.md` files under `.claude/commands` at each layer. The home scope includes `.codex/AGENTS.md`, `.claude/CLAUDE.md`, `.claude/CLAUDE.local.md`, direct skill children under `.agents/skills`, `.codex/skills`, or `.claude/skills`, and direct `.md` files under `.claude/commands`. Missing common instruction files remain listed as missing. Home files are read-only in this interface because changing one may affect every Project.
 
@@ -171,3 +171,41 @@ whose fields the reader filters by code. The console's Cloud writer answers it a
 does, `500` with that body, so the screen shows the same stopped view on either transport. Any
 other refusal still crosses as an `error`, and a lost answer is still uncertain and rereads the
 plan.
+
+## Antigravity CLI applicability
+
+The inventory retains one canonical row and ID per candidate. `assistant` remains the
+legacy primary provider; optional `assistants` reports all applicable providers.
+Project `AGENTS.md` and `.agents/skills/<name>/SKILL.md` apply to both Codex and
+Antigravity CLI. Global `.agents/skills` remains Codex-only: the CLI documents its
+own global `.gemini/antigravity-cli/skills` directory.
+
+The bounded inventory also lists existing `GEMINI.md`, `.agents/AGENTS.md`,
+`.agents/GEMINI.md`, direct `.md` children of `.agents/rules` and legacy
+`.agent/rules`, and `.agent/skills/<name>/SKILL.md` at each selected project layer.
+These Antigravity-only candidates are read-only, including project files. Global
+candidates include `.gemini/AGENTS.md`, `.gemini/GEMINI.md`, the corresponding
+`.gemini/config` files, direct `.md` children of `.gemini/config/rules` and
+`.gemini/antigravity-cli/rules`, and direct native CLI skills. Plugin directories,
+custom `rules.json` inheritance, and arbitrary descendants are not traversed.
+Rules with activation frontmatter remain candidates, not confirmed active rules.
+
+Unify now reports Antigravity applicability in `rules.now/after.antigravity` and
+`skills[].now/after.antigravity`. Arrays are explicit even when empty; skill
+booleans preserve false. Missing or null fields from an older machine mean
+unreported. The console and CLI do not derive these fields from Codex data.
+`native_only` lists root Antigravity-only candidates with their path, kind and
+inspection status; an empty array means checked, and missing/null means unreported.
+These files participate in the preview digest but no Unify action moves, links,
+copies, overwrites or deletes them. Unify's status describes its managed shared
+workspace layout; separate native rules and skill activation can still differ.
+Existing `.claude` link/copy operations expose `.agents` skills to all three
+providers without introducing a third copy.
+
+Source boundaries: the [official CLI skills documentation](https://antigravity.google/docs/skills)
+and [CLI rules documentation](https://antigravity.google/docs/rules), read on
+2026-10-22, document the native locations. The root's synthetic native probe
+observed a distinct workspace `AGENTS.md` marker alongside hook context; it did
+not prove every global path, activation mode or skill execution. This inventory
+and its synthetic browser tests do not establish a running Session's context,
+launch permission, successful skill receipt, Cloud acceptance, or paid-model access.

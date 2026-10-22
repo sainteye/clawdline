@@ -9,6 +9,10 @@
   "actions_none": "Actions: none",
   "actions_order": "Actions, in order",
   "answer_unreadable": "clawdline: the answer was not readable; run `clawdline project unify` to see what disk holds.",
+  "antigravity_after": "  Antigravity applicable after:\t%s\n",
+  "antigravity_now": "  Antigravity applicable now:\t%s\n",
+  "antigravity_unreported": "Antigravity unreported",
+  "applicability": "File applicability, not active Session context or skill execution.",
   "applied_count": "\nApplied %d of %d actions:\n",
   "apply_hint": "\nNothing has been changed. `clawdline project unify --apply` performs the %d actions above.\n",
   "apply_unknown": "— whether it applied is unknown; run `clawdline project unify` to see.",
@@ -45,6 +49,8 @@
   "flag_json": "print the daemon's answer",
   "linked": ", linked",
   "list_nothing": "nothing",
+  "native_read_only": "Antigravity-only candidates (read-only; Unify leaves these unchanged):",
+  "native_unreported": "Antigravity-only candidates unreported.",
   "not_git_repository": "%s is not inside a Git repository",
   "nothing_applied": "clawdline: nothing was applied:",
   "nothing_committed": "Nothing was committed to git.",
@@ -70,5 +76,5 @@
   "status_unified": "unified",
   "status_unknown": "unknown",
   "stopped_at": "Stopped at: %s\n  %s (%s)\n",
-  "usage": "usage: clawdline project unify [--apply | --check] [--json] [directory]"
+  "usage": "usage: clawdline project unify [--apply | --check] [--json] [directory]\nPreview shared workspace file applicability for Claude, Codex and Antigravity. Native-only files remain read-only."
 }

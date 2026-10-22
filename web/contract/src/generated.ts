@@ -5134,6 +5134,12 @@ export type ProjectUnifyFileState =
 
 export const ProjectUnifyFileStateValues: readonly ProjectUnifyFileState[] = ["present", "missing", "link", "unreadable"] as const
 
+export interface ProjectUnifyNativeFile {
+  kind: string
+  path: string
+  status: string
+}
+
 export type ProjectUnifyOutcome =
     "applied"
   | "stopped"
@@ -5156,6 +5162,12 @@ export interface ProjectUnifyPlan {
    * (skill_copy).
    */
   links_available: boolean
+
+  /**
+   * Documented Antigravity-only root candidates, read-only and outside Unify
+   * actions. Missing or null means unreported. Does not assert activation.
+   */
+  native_only: ProjectUnifyNativeFile[] | null
   rules: ProjectUnifyRules
   skills: ProjectUnifySkill[]
   status: ProjectUnifyStatus
@@ -5172,6 +5184,12 @@ export interface ProjectUnifyPlan {
  * following the measured loading rules in docs/shared-project-instructions.md.
  */
 export interface ProjectUnifyReads {
+  /**
+   * Antigravity CLI applicable workspace candidates; absent or null means
+   * unreported by an older machine. Empty means checked and none. Not active
+   * Session context.
+   */
+  antigravity: string[] | null
   claude: string[]
   codex: string[]
 }
@@ -5201,6 +5219,11 @@ export interface ProjectUnifyRules {
 }
 
 export interface ProjectUnifySeen {
+  /**
+   * Applicability through .agents/skills. Null or absent is unreported; false is
+   * checked and unavailable.
+   */
+  antigravity: boolean | null
   claude: boolean
   codex: boolean
 }

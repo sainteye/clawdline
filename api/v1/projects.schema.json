@@ -497,7 +497,8 @@
       "required": ["claude", "codex"],
       "properties": {
         "claude": { "type": "array", "items": { "type": "string" } },
-        "codex": { "type": "array", "items": { "type": "string" } }
+        "codex": { "type": "array", "items": { "type": "string" } },
+        "antigravity": { "description": "Antigravity CLI applicable workspace candidates; absent or null means unreported by an older machine. Empty means checked and none. Not active Session context.", "type": "array", "nullable": true, "items": { "type": "string" } }
       }
     },
     "ProjectUnifyRules": {
@@ -525,7 +526,8 @@
       "required": ["claude", "codex"],
       "properties": {
         "claude": { "type": "boolean" },
-        "codex": { "type": "boolean" }
+        "codex": { "type": "boolean" },
+        "antigravity": { "description": "Applicability through .agents/skills. Null or absent is unreported; false is checked and unavailable.", "type": "boolean", "nullable": true }
       }
     },
     "ProjectUnifyActionKind": {
@@ -585,6 +587,15 @@
         "detail": { "type": "string" }
       }
     },
+    "ProjectUnifyNativeFile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "kind", "status"],
+      "properties": {
+        "path": {"type": "string"},
+        "kind": {"type": "string"},
+        "status": {"type": "string"}
+      }
+    },
     "ProjectUnifyPlan": {
       "description": "GET /v1/projects/:id/unify. Computed from disk at the Project's repository root; reading it writes nothing.",
       "type": "object",
@@ -596,6 +607,7 @@
         "links_available": { "description": "False where this machine cannot create symbolic links; skills are then copied (skill_copy).", "type": "boolean" },
         "rules": { "$ref": "#/$defs/ProjectUnifyRules" },
         "skills": { "type": "array", "items": { "$ref": "#/$defs/ProjectUnifySkill" } },
+        "native_only": { "description": "Documented Antigravity-only root candidates, read-only and outside Unify actions. Missing or null means unreported. Does not assert activation.", "type": "array", "nullable": true, "items": { "$ref": "#/$defs/ProjectUnifyNativeFile" } },
         "actions": { "description": "In the order apply performs them.", "type": "array", "items": { "$ref": "#/$defs/ProjectUnifyAction" } },
         "conflicts": { "type": "array", "items": { "$ref": "#/$defs/ProjectUnifyConflict" } }
       }
