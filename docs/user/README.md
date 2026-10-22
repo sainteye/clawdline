@@ -6,7 +6,7 @@ Start with the job you want to finish. These pages describe what to look for in 
 | --- | --- | --- |
 | Install Clawdline and see my first Session | [First Session](first-session.md) | The Session appears in the list and opens to its conversation. |
 | Keep track of work and answer an Agent | [Sessions](sessions.md) · [Board](board.md) | The answer appears in the conversation or the Board item shows its next phase. |
-| Give a Session a password or API key | [Secret Handoff](secret-handoff.md) | The Note confirms receipt and later moves to handled after one use. |
+| Give a Session a password or API key | [Secret Handoff](secret-handoff.md) | The Note moves to handled on receipt; the Session can still use the value once. |
 | Check my machines from a phone or another computer | [See another machine](cloud-first-look.md) | The selected machine and its Sessions appear with a fresh connection state. |
 | Understand a missing, offline, or unreadable state | [Recover from a problem](recovery.md) | The state changes after the named action, or you know which machine needs attention. |
 | Control who can read or act | [Remote access and permissions](remote-access.md) · [Notifications](notifications.md) | The device or machine shows the intended permission and a test reaches you. |

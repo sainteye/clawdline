@@ -1,4 +1,5 @@
 {
+  "http.1db27562f4ac9522": "這台機器尚未驗證 Antigravity Session 的身分與互動就緒狀態。",
   "next.transcriptEarlierStalled": "紀錄位置未往前推進，請重新開啟這個 Session 後再試。",
   "next.terminalRefusalViewerReadOnly": "這台機器只讓這個裝置觀看終端，不能輸入。要操作的話，請在那台機器上把它的權限改成 operate。",
   "next.cloudPairLocal": "直接與這個 App 的機器配對",
@@ -8903,5 +8904,9 @@
   "browserPairing.mismatch": "指紋不一致，請勿繼續。在機器執行下方指令撤銷這個瀏覽器，再產生新的 QR Code。這不會從帳號移除機器。",
   "browserPairing.retry": "再試一次",
   "next.quotaSettingDesktopTitle": "桌機顯示額度列",
-  "next.quotaSettingMobileTitle": "手機 Session 列表顯示額度列"
+  "next.quotaSettingMobileTitle": "手機 Session 列表顯示額度列",
+  "capacityRow.places.antigravity_probe_output_bytes.what": "限制辨識 Antigravity 執行檔時保留的輸出量，用來確認它是否為已支援的獨立 CLI。",
+  "capacityRow.places.antigravity_probe_output_bytes.full": "輸出超過上限時，相容性檢查會失敗，Clawdline 不會啟動該執行檔。",
+  "capacityRow.places.antigravity_probe_seconds.what": "限制 Antigravity 執行檔變更後的每次相容性檢查時間。取消後收取剩餘輸出的時間另受相同上限限制。",
+  "capacityRow.places.antigravity_probe_seconds.full": "逾時時相容性維持未知，無法啟動該執行檔。這項檢查不會送出模型請求。"
 }

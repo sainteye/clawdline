@@ -112,12 +112,13 @@ type ArchivedSessions struct {
 type Assistant string
 
 const (
-	AssistantClaude Assistant = "claude"
-	AssistantCodex  Assistant = "codex"
+	AssistantClaude      Assistant = "claude"
+	AssistantCodex       Assistant = "codex"
+	AssistantAntigravity Assistant = "antigravity"
 )
 
 // AssistantValues is every value the contract allows, in contract order.
-var AssistantValues = []Assistant{AssistantClaude, AssistantCodex}
+var AssistantValues = []Assistant{AssistantClaude, AssistantCodex, AssistantAntigravity}
 
 // One of four things this Mac can honestly say about an assistant's
 // account-level quota, tightest to loosest. Never a percentage: both providers
@@ -3745,8 +3746,12 @@ type PersonaSuggestionRequest struct {
 type PlaceError struct {
 	// The terminal the refusal is about, on terminal_closed and
 	// iterm_attention_required, so a page can name it in its own language.
-	App       string `json:"app,omitempty"`
-	Code      string `json:"code"`
+	App  string `json:"app,omitempty"`
+	Code string `json:"code"`
+
+	// Producer catalog key for a known fixed refusal; omitted for raw or external
+	// messages.
+	DetailKey string `json:"detail_key,omitempty"`
 	Message   string `json:"message"`
 	RequestID string `json:"request_id"`
 }
@@ -6926,10 +6931,35 @@ type SquadWriteReply struct {
 }
 
 type StartAssistant struct {
-	Availability StartAvailability `json:"availability"`
-	ID           string            `json:"id"`
-	Label        string            `json:"label"`
+	AuthState    StartAuthState     `json:"authState,omitempty"`
+	Availability StartAvailability  `json:"availability"`
+	Capabilities *StartCapabilities `json:"capabilities,omitempty"`
+	ID           string             `json:"id"`
+
+	// Whether a local executable was found; null when not checked. Does not prove
+	// protocol compatibility or authentication.
+	Installed        *bool                 `json:"installed"`
+	IntegrationState StartIntegrationState `json:"integrationState,omitempty"`
+	Label            string                `json:"label"`
+
+	// Validated standalone CLI version, absent when compatibility could not be
+	// established.
+	Version string `json:"version,omitempty"`
 }
+
+// Authentication evidence, separate from executable presence and quota. Unknown
+// never means ready.
+type StartAuthState string
+
+const (
+	StartAuthStateReady              StartAuthState = "ready"
+	StartAuthStateRequired           StartAuthState = "required"
+	StartAuthStateUnknown            StartAuthState = "unknown"
+	StartAuthStateUnsupportedAccount StartAuthState = "unsupported_account"
+)
+
+// StartAuthStateValues is every value the contract allows, in contract order.
+var StartAuthStateValues = []StartAuthState{StartAuthStateReady, StartAuthStateRequired, StartAuthStateUnknown, StartAuthStateUnsupportedAccount}
 
 // AssistantQuota.Availability. This daemon reads no quota, so it answers
 // unknown.
@@ -6944,6 +6974,28 @@ const (
 
 // StartAvailabilityValues is every value the contract allows, in contract order.
 var StartAvailabilityValues = []StartAvailability{StartAvailabilityOK, StartAvailabilityLow, StartAvailabilityExhausted, StartAvailabilityUnknown}
+
+// Operations admitted by this daemon's verified integration. CLI syntax alone
+// never makes an operation available.
+type StartCapabilities struct {
+	Menus      bool `json:"menus"`
+	Resume     bool `json:"resume"`
+	Send       bool `json:"send"`
+	Start      bool `json:"start"`
+	Transcript bool `json:"transcript"`
+}
+
+type StartIntegrationState string
+
+const (
+	StartIntegrationStateActive       StartIntegrationState = "active"
+	StartIntegrationStateDisabled     StartIntegrationState = "disabled"
+	StartIntegrationStateMissing      StartIntegrationState = "missing"
+	StartIntegrationStateIncompatible StartIntegrationState = "incompatible"
+)
+
+// StartIntegrationStateValues is every value the contract allows, in contract order.
+var StartIntegrationStateValues = []StartIntegrationState{StartIntegrationStateActive, StartIntegrationStateDisabled, StartIntegrationStateMissing, StartIntegrationStateIncompatible}
 
 // One directory a session can be started in. `id` is sixteen hex characters of
 // the path's SHA-256 and names session and project-file operations. `projectId`

@@ -1,7 +1,8 @@
 /* C: the ordinary counts remain quiet; only an applied state names itself in orange. */
 .session-state-entry { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; text-align: left; }
 .session-state-entry:hover { color: var(--ink); }
-.session-state-entry:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.session-state-entry:focus-visible { outline: none; }
+.session-state-entry:focus-visible .session-state-caret { stroke: var(--ink); }
 .session-state-entry .counts { flex: 0 1 auto; }
 .session-state-entry[data-active="false"] .waiting { color: var(--dim); font-weight: inherit; }
 .session-state-selected { color: var(--accent); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
