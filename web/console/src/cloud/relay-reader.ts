@@ -246,7 +246,7 @@ export interface CloudReadClient {
   snippets?(identity?: CloudIdentity, options?: { fresh?: boolean }): Promise<CloudSnippets>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
   transcriptForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
-  transcriptPageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, before: number, signal?: AbortSignal): Promise<unknown>
+  transcriptPageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, before: number, signal?: AbortSignal, revision?: string): Promise<unknown>
   readForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string },
     word: string, fields: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
   /**
@@ -1215,14 +1215,16 @@ export class RelayReader {
           const before = historyCursor(beforeRaw)
           if (beforeRaw !== null && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
           if (before) {
+            const revision = url.searchParams.get("revision") || undefined
             const client = this.connected()
             if (this.options.classicStatus ? !client.transcriptPageForGeneration : !client._read) {
               return this.refuse(method, path, 501, "cloud_not_carried", "This console cannot read earlier messages.")
             }
             const body = this.options.classicStatus
-              ? await client.transcriptPageForGeneration!(await this.coherentSession(session, init?.signal), before, init?.signal ?? undefined)
+              ? await client.transcriptPageForGeneration!(await this.coherentSession(session, init?.signal), before, init?.signal ?? undefined, revision)
               : await client._read?.({ machine: this.machine, session }, "transcript",
-                { limit: CLOUD_TRANSCRIPT_LIMIT, before, priority: "foreground" }, `transcript.before.${before}`)
+                { limit: CLOUD_TRANSCRIPT_LIMIT, before, ...(revision ? { revision } : {}), priority: "foreground" },
+                `transcript.before.${before}${revision ? `.revision.${revision}` : ""}`)
             const page = transcriptPage(body, session)
             this.note(method, path, "relay", undefined, { word: "transcript" })
             return json(200, page)
@@ -3114,6 +3116,9 @@ function transcriptPage(body: unknown, session: string): TranscriptPage {
   // reads the daemon directly; over the relay the transcript is this seam's
   // held answer, so the cursor is not passed on (see the `after=` refusal).
   const { optimisticIdentity: _identity, nextAfter: _after, ...page } = body as Record<string, unknown>
+  if (page.id !== undefined && page.id !== session) {
+    throw Object.assign(new Error("the transcript answer names another Session"), { code: "bad_payload" })
+  }
   return {
     ...page,
     id: typeof page.id === "string" && page.id ? page.id : session,

@@ -4,6 +4,22 @@ package capacity
 func consoleBounds() []Entry {
 	return append(append(append(connectionHealthUIBounds(), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
 		{
+			// readOlderRecovering in session/transcript-follow.ts clears stale
+			// held history, reads newest once, and retries older once per request.
+			// A second refusal remains visible for manual recovery.
+			Name: "console.transcript_revision_restarts", Class: Buffer, Unit: Rows,
+			Limit: 1, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// AssistantFactsRequest uses ANTIGRAVITY_STATE_FRESH_MS in
+			// session/antigravity-ui.ts for a mounted view's inventory read.
+			// Expiry aborts the request and displays an unavailable state.
+			Name: "console.assistant_facts_read_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 15000, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+		},
+		{
 			// Encoded DataChannel answers waiting for authentication in wire order.
 			// Shared by this browser's machines; overflow closes only the affected carrier.
 			Name: "console.carrier_receive_bytes", Class: Buffer, Unit: Bytes,

@@ -6,6 +6,8 @@ is available for readers who prefer a document.
 
 For passwords, credentials and API keys handed to a Session, see [Secret Handoff](secret-handoff.md).
 
+The proposed third-provider integration is described in [Antigravity CLI integration design](antigravity-cli.md).
+
 One Go binary is both the daemon and its command line. Work always runs on your own machine. Every
 client, whether the native window, a browser tab or the Cloud console, reads the same HTTP + SSE
 API, which is defined once, as JSON Schema, before any code is written against it.

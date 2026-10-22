@@ -3560,6 +3560,11 @@ export class CloudClient {
      * transcript coalescing does for the same reason.
      */
     _read(value, type, extra, answer, timeoutMs, readOptions) {
+        // Native byte cursors are meaningful only with their held generation.
+        // Different revisions must never join one pending older-page read.
+        if (type === "transcript" && extra && extra.before && extra.revision) {
+            answer = "transcript.before." + extra.before + ".revision." + extra.revision;
+        }
         if (this.retired) {
             return this._viaSuccessor(function (next) {
                 return next._read(value, type, extra, answer, timeoutMs, readOptions);

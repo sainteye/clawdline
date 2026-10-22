@@ -2464,6 +2464,10 @@ func genDecodeTranscript(b body) (plan, LocalRequest, bool) {
 		[]string{"type", "before", "limit", "priority", "session"},
 		[]string{"type", "expected_generation", "limit", "priority", "session"},
 		[]string{"type", "before", "expected_generation", "limit", "priority", "session"},
+		[]string{"type", "before", "limit", "revision", "session"},
+		[]string{"type", "before", "expected_generation", "limit", "revision", "session"},
+		[]string{"type", "before", "limit", "priority", "revision", "session"},
+		[]string{"type", "before", "expected_generation", "limit", "priority", "revision", "session"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -2479,6 +2483,9 @@ func genDecodeTranscript(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("priority", genRule{kind: "string", enum: []string{"foreground", "background"}}) {
 		return plan{}, LocalRequest{}, false
 	}
+	if !b.genValid("revision", genRule{kind: "string", checks: []func(string) bool{genSessionName}}) {
+		return plan{}, LocalRequest{}, false
+	}
 	p, ok := sessionPlan(b, "transcript")
 	if !ok {
 		return plan{}, LocalRequest{}, false
@@ -2486,12 +2493,15 @@ func genDecodeTranscript(b body) (plan, LocalRequest, bool) {
 	if _, named := b["before"]; named {
 		p.name += ".before." + genText(b["before"])
 	}
+	if _, named := b["revision"]; named {
+		p.name += ".revision." + genText(b["revision"])
+	}
 	if v, named := b["expected_generation"]; named {
 		p.executionGeneration = genText(v)
 	}
 	path := "/v1/transcript"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"before": genValue{from: "before"}, "expected_generation": genValue{from: "expected_generation"}, "limit": genValue{from: "limit"}, "session": genValue{from: "session"}})
+	req.Query = b.genQuery(map[string]genValue{"before": genValue{from: "before"}, "expected_generation": genValue{from: "expected_generation"}, "limit": genValue{from: "limit"}, "revision": genValue{from: "revision"}, "session": genValue{from: "session"}})
 	return p, req, true
 }
 

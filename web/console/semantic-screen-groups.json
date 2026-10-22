@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8903,
-  "riskKeys": 3959,
-  "nonRiskCount": 4944,
+  "englishContentKeys": 8969,
+  "riskKeys": 3997,
+  "nonRiskCount": 4972,
   "groups": [
     {
       "name": "admin / other",
@@ -237,6 +237,19 @@
       ]
     },
     {
+      "name": "antigravity / other",
+      "count": 4,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "antigravity.loading",
+        "antigravity.placeholder",
+        "antigravity.ready",
+        "antigravity.stale"
+      ]
+    },
+    {
       "name": "bar / other",
       "count": 15,
       "sources": [
@@ -278,6 +291,16 @@
       ]
     },
     {
+      "name": "capacity / other",
+      "count": 1,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "capacity.milliseconds"
+      ]
+    },
+    {
       "name": "capacityHelp / other",
       "count": 4,
       "sources": [
@@ -292,11 +315,23 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 258,
+      "count": 280,
       "sources": [
         null
       ],
       "keys": [
+        "capacityRow.antigravity.ancestry_rows.what",
+        "capacityRow.antigravity.hook_config_bytes.what",
+        "capacityRow.antigravity.hook_payload_bytes.what",
+        "capacityRow.antigravity.hook_timeout_seconds.what",
+        "capacityRow.antigravity.live_bindings.what",
+        "capacityRow.antigravity.managed_launches.what",
+        "capacityRow.antigravity.native_process_file_bytes.what",
+        "capacityRow.antigravity.native_tty_entries.what",
+        "capacityRow.antigravity.observation_bytes.full",
+        "capacityRow.antigravity.process_read_seconds.what",
+        "capacityRow.antigravity.retention_seconds.what",
+        "capacityRow.antigravity.state_age_seconds.what",
         "capacityRow.artifacts.report_image_pixels.full",
         "capacityRow.artifacts.report_image_pixels.what",
         "capacityRow.artifacts.report_image_side.full",
@@ -394,6 +429,7 @@
         "capacityRow.cloud.terminal_viewer_connections.full",
         "capacityRow.cloud.terminal_viewer_connections.what",
         "capacityRow.cloud.viewer_events_batch_bytes.what",
+        "capacityRow.console.assistant_facts_read_milliseconds.what",
         "capacityRow.console.direct_history_machines.what",
         "capacityRow.console.health_ui_body_bytes.what",
         "capacityRow.console.health_ui_budget_seconds.what",
@@ -428,6 +464,8 @@
         "capacityRow.console.transcript_backoff_seconds.what",
         "capacityRow.console.transcript_fill_pages.full",
         "capacityRow.console.transcript_follow_later_seconds.what",
+        "capacityRow.console.transcript_revision_restarts.full",
+        "capacityRow.console.transcript_revision_restarts.what",
         "capacityRow.console.viewer_health_attempts.what",
         "capacityRow.console.viewer_health_backoff_seconds.full",
         "capacityRow.console.viewer_health_backoff_seconds.what",
@@ -470,6 +508,13 @@
         "capacityRow.naming.tail_entries.what",
         "capacityRow.notification.rule_wait_seconds.what",
         "capacityRow.personas.text_bytes.what",
+        "capacityRow.places.antigravity_history_bytes.what",
+        "capacityRow.places.antigravity_history_entries.what",
+        "capacityRow.places.antigravity_history_milliseconds.what",
+        "capacityRow.places.antigravity_history_title_characters.full",
+        "capacityRow.places.antigravity_history_title_characters.what",
+        "capacityRow.places.antigravity_probe_output_bytes.what",
+        "capacityRow.places.antigravity_probe_seconds.what",
         "capacityRow.places.git_config_bytes.what",
         "capacityRow.places.repo_lookups.what",
         "capacityRow.places.setup_lookups.what",
@@ -1623,7 +1668,7 @@
     },
     {
       "name": "http / other",
-      "count": 565,
+      "count": 566,
       "sources": [
         "internal/productcopy/http_refusals/en.json"
       ],
@@ -1761,6 +1806,7 @@
         "http.3dfd715e6994b156",
         "http.3e9263201dd719ee",
         "http.3f2f5200b2fd3231",
+        "http.3f3e39e2d8c0779a",
         "http.3f45b288d65db920",
         "http.3fd254231acc0e0b",
         "http.40b4ec8eb866b455",

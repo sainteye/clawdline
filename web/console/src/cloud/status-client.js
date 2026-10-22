@@ -65,7 +65,8 @@ function pinnedReadName(type, body) {
   if (type === "image" && typeof body?.id === "string" && body.id) return "image." + body.id + (body.size === "thumb" ? ".thumb" : "")
   if (type === "transcript") {
     if (body?.before === undefined) return "transcript"
-    return Number.isSafeInteger(body.before) && body.before > 0 ? "transcript.before." + body.before : null
+    return Number.isSafeInteger(body.before) && body.before > 0
+      ? "transcript.before." + body.before + (body.revision ? ".revision." + body.revision : "") : null
   }
   if (type === "peer-inbox" && typeof body?.request === "string" && body.request) return "read:" + body.request
   return null
@@ -1442,16 +1443,16 @@ export class StatusCloudClient extends CatalogCloudClient {
   }
 
   /** Older pages keep their own read name, so they cannot settle the newest page's waiter. */
-  transcriptPageForGeneration(destination, before, signal) {
+  transcriptPageForGeneration(destination, before, signal, revision) {
     const { machineID, sessionID, executionGeneration } = destination
     if (!machineID || !sessionID || !GENERATION.test(executionGeneration) ||
       !Number.isSafeInteger(before) || before < 1) {
       return Promise.reject(refused("execution_target_required", "an exact older Session page is required"))
     }
     if (signal?.aborted) return Promise.reject(refused("read_aborted", "the Session detail was closed"))
-    const answer = "transcript.before." + before
+    const answer = "transcript.before." + before + (revision ? ".revision." + revision : "")
     return this._read({ machine: machineID, session: sessionID }, "transcript", {
-      limit: 200, before, priority: "foreground", machine_id: machineID,
+      limit: 200, before, ...(revision ? { revision } : {}), priority: "foreground", machine_id: machineID,
       expected_generation: executionGeneration,
     }, answer, undefined, { signal })
   }

@@ -74,8 +74,9 @@ type movementReading struct {
 	// without being retried every time.
 	pathAt time.Time
 	// size and mod are the file as it was when at was read.
-	size int64
-	mod  time.Time
+	size     int64
+	mod      time.Time
+	identity string
 	// at is the newest record's own timestamp, and read whether that was
 	// found.
 	at   time.Time
@@ -139,6 +140,38 @@ func (m *Movements) rollout(home, id string) (string, bool) {
 // ordering a row by a time nobody could read would hide it at the bottom of
 // the list, which is the one thing this must not do.
 func (h *Host) LastActivity(ctx context.Context, s session.Session) session.Activity {
+	if s.Assistant == session.AssistantAntigravity {
+		path := h.RecordPath(s)
+		if path == "" {
+			reason := session.ActivityUnreadable
+			if s.Binding == session.BindingNoRecord {
+				reason = session.ActivityNoRecord
+			}
+			return session.Activity{Reason: reason, Detail: "the session has no verified native record identity"}
+		}
+		st, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			return session.Activity{Reason: session.ActivityNoRecord, Detail: "the session has not written its native record yet"}
+		}
+		if err != nil || !antigravityNativePath(path) {
+			return session.Activity{Reason: session.ActivityUnreadable, Detail: "the native record could not be read"}
+		}
+		identity := antigravityChangeIdentity(st)
+		key := "antigravity:" + s.ConversationID
+		if h.movements != nil && identity != "" {
+			if prev, ok := h.movements.get(key); ok && prev.read && prev.identity == identity && prev.size == st.Size() && prev.mod.Equal(st.ModTime()) {
+				return session.Activity{At: prev.at, Evidence: session.EvidenceTranscript}
+			}
+		}
+		info, err := ReadAntigravityInfo(path)
+		if err != nil || info.LastActivity.IsZero() {
+			return session.Activity{Reason: session.ActivityUnreadable, Detail: "the native record could not supply an activity timestamp"}
+		}
+		if h.movements != nil && identity != "" {
+			h.movements.put(key, movementReading{size: st.Size(), mod: st.ModTime(), identity: identity, at: info.LastActivity, read: true})
+		}
+		return session.Activity{At: info.LastActivity, Evidence: session.EvidenceTranscript}
+	}
 	path, why := h.recordPath(s)
 	if path == "" {
 		return why

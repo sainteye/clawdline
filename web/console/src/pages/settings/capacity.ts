@@ -82,6 +82,7 @@ export function stateWord(state: CapacityState): string {
  */
 export function amount(unit: CapacityEntry["unit"], n: number): string {
   if (unit === "characters") return words(`${n} chars`, catalogFormat("template", "5c5e1d37c1ed", [n]))
+  if (unit === "milliseconds") return catalogFormat("capacity", "milliseconds", [n])
   if (unit === "seconds") return words(`${n} s`, catalogFormat("template", "49c70f219483", [n]))
   if (unit === "rows") return words(`${n}`, catalogFormat("template", "86ef4744daea", [n]))
   const k = 1024

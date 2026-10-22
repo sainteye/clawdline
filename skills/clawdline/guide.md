@@ -283,7 +283,7 @@ For `read`, `send`, `answer`, `interrupt`, `end`, and `receipt`, pass all of `--
 lowercase hexadecimal characters. `read` returns the newest transcript page and `next_before`
 when older messages remain. Fetch
 one older page with the same three values and `--before NEXT_BEFORE`, repeating only while the
-reply supplies another cursor. Every page rechecks the current execution; do not invent a cursor
+reply supplies another cursor. For a native page with a `signature`, also pass `--revision SIGNATURE` from the held page that supplied that cursor; never use a newer poll’s signature. A `transcript_cursor_stale` refusal requires reading the newest page again before choosing its new cursor and signature. Every page rechecks the current execution; do not invent a cursor
 or treat the first 200 entries as the complete conversation. `send` needs `--text`; `answer` needs a displayed option's
 `--answer` key and `--expect` question fingerprint. An Agent may not invent either. A mutation
 prints its request ID before sending. Keep that ID; after an uncertain result use

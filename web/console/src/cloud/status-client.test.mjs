@@ -551,6 +551,19 @@ test("an older transcript page names its cursor in the read waiter and preserves
     { code: "execution_target_required" })
 })
 
+test("same-offset native pages on different revisions own separate read names", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const calls = []
+  client._read = (...args) => { calls.push(args); return Promise.resolve({ entries: [] }) }
+  const destination = { machineID: "m", sessionID: "s", executionGeneration: genA }
+  for (const revision of ["agy1:1:123:abc", "agy1:2:123:def"]) {
+    await client.transcriptPageForGeneration(destination, 123, new AbortController().signal, revision)
+  }
+  assert.deepEqual(calls.map((args) => args[2].revision), ["agy1:1:123:abc", "agy1:2:123:def"])
+  assert.deepEqual(calls.map((args) => args[3]), ["transcript.before.123.revision.agy1:1:123:abc",
+    "transcript.before.123.revision.agy1:2:123:def"])
+})
+
 test("pinned info asks for full detail with the exact machine and generation", async () => {
   const client = Object.create(StatusCloudClient.prototype)
   client.pinnedInfoFlights = new Map()
@@ -766,6 +779,22 @@ test("only pinned Session content reads seal r/; send remains on ctl/", async ()
     { name: "AES-GCM", iv: base64Bytes(list.nonce, "nonce") }, masterKey, base64Bytes(list.ct, "ct"))))
   assert.deepEqual(listBody, { type: "sessions.list", session: "__clawdline_machine__",
     machine_id: "m", request: "batch-1" })
+  const revision = "agy1:synthetic:123:abc"
+  const olderName = "transcript.before.123.revision." + revision
+  const olderKey = "m\u0000s\u0000" + olderName
+  const olderWaiters = {}
+  client.readWaiters.set(olderKey, olderWaiters)
+  client.pinnedReadProofs.set(olderKey, { machineID: "m", sessionID: "s", generation: genA,
+    read: olderName, seq: null, waiters: olderWaiters })
+  const olderEnvelope = await client._publishCommand("m", "transcript", {
+    session: "s", machine_id: "m", expected_generation: genA, limit: 200, before: 123, revision,
+  }, "ctl", { key: olderKey, waiters: olderWaiters })
+  assert.equal(await crypto.subtle.verify({ name: "Ed25519" }, keys.publicKey,
+    base64Bytes(olderEnvelope.sig, "sig"), envelopeSigningBytes(olderEnvelope)), true)
+  const olderBody = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64Bytes(olderEnvelope.nonce, "nonce") }, masterKey, base64Bytes(olderEnvelope.ct, "ct"))))
+  assert.deepEqual(olderBody, { type: "transcript", session: "s", machine_id: "m", expected_generation: genA,
+    limit: 200, before: 123, revision })
   await assert.rejects(() => client._publishCommand("m", "peer-inbox", {
     session: "s", machine_id: "m", request: "inbox-2",
   }, "ctl"), { code: "execution_target_required" })
@@ -879,6 +908,34 @@ test("an older page reply settles only the waiter for its exact cursor and reque
   client._applySnapshot(channel, { ...older, seq: 52 }, { seq: 61, ts: Date.now() }, false)
   assert.deepEqual(settlements, [{ readKey: key, body: older.body, error: null }])
   assert.equal(client.transcriptSnapshots.size, 0, "an older page never replaces the newest transcript cache")
+})
+
+test("replayed or disconnected older replies cannot settle a new revision at the same offset", () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  const read = "transcript.before.123.revision.agy1:new"
+  const key = "m\u0000s\u0000" + read
+  const waiters = {}
+  client.readWaiters = new Map([[key, waiters]])
+  client.pinnedReadProofs = new Map([[key, { machineID: "m", sessionID: "s", generation: genA,
+    read, seq: 52, waiters }]])
+  client._observeMachine = () => {}
+  client.transcriptSnapshots = new Map()
+  client._emit = () => {}
+  const settlements = []
+  client._settleRead = (...args) => { if (client.readWaiters.has(args[0])) settlements.push(args) }
+  const channel = { kind: "transcript", machine: "m", session: "s" }
+  const payload = { read, machine_id: "m", session_id: "s", expected_generation: genA, seq: 52,
+    body: { entries: [], signature: "agy1:new" } }
+  client._applySnapshot(channel, { ...payload, read: "transcript.before.123.revision.agy1:old", seq: 51 }, {}, false)
+  client._applySnapshot(channel, payload, {}, true)
+  assert.equal(settlements.length, 0)
+  client._applySnapshot(channel, payload, {}, false)
+  assert.equal(settlements.length, 1)
+  assert.equal(settlements[0][0], key)
+  client.readWaiters.clear()
+  client.pinnedReadProofs.clear()
+  client._applySnapshot(channel, payload, {}, false)
+  assert.equal(settlements.length, 1, "an answer after disconnect has no waiter to fill")
 })
 
 test("leaving a detail releases s and t immediately", () => {

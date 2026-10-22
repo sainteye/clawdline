@@ -246,6 +246,9 @@ type LedgerState struct {
 	ClassificationVersion int `json:"classification_version,omitempty"`
 	// Assistant is "claude" or "codex"; empty until the first record says.
 	Assistant string `json:"assistant,omitempty"`
+	// AntigravityRevision is a complete native snapshot's file generation and
+	// digest, not the short head fingerprint used by the original readers.
+	AntigravityRevision string `json:"antigravity_revision,omitempty"`
 
 	// Offset is the byte the next Feed starts at: the start of a line. The
 	// file is named by its first HeadLen bytes' digest, so a file that
@@ -322,12 +325,27 @@ func (s *LedgerState) Feed(path string) (FeedResult, error) {
 }
 
 func (s *LedgerState) feed(path string, feedLimit, lineLimit int64) (FeedResult, error) {
+	if s.Assistant == "antigravity" || antigravityNativePath(path) {
+		return s.feedAntigravity(path)
+	}
 	var res FeedResult
 	f, err := os.Open(path)
 	if err != nil {
 		return res, recordError(err)
 	}
 	defer f.Close()
+	if s.Assistant == "" {
+		// Older usage scanners do not pass a provider. Recognize the native
+		// top-level shape before choosing a parser, then require its exact
+		// confined path. A native log copied elsewhere is not Claude usage.
+		var first struct {
+			Index  *int64 `json:"step_index"`
+			Source string `json:"source"`
+		}
+		if json.NewDecoder(io.LimitReader(f, ReadBudget)).Decode(&first) == nil && first.Index != nil && first.Source != "" {
+			return s.feedAntigravity(path)
+		}
+	}
 	st, err := f.Stat()
 	if err != nil {
 		return res, err
@@ -454,8 +472,17 @@ func (s *LedgerState) line(raw []byte) {
 		if _, ok := rec.object("payload"); ok {
 			s.Assistant = "codex"
 		}
+		if source, _ := rec.str("source"); source != "" {
+			if _, ok := rec.integer("step_index"); ok {
+				s.Assistant = "antigravity"
+			}
+		}
 	}
-	if s.Assistant == "codex" {
+	if s.Assistant == "antigravity" {
+		// Native rows are validated as a whole generation by Feed. Do not
+		// silently pass native records to Claude's permissive line reader.
+		return
+	} else if s.Assistant == "codex" {
 		before := s.dailyMeasured()
 		s.codexLine(rec)
 		s.dailyRecord(rec, before)
