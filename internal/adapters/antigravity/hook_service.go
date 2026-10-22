@@ -42,7 +42,7 @@ type hookReply struct {
 	Code     string          `json:"code,omitempty"`
 }
 
-// HookResponse composes native PreInvocation context only after a verified,
+// HookResponse composes native context or tool policy only after a verified,
 // persisted observation. It must honor ctx. A returned error is a hook failure;
 // observing a binding does not prove that context was loaded by the provider.
 type HookResponse func(context.Context, ports.AntigravityBinding) ([]byte, error)
@@ -66,7 +66,10 @@ type HookServiceConfig struct {
 	Bridge                *Bridge
 	Admit                 HookAdmission
 	PreInvocationResponse HookResponse
-	AfterObservation      HookObservation
+	// PreToolUseResponse is an explicit policy seam. Errors never fall back
+	// to the observer response that may reuse native grants.
+	PreToolUseResponse HookResponse
+	AfterObservation   HookObservation
 }
 
 // HookService owns its listener and accepted connections. Serve owns all
@@ -312,6 +315,8 @@ func (s *HookService) receive(ctx context.Context, conn *net.UnixConn) ([]byte, 
 	var response []byte
 	if r.Event == "PreInvocation" && s.config.PreInvocationResponse != nil {
 		response, err = s.config.PreInvocationResponse(ctx, binding)
+	} else if r.Event == "PreToolUse" && s.config.PreToolUseResponse != nil {
+		response, err = s.config.PreToolUseResponse(ctx, binding)
 	} else {
 		response, err = ObserverResponse(r.Event)
 	}

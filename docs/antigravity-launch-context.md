@@ -286,3 +286,10 @@ current eligibility requires fresh process and complete file revalidation.
 Managed PreInvocation composition now captures the baseline synchronously and
 verifies its predecessor before advancing. Actual vendor boundary timing and
 role/Squad projection remain pending.
+
+
+The current pinned image and bounded native execution-plan APIs, plus the
+explicit PreToolUse response seam, are described in
+[native policy](antigravity-native-policy.md#implemented-native-observation-and-tool-response-seam).
+They supply private production composition inputs, not an enabled permission
+ceiling. Public launch/resume guards and full native/UI acceptance remain.

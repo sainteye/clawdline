@@ -1,7 +1,8 @@
 # Antigravity native policy and launch ownership
 
-Status: storage stage implemented; production composition and native behavior
-activation remain pending. This supplements decision A07 in
+Status: storage, native execution-plan observation and the tool-response seam
+are implemented; production composition and native behavior activation remain
+pending. This supplements decision A07 in
 [the integration design](antigravity-cli.md#decisions-and-alternatives), without
 replacing the existing work, receipt, claims or final acceptance policies.
 No compatibility row is enabled by this storage change.
@@ -74,18 +75,58 @@ Policy uses existing `MaxLaunches` and `MaxIndexBytes`; no new map, queue,
 background worker, eviction rule or resource bound is introduced. Oversized
 policy preparation refuses before creating launch files or authority.
 
+## Implemented native observation and tool-response seam
+
+`Bridge.ImageFingerprint` returns the already pinned image digest only while
+its current kernel file identity/change stamp still matches. It does not hash
+the entire binary again, probe an account or run a provider. `ExecutionPlan`
+also requires that exact image and the expected complete process identity.
+Both methods refuse bridge contention immediately with the existing typed busy
+result. Plan reading shares the registered process-read deadline.
+
+The native execution-plan reader brackets two argv reads with three complete
+process/workspace/terminal observations. It accepts only the exact executable,
+one explicit `--mode`, and optional unique `--model`, `--effort` and exact UUID
+`--conversation` pairs. Unknown flags, inline prompts, positional arguments,
+duplicate/conflicting values, invalid UTF-8 and incomplete buffers refuse the
+entire result. The private result contains only those fields, native identity,
+workspace and an argv digest. A process or workspace/generation change refuses;
+there is no retry, polling worker, command invocation or generic argv return.
+The observations do not make mutable argv atomic or establish effective mode.
+
+Linux reads its bounded kernel cmdline pseudo-file. Darwin's
+[KERN_PROCARGS2 ABI](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sysctl.c)
+can include an environment tail. The reader bounds the queried size before
+allocation, decodes only the reported argc arguments, excludes the tail from
+all returned fields/digests, and clears its owned buffer on return. It never
+decodes environment keys or values. A changed/short read refuses without retry.
+Both platforms reuse the existing native process-file byte budget; this does
+not add a new resource bound. Runtime execution plans normalize TTY spelling in
+the same way as the existing process port. Native runtime evidence in this
+stage is from an owned synthetic process on the current platform, not a vendor
+CLI or foreign-platform runtime result.
+
+`PreToolUseResponse` now travels from runtime options to the hook service.
+After authenticated persisted Observe and the existing completion callback,
+only PreToolUse selects this response. Failure, cancellation, oversized or
+non-object data produces a hook error and no observer response. Other events
+keep their original response path. The seam does not automatically install a
+production callback, label unmanaged observations as managed, or assert that
+native `force_ask` is effective. That behavior remains a native matrix item.
+
 ## Remaining production contract
 
 1. Resolve a compiled compatibility tuple for the exact pinned image, platform
    and requested `ask`, `edits` or `full` ceiling. Initially enable no rows.
    Native mode spelling and argv are intent, not effective enforcement proof.
 2. Require current explicit project hook opt-in and exact intact helper/hook
-   configuration. Observe execution-plan tokens under the same kernel
-   generation if required by the tuple; do not expose raw argv or environment.
+   configuration. Compose the existing execution-plan reader under the same kernel
+   generation if required by the tuple; establish effective-mode authority
+   separately and do not expose raw argv or environment.
 3. Share preparation and current policy Check across HTTP and broker. Check
    before process pinning, managed context/tool responses, and every
-   capture/load/paste/Enter effect. Add a production-specific PreToolUse
-   response with no observer fallback on failure. The initial candidate is
+   capture/load/paste/Enter effect. Supply the production-specific callback through the existing PreToolUse
+   response seam with no observer fallback on failure. The initial candidate is
    measured `force_ask`, not the observer's grant-reusing `ask` response.
 4. Persist the native launch reference before each owner's one open. Retain
    binding-pending and unknown outcomes without generic Type, Send or reopen
@@ -107,7 +148,10 @@ Credits or fallback is authorized by this design or its storage tests.
 Storage tests cover changed-policy conflicts, alias isolation, partial
 publication, durable/failed/uncertain revocation, active first-input grant
 invalidation, restart, old proof retention, future policy refusal and existing
-byte-budget rejection. These are synthetic local tests, not native permission
+byte-budget rejection. Execution-plan tests additionally read an owned kernel
+process with synthetic argv/environment, reject identity/argument mutations and
+changed images, and exercise the runtime tool response through private tmux and
+Unix peer/helper verification. These are synthetic local tests, not native permission
 or account acceptance. Actual product new/resume, each ceiling, immutable roles
 and explicit skill receipts, native iTerm/platform behavior, local/encrypted
 Cloud delivery and independent code plus desktop/mobile bilingual theme and

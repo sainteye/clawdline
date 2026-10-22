@@ -21,7 +21,8 @@ import (
 
 // These are Darwin ABI layouts, not configurable capacity limits. Reviewed
 // against SDK sys/proc_info.h (proc_vnodepathinfo/vnode_info_path/vinfo_stat),
-// sys/param.h and XNU bsd/kern/proc_info.c. No kern.procargs2 or environment read.
+// sys/param.h and XNU bsd/kern/proc_info.c. This identity sampler reads no
+// argv/environment; the separate execution-plan reader owns its bounded ABI.
 type darwinVnodePath struct {
 	Info [152]byte
 	Path [1024]byte

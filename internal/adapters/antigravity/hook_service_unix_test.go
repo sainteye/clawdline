@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -703,6 +704,86 @@ func TestHookServiceCompletesObservationBeforeAcknowledging(t *testing.T) {
 				}
 			} else if reply.Code != "" || string(reply.Response) != "{}" {
 				t.Fatal("completion changed the native response", reply)
+			}
+		})
+	}
+}
+
+func TestHookServiceToolPolicyRunsAfterVerifiedObservationWithoutFallback(t *testing.T) {
+	for _, kind := range []string{"force-ask", "callback-failure", "cancelled", "malformed", "oversize", "different-event", "unverified-peer", "completion-failure"} {
+		t.Run(kind, func(t *testing.T) {
+			f := hookFixture(t)
+			dir := hookTestDir(t)
+			var observed, responded atomic.Bool
+			serviceCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			config := HookServiceConfig{StateDir: dir, Bridge: f.b,
+				AfterObservation: func(ctx context.Context, b ports.AntigravityBinding) error {
+					current, err := f.b.AntigravityBinding(ctx, f.s)
+					if err != nil || !b.Verified || current.Sequence != b.Sequence {
+						return fmt.Errorf("not persisted")
+					}
+					observed.Store(true)
+					if kind == "completion-failure" {
+						return fmt.Errorf("synthetic completion failure")
+					}
+					return nil
+				},
+				PreToolUseResponse: func(ctx context.Context, b ports.AntigravityBinding) ([]byte, error) {
+					if !observed.Load() || b.Event != "PreToolUse" || !b.Verified {
+						return nil, fmt.Errorf("wrong ordering")
+					}
+					responded.Store(true)
+					switch kind {
+					case "callback-failure":
+						return nil, fmt.Errorf("synthetic policy refusal")
+					case "cancelled":
+						cancel()
+					case "malformed":
+						return []byte(`[]`), nil
+					case "oversize":
+						return bytes.Repeat([]byte{' '}, MaxHookPayloadBytes+1), nil
+					}
+					return []byte(`{"decision":"force_ask"}`), nil
+				},
+			}
+			service, err := ListenHookService(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == "unverified-peer" {
+				service.peer = func(context.Context, *net.UnixConn) (NativeUnixPeer, error) { return NativeUnixPeer{}, nil }
+			}
+			// Keep the request connection alive for the cancellation case;
+			// only the callback's context is cancelled, not Serve's socket.
+			if kind == "cancelled" {
+				service.config.PreToolUseResponse = func(_ context.Context, b ports.AntigravityBinding) ([]byte, error) {
+					responded.Store(true)
+					cancel()
+					return nil, serviceCtx.Err()
+				}
+			}
+			startHookTest(t, service)
+			event := "PreToolUse"
+			if kind == "different-event" {
+				event = "PostToolUse"
+			}
+			reply := hookExchange(t, dir, hookRequestFor(f, event, 1))
+			if kind == "force-ask" {
+				if !observed.Load() || !responded.Load() || reply.Code != "" || string(reply.Response) != `{"decision":"force_ask"}` {
+					t.Fatal("explicit native response missing", reply)
+				}
+			} else if kind == "different-event" {
+				if !observed.Load() || responded.Load() || reply.Code != "" || string(reply.Response) != "{}" {
+					t.Fatal("tool policy affected another event", reply)
+				}
+			} else {
+				if reply.Code == "" || len(reply.Response) != 0 {
+					t.Fatal("failed policy fell back to native success", reply)
+				}
+				if (kind == "unverified-peer" || kind == "completion-failure") && responded.Load() {
+					t.Fatal("unverified/incomplete observation reached tool policy")
+				}
 			}
 		})
 	}

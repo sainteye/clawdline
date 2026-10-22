@@ -10,3 +10,10 @@ func readNativeProcessSample(ctx context.Context, _ int) (nativeProcessSample, e
 	}
 	return nativeProcessSample{}, nativeIdentityError("antigravity_native_process_unsupported", nil)
 }
+
+func readNativeExecutionPlan(ctx context.Context, _ int, _ string) (nativePlanTokens, error) {
+	if err := nativeContext(ctx); err != nil {
+		return nativePlanTokens{}, err
+	}
+	return nativePlanTokens{}, nativeIdentityError("antigravity_native_plan_unsupported", nil)
+}

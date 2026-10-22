@@ -18,10 +18,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// MaxNativeProcessFileBytes bounds each kernel pseudo-file read. Exceeding it
-// refuses identity; it never truncates into a plausible successful observation.
-const MaxNativeProcessFileBytes = 1 << 20
-
 func nativeProcFile(ctx context.Context, path string) ([]byte, error) {
 	if err := nativeContext(ctx); err != nil {
 		return nil, err
@@ -210,4 +206,13 @@ func readLinuxNativeProcessSample(ctx context.Context, proc string, pid int) (na
 		Process:      ports.AntigravityProcess{PID: pid, ParentPID: before.parent, Birth: birth, Executable: executable, TTY: tty},
 		WorkspaceCWD: workspace, BootID: bootID,
 	}, generation: fmt.Sprintf("%s/%d/%d/%d/%d", bootID, before.start, before.code, before.endCode, before.stack), image: image}, nil
+}
+
+func readNativeExecutionPlan(ctx context.Context, pid int, executable string) (nativePlanTokens, error) {
+	data, err := nativeProcFile(ctx, filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	if err != nil {
+		return nativePlanTokens{}, err
+	}
+	defer clear(data)
+	return parseNativeCommandLine(data, executable)
 }

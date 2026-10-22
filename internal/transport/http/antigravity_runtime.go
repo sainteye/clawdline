@@ -20,6 +20,7 @@ import (
 type AntigravityRuntimeOptions struct {
 	Admit                 antigravity.HookAdmission
 	PreInvocationResponse antigravity.HookResponse
+	PreToolUseResponse    antigravity.HookResponse
 	AfterObservation      antigravity.HookObservation
 }
 
@@ -71,6 +72,14 @@ func (r normalizedAntigravityReader) ReadAntigravityProcess(ctx context.Context,
 		p.TTY = strings.TrimPrefix(p.TTY, "/dev/")
 	}
 	return p, err
+}
+
+func (r normalizedAntigravityReader) ReadAntigravityExecutionPlan(ctx context.Context, pid int) (antigravity.NativeExecutionPlan, error) {
+	plan, err := r.native.ReadAntigravityExecutionPlan(ctx, pid)
+	if err == nil {
+		plan.Process.TTY = strings.TrimPrefix(plan.Process.TTY, "/dev/")
+	}
+	return plan, err
 }
 
 // StartAntigravity owns cancellation, Close and the Serve join. Construction
@@ -130,7 +139,7 @@ func (s *Server) StartAntigravity(ctx context.Context, options AntigravityRuntim
 	if err != nil {
 		return nil, err
 	}
-	service, err := antigravity.ListenHookService(antigravity.HookServiceConfig{StateDir: dir, Bridge: bridge, Admit: options.Admit, PreInvocationResponse: options.PreInvocationResponse, AfterObservation: options.AfterObservation})
+	service, err := antigravity.ListenHookService(antigravity.HookServiceConfig{StateDir: dir, Bridge: bridge, Admit: options.Admit, PreInvocationResponse: options.PreInvocationResponse, PreToolUseResponse: options.PreToolUseResponse, AfterObservation: options.AfterObservation})
 	if err != nil {
 		return nil, err
 	}

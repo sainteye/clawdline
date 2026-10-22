@@ -32,14 +32,15 @@ type NativeProcessObservation struct {
 // NativeProcessReader has no cache, retries, background goroutines or shell/C
 // dependency. Its resolver must be safe for concurrent calls if shared.
 type NativeProcessReader struct {
-	resolve ExactTerminalResolver
-	read    func(context.Context, int) (nativeProcessSample, error)
+	readPlan func(context.Context, int, string) (nativePlanTokens, error)
+	resolve  ExactTerminalResolver
+	read     func(context.Context, int) (nativeProcessSample, error)
 }
 
 var _ ports.AntigravityProcessReader = (*NativeProcessReader)(nil)
 
 func NewNativeProcessReader(resolve ExactTerminalResolver) *NativeProcessReader {
-	return &NativeProcessReader{resolve: resolve, read: readNativeProcessSample}
+	return &NativeProcessReader{resolve: resolve, read: readNativeProcessSample, readPlan: readNativeExecutionPlan}
 }
 
 // NativeIdentityError exposes only stable codes, never private paths/argv.

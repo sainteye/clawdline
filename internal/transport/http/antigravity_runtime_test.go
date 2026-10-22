@@ -205,6 +205,7 @@ func TestAntigravityRuntimeNativeCompositionAndCallbacks(t *testing.T) {
 	}
 	admitted := make(chan struct{}, 1)
 	responded := make(chan ports.AntigravityBinding, 1)
+	toolResponded := make(chan ports.AntigravityBinding, 1)
 	stop, err := s.StartAntigravity(ctx, AntigravityRuntimeOptions{
 		Admit: func(context.Context, antigravity.NativeUnixPeer, antigravity.Witness, string, json.RawMessage) (*antigravity.HookLaunch, error) {
 			admitted <- struct{}{}
@@ -213,6 +214,10 @@ func TestAntigravityRuntimeNativeCompositionAndCallbacks(t *testing.T) {
 		PreInvocationResponse: func(_ context.Context, b ports.AntigravityBinding) ([]byte, error) {
 			responded <- b
 			return []byte(`{"fixture":true}`), nil
+		},
+		PreToolUseResponse: func(_ context.Context, b ports.AntigravityBinding) ([]byte, error) {
+			toolResponded <- b
+			return []byte(`{"decision":"force_ask"}`), nil
 		},
 	})
 	if err != nil {
@@ -224,7 +229,7 @@ func TestAntigravityRuntimeNativeCompositionAndCallbacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'" }
-	command("new-session", "-d", "-s", "synthetic", "exec env AG_RUNTIME_SYNTHETIC_ROOT="+quote(root)+" "+quote(exe)+" -test.run=^TestAntigravityRuntimeSyntheticProvider$")
+	command("new-session", "-d", "-s", "synthetic", "exec env AG_RUNTIME_CONTEXT_FOLLOWUP=1 AG_RUNTIME_FOLLOWUP_EVENT=PreToolUse AG_RUNTIME_SYNTHETIC_ROOT="+quote(root)+" "+quote(exe)+" -test.run=^TestAntigravityRuntimeSyntheticProvider$")
 	defer func() {
 		cmd := exec.Command(binary, "-S", tmux.Socket, "kill-server")
 		cmd.Env = []string{"PATH=/usr/bin:/bin"}
@@ -268,6 +273,27 @@ func TestAntigravityRuntimeNativeCompositionAndCallbacks(t *testing.T) {
 	s.pictures = newPictures(root)
 	if s.actions().Antigravity != s.antigravityBridge.Load() {
 		t.Fatal("Actions uses a different bridge")
+	}
+	if err := os.WriteFile(filepath.Join(root, "managed-next"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for ctx.Err() == nil {
+		result, err = os.ReadFile(filepath.Join(root, "hook-next-result"))
+		if err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil || string(result) != `{"decision":"force_ask"}`+"\n" {
+		t.Fatal("runtime tool callback was not forwarded", err)
+	}
+	select {
+	case tool := <-toolResponded:
+		if tool.Event != "PreToolUse" || !tool.Verified || tool.Process != binding.Process || tool.ConversationID != binding.ConversationID || tool.Sequence <= binding.Sequence {
+			t.Fatal("tool callback lost exact native binding")
+		}
+	default:
+		t.Fatal("runtime did not call tool policy")
 	}
 }
 
