@@ -258,6 +258,7 @@ CLI 用 `clawdline cloud peer outbox <request-id>` 讀取來源證據。
 `--machine MACHINE_ID`、`--session SESSION_ID`、`--generation GENERATION` 三個值；
 `GENERATION` 是 32 位小寫十六進位字串。`read` 先回傳最新逐字紀錄頁；若有 `next_before`，
 以相同三元目標加上 `--before NEXT_BEFORE` 按需讀取一頁較早訊息，直到回覆不再提供游標。
+原生紀錄頁若附有 `signature`，同時傳入提供該游標那一頁的 `--revision SIGNATURE`；不可改用較新輪詢的簽章。收到 `transcript_cursor_stale` 時，先重讀最新一頁，再取用其新游標及簽章。
 每頁都重新檢查目前執行世代；不得猜測游標，也不可把最新 200 筆當成完整對話。
 `send` 需要 `--text`；`answer` 需要畫面上選項的
 `--answer` 代碼與問題 `--expect` 指紋，Agent 不得猜測。變更操作會先印請求 ID；結果不確定時，

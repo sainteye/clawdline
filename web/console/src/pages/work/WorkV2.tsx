@@ -1,3 +1,5 @@
+import { useAssistantFacts } from "../../session/assistant-facts.js"
+import { assistantAdmits, assistantUnavailable, assistantLabel } from "../../session/antigravity-ui.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
 import { ProjectPicker } from "../../ui/ProjectPicker.js"
 import { catalogFormat } from "../../catalog.js"
@@ -824,6 +826,10 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
   foldDescription?: boolean
 }) {
   const [terminal, setTerminal] = useState("")
+  const providerReading = useAssistantFacts("", `${item.id}:${item.version}`)
+  const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? (id === "antigravity" ? undefined : { id })
+  const providerStatus = (id: string) => providerReading.kind !== "ready" ? providerReading.kind
+    : assistantUnavailable(providerFacts(id), "start") || (id === "antigravity" && providerFacts(id)?.authState !== "ready" ? "bootstrap" : "ready")
   const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
   // A new Session has no role until the person chooses one or asks AI.
   const personas = usePersonas()
@@ -1011,11 +1017,12 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
         {/* The product mark alone: the button beside it already spells out the
             chosen assistant, so the name is kept for the label and tooltip. */}
         {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
-          role="radio" aria-checked={choice === assistant} disabled={!!busy || aiSuggestionBusy}
-          aria-label={assistantName(choice)} title={assistantName(choice)}
+          role="radio" aria-checked={choice === assistant} disabled={!!busy || aiSuggestionBusy || !assistantAdmits(providerFacts(choice), "start")}
+          aria-label={assistantName(choice)} title={assistantUnavailable(providerFacts(choice), "start") ? catalogWord("antigravity", assistantUnavailable(providerFacts(choice), "start")!).replace("{assistant}", assistantName(choice)) : assistantName(choice)}
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
         </div>
+        {assistant === "antigravity" && <p className="work-note" role="status">{catalogWord("antigravity", providerStatus(assistant)).replace("{assistant}", assistantLabel(assistant))}</p>}
         {personas.length > 0 && <button className="chip work-persona-ai-button" type="button" disabled={!!busy || aiSuggestionBusy}
           aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
           onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? catalogWord("literal", "29e124139608") : catalogWord("literal", "2bbea1c41037")}</button>}
@@ -1036,8 +1043,8 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
             rememberTeam(next)
             setPersonaChoice(switched.chosen)
           }} />}
-        <button className="chip on work-assignment-action" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id && assigningRoute === "new"}
-          onClick={() => assign("new", () => assignNewWorkV2(item, assistant, persona?.id))}>
+        <button className="chip on work-assignment-action" type="button" disabled={!!busy || aiSuggestionBusy || !assistantAdmits(providerFacts(assistant), "start")} aria-busy={busy === item.id && assigningRoute === "new"}
+          onClick={() => { if (assistantAdmits(providerFacts(assistant), "start")) void assign("new", () => assignNewWorkV2(item, assistant, persona?.id)) }}>
           {busy === item.id && assigningRoute === "new" && <span className="work-assignment-spinner" aria-hidden="true" />}
           {persona
             ? nextWord(busy === item.id && assigningRoute === "new" ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })

@@ -37,7 +37,9 @@ type Actions struct {
 	// scans through Inventory directly, which is what a test wants.
 	Reading   *InventoryReading
 	Terminals []ports.TerminalHost
-	Store     *store.Store
+	// Antigravity verifies the live native conversation before every terminal effect.
+	Antigravity ports.AntigravityBindings
+	Store       *store.Store
 	// Owed is what the sessions on this machine still owe — the broker's
 	// pending landings, read at the moment of asking (D01). Nil is a daemon
 	// that cannot say, and a close is then refused as unknown rather than
@@ -344,8 +346,8 @@ func (a Actions) send(ctx context.Context, s session.Session, text string) (sess
 	if err := checkOperation(ctx); err != nil {
 		return s, err
 	}
-	if err := h.Send(ctx, s, text); err != nil {
-		return s, sendRefusal(s, err)
+	if err := a.sendToHost(ctx, s, h, text); err != nil {
+		return s, err
 	}
 	return s, nil
 }
@@ -405,6 +407,9 @@ func (a Actions) SendPrepared(ctx context.Context, id, text string, prepare orch
 	if err != nil {
 		return session.Session{}, beforeTheFirstByte(err)
 	}
+	if s.Assistant == session.AssistantAntigravity {
+		return s, beforeTheFirstByte(antigravityOperationRefusal())
+	}
 	h, err := a.host(ctx, s)
 	if err != nil {
 		return session.Session{}, beforeTheFirstByte(err)
@@ -436,8 +441,8 @@ func (a Actions) SendPrepared(ctx context.Context, id, text string, prepare orch
 	if err := checkOperation(ctx); err != nil {
 		return s, err
 	}
-	if err := h.Send(ctx, s, text); err != nil {
-		return s, sendRefusal(s, err)
+	if err := a.sendToHost(ctx, s, h, text); err != nil {
+		return s, err
 	}
 	return s, nil
 }
@@ -583,8 +588,8 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 		if err := checkOperation(ctx); err != nil {
 			return err
 		}
-		if err := h.Send(ctx, s, asPaths(paths)); err != nil {
-			return sendRefusal(s, err)
+		if err := a.sendToHost(ctx, s, h, asPaths(paths)); err != nil {
+			return err
 		}
 		return nil
 	}
@@ -742,7 +747,11 @@ func (a Actions) Interrupt(ctx context.Context, id string) (session.Session, err
 		return s, err
 	}
 	defer release()
-	if err := h.Interrupt(ctx, s); err != nil {
+	if s.Assistant == session.AssistantAntigravity {
+		if err := a.interruptAntigravity(ctx, s, h); err != nil {
+			return s, err
+		}
+	} else if err := h.Interrupt(ctx, s); err != nil {
 		return s, Refusal{RawDetail: true, Code: "interrupt_failed", Detail: err.Error()}
 	}
 	a.record(ctx, "session.interrupted", s.ID, nil)

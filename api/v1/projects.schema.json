@@ -16,7 +16,34 @@
       "properties": {
         "availability": { "$ref": "#/$defs/StartAvailability" },
         "id": { "type": "string" },
-        "label": { "type": "string" }
+        "label": { "type": "string" },
+        "installed": { "description": "Whether a local executable was found; null when not checked. Does not prove protocol compatibility or authentication.", "type": "boolean", "nullable": true },
+        "version": { "description": "Validated standalone CLI version, absent when compatibility could not be established.", "type": "string" },
+        "authState": { "$ref": "#/$defs/StartAuthState" },
+        "integrationState": { "$ref": "#/$defs/StartIntegrationState" },
+        "capabilities": { "$ref": "#/$defs/StartCapabilities" }
+      }
+    },
+    "StartAuthState": {
+      "description": "Authentication evidence, separate from executable presence and quota. Unknown never means ready.",
+      "type": "string",
+      "enum": ["ready", "required", "unknown", "unsupported_account"]
+    },
+    "StartIntegrationState": {
+      "type": "string",
+      "enum": ["active", "disabled", "missing", "incompatible"]
+    },
+    "StartCapabilities": {
+      "description": "Operations admitted by this daemon's verified integration. CLI syntax alone never makes an operation available.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "resume", "transcript", "send", "menus"],
+      "properties": {
+        "start": { "type": "boolean" },
+        "resume": { "type": "boolean" },
+        "transcript": { "type": "boolean" },
+        "send": { "type": "boolean" },
+        "menus": { "type": "boolean" }
       }
     },
     "ProjectIconSetup": {
@@ -167,6 +194,7 @@
       "properties": {
         "code": { "type": "string" },
         "message": { "type": "string" },
+        "detail_key": { "description": "Producer catalog key for a known fixed refusal; omitted for raw or external messages.", "type": "string" },
         "request_id": { "type": "string" },
         "app": { "description": "The terminal the refusal is about, on terminal_closed and iterm_attention_required, so a page can name it in its own language.", "type": "string" }
       }

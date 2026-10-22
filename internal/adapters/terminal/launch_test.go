@@ -36,6 +36,8 @@ func TestNewTmuxPaneDoesNotInheritAssistantIdentityFromServer(t *testing.T) {
 	sock := filepath.Join(dir, "private.sock")
 	t.Setenv("TMUX", "")
 	t.Setenv("TMUX_PANE", "")
+	// This checks inherited identity, independently of personal login-shell setup.
+	t.Setenv("SHELL", "/bin/sh")
 	for _, key := range []string{"CLAUDE_CODE_SESSION_ID", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAWDLINE_SQUAD_CAPABILITY_FILE"} {
 		t.Setenv(key, "leaked")
 	}

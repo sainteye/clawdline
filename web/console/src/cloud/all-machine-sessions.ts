@@ -27,7 +27,7 @@ export interface SessionListPresentation {
   title: string
   /** Time of the authenticated machine list that supplied this status. */
   observedAt?: number
-  assistant?: "claude" | "codex"
+  assistant?: "claude" | "codex" | "antigravity"
   cwd?: string
   /** The Project the machine would accept this Session into (`project_key`). */
   projectKey?: string
@@ -107,7 +107,7 @@ export interface ProjectedSession {
    * until it does the list waits for its authorized presentation read.
    */
   title?: undefined
-  assistant?: "claude" | "codex"
+  assistant?: "claude" | "codex" | "antigravity"
   backend?: "tmux" | "iterm" | "ps"
   parentSessionID?: string
   machineScope?: boolean
@@ -188,13 +188,14 @@ export type SessionContent =
   | { kind: "ready"; destination: SessionDestination; observedAt: number; info: { title?: string; assistant?: string; model?: string };
       entries: TranscriptEntry[];
       nextBefore?: number;
+      signature?: string;
       question: { text?: string; fingerprint: string; options: { key: string; label: string }[]; observedAt: number } | null }
   | { kind: "unavailable"; reason: "no_permission" | "old_version" | "unknown" | "offline" | "stale" | "changed" | "unconfirmed";
       code?: string }
 
 export type SessionOlderPage =
   | { kind: "ready"; destination: SessionDestination; before: number;
-      entries: TranscriptEntry[]; nextBefore?: number }
+      entries: TranscriptEntry[]; nextBefore?: number; signature?: string; requestedRevision?: string }
   | Extract<SessionContent, { kind: "unavailable" }>
 
 export interface SessionProjectionSource {
@@ -207,7 +208,7 @@ export interface SessionProjectionSource {
   /** Content is requested only after a person opens an exact destination. */
   readDetail(destination: SessionDestination, signal: AbortSignal): Promise<SessionContent>
   /** A person asks for one older page on the same opened, pinned detail. */
-  readOlder?(destination: SessionDestination, before: number, signal: AbortSignal): Promise<SessionOlderPage>
+  readOlder?(destination: SessionDestination, before: number, signal: AbortSignal, revision?: string): Promise<SessionOlderPage>
   /** Recheck the signed rich row when an opened detail receives a new menu. */
   readQuestion?(destination: SessionDestination, signal: AbortSignal): Promise<Extract<SessionContent, { kind: "ready" }>["question"]>
   /** Read slash-menu metadata only for the open, exact execution. */
@@ -381,11 +382,13 @@ export function prependOlderPage(current: SessionContent, page: SessionOlderPage
   Extract<SessionContent, { kind: "ready" }> | null {
   if (current.kind !== "ready" || page.kind !== "ready" ||
     destinationKey(current.destination) !== destinationKey(page.destination) || current.nextBefore !== page.before ||
+    ((current.signature?.startsWith("agy1:") || page.requestedRevision !== undefined) && current.signature !== page.requestedRevision) ||
     !Number.isSafeInteger(page.before) || page.before < 1 ||
     (page.nextBefore !== undefined && (!Number.isSafeInteger(page.nextBefore) || page.nextBefore < 1 || page.nextBefore >= page.before))) {
     return null
   }
-  return { ...current, entries: [...page.entries, ...current.entries], nextBefore: page.nextBefore }
+  return { ...current, entries: [...page.entries, ...current.entries], nextBefore: page.nextBefore,
+    ...(page.signature === undefined ? {} : { signature: page.signature }) }
 }
 
 export class SessionDetailCache {

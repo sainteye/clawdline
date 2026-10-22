@@ -37,3 +37,16 @@ test("older Codex none and minimal settings retain separate positions", () => {
   assert.ok(reasoningEffortHTML("codex", "none", word, esc).includes('aria-valuenow="1"'))
   assert.ok(reasoningEffortHTML("codex", "minimal", word, esc).includes('aria-valuenow="2"'))
 })
+
+test("Antigravity has five measured effort levels and no guessed position for other values", () => {
+  for (const [index, level] of ["low", "medium", "high", "xhigh", "max"].entries()) {
+    const html = reasoningEffortHTML("antigravity", level, word, esc)
+    assert.ok(html.includes(`aria-valuenow="${index + 1}"`))
+    assert.ok(html.includes('aria-valuemax="5"'))
+    assert.equal((html.match(/data-current="1"/g) || []).length, 1)
+    assert.ok(!html.includes("<input"))
+  }
+  for (const level of [undefined, "none", "minimal", "ultra"]) {
+    assert.ok(!reasoningEffortHTML("antigravity", level, word, esc).includes('role="meter"'))
+  }
+})
