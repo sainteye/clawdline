@@ -64,6 +64,9 @@ const composerTail = 20
 
 // ComposerReady reports whether a screen shows an input line ready for text.
 func ComposerReady(screen string, assistant session.Assistant) bool {
+	if assistant == session.AssistantAntigravity {
+		return session.ReadAntigravityScreen(screen, false).Kind == session.AntigravityIdle
+	}
 	caret, furnished, _ := readComposer(screen, assistant)
 	return caret && furnished
 }
@@ -71,6 +74,9 @@ func ComposerReady(screen string, assistant session.Assistant) bool {
 // Choosing is the same reading from the other side: a caret with no furniture
 // under it is something waiting to be answered, and nothing may be typed at it.
 func Choosing(screen string, assistant session.Assistant) bool {
+	if assistant == session.AssistantAntigravity {
+		return session.ReadAntigravityScreen(screen, false).Kind == session.AntigravityMenu
+	}
 	caret, furnished, _ := readComposer(screen, assistant)
 	return caret && !furnished
 }
@@ -80,6 +86,11 @@ func Choosing(screen string, assistant session.Assistant) bool {
 // drawing itself: neither answer is yes, because typing at it drops the bytes
 // and calling it a chooser would stop a briefing that is about to be possible.
 func readComposer(screen string, assistant session.Assistant) (caret, furnished bool, line string) {
+	// Legacy callers with no provider retain their existing frame reading;
+	// dispatch/root admission requires an explicit known provider separately.
+	if assistant != "" && assistant != session.AssistantClaude && assistant != session.AssistantCodex {
+		return false, false, ""
+	}
 	lines := strings.Split(screen, "\n")
 	written := make([]int, 0, len(lines))
 	for i, line := range lines {
@@ -188,6 +199,16 @@ const (
 // draws no frame — and a notice is not held for a composer that was never
 // looked at.
 func ReadComposer(screen string, assistant session.Assistant) ComposerState {
+	if assistant == session.AssistantAntigravity {
+		facts := session.ReadAntigravityScreen(screen, false)
+		switch facts.Kind {
+		case session.AntigravityIdle:
+			return ComposerEmpty
+		case session.AntigravityDraft:
+			return ComposerDraft
+		}
+		return ComposerNone
+	}
 	caret, furnished, line := readComposer(screen, assistant)
 	if !caret || !furnished {
 		return ComposerNone

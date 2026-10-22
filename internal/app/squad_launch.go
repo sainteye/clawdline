@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"runtime"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
@@ -71,6 +72,77 @@ func (s Starter) prepareSquadLaunch(ctx context.Context, projectPath, personaID,
 		return preparedSquadLaunch{}, err
 	}
 	return preparedSquadLaunch{launch: launch, files: files}, nil
+}
+
+// startAntigravity prepares immutable context before any process is opened.
+// The root supplies executable validation, hook installation and launch
+// commitment; this app layer never reads vendor settings or account files.
+func (s Starter) startAntigravity(ctx context.Context, place projects.Place, request projects.LaunchRequest) (Started, error) {
+	if !placeIsDirectory(place.Path) {
+		return Started{}, notFound("No place named that")
+	}
+	if s.PrepareAntigravity == nil {
+		return Started{}, StartRefusal{Status: http.StatusServiceUnavailable, Code: "squad_context_unavailable", Message: "Antigravity launch context is not connected on this machine."}
+	}
+	itermOpen, _ := s.Launcher.ITermRunning(ctx)
+	reach := projects.TmuxReach(s.Launcher.TmuxReach(ctx))
+	choice := s.Terminal()
+	plan := projects.ChoosePlan(choice, itermOpen, reach)
+	if plan == projects.PlanNotRunning {
+		return Started{}, unavailableTerminal(choice, runtime.GOOS)
+	}
+	if plan == projects.PlanNoTmux {
+		return Started{}, StartRefusal{Status: http.StatusConflict, Code: "terminal_unsupported", Message: "tmux is not installed on this machine."}
+	}
+	prepared, err := s.prepareSquadLaunch(ctx, place.Path, request.Persona, request.Resume)
+	if err != nil {
+		return Started{}, err
+	}
+	request.SquadPromptPath = prepared.files.PromptPath
+	if request.Persona != "" && request.SquadPromptPath == "" {
+		return Started{}, projects.ErrSquadContextUnavailable
+	}
+	admitted, env, err := s.PrepareAntigravity(ctx, request)
+	if err == nil && (admitted.Assistant != request.Assistant || admitted.ProjectRoot != request.ProjectRoot || admitted.Resume != request.Resume || admitted.SquadPromptPath != request.SquadPromptPath) {
+		err = projects.ErrSquadContextUnavailable
+	}
+	var launch projects.Launch
+	if err == nil {
+		launch, err = projects.Admit(admitted)
+	}
+	if err != nil {
+		if prepared.launch.ID != "" {
+			_ = s.Squad.FailSquadLaunch(ctx, prepared.launch.ID)
+		}
+		return Started{}, err
+	}
+	if prepared.launch.ID != "" {
+		env = append(env, prepared.files.PrivateEnv())
+	}
+	command := launch.ShellCommandWithEnv(env)
+	if prepared.launch.ID != "" {
+		return s.openSquadTerminal(ctx, place, request.Model, plan, prepared, command)
+	}
+	var result Started
+	switch plan {
+	case projects.PlanITerm:
+		result.ID, err = s.Launcher.NewITermTab(ctx, "cd "+projects.ShellQuoted(place.Path)+" && "+command)
+		result.Backend = "iterm"
+	case projects.PlanITermTmux:
+		return s.openViewed(ctx, place, request.Model, command)
+	case projects.PlanTmux:
+		result.ID, err = s.Launcher.NewTmuxWindow(ctx, place.Path, command)
+		result.Backend = "tmux"
+	case projects.PlanTmuxDetached:
+		result.ID, err = s.Launcher.NewTmuxSession(ctx, place.Path, projects.TmuxStartedSessionName, command)
+		result.Backend = "tmux"
+		result.Attach = projects.TmuxAttachCommand()
+	}
+	if err != nil {
+		return Started{}, openRefusal(err, "")
+	}
+	result.Model = request.Model
+	return result, nil
 }
 
 func (s Starter) openSquadTerminal(ctx context.Context, place projects.Place, model string,

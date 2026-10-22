@@ -27,6 +27,9 @@ var codexBullets = map[rune]bool{'•': true, '‣': true, '▪': true, '·': tr
 // spinner lines further up that were scrolled past rather than erased — reading
 // one of those would report a session as busy long after it went quiet.
 func WorkingLine(screen string, assistant Assistant, tailLines int) string {
+	if assistant == AssistantAntigravity {
+		return ReadAntigravityScreen(screen, false).Working
+	}
 	if tailLines <= 0 {
 		tailLines = 25
 	}

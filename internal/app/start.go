@@ -25,6 +25,11 @@ import (
 // place, and the terminal is chosen here from what is running rather than
 // named by the caller.
 type Starter struct {
+	// PrepareAntigravity is the composition root's validated standalone,
+	// permission and immutable-context preparer. It receives the original
+	// resume snapshot path, not a fresh mutable role catalog. Nil fails closed.
+	// Returned environment values are private launch capability assignments.
+	PrepareAntigravity func(context.Context, projects.LaunchRequest) (projects.LaunchRequest, []string, error)
 	// Places is the place list, built at the moment of asking.
 	Places func(ctx context.Context) []projects.Place
 	// Terminal is the machine's `terminal` setting.
@@ -124,6 +129,10 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 	memory := ""
 	if s.Memory != nil {
 		memory = s.Memory(place.Path)
+	}
+	if assistant == projects.AssistantAntigravity {
+		return s.startAntigravity(ctx, place, projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
+			Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: persona, Memory: memory})
 	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
 		Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: preflightPersona, PersonaDir: s.PersonaDir,

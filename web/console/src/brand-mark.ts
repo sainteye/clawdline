@@ -16,7 +16,7 @@ export function sessionName(row: SessionRow): string {
 export function detailSessionName(row: SessionRow): string {
   if (row.machine_scope || row.coordinator) return sessionName(row)
   if ((!row.label || row.label === row.id) && (!row.tty || row.tty === row.id)) {
-    const assistant = row.assistant === "codex" ? "Codex" : row.assistant === "claude" ? "Claude" : "Assistant"
+    const assistant = row.assistant === "codex" ? "Codex" : row.assistant === "claude" ? "Claude" : row.assistant === "antigravity" ? "Antigravity" : "Assistant"
     return `${assistant} Session`
   }
   return sessionName(row)
