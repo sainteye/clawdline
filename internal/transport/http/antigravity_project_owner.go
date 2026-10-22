@@ -36,7 +36,8 @@ func (s *Server) antigravityProjectRoot(ctx context.Context, workspace string) (
 
 // StartAntigravityProjectConsent owns one immutable helper pin per boot, not
 // per preview or Project. It starts no worker/provider and publishes no native
-// behavior row or policy input. A missing helper permits revocation only.
+// behavior row. Runtime composition publishes inputs only after all owners exist.
+// A missing helper permits revocation only.
 func (s *Server) StartAntigravityProjectConsent(ctx context.Context) (func(), error) {
 	s.antigravityProjectMu.Lock()
 	defer s.antigravityProjectMu.Unlock()
@@ -78,5 +79,48 @@ func (s *Server) StartAntigravityProjectConsent(ctx context.Context) (func(), er
 	}
 	s.antigravityProjectOwner.Store(owner)
 	var once sync.Once
-	return func() { once.Do(func() { s.antigravityProjectOwner.CompareAndSwap(owner, nil) }) }, nil
+	return func() {
+		once.Do(func() {
+			if inputs := s.antigravityPolicyInputs.Load(); inputs != nil && inputs.projectOwner == owner {
+				s.antigravityPolicyInputs.CompareAndSwap(inputs, nil)
+			}
+			s.antigravityProjectOwner.CompareAndSwap(owner, nil)
+		})
+	}, nil
+}
+
+// publishAntigravityPolicy connects actual, already-started owners. Missing
+// dependencies leave observation available without granting managed launches.
+// Native compatibility remains the compiled resolver, which currently refuses.
+func (s *Server) publishAntigravityPolicy(ctx context.Context) func() {
+	manager, store, bridge := s.antigravityProjectOwner.Load(), s.antigravityLaunchStore.Load(), s.antigravityBridge.Load()
+	if ctx.Err() != nil || manager == nil || store == nil || bridge == nil {
+		return func() {}
+	}
+	inputs := &antigravityPolicyInputs{lifetime: ctx, projectOwner: manager, launchStore: store, bridge: bridge,
+		behavior: productionAntigravityBehavior,
+		project: func(requestCtx context.Context, workspace string) (antigravityProjectPolicy, error) {
+			current := func() bool { return ctx.Err() == nil && s.antigravityProjectOwner.Load() == manager }
+			if !current() {
+				return antigravityProjectPolicy{}, antigravityproject.Unverified
+			}
+			policy, err := manager.Check(requestCtx, workspace)
+			if err != nil {
+				return antigravityProjectPolicy{}, err
+			}
+			if !current() {
+				return antigravityProjectPolicy{}, antigravityproject.Unverified
+			}
+			return antigravityProjectPolicy{Revision: policy.RevisionDigest, HookDigest: policy.HookDigest, HelperDigest: policy.HelperDigest}, nil
+		},
+	}
+	if s.antigravityProjectOwner.Load() != manager || s.antigravityLaunchStore.Load() != store || s.antigravityBridge.Load() != bridge || ctx.Err() != nil || !s.antigravityPolicyInputs.CompareAndSwap(nil, inputs) {
+		return func() {}
+	}
+	// Pointer-specific withdrawal cannot remove a newer publication.
+	withdraw := func() { s.antigravityPolicyInputs.CompareAndSwap(inputs, nil) }
+	if s.currentAntigravityPolicy(ctx, store, bridge, inputs) != nil {
+		withdraw()
+	}
+	return withdraw
 }

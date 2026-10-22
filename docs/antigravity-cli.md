@@ -143,7 +143,7 @@ not supersede its work, receipt, claims or authority policies.
 | A04: state | Trust invocation/end hooks alone: misses prompts, background work and lost events. Screen only: brittle. Combine typed observations with source/freshness: more integration, honest unknowns. | Combine current screen/status with fenced hooks. **Reversible** rules; never equate PostInvocation with idle or waiting with permission grant. |
 | A05: context injection | Rewrite global rules: affects other sessions. Replace base system prompt: changes provider behavior. Immutable launch pointer in supported SessionStart context/initial interactive prompt: preserves existing files, requires a loading receipt. | Immutable Squad snapshot + memory/rules pointer, scoped to launch. **Irreversible receipt meaning**; no native `--agent` substitution for Squad role identity. |
 | A06: account/quota | Read keyring/token stores or automatically activate billing: broad authority. Consume CLI-produced numeric observations: no new account owner, may be absent. | CLI owns login; use passive status/quota evidence. Missing data stays unknown. **Reversible** source selection; paid fallback remains prohibited. |
-| A07: durable native policy (implementation in progress) | Browser mode names or saved receipts cannot establish native behavior. A separate policy service would duplicate launch ownership. | One server-owned policy, bound inside the existing private launch transaction, shared by HTTP and broker; durable revocation preserves history and consumed input. Native behavior rows remain inactive until measured. See [native policy contract](antigravity-native-policy.md) for the implemented storage stage and remaining activation gates. No scope or final acceptance reduction. |
+| A07: durable native policy (implementation in progress) | Browser mode names or saved receipts cannot establish native behavior. A separate policy service would duplicate launch ownership. | One server-owned policy, bound inside the existing private launch transaction, shared by HTTP and broker; durable revocation preserves history and consumed input. Runtime composition binds the actual Project manager, launch store and bridge; stop/replacement withdraws matching inputs. A closed review strategy replaces the unspecified effective callback; distinct edits/full semantics and mandatory native hook evidence remain open. Native behavior rows remain inactive until measured. See [native policy contract](antigravity-native-policy.md) for the implemented storage stage and remaining activation gates. No scope or final acceptance reduction. |
 
 ACP is a real alternative, not an undocumented `agy --acp` flag. The [official ACP registry entry](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json)
 currently lists a separate proprietary 1.4.1 runtime, `agy_acp_server.par`/`.exe`, for macOS,
@@ -375,9 +375,12 @@ and missing resumed context; 43 sanitized artifact hashes matched.
    durable sequencing, launch capability, workspace/history binding and safe startup before the
    first native identity event. A requested UUID remains provisional until verified observation.
 2. **Permission coverage:** `force_ask` is required for the measured review ceiling; `ask` is
-   insufficient. Verify hook timeout, missing/nonexecutable/malformed hook, local service outage,
-   same-process prior-grant failure and the complete tool coverage before admitting generic
-   broker permission modes. Retain `provider_permission_unsupported` until those gates pass.
+   insufficient. Reuse measured configured-hook failures rather than treating them as proof
+   for removed/disabled hooks. Verify mandatory callback persistence, competing hook/rule
+   precedence, all actual tool contracts, local service outage and the complete tool coverage
+   before admitting generic broker permission modes. The bounded 2026-10-23 probe stopped on
+   an actual `write_file` name/argument difference; it did not reach removal/disable cases.
+   See the [enforcement amendment and native result](antigravity-native-policy.md#a07-enforcement-amendment-and-bounded-native-result). Retain `provider_permission_unsupported` until those gates pass.
 3. **Product interaction and context:** exercise the actual paste/menu lane and receipts, edit
    permission and other native pickers, cancellation, immutable role/memory publication and exact
    resume. Distinguish context prepared, delivered and observed before showing a loaded badge.

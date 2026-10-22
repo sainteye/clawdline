@@ -42,3 +42,13 @@ not inject another response or synthesize a skill-applied receipt. PostInvocatio
 and Stop therefore do not require another model call to validate the first
 response. The explanation distinguishes PREPARED from loaded evidence in both
 languages; live role badges and public capabilities remain independently gated.
+
+Policy-bearing Antigravity context responses additionally require current
+explicit Project consent and the exact live runtime, Project-manager and
+launch-store owners. Stopping or replacing an owner invalidates that path;
+the check does not install hooks or infer consent from an old command receipt.
+The English and Taiwan Traditional Chinese card explanations and source links
+include this lifecycle boundary. This is conditional enforcement for prepared
+policy-bearing launches, not a claim that native compatibility rows or public
+HTTP/broker starts are enabled. Publication of the revised website snapshot
+still follows the reviewed product commit reaching public main.

@@ -147,9 +147,11 @@ func (s *Server) StartAntigravity(ctx context.Context, options AntigravityRuntim
 	done := make(chan struct{})
 	s.antigravityRuntimeStarted = true
 	s.SetAntigravityBridge(bridge)
+	withdrawPolicy := s.publishAntigravityPolicy(runCtx)
 	go func() {
 		defer close(done)
 		defer s.antigravityBridge.CompareAndSwap(bridge, nil)
+		defer withdrawPolicy()
 		if err := service.Serve(runCtx); err != nil && runCtx.Err() == nil {
 			var typed *antigravity.BridgeError
 			if errors.As(err, &typed) {
@@ -162,6 +164,7 @@ func (s *Server) StartAntigravity(ctx context.Context, options AntigravityRuntim
 	var once sync.Once
 	return func() {
 		once.Do(func() {
+			withdrawPolicy()
 			cancel()
 			service.Close()
 			<-done

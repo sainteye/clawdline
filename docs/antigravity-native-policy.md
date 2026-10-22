@@ -2,9 +2,10 @@
 
 Status: private storage, native execution-plan observation, shared preparation
 and live policy checks are implemented. Authenticated Project consent now has
-website and Cloud entrypoints. Publishing the actual launch policy and
-effective-mode owners, Session HTTP/broker entrypoints and native behavior
-activation remain pending. This supplements decision A07 in
+website and Cloud entrypoints. Runtime composition now publishes actual
+Project/launch-store/bridge inputs and withdraws them before shutdown.
+Session HTTP/broker entrypoints and native enforcement activation remain
+pending. This supplements decision A07 in
 [the integration design](antigravity-cli.md#decisions-and-alternatives), without
 replacing the existing work, receipt, claims or final acceptance policies.
 No compatibility row is enabled by this storage change.
@@ -15,7 +16,7 @@ request receipts. A private coordinator now composes filesystem installation, re
 revocation and per-worktree checks. A lifecycle-owned private server manager
 now resolves current catalog membership and bounded Git worktree registration.
 Authenticated Project consent UI and Cloud operations now use this owner;
-the live launch policy publisher remains to be connected;
+the live launch policy publisher reads this same manager;
 an active historical command answer is never current authority.
 
 ## Decision and alternatives
@@ -143,19 +144,25 @@ must retain pending/unknown opening outcomes for their original owner.
 
 The live Check reruns private context/capability, image, behavior tuple,
 project consent/helper/hook revision, exact native process/terminal/workspace,
-mode/model/effort/resume arguments and separately supplied effective-mode
-verification. It checks owner pointers and persisted policy again after those
-reads, so revocation during an inspector or effective-state callback does not
-leave an input grant. No new process, provider request or retry is performed.
+mode/model/effort/resume launch arguments and a closed enforcement strategy.
+An opaque effective-mode callback is no longer an authorization input. It
+checks the captured runtime lifetime, Project manager, launch-store and bridge
+pointers and persisted policy after those reads, so revocation or replacement
+during an inspector or kernel-plan read cannot leave an input grant.
+No new process, provider request or retry is performed.
 
 Policy-bearing managed ingress checks before pinning; context preparation and
 proof reads recheck current policy. Managed PreToolUse selects the dedicated
 response only after the same policy checks. A missing dependency or behavior
 row refuses; all real rows remain inactive. The private dependency snapshot has
-no browser setter or production publisher in this stage: the actual narrow
-project-consent owner must still be bound into that publication alongside a
-proven effective-mode implementation. Tests inject explicit synthetic adapter contracts, not real consent
-or native permission evidence. No existing hooks file is treated as opt-in.
+no browser setter. Publication captures the actual narrow Project manager;
+its closure calls current Check without installing files, and checks the same
+manager and lifetime before and after the read. Runtime stop withdraws its
+own snapshot before cancel/Close/join; Project and launch-store stop also
+withdraw matching snapshots. Pointer-specific cleanup cannot remove a later
+publication. Tests exercise real SQLite consent, hook files and a synthetic
+provider adapter; they establish no native permission behavior. Existing hook
+files are never treated as opt-in.
 
 `ManagedRecordForProcess` distinguishes positively unowned native processes
 from durable managed provenance, including inactive, revoked and old-policy
@@ -174,6 +181,46 @@ retained draft and no Enter after policy withdrawal, and no generic Send
 fallback. Broker/root/HTTP opening and initial-input ownership still need their
 remaining composition; adding these checks does not enable public starts.
 
+## A07 enforcement amendment and bounded native result
+
+Execution mode, permission ceiling and native grant are separate contracts.
+The initial closed `review-each-tool` strategy can emit only `force_ask` for
+`ask`; zero/unknown strategies and `edits`/`full` combinations refuse. It uses
+an explicit `accept-edits` launch token to avoid an ambient default, not to
+claim a review ceiling. `plan` is not a filesystem boundary and native `auto`
+is not proof of full authorization. Distinct edits/full strategies remain
+required. No persisted policy version or mode spelling is reinterpreted.
+
+The conditional invariant is that each admitted native tool must execute the
+managed handler and cannot weaken its fresh native approval requirement.
+No compiled production image tuple currently asserts that invariant. A mode
+indicator or file watcher cannot close a skipped-handler race. Missing or
+runtime-disabled hooks, competing decisions/argument overrides, global and
+plugin origins, toolPermission bypass, all admitted tool families, resume and
+restart remain activation discriminators. If those falsify mandatory review,
+the existing A02 structured approval transport alternative must be implemented
+under the same launch ownership; permanent refusal is not feature completion.
+
+A bounded 1.4.5 native probe on 2026-10-23 observed Starter Quota and Use AI
+Credits OFF in the same process, with API/ADC/Vertex/fallback variables
+excluded. Its first proposed tool was `write_file` with `Path`, `Content` and
+`Overwrite`, whereas the [official hook reference](https://antigravity.google/docs/hooks) listed `write_to_file` with
+`TargetFile`/`CodeContent`. This is an observed CLI contract difference, not
+an alias inferred from documentation. The exact allowlist refused the unknown
+name and stopped all owned processes. The marker remained unchanged. One user
+input and one PreInvocation were received/admitted; no tool approval or second
+input was sent. Removal/disable cases were **not reached**. No permission
+matrix or production tuple is activated by that result.
+
+Before this native sample, 31 local synthetic controller tests passed in
+3.458 seconds, including per-input admission and input-count limits, fixed
+batch deadline, twelve-received global stop, late-event accounting, owner
+loss and PTY close-before-join. The native owner exited after 49.785 seconds;
+cleanup reported the group absent, all direct handles joined, PTY/listener
+closed and controller threads joined with no cleanup error. The NT$0 bound
+is based on the observed free-only gate, not invoice telemetry; raw vendor
+HTTP request count is unknown. No automatic input retry followed refusal.
+
 ## Remaining production contract
 
 1. Resolve a compiled compatibility tuple for the exact pinned image, platform
@@ -181,8 +228,9 @@ remaining composition; adding these checks does not enable public starts.
    Native mode spelling and argv are intent, not effective enforcement proof.
 2. Require current explicit project hook opt-in and exact intact helper/hook
    configuration. Compose the existing execution-plan reader under the same kernel
-   generation if required by the tuple; establish effective-mode authority
-   separately and do not expose raw argv or environment.
+   generation if required by the tuple. Prove the chosen native enforcement
+   contract separately; argv and workspace bytes do not attest runtime mode or
+   loaded/global/plugin hook precedence. Do not expose raw argv or environment.
 3. Connect the implemented shared preparation and current policy Check to the
    HTTP and broker owning receipts. Preserve checks before process pinning,
    managed context/tool responses and each capture/load/paste/Enter effect. The

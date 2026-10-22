@@ -7,23 +7,40 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/antigravitylaunch"
+	"github.com/sainteye/clawdline/internal/adapters/antigravityproject"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app/launchplan"
 	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
-// These private immutable composition inputs have no browser setter. Project
-// opt-in and effective-mode evidence require concrete owners before production
-// publishes them. Missing dependencies and unmeasured native behavior refuse.
-// There is no permission registry, worker or global free-account predicate.
+// These private immutable inputs belong to one concrete runtime and Project
+// owner. No browser setter, settings inspector or successful callback can
+// manufacture native enforcement evidence.
 type antigravityPolicyInputs struct {
-	project   func(context.Context, string) (antigravityProjectPolicy, error)
-	behavior  func(antigravity.ImageFingerprint, string) (antigravityNativeBehavior, error)
-	effective func(context.Context, antigravitylaunch.Record, ports.AntigravityProcess, antigravity.NativeExecutionPlan) error
+	lifetime     context.Context
+	projectOwner *antigravityproject.Manager
+	launchStore  *antigravitylaunch.Store
+	bridge       *antigravity.Bridge
+	project      func(context.Context, string) (antigravityProjectPolicy, error)
+	behavior     func(antigravity.ImageFingerprint, string) (antigravityNativeBehavior, error)
 }
 type antigravityProjectPolicy struct{ Revision, HookDigest, HelperDigest string }
+type antigravityNativeEnforcement uint8
+
+// This strategy is conditional on an exact-image mandatory native approval
+// contract. Selecting it is not evidence that the installed CLI implements it.
+const antigravityReviewEachTool antigravityNativeEnforcement = 1
+
 type antigravityNativeBehavior struct {
-	ID, ImageDigest, Platform, Architecture, Ceiling, Mode, ToolDecision string
+	ID, ImageDigest, Platform, Architecture, Ceiling, Mode string
+	Enforcement                                            antigravityNativeEnforcement
+}
+
+func (b antigravityNativeBehavior) toolDecision() (string, error) {
+	if b.Enforcement != antigravityReviewEachTool || b.Ceiling != "ask" {
+		return "", antigravityPolicyRefusal("native_enforcement_unverified")
+	}
+	return "force_ask", nil
 }
 
 func antigravityPolicyRefusal(reason string) error {
@@ -58,8 +75,11 @@ func (i *antigravityPolicyInputs) inspect(ctx context.Context, workspace string,
 		return antigravityProjectPolicy{}, antigravityNativeBehavior{}, antigravityPolicyRefusal("native_behavior_unverified")
 	}
 	if behavior.ID == "" || behavior.ImageDigest != image.Digest || behavior.Platform != image.Platform || behavior.Architecture != image.Architecture || behavior.Ceiling != ceiling ||
-		(behavior.Mode != "plan" && behavior.Mode != "accept-edits" && behavior.Mode != "auto") || behavior.ToolDecision != "force_ask" || i.effective == nil {
+		(behavior.Mode != "plan" && behavior.Mode != "accept-edits" && behavior.Mode != "auto") {
 		return antigravityProjectPolicy{}, antigravityNativeBehavior{}, antigravityPolicyRefusal("native_behavior_unverified")
+	}
+	if _, err := behavior.toolDecision(); err != nil {
+		return antigravityProjectPolicy{}, antigravityNativeBehavior{}, err
 	}
 	project, err := i.project(ctx, workspace)
 	if err != nil {
@@ -77,7 +97,7 @@ func (s *Server) currentAntigravityPolicy(ctx context.Context, owner *antigravit
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if owner == nil || bridge == nil || inputs == nil || s.antigravityLaunchStore.Load() != owner || s.antigravityBridge.Load() != bridge || s.antigravityPolicyInputs.Load() != inputs {
+	if owner == nil || bridge == nil || inputs == nil || inputs.lifetime == nil || inputs.lifetime.Err() != nil || inputs.projectOwner == nil || s.antigravityProjectOwner.Load() != inputs.projectOwner || inputs.launchStore != owner || inputs.bridge != bridge || s.antigravityLaunchStore.Load() != owner || s.antigravityBridge.Load() != bridge || s.antigravityPolicyInputs.Load() != inputs {
 		return antigravityPolicyRefusal("runtime_unavailable")
 	}
 	return nil
@@ -194,14 +214,9 @@ func (s *Server) checkProductionAntigravityPolicy(ctx context.Context, record an
 	if err := s.currentAntigravityPolicy(ctx, owner, bridge, inputs); err != nil {
 		return err
 	}
-	if inputs.effective == nil {
-		return antigravityPolicyRefusal("native_mode_unverified")
-	}
-	if err := inputs.effective(ctx, current, process, plan); err != nil {
-		return antigravityPolicyRefusal("native_mode_unverified")
-	}
-	// The effective-state read can race opt-out, replacement and private state.
-	// Recheck the same inputs and immutable policy before the caller's effect.
+	// ExecutionPlan verifies launch tokens, not mutable effective mode. The
+	// final shared policy check selects the same closed enforcement strategy
+	// and rereads consent, image and immutable policy after the kernel read.
 	if err := s.currentAntigravityPolicy(ctx, owner, bridge, inputs); err != nil {
 		return err
 	}
@@ -257,9 +272,13 @@ func (s *Server) managedAntigravityToolResponse(ctx context.Context, binding por
 	}
 	// No native tool argument controls this uniform response. Selective
 	// exceptions require a separate validated classification contract.
+	decision, err := behavior.toolDecision()
+	if err != nil {
+		return nil, err
+	}
 	response, err := json.Marshal(struct {
 		Decision string `json:"decision"`
-	}{behavior.ToolDecision})
+	}{decision})
 	if err != nil {
 		return nil, managedAntigravityFailure()
 	}

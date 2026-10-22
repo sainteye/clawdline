@@ -5,6 +5,14 @@
 
 # 設計決定：唯一的實作依據
 
+Provider integration decisions remain in their linked registers. Antigravity
+[A07](antigravity-cli.md#decisions-and-alternatives) now binds policy inputs to
+actual runtime/Project owners and uses a closed enforcement strategy rather
+than an unspecified effective-mode callback. Its
+[activation amendment](antigravity-native-policy.md#a07-enforcement-amendment-and-bounded-native-result)
+keeps all native behavior rows inactive pending mandatory approval evidence;
+this does not reduce the accepted feature or independent acceptance scope.
+
 > **從 2026-09-18 起，實作只照這一份。** `docs/broker-design.md`、`docs/broker-design-challenge.md`、`docs/board-design.md`、
 > `docs/board-redesign.md`、`docs/timeline-design.md`、`docs/cutover.md`、`docs/limits.md` 保留為分析材料；與本文件衝突之處以本文件為準，
 > **本文件沒寫到的，照原文件**（§3.6 列出仍然有效的範圍）。`docs/design-guidelines.md` 是**原則**，本文件是**實作決定**，兩者的關係見 §7。

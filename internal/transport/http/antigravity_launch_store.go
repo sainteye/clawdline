@@ -40,6 +40,9 @@ func (s *Server) StartAntigravityLaunchStore(ctx context.Context) (func(), error
 		once.Do(func() {
 			s.antigravityLaunchMu.Lock()
 			defer s.antigravityLaunchMu.Unlock()
+			if inputs := s.antigravityPolicyInputs.Load(); inputs != nil && inputs.launchStore == owner {
+				s.antigravityPolicyInputs.CompareAndSwap(inputs, nil)
+			}
 			s.antigravityLaunchStore.CompareAndSwap(owner, nil)
 			owner.Close()
 		})

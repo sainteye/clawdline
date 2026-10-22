@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/antigravitylaunch"
+	"github.com/sainteye/clawdline/internal/adapters/antigravityproject"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app/ports"
 )
@@ -21,14 +22,18 @@ import (
 // Only adapter contracts are synthetic here. This does not claim native
 // permission acceptance, project consent or a live provider tool invocation.
 type policyReader struct {
-	process ports.AntigravityProcess
-	plan    antigravity.NativeExecutionPlan
+	process   ports.AntigravityProcess
+	plan      antigravity.NativeExecutionPlan
+	afterPlan func()
 }
 
 func (r *policyReader) ReadAntigravityProcess(ctx context.Context, _ int) (ports.AntigravityProcess, error) {
 	return r.process, ctx.Err()
 }
 func (r *policyReader) ReadAntigravityExecutionPlan(ctx context.Context, _ int) (antigravity.NativeExecutionPlan, error) {
+	if r.afterPlan != nil {
+		r.afterPlan()
+	}
 	return r.plan, ctx.Err()
 }
 
@@ -61,7 +66,7 @@ func newProductionPolicyFixture(t *testing.T) *productionPolicyFixture {
 		t.Fatal(err)
 	}
 	p := ports.AntigravityProcess{PID: 321, ParentPID: 123, Birth: "2026-10-22T10:00:00.123456Z", Executable: executable, TTY: "ttySyntheticPolicy", TerminalID: "%synthetic-policy", BootID: "synthetic-boot", KernelGeneration: "synthetic-generation"}
-	r := &policyReader{process: p, plan: antigravity.NativeExecutionPlan{Process: p, WorkspaceCWD: workspace, Mode: "plan", Effort: "high", Digest: policyHash("synthetic argv")}}
+	r := &policyReader{process: p, plan: antigravity.NativeExecutionPlan{Process: p, WorkspaceCWD: workspace, Mode: "accept-edits", Effort: "high", Digest: policyHash("synthetic argv")}}
 	bridge, err := antigravity.NewBridge(root, filepath.Join(root, "synthetic-observations.json"), executable, r, func(string, string) (string, bool) { return "", false })
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +80,10 @@ func newProductionPolicyFixture(t *testing.T) *productionPolicyFixture {
 	f := &productionPolicyFixture{server: s, owner: s.antigravityLaunchStore.Load(), reader: r, image: image,
 		req:     projects.LaunchRequest{Assistant: projects.AssistantAntigravity, ProjectRoot: workspace, Memory: "synthetic immutable memory", ReasoningEffort: "high"},
 		project: antigravityProjectPolicy{Revision: policyHash("synthetic opt-in"), HookDigest: policyHash("synthetic hook plan"), HelperDigest: policyHash("synthetic helper")}}
+	manager := &antigravityproject.Manager{} // Synthetic pointer fence; project adapter below is explicit.
+	s.antigravityProjectOwner.Store(manager)
 	f.inputs = &antigravityPolicyInputs{
+		lifetime: context.Background(), projectOwner: manager, launchStore: f.owner, bridge: bridge,
 		project: func(_ context.Context, root string) (antigravityProjectPolicy, error) {
 			if root != workspace {
 				return antigravityProjectPolicy{}, fmt.Errorf("wrong synthetic scope")
@@ -83,10 +91,7 @@ func newProductionPolicyFixture(t *testing.T) *productionPolicyFixture {
 			return f.project, nil
 		},
 		behavior: func(got antigravity.ImageFingerprint, ceiling string) (antigravityNativeBehavior, error) {
-			return antigravityNativeBehavior{ID: "synthetic-behavior-v1", ImageDigest: image.Digest, Platform: image.Platform, Architecture: image.Architecture, Ceiling: "ask", Mode: "plan", ToolDecision: "force_ask"}, nil
-		},
-		effective: func(context.Context, antigravitylaunch.Record, ports.AntigravityProcess, antigravity.NativeExecutionPlan) error {
-			return nil
+			return antigravityNativeBehavior{ID: "synthetic-behavior-v1", ImageDigest: image.Digest, Platform: image.Platform, Architecture: image.Architecture, Ceiling: "ask", Mode: "accept-edits", Enforcement: antigravityReviewEachTool}, nil
 		},
 	}
 	s.antigravityPolicyInputs.Store(f.inputs)
@@ -96,7 +101,7 @@ func (f *productionPolicyFixture) prepare(t *testing.T) (string, antigravitylaun
 	t.Helper()
 	id := uuid.NewString()
 	p, err := f.server.prepareProductionAntigravity(context.Background(), f.req, ports.AntigravityLaunchIntent{LaunchID: id, Ceiling: "ask"})
-	if err != nil || p.LaunchID != id || p.Request.Executable != f.image.Executable || p.Request.PermissionMode != "plan" || len(p.PrivateEnv) != 1 || p.AttachTerminal == nil || p.AbortBeforeOpen == nil {
+	if err != nil || p.LaunchID != id || p.Request.Executable != f.image.Executable || p.Request.PermissionMode != "accept-edits" || len(p.PrivateEnv) != 1 || p.AttachTerminal == nil || p.AbortBeforeOpen == nil {
 		t.Fatal("shared preparation missing", err)
 	}
 	if err := p.AttachTerminal(context.Background(), "tmux", f.reader.process.TerminalID); err != nil {
@@ -151,7 +156,7 @@ func TestProductionAntigravityPreparationReusesOneIntentAndCanAbort(t *testing.T
 
 }
 func TestProductionAntigravityRejectsChangedInputsBeforeEffects(t *testing.T) {
-	for _, kind := range []string{"consent", "hook", "helper", "mode", "model", "effort", "conversation", "workspace", "process", "effective", "runtime", "inputs", "revoke-during-inspection", "revoke-during-effective"} {
+	for _, kind := range []string{"consent", "hook", "helper", "mode", "model", "effort", "conversation", "workspace", "process", "strategy", "runtime", "inputs", "project-owner", "owner-during-inspection", "revoke-during-inspection", "revoke-during-plan"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newProductionPolicyFixture(t)
 			id, record := f.prepare(t)
@@ -174,22 +179,34 @@ func TestProductionAntigravityRejectsChangedInputsBeforeEffects(t *testing.T) {
 				f.reader.plan.WorkspaceCWD = filepath.Dir(f.req.ProjectRoot)
 			case "process":
 				f.reader.plan.Process.KernelGeneration = "another-generation"
-			case "effective":
-				f.inputs.effective = func(context.Context, antigravitylaunch.Record, ports.AntigravityProcess, antigravity.NativeExecutionPlan) error {
-					return fmt.Errorf("synthetic changed effective mode")
+			case "strategy":
+				resolver := f.inputs.behavior
+				f.inputs.behavior = func(image antigravity.ImageFingerprint, ceiling string) (antigravityNativeBehavior, error) {
+					b, e := resolver(image, ceiling)
+					b.Enforcement = 255
+					return b, e
 				}
+			case "project-owner":
+				f.server.antigravityProjectOwner.Store(&antigravityproject.Manager{})
 			case "runtime":
 				f.server.SetAntigravityBridge(nil)
 			case "inputs":
 				f.server.antigravityPolicyInputs.Store(&antigravityPolicyInputs{})
+			case "owner-during-inspection":
+				f.inputs.project = func(context.Context, string) (antigravityProjectPolicy, error) {
+					f.server.antigravityProjectOwner.Store(&antigravityproject.Manager{})
+					return f.project, nil
+				}
 			case "revoke-during-inspection":
 				f.inputs.project = func(context.Context, string) (antigravityProjectPolicy, error) {
 					_ = f.owner.RevokeLaunch(context.Background(), id)
 					return f.project, nil
 				}
-			case "revoke-during-effective":
-				f.inputs.effective = func(context.Context, antigravitylaunch.Record, ports.AntigravityProcess, antigravity.NativeExecutionPlan) error {
-					return f.owner.RevokeLaunch(context.Background(), id)
+			case "revoke-during-plan":
+				f.reader.afterPlan = func() {
+					if err := f.owner.RevokeLaunch(context.Background(), id); err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 			if err := f.server.checkProductionAntigravityPolicy(context.Background(), record, f.reader.process); err == nil {
@@ -199,7 +216,7 @@ func TestProductionAntigravityRejectsChangedInputsBeforeEffects(t *testing.T) {
 	}
 }
 func TestProductionAntigravityNeverActivatesMissingProductionEvidence(t *testing.T) {
-	for _, kind := range []string{"no-inputs", "no-project", "no-native-row", "no-effective", "wrong-image", "edits", "full"} {
+	for _, kind := range []string{"no-inputs", "no-project", "no-native-row", "no-strategy", "wrong-image", "edits", "full"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newProductionPolicyFixture(t)
 			ceiling := "ask"
@@ -210,11 +227,16 @@ func TestProductionAntigravityNeverActivatesMissingProductionEvidence(t *testing
 				f.inputs.project = nil
 			case "no-native-row":
 				f.inputs.behavior = nil
-			case "no-effective":
-				f.inputs.effective = nil
+			case "no-strategy":
+				resolver := f.inputs.behavior
+				f.inputs.behavior = func(image antigravity.ImageFingerprint, ceiling string) (antigravityNativeBehavior, error) {
+					b, e := resolver(image, ceiling)
+					b.Enforcement = 0
+					return b, e
+				}
 			case "wrong-image":
 				f.inputs.behavior = func(antigravity.ImageFingerprint, string) (antigravityNativeBehavior, error) {
-					return antigravityNativeBehavior{ID: "synthetic", ImageDigest: policyHash("wrong image"), Platform: f.image.Platform, Architecture: f.image.Architecture, Ceiling: "ask", Mode: "plan", ToolDecision: "force_ask"}, nil
+					return antigravityNativeBehavior{ID: "synthetic", ImageDigest: policyHash("wrong image"), Platform: f.image.Platform, Architecture: f.image.Architecture, Ceiling: "ask", Mode: "accept-edits", Enforcement: antigravityReviewEachTool}, nil
 				}
 			case "edits", "full":
 				ceiling = kind

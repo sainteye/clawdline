@@ -2178,6 +2178,18 @@
         {
           "path": "internal/adapters/antigravitylaunch/context_proof.go",
           "line": 64
+        },
+        {
+          "path": "internal/transport/http/antigravity_policy.go",
+          "line": 96
+        },
+        {
+          "path": "internal/transport/http/antigravity_project_owner.go",
+          "line": 95
+        },
+        {
+          "path": "internal/transport/http/antigravity_runtime.go",
+          "line": 147
         }
       ],
       "original": [
@@ -2263,8 +2275,11 @@
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_workflow.go": "3a4d21963243a0b6dd2af553b4cd67b0d1bfaeabedfc2d43d629ba8b02e0bf08",
     "internal/transport/http/agent_session_close.go": "4cfb1d376e50119026dc079346a7253e826472305263e66ade6982b8e8b958f3",
-    "internal/transport/http/antigravity_launch_store.go": "dab909d4ec4afcc99164859095df75ef1af4e059a505ea705a1227d2c9447ea5",
+    "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
     "internal/transport/http/antigravity_managed_hooks.go": "02087850934cc1daedc9c71d5efcf7cb304910a0c90be4efb276fb2ec6d4b7c7",
+    "internal/transport/http/antigravity_policy.go": "ed646015b98fa641123d74c344225a5ba12db02787ba2d4107d7bd8c2bf67474",
+    "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
+    "internal/transport/http/antigravity_runtime.go": "f27a2f0242a39b7a77792b88ad8d2337760d2da49cd4374b6f010887bbacab21",
     "internal/transport/http/coordinator.go": "5f139556883583d34320783d063ee1e6a4a1124a726f69510cc4a9324a6cb3df",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/start.go": "6195fa0a66dff17f09b9b424a09ffda30958c2147e96de628be125dfa10a9cfb",
@@ -2277,7 +2292,7 @@
     "web/console/src/session/Start.tsx": "e14aa5a64c4421538d4f69ce2638e5b1eaf87a43f1db6219655163603223727d"
   },
   "copyChecks": {
-    "en": "7aad83013bff1c0763e77c790a69261b0a73ad359181eaf9e0660ce6f0694b3b",
-    "zh-Hant": "90bcc1170b3f5c33bdeb70acd69ec9ad0aa5555c8dbdf8826188123dfd4c0fad"
+    "en": "1fc7f01bbd019616b9b2b090ee4301b5b33368463bb2675e5d2d13777adff8f1",
+    "zh-Hant": "76171ce423d7e37c72706f374e4a0fbe26d5524ca04f94117526137a246f6e78"
   }
 }
