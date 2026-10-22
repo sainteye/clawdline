@@ -469,3 +469,46 @@ func TestPendingCapabilityRecoveryAndNonPromptFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestLaunchCapabilityAuthenticationDoesNotPinOrChangePreparedState(t *testing.T) {
+	f := setup(t)
+	prepared := prep(t, f)
+	ctx := context.Background()
+	value, err := os.ReadFile(prepared.Record.CapabilityPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := f.store.Stats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := "0"
+	if value[0] == '0' {
+		replacement = "1"
+	}
+	wrong := replacement + string(value[1:])
+	for _, bad := range []string{"", wrong, strings.Repeat("A", 64)} {
+		if bad == string(value) {
+			t.Fatal("synthetic negative accidentally equals capability")
+		}
+		_, err := f.store.VerifyLaunchCapability(ctx, prepared.Record.ID, bad)
+		code(t, err, "capability_invalid")
+	}
+	got, err := f.store.VerifyLaunchCapability(ctx, prepared.Record.ID, string(value))
+	if err != nil || got != prepared.Record || got.Process.PID != 0 {
+		t.Fatal("authentication changed process authority", err)
+	}
+	after, err := f.store.Stats(ctx)
+	if err != nil || after != before {
+		t.Fatal("capability authentication mutated persistent state", err)
+	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := f.store.VerifyLaunchCapability(cancelled, prepared.Record.ID, string(value)); err == nil {
+		t.Fatal("cancelled authentication admitted")
+	}
+	put(t, prepared.Record.ContextPath, []byte("changed context"))
+	if _, err := f.store.VerifyLaunchCapability(ctx, prepared.Record.ID, string(value)); err == nil {
+		t.Fatal("valid capability admitted changed original context")
+	}
+}

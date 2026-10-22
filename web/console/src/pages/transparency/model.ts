@@ -10,7 +10,7 @@ export type Facet = "scope" | "agents" | "stages" | "scenes"
 export type Filters = Record<Facet, string[]>
 export const facets: Record<Facet, readonly string[]> = {
   scope: ["default", "automatic", "conditional", "common"],
-  agents: ["claude", "codex"],
+  agents: ["claude", "codex", "antigravity"],
   stages: ["start", "turn", "finish"],
   scenes: ["general", "memory", "role", "skill", "board", "todo", "task", "handoff", "machine", "workflow"],
 }

@@ -39,6 +39,7 @@ Open(Config{StateDir: providerStateDir, SquadLaunchRoot: squadLaunchRoot}) (*Sto
 (*Store).PinProcess(context.Context, string, ports.AntigravityProcess) error
 (*Store).LookupProcess(context.Context, ports.AntigravityProcess) (Record, error)
 (*Store).Commitment(context.Context, Record) (antigravity.LaunchCommitment, antigravity.HookLaunch, error)
+(*Store).VerifyLaunchCapability(context.Context, string, string) (Record, error)
 (*Store).Deactivate(context.Context, string) error
 (*Store).RecordBinding(context.Context, string, ports.AntigravityBinding, BindingPolicy) error
 (*Store).Restore(context.Context, string, string) (projects.AntigravityContext, error)
@@ -201,3 +202,24 @@ No schema migration of old providers or Squad SQLite occurs. The new index has
 version 1; an unknown version is refused. Removing this adapter leaves its
 private historical files intact; process, terminal, initial-send and public
 release acceptance remain with Root.
+
+
+## Native runtime composition
+
+The daemon now opens the context owner before its native hook runtime and joins
+hook workers before closing that owner on normal exit, signals or a serve error.
+`Server.ManagedAntigravityOptions` authenticates the private capability before
+pinning any process, verifies the kernel ancestor and terminal, and compares the
+kernel workspace with the immutable launch workspace. It rechecks that workspace
+again when preparing context. A guessed capability cannot mutate process pins.
+
+Only a positive native PreInvocation binding is retained as workspace history;
+`PreInvocationResponse` then composes the saved context and writes PREPARED.
+Unmanaged observations receive the observer response without context. This
+composition neither installs a new role badge nor claims that a provider loaded
+the prepared message. App-level new/resume preparation, terminal attachment,
+initial input, native load proof and final Cloud/UI acceptance remain required.
+
+The private store's `VerifyLaunchCapability` authenticates a prepared record
+without changing its process or binding state. It verifies the immutable context
+and capability files, honors cancellation and returns no capability bytes.

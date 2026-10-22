@@ -11,3 +11,8 @@ test("public links retain language and supported filters without Cloud session i
   assert.equal(transparencyURL("en"), "https://clawdline.com/docs/transparency/?lang=en")
   assert.equal(transparencyURL("ja"), transparencyURL("en"))
 })
+
+test("native context links retain the provider without Session or machine identity", () => {
+  const url = new URL(transparencyURL("en", "#agents=antigravity&scenes=memory&session=private&machine=private"))
+  assert.equal(url.hash, "#agents=antigravity&scenes=memory")
+})

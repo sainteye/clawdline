@@ -31,3 +31,12 @@ test("filter links round-trip, invalid values are discarded, toggling and reset 
   assert.equal(visible(filterHash(empty())).length, cards.length)
   assert.deepEqual(toggleFilter(toggleFilter(empty(), "agents", "codex"), "agents", "codex"), empty())
 })
+
+test("native context has its own conditional provider filter", () => {
+  assert(visible("#agents=antigravity&scope=conditional&scenes=memory&stages=turn").includes("antigravity-context"))
+  assert.deepEqual(visible("#agents=antigravity&scope=default"), [])
+  assert(!visible("#agents=codex").includes("antigravity-context"))
+  const f = filtersFromHash("#agents=antigravity&scenes=memory")
+  assert.deepEqual(f.agents, ["antigravity"])
+  assert.deepEqual(filtersFromHash(filterHash(f)), f)
+})

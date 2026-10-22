@@ -23,3 +23,15 @@ The inventory explicitly registers task-message composers, role/memory loaders a
 To prove the freshness guard rejects drift, change one registered source in an isolated worktree without refreshing the receipt, run the focused repository guard, and retain its failing result. Restore the task-owned experiment before the passing commit gate. A new injection mechanism should also have a case proving its producer cannot remain unregistered.
 
 This is a descriptive page. New permission switches, configuration scans, Cloud API changes and provider policy changes are separate work.
+
+
+The Antigravity path has a conditional inventory entry. Managed native hooks
+must authenticate a private prepared launch, recheck the native process,
+terminal and kernel workspace, and retain a positive conversation binding before
+preparing original context. Unmanaged observations carry no Clawdline context.
+The response receipt is PREPARED, not proof of provider loading or a role badge.
+The guard discovers both native `injectSteps` strings and calls through
+`PreInvocationResponse`; registering only the original Codex/Claude flags would
+miss this transport. The public filter preserves the explicit Antigravity
+provider while stripping Session and machine identifiers from documentation
+links. Website publication still requires importing the reviewed product tree.

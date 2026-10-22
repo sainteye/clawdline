@@ -5,6 +5,7 @@ package antigravitylaunch
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -622,6 +623,39 @@ func (s *Store) capability(r Record) ([]byte, error) {
 	}
 	return b, nil
 }
+
+// VerifyLaunchCapability authenticates a prepared intent before any process
+// pinning. It performs no mutation and exposes no capability bytes. The caller
+// must still supply independent kernel and terminal proof before PinProcess.
+func (s *Store) VerifyLaunchCapability(ctx context.Context, id, capability string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ready(ctx); err != nil {
+		return Record{}, err
+	}
+	if !validID(id) || !validHash(capability) {
+		return Record{}, fail("capability_invalid")
+	}
+	r, err := s.record(id)
+	if err != nil {
+		return Record{}, err
+	}
+	expected, err := s.capability(r)
+	if err != nil {
+		return Record{}, err
+	}
+	if subtle.ConstantTimeCompare(expected, []byte(capability)) != 1 {
+		return Record{}, fail("capability_invalid")
+	}
+	if _, err := s.load(r); err != nil {
+		return Record{}, err
+	}
+	if err := cancelled(ctx); err != nil {
+		return Record{}, err
+	}
+	return r, nil
+}
+
 func (s *Store) Commitment(ctx context.Context, r Record) (antigravity.LaunchCommitment, antigravity.HookLaunch, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

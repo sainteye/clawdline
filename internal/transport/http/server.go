@@ -53,10 +53,13 @@ import (
 )
 
 type Server struct {
-	antigravityBridge      atomic.Pointer[antigravity.Bridge]
-	antigravityLaunchStore atomic.Pointer[antigravitylaunch.Store]
-	antigravityLaunchMu    sync.Mutex
-	cfg                    config.Config
+	antigravityRuntimeMu      sync.Mutex
+	antigravityRuntimeStarted bool
+	antigravityInstallation   func(context.Context) antigravity.Installation
+	antigravityBridge         atomic.Pointer[antigravity.Bridge]
+	antigravityLaunchStore    atomic.Pointer[antigravitylaunch.Store]
+	antigravityLaunchMu       sync.Mutex
+	cfg                       config.Config
 	// routeStats counts every API call by route and caller (route_stats.go).
 	routeStats      *routeStats
 	routeStatsOnce  sync.Once
@@ -255,11 +258,12 @@ func New(cfg config.Config) (*Server, error) {
 	icons.SetMirror(mirrorLookup(mirror))
 	home, _ := os.UserHomeDir()
 	agents := subagents.New(home)
+	hosts := terminal.Hosts()
 	srv := &Server{
 		store:          st,
 		secretHandoffs: app.NewSecretHandoffs(),
 		cfg:            cfg,
-		terminals:      terminal.Hosts(),
+		terminals:      hosts,
 		facts:          transcript.NewRecordFacts(),
 		icons:          icons,
 		pictures:       newPictures(cfg.Dir),
@@ -269,7 +273,7 @@ func New(cfg config.Config) (*Server, error) {
 		agents:         agents,
 		inventory: app.Inventory{
 			Process:   process.New(),
-			Terminals: terminal.Hosts(),
+			Terminals: hosts,
 			Identity:  transcript.NewHost(),
 			Agents:    agents,
 			Screen:    terminal.NewScreens(),
@@ -282,6 +286,8 @@ func New(cfg config.Config) (*Server, error) {
 		},
 	}
 	srv.inventory.SquadRole = srv.sessionSquadRole
+	// Inventory, actions and native identity share actual backend instances.
+	srv.wireAntigravity()
 	srv.inventory.DiscoverExternal = func() bool {
 		v, err := srv.settingsFile().Read()
 		// An unreadable preference must not broaden discovery.
@@ -296,7 +302,7 @@ func New(cfg config.Config) (*Server, error) {
 	srv.nameSession = localPlanner.Name
 	srv.draftRole = localPlanner.DraftRole
 	// One producer in front of it, so three loops are one scan.
-	srv.readings = app.NewInventoryReading(srv.inventory.Read, 0)
+	srv.readings = app.NewInventoryReading(func(ctx context.Context) session.Inventory { return srv.inventory.Read(ctx) }, 0)
 	srv.readings.SetRetentionAge(CapacityLimit(capacity.CacheSessionInventory))
 	srv.readings.SetAnswerAge(CapacityLimit(capacity.CacheSourceAnswer))
 	inventoryBackoffMax := time.Duration(CapacityLimit(capacity.CacheSessionInventory)) * time.Second
@@ -360,20 +366,9 @@ func New(cfg config.Config) (*Server, error) {
 	// not under a temporary one somebody else may empty.
 	srv.broker = newBroker(srv)
 	srv.screenBus = newScreenBus()
-	hosts := terminal.Hosts()
 	screenDir := filepath.Join(cfg.Dir, "screens")
 	srv.screens = app.NewScreens(hosts, terminal.NewPaneSignal(screenDir, terminal.NewTmux()),
 		srv.screenBus.publish)
-	// Panes piped by a previous run, taken back. Once, at start, and off the
-	// startup path: it is a subprocess, and a daemon that cannot reach tmux
-	// must still come up.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if taken := srv.screens.Reclaim(ctx); len(taken) > 0 {
-			log.Printf("live screens: took back %d pipe(s) from a previous run: %v", len(taken), taken)
-		}
-	}()
 	srv.projectSync = srv.newProjectSync(mirror)
 	return srv, nil
 }
@@ -876,6 +871,19 @@ func Listen(cfg config.Config) (net.Listener, error) {
 
 // Serve answers on a listener Listen bound.
 func (s *Server) Serve(ln net.Listener) error {
+	// Construction does not launch subprocesses. Serve owns and joins the
+	// bounded reclaim worker, including when the HTTP listener fails early.
+	if s.screens != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if taken := s.screens.Reclaim(ctx); len(taken) > 0 {
+				log.Printf("live screens: took back %d pipe(s) from a previous run: %v", len(taken), taken)
+			}
+		}()
+		defer func() { cancel(); <-done }()
+	}
 	addr := ln.Addr().String()
 	if s.cfg.Host != "127.0.0.1" && s.cfg.Host != "localhost" {
 		// Said out loud, once, in the log a person reads when something is

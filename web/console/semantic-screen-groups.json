@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9002,
-  "riskKeys": 4009,
-  "nonRiskCount": 4993,
+  "englishContentKeys": 9008,
+  "riskKeys": 4013,
+  "nonRiskCount": 4995,
   "groups": [
     {
       "name": "admin / other",
@@ -5085,14 +5085,16 @@
     },
     {
       "name": "transparency / other",
-      "count": 129,
+      "count": 131,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
       "keys": [
         "transparency.agents",
+        "transparency.antigravity",
         "transparency.automatic",
         "transparency.board",
+        "transparency.card.antigravity-context.title",
         "transparency.card.board.condition",
         "transparency.card.board.effect",
         "transparency.card.board.how",

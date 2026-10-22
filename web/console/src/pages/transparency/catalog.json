@@ -2082,7 +2082,8 @@
       "scope": "automatic",
       "agents": [
         "claude",
-        "codex"
+        "codex",
+        "antigravity"
       ],
       "stages": [
         "start"
@@ -2117,12 +2118,112 @@
       "locations": [
         "argv / environment"
       ]
+    },
+    {
+      "id": "antigravity-context",
+      "scope": "conditional",
+      "agents": [
+        "antigravity"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "role",
+        "memory",
+        "board",
+        "workflow"
+      ],
+      "sources": [
+        {
+          "path": "internal/adapters/projects/antigravity_context.go",
+          "line": 92
+        },
+        {
+          "path": "internal/adapters/antigravitylaunch/response.go",
+          "line": 74
+        },
+        {
+          "path": "internal/adapters/antigravitylaunch/store.go",
+          "line": 630
+        },
+        {
+          "path": "internal/adapters/antigravity/hook_service.go",
+          "line": 235
+        },
+        {
+          "path": "internal/transport/http/antigravity_managed_hooks.go",
+          "line": 87
+        },
+        {
+          "path": "internal/transport/http/antigravity_launch_store.go",
+          "line": 14
+        },
+        {
+          "path": "cmd/clawdline/main.go",
+          "line": 296
+        },
+        {
+          "path": "internal/adapters/projects/launch.go",
+          "line": 247
+        }
+      ],
+      "original": [
+        "func AntigravityContextResponse(c AntigravityContext, event string, observer json.RawMessage) (json.RawMessage, error) {\n",
+        "\tif err := c.Validate(); err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\tvar response map[string]json.RawMessage\n",
+        "\tif err := json.Unmarshal(observer, &response); err != nil || response == nil {\n",
+        "\t\treturn nil, ErrSquadContextUnavailable\n",
+        "\t}\n",
+        "\tif _, exists := response[\"injectSteps\"]; exists {\n",
+        "\t\treturn nil, ErrSquadContextUnavailable\n",
+        "\t}\n",
+        "\tif event != \"PreInvocation\" {\n",
+        "\t\treturn observer, nil\n",
+        "\t}\n",
+        "\tvar parts []string\n",
+        "\tif c.Prompt != \"\" {\n",
+        "\t\tparts = append(parts, c.Prompt)\n",
+        "\t}\n",
+        "\tif c.Language != \"\" {\n",
+        "\t\tparts = append(parts, fmt.Sprintf(\"Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag %q.\", c.Language))\n",
+        "\t}\n",
+        "\tif c.Memory != \"\" {\n",
+        "\t\tparts = append(parts, c.Memory)\n",
+        "\t}\n",
+        "\tif len(parts) == 0 {\n",
+        "\t\treturn observer, nil\n",
+        "\t}\n",
+        "\tparts = append(parts, codexNoteInstruction)\n",
+        "\tstep := map[string]any{\"systemMessage\": map[string]string{\"systemMessage\": strings.Join(parts, \"\\n\\n\")}}\n",
+        "\tencoded, err := json.Marshal([]any{step})\n",
+        "\tif err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\tresponse[\"injectSteps\"] = encoded\n",
+        "\treturn json.Marshal(response)\n",
+        "}\n",
+        "\n",
+        "const codexNoteInstruction = \"When you need the person to choose between concrete options in a Clawdline Session, read `clawdline guide note` and create one answer Note with the question and complete suggested replies before asking in chat. Wait for the person's sent message before acting on the choice. For Codex's non-blocking request_user_input_async, also create one answer Note with the same question and complete replies so the person can return to it later. A blocking question prompt already waits for an answer and needs no duplicate Note. Never act on a suggested or preselected option before the person sends an answer.\"\n"
+      ],
+      "locations": [
+        "<state>/antigravity/launches/<id>/context.json",
+        "<state>/antigravity/context-index.json",
+        "Antigravity PreInvocation / injectSteps"
+      ]
     }
   ],
   "sourceChecks": {
+    "cmd/clawdline/main.go": "ef80f8f2bcee633896bf5cb8d7c601efc774fddcc8e8cfad29011477552f974a",
     "cmd/clawdline/session.go": "de2e47caf092efedfb633b4f5242ee9cb0989fdf5d7f97dd95a1ff33667f5efc",
+    "internal/adapters/antigravity/hook_service.go": "fb942eb1374e98bde47fe28aec187380124374aa1fcec128de69c2d4105ca999",
+    "internal/adapters/antigravitylaunch/response.go": "e218b8efde043db111c71988a06968513c498608a90c33665b5f7dee6b286def",
+    "internal/adapters/antigravitylaunch/store.go": "566c4af72cd8cbfb42eabe447950919fcc26196170378396bce0c4cd846db8cb",
     "internal/adapters/memory/memory.go": "b85b11cd849f61bcb55c449acc868a4605950dcb5a408ac65a228babbfab9fb0",
     "internal/adapters/nextconfig/nextconfig.go": "854b65137d603c892cb04fbbd486eed1d54b0ca48a2c8e71d8361f1cdc666dce",
+    "internal/adapters/projects/antigravity_context.go": "af2f72bca504765de63bc45bbeb208e201c063bacf51ff3ff5cbe0fd5e5aac1a",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "b9e132edc9b642bce7eaaca0fef19a4ea67f9d419349eaa41bea699533c5a939",
     "internal/adapters/skillfile/skillfile.go": "a10a410e8966b71a8c4d6666e0155a4b0b12cb3f513d9843038e3e2e2118ffde",
@@ -2148,6 +2249,8 @@
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_workflow.go": "3a4d21963243a0b6dd2af553b4cd67b0d1bfaeabedfc2d43d629ba8b02e0bf08",
     "internal/transport/http/agent_session_close.go": "4cfb1d376e50119026dc079346a7253e826472305263e66ade6982b8e8b958f3",
+    "internal/transport/http/antigravity_launch_store.go": "dab909d4ec4afcc99164859095df75ef1af4e059a505ea705a1227d2c9447ea5",
+    "internal/transport/http/antigravity_managed_hooks.go": "cc3cc01f76485f04bd5f05d68dec544fa511c0dbc5b6e0aa89e6429cf24f66d2",
     "internal/transport/http/coordinator.go": "5f139556883583d34320783d063ee1e6a4a1124a726f69510cc4a9324a6cb3df",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/start.go": "6195fa0a66dff17f09b9b424a09ffda30958c2147e96de628be125dfa10a9cfb",
@@ -2160,7 +2263,7 @@
     "web/console/src/session/Start.tsx": "e14aa5a64c4421538d4f69ce2638e5b1eaf87a43f1db6219655163603223727d"
   },
   "copyChecks": {
-    "en": "579e89714dc2d493984cb71f1fd9dfa3dfde4f9c61cd7e559d0926a3c2190969",
-    "zh-Hant": "da4b9fbf118424732d9e7fc97ce438e48ed26a8e3235ebaded39e6b582de8e53"
+    "en": "2e18b4bd7b0c14fe0a79e26390cd6a307f207d6c51519523dbdbc43295fe3fbb",
+    "zh-Hant": "00cd9d9f3de8c49ebced0d8a33f04d82d06cbc98d4cdac9a05ed05ffce0a2c03"
   }
 }

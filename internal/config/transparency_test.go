@@ -47,6 +47,11 @@ func transparencyInjectionSources(t *testing.T, root string) []string {
 			}
 			found := false
 			ast.Inspect(file, func(n ast.Node) bool {
+				if call, ok := n.(*ast.CallExpr); ok {
+					if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "PreInvocationResponse" {
+						found = true
+					}
+				}
 				literal, ok := n.(*ast.BasicLit)
 				if !ok || literal.Kind != token.STRING {
 					return true
@@ -55,7 +60,7 @@ func transparencyInjectionSources(t *testing.T, root string) []string {
 				if err != nil {
 					return true
 				}
-				for _, marker := range []string{"developer_instructions", "--append-system-prompt"} {
+				for _, marker := range []string{"developer_instructions", "--append-system-prompt", "injectSteps"} {
 					if strings.Contains(text, marker) {
 						found = true
 					}
@@ -146,5 +151,29 @@ func TestTransparencyMatchesReviewedSourcesAndBothLanguages(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestTransparencyDiscoversNativeInjectionAndIndirectResponses(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"internal/sample", "cmd"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		"native.go":    `package sample; const response = "injectSteps"`,
+		"indirect.go":  `package sample; func invoke(){ owner.PreInvocationResponse(ctx,binding) }`,
+		"unrelated.go": `package sample; const event = "PreInvocation" // injectSteps is only mentioned in a comment`,
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(root, "internal/sample", name), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := transparencyInjectionSources(t, root)
+	want := []string{"internal/sample/indirect.go", "internal/sample/native.go"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("native instruction sources=%v, want %v", got, want)
 	}
 }
