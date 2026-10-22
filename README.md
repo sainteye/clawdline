@@ -54,19 +54,19 @@ A paired browser can send instructions and use your terminal, so pair only devic
 
 ## Install
 
-[![Download Clawdline v2.1.2 for macOS — Apple Silicon, macOS 13+](docs/assets/download-macos-en.svg)](https://github.com/sainteye/clawdline/releases/download/v2.1.2/Clawdline-v2.1.2-macos-arm64.dmg)
+[![Download Clawdline v2.1.3 for macOS — Apple Silicon, macOS 13+](docs/assets/download-macos-en.svg)](https://github.com/sainteye/clawdline/releases/download/v2.1.3/Clawdline-v2.1.3-macos-arm64.dmg)
 
 Apple Silicon · macOS 13+ · [Install guide](https://clawdline.com/docs/install/#mac-dmg)
 
 For the command-line installer on macOS 13+ or Linux, install Claude Code or Codex, trusted Python 3, and OpenSSL 3 or newer. The macOS bundled LibreSSL is not sufficient; see [verification prerequisites](docs/user/install.md#before-you-start). Then run:
 
 ```sh
-curl --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/sainteye/clawdline/74fc07e5bc8c8d092f216478f26d99b7ed1b77ee/install.sh | sh -s -- --version v2.1.2
+curl --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/sainteye/clawdline/fcc9059142485514d54683adb769710abb96e1ab/install.sh | sh -s -- --version v2.1.3
 ```
 
 Before unpacking or executing downloaded code, the installer uses local OpenSSL to verify the manifest against public keys pinned in the reviewed script, then checks the archive against its signed size and SHA-256. Missing verification tools or failed checks stop the installation. You still need to trust the installer script and your local tools. The verified program then starts a per-user service and opens the console. Start a Session there or run `claude` or `codex` in tmux; the release includes tmux if needed. [Install and first run](docs/user/install.md) · [First Session](docs/user/first-session.md)
 
-This command pins **both** the verifier script and release `v2.1.2`. The script revision and the installed release are separate; the signed release manifest names the program source revision. The installer will not silently substitute the latest release. [Review and pin an installation](docs/user/install.md#review-and-pin-an-installation) explains the steps and the first-install trust boundary.
+This command pins **both** the verifier script and release `v2.1.3`. The script revision and the installed release are separate; the signed release manifest names the program source revision. The installer will not silently substitute the latest release. [Review and pin an installation](docs/user/install.md#review-and-pin-an-installation) explains the steps and the first-install trust boundary.
 
 ## Availability
 

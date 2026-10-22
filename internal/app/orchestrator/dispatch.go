@@ -507,7 +507,7 @@ func (b *Broker) resolveRoot(ctx context.Context, root *RootRef) (string, error)
 	}
 	const tail = " Resend from the Root's own terminal, where the conversation id is read from the environment, or " +
 		"name it: `clawdline dispatch --title <title> --claims <paths> --conversation <conversation id> " +
-		"--root-assistant <claude|codex>`. Do not downgrade owned work to detached polling."
+		"--root-assistant <claude|codex|antigravity>`. Do not downgrade owned work to detached polling."
 	if ref.Code == "conversation_ambiguous" {
 		return "", refuse(http.StatusConflict, "conversation_ambiguous",
 			"More than one live process of the declared assistant proves root.session_id; no owner was selected."+tail)
@@ -864,7 +864,7 @@ func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 
 func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, taskExecutable string, launchEnv ...string) string {
 	args := append([]string{}, l.Arguments...)
-	if r.Gate == nil {
+	if r.Gate == nil && l.Assistant != projects.AssistantAntigravity {
 		args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
 	}
 	args = append(args, permissionArgs(r, cwd, taskExecutable)...)
@@ -892,6 +892,10 @@ func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, task
 			q("CARGO_TARGET_DIR", filepath.Join(root, "build")))
 	}
 	set = append(set, launchEnv...)
+	if l.Assistant == projects.AssistantAntigravity {
+		l.Arguments = args
+		return l.ShellCommandWithEnv(set)
+	}
 	return envPrefix(l.Assistant, set) + strings.Join(append([]string{l.Assistant}, args...), " ")
 }
 
@@ -1128,6 +1132,9 @@ func nothingTyped(err error) bool {
 // naming neither what was there nor what was looked for.
 func (b *Broker) composerReady(ctx context.Context, terminalID, assistant string) (bool, error) {
 	if b.Screen == nil {
+		if assistant == projects.AssistantAntigravity {
+			return false, errors.New("provider_state_unknown")
+		}
 		return true, nil
 	}
 	screen, ok := b.Screen(ctx, terminalID)
@@ -1153,6 +1160,8 @@ func assistantName(assistant string) string {
 		return "Claude Code"
 	case "codex":
 		return "Codex"
+	case projects.AssistantAntigravity:
+		return "Antigravity CLI"
 	}
 	return "an assistant"
 }

@@ -117,6 +117,13 @@ func trimSpacesAndNewlines(s string) string { return strings.TrimFunc(s, unicode
 // asserts nothing — AskUserQuestion draws its selected row flush left, the
 // same column as the composer's caret, and that shape is trusted only then.
 func ReadMenu(screen string, assistant Assistant, gate bool) (Menu, bool) {
+	if assistant == AssistantAntigravity {
+		facts := ReadAntigravityScreen(screen, false)
+		return facts.Menu, facts.Kind == AntigravityMenu
+	}
+	if assistant != AssistantClaude && assistant != AssistantCodex {
+		return Menu{}, false
+	}
 	return readMenu(screen, assistant, 30, gate)
 }
 

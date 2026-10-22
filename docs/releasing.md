@@ -286,3 +286,7 @@ compilation if the selected identity is not Developer ID Application.
 - **If the key leaks**: rotate as above at once, signing with the new key only, and say so in the
   release notes. Installs older than the release that added the new key cannot verify the new
   releases and need the installer run again.
+
+## Recent acceptance records
+
+- [v2.1.3 installation and publication evidence](records/release-v2.1.3-acceptance.md), including the explicitly accepted fresh-account boundary.
