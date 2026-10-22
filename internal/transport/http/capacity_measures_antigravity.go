@@ -17,6 +17,8 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 		}
 		st := b.ObservationStats()
 		switch part {
+		case "hook_connections":
+			return capacity.Reading{Known: true, Used: int64(st.HookConnections)}
 		case "bindings":
 			return capacity.Reading{Known: true, Used: int64(st.Bindings)}
 		case "launches":
@@ -33,6 +35,13 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 		return capacity.Unmeasured("unknown bridge measure")
 	}
 	return map[string]func() capacity.Reading{
+		"antigravity.hook_connections": func() capacity.Reading { return stats("hook_connections") },
+		"antigravity.hook_frame_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-frame guard; no retained frame buffer"}
+		},
+		"antigravity.hook_request_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request deadline; no retry or work queue"}
+		},
 		"antigravity.native_process_file_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-operation guard; no retained buffer"}
 		},

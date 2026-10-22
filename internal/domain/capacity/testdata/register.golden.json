@@ -41,6 +41,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "antigravity.hook_connections",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxHookConnections"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.hook_frame_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2097152,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxHookFrameBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "antigravity.hook_payload_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -57,6 +97,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/antigravity.MaxHookPayloadBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.hook_request_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxHookRequestTime"
     ]
   },
   {

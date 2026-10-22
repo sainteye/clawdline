@@ -22,6 +22,36 @@ const conversationB = "22222222-2222-4222-8222-222222222222"
 
 type processFixture map[int]ports.AntigravityProcess
 
+type cancelBeforePersistenceReader struct {
+	base   processFixture
+	cancel context.CancelFunc
+	reads  int
+}
+
+func (r *cancelBeforePersistenceReader) ReadAntigravityProcess(ctx context.Context, pid int) (ports.AntigravityProcess, error) {
+	p, err := r.base.ReadAntigravityProcess(ctx, pid)
+	r.reads++
+	if r.reads == 4 {
+		r.cancel()
+	}
+	return p, err
+}
+
+func TestObservationCancellationBeforePersistencePublishesNothing(t *testing.T) {
+	f := fixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.b.reader = &cancelBeforePersistenceReader{base: f.procs, cancel: cancel}
+	_, err := f.b.Observe(ctx, f.w, "PreInvocation", payload(conversationA, f.pathA, nil))
+	wantCode(t, err, "antigravity_observation_cancelled")
+	if len(f.b.entries) != 0 {
+		t.Fatal("cancelled observation published authority")
+	}
+	if _, err = os.Lstat(f.state); !os.IsNotExist(err) {
+		t.Fatal("cancelled observation wrote durable authority")
+	}
+}
+
 func (p processFixture) ReadAntigravityProcess(ctx context.Context, pid int) (ports.AntigravityProcess, error) {
 	if err := ctx.Err(); err != nil {
 		return ports.AntigravityProcess{}, err

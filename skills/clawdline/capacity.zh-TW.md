@@ -6,7 +6,10 @@
 | --- | ---: | --- | --- | --- | --- |
 | `antigravity.ancestry_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.hook_config_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_connections` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_frame_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.hook_payload_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_request_seconds` | 2 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.hook_timeout_seconds` | 3 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.live_bindings` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.managed_launches` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |

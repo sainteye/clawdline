@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,8 +47,9 @@ func refuse(code string) error { return &BridgeError{Code: code} }
 // Its contract is canonical confinement, UUID/directory agreement and no symlinks.
 type PathResolver func(home, conversationID string) (string, bool)
 
-// Witness is local helper metadata acquired independently of stdin. Root must
-// use its own PID/birth and a durable, increasing sequence per provider process.
+// Witness is local helper metadata acquired independently of stdin. The local
+// service uses the kernel connector PID and its independently read full birth,
+// boot and exec generation, with a durable, increasing service sequence.
 // It must never expose Observe as a remote event-injection endpoint.
 type Witness struct {
 	HelperPID                      int
@@ -94,6 +96,7 @@ type diskState struct {
 // Bridge serializes validate/persist/publish with a mutex; it starts no
 // goroutines, queues or retries. Persistence failure never publishes authority.
 type Bridge struct {
+	hookConnections             atomic.Int64
 	mu                          sync.Mutex
 	home, statePath, executable string
 	executableInfo              os.FileInfo
@@ -367,6 +370,18 @@ func (b *Bridge) VerifyAntigravityProcess(ctx context.Context, pid int) (ports.A
 	return p, nil
 }
 
+// VerifyHookAncestor supports trusted admission before a managed launch can
+// register its commitment. It applies the same exact terminal, executable and
+// native generation checks as Observe, but creates no binding or authority.
+// Observe repeats the complete verification after admission to fence changes.
+func (b *Bridge) VerifyHookAncestor(ctx context.Context, w Witness) (ports.AntigravityProcess, error) {
+	if !b.mu.TryLock() {
+		return ports.AntigravityProcess{}, refuse("antigravity_bridge_busy")
+	}
+	defer b.mu.Unlock()
+	return b.ancestor(ctx, w)
+}
+
 func (b *Bridge) checkLaunch(w Witness, p ports.AntigravityProcess) error {
 	if w.LaunchID == "" {
 		for _, c := range b.launches {
@@ -482,8 +497,14 @@ func (b *Bridge) Observe(ctx context.Context, w Witness, event string, r io.Read
 	if e != nil || len(data) > MaxObservationBytes {
 		return ports.AntigravityBinding{}, refuse("antigravity_store_full")
 	}
+	if ctx.Err() != nil {
+		return ports.AntigravityBinding{}, refuse("antigravity_observation_cancelled")
+	}
 	if e = atomicReplace(b.statePath, data, 0600); e != nil {
 		return ports.AntigravityBinding{}, refuse("antigravity_store_write_failed")
+	}
+	if ctx.Err() != nil {
+		return ports.AntigravityBinding{}, refuse("antigravity_observation_cancelled")
 	}
 	b.entries = next
 	b.bytes = int64(len(data))
@@ -493,6 +514,7 @@ func (b *Bridge) Observe(ctx context.Context, w Witness, event string, r io.Read
 // ObservationStats exposes the actual retained sizes for capacity measurement.
 // Launches are a separate map, with the same per-map cardinality ceiling.
 type ObservationStats struct {
+	HookConnections               int
 	Bindings, Launches, Recovered int
 	Bytes                         int64
 	OldestAt                      time.Time
@@ -501,7 +523,7 @@ type ObservationStats struct {
 func (b *Bridge) ObservationStats() ObservationStats {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	s := ObservationStats{Bindings: len(b.entries), Launches: len(b.launches), Bytes: b.bytes}
+	s := ObservationStats{Bindings: len(b.entries), Launches: len(b.launches), Bytes: b.bytes, HookConnections: int(b.hookConnections.Load())}
 	for _, entry := range b.entries {
 		if s.OldestAt.IsZero() || entry.Binding.ObservedAt.Before(s.OldestAt) {
 			s.OldestAt = entry.Binding.ObservedAt
@@ -511,6 +533,22 @@ func (b *Bridge) ObservationStats() ObservationStats {
 		}
 	}
 	return s
+}
+
+// observationSequenceFloor includes recovered, deliberately unverified entries.
+// The service serializes allocation/Observe and seeds from persisted evidence,
+// so restart cannot reuse a sequence accepted for a still-running provider.
+// Failed observations consume an in-memory gap but publish no new authority.
+func (b *Bridge) observationSequenceFloor() (uint64, error) {
+	if !b.mu.TryLock() {
+		return 0, refuse("antigravity_bridge_busy")
+	}
+	defer b.mu.Unlock()
+	var floor uint64
+	for _, e := range b.entries {
+		floor = max(floor, e.Binding.Sequence)
+	}
+	return floor, nil
 }
 
 func (b *Bridge) AntigravityBinding(ctx context.Context, s session.Session) (ports.AntigravityBinding, error) {

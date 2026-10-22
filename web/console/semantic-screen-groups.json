@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8969,
-  "riskKeys": 3997,
-  "nonRiskCount": 4972,
+  "englishContentKeys": 8975,
+  "riskKeys": 4000,
+  "nonRiskCount": 4975,
   "groups": [
     {
       "name": "admin / other",
@@ -315,14 +315,17 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 280,
+      "count": 283,
       "sources": [
         null
       ],
       "keys": [
         "capacityRow.antigravity.ancestry_rows.what",
         "capacityRow.antigravity.hook_config_bytes.what",
+        "capacityRow.antigravity.hook_connections.full",
+        "capacityRow.antigravity.hook_frame_bytes.what",
         "capacityRow.antigravity.hook_payload_bytes.what",
+        "capacityRow.antigravity.hook_request_seconds.what",
         "capacityRow.antigravity.hook_timeout_seconds.what",
         "capacityRow.antigravity.live_bindings.what",
         "capacityRow.antigravity.managed_launches.what",
