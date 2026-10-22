@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8949,
-  "riskKeys": 3986,
-  "nonRiskCount": 4963,
+  "englishContentKeys": 8960,
+  "riskKeys": 3994,
+  "nonRiskCount": 4966,
   "groups": [
     {
       "name": "admin / other",
@@ -312,7 +312,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 275,
+      "count": 277,
       "sources": [
         null
       ],
@@ -323,6 +323,8 @@
         "capacityRow.antigravity.hook_timeout_seconds.what",
         "capacityRow.antigravity.live_bindings.what",
         "capacityRow.antigravity.managed_launches.what",
+        "capacityRow.antigravity.native_process_file_bytes.what",
+        "capacityRow.antigravity.native_tty_entries.what",
         "capacityRow.antigravity.observation_bytes.full",
         "capacityRow.antigravity.process_read_seconds.what",
         "capacityRow.antigravity.retention_seconds.what",
@@ -1660,7 +1662,7 @@
     },
     {
       "name": "http / other",
-      "count": 565,
+      "count": 566,
       "sources": [
         "internal/productcopy/http_refusals/en.json"
       ],
@@ -1798,6 +1800,7 @@
         "http.3dfd715e6994b156",
         "http.3e9263201dd719ee",
         "http.3f2f5200b2fd3231",
+        "http.3f3e39e2d8c0779a",
         "http.3f45b288d65db920",
         "http.3fd254231acc0e0b",
         "http.40b4ec8eb866b455",

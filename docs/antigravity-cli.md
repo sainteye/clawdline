@@ -292,7 +292,7 @@ files. Paired tests belong to the same owner. Root expands a claim explicitly if
 
 | Stage/owner | Literal file claims | Acceptance and dependency |
 | --- | --- | --- |
-| P0 root + architect | `docs/gemini-cli.md` (rename by root later) | Pin standalone version/help, sanitized screen/hook/status/transcript samples and auth outcome. Resolve the open schema questions below before hardening parser contracts. Independent design review can read immediately, without waiting for tests. |
+| P0 root + architect | `docs/antigravity-cli.md` | Pin standalone version/help, sanitized screen/hook/status/transcript samples and auth outcome. Resolve the open schema questions below before hardening parser contracts. Independent design review can read immediately, without waiting for tests. |
 | P1 provider contract owner | `internal/domain/session/session.go`; `api/v1/common.schema.json`; `api/v1/projects.schema.json`; `api/v1/sessions.schema.json`; `api/v1/routes.json`; `internal/contract/zz_generated.go`; `internal/transport/http/routes.go`; `web/console/src/cloud/carry-generated.ts`; `web/contract/src/generated.ts`; `internal/app/cloudops/zz_decode_generated.go`; `skills/clawdline/routes.md`; `skills/clawdline/routes.zh-TW.md`; `skills/clawdline/capacity.md`; `skills/clawdline/capacity.zh-TW.md`; `skills/clawdline/refusals.md`; `skills/clawdline/refusals.zh-TW.md`; `internal/adapters/projects/launch.go`; `internal/adapters/projects/launch_test.go`; `internal/adapters/projects/launch_antigravity_test.go` (NEW); `internal/transport/http/projects.go`; `internal/transport/http/start.go`; `internal/transport/http/assistants_test.go` | P0. Generate Go/TS from schema together; full generated output set is checked in `tools/contract-gen/main.go:140`. Exact resume uses `--conversation`; wrong IDE refused; unsupported fields refused; two original providers' argv unchanged. No hook permission escalation. |
 | P2 identity/bridge owner | `internal/adapters/transcript/host.go`; `internal/adapters/transcript/antigravity_identity.go` (NEW); `internal/adapters/transcript/antigravity_identity_test.go` (NEW); `internal/adapters/process/ps_unix.go`; `internal/adapters/process/ps_windows.go`; `internal/adapters/process/antigravity_test.go` (NEW); `internal/adapters/terminal/tmux.go`; `internal/adapters/terminal/farewell.go`; `internal/adapters/terminal/antigravity_test.go` (NEW); `internal/app/ports/antigravity.go` (NEW); `internal/adapters/antigravity/observe.go` (NEW); `internal/adapters/antigravity/install.go` (NEW); `internal/adapters/antigravity/observe_test.go` (NEW); `internal/adapters/antigravity/install_test.go` (NEW) | P1. Two concurrent sessions in same cwd bind distinct IDs. Replay/reused PID/foreign path rejected. Disabled hooks survive unchanged. CLI entrypoint/wiring is integrated by root in P5, so this worker delivers bounded adapter APIs, not an unreachable feature. |
 | P3 records owner | `internal/adapters/transcript/antigravity.go` (NEW); `internal/adapters/transcript/antigravity_test.go` (NEW); `internal/adapters/transcript/info.go`; `internal/adapters/transcript/movement.go`; `internal/adapters/transcript/models.go`; `internal/adapters/transcript/ledger.go`; `internal/adapters/transcript/ledger_antigravity.go` (NEW); `internal/adapters/transcript/ledger_antigravity_test.go` (NEW); `internal/transport/http/transcript.go`; `internal/transport/http/transcript_antigravity_test.go` (NEW); `internal/adapters/projects/antigravity_history.go` (NEW); `internal/adapters/projects/antigravity_history_test.go` (NEW) | P1; P2 identity interface fixed. Exact captured records render tools/results once, cumulative usage does not inflate, older pages retain ordering, rewinds invalidate cursors, incomplete records are typed. P1 owner lands any resulting schema changes before generation. |
@@ -332,29 +332,62 @@ first. A login receipt, CLI help and a successful model turn establish different
 | Local + Cloud + platform | Actual encrypted Cloud wire preserves assistant/identity, state/freshness/menus/roles and selected machine. API-level mismatch disables actions. Linux native and Windows refusal/capability rows tested independently from macOS. |
 | Claude/Codex regressions and capacity | Existing focused suites and local gate green; no new third-provider fallback. `TestEveryBoundIsRegistered`, measured capacity and both golden snapshots cover every new bound; shrink limits to force rejection. |
 
+## Measured native contracts after the design review
+
+The root inspected the private native evidence and independently reran its local integrity
+checks, including three negative controls. These observations apply to the installed standalone
+1.4.5 binary, SHA-256 `b89677b741d8d9d38cf0a6911ab468fac629158194039904cbfd645fdb897554`.
+They supersede the provisional native path and event assumptions above.
+
+- The free personal account completed login. Two later probe processes displayed Starter quota
+  and their own configuration panels showed AI Credits off before model input. API-key,
+  Vertex/ADC and paid fallback environments were excluded. No invoice was queried; the NTD 0
+  boundary is based on that free-only gate, not account billing telemetry.
+- The observed transcript is `brain/UUID/.system_generated/logs/transcript_full.jsonl` beneath
+  the CLI's state directory. Native events carry `conversationId` and `transcriptPath`.
+  Initial input emitted SessionStart; exact UUID resume emitted PreInvocation without
+  SessionStart. An idle launch alone did not supply a native identity event.
+- Under an existing conversation-local printf grant, `ask` allowed the exact command without
+  another question. `force_ask` displayed the permission menu again. The probe selected the
+  conversation-local scope and allow-once scope explicitly; it never persisted a global grant.
+- A deliberate PreToolUse hook exit 23 produced a native ERROR result. No successful tool output
+  or PostToolUse was recorded for that attempt. Grant persistence across restart was not proved,
+  so this does not establish failure behavior with a known-live cached grant in that process.
+- A nonempty-Target edit showed its exact diff, was explicitly approved, produced native DONE,
+  and changed the fixture's bytes. The earlier INVALID edit remains a failure rather than
+  evidence of successful editing.
+- An unchanged synthetic context was attributed to PreInvocation in eight native SYSTEM_MESSAGE
+  records and was reflected in initial and resumed responses. Separate workspace instructions
+  had a distinct marker. This proves the native nested injection shape; it does not prove the
+  product's immutable Squad snapshot, project memory journal or loaded badge.
+
+The latest bounded probe accounted for four input attempts, three delivered USER_INPUT records,
+eight PreInvocation events and eight planner responses. One counted send found its private
+server already stopped by the 45-second supervisor; it was not retried or refunded. Both provider
+processes and the private server were confirmed stopped. These counts do not describe hidden
+vendor transport retries. Integrity checks rejected fabricated hook success, unchanged file bytes,
+and missing resumed context; 43 sanitized artifact hashes matched.
+
 ## Remaining evidence root must gather
 
-1. **Standalone account:** root completes the already authorized free personal OAuth and records
-   service availability separately from sign-in, without exposing tokens/emails in the report.
-   This child tested only standalone help/version, not account usability or billing.
-2. **No-model local captures first:** starting/idle/login/trust/menu screens; supported hook
-   install/disable/uninstall; whether SessionStart fires before first model turn and on resume;
-   whether process ancestry remains inspectable through sandbox helpers; whether logs remain open.
-3. **Model-bearing captures only with any required specific approval:** one bounded turn, tool
-   confirmation and result/error, cancellation, background task, model/usage updates, native
-   subagent and multiple same-cwd sessions. Preserve sanitized native shapes before writing tests.
-4. **Transcript completeness:** actual 1.4.5 tool results, stable IDs, edits/rewinds, token source,
-   model source and subagent linkage remain unproved. Official log location plus Orca preview
-   parsing is not a full schema. If only text is durable, add a bounded observation journal or
-   select structured ACP after measuring it; do not silently drop required tools/tokens/history.
-5. **Status line and context:** measure safe composition with an existing command, exact
-   confirmation state, identity and quota freshness, first-turn snapshot loading and resumed-role
-   invariance. Failure must be explicit, not a claimed loaded role or numeric zero.
-6. **Platforms and Cloud:** this child has no Linux/Windows runtime or public Cloud acceptance
-   receipt. Root must name unsupported capabilities and their owner; Windows native control is a
-   broader backend dependency if parity beyond today's baseline is required.
+1. **Product composition:** wire native process/Unix-peer identity, local-only hook ingress,
+   durable sequencing, launch capability, workspace/history binding and safe startup before the
+   first native identity event. A requested UUID remains provisional until verified observation.
+2. **Permission coverage:** `force_ask` is required for the measured review ceiling; `ask` is
+   insufficient. Verify hook timeout, missing/nonexecutable/malformed hook, local service outage,
+   same-process prior-grant failure and the complete tool coverage before admitting generic
+   broker permission modes. Retain `provider_permission_unsupported` until those gates pass.
+3. **Product interaction and context:** exercise the actual paste/menu lane and receipts, edit
+   permission and other native pickers, cancellation, immutable role/memory publication and exact
+   resume. Distinguish context prepared, delivered and observed before showing a loaded badge.
+4. **Transcript and status:** carry native generation signatures through local and encrypted
+   Cloud history, prove replacement/truncation behavior, large-file bounds and exact usage
+   attribution. Numeric quota/context data remains unknown unless the CLI produces it.
+5. **Independent acceptance:** after assembly, review the actual product and verify desktop,
+   phone, light/dark themes, English/Traditional Chinese, Cloud and brand consistency. Name
+   platform capabilities separately; cross-compilation is not Linux/Windows runtime acceptance.
 
-The root's installation/sign-in work and implementation can proceed under existing authorization.
+Implementation and bounded free CLI verification can proceed under the person's existing authorization.
 These are technical evidence dependencies, not a request for another blanket design approval.
 Any actual conflict with the person's scope, account choice or billing permission belongs to the
 person and must be presented explicitly rather than resolved by reducing the feature.

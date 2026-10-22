@@ -30,6 +30,16 @@
     "Note": true
   },
   {
+    "Name": "antigravity.native_process_file_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.native_tty_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "antigravity.observation_bytes",
     "Known": true,
     "Note": true

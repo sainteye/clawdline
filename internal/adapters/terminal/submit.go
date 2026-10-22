@@ -21,6 +21,9 @@ var ErrAntigravityMenuUnavailable = errors.New("antigravity_menu_unavailable")
 
 var ErrAntigravityInputUnavailable = errors.New("antigravity_input_unavailable")
 
+// SendConfirmationWindow is the existing, registered paste-observation budget.
+func SendConfirmationWindow() time.Duration { return sendConfirm }
+
 // SubmitAntigravityText shares paste observation and the caller's send lane,
 // while requiring the native current surface before paste and before Enter.
 // It presses Enter at most once: subsequent delivery is reconciled by the
