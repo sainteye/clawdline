@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8992,
-  "riskKeys": 4005,
-  "nonRiskCount": 4987,
+  "englishContentKeys": 9002,
+  "riskKeys": 4009,
+  "nonRiskCount": 4993,
   "groups": [
     {
       "name": "admin / other",
@@ -315,18 +315,23 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 283,
+      "count": 289,
       "sources": [
         null
       ],
       "keys": [
         "capacityRow.antigravity.ancestry_rows.what",
+        "capacityRow.antigravity.context_history.what",
+        "capacityRow.antigravity.context_index_bytes.full",
+        "capacityRow.antigravity.context_index_bytes.what",
+        "capacityRow.antigravity.context_receipts.what",
         "capacityRow.antigravity.hook_config_bytes.what",
         "capacityRow.antigravity.hook_connections.full",
         "capacityRow.antigravity.hook_frame_bytes.what",
         "capacityRow.antigravity.hook_payload_bytes.what",
         "capacityRow.antigravity.hook_request_seconds.what",
         "capacityRow.antigravity.hook_timeout_seconds.what",
+        "capacityRow.antigravity.launch_context_bytes.what",
         "capacityRow.antigravity.live_bindings.what",
         "capacityRow.antigravity.managed_launches.what",
         "capacityRow.antigravity.native_process_file_bytes.what",
@@ -334,6 +339,7 @@
         "capacityRow.antigravity.observation_bytes.full",
         "capacityRow.antigravity.process_read_seconds.what",
         "capacityRow.antigravity.retention_seconds.what",
+        "capacityRow.antigravity.saved_launches.what",
         "capacityRow.antigravity.state_age_seconds.what",
         "capacityRow.artifacts.report_image_pixels.full",
         "capacityRow.artifacts.report_image_pixels.what",

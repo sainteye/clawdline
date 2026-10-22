@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravity"
+	"github.com/sainteye/clawdline/internal/adapters/antigravitylaunch"
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
@@ -52,8 +53,10 @@ import (
 )
 
 type Server struct {
-	antigravityBridge atomic.Pointer[antigravity.Bridge]
-	cfg               config.Config
+	antigravityBridge      atomic.Pointer[antigravity.Bridge]
+	antigravityLaunchStore atomic.Pointer[antigravitylaunch.Store]
+	antigravityLaunchMu    sync.Mutex
+	cfg                    config.Config
 	// routeStats counts every API call by route and caller (route_stats.go).
 	routeStats      *routeStats
 	routeStatsOnce  sync.Once

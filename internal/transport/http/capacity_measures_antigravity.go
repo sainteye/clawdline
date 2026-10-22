@@ -1,15 +1,54 @@
 package http
 
 import (
-	"github.com/sainteye/clawdline/internal/adapters/antigravity"
-	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"context"
+	"sync"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/adapters/antigravity"
+	"github.com/sainteye/clawdline/internal/adapters/antigravitylaunch"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // SetAntigravityBridge publishes the same verified bridge used by inventory.
 func (s *Server) SetAntigravityBridge(bridge *antigravity.Bridge) { s.antigravityBridge.Store(bridge) }
 
 func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Reading {
+	// Each capacity pass rebuilds this map. Share one integrity-checked snapshot
+	// across its five rows, never five complete filesystem reads or a boot cache.
+	var once sync.Once
+	var launchStats antigravitylaunch.Stats
+	var launchErr error
+	launchReading := func(part string) capacity.Reading {
+		once.Do(func() {
+			owner := s.antigravityLaunchStore.Load()
+			if owner == nil {
+				launchErr = &antigravitylaunch.Error{Code: "antigravity_context_owner_unavailable"}
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), antigravity.MaxProcessReadTime)
+			defer cancel()
+			launchStats, launchErr = owner.Stats(ctx)
+		})
+		if launchErr != nil {
+			return capacity.Unmeasured(launchErr.Error())
+		}
+		var n int64
+		switch part {
+		case "launches":
+			n = int64(launchStats.Launches)
+		case "history":
+			n = int64(launchStats.History)
+		case "receipts":
+			n = int64(launchStats.Receipts)
+		case "index":
+			n = launchStats.IndexBytes
+		case "context":
+			n = launchStats.LargestContextBytes
+		}
+		return capacity.Reading{Known: true, Used: n}
+	}
+
 	stats := func(part string) capacity.Reading {
 		b := s.antigravityBridge.Load()
 		if b == nil {
@@ -35,7 +74,13 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 		return capacity.Unmeasured("unknown bridge measure")
 	}
 	return map[string]func() capacity.Reading{
-		"antigravity.hook_connections": func() capacity.Reading { return stats("hook_connections") },
+		// Missing, closed or unreadable owners remain unknown.
+		"antigravity.saved_launches":       func() capacity.Reading { return launchReading("launches") },
+		"antigravity.context_history":      func() capacity.Reading { return launchReading("history") },
+		"antigravity.context_receipts":     func() capacity.Reading { return launchReading("receipts") },
+		"antigravity.context_index_bytes":  func() capacity.Reading { return launchReading("index") },
+		"antigravity.launch_context_bytes": func() capacity.Reading { return launchReading("context") },
+		"antigravity.hook_connections":     func() capacity.Reading { return stats("hook_connections") },
 		"antigravity.hook_frame_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-frame guard; no retained frame buffer"}
 		},
