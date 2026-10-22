@@ -17,12 +17,12 @@ func TestAntigravityStarterRequiresPreparedContextBeforeOpen(t *testing.T) {
 	if _, err := s.Start(context.Background(), place, projects.AssistantAntigravity, "", "", ""); err == nil || term.command != "" {
 		t.Fatal("unprepared launch", err, term.command)
 	}
-	s.PrepareAntigravity = func(_ context.Context, r projects.LaunchRequest) (projects.LaunchRequest, []string, error) {
+	s.PrepareAntigravity = func(_ context.Context, r projects.LaunchRequest) (PreparedAntigravity, error) {
 		c, err := projects.PrepareAntigravityContext("", "", r.Memory, r.Language)
 		r.AntigravityContext = &c
 		r.Executable = "/validated/standalone"
 		r.PermissionMode = "plan"
-		return r, []string{"CLAWDLINE_TEST_LAUNCH='synthetic'"}, err
+		return preparedAntigravityForTest(r, []string{"CLAWDLINE_TEST_LAUNCH='synthetic'"}), err
 	}
 	if _, err := s.Start(context.Background(), place, projects.AssistantAntigravity, "", "", ""); err != nil {
 		t.Fatal(err)
@@ -31,8 +31,8 @@ func TestAntigravityStarterRequiresPreparedContextBeforeOpen(t *testing.T) {
 		t.Fatal(term.command)
 	}
 	term.command = ""
-	s.PrepareAntigravity = func(_ context.Context, r projects.LaunchRequest) (projects.LaunchRequest, []string, error) {
-		return r, nil, projects.ErrSquadContextUnavailable
+	s.PrepareAntigravity = func(_ context.Context, r projects.LaunchRequest) (PreparedAntigravity, error) {
+		return PreparedAntigravity{}, projects.ErrSquadContextUnavailable
 	}
 	if _, err := s.Start(context.Background(), place, projects.AssistantAntigravity, "", "", ""); !errors.Is(err, projects.ErrSquadContextUnavailable) || term.command != "" {
 		t.Fatal(err, term.command)
@@ -45,6 +45,9 @@ func TestAntigravityNewLaunchUsesItsOwnEffortAndResumeKeepsTheOriginal(t *testin
 	reads := 0
 	var requests []projects.LaunchRequest
 	s := Starter{
+		RestoreAntigravity: func(context.Context, string, string) (projects.AntigravityContext, error) {
+			return projects.PrepareAntigravityContext("", "", "", "")
+		},
 		Terminal: func() projects.TerminalChoice { return projects.TerminalTmux }, Launcher: term,
 		DefaultReasoningEffort: func(assistant string) string {
 			reads++
@@ -53,13 +56,13 @@ func TestAntigravityNewLaunchUsesItsOwnEffortAndResumeKeepsTheOriginal(t *testin
 			}
 			return "xhigh"
 		},
-		PrepareAntigravity: func(_ context.Context, r projects.LaunchRequest) (projects.LaunchRequest, []string, error) {
+		PrepareAntigravity: func(_ context.Context, r projects.LaunchRequest) (PreparedAntigravity, error) {
 			requests = append(requests, r)
 			c, err := projects.PrepareAntigravityContext("", "", r.Memory, r.Language)
 			r.AntigravityContext = &c
 			r.Executable = "/validated/standalone"
 			r.PermissionMode = "plan"
-			return r, nil, err
+			return preparedAntigravityForTest(r, nil), err
 		},
 	}
 	if _, err := s.Start(context.Background(), place, projects.AssistantAntigravity, "", "", ""); err != nil {
@@ -75,4 +78,9 @@ func TestAntigravityNewLaunchUsesItsOwnEffortAndResumeKeepsTheOriginal(t *testin
 	if reads != 1 || len(requests) != 2 || requests[1].ReasoningEffort != "" || strings.Contains(term.command, "--effort") || !strings.Contains(term.command, id) {
 		t.Fatalf("resume reread a mutable effort: reads=%d request=%+v line=%s", reads, requests[1], term.command)
 	}
+}
+
+func preparedAntigravityForTest(r projects.LaunchRequest, env []string) PreparedAntigravity {
+	return PreparedAntigravity{Request: r, PrivateEnv: env,
+		AttachTerminal: func(context.Context, string, string) error { return nil }}
 }

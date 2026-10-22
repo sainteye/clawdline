@@ -118,16 +118,17 @@ func ShellQuoted(value string) string {
 // not be handed.
 func InheritedIdentityKeys(assistant string) []string {
 	const squadCapability = "CLAWDLINE_SQUAD_CAPABILITY_FILE"
+	const nativeCapability = "CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE"
 	switch assistant {
 	case AssistantClaude:
 		return []string{"CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION",
 			"CLAUDE_PID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
-			"CLAUDE_CODE_BRIDGE_SESSION_ID", "CLAUDE_EFFORT", "AI_AGENT", squadCapability}
+			"CLAUDE_CODE_BRIDGE_SESSION_ID", "CLAUDE_EFFORT", "AI_AGENT", squadCapability, nativeCapability}
 	case AssistantCodex:
 		return []string{"CODEX_THREAD_ID", "CODEX_SESSION_ID",
-			"CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", squadCapability}
+			"CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", squadCapability, nativeCapability}
 	case AssistantAntigravity:
-		return []string{squadCapability}
+		return []string{squadCapability, nativeCapability}
 	}
 	return nil
 }

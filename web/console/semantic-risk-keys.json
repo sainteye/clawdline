@@ -2,7 +2,7 @@
   "version": 1,
   "englishKeys": 9008,
   "counts": {
-    "negation": 2618,
+    "negation": 2619,
     "state": 1481,
     "permission": 522,
     "deletion": 201,
@@ -2508,6 +2508,7 @@
       "transparency.boundary",
       "transparency.card.antigravity-context.effect",
       "transparency.card.antigravity-context.how",
+      "transparency.card.antigravity-context.summary",
       "transparency.card.child.summary",
       "transparency.card.claude-language.summary",
       "transparency.card.claude-role.summary",

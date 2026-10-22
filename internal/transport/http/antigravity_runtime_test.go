@@ -79,7 +79,7 @@ func TestAntigravityRuntimeSyntheticProvider(t *testing.T) {
 		if err != nil {
 			output = append(output, []byte(err.Error())...)
 		}
-		if os.WriteFile(filepath.Join(root, "managed-bad-result"), output, 0600) != nil {
+		if publishAntigravitySyntheticResult(filepath.Join(root, "managed-bad-result"), output, nil) != nil {
 			os.Exit(2)
 		}
 		wait("managed-continue")
@@ -89,7 +89,7 @@ func TestAntigravityRuntimeSyntheticProvider(t *testing.T) {
 	if err != nil {
 		output = append(output, []byte(err.Error())...)
 	}
-	if os.WriteFile(filepath.Join(root, "hook-result"), output, 0600) != nil {
+	if publishAntigravitySyntheticResult(filepath.Join(root, "hook-result"), output, nil) != nil {
 		os.Exit(2)
 	}
 	// Keep the positively observed provider alive until its private pane is closed.

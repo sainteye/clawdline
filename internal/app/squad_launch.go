@@ -94,16 +94,56 @@ func (s Starter) startAntigravity(ctx context.Context, place projects.Place, req
 	if plan == projects.PlanNoTmux {
 		return Started{}, StartRefusal{Status: http.StatusConflict, Code: "terminal_unsupported", Message: "tmux is not installed on this machine."}
 	}
+	// Native history owns the original prompt, memory and language. Restore
+	// before creating a new Squad launch: its newly published skill paths must
+	// never replace the old conversation's original paths.
+	if request.Resume != "" {
+		if s.RestoreAntigravity == nil {
+			return Started{}, projects.ErrSquadContextUnavailable
+		}
+		original, err := s.RestoreAntigravity(ctx, request.ProjectRoot, request.Resume)
+		if err != nil {
+			return Started{}, err
+		}
+		if err := original.Validate(); err != nil {
+			return Started{}, err
+		}
+		request.AntigravityContext = &original
+		request.SquadPromptPath, request.Memory, request.Language = original.PromptPath, original.Memory, original.Language
+	}
 	prepared, err := s.prepareSquadLaunch(ctx, place.Path, request.Persona, request.Resume)
 	if err != nil {
 		return Started{}, err
 	}
-	request.SquadPromptPath = prepared.files.PromptPath
-	if request.Persona != "" && request.SquadPromptPath == "" {
+	failSquad := func() {
+		if prepared.launch.ID != "" {
+			_ = s.Squad.FailSquadLaunch(ctx, prepared.launch.ID)
+		}
+	}
+	if request.Resume == "" {
+		request.SquadPromptPath = prepared.files.PromptPath
+	} else if (request.SquadPromptPath != "") != (prepared.launch.ID != "") {
+		// Native history and Squad identity must agree on whether this was a
+		// role launch. Neither incomplete history may manufacture the other.
+		failSquad()
 		return Started{}, projects.ErrSquadContextUnavailable
 	}
-	admitted, env, err := s.PrepareAntigravity(ctx, request)
-	if err == nil && (admitted.Assistant != request.Assistant || admitted.ProjectRoot != request.ProjectRoot || admitted.Resume != request.Resume || admitted.SquadPromptPath != request.SquadPromptPath) {
+	if request.Persona != "" && request.SquadPromptPath == "" {
+		failSquad()
+		return Started{}, projects.ErrSquadContextUnavailable
+	}
+	var original projects.AntigravityContext
+	if request.AntigravityContext != nil {
+		original = *request.AntigravityContext
+	}
+	native, err := s.PrepareAntigravity(ctx, request)
+	admitted := native.Request
+	if err == nil && (native.AttachTerminal == nil || admitted.Assistant != request.Assistant ||
+		admitted.ProjectRoot != request.ProjectRoot || admitted.Resume != request.Resume ||
+		admitted.Persona != request.Persona || admitted.Model != request.Model ||
+		admitted.ReasoningEffort != request.ReasoningEffort || admitted.Language != request.Language ||
+		admitted.Memory != request.Memory || admitted.SquadPromptPath != request.SquadPromptPath ||
+		(request.Resume != "" && (admitted.AntigravityContext == nil || *admitted.AntigravityContext != original))) {
 		err = projects.ErrSquadContextUnavailable
 	}
 	var launch projects.Launch
@@ -111,37 +151,46 @@ func (s Starter) startAntigravity(ctx context.Context, place projects.Place, req
 		launch, err = projects.Admit(admitted)
 	}
 	if err != nil {
-		if prepared.launch.ID != "" {
-			_ = s.Squad.FailSquadLaunch(ctx, prepared.launch.ID)
-		}
+		failSquad()
 		return Started{}, err
 	}
+	env := append([]string(nil), native.PrivateEnv...)
 	if prepared.launch.ID != "" {
 		env = append(env, prepared.files.PrivateEnv())
 	}
 	command := launch.ShellCommandWithEnv(env)
-	if prepared.launch.ID != "" {
-		return s.openSquadTerminal(ctx, place, request.Model, plan, prepared, command)
-	}
 	var result Started
-	switch plan {
-	case projects.PlanITerm:
-		result.ID, err = s.Launcher.NewITermTab(ctx, "cd "+projects.ShellQuoted(place.Path)+" && "+command)
-		result.Backend = "iterm"
-	case projects.PlanITermTmux:
-		return s.openViewed(ctx, place, request.Model, command)
-	case projects.PlanTmux:
-		result.ID, err = s.Launcher.NewTmuxWindow(ctx, place.Path, command)
-		result.Backend = "tmux"
-	case projects.PlanTmuxDetached:
-		result.ID, err = s.Launcher.NewTmuxSession(ctx, place.Path, projects.TmuxStartedSessionName, command)
-		result.Backend = "tmux"
-		result.Attach = projects.TmuxAttachCommand()
+	if prepared.launch.ID != "" {
+		result, err = s.openSquadTerminal(ctx, place, request.Model, plan, prepared, command)
+	} else {
+		switch plan {
+		case projects.PlanITerm:
+			result.ID, err = s.Launcher.NewITermTab(ctx, "cd "+projects.ShellQuoted(place.Path)+" && "+command)
+			result.Backend = "iterm"
+		case projects.PlanITermTmux:
+			result, err = s.openViewed(ctx, place, request.Model, command)
+		case projects.PlanTmux:
+			result.ID, err = s.Launcher.NewTmuxWindow(ctx, place.Path, command)
+			result.Backend = "tmux"
+		case projects.PlanTmuxDetached:
+			result.ID, err = s.Launcher.NewTmuxSession(ctx, place.Path, projects.TmuxStartedSessionName, command)
+			result.Backend = "tmux"
+			result.Attach = projects.TmuxAttachCommand()
+		}
+		if err != nil {
+			return Started{}, openRefusal(err, "")
+		}
 	}
 	if err != nil {
-		return Started{}, openRefusal(err, "")
+		return Started{}, err
 	}
 	result.Model = request.Model
+	if err := native.AttachTerminal(ctx, result.Backend, result.ID); err != nil {
+		// Opening already succeeded. Keep that outcome, never open again, and
+		// leave native authority unavailable rather than inviting a duplicate.
+		result.BindingPending = true
+		log.Printf("antigravity launch: terminal binding pending recovery")
+	}
 	return result, nil
 }
 

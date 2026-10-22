@@ -29,7 +29,10 @@ type Starter struct {
 	// permission and immutable-context preparer. It receives the original
 	// resume snapshot path, not a fresh mutable role catalog. Nil fails closed.
 	// Returned environment values are private launch capability assignments.
-	PrepareAntigravity func(context.Context, projects.LaunchRequest) (projects.LaunchRequest, []string, error)
+	PrepareAntigravity func(context.Context, projects.LaunchRequest) (PreparedAntigravity, error)
+	// RestoreAntigravity verifies native historical evidence and original files
+	// before a resume can publish a fresh Squad capability. Nil refuses resumes.
+	RestoreAntigravity func(context.Context, string, string) (projects.AntigravityContext, error)
 	// Places is the place list, built at the moment of asking.
 	Places func(ctx context.Context) []projects.Place
 	// Terminal is the machine's `terminal` setting.
@@ -68,6 +71,15 @@ type Starter struct {
 	Memory func(dir string) string
 }
 
+// PreparedAntigravity is one private durable launch intent. AttachTerminal
+// closes over that intent's ID; it must never allocate another intent or open a
+// terminal. Nil refuses admission before the terminal can be created.
+type PreparedAntigravity struct {
+	Request        projects.LaunchRequest
+	PrivateEnv     []string
+	AttachTerminal func(context.Context, string, string) error
+}
+
 // Started is StartPoints.Outcome.started. Attach is filled for the one plan
 // that puts a session where nobody is looking: a tmux server started detached.
 type Started struct {
@@ -77,6 +89,10 @@ type Started struct {
 	// Model is the explicit or machine-default model handed to the provider,
 	// empty when the provider was left to choose.
 	Model string
+	// BindingPending means the terminal exists but its durable native binding
+	// could not be recorded. It is not a failed open and must not be replayed.
+	// Native actions remain unavailable until the exact terminal is verified.
+	BindingPending bool
 }
 
 // StartRefusal is StartPoints.Outcome.refused: an HTTP status, the code a page
@@ -121,7 +137,7 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		effort = s.DefaultReasoningEffort(assistant)
 	}
 	language := ""
-	if s.Language != nil {
+	if s.Language != nil && (assistant != projects.AssistantAntigravity || resume == "") {
 		language = s.Language(assistant)
 	}
 	preflightPersona := persona
@@ -129,7 +145,7 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		preflightPersona = ""
 	}
 	memory := ""
-	if s.Memory != nil {
+	if s.Memory != nil && (assistant != projects.AssistantAntigravity || resume == "") {
 		memory = s.Memory(place.Path)
 	}
 	if assistant == projects.AssistantAntigravity {

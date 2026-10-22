@@ -19,7 +19,7 @@
       "sources": [
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 266
+          "line": 285
         }
       ],
       "original": [
@@ -74,11 +74,11 @@
       "sources": [
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 229
+          "line": 248
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 346
+          "line": 392
         }
       ],
       "original": [
@@ -2095,15 +2095,15 @@
       "sources": [
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 132
+          "line": 119
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 400
+          "line": 401
         },
         {
           "path": "internal/app/start.go",
-          "line": 115
+          "line": 131
         },
         {
           "path": "internal/app/orchestrator/compact.go",
@@ -2165,7 +2165,11 @@
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 247
+          "line": 248
+        },
+        {
+          "path": "internal/app/squad_launch.go",
+          "line": 78
         }
       ],
       "original": [
@@ -2225,7 +2229,7 @@
     "internal/adapters/nextconfig/nextconfig.go": "854b65137d603c892cb04fbbd486eed1d54b0ca48a2c8e71d8361f1cdc666dce",
     "internal/adapters/projects/antigravity_context.go": "af2f72bca504765de63bc45bbeb208e201c063bacf51ff3ff5cbe0fd5e5aac1a",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
-    "internal/adapters/projects/launch.go": "b9e132edc9b642bce7eaaca0fef19a4ea67f9d419349eaa41bea699533c5a939",
+    "internal/adapters/projects/launch.go": "11473172607d2736aa2b46f85dc7126331814e659f8654e3e3f8f4f5dcd4122b",
     "internal/adapters/skillfile/skillfile.go": "a10a410e8966b71a8c4d6666e0155a4b0b12cb3f513d9843038e3e2e2118ffde",
     "internal/adapters/squadfiles/launch.go": "8f3e51f35df23fc2c34537eab07a58857f81eaac0cf1c3236c6c2d9253ac4e6a",
     "internal/adapters/taskdir/broker.go": "9f5c355354c0ea181b1dcefcbaec3fe2431f867d09abc7cd03356c06866b4968",
@@ -2241,8 +2245,8 @@
     "internal/app/orchestrator/policy_projection.go": "964d5d2db030ae7a489bfc00d393c68c74d8aaef05be70c3dd489cf45191d925",
     "internal/app/orchestrator/scheduled.go": "21d1e8c60de795ba9fa31e27a423ef3ceceaf6170170aaff625870e3a8f3941e",
     "internal/app/orchestrator/session_pause.go": "f1407a0ece5a3d54ee45062e71c688ffdd844c5aefe0fabaf4d1b3fdc3d6a164",
-    "internal/app/squad_launch.go": "48dcba98c36d8c8437ec9ddb25f43d69e99541888f071a21f0b76d97c2ee7f9d",
-    "internal/app/start.go": "80421ee3bd817e8f54ab2e316c020a574924796e628d73d2a8034346b5720c0b",
+    "internal/app/squad_launch.go": "1ec83ebede904f62d9ad82471743702829e85a66f87ad575e9ee03408ee8065d",
+    "internal/app/start.go": "a1fb010b9d9d669b3607c364ca2750679a8a95a5eba6e2ec1d766e9798165bca",
     "internal/app/work_v2_todos.go": "fb992a3c595450d28507e6b8de14fe0c4be72e0cb84e398445f8c2622e0e171a",
     "internal/config/config.go": "25f547d482792bb8bc1cfef1ad6b9d8355d289104bf1f0842efe5002c7f6ab6c",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
@@ -2263,7 +2267,7 @@
     "web/console/src/session/Start.tsx": "e14aa5a64c4421538d4f69ce2638e5b1eaf87a43f1db6219655163603223727d"
   },
   "copyChecks": {
-    "en": "2e18b4bd7b0c14fe0a79e26390cd6a307f207d6c51519523dbdbc43295fe3fbb",
-    "zh-Hant": "00cd9d9f3de8c49ebced0d8a33f04d82d06cbc98d4cdac9a05ed05ffce0a2c03"
+    "en": "2a4f92b569fca2df7f75ba656446ca1cabf01b3e1a856ffa0214a0f8925ea4b6",
+    "zh-Hant": "d2a5705c900782e6582e29ac04e37280ad08e8dcce8d6a1216bbe45e181dc8ed"
   }
 }

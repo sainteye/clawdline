@@ -21,12 +21,28 @@ trusted root; it never consults the mutable role catalog. The existing
 for Squad identity and capability. They are distinct from this adapter's native
 conversation-to-context evidence.
 
-`app.Starter.startAntigravity` currently requires `PrepareAntigravity`, then
-checks that the admitted request retains its prompt path before opening a
-terminal. Root must wire the methods below and adjust that admission guard for
-an original restored path; it must not weaken the guard to allow arbitrary
-paths. The adapter's successful `Prepared.Request` is the exact request to
-admit, including its original memory, language, prompt path and context.
+`app.Starter.startAntigravity` requires a `PreparedAntigravity` containing the
+admitted request, private environment and a callback attached to one durable
+intent. For resume, `RestoreAntigravity` verifies native historical context
+before Squad publishes a new capability. The injected prompt retains its
+original skill paths; the fresh Squad launch files serve the new capability and
+terminal receipt, not replacement instruction text. Current role, memory and
+language callbacks are not read on this resume path.
+
+Admission checks that preparation retained the assistant, workspace, resume ID,
+role, model, effort, memory, language and original prompt. A resumed context must
+also equal the restored document. Missing preparation or terminal attachment
+refuses before opening. Every supported terminal plan, including the Squad and
+iTerm viewer paths, attaches the actual returned terminal once. If attachment
+fails after opening, `Started.BindingPending` retains the opened outcome; it is
+not a retryable opening failure and native authority remains unavailable.
+
+The app behavior is exercised with synthetic terminals and the real private
+context/Squad stores, including original skill paths and unknown history. This
+does not establish real vendor launch readiness. The HTTP start/resume foundation
+guards remain in place: before lifting them, the composition root must supply
+validated installation and measured permission policy, expose a pending binding
+outcome, complete initial-input admission and verify native context-loaded proof.
 
 ## API and ownership
 
