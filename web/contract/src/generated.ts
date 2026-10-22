@@ -2430,8 +2430,9 @@ export type CapacityUnit =
   | "characters"
   | "rows"
   | "seconds"
+  | "milliseconds"
 
-export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "characters", "rows", "seconds"] as const
+export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "characters", "rows", "seconds", "milliseconds"] as const
 
 export interface CatalogError {
   code: string

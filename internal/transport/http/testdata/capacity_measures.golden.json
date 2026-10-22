@@ -1333,6 +1333,26 @@
     "Note": true
   },
   {
+    "Name": "places.antigravity_history_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_history_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_history_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_history_title_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "places.antigravity_probe_output_bytes",
     "Known": true,
     "Note": true

@@ -8908,5 +8908,14 @@
   "capacityRow.places.antigravity_probe_output_bytes.what": "Limits the output retained while checking whether an installed Antigravity executable is the supported standalone CLI.",
   "capacityRow.places.antigravity_probe_output_bytes.full": "Oversized output makes the compatibility check fail. Clawdline will not launch that executable.",
   "capacityRow.places.antigravity_probe_seconds.what": "Limits each changed Antigravity executable compatibility probe. Draining output after cancellation has a separate limit of the same duration.",
-  "capacityRow.places.antigravity_probe_seconds.full": "If the probe times out, compatibility stays unknown and launch remains unavailable. No model request is made."
+  "capacityRow.places.antigravity_probe_seconds.full": "If the probe times out, compatibility stays unknown and launch remains unavailable. No model request is made.",
+  "capacity.milliseconds": "{0} ms",
+  "capacityRow.places.antigravity_history_entries.what": "Limits the native conversation directories and records inspected for one history read.",
+  "capacityRow.places.antigravity_history_entries.full": "An over-budget scan is refused instead of returning a misleading partial history.",
+  "capacityRow.places.antigravity_history_bytes.what": "Limits total native record bytes read for one history scan.",
+  "capacityRow.places.antigravity_history_bytes.full": "A scan that reaches the byte limit is refused; provider records are not deleted.",
+  "capacityRow.places.antigravity_history_milliseconds.what": "Limits time spent on one native history scan.",
+  "capacityRow.places.antigravity_history_milliseconds.full": "A scan that exceeds the deadline is refused, preserving an honest unknown history.",
+  "capacityRow.places.antigravity_history_title_characters.what": "Limits the fallback title derived from a conversation first line.",
+  "capacityRow.places.antigravity_history_title_characters.full": "A longer fallback title is shortened with an ellipsis; the conversation stays intact."
 }

@@ -2062,14 +2062,15 @@ var CapacityStateValues = []CapacityState{CapacityStateOK, CapacityStateWarn, Ca
 type CapacityUnit string
 
 const (
-	CapacityUnitBytes      CapacityUnit = "bytes"
-	CapacityUnitCharacters CapacityUnit = "characters"
-	CapacityUnitRows       CapacityUnit = "rows"
-	CapacityUnitSeconds    CapacityUnit = "seconds"
+	CapacityUnitBytes        CapacityUnit = "bytes"
+	CapacityUnitCharacters   CapacityUnit = "characters"
+	CapacityUnitRows         CapacityUnit = "rows"
+	CapacityUnitSeconds      CapacityUnit = "seconds"
+	CapacityUnitMilliseconds CapacityUnit = "milliseconds"
 )
 
 // CapacityUnitValues is every value the contract allows, in contract order.
-var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitCharacters, CapacityUnitRows, CapacityUnitSeconds}
+var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitCharacters, CapacityUnitRows, CapacityUnitSeconds, CapacityUnitMilliseconds}
 
 type CatalogError struct {
 	Code    string `json:"code"`
