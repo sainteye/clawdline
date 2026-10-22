@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 8903,
+  "englishKeys": 8908,
   "counts": {
-    "negation": 2584,
+    "negation": 2587,
     "state": 1458,
     "permission": 517,
     "deletion": 199,
-    "uncertainty": 271
+    "uncertainty": 272
   },
-  "unionCount": 3959,
+  "unionCount": 3962,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -360,6 +360,8 @@
       "capacityRow.personas.catalog.full",
       "capacityRow.personas.suggestion_context_bytes.full",
       "capacityRow.personas.text_bytes.full",
+      "capacityRow.places.antigravity_probe_output_bytes.full",
+      "capacityRow.places.antigravity_probe_seconds.full",
       "capacityRow.places.git_config_bytes.full",
       "capacityRow.places.registered.full",
       "capacityRow.places.registered.what",
@@ -943,6 +945,7 @@
       "http.1c1ebe46f533ab43",
       "http.1d1afd4687287b0d",
       "http.1da839ef85c9cdfb",
+      "http.1db27562f4ac9522",
       "http.1dc18143b4b6fffc",
       "http.1df6d5122960673f",
       "http.1e31c72f0db9eb5b",
@@ -4806,6 +4809,7 @@
       "capacityRow.console.status_gap_retry_seconds.what",
       "capacityRow.console.status_marker_retry_seconds.full",
       "capacityRow.diagnostics.route_stat_keys.full",
+      "capacityRow.places.antigravity_probe_seconds.full",
       "capacityRow.places.repo_wait_seconds.full",
       "capacityRow.places.setup_wait_seconds.full",
       "capacityRow.projectfiles.list.full",
@@ -5558,6 +5562,8 @@
     "capacityRow.personas.suggestion_context_bytes.full",
     "capacityRow.personas.suggestion_context_bytes.what",
     "capacityRow.personas.text_bytes.full",
+    "capacityRow.places.antigravity_probe_output_bytes.full",
+    "capacityRow.places.antigravity_probe_seconds.full",
     "capacityRow.places.git_config_bytes.full",
     "capacityRow.places.registered.full",
     "capacityRow.places.registered.what",
@@ -6393,6 +6399,7 @@
     "http.1d1afd4687287b0d",
     "http.1d8aa25687f68cbd",
     "http.1da839ef85c9cdfb",
+    "http.1db27562f4ac9522",
     "http.1dc18143b4b6fffc",
     "http.1df6d5122960673f",
     "http.1e31c72f0db9eb5b",

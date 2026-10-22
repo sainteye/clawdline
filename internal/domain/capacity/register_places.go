@@ -4,6 +4,19 @@ package capacity
 func placesBounds() []Entry {
 	return []Entry{
 		{
+			// Executable compatibility probes retain only one bounded stdout.
+			Name: "places.antigravity_probe_output_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/antigravity.CLIProbeOutputLimit"},
+		},
+		{
+			// One changed executable gets one deadline; orphan pipe draining
+			// is independently bounded by the same WaitDelay.
+			Name: "places.antigravity_probe_seconds", Class: Buffer, Unit: Seconds,
+			Limit: 3, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/antigravity.CLIProbeTimeLimit"},
+		},
+		{
 			// CLAWDLINE_NEXT_DIR/places.json: explicit project directories and
 			// directories deliberately hidden from the lists. Each
 			// row is a person's choice, so the daemon never evicts one; a full
