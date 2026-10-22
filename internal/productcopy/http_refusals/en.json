@@ -1246,5 +1246,6 @@
   "http.5d831f38b0407861": "Choose readonly or operate.",
   "http.4f1e84af963c02ab": "the viewer grant cannot be verified",
   "http.84c550dd21a49bd4": "The viewer scope was saved, but terminal leases could not be revalidated. Retry the same grant.",
-  "http.4a474057620510c7": "A scope can only be chosen when pairing with this machine; choose it on the other machine instead."
+  "http.4a474057620510c7": "A scope can only be chosen when pairing with this machine; choose it on the other machine instead.",
+  "http.1db27562f4ac9522": "Antigravity Session identity and interactive readiness have not been verified on this machine."
 }

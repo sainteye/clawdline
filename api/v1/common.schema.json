@@ -20,7 +20,7 @@
     },
     "Assistant": {
       "type": "string",
-      "enum": ["claude", "codex"]
+      "enum": ["claude", "codex", "antigravity"]
     },
     "MoverKind": {
       "description": "Who can clear an obligation. Naming the mover is what turns a stuck list into an actionable one.",
