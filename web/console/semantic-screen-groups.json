@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8903,
-  "riskKeys": 3959,
-  "nonRiskCount": 4944,
+  "englishContentKeys": 8920,
+  "riskKeys": 3973,
+  "nonRiskCount": 4947,
   "groups": [
     {
       "name": "admin / other",
@@ -237,6 +237,16 @@
       ]
     },
     {
+      "name": "antigravity / other",
+      "count": 1,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "antigravity.ready"
+      ]
+    },
+    {
       "name": "bar / other",
       "count": 15,
       "sources": [
@@ -292,7 +302,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 258,
+      "count": 260,
       "sources": [
         null
       ],
@@ -470,6 +480,8 @@
         "capacityRow.naming.tail_entries.what",
         "capacityRow.notification.rule_wait_seconds.what",
         "capacityRow.personas.text_bytes.what",
+        "capacityRow.places.antigravity_probe_output_bytes.what",
+        "capacityRow.places.antigravity_probe_seconds.what",
         "capacityRow.places.git_config_bytes.what",
         "capacityRow.places.repo_lookups.what",
         "capacityRow.places.setup_lookups.what",

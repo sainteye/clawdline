@@ -589,7 +589,7 @@ export function seconds(value: number): string {
 }
 
 /** `Assistant.label` (`Assistant.swift`), the two product names as they are written there. */
-export const ASSISTANT_LABEL = { claude: "Claude Code", codex: "Codex" } as const
+export const ASSISTANT_LABEL = { claude: "Claude Code", codex: "Codex", antigravity: "Antigravity" } as const
 
 /**
  * `dictationStatus(_:)`, composed here from the reading the shell sends rather

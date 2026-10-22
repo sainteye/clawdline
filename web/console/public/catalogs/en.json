@@ -1,4 +1,5 @@
 {
+  "http.1db27562f4ac9522": "Antigravity Session identity and interactive readiness have not been verified on this machine.",
   "next.transcriptEarlierStalled": "The history position did not move backward. Reload this Session before trying again.",
   "next.terminalRefusalViewerReadOnly": "This machine lets this device watch the terminal, not type in it. Change its access on that machine to operate.",
   "next.cloudPairLocal": "Pair directly with this app's machine",
@@ -8903,5 +8904,21 @@
   "browserPairing.mismatch": "The fingerprints differ. Do not continue. On the machine, revoke this browser with the command below, then generate a new QR code. This does not remove the machine from your account.",
   "browserPairing.retry": "Try again",
   "next.quotaSettingDesktopTitle": "Show quota bar on desktop",
-  "next.quotaSettingMobileTitle": "Show quota bar in the mobile Session list"
+  "next.quotaSettingMobileTitle": "Show quota bar in the mobile Session list",
+  "capacityRow.places.antigravity_probe_output_bytes.what": "Limits the output retained while checking whether an installed Antigravity executable is the supported standalone CLI.",
+  "capacityRow.places.antigravity_probe_output_bytes.full": "Oversized output makes the compatibility check fail. Clawdline will not launch that executable.",
+  "capacityRow.places.antigravity_probe_seconds.what": "Limits each changed Antigravity executable compatibility probe. Draining output after cancellation has a separate limit of the same duration.",
+  "capacityRow.places.antigravity_probe_seconds.full": "If the probe times out, compatibility stays unknown and launch remains unavailable. No model request is made.",
+  "antigravity.missing": "{assistant} CLI is not installed. Install it on this machine before starting a Session.",
+  "antigravity.integrationMissing": "{assistant} integration is not set up on this machine.",
+  "antigravity.required": "{assistant} needs sign-in on this machine.",
+  "antigravity.unsupported": "This account cannot use {assistant}. Check the account in its CLI.",
+  "antigravity.unknownAuth": "{assistant} sign-in status is unknown. Check its CLI on this machine.",
+  "antigravity.disabled": "{assistant} is unavailable for this action on this machine.",
+  "antigravity.incompatible": "The installed {assistant} CLI version is not supported.",
+  "antigravity.unknown": "{assistant} availability has not been confirmed on this machine.",
+  "antigravity.ready": "{assistant} is ready.",
+  "antigravity.slashDraft": "Antigravity commands stay in the draft. Open the command menu in its terminal to choose an action.",
+  "antigravity.sendUnavailable": "Sending to Antigravity is unavailable until its readiness and input are confirmed. Your draft stays here.",
+  "antigravity.modelUnavailable": "Model changes are unavailable here. Choose a model in the Antigravity terminal."
 }

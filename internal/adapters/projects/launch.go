@@ -17,20 +17,21 @@ import (
 //
 // The shape is the Swift app's and it is the point of this file. A client
 // never names a directory — it names a place id off a list this machine built —
-// and never names a command: the assistant is one of two literals, a model is
+// and never names a command: the assistant is a closed provider id, a model is
 // a name out of a closed alphabet, and a conversation is a lowercase UUID that
 // this machine has just listed for that place. There is no field anywhere on
 // the route a path or a command could be written into.
 
 // Assistants a place can be started with, by the path segment that names them.
 const (
-	AssistantClaude = "claude"
-	AssistantCodex  = "codex"
+	AssistantClaude      = "claude"
+	AssistantCodex       = "codex"
+	AssistantAntigravity = "antigravity"
 )
 
-// KnownAssistant is `Assistant(rawValue:)`: exact, and two cases.
+// KnownAssistant admits exact public provider ids, never executable aliases.
 func KnownAssistant(name string) bool {
-	return name == AssistantClaude || name == AssistantCodex
+	return name == AssistantClaude || name == AssistantCodex || name == AssistantAntigravity
 }
 
 // StartModels is Planner.models: the only model names the start route's
@@ -82,7 +83,7 @@ func KnownReasoningEffort(name string) bool {
 	return false
 }
 
-// SessionName is SessionLaunchPolicy.sessionID: a UUID as both CLIs write it,
+// SessionName is SessionLaunchPolicy.sessionID: a UUID as the CLIs write it,
 // lowercase, and nothing else. `--resume` takes an optional value, so anything
 // looser would open the CLI's own picker in a tab nobody is sitting at.
 func SessionName(raw string) (string, bool) {
@@ -125,23 +126,30 @@ func InheritedIdentityKeys(assistant string) []string {
 	case AssistantCodex:
 		return []string{"CODEX_THREAD_ID", "CODEX_SESSION_ID",
 			"CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", squadCapability}
+	case AssistantAntigravity:
+		return []string{squadCapability}
 	}
 	return nil
 }
 
-// LaunchRequest is ProviderLaunchRequest for the start and resume routes: the
-// permission is always `ask` and there is no extra directory, because nothing
-// a browser can reach names either.
+// LaunchRequest is the pure start/resume plan input. Existing browser launches
+// retain their ask policy. Antigravity requires an explicit measured native
+// permission mode and daemon-validated executable; neither is a browser input.
 type LaunchRequest struct {
-	ProjectRoot string
-	Assistant   string
-	Model       string
-	Resume      string
-	// ReasoningEffort is Codex's `model_reasoning_effort`, empty for the
-	// model's own default. It is a Codex setting and Claude Code has no
-	// equivalent flag, so it is refused rather than dropped on the other
-	// assistant: a brief that asked for it and got a session without it would
-	// have been answered yes to something that did not happen.
+	// Executable is the absolute standalone executable validated by the
+	// Antigravity adapter. Browser inputs must never populate it.
+	Executable string
+	// PermissionMode is an explicitly selected native Antigravity mode.
+	// No existing permission policy has a measured mapping yet; empty and
+	// generic ask/edits modes are refused instead of inheriting vendor settings.
+	PermissionMode string
+	ProjectRoot    string
+	Assistant      string
+	Model          string
+	Resume         string
+	// ReasoningEffort is Codex's model_reasoning_effort or Antigravity's
+	// --effort, validated against separate closed vocabularies. Empty keeps
+	// the provider default. Claude has no equivalent and refuses the field.
 	ReasoningEffort string
 	// Language is Claude Code's `language` setting, or the BCP 47 tag used in
 	// Codex's Board-item instruction. Empty leaves the assistant as it starts.
@@ -173,6 +181,7 @@ const MemoryLaunchLimit = 9 << 10
 
 // Launch is ProviderLaunchPlan: the one command a new terminal is given.
 type Launch struct {
+	Executable  string
 	ProjectRoot string
 	Assistant   string
 	Arguments   []string
@@ -180,6 +189,10 @@ type Launch struct {
 
 // ErrInvalidLaunch is SessionLaunchRefusal.invalid.
 var ErrInvalidLaunch = errors.New("invalid_launch")
+
+var ErrProviderPermissionUnsupported = errors.New("provider_permission_unsupported")
+var ErrProviderOptionsUnsupported = errors.New("provider_options_unsupported")
+var ErrProviderExecutableUnavailable = errors.New("provider_executable_unavailable")
 
 // ErrUnknownPersona is a persona id the catalog does not have. It is always
 // joined with ErrInvalidLaunch; a route that names the persona in its path
@@ -198,6 +211,9 @@ var ErrUnknownPersona = errors.New("the persona is not one this machine knows")
 //     nothing, and it replaces a `developer_instructions` the person set in
 //     ~/.codex/config.toml for this session (docs/personas.md).
 func PersonaArgs(assistant string, p persona.Persona, path string) []string {
+	if assistant == AssistantAntigravity {
+		return nil // Admit refuses unsupported context before reaching this helper.
+	}
 	if assistant == AssistantCodex {
 		return codexDeveloperArgs(persona.CodexInstruction(p, path))
 	}
@@ -271,6 +287,21 @@ func Admit(req LaunchRequest) (Launch, error) {
 	if !KnownAssistant(req.Assistant) {
 		return Launch{}, errors.Join(ErrInvalidLaunch, errors.New("the assistant is not one this machine starts"))
 	}
+	if req.Assistant == AssistantAntigravity {
+		if !usable(req.Executable) || !filepath.IsAbs(req.Executable) {
+			return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderExecutableUnavailable)
+		}
+		switch req.PermissionMode {
+		case "accept-edits", "auto", "plan":
+		default:
+			return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderPermissionUnsupported)
+		}
+		if req.Language != "" || req.Persona != "" || req.PersonaDir != "" || req.SquadPromptPath != "" || req.Memory != "" {
+			return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderOptionsUnsupported)
+		}
+	} else if req.Executable != "" || req.PermissionMode != "" {
+		return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderOptionsUnsupported)
+	}
 	if req.Model != "" {
 		if _, ok := ModelName(req.Model); !ok {
 			return Launch{}, errors.Join(ErrInvalidLaunch, errors.New("the provider model is not an allowlisted slug"))
@@ -282,11 +313,12 @@ func Admit(req LaunchRequest) (Launch, error) {
 		}
 	}
 	if req.ReasoningEffort != "" {
-		if req.Assistant != AssistantCodex {
+		if req.Assistant != AssistantCodex && req.Assistant != AssistantAntigravity {
 			return Launch{}, errors.Join(ErrInvalidLaunch,
 				errors.New("a reasoning effort is a Codex setting and this is not Codex"))
 		}
-		if !KnownReasoningEffort(req.ReasoningEffort) {
+		if !(req.Assistant == AssistantCodex && KnownReasoningEffort(req.ReasoningEffort) ||
+			req.Assistant == AssistantAntigravity && KnownAntigravityEffort(req.ReasoningEffort)) {
 			return Launch{}, errors.Join(ErrInvalidLaunch,
 				errors.New("the provider reasoning effort is not one this machine starts"))
 		}
@@ -353,6 +385,8 @@ func Admit(req LaunchRequest) (Launch, error) {
 	if req.Resume != "" {
 		if req.Assistant == AssistantClaude {
 			args = append(args, "--resume", req.Resume)
+		} else if req.Assistant == AssistantAntigravity {
+			args = append(args, "--conversation", req.Resume)
 		} else {
 			args = append(args, "resume", req.Resume)
 		}
@@ -364,13 +398,29 @@ func Admit(req LaunchRequest) (Launch, error) {
 	// `SessionLaunchPolicy.admit` puts it and what the Swift app's measured
 	// command line reads as.
 	if req.ReasoningEffort != "" {
-		args = append(args, "--config", "model_reasoning_effort="+req.ReasoningEffort)
+		if req.Assistant == AssistantAntigravity {
+			args = append(args, "--effort", req.ReasoningEffort)
+		} else {
+			args = append(args, "--config", "model_reasoning_effort="+req.ReasoningEffort)
+		}
+	}
+	if req.Assistant == AssistantAntigravity {
+		args = append(args, "--mode", req.PermissionMode)
 	}
 	if req.Language != "" && req.Assistant == AssistantClaude {
 		args = append(args, claudeLanguageArgs(req.Language)...)
 	}
 	args = append(args, personaArgs...)
-	return Launch{ProjectRoot: req.ProjectRoot, Assistant: req.Assistant, Arguments: args}, nil
+	return Launch{ProjectRoot: req.ProjectRoot, Assistant: req.Assistant, Executable: req.Executable, Arguments: args}, nil
+}
+
+// KnownAntigravityEffort is the standalone CLI's closed --effort vocabulary.
+func KnownAntigravityEffort(value string) bool {
+	switch value {
+	case "low", "medium", "high", "xhigh", "max":
+		return true
+	}
+	return false
 }
 
 // UpdateCheckArgs keeps Codex from asking, on its first screen, whether to
@@ -437,6 +487,10 @@ func (l Launch) ShellCommandWithEnv(set []string) string {
 			parts[i] = "-u " + k
 		}
 		prefix = "env " + strings.Join(append(parts, set...), " ") + " "
+	}
+	if l.Assistant == AssistantAntigravity {
+		// Do not resolve agy in an interactive shell's possibly different PATH.
+		return prefix + strings.Join(append([]string{ShellQuoted(l.Executable)}, l.Arguments...), " ")
 	}
 	return prefix + assistantPathEnv(l.Assistant) + " " + strings.Join(append([]string{l.Assistant}, l.Arguments...), " ")
 }

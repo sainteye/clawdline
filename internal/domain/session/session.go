@@ -15,8 +15,9 @@ const (
 type Assistant string
 
 const (
-	AssistantClaude Assistant = "claude"
-	AssistantCodex  Assistant = "codex"
+	AssistantClaude      Assistant = "claude"
+	AssistantCodex       Assistant = "codex"
+	AssistantAntigravity Assistant = "antigravity"
 )
 
 // State is what the session appears to be doing. `unknown` is a real answer and
