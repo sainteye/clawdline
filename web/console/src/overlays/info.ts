@@ -33,6 +33,7 @@ import { waitingForWords } from "../session/waiting-for.js"
 import { ActionConfirm } from "./action-confirm.js"
 import { RoleDetail } from "./role-detail.js"
 import { reasoningEffortHTML } from "./reasoning-effort.js"
+import { catalogWord } from "../catalog.js"
 import "./info-next.css"
 
 /**
@@ -195,7 +196,7 @@ function statusShape(s: Row | null): string {
 /** Only an idle session takes a `/model`: typed into a working one it interrupts the turn. */
 function canSwitch(): boolean {
   const s = session()
-  return !!(s && host.writable() && s.state === "idle" && !busy)
+  return !!(s && s.assistant !== "antigravity" && host.writable() && s.state === "idle" && !busy)
 }
 /** A Codex row may be unknown while its terminal remains writable. A deliberate press can open its picker. */
 function canOpenCodexPicker(): boolean {
@@ -234,6 +235,7 @@ function smartTitleButton(disabled: boolean): string {
 function namingAssistantName(assistant: string | undefined): string {
   if (assistant === "claude") return "Claude Code"
   if (assistant === "codex") return "Codex"
+  if (assistant === "antigravity") return "Antigravity"
   // A turn under `auto` that ran and failed was Claude Code's: Codex is only
   // asked when Claude Code could not answer at all.
   if (assistant === "auto") return "Claude Code"
@@ -531,10 +533,12 @@ function html(d: Facts): string {
   const role = roleHTML(session())
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
   // Read-only pairings get no buttons rather than dead ones.
-  if (host.writable() && (models.length || s.assistant === "codex")) {
+  if (host.writable() && s.assistant !== "antigravity" && (models.length || s.assistant === "codex")) {
     out += sec(++i, T.webInfoSwitchModel, "", s.assistant === "codex" ? codexModelHTML(models, current) : modelsHTML(models, current))
+  } else if (host.writable() && s.assistant === "antigravity") {
+    out += sec(++i, T.webInfoSwitchModel, "", note(catalogWord("antigravity", "modelUnavailable")))
   }
-  if (s.assistant === "codex" || s.assistant === "claude") {
+  if (s.assistant === "codex" || s.assistant === "claude" || s.assistant === "antigravity") {
     out += sec(++i, nextWord("infoReasoningEffort"), "", reasoningEffortHTML(s.assistant, s.effort, nextWord, esc))
   }
   out += sec(++i, nextWord("infoContext"), "", contextHTML(d.context))

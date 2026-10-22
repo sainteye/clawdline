@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -133,7 +134,30 @@ func installedAssistants() []contract.StartAssistant {
 				Availability: contract.StartAvailabilityUnknown})
 		}
 	}
+	out = append(out, antigravityStartAssistant(antigravityResolver().Snapshot(context.Background())))
 	return out
+}
+
+var antigravityResolver = sync.OnceValue(func() *antigravity.Resolver {
+	return antigravity.NewResolver(antigravity.DefaultCandidates(), nil)
+})
+
+func antigravityStartAssistant(info antigravity.Installation) contract.StartAssistant {
+	state := contract.StartIntegrationStateMissing
+	if info.Compatible {
+		state = contract.StartIntegrationStateDisabled
+	}
+	if info.Installed && info.Reason == "provider_cli_incompatible" {
+		state = contract.StartIntegrationStateIncompatible
+	}
+	var installed *bool
+	if info.InstalledKnown {
+		installed = &info.Installed
+	}
+	return contract.StartAssistant{ID: projects.AssistantAntigravity, Label: "Antigravity",
+		Availability: contract.StartAvailabilityUnknown, Installed: installed,
+		Version: info.Version, AuthState: contract.StartAuthState(info.AuthState),
+		IntegrationState: state, Capabilities: &contract.StartCapabilities{}}
 }
 
 func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {

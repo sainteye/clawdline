@@ -144,6 +144,8 @@ func amountOfLanguage(language string, u Unit, n int64) string {
 	switch u {
 	case Characters:
 		return strconv.FormatInt(n, 10) + productcopy.Format(language, "capacity.unit.characters", nil)
+	case Milliseconds:
+		return strconv.FormatInt(n, 10) + productcopy.Format(language, "capacity.unit.milliseconds", nil)
 	case Seconds:
 		return strconv.FormatInt(n, 10) + productcopy.Format(language, "capacity.unit.seconds", nil)
 	case Rows:
