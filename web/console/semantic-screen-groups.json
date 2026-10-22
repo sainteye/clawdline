@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8967,
+  "englishContentKeys": 8969,
   "riskKeys": 3997,
-  "nonRiskCount": 4970,
+  "nonRiskCount": 4972,
   "groups": [
     {
       "name": "admin / other",
@@ -315,7 +315,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 278,
+      "count": 280,
       "sources": [
         null
       ],
@@ -464,6 +464,8 @@
         "capacityRow.console.transcript_backoff_seconds.what",
         "capacityRow.console.transcript_fill_pages.full",
         "capacityRow.console.transcript_follow_later_seconds.what",
+        "capacityRow.console.transcript_revision_restarts.full",
+        "capacityRow.console.transcript_revision_restarts.what",
         "capacityRow.console.viewer_health_attempts.what",
         "capacityRow.console.viewer_health_backoff_seconds.full",
         "capacityRow.console.viewer_health_backoff_seconds.what",

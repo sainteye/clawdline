@@ -110,7 +110,7 @@ func renderDecoder(b *bytes.Buffer, o cloudvocab.Operation) error {
 		return fmt.Errorf("reply %q", d.Reply)
 	}
 	b.WriteString("if !ok {\nreturn plan{}, LocalRequest{}, false\n}\n")
-	if s := d.NameSuffix; s != nil {
+	for _, s := range d.AnswerNameSuffixes() {
 		fmt.Fprintf(b, "if _, named := b[%q]; named {\np.name += %s\n}\n", s.Field, goTemplate(s.Text))
 	}
 	for _, field := range fields {

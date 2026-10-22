@@ -199,6 +199,25 @@ test("older transcript reads name their cursor and do not replace the newest cac
   assert.equal(client.asks, 1)
 })
 
+test("same-offset older reads carry distinct held revisions through the relay", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 10_000 })
+  for (const revision of ["agy1:a:123:abc", "agy1:b:123:def"]) {
+    await r.fetch(`/v1/transcript?session=s1&before=123&revision=${encodeURIComponent(revision)}`)
+  }
+  assert.deepEqual(client.sessionPageReads.map((read) => read.body.revision), ["agy1:a:123:abc", "agy1:b:123:def"])
+  assert.notEqual(client.sessionPageReads[0].answer, client.sessionPageReads[1].answer)
+})
+
+test("an equal-offset page from another conversation cannot be drawn as this Session", async () => {
+  const client = new FakeClient()
+  client._read = async () => ({ id: "other", entries: [{ role: "user", text: "another conversation" }], signature: "agy1:other", evidence: "transcript" })
+  const r = reader(client, { t: 10_000 })
+  const response = await r.fetch("/v1/transcript?session=s1&before=123&revision=agy1:held")
+  assert.equal(response.status, 502)
+  assert.equal((await response.json()).error, "bad_payload")
+})
+
 /** A snippet row as the copied client tags it, with nothing of anybody's in it. */
 function snippet(machine: string, id: string, extra: Record<string, unknown> = {}) {
   return { id, machine, title: "a title", body: "a body", scope: "global", position: 0, ...extra }

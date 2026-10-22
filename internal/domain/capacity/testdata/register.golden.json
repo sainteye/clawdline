@@ -4295,6 +4295,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.transcript_revision_restarts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.transcript_safety_seconds",
     "Class": "cache",
     "Unit": "seconds",

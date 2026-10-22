@@ -2148,8 +2148,8 @@
     "internal/transport/http/start.go": "f0bc4fdd7e79b0fb5cbc4a0dc1be4cdeee9a2365238c8465a84aaa0f2f5d22af",
     "internal/transport/http/work_v2_brief.go": "444e7aa2297733c71a1ed4b64c9ee9f616fa934bf1061824072aa7dd36e9eaf9",
     "skills/clawdline/SKILL.md": "22ecbbe8ffa2da28d8442f6bc2535846fb9b75d155b8d457d3329f35098d6edc",
-    "skills/clawdline/guide.md": "5cdda8a2deb1bf055bb99ff2b74b7516de3ad17bcd6f4d060d3cd8c43c7d07fb",
-    "skills/clawdline/guide.zh-TW.md": "3e4f5e61c8951f988286fcee09beeeb8162aae6955efa321bd09973784a22da1",
+    "skills/clawdline/guide.md": "af7f6bd66be286a1d97e07ff47304748283c6727cc242b6c0e011b564c2d5690",
+    "skills/clawdline/guide.zh-TW.md": "25476dd60dc4dc75c7902dfe151820925739564d04bb416874b7c7a99a68ae64",
     "skills/sections.go": "ba3de38ebe0e26817f337bd4ae93e19d07ba07af8971b4fba397e6fe9082b903",
     "skills/skills.go": "146b2605f5e82e4093f731222da229df949be007b19005a428b538686feed330",
     "web/console/src/session/Start.tsx": "e14aa5a64c4421538d4f69ce2638e5b1eaf87a43f1db6219655163603223727d"

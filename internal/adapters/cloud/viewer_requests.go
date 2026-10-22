@@ -265,7 +265,7 @@ func viewerTranscriptCursor(body json.RawMessage, destination ViewerDestination)
 	return page.NextBefore, nil
 }
 
-func viewerTranscriptCommand(destination ViewerDestination, before int64) (string, map[string]any) {
+func viewerTranscriptCommand(destination ViewerDestination, before int64, revision ...string) (string, map[string]any) {
 	name := "transcript"
 	command := map[string]any{"type": "transcript", "session": destination.SessionID, "limit": 200,
 		"priority": "foreground", "machine_id": destination.MachineID,
@@ -273,12 +273,16 @@ func viewerTranscriptCommand(destination ViewerDestination, before int64) (strin
 	if before > 0 {
 		name = fmt.Sprintf("transcript.before.%d", before)
 		command["before"] = before
+		if len(revision) == 1 && revision[0] != "" {
+			name += ".revision." + revision[0]
+			command["revision"] = revision[0]
+		}
 	}
 	return name, command
 }
 
-func (c *ViewerClient) readTranscript(ctx context.Context, destination ViewerDestination, before int64) (json.RawMessage, *int64, error) {
-	name, command := viewerTranscriptCommand(destination, before)
+func (c *ViewerClient) readTranscript(ctx context.Context, destination ViewerDestination, before int64, revision ...string) (json.RawMessage, *int64, error) {
+	name, command := viewerTranscriptCommand(destination, before, revision...)
 	body, err := c.request(ctx, destination, "r", name, command, false)
 	if err != nil {
 		return nil, nil, err
@@ -484,7 +488,7 @@ func (c *ViewerClient) ReadDetail(ctx context.Context, destination ViewerDestina
 
 // ReadTranscriptPage fetches one older page. The cursor names a byte boundary
 // in the same transcript; each request separately rechecks the live execution.
-func (c *ViewerClient) ReadTranscriptPage(ctx context.Context, destination ViewerDestination, before int64) (ViewerTranscriptPage, error) {
+func (c *ViewerClient) ReadTranscriptPage(ctx context.Context, destination ViewerDestination, before int64, revision ...string) (ViewerTranscriptPage, error) {
 	if before <= 0 {
 		return ViewerTranscriptPage{}, ViewerRefusal{Code: "bad_request"}
 	}
@@ -496,7 +500,7 @@ func (c *ViewerClient) ReadTranscriptPage(ctx context.Context, destination Viewe
 		return ViewerTranscriptPage{}, err
 	}
 	defer func() { _ = c.transport.Unsubscribe(path) }()
-	transcript, nextBefore, err := c.readTranscript(ctx, destination, before)
+	transcript, nextBefore, err := c.readTranscript(ctx, destination, before, revision...)
 	if err != nil {
 		return ViewerTranscriptPage{}, err
 	}
