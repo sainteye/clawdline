@@ -136,6 +136,8 @@ func InheritedIdentityKeys(assistant string) []string {
 // retain their ask policy. Antigravity requires an explicit measured native
 // permission mode and daemon-validated executable; neither is a browser input.
 type LaunchRequest struct {
+	// AntigravityContext is daemon-prepared, persisted immutable context.
+	AntigravityContext *AntigravityContext
 	// Executable is the absolute standalone executable validated by the
 	// Antigravity adapter. Browser inputs must never populate it.
 	Executable string
@@ -296,10 +298,17 @@ func Admit(req LaunchRequest) (Launch, error) {
 		default:
 			return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderPermissionUnsupported)
 		}
-		if req.Language != "" || req.Persona != "" || req.PersonaDir != "" || req.SquadPromptPath != "" || req.Memory != "" {
-			return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderOptionsUnsupported)
+		if req.AntigravityContext == nil {
+			if req.Language != "" || req.Persona != "" || req.PersonaDir != "" || req.SquadPromptPath != "" || req.Memory != "" {
+				return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderOptionsUnsupported)
+			}
+		} else if req.AntigravityContext.Validate() != nil ||
+			req.AntigravityContext.Language != req.Language || req.AntigravityContext.Memory != req.Memory ||
+			req.AntigravityContext.PromptPath != req.SquadPromptPath ||
+			(req.Persona != "" && req.SquadPromptPath == "") {
+			return Launch{}, errors.Join(ErrInvalidLaunch, ErrSquadContextUnavailable)
 		}
-	} else if req.Executable != "" || req.PermissionMode != "" {
+	} else if req.Executable != "" || req.PermissionMode != "" || req.AntigravityContext != nil {
 		return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderOptionsUnsupported)
 	}
 	if req.Model != "" {
@@ -325,7 +334,7 @@ func Admit(req LaunchRequest) (Launch, error) {
 	}
 	if req.Language != "" {
 		known := req.Assistant == AssistantClaude && knownClaudeLanguage(req.Language) ||
-			req.Assistant == AssistantCodex && CodexBoardLanguage(req.Language) == req.Language
+			(req.Assistant == AssistantCodex || req.Assistant == AssistantAntigravity) && CodexBoardLanguage(req.Language) == req.Language
 		if !known {
 			return Launch{}, errors.Join(ErrInvalidLaunch,
 				errors.New("the response language is not one this machine starts"))
@@ -336,7 +345,10 @@ func Admit(req LaunchRequest) (Launch, error) {
 	}
 	var personaArgs []string
 	var codexInstructions []string
-	if req.SquadPromptPath != "" {
+	if req.Assistant == AssistantAntigravity {
+		// Native PreInvocation supplies prepared context, without Claude flags
+		// or replacing the provider's base prompt and project/global rules.
+	} else if req.SquadPromptPath != "" {
 		if !filepath.IsAbs(req.SquadPromptPath) || !usable(req.SquadPromptPath) {
 			return Launch{}, errors.Join(ErrInvalidLaunch, errors.New("the squad prompt is not a safe absolute path"))
 		}
