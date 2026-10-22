@@ -1,6 +1,8 @@
+import { assistantStateCurrent } from "../session/antigravity-ui.js"
+import { assistantFactsMachine, useAssistantFacts } from "../session/assistant-facts.js"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { AssistantSkill, DevStacksReply, SessionRow } from "@clawdline/contract"
-import { antigravitySlashDraft, assistantComposeAdmits, assistantLabel } from "../session/antigravity-ui.js"
+import { antigravitySlashDraft, assistantComposeAdmits, assistantLabel, assistantUnavailable } from "../session/antigravity-ui.js"
 import { catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client } from "../client.js"
@@ -273,6 +275,8 @@ export default function Bar() {
   }, [rows, stickyID])
   const current: SessionRow | null = index >= 0 ? (rows[index] ?? null) : null
 
+  const readiness = useAssistantFacts(assistantFactsMachine(current), current?.execution_generation, current?.source?.observed_at, current?.assistant === "antigravity" && assistantStateCurrent(current))
+  const factsRef = useRef(readiness); factsRef.current = readiness
   const textRef = useRef(text)
   textRef.current = text
   const rowsRef = useRef(rows)
@@ -460,9 +464,10 @@ export default function Bar() {
       say(catalogWord("antigravity", "slashDraft"), true)
       return
     }
-    // The bar's current row contract carries no provider readiness facts yet.
-    if (!assistantComposeAdmits(target.assistant, undefined, target.state, !!target.menu)) {
-      say(catalogWord("antigravity", "sendUnavailable"), true)
+    if ((target.assistant === "antigravity" && !assistantStateCurrent(target)) || !assistantComposeAdmits(target.assistant, factsRef.current.assistants.find(facts => facts.id === target.assistant), target.state, !!target.menu)) {
+      const reason = factsRef.current.kind !== "ready" ? factsRef.current.kind
+        : assistantUnavailable(factsRef.current.assistants.find(facts => facts.id === target.assistant), "send")
+      say(reason ? catalogWord("antigravity", reason).replace("{assistant}", assistantLabel(target.assistant)) : catalogWord("antigravity", "sendUnavailable"), true)
       return
     }
     remember(body)
@@ -684,7 +689,7 @@ export default function Bar() {
   const project = L.projectLabel(current?.cwd)
   const hints = keysShown ? HINTS : HINTS_CLOSED
   const placeholder = current?.assistant === "antigravity"
-    ? placeholderFor("codex").replaceAll("Codex", "Antigravity") : placeholderFor(current?.assistant)
+    ? catalogWord("antigravity", "placeholder") : placeholderFor(current?.assistant)
 
   return (
     <div className="bar-card" ref={cardRef}>

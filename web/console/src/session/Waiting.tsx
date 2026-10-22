@@ -1,3 +1,4 @@
+import { assistantMenuAdmits, type AssistantFacts } from "./antigravity-ui.js"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import type { SessionMenu, SessionMenuOption, SessionMenuStep, SessionMenuSubmit, SessionRow } from "@clawdline/contract"
 import { toast, toastFailure } from "../overlays/toast.js"
@@ -74,12 +75,12 @@ const PRESS_SHOWN_MS = 150
  * cut the top off; the card told the person to answer "on the Mac", and there
  * was nothing on the phone that could move it.
  */
-export function Waiting({ row, write, onScreen }: { row: SessionRow | null; write: boolean; onScreen?: () => void }) {
+export function Waiting({ row, write, onScreen, assistantFacts }: { row: SessionRow | null; write: boolean; assistantFacts?: AssistantFacts; onScreen?: () => void }) {
   const box = useRef<HTMLDivElement>(null)
   const follow = useRef(new MenuFollow())
   const state = useRef<CardState>({ drawn: null, answered: null, folded: null, reread: null })
-  const current = useRef<{ row: SessionRow | null; write: boolean; onScreen?: () => void }>({ row, write, onScreen })
-  current.current = { row, write, onScreen }
+  const current = useRef<{ row: SessionRow | null; write: boolean; onScreen?: () => void; assistantFacts?: AssistantFacts }>({ row, write, onScreen, assistantFacts })
+  current.current = { row, write, onScreen, assistantFacts }
 
   const render = () => {
     const el = box.current
@@ -136,13 +137,13 @@ export function Waiting({ row, write, onScreen }: { row: SessionRow | null; writ
                   : press.shown
                     ? "sending"
                     : null,
-            write: current.current.write,
+            write: current.current.write && assistantMenuAdmits(open, current.current.assistantFacts),
             refresh: {
               busy: !!st.reread?.busy,
               status: st.reread && !st.reread.busy && st.reread.done ? nextWord("menuRereadAsked") : "",
             },
             screenOff: !current.current.onScreen,
-            cancel: current.current.write,
+            cancel: current.current.write && assistantMenuAdmits(open, current.current.assistantFacts),
             screen: open.screen_reading ?? null,
             arriving: following && !follow.current.expired(Date.now()) || open.closeability?.source?.provenance === "pinned_list" ||
               (open as { menu_arriving?: unknown }).menu_arriving === true,
@@ -252,7 +253,7 @@ export function Waiting({ row, write, onScreen }: { row: SessionRow | null; writ
 
       const opt = target.closest<HTMLButtonElement>("[data-key]")
       if (opt) {
-        if (!open || opt.disabled) return
+        if (!open || opt.disabled || !assistantMenuAdmits(open, current.current.assistantFacts)) return
         // Every option goes dead on the first press: they answer one question,
         // and a second tap in flight would be a stray key in the next one.
         el.querySelectorAll<HTMLButtonElement>(".opt").forEach((b) => {
@@ -330,7 +331,7 @@ export function Waiting({ row, write, onScreen }: { row: SessionRow | null; writ
       // a second Esc into whatever the session does next.
       const cancel = target.closest<HTMLButtonElement>("[data-cancel]")
       if (cancel) {
-        if (!open || cancel.disabled) return
+        if (!open || cancel.disabled || !assistantMenuAdmits(open, current.current.assistantFacts)) return
         cancel.disabled = true
         const asked = open.id
         askInterrupt(asked).then(
