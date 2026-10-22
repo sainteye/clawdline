@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/release/updater"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
@@ -100,6 +101,8 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "provider":
+		os.Exit(providerObserveCommand(context.Background(), os.Args[2:], config.Load().Dir, os.Stdin, os.Stdout, os.Stderr))
 	case "serve":
 		serve()
 	case "doctor":
@@ -285,12 +288,28 @@ func serve() {
 	// closed rather than abandoned mid-write.
 	cloudCtx, stopCloud := context.WithCancel(context.Background())
 	defer stopCloud()
-	go stopConnectionHealthOnSignal(startConnectionHealth(cfg.Dir, srv), stopCloud)
 	// A device file that cannot be read stops the daemon here, rather than
 	// letting it listen and refuse everybody.
 	if err := srv.AuthReady(); err != nil {
 		refuseToServe(1, err.Error())
 	}
+	stopAntigravity, antigravityErr := srv.StartAntigravity(cloudCtx, httptransport.AntigravityRuntimeOptions{})
+	if antigravityErr != nil {
+		var typed *antigravity.BridgeError
+		if errors.As(antigravityErr, &typed) {
+			log.Printf("antigravity: %s", typed.Code)
+		} else {
+			log.Print("antigravity: antigravity_runtime_failed")
+		}
+	} else {
+		defer stopAntigravity()
+	}
+	go stopConnectionHealthOnSignal(startConnectionHealth(cfg.Dir, srv), func() {
+		stopCloud()
+		if stopAntigravity != nil {
+			stopAntigravity()
+		}
+	})
 	srv.StartScheduler(context.Background())
 	// The broker's beat: collect what children wrote, run the two clocks, and
 	// keep telling a root its child finished until somebody acknowledges it.
@@ -313,6 +332,9 @@ func serve() {
 	startCloudLine(cloudCtx, cfg, srv)
 	if err := srv.Serve(ln); err != nil {
 		stopCloud()
+		if stopAntigravity != nil {
+			stopAntigravity()
+		}
 		refuseToServe(1, err.Error())
 	}
 }

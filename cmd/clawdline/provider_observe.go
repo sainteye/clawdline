@@ -4,9 +4,31 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 )
+
+func providerObserveCommand(ctx context.Context, args []string, configDir string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) != 4 || args[0] != "observe" || args[1] != "antigravity" || args[2] != "--event" {
+		return runProviderObserve(ctx, nil, "", nil, stdin, stdout, stderr)
+	}
+	dir, err := antigravity.ProviderStateDir(configDir)
+	var launch *antigravity.HookLaunch
+	if err == nil {
+		path, present := os.LookupEnv(antigravity.CapabilityFileEnv)
+		if present && path == "" {
+			err = &antigravity.BridgeError{Code: "antigravity_capability_invalid"}
+		} else {
+			launch, err = antigravity.LoadHookLaunch(dir, path)
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, cliCopy("provider", "observe.failed", "Antigravity hook failed (%s).\n"), err.Error())
+		return 1
+	}
+	return runProviderObserve(ctx, args[1:], dir, launch, stdin, stdout, stderr)
+}
 
 // runProviderObserve is deliberately dependency-injected. Main owns selection
 // of the configured canonical private state directory and any managed launch
