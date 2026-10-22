@@ -54,6 +54,13 @@ func (p *antigravityAction) check(ctx context.Context) error {
 	if err != nil || !b.Verified || b.Process != p.target.Process || b.ConversationID != p.target.ConversationID {
 		return antigravityBindingRefusal()
 	}
+	if p.actions.AntigravityPolicy != nil {
+		if err := p.actions.AntigravityPolicy(ctx, b); err != nil {
+			ref := antigravityBindingRefusal()
+			ref.Cause = err
+			return ref
+		}
+	}
 	return nil
 }
 func (p *antigravityAction) read(ctx context.Context) (string, error) {

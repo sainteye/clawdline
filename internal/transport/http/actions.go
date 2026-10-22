@@ -511,6 +511,7 @@ func (s *Server) actions() app.Actions {
 	if bridge := s.antigravityBridge.Load(); bridge != nil {
 		a.Antigravity = bridge
 	}
+	a.AntigravityPolicy = s.checkAntigravityActionPolicy
 	return a
 }
 

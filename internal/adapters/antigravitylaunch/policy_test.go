@@ -471,3 +471,114 @@ func TestNativePolicyLegacyVersionCannotClaimNewAuthorityFields(t *testing.T) {
 		}
 	}
 }
+
+func TestManagedProvenanceSurvivesDeactivateRevokeAndReopen(t *testing.T) {
+	ctx := context.Background()
+	f := setup(t)
+	p := preparePolicy(t, f)
+	native := pin(t, f.store, p)
+	verify := func(s *Store, revoked bool) {
+		t.Helper()
+		got, found, err := s.ManagedRecordForProcess(ctx, native)
+		if err != nil || !found || got.ID != p.Record.ID || got.Revoked != revoked {
+			t.Fatal("managed provenance became absent", found, err)
+		}
+		got.Policy.Ceiling = "full"
+		again, found, err := s.ManagedRecordForProcess(ctx, native)
+		if err != nil || !found || again.Policy.Ceiling != "ask" {
+			t.Fatal("metadata leaked mutable policy", err)
+		}
+	}
+	verify(f.store, false)
+	if err := f.store.Deactivate(ctx, p.Record.ID); err != nil {
+		t.Fatal(err)
+	}
+	verify(f.store, false)
+	if err := f.store.RevokeLaunch(ctx, p.Record.ID); err != nil {
+		t.Fatal(err)
+	}
+	verify(f.store, true)
+	f.store.Close()
+	s, err := Open(f.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	verify(s, true)
+	other := native
+	other.KernelGeneration += "-new"
+	if _, found, err := s.ManagedRecordForProcess(ctx, other); err != nil || found {
+		t.Fatal("unowned generation became managed", err)
+	}
+	s.Close()
+	if _, _, err := s.ManagedRecordForProcess(ctx, other); err == nil {
+		t.Fatal("unreadable provenance became unowned")
+	}
+}
+
+func TestManagedProvenanceRefusesAmbiguousOwners(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	first := preparePolicy(t, f)
+	native := pin(t, f.store, first)
+	if err := f.store.Deactivate(ctx, first.Record.ID); err != nil {
+		t.Fatal(err)
+	}
+	second := preparePolicy(t, f)
+	if got := pin(t, f.store, second); got != native {
+		t.Fatal("synthetic process differs")
+	}
+	_, _, err := f.store.ManagedRecordForProcess(ctx, native)
+	code(t, err, "process_ambiguous")
+}
+
+func TestPolicyVersionOneKeepsHistoryButCannotReactivate(t *testing.T) {
+	ctx := context.Background()
+	f := setup(t)
+	p := preparePolicy(t, f)
+	native := pin(t, f.store, p)
+	b := binding(native, uuid.NewString(), 1)
+	if err := f.store.RecordBinding(ctx, p.Record.ID, b, KeepConversation); err != nil {
+		t.Fatal(err)
+	}
+	rewritePolicyIndex(t, f, func(index map[string]any) {
+		policy := index["records"].(map[string]any)[p.Record.ID].(map[string]any)["policy"].(map[string]any)
+		policy["version"] = 1
+		delete(policy, "model")
+		delete(policy, "effort")
+	})
+	s, err := Open(f.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_, err = s.PolicyForLaunch(ctx, p.Record.ID)
+	code(t, err, "policy_version_unsupported")
+	if _, err := s.Restore(ctx, f.request.ProjectRoot, b.ConversationID); err != nil {
+		t.Fatal("old policy lost history", err)
+	}
+	got, found, err := s.ManagedRecordForProcess(ctx, native)
+	if err != nil || !found || got.Policy.Version != 1 {
+		t.Fatal("old policy became unmanaged", err)
+	}
+}
+
+func TestNativePolicyBindsModelAndEffort(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p := preparePolicy(t, f)
+	for _, kind := range []string{"model", "effort"} {
+		req := f.request
+		policy := syntheticNativePolicy()
+		if kind == "model" {
+			req.Model = "synthetic-model"
+		} else {
+			req.ReasoningEffort = "high"
+		}
+		_, err := f.store.PrepareLaunchWithPolicy(ctx, uuid.NewString(), req, policy)
+		code(t, err, "policy_request_conflict")
+		policy.Model, policy.Effort = req.Model, req.ReasoningEffort
+		_, err = f.store.PrepareLaunchWithPolicy(ctx, p.Record.ID, req, policy)
+		code(t, err, "launch_conflict")
+	}
+}

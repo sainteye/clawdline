@@ -1,8 +1,9 @@
 # Antigravity native policy and launch ownership
 
-Status: storage, native execution-plan observation and the tool-response seam
-are implemented; production composition and native behavior activation remain
-pending. This supplements decision A07 in
+Status: private storage, native execution-plan observation, shared preparation
+and live policy checks are implemented. Publishing the actual project-consent
+and effective-mode owners, HTTP/broker entrypoints and native behavior activation
+remain pending. This supplements decision A07 in
 [the integration design](antigravity-cli.md#decisions-and-alternatives), without
 replacing the existing work, receipt, claims or final acceptance policies.
 No compatibility row is enabled by this storage change.
@@ -33,10 +34,12 @@ These callbacks are payload seams, not newly enabled launch behavior.
 `PrepareLaunchWithPolicy` binds the normalized launch request and `NativePolicy`
 in the same bounded index transaction that reserves the launch slot. Policy
 contains a version, the product ceiling, exact executable digest, compatibility
-revision, native mode, hook/helper digests and the digest of the explicit
-project-consent revision. These are private daemon values, with no account,
+revision, native mode, requested model/effort, hook/helper digests and the digest
+of the explicit project-consent revision. These are private daemon values, with no account,
 credential, transcript or capability bytes. Policy mode must equal the prepared
-request's native mode; that equality does not prove the mode's semantics.
+request's native mode; that equality does not prove the mode's semantics. Policy
+version 2 additionally binds model and effort. Version-1 policies remain
+historical and cannot reactivate authority; their original context stays readable.
 
 Identical keyed retries reuse context and capability. Changing any policy or
 request field conflicts; a policy-free launch cannot be silently upgraded.
@@ -110,9 +113,56 @@ CLI or foreign-platform runtime result.
 After authenticated persisted Observe and the existing completion callback,
 only PreToolUse selects this response. Failure, cancellation, oversized or
 non-object data produces a hook error and no observer response. Other events
-keep their original response path. The seam does not automatically install a
-production callback, label unmanaged observations as managed, or assert that
-native `force_ask` is effective. That behavior remains a native matrix item.
+keep their original response path. The shared managed callback now supplies this seam as described below; it
+does not publish a production behavior row, label unmanaged observations as
+managed, or assert that native `force_ask` is effective. That behavior remains
+a native matrix item.
+
+## Implemented server composition
+
+`prepareProductionAntigravity` takes the HTTP receipt or broker owner's durable
+intent and returns the shared private launch result. It selects the exact
+pinned image and server-selected behavior, binds the current project plan and
+consent revision, prepares immutable context, and checks real `projects.Admit`
+before returning. It allocates no ID, installs no project hooks, opens no
+terminal and sends no input. Identical intents reuse private state. An
+admission failure can revoke only a positively unopened launch.
+`RevokeUnopenedLaunch` atomically refuses a recorded terminal/process; absence
+of a receipt alone is still not proof that an opener did nothing. A caller
+must retain pending/unknown opening outcomes for their original owner.
+
+The live Check reruns private context/capability, image, behavior tuple,
+project consent/helper/hook revision, exact native process/terminal/workspace,
+mode/model/effort/resume arguments and separately supplied effective-mode
+verification. It checks owner pointers and persisted policy again after those
+reads, so revocation during an inspector or effective-state callback does not
+leave an input grant. No new process, provider request or retry is performed.
+
+Policy-bearing managed ingress checks before pinning; context preparation and
+proof reads recheck current policy. Managed PreToolUse selects the dedicated
+response only after the same policy checks. A missing dependency or behavior
+row refuses; all real rows remain inactive. The private dependency snapshot has
+no browser setter or production publisher in this stage: the actual narrow
+project-consent owner and proven effective-mode implementation are still
+required. Tests inject explicit synthetic adapter contracts, not real consent
+or native permission evidence. No existing hooks file is treated as opt-in.
+
+`ManagedRecordForProcess` distinguishes positively unowned native processes
+from durable managed provenance, including inactive, revoked and old-policy
+records. It reads only the existing bounded launch index and refuses ambiguous
+ownership or unreadable state. Deactivation, revocation and restart cannot
+convert a known managed process into an unmanaged fallback. Context and tool
+responses use this distinction before live lookup.
+
+Server-created bound actions now consult the same live policy around their
+existing capture/paste/navigation/Enter effects. A managed process must retain
+its active private owner and exact positively recorded conversation. Unknown
+ownership refuses, while positively unowned sessions retain their existing
+native interaction path. Policy failures use the existing bilingual binding
+refusal copy with the typed cause retained. Synthetic action tests show a
+retained draft and no Enter after policy withdrawal, and no generic Send
+fallback. Broker/root/HTTP opening and initial-input ownership still need their
+remaining composition; adding these checks does not enable public starts.
 
 ## Remaining production contract
 
@@ -123,10 +173,10 @@ native `force_ask` is effective. That behavior remains a native matrix item.
    configuration. Compose the existing execution-plan reader under the same kernel
    generation if required by the tuple; establish effective-mode authority
    separately and do not expose raw argv or environment.
-3. Share preparation and current policy Check across HTTP and broker. Check
-   before process pinning, managed context/tool responses, and every
-   capture/load/paste/Enter effect. Supply the production-specific callback through the existing PreToolUse
-   response seam with no observer fallback on failure. The initial candidate is
+3. Connect the implemented shared preparation and current policy Check to the
+   HTTP and broker owning receipts. Preserve checks before process pinning,
+   managed context/tool responses and each capture/load/paste/Enter effect. The
+   managed PreToolUse seam has no observer fallback on failure. The initial candidate is
    measured `force_ask`, not the observer's grant-reusing `ask` response.
 4. Persist the native launch reference before each owner's one open. Retain
    binding-pending and unknown outcomes without generic Type, Send or reopen

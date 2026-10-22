@@ -292,3 +292,50 @@ func TestAntigravityActionsLostEnterReplyRemainsUncertain(t *testing.T) {
 		t.Fatalf("err=%v pasted=%q keys=%q", err, p.pasted, p.keys())
 	}
 }
+
+func TestAntigravityBoundActionsRecheckPolicyBeforeEachEffect(t *testing.T) {
+	for _, kind := range []string{"before-paste", "after-paste", "menu"} {
+		t.Run(kind, func(t *testing.T) {
+			a, pane, _ := agyActions()
+			revoked := kind == "before-paste"
+			checks := 0
+			a.AntigravityPolicy = func(context.Context, ports.AntigravityBinding) error {
+				checks++
+				if revoked {
+					return errors.New("synthetic policy revoked")
+				}
+				return nil
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if kind == "menu" {
+				pane.show(agyActionPermission(1))
+				expected := session.MenuFingerprint(session.ReadAntigravityScreen(agyActionPermission(1), false).Menu)
+				pane.onKey = func(p *menuTerminal, _ []byte) { revoked = true; p.show(agyActionPermission(2)) }
+				if _, err := a.Key(ctx, pane.s.ID, "2", expected); err == nil {
+					t.Fatal("revoked menu confirmed")
+				}
+				if strings.Contains(strings.Join(pane.keys(), ""), "\r") {
+					t.Fatal("policy revoked after navigation but Enter sent")
+				}
+			} else {
+				pane.afterPaste = func() { revoked = true }
+				if _, err := a.send(ctx, pane.s, "synthetic input"); err == nil {
+					t.Fatal("revoked policy submitted")
+				}
+				if pane.rawSends != 0 || len(pane.keys()) != 0 {
+					t.Fatal("revoked policy fell back to generic send")
+				}
+				if kind == "before-paste" && len(pane.pasted) != 0 {
+					t.Fatal("initially revoked policy pasted")
+				}
+				if kind == "after-paste" && len(pane.pasted) != 1 {
+					t.Fatal("retained draft lost")
+				}
+			}
+			if checks == 0 {
+				t.Fatal("bound action did not consult policy")
+			}
+		})
+	}
+}

@@ -54,6 +54,8 @@ Open(Config{StateDir: providerStateDir, SquadLaunchRoot: squadLaunchRoot}) (*Sto
 (*Store).PrepareLaunchWithPolicy(context.Context, string, projects.LaunchRequest, NativePolicy) (Prepared, error)
 (*Store).PolicyForLaunch(context.Context, string) (NativePolicy, error)
 (*Store).RevokeLaunch(context.Context, string) error
+(*Store).RevokeUnopenedLaunch(context.Context, string) error
+(*Store).ManagedRecordForProcess(context.Context, ports.AntigravityProcess) (Record, bool, error)
 (*Store).AttachTerminal(context.Context, string, string, string) error
 (*Store).PinProcess(context.Context, string, ports.AntigravityProcess) error
 (*Store).LookupProcess(context.Context, ports.AntigravityProcess) (Record, error)

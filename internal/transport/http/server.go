@@ -53,6 +53,7 @@ import (
 )
 
 type Server struct {
+	antigravityPolicyInputs   atomic.Pointer[antigravityPolicyInputs]
 	antigravityRuntimeMu      sync.Mutex
 	antigravityRuntimeStarted bool
 	antigravityInstallation   func(context.Context) antigravity.Installation

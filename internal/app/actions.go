@@ -40,7 +40,10 @@ type Actions struct {
 	// Antigravity verifies the live native conversation before every terminal effect.
 	Antigravity           ports.AntigravityBindings
 	AntigravityFirstInput ports.AntigravityFirstInputs
-	Store                 *store.Store
+	// AntigravityPolicy rechecks managed authority around every bound IO effect.
+	// Isolated unmanaged adapters may omit it; server composition always sets it.
+	AntigravityPolicy func(context.Context, ports.AntigravityBinding) error
+	Store             *store.Store
 	// Owed is what the sessions on this machine still owe — the broker's
 	// pending landings, read at the moment of asking (D01). Nil is a daemon
 	// that cannot say, and a close is then refused as unknown rather than

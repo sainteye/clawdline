@@ -5,15 +5,21 @@ import (
 	"encoding/json"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
-const nativePolicyVersion = 1
+// PolicyVersion binds model and effort as well as the native permission plan.
+const PolicyVersion = 2
+
+const nativePolicyVersion = PolicyVersion
 
 // NativePolicy is private launch evidence. It never grants permission by
 // itself: production must recheck the compiled native behavior, current opt-in,
 // hook plan, exact image and live process before each effect. Store owns no
 // account predicate or compatibility table.
 type NativePolicy struct {
+	Model            string `json:"model,omitempty"`
+	Effort           string `json:"effort,omitempty"`
 	Version          int    `json:"version"`
 	Ceiling          string `json:"ceiling"`
 	ExecutableDigest string `json:"executable_digest"`
@@ -88,6 +94,9 @@ func (s *Store) PrepareLaunchWithPolicy(ctx context.Context, id string, req proj
 	if policy.NativeMode != req.PermissionMode {
 		return Prepared{}, fail("policy_mode_conflict")
 	}
+	if policy.Model != req.Model || policy.Effort != req.ReasoningEffort {
+		return Prepared{}, fail("policy_request_conflict")
+	}
 	return s.prepareLaunch(ctx, id, req, &policy)
 }
 
@@ -122,6 +131,16 @@ func (s *Store) PolicyForLaunch(ctx context.Context, id string) (NativePolicy, e
 // context, native history, loaded proof or consumed first-input slots. It does
 // not stop an independently running provider. Repeated revocation is idempotent.
 func (s *Store) RevokeLaunch(ctx context.Context, id string) error {
+	return s.revokeLaunch(ctx, id, false)
+}
+
+// RevokeUnopenedLaunch additionally refuses a recorded terminal or process.
+// The caller must still positively prove that no opener effect occurred; an
+// absent terminal receipt alone cannot establish that an open did not happen.
+func (s *Store) RevokeUnopenedLaunch(ctx context.Context, id string) error {
+	return s.revokeLaunch(ctx, id, true)
+}
+func (s *Store) revokeLaunch(ctx context.Context, id string, unopened bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ready(ctx); err != nil {
@@ -135,6 +154,9 @@ func (s *Store) RevokeLaunch(ctx context.Context, id string) error {
 		delete(s.active, id)
 		return nil
 	}
+	if unopened && (r.TerminalID != "" || r.Process.PID != 0) {
+		return fail("opening_outcome_not_unopened")
+	}
 	// Invalidate volatile authority even if durable publication fails. A
 	// failed/uncertain result is not permission to reopen or reuse this launch.
 	delete(s.active, id)
@@ -146,4 +168,32 @@ func (s *Store) RevokeLaunch(ctx context.Context, id string) error {
 		return err
 	}
 	return nil
+}
+
+// ManagedRecordForProcess is provenance, not live authority. A revoked,
+// inactive or future-policy launch MUST remain distinguishable from an
+// unmanaged native process. False is returned only after a complete bounded
+// private-state read, never on unavailable or ambiguous ownership.
+func (s *Store) ManagedRecordForProcess(ctx context.Context, p ports.AntigravityProcess) (Record, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ready(ctx); err != nil {
+		return Record{}, false, err
+	}
+	if !completeProcess(p) {
+		return Record{}, false, fail("process_invalid")
+	}
+	var found Record
+	for _, record := range s.state.Records {
+		if err := cancelled(ctx); err != nil {
+			return Record{}, false, err
+		}
+		if record.Process == p {
+			if found.ID != "" {
+				return Record{}, false, fail("process_ambiguous")
+			}
+			found = cloneRecord(record)
+		}
+	}
+	return found, found.ID != "", nil
 }

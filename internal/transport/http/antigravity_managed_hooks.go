@@ -3,7 +3,6 @@ package http
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"strings"
 	"time"
@@ -26,6 +25,7 @@ func (s *Server) ManagedAntigravityOptions() AntigravityRuntimeOptions {
 	return AntigravityRuntimeOptions{
 		Admit:                 s.admitManagedAntigravity,
 		PreInvocationResponse: s.managedAntigravityResponse,
+		PreToolUseResponse:    s.managedAntigravityToolResponse,
 		AfterObservation:      s.observeManagedAntigravityCompletion,
 	}
 }
@@ -55,6 +55,11 @@ func (s *Server) admitManagedAntigravity(ctx context.Context, peer antigravity.N
 		return nil, err
 	}
 
+	if record.Policy != nil {
+		if err := s.checkProductionAntigravityPolicy(ctx, record, process); err != nil {
+			return nil, err
+		}
+	}
 	if err := owner.PinProcess(ctx, record.ID, process); err != nil {
 		return nil, err
 	}
@@ -93,13 +98,21 @@ func (s *Server) managedAntigravityResponse(ctx context.Context, binding ports.A
 	if owner == nil {
 		return antigravity.ObserverResponse(binding.Event)
 	}
+	_, managed, err := owner.ManagedRecordForProcess(ctx, binding.Process)
+	if err != nil {
+		return nil, err
+	}
+	if !managed {
+		return antigravity.ObserverResponse(binding.Event)
+	}
 	record, err := owner.LookupProcess(ctx, binding.Process)
 	if err != nil {
-		var typed *antigravitylaunch.Error
-		if errors.As(err, &typed) && typed.Code == "antigravity_context_process_unverified" {
-			return antigravity.ObserverResponse(binding.Event) // explicit unmanaged observation
-		}
 		return nil, err
+	}
+	if record.Policy != nil {
+		if err := s.checkProductionAntigravityPolicy(ctx, record, binding.Process); err != nil {
+			return nil, err
+		}
 	}
 	if err := verifyManagedAntigravityWorkspace(ctx, binding.Process, record.Workspace); err != nil {
 		return nil, err
@@ -179,6 +192,11 @@ func (s *Server) checkManagedAntigravityContext(ctx context.Context, launchID st
 	if record.ID != launchID || (record.NativeID != "" && record.NativeID != evidence.ConversationID) {
 		return managedAntigravityFailure()
 	}
+	if record.Policy != nil {
+		if err := s.checkProductionAntigravityPolicy(ctx, record, fresh); err != nil {
+			return err
+		}
+	}
 	if err := verifyManagedAntigravityWorkspace(ctx, fresh, record.Workspace); err != nil {
 		return err
 	}
@@ -210,12 +228,15 @@ func (s *Server) observeManagedAntigravityCompletion(ctx context.Context, bindin
 	if owner == nil {
 		return ctx.Err()
 	}
+	_, managed, err := owner.ManagedRecordForProcess(ctx, binding.Process)
+	if err != nil {
+		return err
+	}
+	if !managed {
+		return ctx.Err()
+	}
 	record, err := owner.LookupProcess(ctx, binding.Process)
 	if err != nil {
-		var typed *antigravitylaunch.Error
-		if errors.As(err, &typed) && typed.Code == "antigravity_context_process_unverified" {
-			return ctx.Err() // explicit unmanaged observation; no loaded receipt
-		}
 		return err
 	}
 	receipt, found, err := owner.Receipt(ctx, record.ID)

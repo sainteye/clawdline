@@ -2153,7 +2153,7 @@
         },
         {
           "path": "internal/transport/http/antigravity_managed_hooks.go",
-          "line": 91
+          "line": 96
         },
         {
           "path": "internal/transport/http/antigravity_launch_store.go",
@@ -2264,7 +2264,7 @@
     "internal/domain/snippet/default_workflow.go": "3a4d21963243a0b6dd2af553b4cd67b0d1bfaeabedfc2d43d629ba8b02e0bf08",
     "internal/transport/http/agent_session_close.go": "4cfb1d376e50119026dc079346a7253e826472305263e66ade6982b8e8b958f3",
     "internal/transport/http/antigravity_launch_store.go": "dab909d4ec4afcc99164859095df75ef1af4e059a505ea705a1227d2c9447ea5",
-    "internal/transport/http/antigravity_managed_hooks.go": "2389c052460b67b2ac2edfb105482d15db4b48b19fc6fbdaaa1b0dd6b6754546",
+    "internal/transport/http/antigravity_managed_hooks.go": "02087850934cc1daedc9c71d5efcf7cb304910a0c90be4efb276fb2ec6d4b7c7",
     "internal/transport/http/coordinator.go": "5f139556883583d34320783d063ee1e6a4a1124a726f69510cc4a9324a6cb3df",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/start.go": "6195fa0a66dff17f09b9b424a09ffda30958c2147e96de628be125dfa10a9cfb",
