@@ -256,12 +256,12 @@ func newBroker(s *Server) *orchestrator.Broker {
 		// The same live-read rule as terminal and compaction: the next launch
 		// sees a saved default without restarting the daemon.
 		DefaultModel: func(assistant string) string { return brokerDefaultModel(s, assistant) },
-		DefaultReasoningEffort: func() string {
+		DefaultReasoningEffort: func(assistant string) string {
 			values, err := nextconfig.Open(s.cfg.Dir).Read()
 			if err != nil {
 				return ""
 			}
-			return nextconfig.DefaultReasoningEffort(values)
+			return nextconfig.DefaultEffort(values, assistant)
 		},
 
 		ReclaimAuto:  os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",

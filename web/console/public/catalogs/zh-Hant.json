@@ -8473,7 +8473,7 @@
   "transparency.card.runtime.condition": "啟動時自動決定",
   "transparency.card.runtime.effect": "程序執行期間。",
   "transparency.card.runtime.how": "啟動參數或環境變數；權限預設依啟動入口而異。",
-  "transparency.card.runtime.summary": "模型、reasoning effort、權限模式等會影響執行，但不是指示文字。",
+  "transparency.card.runtime.summary": "模型、推理強度與權限模式會影響執行，但不是指示文字。推理預設值依供應商分別驗證；續接時不重新讀取該預設值。",
   "transparency.card.runtime.title": "啟動參數（不是指示文字）",
   "transparency.card.turn-todos.condition": "讀過 board／running 指南後",
   "transparency.card.turn-todos.effect": "每輪宣告 idle 前，呼叫 GET /v1/work/v2/agent/session-todos/CONVERSATION_ID。",

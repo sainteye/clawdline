@@ -20,8 +20,8 @@ import (
 //
 // This is the only thing on this daemon that creates execution from a request,
 // and its shape is the Swift app's for that reason: a place is an id resolved
-// against a list built now, the assistant is one of two literals, a model is a
-// closed name, a conversation is a UUID this machine has just listed for that
+// against a list built now, the assistant is one of the admitted literals, a
+// model is a closed name, a conversation is a UUID this machine just listed for that
 // place, and the terminal is chosen here from what is running rather than
 // named by the caller.
 type Starter struct {
@@ -49,8 +49,10 @@ type Starter struct {
 	// DefaultModel is the machine setting for a new session of assistant.
 	// It is consulted only when a new launch did not name a model; resumes and
 	// explicit per-session choices keep their own model. Nil is provider default.
-	DefaultModel           func(assistant string) string
-	DefaultReasoningEffort func() string
+	DefaultModel func(assistant string) string
+	// DefaultReasoningEffort selects the provider's own validated setting.
+	// Resumes retain their original context rather than reading a new default.
+	DefaultReasoningEffort func(assistant string) string
 	// PersonaDir is where the daemon wrote the persona texts
 	// (persona.Dir). Empty refuses every persona, which only a test wants.
 	PersonaDir string
@@ -115,8 +117,8 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		model = s.DefaultModel(assistant)
 	}
 	effort := ""
-	if assistant == projects.AssistantCodex && resume == "" && s.DefaultReasoningEffort != nil {
-		effort = s.DefaultReasoningEffort()
+	if (assistant == projects.AssistantCodex || assistant == projects.AssistantAntigravity) && resume == "" && s.DefaultReasoningEffort != nil {
+		effort = s.DefaultReasoningEffort(assistant)
 	}
 	language := ""
 	if s.Language != nil {

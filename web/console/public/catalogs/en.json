@@ -8473,7 +8473,7 @@
   "transparency.card.runtime.condition": "Decided automatically at launch",
   "transparency.card.runtime.effect": "While the process runs.",
   "transparency.card.runtime.how": "Command arguments or environment variables. Permission defaults depend on the launch entry point.",
-  "transparency.card.runtime.summary": "Model, reasoning effort and permission mode affect execution but are not instruction text.",
+  "transparency.card.runtime.summary": "Model, reasoning effort and permission mode affect execution but are not instruction text. Reasoning defaults use each provider’s own validated setting; resumes do not reread that default.",
   "transparency.card.runtime.title": "Launch parameters, not instructions",
   "transparency.card.turn-todos.condition": "After reading the board or running guide",
   "transparency.card.turn-todos.effect": "Before declaring idle, read GET /v1/work/v2/agent/session-todos/CONVERSATION_ID.",

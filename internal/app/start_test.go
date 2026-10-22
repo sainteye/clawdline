@@ -72,7 +72,7 @@ func TestANewSessionUsesTheMachinesDefaultModel(t *testing.T) {
 		Past: func(context.Context, projects.Place, string) []projects.Past {
 			return []projects.Past{{ID: conversation}}
 		},
-		DefaultReasoningEffort: func() string { return "xhigh" },
+		DefaultReasoningEffort: func(assistant string) string { return "xhigh" },
 		DefaultModel: func(assistant string) string {
 			if assistant == "codex" {
 				return "gpt-6-sol"

@@ -668,8 +668,8 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if r.Model == "" && b.DefaultModel != nil {
 		r.Model = b.DefaultModel(r.Assistant)
 	}
-	if r.Assistant == projects.AssistantCodex && r.ReasoningEffort == "" && b.DefaultReasoningEffort != nil {
-		r.ReasoningEffort = b.DefaultReasoningEffort()
+	if (r.Assistant == projects.AssistantCodex || r.Assistant == projects.AssistantAntigravity) && r.ReasoningEffort == "" && b.DefaultReasoningEffort != nil {
+		r.ReasoningEffort = b.DefaultReasoningEffort(r.Assistant)
 	}
 	preflightPersona := r.Persona
 	if b.ResolveSquadSnapshot != nil && r.Persona != "" {
@@ -680,9 +680,8 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
 		Model:       r.Model,
-		// Codex only, and already refused by name on anything else when the
-		// brief was admitted; `Admit` refuses it again rather than trusting
-		// that, because it is the gate between a brief and a command line.
+		// Revalidate the selected provider's vocabulary at the command-line
+		// boundary, including defaults read after brief admission.
 		ReasoningEffort: r.ReasoningEffort,
 		Language:        b.SessionLanguage(r.Assistant),
 		// Admitted by name with the brief, and admitted again here for the

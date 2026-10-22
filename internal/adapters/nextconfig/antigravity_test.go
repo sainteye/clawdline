@@ -65,3 +65,19 @@ func TestAntigravityDefaultWritePreservesOtherProviders(t *testing.T) {
 		t.Fatal("provider default changed across repeated write and reopen")
 	}
 }
+
+func TestDefaultEffortSelectsTheProvidersOwnVocabulary(t *testing.T) {
+	v := Values{Raw: map[string]json.RawMessage{
+		"codex_default_effort":       json.RawMessage(`"xhigh"`),
+		"antigravity_default_effort": json.RawMessage(`"medium"`),
+	}}
+	for assistant, want := range map[string]string{"codex": "xhigh", "antigravity": "medium", "claude": "", "foreign": ""} {
+		if got := DefaultEffort(v, assistant); got != want {
+			t.Errorf("%s got %q, want %q", assistant, got, want)
+		}
+	}
+	v.Raw["antigravity_default_effort"] = json.RawMessage(`"ultra"`)
+	if DefaultEffort(v, "antigravity") != "" || DefaultEffort(v, "codex") != "xhigh" {
+		t.Fatal("malformed native setting crossed provider boundary")
+	}
+}

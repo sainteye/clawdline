@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/domain/icon"
 )
 
 func TestAntigravityDefaultsThroughAuthenticatedRoute(t *testing.T) {
@@ -66,5 +67,33 @@ func TestAntigravityDefaultsThroughAuthenticatedRoute(t *testing.T) {
 	answer = request(f.local, http.MethodPost, `{"antigravity_default_model":"","antigravity_default_effort":""}`)
 	if answer["antigravity_default_model"] != "" || answer["antigravity_default_effort"] != "" {
 		t.Fatal("native default not restored")
+	}
+}
+
+func TestSavedProviderEffortReachesBothLaunchCompositionsWithoutRestart(t *testing.T) {
+	s := &Server{cfg: config.Config{Dir: t.TempDir()}, icons: icon.NewRegistry()}
+	callbacks := []struct {
+		name string
+		read func(string) string
+	}{
+		{"console", s.starter(startReading{}).DefaultReasoningEffort},
+		{"broker", newBroker(s).DefaultReasoningEffort},
+	}
+	for _, update := range []struct{ body, native string }{
+		{`{"codex_default_effort":"xhigh","antigravity_default_effort":"medium"}`, "medium"},
+		{`{"antigravity_default_effort":"max"}`, "max"},
+		{`{"antigravity_default_effort":""}`, ""},
+	} {
+		response := defaultModelsCall(t, s, http.MethodPost, "application/json", update.body)
+		if response.Code != http.StatusOK {
+			t.Fatalf("save: %d %s", response.Code, response.Body)
+		}
+		for _, callback := range callbacks {
+			for assistant, want := range map[string]string{"antigravity": update.native, "codex": "xhigh", "claude": "", "foreign": ""} {
+				if got := callback.read(assistant); got != want {
+					t.Errorf("%s/%s got %q, want %q", callback.name, assistant, got, want)
+				}
+			}
+		}
 	}
 }

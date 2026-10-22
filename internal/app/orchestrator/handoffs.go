@@ -71,8 +71,8 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		model = b.DefaultModel(assistant)
 	}
 	effort := ""
-	if assistant == projects.AssistantCodex && b.DefaultReasoningEffort != nil {
-		effort = b.DefaultReasoningEffort()
+	if (assistant == projects.AssistantCodex || assistant == projects.AssistantAntigravity) && b.DefaultReasoningEffort != nil {
+		effort = b.DefaultReasoningEffort(assistant)
 	}
 	preflightPersona := persona
 	if b.ResolveSquadSnapshot != nil && persona != "" {

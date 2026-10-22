@@ -399,3 +399,21 @@ control, replace Clawdline encryption, import account vaults, migrate Gemini set
 enable paid teamwork/credits, delete provider histories, or port an IDE. These are unnecessary to
 the authorized integration. ACP runtime distribution is an alternative requiring its own exact
 compatibility evidence, not a hidden prerequisite or excuse to omit interactive TUI support.
+
+
+## Provider-specific launch defaults
+
+The feature branch's `nextconfig.DefaultEffort` selects the saved preference by
+explicit provider. Antigravity reads `antigravity_default_effort` through its own
+`low|medium|high|xhigh|max` validator; Codex keeps its existing validator and key.
+Absent, malformed and unknown-provider values remain empty rather than falling
+back to another provider. Both console and broker composition read the current
+configuration for each launch, so saving a preference needs no daemon restart.
+
+`Starter`, child spawning and handoff opening pass the provider into this shared
+selection. A child with an explicit effort keeps that value. A resumed Session
+does not read a new machine default; its original prepared context remains the
+launch preparer's responsibility. These settings do not authorize execution:
+Antigravity's managed context, verified executable, permissions and native
+identity gates must still admit the launch. Passing preference-selection tests
+is not acceptance of the complete native start, resume or handoff experience.

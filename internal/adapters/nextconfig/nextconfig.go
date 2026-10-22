@@ -610,6 +610,19 @@ func DefaultReasoningEffort(values Values) string {
 	return ""
 }
 
+// DefaultEffort selects one provider's validated launch preference. A provider
+// without an effort setting never inherits another provider's value.
+func DefaultEffort(values Values, assistant string) string {
+	switch assistant {
+	case projects.AssistantCodex:
+		return DefaultReasoningEffort(values)
+	case projects.AssistantAntigravity:
+		return DefaultAntigravityEffort(values)
+	default:
+		return ""
+	}
+}
+
 // DefaultAntigravityEffort reads only the native provider default, never Codex's.
 // Empty, absent and malformed values leave the native choice unchanged.
 func DefaultAntigravityEffort(values Values) string {
