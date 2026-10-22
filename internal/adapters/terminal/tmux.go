@@ -287,6 +287,9 @@ func (t *Tmux) Capture(ctx context.Context, s session.Session) (string, bool) {
 // stream to the program, which reads it in pieces of at most 1022 bytes, and a
 // 1045-byte notice reached a Claude Code root as its last 23 bytes.
 func (t *Tmux) Send(ctx context.Context, s session.Session, text string) error {
+	if s.Assistant == session.AssistantAntigravity {
+		return Unsent{Why: ErrAntigravityInputUnavailable.Error()}
+	}
 	return submit(ctx, tmuxInput{call: t.call, target: s.ID}, text, sendConfirm)
 }
 

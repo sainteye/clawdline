@@ -51,3 +51,12 @@ func TestAntigravityNeverSynthesizesQuitOrTrustsComm(t *testing.T) {
 		t.Fatal("Codex quit regressed")
 	}
 }
+
+func TestAntigravityRawSendRefusesBeforeLookingForATerminal(t *testing.T) {
+	tmux := &Tmux{Binary: "/nonexistent/synthetic-tmux"}
+	err := tmux.Send(context.Background(), session.Session{ID: "%synthetic", Assistant: session.AssistantAntigravity}, "hello")
+	var unsent Unsent
+	if !errors.As(err, &unsent) || unsent.Why != ErrAntigravityInputUnavailable.Error() {
+		t.Fatalf("raw send did not require verified action composition: %v", err)
+	}
+}
