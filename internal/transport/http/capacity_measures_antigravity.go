@@ -33,6 +33,12 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 		return capacity.Unmeasured("unknown bridge measure")
 	}
 	return map[string]func() capacity.Reading{
+		"antigravity.native_process_file_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-operation guard; no retained buffer"}
+		},
+		"antigravity.native_tty_entries": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-operation guard; no retained buffer"}
+		},
 		"antigravity.hook_payload_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-operation guard; no retained buffer"}
 		},

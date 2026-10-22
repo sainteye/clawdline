@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 8956,
+  "englishKeys": 8960,
   "counts": {
-    "negation": 2605,
-    "state": 1470,
+    "negation": 2606,
+    "state": 1471,
     "permission": 519,
     "deletion": 201,
-    "uncertainty": 280
+    "uncertainty": 281
   },
-  "unionCount": 3992,
+  "unionCount": 3994,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -100,6 +100,7 @@
       "capacityRow.antigravity.ancestry_rows.full",
       "capacityRow.antigravity.hook_timeout_seconds.full",
       "capacityRow.antigravity.live_bindings.full",
+      "capacityRow.antigravity.native_tty_entries.full",
       "capacityRow.antigravity.process_read_seconds.full",
       "capacityRow.antigravity.retention_seconds.full",
       "capacityRow.antigravity.state_age_seconds.full",
@@ -2654,6 +2655,7 @@
       "capacityRow.antigravity.hook_timeout_seconds.full",
       "capacityRow.antigravity.live_bindings.full",
       "capacityRow.antigravity.managed_launches.full",
+      "capacityRow.antigravity.native_process_file_bytes.full",
       "capacityRow.antigravity.observation_bytes.what",
       "capacityRow.antigravity.retention_seconds.full",
       "capacityRow.artifacts.drops.full",
@@ -4827,6 +4829,7 @@
       "browserPairing.cliMissing",
       "builtinPersona.analytics.summary",
       "capacityRow.antigravity.ancestry_rows.full",
+      "capacityRow.antigravity.native_tty_entries.full",
       "capacityRow.antigravity.process_read_seconds.full",
       "capacityRow.antigravity.state_age_seconds.full",
       "capacityRow.cache.session_inventory.full",
@@ -5252,6 +5255,8 @@
     "capacityRow.antigravity.hook_timeout_seconds.full",
     "capacityRow.antigravity.live_bindings.full",
     "capacityRow.antigravity.managed_launches.full",
+    "capacityRow.antigravity.native_process_file_bytes.full",
+    "capacityRow.antigravity.native_tty_entries.full",
     "capacityRow.antigravity.observation_bytes.what",
     "capacityRow.antigravity.process_read_seconds.full",
     "capacityRow.antigravity.retention_seconds.full",

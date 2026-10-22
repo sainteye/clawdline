@@ -50,11 +50,12 @@ type PathResolver func(home, conversationID string) (string, bool)
 // use its own PID/birth and a durable, increasing sequence per provider process.
 // It must never expose Observe as a remote event-injection endpoint.
 type Witness struct {
-	HelperPID            int
-	HelperBirth          string
-	At                   time.Time
-	Sequence             uint64
-	LaunchID, Capability string
+	HelperPID                      int
+	HelperBirth                    string
+	HelperBootID, HelperGeneration string
+	At                             time.Time
+	Sequence                       uint64
+	LaunchID, Capability           string
 }
 
 // LaunchCommitment is registered by trusted launch composition, never stdin.
@@ -177,13 +178,15 @@ func fileDigest(path string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
-func validID(id string) bool                       { u, err := uuid.Parse(id); return err == nil && u.String() == id }
-func processKey(p ports.AntigravityProcess) string { return fmt.Sprintf("%d/%s", p.PID, p.Birth) }
+func validID(id string) bool { u, err := uuid.Parse(id); return err == nil && u.String() == id }
+func processKey(p ports.AntigravityProcess) string {
+	return fmt.Sprintf("%d/%s/%s/%s", p.PID, p.Birth, p.BootID, p.KernelGeneration)
+}
 func sameProcess(a, b ports.AntigravityProcess) bool {
-	return a.PID == b.PID && a.Birth != "" && a.Birth == b.Birth && a.Executable == b.Executable && a.TTY != "" && a.TTY == b.TTY && a.TerminalID != "" && a.TerminalID == b.TerminalID
+	return a.PID == b.PID && a.Birth != "" && a.Birth == b.Birth && a.BootID == b.BootID && a.KernelGeneration != "" && a.KernelGeneration == b.KernelGeneration && a.Executable == b.Executable && a.TTY != "" && a.TTY == b.TTY && a.TerminalID != "" && a.TerminalID == b.TerminalID
 }
 func (b *Bridge) supported(p ports.AntigravityProcess) bool {
-	if p.Executable != b.executable || p.PID <= 0 || p.Birth == "" || p.TTY == "" || p.TerminalID == "" {
+	if p.Executable != b.executable || p.PID <= 0 || p.Birth == "" || p.KernelGeneration == "" || p.TTY == "" || p.TerminalID == "" {
 		return false
 	}
 	info, err := os.Lstat(p.Executable)
@@ -298,7 +301,7 @@ func (b *Bridge) ancestor(ctx context.Context, w Witness) (ports.AntigravityProc
 	ctx, cancel := context.WithTimeout(ctx, MaxProcessReadTime)
 	defer cancel()
 	first, err := b.reader.ReadAntigravityProcess(ctx, w.HelperPID)
-	if err != nil || first.PID != w.HelperPID || first.Birth == "" || first.Birth != w.HelperBirth {
+	if err != nil || first.PID != w.HelperPID || first.Birth == "" || first.Birth != w.HelperBirth || first.KernelGeneration == "" || first.KernelGeneration != w.HelperGeneration || first.BootID != w.HelperBootID {
 		return ports.AntigravityProcess{}, refuse("antigravity_helper_unverified")
 	}
 	cur := first
@@ -337,7 +340,7 @@ func (b *Bridge) ancestor(ctx context.Context, w Witness) (ports.AntigravityProc
 	if candidate.PID != 0 && complete {
 		for _, before := range chain {
 			after, e := b.reader.ReadAntigravityProcess(ctx, before.PID)
-			if e != nil || before.PID != after.PID || before.Birth == "" || before.Birth != after.Birth || before.Executable != after.Executable || before.TTY != after.TTY || before.TerminalID != after.TerminalID || before.ParentPID != after.ParentPID {
+			if e != nil || before.PID != after.PID || before.Birth == "" || before.Birth != after.Birth || before.BootID != after.BootID || before.KernelGeneration != after.KernelGeneration || before.Executable != after.Executable || before.TTY != after.TTY || before.TerminalID != after.TerminalID || before.ParentPID != after.ParentPID {
 				return ports.AntigravityProcess{}, refuse("antigravity_helper_changed")
 			}
 		}
@@ -523,7 +526,7 @@ func (b *Bridge) AntigravityBinding(ctx context.Context, s session.Session) (por
 		return ports.AntigravityBinding{}, refuse("antigravity_process_unreadable")
 	}
 	r, ok := b.entries[processKey(p)]
-	if !ok || !r.Binding.Verified || !b.supported(p) || !sameProcess(p, r.Binding.Process) || s.TTY != p.TTY || (s.Backend == session.BackendTmux && s.ID != p.TerminalID) || (!s.ExpectedStart.IsZero() && s.ExpectedStart.Format(time.RFC3339Nano) != p.Birth) || (s.ConversationID != "" && s.ConversationID != r.Binding.ConversationID) {
+	if !ok || !r.Binding.Verified || !b.supported(p) || !sameProcess(p, r.Binding.Process) || s.TTY != p.TTY || (s.Backend == session.BackendTmux && s.ID != p.TerminalID) || (!s.ExpectedStart.IsZero() && s.ExpectedStart.UTC().Format(time.RFC3339Nano) != p.Birth) || (s.ConversationID != "" && s.ConversationID != r.Binding.ConversationID) {
 		return ports.AntigravityBinding{}, refuse("antigravity_binding_unverified")
 	}
 	r.Binding.StateFresh = b.now().Sub(r.Binding.ObservedAt) <= MaxObservationAge && !r.Binding.ObservedAt.After(b.now())
