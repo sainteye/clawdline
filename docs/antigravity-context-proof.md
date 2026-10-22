@@ -89,7 +89,7 @@ The six-case private-tmux/Unix-helper composition test passed in 3.182 seconds.
 It uses real kernel process ancestry and the saved sanitized wrapper with
 synthetic data, not a vendor process. It verifies original context across two
 separate hooks and refuses wrong workspace, partial baseline, missing loaded
-row, model echo and file replacement. Every returned response has its own
+row, model echo and file replacement. Every returned response with nonempty context has its own
 persisted PREPARED fence, rather than inheriting a Loaded bit from its predecessor.
 The existing bridge already requires a present regular transcript at admission;
 the new capture additionally requires complete native JSONL. Actual standalone
@@ -188,3 +188,20 @@ the permission category into the state category; the risk union remains 4017,
 with 96 non-risk groups and 4996 non-risk keys unchanged. The complete console
 `npm run check` then passed. The full commit gate is rerun against the exact
 candidate including the generated index, without changing guard rules.
+
+## Empty immutable context
+
+A roleless launch can have no prompt, memory or configured language. Its native
+PreInvocation response then contains no injection. It retains positive native
+identity and an unfenced PREPARED receipt, and subsequent invocations or Stop
+must not wait for a system row that was never emitted. The branch derives this
+fact from the exact saved context, not a browser flag. It does not acquire a
+Loaded proof or role badge. An older unfenced response with nonempty context
+still refuses completion, even if a matching system row happens to exist.
+
+Two native-helper regressions first reproduced the erroneous empty fenced
+receipt. After correction, the complete fourteen-case managed-hook suite passed
+in 7.374 seconds, including empty repeated invocation/Stop and refusal of the
+nonempty legacy-unfenced case. These are isolated local test durations, not
+product latency or additional vendor probes. Older unresolved fenced receipts
+are not reset or granted new authority by this correction.

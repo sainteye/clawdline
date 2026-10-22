@@ -163,3 +163,9 @@ now allocates a second pane inside the owned private server and asserts it diffe
 from the provider pane. No privacy rule was changed. The affected wrong-pane
 test passed in 0.562 seconds and the same file privacy check passed; a new exact
 candidate is required for the full commit gate.
+
+Empty immutable context needs no native injection proof. Its first-input slot
+still obeys the same one-shot process/foreground/authorization checks; only
+subsequent context preparation/completion avoids waiting for a nonexistent
+system row. Unfenced empty preparation is neither a loaded receipt nor authority
+to bypass proof for any nonempty context.

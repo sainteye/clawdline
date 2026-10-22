@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravity"
+	"github.com/sainteye/clawdline/internal/adapters/antigravitylaunch"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
@@ -19,7 +20,7 @@ import (
 )
 
 func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T) {
-	for _, name := range []string{"original_workspace", "wrong_workspace", "partial_native_record", "missing_loaded_row", "model_echo", "replaced_transcript", "completed_post", "completed_stop", "completion_missing", "completion_model_echo", "completion_replaced"} {
+	for _, name := range []string{"original_workspace", "wrong_workspace", "partial_native_record", "missing_loaded_row", "model_echo", "replaced_transcript", "completed_post", "completed_stop", "completion_missing", "completion_model_echo", "completion_replaced", "empty_context", "empty_completion", "legacy_unfenced"} {
 		wrongWorkspace := name == "wrong_workspace"
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("TMUX", "")
@@ -51,8 +52,12 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			prepared, err := owner.Prepare(ctx, projects.LaunchRequest{Assistant: projects.AssistantAntigravity, ProjectRoot: project,
-				Executable: executable, PermissionMode: "plan", Memory: "ORIGINAL_SYNTHETIC_MEMORY", Language: "zh-Hant-TW"})
+			request := projects.LaunchRequest{Assistant: projects.AssistantAntigravity, ProjectRoot: project,
+				Executable: executable, PermissionMode: "plan", Memory: "ORIGINAL_SYNTHETIC_MEMORY", Language: "zh-Hant-TW"}
+			if strings.HasPrefix(name, "empty_") {
+				request.Memory, request.Language = "", ""
+			}
+			prepared, err := owner.Prepare(ctx, request)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -76,7 +81,17 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 			tmux := s.terminals[0].(*terminal.Tmux)
 			tmux.Binary = binary
 			tmux.Socket = filepath.Join(root, "managed.sock")
-			stopRuntime, err := s.StartAntigravity(ctx, s.ManagedAntigravityOptions())
+			options := s.ManagedAntigravityOptions()
+			if name == "legacy_unfenced" {
+				// Reproduce a known older response without inventing a baseline.
+				options.PreInvocationResponse = func(c context.Context, b ports.AntigravityBinding) ([]byte, error) {
+					if err := owner.RecordBinding(c, prepared.Record.ID, b, antigravitylaunch.KeepConversation); err != nil {
+						return nil, err
+					}
+					return owner.PreInvocationResponse(c, b)
+				}
+			}
+			stopRuntime, err := s.StartAntigravity(ctx, options)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -98,7 +113,7 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 			followup := "PreInvocation"
 			if name == "completed_post" {
 				followup = "PostInvocation"
-			} else if strings.HasPrefix(name, "completion_") || name == "completed_stop" {
+			} else if strings.HasPrefix(name, "completion_") || name == "completed_stop" || name == "empty_completion" || name == "legacy_unfenced" {
 				followup = "Stop"
 			}
 			command := "exec env AG_RUNTIME_FOLLOWUP_EVENT=" + followup + " AG_RUNTIME_SYNTHETIC_ROOT=" + projects.ShellQuoted(root) + " AG_RUNTIME_MANAGED=1 AG_RUNTIME_CONTEXT_FOLLOWUP=1 " + strings.Join(prepared.PrivateEnv, " ") + " " + projects.ShellQuoted(executable) + " -test.run=^TestAntigravityRuntimeSyntheticProvider$"
@@ -169,6 +184,39 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 				}
 				return
 			}
+			if strings.HasPrefix(name, "empty_") {
+				if string(bytes.TrimSpace(output)) != "{}" {
+					t.Fatal("empty context returned injection", string(output))
+				}
+				first, found, err := owner.Receipt(ctx, prepared.Record.ID)
+				if err != nil || !found || first.Fenced || first.Loaded {
+					t.Fatal("empty context waits for a nonexistent system row", first.Fenced, first.Loaded, err)
+				}
+				injection, err := owner.ExpectedInjection(ctx, prepared.Record.ID)
+				if err != nil || injection.Text != "" || first.InjectionDigest != injection.Digest {
+					t.Fatal("empty injection metadata changed", err)
+				}
+				signal("managed-next")
+				next := wait("hook-next-result")
+				latest, found, err := owner.Receipt(ctx, prepared.Record.ID)
+				if err != nil || !found || latest.Fenced || latest.Loaded || string(bytes.TrimSpace(next)) != "{}" {
+					t.Fatal("empty context cannot complete or advance", string(next), err)
+				}
+				if name == "empty_completion" && latest != first {
+					t.Fatal("empty completion manufactured a response")
+				}
+				check := func(c context.Context, b ports.AntigravityBinding) error {
+					return s.checkManagedAntigravityContext(c, prepared.Record.ID, b)
+				}
+				if err := owner.CheckContextLoaded(ctx, prepared.Record.ID, home, check); err == nil {
+					t.Fatal("empty context acquired a loaded badge")
+				}
+				history, err := owner.WorkspaceBindings(ctx)
+				if err != nil || history[conversation] != project {
+					t.Fatal("empty context lost native identity", err)
+				}
+				return
+			}
 			var response struct {
 				InjectSteps []struct {
 					SystemMessage struct {
@@ -184,7 +232,7 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 				t.Fatal("native binding not retained", err)
 			}
 			receipt, found, err := owner.Receipt(ctx, prepared.Record.ID)
-			if err != nil || !found || receipt.Status != "PREPARED" || !receipt.Fenced || receipt.Loaded || receipt.Fence.Bytes != 0 {
+			if err != nil || !found || receipt.Status != "PREPARED" || receipt.Fenced != (name != "legacy_unfenced") || receipt.Loaded || receipt.Fence.Bytes != 0 {
 				t.Fatal("response became a false loaded receipt", err)
 			}
 			history, err := owner.WorkspaceBindings(ctx)

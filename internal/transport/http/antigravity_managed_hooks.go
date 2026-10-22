@@ -111,6 +111,21 @@ func (s *Server) managedAntigravityResponse(ctx context.Context, binding ports.A
 	check := func(c context.Context, evidence ports.AntigravityBinding) error {
 		return s.checkManagedAntigravityContext(c, record.ID, evidence)
 	}
+	injection, err := owner.ExpectedInjection(ctx, record.ID)
+	if err != nil {
+		return nil, err
+	}
+	if injection.Text == "" {
+		// An empty immutable context emits no system step. Retain native
+		// identity and preparation, but never wait for or claim loaded proof.
+		if err := check(ctx, binding); err != nil {
+			return nil, err
+		}
+		if err := owner.RecordBinding(ctx, record.ID, binding, antigravitylaunch.KeepConversation); err != nil {
+			return nil, err
+		}
+		return owner.PreInvocationResponse(ctx, binding)
+	}
 	// A second response cannot overwrite the unresolved baseline of the first.
 	// Verify its native system row synchronously; no poller or automatic retry.
 	previous, found, err := owner.Receipt(ctx, record.ID)
@@ -211,7 +226,14 @@ func (s *Server) observeManagedAntigravityCompletion(ctx context.Context, bindin
 		return ctx.Err() // no response was prepared; never manufacture proof
 	}
 	if !receipt.Fenced {
-		return managedAntigravityFailure()
+		injection, err := owner.ExpectedInjection(ctx, record.ID)
+		if err != nil {
+			return err
+		}
+		if injection.Text != "" || receipt.InjectionDigest != injection.Digest || receipt.Loaded {
+			return managedAntigravityFailure()
+		}
+		return s.checkManagedAntigravityContext(ctx, record.ID, binding)
 	}
 	if err := s.checkManagedAntigravityContext(ctx, record.ID, binding); err != nil {
 		return err
