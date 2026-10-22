@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 8967,
+  "englishKeys": 8973,
   "counts": {
-    "negation": 2608,
-    "state": 1473,
+    "negation": 2610,
+    "state": 1474,
     "permission": 520,
     "deletion": 201,
     "uncertainty": 283
   },
-  "unionCount": 3997,
+  "unionCount": 4000,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -99,6 +99,8 @@
       "builtinPersona.support.summary",
       "builtinSkill.humanize-prose.purpose",
       "capacityRow.antigravity.ancestry_rows.full",
+      "capacityRow.antigravity.hook_connections.what",
+      "capacityRow.antigravity.hook_request_seconds.full",
       "capacityRow.antigravity.hook_timeout_seconds.full",
       "capacityRow.antigravity.live_bindings.full",
       "capacityRow.antigravity.native_tty_entries.full",
@@ -2654,6 +2656,7 @@
       "builtinSkill.exploit-path-review.purpose",
       "builtinSkill.map-versus-territory.purpose",
       "capacityRow.antigravity.hook_config_bytes.full",
+      "capacityRow.antigravity.hook_frame_bytes.full",
       "capacityRow.antigravity.hook_payload_bytes.full",
       "capacityRow.antigravity.hook_timeout_seconds.full",
       "capacityRow.antigravity.live_bindings.full",
@@ -5260,7 +5263,10 @@
     "builtinSkill.write-spec.name",
     "capacityRow.antigravity.ancestry_rows.full",
     "capacityRow.antigravity.hook_config_bytes.full",
+    "capacityRow.antigravity.hook_connections.what",
+    "capacityRow.antigravity.hook_frame_bytes.full",
     "capacityRow.antigravity.hook_payload_bytes.full",
+    "capacityRow.antigravity.hook_request_seconds.full",
     "capacityRow.antigravity.hook_timeout_seconds.full",
     "capacityRow.antigravity.live_bindings.full",
     "capacityRow.antigravity.managed_launches.full",

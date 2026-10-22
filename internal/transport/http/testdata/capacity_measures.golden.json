@@ -10,7 +10,22 @@
     "Note": true
   },
   {
+    "Name": "antigravity.hook_connections",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_frame_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "antigravity.hook_payload_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_request_seconds",
     "Known": true,
     "Note": true
   },

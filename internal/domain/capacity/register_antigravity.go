@@ -3,6 +3,9 @@ package capacity
 // antigravityBounds registers the local native observation bridge.
 func antigravityBounds() []Entry {
 	return []Entry{
+		{Name: "antigravity.hook_connections", Class: Buffer, Unit: Rows, Limit: 8, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravity.MaxHookConnections"}},
+		{Name: "antigravity.hook_frame_bytes", Class: Buffer, Unit: Bytes, Limit: 2097152, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravity.MaxHookFrameBytes"}},
+		{Name: "antigravity.hook_request_seconds", Class: Buffer, Unit: Seconds, Limit: 2, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravity.MaxHookRequestTime"}},
 		{Name: "antigravity.native_process_file_bytes", Class: Buffer, Unit: Bytes, Limit: 1048576, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravity.MaxNativeProcessFileBytes"}},
 		{Name: "antigravity.native_tty_entries", Class: Buffer, Unit: Rows, Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravity.MaxNativeTTYEntries"}},
 		{Name: "antigravity.hook_payload_bytes", Class: Buffer, Unit: Bytes, Limit: 1048576, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravity.MaxHookPayloadBytes"}},
