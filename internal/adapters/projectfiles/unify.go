@@ -116,7 +116,7 @@ func planAt(place string) (*unifyState, error) {
 	}
 	defer base.Close()
 	digest := sha256.New()
-	fmt.Fprintf(digest, "unify/1 links=%t\n", linksAvailable)
+	fmt.Fprintf(digest, "unify/2 links=%t\n", linksAvailable)
 	st := &unifyState{root: root}
 	p := contract.ProjectUnifyPlan{LinksAvailable: linksAvailable, Skills: []contract.ProjectUnifySkill{},
 		Actions: []contract.ProjectUnifyAction{}, Conflicts: []contract.ProjectUnifyConflict{}}
@@ -143,6 +143,33 @@ func planAt(place string) (*unifyState, error) {
 	c := readSide(base, claudeSkills, digest)
 	st.sides = [2]*side{a, c}
 	planSkills(a, c, &p, conflict)
+
+	// Antigravity uses the same workspace files as Codex. Keep false and
+	// known-empty values explicit on the wire; legacy machines omit them.
+	p.Rules.Now.Antigravity = append([]string{}, p.Rules.Now.Codex...)
+	p.Rules.After.Antigravity = append([]string{}, p.Rules.After.Codex...)
+	for i := range p.Skills {
+		now, after := p.Skills[i].Now.Codex, p.Skills[i].After.Codex
+		p.Skills[i].Now.Antigravity, p.Skills[i].After.Antigravity = &now, &after
+	}
+	p.NativeOnly = []contract.ProjectUnifyNativeFile{}
+	native := Listing{Files: []File{}, Skipped: []string{}}
+	nativeProjectFiles(&native, root, ".")
+	for _, f := range native.Files {
+		if content, err := read(f); err == nil {
+			fmt.Fprintln(digest, content.Version)
+		} else if f.Status == "ready" {
+			f.Status = "unreadable"
+		}
+		p.NativeOnly = append(p.NativeOnly, contract.ProjectUnifyNativeFile{Path: f.Location, Kind: f.Kind, Status: f.Status})
+		fmt.Fprintf(digest, "native %s %s\n", f.Location, f.Status)
+	}
+	for _, path := range native.Skipped {
+		conflict(contract.ProjectUnifyConflictKindUnreadable, path, "This skill could not be read.")
+	}
+	if native.Truncated {
+		conflict(contract.ProjectUnifyConflictKindTooLarge, ".agents/rules", "This skills directory has more entries than unify reads.")
+	}
 
 	p.Status = contract.ProjectUnifyStatusUnified
 	if len(p.Actions) > 0 || len(p.Conflicts) > 0 {

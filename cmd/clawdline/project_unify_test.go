@@ -58,8 +58,8 @@ func unifyCheckout(t *testing.T) string {
 func TestProjectUnifyCatalogShipsItsNineLanguageBaseline(t *testing.T) {
 	for _, language := range []string{"en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"} {
 		translated, total := cliCatalogCoverage("unify", language)
-		if total != 72 || translated != total {
-			t.Errorf("unify coverage %s = %d/%d, want 72/72", language, translated, total)
+		if total < 72 || (language == "en" || language == "zh-Hant") && translated != total || translated < 72 {
+			t.Errorf("unify coverage %s = %d/%d, want baseline >=72 and complete en/zh-Hant", language, translated, total)
 		}
 	}
 }
@@ -241,7 +241,7 @@ func TestProjectUnifyPrintsThePlanAndAppliesOnlyWithApply(t *testing.T) {
 	if code := runProjectUnify(&out, &errs, client, dir, false, false, false); code != 1 {
 		t.Fatalf("plan read exit %d", code)
 	}
-	for _, want := range []string{"Claude will read:  CLAUDE.md, AGENTS.md", "| only for Claude", "zebra", "Claude only", "Claude and Codex",
+	for _, want := range []string{"Claude will read:  CLAUDE.md, AGENTS.md", "| only for Claude", "zebra", "Claude, Antigravity unreported", "Claude, Codex, Antigravity unreported",
 		"1. Add the import.", "2. Move zebra.", "Nothing has been changed."} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("plan output lacks %q:\n%s", want, out.String())

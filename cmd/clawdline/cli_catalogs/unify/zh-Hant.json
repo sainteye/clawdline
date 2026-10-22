@@ -9,6 +9,10 @@
   "actions_none": "動作：無",
   "actions_order": "動作（依執行順序）",
   "answer_unreadable": "clawdline：無法讀取回應；執行 `clawdline project unify` 查看磁碟上的狀態。",
+  "antigravity_after": "  Antigravity 套用後適用：\t%s\n",
+  "antigravity_now": "  Antigravity 目前適用：\t%s\n",
+  "antigravity_unreported": "Antigravity 未回報",
+  "applicability": "檔案適用範圍，不代表 Session 已載入或技能已執行。",
   "applied_count": "\n已套用 %d 個動作，共 %d 個：\n",
   "apply_hint": "\n尚未變更任何內容。`clawdline project unify --apply` 會執行上述 %d 個動作。\n",
   "apply_unknown": "— 無法確認是否已套用；執行 `clawdline project unify` 查看。",
@@ -45,6 +49,8 @@
   "flag_json": "列印 daemon 的原始回應",
   "linked": "，連結",
   "list_nothing": "無",
+  "native_read_only": "Antigravity 專用候選檔案（唯讀，Unify 不更動）：",
+  "native_unreported": "Antigravity 專用候選檔案未回報。",
   "not_git_repository": "%s 不在 Git 儲存庫內",
   "nothing_applied": "clawdline：未套用任何內容：",
   "nothing_committed": "沒有將任何內容提交至 Git。",
@@ -70,5 +76,5 @@
   "status_unified": "已統一",
   "status_unknown": "未知",
   "stopped_at": "停止於：%s\n  %s (%s)\n",
-  "usage": "用法：clawdline project unify [--apply | --check] [--json] [directory]"
+  "usage": "用法：clawdline project unify [--apply | --check] [--json] [directory]\n預覽 Claude、Codex 與 Antigravity 的共用工作區檔案適用範圍；原生專用檔案維持唯讀。"
 }

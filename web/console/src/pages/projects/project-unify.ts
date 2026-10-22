@@ -18,7 +18,7 @@ import type {
   ProjectUnifyAction, ProjectUnifyConflict, ProjectUnifyPlan, ProjectUnifyReads,
 } from "@clawdline/contract"
 
-export type Assistant = "claude" | "codex"
+export type Assistant = "claude" | "codex" | "antigravity"
 
 /** 不變 / 新增（套用後才看得到）/ 看不到（這是落差）; `lost` is a plan that would hide something, which unify never plans. */
 export type SeenMark = "same" | "added" | "missing" | "lost"
@@ -41,7 +41,7 @@ export interface SeenRow {
   note: string
 }
 
-export interface SeenColumn { assistant: Assistant; title: string; rows: SeenRow[] }
+export interface SeenColumn { assistant: Assistant; title: string; rows: SeenRow[]; unreported: boolean }
 
 function markOf(now: boolean, after: boolean): SeenMark {
   if (now && after) return "same"
@@ -52,9 +52,9 @@ function markOf(now: boolean, after: boolean): SeenMark {
 
 function rulesRows(assistant: Assistant, now: ProjectUnifyReads, after: ProjectUnifyReads): SeenRow[] {
   const names: string[] = []
-  for (const name of [...now[assistant], ...after[assistant]]) if (!names.includes(name)) names.push(name)
+  for (const name of [...(now[assistant] ?? []), ...(after[assistant] ?? [])]) if (!names.includes(name)) names.push(name)
   return names.map(name => {
-    const n = now[assistant].includes(name), a = after[assistant].includes(name)
+    const n = (now[assistant] ?? []).includes(name), a = (after[assistant] ?? []).includes(name)
     return { key: `rules:${name}`, kind: "rules", name, now: n, after: a, mark: markOf(n, a), note: "" }
   })
 }
@@ -66,7 +66,8 @@ function rulesRows(assistant: Assistant, now: ProjectUnifyReads, after: ProjectU
  */
 export function unifyColumns(plan: ProjectUnifyPlan): SeenColumn[] {
   const differs = new Set(plan.skills.filter(s => s.place === "both_different").map(s => s.name))
-  return (["claude", "codex"] as const).map(assistant => {
+  return (["claude", "codex", "antigravity"] as const).map(assistant => {
+    let unreported = plan.rules.now[assistant] == null || plan.rules.after[assistant] == null
     const rows = rulesRows(assistant, plan.rules.now, plan.rules.after)
     if (assistant === "claude") {
       for (const file of plan.rules.claude_only_files) {
@@ -76,11 +77,12 @@ export function unifyColumns(plan: ProjectUnifyPlan): SeenColumn[] {
     }
     for (const skill of plan.skills) {
       const now = skill.now[assistant], after = skill.after[assistant]
+      if (now == null || after == null) { unreported = true; continue }
       const note = differs.has(skill.name) ? catalogWord("literal", "e83e668845a4")
-        : catalogWord("literal", "a24619afa16e")
+        : skill.copy ? catalogWord("literal", "a24619afa16e") : ""
       rows.push({ key: `skill:${skill.name}`, kind: "skill", name: skill.name, now, after, mark: markOf(now, after), note })
     }
-    return { assistant, title: assistant === "claude" ? "Claude" : "Codex", rows }
+    return { assistant, title: assistant === "claude" ? "Claude" : assistant === "codex" ? "Codex" : "Antigravity", rows, unreported }
   })
 }
 

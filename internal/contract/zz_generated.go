@@ -4388,6 +4388,12 @@ const (
 // ProjectUnifyFileStateValues is every value the contract allows, in contract order.
 var ProjectUnifyFileStateValues = []ProjectUnifyFileState{ProjectUnifyFileStatePresent, ProjectUnifyFileStateMissing, ProjectUnifyFileStateLink, ProjectUnifyFileStateUnreadable}
 
+type ProjectUnifyNativeFile struct {
+	Kind   string `json:"kind"`
+	Path   string `json:"path"`
+	Status string `json:"status"`
+}
+
 type ProjectUnifyOutcome string
 
 const (
@@ -4407,10 +4413,14 @@ type ProjectUnifyPlan struct {
 
 	// False where this machine cannot create symbolic links; skills are then copied
 	// (skill_copy).
-	LinksAvailable bool                `json:"links_available"`
-	Rules          ProjectUnifyRules   `json:"rules"`
-	Skills         []ProjectUnifySkill `json:"skills"`
-	Status         ProjectUnifyStatus  `json:"status"`
+	LinksAvailable bool `json:"links_available"`
+
+	// Documented Antigravity-only root candidates, read-only and outside Unify
+	// actions. Missing or null means unreported. Does not assert activation.
+	NativeOnly []ProjectUnifyNativeFile `json:"native_only"`
+	Rules      ProjectUnifyRules        `json:"rules"`
+	Skills     []ProjectUnifySkill      `json:"skills"`
+	Status     ProjectUnifyStatus       `json:"status"`
 
 	// SHA-256 of every input the plan read. Apply refuses plan_changed when it
 	// differs.
@@ -4421,8 +4431,11 @@ type ProjectUnifyPlan struct {
 // root, following the measured loading rules in
 // docs/shared-project-instructions.md.
 type ProjectUnifyReads struct {
-	Claude []string `json:"claude"`
-	Codex  []string `json:"codex"`
+	// Antigravity CLI applicable workspace candidates; absent or null means unreported
+	// by an older machine. Empty means checked and none. Not active Session context.
+	Antigravity []string `json:"antigravity"`
+	Claude      []string `json:"claude"`
+	Codex       []string `json:"codex"`
 }
 
 type ProjectUnifyRules struct {
@@ -4444,8 +4457,11 @@ type ProjectUnifyRules struct {
 }
 
 type ProjectUnifySeen struct {
-	Claude bool `json:"claude"`
-	Codex  bool `json:"codex"`
+	// Applicability through .agents/skills. Null or absent is unreported; false is
+	// checked and unavailable.
+	Antigravity *bool `json:"antigravity"`
+	Claude      bool  `json:"claude"`
+	Codex       bool  `json:"codex"`
 }
 
 // One skill name found in .agents/skills or .claude/skills at the repository

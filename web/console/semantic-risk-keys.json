@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 8969,
+  "englishKeys": 8980,
   "counts": {
-    "negation": 2608,
+    "negation": 2611,
     "state": 1473,
-    "permission": 520,
+    "permission": 521,
     "deletion": 201,
     "uncertainty": 283
   },
-  "unionCount": 3997,
+  "unionCount": 4000,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2378,6 +2378,9 @@
       "notifications.smart_notificationsHint",
       "plan.fine",
       "planSimulation.failed",
+      "projectUnify.applicability",
+      "projectUnify.nativeUnreported",
+      "projectUnify.unreported",
       "projects.activityNone",
       "projects.emptyAdd",
       "projects.folderAddFailed",
@@ -4549,6 +4552,7 @@
       "plan.fine",
       "plan.machinesMany",
       "plan.machinesOne",
+      "projectUnify.applicability",
       "promo.signedOut",
       "settings.cloudAccountFailed",
       "settings.cloudAccountMissing",
@@ -8674,6 +8678,9 @@
     "plan.proPitch",
     "plan.webhooks",
     "planSimulation.failed",
+    "projectUnify.applicability",
+    "projectUnify.nativeUnreported",
+    "projectUnify.unreported",
     "projects.activityNone",
     "projects.editDone",
     "projects.emptyAdd",
