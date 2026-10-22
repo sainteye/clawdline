@@ -1,0 +1,139 @@
+import assert from "node:assert/strict"
+import test from "node:test"
+import { makeJSONFetch } from "@clawdline/core/refusal"
+import english from "../../public/catalogs/en.json" with { type: "json" }
+import chinese from "../../public/catalogs/zh-Hant.json" with { type: "json" }
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { catalogRefusalDetail } from "../catalog.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { withCatalog } from "../catalog-testing.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { startPath, resumePath } from "./place-routes.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { writeRoute } from "../cloud/relay-writer.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { STATUS_FRESH_MS, statusProjection } from "../cloud/status-projection.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { pinnedQuestion } from "../cloud/status-source.ts"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantLabel, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
+
+const active: AssistantFacts = { id: "antigravity", installed: true, authState: "ready", integrationState: "active",
+  capabilities: { start: true, resume: true, send: true, menus: true, transcript: true } }
+
+withCatalog("zh-Hant")
+
+test("a found CLI never grants Antigravity operations without readiness evidence", () => {
+  for (const facts of [{ id: "antigravity" }, { id: "antigravity", installed: true },
+    { ...active, capabilities: undefined }, { ...active, authState: undefined },
+    { ...active, integrationState: undefined }] satisfies AssistantFacts[]) {
+    for (const operation of ["start", "resume", "send", "menus", "transcript"] as const) {
+      assert.equal(assistantAdmits(facts, operation), false)
+    }
+  }
+})
+
+test("each operation needs its own explicit permission and a usable installation", () => {
+  for (const operation of ["start", "resume", "send", "menus", "transcript"] as const) {
+    assert.equal(assistantAdmits(active, operation), true)
+    assert.equal(assistantAdmits({ ...active, capabilities: { ...active.capabilities!, [operation]: false } }, operation), false)
+    assert.equal(assistantAdmits({ ...active, installed: false }, operation), false)
+  }
+})
+
+test("unknown auth, disabled integration, missing CLI and unsupported account remain distinct", () => {
+  for (const [patch, reason] of [
+    [{ installed: false }, "missing"], [{ integrationState: "missing" }, "integrationMissing"],
+    [{ integrationState: "disabled" }, "disabled"], [{ integrationState: "incompatible" }, "incompatible"],
+    [{ authState: "required" }, "required"], [{ authState: "unknown" }, "unknownAuth"],
+    [{ authState: "unsupported_account" }, "unsupported"],
+  ] as const) {
+    assert.equal(assistantUnavailable({ ...active, ...patch }, "start"), reason)
+  }
+})
+
+test("old daemons preserve original provider behavior without inventing a third-provider capability", () => {
+  assert.equal(assistantAdmits({ id: "claude" }, "resume"), true)
+  assert.equal(assistantAdmits({ id: "codex" }, "start"), true)
+  assert.equal(assistantAdmits({ id: "antigravity" }, "start"), false)
+  assert.equal(assistantAdmits({ id: "foreign" }, "start"), false)
+  assert.equal(assistantAdmits(undefined, "start"), false)
+  assert.equal(assistantAdmits({ id: "codex", capabilities: { ...active.capabilities!, start: false } }, "start"), false)
+  assert.equal(isAssistant("antigravity"), true)
+  assert.equal(isAssistant("gemini"), false)
+  assert.equal(assistantLabel("antigravity"), "Antigravity")
+})
+
+test("Antigravity slash commands stay drafts while ordinary prompts and other providers retain their behavior", () => {
+  for (const text of ["/", "/model", "  /config", "\n/quit"]) assert.equal(antigravitySlashDraft("antigravity", text), true)
+  for (const text of ["", "Explain /model", "A normal prompt"]) assert.equal(antigravitySlashDraft("antigravity", text), false)
+  assert.equal(antigravitySlashDraft("codex", "/model"), false)
+  assert.equal(antigravitySlashDraft("claude", "/exit"), false)
+})
+
+test("Antigravity compose requires that provider's readiness and an idle screen without a menu", () => {
+  assert.equal(assistantComposeAdmits("antigravity", active, "idle", false), true)
+  assert.equal(assistantComposeAdmits("antigravity", undefined, "idle", false), false)
+  assert.equal(assistantComposeAdmits("antigravity", { ...active, id: "claude" }, "idle", false), false)
+  assert.equal(assistantComposeAdmits("antigravity", active, "idle", true), false)
+  for (const state of [undefined, "unknown", "waiting", "working"]) {
+    assert.equal(assistantComposeAdmits("antigravity", active, state, false), false)
+  }
+  assert.equal(assistantComposeAdmits("antigravity", { ...active, capabilities: { ...active.capabilities!, send: false } }, "idle", false), false)
+  assert.equal(assistantComposeAdmits("claude", undefined, "working", false), true)
+  assert.equal(assistantComposeAdmits("codex", undefined, "unknown", true), true)
+})
+
+test("local start and exact resume routes carry Antigravity and the role through the existing Cloud route parser", () => {
+  assert.deepEqual(writeRoute("POST", startPath("project fixture", "antigravity", undefined, "frontend")), {
+    op: "start", word: "start", place: "project fixture", assistant: "antigravity", model: "", persona: "frontend",
+  })
+  assert.deepEqual(writeRoute("POST", resumePath("project fixture", "conversation-fixture", "antigravity", "frontend")), {
+    op: "resume", word: "resume", place: "project fixture", assistant: "antigravity", past: "conversation-fixture", persona: "frontend",
+  })
+})
+
+test("the start JSON transport keeps a producer detail key in either refusal envelope", async t => {
+  const key = Object.keys(english).find(key => /^http\.[0-9a-f]{16}$/u.test(key))! as keyof typeof english
+  const jsonFetch = makeJSONFetch({ words: { offline: "offline", requestFailed: "failed", notJSON: "invalid" } })
+  for (const body of [
+    { error: "assistant_unavailable", detail: "Synthetic refusal", detail_key: key },
+    { error: { code: "assistant_unavailable", message: "Synthetic refusal", detail_key: key } },
+  ]) {
+    const mock = t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify(body), { status: 409 }))
+    try {
+      await assert.rejects(jsonFetch(startPath("fixture", "antigravity")), (error: unknown) => {
+        assert.equal((error as { code: string }).code, "assistant_unavailable")
+        assert.equal((error as { detailKey: string }).detailKey, key)
+        assert.deepEqual(catalogRefusalDetail(error), { text: chinese[key], lang: "zh-Hant" })
+        return true
+      })
+    } finally { mock.mock.restore() }
+  }
+})
+
+test("signed Cloud projection preserves Antigravity without allowing a stale or foreign menu", () => {
+  const machine = "machine-fixture", session = "pane-fixture"
+  const generation = "a".repeat(32), execution = "b".repeat(32)
+  const inventory = "__clawdline_inventory_v1__"
+  const hold = (id: string, payload: unknown) => ({ identity: { machine, session: id }, payload, observedAt: 2000, sequence: 1 })
+  const statusSnapshots = new Map([
+    [JSON.stringify([machine, inventory]), hold(inventory, { inventory: { version: 1, sessions: [session] }, at: 2,
+      complete: true, snapshot_generation: generation })],
+    [JSON.stringify([machine, session]), hold(session, { machine_id: machine, session_id: session, assistant: "antigravity",
+      execution_generation: execution, state: "waiting", source: { observed_at: 2, freshness: "current" },
+      projected_at: 2, inventory_complete: true, snapshot_generation: generation })],
+  ])
+  const reading = statusProjection({ statusSnapshots }, machine, 2000)
+  assert.equal(reading.kind, "ready")
+  assert.equal(reading.rows?.[0].assistant, "antigravity")
+  const destination = { machineID: machine, sessionID: session, executionGeneration: execution }
+  const row = { identity: { machine, session }, machine, session, execution_generation: execution,
+    source: { freshness: "current", observed_at: 2 }, menu: { question: "Allow synthetic command?",
+      options: [{ n: 1, label: "Allow once", can: true }] } }
+  const client = { detailSnapshots: new Map([[machine + "\u0000" + session, row]]) }
+  assert.equal(pinnedQuestion(client, destination, 2000)?.options[0].key, "1")
+  assert.equal(pinnedQuestion(client, { ...destination, executionGeneration: "c".repeat(32) }, 2000), null)
+  assert.equal(pinnedQuestion(client, { ...destination, machineID: "foreign" }, 2000), null)
+  assert.equal(pinnedQuestion(client, destination, STATUS_FRESH_MS + 3000), null)
+})

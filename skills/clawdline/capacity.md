@@ -4,6 +4,16 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 
 | Name | Default bound | Unit | At limit | Told through | Current deviation |
 | --- | ---: | --- | --- | --- | --- |
+| `antigravity.ancestry_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_config_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_payload_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_timeout_seconds` | 3 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.live_bindings` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.managed_launches` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.observation_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.process_read_seconds` | 3 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.retention_seconds` | 86400 | `seconds` | `expire` | `diagnostics, sender` | — |
+| `antigravity.state_age_seconds` | 15 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `artifacts.drops` | 268435456 | `bytes` | `evict_oldest` | `diagnostics, log` | — |
 | `artifacts.drops_young` | 1 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
 | `artifacts.image_bytes` | 67108864 | `bytes` | `evict_oldest` | `diagnostics, notice, log` | — |
@@ -275,6 +285,12 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `personas.catalog` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `personas.suggestion_context_bytes` | 16384 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `personas.text_bytes` | 8192 | `bytes` | `refuse` | `diagnostics` | — |
+| `places.antigravity_history_bytes` | 67108864 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `places.antigravity_history_entries` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `places.antigravity_history_milliseconds` | 250 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `places.antigravity_history_title_characters` | 80 | `characters` | `refuse` | `diagnostics, sender` | — |
+| `places.antigravity_probe_output_bytes` | 65536 | `bytes` | `refuse` | `diagnostics` | — |
+| `places.antigravity_probe_seconds` | 3 | `seconds` | `refuse` | `diagnostics` | — |
 | `places.git_config_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `places.registered` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `places.repo_lookups` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |

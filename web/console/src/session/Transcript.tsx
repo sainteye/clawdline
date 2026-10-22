@@ -1,4 +1,5 @@
 import { catalogWord } from "../catalog.js"
+import { assistantLabel } from "./antigravity-ui.js"
 import {
   useCallback,
   useEffect,
@@ -571,8 +572,8 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
 
   const who: Record<string, string> = {
     user: T.webWhoYou,
-    assistant: L.assistantDisplayName(session?.assistant),
-    error: L.assistantDisplayName(session?.assistant),
+    assistant: session?.assistant === "antigravity" ? assistantLabel(session.assistant) : L.assistantDisplayName(session?.assistant),
+    error: session?.assistant === "antigravity" ? assistantLabel(session.assistant) : L.assistantDisplayName(session?.assistant),
     agent: T.webAgents,
     peer: "Claude ↔",
     message: "Clawdline ↔",
@@ -676,7 +677,7 @@ export function TranscriptEntries({ entries, assistant, working = false, picture
     return next
   })
   const view: View = {
-    who: { user: T.webWhoYou, assistant: L.assistantDisplayName(assistant), error: L.assistantDisplayName(assistant),
+    who: { user: T.webWhoYou, assistant: assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant), error: assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant),
       agent: T.webAgents, peer: "Claude ↔", message: "Clawdline ↔", notice: "Clawdline", tool: T.webWhoTool },
     expanded, toggle, assistant, agents: [], onAgent: undefined, icons, slots: new Map(),
   }
@@ -1358,7 +1359,7 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
   if (role === "message") {
     const assistant = String(e.sourceAssistant || "")
     const meta = assistant
-      ? L.assistantLogoHTML(assistant) + "<span>" + esc(L.assistantDisplayName(assistant)) + "</span>"
+      ? L.assistantLogoHTML(assistant) + "<span>" + esc(assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant)) + "</span>"
       : ""
     const card =
       '<div class="message-card"><div class="message-source"><span>' +

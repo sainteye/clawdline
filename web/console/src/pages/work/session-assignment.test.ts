@@ -33,6 +33,7 @@ test("unfinished counts include open Board items, their pending steps, and direc
 test("assignment choices name which company's assistant each Session runs", () => {
   assert.equal(assistantName("claude"), "Claude Code")
   assert.equal(assistantName("codex"), "Codex")
+  assert.equal(assistantName("antigravity"), "Antigravity")
   assert.equal(assistantName(undefined), "助理不明")
 })
 
@@ -42,6 +43,8 @@ test("a new Session keeps the assistant last chosen, and Codex before any choice
   assert.equal(rememberedAssistant(storage), "codex")
   rememberAssistant("claude", storage)
   assert.equal(rememberedAssistant(storage), "claude")
+  rememberAssistant("antigravity", storage)
+  assert.equal(rememberedAssistant(storage), "antigravity")
   kept.set("clawdline.work.new-session-assistant", "gemini")
   assert.equal(rememberedAssistant(storage), "codex")
   const blocked = { getItem: () => { throw new Error("blocked") }, setItem: () => { throw new Error("blocked") } }

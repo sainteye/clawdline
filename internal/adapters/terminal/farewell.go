@@ -59,6 +59,10 @@ func QuitLine(a session.Assistant) (string, bool) {
 		return "/exit", true
 	case session.AssistantCodex:
 		return "/quit", true
+	case session.AssistantAntigravity:
+		// Slash submission was observed becoming ordinary user text. No native
+		// exit/composer contract has been verified, so never synthesize one.
+		return "", false
 	}
 	return "", false
 }

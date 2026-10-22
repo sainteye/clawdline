@@ -116,6 +116,8 @@ const (
 	// horizon. It is a capacity in the literal sense: once filled, the held
 	// observation expires and the reader must say it does not know.
 	Seconds Unit = "seconds"
+	// Milliseconds retains subsecond deadlines without rounding the capacity.
+	Milliseconds Unit = "milliseconds"
 )
 
 // Channel is a way a full row reaches somebody.

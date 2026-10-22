@@ -1,7 +1,7 @@
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { fetchWithDeadline } from "./fetch-deadline.js"
 import { readSessionListWith } from "./session-assignment.js"
-import type { PersonaSuggestionReply, SessionsSnapshot, UsageItem, UsageSession, WorkGateCompactRead, WorkGateDetailRead, WorkGateDecisionAction } from "@clawdline/contract"
+import type { Assistant, PersonaSuggestionReply, SessionsSnapshot, UsageItem, UsageSession, WorkGateCompactRead, WorkGateDetailRead, WorkGateDecisionAction } from "@clawdline/contract"
 import type { CreatedVia } from "./words.js"
 
 /**
@@ -385,7 +385,7 @@ export const assignWorkV2 = (item: WorkV2Item, terminalID: string) =>
   })
 
 /** `persona` is sent only when one was chosen: a new Session with none is the Session it always was. */
-export const assignNewWorkV2 = (item: WorkV2Item, assistant: "codex" | "claude", persona?: string) =>
+export const assignNewWorkV2 = (item: WorkV2Item, assistant: Assistant, persona?: string) =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/assign`, {
     expected_version: item.version,
     mode: "new_session",
