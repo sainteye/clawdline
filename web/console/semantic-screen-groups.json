@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8908,
-  "riskKeys": 3962,
-  "nonRiskCount": 4946,
+  "englishContentKeys": 8920,
+  "riskKeys": 3973,
+  "nonRiskCount": 4947,
   "groups": [
     {
       "name": "admin / other",
@@ -234,6 +234,16 @@
         "admin.windowFrom",
         "admin.windowRange",
         "admin.windowUntil"
+      ]
+    },
+    {
+      "name": "antigravity / other",
+      "count": 1,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "antigravity.ready"
       ]
     },
     {

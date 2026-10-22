@@ -17,6 +17,7 @@
 import { T } from "./js/core/i18n.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 import { resumePath, startPath } from "../session/place-routes.js"
+import type { Assistant, StartAssistant } from "@clawdline/contract"
 import { bindFailureLine as bindFailureLineOriginal } from "./js/core/failure-text.js"
 import {
   bandSpin as bandSpinOriginal,
@@ -45,10 +46,7 @@ export interface StartPlaceRow {
   icon?: StartIcon
   machine?: string
 }
-export interface StartAssistantRow {
-  id: string
-  label?: string
-}
+export type StartAssistantRow = Pick<StartAssistant, "id"> & Partial<StartAssistant>
 export interface PastRow {
   id: string
   title: string
@@ -59,12 +57,12 @@ export interface StartAnswer {
   id?: string
   attach?: string
   backend?: "iterm" | "tmux" | "owned"
-  assistant?: "claude" | "codex"
+  assistant?: Assistant
   cwd?: string
 }
 
 /** A refusal as `net/fetch.js` hands it on: the code, and `app` when there is one. */
-export type StartFailure = Error & { code?: string; app?: string; reason?: string }
+export type StartFailure = Error & { code?: string; app?: string; reason?: string; detail?: string; detailKey?: string; detail_key?: string }
 
 /** `net/fetch.js`'s `jsonFetch`, with this page's refusal metadata retained. */
 const jsonFetch = makeJSONFetch({

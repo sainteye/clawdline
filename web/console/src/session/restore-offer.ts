@@ -172,6 +172,7 @@ export function rowName(s: RestorableSession): string {
 export function assistantName(assistant: string): string {
   if (assistant === "claude") return "Claude Code"
   if (assistant === "codex") return "Codex"
+  if (assistant === "antigravity") return "Antigravity"
   return assistant
 }
 

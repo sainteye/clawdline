@@ -111,7 +111,8 @@ test("buttons become stale when signed status expires without any source event",
   } finally { stop(); if (timeout !== undefined) clearTimeout(timeout) }
 })
 
-test("machine inventory expiry disables an otherwise fresh pinned action without an event", async () => {
+test("machine inventory expiry disables an otherwise fresh pinned action without an event", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1_000_000 })
   const f = fixture()
   const observedAt = Date.now() - ACTION_STATUS_FRESH_MS + 500
   f.client.machines = async () => ({ machines: [{ id: "machine-a", observedAt,
@@ -122,18 +123,25 @@ test("machine inventory expiry disables an otherwise fresh pinned action without
   const storage = { getItem: () => null, setItem: () => {} }
   const service = new PinnedSessionActions(source, () => f.client, storage, () => "request")
   const seen: unknown[] = []
+  let ready!: () => void
+  const firstRead = new Promise<void>((resolve) => { ready = resolve })
   let stop = () => {}
   const stale = new Promise<void>((resolve) => {
     stop = watchActionAvailability(context, source, service, (value) => {
       if (value.send !== undefined) seen.push(value.send)
+      if (value.send === null) ready()
       if (value.send === "stale") resolve()
     })
   })
-  let timeout: ReturnType<typeof setTimeout> | undefined
   try {
-    await Promise.race([stale, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("machine timer did not fire")), 2_000) })])
+    await firstRead
+    assert.deepEqual(seen, [null])
+    t.mock.timers.tick(500)
+    assert.deepEqual(seen, [null], "the machine remains current at the exact freshness boundary")
+    t.mock.timers.tick(1)
+    await stale
     assert.deepEqual(seen, [null, "stale"])
-  } finally { stop(); if (timeout !== undefined) clearTimeout(timeout) }
+  } finally { stop(); t.mock.timers.reset() }
 })
 
 test("capability, content and pairing revocation refuse a write before its envelope", async () => {
