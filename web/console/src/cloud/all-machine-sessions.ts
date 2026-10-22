@@ -27,7 +27,7 @@ export interface SessionListPresentation {
   title: string
   /** Time of the authenticated machine list that supplied this status. */
   observedAt?: number
-  assistant?: "claude" | "codex"
+  assistant?: "claude" | "codex" | "antigravity"
   cwd?: string
   /** The Project the machine would accept this Session into (`project_key`). */
   projectKey?: string
@@ -107,7 +107,7 @@ export interface ProjectedSession {
    * until it does the list waits for its authorized presentation read.
    */
   title?: undefined
-  assistant?: "claude" | "codex"
+  assistant?: "claude" | "codex" | "antigravity"
   backend?: "tmux" | "iterm" | "ps"
   parentSessionID?: string
   machineScope?: boolean

@@ -4,7 +4,7 @@ import type { StartAnswer, StartPlaceRow } from "../legacy/start-bridge.js"
 /** The start reply proves the pane exists; the inventory will fill in its state. */
 export function startedRow(answer: StartAnswer, place: StartPlaceRow | null): SessionRow | null {
   if (!answer.id || !["iterm", "tmux", "owned"].includes(answer.backend ?? "") ||
-    !["claude", "codex"].includes(answer.assistant ?? "")) return null
+    !["claude", "codex", "antigravity"].includes(answer.assistant ?? "")) return null
   return {
     id: answer.id,
     backend: answer.backend as SessionRow["backend"],

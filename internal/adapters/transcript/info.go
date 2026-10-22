@@ -70,6 +70,7 @@ type factsKey struct {
 	assistant string
 	size      int64
 	mod       int64
+	identity  string
 }
 
 const factsKept = 24
@@ -84,6 +85,16 @@ func (r *RecordFacts) Read(path, assistant string) (Facts, error) {
 		return Facts{}, recordError(err)
 	}
 	key := factsKey{path: path, assistant: assistant, size: st.Size(), mod: st.ModTime().UnixNano()}
+	if assistant == "antigravity" {
+		if !antigravityNativePath(path) {
+			return Facts{}, antigravityError("path_invalid")
+		}
+		key.identity = antigravityChangeIdentity(st)
+		if key.identity == "" {
+			info, err := ReadAntigravityInfo(path)
+			return Facts{Usage: info.Usage}, err
+		}
+	}
 	r.mu.Lock()
 	if hit, ok := r.held[key]; ok {
 		r.touch(key)
@@ -92,15 +103,23 @@ func (r *RecordFacts) Read(path, assistant string) (Facts, error) {
 	}
 	r.mu.Unlock()
 
-	data, complete, err := tailData(path, recordReadLimit)
-	if err != nil {
-		return Facts{}, recordError(err)
-	}
 	var facts Facts
-	if assistant == "codex" {
-		facts = codexFacts(data)
+	if assistant == "antigravity" {
+		info, err := ReadAntigravityInfo(path)
+		if err != nil {
+			return Facts{}, err
+		}
+		facts.Usage = info.Usage
 	} else {
-		facts = claudeFacts(data, complete)
+		data, complete, err := tailData(path, recordReadLimit)
+		if err != nil {
+			return Facts{}, recordError(err)
+		}
+		if assistant == "codex" {
+			facts = codexFacts(data)
+		} else {
+			facts = claudeFacts(data, complete)
+		}
 	}
 
 	r.mu.Lock()

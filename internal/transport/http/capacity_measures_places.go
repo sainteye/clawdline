@@ -8,6 +8,25 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) placesCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"places.antigravity_history_entries": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-history-read guard; no retained buffer"}
+		},
+		"places.antigravity_history_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-history-read guard; no retained buffer"}
+		},
+		"places.antigravity_history_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-history-read guard; no retained buffer"}
+		},
+		"places.antigravity_history_title_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-history-read guard; no retained buffer"}
+		},
+
+		"places.antigravity_probe_output_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-probe output guard; no retained buffer"}
+		},
+		"places.antigravity_probe_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-probe deadline and pipe-drain guard; no retained buffer"}
+		},
 		"places.git_config_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-read guard; no retained buffer"}
 		},
