@@ -845,6 +845,8 @@ export var T = {
     webFailReconnecting: "The Cloud connection is renewing. Try again in a moment.",
     webFailSignedOut: "Cloud did not accept this browser's credential.",
     webFailForbidden: "Cloud does not allow this device to do that.",
+    webFailGeminiHistory: "Gemini history could not be read. Try again.",
+    webFailGeminiResume: "Gemini could not resume this conversation. Try again.",
     webFailRateLimited: "Cloud is limiting requests. Try again shortly.",
     webFailTooLarge: "This is too large to send over Cloud.",
     webFailNoAnswer: "The Mac did not answer.",

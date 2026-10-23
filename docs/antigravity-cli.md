@@ -576,3 +576,67 @@ reply. Retain the existing bounded follow window after that echo and reuse a
 native structured page only for the existing short read-coalescing window.
 Native pages do not have a terminal line whose movement invalidates the longer
 terminal transcript cache. This follows reads only; it never resends the prompt.
+
+
+### Durable owned history and restart recovery
+
+The owned pilot now stores conversation identity, projected entries and turn
+uncertainty in a private SQLite database under the daemon state directory. Its
+owned ID, native ID, original workspace and personal profile survive shutdown.
+A saved conversation remains visible and readable without starting or
+authenticating the native CLI. Closing an active process does not delete its
+history. The active-process limit does not count saved conversations.
+
+A new explicit message reconnects the exact saved native conversation. Clean
+recovery uses negotiated `session/resume`; missing or uncertain history uses
+`session/load` into an isolated projection. A complete successful replay replaces
+the projection atomically; an authentication, replay or persistence failure
+leaves the saved history unchanged. Recovery never creates a replacement
+conversation or resends a prior prompt. A prompt is marked uncertain before its
+pipe write, so interruption remains visible after a restart instead of being
+silently retried. A new message can then reconcile and continue that conversation.
+
+The project history chooser reads saved local pages first. Explicit native
+history pages perform metadata-only initialization, personal authentication and
+`session/list`. They do not run a model or scan during the home screen startup.
+An older pilot conversation can be adopted through the same resume route only
+after native listing confirms its complete ID and original workspace. The
+provider cursor is opaque; missing native timestamps stay unknown.
+
+Each durable transcript entry has a stable ID and ordinal cursor. Identical
+text in different turns remains separate. Streaming tool changes update their
+existing entry, including entries outside the hot preview. Older structured
+pages are accepted by the phone and desktop transcript. A replay generation
+change discards retained older pages; ordinary streaming revisions do not.
+`MaxViewBytes` limits a response and the hot preview, not total disk history.
+Large text entries split on UTF-8 boundaries into adjacent durable entries. A
+single tool snapshot larger than the page budget still reports truncation; this
+change does not add a cursor inside one tool result.
+
+The existing one-active-process pilot restriction remains. This work does not
+claim full role, permission or public-release acceptance.
+
+#### Reproducing the native recovery probe
+
+Normal tests use synthetic process peers and never access a vendor account.
+The opt-in Unix probe requires an already signed-in personal free profile with
+AI Credits disabled. Its configuration must name an explicit CLI executable and
+account directory. Only that CLI receives the explicitly selected original HOME;
+the HTTP fixture and daemon state remain isolated. No credentials are copied
+into the repository.
+
+```sh
+CLAWDLINE_GEMINI_FREE_RESUME_TEST_CONFIG=/private/path/pilot.json \
+CLAWDLINE_GEMINI_NATIVE_HOME=/explicit/account/home \
+go test ./internal/transport/http -run '^TestGeminiFreeNativeHistorySurvivesRestart$' -count=1 -v
+```
+
+This probe has exactly two synthetic prompts, no automatic retry, and a
+45-second deadline for each prompt and reply wait. It verifies two isolated
+service restarts, exact native and owned identity, recall after reconnect, and
+four saved entries readable before authentication. It leaves the running daemon
+untouched. The separate `TestGeminiPersonalNativeImportSurvivesRestart` probe
+also needs `CLAWDLINE_GEMINI_IMPORT_TARGET`, a private JSON receipt with `cwd` and
+`nativeId` obtained from a native listing. It verifies discovery, import and
+offline older pages with zero model prompts. Neither probe authorizes a paid
+API, API key, credit fallback or retries.

@@ -3701,7 +3701,8 @@ type PasswordSet struct {
 // One conversation an assistant has already recorded in a place. `id` is the
 // only part a client sends back.
 type PastSession struct {
-	// When it was last written to, Unix seconds.
+	// When it was last written to, Unix seconds; zero when native history does not
+	// report a timestamp.
 	At int64 `json:"at"`
 
 	// A lowercase UUID: the conversation's own id.
@@ -3714,9 +3715,11 @@ type PastSession struct {
 }
 
 // GET /v1/places/{id}/sessions[/{assistant}]: what that assistant has recorded
-// in the place, newest first. Codex returns one provider page of twenty with an
-// opaque next_cursor; other assistants return at most two hundred. Dispatched
-// children and `-p` runs are not conversations and are left out.
+// in the place, newest first. Codex returns one provider page of twenty. Gemini
+// returns saved local pages of at most two hundred, then explicit native pages
+// bounded by the ACP frame budget. Both use opaque next_cursor values; other
+// assistants return at most two hundred. Dispatched children and `-p` runs are
+// not conversations and are left out.
 type PastSessionList struct {
 	Assistant string `json:"assistant"`
 	At        int64  `json:"at"`
@@ -3724,7 +3727,7 @@ type PastSessionList struct {
 	// The list stopped at its cap and there were more.
 	More bool `json:"more"`
 
-	// Opaque continuation for the next Codex page; omitted at the end.
+	// Opaque continuation for the next provider page; omitted at the end.
 	NextCursor string        `json:"next_cursor,omitempty"`
 	Place      string        `json:"place"`
 	Sessions   []PastSession `json:"sessions"`
@@ -7718,6 +7721,11 @@ type TranscriptEntry struct {
 	// on every other entry.
 	FileChanges []TranscriptFileChange `json:"fileChanges,omitempty"`
 
+	// Stable entry identity when the provider has a durable projection. Owned ACP uses
+	// acp2:generation:ordinal, preserving distinct repeated turns and replacing
+	// streamed content in place. Absent for providers without entry identities.
+	ID string `json:"id,omitempty"`
+
 	// Images attached to a user turn. Absent when there were none: the Swift app
 	// writes an explicit 0 on user rows, and a reader treats absence as that 0.
 	ImageCount int64             `json:"imageCount,omitempty"`
@@ -7827,8 +7835,9 @@ type TranscriptPage struct {
 	// reader without it keeps reading the newest page whole.
 	NextAfter int64 `json:"nextAfter,omitempty"`
 
-	// Exclusive byte cursor for the next older page; absent at the beginning of the
-	// record, and on an after= page.
+	// Exclusive provider cursor for the next older page: a JSONL byte offset or a
+	// durable owned ACP entry ordinal. Pass it back unchanged with this page's
+	// signature. Absent at the beginning of the record, and on an after= page.
 	NextBefore int64  `json:"nextBefore,omitempty"`
 	Note       string `json:"note,omitempty"`
 
@@ -7836,11 +7845,16 @@ type TranscriptPage struct {
 	// evidence.
 	Path string `json:"path,omitempty"`
 
+	// Optional exclusive opaque cursor for rereading this exact durable ACP page with
+	// its signature, including after its entries leave the newest window.
+	ReadBefore int64 `json:"readBefore,omitempty"`
+
 	// Opaque record revision, empty when nothing was read. Claude/Codex use size and
 	// modification time; native Antigravity uses
-	// agy1:file-generation:prefix-bytes:sha256. Return this exact held page signature
-	// as revision with its before/after cursor; never substitute another page's
-	// signature.
+	// agy1:file-generation:prefix-bytes:sha256; durable owned ACP uses
+	// acp2:generation:revision, where only a native history replacement changes
+	// generation. Return this exact held page signature as revision with its
+	// before/after cursor; never substitute another page's signature.
 	Signature  string                `json:"signature"`
 	Truncation *TranscriptTruncation `json:"truncation,omitempty"`
 	Unread     *TranscriptUnread     `json:"unread,omitempty"`

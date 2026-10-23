@@ -20,7 +20,7 @@ export function assistantUnavailable(facts: AssistantFacts | null | undefined, o
   if (facts.integrationState === "missing") return "integrationMissing"
   if (facts.integrationState === "disabled") return "disabled"
   // A safe bootstrap is explicitly advertised by the backend, never inferred from auth.
-  if (operation === "start" && facts.capabilities?.start === true &&
+  if ((operation === "start" || operation === "resume") && facts.capabilities?.[operation] === true &&
     (facts.id !== "antigravity" || facts.installed === true) && facts.integrationState === "active" && facts.authState !== "unsupported_account") return null
   if (facts.authState === "required") return "required"
   if (facts.authState === "unsupported_account") return "unsupported"
@@ -50,7 +50,9 @@ export function assistantComposeAdmits(assistant: string | undefined, facts: Ass
   state: string | undefined, hasMenu: boolean, protocolOwned = false): boolean {
   if (assistant !== "antigravity") return true
   // Owned writes are checked at the server; do not preflight the account again in the view.
-  if (protocolOwned) return state === "idle" && !hasMenu
+  // A stopped or interrupted owned conversation resumes on the person's next
+  // explicit message. The Host reconciles native history before that one send.
+  if (protocolOwned) return (state === "idle" || state === "unknown") && !hasMenu
   return facts?.id === assistant && assistantAdmits(facts, "send") && state === "idle" && !hasMenu
 }
 

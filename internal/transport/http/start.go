@@ -514,7 +514,7 @@ func assistantNeedsSignIn(parent context.Context, assistant string) bool {
 
 func (s *Server) resumePlace(w http.ResponseWriter, r *http.Request, id, assistant, conversation, persona string) {
 	if assistant == projects.AssistantAntigravity {
-		refuseAntigravityFoundation(w)
+		s.resumeOwnedAntigravity(w, r, id, conversation, persona)
 		return
 	}
 	release, ok := admitOpening(w, r)
@@ -554,7 +554,7 @@ func (s *Server) resumePlace(w http.ResponseWriter, r *http.Request, id, assista
 }
 
 func (s *Server) pastRoute(w http.ResponseWriter, r *http.Request, id, assistant string) {
-	if assistant == projects.AssistantAntigravity {
+	if assistant == projects.AssistantAntigravity && s.antigravitySessions.Load() == nil {
 		refuseAntigravityFoundation(w)
 		return
 	}
@@ -569,6 +569,10 @@ func (s *Server) pastRoute(w http.ResponseWriter, r *http.Request, id, assistant
 	}
 	// One more than is sent, so the answer can say whether there were more.
 	const limit = 200
+	if assistant == projects.AssistantAntigravity {
+		s.pastOwnedAntigravity(w, r, ctx, place, limit)
+		return
+	}
 	var found []projects.Past
 	next := ""
 	if assistant == projects.AssistantCodex {

@@ -45,9 +45,12 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
 			Params struct {
-				ConfigID string `json:"configId"`
-				Value    string `json:"value"`
-				Prompt   []struct {
+				SessionID string `json:"sessionId"`
+				CWD       string `json:"cwd"`
+				Cursor    string `json:"cursor"`
+				ConfigID  string `json:"configId"`
+				Value     string `json:"value"`
+				Prompt    []struct {
 					Text string `json:"text"`
 				} `json:"prompt"`
 			} `json:"params"`
@@ -58,10 +61,22 @@ func TestOwnedHTTPPeer(t *testing.T) {
 		var result any = map[string]any{}
 		switch req.Method {
 		case "initialize":
-			result = map[string]int{"protocolVersion": 1}
+			result = map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}}
+		case "session/list":
+			result = map[string]any{"sessions": []any{map[string]string{"sessionId": "synthetic-http-native", "cwd": req.Params.CWD, "title": "Saved synthetic conversation"}, map[string]string{"sessionId": "synthetic-old-native", "cwd": req.Params.CWD, "title": "Previous CLI conversation"}, map[string]string{"sessionId": "foreign-cwd", "cwd": "/another/project", "title": "Foreign workspace"}}, "nextCursor": "older-native"}
+			if req.Params.Cursor == "older-native" {
+				result = map[string]any{"sessions": []any{map[string]string{"sessionId": "oldest-native", "cwd": req.Params.CWD, "title": "Oldest conversation"}}}
+			}
 		case "session/new":
 			result = map[string]any{"sessionId": "synthetic-http-native", "models": map[string]any{"currentModelId": "synthetic-flash-high", "availableModels": []any{map[string]string{"modelId": "synthetic-flash-high", "name": "Synthetic High"}, map[string]string{"modelId": "synthetic-flash-low", "name": "Synthetic Low"}}}, "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
 			result.(map[string]any)["configOptions"] = config()
+		case "session/resume", "session/load":
+			if req.Method == "session/load" && req.Params.SessionID == "synthetic-old-native" {
+				for _, entry := range []struct{ kind, text string }{{"user_message_chunk", "previous synthetic input"}, {"agent_message_chunk", "previous synthetic reply"}} {
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": req.Params.SessionID, "update": map[string]any{"sessionUpdate": entry.kind, "content": map[string]string{"type": "text", "text": entry.text}}}})
+				}
+			}
+			result = map[string]any{"configOptions": config(), "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
 		case "session/set_config_option":
 			f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "config-writes"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 			f.WriteString(req.Params.ConfigID + "=" + req.Params.Value + "\n")
@@ -218,7 +233,7 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 		t.Fatal("quota entered transcript", page)
 	}
 	for _, row := range s.availableAssistants() {
-		if row.ID == "antigravity" && (row.AuthState != contract.StartAuthStateReady || !row.Capabilities.Send || !row.Capabilities.Transcript || row.Capabilities.Resume || row.Capabilities.Menus) {
+		if row.ID == "antigravity" && (row.AuthState != contract.StartAuthStateReady || !row.Capabilities.Send || !row.Capabilities.Transcript || !row.Capabilities.Resume || row.Capabilities.Menus) {
 			t.Fatalf("incorrect preview capabilities: %+v", row)
 		}
 	}

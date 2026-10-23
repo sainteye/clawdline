@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -155,8 +156,18 @@ func (s *Server) transcriptPageBefore(id string, item session.Session, limit int
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
 		if h := s.antigravitySessions.Load(); h != nil {
-			if snapshot, err := h.Transcript(item, limit); err == nil {
+			held := ""
+			if len(revision) > 0 {
+				held = revision[0]
+			}
+			if snapshot, err := h.TranscriptPage(context.Background(), item, limit, before, held); err == nil {
 				return snapshot
+			} else {
+				var typed *antigravitysession.Error
+				if errors.Is(err, transcript.ErrCursorStale) || (errors.As(err, &typed) && typed.Code == "cursor_stale") {
+					page.Note = recordNote(transcript.ErrCursorStale)
+					return page
+				}
 			}
 		}
 		page.Evidence = contract.EvidenceNone

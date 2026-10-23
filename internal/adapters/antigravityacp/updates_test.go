@@ -147,7 +147,7 @@ func TestSessionUpdateToolContentSynthetic(t *testing.T) {
 }
 
 func TestSessionUpdateIgnoredVariants(t *testing.T) {
-	for _, kind := range []string{"user_message_chunk", "plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update"} {
+	for _, kind := range []string{"plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update"} {
 		t.Run(kind, func(t *testing.T) {
 			frame := updateTestFrame(`{"sessionUpdate":"` + kind + `","_meta":{"text":"not chat"}}`)
 			out, err := DecodeSessionUpdate(frame, updateTestSession)
@@ -160,6 +160,17 @@ func TestSessionUpdateIgnoredVariants(t *testing.T) {
 				t.Fatalf("ignored variant bypassed session fence: %v", err)
 			}
 		})
+	}
+}
+
+func TestSessionUpdateUserHistory(t *testing.T) {
+	out := updateTestDecode(t, `{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"original user turn"}}`)
+	if out.Ignored || out.Kind != "user_message_chunk" || out.Text != "original user turn" {
+		t.Fatalf("history text lost: %+v", out)
+	}
+	_, err := DecodeSessionUpdate(updateTestFrame(`{"sessionUpdate":"user_message_chunk","content":{"type":"text"}}`), updateTestSession)
+	if err == nil {
+		t.Fatal("invalid history content accepted")
 	}
 }
 

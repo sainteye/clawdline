@@ -22,6 +22,7 @@ import (
 // discovered, or enabled by default. The lifetime belongs to the daemon.
 type Options struct {
 	Executable, AccountDir string
+	StateDir               string
 	Args                   []string
 }
 
@@ -34,6 +35,7 @@ type Host struct {
 	opening bool
 	closed  bool
 	jobs    sync.WaitGroup
+	store   *historyStore
 }
 
 type conversation struct {
@@ -56,6 +58,17 @@ type conversation struct {
 	quota            *contract.SessionLimits
 	contextKnown     bool
 	context          antigravityacp.ContextUsage
+	store            *historyStore
+	profile          string
+	generation       string
+	ordinal          int64
+	textOrdinal      int64
+	textRole         string
+	uncertain        bool
+	hidden           bool
+	staging          bool
+	replaying        bool
+	storeErr         error
 }
 
 type Error struct {
@@ -72,7 +85,22 @@ func New(ctx context.Context, opts Options) (*Host, error) {
 		return nil, refusal("invalid_configuration")
 	}
 	life, cancel := context.WithCancel(ctx)
-	return &Host{ctx: life, cancel: cancel, opts: opts, rows: map[string]*conversation{}}, nil
+	h := &Host{ctx: life, cancel: cancel, opts: opts, rows: map[string]*conversation{}}
+	if opts.StateDir != "" {
+		var err error
+		h.store, err = openHistory(opts.StateDir)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		h.rows, err = h.store.restore(filepath.Clean(opts.AccountDir))
+		if err != nil {
+			h.store.db.Close()
+			cancel()
+			return nil, err
+		}
+	}
+	return h, nil
 }
 func (h *Host) Name() string { return string(session.BackendOwned) }
 
@@ -80,8 +108,9 @@ func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 	if !filepath.IsAbs(req.Cwd) || req.Command != "" || len(req.Env) != 0 {
 		return session.Session{}, refusal("unsupported_launch")
 	}
+	req.Cwd = filepath.Clean(req.Cwd)
 	h.mu.Lock()
-	if h.closed || h.ctx.Err() != nil || h.opening || len(h.rows) >= MaxSessions {
+	if h.closed || h.ctx.Err() != nil || h.opening || h.activeLocked() >= MaxSessions {
 		h.mu.Unlock()
 		return session.Session{}, refusal("unavailable")
 	}
@@ -90,7 +119,7 @@ func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 	h.mu.Unlock()
 	defer h.jobs.Done()
 	defer func() { h.mu.Lock(); h.opening = false; h.mu.Unlock() }()
-	c := &conversation{tools: map[string]int{}, textIndex: -1}
+	c := &conversation{tools: map[string]int{}, textIndex: -1, store: h.store, profile: filepath.Clean(h.opts.AccountDir), generation: rand.Text()}
 	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update})
 	if err != nil {
 		return session.Session{}, err
@@ -121,6 +150,10 @@ func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 		return session.Session{}, err
 	}
 	c.row = session.Session{ID: "owned:acp:" + rand.Text(), Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
+	if err := c.saveState(); err != nil {
+		c.mu.Unlock()
+		return session.Session{}, err
+	}
 	row := c.row
 	c.mu.Unlock()
 	h.mu.Lock()
@@ -144,14 +177,22 @@ func (h *Host) lookup(s session.Session) (*conversation, error) {
 		return nil, refusal("not_found")
 	}
 	c.mu.Lock()
-	matches := c.row.PID == s.PID && c.row.ConversationID == s.ConversationID
+	matches := c.row.ConversationID == s.ConversationID && c.row.CWD == s.CWD && (c.store != nil || c.row.PID == s.PID)
 	c.mu.Unlock()
 	if !matches {
 		return nil, refusal("identity_changed")
 	}
 	return c, nil
 }
-func (h *Host) OwnsProtocol(s session.Session) bool { _, err := h.lookup(s); return err == nil }
+func (h *Host) OwnsProtocol(s session.Session) bool {
+	c, err := h.lookup(s)
+	if err != nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.hidden
+}
 func (h *Host) Inventory(ctx context.Context) (session.Inventory, error) {
 	now := time.Now()
 	inv := session.Inventory{Complete: true, Provenance: "owned", ObservedAt: now, Sessions: []session.Session{}}
@@ -159,9 +200,18 @@ func (h *Host) Inventory(ctx context.Context) (session.Inventory, error) {
 	defer h.mu.Unlock()
 	for _, c := range h.rows {
 		c.mu.Lock()
+		if c.hidden {
+			c.mu.Unlock()
+			continue
+		}
 		row := c.row
-		if c.client.Err() != nil {
+		if c.client != nil && c.client.Err() != nil {
 			row.State = session.StateUnknown
+			if !c.uncertain {
+				c.uncertain = true
+				c.row.State = session.StateUnknown
+				_ = c.saveState()
+			}
 		}
 		c.mu.Unlock()
 		row.Observation = session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}
@@ -181,6 +231,9 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 	if err != nil {
 		return err
 	}
+	if _, err = h.Resume(ctx, s.CWD, s.ConversationID); err != nil {
+		return err
+	}
 	if text == "/model" || strings.HasPrefix(text, "/model ") {
 		return h.selectModel(ctx, c, strings.TrimPrefix(text, "/model "), before)
 	}
@@ -193,6 +246,12 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		return refusal("closed")
 	}
 	c.mu.Lock()
+	if c.hidden || c.client == nil {
+		c.mu.Unlock()
+		h.mu.Unlock()
+		return refusal("closed")
+	}
+	client := c.client
 	if c.busy || c.row.State != session.StateIdle {
 		c.mu.Unlock()
 		h.mu.Unlock()
@@ -233,11 +292,27 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		turn, cancel := context.WithCancel(h.ctx)
 		defer cancel()
 		stop := context.AfterFunc(ctx, cancel)
-		result, err := c.client.PromptChecked(turn, text, before, func() {
+		result, err := client.PromptChecked(turn, text, func() error {
+			if before != nil {
+				if err := before(); err != nil {
+					return err
+				}
+			}
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			if c.storeErr != nil {
+				return c.storeErr
+			}
+			// Persist uncertainty before the pipe write. A crash never replays a prompt.
+			c.uncertain = true
+			return c.saveState()
+		}, func() {
 			stop()
 			c.mu.Lock()
 			c.row.State = session.StateWorking
 			c.textIndex = -1
+			c.textOrdinal = 0
+			c.textRole = ""
 			c.append(contract.TranscriptEntry{Role: "user", Text: text, At: time.Now().Unix()})
 			close(c.writeGate)
 			c.writeGate = nil
@@ -252,13 +327,25 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 			var local interface{ BeforeWrite() bool }
 			if errors.As(err, &local) && local.BeforeWrite() {
 				c.row.State = session.StateIdle
+				c.uncertain = false
+				_ = c.saveState()
 				return
 			}
 			c.row.State = session.StateUnknown
+			c.uncertain = true
 			c.append(contract.TranscriptEntry{Role: "error", Text: err.Error(), At: time.Now().Unix()})
 			return
 		}
 		c.row.State = session.StateIdle
+		c.uncertain = false
+		if c.storeErr != nil {
+			c.row.State = session.StateUnknown
+			c.uncertain = true
+		}
+		if saveErr := c.saveState(); saveErr != nil {
+			outcome = saveErr
+			c.row.State = session.StateUnknown
+		}
 		if result.StopReason != "end_turn" {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_did_not_end_normally", At: time.Now().Unix()})
 		}
@@ -290,24 +377,69 @@ func (h *Host) Close(ctx context.Context, s session.Session) error {
 	if err != nil {
 		return err
 	}
-	if err = c.client.Close(); err != nil {
+	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		return refusal("closed")
+	}
+	c.mu.Lock()
+	client := c.client
+	if c.busy {
+		c.mu.Unlock()
+		h.mu.Unlock()
+		return refusal("busy")
+	}
+	c.busy = true
+	h.jobs.Add(1)
+	h.mu.Unlock()
+	defer h.jobs.Done()
+	defer func() { c.mu.Lock(); c.busy = false; c.mu.Unlock() }()
+	c.hidden = true
+	if client != nil && client.Err() != nil {
+		c.uncertain = true
+		c.row.State = session.StateUnknown
+	}
+	if err := c.saveState(); err != nil {
+		c.hidden = false
+		c.mu.Unlock()
 		return err
 	}
+	c.mu.Unlock()
+	if client != nil {
+		if err = client.Close(); err != nil {
+			return err
+		}
+	}
+	c.mu.Lock()
+	c.client = nil
+	c.row.PID = 0
+	c.mu.Unlock()
 	h.mu.Lock()
-	delete(h.rows, s.ID)
+	if c.store == nil {
+		delete(h.rows, s.ID)
+	}
 	h.mu.Unlock()
 	return nil
 }
 func (h *Host) Shutdown() error {
+	var err error
 	h.mu.Lock()
 	h.closed = true
-	h.cancel()
 	var clients []*antigravityprocess.Client
 	for _, c := range h.rows {
-		clients = append(clients, c.client)
+		c.mu.Lock()
+		if c.client != nil {
+			if c.client.Err() != nil && !c.uncertain {
+				c.uncertain = true
+				c.row.State = session.StateUnknown
+				err = errors.Join(err, c.saveState())
+			}
+			clients = append(clients, c.client)
+		}
+		c.mu.Unlock()
 	}
+	h.cancel()
 	h.mu.Unlock()
-	var err error
 	for _, c := range clients {
 		err = errors.Join(err, c.Close())
 	}
@@ -315,6 +447,9 @@ func (h *Host) Shutdown() error {
 	h.mu.Lock()
 	clear(h.rows)
 	h.mu.Unlock()
+	if h.store != nil {
+		err = errors.Join(err, h.store.db.Close())
+	}
 	return err
 }
 
@@ -323,6 +458,14 @@ func (c *conversation) changed() {
 	c.row.Activity = session.Activity{At: time.Now(), Evidence: session.EvidenceStructured}
 }
 func (c *conversation) append(e contract.TranscriptEntry) {
+	if c.store != nil {
+		c.ordinal++
+		c.changed()
+		if err := c.saveEntry(c.ordinal, "", e); err != nil {
+			c.storeErr = err
+		}
+		return
+	}
 	c.entries = append(c.entries, e)
 	c.changed()
 	c.bound()
@@ -378,6 +521,9 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 	if c.client == nil {
 		return nil
 	}
+	if c.store != nil && c.row.ConversationID == "" {
+		return nil
+	}
 	id := c.client.SessionID()
 	if id == "" {
 		return nil
@@ -400,6 +546,9 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 	if u.Ignored {
 		return nil
 	}
+	if c.store != nil {
+		return c.project(u)
+	}
 	switch {
 	case u.Context != nil:
 		c.context = *u.Context
@@ -412,35 +561,7 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 			c.entries = append(c.entries, contract.TranscriptEntry{Role: "tool", Activity: &contract.TranscriptActivity{Kind: "called", DurationMs: -1, Actions: []contract.TranscriptAction{}}, At: time.Now().Unix()})
 			c.tools[d.ToolCallID] = index
 		}
-		e := &c.entries[index]
-		if d.Title != nil {
-			e.Text = *d.Title
-			e.Activity.Title = *d.Title
-		}
-		if d.Kind != nil {
-			e.Tool = *d.Kind
-		}
-		if d.Status != nil {
-			e.Activity.Status = *d.Status
-			if *d.Status == "in_progress" {
-				e.Activity.Status = "inProgress"
-			}
-		}
-		if d.Locations != nil {
-			e.Activity.Actions = []contract.TranscriptAction{}
-			for _, location := range *d.Locations {
-				e.Activity.Actions = append(e.Activity.Actions, contract.TranscriptAction{Kind: "read", Path: location.Path})
-			}
-		}
-		if d.Content != nil {
-			var parts []string
-			for _, v := range *d.Content {
-				if v.Content != nil && v.Content.Text != nil {
-					parts = append(parts, *v.Content.Text)
-				}
-			}
-			e.Activity.Result = strings.Join(parts, "\n")
-		}
+		applyToolDelta(&c.entries[index], d)
 		c.textIndex = -1
 		c.changed()
 		c.bound()
@@ -466,12 +587,9 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 // Transcript is a complete retained snapshot. It deliberately offers no byte
 // cursors or durable-history claim; revisions change on real view mutations.
 func (h *Host) Transcript(s session.Session, limit int) (contract.TranscriptPage, error) {
-	c, err := h.lookup(s)
-	if err != nil {
-		return contract.TranscriptPage{}, err
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	return h.TranscriptPage(context.Background(), s, limit, 0, "")
+}
+func (c *conversation) memoryTranscript(s session.Session, limit int) contract.TranscriptPage {
 	start := 0
 	if limit > 0 && len(c.entries) > limit {
 		start = len(c.entries) - limit
@@ -482,22 +600,31 @@ func (h *Host) Transcript(s session.Session, limit int) (contract.TranscriptPage
 	if entries == nil {
 		entries = []contract.TranscriptEntry{}
 	}
-	page := contract.TranscriptPage{ID: s.ID, Entries: entries, Evidence: contract.EvidenceStructured, Signature: fmt.Sprintf("acp:%s:%d", s.ConversationID, c.revision)}
+	page := contract.TranscriptPage{ID: s.ID, Entries: entries, Evidence: contract.EvidenceStructured, Signature: fmt.Sprintf("acp2:%s:%d", c.generation, c.revision)}
 	if omitted := c.omitted + start; omitted > 0 {
 		page.Truncation = &contract.TranscriptTruncation{Reason: "transcript_byte_budget", EntriesOmittedCount: int64(omitted), BudgetBytes: MaxViewBytes}
 	}
-	return page, nil
+	return page
 }
 func (h *Host) Stats() (sessions int, viewBytes int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, c := range h.rows {
-		sessions++
 		c.mu.Lock()
+		if c.client != nil {
+			sessions++
+		}
 		viewBytes += c.bytes
 		c.mu.Unlock()
 	}
 	return
+}
+
+func (h *Host) HistoryConnections() int {
+	if h.store == nil {
+		return 0
+	}
+	return h.store.db.Stats().OpenConnections
 }
 
 // Facts are provider observations, not inferred prices or cumulative spend.

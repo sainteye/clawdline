@@ -24,7 +24,7 @@ function snapshot() {
     epoch: 1, generation: fixtureSequence, source: { freshness: "current", observed_at: now(), provenance: "fixture" } },
     sessions: ["alpha", "beta"].map((machine, index) => ({ id: "fixture-" + machine, label: "Antigravity synthetic " + machine,
       machine, backend: mode.startsWith("owned-protocol") ? "owned" : "tmux", assistant: "antigravity", isClaude: true, identity: mode.startsWith("owned-protocol") ? "protocol" : "launch_hook", line: "synthetic menu revision", cwd: "/work/fixture", sessionId: "conversation-" + machine,
-      execution_generation: (index ? "b" : "a").repeat(32), state: mode.includes("menu") ? "waiting" : "idle", work_state: "ready", evidence: "process",
+      execution_generation: (index ? "b" : "a").repeat(32), state: mode.includes("menu") ? "waiting" : mode === "owned-protocol-interrupted" ? "unknown" : "idle", work_state: "ready", evidence: "process",
       source: { freshness: (mode === "stale-state" || mode === "async-unknown") ? "stale" : "current", observed_at: now(), provenance: "fixture" },
       activity: { known: true, at: now() },
       ...(mode.includes("menu") ? { menu: { question: "Allow synthetic command?", options: [{ n: 1, label: "Allow once", can: true }],
@@ -422,8 +422,8 @@ test("Async questions require the exact current idle execution; verified menus u
 })
 
 
-test("Owned protocol phone: fresh identity sends once and renders the normalized reply", { timeout: 60_000 }, async () => {
- mode="owned-protocol";language="zh-Hant";sends=[];inventoryReads=[]
+for (const state of ["idle", "interrupted"]) test(`Owned protocol phone ${state}: explicit input sends once and renders the normalized reply`, { timeout: 60_000 }, async () => {
+ mode=state === "idle" ? "owned-protocol" : "owned-protocol-interrupted";language="zh-Hant";sends=[];inventoryReads=[]
  const tab=await Tab.open(browser,390,844,true)
  try {
   await tab.go("/?owned=1#session=fixture-alpha")

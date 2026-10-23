@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,21 +26,31 @@ func TestOwnedPeer(t *testing.T) {
 		return
 	}
 	enc := json.NewEncoder(os.Stdout)
+	nativeID := "synthetic-native"
+	dir := os.Getenv("GEMINI_HOME")
+	if os.Getenv("CLW_RESTORE_PEER") == "yes" {
+		f, _ := os.OpenFile(filepath.Join(dir, "starts"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		f.WriteString("start\n")
+		f.Close()
+	}
 	model, effort := "synthetic-flash", "high"
 	efforts := []string{"low", "medium", "high"}
 	scanner := bufio.NewScanner(os.Stdin)
 	notify := func(u any) {
-		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-native", "update": u}})
+		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": nativeID, "update": u}})
 	}
 	for scanner.Scan() {
 		var req struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
 			Params struct {
-				ModelID  string `json:"modelId"`
-				ConfigID string `json:"configId"`
-				Value    string `json:"value"`
-				Prompt   []struct {
+				SessionID string `json:"sessionId"`
+				CWD       string `json:"cwd"`
+				Cursor    string `json:"cursor"`
+				ModelID   string `json:"modelId"`
+				ConfigID  string `json:"configId"`
+				Value     string `json:"value"`
+				Prompt    []struct {
 					Text string `json:"text"`
 				} `json:"prompt"`
 			} `json:"params"`
@@ -48,15 +59,59 @@ func TestOwnedPeer(t *testing.T) {
 			os.Exit(30)
 		}
 		var result any = map[string]any{}
+		if os.Getenv("CLW_RESTORE_PEER") == "yes" {
+			f, _ := os.OpenFile(filepath.Join(dir, "methods"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+			f.WriteString(req.Method + "\n")
+			f.Close()
+		}
 		switch req.Method {
 		case "initialize":
 			result = map[string]any{"protocolVersion": 1}
+			if os.Getenv("CLW_RESTORE_PEER") == "yes" {
+				result.(map[string]any)["agentCapabilities"] = map[string]any{"loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
+			}
+		case "session/list":
+			result = map[string]any{"sessions": []any{}}
+			name := "native-list.json"
+			if req.Params.Cursor == "older" {
+				name = "native-list-older.json"
+			}
+			if raw, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+				if json.Unmarshal(raw, &result) != nil {
+					os.Exit(32)
+				}
+			}
+		case "authenticate":
+			if _, err := os.Stat(filepath.Join(dir, "auth-error")); err == nil {
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32001, "message": "synthetic auth error"}})
+				continue
+			}
 		case "session/new":
-			result = map[string]any{"sessionId": "synthetic-native", "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
+			if os.Getenv("CLW_RESTORE_PEER") == "yes" {
+				raw, _ := os.ReadFile(filepath.Join(dir, "session-number"))
+				n, _ := strconv.Atoi(string(raw))
+				n++
+				os.WriteFile(filepath.Join(dir, "session-number"), []byte(strconv.Itoa(n)), 0600)
+				nativeID = "synthetic-native-" + strconv.Itoa(n)
+			}
+			result = map[string]any{"sessionId": nativeID, "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
 			result.(map[string]any)["models"] = map[string]any{"currentModelId": "synthetic-high", "availableModels": []any{map[string]string{"modelId": "synthetic-high", "name": "Synthetic High"}, map[string]string{"modelId": "synthetic-low", "name": "Synthetic Low"}}}
 			if os.Getenv("CLW_CONFIG_PEER") == "yes" {
 				result.(map[string]any)["configOptions"] = syntheticConfigOptions(model, effort, efforts)
 			}
+		case "session/load", "session/resume":
+			nativeID = req.Params.SessionID
+			if req.Method == "session/load" {
+				for i := 0; i < 2; i++ {
+					notify(map[string]any{"sessionUpdate": "user_message_chunk", "content": map[string]string{"type": "text", "text": "identical user"}})
+					notify(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "identical reply"}})
+				}
+				if _, err := os.Stat(filepath.Join(dir, "load-error")); err == nil {
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32001, "message": "synthetic load error"}})
+					continue
+				}
+			}
+			result = map[string]any{"_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
 		case "session/set_config_option":
 			dir := os.Getenv("GEMINI_HOME")
 			f, _ := os.OpenFile(filepath.Join(dir, "config-writes"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
@@ -94,6 +149,17 @@ func TestOwnedPeer(t *testing.T) {
 			}
 			f.WriteString("prompt\n")
 			f.Close()
+			if _, err := os.Stat(filepath.Join(dir, "prompt-uncertain")); err == nil {
+				// Keep the process alive with no response. Host shutdown cancels
+				// the accepted call, injecting uncertain delivery without relying
+				// on platform-specific handling of an already-exited process group.
+				for {
+					time.Sleep(time.Second)
+				}
+			}
+			if os.Getenv("CLW_RESTORE_PEER") == "yes" {
+				notify(map[string]any{"sessionUpdate": "user_message_chunk", "content": map[string]string{"type": "text", "text": req.Params.Prompt[0].Text}})
+			}
 			for {
 				if _, err := os.Stat(filepath.Join(dir, "release")); err == nil {
 					break

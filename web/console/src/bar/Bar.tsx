@@ -2,7 +2,7 @@ import { assistantStateCurrent } from "../session/antigravity-ui.js"
 import { assistantFactsMachine, useAssistantFacts } from "../session/assistant-facts.js"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { AssistantSkill, DevStacksReply, SessionRow } from "@clawdline/contract"
-import { antigravitySlashDraft, assistantComposeAdmits, assistantLabel, assistantUnavailable } from "../session/antigravity-ui.js"
+import { antigravitySlashDraft, assistantComposeAdmits, assistantProtocolOwned, assistantLabel, assistantUnavailable } from "../session/antigravity-ui.js"
 import { catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client } from "../client.js"
@@ -464,7 +464,7 @@ export default function Bar() {
       say(catalogWord("antigravity", "slashDraft"), true)
       return
     }
-    if ((target.assistant === "antigravity" && !assistantStateCurrent(target)) || !assistantComposeAdmits(target.assistant, factsRef.current.assistants.find(facts => facts.id === target.assistant), target.state, !!target.menu)) {
+    if ((target.assistant === "antigravity" && !assistantStateCurrent(target)) || !assistantComposeAdmits(target.assistant, factsRef.current.assistants.find(facts => facts.id === target.assistant), target.state, !!target.menu, assistantProtocolOwned(target))) {
       const reason = factsRef.current.kind !== "ready" ? factsRef.current.kind
         : assistantUnavailable(factsRef.current.assistants.find(facts => facts.id === target.assistant), "send")
       say(reason ? catalogWord("antigravity", reason).replace("{assistant}", assistantLabel(target.assistant)) : catalogWord("antigravity", "sendUnavailable"), true)

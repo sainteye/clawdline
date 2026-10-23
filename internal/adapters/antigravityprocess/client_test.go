@@ -79,11 +79,35 @@ func TestACPProcess(t *testing.T) {
 				os.Exit(33)
 			}
 			result = map[string]any{"protocolVersion": 1, "authMethods": []any{map[string]string{"id": "oauth-personal"}}}
+			if mode != "no-restore" {
+				result.(map[string]any)["agentCapabilities"] = map[string]any{"loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
+			}
 		case "authenticate":
 			if !strings.Contains(string(m["params"]), `"methodId":"oauth-personal"`) {
 				os.Exit(34)
 			}
 			result = map[string]any{}
+		case "session/list":
+			result = map[string]any{"sessions": []any{map[string]string{"sessionId": "saved-exact", "cwd": os.Getenv("GEMINI_HOME")}}}
+		case "session/load", "session/resume":
+			var params struct {
+				SessionID string `json:"sessionId"`
+			}
+			_ = json.Unmarshal(m["params"], &params)
+			if mode == "restore-error" {
+				enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32001, "message": "SECRET native diagnostic"}})
+				continue
+			}
+			if method == "session/load" {
+				enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": params.SessionID, "update": map[string]any{"sessionUpdate": "user_message_chunk", "content": map[string]string{"type": "text", "text": "saved user turn"}}}})
+			}
+			result = map[string]any{"_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
+			if mode == "restore-wrong-id" {
+				result.(map[string]any)["sessionId"] = "another-conversation"
+			}
+			if mode == "restore-paid" {
+				result.(map[string]any)["_meta"] = map[string]any{}
+			}
 		case "session/new":
 			tier := "free-tier"
 			if mode == "paid-tier" {

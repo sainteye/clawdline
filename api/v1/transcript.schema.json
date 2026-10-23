@@ -15,6 +15,7 @@
         "at": { "description": "Unix seconds. Absent when the record carried no timestamp this reader accepts.", "type": "integer" },
         "fileChanges": { "description": "Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent on every other entry.", "type": "array", "items": { "$ref": "#/$defs/TranscriptFileChange" } },
         "imageCount": { "description": "Images attached to a user turn. Absent when there were none: the Swift app writes an explicit 0 on user rows, and a reader treats absence as that 0.", "type": "integer" },
+        "id": { "description": "Stable entry identity when the provider has a durable projection. Owned ACP uses acp2:generation:ordinal, preserving distinct repeated turns and replacing streamed content in place. Absent for providers without entry identities.", "type": "string" },
         "notice": { "$ref": "#/$defs/TranscriptNotice" },
         "plan": { "description": "A complete Codex checklist update.", "type": "array", "items": { "$ref": "#/$defs/TranscriptPlanStep" } },
         "role": { "description": "user, assistant, error (a provider failure that ended a turn), peer (another Claude Code session), message (another session through Clawdline), notice (Clawdline about a task) or tool.", "type": "string" },
@@ -155,10 +156,11 @@
         "id": { "type": "string" },
         "leftovers": { "description": "task_finished only: how many things the delivery said it left undone. Present only when above zero.", "type": "integer" },
         "note": { "type": "string" },
-		"nextBefore": { "description": "Exclusive byte cursor for the next older page; absent at the beginning of the record, and on an after= page.", "type": "integer" },
+		"nextBefore": { "description": "Exclusive provider cursor for the next older page: a JSONL byte offset or a durable owned ACP entry ordinal. Pass it back unchanged with this page's signature. Absent at the beginning of the record, and on an after= page.", "type": "integer" },
+        "readBefore": { "description": "Optional exclusive opaque cursor for rereading this exact durable ACP page with its signature, including after its entries leave the newest window.", "type": "integer" },
         "nextAfter": { "description": "The byte offset just past the last complete row read: pass it as after= to read only what was appended since. Absent when nothing complete was read (no record yet, or an unreadable one), and from a daemon that does not take after=; a reader without it keeps reading the newest page whole.", "type": "integer" },
         "path": { "description": "Which file this was read from. A reading that cannot name its source is not evidence.", "type": "string" },
-        "signature": { "description": "Opaque record revision, empty when nothing was read. Claude/Codex use size and modification time; native Antigravity uses agy1:file-generation:prefix-bytes:sha256. Return this exact held page signature as revision with its before/after cursor; never substitute another page's signature.", "type": "string" },
+        "signature": { "description": "Opaque record revision, empty when nothing was read. Claude/Codex use size and modification time; native Antigravity uses agy1:file-generation:prefix-bytes:sha256; durable owned ACP uses acp2:generation:revision, where only a native history replacement changes generation. Return this exact held page signature as revision with its before/after cursor; never substitute another page's signature.", "type": "string" },
         "truncation": { "$ref": "#/$defs/TranscriptTruncation" },
         "unread": { "$ref": "#/$defs/TranscriptUnread" }
       }

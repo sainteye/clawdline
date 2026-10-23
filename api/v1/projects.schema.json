@@ -168,12 +168,12 @@
       "properties": {
         "id": { "description": "A lowercase UUID: the conversation's own id.", "type": "string" },
         "title": { "type": "string" },
-        "at": { "description": "When it was last written to, Unix seconds.", "type": "integer" },
+        "at": { "description": "When it was last written to, Unix seconds; zero when native history does not report a timestamp.", "type": "integer" },
         "live": { "description": "Something is writing to it right now; resuming it would put a second process on the same record.", "type": "boolean" }
       }
     },
     "PastSessionList": {
-      "description": "GET /v1/places/{id}/sessions[/{assistant}]: what that assistant has recorded in the place, newest first. Codex returns one provider page of twenty with an opaque next_cursor; other assistants return at most two hundred. Dispatched children and `-p` runs are not conversations and are left out.",
+      "description": "GET /v1/places/{id}/sessions[/{assistant}]: what that assistant has recorded in the place, newest first. Codex returns one provider page of twenty. Gemini returns saved local pages of at most two hundred, then explicit native pages bounded by the ACP frame budget. Both use opaque next_cursor values; other assistants return at most two hundred. Dispatched children and `-p` runs are not conversations and are left out.",
       "type": "object",
       "additionalProperties": false,
       "required": ["at", "place", "assistant", "more", "sessions"],
@@ -181,7 +181,7 @@
         "at": { "type": "integer" },
         "place": { "type": "string" },
         "assistant": { "type": "string" },
-        "next_cursor": { "description": "Opaque continuation for the next Codex page; omitted at the end.", "type": "string" },
+        "next_cursor": { "description": "Opaque continuation for the next provider page; omitted at the end.", "type": "string" },
         "more": { "description": "The list stopped at its cap and there were more.", "type": "boolean" },
         "sessions": { "type": "array", "items": { "$ref": "#/$defs/PastSession" } }
       }

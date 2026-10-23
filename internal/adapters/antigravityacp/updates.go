@@ -134,7 +134,7 @@ func DecodeSessionUpdate(message []byte, expectedSession string) (SessionUpdate,
 	}
 	out := SessionUpdate{SessionID: session, Kind: kind}
 	switch kind {
-	case "agent_message_chunk", "agent_thought_chunk":
+	case "agent_message_chunk", "agent_thought_chunk", "user_message_chunk":
 		content, valid := updateContent(u["content"])
 		if !valid {
 			return fail("invalid_update")
@@ -157,7 +157,7 @@ func DecodeSessionUpdate(message []byte, expectedSession string) (SessionUpdate,
 			return fail("invalid_update")
 		}
 		out.Context = &ContextUsage{Used: used, Size: size}
-	case "user_message_chunk", "plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update":
+	case "plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update":
 		// The variant is known, but its optional payload is deliberately not
 		// normalized. In particular, history user text is not assistant output.
 		out.Ignored = true

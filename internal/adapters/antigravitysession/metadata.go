@@ -8,26 +8,30 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravityprocess"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // beginMetadata shares the sender's single in-flight operation, without
 // manufacturing a working model turn. Shutdown owns cancellation and joins jobs.
-func (h *Host) beginMetadata(c *conversation) (func(), error) {
+func (h *Host) beginMetadata(c *conversation) (*antigravityprocess.Client, func(), error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.closed || h.ctx.Err() != nil {
-		return nil, refusal("closed")
+		return nil, nil, refusal("closed")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.hidden || c.client == nil {
+		return nil, nil, refusal("closed")
+	}
 	if c.busy || c.row.State != session.StateIdle {
-		return nil, refusal("busy")
+		return nil, nil, refusal("busy")
 	}
 	c.busy = true
 	h.jobs.Add(1)
-	return func() { c.mu.Lock(); c.busy = false; c.mu.Unlock(); h.jobs.Done() }, nil
+	return c.client, func() { c.mu.Lock(); c.busy = false; c.mu.Unlock(); h.jobs.Done() }, nil
 }
 
 func (h *Host) selectModel(ctx context.Context, c *conversation, modelID string, before func() error) error {
@@ -37,7 +41,7 @@ func (h *Host) selectModel(ctx context.Context, c *conversation, modelID string,
 	if structured {
 		return h.selectConfig(ctx, c, "model", modelID, before)
 	}
-	done, err := h.beginMetadata(c)
+	client, done, err := h.beginMetadata(c)
 	if err != nil {
 		return err
 	}
@@ -51,7 +55,7 @@ func (h *Host) selectModel(ctx context.Context, c *conversation, modelID string,
 	if !offered {
 		return refusal("model_not_offered")
 	}
-	if err := c.client.SetModelChecked(ctx, modelID, before); err != nil {
+	if err := client.SetModelChecked(ctx, modelID, before); err != nil {
 		return err
 	}
 	c.mu.Lock()
@@ -61,7 +65,7 @@ func (h *Host) selectModel(ctx context.Context, c *conversation, modelID string,
 }
 
 func (h *Host) selectConfig(ctx context.Context, c *conversation, id, value string, before func() error) error {
-	done, err := h.beginMetadata(c)
+	client, done, err := h.beginMetadata(c)
 	if err != nil {
 		return err
 	}
@@ -92,7 +96,7 @@ func (h *Host) selectConfig(ctx context.Context, c *conversation, id, value stri
 	if err := validate(); err != nil {
 		return err
 	}
-	return c.client.SetConfigOptionChecked(ctx, id, value, func() error {
+	return client.SetConfigOptionChecked(ctx, id, value, func() error {
 		if before != nil {
 			if err := before(); err != nil {
 				return err
@@ -197,12 +201,15 @@ func (h *Host) RefreshQuota(ctx context.Context, s session.Session) error {
 	if err != nil {
 		return err
 	}
-	done, err := h.beginMetadata(c)
+	if _, err = h.Resume(ctx, s.CWD, s.ConversationID); err != nil {
+		return err
+	}
+	client, done, err := h.beginMetadata(c)
 	if err != nil {
 		return err
 	}
 	defer done()
-	text, err := c.client.Usage(ctx)
+	text, err := client.Usage(ctx)
 	reading := unknownQuota(contract.AssistantUnknownReasonUnreadable)
 	if err == nil {
 		reading = parseQuota(text, time.Now())

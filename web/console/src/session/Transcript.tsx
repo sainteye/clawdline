@@ -37,6 +37,7 @@ import {
   olderTranscriptPage,
   readOlderRecovering,
   nativeHistoryChanged,
+  readableTranscriptHistory,
   SAFETY_MS,
   TRAIL_MS,
   transcriptPace,
@@ -61,7 +62,7 @@ import "./agent-report.css"
 import "./lightbox-steps.css"
 import "./transcript-error.css"
 import { atNewest, jumpOffered } from "./jump.js"
-import { joinTranscript } from "./history.js"
+import { joinTranscript, pendingHistoryPages } from "./history.js"
 import { HistoryFill, historyAdvanced } from "./history-fill.js"
 import { recordSendDiagnostic } from "../cloud/install.js"
 import "./jump.css"
@@ -276,6 +277,40 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   const [earlier, setEarlier] = useState<EarlierPages | null>(null)
   const [olderLoading, setOlderLoading] = useState(false)
   const [olderError, setOlderError] = useState<string | null>(null)
+  // One background reread at a time, only for retained unfinished tool pages.
+  // Their exact upper cursor preserves the held window while the tail moves.
+  const olderRefreshBusy = useRef(false)
+  const olderRefreshFailed = useRef("")
+  useEffect(() => {
+    if (agentId || !data || !earlier || olderRefreshBusy.current || olderRefreshFailed.current === data.signature) return
+    const pending = pendingHistoryPages(earlier, data)
+    if (!pending.length) return
+    olderRefreshBusy.current = true
+    const epoch = readEpoch.current
+    void (async () => {
+      const fresh = new Map<number, TranscriptPage>()
+      try {
+        for (const page of pending) {
+          const updated = await client.transcript(id, LIMIT, page.readBefore, page.signature)
+          if (!alive.current || epoch !== readEpoch.current) return
+          if (!readableTranscriptHistory(updated) || nativeHistoryChanged(page, updated)) return
+          fresh.set(page.readBefore!, { ...updated, entries: joinTranscript(page.entries, updated.entries), nextBefore: page.nextBefore, readBefore: page.readBefore })
+        }
+      } catch {
+        // The normal next revision can try again; a failed read never loops.
+        olderRefreshFailed.current = data.signature
+      } finally {
+        olderRefreshBusy.current = false
+      }
+      if (!alive.current || epoch !== readEpoch.current || !fresh.size) return
+      const scroll = document.getElementById("tx-scroll")
+      if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
+      setEarlier((was) => was ? {
+        base: fresh.get(was.base.readBefore ?? 0) ?? was.base,
+        pages: was.pages.map((page) => fresh.get(page.readBefore ?? 0) ?? page),
+      } : was)
+    })()
+  }, [agentId, data, earlier, id])
   const olderBusy = useRef(false)
   const historyFill = useRef(new HistoryFill())
   const alive = useRef(true)
@@ -337,7 +372,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
         setOlderError(nextWord("transcriptEarlierStalled"))
         return
       }
-      if (page.evidence !== "transcript") throw new Error(page.note || "Earlier conversation could not be read")
+      if (!readableTranscriptHistory(page)) throw new Error(page.note || "Earlier conversation could not be read")
       if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
       setEarlier((was) => ({ base: was?.base ?? base, pages: [...(was?.pages ?? []), page] }))
     } catch (error) {
@@ -354,7 +389,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   useEffect(() => {
     const scroll = document.getElementById("tx-scroll")
     const box = document.getElementById("tx")
-    if (!scroll || !box || !data || data.evidence !== "transcript") {
+    if (!scroll || !box || !data || !readableTranscriptHistory(data)) {
       onFilling(show === "loading")
       return
     }

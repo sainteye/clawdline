@@ -181,6 +181,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "antigravity.history_connections",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxHistoryConnections"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "antigravity.hook_config_bytes",
     "Class": "buffer",
     "Unit": "bytes",

@@ -3,6 +3,7 @@ package capacity
 // antigravityBounds registers the local native observation bridge.
 func antigravityBounds() []Entry {
 	return []Entry{
+		{Name: "antigravity.history_connections", Class: Buffer, Unit: Rows, Limit: 1, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxHistoryConnections"}},
 		{Name: "antigravity.acp_sessions", Class: Buffer, Unit: Rows, Limit: 1, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxSessions"}},
 		{Name: "antigravity.acp_frame_bytes", Class: Buffer, Unit: Bytes, Limit: 1048576, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxFrameBytes"}},
 		{Name: "antigravity.acp_view_bytes", Class: Observation, Unit: Bytes, Limit: 1048576, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxViewBytes"}},

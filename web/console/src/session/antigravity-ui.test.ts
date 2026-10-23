@@ -28,7 +28,7 @@ test("a found CLI never grants Antigravity operations without readiness evidence
     { ...active, capabilities: undefined }, { ...active, authState: undefined },
     { ...active, integrationState: undefined }] as AssistantFacts[]) {
     for (const operation of ["start", "resume", "send", "menus", "transcript"] as const) {
-      assert.equal(assistantAdmits(facts, operation), operation === "start" && facts.authState === undefined && facts.integrationState === "active" && facts.capabilities?.start === true)
+      assert.equal(assistantAdmits(facts, operation), (operation === "start" || operation === "resume") && facts.authState === undefined && facts.integrationState === "active" && facts.capabilities?.[operation] === true)
     }
   }
 })
@@ -139,15 +139,17 @@ test("signed Cloud projection preserves Antigravity without allowing a stale or 
 })
 
 
-test("explicit safe start bootstraps sign-in without admitting a send or resume", () => {
+test("explicit native start and resume remain available without a separate auth preflight", () => {
   for (const authState of ["required", "unknown", undefined] as const) {
     const facts = { ...active, authState }
     assert.equal(assistantAdmits(facts, "start"), true)
     assert.equal(assistantAdmits(facts, "send"), false)
-    assert.equal(assistantAdmits(facts, "resume"), false)
+    assert.equal(assistantAdmits(facts, "resume"), true)
+    assert.equal(assistantAdmits({ ...facts, capabilities: { ...active.capabilities!, resume: false } }, "resume"), false)
     assert.equal(assistantAdmits({ ...facts, capabilities: { ...active.capabilities!, start: false } }, "start"), false)
   }
   assert.equal(assistantAdmits({ ...active, authState: "unsupported_account" }, "start"), false)
+  assert.equal(assistantAdmits({ ...active, authState: "unsupported_account" }, "resume"), false)
 })
 
 test("Antigravity menu keys require capabilities, a current exact execution and a screen menu revision", () => {
@@ -172,4 +174,11 @@ test("owned protocol identity admits a fresh composer without inventing a termin
  assert.equal(assistantStateCurrent({...row,execution_generation:undefined},now),false)
  assert.equal(assistantStateCurrent(row,now+16000),false)
  assert.equal(assistantMenuAdmits({...row,state:"waiting",line:"synthetic",menu:{options:[{n:1,label:"Allow",can:true}]}},preview),false)
+})
+
+test("an interrupted owned conversation can accept an explicit continuation without reopening a terminal", () => {
+  assert.equal(assistantComposeAdmits("antigravity", undefined, "unknown", false, true), true)
+  assert.equal(assistantComposeAdmits("antigravity", undefined, "working", false, true), false)
+  assert.equal(assistantComposeAdmits("antigravity", undefined, "waiting", true, true), false)
+  assert.equal(assistantComposeAdmits("antigravity", active, "unknown", false, false), false)
 })

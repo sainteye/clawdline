@@ -92,7 +92,7 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 	if st, err := os.Stat(cfg.Executable); err != nil || st.IsDir() || st.Mode()&0111 == 0 {
 		return nil, ownedAntigravityUnavailable()
 	}
-	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args})
+	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions")})
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (s *Server) availableAssistants() []contract.StartAssistant {
 			if count > 0 {
 				rows[n].AuthState = contract.StartAuthStateReady
 			}
-			rows[n].Capabilities = &contract.StartCapabilities{Start: true, Send: count > 0, Transcript: count > 0}
+			rows[n].Capabilities = &contract.StartCapabilities{Start: true, Resume: true, Send: count > 0, Transcript: count > 0}
 		}
 	}
 	return rows

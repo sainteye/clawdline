@@ -76,6 +76,13 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 		return capacity.Unmeasured("unknown bridge measure")
 	}
 	return map[string]func() capacity.Reading{
+		"antigravity.history_connections": func() capacity.Reading {
+			var n int
+			if h := s.antigravitySessions.Load(); h != nil {
+				n = h.HistoryConnections()
+			}
+			return capacity.Reading{Known: true, Used: int64(n)}
+		},
 		"antigravity.acp_sessions": func() capacity.Reading {
 			var n int
 			if h := s.antigravitySessions.Load(); h != nil {
