@@ -788,7 +788,9 @@ export const Info = {
           if (forId !== id || !data) return
           busy = false
           SessionFacts.receiveFull(id, data)
-          said(fill(catalogWord("antigravity", "modelSelected"), { model: name || word }), true)
+          const observed = data.session.model
+          const selected = data.models.find(m => m.id === observed)?.name || observed || name || word
+          said(fill(catalogWord("antigravity", "modelSelected"), { model: selected }), true)
           draw()
           return
         }
@@ -822,7 +824,7 @@ export const Info = {
       if (forId !== id || !data) return
       busy = false
       SessionFacts.receiveFull(id, data)
-      said(fill(catalogWord("antigravity", "effortSelected"), { effort: effortName(raw) }), true)
+      said(fill(catalogWord("antigravity", "effortSelected"), { effort: effortName(data.session.effort || raw) }), true)
       draw()
     }, e => {
       if (forId !== id) return

@@ -16,6 +16,7 @@ const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/M
 const now = () => Math.floor(Date.now() / 1000)
 let mode = "ready", language = "en", fixtureSequence = 0
 let sends: string[] = [], inventoryReads: string[] = []
+let nativeEffortOverride = false
 let selectedModel = "synthetic-flash", selectedEffort = "high", modelWrites: string[] = [], fullInfoReads = 0
 const streams = new Set<ServerResponse>()
 function snapshot() {
@@ -72,7 +73,7 @@ function daemon(): Server {
         const text=JSON.parse(body).text
         modelWrites.push(text)
         if (text.startsWith("/model ")) { selectedModel=text.slice(7); selectedEffort="high" }
-        if (text.startsWith("/effort ")) selectedEffort=text.slice(8)
+        if (text.startsWith("/effort ")) selectedEffort=nativeEffortOverride?"high":text.slice(8)
         json(res,200,{ok:true})
       }); return
     }
@@ -459,7 +460,7 @@ test("Owned observations do not cancel a slower readiness read", {timeout:30000}
 
 for (const width of [390,1280]) for (const lang of ["en","zh-Hant"]) {
  test(`Gemini Info ${width}px ${lang}: base model and native effort switch separately`,{timeout:30000},async()=>{
-  mode="owned-protocol-models";language=lang;selectedModel="synthetic-flash";selectedEffort="high";modelWrites=[];fullInfoReads=0
+  mode="owned-protocol-models";nativeEffortOverride=false;language=lang;selectedModel="synthetic-flash";selectedEffort="high";modelWrites=[];fullInfoReads=0
   const tab=await Tab.open(browser,width,900,width===390)
   try {
    await tab.go("/?native-models=1#session=fixture-alpha")
@@ -494,3 +495,21 @@ for (const width of [390,1280]) for (const lang of ["en","zh-Hant"]) {
   }finally{await tab.close()}
  })
 }
+
+
+test("Gemini effort confirmation follows native state rather than the requested value",{timeout:30000},async()=>{
+ mode="owned-protocol-models";nativeEffortOverride=true;language="en";selectedModel="synthetic-flash";selectedEffort="high";modelWrites=[]
+ const tab=await Tab.open(browser,390,900,true)
+ try {
+  await tab.go("/?native-effort-override=1#session=fixture-alpha")
+  await tab.until("native model is visible",s=>s.text.includes("Fixture Flash"))
+  await tab.run(`document.querySelector('.setup-dialog[open] .setup-x')?.click()`)
+  await tab.click("#detail-info")
+  await tab.until("native effort is visible",s=>s.text.includes("Fixture Pro"))
+  await tab.click('#info [data-effort="low"]')
+  await tab.until("native effort confirmation is visible",s=>s.text.includes("Next turn reasoning effort: High"))
+  assert.deepEqual(modelWrites,["/effort low"])
+  assert.equal(await tab.run(`document.querySelector('#info [data-effort="high"]').getAttribute('aria-current')`),"true")
+  assert.equal(await tab.run(`document.querySelector('#info-said').textContent`),"Next turn reasoning effort: High")
+ }finally{nativeEffortOverride=false;await tab.close()}
+})
