@@ -425,3 +425,51 @@ launch preparer's responsibility. These settings do not authorize execution:
 Antigravity's managed context, verified executable, permissions and native
 identity gates must still admit the launch. Passing preference-selection tests
 is not acceptance of the complete native start, resume or handoff experience.
+
+
+### Captured ACP message and native read-tool events
+
+A bounded native ACP 1.4.1 run completed personal Google authentication,
+created a session, read a task-owned synthetic file and returned its expected
+marker with `end_turn` in 29.727 seconds. It sent one model prompt and four client
+RPC requests in total. Starter Quota and `useG1Credits: false` were checked after
+session creation, before that prompt. There was no client retry, paid API or
+fallback. All owned process groups exited and cleanup reported no errors. This
+configuration evidence does not substitute for a provider invoice; internal
+provider HTTP requests and model-invocation counts were not measured.
+
+The native stream contained three `view_file` starts and three status-only
+completion updates, four context snapshots, and one message chunk. The agent
+attempted three paths, including two that differed from the fixture's absolute
+path; one prompt must not be described as one filesystem attempt. All three
+completion events followed the visible text chunk. A renderer must keep matching
+tools by `toolCallId`, merge only fields present in the delta, and continue
+processing events after text appears. The capture supplies no tool-output content;
+`completed` alone is not proof that each attempted path returned file contents.
+
+The small decoder fixture `internal/adapters/antigravityacp/testdata/native-read-1.4.1.jsonl`
+retains only explicitly checked native fields, fixed synthetic paths, a fixed
+synthetic reply and replacement session/tool IDs. Command-list metadata and
+unrelated fields are omitted. The local comparison checked every retained field
+before writing that fixture; no raw account wire record is stored in the repository.
+`TestSessionUpdateNativeRead141` checks the actual order and partial completion
+shape. `usage_update.used/size` replace context occupancy and do not accumulate as
+billed input/output tokens. These are native script and decoder results; the
+product's ACP process owner, message flow and admin mobile entry still need
+integration and end-to-end acceptance.
+
+For the initial mobile pilot, the existing admin/operations-access UI decision
+controls entry visibility. The pilot does not introduce a new backend admin
+entitlement service or change ordinary session authorization. Other accounts do
+not receive the pilot entry. Paid API use continues to require separate approval.
+
+
+The subsequent whole-tree gate exposed an older hook-service refusal race, not
+an ACP decoder failure: peer verification could reject before reading the
+request, then close both socket halves immediately after writing the refusal.
+A real Unix-socket regression reproduced `antigravity_hook_disconnected` before
+the fix. Refusals now use the capacity branch's existing half-close and bounded
+drain, under the same request deadline and frame limit. The new regression and
+the observation/tool-policy ordering tests passed 25 repetitions after the fix.
+No authority, grant, timeout or capacity value changed. The earlier full gate
+remains a failed run; the corrected exact candidate needs a fresh green gate.

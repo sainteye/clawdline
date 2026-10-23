@@ -788,3 +788,49 @@ func TestHookServiceToolPolicyRunsAfterVerifiedObservationWithoutFallback(t *tes
 		})
 	}
 }
+
+// A refusal can precede the request frame. The reply's EOF closes only the
+// response half: the peer must still be able to finish its bounded request.
+// Closing both halves instead can reset the stream and hide the typed refusal.
+func TestHookServicePeerRefusalPreservesReplyBeforeRequestEOF(t *testing.T) {
+	f := hookFixture(t)
+	dir := hookTestDir(t)
+	s, err := ListenHookService(HookServiceConfig{StateDir: dir, Bridge: f.b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.peer = func(context.Context, *net.UnixConn) (NativeUnixPeer, error) { return NativeUnixPeer{}, nil }
+	startHookTest(t, s)
+	conn, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: HookSocketPath(dir), Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	data, err := readHookFrame(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reply hookReply
+	if err := decodeHookEnvelope(data, &reply); err != nil {
+		t.Fatal(err)
+	}
+	if reply.Code != "antigravity_hook_peer_unverified" || len(reply.Response) != 0 {
+		t.Fatalf("unexpected refusal: %+v", reply)
+	}
+	var eof [1]byte
+	if n, err := conn.Read(eof[:]); n != 0 || err != io.EOF {
+		t.Fatalf("refusal did not close its response half: n=%d err=%v", n, err)
+	}
+	if err := writeHookFrame(conn, hookRequestFor(f, "Stop", 1)); err != nil {
+		t.Fatalf("refusal closed the request half before the peer finished: %v", err)
+	}
+	if err := conn.CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.b.entries) != 0 {
+		t.Fatal("refused peer published an observation")
+	}
+}

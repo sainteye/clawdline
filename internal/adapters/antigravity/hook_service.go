@@ -228,6 +228,13 @@ func (s *HookService) Serve(ctx context.Context) error {
 			defer cancel()
 			reply := s.handle(requestCtx, conn)
 			_ = writeHookFrame(conn, reply)
+			if reply.Code != "" {
+				// Peer verification can refuse before reading the request.
+				// Preserve the refusal using the same bounded half-close and
+				// drain as the capacity path, under the existing deadline.
+				_ = conn.CloseWrite()
+				_, _ = io.CopyN(io.Discard, conn, MaxHookFrameBytes+4)
+			}
 		}()
 	}
 }

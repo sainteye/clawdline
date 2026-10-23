@@ -52,3 +52,12 @@ include this lifecycle boundary. This is conditional enforcement for prepared
 policy-bearing launches, not a claim that native compatibility rows or public
 HTTP/broker starts are enabled. Publication of the revised website snapshot
 still follows the reviewed product commit reaching public main.
+
+
+The hook refusal transport now half-closes its reply and drains no more than the
+existing frame limit under the existing request deadline. This prevents unread
+request bytes from hiding a typed refusal as a disconnect. Review confirmed that
+this changes neither context preparation nor loaded proof, Project consent or
+native tool permissions; the English and Taiwan Traditional Chinese card copy
+therefore remains accurate. The source link and receipt track the reviewed
+implementation after this transport-only change.

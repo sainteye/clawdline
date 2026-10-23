@@ -2149,7 +2149,7 @@
         },
         {
           "path": "internal/adapters/antigravity/hook_service.go",
-          "line": 243
+          "line": 250
         },
         {
           "path": "internal/transport/http/antigravity_managed_hooks.go",
@@ -2242,7 +2242,7 @@
   "sourceChecks": {
     "cmd/clawdline/main.go": "9ffd44d8c27f61a67e9139a4accc6f3c03988b80b2a6e372be03bb255587121b",
     "cmd/clawdline/session.go": "de2e47caf092efedfb633b4f5242ee9cb0989fdf5d7f97dd95a1ff33667f5efc",
-    "internal/adapters/antigravity/hook_service.go": "e243be5f1bd3887359feb13d3aca7679c20ca3810812ebd1c4ed02d68d475f26",
+    "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
     "internal/adapters/antigravitylaunch/store.go": "e3a2344fda42de6142bc0d8646cb73527211c3eaea6547cf03107a21bd430a12",
