@@ -1,5 +1,6 @@
 // Package antigravityprocess owns one personal ACP process and its regular pipes.
-// It does not discover credentials, normalize events, retry calls or select models.
+// It does not discover credentials or retry calls. Model selection and the exact
+// metadata-only /usage command use the same authenticated personal/free session.
 package antigravityprocess
 
 import (
@@ -16,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/adapters/antigravityacp"
 )
 
 // Delivery distinguishes a local refusal from an acknowledged response and an
@@ -68,6 +71,12 @@ type Client struct {
 	sequence                         uint64
 	initialized, authenticated, free bool
 	sessionID                        string
+	usage                            *usageCapture // stateMu; readLoop owns chunk order
+}
+
+type usageCapture struct {
+	text             string
+	active, overflow bool
 }
 
 // Start does not authenticate. ctx owns the entire process lifetime. Cancellation
@@ -267,6 +276,94 @@ type beforeWriteError struct{ error }
 
 func (e beforeWriteError) Unwrap() error     { return e.error }
 func (e beforeWriteError) BeforeWrite() bool { return true }
+
+// SetModelChecked acknowledges the model for the next turn, without prompting.
+// The owner must validate modelID against this session's offered model list.
+func (c *Client) SetModelChecked(ctx context.Context, modelID string, before func() error) error {
+	if !c.callMu.TryLock() {
+		return failure("busy", NotWritten)
+	}
+	defer c.callMu.Unlock()
+	if !c.authenticated || !c.free || c.SessionID() == "" {
+		return failure("not_ready", NotWritten)
+	}
+	if modelID == "" {
+		return failure("invalid_model", NotWritten)
+	}
+	if err := c.checkPersonal(); err != nil {
+		return err
+	}
+	r, err := c.callAccepted(ctx, "session/set_model", map[string]string{"sessionId": c.SessionID(), "modelId": modelID}, before, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := object(r); err != nil {
+		return c.badResult("invalid_model_result")
+	}
+	return nil
+}
+
+// Usage reads only the provider's exact /usage metadata command. It accepts no
+// caller text. Its message chunks are withheld from OnUpdate; context and tool
+// updates still flow normally. The existing frame budget also bounds the sum.
+func (c *Client) Usage(ctx context.Context) (string, error) {
+	if !c.callMu.TryLock() {
+		return "", failure("busy", NotWritten)
+	}
+	defer c.callMu.Unlock()
+	if !c.authenticated || !c.free || c.SessionID() == "" {
+		return "", failure("not_ready", NotWritten)
+	}
+	if err := c.checkPersonal(); err != nil {
+		return "", err
+	}
+	capture := &usageCapture{}
+	c.stateMu.Lock()
+	c.usage = capture
+	c.stateMu.Unlock()
+	defer func() { c.stateMu.Lock(); c.usage = nil; c.stateMu.Unlock() }()
+	r, err := c.callAccepted(ctx, "session/prompt", map[string]any{"sessionId": c.SessionID(), "prompt": []any{map[string]string{"type": "text", "text": "/usage"}}}, func() error {
+		c.stateMu.Lock()
+		capture.active = true
+		c.stateMu.Unlock()
+		return nil
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+	m, err := object(r)
+	if err != nil || !equalString(m["stopReason"], "end_turn") {
+		return "", failure("invalid_usage_result", Acknowledged)
+	}
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if capture.overflow {
+		return "", failure("usage_too_large", Acknowledged)
+	}
+	return capture.text, nil
+}
+
+func (c *Client) captureUsage(frame json.RawMessage) (bool, error) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.usage == nil || !c.usage.active {
+		return false, nil
+	}
+	u, err := antigravityacp.DecodeSessionUpdate(frame, c.sessionID)
+	if err != nil {
+		return false, err
+	}
+	if u.Kind != "agent_message_chunk" {
+		return false, nil
+	}
+	if len(c.usage.text)+len(u.Text) > c.opts.MaxFrameBytes {
+		c.usage.overflow = true
+	}
+	if !c.usage.overflow {
+		c.usage.text += u.Text
+	}
+	return true, nil
+}
 
 func (c *Client) prompt(ctx context.Context, text string, before func() error, written func()) (PromptResult, error) {
 	if !c.callMu.TryLock() {
@@ -497,9 +594,17 @@ func (c *Client) readLoop() {
 					c.shutdown(failure("write_failed", Uncertain))
 					return
 				}
-			} else if equalString(method, "session/update") && c.opts.OnUpdate != nil {
+			} else if equalString(method, "session/update") {
+				captured, err := c.captureUsage(frame)
+				if err != nil {
+					c.shutdown(failure("update_rejected", Uncertain))
+					return
+				}
+				if captured || c.opts.OnUpdate == nil {
+					continue
+				}
 				ctx, cancel := context.WithTimeout(c.ctx, c.opts.CallTimeout)
-				err := c.opts.OnUpdate(ctx, frame)
+				err = c.opts.OnUpdate(ctx, frame)
 				cancel()
 				if err != nil {
 					c.shutdown(failure("update_rejected", Uncertain))
@@ -508,6 +613,13 @@ func (c *Client) readLoop() {
 			}
 			continue
 		}
+		// The reply is the metadata boundary. Clear it here in wire order,
+		// before handing the response to the waiting caller.
+		c.stateMu.Lock()
+		if c.usage != nil {
+			c.usage.active = false
+		}
+		c.stateMu.Unlock()
 		select {
 		case c.responses <- frame:
 		case <-c.done:

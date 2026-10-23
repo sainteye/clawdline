@@ -32,6 +32,12 @@ func TestOwnedPeer(t *testing.T) {
 		var req struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
+			Params struct {
+				ModelID string `json:"modelId"`
+				Prompt  []struct {
+					Text string `json:"text"`
+				} `json:"prompt"`
+			} `json:"params"`
 		}
 		if json.Unmarshal(scanner.Bytes(), &req) != nil {
 			os.Exit(30)
@@ -42,8 +48,23 @@ func TestOwnedPeer(t *testing.T) {
 			result = map[string]any{"protocolVersion": 1}
 		case "session/new":
 			result = map[string]any{"sessionId": "synthetic-native", "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
+			result.(map[string]any)["models"] = map[string]any{"currentModelId": "synthetic-high", "availableModels": []any{map[string]string{"modelId": "synthetic-high", "name": "Synthetic High"}, map[string]string{"modelId": "synthetic-low", "name": "Synthetic Low"}}}
+		case "session/set_model":
+			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "model"), []byte(req.Params.ModelID), 0600)
 		case "session/prompt":
 			dir := os.Getenv("GEMINI_HOME")
+			if len(req.Params.Prompt) == 1 && req.Params.Prompt[0].Text == "/usage" {
+				f, _ := os.OpenFile(filepath.Join(dir, "usage"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+				f.WriteString("usage\n")
+				f.Close()
+				if _, err := os.Stat(filepath.Join(dir, "usage-error")); err == nil {
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32001, "message": "SECRET provider diagnostic /account/path"}})
+					continue
+				}
+				notify(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "### Quota Limits\n- **Gemini Models**\n  - **Weekly Limit Remaining:** 62% remaining (resets Oct 29, 2026, 07:51 UTC)\n- **Claude and GPT models**\n  - **Weekly Limit Remaining:** 9% remaining"}})
+				result = map[string]string{"stopReason": "end_turn"}
+				break
+			}
 			f, err := os.OpenFile(filepath.Join(dir, "prompts"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 			if err != nil {
 				os.Exit(31)
@@ -61,11 +82,119 @@ func TestOwnedPeer(t *testing.T) {
 			result = map[string]string{"stopReason": "end_turn"}
 		}
 		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
-		if req.Method == "session/prompt" {
+		if req.Method == "session/prompt" && !(len(req.Params.Prompt) == 1 && req.Params.Prompt[0].Text == "/usage") {
 			notify(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "read-1", "status": "completed"})
 		}
 	}
 	os.Exit(0)
+}
+
+func TestOwnedModelCommandSelectsWithoutPrompt(t *testing.T) {
+	h, row, dir := fixture(t)
+	checks := 0
+	if err := h.SendProtocol(context.Background(), row, "/model synthetic-low", func() error { checks++; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	facts, _ := h.Facts(row)
+	if facts.Model != "synthetic-low" {
+		t.Fatalf("selected model=%q; command became a prompt", facts.Model)
+	}
+	if checks != 1 {
+		t.Fatalf("checks=%d", checks)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "prompts")); !os.IsNotExist(err) {
+		t.Fatal("model selection called prompt")
+	}
+	if p, _ := h.Transcript(row, 100); len(p.Entries) != 0 {
+		t.Fatal("model selection fabricated a conversation turn")
+	}
+	if err := h.Send(context.Background(), row, "/model unoffered"); err == nil {
+		t.Fatal("unoffered model accepted")
+	}
+	if err := h.Send(context.Background(), row, "/model synthetic-low extra"); err == nil {
+		t.Fatal("nonexact model accepted")
+	}
+	denied := errors.New("revoked")
+	if err := h.SendProtocol(context.Background(), row, "/model synthetic-high", func() error { return denied }); !errors.Is(err, denied) {
+		t.Fatal(err)
+	}
+	selected, _ := os.ReadFile(filepath.Join(dir, "model"))
+	if string(selected) != "synthetic-low" {
+		t.Fatalf("rejected model reached peer: %q", selected)
+	}
+	facts, _ = h.Facts(row)
+	if len(facts.Models) != 2 || facts.Models[1].Command != "synthetic-low" || facts.Model != "synthetic-low" {
+		t.Fatalf("facts=%+v", facts)
+	}
+	facts.Models[0].ID = "tampered"
+	held, _ := h.Facts(row)
+	if held.Models[0].ID != "synthetic-high" {
+		t.Fatal("model snapshot mutated offered list")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Send(context.Background(), row, "ordinary input"); err != nil {
+		t.Fatal(err)
+	}
+	page := settled(t, h, row)
+	if page.Entries[0].Text != "ordinary input" {
+		t.Fatal(page)
+	}
+	prompts, _ := os.ReadFile(filepath.Join(dir, "prompts"))
+	if string(prompts) != "prompt\n" {
+		t.Fatalf("ordinary prompt count=%q", prompts)
+	}
+}
+
+func TestOwnedQuotaNeverPollutesTranscriptOrBlocksSender(t *testing.T) {
+	h, row, dir := fixture(t)
+	before, _ := h.Transcript(row, 100)
+	if err := h.RefreshQuota(context.Background(), row); err != nil {
+		t.Fatal(err)
+	}
+	facts, _ := h.Facts(row)
+	if len(facts.Limits.Windows) != 1 || facts.Limits.Windows[0].UsedPercent != 38 {
+		t.Fatalf("quota=%+v", facts.Limits)
+	}
+	after, _ := h.Transcript(row, 100)
+	if len(after.Entries) != 0 || after.Signature != before.Signature {
+		t.Fatal("quota mutated transcript", after)
+	}
+	if err := h.Send(context.Background(), row, "ordinary input"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.RefreshQuota(context.Background(), row); err == nil {
+		t.Fatal("busy usage queued")
+	}
+	if err := h.Send(context.Background(), row, "/model synthetic-low"); err == nil {
+		t.Fatal("busy model selection queued")
+	}
+	usage, _ := os.ReadFile(filepath.Join(dir, "usage"))
+	if string(usage) != "usage\n" {
+		t.Fatalf("usage retried: %q", usage)
+	}
+}
+
+func TestOwnedQuotaFailureStaysUnknownWithoutProviderDiagnostic(t *testing.T) {
+	h, row, dir := fixture(t)
+	if err := os.WriteFile(filepath.Join(dir, "usage-error"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.RefreshQuota(context.Background(), row); err == nil || strings.Contains(err.Error(), "SECRET") {
+		t.Fatalf("error=%v", err)
+	}
+	facts, _ := h.Facts(row)
+	if facts.Limits == nil || len(facts.Limits.Windows) != 0 || facts.Limits.UnknownReason != contract.AssistantUnknownReasonUnreadable || facts.Limits.AgeSeconds != nil {
+		t.Fatalf("limits=%+v", facts.Limits)
+	}
+	if page, _ := h.Transcript(row, 100); len(page.Entries) != 0 {
+		t.Fatal("quota error entered transcript", page)
+	}
+	usage, _ := os.ReadFile(filepath.Join(dir, "usage"))
+	if string(usage) != "usage\n" {
+		t.Fatal("quota error retried")
+	}
 }
 func fixture(t *testing.T) (*Host, session.Session, string) {
 	t.Helper()

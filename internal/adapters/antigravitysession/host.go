@@ -49,6 +49,8 @@ type conversation struct {
 	textIndex    int
 	writeGate    chan struct{}
 	model        string
+	models       []contract.SessionModel
+	quota        *contract.SessionLimits
 	contextKnown bool
 	context      antigravityacp.ContextUsage
 }
@@ -111,13 +113,22 @@ func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 	}
 	var metadata struct {
 		Models struct {
-			CurrentModelID string `json:"currentModelId"`
+			CurrentModelID  string `json:"currentModelId"`
+			AvailableModels []struct {
+				ModelID string `json:"modelId"`
+				Name    string `json:"name"`
+			} `json:"availableModels"`
 		} `json:"models"`
 	}
 	_ = json.Unmarshal(created, &metadata)
 	now := time.Now()
 	c.mu.Lock()
 	c.model = metadata.Models.CurrentModelID
+	for _, m := range metadata.Models.AvailableModels {
+		if m.ModelID != "" && !strings.ContainsAny(m.ModelID, " \t\r\n") {
+			c.models = append(c.models, contract.SessionModel{ID: m.ModelID, Name: m.Name, Command: m.ModelID})
+		}
+	}
 	c.row = session.Session{ID: "owned:acp:" + rand.Text(), Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
 	row := c.row
 	c.mu.Unlock()
@@ -178,6 +189,9 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 	c, err := h.lookup(s)
 	if err != nil {
 		return err
+	}
+	if text == "/model" || strings.HasPrefix(text, "/model ") {
+		return h.selectModel(ctx, c, strings.TrimPrefix(text, "/model "), before)
 	}
 	h.mu.Lock()
 	if h.closed || h.ctx.Err() != nil {
@@ -484,6 +498,8 @@ func (h *Host) Stats() (sessions int, viewBytes int) {
 // Facts are provider observations, not inferred prices or cumulative spend.
 type Facts struct {
 	Model   string
+	Models  []contract.SessionModel
+	Limits  *contract.SessionLimits
 	Context *antigravityacp.ContextUsage
 }
 
@@ -494,7 +510,7 @@ func (h *Host) Facts(s session.Session) (Facts, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	f := Facts{Model: c.model}
+	f := Facts{Model: c.model, Models: append([]contract.SessionModel{}, c.models...), Limits: quotaSnapshot(c.quota, time.Now())}
 	if c.contextKnown {
 		reading := c.context
 		f.Context = &reading

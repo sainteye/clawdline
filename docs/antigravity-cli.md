@@ -402,7 +402,7 @@ person and must be presented explicitly rather than resolved by reducing the fea
 
 ## Not building in this change
 
-This document contains no runtime implementation. The plan does not add Antigravity's own remote
+The original design above does not add Antigravity's own remote
 control, replace Clawdline encryption, import account vaults, migrate Gemini settings or credentials,
 enable paid teamwork/credits, delete provider histories, or port an IDE. These are unnecessary to
 the authorized integration. ACP runtime distribution is an alternative requiring its own exact
@@ -496,6 +496,46 @@ and continuing Session snapshots. The old bundle remains unable to edit; the
 fixed bundle becomes editable and sends once to the selected Session. Cloud
 Project reads report a content-free elapsed time as `cloud.places.read`, so
 chooser delays can be measured separately from provider startup.
+
+### Native model selection and quota in the owned pilot
+
+The owned backend retains `session/new.models.availableModels` and its
+`currentModelId`. Both full `/info` and `?parts=summary` return these as
+`models: [{id, name, command}]` and `session.model`; `command` is the complete
+native model ID. No model list or model-ID decomposition is hard-coded.
+Sending exactly `/model <offered modelId>` through the existing sender calls
+`session/set_model` once, with the existing operation check under the pipe write
+lock. Its acknowledgment selects the next turn's model; it does not execute a
+model, add a user transcript entry, or establish which model ran a prior turn.
+An unoffered ID is refused before writing. Busy, cancelled and failed calls are
+not queued or retried. Ordinary text still uses one `session/prompt` call.
+
+Opening full `/info` explicitly attempts at most one metadata-only `/usage`
+prompt on an idle session. Summary, listing and sending never fetch quota.
+The ACP 1.4.1 native probe and its built-in usage handler establish that this
+exact command bypasses model chat; arbitrary text cannot enter this metadata
+API. Its `agent_message_chunk` content is collected only between that write and
+its response and is excluded from the transcript. Other updates retain their
+normal processing. The collector reuses the existing frame-byte budget and
+call deadline, and introduces no retries, credentials or HTTP owner.
+
+`limits.windows` contains only a recognized numeric **Gemini Models** weekly
+remaining percentage from `### Quota Limits`: `name: "7d"`,
+`usedPercent: 100 - remaining`, `hit: remaining == 0`, and optional UTC
+`resetsAt`. The other model group and context tokens cannot supply this value.
+Zero is retained. Missing numbers, unknown shapes and errors yield empty windows
+and a typed unknown reason, never a fabricated zero or raw provider diagnostic.
+`detail: "Gemini · ACP /usage"` identifies the source. A successful reading's
+`at`, `readAtMs` and `ageSeconds` persist across summary reads; no new timestamp
+is invented by a cache read. The source provides no freshness interval, so
+`freshForSeconds` remains null; a passed native reset marks the held reading
+stale. A busy read leaves the previously held reading alone.
+
+Synthetic process-peer tests use different percentages from the private probe
+and cover exact model selection, revocation before pipe write, transcript
+isolation, group separation, zero/unknown readings, cancellation and no retry.
+This backend change does not claim native permission, role injection, resume,
+Cloud browser acceptance or physical phone acceptance.
 
 
 ### Native bindings across Cloud presentation

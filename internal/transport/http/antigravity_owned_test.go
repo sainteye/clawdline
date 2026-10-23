@@ -31,6 +31,11 @@ func TestOwnedHTTPPeer(t *testing.T) {
 		var req struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
+			Params struct {
+				Prompt []struct {
+					Text string `json:"text"`
+				} `json:"prompt"`
+			} `json:"params"`
 		}
 		if json.Unmarshal(scanner.Bytes(), &req) != nil {
 			os.Exit(31)
@@ -40,8 +45,16 @@ func TestOwnedHTTPPeer(t *testing.T) {
 		case "initialize":
 			result = map[string]int{"protocolVersion": 1}
 		case "session/new":
-			result = map[string]any{"sessionId": "synthetic-http-native", "models": map[string]string{"currentModelId": "synthetic-flash-high"}, "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
+			result = map[string]any{"sessionId": "synthetic-http-native", "models": map[string]any{"currentModelId": "synthetic-flash-high", "availableModels": []any{map[string]string{"modelId": "synthetic-flash-high", "name": "Synthetic High"}, map[string]string{"modelId": "synthetic-flash-low", "name": "Synthetic Low"}}}, "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
 		case "session/prompt":
+			if len(req.Params.Prompt) == 1 && req.Params.Prompt[0].Text == "/usage" {
+				f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "usage"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+				f.WriteString("usage\n")
+				f.Close()
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "### Quota Limits\n- **Gemini Models**\n  - **Weekly Limit Remaining:** 62% remaining (resets Oct 29, 2026, 07:51 UTC)\n- **Claude and GPT models**\n  - **Weekly Limit Remaining:** 9% remaining"}}}})
+				result = map[string]string{"stopReason": "end_turn"}
+				break
+			}
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "usage_update", "used": 12, "size": 100}}})
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic HTTP reply"}}}})
 			result = map[string]string{"stopReason": "end_turn"}
@@ -128,11 +141,34 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	if page.Evidence != contract.EvidenceStructured || len(page.Entries) != 2 || page.Entries[0].Role != "user" || page.Entries[1].Text != "synthetic HTTP reply" {
 		t.Fatalf("existing transcript=%+v", page)
 	}
+	summaryResponse := httptest.NewRecorder()
+	s.sessionInfoRoute(summaryResponse, httptest.NewRequest(http.MethodGet, "/v1/sessions/fixture/info?parts=summary", nil), answer.ID)
+	var summary contract.SessionInfoReply
+	if summaryResponse.Code != 200 || json.Unmarshal(summaryResponse.Body.Bytes(), &summary) != nil || len(summary.Info.Models) != 2 || summary.Info.Limits == nil || len(summary.Info.Limits.Windows) != 0 {
+		t.Fatalf("summary=%s", summaryResponse.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "usage")); !os.IsNotExist(err) {
+		t.Fatal("summary queried provider quota")
+	}
 	infoResponse := httptest.NewRecorder()
 	s.sessionInfoRoute(infoResponse, httptest.NewRequest(http.MethodGet, "/v1/sessions/fixture/info", nil), answer.ID)
 	var info contract.SessionInfoReply
-	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-flash-high" || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 0 {
-		t.Fatalf("native facts invented billing or terminal model controls: %d %s", infoResponse.Code, infoResponse.Body.String())
+	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-flash-high" || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-flash-low" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 1 || info.Info.Limits.Windows[0].UsedPercent != 38 {
+		t.Fatalf("native facts missing or billing invented: %d %s", infoResponse.Code, infoResponse.Body.String())
+	}
+	readAt := info.Info.Limits.ReadAtMs
+	summaryResponse = httptest.NewRecorder()
+	s.sessionInfoRoute(summaryResponse, httptest.NewRequest(http.MethodGet, "/v1/sessions/fixture/info?parts=summary", nil), answer.ID)
+	if json.Unmarshal(summaryResponse.Body.Bytes(), &summary) != nil || summary.Info.Limits.ReadAtMs != readAt {
+		t.Fatal("summary fabricated quota freshness")
+	}
+	usage, _ := os.ReadFile(filepath.Join(dir, "usage"))
+	if string(usage) != "usage\n" {
+		t.Fatalf("full info quota calls=%q", usage)
+	}
+	page = s.transcriptPage(answer.ID, inv.Sessions[0], 20)
+	if len(page.Entries) != 2 || page.Entries[1].Text != "synthetic HTTP reply" {
+		t.Fatal("quota entered transcript", page)
 	}
 	for _, row := range s.availableAssistants() {
 		if row.ID == "antigravity" && (row.AuthState != contract.StartAuthStateReady || !row.Capabilities.Send || !row.Capabilities.Transcript || row.Capabilities.Resume || row.Capabilities.Menus) {

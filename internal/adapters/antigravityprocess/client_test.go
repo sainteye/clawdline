@@ -90,7 +90,40 @@ func TestACPProcess(t *testing.T) {
 				tier = "paid"
 			}
 			result = map[string]any{"sessionId": "fake-session", "models": map[string]string{"currentModelId": "flash-high"}, "configOptions": []any{map[string]string{"id": "model", "currentValue": "flash"}}, "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": tier, "name": "Antigravity Starter Quota"}}}}
+		case "session/set_model":
+			if mode == "metadata-stall" {
+				time.Sleep(time.Hour)
+			}
+			if mode == "metadata-error" {
+				enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32001, "message": "SECRET provider account"}})
+				continue
+			}
+			result = map[string]any{}
 		case "session/prompt":
+			var params struct {
+				Prompt []struct {
+					Text string `json:"text"`
+				} `json:"prompt"`
+			}
+			_ = json.Unmarshal(m["params"], &params)
+			if len(params.Prompt) == 1 && params.Prompt[0].Text == "/usage" {
+				if mode == "metadata-stall" {
+					time.Sleep(time.Hour)
+				}
+				if mode == "metadata-error" {
+					enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32001, "message": "SECRET provider account"}})
+					continue
+				}
+				for _, text := range []string{"### Quota Limits\n", "- **Gemini Models**\n  - **Weekly Limit Remaining:** 62% remaining"} {
+					if mode == "metadata-large" {
+						text = strings.Repeat("x", 3000)
+					}
+					enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fake-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": text}}}})
+				}
+				enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fake-session", "update": map[string]any{"sessionUpdate": "usage_update", "used": 11, "size": 100}}})
+				result = map[string]string{"stopReason": "end_turn"}
+				break
+			}
 			if mode == "stall-read" || mode == "tree" || mode == "tree-exit" {
 				if mode == "tree" || mode == "tree-exit" {
 					child := exec.Command(os.Args[0], "-test.run=^TestACPProcess$", "--", "descendant")
@@ -131,6 +164,153 @@ func TestACPProcess(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+func TestMetadataCallsKeepUpdatesSeparateAndUseOneRPC(t *testing.T) {
+	var mu sync.Mutex
+	var updates []string
+	c, dir := fake(t, "happy", func(_ context.Context, raw json.RawMessage) error {
+		var m struct {
+			Params struct {
+				Update struct {
+					Kind string `json:"sessionUpdate"`
+				}
+			}
+		}
+		_ = json.Unmarshal(raw, &m)
+		mu.Lock()
+		updates = append(updates, m.Params.Update.Kind)
+		mu.Unlock()
+		return nil
+	})
+	ready(t, c)
+	checks := 0
+	if err := c.SetModelChecked(context.Background(), "synthetic-low", func() error { checks++; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	text, err := c.Usage(context.Background())
+	if err != nil || !strings.Contains(text, "62% remaining") || checks != 1 {
+		t.Fatalf("usage=%q err=%v checks=%d", text, err, checks)
+	}
+	mu.Lock()
+	for _, kind := range updates {
+		if kind == "agent_message_chunk" {
+			t.Fatal("quota leaked into conversation callback")
+		}
+	}
+	if len(updates) == 0 {
+		t.Fatal("non-message metadata updates lost")
+	}
+	mu.Unlock()
+	if got := methods(t, dir); !reflect.DeepEqual(got, []string{"initialize", "authenticate", "session/new", "session/set_model", "session/prompt"}) {
+		t.Fatal(got)
+	}
+	// The next ordinary turn remains a prompt and its text reaches the callback.
+	if _, err := c.Prompt(context.Background(), "ordinary turn"); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !strings.Contains(strings.Join(updates, ","), "agent_message_chunk") {
+		t.Fatal("usage collector captured a later ordinary turn")
+	}
+}
+
+func TestModelOperationRevocationHoldsUntilPipeWrite(t *testing.T) {
+	c, dir := fake(t, "happy", nil)
+	ready(t, c)
+	c.writeMu.Lock()
+	result := make(chan error, 1)
+	denied := errors.New("revoked")
+	go func() {
+		result <- c.SetModelChecked(context.Background(), "synthetic-low", func() error { return denied })
+	}()
+	// Wait until this call owns callMu but cannot yet reach its operation check.
+	deadline := time.Now().Add(time.Second)
+	for c.callMu.TryLock() {
+		c.callMu.Unlock()
+		if time.Now().After(deadline) {
+			c.writeMu.Unlock()
+			t.Fatal("model call did not start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	c.writeMu.Unlock()
+	if err := <-result; !errors.Is(err, denied) {
+		t.Fatal(err)
+	}
+	if got := methods(t, dir); len(got) != 3 {
+		t.Fatal("revoked model reached pipe", got)
+	}
+}
+
+func TestMetadataCallsRefuseUnsafeSettingsAndStates(t *testing.T) {
+	c, dir := fake(t, "happy", nil)
+	if err := c.SetModelChecked(context.Background(), "synthetic", nil); err == nil {
+		t.Fatal("unauthenticated model selection")
+	}
+	if _, err := c.Usage(context.Background()); err == nil {
+		t.Fatal("unauthenticated usage")
+	}
+	ready(t, c)
+	settings(t, dir, `{"useG1Credits":true,"auth":{"type":"oauth-personal"}}`)
+	requireError(t, c.SetModelChecked(context.Background(), "synthetic", nil), "personal_settings_required", NotWritten)
+	_, err := c.Usage(context.Background())
+	requireError(t, err, "personal_settings_required", NotWritten)
+	if got := methods(t, dir); len(got) != 3 {
+		t.Fatal(got)
+	}
+}
+
+func TestMetadataErrorsCancellationAndBusyNeverRetry(t *testing.T) {
+	for _, model := range []bool{true, false} {
+		t.Run(fmt.Sprint(model), func(t *testing.T) {
+			for _, mode := range []string{"metadata-error", "metadata-stall", "metadata-large"} {
+				t.Run(mode, func(t *testing.T) {
+					if model && mode == "metadata-large" {
+						t.Skip("only usage aggregates frames")
+					}
+					c, dir := fake(t, mode, nil)
+					ready(t, c)
+					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+					defer cancel()
+					result := make(chan error, 1)
+					go func() {
+						if model {
+							result <- c.SetModelChecked(ctx, "synthetic", nil)
+						} else {
+							_, err := c.Usage(ctx)
+							result <- err
+						}
+					}()
+					if mode == "metadata-stall" {
+						deadline := time.Now().Add(time.Second)
+						for len(methods(t, dir)) < 4 && time.Now().Before(deadline) {
+							time.Sleep(time.Millisecond)
+						}
+						_, err := c.Usage(context.Background())
+						requireError(t, err, "busy", NotWritten)
+						cancel()
+					}
+					err := <-result
+					code, delivery := "rpc_error", Acknowledged
+					if mode == "metadata-stall" {
+						code, delivery = "cancelled", Uncertain
+					}
+					if mode == "metadata-large" {
+						code = "usage_too_large"
+					}
+					requireError(t, err, code, delivery)
+					if strings.Contains(err.Error(), "SECRET") {
+						t.Fatal("raw provider error leaked")
+					}
+					if got := methods(t, dir); len(got) != 4 {
+						t.Fatal("metadata retry", got)
+					}
+				})
+			}
+		})
+	}
 }
 
 func fake(t *testing.T, mode string, update func(context.Context, json.RawMessage) error) (*Client, string) {
