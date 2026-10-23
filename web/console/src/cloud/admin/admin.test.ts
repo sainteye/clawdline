@@ -223,7 +223,7 @@ test("operations waits for catalog validation and a broken translation falls bac
 
 test("pure Workflow source formatting stays compatible while edited messages remain data", () => {
   assert.equal(workflowWordFor("zh-Hant", "skillPrompt", { name: "ctx" }), "請執行「ctx」Skill，依照其中流程完成工作並回報結果。")
-  assert.equal(workflowWordFor("fr", "workflow"), "Workflow")
+  assert.equal(workflowWordFor("fr", "workflow"), "Playbook")
   const edited = { id: "review", title: "My review", body: "Keep my words.", scope: "workflow" as const, position: 1, created_at: 1, updated_at: 1 }
   assert.equal(localizedWorkflow(edited), edited)
 })

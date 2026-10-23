@@ -726,7 +726,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
         <div className="snippets-head">
           <div className="snippets-heading">
             <h2 id="snippets-title">{tab === "clawdfather" ? (coordination ? catalogWord("resourceCoordination", "title") : catalogWord("literal", "56aed5587136"))
-              : tab === "snippet" ? T.webSnippets : "Workflow"}</h2>
+              : tab === "snippet" ? T.webSnippets : W("workflow")}</h2>
             <span className="snippets-where" id="snippets-where">
               {[whose, model.project ? model.project.label : ""].filter(Boolean).join(" · ")}
             </span>
@@ -994,7 +994,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
 }
 
 const tabPanel: Record<SheetTab, string> = { clawdfather: "clawdfather-actions", snippet: "snippet-list", workflow: "workflow-picker" }
-const tabLabel = (tab: SheetTab) => tab === "clawdfather" ? "Clawdfather" : tab === "snippet" ? "Snippet" : "Workflow"
+const tabLabel = (tab: SheetTab) => tab === "clawdfather" ? "Clawdfather" : tab === "snippet" ? "Snippet" : W("workflow")
 
 function SnippetSkeleton({ label }: { label: string }) {
   return <div className="snippet-skeleton" role="status" aria-label={label}>

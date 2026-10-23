@@ -17,10 +17,10 @@ Project's own directory, not a repository ancestor or the machine's home directo
 loaded only when expanded; a file's content is requested only when selected. This view is read-only.
 The existing instruction and Skill editor remains in Settings and instructions.
 
-The Workflow editor uses this inventory's ready Skills and Claude commands to fill a
+The Playbook editor uses this inventory's ready Skills and Claude commands to fill a
 new launch-message draft. A command import asks the assistant to read that Project's
-command; the command file remains necessary when it runs. A manually written Workflow
-can stand alone. See [Project Workflows](workflows.md).
+command; the command file remains necessary when it runs. A manually written Playbook
+can stand alone. See [Project Playbooks](playbooks.md).
 
 `GET /v1/projects/{place}/tree?directory=<relative>` lists one directory;
 `GET /v1/projects/{place}/tree/file?path=<relative>` reads one regular UTF-8 text file. The server

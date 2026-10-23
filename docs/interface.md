@@ -269,7 +269,7 @@ consulted about a terminal again: move the hotkey wherever you like and the sess
 
 ## Turning iTerm2 scanning off
 
-**Website Settings → Workflow and control → Enable iTerm2 integration** (`iterm_integration` in `config.json`)
+**Website Settings → Sessions and access → Enable iTerm2 integration** (`iterm_integration` in `config.json`)
 is available in the Cloud and local browser console and is off by default for both new and existing installations. The macOS App settings surface is sunset; it is not the configuration entry point. Only an explicit
 `true` enables access. An old `iterm_scan` value, an iTerm2 terminal preference,
 and an existing macOS Automation grant do not count as consent. Unreadable

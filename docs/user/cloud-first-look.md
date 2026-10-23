@@ -28,7 +28,7 @@ Set up the phone first, in the place you will keep using. Safari, the Home Scree
 1. **Prepare the phone.**
    - **iPhone or iPad:** in Safari, open app.clawdline.com and choose **Share → Add to Home Screen**. Open Clawdline from the Home Screen icon and sign in there.
    - **Android:** choose a Chrome profile, or install Clawdline from Chrome's menu. Sign in there.
-2. **Show the QR on the computer.** In the app's **Cloud** tab, find **Pair a browser or phone** (once Sessions appear: **Settings → Workflow and control → Pair a browser or phone**). Choose **Show a pairing QR code** and approve the native confirmation. Click the QR to enlarge it.
+2. **Show the QR on the computer.** In the app's **Cloud** tab, find **Pair a browser or phone** (once Sessions appear: **Settings → Sessions and access → Pair a browser or phone**). Choose **Show a pairing QR code** and approve the native confirmation. Click the QR to enlarge it.
 3. **Scan from the phone,** in that same app or profile: choose **Pair → Scan the machine's QR**, allow the camera, compare the fingerprints, and choose **They match — done**.
 
 **Done when:** the phone shows the machine's Sessions and the computer says **Browser paired**. For an expired QR, a denied camera or a black preview, see [phone recovery](remote-access.md#pair-an-iphone-ipad-or-android-phone).

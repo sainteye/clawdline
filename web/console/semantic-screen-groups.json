@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 9149,
-  "riskKeys": 4086,
-  "nonRiskCount": 5063,
+  "riskKeys": 4087,
+  "nonRiskCount": 5062,
   "groups": [
     {
       "name": "admin / other",
@@ -5913,7 +5913,7 @@
     },
     {
       "name": "workflowSettings / other",
-      "count": 13,
+      "count": 12,
       "sources": [
         null
       ],
@@ -5928,7 +5928,6 @@
         "workflowSettings.retry",
         "workflowSettings.session_auto_discoveryOn",
         "workflowSettings.session_auto_discoveryTitle",
-        "workflowSettings.tab",
         "workflowSettings.whenOff",
         "workflowSettings.whenOn"
       ]

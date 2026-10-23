@@ -180,7 +180,7 @@ If the shell says `command not found: clawdline`, open a new terminal, or run `~
 1. **Prepare the phone first.** Keys stay where you pair, so pair where you will keep using Clawdline.
    - **iPhone or iPad:** in Safari, open app.clawdline.com, choose **Share → Add to Home Screen** (turn on **Open as Web App** if shown), open Clawdline from the Home Screen, and sign in there.
    - **Android:** choose a Chrome profile, or install Clawdline from Chrome's menu, and sign in there.
-2. **Show the QR on the computer.** In the app's **Cloud** tab, find **Pair a browser or phone** (once Sessions appear: **Settings → Workflow and control → Pair a browser or phone**). Choose **Show a pairing QR code** and approve. Click the QR to enlarge it.
+2. **Show the QR on the computer.** In the app's **Cloud** tab, find **Pair a browser or phone** (once Sessions appear: **Settings → Sessions and access → Pair a browser or phone**). Choose **Show a pairing QR code** and approve. Click the QR to enlarge it.
 3. **Scan inside the phone app:** **Pair → Scan the machine's QR**, then allow the camera. The system Camera app may open Safari instead.
 4. Compare the fingerprints and choose **They match — done**.
 
@@ -194,7 +194,7 @@ If the shell says `command not found: clawdline`, open a new terminal, or run `~
 
 Use one of these when the app does not open, scanning fails, or the target machine has no app:
 
-- **Paste a code:** in the browser or phone to pair, choose **Pair → Show the pairing code** (on a phone, **Can't scan? Use a pairing code instead**, or **Use a pairing code** after a camera error) and copy the whole code. On the computer, open the app's **Cloud** tab → **Settings → Workflow and control → Pair a browser or phone**, paste it into **Paste the pairing code from the browser you want to connect**, choose **Pair this browser**, and approve.
+- **Paste a code:** in the browser or phone to pair, choose **Pair → Show the pairing code** (on a phone, **Can't scan? Use a pairing code instead**, or **Use a pairing code** after a camera error) and copy the whole code. On the computer, open the app's **Cloud** tab → **Settings → Sessions and access → Pair a browser or phone**, paste it into **Paste the pairing code from the browser you want to connect**, choose **Pair this browser**, and approve.
 - **Terminal:** on the browser's pairing card, choose **Copy pairing command** and run the whole command once on the target machine. It finds an installed Clawdline even when `clawdline` is not on PATH. If it says **Clawdline was not found**, install and start Clawdline there, then generate a new code.
 - **QR without the app:** run `clawdline cloud pair` on the target machine. It prints a QR, a one-time link, the fingerprints and the expiry.
 
