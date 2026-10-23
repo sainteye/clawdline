@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestPromptAcceptancePrecedesCompletionWithoutReplay(t *testing.T) {
@@ -32,6 +33,14 @@ func TestPromptAcceptancePrecedesCompletionWithoutReplay(t *testing.T) {
 		t.Fatalf("acceptance was mistaken for completion: %v", err)
 	default:
 	}
+	// Acceptance is the pipe taking the bytes, not the peer reading them, so
+	// wait for the peer's record before cancelling: cancelling first can kill
+	// it with the frame still unread in the pipe.
+	want := []string{"initialize", "authenticate", "session/new", "session/prompt"}
+	deadline := time.Now().Add(2 * time.Second)
+	for !reflect.DeepEqual(methods(t, dir), want) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
 	if err := c.Cancel(); err != nil {
 		t.Fatal(err)
 	}
@@ -39,8 +48,8 @@ func TestPromptAcceptancePrecedesCompletionWithoutReplay(t *testing.T) {
 	if err := <-done; !errors.As(err, &typed) || typed.Delivery != Uncertain {
 		t.Fatalf("cancelled accepted write outcome=%v", err)
 	}
-	if got := methods(t, dir); !reflect.DeepEqual(got, []string{"initialize", "authenticate", "session/new", "session/prompt"}) {
-		t.Fatalf("accepted prompt was replayed: %v", got)
+	if got := methods(t, dir); !reflect.DeepEqual(got, want) {
+		t.Fatalf("accepted prompt was not sent exactly once: %v", got)
 	}
 }
 
