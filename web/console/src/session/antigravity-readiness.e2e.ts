@@ -433,7 +433,6 @@ test("Owned observations do not cancel a slower readiness read", {timeout:30000}
   await tab.click("#send")
   await tab.run(`new Promise(r=>setTimeout(r,100))`)
   assert.deepEqual(sends,["/v1/sessions/fixture-alpha/send"])
-  assert.equal(await tab.run(`new Promise(resolve => {const image = new Image();image.onload=()=>resolve(image.naturalWidth===512);image.onerror=()=>resolve(false);image.src='/icons/gemini.png'})`),true)
   await tab.shot("gemini-owned-continuing-observation")
  }finally{await tab.close()}
 })

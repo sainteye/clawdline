@@ -477,9 +477,10 @@ remains a failed run; the corrected exact candidate needs a fresh green gate.
 
 ### Gemini preview display and readiness
 
-The Console calls this assistant **Gemini** and bundles the official four-color
-Gemini favicon used by `https://gemini.google.com/` (retrieved 2026-10-23 from
-`https://www.gstatic.com/lamda/images/gemini_sparkle_4g_512_lt_f94943af3be039176192d.png`).
+The Console calls this assistant **Gemini** and uses the official Antigravity
+favicon silhouette from `https://antigravity.google/favicon.svg`, bundled inline
+with the other assistant marks. This follows the requested preview branding;
+the integration is Antigravity CLI, while Gemini identifies its model family.
 The transport identifier remains `antigravity`; changing a product label does
 not migrate conversation identities or change the underlying official CLI.
 
