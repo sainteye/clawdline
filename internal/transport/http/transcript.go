@@ -475,6 +475,8 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 			}
 			if facts, err := h.Facts(item); err == nil {
 				info.Session.Model = facts.Model
+				info.Session.Effort = facts.Effort
+				info.Efforts = facts.Efforts
 				info.Models = facts.Models
 				info.Limits = facts.Limits
 				if at := facts.Context; at != nil && at.Size > 0 {

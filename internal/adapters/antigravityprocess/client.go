@@ -71,7 +71,9 @@ type Client struct {
 	sequence                         uint64
 	initialized, authenticated, free bool
 	sessionID                        string
-	usage                            *usageCapture // stateMu; readLoop owns chunk order
+	usage                            *usageCapture               // stateMu; readLoop owns chunk order
+	configResult                     func(json.RawMessage) error // stateMu; invoked by readLoop before later updates
+	configResultID                   string
 }
 
 type usageCapture struct {
@@ -301,6 +303,36 @@ func (c *Client) SetModelChecked(ctx context.Context, modelID string, before fun
 		return c.badResult("invalid_model_result")
 	}
 	return nil
+}
+
+// SetConfigOptionChecked changes one native select value without prompting.
+// The owner validates offered values. apply observes the acknowledged result in
+// wire order, before later notifications; it must not reenter the client.
+func (c *Client) SetConfigOptionChecked(ctx context.Context, configID, value string, before func() error, apply func(json.RawMessage) error) error {
+	if !c.callMu.TryLock() {
+		return failure("busy", NotWritten)
+	}
+	defer c.callMu.Unlock()
+	if !c.authenticated || !c.free || c.SessionID() == "" {
+		return failure("not_ready", NotWritten)
+	}
+	if (configID != "model" && configID != "thinking_level") || value == "" {
+		return failure("invalid_config", NotWritten)
+	}
+	if err := c.checkPersonal(); err != nil {
+		return err
+	}
+	c.stateMu.Lock()
+	c.configResult = apply
+	c.configResultID = strconv.FormatUint(c.sequence+1, 10)
+	c.stateMu.Unlock()
+	defer func() {
+		c.stateMu.Lock()
+		c.configResult, c.configResultID = nil, ""
+		c.stateMu.Unlock()
+	}()
+	_, err := c.callAccepted(ctx, "session/set_config_option", map[string]string{"sessionId": c.SessionID(), "configId": configID, "value": value}, before, nil)
+	return err
 }
 
 // Usage reads only the provider's exact /usage metadata command. It accepts no
@@ -619,7 +651,16 @@ func (c *Client) readLoop() {
 		if c.usage != nil {
 			c.usage.active = false
 		}
+		apply, expected := c.configResult, c.configResultID
 		c.stateMu.Unlock()
+		if apply != nil {
+			if result, err := response(frame, expected); err == nil {
+				if err := apply(result); err != nil {
+					c.shutdown(failure("invalid_config_result", Acknowledged))
+					return
+				}
+			}
+		}
 		select {
 		case c.responses <- frame:
 		case <-c.done:

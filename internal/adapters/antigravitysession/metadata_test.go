@@ -1,11 +1,39 @@
 package antigravitysession
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/contract"
 )
+
+func TestNativeConfigInvalidSnapshotsPreservePreviousState(t *testing.T) {
+	valid := json.RawMessage(`{"configOptions":[{"id":"model","type":"select","currentValue":"synthetic-flash","options":[{"value":"synthetic-flash","name":"Synthetic Flash"}]},{"id":"thinking_level","type":"select","currentValue":"high","options":[{"value":"low"},{"value":"high"}]}]}`)
+	c := &conversation{}
+	if err := c.readMetadata(valid, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{
+		`{}`, `{"configOptions":null}`, `{"configOptions":{}}`,
+		`{"configOptions":[{"id":"thinking_level","type":"select","currentValue":"low","options":[{"value":"low"},{"value":"low"}]}]}`,
+		`{"configOptions":[{"id":"thinking_level","type":"select","currentValue":"high","options":[{"value":"low extra"}]}]}`,
+		`{"configOptions":[{"id":"model","type":"select","currentValue":"new","options":[]},{"id":"thinking_level","type":"select","currentValue":false}]}`,
+	} {
+		if err := c.readMetadata(json.RawMessage(raw), false); err == nil {
+			t.Fatalf("accepted %s", raw)
+		}
+		if c.model != "synthetic-flash" || c.effort != "high" || len(c.efforts) != 2 {
+			t.Fatal("invalid snapshot partially applied", c.model, c.effort, c.efforts)
+		}
+	}
+	if err := c.readMetadata(json.RawMessage(`{"configOptions":[]}`), false); err != nil {
+		t.Fatal(err)
+	}
+	if c.model != "" || c.effort != "" || len(c.models) != 0 || len(c.efforts) != 0 {
+		t.Fatal("removed native controls remained offered")
+	}
+}
 
 // Synthetic values follow the sanitized ACP 1.4.1 shape; no account reading is
 // retained. The Gemini and other-model group values deliberately disagree.

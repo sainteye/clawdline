@@ -6612,6 +6612,13 @@ export interface SessionInfo {
    * between runs are one blank cell.
    */
   deployQuiet?: ProjectDeployQuiet
+
+  /**
+   * Native offered thinking_level option values for this owned ACP session. May
+   * change with model selection. Absent when structured options are unavailable; no
+   * inferred effort control.
+   */
+  efforts?: string[]
   limits?: SessionLimits
 
   /**
@@ -6686,16 +6693,19 @@ export interface SessionInfoSession {
   cwd?: string
 
   /**
-   * The reasoning effort explicitly named by the newest Codex turn context, or its
-   * startup card before a turn context names it. Absent when unknown.
+   * The reasoning effort explicitly named by the session record or startup card, or
+   * the current native ACP thinking_level configOption. Never inferred from model
+   * ID suffixes. Absent when unknown.
    */
   effort?: string
   icon?: Icon
   id: string
 
   /**
-   * The model explicitly named by the session record, Codex startup card, or an
-   * owned ACP session/new response. Absent without evidence.
+   * The model explicitly named by the session record, Codex startup card, or owned
+   * ACP metadata. Structured ACP model configOptions provide the native base ID
+   * independently of thinking_level; legacy IDs are not split. Absent without
+   * evidence.
    */
   model?: string
 

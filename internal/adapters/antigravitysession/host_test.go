@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,8 @@ func TestOwnedPeer(t *testing.T) {
 		return
 	}
 	enc := json.NewEncoder(os.Stdout)
+	model, effort := "synthetic-flash", "high"
+	efforts := []string{"low", "medium", "high"}
 	scanner := bufio.NewScanner(os.Stdin)
 	notify := func(u any) {
 		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-native", "update": u}})
@@ -33,8 +36,10 @@ func TestOwnedPeer(t *testing.T) {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
 			Params struct {
-				ModelID string `json:"modelId"`
-				Prompt  []struct {
+				ModelID  string `json:"modelId"`
+				ConfigID string `json:"configId"`
+				Value    string `json:"value"`
+				Prompt   []struct {
 					Text string `json:"text"`
 				} `json:"prompt"`
 			} `json:"params"`
@@ -49,6 +54,24 @@ func TestOwnedPeer(t *testing.T) {
 		case "session/new":
 			result = map[string]any{"sessionId": "synthetic-native", "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
 			result.(map[string]any)["models"] = map[string]any{"currentModelId": "synthetic-high", "availableModels": []any{map[string]string{"modelId": "synthetic-high", "name": "Synthetic High"}, map[string]string{"modelId": "synthetic-low", "name": "Synthetic Low"}}}
+			if os.Getenv("CLW_CONFIG_PEER") == "yes" {
+				result.(map[string]any)["configOptions"] = syntheticConfigOptions(model, effort, efforts)
+			}
+		case "session/set_config_option":
+			dir := os.Getenv("GEMINI_HOME")
+			f, _ := os.OpenFile(filepath.Join(dir, "config-writes"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+			f.WriteString(req.Params.ConfigID + "=" + req.Params.Value + "\n")
+			f.Close()
+			if _, err := os.Stat(filepath.Join(dir, "config-error")); err == nil {
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32001, "message": "SECRET provider diagnostic"}})
+				continue
+			}
+			if req.Params.ConfigID == "model" {
+				model, effort, efforts = req.Params.Value, "medium", []string{"medium", "high"}
+			} else {
+				effort = req.Params.Value
+			}
+			result = map[string]any{"configOptions": syntheticConfigOptions(model, effort, efforts)}
 		case "session/set_model":
 			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "model"), []byte(req.Params.ModelID), 0600)
 		case "session/prompt":
@@ -82,11 +105,134 @@ func TestOwnedPeer(t *testing.T) {
 			result = map[string]string{"stopReason": "end_turn"}
 		}
 		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
+		if req.Method == "session/set_config_option" {
+			if _, err := os.Stat(filepath.Join(os.Getenv("GEMINI_HOME"), "config-update")); err == nil {
+				effort = "high"
+				notify(map[string]any{"sessionUpdate": "config_option_update", "configOptions": syntheticConfigOptions(model, effort, efforts)})
+			}
+		}
 		if req.Method == "session/prompt" && !(len(req.Params.Prompt) == 1 && req.Params.Prompt[0].Text == "/usage") {
 			notify(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "read-1", "status": "completed"})
 		}
 	}
 	os.Exit(0)
+}
+
+func syntheticConfigOptions(model, effort string, efforts []string) []any {
+	values := []any{}
+	for _, v := range efforts {
+		values = append(values, map[string]string{"value": v, "name": v})
+	}
+	return []any{
+		map[string]any{"id": "model", "type": "select", "currentValue": model, "options": []any{map[string]string{"value": "synthetic-flash", "name": "Synthetic Flash"}, map[string]string{"value": "synthetic-pro", "name": "Synthetic Pro"}}},
+		map[string]any{"id": "thinking_level", "type": "select", "category": "thought_level", "currentValue": effort, "options": values},
+	}
+}
+
+func TestOwnedNativeModelUsesStructuredBaseID(t *testing.T) {
+	t.Setenv("CLW_CONFIG_PEER", "yes")
+	h, row, _ := fixture(t)
+	facts, _ := h.Facts(row)
+	if facts.Model != "synthetic-flash" || len(facts.Models) != 2 || facts.Models[0].Name != "Synthetic Flash" {
+		t.Fatalf("structured model was replaced by legacy composite metadata: %+v", facts)
+	}
+}
+
+func TestOwnedNativeConfigSelectionKeepsAcknowledgedTruth(t *testing.T) {
+	t.Setenv("CLW_CONFIG_PEER", "yes")
+	h, row, dir := fixture(t)
+	facts, _ := h.Facts(row)
+	if facts.Model != "synthetic-flash" || facts.Effort != "high" || !reflect.DeepEqual(facts.Efforts, []string{"low", "medium", "high"}) {
+		t.Fatal(facts)
+	}
+	checks := 0
+	if err := h.SendProtocol(context.Background(), row, "/effort low", func() error { checks++; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	facts, _ = h.Facts(row)
+	if facts.Model != "synthetic-flash" || facts.Effort != "low" || checks != 1 {
+		t.Fatal(facts, checks)
+	}
+	for _, command := range []string{"/effort", "/effort max", "/effort low extra", "/model synthetic-high"} {
+		if err := h.Send(context.Background(), row, command); err == nil {
+			t.Fatalf("accepted %q", command)
+		}
+	}
+	denied := errors.New("revoked")
+	if err := h.SendProtocol(context.Background(), row, "/effort high", func() error { return denied }); !errors.Is(err, denied) {
+		t.Fatal(err)
+	}
+	if err := h.Send(context.Background(), row, "/model synthetic-pro"); err != nil {
+		t.Fatal(err)
+	}
+	facts, _ = h.Facts(row)
+	if facts.Model != "synthetic-pro" || facts.Effort != "medium" || !reflect.DeepEqual(facts.Efforts, []string{"medium", "high"}) {
+		t.Fatal(facts)
+	}
+	if err := h.Send(context.Background(), row, "/effort low"); err == nil {
+		t.Fatal("stale effort offered")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config-error"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Send(context.Background(), row, "/effort high"); err == nil || strings.Contains(err.Error(), "SECRET") {
+		t.Fatal(err)
+	}
+	held, _ := h.Facts(row)
+	if held.Effort != "medium" || held.Model != "synthetic-pro" {
+		t.Fatal(held)
+	}
+	writes, _ := os.ReadFile(filepath.Join(dir, "config-writes"))
+	if string(writes) != "thinking_level=low\nmodel=synthetic-pro\nthinking_level=high\n" {
+		t.Fatalf("writes=%q", writes)
+	}
+	for _, file := range []string{"prompts", "usage", "model"} {
+		if _, err := os.Stat(filepath.Join(dir, file)); !os.IsNotExist(err) {
+			t.Fatalf("metadata wrote %s", file)
+		}
+	}
+	if page, _ := h.Transcript(row, 10); len(page.Entries) != 0 {
+		t.Fatal(page)
+	}
+	facts.Efforts[0] = "tampered"
+	held, _ = h.Facts(row)
+	if held.Efforts[0] != "medium" {
+		t.Fatal("efforts snapshot aliases state")
+	}
+}
+
+func TestOwnedNativeConfigNotificationFollowsResponse(t *testing.T) {
+	t.Setenv("CLW_CONFIG_PEER", "yes")
+	h, row, dir := fixture(t)
+	if err := os.WriteFile(filepath.Join(dir, "config-update"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Send(context.Background(), row, "/effort low"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		facts, _ := h.Facts(row)
+		if facts.Effort == "high" {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("later native notification did not replace acknowledged effort")
+}
+
+func TestOwnedLegacyMetadataOffersNoEffortControl(t *testing.T) {
+	h, row, dir := fixture(t)
+	facts, _ := h.Facts(row)
+	if facts.Effort != "" || len(facts.Efforts) != 0 {
+		t.Fatal(facts)
+	}
+	if err := h.Send(context.Background(), row, "/effort high"); err == nil {
+		t.Fatal("invented legacy effort control")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config-writes")); !os.IsNotExist(err) {
+		t.Fatal("legacy effort wrote native pipe")
+	}
 }
 
 func TestOwnedModelCommandSelectsWithoutPrompt(t *testing.T) {

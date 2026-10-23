@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -27,12 +28,26 @@ func TestOwnedHTTPPeer(t *testing.T) {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	enc := json.NewEncoder(os.Stdout)
+	model, effort := "synthetic-flash", "high"
+	efforts := []string{"low", "medium", "high"}
+	config := func() []any {
+		values := []any{}
+		for _, value := range efforts {
+			values = append(values, map[string]string{"value": value, "name": value})
+		}
+		return []any{
+			map[string]any{"id": "model", "type": "select", "currentValue": model, "options": []any{map[string]string{"value": "synthetic-flash", "name": "Synthetic Flash"}, map[string]string{"value": "synthetic-pro", "name": "Synthetic Pro"}}},
+			map[string]any{"id": "thinking_level", "type": "select", "currentValue": effort, "options": values},
+		}
+	}
 	for scanner.Scan() {
 		var req struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
 			Params struct {
-				Prompt []struct {
+				ConfigID string `json:"configId"`
+				Value    string `json:"value"`
+				Prompt   []struct {
 					Text string `json:"text"`
 				} `json:"prompt"`
 			} `json:"params"`
@@ -46,6 +61,17 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			result = map[string]int{"protocolVersion": 1}
 		case "session/new":
 			result = map[string]any{"sessionId": "synthetic-http-native", "models": map[string]any{"currentModelId": "synthetic-flash-high", "availableModels": []any{map[string]string{"modelId": "synthetic-flash-high", "name": "Synthetic High"}, map[string]string{"modelId": "synthetic-flash-low", "name": "Synthetic Low"}}}, "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
+			result.(map[string]any)["configOptions"] = config()
+		case "session/set_config_option":
+			f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "config-writes"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+			f.WriteString(req.Params.ConfigID + "=" + req.Params.Value + "\n")
+			f.Close()
+			if req.Params.ConfigID == "model" {
+				model, effort, efforts = req.Params.Value, "medium", []string{"medium", "high"}
+			} else {
+				effort = req.Params.Value
+			}
+			result = map[string]any{"configOptions": config()}
 		case "session/prompt":
 			if len(req.Params.Prompt) == 1 && req.Params.Prompt[0].Text == "/usage" {
 				f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "usage"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
@@ -123,6 +149,24 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	}
 	checks := 0
 	ctx := app.WithOperationCheck(context.Background(), func() error { checks++; return nil })
+	initial := httptest.NewRecorder()
+	s.sessionInfoRoute(initial, httptest.NewRequest(http.MethodGet, "/v1/sessions/fixture/info?parts=summary", nil), answer.ID)
+	var initialInfo contract.SessionInfoReply
+	if initial.Code != 200 || json.Unmarshal(initial.Body.Bytes(), &initialInfo) != nil || initialInfo.Info.Session.Model != "synthetic-flash" || initialInfo.Info.Session.Effort != "high" || !reflect.DeepEqual(initialInfo.Info.Efforts, []string{"low", "medium", "high"}) || len(initialInfo.Info.Models) != 2 || initialInfo.Info.Models[0].Name != "Synthetic Flash" {
+		t.Fatalf("initial native config=%s", initial.Body.String())
+	}
+	for _, command := range []string{"/effort low", "/model synthetic-pro"} {
+		if _, err := s.actions().Send(ctx, answer.ID, command); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.actions().Send(ctx, answer.ID, "/effort low"); err == nil {
+		t.Fatal("model-specific effort list not enforced")
+	}
+	writes, _ := os.ReadFile(filepath.Join(dir, "config-writes"))
+	if string(writes) != "thinking_level=low\nmodel=synthetic-pro\n" {
+		t.Fatalf("metadata writes=%q", writes)
+	}
 	if _, err := s.actions().Send(ctx, answer.ID, "synthetic HTTP input"); err != nil {
 		t.Fatal(err)
 	}
@@ -147,13 +191,16 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	if summaryResponse.Code != 200 || json.Unmarshal(summaryResponse.Body.Bytes(), &summary) != nil || len(summary.Info.Models) != 2 || summary.Info.Limits == nil || len(summary.Info.Limits.Windows) != 0 {
 		t.Fatalf("summary=%s", summaryResponse.Body.String())
 	}
+	if summary.Info.Session.Model != "synthetic-pro" || summary.Info.Session.Effort != "medium" || !reflect.DeepEqual(summary.Info.Efforts, []string{"medium", "high"}) {
+		t.Fatalf("summary native config=%s", summaryResponse.Body.String())
+	}
 	if _, err := os.Stat(filepath.Join(dir, "usage")); !os.IsNotExist(err) {
 		t.Fatal("summary queried provider quota")
 	}
 	infoResponse := httptest.NewRecorder()
 	s.sessionInfoRoute(infoResponse, httptest.NewRequest(http.MethodGet, "/v1/sessions/fixture/info", nil), answer.ID)
 	var info contract.SessionInfoReply
-	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-flash-high" || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-flash-low" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 1 || info.Info.Limits.Windows[0].UsedPercent != 38 {
+	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-pro" || info.Info.Session.Effort != "medium" || !reflect.DeepEqual(info.Info.Efforts, []string{"medium", "high"}) || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-pro" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 1 || info.Info.Limits.Windows[0].UsedPercent != 38 {
 		t.Fatalf("native facts missing or billing invented: %d %s", infoResponse.Code, infoResponse.Body.String())
 	}
 	readAt := info.Info.Limits.ReadAtMs

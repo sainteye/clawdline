@@ -358,8 +358,8 @@
         "cwd": { "type": "string" },
         "icon": { "$ref": "common.schema.json#/$defs/Icon" },
         "id": { "type": "string" },
-        "model": { "description": "The model explicitly named by the session record, Codex startup card, or an owned ACP session/new response. Absent without evidence.", "type": "string" },
-        "effort": { "description": "The reasoning effort explicitly named by the newest Codex turn context, or its startup card before a turn context names it. Absent when unknown.", "type": "string" },
+        "model": { "description": "The model explicitly named by the session record, Codex startup card, or owned ACP metadata. Structured ACP model configOptions provide the native base ID independently of thinking_level; legacy IDs are not split. Absent without evidence.", "type": "string" },
+        "effort": { "description": "The reasoning effort explicitly named by the session record or startup card, or the current native ACP thinking_level configOption. Never inferred from model ID suffixes. Absent when unknown.", "type": "string" },
         "namingAssistant": { "description": "The assistant selected in Settings for one-turn session naming. The confirmation shows it before spending that assistant's quota. `auto` asks Claude Code first and Codex only when Claude Code has no usage left or is not installed.", "type": "string", "enum": ["claude", "codex", "auto"] },
         "sessionId": { "type": "string" },
         "title": { "description": "The same label the session list shows.", "type": "string" }
@@ -426,6 +426,7 @@
       "required": ["models", "session"],
       "properties": {
         "context": { "$ref": "#/$defs/SessionInfoContext" },
+        "efforts": { "description": "Native offered thinking_level option values for this owned ACP session. May change with model selection. Absent when structured options are unavailable; no inferred effort control.", "type": "array", "items": { "type": "string" } },
         "limits": { "$ref": "#/$defs/SessionLimits" },
         "models": { "type": "array", "items": { "$ref": "#/$defs/SessionModel" } },
         "session": { "$ref": "#/$defs/SessionInfoSession" },

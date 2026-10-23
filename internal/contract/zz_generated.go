@@ -5618,7 +5618,12 @@ type SessionInfo struct {
 	// having nothing to show. Without it a project with a wedged poller and a project
 	// between runs are one blank cell.
 	DeployQuiet *ProjectDeployQuiet `json:"deployQuiet,omitempty"`
-	Limits      *SessionLimits      `json:"limits,omitempty"`
+
+	// Native offered thinking_level option values for this owned ACP session. May
+	// change with model selection. Absent when structured options are unavailable; no
+	// inferred effort control.
+	Efforts []string       `json:"efforts,omitempty"`
+	Limits  *SessionLimits `json:"limits,omitempty"`
 
 	// Where this project can be opened, the same rows GET /v1/sessions/{id}/links
 	// answers with (links.schema.json). Served from the same maintained projection, so
@@ -5675,14 +5680,17 @@ type SessionInfoSession struct {
 	Assistant Assistant `json:"assistant,omitempty"`
 	CWD       string    `json:"cwd,omitempty"`
 
-	// The reasoning effort explicitly named by the newest Codex turn context, or its
-	// startup card before a turn context names it. Absent when unknown.
+	// The reasoning effort explicitly named by the session record or startup card, or
+	// the current native ACP thinking_level configOption. Never inferred from model ID
+	// suffixes. Absent when unknown.
 	Effort string `json:"effort,omitempty"`
 	Icon   *Icon  `json:"icon,omitempty"`
 	ID     string `json:"id"`
 
-	// The model explicitly named by the session record, Codex startup card, or an
-	// owned ACP session/new response. Absent without evidence.
+	// The model explicitly named by the session record, Codex startup card, or owned
+	// ACP metadata. Structured ACP model configOptions provide the native base ID
+	// independently of thinking_level; legacy IDs are not split. Absent without
+	// evidence.
 	Model string `json:"model,omitempty"`
 
 	// The assistant selected in Settings for one-turn session naming. The confirmation

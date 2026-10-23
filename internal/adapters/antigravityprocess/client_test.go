@@ -90,7 +90,7 @@ func TestACPProcess(t *testing.T) {
 				tier = "paid"
 			}
 			result = map[string]any{"sessionId": "fake-session", "models": map[string]string{"currentModelId": "flash-high"}, "configOptions": []any{map[string]string{"id": "model", "currentValue": "flash"}}, "_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": tier, "name": "Antigravity Starter Quota"}}}}
-		case "session/set_model":
+		case "session/set_model", "session/set_config_option":
 			if mode == "metadata-stall" {
 				time.Sleep(time.Hour)
 			}
@@ -99,6 +99,9 @@ func TestACPProcess(t *testing.T) {
 				continue
 			}
 			result = map[string]any{}
+			if method == "session/set_config_option" {
+				result = map[string]any{"configOptions": []any{map[string]string{"id": "thinking_level", "type": "select", "currentValue": "low"}}}
+			}
 		case "session/prompt":
 			var params struct {
 				Prompt []struct {
@@ -164,6 +167,69 @@ func TestACPProcess(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+func TestConfigOptionUsesOneCheckedMetadataRPC(t *testing.T) {
+	c, dir := fake(t, "happy", nil)
+	if err := c.SetConfigOptionChecked(context.Background(), "thinking_level", "low", nil, nil); err == nil {
+		t.Fatal("unauthenticated config accepted")
+	}
+	ready(t, c)
+	checks, applied := 0, 0
+	if err := c.SetConfigOptionChecked(context.Background(), "thinking_level", "low", func() error { checks++; return nil }, func(raw json.RawMessage) error {
+		applied++
+		if !strings.Contains(string(raw), `"currentValue":"low"`) {
+			return errors.New("missing native result")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if checks != 1 || applied != 1 {
+		t.Fatal(checks, applied)
+	}
+	wire, err := os.ReadFile(filepath.Join(dir, "wire"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(wire)), "\n")
+	var last struct {
+		Method string            `json:"method"`
+		Params map[string]string `json:"params"`
+	}
+	if len(lines) != 4 || json.Unmarshal([]byte(lines[3]), &last) != nil || last.Method != "session/set_config_option" || !reflect.DeepEqual(last.Params, map[string]string{"sessionId": "fake-session", "configId": "thinking_level", "value": "low"}) {
+		t.Fatalf("wire=%s", wire)
+	}
+	denied := errors.New("revoked")
+	if err := c.SetConfigOptionChecked(context.Background(), "model", "synthetic", func() error { return denied }, nil); !errors.Is(err, denied) {
+		t.Fatal(err)
+	}
+	settings(t, dir, `{"useG1Credits":true,"auth":{"type":"oauth-personal"}}`)
+	requireError(t, c.SetConfigOptionChecked(context.Background(), "thinking_level", "high", nil, nil), "personal_settings_required", NotWritten)
+	if got := methods(t, dir); len(got) != 4 {
+		t.Fatal("refused config reached peer", got)
+	}
+}
+
+func TestConfigOptionFailuresDoNotApplyOrRetry(t *testing.T) {
+	for _, mode := range []string{"metadata-error", "metadata-stall"} {
+		t.Run(mode, func(t *testing.T) {
+			c, dir := fake(t, mode, nil)
+			ready(t, c)
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			applied := false
+			err := c.SetConfigOptionChecked(ctx, "thinking_level", "low", nil, func(json.RawMessage) error { applied = true; return nil })
+			code, delivery := "rpc_error", Acknowledged
+			if mode == "metadata-stall" {
+				code, delivery = "cancelled", Uncertain
+			}
+			requireError(t, err, code, delivery)
+			if applied || len(methods(t, dir)) != 4 {
+				t.Fatal("failed config applied or retried")
+			}
+		})
+	}
 }
 
 func TestMetadataCallsKeepUpdatesSeparateAndUseOneRPC(t *testing.T) {

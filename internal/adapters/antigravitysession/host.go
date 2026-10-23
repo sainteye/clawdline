@@ -37,22 +37,25 @@ type Host struct {
 }
 
 type conversation struct {
-	mu           sync.Mutex
-	client       *antigravityprocess.Client
-	row          session.Session
-	entries      []contract.TranscriptEntry
-	tools        map[string]int
-	revision     uint64
-	omitted      int
-	bytes        int
-	busy         bool
-	textIndex    int
-	writeGate    chan struct{}
-	model        string
-	models       []contract.SessionModel
-	quota        *contract.SessionLimits
-	contextKnown bool
-	context      antigravityacp.ContextUsage
+	mu               sync.Mutex
+	client           *antigravityprocess.Client
+	row              session.Session
+	entries          []contract.TranscriptEntry
+	tools            map[string]int
+	revision         uint64
+	omitted          int
+	bytes            int
+	busy             bool
+	textIndex        int
+	writeGate        chan struct{}
+	model            string
+	models           []contract.SessionModel
+	effort           string
+	efforts          []string
+	structuredConfig bool
+	quota            *contract.SessionLimits
+	contextKnown     bool
+	context          antigravityacp.ContextUsage
 }
 
 type Error struct {
@@ -111,23 +114,11 @@ func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 	if err != nil {
 		return session.Session{}, err
 	}
-	var metadata struct {
-		Models struct {
-			CurrentModelID  string `json:"currentModelId"`
-			AvailableModels []struct {
-				ModelID string `json:"modelId"`
-				Name    string `json:"name"`
-			} `json:"availableModels"`
-		} `json:"models"`
-	}
-	_ = json.Unmarshal(created, &metadata)
 	now := time.Now()
 	c.mu.Lock()
-	c.model = metadata.Models.CurrentModelID
-	for _, m := range metadata.Models.AvailableModels {
-		if m.ModelID != "" && !strings.ContainsAny(m.ModelID, " \t\r\n") {
-			c.models = append(c.models, contract.SessionModel{ID: m.ModelID, Name: m.Name, Command: m.ModelID})
-		}
+	if err := c.readMetadata(created, true); err != nil {
+		c.mu.Unlock()
+		return session.Session{}, err
 	}
 	c.row = session.Session{ID: "owned:acp:" + rand.Text(), Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
 	row := c.row
@@ -192,6 +183,9 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 	}
 	if text == "/model" || strings.HasPrefix(text, "/model ") {
 		return h.selectModel(ctx, c, strings.TrimPrefix(text, "/model "), before)
+	}
+	if text == "/effort" || strings.HasPrefix(text, "/effort ") {
+		return h.selectConfig(ctx, c, "thinking_level", strings.TrimPrefix(text, "/effort "), before)
 	}
 	h.mu.Lock()
 	if h.closed || h.ctx.Err() != nil {
@@ -392,6 +386,17 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 	if err != nil {
 		return err
 	}
+	if u.Kind == "config_option_update" {
+		var envelope struct {
+			Params struct {
+				Update json.RawMessage `json:"update"`
+			} `json:"params"`
+		}
+		if json.Unmarshal(frame, &envelope) != nil {
+			return refusal("invalid_config")
+		}
+		return c.readMetadata(envelope.Params.Update, false)
+	}
 	if u.Ignored {
 		return nil
 	}
@@ -499,6 +504,8 @@ func (h *Host) Stats() (sessions int, viewBytes int) {
 type Facts struct {
 	Model   string
 	Models  []contract.SessionModel
+	Effort  string
+	Efforts []string
 	Limits  *contract.SessionLimits
 	Context *antigravityacp.ContextUsage
 }
@@ -510,7 +517,7 @@ func (h *Host) Facts(s session.Session) (Facts, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	f := Facts{Model: c.model, Models: append([]contract.SessionModel{}, c.models...), Limits: quotaSnapshot(c.quota, time.Now())}
+	f := Facts{Model: c.model, Models: append([]contract.SessionModel{}, c.models...), Effort: c.effort, Efforts: append([]string(nil), c.efforts...), Limits: quotaSnapshot(c.quota, time.Now())}
 	if c.contextKnown {
 		reading := c.context
 		f.Context = &reading
