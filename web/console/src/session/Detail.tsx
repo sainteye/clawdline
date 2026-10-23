@@ -1,4 +1,4 @@
-import { assistantStateCurrent } from "./antigravity-ui.js"
+import { assistantStateCurrent, assistantProtocolOwned } from "./antigravity-ui.js"
 import { assistantFactsMachine, useAssistantFacts } from "./assistant-facts.js"
 import { catalogWord } from "../catalog.js"
 import type { Icon, ScanSource, SessionAgent, SessionRow, SessionShell, TaskRow } from "@clawdline/contract"
@@ -121,7 +121,7 @@ export function Detail({
   scanSources?: readonly ScanSource[]
 }) {
   const T = L.strings
-  const readiness = useAssistantFacts(assistantFactsMachine(row), row?.execution_generation, row?.source?.observed_at, row?.assistant === "antigravity" && assistantStateCurrent(row))
+  const readiness = useAssistantFacts(assistantFactsMachine(row), row?.execution_generation, row?.source?.observed_at, row?.assistant === "antigravity" && !assistantProtocolOwned(row) && assistantStateCurrent(row))
   const assistantFacts = readiness.assistants.find(facts => facts.id === row?.assistant)
   const [agentId, setAgentId] = useState<string | null>(null)
   const [savedComposerDraft, setSavedComposerDraft] = useState<{ target: InterventionTarget; text: string } | null>(null)
@@ -520,7 +520,7 @@ function Tools({
   const T = L.strings
   const steward = !!row && !!(row.machine_scope || row.coordinator)
   const actions = richSessionSwipeActions(row)
-  const protocolOwned = row?.backend === "owned" && row.identity === "protocol"
+  const protocolOwned = assistantProtocolOwned(row)
   const [open, setOpen] = useState(false)
   const [more, setMore] = useState(false)
   const [openingTerminal, setOpeningTerminal] = useState(false)

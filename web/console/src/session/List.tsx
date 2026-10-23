@@ -2,7 +2,6 @@ import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithRef } from "react"
 import type { SessionRow } from "@clawdline/contract"
-import { assistantLabel } from "./antigravity-ui.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { detailSessionName, projectedSessionIdentity, sessionCoordinatorBound, sessionMark } from "../brand-mark.js"
@@ -28,7 +27,7 @@ function RowIdentity({ title, icon, assistant, crown = false, bound = false }: {
   title: string; icon: SessionRow["icon"]; assistant?: SessionRow["assistant"]
   crown?: boolean; bound?: boolean
 }) {
-  const who = assistant === "antigravity" ? L.escapeHTML(assistantLabel(assistant)) : assistant ? L.whoHTML(assistant) : ""
+  const who = assistant ? L.whoHTML(assistant) : ""
   return <>
     {crown ? <span className="coordinator-mark" aria-hidden="true"><Mark icon={icon} cellPx={4} />
       <span className="clawdfather-crown" aria-hidden="true" /></span> : <Mark icon={icon} cellPx={4} />}

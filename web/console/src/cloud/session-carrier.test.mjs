@@ -366,6 +366,12 @@ test("a copied row lands in the list the relay's own row would have filled", asy
   await client._applySnapshot({ kind: "session", machine: "m", session: "s2" },
     { session: { id: "s2", label: "a row" }, at: 1 }, { seq: 40, ts: 1 }, true)
   assert.equal(client.sessionSnapshots.get("m\u0000s2").label, "a row")
+  await client._applySnapshot({ kind: "session", machine: "m", session: "s2" },
+    { session: { id: "s2", identity: "protocol", backend: "owned" }, at: 1 }, { seq: 41, ts: 1 }, true)
+  const native = client.sessionSnapshots.get("m\u0000s2")
+  assert.equal(native.sessionBinding, "protocol")
+  assert.deepEqual(native.identity, { machine: "m", session: "s2" })
+  assert.equal(native.backend, "owned")
 })
 
 test("fault injection: a read takes the carrier while this page's own socket is between connections", async () => {

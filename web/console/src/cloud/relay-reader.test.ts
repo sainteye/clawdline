@@ -2165,3 +2165,50 @@ test("a transcript generation refusal requests recovery without needing a diagno
   assert.deepEqual(recoveries, ["mac-a/s1"])
   assert.deepEqual(client.pinnedReads, [], "the old execution is never read as a substitute")
 })
+
+
+test("a pinned native Cloud conversation retains its binding and admits the current execution", async () => {
+  // @ts-expect-error -- Node tests resolve source extensions.
+  const { assistantStateCurrent, assistantProtocolOwned, assistantComposeAdmits } = await import("../session/antigravity-ui.ts")
+  const client = new FakeClient()
+  const execution = "a".repeat(32), now = 1_000_000
+  const destination = { machineID: "mac-a", sessionID: "owned:acp:synthetic", executionGeneration: execution }
+  // Current machines omit owned/provider in ss/, but their authorized list names the native binding.
+  const projected = { destination, state: "idle", freshness: "current" as const, observedAt: now - 30_000 }
+  const reader = new RelayReader("mac-a", { classicStatus: true, now: () => now,
+    machineProjection: async () => ({ kind: "ready", complete: true, observedAt: now,
+      snapshotGeneration: execution, rows: [projected] }),
+    listPresentations: async () => [{ destination, title: "Native conversation", assistant: "antigravity",
+      status: { state: "idle", identity: "protocol", sessionId: "native-conversation", work_state: "ready" }, projection: projected }],
+  })
+  reader.attach(client)
+  const row = (await reader.snapshot()).sessions[0]
+  assert.equal(row.backend, "owned")
+  assert.equal(assistantProtocolOwned(row), true)
+  assert.equal(assistantComposeAdmits(row.assistant, undefined, row.state, false, assistantProtocolOwned(row)), true)
+  assert.equal(assistantComposeAdmits(row.assistant, undefined, "working", false, assistantProtocolOwned(row)), false)
+  assert.equal(assistantStateCurrent(row, now), false, "native text input does not require a terminal observation")
+  assert.deepEqual(documentIdentityForSession([row], destination.sessionID, "cloud"),
+    { machine: "mac-a", session: destination.sessionID })
+})
+
+
+test("a native-looking title or another execution cannot supply a Cloud protocol binding", async () => {
+  // @ts-expect-error -- Node tests resolve source extensions.
+  const { assistantProtocolOwned } = await import("../session/antigravity-ui.ts")
+  for (const variant of ["missing_binding", "different_execution"] as const) {
+    const client = new FakeClient(), execution = "a".repeat(32), now = 1_000_000
+    const destination = { machineID: "mac-a", sessionID: "owned:acp:synthetic", executionGeneration: execution }
+    const projected = { destination, state: "idle", freshness: "current" as const, observedAt: now }
+    const reader = new RelayReader("mac-a", { classicStatus: true, now: () => now,
+      machineProjection: async () => ({ kind: "ready", complete: true, observedAt: now,
+        snapshotGeneration: execution, rows: [projected] }),
+      listPresentations: async () => [{ destination: { ...destination,
+        executionGeneration: variant === "different_execution" ? "b".repeat(32) : execution },
+        title: "Antigravity conversation", assistant: "antigravity", status: { state: "idle",
+          identity: variant === "missing_binding" ? undefined : "protocol", sessionId: "native-conversation" }, projection: projected }],
+    })
+    reader.attach(client)
+    assert.equal(assistantProtocolOwned((await reader.snapshot()).sessions[0]), false, variant)
+  }
+})

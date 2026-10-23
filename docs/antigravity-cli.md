@@ -477,10 +477,9 @@ remains a failed run; the corrected exact candidate needs a fresh green gate.
 
 ### Gemini preview display and readiness
 
-The Console calls this assistant **Gemini** and uses the official Antigravity
-favicon silhouette from `https://antigravity.google/favicon.svg`, bundled inline
-with the other assistant marks. This follows the requested preview branding;
-the integration is Antigravity CLI, while Gemini identifies its model family.
+The Console calls this assistant **Gemini** and bundles the official four-color
+Gemini favicon from `https://gemini.google.com/`. The assistant picker, Session
+list badge, transcript and information views use the same local asset.
 The transport identifier remains `antigravity`; changing a product label does
 not migrate conversation identities or change the underlying official CLI.
 
@@ -497,3 +496,19 @@ and continuing Session snapshots. The old bundle remains unable to edit; the
 fixed bundle becomes editable and sends once to the selected Session. Cloud
 Project reads report a content-free elapsed time as `cloud.places.read`, so
 chooser delays can be measured separately from provider startup.
+
+
+### Native bindings across Cloud presentation
+
+Cloud rows carry two distinct identities: the relay machine/Session routing pair
+and the native conversation binding. Keep the native binding as `sessionBinding`
+when constructing the routing pair and when joining an authenticated pinned
+presentation to its exact execution. A `protocol` binding from that execution's
+Antigravity presentation identifies the owned backend even on machines whose
+older status projection omits it. A title or a Session ID prefix grants nothing.
+
+An owned native conversation uses its idle/busy state for input. It does not
+fetch the assistant inventory or require a terminal observation before composing.
+Text goes through the existing send route; the server still checks the exact
+execution, owned process, account and free mode immediately before writing.
+Terminal-backed integrations retain their separate screen and menu observations.

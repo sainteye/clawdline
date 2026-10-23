@@ -1595,7 +1595,7 @@ export class CloudClient {
         if ((this.sessionSequenceByKey.get(key) || 0) !== (mark || 0)) return false;
         var knownInventory = this.sessionInventoryByMachine.get(identity.machine);
         if (knownInventory && !knownInventory.ids.has(key)) return false;
-        this.sessionSnapshots.set(key, Object.assign({}, row, {
+        this.sessionSnapshots.set(key, Object.assign({}, row, typeof row.identity === "string" ? { sessionBinding: row.identity } : {}, {
             id: row.id, machine: identity.machine, session: identity.session, identity: identity
         }));
         this.sessionKeysHeard.add(key);
@@ -1661,7 +1661,7 @@ export class CloudClient {
                 this.sessionSnapshots.delete(key);
                 this.sessionSequenceByKey.set(key, envelope.seq);
             } else if (row && typeof row === "object" && !Array.isArray(row)) {
-                this.sessionSnapshots.set(key, Object.assign({}, row, {
+                this.sessionSnapshots.set(key, Object.assign({}, row, typeof row.identity === "string" ? { sessionBinding: row.identity } : {}, {
                     id: row.id || identity.session,
                     machine: identity.machine,
                     session: identity.session,

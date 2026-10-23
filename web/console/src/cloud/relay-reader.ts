@@ -44,6 +44,8 @@ export type CloudRow = Record<string, unknown> & {
   machine?: string
   session?: string
   identity?: CloudIdentity
+  /** Native conversation binding, separate from the relay routing pair. */
+  sessionBinding?: SessionRow["identity"]
 }
 
 /** `CloudClient.sessions()`'s answer (`_sessionResponse`). */
@@ -1681,17 +1683,18 @@ export class RelayReader {
         row.destination.executionGeneration)
       const status = presentation?.status?.state === row.state ? presentation.status : undefined
       const { identity: _displayIdentity, ...displayStatus } = status ?? {}
-      return { ...displayStatus, id: row.destination.sessionID, session: row.destination.sessionID,
+      return { ...displayStatus, sessionBinding: presentation?.status?.identity,
+        id: row.destination.sessionID, session: row.destination.sessionID,
         // The signed projection and this presentation name the same execution.
         // Its conversation id stays valid while their activity states cross in
         // flight; dropping it here makes the Session work fold say no message
         // was sent and suppresses the Board read until a later list pass.
         ...(presentation?.status?.sessionId ? { sessionId: presentation.status.sessionId } : {}),
-        machine: this.machine, execution_generation: row.destination.executionGeneration,
+        machine: this.machine, identity: { machine: this.machine, session: row.destination.sessionID }, execution_generation: row.destination.executionGeneration,
         parent_session_id: row.parentSessionID,
         machine_scope: row.machineScope === true, coordinator_bound: row.coordinatorBound === true,
         label: presentation?.title ?? row.destination.sessionID, cwd: presentation?.cwd, project_key: presentation?.projectKey,
-        icon: presentation?.icon, assistant: row.assistant ?? presentation?.assistant, backend: row.backend, state: row.state,
+        icon: presentation?.icon, assistant: row.assistant ?? presentation?.assistant, backend: row.backend ?? (presentation?.status?.identity === "protocol" && presentation.assistant === "antigravity" ? "owned" : undefined), state: row.state,
         source: { freshness: row.freshness === "current" ? "current" : "unverified",
           observed_at: row.observedAt / 1000 } }
     })
@@ -1882,13 +1885,14 @@ export class RelayReader {
             presentation.projection.snapshotGeneration === statusMarker?.payload?.snapshot_generation)
         if (hasInventory && !signedRow && !pinnedRow) continue
         const { identity: _displayIdentity, ...displayStatus } = presentation.status ?? {}
-        machineRows.push({ ...displayStatus, id: target.sessionID, session: target.sessionID,
-          machine: this.machine, execution_generation: target.executionGeneration, label: presentation.title,
+        machineRows.push({ ...displayStatus, sessionBinding: presentation.status?.identity, id: target.sessionID, session: target.sessionID,
+          machine: this.machine, identity: { machine: this.machine, session: target.sessionID }, execution_generation: target.executionGeneration, label: presentation.title,
           parent_session_id: signedRow && typeof data?.parent_session_id === "string"
             ? data.parent_session_id : presentation.projection?.parentSessionID,
           cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon,
           assistant: signedRow ? data?.assistant ?? presentation.assistant : presentation.projection?.assistant ?? presentation.assistant,
-          backend: signedRow ? data?.backend : presentation.projection?.backend,
+          backend: (signedRow ? data?.backend : presentation.projection?.backend) ??
+            (presentation.status?.identity === "protocol" && presentation.assistant === "antigravity" ? "owned" : undefined),
           state: signedRow ? data?.state : presentation.status?.state ?? "unknown",
           source: signedRow ? data?.source : { freshness: presentation.projection?.freshness === "current" ? "current" : "unverified",
             observed_at: (presentation.projection?.observedAt ?? this.now()) / 1000 } })
@@ -1914,11 +1918,12 @@ export class RelayReader {
         // signed ss/ pass. The old Session pane still needs a row to open its
         // transcript; a missing rich s/ replay must not hide that answer.
         const { identity: _displayIdentity, ...displayStatus } = presentation.status ?? {}
-        machineRows.push({ ...displayStatus, id: target.sessionID, session: target.sessionID,
-          machine: this.machine, execution_generation: target.executionGeneration,
+        machineRows.push({ ...displayStatus, sessionBinding: presentation.status?.identity, id: target.sessionID, session: target.sessionID,
+          machine: this.machine, identity: { machine: this.machine, session: target.sessionID }, execution_generation: target.executionGeneration,
           parent_session_id: typeof data.parent_session_id === "string" ? data.parent_session_id : undefined,
           label: presentation.title, cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon,
-          assistant: data.assistant, backend: data.backend, state: data.state, source: data.source })
+          assistant: data.assistant ?? presentation.assistant, backend: data.backend ??
+            (presentation.status?.identity === "protocol" && presentation.assistant === "antigravity" ? "owned" : undefined), state: data.state, source: data.source })
       }
     }
     this.askForOpenedRow(client, machineRows)

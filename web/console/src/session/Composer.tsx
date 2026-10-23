@@ -2,7 +2,7 @@ import type { AssistantFactsReading } from "./assistant-facts.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { ReactNode, RefObject } from "react"
 import type { AssistantSkill, SessionRow } from "@clawdline/contract"
-import { antigravitySlashDraft, assistantComposeAdmits, assistantLabel, assistantUnavailable, assistantStateCurrent, type AssistantFacts } from "./antigravity-ui.js"
+import { antigravitySlashDraft, assistantComposeAdmits, assistantProtocolOwned, assistantLabel, assistantUnavailable, assistantStateCurrent, type AssistantFacts } from "./antigravity-ui.js"
 import { catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client, followsRelay } from "../client.js"
@@ -172,8 +172,9 @@ export function Composer({
   const machine = remote?.machineID ?? (row ? L.machineFor(row).id : "")
   const blockedCode = !remote && blocked?.machine === machine ? blocked.code : ""
   const write = remote ? remote.canSend : !blockedCode
+  const protocolOwned = !remote && assistantProtocolOwned(row)
   const providerOn = assistantComposeAdmits(remote?.assistant ?? row?.assistant, remote?.assistantFacts ?? assistantFacts,
-    remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu)
+    remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu, protocolOwned)
   const on = (remote ? remote.canSend : write && !!row) && providerOn
   // The picture listeners are bound once, and ask what is open when they fire.
   const open = useRef({ on })
@@ -500,7 +501,7 @@ export function Composer({
     // A picture still shrinking is part of this message and has not arrived
     // yet; Return comes through here as well as the button.
     if (inFlight.current || Shots.busy()) return
-    if (!remote && row?.assistant === "antigravity" && !assistantStateCurrent(row)) return
+    if (!remote && row?.assistant === "antigravity" && !protocolOwned && !assistantStateCurrent(row)) return
     // With the menu up, Return and the button choose the highlighted skill.
     if (acceptSkill()) return
     const said = rawText().trim()
@@ -567,7 +568,7 @@ export function Composer({
 
   const providerReason = assistantReadiness && assistantReadiness !== "ready" ? assistantReadiness
     : assistantUnavailable(remote?.assistantFacts ?? assistantFacts, "send")
-  const providerWords = providerReason === "loading" ? "" : providerReason ? catalogWord("antigravity", providerReason).replace("{assistant}", assistantLabel(remote?.assistant ?? row?.assistant))
+  const providerWords = protocolOwned || providerReason === "loading" ? "" : providerReason ? catalogWord("antigravity", providerReason).replace("{assistant}", assistantLabel(remote?.assistant ?? row?.assistant))
     : catalogWord("antigravity", "sendUnavailable")
   const why: ReactNode = failure || (!providerOn ? providerWords : "") || (!remote && blockedCode
     ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)

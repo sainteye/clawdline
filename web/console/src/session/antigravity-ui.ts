@@ -43,8 +43,10 @@ export function antigravitySlashDraft(assistant: string | undefined, text: strin
 
 /** Session hosts supply machine readiness separately from permission to write to that machine. */
 export function assistantComposeAdmits(assistant: string | undefined, facts: AssistantFacts | undefined,
-  state: string | undefined, hasMenu: boolean): boolean {
+  state: string | undefined, hasMenu: boolean, protocolOwned = false): boolean {
   if (assistant !== "antigravity") return true
+  // Owned writes are checked at the server; do not preflight the account again in the view.
+  if (protocolOwned) return state === "idle" && !hasMenu
   return facts?.id === assistant && assistantAdmits(facts, "send") && state === "idle" && !hasMenu
 }
 
@@ -58,7 +60,13 @@ export function assistantMenuAdmits(row: SessionRow | null, facts?: AssistantFac
 
 /** Same bound as capacity antigravity.state_age_seconds and the native observation owner. */
 export const ANTIGRAVITY_STATE_FRESH_MS = 15_000
+export function assistantProtocolOwned(row: SessionRow | null): boolean {
+  const binding = (row as (SessionRow & { sessionBinding?: SessionRow["identity"] }) | null)?.sessionBinding ?? row?.identity
+  return row?.backend === "owned" && binding === "protocol"
+}
 export function assistantStateCurrent(row: SessionRow | null, now = Date.now()): boolean {
-  return (row?.identity === "launch_hook" || row?.identity === "protocol" && row.backend === "owned") && !!row.sessionId && !!row.execution_generation && row.source?.freshness === "current" &&
+  const cloud = row as (SessionRow & { machine?: string; sessionBinding?: SessionRow["identity"] }) | null
+  const binding = cloud?.sessionBinding ?? row?.identity
+  return (binding === "launch_hook" || assistantProtocolOwned(row)) && !!row?.sessionId && !!row.execution_generation && row.source?.freshness === "current" &&
     Number.isFinite(row.source.observed_at) && Math.abs(now - row.source.observed_at * 1000) <= ANTIGRAVITY_STATE_FRESH_MS
 }
