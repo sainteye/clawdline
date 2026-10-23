@@ -82,7 +82,7 @@ export function unifyColumns(plan: ProjectUnifyPlan): SeenColumn[] {
         : skill.copy ? catalogWord("literal", "a24619afa16e") : ""
       rows.push({ key: `skill:${skill.name}`, kind: "skill", name: skill.name, now, after, mark: markOf(now, after), note })
     }
-    return { assistant, title: assistant === "claude" ? "Claude" : assistant === "codex" ? "Codex" : "Antigravity", rows, unreported }
+    return { assistant, title: assistant === "claude" ? "Claude" : assistant === "codex" ? "Codex" : "Gemini", rows, unreported }
   })
 }
 

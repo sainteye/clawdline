@@ -310,9 +310,9 @@ function admitted(operation: AssistantOperation): boolean {
 function assistantStatus(operation: AssistantOperation): string {
   const selected = assistants.find(a => a.id === with_)
   const reason = assistantUnavailable(selected, operation)
-  if (!selected || (!reason && selected.id !== "antigravity")) return ""
-  const name = (selected.label || assistantLabel(selected.id)) + (selected.version ? " " + selected.version : "")
-  const status = !reason && selected.id === "antigravity" && selected.authState !== "ready" ? "bootstrap" : reason || "ready"
+  if (!selected || !reason) return ""
+  const name = (selected.id === "antigravity" ? assistantLabel(selected.id) : selected.label || assistantLabel(selected.id)) + (selected.version ? " " + selected.version : "")
+  const status = reason
   return catalogWord("antigravity", status).replace("{assistant}", name)
 }
 
@@ -347,9 +347,9 @@ function drawWith(): void {
     const chip = document.createElement("button")
     chip.type = "button"
     chip.className = "chip" + (a.id === with_ ? " on" : "")
-    chip.textContent = a.label || a.id
+    chip.innerHTML = L.assistantLogoHTML(a.id) + '<span>' + L.escapeHTML(a.id === "antigravity" ? assistantLabel(a.id) : a.label || a.id) + '</span>'
     const reason = assistantUnavailable(a, "start")
-    if (reason) chip.title = catalogWord("antigravity", reason).replace("{assistant}", a.label || assistantLabel(a.id))
+    if (reason) chip.title = catalogWord("antigravity", reason).replace("{assistant}", (a.id === "antigravity" ? assistantLabel(a.id) : a.label || assistantLabel(a.id)))
     chip.disabled = !!pressing || !!wait
     chip.setAttribute("aria-pressed", a.id === with_ ? "true" : "false")
     chip.onclick = () => {

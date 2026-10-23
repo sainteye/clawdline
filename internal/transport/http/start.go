@@ -428,12 +428,12 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 	}
 	if assistant == projects.AssistantAntigravity {
 		if model != "" || persona != "" {
-			writePlaceRefusal(w, http.StatusConflict, "provider_operation_unsupported", "The personal ACP preview currently uses its native default model and no role.", "Antigravity")
+			writePlaceRefusal(w, http.StatusConflict, "provider_operation_unsupported", "The personal ACP preview currently uses its native default model and no role.", "Gemini")
 			return
 		}
 		made, err := (ownedAntigravityTerminal{s}).Open(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label})
 		if err != nil {
-			writePlaceRefusal(w, http.StatusConflict, "provider_start_failed", err.Error(), "Antigravity")
+			writePlaceRefusal(w, http.StatusConflict, "provider_start_failed", err.Error(), "Gemini")
 			return
 		}
 		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})

@@ -473,3 +473,26 @@ drain, under the same request deadline and frame limit. The new regression and
 the observation/tool-policy ordering tests passed 25 repetitions after the fix.
 No authority, grant, timeout or capacity value changed. The earlier full gate
 remains a failed run; the corrected exact candidate needs a fresh green gate.
+
+
+### Gemini preview display and readiness
+
+The Console calls this assistant **Gemini** and bundles the official four-color
+Gemini favicon used by `https://gemini.google.com/` (retrieved 2026-10-23 from
+`https://www.gstatic.com/lamda/images/gemini_sparkle_4g_512_lt_f94943af3be039176192d.png`).
+The transport identifier remains `antigravity`; changing a product label does
+not migrate conversation identities or change the underlying official CLI.
+
+An admitted new Session has no introductory sign-in notice, and its composer
+does not display a routine availability-check sentence. A specific sign-in
+refusal still has its own recovery guidance. Current observations of the same
+execution no longer cancel an outstanding readiness read: the request belongs
+to the selected machine, execution and transport. New observations refresh
+expired facts without starting concurrent reads; switching executions, losing
+connectivity or hiding the page still invalidates the old authority.
+
+The changing-observation browser regression uses a delayed capability response
+and continuing Session snapshots. The old bundle remains unable to edit; the
+fixed bundle becomes editable and sends once to the selected Session. Cloud
+Project reads report a content-free elapsed time as `cloud.places.read`, so
+chooser delays can be measured separately from provider startup.

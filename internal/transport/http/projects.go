@@ -154,7 +154,7 @@ func antigravityStartAssistant(info antigravity.Installation) contract.StartAssi
 	if info.InstalledKnown {
 		installed = &info.Installed
 	}
-	return contract.StartAssistant{ID: projects.AssistantAntigravity, Label: "Antigravity",
+	return contract.StartAssistant{ID: projects.AssistantAntigravity, Label: "Gemini",
 		Availability: contract.StartAvailabilityUnknown, Installed: installed,
 		Version: info.Version, AuthState: contract.StartAuthState(info.AuthState),
 		IntegrationState: state, Capabilities: &contract.StartCapabilities{}}

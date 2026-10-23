@@ -567,7 +567,7 @@ export function Composer({
 
   const providerReason = assistantReadiness && assistantReadiness !== "ready" ? assistantReadiness
     : assistantUnavailable(remote?.assistantFacts ?? assistantFacts, "send")
-  const providerWords = providerReason ? catalogWord("antigravity", providerReason).replace("{assistant}", assistantLabel(remote?.assistant ?? row?.assistant))
+  const providerWords = providerReason === "loading" ? "" : providerReason ? catalogWord("antigravity", providerReason).replace("{assistant}", assistantLabel(remote?.assistant ?? row?.assistant))
     : catalogWord("antigravity", "sendUnavailable")
   const why: ReactNode = failure || (!providerOn ? providerWords : "") || (!remote && blockedCode
     ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)

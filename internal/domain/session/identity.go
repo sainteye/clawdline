@@ -84,6 +84,9 @@ func Coordinate(s Session) string {
 		where = s.ID
 	}
 	name := strings.ToUpper(assistant[:1]) + assistant[1:]
+	if s.Assistant == AssistantAntigravity {
+		name = "Gemini"
+	}
 	if where == "" {
 		return name
 	}

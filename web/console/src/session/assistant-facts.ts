@@ -55,28 +55,43 @@ export function assistantFactsMachine(row: SessionRow | null): string {
 /** Refresh on the existing inventory observation, execution, transport, or visibility event; no poll. */
 export function useAssistantFacts(machine = "", execution = "", observedAt = 0, enabled = true): AssistantFactsReading {
   const transport = useSyncExternalStore(subscribe, () => transportGeneration)
-  const key = JSON.stringify([machine, execution, transport, observedAt, enabled])
+  // Inventory observations refresh the same execution; they do not replace its in-flight read.
+  const key = JSON.stringify([machine, execution, transport, enabled])
   const [held, setHeld] = useState<{ key: string; reading: AssistantFactsReading } | null>(null)
   const latest = useRef(key); latest.current = key
+  const observation = useRef(observedAt); observation.current = observedAt
+  const refresh = useRef<(() => void) | null>(null)
+  const validUntil = useRef(0)
   useEffect(() => {
     if (!enabled) return
     const owner = new AssistantFactsRequest()
     let expiry: ReturnType<typeof setTimeout> | undefined
+    let pending = false
     const read = () => {
+      if (pending) return
+      pending = true
       clearTimeout(expiry)
       void owner.read(machine, globalThis.fetch.bind(globalThis), reading => {
         if (latest.current !== key) return
         setHeld({ key, reading })
-        if (reading.kind === "ready") expiry = setTimeout(() => setHeld({ key, reading: empty("stale") }), Math.max(0, Math.min(reading.expiresAt ?? Date.now(), observedAt ? observedAt * 1000 + ANTIGRAVITY_STATE_FRESH_MS : Infinity) - Date.now()))
-      })
+        if (reading.kind === "ready") {
+          validUntil.current = Math.min(reading.expiresAt ?? Date.now(), observation.current ? observation.current * 1000 + ANTIGRAVITY_STATE_FRESH_MS : Infinity)
+          expiry = setTimeout(() => setHeld({ key, reading: empty("stale") }), Math.max(0, validUntil.current - Date.now()))
+        }
+      }).finally(() => { pending = false })
     }
-    const offline = () => { owner.cancel(); clearTimeout(expiry); setHeld({ key, reading: empty("error") }) }
+    refresh.current = read
+    validUntil.current = 0
+    const offline = () => { owner.cancel(); clearTimeout(expiry); validUntil.current = 0; setHeld({ key, reading: empty("error") }) }
     const visible = () => { if (document.visibilityState === "visible") read(); else offline() }
     read()
     window.addEventListener("offline", offline); window.addEventListener("online", read)
     document.addEventListener("visibilitychange", visible)
-    return () => { owner.cancel(); clearTimeout(expiry); window.removeEventListener("offline", offline)
+    return () => { refresh.current = null; owner.cancel(); clearTimeout(expiry); window.removeEventListener("offline", offline)
       window.removeEventListener("online", read); document.removeEventListener("visibilitychange", visible) }
   }, [key])
+  useEffect(() => {
+    if (enabled && observedAt && Date.now() >= validUntil.current) refresh.current?.()
+  }, [key, observedAt, enabled])
   return enabled && held?.key === key ? held.reading : empty("loading")
 }

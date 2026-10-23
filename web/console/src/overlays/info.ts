@@ -235,7 +235,7 @@ function smartTitleButton(disabled: boolean): string {
 function namingAssistantName(assistant: string | undefined): string {
   if (assistant === "claude") return "Claude Code"
   if (assistant === "codex") return "Codex"
-  if (assistant === "antigravity") return "Antigravity"
+  if (assistant === "antigravity") return "Gemini"
   // A turn under `auto` that ran and failed was Claude Code's: Codex is only
   // asked when Claude Code could not answer at all.
   if (assistant === "auto") return "Claude Code"

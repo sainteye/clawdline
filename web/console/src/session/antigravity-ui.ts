@@ -10,7 +10,7 @@ export function isAssistant(value: unknown): value is Assistant {
 }
 
 export function assistantLabel(value: string | undefined): string {
-  return value === "claude" ? "Claude Code" : value === "codex" ? "Codex" : value === "antigravity" ? "Antigravity" : "AI"
+  return value === "claude" ? "Claude Code" : value === "codex" ? "Codex" : value === "antigravity" ? "Gemini" : "AI"
 }
 
 export function assistantUnavailable(facts: AssistantFacts | null | undefined, operation: AssistantOperation): AssistantUnavailable | null {

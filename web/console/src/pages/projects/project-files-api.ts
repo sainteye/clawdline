@@ -115,5 +115,5 @@ function refusal(data: any, write: boolean): ProjectFileError {
 // Old inventories report a single assistant. Do not infer additional providers
 // from a path when the machine did not report them.
 export function fileAssistants(file: ProjectFile): string {
-  return (file.assistants ?? [file.assistant]).map(id => id === "claude" ? "Claude" : id === "codex" ? "Codex" : "Antigravity").join(" · ")
+  return (file.assistants ?? [file.assistant]).map(id => id === "claude" ? "Claude" : id === "codex" ? "Codex" : "Gemini").join(" · ")
 }

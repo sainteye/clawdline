@@ -323,7 +323,7 @@ export const NEW_SESSION_ASSISTANTS: readonly Assistant[] = ["codex", "claude", 
 
 /** Which company's assistant a Session runs, as the person reads it. */
 export function assistantName(assistant: SessionRow["assistant"]): string {
-  return assistant === "claude" ? "Claude Code" : assistant === "codex" ? "Codex" : assistant === "antigravity" ? "Antigravity" : catalogWord("literal", "1d6ea8ca2af5")
+  return assistant === "claude" ? "Claude Code" : assistant === "codex" ? "Codex" : assistant === "antigravity" ? "Gemini" : catalogWord("literal", "1d6ea8ca2af5")
 }
 
 const LAST_ASSISTANT = "clawdline.work.new-session-assistant"

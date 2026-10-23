@@ -33,7 +33,7 @@ test("unfinished counts include open Board items, their pending steps, and direc
 test("assignment choices name which company's assistant each Session runs", () => {
   assert.equal(assistantName("claude"), "Claude Code")
   assert.equal(assistantName("codex"), "Codex")
-  assert.equal(assistantName("antigravity"), "Antigravity")
+  assert.equal(assistantName("antigravity"), "Gemini")
   assert.equal(assistantName(undefined), "助理不明")
 })
 

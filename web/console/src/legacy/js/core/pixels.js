@@ -14,14 +14,13 @@ function dpr() { return Math.max(1, Math.min(3, window.devicePixelRatio || 1)); 
 // Project images share one bounded renderer across legacy and React views.
 export { drawIcon, drawIconOnce } from "./project-icon.js";
 
-/* Provider product marks. Kept inline so the list and transcript
-   never wait on another request, and so the marks inherit their exact row-sized geometry. */
+/* Provider product marks share the existing row-sized geometry. Gemini uses
+   the bundled official favicon; no provider request is made by the page. */
 export var ASSISTANT_LOGOS = {
-    // Official favicon silhouette, https://antigravity.google/favicon.svg (2026-10-22).
+    // Gemini's official web favicon, https://gemini.google.com/ (2026-10-23).
     antigravity: {
-        colour: "#3186FF",
-        viewBox: "12 17 88 80",
-        path: "M89.6992 93.695C94.3659 97.195 101.366 94.8617 94.9492 88.445C75.6992 69.7783 79.7825 18.445 55.8659 18.445C31.9492 18.445 36.0325 69.7783 16.7825 88.445C9.78251 95.445 17.3658 97.195 22.0325 93.695C40.1159 81.445 38.9492 59.8617 55.8659 59.8617C72.7825 59.8617 71.6159 81.445 89.6992 93.695Z"
+        viewBox: "0 0 512 512",
+        image: "/icons/gemini.png"
     },
     claude: {
         colour: "#D97757",
@@ -37,11 +36,12 @@ export function assistantLogo(kind) {
     var logo = ASSISTANT_LOGOS[kind];
     if (!logo) return "";
     return '<svg class="assistant-logo" viewBox="' + (logo.viewBox || "0 0 24 24") + '" aria-hidden="true" focusable="false">' +
-        '<path fill="' + logo.colour + '" fill-rule="evenodd" d="' + logo.path + '"></path></svg>';
+        (logo.image ? '<image href="' + logo.image + '" width="512" height="512"/>' :
+        '<path fill="' + logo.colour + '" fill-rule="evenodd" d="' + logo.path + '"></path>') + '</svg>';
 }
 
 export function assistantName(kind) {
-    return kind === "claude" ? "claude" : kind === "codex" ? "codex" : kind === "antigravity" ? "Antigravity" : "assistant";
+    return kind === "claude" ? "claude" : kind === "codex" ? "codex" : kind === "antigravity" ? "Gemini" : "assistant";
 }
 
 /**

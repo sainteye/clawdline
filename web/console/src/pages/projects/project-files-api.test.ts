@@ -63,6 +63,6 @@ test("a plan read that is refused carries the machine's code, never an empty pla
 test("shared file applicability uses the machine report and preserves old inventories", async () => {
  const old: any = {assistant: "codex", location: "AGENTS.md"}
  assert.equal(fileAssistants(old), "Codex")
- assert.equal(fileAssistants({...old, assistants: ["codex", "antigravity"]}), "Codex · Antigravity")
- assert.equal(fileAssistants({assistant: "antigravity"} as any), "Antigravity")
+ assert.equal(fileAssistants({...old, assistants: ["codex", "antigravity"]}), "Codex · Gemini")
+ assert.equal(fileAssistants({assistant: "antigravity"} as any), "Gemini")
 })

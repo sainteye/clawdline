@@ -2179,12 +2179,12 @@ export class RelayReader {
       mark("ask_started")
       const answer = await abandonable(asked, signal, word)
       mark("answer_observed")
-      if (word === "personas") {
+      if (word === "personas" || word === "places") {
         try {
           const log = (client as { viewerEvents?: { record?(event: string, data: Record<string, unknown>): unknown } }).viewerEvents
           const personas = (answer as { personas?: unknown } | null)?.personas
-          log?.record?.("cloud.personas.read", { machine,
-            count: Array.isArray(personas) ? personas.length : null,
+          log?.record?.(word === "personas" ? "cloud.personas.read" : "cloud.places.read", { machine,
+            count: word === "personas" ? (Array.isArray(personas) ? personas.length : null) : undefined,
             ms: Math.max(0, Math.round(this.now() - started)) })
         } catch { /* diagnostics cannot fail the catalog read */ }
       }

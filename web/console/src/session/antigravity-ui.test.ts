@@ -61,7 +61,7 @@ test("old daemons preserve original provider behavior without inventing a third-
   assert.equal(assistantAdmits({ id: "codex", capabilities: { ...active.capabilities!, start: false } }, "start"), false)
   assert.equal(isAssistant("antigravity"), true)
   assert.equal(isAssistant("gemini"), false)
-  assert.equal(assistantLabel("antigravity"), "Antigravity")
+  assert.equal(assistantLabel("antigravity"), "Gemini")
 })
 
 test("Antigravity slash commands stay drafts while ordinary prompts and other providers retain their behavior", () => {
