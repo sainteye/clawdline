@@ -2212,3 +2212,28 @@ test("a native-looking title or another execution cannot supply a Cloud protocol
     assert.equal(assistantProtocolOwned((await reader.snapshot()).sessions[0]), false, variant)
   }
 })
+
+
+test("a native reply is read after its user echo without waiting for terminal activity", async () => {
+  const client = new FakeClient(), clock = { t: 1_000_000 }
+  client.rows = [row("mac-a", "s1", { assistant: "antigravity", backend: "owned", sessionBinding: "protocol" })]
+  let revision = 0, reads = 0
+  client.transcript = async () => {
+    reads++
+    return { id: "s1", signature: "acp:synthetic:" + revision, evidence: "structured", entries:
+      revision === 0 ? [] : revision === 1 ? [{ role: "user", text: "hello" }] :
+        [{ role: "user", text: "hello" }, { role: "assistant", text: "reply" }] } as any
+  }
+  const r = reader(client, clock)
+  await r.transcript("s1")
+  r.wrote("s1", "done")
+  revision = 1
+  await r.transcript("s1")
+  revision = 2
+  clock.t += 4_001
+  const next = await r.transcript("s1")
+  assert.equal(next.page.entries.at(-1)?.text, "reply")
+  assert.equal(reads, 3)
+  await r.transcript("s1")
+  assert.equal(reads, 3, "unchanged redraws share the existing short read window")
+})

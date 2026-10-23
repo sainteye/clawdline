@@ -512,3 +512,10 @@ fetch the assistant inventory or require a terminal observation before composing
 Text goes through the existing send route; the server still checks the exact
 execution, owned process, account and free mode immediately before writing.
 Terminal-backed integrations retain their separate screen and menu observations.
+
+
+An owned native user echo confirms delivery but does not complete the model
+reply. Retain the existing bounded follow window after that echo and reuse a
+native structured page only for the existing short read-coalescing window.
+Native pages do not have a terminal line whose movement invalidates the longer
+terminal transcript cache. This follows reads only; it never resends the prompt.

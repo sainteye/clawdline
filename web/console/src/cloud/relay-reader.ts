@@ -2041,7 +2041,11 @@ export class RelayReader {
       const age = now - held.at
       const moved = rowKey !== held.rowKey
       const lineMoved = line !== held.line
-      if (!moved && age < TRANSCRIPT_MAX_REUSE_MS && !(lineMoved && age >= TRANSCRIPT_LINE_REREAD_MS)) {
+      // A native user echo is delivery, not the completed model reply. Native
+      // pages have no terminal line whose movement invalidates this cache.
+      const native = held.answer.evidence === "structured" && held.answer.signature?.startsWith("acp:")
+      if (native ? !moved && age < TRANSCRIPT_EXPECT_REREAD_MS
+        : !moved && age < TRANSCRIPT_MAX_REUSE_MS && !(lineMoved && age >= TRANSCRIPT_LINE_REREAD_MS)) {
         return { page: held.answer, reused: true }
       }
     }

@@ -1,5 +1,5 @@
 import { catalogWord } from "../catalog.js"
-import { assistantLabel } from "./antigravity-ui.js"
+import { assistantLabel, assistantProtocolOwned } from "./antigravity-ui.js"
 import {
   useCallback,
   useEffect,
@@ -198,9 +198,15 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   )
   const pendingVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   const cards = agentId ? [] : pendingSends.of(id)
-  const following = cards.some((card) => card.state !== "failed")
-  const newestSendAt = cards.reduce((at, card) => (card.state !== "failed" && card.sentAt > at ? card.sentAt : at), 0)
   const session = useSession(id, row)
+  const nativeSendAt = useRef(0)
+  const cardSendAt = cards.reduce((at, card) => (card.state !== "failed" && card.sentAt > at ? card.sentAt : at), 0)
+  // A native echo removes the delivery card before the reply exists. Keep the
+  // same bounded follow window for that reply instead of waiting for a tty tick.
+  if (assistantProtocolOwned(session ?? null)) nativeSendAt.current = Math.max(nativeSendAt.current, cardSendAt)
+  const newestSendAt = Math.max(cardSendAt, nativeSendAt.current)
+  const following = cards.some((card) => card.state !== "failed") ||
+    nativeSendAt.current > 0 && Date.now() - nativeSendAt.current < FOLLOW_WINDOW_MS
   // The fast pace ends FOLLOW_WINDOW_MS after the newest send; this draw is
   // what moves the pace back when it does.
   const [, setPaceClock] = useState(0)
