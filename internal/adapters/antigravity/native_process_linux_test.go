@@ -5,6 +5,7 @@ package antigravity
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 func TestNativeLinuxOwnProcess(t *testing.T) {
@@ -31,7 +34,18 @@ func TestNativeLinuxSubprocessExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
-	got, err := NewNativeProcessReader(nil).ReadAntigravityProcess(context.Background(), cmd.Process.Pid)
+	// Start returns once the child has begun execve, before the kernel has
+	// finished loading the new image, so a read in that window is correctly
+	// reported as a changed process. The test wants the settled identity.
+	var got ports.AntigravityProcess
+	var err error
+	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		got, err = NewNativeProcessReader(nil).ReadAntigravityProcess(context.Background(), cmd.Process.Pid)
+		var typed *NativeIdentityError
+		if !errors.As(err, &typed) || typed.Code != "antigravity_native_process_changed" || time.Now().After(deadline) {
+			break
+		}
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

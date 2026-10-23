@@ -1736,7 +1736,7 @@ test("Clawdfather's icon opens the Snippet / Workflow sheet on its own tab, and 
       await tab.shot("clawdfather-sheet-phone")
       assert.equal(await tab.run(`document.getElementById('snippets')?.hidden`), false)
       assert.deepEqual(await tab.run(`[...document.querySelectorAll('#snippets [role=tab]')].map((t) => [t.textContent, t.getAttribute('aria-selected')])`),
-        [["Clawdfather", "true"], ["Snippet", "false"], ["Workflow", "false"]])
+        [["Clawdfather", "true"], ["Snippet", "false"], ["Playbook", "false"]])
       const rows = `#clawdfather-actions .clawdfather-suggestions-list > button`
       const icons = await tab.run(`(() => [...document.querySelectorAll('${rows}')].map((button) => ({
         title: button.textContent.trim(),

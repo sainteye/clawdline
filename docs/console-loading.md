@@ -37,7 +37,7 @@ SK-01 was implemented and browser-checked in the original inventory. The person 
 | SK-27 | Background command output panel | 背景命令輸出面板 | Conditional | P2 | `web/console/src/session/ShellPanel.tsx:160` |
 | SK-28 | My messages list | 我的訊息清單 | Conditional | P3 | `web/console/src/session/UserMessages.tsx:151`; `web/console/src/session/UserMessages.tsx:227` |
 | SK-29 | Resource coordination panel | 資源協調面板 | Conditional | P3 | `web/console/src/session/ResourceCoordination.tsx:70` |
-| SK-30 | Workflow skill detail and source | Workflow 的技能詳情與來源 | Implemented | P2 | `web/console/src/pages/workflow.tsx:342`; `web/console/src/pages/workflow.tsx:361` |
+| SK-30 | Playbook skill detail and source | 常用流程的技能詳情與來源 | Implemented | P2 | `web/console/src/pages/workflow.tsx:342`; `web/console/src/pages/workflow.tsx:361` |
 | SK-31 | Squad skill import sources | 角色小隊的匯入技能來源 | Implemented | P2 | `web/console/src/pages/Squad.tsx:853`; `web/console/src/pages/Squad.tsx:859` |
 | SK-32 | Settings capacity monitoring | 設定的容量監測區塊 | Conditional | P3 | `web/console/src/pages/settings/CapacityBlock.tsx:103` |
 | SK-33 | Admin campaign list | 管理後台的活動清單 | Conditional | P3 | `web/console/src/cloud/admin/PromoManagement.tsx:269` |
@@ -52,11 +52,11 @@ SK-01 was implemented and browser-checked in the original inventory. The person 
 | EX-02 | Session transcript | Session 對話 | Keep the existing skeleton |
 | EX-03 | Cloud Session initial detail | Cloud Session 詳情初開 | Keep the existing skeleton |
 | EX-04 | Session console screen | Session 主控台畫面 | Keep the existing skeleton |
-| EX-05 | Session snippets and Workflow lists | Session 快捷內容與 Workflow 清單 | Keep the existing skeleton |
+| EX-05 | Session snippets and Playbook lists | Session 快捷內容與常用流程清單 | Keep the existing skeleton |
 | EX-06 | Session start history list | 開啟 Session 的歷史對話清單 | Keep the existing skeleton |
 | EX-07 | Project list | 專案清單 | Keep the existing skeleton |
 | EX-08 | Squad main page | 角色小隊主頁 | Keep the existing skeleton |
-| EX-09 | Workflow main list | Workflow 主清單 | Keep the existing skeleton |
+| EX-09 | Playbook main list | 常用流程主清單 | Keep the existing skeleton |
 | EX-10 | Archive list | 封存清單 | Keep the existing skeleton |
 | EX-11 | Work board | 看板 | Keep the existing skeleton |
 | EX-12 | Machine dashboard | 機器儀表板 | Keep the existing skeleton |

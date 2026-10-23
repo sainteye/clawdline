@@ -4,11 +4,11 @@
   "counts": {
     "negation": 2646,
     "state": 1519,
-    "permission": 547,
+    "permission": 550,
     "deletion": 201,
     "uncertainty": 289
   },
-  "unionCount": 4086,
+  "unionCount": 4087,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -4725,7 +4725,10 @@
       "workflowSettings.itermUpdateRequired",
       "workflowSettings.iterm_integrationOff",
       "workflowSettings.iterm_integrationOn",
+      "workflowSettings.readFailed",
+      "workflowSettings.saveFailed",
       "workflowSettings.session_auto_discoveryScope",
+      "workflowSettings.tab",
       "worktree.refreshed"
     ],
     "deletion": [
@@ -9292,6 +9295,7 @@
     "workflowSettings.saved",
     "workflowSettings.session_auto_discoveryOff",
     "workflowSettings.session_auto_discoveryScope",
+    "workflowSettings.tab",
     "worktree.cleanupEligible",
     "worktree.cleanupUnavailable",
     "worktree.countUnknown",

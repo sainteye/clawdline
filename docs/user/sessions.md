@@ -15,9 +15,9 @@ project, stop the turn it is on, and close it safely.
 
 Labels below follow the English interface; the console also supports other languages.
 
-## Workflow and control
+## Sessions and access
 
-In **Settings → Workflow and control**, both switches start enabled. Select the ⓘ button beside
+In **Settings → Sessions and access**, both switches start enabled. Select the ⓘ button beside
 one to expand its On, Off, and scope explanation. These are settings of the selected machine,
 including when changed from a paired Cloud browser with Send permission.
 
@@ -80,10 +80,10 @@ The **⋯** menu (**Session actions**) holds the rest:
   [How a picture finds its reply](../messages.md#pictures-a-session-shows-the-person).
 - **Snippets** are text you send often. Create them with **New snippet**, for this project
   or every project. Pressing one only fills the box; you still send it.
-- **Workflows** hold a complete launch message. Open the Workflow tab, select one, then press
-  **Start Workflow**. The shipped **Zero-Based Review** example reviews the current
+- **Playbooks** (called Workflows before 2026-10-23) hold a complete launch message. Open the
+  Playbook tab, select one, then press **Start Playbook**. The shipped **Zero-Based Review** example reviews the current
   Project and is available in every Project. Its unedited text follows the interface language;
-  you can edit or delete it like another Workflow. A deleted example stays deleted after restart.
+  you can edit or delete it like another Playbook. A deleted example stays deleted after restart.
 - **Skills:** type `/` (or `$` for Codex) as the whole message to list the session's skills and
   commands. Choosing one writes it into the box and does not send.
 
