@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9131,
-  "riskKeys": 4075,
-  "nonRiskCount": 5056,
+  "englishContentKeys": 9149,
+  "riskKeys": 4086,
+  "nonRiskCount": 5063,
   "groups": [
     {
       "name": "admin / other",
@@ -238,7 +238,7 @@
     },
     {
       "name": "antigravity / other",
-      "count": 4,
+      "count": 6,
       "sources": [
         null
       ],
@@ -246,7 +246,9 @@
         "antigravity.loading",
         "antigravity.placeholder",
         "antigravity.ready",
-        "antigravity.stale"
+        "antigravity.stale",
+        "antigravity.toolCalled",
+        "antigravity.toolExplored"
       ]
     },
     {
@@ -335,11 +337,16 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 294,
+      "count": 299,
       "sources": [
         null
       ],
       "keys": [
+        "capacityRow.antigravity.acp_call_seconds.what",
+        "capacityRow.antigravity.acp_frame_bytes.what",
+        "capacityRow.antigravity.acp_sessions.full",
+        "capacityRow.antigravity.acp_sessions.what",
+        "capacityRow.antigravity.acp_view_bytes.what",
         "capacityRow.antigravity.ancestry_rows.what",
         "capacityRow.antigravity.context_history.what",
         "capacityRow.antigravity.context_index_bytes.full",

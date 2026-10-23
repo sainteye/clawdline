@@ -31,7 +31,7 @@ func (s *Server) PeerInventory(ctx context.Context) ([]byte, error) {
 	}
 	sort.Slice(projects, func(i, j int) bool { return projects[i].ID < projects[j].ID })
 	return json.Marshal(map[string]any{"machine_id": s.executionMachine(), "at": time.Now().Unix(),
-		"projects": projects, "sessions": s.sessionsPayloadFrom(ctx, inventory), "assistants": installedAssistants()})
+		"projects": projects, "sessions": s.sessionsPayloadFrom(ctx, inventory), "assistants": s.availableAssistants()})
 }
 
 func (s *Server) remotePair(ctx context.Context, machine, id string) (string, error) {

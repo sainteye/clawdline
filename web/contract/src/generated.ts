@@ -3568,11 +3568,12 @@ export type IdentityBinding =
   | "live_title"
   | "registry"
   | "launch_hook"
+  | "protocol"
   | "no_record"
   | "unreadable"
   | "ambiguous"
 
-export const IdentityBindingValues: readonly IdentityBinding[] = ["command_line", "open_file", "live_title", "registry", "launch_hook", "no_record", "unreadable", "ambiguous"] as const
+export const IdentityBindingValues: readonly IdentityBinding[] = ["command_line", "open_file", "live_title", "registry", "launch_hook", "protocol", "no_record", "unreadable", "ambiguous"] as const
 
 /**
  * Why a reference has no picture behind it: `expired` when the store held it and no
@@ -6693,8 +6694,8 @@ export interface SessionInfoSession {
   id: string
 
   /**
-   * The model explicitly named by the session record, or by Codex's startup card
-   * before a record names it. Absent without evidence.
+   * The model explicitly named by the session record, Codex startup card, or an
+   * owned ACP session/new response. Absent without evidence.
    */
   model?: string
 

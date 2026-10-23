@@ -153,6 +153,16 @@ func (s *Server) transcriptPage(id string, item session.Session, limit int) cont
 
 func (s *Server) transcriptPageBefore(id string, item session.Session, limit int, before int64, revision ...string) contract.TranscriptPage {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
+	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
+		if h := s.antigravitySessions.Load(); h != nil {
+			if snapshot, err := h.Transcript(item, limit); err == nil {
+				return snapshot
+			}
+		}
+		page.Evidence = contract.EvidenceNone
+		page.Note = "antigravity_session_unavailable"
+		return page
+	}
 	path := s.recordPath(item)
 	if path == "" {
 		if item.Binding == session.BindingNoRecord {
@@ -457,6 +467,21 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 			CWD:       item.CWD,
 		},
 		Models: []contract.SessionModel{},
+	}
+	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
+		if h := s.antigravitySessions.Load(); h != nil {
+			if facts, err := h.Facts(item); err == nil {
+				info.Session.Model = facts.Model
+				if at := facts.Context; at != nil && at.Size > 0 {
+					info.Context = &contract.SessionInfoContext{UsedPercent: min(100, max(0, float64(at.Used)*100/float64(at.Size))), UsedTokens: at.Used, WindowTokens: at.Size}
+				}
+			}
+		}
+		if !s.admitPinnedTarget(w, r, id) {
+			return
+		}
+		writeJSON(w, contract.SessionInfoReply{Info: info})
+		return
 	}
 	if naming, err := s.namingAssistant(); err == nil {
 		info.Session.NamingAssistant = naming

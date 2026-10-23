@@ -35,6 +35,7 @@ type Error struct {
 	Delivery Delivery
 }
 
+func (e *Error) BeforeWrite() bool                  { return e.Delivery == NotWritten }
 func (e *Error) Error() string                      { return "antigravity_process_" + e.Code }
 func failure(code string, delivery Delivery) *Error { return &Error{Code: code, Delivery: delivery} }
 
@@ -225,6 +226,17 @@ func (c *Client) NewSession(ctx context.Context) (json.RawMessage, error) {
 // PID is the originally started child identifier, not a current liveness proof.
 func (c *Client) PID() int { return c.cmd.Process.Pid }
 
+// Err reports terminal transport failure without exposing provider diagnostics.
+func (c *Client) Err() error {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.terminal == nil {
+		return nil
+	}
+	e := *c.terminal
+	return &e
+}
+
 func (c *Client) SessionID() string { c.stateMu.Lock(); defer c.stateMu.Unlock(); return c.sessionID }
 
 type PromptResult struct {
@@ -235,17 +247,28 @@ type PromptResult struct {
 // Prompt sends one text turn, once. A successful result is completion evidence;
 // updates alone do not acknowledge a prompt or establish a stop reason.
 func (c *Client) Prompt(ctx context.Context, text string) (PromptResult, error) {
-	return c.prompt(ctx, text, nil)
+	return c.prompt(ctx, text, nil, nil)
 }
 
 // PromptAccepted calls written once after the complete request reaches the
 // private pipe. It is acceptance evidence, not completion or provider-read
 // evidence. The callback must not block or reenter the client.
 func (c *Client) PromptAccepted(ctx context.Context, text string, written func()) (PromptResult, error) {
-	return c.prompt(ctx, text, written)
+	return c.prompt(ctx, text, nil, written)
 }
 
-func (c *Client) prompt(ctx context.Context, text string, written func()) (PromptResult, error) {
+// PromptChecked checks existing operation authority under the pipe write lock,
+// after profile I/O and serialization. A refusal proves no prompt bytes were sent.
+func (c *Client) PromptChecked(ctx context.Context, text string, before func() error, written func()) (PromptResult, error) {
+	return c.prompt(ctx, text, before, written)
+}
+
+type beforeWriteError struct{ error }
+
+func (e beforeWriteError) Unwrap() error     { return e.error }
+func (e beforeWriteError) BeforeWrite() bool { return true }
+
+func (c *Client) prompt(ctx context.Context, text string, before func() error, written func()) (PromptResult, error) {
 	if !c.callMu.TryLock() {
 		return PromptResult{}, failure("busy", NotWritten)
 	}
@@ -256,7 +279,7 @@ func (c *Client) prompt(ctx context.Context, text string, written func()) (Promp
 	if err := c.checkPersonal(); err != nil {
 		return PromptResult{}, err
 	}
-	r, err := c.callAccepted(ctx, "session/prompt", map[string]any{"sessionId": c.SessionID(), "prompt": []any{map[string]string{"type": "text", "text": text}}}, written)
+	r, err := c.callAccepted(ctx, "session/prompt", map[string]any{"sessionId": c.SessionID(), "prompt": []any{map[string]string{"type": "text", "text": text}}}, before, written)
 	if err != nil {
 		return PromptResult{}, err
 	}
@@ -325,10 +348,10 @@ func (c *Client) checkPersonal() error {
 }
 
 func (c *Client) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	return c.callAccepted(ctx, method, params, nil)
+	return c.callAccepted(ctx, method, params, nil, nil)
 }
 
-func (c *Client) callAccepted(ctx context.Context, method string, params any, written func()) (json.RawMessage, error) {
+func (c *Client) callAccepted(ctx context.Context, method string, params any, before func() error, written func()) (json.RawMessage, error) {
 	if ctx == nil {
 		return nil, failure("invalid_context", NotWritten)
 	}
@@ -356,8 +379,23 @@ func (c *Client) callAccepted(ctx context.Context, method string, params any, wr
 	finished := make(chan reply)
 	go func() {
 		var r reply
+		c.writeMu.Lock()
+		if callCtx.Err() != nil {
+			c.writeMu.Unlock()
+			finished <- reply{err: failure("cancelled", NotWritten)}
+			return
+		}
+		if before != nil {
+			if err := before(); err != nil {
+				c.writeMu.Unlock()
+				finished <- reply{err: beforeWriteError{err}}
+				return
+			}
+		}
 		attempted.Store(true)
-		if c.write(b) != nil {
+		writeErr := c.writeUnlocked(b)
+		c.writeMu.Unlock()
+		if writeErr != nil {
 			r.err = failure("write_failed", Uncertain)
 		} else {
 			if written != nil {
@@ -398,6 +436,10 @@ func (c *Client) callAccepted(ctx context.Context, method string, params any, wr
 func (c *Client) write(b []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	return c.writeUnlocked(b)
+}
+
+func (c *Client) writeUnlocked(b []byte) error {
 	b = append(b, '\n')
 	n, err := c.in.Write(b)
 	if err == nil && n != len(b) {

@@ -169,3 +169,62 @@ start/send/transcript and encrypted Cloud paths. The existing administrator UI
 controls whether the Antigravity start option appears. The separate chat-endpoint
 proposal was not enabled. Ordinary machine pairing, capabilities, execution pins
 and write receipts remain the authority; there is no new admin entitlement API.
+
+## Existing Session preview
+
+`antigravitysession.Host` composes the measured process client and update decoder
+behind the existing Session start, send and transcript routes. An explicitly
+configured machine can open one personal ACP preview at a time. The native
+`session/new` identity is carried as `protocol`, with the real owned PID and an
+`owned:acp:` terminal identifier. Inventory does not overwrite this structured
+reading with the standalone CLI's screen or on-disk transcript resolver.
+
+A send returns when the complete prompt reaches the private pipe. The daemon
+continues reading the same turn after that HTTP request ends. The normal Session
+operation check still runs immediately before the write; an uncertain write is
+never replayed. Tool updates merge only present fields, including completions
+that arrive after visible assistant text. Context occupancy is not billing. The native session/new model and usage_update
+context snapshot supply the existing Session info route without inventing prices
+or offering an unverified terminal model picker.
+
+The preview is disabled unless the machine's state directory contains
+`antigravity-acp-pilot.json`, with absolute `executable` and `accountDir` paths and
+optional `args`. These paths select an already authenticated personal profile;
+configuration does not copy credentials or launch a process. Daemon shutdown
+cancels and joins the owned processes and prompts. Entry visibility reuses the
+Cloud console's existing administrator decision, with no new entitlement API.
+
+The retained transcript is a bounded memory snapshot, not durable native history.
+Oldest whole entries are evicted with an explicit truncation notice. Restart and
+resume, role/context injection, model selection, interactive permission grants,
+terminal attachment and turn-only cancellation remain outside this preview and
+are not advertised as available. The original full-integration acceptance scope
+still requires those capabilities and independent UI/UX and brand acceptance.
+
+A Root-only one-shot acceptance on the new Host returned the expected synthetic
+reply and `end_turn` in 8.192 seconds with one model input, the native Starter tier
+and AI Credits off checked by the client, and both owned leader and process group
+absent after close. There were no automatic retries or paid API calls. This is
+configuration/tier evidence, not an invoice measurement, and does not establish
+Cloud or mobile deployment acceptance. Later retention/path projection changes
+are covered separately by local tests, not by another native model call.
+
+
+### Independent preview review corrections
+
+Independent code and UI reviews found three executable counterexamples: authority
+revoked while profile settings were being read, retained tool IDs escaping the
+view budget, and oversized late text remaining readable. Regression tests retain
+these controlled interleavings. The final operation check now runs under the pipe
+write lock after settings I/O and serialization; a local refusal remains unsent
+and leaves a healthy Session usable. The retained budget includes exact tool IDs,
+and whole-entry eviction also removes an oversized single entry with truncation.
+The capacity reading uses that same total; it is a payload budget, not a measurement
+of Go allocator overhead.
+
+The Board's role-based assignment route does not accept the ordinary text preview,
+so it does not offer Antigravity. The administrator preview remains in ordinary
+Session Start. Native turn failures keep their diagnostic code beneath readable
+English and Taiwan Traditional Chinese guidance. Known tool status labels are
+localized, and meaningful tool/unavailable text uses the existing dim text token.
+These corrections do not complete the full integration acceptance scope above.

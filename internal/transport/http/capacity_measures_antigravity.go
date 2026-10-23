@@ -76,6 +76,26 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 		return capacity.Unmeasured("unknown bridge measure")
 	}
 	return map[string]func() capacity.Reading{
+		"antigravity.acp_sessions": func() capacity.Reading {
+			var n int
+			if h := s.antigravitySessions.Load(); h != nil {
+				n, _ = h.Stats()
+			}
+			return capacity.Reading{Known: true, Used: int64(n)}
+		},
+		"antigravity.acp_view_bytes": func() capacity.Reading {
+			var n int
+			if h := s.antigravitySessions.Load(); h != nil {
+				_, n = h.Stats()
+			}
+			return capacity.Reading{Known: true, Used: int64(n)}
+		},
+		"antigravity.acp_frame_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-frame guard; no replay queue"}
+		},
+		"antigravity.acp_call_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-call deadline; no automatic retry"}
+		},
 		// Missing, closed or unreadable owners remain unknown.
 		"antigravity.first_input_slots":    func() capacity.Reading { return launchReading("first_inputs") },
 		"antigravity.saved_launches":       func() capacity.Reading { return launchReading("launches") },

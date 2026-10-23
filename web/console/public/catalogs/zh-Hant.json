@@ -1,4 +1,5 @@
 {
+  "http.adfb122018780903": "個人 ACP 試用目前使用原生預設模型，且不套用角色。",
   "admin.accountsNew30": "近 30 日新增",
   "admin.accountsNew7": "近 7 日新增",
   "admin.accountsPattern": "近 30 天",
@@ -556,6 +557,14 @@
   "capacityRow.antigravity.first_input_slots.what": "每次啟動最多保存一份首次輸入預約；重啟不會恢復輸入執行權。",
   "capacityRow.antigravity.hook_config_bytes.full": "設定超過上限時會拒絕，保留其他設定。",
   "capacityRow.antigravity.hook_config_bytes.what": "限制既有及合併後的工作區 hook 設定大小。",
+  "capacityRow.antigravity.acp_sessions.what": "這台機器保留一個個人 Antigravity 試用程序。",
+  "capacityRow.antigravity.acp_sessions.full": "請先關閉目前的試用 Session，再開啟另一個。",
+  "capacityRow.antigravity.acp_frame_bytes.what": "限制每筆私有 ACP 協定訊息與個人設定讀取的大小。",
+  "capacityRow.antigravity.acp_frame_bytes.full": "訊息過大會停止此程序；不會自動重送輸入。",
+  "capacityRow.antigravity.acp_view_bytes.what": "限制個人 ACP 試用保留的對話快照大小。",
+  "capacityRow.antigravity.acp_view_bytes.full": "快照滿時移除最早的完整項目；此畫面不是永久歷史紀錄。",
+  "capacityRow.antigravity.acp_call_seconds.what": "限制每次原生 ACP 呼叫，包括模型回合的時間。",
+  "capacityRow.antigravity.acp_call_seconds.full": "到時會停止所屬程序；不會重送結果不確定的輸入。",
   "capacityRow.antigravity.hook_connections.full": "連線額滿時回傳忙碌錯誤；既有請求仍受原本期限限制。",
   "capacityRow.antigravity.hook_connections.what": "限制同時處理的本機 Antigravity hook 連線，不設工作佇列。",
   "capacityRow.antigravity.hook_frame_bytes.full": "超大框架會在依宣告長度配置本文之前遭到拒絕。",
@@ -9131,5 +9140,14 @@
   "worktree.taskTemporary": "任務擁有的暫存工作樹",
   "worktree.unknown": "未知",
   "worktree.unlanded": "尚未落地的工作",
-  "worktree.untracked": "未追蹤"
+  "worktree.untracked": "未追蹤",
+  "antigravity.turnIncomplete": "這個 Antigravity 回合未正常完成。",
+  "antigravity.inspectBeforeSending": "請先查看對話與工具結果，再決定是否傳送下一則訊息。系統未自動重送這則訊息。",
+  "antigravity.toolCalled": "呼叫工具",
+  "antigravity.toolExplored": "探索",
+  "antigravity.toolCompleted": "已完成",
+  "antigravity.toolRunning": "執行中",
+  "antigravity.toolPending": "等待中",
+  "antigravity.toolFailed": "失敗",
+  "antigravity.toolCancelled": "已取消"
 }

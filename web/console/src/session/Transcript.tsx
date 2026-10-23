@@ -1469,6 +1469,10 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
   const record = role === "user" ? L.parseWorkflowRecord(e.text, role) : null
   let body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") +
     L.richTextHTML(record ? (record as { text: string }).text : e.text)
+  if (role === "error" && /^antigravity_(?:session|process|turn)_/.test(e.text)) {
+    body = "<p>" + esc(catalogWord("antigravity", "turnIncomplete")) + "</p><p>" +
+      esc(catalogWord("antigravity", "inspectBeforeSending")) + "</p><code>" + esc(e.text) + "</code>"
+  }
   if (record) {
     // The label is the original's own literal; the catalog has no key for it.
     body += L.workflowRecordHTML(record, {
@@ -1718,7 +1722,9 @@ function activityCardHTML(v: View, e: Entry, at: number) {
   const activity = activityOf(e) || ({} as Partial<TranscriptActivity>)
   const kind = activity.kind === "explored" ? "explored" : "called"
   const title = kind === "called" ? String(activity.title || e.text || e.tool || "") : ""
-  const meta = [activity.status, durationText(activity.durationMs)].filter((value) => !!value)
+  const statusKeys: Record<string, string> = { completed: "toolCompleted", inProgress: "toolRunning", in_progress: "toolRunning", pending: "toolPending", failed: "toolFailed", cancelled: "toolCancelled" }
+  const status = activity.status && statusKeys[activity.status] ? catalogWord("antigravity", statusKeys[activity.status]) : activity.status
+  const meta = [status, durationText(activity.durationMs)].filter((value) => !!value)
   const actions = kind === "explored" ? activityActionsHTML(activity.actions || []) : ""
   const result =
     kind === "called" && typeof activity.result === "string" && activity.result.length
@@ -1726,7 +1732,7 @@ function activityCardHTML(v: View, e: Entry, at: number) {
       : ""
   const card =
     '<section class="activity-card"><header><span class="activity-kind">' +
-    (kind === "called" ? "Called" : "Explored") +
+    esc(catalogWord("antigravity", kind === "called" ? "toolCalled" : "toolExplored")) +
     "</span>" +
     (title ? '<span class="activity-title">' + esc(title) + "</span>" : "") +
     '<span class="activity-meta">' +

@@ -203,6 +203,10 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 			merged.Sessions = append(merged.Sessions, byTTY[key])
 			continue
 		}
+		if row := byTTY[key]; row.Backend == session.BackendOwned && row.Binding == session.BindingProtocol && row.Evidence == session.EvidenceStructured {
+			merged.Sessions = append(merged.Sessions, row)
+			continue
+		}
 		row := in.enrich(ctx, byTTY[key])
 		if row.IsAssistant() && row.SquadLaunchID != "" && in.SquadRole != nil {
 			row.Persona = in.SquadRole(ctx, row)

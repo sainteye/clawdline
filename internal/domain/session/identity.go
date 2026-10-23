@@ -19,6 +19,8 @@ import (
 type Binding string
 
 const (
+	// BindingProtocol is the conversation returned by an owned protocol process.
+	BindingProtocol Binding = "protocol"
 	// BindingLaunchHook ties a native conversation to independently verified process facts.
 	BindingLaunchHook Binding = "launch_hook"
 	// BindingCommandLine: the conversation id is in the process's own argv,
@@ -60,7 +62,7 @@ const (
 // not are deliberately not one value: see Binding.
 func (b Binding) Bound() bool {
 	switch b {
-	case BindingCommandLine, BindingOpenFile, BindingLiveTitle, BindingRegistry, BindingLaunchHook:
+	case BindingCommandLine, BindingOpenFile, BindingLiveTitle, BindingRegistry, BindingLaunchHook, BindingProtocol:
 		return true
 	}
 	return false

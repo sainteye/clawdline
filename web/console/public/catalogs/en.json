@@ -1,4 +1,5 @@
 {
+  "http.adfb122018780903": "The personal ACP preview currently uses its native default model and no role.",
   "admin.accountsNew30": "New, last 30 days",
   "admin.accountsNew7": "New, last 7 days",
   "admin.accountsPattern": "The last 30 days",
@@ -556,6 +557,14 @@
   "capacityRow.antigravity.first_input_slots.what": "Limits durable first-input reservations to one per launch; restart never restores execution authority.",
   "capacityRow.antigravity.hook_config_bytes.full": "Oversized configuration is refused; unrelated settings are preserved.",
   "capacityRow.antigravity.hook_config_bytes.what": "Limits the existing and merged workspace hook configuration.",
+  "capacityRow.antigravity.acp_sessions.what": "Keeps one personal Antigravity preview process on this machine.",
+  "capacityRow.antigravity.acp_sessions.full": "Close the current preview Session before opening another.",
+  "capacityRow.antigravity.acp_frame_bytes.what": "Bounds each private ACP protocol frame and personal-settings read.",
+  "capacityRow.antigravity.acp_frame_bytes.full": "An oversized frame stops this process; its prompt is never retried automatically.",
+  "capacityRow.antigravity.acp_view_bytes.what": "Bounds the conversation snapshot retained for the personal ACP preview.",
+  "capacityRow.antigravity.acp_view_bytes.full": "Oldest complete entries leave the preview when it fills; this view is not durable history.",
+  "capacityRow.antigravity.acp_call_seconds.what": "Bounds each native ACP call, including a model turn.",
+  "capacityRow.antigravity.acp_call_seconds.full": "The owned process is stopped at the deadline; uncertain input is never replayed.",
   "capacityRow.antigravity.hook_connections.full": "A full service refuses the connection with a busy error; existing work retains its deadline.",
   "capacityRow.antigravity.hook_connections.what": "Limits active local Antigravity hook connections; there is no work queue.",
   "capacityRow.antigravity.hook_frame_bytes.full": "An oversized frame is refused before allocating its declared body.",
@@ -9131,5 +9140,14 @@
   "worktree.taskTemporary": "Task-owned temporary",
   "worktree.unknown": "unknown",
   "worktree.unlanded": "Unlanded work",
-  "worktree.untracked": "Untracked"
+  "worktree.untracked": "Untracked",
+  "antigravity.turnIncomplete": "This Antigravity turn did not finish normally.",
+  "antigravity.inspectBeforeSending": "Review the conversation and tool results before sending another message. This message was not automatically sent again.",
+  "antigravity.toolCalled": "Called",
+  "antigravity.toolExplored": "Explored",
+  "antigravity.toolCompleted": "completed",
+  "antigravity.toolRunning": "running",
+  "antigravity.toolPending": "pending",
+  "antigravity.toolFailed": "failed",
+  "antigravity.toolCancelled": "cancelled"
 }

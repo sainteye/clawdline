@@ -623,7 +623,7 @@
 .plan-card li[data-status="inProgress"] { color: var(--ink); }
 .plan-card li[data-status="inProgress"] .plan-mark { color: var(--accent); }
 .activity-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
-.activity-meta { margin-left: auto; white-space: nowrap; color: var(--faint); font-size: 10.5px; }
+.activity-meta { margin-left: auto; white-space: nowrap; color: var(--dim); font-size: 10.5px; }
 .activity-verb { flex: 0 0 48px; color: var(--accent); font-family: var(--mono); font-size: 11px; }
 .activity-detail { min-width: 0; flex: 1 1 auto; }
 .activity-subject { display: block; color: var(--ink); overflow-wrap: anywhere; }
@@ -680,7 +680,7 @@
 .askopt .what b { font-weight: 600; color: var(--ink); font-size: 13.5px; }
 .askopt .note { display: block; color: var(--dim); font-size: 12.5px; line-height: 1.45; margin-top: 2px; }
 
-.tx-note { color: var(--faint); font-size: 12.5px; padding: 26px 2px; }
+.tx-note { color: var(--dim); font-size: 12.5px; padding: 26px 2px; }
 .tx-note.err { color: #c58472; }
 
 .board-workflow-record {

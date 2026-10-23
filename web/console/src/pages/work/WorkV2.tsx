@@ -1,5 +1,5 @@
 import { useAssistantFacts } from "../../session/assistant-facts.js"
-import { assistantAdmits, assistantUnavailable, assistantLabel } from "../../session/antigravity-ui.js"
+import { assistantAdmits, assistantUnavailable } from "../../session/antigravity-ui.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
 import { ProjectPicker } from "../../ui/ProjectPicker.js"
 import { catalogFormat } from "../../catalog.js"
@@ -828,9 +828,8 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
   const [terminal, setTerminal] = useState("")
   const providerReading = useAssistantFacts("", `${item.id}:${item.version}`)
   const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? (id === "antigravity" ? undefined : { id })
-  const providerStatus = (id: string) => providerReading.kind !== "ready" ? providerReading.kind
-    : assistantUnavailable(providerFacts(id), "start") || (id === "antigravity" && providerFacts(id)?.authState !== "ready" ? "bootstrap" : "ready")
-  const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
+  const [selectedAssistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
+  const assistant = selectedAssistant === "antigravity" ? "claude" : selectedAssistant
   // A new Session has no role until the person chooses one or asks AI.
   const personas = usePersonas()
   const [personaChoice, setPersonaChoice] = useState("")
@@ -1016,13 +1015,12 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
         <div className="work-new-session" role="radiogroup" aria-label={catalogWord("inline", "d7c6293edaf2")}>
         {/* The product mark alone: the button beside it already spells out the
             chosen assistant, so the name is kept for the label and tooltip. */}
-        {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
+        {NEW_SESSION_ASSISTANTS.filter((choice) => choice !== "antigravity").map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
           role="radio" aria-checked={choice === assistant} disabled={!!busy || aiSuggestionBusy || !assistantAdmits(providerFacts(choice), "start")}
           aria-label={assistantName(choice)} title={assistantUnavailable(providerFacts(choice), "start") ? catalogWord("antigravity", assistantUnavailable(providerFacts(choice), "start")!).replace("{assistant}", assistantName(choice)) : assistantName(choice)}
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
         </div>
-        {assistant === "antigravity" && <p className="work-note" role="status">{catalogWord("antigravity", providerStatus(assistant)).replace("{assistant}", assistantLabel(assistant))}</p>}
         {personas.length > 0 && <button className="chip work-persona-ai-button" type="button" disabled={!!busy || aiSuggestionBusy}
           aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
           onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? catalogWord("literal", "29e124139608") : catalogWord("literal", "2bbea1c41037")}</button>}

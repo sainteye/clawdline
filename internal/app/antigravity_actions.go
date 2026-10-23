@@ -107,6 +107,17 @@ func (a Actions) sendToHost(ctx context.Context, s session.Session, h ports.Term
 		}
 		return nil
 	}
+	if protocol, ok := h.(ports.ProtocolSessionHost); ok && protocol.OwnsProtocol(s) {
+		err := protocol.SendProtocol(ctx, s, text, func() error { return checkOperation(ctx) })
+		if err == nil {
+			return nil
+		}
+		var local interface{ BeforeWrite() bool }
+		if errors.As(err, &local) && local.BeforeWrite() {
+			return beforeTheFirstByte(sendRefusal(s, err))
+		}
+		return sendRefusal(s, err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, terminal.SendConfirmationWindow())
 	defer cancel()
 	p, err := a.antigravityAction(ctx, s, h)

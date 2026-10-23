@@ -9,7 +9,7 @@ type Backend string
 const (
 	BackendITerm Backend = "iterm"
 	BackendTmux  Backend = "tmux"
-	BackendOwned Backend = "owned" // a pty this daemon opened itself
+	BackendOwned Backend = "owned" // a terminal or protocol process this daemon owns
 )
 
 type Assistant string

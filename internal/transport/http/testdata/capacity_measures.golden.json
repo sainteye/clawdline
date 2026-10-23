@@ -1,5 +1,23 @@
 [
   {
+    "Name": "antigravity.acp_call_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.acp_frame_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.acp_sessions",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.acp_view_bytes",
+    "Known": true
+  },
+  {
     "Name": "antigravity.ancestry_rows",
     "Known": true,
     "Note": true

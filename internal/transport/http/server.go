@@ -21,6 +21,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/antigravitylaunch"
 	"github.com/sainteye/clawdline/internal/adapters/antigravityproject"
+	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
@@ -96,6 +97,7 @@ type Server struct {
 	// replaceMachineItemReceipt is a test seam for a failed post-create
 	// receipt refinement. Nil uses the durable store implementation.
 	replaceMachineItemReceipt func(context.Context, store.ReceiptKey, store.ReceiptAnswer) error
+	antigravitySessions       atomic.Pointer[antigravitysession.Host]
 	terminals                 []ports.TerminalHost
 	// closes is the Sessions' own closes waiting for their turn to end
 	// (agent_close_schedule.go).
@@ -289,6 +291,9 @@ func New(cfg config.Config) (*Server, error) {
 			Activity: app.NewActivityReads(),
 		},
 	}
+	hosts = append(hosts, ownedAntigravityTerminal{srv})
+	srv.terminals = hosts
+	srv.inventory.Terminals = hosts
 	srv.inventory.SquadRole = srv.sessionSquadRole
 	// Inventory, actions and native identity share actual backend instances.
 	srv.wireAntigravity()

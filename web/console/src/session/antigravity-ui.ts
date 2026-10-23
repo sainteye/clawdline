@@ -59,6 +59,6 @@ export function assistantMenuAdmits(row: SessionRow | null, facts?: AssistantFac
 /** Same bound as capacity antigravity.state_age_seconds and the native observation owner. */
 export const ANTIGRAVITY_STATE_FRESH_MS = 15_000
 export function assistantStateCurrent(row: SessionRow | null, now = Date.now()): boolean {
-  return row?.identity === "launch_hook" && !!row.sessionId && !!row.execution_generation && row.source?.freshness === "current" &&
+  return (row?.identity === "launch_hook" || row?.identity === "protocol" && row.backend === "owned") && !!row.sessionId && !!row.execution_generation && row.source?.freshness === "current" &&
     Number.isFinite(row.source.observed_at) && Math.abs(now - row.source.observed_at * 1000) <= ANTIGRAVITY_STATE_FRESH_MS
 }

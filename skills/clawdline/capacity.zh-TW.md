@@ -4,6 +4,10 @@
 
 | 名稱 | 預設上限 | 單位 | 達上限時 | 告知管道 | 偏離既定規則 |
 | --- | ---: | --- | --- | --- | --- |
+| `antigravity.acp_call_seconds` | 45 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.acp_frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.acp_sessions` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.acp_view_bytes` | 1048576 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `antigravity.ancestry_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.context_history` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.context_index_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |

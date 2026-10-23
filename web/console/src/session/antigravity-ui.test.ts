@@ -16,7 +16,7 @@ import { STATUS_FRESH_MS, statusProjection } from "../cloud/status-projection.ts
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
 import { pinnedQuestion } from "../cloud/status-source.ts"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
-import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantMenuAdmits, assistantLabel, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
+import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantMenuAdmits, assistantStateCurrent, assistantLabel, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
 
 const active: AssistantFacts = { id: "antigravity", installed: true, authState: "ready", integrationState: "active",
   capabilities: { start: true, resume: true, send: true, menus: true, transcript: true } }
@@ -159,4 +159,17 @@ test("Antigravity menu keys require capabilities, a current exact execution and 
     { menu: { ...row.menu, source: "transcript" } }]) assert.equal(assistantMenuAdmits({ ...row, ...patch }, active), false)
   assert.equal(assistantMenuAdmits(row), false)
   assert.equal(assistantMenuAdmits({ ...row, assistant: "codex" }), true)
+})
+
+
+test("owned protocol identity admits a fresh composer without inventing a terminal menu", () => {
+ const now=Date.now()
+ const row={id:"owned:acp:synthetic",backend:"owned",assistant:"antigravity",identity:"protocol",sessionId:"synthetic-native",execution_generation:"a".repeat(32),state:"idle",source:{freshness:"current",observed_at:now/1000}} as any
+ const preview:AssistantFacts={...active,capabilities:{start:true,send:true,transcript:true,resume:false,menus:false}}
+ assert.equal(assistantStateCurrent(row,now),true)
+ assert.equal(assistantComposeAdmits(row.assistant,preview,row.state,false),true)
+ assert.equal(assistantStateCurrent({...row,backend:"tmux"},now),false)
+ assert.equal(assistantStateCurrent({...row,execution_generation:undefined},now),false)
+ assert.equal(assistantStateCurrent(row,now+16000),false)
+ assert.equal(assistantMenuAdmits({...row,state:"waiting",line:"synthetic",menu:{options:[{n:1,label:"Allow",can:true}]}},preview),false)
 })

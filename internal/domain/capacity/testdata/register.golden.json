@@ -1,6 +1,86 @@
 [
   {
     "Register": "daemon",
+    "Name": "antigravity.acp_call_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 45,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxCallTime"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_frame_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxFrameBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_sessions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxSessions"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_view_bytes",
+    "Class": "observation",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxViewBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "antigravity.ancestry_rows",
     "Class": "buffer",
     "Unit": "rows",

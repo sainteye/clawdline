@@ -310,7 +310,14 @@ func serve() {
 			log.Print("antigravity: antigravity_runtime_failed")
 		}
 	}
+	stopAntigravitySessions, sessionsErr := srv.StartAntigravitySessions(cloudCtx)
+	if sessionsErr != nil {
+		log.Print("antigravity: owned_session_start_failed")
+	}
 	stopAntigravityAll := func() {
+		if stopAntigravitySessions != nil {
+			stopAntigravitySessions()
+		}
 		if stopAntigravity != nil {
 			stopAntigravity()
 		}

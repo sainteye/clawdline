@@ -186,7 +186,7 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 		keys = append(keys, setupLookupKey{path: p.Path, repo: repos[p.Path], icon: source})
 	}
 	setups := readers.setups.Resolve(keys)
-	out := contract.StartPlaceList{At: time.Now().Unix(), Assistants: installedAssistants(),
+	out := contract.StartPlaceList{At: time.Now().Unix(), Assistants: s.availableAssistants(),
 		Places: make([]contract.StartPlace, 0, len(list))}
 	for _, p := range list {
 		// `repo` is what a schedule moving here from another machine finds its

@@ -3078,13 +3078,14 @@ const (
 	IdentityBindingLiveTitle   IdentityBinding = "live_title"
 	IdentityBindingRegistry    IdentityBinding = "registry"
 	IdentityBindingLaunchHook  IdentityBinding = "launch_hook"
+	IdentityBindingProtocol    IdentityBinding = "protocol"
 	IdentityBindingNoRecord    IdentityBinding = "no_record"
 	IdentityBindingUnreadable  IdentityBinding = "unreadable"
 	IdentityBindingAmbiguous   IdentityBinding = "ambiguous"
 )
 
 // IdentityBindingValues is every value the contract allows, in contract order.
-var IdentityBindingValues = []IdentityBinding{IdentityBindingCommandLine, IdentityBindingOpenFile, IdentityBindingLiveTitle, IdentityBindingRegistry, IdentityBindingLaunchHook, IdentityBindingNoRecord, IdentityBindingUnreadable, IdentityBindingAmbiguous}
+var IdentityBindingValues = []IdentityBinding{IdentityBindingCommandLine, IdentityBindingOpenFile, IdentityBindingLiveTitle, IdentityBindingRegistry, IdentityBindingLaunchHook, IdentityBindingProtocol, IdentityBindingNoRecord, IdentityBindingUnreadable, IdentityBindingAmbiguous}
 
 // Why a reference has no picture behind it: `expired` when the store held it
 // and no longer does, `unknown` when no store here ever held that id.
@@ -5680,8 +5681,8 @@ type SessionInfoSession struct {
 	Icon   *Icon  `json:"icon,omitempty"`
 	ID     string `json:"id"`
 
-	// The model explicitly named by the session record, or by Codex's startup card
-	// before a record names it. Absent without evidence.
+	// The model explicitly named by the session record, Codex startup card, or an
+	// owned ACP session/new response. Absent without evidence.
 	Model string `json:"model,omitempty"`
 
 	// The assistant selected in Settings for one-turn session naming. The confirmation

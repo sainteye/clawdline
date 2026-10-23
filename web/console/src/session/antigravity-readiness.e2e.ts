@@ -21,7 +21,7 @@ function snapshot() {
   return { at: Date.now(), scan: { complete: true, completed: { complete: true, sequence: 1 }, emptyAuthoritative: true,
     epoch: 1, generation: 1, source: { freshness: "current", observed_at: now(), provenance: "fixture" } },
     sessions: ["alpha", "beta"].map((machine, index) => ({ id: "fixture-" + machine, label: "Antigravity synthetic " + machine,
-      machine, backend: "tmux", assistant: "antigravity", isClaude: true, identity: "launch_hook", line: "synthetic menu revision", cwd: "/work/fixture", sessionId: "conversation-" + machine,
+      machine, backend: mode === "owned-protocol" ? "owned" : "tmux", assistant: "antigravity", isClaude: true, identity: mode === "owned-protocol" ? "protocol" : "launch_hook", line: "synthetic menu revision", cwd: "/work/fixture", sessionId: "conversation-" + machine,
       execution_generation: (index ? "b" : "a").repeat(32), state: mode.includes("menu") ? "waiting" : "idle", work_state: "ready", evidence: "process",
       source: { freshness: (mode === "stale-state" || mode === "async-unknown") ? "stale" : "current", observed_at: now(), provenance: "fixture" },
       activity: { known: true, at: now() },
@@ -63,6 +63,11 @@ function daemon(): Server {
   if (path === "/v1/events") { res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" }); streams.add(res); req.on("close", () => streams.delete(res)); res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n"); return }
   if (req.method === "POST" && /\/(send|key)$/.test(path)) { sends.push(path); return json(res, 200, { ok: true }) }
   if (path.includes("transcript") && mode.startsWith("async-")) return json(res, 200, { id: path.split("/")[3], entries: [{ role: "tool", tool: "request_user_input_async", text: "\u0001ask\u0001" + JSON.stringify([{ h: "Synthetic choice", q: "Choose the synthetic direction", o: [{ l: "Continue fixture", d: "Only a synthetic reply" }] }]), at: now() }], more: false })
+  if (path.endsWith("/info") && mode === "owned-protocol") return json(res,200,{info:{session:{id:path.split("/")[3],assistant:"antigravity",model:"synthetic-flash-high",sessionId:"conversation-alpha"},models:[],context:{usedPercent:12,usedTokens:12,windowTokens:100}}})
+  if (path.includes("transcript") && mode === "owned-protocol") return json(res, 200, { id: path.split("/")[3], evidence: "structured", signature: "synthetic-owned:1", entries: [
+    {role:"user",text:"Synthetic input",at:now()},
+    {role:"tool",tool:"read",text:"Read synthetic file",at:now(),activity:{kind:"called",title:"Read synthetic file",status:"completed",durationMs:-1,actions:[{kind:"read",path:"/work/fixture/sample.txt"}]}},
+    {role:"assistant",text:"Synthetic owned protocol reply.",at:now()}] })
   if (path.includes("transcript")) return json(res, 200, { id: path.split("/")[3], entries: [{ role: "assistant", text: "Synthetic Antigravity reply.", at: now() }], more: false })
   if (path.startsWith("/v1/")) return json(res, 200, { rows: [], direct_todos: [], assigned_items: [], recent_items: [], open_decisions: [], entries: [], tasks: [], todos: [], skills: [], items: [], sessions: [], at: now(), counts: {} })
   if (path === "/" || path === "/bar.html") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(document(path === "/" ? "index.html" : "bar.html")) }
@@ -163,6 +168,9 @@ class Tab {
 
   async draft(text: string): Promise<void> {
     await this.until("editor accepts input", s => String((s as any).editor).includes('contenteditable="plaintext-only"') || String((s as any).editor).includes('contenteditable="true"'))
+    // A fresh isolated profile opens the real first-run wizard. Dismiss it
+    // through its public close control before typing into the page behind it.
+    await this.run(`document.querySelector('.setup-dialog[open] .setup-x')?.click()`)
     await this.run(`document.querySelector('#msg').focus()`)
     await this.b.send("Input.insertText", { text }, this.session)
   }
@@ -327,7 +335,7 @@ test("Bar checks exact selected machine capabilities and keeps slash commands as
  } catch (error) { console.error(error); throw error } finally { await tab.close() }
 })
 
-for (const width of [390, 1280]) test(`Work picker ${width}px: explicit capability and bootstrap admission`, { timeout: 60_000 }, async () => {
+for (const width of [390, 1280]) test(`Work picker ${width}px: preview stays hidden without administrator access`, { timeout: 60_000 }, async () => {
  language = "zh-Hant"
  const tab = await Tab.open(browser, width, 900, width === 390)
  try {
@@ -335,13 +343,11 @@ for (const width of [390, 1280]) test(`Work picker ${width}px: explicit capabili
    mode = state
    await tab.go("/?workcase=" + state + "#page=work")
    await tab.until("work card is visible", s => s.text.includes("Synthetic Antigravity task"))
+   await tab.run(`document.querySelector('.setup-dialog[open] .setup-x')?.click()`)
    await tab.click(".work-card-summary")
-   await tab.run(`(async()=>{while(!document.querySelector('.work-new-session [aria-label="Antigravity"]'))await new Promise(r=>setTimeout(r,20))})()`)
-   await tab.run(`new Promise(r=>setTimeout(r,150))`)
-   const disabled = await tab.run(`document.querySelector('.work-new-session [aria-label="Antigravity"]').disabled`)
-   assert.equal(disabled, state !== "bootstrap")
-   assert.ok(await tab.run(`document.querySelector('.work-new-session [aria-label="Antigravity"] svg') !== null`))
-   if (state === "bootstrap") await tab.click('.work-new-session [aria-label="Antigravity"]')
+   await tab.run(`(async()=>{while(!document.querySelector('.work-new-session [role="radio"]'))await new Promise(r=>setTimeout(r,20))})()`)
+   assert.equal(await tab.run(`document.querySelector('.work-new-session [aria-label="Antigravity"]')`), null)
+   assert.ok(await tab.run(`document.querySelectorAll('.work-new-session [role="radio"]').length >= 2`))
    await tab.shot(`antigravity-work-${width}-${state}`)
    assert.ok((await tab.run(PROBE)).wide <= width)
   }
@@ -389,4 +395,24 @@ test("Async questions require the exact current idle execution; verified menus u
   await tab.run(`new Promise(r=>setTimeout(r,100))`)
   assert.deepEqual(sends, ["/v1/sessions/fixture-alpha/send", "/v1/sessions/fixture-alpha/key"])
  } catch(error) { console.error(error); throw error } finally { await tab.close() }
+})
+
+
+test("Owned protocol phone: fresh identity sends once and renders the normalized reply", { timeout: 60_000 }, async () => {
+ mode="owned-protocol";language="zh-Hant";sends=[];inventoryReads=[]
+ const tab=await Tab.open(browser,390,844,true)
+ try {
+  await tab.go("/?owned=1#session=fixture-alpha")
+  await tab.draft("Synthetic phone input")
+  const seen=await tab.until("owned protocol composer can send",s=>s.send && s.text.includes("Synthetic owned protocol reply.") && s.text.includes("synthetic-flash-high"))
+  assert.ok(seen.wide<=390)
+  assert.ok(seen.logos>0)
+  assert.ok(seen.text.includes("Read synthetic file"))
+  assert.equal(await tab.run(`document.querySelector('#tx-focus').hidden`),true)
+  assert.ok(await tab.run(`document.querySelector('#status-line').innerText.includes('12%')`))
+  await tab.shot("antigravity-owned-phone-zh-Hant")
+  await tab.click("#send")
+  await tab.run(`new Promise(r=>setTimeout(r,100))`)
+  assert.deepEqual(sends,["/v1/sessions/fixture-alpha/send"])
+ } catch(error) {await tab.shot("antigravity-owned-phone-failure");throw error} finally {await tab.close()}
 })

@@ -85,6 +85,7 @@ let write = true // `S.write`
 
 let places: Place[] | null = null
 let assistants: L.StartAssistantRow[] = []
+let antigravityPreviewAccess = false
 let with_: string | null = null
 /** The persona chosen for the next start; "" for none. */
 let persona = ""
@@ -362,6 +363,7 @@ function drawWith(): void {
 
 /** The chosen persona, when the catalog still names it; "" for none. */
 function chosenPersona(): string {
+  if (with_ === "antigravity") return ""
   const id = at ? resumeAs : persona
   return personaById(personasNow(onMachine?.id ?? null), id) ? id : ""
 }
@@ -373,7 +375,7 @@ function drawPersona(): void {
   // Every draw rebuilds the chips; the sideways scroll is kept across it, so a
   // press on a chip the person scrolled to does not throw the row back.
   const scrolled = row.scrollLeft
-  row.hidden = !catalog.length || (!at && resume && resumable())
+  row.hidden = with_ === "antigravity" || !catalog.length || (!at && resume && resumable())
   row.innerHTML = ""
   if (row.hidden) return
   const choose = (id: string) => {
@@ -746,7 +748,7 @@ function load(background = false): void {
       placesUnread = false
       said("")
       places = (d && d.places) || []
-      assistants = (d && d.assistants) || []
+      assistants = ((d && d.assistants) || []).filter((a) => a.id !== "antigravity" || antigravityPreviewAccess)
       if (!with_ || !assistants.some((a) => a.id === with_)) {
         with_ = assistants.find(a => assistantAdmits(a, "start"))?.id || assistants[0]?.id || null
       }
@@ -1076,6 +1078,12 @@ export const Start = {
   scrolled: edge,
   isOpen: () => !sheetHidden(),
 
+  /** Reuse the existing Cloud administrator decision for entry visibility. */
+  antigravityPreview(allowed: boolean) {
+    antigravityPreviewAccess = allowed
+    if (!allowed) {assistants = assistants.filter((a) => a.id !== "antigravity"); if (with_ === "antigravity") with_ = null}
+    if (!sheetHidden()) {if (allowed) load(true); else draw()}
+  },
   /** Bind the page: how to open a row, and which row is open. */
   host(next: StartHost) {
     host = next

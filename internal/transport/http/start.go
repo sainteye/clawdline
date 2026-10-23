@@ -22,6 +22,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/terminal/owned"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
 	personas "github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -398,7 +399,7 @@ func manualConversationTitle(rows []swiftTitle, id, custom string) string {
 }
 
 func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistant, model, persona string) {
-	if assistant == projects.AssistantAntigravity {
+	if assistant == projects.AssistantAntigravity && s.antigravitySessions.Load() == nil {
 		refuseAntigravityFoundation(w)
 		return
 	}
@@ -423,6 +424,19 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 	if !ok {
 		log.Printf("audit place.start place=%.64s ok=0 why=not_found", id)
 		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No place named that", "")
+		return
+	}
+	if assistant == projects.AssistantAntigravity {
+		if model != "" || persona != "" {
+			writePlaceRefusal(w, http.StatusConflict, "provider_operation_unsupported", "The personal ACP preview currently uses its native default model and no role.", "Antigravity")
+			return
+		}
+		made, err := (ownedAntigravityTerminal{s}).Open(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label})
+		if err != nil {
+			writePlaceRefusal(w, http.StatusConflict, "provider_start_failed", err.Error(), "Antigravity")
+			return
+		}
+		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})
 		return
 	}
 	if assistantNeedsSignIn(ctx, assistant) {

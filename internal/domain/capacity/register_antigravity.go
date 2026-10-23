@@ -3,6 +3,10 @@ package capacity
 // antigravityBounds registers the local native observation bridge.
 func antigravityBounds() []Entry {
 	return []Entry{
+		{Name: "antigravity.acp_sessions", Class: Buffer, Unit: Rows, Limit: 1, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxSessions"}},
+		{Name: "antigravity.acp_frame_bytes", Class: Buffer, Unit: Bytes, Limit: 1048576, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxFrameBytes"}},
+		{Name: "antigravity.acp_view_bytes", Class: Observation, Unit: Bytes, Limit: 1048576, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxViewBytes"}},
+		{Name: "antigravity.acp_call_seconds", Class: Buffer, Unit: Seconds, Limit: 45, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxCallTime"}},
 		{Name: "antigravity.first_input_slots", Class: Buffer, Unit: Rows, Limit: 512, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitylaunch.MaxFirstInputs"}},
 		{Name: "antigravity.saved_launches", Class: Buffer, Unit: Rows, Limit: 512, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitylaunch.MaxLaunches"}},
 		{Name: "antigravity.context_history", Class: Buffer, Unit: Rows, Limit: 512, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitylaunch.MaxHistory"}},

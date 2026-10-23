@@ -87,6 +87,8 @@ var itermSession = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f
 // the whole reading rather than pick a source.
 func SourceForID(id string) string {
 	switch {
+	case strings.HasPrefix(id, "owned:acp:"):
+		return "owned"
 	case tmuxPane.MatchString(id):
 		return "tmux"
 	case itermSession.MatchString(id):
@@ -114,6 +116,11 @@ const ProcessSource = "ps"
 // source here speaks for (a pty this daemon opened) answers empty, and a
 // caller then falls back to the whole reading.
 func OwningSource(row Session) string {
+	// Only the ACP namespace is listed by the owned protocol host. Ordinary
+	// owned PTYs retain their existing whole-reading/process fallback.
+	if row.Backend == BackendOwned && SourceForID(row.ID) == "owned" {
+		return "owned"
+	}
 	if SourceForID(row.ID) == ProcessSource || (row.TTY != "" && row.ID == row.TTY) {
 		return ProcessSource
 	}

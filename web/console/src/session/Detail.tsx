@@ -520,6 +520,7 @@ function Tools({
   const T = L.strings
   const steward = !!row && !!(row.machine_scope || row.coordinator)
   const actions = richSessionSwipeActions(row)
+  const protocolOwned = row?.backend === "owned" && row.identity === "protocol"
   const [open, setOpen] = useState(false)
   const [more, setMore] = useState(false)
   const [openingTerminal, setOpeningTerminal] = useState(false)
@@ -721,7 +722,7 @@ function Tools({
         className="chip"
         id="tx-focus"
         type="button"
-        hidden={!atMac()}
+        hidden={!atMac() || protocolOwned}
         disabled={!row || ending}
         title={T.webShowOnMacTip}
         onClick={focusMac}
@@ -773,6 +774,7 @@ function Tools({
             >
               <button
                 id="session-interrupt"
+                hidden={protocolOwned}
                 type="button"
                 role="menuitem"
                 disabled={!row || ending}
@@ -785,6 +787,7 @@ function Tools({
               </button>
               <button
                 id="session-focus"
+                hidden={protocolOwned}
                 type="button"
                 role="menuitem"
                 disabled={!row || ending}
@@ -822,6 +825,7 @@ function Tools({
                   it sits in cannot be opened without a session. */}
               <button
                 id="session-screen"
+                hidden={protocolOwned}
                 type="button"
                 role="menuitem"
                 onClick={() => {
