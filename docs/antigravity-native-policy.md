@@ -184,10 +184,11 @@ remaining composition; adding these checks does not enable public starts.
 ## A07 enforcement amendment and bounded native result
 
 Execution mode, permission ceiling and native grant are separate contracts.
-The initial closed `review-each-tool` strategy can emit only `force_ask` for
-`ask`; zero/unknown strategies and `edits`/`full` combinations refuse. It uses
-an explicit `accept-edits` launch token to avoid an ambient default, not to
-claim a review ceiling. `plan` is not a filesystem boundary and native `auto`
+The closed `review-each-tool` representation can emit only `force_ask` for
+`ask`; zero/unknown strategies and `edits`/`full` combinations refuse. The
+proposed explicit `accept-edits` plus uniform `force_ask` activation candidate
+was falsified by the native control below. That tuple remains inactive; its
+synthetic strategy representation is not evidence of native enforcement. `plan` is not a filesystem boundary and native `auto`
 is not proof of full authorization. Distinct edits/full strategies remain
 required. No persisted policy version or mode spelling is reinterpreted.
 
@@ -221,6 +222,67 @@ closed and controller threads joined with no cleanup error. The NT$0 bound
 is based on the observed free-only gate, not invoice telemetry; raw vendor
 HTTP request count is unknown. No automatic input retry followed refusal.
 
+### Native counterexample and structured-runtime prerequisite
+
+The follow-up used the actual observed `write_file(Path, Content, Overwrite)`
+contract and an exact owned-file allowlist. A two-PreToolUse-handler case
+returned an unapproved marker edit in `accept-edits`; its response stdout was
+not captured, so its decision-path evidence is incomplete. A separately
+planned single-handler control removed that ambiguity: the only PreToolUse
+handler durably captured `{"decision":"force_ask"}` with its fixed reason,
+PostToolUse reported no error, and the marker changed to the requested bytes.
+Each model ticket had exactly two owner transport writes: its one literal
+prompt and initial Enter. No approval keys or approval artifacts existed.
+The single-handler result therefore refutes this review-ceiling candidate
+without depending on cross-hook order. It does not establish every native
+permission behavior or the missing/disabled-hook result.
+
+These two later cases each used one input and two PreInvocation events. The
+three related probes together used three inputs and five received/admitted
+PreInvocation events, retaining the prior refused input in the total. Each
+process independently displayed Starter Quota and AI Credits OFF before its
+input, with API/ADC/Vertex/fallback environment excluded. Both later owners
+reported all groups absent, direct handles joined, PTY/listener closed and
+threads joined, with no cleanup error (50.248 and 56.375 seconds). No automatic
+prompt retry followed either case. The NT$0 evidence boundary remains
+free-gate based; raw vendor HTTP and invoice telemetry remain unknown.
+
+The A02 ACP alternative now has a zero-model installation/initialization
+observation. The official registry's separate 1.4.1 darwin-arm64 archive was
+112737434 bytes, SHA256
+`f9bdd68291ae78c38d2141e63bc86b84e6cc7b9f60f71652c68435a7943deb17`.
+Both extracted executables passed strict local signature verification and
+identified Google LLC, Team `EQHXZ8M8AV`. This is a locally measured pin and
+signature result; the registry did not publish an archive checksum.
+One `initialize` response negotiated ACP v1 in 1.243 seconds and advertised
+load/list/resume, personal Google OAuth and optional tier/system-prompt
+extensions. These are declared capabilities, not authenticated/free/usable
+Session evidence. A separate initialize plus session/new probe reached its
+15-second owner deadline without a session/new answer; an EOF was observed
+as that deadline stopped the owner. This is not evidence of authentication failure.
+No authenticate or prompt was sent, and all owned processes were stopped.
+
+A subsequent, separate zero-model login diagnostic used a new isolated ACP
+account directory. It sent `initialize` and `authenticate` with the advertised
+`oauth-personal` method, once each. Initialization answered; the authentication
+operation printed a Google browser-confirmation link. The owner stopped on that
+observation after 1.529 seconds, with all owned groups absent, resources disposed
+and no cleanup error. It sent no session/new or prompt and made no paid API call
+or automatic retry. This establishes the browser step for this fresh profile,
+not authentication completion, reuse of standalone credentials, a free-tier
+claim, or a created Session. The stopped login link is not reusable.
+
+A structured protocol codec and later owned transport must preserve the
+actual native request/session/tool/option IDs and generation before any
+answer. An initialized connection is not a created Session. Standalone
+history/identity/terminal paths remain required; ACP resume cannot inherit
+standalone compatibility or quota/Credits settings merely because Google
+supplies both binaries. The next batch implements immutable initialization
+and permission-offer decoding, with no provider calls, process registry or
+public capability enabled. Production transport, authentication, billing
+state, exact resume, and actual mandatory native approval evidence remain
+prerequisites to replacing the falsified candidate.
+
 ## Remaining production contract
 
 1. Resolve a compiled compatibility tuple for the exact pinned image, platform
@@ -234,8 +296,9 @@ HTTP request count is unknown. No automatic input retry followed refusal.
 3. Connect the implemented shared preparation and current policy Check to the
    HTTP and broker owning receipts. Preserve checks before process pinning,
    managed context/tool responses and each capture/load/paste/Enter effect. The
-   managed PreToolUse seam has no observer fallback on failure. The initial candidate is
-   measured `force_ask`, not the observer's grant-reusing `ask` response.
+   managed PreToolUse seam has no observer fallback on failure. No observer response is an enforcement proof. The tested accept-edits plus
+   force_ask review candidate is falsified; a replacement must supply its own
+   native approval evidence.
 4. Persist the native launch reference before each owner's one open. Retain
    binding-pending and unknown outcomes without generic Type, Send or reopen
    fallback. Broker claims, worktree, actor/defaults and one-shot first input

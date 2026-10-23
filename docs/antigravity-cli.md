@@ -138,7 +138,7 @@ not supersede its work, receipt, claims or authority policies.
 | Decision | Options and trade-off | Chosen direction; reversibility |
 | --- | --- | --- |
 | A01: product target | Keep old Gemini personal OAuth: cannot serve this account. Gemini API-key/enterprise: valid distinct audience, potentially paid. Antigravity: satisfies the newly authorized target. | Antigravity standalone; **irreversible public provider name** `antigravity`, executable `agy`. Keep Gemini quota identity distinct. |
-| A02: interactive integration | TUI + opt-in identity hooks + optional status line: fits existing terminal product and unmanaged sessions, requires conservative screen handling. ACP: stronger structured owned interactions, separate runtime/auth/distribution. Print stream: simpler, insufficient approval protocol. Do nothing: does not deliver the feature. | TUI integration first, full requested scope retained. ACP remains an alternative architecture if captured standalone evidence cannot deliver required facts. Adapter internals **reversible**; no headless-only completion claim. |
+| A02: interactive integration | TUI + opt-in identity hooks + optional status line: fits existing terminal product and unmanaged sessions, requires conservative screen handling. ACP: stronger structured owned interactions, separate runtime/auth/distribution. Print stream: simpler, insufficient approval protocol. Do nothing: does not deliver the feature. | TUI integration first, full requested scope retained. The accept-edits plus force_ask review candidate was falsified by an owned native file-write control; evaluate the separate ACP approval lane while retaining standalone discovery/history and all accepted scope. Adapter internals **reversible**; no headless-only completion claim. |
 | A03: exact identity | Cwd/latest chat: cheap but wrong with two sessions. Open files: positive only while a descriptor exists. Hook/launch commitment: stable identity with local lineage checks, installation required. | Hook/launch commitment primary; kernel-open-file fallback only when positively proven. **Irreversible durable binding format**, version it. Missing proof means ambiguous/unreadable/no_record, never latest. |
 | A04: state | Trust invocation/end hooks alone: misses prompts, background work and lost events. Screen only: brittle. Combine typed observations with source/freshness: more integration, honest unknowns. | Combine current screen/status with fenced hooks. **Reversible** rules; never equate PostInvocation with idle or waiting with permission grant. |
 | A05: context injection | Rewrite global rules: affects other sessions. Replace base system prompt: changes provider behavior. Immutable launch pointer in supported SessionStart context/initial interactive prompt: preserves existing files, requires a loading receipt. | Immutable Squad snapshot + memory/rules pointer, scoped to launch. **Irreversible receipt meaning**; no native `--agent` substitution for Squad role identity. |
@@ -147,8 +147,12 @@ not supersede its work, receipt, claims or authority policies.
 
 ACP is a real alternative, not an undocumented `agy --acp` flag. The [official ACP registry entry](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json)
 currently lists a separate proprietary 1.4.1 runtime, `agy_acp_server.par`/`.exe`, for macOS,
-Linux and Windows. The standalone binary tested here is 1.4.5. If ACP becomes necessary, first
-pin artifacts and verification hashes, validate its separate authentication and resume behavior,
+Linux and Windows. The standalone binary tested here is 1.4.5. Root has now
+pinned the official darwin-arm64 ACP archive, verified both Google signatures
+and obtained one ACP v1 initialize response without model input. The following
+session/new attempt timed out without a Session answer. These facts establish
+neither personal authentication nor free/Credits settings nor standalone
+resume compatibility. Before activation, validate separate authentication and resume behavior,
 and preserve TUI discovery; do not treat a T3/Orca version pin as our compatibility receipt.
 
 ## Proposed boundaries and exact contracts

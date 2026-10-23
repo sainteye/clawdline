@@ -30,7 +30,7 @@ import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
 import { bootLocalCatalog } from "./catalog.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
-import { destinationFragment, destinationFromFragment, destinationKey, identifyOpenedFleetRow, withConfirmedFleetTitle,
+import { destinationFragment, destinationFromFragment, destinationKey, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
   type FleetDetailProblem, type ProjectedSession, type SessionDestination } from "./cloud/all-machine-sessions.js"
 import { notificationAddress } from "./push/navigation.js"
 import { hasDocumentIntent } from "./legacy/documents-bridge.js"
@@ -1161,7 +1161,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         filter={filter}
         onFilter={setFilter}
         selected={selected}
-        openId={openId}
+        openId={sessionDetailID(openId, fleetList ? fleetTarget : null, fleetReaderMachine, rows)}
         onOpen={(id) => openSession(id)}
         onBack={() => closeDetail()}
         onDid={fleet.refresh}

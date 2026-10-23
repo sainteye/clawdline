@@ -12,6 +12,15 @@ export interface SessionDestination {
   executionGeneration: string
 }
 
+/** Select the pinned Cloud detail during render, before local selection effects run. */
+export function sessionDetailID(localID: string | null, target: SessionDestination | null,
+  readerMachine: string | null, rows: readonly SessionRow[]): string | null {
+  if (!target) return localID
+  if (readerMachine !== target.machineID) return null
+  return rows.some((row) => row.id === target.sessionID &&
+    row.execution_generation === target.executionGeneration) ? target.sessionID : null
+}
+
 export interface FleetMachine {
   id: string
   name: string

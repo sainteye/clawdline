@@ -221,6 +221,9 @@ complete `ss/` set or authenticated machine list; its
 already authorized presentation can supply the original Session pane's display row when a rich
 `s/` replay is absent. The pane then reads `info` and transcript for that exact execution. This
 keeps a quiet Session readable without asking every machine to restate its whole rich list.
+The detail selects that pinned destination during render, before local selection effects run.
+Until its machine and execution match a display row, it shows no conversation; an earlier local
+selection cannot supply the detail while a newly opened Session is arriving.
 
 Scheduled Tasks wait for the fleet roster, then ask each eligible machine independently. The
 section shows loading, empty, partial failure and last answered rows separately; remounting the
