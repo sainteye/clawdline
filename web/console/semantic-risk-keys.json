@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9151,
+  "englishKeys": 9153,
   "counts": {
-    "negation": 2647,
+    "negation": 2649,
     "state": 1518,
     "permission": 550,
     "deletion": 201,
     "uncertainty": 288
   },
-  "unionCount": 4086,
+  "unionCount": 4088,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -1576,6 +1576,8 @@
       "legacy.webFailDecrypt",
       "legacy.webFailExecutionGeneration",
       "legacy.webFailForbidden",
+      "legacy.webFailGeminiHistory",
+      "legacy.webFailGeminiResume",
       "legacy.webFailKeyMismatch",
       "legacy.webFailMacWritesOff",
       "legacy.webFailMachineOffline",
@@ -7431,6 +7433,8 @@
     "legacy.webFailDecrypt",
     "legacy.webFailExecutionGeneration",
     "legacy.webFailForbidden",
+    "legacy.webFailGeminiHistory",
+    "legacy.webFailGeminiResume",
     "legacy.webFailKeyMismatch",
     "legacy.webFailMacWritesOff",
     "legacy.webFailMachineOffline",

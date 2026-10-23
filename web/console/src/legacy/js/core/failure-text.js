@@ -17,6 +17,8 @@ import { isFailureCode, refText } from "../net/cloud-failure.js";
 
 /** Code → string-table name. A code listed here is a sentence a person can act on. */
 const SENTENCES = {
+    provider_history_unavailable: "webFailGeminiHistory",
+    provider_resume_failed: "webFailGeminiResume",
     machine_offline: "webFailMachineOffline",
     cloud_reconnecting: "webFailReconnecting",
     token_superseded: "webFailReconnecting",

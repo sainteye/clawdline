@@ -37,6 +37,7 @@ import {
   olderTranscriptPage,
   readOlderRecovering,
   nativeHistoryChanged,
+  readableTranscriptHistory,
   SAFETY_MS,
   TRAIL_MS,
   transcriptPace,
@@ -337,7 +338,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
         setOlderError(nextWord("transcriptEarlierStalled"))
         return
       }
-      if (page.evidence !== "transcript") throw new Error(page.note || "Earlier conversation could not be read")
+      if (!readableTranscriptHistory(page)) throw new Error(page.note || "Earlier conversation could not be read")
       if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
       setEarlier((was) => ({ base: was?.base ?? base, pages: [...(was?.pages ?? []), page] }))
     } catch (error) {
@@ -354,7 +355,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   useEffect(() => {
     const scroll = document.getElementById("tx-scroll")
     const box = document.getElementById("tx")
-    if (!scroll || !box || !data || data.evidence !== "transcript") {
+    if (!scroll || !box || !data || !readableTranscriptHistory(data)) {
       onFilling(show === "loading")
       return
     }

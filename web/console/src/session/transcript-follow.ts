@@ -44,7 +44,15 @@ export function transcriptCursorStale(error: unknown): boolean {
 
 /** A whole native reread cannot prove retained older entries still match. */
 export function nativeHistoryChanged(held: TranscriptPage | null, newest: TranscriptPage): boolean {
+  if (held?.signature.startsWith("acp2:")) {
+    return held.signature.split(":")[1] !== newest.signature.split(":")[1]
+  }
   return !!held?.signature.startsWith("agy1:") && held.signature !== newest.signature
+}
+
+/** Durable owned ACP pages share the existing older-history UI and cursor recovery. */
+export function readableTranscriptHistory(page: TranscriptPage): boolean {
+  return page.evidence === "transcript" || (page.evidence === "structured" && page.signature.startsWith("acp2:"))
 }
 
 /** Restart an incompatible chain once. A second stale read is exposed for manual retry. */

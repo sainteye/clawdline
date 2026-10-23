@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { appendedReadFrom, FOLLOW_FAST_MS, FOLLOW_LATER_MS, FOLLOW_MS, FOLLOW_WINDOW_MS, joinAppended, MERGED_ROWS_LIMIT, SAFETY_MS, BLIND_MS, transcriptPace, olderTranscriptPage, readOlderRecovering, nativeHistoryChanged } from "./transcript-follow.ts"
+import { appendedReadFrom, FOLLOW_FAST_MS, FOLLOW_LATER_MS, FOLLOW_MS, FOLLOW_WINDOW_MS, joinAppended, MERGED_ROWS_LIMIT, SAFETY_MS, BLIND_MS, transcriptPace, olderTranscriptPage, readOlderRecovering, nativeHistoryChanged, readableTranscriptHistory } from "./transcript-follow.ts"
 // @ts-expect-error -- a `.ts` path, for node.
 import { SharedTranscripts } from "./transcript-share.ts"
 
@@ -29,6 +29,17 @@ test("a whole native reread invalidates uncertain older history without changing
   assert.equal(nativeHistoryChanged(page([], 100, "agy1:same"), page([], 100, "agy1:same")), false)
   assert.equal(nativeHistoryChanged(page([], 100, "claude-old"), page([], 200, "claude-new")), false)
   assert.equal(nativeHistoryChanged(null, page([], 200, "agy1:new")), false)
+})
+
+test("owned Gemini history survives streamed tail updates and restarts only on native replacement", () => {
+  const held = { ...page(["saved"], undefined, "acp2:g1:7"), evidence: "structured" as const, nextBefore: 80 }
+  assert.equal(readableTranscriptHistory(held), true)
+  assert.equal(readableTranscriptHistory({ ...held, signature: "acp:legacy:7" }), false)
+  assert.equal(readableTranscriptHistory({ ...held, evidence: "none" }), false)
+  assert.equal(readableTranscriptHistory(page([])), true)
+  assert.equal(nativeHistoryChanged(held, { ...held, signature: "acp2:g1:8" }), false)
+  assert.equal(nativeHistoryChanged(held, { ...held, signature: "acp2:g2:1" }), true)
+  assert.equal(appendedReadFrom(held, "poke", false), null, "mutable ACP rows are read as whole pages")
 })
 
 test("stale older history clears before one newest read and one retry, then exposes a second stale", async () => {
