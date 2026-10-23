@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9149,
+  "englishKeys": 9150,
   "counts": {
-    "negation": 2646,
-    "state": 1519,
+    "negation": 2647,
+    "state": 1518,
     "permission": 550,
     "deletion": 201,
-    "uncertainty": 289
+    "uncertainty": 288
   },
-  "unionCount": 4087,
+  "unionCount": 4086,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -79,6 +79,7 @@
       "antigravity.inspectBeforeSending",
       "antigravity.integrationMissing",
       "antigravity.missing",
+      "antigravity.modelUnavailable",
       "antigravity.turnIncomplete",
       "antigravity.unknown",
       "antigravity.unsupported",
@@ -2677,7 +2678,6 @@
       "admin.windowNote",
       "antigravity.bootstrap",
       "antigravity.inspectBeforeSending",
-      "antigravity.slashDraft",
       "antigravity.toolCancelled",
       "antigravity.toolCompleted",
       "antigravity.toolFailed",
@@ -4942,7 +4942,6 @@
       "admin.usageUnknownLabel",
       "antigravity.bootstrap",
       "antigravity.disabled",
-      "antigravity.modelUnavailable",
       "antigravity.sendUnavailable",
       "antigravity.unknownAuth",
       "antigravityConsent.helperUnavailable",
@@ -5329,7 +5328,6 @@
     "antigravity.modelUnavailable",
     "antigravity.required",
     "antigravity.sendUnavailable",
-    "antigravity.slashDraft",
     "antigravity.toolCancelled",
     "antigravity.toolCompleted",
     "antigravity.toolFailed",

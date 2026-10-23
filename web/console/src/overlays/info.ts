@@ -196,7 +196,8 @@ function statusShape(s: Row | null): string {
 /** Only an idle session takes a `/model`: typed into a working one it interrupts the turn. */
 function canSwitch(): boolean {
   const s = session()
-  return !!(s && s.assistant !== "antigravity" && host.writable() && s.state === "idle" && !busy)
+  return !!(s && host.writable() && s.state === "idle" && !busy &&
+    (s.assistant !== "antigravity" || !!data?.models.length))
 }
 /** A Codex row may be unknown while its terminal remains writable. A deliberate press can open its picker. */
 function canOpenCodexPicker(): boolean {
@@ -272,7 +273,7 @@ function hero(s: Facts["session"], u: Facts["usage"]): string {
   return (
     '<div class="hero">' +
     '<div class="who">' + L.assistantLogoHTML(s.assistant) + '<span class="assistant-name">' +
-    esc(s.assistant || T.webInfoUnknown) + "</span>" + modelMeta + "</div>" +
+    esc(s.assistant ? L.assistantDisplayName(s.assistant) : T.webInfoUnknown) + "</span>" + modelMeta + "</div>" +
     headline +
     '<div class="meta">' + meta.join('<span class="dot">·</span>') + "</div>" +
     "</div>"
@@ -296,7 +297,7 @@ function modelsHTML(models: SessionModel[], current: string): string {
   if (pending && !models.some((m) => m.command === pending)) {
     chips += '<button type="button" class="m" data-pending="1" disabled>' + esc(pending) + "</button>"
   }
-  const other =
+  const other = data?.session.assistant === "antigravity" ? "" :
     '<form class="other" data-other="1">' +
     '<input type="text" name="model" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" ' +
     'placeholder="' + esc(T.webInfoModelOther) + '" aria-label="' + esc(T.webInfoModelOther) + '"' + (can ? "" : " disabled") + ">" +
@@ -445,7 +446,7 @@ function limitsHTML(limits: SessionLimits): string {
   // that sentence for a bare "unknown" is what leaves a person with no status
   // line configured — the only thing Claude Code ever hands its 5h and 7d
   // percentages to — with nowhere to read why the corner is blank.
-  if (!limits.windows.length) return note(limits.detail || T.webInfoUnknown)
+  if (!limits.windows.length) return note(data?.session.assistant === "antigravity" ? T.webInfoUnknown : limits.detail || T.webInfoUnknown)
   return limits.windows
     .map((window) => {
       const pct = Math.max(0, Math.min(100, Math.round(window.usedPercent)))
@@ -453,7 +454,7 @@ function limitsHTML(limits: SessionLimits): string {
       const reset = window.resetsAt
         ? '<span class="when">' + esc(fill(T.webInfoResets, { when: resetMoment(window.resetsAt) })) + "</span>"
         : ""
-      const value = window.hit ? T.webInfoLimitHit : pct + "%"
+      const value = window.hit ? T.webInfoLimitHit : data?.session.assistant === "antigravity" ? nextWord("quotaUsed", { percent: pct }) : pct + "%"
       return (
         '<div class="win" data-level="' + level + '">' +
         '<span class="wn">' + esc(window.name) + "</span>" +
@@ -533,7 +534,7 @@ function html(d: Facts): string {
   const role = roleHTML(session())
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
   // Read-only pairings get no buttons rather than dead ones.
-  if (host.writable() && s.assistant !== "antigravity" && (models.length || s.assistant === "codex")) {
+  if (host.writable() && (models.length || s.assistant === "codex")) {
     out += sec(++i, T.webInfoSwitchModel, "", s.assistant === "codex" ? codexModelHTML(models, current) : modelsHTML(models, current))
   } else if (host.writable() && s.assistant === "antigravity") {
     out += sec(++i, T.webInfoSwitchModel, "", note(catalogWord("antigravity", "modelUnavailable")))
@@ -749,6 +750,16 @@ export const Info = {
       () => {
         if (forId !== id) return
         busy = false
+        if (data?.session.assistant === "antigravity") {
+          // Native setting acknowledgement selects the next turn. It is not a
+          // terminal command waiting to appear in the conversation transcript.
+          pending = null
+          data.session.model = word
+          SessionFacts.receiveFull(id, data)
+          said(fill(catalogWord("antigravity", "modelSelected"), { model: name || word }), true)
+          draw()
+          return
+        }
         pending = word
         SessionFacts.drop(id)
         said(fill(T.webInfoModelSent, { model: name || word }), true)

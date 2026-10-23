@@ -36,9 +36,13 @@ export function assistantAdmits(facts: AssistantFacts | null | undefined, operat
   return assistantUnavailable(facts, operation) === null
 }
 
-/** A literal slash can become a paid prompt rather than opening the CLI picker. Keep it a draft. */
+/** Terminal controls are not chat prompts. Absolute paths remain ordinary text.
+ * Command names follow the official Antigravity CLI command reference.
+ */
 export function antigravitySlashDraft(assistant: string | undefined, text: string): boolean {
-  return assistant === "antigravity" && text.trimStart().startsWith("/")
+  const draft = text.trimStart()
+  return assistant === "antigravity" && (draft.trim() === "/" ||
+    /^\/(?:btw|changelog|clear|codesearch|cs|search|compact|config|settings|context|diff|effort|exit|quit|fast|feedback|fork|branch|goal|help|hooks|keybindings|learn|logout|mcp|model|open|permissions|planning|plugin|plugins|rename|remote-control|resume|switch|conversation|rewind|undo|schedule|skills|statusline|tasks|teamwork-preview|teamwork|title|usage|quota|voice|record)(?:\s|$)/.test(draft))
 }
 
 /** Session hosts supply machine readiness separately from permission to write to that machine. */

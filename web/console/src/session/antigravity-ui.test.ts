@@ -66,7 +66,7 @@ test("old daemons preserve original provider behavior without inventing a third-
 
 test("Antigravity slash commands stay drafts while ordinary prompts and other providers retain their behavior", () => {
   for (const text of ["/", "/model", "  /config", "\n/quit"]) assert.equal(antigravitySlashDraft("antigravity", text), true)
-  for (const text of ["", "Explain /model", "A normal prompt"]) assert.equal(antigravitySlashDraft("antigravity", text), false)
+  for (const text of ["", "Explain /model", "A normal prompt", "/src/main.go is the file to explain", "/README.md", "/model.json", "/unknown-file"]) assert.equal(antigravitySlashDraft("antigravity", text), false)
   assert.equal(antigravitySlashDraft("codex", "/model"), false)
   assert.equal(antigravitySlashDraft("claude", "/exit"), false)
 })

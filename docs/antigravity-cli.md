@@ -531,6 +531,15 @@ is invented by a cache read. The source provides no freshness interval, so
 `freshForSeconds` remains null; a passed native reset marks the held reading
 stale. A busy read leaves the previously held reading alone.
 
+The Info card renders only the offered native model buttons and uses the
+acknowledged selection immediately for the next turn. It does not poll the
+transcript for a model command or repeat quota reads to confirm the selection.
+The quota window explicitly labels its percentage as used and stays separate
+from the conversation context meter. English and Traditional Chinese phone and
+desktop fixture runs verify one setting request and no extra full Info read.
+The ordinary composer reserves known CLI command tokens rather than every
+leading slash, so absolute file paths remain valid prompts.
+
 Synthetic process-peer tests use different percentages from the private probe
 and cover exact model selection, revocation before pipe write, transcript
 isolation, group separation, zero/unknown readings, cancellation and no retry.
