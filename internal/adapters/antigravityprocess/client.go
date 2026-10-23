@@ -74,6 +74,7 @@ type Client struct {
 	usage                            *usageCapture               // stateMu; readLoop owns chunk order
 	configResult                     func(json.RawMessage) error // stateMu; invoked by readLoop before later updates
 	configResultID                   string
+	canLoad, canResume, canList      bool // negotiated before opening a session
 }
 
 type usageCapture struct {
@@ -173,6 +174,16 @@ func (c *Client) Initialize(ctx context.Context) (json.RawMessage, error) {
 		return nil, c.badResult("unsupported_protocol")
 	}
 	c.initialized = true
+	var caps struct {
+		AgentCapabilities struct {
+			LoadSession         bool                       `json:"loadSession"`
+			SessionCapabilities map[string]json.RawMessage `json:"sessionCapabilities"`
+		} `json:"agentCapabilities"`
+	}
+	_ = json.Unmarshal(r, &caps)
+	c.canLoad = caps.AgentCapabilities.LoadSession
+	_, c.canResume = caps.AgentCapabilities.SessionCapabilities["resume"]
+	_, c.canList = caps.AgentCapabilities.SessionCapabilities["list"]
 	return r, nil
 }
 
@@ -224,14 +235,97 @@ func (c *Client) NewSession(ctx context.Context) (json.RawMessage, error) {
 	c.stateMu.Lock()
 	c.sessionID = id
 	c.stateMu.Unlock()
+	if err := c.acceptFreeTier(m); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (c *Client) acceptFreeTier(m map[string]json.RawMessage) error {
 	meta, _ := object(m["_meta"])
 	ag, _ := object(meta["antigravity"])
 	tier, _ := object(ag["tier"])
 	if !equalString(tier["id"], "free-tier") || !equalString(tier["name"], "Antigravity Starter Quota") {
-		return nil, c.badResult("free_tier_required")
+		return c.badResult("free_tier_required")
 	}
 	c.free = true
+	return nil
+}
+
+// CanResume reports the negotiated no-replay method. Owners with a durable
+// transcript prefer it; LoadSession is for importing the native replay.
+func (c *Client) CanResume() bool { return c.canResume }
+
+// ResumeSession restores the exact native conversation without replaying its
+// history. It never creates a replacement conversation or resends a prompt.
+func (c *Client) ResumeSession(ctx context.Context, id string) (json.RawMessage, error) {
+	return c.restoreSession(ctx, id, false)
+}
+
+// LoadSession restores the exact conversation and delivers native history to
+// OnUpdate before returning. The session ID is installed before those updates.
+func (c *Client) LoadSession(ctx context.Context, id string) (json.RawMessage, error) {
+	return c.restoreSession(ctx, id, true)
+}
+
+func (c *Client) restoreSession(ctx context.Context, id string, replay bool) (json.RawMessage, error) {
+	if !c.callMu.TryLock() {
+		return nil, failure("busy", NotWritten)
+	}
+	defer c.callMu.Unlock()
+	if !c.authenticated || c.SessionID() != "" || strings.TrimSpace(id) == "" {
+		return nil, failure("invalid_state", NotWritten)
+	}
+	method := "session/resume"
+	if replay {
+		method = "session/load"
+		if !c.canLoad {
+			return nil, failure("load_unsupported", NotWritten)
+		}
+	} else if !c.canResume {
+		return nil, failure("resume_unsupported", NotWritten)
+	}
+	if err := c.checkPersonal(); err != nil {
+		return nil, err
+	}
+	c.stateMu.Lock()
+	c.sessionID = id
+	c.stateMu.Unlock()
+	r, err := c.call(ctx, method, map[string]any{"sessionId": id, "cwd": c.opts.WorkingDir, "mcpServers": []any{}})
+	if err != nil {
+		return nil, err
+	}
+	m, err := object(r)
+	if err != nil {
+		return nil, c.badResult("invalid_session")
+	}
+	if raw, ok := m["sessionId"]; ok && !equalString(raw, id) {
+		return nil, c.badResult("session_identity_changed")
+	}
+	if err := c.acceptFreeTier(m); err != nil {
+		return nil, err
+	}
 	return r, nil
+}
+
+// ListSessions requests native metadata for this exact working directory.
+// The owner must still validate returned cwd and session IDs before adopting any.
+func (c *Client) ListSessions(ctx context.Context, cursor string) (json.RawMessage, error) {
+	if !c.callMu.TryLock() {
+		return nil, failure("busy", NotWritten)
+	}
+	defer c.callMu.Unlock()
+	if !c.authenticated || !c.canList {
+		return nil, failure("list_unsupported", NotWritten)
+	}
+	if err := c.checkPersonal(); err != nil {
+		return nil, err
+	}
+	params := map[string]any{"cwd": c.opts.WorkingDir}
+	if cursor != "" {
+		params["cursor"] = cursor
+	}
+	return c.call(ctx, "session/list", params)
 }
 
 // PID is the originally started child identifier, not a current liveness proof.
