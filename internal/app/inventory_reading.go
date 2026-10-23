@@ -743,6 +743,12 @@ func (r *InventoryReading) retainLocked(raw session.Inventory) session.Inventory
 			oldest = good.at
 		}
 	}
+	// Retention crosses source boundaries: when a terminal listing fails, ps
+	// can still list its tty under a different id. Apply the scan's terminal
+	// join again so that the retained tab/pane replaces its process placeholder.
+	// Keep whole observations together; retained state must not become current
+	// merely because ps saw the same tty in this pass.
+	display.Sessions = joinDisplayRows(display.Sessions)
 	sort.SliceStable(display.Sessions, func(i, j int) bool {
 		return inventoryRowKey(display.Sessions[i]) < inventoryRowKey(display.Sessions[j])
 	})
@@ -757,6 +763,33 @@ func (r *InventoryReading) retainLocked(raw session.Inventory) session.Inventory
 		}
 	}
 	return display
+}
+
+func joinDisplayRows(rows []session.Session) []session.Session {
+	byKey := make(map[string]int, len(rows))
+	out := rows[:0]
+	for _, row := range rows {
+		key := inventoryRowKey(row)
+		index, seen := byKey[key]
+		if !seen {
+			byKey[key] = len(out)
+			out = append(out, row)
+			continue
+		}
+		previous := out[index]
+		previousProcess, process := rowSource(previous) == processSource, rowSource(row) == processSource
+		if previousProcess != process {
+			// The terminal's stable id wins over a process-only tty, just as
+			// it does in Inventory.Read, even during a terminal-source outage.
+			if previousProcess {
+				out[index] = row
+			}
+		} else if row.Observation.Freshness == session.FreshnessCurrent &&
+			previous.Observation.Freshness != session.FreshnessCurrent {
+			out[index] = row
+		}
+	}
+	return out
 }
 
 // processSource is the process table's name in a reading's Sources.

@@ -108,6 +108,14 @@ evidence: what its screen shows and what its own records say. With no evidence, 
 `unknown`. Transcripts are read from the assistant's own files under `~/.claude` and `~/.codex`.
 Nothing is written there.
 
+Display retention uses the same tty join as the live inventory merge. If a terminal source
+fails while the process table still sees its tty, the retained tab or pane replaces the
+process-only row instead of adding a second Session. Its stable terminal id, state and original
+unverified observation stay together. A current terminal reading takes precedence over a retained
+one; distinct terminals remain distinct even when their conversation titles match. Retention
+still expires under [D55](design-decisions.md), and `Fresh` decision readers receive only the raw
+scan, without retained rows.
+
 Provider-native subagents are part of that same read-only inventory, not broker tasks. Claude Code
 puts the description written by the spawning turn in an immutable sidecar; Codex identifies an
 open subagent through process evidence and puts a distinct nickname and start time in the
