@@ -1470,7 +1470,7 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
   let body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") +
     L.richTextHTML(record ? (record as { text: string }).text : e.text)
   if (role === "error" && /^antigravity_(?:session|process|turn)_/.test(e.text)) {
-    body = "<p>" + esc(catalogWord("antigravity", "turnIncomplete")) + "</p><p>" +
+    body = '<p class="turn-error-copy">' + esc(catalogWord("antigravity", "turnIncomplete")) + '</p><p class="turn-error-copy">' +
       esc(catalogWord("antigravity", "inspectBeforeSending")) + "</p><code>" + esc(e.text) + "</code>"
   }
   if (record) {
