@@ -9334,6 +9334,13 @@ export interface TranscriptEntry {
   fileChanges?: TranscriptFileChange[]
 
   /**
+   * Stable entry identity when the provider has a durable projection. Owned ACP
+   * uses acp2:generation:ordinal, preserving distinct repeated turns and replacing
+   * streamed content in place. Absent for providers without entry identities.
+   */
+  id?: string
+
+  /**
    * Images attached to a user turn. Absent when there were none: the Swift app
    * writes an explicit 0 on user rows, and a reader treats absence as that 0.
    */
@@ -9477,8 +9484,9 @@ export interface TranscriptPage {
   nextAfter?: number
 
   /**
-   * Exclusive byte cursor for the next older page; absent at the beginning of the
-   * record, and on an after= page.
+   * Exclusive provider cursor for the next older page: a JSONL byte offset or a
+   * durable owned ACP entry ordinal. Pass it back unchanged with this page's
+   * signature. Absent at the beginning of the record, and on an after= page.
    */
   nextBefore?: number
   note?: string
@@ -9492,9 +9500,10 @@ export interface TranscriptPage {
   /**
    * Opaque record revision, empty when nothing was read. Claude/Codex use size and
    * modification time; native Antigravity uses
-   * agy1:file-generation:prefix-bytes:sha256. Return this exact held page signature
-   * as revision with its before/after cursor; never substitute another page's
-   * signature.
+   * agy1:file-generation:prefix-bytes:sha256; durable owned ACP uses
+   * acp2:generation:revision, where only a native history replacement changes
+   * generation. Return this exact held page signature as revision with its
+   * before/after cursor; never substitute another page's signature.
    */
   signature: string
   truncation?: TranscriptTruncation

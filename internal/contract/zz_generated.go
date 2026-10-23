@@ -7718,6 +7718,11 @@ type TranscriptEntry struct {
 	// on every other entry.
 	FileChanges []TranscriptFileChange `json:"fileChanges,omitempty"`
 
+	// Stable entry identity when the provider has a durable projection. Owned ACP uses
+	// acp2:generation:ordinal, preserving distinct repeated turns and replacing
+	// streamed content in place. Absent for providers without entry identities.
+	ID string `json:"id,omitempty"`
+
 	// Images attached to a user turn. Absent when there were none: the Swift app
 	// writes an explicit 0 on user rows, and a reader treats absence as that 0.
 	ImageCount int64             `json:"imageCount,omitempty"`
@@ -7827,8 +7832,9 @@ type TranscriptPage struct {
 	// reader without it keeps reading the newest page whole.
 	NextAfter int64 `json:"nextAfter,omitempty"`
 
-	// Exclusive byte cursor for the next older page; absent at the beginning of the
-	// record, and on an after= page.
+	// Exclusive provider cursor for the next older page: a JSONL byte offset or a
+	// durable owned ACP entry ordinal. Pass it back unchanged with this page's
+	// signature. Absent at the beginning of the record, and on an after= page.
 	NextBefore int64  `json:"nextBefore,omitempty"`
 	Note       string `json:"note,omitempty"`
 
@@ -7838,9 +7844,10 @@ type TranscriptPage struct {
 
 	// Opaque record revision, empty when nothing was read. Claude/Codex use size and
 	// modification time; native Antigravity uses
-	// agy1:file-generation:prefix-bytes:sha256. Return this exact held page signature
-	// as revision with its before/after cursor; never substitute another page's
-	// signature.
+	// agy1:file-generation:prefix-bytes:sha256; durable owned ACP uses
+	// acp2:generation:revision, where only a native history replacement changes
+	// generation. Return this exact held page signature as revision with its
+	// before/after cursor; never substitute another page's signature.
 	Signature  string                `json:"signature"`
 	Truncation *TranscriptTruncation `json:"truncation,omitempty"`
 	Unread     *TranscriptUnread     `json:"unread,omitempty"`
