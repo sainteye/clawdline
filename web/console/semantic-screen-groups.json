@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9150,
+  "englishContentKeys": 9151,
   "riskKeys": 4086,
-  "nonRiskCount": 5064,
+  "nonRiskCount": 5065,
   "groups": [
     {
       "name": "admin / other",
@@ -238,11 +238,12 @@
     },
     {
       "name": "antigravity / other",
-      "count": 8,
+      "count": 9,
       "sources": [
         null
       ],
       "keys": [
+        "antigravity.effortSelected",
         "antigravity.loading",
         "antigravity.modelSelected",
         "antigravity.placeholder",

@@ -499,16 +499,22 @@ chooser delays can be measured separately from provider startup.
 
 ### Native model selection and quota in the owned pilot
 
-The owned backend retains `session/new.models.availableModels` and its
-`currentModelId`. Both full `/info` and `?parts=summary` return these as
-`models: [{id, name, command}]` and `session.model`; `command` is the complete
-native model ID. No model list or model-ID decomposition is hard-coded.
-Sending exactly `/model <offered modelId>` through the existing sender calls
-`session/set_model` once, with the existing operation check under the pipe write
-lock. Its acknowledgment selects the next turn's model; it does not execute a
-model, add a user transcript entry, or establish which model ran a prior turn.
-An unoffered ID is refused before writing. Busy, cancelled and failed calls are
-not queued or retried. Ordinary text still uses one `session/prompt` call.
+The owned backend reads the native `session/new.configOptions`: `model` supplies
+the base model ID, name and offered models; `thinking_level` supplies the selected
+reasoning effort and the offered levels. Full `/info` and `?parts=summary` expose
+these separately as `session.model`, `models`, `session.effort` and optional
+`efforts`. Neither model ID suffixes nor a fixed effort scale supply these facts.
+The legacy composite model list remains a compatibility path only when the
+structured configuration is absent.
+
+Sending exactly `/model <offered base ID>` or `/effort <offered level>` through
+the existing sender performs one native `session/set_config_option` operation.
+The native acknowledgement selects the next turn without executing a model or
+adding a user transcript entry. Updated native configuration determines the
+selected values and any changed effort options. The existing operation check,
+personal-account restriction and pipe-write boundary remain in place. Unoffered
+values are refused before writing; failed or busy calls are not retried. Ordinary
+text still uses one `session/prompt` call.
 
 Opening full `/info` explicitly attempts at most one metadata-only `/usage`
 prompt on an idle session. Summary, listing and sending never fetch quota.
@@ -531,12 +537,14 @@ is invented by a cache read. The source provides no freshness interval, so
 `freshForSeconds` remains null; a passed native reset marks the held reading
 stale. A busy read leaves the previously held reading alone.
 
-The Info card renders only the offered native model buttons and uses the
-acknowledged selection immediately for the next turn. It does not poll the
-transcript for a model command or repeat quota reads to confirm the selection.
-The quota window explicitly labels its percentage as used and stays separate
-from the conversation context meter. English and Traditional Chinese phone and
-desktop fixture runs verify one setting request and no extra full Info read.
+The Info card presents base models and reasoning effort in separate sections.
+Gemini uses the shared ordinal effort meter with only its native offered levels,
+plus setting buttons. Claude and Codex retain their existing scales. One local
+summary read after a setting acknowledges changed model/effort choices; it does
+not read native quota or poll a transcript. The quota percentage is explicitly
+used and stays separate from conversation context. English and Traditional
+Chinese phone and desktop fixtures verify separate setting requests, changed
+native options and no extra full Info quota read.
 The ordinary composer reserves known CLI command tokens rather than every
 leading slash, so absolute file paths remain valid prompts.
 

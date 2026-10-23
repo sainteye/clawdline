@@ -16,7 +16,7 @@ const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/M
 const now = () => Math.floor(Date.now() / 1000)
 let mode = "ready", language = "en", fixtureSequence = 0
 let sends: string[] = [], inventoryReads: string[] = []
-let selectedModel = "synthetic-flash-high", modelWrites: string[] = [], fullInfoReads = 0
+let selectedModel = "synthetic-flash", selectedEffort = "high", modelWrites: string[] = [], fullInfoReads = 0
 const streams = new Set<ServerResponse>()
 function snapshot() {
   return { at: Date.now(), scan: { complete: true, completed: { complete: true, sequence: ++fixtureSequence }, emptyAuthoritative: true,
@@ -71,7 +71,8 @@ function daemon(): Server {
       let body=""; req.on("data",chunk=>body+=String(chunk)); req.on("end",()=>{
         const text=JSON.parse(body).text
         modelWrites.push(text)
-        if (text.startsWith("/model ")) selectedModel=text.slice(7)
+        if (text.startsWith("/model ")) { selectedModel=text.slice(7); selectedEffort="high" }
+        if (text.startsWith("/effort ")) selectedEffort=text.slice(8)
         json(res,200,{ok:true})
       }); return
     }
@@ -79,8 +80,9 @@ function daemon(): Server {
   if (path.includes("transcript") && mode.startsWith("async-")) return json(res, 200, { id: path.split("/")[3], entries: [{ role: "tool", tool: "request_user_input_async", text: "\u0001ask\u0001" + JSON.stringify([{ h: "Synthetic choice", q: "Choose the synthetic direction", o: [{ l: "Continue fixture", d: "Only a synthetic reply" }] }]), at: now() }], more: false })
   if (path.endsWith("/info") && mode === "owned-protocol-models") {
     if (url.searchParams.get("parts") !== "summary") fullInfoReads++
-    return json(res,200,{info:{session:{id:path.split("/")[3],assistant:"antigravity",model:selectedModel,sessionId:"conversation-alpha"},
-      models:["high","medium","low"].map(level=>({id:"synthetic-flash-"+level,command:"synthetic-flash-"+level,name:"Fixture Flash ("+level+")"})),
+    return json(res,200,{info:{session:{id:path.split("/")[3],assistant:"antigravity",model:selectedModel,effort:selectedEffort,sessionId:"conversation-alpha"},
+      models:[{id:"synthetic-flash",command:"synthetic-flash",name:"Fixture Flash"},{id:"synthetic-pro",command:"synthetic-pro",name:"Fixture Pro"}],
+      efforts:selectedModel==="synthetic-flash"?["low","medium","high"]:["low","high"],
       limits:{windows:[{name:"7d",usedPercent:38,hit:false,resetsAt:now()+3600}],at:now(),ageSeconds:0,freshForSeconds:null,readAtMs:Date.now()},
       context:{usedPercent:12,usedTokens:12,windowTokens:100}}})
   }
@@ -456,28 +458,39 @@ test("Owned observations do not cancel a slower readiness read", {timeout:30000}
 
 
 for (const width of [390,1280]) for (const lang of ["en","zh-Hant"]) {
- test(`Gemini Info ${width}px ${lang}: offered models switch once and quota stays separate`,{timeout:30000},async()=>{
-  mode="owned-protocol-models";language=lang;selectedModel="synthetic-flash-high";modelWrites=[];fullInfoReads=0
+ test(`Gemini Info ${width}px ${lang}: base model and native effort switch separately`,{timeout:30000},async()=>{
+  mode="owned-protocol-models";language=lang;selectedModel="synthetic-flash";selectedEffort="high";modelWrites=[];fullInfoReads=0
   const tab=await Tab.open(browser,width,900,width===390)
   try {
    await tab.go("/?native-models=1#session=fixture-alpha")
-   await tab.until("native conversation is visible",s=>s.text.includes("Fixture Flash (high)"))
+   await tab.until("native conversation is visible",s=>s.text.includes("Fixture Flash"))
    await tab.run(`document.querySelector('.setup-dialog[open] .setup-x')?.click()`)
    await tab.click("#detail-info")
-   await tab.until("offered model selector is present",s=>s.text.includes("Fixture Flash (low)"))
-   assert.equal(await tab.run(`document.querySelector('#info [data-model="synthetic-flash-high"]').getAttribute('aria-current')`),"true")
-   assert.equal(await tab.run(`document.querySelector('#info [data-model="synthetic-flash-low"]').disabled`),false)
+   await tab.until("base model selector is present",s=>s.text.includes("Fixture Pro"))
+   assert.equal(await tab.run(`document.querySelectorAll('#info [data-model]').length`),2)
+   assert.equal(await tab.run(`document.querySelector('#info [data-model="synthetic-flash"]').getAttribute('aria-current')`),"true")
+   assert.deepEqual(await tab.run(`Array.from(document.querySelectorAll('#info [data-effort]'),e=>e.dataset.effort)`),["low","medium","high"])
+   assert.equal(await tab.run(`document.querySelector('#info [data-effort="high"]').getAttribute('aria-current')`),"true")
+   assert.equal(await tab.run(`document.querySelector('#info .effort-scale').getAttribute('aria-valuemax')`),"3")
    assert.equal(await tab.run(`document.querySelector('#info .other')`),null)
    assert.equal(await tab.run(`document.querySelector('#info .assistant-name').textContent`),"Gemini")
    const quota=await tab.run(`document.querySelector('#info-body').innerText`)
    assert.ok(quota.includes(lang === "en" ? "38% used" : "已用 38%") && quota.includes("12%"))
    const reads=fullInfoReads
-   await tab.click('#info [data-model="synthetic-flash-low"]')
-   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#info [data-model="synthetic-flash-low"]')?.getAttribute('aria-current')!=='true'){if(Date.now()>end)throw Error('model selection did not settle');await new Promise(r=>setTimeout(r,20))}})()`)
-   assert.deepEqual(modelWrites,["/model synthetic-flash-low"])
-   assert.equal(fullInfoReads,reads,"an acknowledged selection must not start repeated quota reads")
+   await tab.click('#info [data-effort="low"]')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#info [data-effort="low"]')?.getAttribute('aria-current')!=='true'){if(Date.now()>end)throw Error('effort selection did not settle');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.deepEqual(modelWrites,["/effort low"])
+   assert.equal(selectedModel,"synthetic-flash","effort does not become a different base model")
+   assert.equal(await tab.run(`document.querySelector('#info [data-model="synthetic-flash"]').getAttribute('aria-current')`),"true")
+   assert.equal(fullInfoReads,reads,"effort acknowledgement must not repeat quota reads")
+   await tab.click('#info [data-model="synthetic-pro"]')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#info [data-model="synthetic-pro"]')?.getAttribute('aria-current')!=='true'){if(Date.now()>end)throw Error('model selection did not settle');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.deepEqual(modelWrites,["/effort low","/model synthetic-pro"])
+   assert.deepEqual(await tab.run(`Array.from(document.querySelectorAll('#info [data-effort]'),e=>e.dataset.effort)`),["low","high"])
+   assert.equal(await tab.run(`document.querySelector('#info [data-effort="high"]').getAttribute('aria-current')`),"true")
+   assert.equal(fullInfoReads,reads,"model acknowledgement must not repeat quota reads")
    assert.ok((await tab.run(PROBE)).wide<=width)
-   await tab.shot(`gemini-model-quota-${width}-${lang}`)
+   await tab.shot(`gemini-model-effort-${width}-${lang}`)
   }finally{await tab.close()}
  })
 }

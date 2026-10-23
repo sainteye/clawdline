@@ -323,6 +323,7 @@
   "antigravity.loading": "Checking {assistant} availability on this machine…",
   "antigravity.missing": "{assistant} CLI is not installed. Install it on this machine before starting a Session.",
   "antigravity.modelSelected": "Next turn: {model}",
+  "antigravity.effortSelected": "Next turn reasoning effort: {effort}",
   "antigravity.modelUnavailable": "This Session does not offer model selection.",
   "antigravity.placeholder": "Message Gemini…",
   "antigravity.ready": "{assistant} is ready.",

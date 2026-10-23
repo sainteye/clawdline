@@ -323,6 +323,7 @@
   "antigravity.loading": "正在確認這台機器的 {assistant} 是否可用…",
   "antigravity.missing": "尚未安裝 {assistant} CLI。請先在這台機器安裝，再開啟 Session。",
   "antigravity.modelSelected": "下一回合使用 {model}",
+  "antigravity.effortSelected": "下一回合推理強度：{effort}",
   "antigravity.modelUnavailable": "這個 Session 尚未提供模型切換。",
   "antigravity.placeholder": "傳訊息給 Gemini…",
   "antigravity.ready": "{assistant} 已就緒。",

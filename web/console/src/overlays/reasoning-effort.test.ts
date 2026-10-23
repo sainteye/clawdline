@@ -38,15 +38,21 @@ test("older Codex none and minimal settings retain separate positions", () => {
   assert.ok(reasoningEffortHTML("codex", "minimal", word, esc).includes('aria-valuenow="2"'))
 })
 
-test("Antigravity has five measured effort levels and no guessed position for other values", () => {
-  for (const [index, level] of ["low", "medium", "high", "xhigh", "max"].entries()) {
-    const html = reasoningEffortHTML("antigravity", level, word, esc)
+test("Gemini uses only the native offered effort scale", () => {
+  const offered = ["low", "medium", "high"]
+  for (const [index, level] of offered.entries()) {
+    const html = reasoningEffortHTML("antigravity", level, word, esc, offered)
     assert.ok(html.includes(`aria-valuenow="${index + 1}"`))
-    assert.ok(html.includes('aria-valuemax="5"'))
+    assert.ok(html.includes('aria-valuemax="3"'))
     assert.equal((html.match(/data-current="1"/g) || []).length, 1)
     assert.ok(!html.includes("<input"))
+    assert.ok(!html.includes("LastTurn"))
   }
-  for (const level of [undefined, "none", "minimal", "ultra"]) {
-    assert.ok(!reasoningEffortHTML("antigravity", level, word, esc).includes('role="meter"'))
+  for (const level of [undefined, "none", "minimal", "xhigh", "max", "ultra"]) {
+    assert.ok(!reasoningEffortHTML("antigravity", level, word, esc, offered).includes('role="meter"'))
   }
+  assert.ok(!reasoningEffortHTML("antigravity", "high", word, esc).includes('role="meter"'))
+  const newer = reasoningEffortHTML("antigravity", "adaptive", word, esc, ["low", "adaptive"])
+  assert.ok(newer.includes('aria-valuetext="adaptive"'))
+  assert.ok(newer.includes('aria-valuemax="2"'))
 })

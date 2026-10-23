@@ -302,7 +302,25 @@ function modelsHTML(models: SessionModel[], current: string): string {
     '<input type="text" name="model" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" ' +
     'placeholder="' + esc(T.webInfoModelOther) + '" aria-label="' + esc(T.webInfoModelOther) + '"' + (can ? "" : " disabled") + ">" +
     '<button type="submit" class="chip"' + (can ? "" : " disabled") + ">" + esc(T.webSend) + "</button></form>"
-  return '<div class="models">' + chips + other + "</div>" + (can ? "" : note(T.webInfoModelBusy))
+  return '<div class="models">' + chips + other + "</div>" + (can || busy ? "" : note(T.webInfoModelBusy))
+}
+
+function effortName(value: string): string {
+  const labels: Record<string, string> = { low: nextWord("infoEffortLow"), medium: nextWord("infoEffortMedium"), high: nextWord("infoEffortHigh"), xhigh: nextWord("infoEffortXhigh"), max: nextWord("infoEffortMax"), ultra: nextWord("infoEffortUltra") }
+  return labels[value] || value
+}
+
+function geminiEffortHTML(d: Facts): string {
+  const options = d.efforts || []
+  const reading = reasoningEffortHTML("antigravity", d.session.effort, nextWord, esc, options)
+  if (!host.writable() || !options.length) return reading
+  const buttons = options.map(value => {
+    const on = value === d.session.effort
+    return '<button type="button" class="m" data-effort="' + esc(value) + '"' +
+      (on ? ' data-on="1" aria-current="true"' : "") + (canSwitch() && !on ? "" : " disabled") +
+      '>' + esc(effortName(value)) + '</button>'
+  }).join("")
+  return reading + '<div class="models effort-choices">' + buttons + '</div>'
 }
 
 function codexModelHTML(models: SessionModel[], current: string): string {
@@ -540,7 +558,7 @@ function html(d: Facts): string {
     out += sec(++i, T.webInfoSwitchModel, "", note(catalogWord("antigravity", "modelUnavailable")))
   }
   if (s.assistant === "codex" || s.assistant === "claude" || s.assistant === "antigravity") {
-    out += sec(++i, nextWord("infoReasoningEffort"), "", reasoningEffortHTML(s.assistant, s.effort, nextWord, esc))
+    out += sec(++i, nextWord("infoReasoningEffort"), "", s.assistant === "antigravity" ? geminiEffortHTML(d) : reasoningEffortHTML(s.assistant, s.effort, nextWord, esc))
   }
   out += sec(++i, nextWord("infoContext"), "", contextHTML(d.context))
   out += sec(++i, T.webInfoUsage, "", usageHTML(u))
@@ -623,6 +641,18 @@ function load(id: string, force: boolean): void {
       draw()
     },
   )
+}
+
+/** A model can change its offered effort levels. This reads held local facts,
+ * once, without another native quota request or a transcript polling loop. */
+async function refreshGeminiSettings(id: string): Promise<void> {
+  const held = data
+  try {
+    const summary = await SessionFacts.getSummary(id, true)
+    if (forId === id && held && summary) data = { ...held, ...summary, limits: held.limits, usage: held.usage }
+  } catch {
+    // The acknowledged setting remains selected if its local readback fails.
+  }
 }
 
 /**
@@ -747,19 +777,22 @@ export const Info = {
     said("")
     draw()
     client.send(id, "/model " + word, pressKey("model")).then(
-      () => {
+      async () => {
         if (forId !== id) return
-        busy = false
         if (data?.session.assistant === "antigravity") {
           // Native setting acknowledgement selects the next turn. It is not a
           // terminal command waiting to appear in the conversation transcript.
           pending = null
           data.session.model = word
+          await refreshGeminiSettings(id)
+          if (forId !== id || !data) return
+          busy = false
           SessionFacts.receiveFull(id, data)
           said(fill(catalogWord("antigravity", "modelSelected"), { model: name || word }), true)
           draw()
           return
         }
+        busy = false
         pending = word
         SessionFacts.drop(id)
         said(fill(T.webInfoModelSent, { model: name || word }), true)
@@ -774,6 +807,29 @@ export const Info = {
         draw()
       },
     )
+  },
+
+  switchEffort(raw: string): void {
+    const id = forId
+    if (!id || data?.session.assistant !== "antigravity" || !data.efforts?.includes(raw) || !canSwitch()) return
+    busy = true
+    said("")
+    draw()
+    client.send(id, "/effort " + raw, pressKey("effort")).then(async () => {
+      if (forId !== id || !data) return
+      data.session.effort = raw
+      await refreshGeminiSettings(id)
+      if (forId !== id || !data) return
+      busy = false
+      SessionFacts.receiveFull(id, data)
+      said(fill(catalogWord("antigravity", "effortSelected"), { effort: effortName(raw) }), true)
+      draw()
+    }, e => {
+      if (forId !== id) return
+      busy = false
+      said(why(e), false)
+      draw()
+    })
   },
 
   openModelPicker(): void {
@@ -915,6 +971,11 @@ export function bindInfo(): () => void {
     const chip = t.closest<HTMLButtonElement>("button[data-model]")
     if (chip) {
       if (!chip.disabled) Info.switchTo(chip.dataset.model || "", chip.dataset.name || "")
+      return
+    }
+    const effort = t.closest<HTMLButtonElement>("button[data-effort]")
+    if (effort) {
+      if (!effort.disabled) Info.switchEffort(effort.dataset.effort || "")
       return
     }
     const copy = t.closest<HTMLButtonElement>("button[data-copy]")
