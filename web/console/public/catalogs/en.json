@@ -6551,7 +6551,7 @@
   "next.cloudPeerTargetReceipt": "Target receipt: machine {execution}; Session {delivered}; Agent observed {observed}; acknowledged {acknowledged}.",
   "next.cloudPeerToWhere": "To",
   "next.cloudPeerWriteUnavailable": "Peer changes on machine {machine} require this viewer's write permission and a machine that supports peer control. Reading remains available.",
-  "next.cloudReadNeedsPairing": "{machine} is online but is not answering this device. Pair again to reconnect.",
+  "next.cloudReadNeedsPairing": "Could not verify the pairing with {machine}. Pair again to reconnect.",
   "next.cloudReadPairAgain": "Scan to pair",
   "next.cloudReadPairingRequired": "Cannot read {machine}: this browser needs to confirm its pairing. Existing content may be out of date.",
   "next.cloudReadUnknownFailure": "Could not refresh {machine}. Displayed content may be out of date.",

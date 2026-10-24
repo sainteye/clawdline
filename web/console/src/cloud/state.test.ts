@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/relay-reader.test.ts.
-import { accessProblemAfterRead, machineAccessProblem, machineListAnswer, machineListRefusal, READ_PAIR_OFFER_AFTER_MS, readProblemOffersPairing, retryReason } from "./state.ts"
+import { accessProblemAfterRead, machineAccessProblem, machineListAnswer, machineListRefusal, readProblemOffersPairing, retryReason } from "./state.ts"
 
 test("the machine list keeps loading, authoritative empty, and refusal apart", () => {
   assert.deepEqual(machineListAnswer({ machines: [], syncing: true }), { phase: "loading" })
@@ -61,6 +61,8 @@ test("timeout and a named pairing refusal retain their machine without guessing 
   assert.deepEqual(machineAccessProblem({ type: "read", identity: {machine: "m"}, error: {code: "cloud_read_timeout"} }), {machine: "m", code: "cloud_read_timeout"})
   assert.deepEqual(machineAccessProblem({ type: "error", machine: "m", error: {code: "machine_pairing_required"} }), {machine: "m", code: "machine_pairing_required"})
   assert.equal(machineAccessProblem({type: "read", machine: "m"}), null)
+  assert.equal(machineAccessProblem({type: "read", machine: "m", realign: true,
+    error: {code: "machine_pairing_required"}}), null, "a retained failure is not a new access problem")
   assert.equal(machineAccessProblem({type: "error", error: {code: "cloud_read_timeout"}}), null)
 })
 
@@ -68,19 +70,33 @@ test("timeout and a named pairing refusal retain their machine without guessing 
 test("cached data and other machines do not clear a failed read", () => {
   const held = {machine: "m", code: "cloud_read_timeout"}
   for (const event of [
-    {type:"sessions", machine:"m"}, {type:"read", machine:"other"}, {type:"read"},
+    {type:"sessions", machine:"m", realign:true}, {type:"read", machine:"other"}, {type:"read"},
     {type:"read", machine:"m", realign:true}, {type:"read", machine:"m", error:{code:"offline"}},
   ]) assert.equal(accessProblemAfterRead(held,event),held)
   assert.equal(accessProblemAfterRead(held,{type:"read", identity:{machine:"m"}}),null)
 })
 
-test("only reads that keep failing at a reporting machine offer pairing again", () => {
-  const long = READ_PAIR_OFFER_AFTER_MS
-  assert.equal(readProblemOffersPairing("cloud_read_timeout", "current", long), true, "revoked here: every read dropped")
-  assert.equal(readProblemOffersPairing("cloud_read_unavailable", "current", long), true)
-  assert.equal(readProblemOffersPairing("cloud_read_timeout", "current", long - 1), false, "a busy machine answers some reads in between")
-  assert.equal(readProblemOffersPairing("cloud_read_timeout", "stale", long), false, "an offline machine is not fixed by pairing")
-  assert.equal(readProblemOffersPairing("cloud_read_timeout", "unknown", long), false)
-  assert.equal(readProblemOffersPairing("unknown_sender", "stale", 0), true, "a named pairing failure offers it at once")
-  assert.equal(readProblemOffersPairing("socket_error", "current", long), false, "this browser's own connection is not a pairing problem")
+test("only a named pairing failure offers pairing again", () => {
+  for (const code of ["cloud_read_timeout", "cloud_read_unavailable", "socket_error", "offline"]) {
+    assert.equal(readProblemOffersPairing(code), false, code)
+  }
+  assert.equal(readProblemOffersPairing("unknown_sender"), true)
+  assert.equal(readProblemOffersPairing("machine_pairing_required"), true)
+})
+
+test("live Session updates clear transient warnings while retained replays and other machines do not", () => {
+  for (const code of ["cloud_read_timeout", "cloud_read_unavailable", "offline", "socket_error"]) {
+    const held = {machine: "m", code}
+    for (const type of ["sessions", "session_status"]) {
+      const event = {type, identity: {machine: "m"}, realign: false}
+      assert.equal(accessProblemAfterRead(held, event), null, `${type} recovered after ${code}`)
+      assert.equal(accessProblemAfterRead(held, {...event, realign: true}), held)
+      assert.equal(accessProblemAfterRead(held, {...event, identity: {machine: "other"}}), held)
+      assert.equal(accessProblemAfterRead(held, {...event, error: {code: "offline"}}), held)
+      const pairing = {machine: "m", code: "machine_pairing_required"}
+      assert.equal(accessProblemAfterRead(pairing, event), pairing, "a publication cannot verify outbound permission")
+    }
+    assert.equal(accessProblemAfterRead(held, {type: "orchestrator", machine: "m"}), held,
+      "presence alone cannot prove the Session view recovered")
+  }
 })

@@ -1,6 +1,6 @@
 import { BrowserPairingBlock } from "../pages/settings/BrowserPairingBlock.js"
 import { LocalMachineSetup } from "./LocalMachineSetup.js"
-import { accessProblemAfterRead, READ_PAIR_OFFER_AFTER_MS, readProblemOffersPairing } from "./state.js"
+import { accessProblemAfterRead, readProblemOffersPairing } from "./state.js"
 import { toast } from "../overlays/toast.js"
 import { CloudReadProblem } from "./CloudReadProblem.js"
 import { dashboardFetch } from "./dashboard-reader.js"
@@ -339,15 +339,15 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // device that was fine. The clock runs from the first failure of one
   // machine and code: later failures of the same kind replace the problem
   // object but must not start it again, or a machine failing every few
-  // seconds would never be shown. Any successful read clears the problem.
+  // seconds would never be shown. Live Session updates clear transient
+  // failures; successful reads also clear pairing failures.
   const problemKey = problem ? problem.machine + ":" + problem.code : ""
   const [problemHeldMs, setProblemHeldMs] = useState(0)
   useEffect(() => {
     setProblemHeldMs(0)
     if (!problemKey) return
     const shown = setTimeout(() => setProblemHeldMs(READ_PROBLEM_SHOW_AFTER_MS), READ_PROBLEM_SHOW_AFTER_MS)
-    const pair = setTimeout(() => setProblemHeldMs(READ_PAIR_OFFER_AFTER_MS), READ_PAIR_OFFER_AFTER_MS)
-    return () => { clearTimeout(shown); clearTimeout(pair) }
+    return () => clearTimeout(shown)
   }, [problemKey])
   const [chosen, setChosen] = useState<CloudMachine | null>(null)
   const [fleetScope, setFleetScope] = useState(() => location.hash === "#all-machines" || !!destinationFromFragment(location.hash))
@@ -1252,7 +1252,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             // When every row was stale the timer below was also stopped, so
             // no later pass could repair either machine's status.
             if (reportsMachinePresence(event)) listMachines()
-            // Only a live successful read repairs this machine's read path.
+            // Clear transient warnings on live Session recovery, and pairing failures on a successful read.
             setProblem((held) => accessProblemAfterRead(held, event))
             const listed = machinesRef.current
             const access = machineAccessProblem(
@@ -1995,7 +1995,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       {problem && problemHeldMs >= READ_PROBLEM_SHOW_AFTER_MS && (screen.at === "console" || screen.at === "machines") && (() => {
         const row = machinesRef.current?.find((machine) => machine.id === problem.machine)
         const name = row?.label ?? problem.machine
-        const pair = readProblemOffersPairing(problem.code, row?.freshness, problemHeldMs)
+        const pair = readProblemOffersPairing(problem.code)
         return <CloudReadProblem key={problem.machine + ":" + problem.code}
           message={nextWord(pair ? "cloudReadNeedsPairing" : "cloudReadUnknownFailure", { machine: name })}
           code={problem.code} trace={problem.trace} retryLabel={nextWord("cloudRetry")}
