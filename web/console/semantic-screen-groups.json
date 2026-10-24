@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9155,
-  "riskKeys": 4090,
-  "nonRiskCount": 5065,
+  "englishContentKeys": 9157,
+  "riskKeys": 4091,
+  "nonRiskCount": 5066,
   "groups": [
     {
       "name": "admin / other",
@@ -3866,7 +3866,7 @@
     },
     {
       "name": "next / schedule",
-      "count": 31,
+      "count": 32,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3874,6 +3874,7 @@
         "next.scheduleAntigravityEffortField",
         "next.scheduleEffortField",
         "next.scheduleEveryDays",
+        "next.scheduleExecutionAgent",
         "next.scheduleInterval",
         "next.scheduleIntervalInvalid",
         "next.scheduleIntervalSummary",

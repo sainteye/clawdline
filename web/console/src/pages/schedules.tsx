@@ -1,5 +1,5 @@
 import { catalogWord } from "../catalog.js"
-import { assistantAdmits, type AssistantFacts } from "../session/antigravity-ui.js"
+import { assistantAdmits, assistantLabel, isAssistant, type AssistantFacts } from "../session/antigravity-ui.js"
 import { STATUS_FRESH_MS } from "../cloud/status-projection.js"
 import { loadingSkeletonHTML } from "../loading-skeleton.js"
 import { useEffect, useLayoutEffect, useRef } from "react"
@@ -2214,6 +2214,14 @@ const ScheduleHistory = (() => {
         ? new Date(record.next_fire * 1000).toLocaleString()
         : ""
     el("schedule-history-meta").textContent = [path, next].filter(Boolean).join(" · ")
+    const assistant = record?.task?.assistant
+    const agent = el("schedule-history-agent")
+    agent.hidden = !record
+    agent.textContent = record
+      ? fill(nextWord("scheduleExecutionAgent"), {
+          agent: isAssistant(assistant) ? assistantLabel(assistant) : assistant || nextWord("scheduleAgentUnspecified"),
+        })
+      : ""
     el("schedule-history-runs-label").textContent = nextWord("scheduleRunsHeading")
     el("schedule-run-rows").innerHTML = loading && !record
       ? '<li role="presentation">' + loadingSkeletonHTML(T().webLoading, "SK-12") + "</li>"

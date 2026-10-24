@@ -7850,6 +7850,8 @@
   "next.worktreeRemoveRisk": "This worktree is not confirmed landed and clean. Files that were never committed, and anything a Session is doing there, will be lost.",
   "next.worktreeRemoveTitle": "Delete this worktree?",
   "next.worktreeRemoveWaiting": "The machine is deleting this worktree. Closing this does not stop it; the list updates when it finishes.",
+  "next.scheduleExecutionAgent": "Execution agent: {agent}",
+  "next.scheduleAgentUnspecified": "Not specified",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

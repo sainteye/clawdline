@@ -7850,6 +7850,8 @@
   "next.worktreeRemoveRisk": "這棵工作樹還沒確認已併入主線且乾淨。從未提交的檔案，以及 Session 正在這裡做的事，刪除後都會消失。",
   "next.worktreeRemoveTitle": "要刪除這棵工作樹嗎？",
   "next.worktreeRemoveWaiting": "機器正在刪除這棵工作樹。關閉這個視窗不會中止刪除，完成後列表會自動更新。",
+  "next.scheduleExecutionAgent": "執行 Agent：{agent}",
+  "next.scheduleAgentUnspecified": "未指定",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",
