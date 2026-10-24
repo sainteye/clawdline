@@ -102,6 +102,9 @@ const (
 	// TabRuleSpawnFailed: a child that never started is closed at once when
 	// its tab is there (closeChild, D11), whatever else is set.
 	TabRuleSpawnFailed = "spawn_failed"
+	// Owned workers have no terminal to leave open for inspection. Their
+	// timeout records an exact stop/join effect with the settlement.
+	TabRuleOwnedTimeout = "owned_timeout_closed"
 )
 
 // The three values of a schedule's close_tab (domain/schedule.CloseTab), as a
@@ -185,6 +188,9 @@ func (r Record) scheduleCloseTab() string {
 // ended (lingerStepFor): the rule says when a close is owed, never that it
 // may be forced.
 func tabPolicy(r Record, end State, linger time.Duration) TabPlan {
+	if r.ChildBackend == "owned" && end == StateTimeout {
+		return TabPlan{Rule: TabRuleOwnedTimeout, Close: true}
+	}
 	if end == StateSpawnFailed {
 		return TabPlan{Rule: TabRuleSpawnFailed, Close: true}
 	}
@@ -266,12 +272,17 @@ func TabPlanSentence(p TabPlan) string {
 // owes no linger.
 func (b *Broker) lingerFor(r Record, now time.Time) (store.Linger, bool) {
 	plan := tabPolicy(r, r.State, b.childLinger())
-	if !plan.Close || r.State == StateSpawnFailed || r.State == StateCancelled || r.ChildTerminalID == "" || b.Launcher == nil {
+	if !plan.Close || r.State == StateSpawnFailed || r.State == StateCancelled || (r.ChildBackend == "owned" && r.State == StateTimeout) || r.ChildTerminalID == "" || (r.ChildBackend != "owned" && b.Launcher == nil) {
 		return store.Linger{}, false
 	}
 	l := store.Linger{Task: r.ID, Backend: r.ChildBackend, Pane: r.ChildTerminalID,
 		Deadline: now.Add(plan.After), CreatedAt: now}
 	switch r.ChildBackend {
+	case "owned":
+		if r.ChildConversationID == "" {
+			return store.Linger{}, false
+		}
+		l.Session = r.ChildConversationID
 	case "tmux":
 		l.Session = ChildSessionName(r.ID)
 	case "iterm":
@@ -409,10 +420,13 @@ const (
 func lingerStepFor(l store.Linger, rd reading, w lingerWatch, assistant string) (lingerStep, string) {
 	s, present := rd.session(l.Pane)
 	if !present {
-		if len(rd.sessions) > 0 && rd.sourceComplete(l.Backend) {
+		if (l.Backend == "owned" || len(rd.sessions) > 0) && rd.sourceComplete(l.Backend) {
 			return lingerGone, "its terminal answered completely and the tab is not there"
 		}
 		return lingerWait, ""
+	}
+	if l.Backend == "owned" && (s.ConversationID != l.Session || s.Backend != session.BackendOwned || s.Binding != session.BindingProtocol) {
+		return lingerLeave, "another native conversation is bound to the owned row"
 	}
 	if s.IsAssistant() && assistant != "" && string(s.Assistant) != assistant {
 		return lingerLeave, "a different assistant is running in it"
@@ -489,6 +503,12 @@ func (b *Broker) closeLingers(ctx context.Context, rd reading) int {
 		case lingerClose:
 			kind = "task.child.linger.due"
 			c := closeChildEffect{Pane: l.Pane, Session: l.Session}
+			if l.Backend == "owned" {
+				if r.ID == "" {
+					continue
+				}
+				c = closeChildEffect{Backend: "owned", Pane: l.Pane, NativeID: l.Session, CWD: childCWD(r)}
+			}
 			if iterm {
 				c = closeChildEffect{Backend: "iterm", Pane: l.Pane}
 				if !r.FinishedAt.IsZero() {

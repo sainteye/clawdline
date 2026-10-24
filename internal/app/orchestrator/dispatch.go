@@ -190,8 +190,15 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	}
 	// A machine that cannot open a child says so here, by name, before
 	// anything exists (capability.go, broker-design #43).
-	if err := b.checkChildCapability(ctx); err != nil {
-		return Dispatched{}, err
+	if record.Assistant == projects.AssistantAntigravity {
+		if !b.ownedChildAvailable(ctx) {
+			return Dispatched{}, refuse(http.StatusUnprocessableEntity, "provider_permission_unsupported",
+				"Antigravity owned dispatch is unavailable.")
+		}
+	} else {
+		if err := b.checkChildCapability(ctx); err != nil {
+			return Dispatched{}, err
+		}
 	}
 	if err := b.admitDispatch(); err != nil {
 		return Dispatched{}, err
@@ -451,6 +458,9 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	record, err = b.mutate(ctx, record.ID, "task.spawned", func(r *Record) error {
 		r.ChildTerminalID = spawned.ChildTerminalID
 		r.ChildBackend = spawned.ChildBackend
+		if spawned.ChildConversationID != "" {
+			r.ChildConversationID = spawned.ChildConversationID
+		}
 		r.SpawnedAt = spawned.SpawnedAt
 		r.SpawnError = spawned.SpawnError
 		r.Unbriefed = spawned.Unbriefed
@@ -670,6 +680,9 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	}
 	if (r.Assistant == projects.AssistantCodex || r.Assistant == projects.AssistantAntigravity) && r.ReasoningEffort == "" && b.DefaultReasoningEffort != nil {
 		r.ReasoningEffort = b.DefaultReasoningEffort(r.Assistant)
+	}
+	if r.Assistant == projects.AssistantAntigravity {
+		return b.spawnOwnedChild(ctx, r, cwd, secret, opened)
 	}
 	preflightPersona := r.Persona
 	if b.ResolveSquadSnapshot != nil && r.Persona != "" {
@@ -1319,6 +1332,17 @@ func (b *Broker) settleOnce(ctx context.Context, id string, state State, why str
 		if l, ok := b.lingerFor(*r, now); ok {
 			if err := tx.PutLinger(l); err != nil {
 				return nil, err
+			}
+		}
+		if r.ChildBackend == "owned" && (state == StateTimeout || state == StateSpawnFailed) {
+			owed := false
+			for _, e := range effects {
+				if e.Kind == EffectCloseChild {
+					owed = true
+				}
+			}
+			if !owed {
+				effects = append(effects, b.closeChild(*r, true)...)
 			}
 		}
 		if also != nil {

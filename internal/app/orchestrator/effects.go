@@ -477,9 +477,11 @@ type closeChildEffect struct {
 	// Backend is empty for tmux — every effect written before iTerm2 tabs
 	// were closed is one — and "iterm" for an iTerm2 session, whose id is
 	// then Pane.
-	Backend string `json:"backend,omitempty"`
-	Pane    string `json:"pane"`
-	Session string `json:"session"`
+	Backend  string `json:"backend,omitempty"`
+	Pane     string `json:"pane"`
+	Session  string `json:"session"`
+	NativeID string `json:"native_id,omitempty"`
+	CWD      string `json:"cwd,omitempty"`
 	// Before is when the task ended, in Unix seconds, for an iTerm2 child:
 	// a job still running in its tab is ended as the child's only when it
 	// began before then (terminal.Launcher.CloseITermChild). Zero ends none.
@@ -494,6 +496,9 @@ func runCloseChild(ctx context.Context, b *Broker, e store.Effect) effectResult 
 	var c closeChildEffect
 	if err := json.Unmarshal(e.Payload, &c); err != nil {
 		return effectResult{state: store.EffectFailed, outcome: "unreadable effect: " + err.Error()}
+	}
+	if c.Backend == "owned" {
+		return b.runCloseOwnedChild(ctx, e, c)
 	}
 	if b.Launcher == nil {
 		return effectResult{state: store.EffectFailed, outcome: "this daemon has no launcher"}
