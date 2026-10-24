@@ -343,5 +343,6 @@ compilation if the selected identity is not Developer ID Application.
 
 ## Recent acceptance records
 
+- [v2.3.0 installation and publication evidence](records/release-v2.3.0-acceptance.md).
 - [v2.2.0 installation and publication evidence](records/release-v2.2.0-acceptance.md).
 - [v2.1.3 installation and publication evidence](records/release-v2.1.3-acceptance.md), including the explicitly accepted fresh-account boundary.
