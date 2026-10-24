@@ -318,7 +318,7 @@ uncertain writes and atomic load; the HTTP peer test covers role and actor
 binding, skill references, original user text and immutable resume selection.
 These offline results do not constitute a new native-product, mobile, deployment
 or role-dispatch acceptance result. Native tool Session identity and role-based
-dispatch are the next integration boundary.
+dispatch are covered separately below.
 
 
 ### Metadata-only worker preparation
@@ -338,7 +338,7 @@ It made four metadata selections and zero model inputs in 4.23 seconds. These
 ACKs establish configuration mapping, not every tool's behavior under each mode.
 Fake peers cover wrong or missing ACKs, changed effort offers, no prompt writes,
 shutdown and close contention. The broker executor and root-notice composition
-remain a separate integration step.
+use the same task store and Actions.Send path described below.
 
 The broker can reuse `Starter.OwnedContextFromPublished` after its existing
 Squad publisher has selected task claims. It reads the same immutable prompt
@@ -348,3 +348,42 @@ an active turn, and retains its history. A wrong native identity is refused;
 a stopped conversation needs explicit resume. Ordinary user close behavior is
 unchanged. Local notice evidence is read only after a clean acknowledged turn,
 never from a pipe echo or an uncertain turn, and it launches no process.
+
+
+### Owned broker workers
+
+The HTTP composition reuses the broker's already published Squad launch, including
+its task claims and actor capability. It opens a blank native conversation, awaits
+permission/model/effort configuration, then returns the owned/native/workspace
+binding and actual settings. The broker commits that binding before one first
+input; concurrent acceptance and results remain in the existing lifecycle.
+A failed configuration returns its row for exact cleanup. A possibly written
+briefing is retained as uncertain and is not rebriefed automatically. There is
+still an open-before-durable-bind crash window; this is not an exactly-once launch
+claim and no second outbox is introduced.
+
+Cancellation and native timeout call Host.Stop with the original binding, without
+requiring a machine-wide terminal scan. Ordinary successful workers use the
+existing linger policy. The `owned_timeout_closed` tab rule means the exact native
+process is stopped and its history retained, including a turn that was active.
+
+An owned root receives completion notices only while its native row is idle and
+has no permission menu. Terminal composer and stash probes do not apply. A clean
+acknowledged turn with the exact framed notice provides local read evidence;
+a busy user echo does not. A possibly written notice becomes
+`native_delivery_uncertain`, is visible through the existing completion ledger,
+and is not automatically retyped, including after restart. Known-unsent failures
+keep the existing bounded retry policy. These offline wiring tests are not a
+production rollout or an admin phone acceptance result.
+
+
+A separate isolated native worker probe completed the real broker dispatch,
+CLI acceptance, CLI result publication and broker settlement with one free
+personal model input in 30.1 seconds. It used native full mode, one Squad
+snapshot and two tool rows, then stopped the exact process (zero active workers)
+and retained the transcript. Personal settings were unchanged. The preceding
+setup attempt stopped at the Git-project requirement before any process launch
+or model input; it is not a model retry. No paid API calls were made. This
+probe used its own loopback server and synthetic Project, not the production
+daemon or a real phone; native-root completion delivery remains covered by
+protocol fixtures rather than this worker-only probe.

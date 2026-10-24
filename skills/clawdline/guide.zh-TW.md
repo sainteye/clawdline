@@ -602,7 +602,7 @@ writes、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 |---|---|
 | `clawdline_protocol` | `1` |
 | `task_id` | 同一個 id |
-| `assistant` | `claude` 或 `codex` |
+| `assistant` | `claude`、`codex`；已明確設定個人 CLI 時也支援 `antigravity` |
 | `project_dir` | 一個已經存在的目錄的絕對路徑 |
 | `title` | 顯示在畫面上：一行、最多 60 字元，說完成後什麼會不一樣。冒號（`:` 或 `：`）、以 "the user" 當主詞、或用 code 格式的識別字開頭，會以 `bad_task`（`title: …`）拒絕 |
 | `instructions` | 必填，最多 16 KiB。內容必須自己就講得清楚：除此之外 child 什麼都不知道。寫進你已經查證過的事實，每一條附 `file:line` 或指令；調查 child 還要有停止條件與 turn 上限 |
@@ -617,9 +617,11 @@ writes、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 | `root` | **必填**：`{"session_id": "<你的 conversation id>", "assistant": "claude"\|"codex"\|"antigravity", "project_dir": "<與外層 project_dir 相同的絕對 repository 路徑>", "label": "…"}`。有角色範圍的 root 需要 `root.project_dir`，daemon 才能驗證 Project 範圍。 |
 
 原生 Gemini root 透過 daemon 發布的身分檔取得自己的原生 conversation，可用 `antigravity`
-作為 `root.assistant`；worker 啟動仍受 daemon 的供應商權限支援限制。請傳入
-`--assistant codex` 或 `--assistant claude` 選擇既有支援的 worker。這不代表 Gemini worker
-已可啟動，也不能繞過權限拒絕。
+作為 `root.assistant`。明確設定的個人 CLI 也支援 `--assistant antigravity` worker，沿用同一套
+任務生命週期，不需要終端機。`ask`／`edits`／`full` 分別對應原生 `default`／`auto_edit`／`yolo`，
+必須收到原生確認後才送出唯一的首次輸入；指定的模型與推理強度也必須是原生提供的選項。
+取消或逾時會停止該 worker 並保留歷史。可能已寫入的任務輸入或完成通知不會自動重送。
+這不授權付費 API 或 AI Credits。
 
 
 **派工前，要讓 worker surface 與啟動模式符合 child 必須使用的每一項工具。** brief 必須列出必要工具，

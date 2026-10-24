@@ -482,7 +482,7 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 			present = false
 		}
 		choosing := false
-		if present && b.Screen != nil {
+		if present && r.ChildBackend != "owned" && b.Screen != nil {
 			if screen, ok := b.Screen(ctx, r.ChildTerminalID); ok {
 				choosing = Choosing(screen, session.Assistant(r.Assistant))
 			}
@@ -539,6 +539,14 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 // task, run after it, and — if this process dies in between — run by the next
 // broker, once, rather than never.
 func (b *Broker) closeChild(r Record, present bool) []store.Effect {
+	if r.ChildBackend == "owned" {
+		if r.ChildTerminalID == "" || r.ChildConversationID == "" {
+			return nil
+		}
+		payload, _ := json.Marshal(closeChildEffect{Backend: "owned", Pane: r.ChildTerminalID,
+			NativeID: r.ChildConversationID, CWD: childCWD(r)})
+		return []store.Effect{{Kind: EffectCloseChild, Subject: r.ID, Payload: payload}}
+	}
 	if !present || r.ChildTerminalID == "" || b.Launcher == nil {
 		return nil
 	}

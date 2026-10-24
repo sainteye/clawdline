@@ -1792,11 +1792,13 @@ export interface BrokerTabEnd {
  * Which rule decides one task's child tab. `child_linger` closes a finished
  * unscheduled child `orchestrator_child_linger` after it ends; `child_linger_off`
  * is that setting negative, which keeps every finished child open;
- * `unfinished_left_open` is a timeout, whose child may still be working; the three
- * `schedule_…` rules are a scheduled run's `close_tab`; `spawn_failed` is a child
- * that never started, closed at once whatever else is set; `cancelled_closed` is a
- * task its root or the person cancelled, whose child is stopped at once whatever
- * else is set (its commits stay on its branch).
+ * `unfinished_left_open` is a timeout, whose terminal child may still be working;
+ * `owned_timeout_closed` stops an owned native worker at its timeout while
+ * preserving its history; the three `schedule_…` rules are a scheduled run's
+ * `close_tab`; `spawn_failed` is a child that never started, closed at once
+ * whatever else is set; `cancelled_closed` is a task its root or the person
+ * cancelled, whose child is stopped at once whatever else is set (its commits stay
+ * on its branch).
  */
 export type BrokerTabRule =
     "child_linger"
@@ -1807,8 +1809,9 @@ export type BrokerTabRule =
   | "schedule_never"
   | "spawn_failed"
   | "cancelled_closed"
+  | "owned_timeout_closed"
 
-export const BrokerTabRuleValues: readonly BrokerTabRule[] = ["child_linger", "child_linger_off", "unfinished_left_open", "schedule_on_success", "schedule_always", "schedule_never", "spawn_failed", "cancelled_closed"] as const
+export const BrokerTabRuleValues: readonly BrokerTabRule[] = ["child_linger", "child_linger_off", "unfinished_left_open", "schedule_on_success", "schedule_always", "schedule_never", "spawn_failed", "cancelled_closed", "owned_timeout_closed"] as const
 
 /**
  * One dispatched piece of work, as the console and a dispatching root read it.

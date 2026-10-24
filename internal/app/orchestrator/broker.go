@@ -19,6 +19,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/lane"
@@ -93,6 +94,12 @@ type Broker struct {
 	NoticeRead func(ctx context.Context, root session.Session, noticeID string) (bool, error)
 	// Launcher opens the child's tab.
 	Launcher ports.Launcher
+	// OwnedChildAvailable reads fresh configured Host availability. Open configures
+	// one owned protocol row without sending input; Close stops and joins only
+	// the exact owned/native/CWD binding, idempotently when already stopped.
+	OwnedChildAvailable func(context.Context) bool
+	OpenOwnedChild      func(context.Context, Record, string, string, squadfiles.Files) (OwnedChild, error)
+	CloseOwnedChild     func(context.Context, string, string, string) error
 	// TrustClaudeProject records a project folder as one Claude Code may work
 	// in, before a session the person asked for is opened there, so its first
 	// screen is a composer and not the workspace-trust dialog nothing may

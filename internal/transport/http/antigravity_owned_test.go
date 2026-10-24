@@ -32,7 +32,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	enc := json.NewEncoder(os.Stdout)
-	model, effort := "synthetic-flash", "high"
+	model, effort, mode := "synthetic-flash", "high", "default"
 	efforts := []string{"low", "medium", "high"}
 	config := func() []any {
 		values := []any{}
@@ -40,6 +40,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			values = append(values, map[string]string{"value": value, "name": value})
 		}
 		return []any{
+			map[string]any{"id": "mode", "type": "select", "currentValue": mode, "options": []any{map[string]string{"value": "default"}, map[string]string{"value": "auto_edit"}, map[string]string{"value": "yolo"}}},
 			map[string]any{"id": "model", "type": "select", "currentValue": model, "options": []any{map[string]string{"value": "synthetic-flash", "name": "Synthetic Flash"}, map[string]string{"value": "synthetic-pro", "name": "Synthetic Pro"}}},
 			map[string]any{"id": "thinking_level", "type": "select", "currentValue": effort, "options": values},
 		}
@@ -86,7 +87,9 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "config-writes"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 			f.WriteString(req.Params.ConfigID + "=" + req.Params.Value + "\n")
 			f.Close()
-			if req.Params.ConfigID == "model" {
+			if req.Params.ConfigID == "mode" {
+				mode = req.Params.Value
+			} else if req.Params.ConfigID == "model" {
 				model, effort, efforts = req.Params.Value, "medium", []string{"medium", "high"}
 			} else {
 				effort = req.Params.Value

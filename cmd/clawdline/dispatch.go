@@ -106,7 +106,7 @@ func dispatchCommand(args []string) {
 	fs.StringVar(&o.Title, "title", "", "shown on screen; cut at 200 characters")
 	fs.Var(&claims, "claims", "the relative paths the child may write, comma-separated; repeatable")
 	fs.StringVar(&o.ProjectDir, "project-dir", "", "the repository (default: this directory's git top-level)")
-	fs.StringVar(&o.Assistant, "assistant", "", "claude or codex (default: the one running this command)")
+	fs.StringVar(&o.Assistant, "assistant", "", "claude, codex or antigravity (default: the one running this command)")
 	fs.StringVar(&o.Isolation, "isolation", "none", "none or worktree")
 	fs.StringVar(&o.PermissionMode, "permission-mode", "", "ask, edits or full (default: machine setting)")
 	fs.IntVar(&o.Timeout, "timeout", 30, "minutes, 1–240")
@@ -157,7 +157,7 @@ func (o *dispatchOptions) setWorkIDs(ids []string) {
 
 func dispatchUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "dispatch.usage", "usage: clawdline dispatch --title <t> --claims a,b [--claims c] [--project-dir d] "+
-		"[--assistant claude|codex] [--isolation none|worktree] [--permission-mode ask|edits|full] [--timeout min] "+
+		"[--assistant claude|codex|antigravity] [--isolation none|worktree] [--permission-mode ask|edits|full] [--timeout min] "+
 		"[--kind k] [--deliverable p …] [--model m] [--persona id] [--work-id uuid …] [--task-id uuid] [--label l] "+
 		"[--instructions-file f | instructions on stdin] [--conversation id] [--root-assistant claude|codex|antigravity] [--port n] [--json]"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "dispatch.dispatches_an_owned_child_writes_ta.5756ae0b", "  dispatches an owned child: writes task.json, reads the inventory, posts the task"))

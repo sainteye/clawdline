@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -292,7 +293,7 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	default:
 		return bad("permission_mode must be one of: ask, edits, full")
 	}
-	if d.Assistant == projects.AssistantAntigravity {
+	if d.Assistant == projects.AssistantAntigravity && !b.ownedChildAvailable(context.Background()) {
 		return Record{}, refuse(http.StatusUnprocessableEntity, "provider_permission_unsupported",
 			"Antigravity has no verified session-local mapping for this dispatch permission ceiling.")
 	}

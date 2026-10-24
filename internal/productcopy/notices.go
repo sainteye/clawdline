@@ -17,6 +17,8 @@ var Languages = []string{"en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", 
 // Later secondary-language additions may be empty: Format falls back on that
 // key alone, and Coverage reports the untranslated count.
 var notices = map[string][9]string{
+	"notice.native_wait":         {"The Gemini conversation is busy or awaiting an answer; the notice has not been sent.", "Gemini 對話正在處理或等待回答，通知尚未傳送。"},
+	"notice.native_uncertain":    {"Gemini may have received this notice. Automatic resending stopped to avoid another model input; read the task result directly.", "Gemini 可能已收到通知。為避免重複輸入，已停止自動重送；請直接讀取任務結果。"},
 	"delivery.title":             {"Session delivered", "Session 已交件", "セッションの完了報告を記録しました", "会话已提交交付报告", "세션 완료 보고 등록", "Entrega de la sesión registrada", "Entrega da sessão registrada", "Livraison de la session enregistrée", "Sitzungsergebnis gemeldet"},
 	"delivery.body":              {"A Session recorded its delivery report.", "Session 已記錄交件回報。", "セッションが完了報告を記録しました。", "会话已记录交付报告。", "세션에서 완료 보고서를 기록했습니다.", "Una sesión registró su informe de entrega.", "Uma sessão registrou seu relatório de entrega.", "Une session a enregistré son rapport de livraison.", "Eine Sitzung hat ihren Abschlussbericht gespeichert."},
 	"fanout.title":               {"Dispatched tasks finished", "整批派工已結束", "依頼したタスクがすべて終了しました", "派发的任务已全部结束", "위임한 작업이 모두 종료됨", "Tareas delegadas finalizadas", "Tarefas delegadas encerradas", "Tâches déléguées terminées", "Delegierte Aufgaben beendet"},

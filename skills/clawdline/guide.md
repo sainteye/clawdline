@@ -687,7 +687,7 @@ included — so the task the child reads is the one that was validated, and it d
 |---|---|
 | `clawdline_protocol` | `1` |
 | `task_id` | the same id |
-| `assistant` | `claude` or `codex` |
+| `assistant` | `claude`, `codex`, or `antigravity` when the owned personal CLI is configured |
 | `project_dir` | absolute path to an existing directory |
 | `title` | shown on screen: one line of at most 60 characters saying what will be different. A colon (`:` or `：`), "the user" as the subject, or an opening code-formatted identifier is refused as `bad_task` (`title: …`) |
 | `instructions` | required, at most 16 KiB. They must stand on their own: the child knows nothing else. Carry the facts you already verified, each with its `file:line` or command; an investigation child also gets a stop condition and a turn limit |
@@ -702,9 +702,12 @@ included — so the task the child reads is the one that was validated, and it d
 | `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex"\|"antigravity", "project_dir": "<the same absolute repository path as project_dir>", "label": "…"}`. A role-scoped root needs `root.project_dir` for the daemon to verify its Project scope. |
 
 An owned Gemini root uses its daemon-published identity file for its exact native conversation.
-It can name `antigravity` as `root.assistant`; worker launch remains subject to the daemon's
-provider permission support. Pass `--assistant codex` or `--assistant claude` to select an existing
-supported worker. This does not enable a Gemini worker or bypass a permission refusal.
+It can name `antigravity` as `root.assistant`. An explicitly configured owned personal CLI also
+supports `--assistant antigravity` workers through this same task lifecycle, without a terminal.
+Permission `ask`/`edits`/`full` maps to native `default`/`auto_edit`/`yolo` and must be acknowledged
+before the one first input; an explicit model and effort must also be native offers. Cancellation
+and timeout stop the exact worker and retain its history. A possibly written briefing or completion
+notice is not automatically resent. This does not authorize paid APIs or AI Credits.
 
 
 **Match the worker surface and launch mode to every tool the child must use before dispatching it.**

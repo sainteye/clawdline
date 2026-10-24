@@ -15,6 +15,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -189,4 +190,45 @@ func (s *Server) availableAssistants() []contract.StartAssistant {
 		}
 	}
 	return rows
+}
+
+// The broker has already published its immutable role snapshot with the task's
+// claims. Reuse it and configure the native worker before its one first input.
+func (s *Server) openOwnedAntigravityChild(ctx context.Context, r orchestrator.Record, cwd, launchID string, files squadfiles.Files) (orchestrator.OwnedChild, error) {
+	h := s.antigravitySessions.Load()
+	if h == nil {
+		return orchestrator.OwnedChild{}, ownedAntigravityUnavailable()
+	}
+	starter := app.Starter{Memory: s.memoryLaunchText, Language: func(assistant string) string {
+		if s.broker == nil {
+			return ""
+		}
+		return s.broker.SessionLanguage(assistant)
+	}}
+	place := projects.Place{Path: cwd, Label: r.Title}
+	prepared, err := starter.OwnedContextFromPublished(ctx, place, r.Persona, launchID, files)
+	if err != nil {
+		return orchestrator.OwnedChild{}, err
+	}
+	row, err := h.OpenWithContext(ctx, ports.OpenRequest{Cwd: cwd, Name: r.Title}, ownedAntigravityContext(place, prepared))
+	if err != nil {
+		return orchestrator.OwnedChild{}, err
+	}
+	result := orchestrator.OwnedChild{Row: row}
+	if err := h.ConfigureDispatch(ctx, row, r.Model, r.ReasoningEffort, r.PermissionMode); err != nil {
+		return result, err
+	}
+	facts, err := h.Facts(row)
+	result.Model, result.ReasoningEffort = facts.Model, facts.Effort
+	return result, err
+}
+
+func (s *Server) stopOwnedAntigravityChild(ctx context.Context, id, native, cwd string) error {
+	h := s.antigravitySessions.Load()
+	if h == nil {
+		return ownedAntigravityUnavailable()
+	}
+	return h.Stop(ctx, session.Session{ID: id, Backend: session.BackendOwned,
+		Assistant: session.AssistantAntigravity, Binding: session.BindingProtocol,
+		ConversationID: native, CWD: cwd})
 }

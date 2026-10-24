@@ -114,7 +114,7 @@ func (w *stallWatch) forget(id string) {
 // stallCandidate is a task whose briefing was typed and which has signed
 // nothing since.
 func stallCandidate(r Record) bool {
-	return r.State == StateSpawning && r.AcceptedAt.IsZero() && !r.Unbriefed && r.AwaitingDialogSince.IsZero() &&
+	return r.ChildBackend != "owned" && r.State == StateSpawning && r.AcceptedAt.IsZero() && !r.Unbriefed && r.AwaitingDialogSince.IsZero() &&
 		r.ChildTerminalID != "" && !r.SpawnedAt.IsZero()
 }
 

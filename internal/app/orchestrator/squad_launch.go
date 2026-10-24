@@ -91,9 +91,9 @@ func (b *Broker) prepareSquadLaunch(ctx context.Context, personaID, projectPath 
 	return brokerSquadLaunch{launch: launch, files: files}, nil
 }
 
-func (b *Broker) recordSquadTerminal(ctx context.Context, prepared brokerSquadLaunch, terminalID string) {
+func (b *Broker) recordSquadTerminal(ctx context.Context, prepared brokerSquadLaunch, terminalID string) error {
 	if prepared.launch.ID == "" {
-		return
+		return nil
 	}
 	// The provider already opened. Both records are retried by the inventory
 	// observer; an error here must not turn a running child into an unowned
@@ -103,5 +103,7 @@ func (b *Broker) recordSquadTerminal(ctx context.Context, prepared brokerSquadLa
 	}
 	if err := b.Store.RecordSquadTerminal(ctx, prepared.launch.ID, terminalID); err != nil {
 		log.Printf("squad launch %s: terminal binding pending recovery: %v", prepared.launch.ID, err)
+		return err
 	}
+	return nil
 }
