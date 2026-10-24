@@ -62,6 +62,22 @@ func TestParallelSessionPeer(t *testing.T) {
 			}
 			text := req.Params.Prompt[0].Text
 			notify(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "same-tool", "title": text, "kind": "read", "status": "in_progress"})
+			if os.Getenv("CLW_PARALLEL_PERMISSION") == "yes" {
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "shared-permission", "method": "session/request_permission", "params": map[string]any{
+					"sessionId": native,
+					"toolCall":  map[string]string{"toolCallId": "same-tool", "title": "Read synthetic file?"},
+					"options": []any{
+						map[string]string{"optionId": "allow-exact", "name": "Allow once", "kind": "allow_once"},
+						map[string]string{"optionId": "reject-exact", "name": "Reject once", "kind": "reject_once"},
+					},
+				}})
+				if !scan.Scan() {
+					os.Exit(32)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "permission-"+native), scan.Bytes(), 0600); err != nil {
+					os.Exit(33)
+				}
+			}
 			for {
 				if _, err := os.Stat(filepath.Join(dir, "release-"+native)); err == nil {
 					break
@@ -75,6 +91,106 @@ func TestParallelSessionPeer(t *testing.T) {
 		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
 	}
 	os.Exit(0)
+}
+
+func TestTwoActivePermissionOffersCannotAnswerEachOther(t *testing.T) {
+	t.Setenv("CLW_PARALLEL_PEER", "yes")
+	t.Setenv("CLW_PARALLEL_PERMISSION", "yes")
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "antigravity-acp"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "antigravity-acp", "settings.json"), []byte(`{"useG1Credits":false,"auth":{"type":"oauth-personal"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := reopenHost(t, Options{Executable: exe, AccountDir: dir, StateDir: filepath.Join(dir, "state"), Args: []string{"-test.run=^TestParallelSessionPeer$"}})
+	a, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []session.Session{a, b} {
+		if err := os.WriteFile(filepath.Join(dir, "release-"+row.ConversationID), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.Send(context.Background(), row, "identical prompt"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ma := parallelPermission(t, h, a)
+	mb := parallelPermission(t, h, b)
+	fa, fb := session.MenuFingerprint(*ma.Menu), session.MenuFingerprint(*mb.Menu)
+	if ma.Menu.Question != mb.Menu.Question || fa == fb {
+		t.Fatal("independent identical offers have no exact identity")
+	}
+	if err := h.SelectProtocol(context.Background(), b, 1, fa, nil); err == nil {
+		t.Fatal("first offer answered the second conversation")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "permission-"+b.ConversationID)); !os.IsNotExist(err) {
+		t.Fatal("crossed answer reached native pipe")
+	}
+	if err := h.SelectProtocol(context.Background(), a, 1, fa, nil); err != nil {
+		t.Fatal(err)
+	}
+	idleHost(t, h, a)
+	if err := h.SelectProtocol(context.Background(), a, 1, fa, nil); err == nil {
+		t.Fatal("duplicate answer accepted")
+	}
+	still := parallelPermission(t, h, b)
+	if session.MenuFingerprint(*still.Menu) != fb {
+		t.Fatal("first answer changed second offer")
+	}
+	if err := h.SelectProtocol(context.Background(), b, 2, fb, nil); err != nil {
+		t.Fatal(err)
+	}
+	idleHost(t, h, b)
+	for _, tc := range []struct {
+		row    session.Session
+		option string
+	}{{a, "allow-exact"}, {b, "reject-exact"}} {
+		raw, err := os.ReadFile(filepath.Join(dir, "permission-"+tc.row.ConversationID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var reply struct {
+			ID     string `json:"id"`
+			Result struct {
+				Outcome struct {
+					Outcome  string `json:"outcome"`
+					OptionID string `json:"optionId"`
+				} `json:"outcome"`
+			} `json:"result"`
+		}
+		if json.Unmarshal(raw, &reply) != nil || reply.ID != "shared-permission" || reply.Result.Outcome.Outcome != "selected" || reply.Result.Outcome.OptionID != tc.option {
+			t.Fatal("wrong native reply", string(raw))
+		}
+	}
+}
+
+func parallelPermission(t *testing.T, h *Host, row session.Session) session.Session {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		inv, err := h.Inventory(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, got := range inv.Sessions {
+			if got.ID == row.ID && got.Menu != nil {
+				return got
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("native offer was not shown for exact session", row.ID)
+	return session.Session{}
 }
 
 func TestTwoActiveSessionsKeepMessagesToolsAndRestartIdentitySeparate(t *testing.T) {

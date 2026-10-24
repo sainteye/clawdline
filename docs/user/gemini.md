@@ -58,6 +58,10 @@ question. Closing the conversation or timing out does not approve its pending
 tool. A device with read-only access can read the conversation but cannot answer
 a permission request.
 
+A native workspace restriction can stop a tool before any permission menu is
+offered. In that case, read the failed tool and the assistant's explanation;
+there is no pending approval for the console to answer.
+
 ## Models, reasoning and quota
 
 Open **About this session** to see the native model choices and, when separately
