@@ -52,6 +52,15 @@ The [Go CPU attribution](performance/cloud-read-cpu.md) measures the parser and 
 
 ## Publications, reads and commands
 
+The hosted console offers pairing again only for a named pairing failure. A timed-out read,
+an unavailable descriptor, and account presence do not establish that a pairing is broken,
+regardless of how long the warning has been held. A live Session row or status update from
+the affected machine clears its transient refresh warning; a retained replay, another
+machine's update, or a descriptor heartbeat does not. Publications cannot clear a named
+pairing refusal because receiving updates does not prove outbound permission. A successful
+live read from that machine clears either kind of warning. Regression coverage is in
+[`state.test.ts`](../web/console/src/cloud/state.test.ts).
+
 The publisher sends a machine descriptor on `orch/<machine>`, one complete row per session on `s/<machine>/<session>`, a content-free status projection on `ss/<machine>/<session>`, and an inventory marker after the rows. It polls the daemon's local routes, skips unchanged session content row by row on both channels, and periodically restates values so an idle machine does not appear stale. A `sessions.snapshot` request can ask the machine to restate rows after a reconnect. The publisher preserves previously known rows when a partial local scan cannot prove they disappeared. The descriptor includes the supported command words. See [`publish.go`](../internal/transport/cloud/publish.go) for current timing, freshness and inventory rules.
 
 **The row under an opened Session is asked for, not waited for.** Opening a Session needs two things: the conversation, which the `r/` read answers in about 130 ms, and that Session's own complete `s/` row, which carries the name, the work line and the execution the composer writes to. The row arrives only when the machine publishes it, so a page that holds the status projection but not the row had nothing to draw and kept saying it was reading the conversation for as long as the row took. Measured on 2026-10-11: one row recovered from the relay's retained channel took 19.6 seconds, while the conversation in that same open answered in 131 ms. The page now sends `sessions.snapshot` to that one machine as soon as it sees the row missing — the row came back one second after the ask — no more often than `console.opened_row_restate_seconds`, and only while the status row names the same execution, because a different one is a replaced execution that the detail read already refuses as changed. A row still missing after `console.opened_row_quiet_seconds` is news rather than a longer wait: the pane names the machine that has not sent it and offers the press that asks again (`askForOpenedRow` in [`relay-reader.ts`](../web/console/src/cloud/relay-reader.ts) and [`opened-row.ts`](../web/console/src/cloud/opened-row.ts)).

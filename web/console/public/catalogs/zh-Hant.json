@@ -6551,7 +6551,7 @@
   "next.cloudPeerTargetReceipt": "目標收據：機器執行 {execution}；Session 交付 {delivered}；Agent 觀察 {observed}；確認 {acknowledged}。",
   "next.cloudPeerToWhere": "送到哪裡",
   "next.cloudPeerWriteUnavailable": "機器 {machine} 的跨機變更需要此檢視端的寫入權限及機器支援；讀取仍可使用。",
-  "next.cloudReadNeedsPairing": "{machine} 在線上，但沒有回應這個裝置，可能要重新配對。",
+  "next.cloudReadNeedsPairing": "無法驗證與 {machine} 的配對，請重新配對以恢復連線。",
   "next.cloudReadPairAgain": "掃描配對",
   "next.cloudReadPairingRequired": "無法讀取 {machine}：這個瀏覽器需要重新確認配對。已顯示的內容可能不是最新狀態。",
   "next.cloudReadUnknownFailure": "讀取 {machine} 失敗，顯示的內容可能尚未更新。",

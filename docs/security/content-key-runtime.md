@@ -76,6 +76,15 @@ fix, only the terminal canary failed after cutover: its channel precheck require
 `ms-1` before the installed-key validator could run, silently dropping valid
 requests and leaving the browser waiting for a receipt.
 
+`TestSessionAndTerminalShareViewerAuthorization` additionally checks the same
+browser through the Session bridge and terminal authorization gates. It warms
+an allowed identity, then withdraws its grant: read-only scope, local or account
+revocation, substituted account signing key, and an unreadable roster. The test
+asserts explicit read and operation outcomes as well as agreement, so two broken
+denials cannot pass by agreeing. Rejected Session operations must not reach the
+local router. The ingress rotation test above covers the content-key layer
+before these authorization gates.
+
 ## The cutover, in order
 
 1. `Cutover` takes the write lock. Go's `RWMutex` stops new `Use` callers once a

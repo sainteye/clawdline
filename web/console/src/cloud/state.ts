@@ -90,7 +90,7 @@ export function machineAccessProblem(
   viewerEvents?: ViewerEventLog,
   onlyListedMachine?: string | null,
 ): AccessProblem | null {
-  if (event.type !== "error" && event.type !== "read") return null
+  if (event.realign || (event.type !== "error" && event.type !== "read")) return null
   const code = failureCode(event.error)
   if (!code || !ACCESS_PROBLEMS.has(code)) return null
   const error = object(event.error)
@@ -130,29 +130,19 @@ function string(value: unknown): string | null {
   return typeof value === "string" && value ? value : null
 }
 
-/** How long reads to a reporting machine must have failed before pairing again is offered. */
-export const READ_PAIR_OFFER_AFTER_MS = 30_000
-
-/**
- * Whether the read problem should offer to pair this browser with the machine
- * again.
- *
- * A machine that revoked this device cannot tell it so: the device's envelope
- * no longer verifies, so the machine drops it unanswered and every read times
- * out. A busy or slow machine times out too, but some reads in between
- * succeed, and any success clears the problem. So a timeout offers pairing
- * only once reads to a machine that still reports to the account have failed
- * for `READ_PAIR_OFFER_AFTER_MS` without one success. A failure already named
- * as a pairing problem offers it at once; an offline machine never does.
- */
-export function readProblemOffersPairing(code: string, presence: "current" | "stale" | "unknown" | undefined, heldMs: number): boolean {
-  if (PAIR_CODES.has(code)) return true
-  return presence === "current" && heldMs >= READ_PAIR_OFFER_AFTER_MS &&
-    (code === "cloud_read_timeout" || code === "cloud_read_unavailable")
+/** Only a named pairing failure can offer pairing; timeouts cannot diagnose its cause. */
+export function readProblemOffersPairing(code: string): boolean {
+  return PAIR_CODES.has(code)
 }
 
-/** Cached publications and another machine answering cannot repair this read path. */
+/** Retained publications and another machine answering cannot clear this machine's warning. */
 export function accessProblemAfterRead(held: AccessProblem | null, event: AccessEvent): AccessProblem | null {
   const machine = event.machine ?? event.identity?.machine
-  return held && event.type === "read" && !event.error && !event.realign && machine === held.machine ? null : held
+  if (!held || event.error || event.realign || machine !== held.machine) return held
+  if (event.type === "read") return null
+  // A live Session publication disproves a machine-wide refresh warning, but
+  // cannot prove that the machine still authorizes this viewer's requests.
+  const transient = held.code === "cloud_read_timeout" || held.code === "cloud_read_unavailable" ||
+    held.code === "offline" || held.code === "socket_error"
+  return transient && (event.type === "sessions" || event.type === "session_status") ? null : held
 }
