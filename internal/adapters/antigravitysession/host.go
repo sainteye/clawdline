@@ -69,6 +69,7 @@ type conversation struct {
 	staging          bool
 	replaying        bool
 	storeErr         error
+	permission       *antigravityprocess.PermissionRequest
 }
 
 type Error struct {
@@ -120,7 +121,7 @@ func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 	defer h.jobs.Done()
 	defer func() { h.mu.Lock(); h.opening = false; h.mu.Unlock() }()
 	c := &conversation{tools: map[string]int{}, textIndex: -1, store: h.store, profile: filepath.Clean(h.opts.AccountDir), generation: rand.Text()}
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update})
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
 	if err != nil {
 		return session.Session{}, err
 	}
@@ -205,7 +206,13 @@ func (h *Host) Inventory(ctx context.Context) (session.Inventory, error) {
 			continue
 		}
 		row := c.row
+		if c.permission != nil && c.permission.Active() {
+			row.Menu = permissionMenu(c.permission)
+			row.State = session.StateWaiting
+			row.Line = session.MenuRevision(*row.Menu)
+		}
 		if c.client != nil && c.client.Err() != nil {
+			row.Menu = nil
 			row.State = session.StateUnknown
 			if !c.uncertain {
 				c.uncertain = true
@@ -323,6 +330,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		outcome = err
+		c.permission = nil
 		if err != nil {
 			var local interface{ BeforeWrite() bool }
 			if errors.As(err, &local) && local.BeforeWrite() {
@@ -384,7 +392,7 @@ func (h *Host) Close(ctx context.Context, s session.Session) error {
 	}
 	c.mu.Lock()
 	client := c.client
-	if c.busy {
+	if c.busy && (c.permission == nil || !c.permission.Active()) {
 		c.mu.Unlock()
 		h.mu.Unlock()
 		return refusal("busy")
@@ -395,6 +403,7 @@ func (h *Host) Close(ctx context.Context, s session.Session) error {
 	defer h.jobs.Done()
 	defer func() { c.mu.Lock(); c.busy = false; c.mu.Unlock() }()
 	c.hidden = true
+	c.permission = nil
 	if client != nil && client.Err() != nil {
 		c.uncertain = true
 		c.row.State = session.StateUnknown

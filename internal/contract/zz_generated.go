@@ -5781,19 +5781,24 @@ type SessionLimits struct {
 	Windows       []SessionLimitWindow   `json:"windows"`
 }
 
-// The question on a waiting session's screen, as rows a finger can hit (the
-// Swift app's menuObject). Present only on a waiting session whose screen could
-// be read as a menu; a waiting row without it is a question drawn in a shape
-// nothing recognised. The row labels and details may be refilled from the
-// session's own transcript, but only once the screen proves which question it
-// is showing; the numbers, the caret, Submit and the steps are always the
-// screen's.
+// The question on a waiting Session, as rows a finger can hit. An owned
+// protocol may supply an exact live native offer; otherwise this is a screen
+// menu (the Swift app's menuObject). For screen menus, present only when the
+// screen could be read as a menu; a waiting row without it is a question drawn
+// in a shape nothing recognised. The row labels and details may be refilled
+// from the session's own transcript, but only once the screen proves which
+// question it is showing; the numbers, the caret, Submit and the steps are
+// always the screen's.
 type SessionMenu struct {
 	Options []SessionMenuOption `json:"options"`
 
 	// The prose above the rows, or the question as the call asked it. Absent when it
 	// could not be read.
 	Question string `json:"question,omitempty"`
+
+	// Opaque identity of one live native offer. Included in the menu fingerprint when
+	// present; repeated identical questions have distinct revisions.
+	Revision string `json:"revision,omitempty"`
 
 	// The number of the row the caret is on. Absent when it is on none of them — a
 	// multi-select's button can hold it — and on a menu taken from the transcript,

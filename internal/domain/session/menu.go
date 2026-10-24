@@ -19,6 +19,9 @@ import (
 // false), where the position is all there is and the same flag that took the
 // numbers off also stopped the dialog accepting digits.
 type Menu struct {
+	// Revision distinguishes repeated native offers with identical visible prose.
+	// Empty retains the historical screen-menu fingerprint.
+	Revision string
 	// Question is the prose above the rows, or the call's own words once the
 	// transcript proves which question is up. Empty when it could not be read.
 	Question string

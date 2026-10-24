@@ -21,6 +21,15 @@ import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assista
 const active: AssistantFacts = { id: "antigravity", installed: true, authState: "ready", integrationState: "active",
   capabilities: { start: true, resume: true, send: true, menus: true, transcript: true } }
 
+test("an exact current native permission menu admits the ordinary waiting buttons", () => {
+  const row = { id: "owned:acp:synthetic", backend: "owned", assistant: "antigravity", identity: "protocol",
+    sessionId: "native-exact", execution_generation: "a".repeat(32), state: "waiting", line: "Run synthetic command?",
+    source: { freshness: "current", observed_at: Date.now() / 1000 },
+    menu: { revision: "offer-1", question: "Run synthetic command?", options: [{ n: 1, label: "Allow once", can: true }] } } as any
+  assert.equal(assistantMenuAdmits(row, active), true)
+  assert.equal(assistantMenuAdmits(row, { ...active, capabilities: { ...active.capabilities!, menus: false } }), false)
+})
+
 withCatalog("zh-Hant")
 
 test("a found CLI never grants Antigravity operations without readiness evidence", () => {

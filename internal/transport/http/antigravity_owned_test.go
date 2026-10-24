@@ -4,6 +4,7 @@ package http
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -11,13 +12,16 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -88,6 +92,19 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			}
 			result = map[string]any{"configOptions": config()}
 		case "session/prompt":
+			if os.Getenv("CLW_HTTP_PERMISSION") == "yes" {
+				for i := 0; i < 2; i++ {
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": 77, "method": "session/request_permission", "params": map[string]any{"sessionId": "synthetic-http-native", "toolCall": map[string]string{"toolCallId": "native-http-tool", "title": "Run synthetic command?"}, "options": []any{map[string]string{"optionId": "native-allow", "name": "Allow once", "kind": "allow_once"}, map[string]string{"optionId": "native-deny", "name": "Reject once", "kind": "reject_once"}}}})
+					if !scanner.Scan() {
+						os.Exit(32)
+					}
+					f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "permissions"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+					_, _ = f.Write(append(append([]byte(nil), scanner.Bytes()...), '\n'))
+					_ = f.Close()
+				}
+				result = map[string]string{"stopReason": "end_turn"}
+				break
+			}
 			if len(req.Params.Prompt) == 1 && req.Params.Prompt[0].Text == "/usage" {
 				f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "usage"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 				f.WriteString("usage\n")
@@ -103,6 +120,110 @@ func TestOwnedHTTPPeer(t *testing.T) {
 		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
 	}
 	os.Exit(0)
+}
+
+func TestOwnedPermissionUsesExistingHTTPKeyAuthorizationAndMenuWire(t *testing.T) {
+	t.Setenv("CLW_HTTP_PEER", "yes")
+	t.Setenv("CLW_HTTP_PERMISSION", "yes")
+	s := capacityServer(t)
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "antigravity-acp"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "antigravity-acp", "settings.json"), []byte(`{"useG1Credits":false,"auth":{"type":"oauth-personal"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := antigravitysession.New(context.Background(), antigravitysession.Options{Executable: exe, AccountDir: dir, Args: []string{"-test.run=^TestOwnedHTTPPeer$"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := h.Shutdown(); err != nil {
+			t.Error(err)
+		}
+	}()
+	s.antigravitySessions.Store(h)
+	s.terminals = []ports.TerminalHost{ownedAntigravityTerminal{s}}
+	s.inventory = app.Inventory{Terminals: s.terminals}
+	row, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.actions().Send(context.Background(), row.ID, "synthetic permission input"); err != nil {
+		t.Fatal(err)
+	}
+	wait := func(previous string) session.Session {
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			inv := s.inventory.Read(context.Background())
+			for _, r := range inv.Sessions {
+				if r.Menu != nil && r.Menu.Revision != previous {
+					return r
+				}
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatal("native offer not in ordinary inventory")
+		return session.Session{}
+	}
+	first := wait("")
+	wire, _ := json.Marshal(wireMenu(first))
+	var menu contract.SessionMenu
+	if json.Unmarshal(wire, &menu) != nil || menu.Revision != first.Menu.Revision || menu.Options[1].Label != "Reject once" {
+		t.Fatalf("wire menu=%s", wire)
+	}
+	key := func(ctx context.Context, caps auth.Caps, digit, expect string) int {
+		body, _ := json.Marshal(contract.KeyRequest{Key: digit, Expect: expect})
+		req := httptest.NewRequest(http.MethodPost, "/v1/sessions/"+row.ID+"/key", bytes.NewReader(body))
+		req = req.WithContext(context.WithValue(ctx, accessKey{}, access{verdict: auth.Verdict{Allowed: true, Caps: caps}}))
+		response := httptest.NewRecorder()
+		s.sessionAction(response, req)
+		return response.Code
+	}
+	expect := session.MenuFingerprint(*first.Menu)
+	if code := key(context.Background(), auth.NewCaps(auth.Read), "1", expect); code != 403 {
+		t.Fatal("read-only key status", code)
+	}
+	checks := 0
+	revoked := app.WithOperationCheck(context.Background(), func() error {
+		checks++
+		if checks > 1 {
+			return app.Refusal{Code: "forbidden", Detail: "This device may read, and not send."}
+		}
+		return nil
+	})
+	if code := key(revoked, auth.NewCaps(auth.Read, auth.Send), "1", expect); code != 403 {
+		t.Fatal("revoked key status", code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "permissions")); !os.IsNotExist(err) {
+		t.Fatal("forbidden route wrote a native reply")
+	}
+	if code := key(context.Background(), auth.NewCaps(auth.Read, auth.Send), "1", expect); code != 200 {
+		t.Fatal("allow key status", code)
+	}
+	second := wait(first.Menu.Revision)
+	if code := key(context.Background(), auth.NewCaps(auth.Read, auth.Send), "1", expect); code == 200 {
+		t.Fatal("old question accepted")
+	}
+	if code := key(context.Background(), auth.NewCaps(auth.Read, auth.Send), "2", session.MenuFingerprint(*second.Menu)); code != 200 {
+		t.Fatal("deny key status", code)
+	}
+	deadline := time.Now().Add(time.Second)
+	var raw []byte
+	for time.Now().Before(deadline) {
+		raw, _ = os.ReadFile(filepath.Join(dir, "permissions"))
+		if bytes.Count(raw, []byte{'\n'}) == 2 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if strings.Count(string(raw), `"id":77`) != 2 || !strings.Contains(string(raw), `"optionId":"native-allow"`) || !strings.Contains(string(raw), `"optionId":"native-deny"`) {
+		t.Fatalf("native replies=%s", raw)
+	}
 }
 func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	s := capacityServer(t)
@@ -233,7 +354,7 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 		t.Fatal("quota entered transcript", page)
 	}
 	for _, row := range s.availableAssistants() {
-		if row.ID == "antigravity" && (row.AuthState != contract.StartAuthStateReady || !row.Capabilities.Send || !row.Capabilities.Transcript || !row.Capabilities.Resume || row.Capabilities.Menus) {
+		if row.ID == "antigravity" && (row.AuthState != contract.StartAuthStateReady || !row.Capabilities.Send || !row.Capabilities.Transcript || !row.Capabilities.Resume || !row.Capabilities.Menus) {
 			t.Fatalf("incorrect preview capabilities: %+v", row)
 		}
 	}

@@ -40,6 +40,9 @@ func MenuFingerprint(m Menu) string {
 		b.WriteString(s)
 	}
 	text("q", m.Question)
+	if m.Revision != "" {
+		text("r", m.Revision)
+	}
 	for _, o := range m.Options {
 		text("o"+strconv.Itoa(o.Number)+",", o.Label)
 	}

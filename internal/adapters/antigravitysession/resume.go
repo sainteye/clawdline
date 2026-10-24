@@ -125,6 +125,11 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 		relay.Lock()
 		defer relay.Unlock()
 		return target.update(ctx, raw)
+	}, OnPermission: func(ctx context.Context, p *antigravityprocess.PermissionRequest) error {
+		relay.Lock()
+		current := target
+		relay.Unlock()
+		return current.requestPermission(ctx, p)
 	}})
 	if err != nil {
 		return session.Session{}, err

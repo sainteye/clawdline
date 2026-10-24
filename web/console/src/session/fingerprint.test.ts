@@ -29,6 +29,12 @@ test("the page names a question with the same hex the machine computes", () => {
   assert.equal(menuFingerprint(VECTOR), VECTOR_HEX)
 })
 
+test("native offer revision distinguishes repeated questions with the paired Go vector", () => {
+  assert.equal(menuFingerprint({ ...VECTOR, revision: "native-offer-2" }), "74dca102ee9eece26056ce00b9e7f0fa6f2e0f112648a4b34c7a43319b6c9d0b")
+  assert.notEqual(menuFingerprint({ ...VECTOR, revision: "native-offer-3" }), menuFingerprint({ ...VECTOR, revision: "native-offer-2" }))
+  assert.equal(menuFingerprint({ ...VECTOR, revision: "" }), VECTOR_HEX)
+})
+
 test("sha256Hex is SHA-256, including across a block boundary and in non-Latin text", () => {
   for (const text of ["", "abc", "a".repeat(55), "a".repeat(56), "a".repeat(64), "a".repeat(1000), "問題 ❯ 1. Yes\u0000"]) {
     const want = createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex")

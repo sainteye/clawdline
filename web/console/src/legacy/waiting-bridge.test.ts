@@ -2,7 +2,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see `session/order.test.ts`.
-import { waitingHTML, type WaitingModel } from "./waiting-bridge.ts"
+import { menuKey, waitingHTML, type WaitingModel } from "./waiting-bridge.ts"
 // @ts-expect-error -- a `.ts` path, for node; see `session/order.test.ts`.
 import { nextWord } from "../next-strings.ts"
 
@@ -19,6 +19,12 @@ const unread: WaitingModel = {
   screenOff: false,
   cancel: true,
 }
+
+test("a repeated native offer releases the previous menu hold", () => {
+  const menu = { question: "Run synthetic command?", options: [{ n: 1, label: "Allow", can: true, selected: false }] }
+  assert.notEqual(menuKey({ ...menu, revision: "offer-1" }), menuKey({ ...menu, revision: "offer-2" }))
+  assert.equal(menuKey(menu), menuKey({ ...menu, revision: "" }))
+})
 
 // On 2026-09-26 a picker whose choices could not be read left the card saying
 // "answer this one on the Mac", on a machine that has none, with every button

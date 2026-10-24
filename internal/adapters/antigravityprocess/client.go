@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"io"
 	"os"
@@ -54,6 +55,68 @@ type Options struct {
 	MaxFrameBytes                      int
 	CallTimeout                        time.Duration
 	OnUpdate                           func(ctx context.Context, frame json.RawMessage) error
+	// OnPermission publishes one live request and returns promptly. No callback
+	// or an unsupported offer is cancelled. The reader waits in wire order.
+	OnPermission func(context.Context, *PermissionRequest) error
+}
+
+// PermissionRequest owns one native reply. Its lifetime is bounded by the
+// existing call timeout and process lifetime; selections never retry a write.
+type PermissionRequest struct {
+	Offer    *antigravityacp.PermissionOffer
+	Revision string
+	mu       sync.Mutex
+	ctx      context.Context
+	client   *Client
+	done     chan struct{}
+	finished atomic.Bool
+}
+
+func (p *PermissionRequest) Active() bool {
+	return !p.finished.Load() && p.ctx.Err() == nil
+}
+
+// Select uses exact native option IDs. The final operation check is under the
+// same pipe write lock as the reply. Duplicate and expired answers write nothing.
+func (p *PermissionRequest) Select(ctx context.Context, option string, before func() error) error {
+	return p.reply(ctx, option, before, false)
+}
+func (p *PermissionRequest) Cancel(ctx context.Context, before func() error) error {
+	return p.reply(ctx, "", before, true)
+}
+func (p *PermissionRequest) reply(ctx context.Context, option string, before func() error, cancelled bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.finished.Load() || p.ctx.Err() != nil || ctx == nil || ctx.Err() != nil {
+		return failure("stale_offer", NotWritten)
+	}
+	b, err := p.Offer.PrepareSelected(p.Offer.Fence(), option)
+	if cancelled {
+		b, err = p.Offer.PrepareCancelled(p.Offer.Fence())
+	}
+	if err != nil {
+		return err
+	}
+	if len(b) > p.client.opts.MaxFrameBytes {
+		return failure("frame_too_large", NotWritten)
+	}
+	p.client.writeMu.Lock()
+	defer p.client.writeMu.Unlock()
+	if p.ctx.Err() != nil || ctx.Err() != nil {
+		return failure("stale_offer", NotWritten)
+	}
+	if before != nil {
+		if err := before(); err != nil {
+			return beforeWriteError{err}
+		}
+	}
+	p.finished.Store(true)
+	defer close(p.done)
+	if err := p.client.writeUnlocked(b); err != nil {
+		p.client.shutdown(failure("write_failed", Uncertain))
+		return failure("write_failed", Uncertain)
+	}
+	return nil
 }
 
 type Client struct {
@@ -702,6 +765,9 @@ func (c *Client) readLoop() {
 				}
 				var reply map[string]any
 				if equalString(method, "session/request_permission") {
+					if c.permission(frame) {
+						continue
+					}
 					reply = map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"outcome": map[string]string{"outcome": "cancelled"}}}
 				} else {
 					reply = map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32601, "message": "Unsupported client request"}}
@@ -769,6 +835,33 @@ func (c *Client) readLoop() {
 		}
 	}
 	c.shutdown(failure(code, Uncertain))
+}
+
+func (c *Client) permission(frame json.RawMessage) bool {
+	if c.opts.OnPermission == nil {
+		return false
+	}
+	offer, err := antigravityacp.DecodePermission(frame, rand.Text(), c.SessionID())
+	if err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(c.ctx, c.opts.CallTimeout)
+	defer cancel()
+	p := &PermissionRequest{Offer: offer, Revision: rand.Text(), ctx: ctx, client: c, done: make(chan struct{})}
+	// The timer also unblocks a stalled reply write. Active prompt deadlines
+	// independently retain their original bound.
+	timer := time.AfterFunc(c.opts.CallTimeout, func() { c.shutdown(failure("cancelled", Uncertain)) })
+	defer timer.Stop()
+	if err := c.opts.OnPermission(ctx, p); err != nil {
+		_ = p.Cancel(ctx, nil)
+		return true
+	}
+	select {
+	case <-p.done:
+	case <-ctx.Done():
+		c.shutdown(failure("cancelled", Uncertain))
+	}
+	return true
 }
 
 func response(frame []byte, expectedID string) (json.RawMessage, error) {
