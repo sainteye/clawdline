@@ -66,6 +66,8 @@ func openHistory(dir string) (*historyStore, error) {
 	 tool_id TEXT NOT NULL DEFAULT '', body BLOB NOT NULL,
 	 PRIMARY KEY(id,generation,ordinal));
 	 CREATE INDEX IF NOT EXISTS entry_tools ON entries(id,generation,tool_id);
+ CREATE TABLE IF NOT EXISTS notice_reads (
+ id TEXT NOT NULL, notice_id TEXT NOT NULL, PRIMARY KEY(id,notice_id));
 	 DELETE FROM entries WHERE NOT EXISTS
 	 (SELECT 1 FROM conversations c WHERE c.id=entries.id AND c.generation=entries.generation);`)
 	if err != nil {

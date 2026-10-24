@@ -2347,7 +2347,7 @@
     "internal/adapters/antigravitylaunch/store.go": "e3a2344fda42de6142bc0d8646cb73527211c3eaea6547cf03107a21bd430a12",
     "internal/adapters/antigravityprocess/client.go": "93e8abf83c388a9e7588b587cfa2cc27bdee98e96657c1aa3448472a7bc810d1",
     "internal/adapters/antigravitysession/context.go": "7f7490cb414f00633f3e436d484f9d02e8a91e6f541eda148eefa6e83d6d854b",
-    "internal/adapters/antigravitysession/host.go": "02892f56570feebdea79eced2829992a3d2688bc897b2485ac259c07d320d48c",
+    "internal/adapters/antigravitysession/host.go": "c787098b602f635eea66477c8fdeab6cb39325038380d65151b6cf498f9c731d",
     "internal/adapters/memory/memory.go": "b85b11cd849f61bcb55c449acc868a4605950dcb5a408ac65a228babbfab9fb0",
     "internal/adapters/nextconfig/nextconfig.go": "aa82a75d236592c194c8b4b5fa81f76e1d83416d395ef9a1666dfcf5dc6d8587",
     "internal/adapters/projects/antigravity_context.go": "9706da1b7af1d019ac3c7feb3713fa02698f95bfe76b81bc430de5efa62fbb53",

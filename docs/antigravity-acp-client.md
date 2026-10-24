@@ -387,3 +387,19 @@ or model input; it is not a model retry. No paid API calls were made. This
 probe used its own loopback server and synthetic Project, not the production
 daemon or a real phone; native-root completion delivery remains covered by
 protocol fixtures rather than this worker-only probe.
+
+
+Independent review reproduced a cancelled prompt being mistaken for a clean
+notice observation. NoticeRead now reads a sparse owned-conversation/notice-ID
+receipt created only for that exact submitted notice's successful `end_turn`;
+replay text and unrelated later successful turns cannot create it. Normal
+receipts survive projection replacement and offline reopen. Memory-only Hosts
+retain these receipts inside the existing view lifetime.
+
+Clearing durable uncertainty and inserting the notice receipt share one SQLite
+transaction. A forced receipt-write failure preserves uncertainty; a controlled
+non-atomic overlay makes that regression fail. Cancelled, max_tokens and refusal
+fixtures remain unread after an unrelated successful turn and after reopen.
+The independent review verified the cancelled counterexample turning green;
+the transaction-failure variant was added and verified by the integrating Root.
+Neither verification called a model or the production daemon.

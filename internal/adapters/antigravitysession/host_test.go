@@ -239,7 +239,11 @@ func TestOwnedPeer(t *testing.T) {
 			}
 			notify(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "read-1", "title": "Read synthetic file", "kind": "read", "status": "in_progress"})
 			notify(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic reply"}})
-			result = map[string]string{"stopReason": "end_turn"}
+			reason := "end_turn"
+			if raw, err := os.ReadFile(filepath.Join(dir, "prompt-stop-reason")); err == nil {
+				reason = strings.TrimSpace(string(raw))
+			}
+			result = map[string]string{"stopReason": reason}
 		}
 		if os.Getenv("CLW_MODE_PEER") != "" && (req.Method == "session/new" || req.Method == "session/resume" || req.Method == "session/load" || req.Method == "session/set_config_option") {
 			options, _ := result.(map[string]any)["configOptions"].([]any)

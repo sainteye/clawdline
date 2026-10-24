@@ -75,6 +75,7 @@ type conversation struct {
 	launchContext    LaunchContext
 	injected         *injectedTurn
 	replaySawUser    bool
+	noticeReads      map[string]bool
 }
 
 type Error struct {
@@ -384,9 +385,15 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 			c.row.State = session.StateUnknown
 			c.uncertain = true
 		}
-		if saveErr := c.saveState(); saveErr != nil {
-			outcome = saveErr
-			c.row.State = session.StateUnknown
+		var saveErr error
+		if result.StopReason == "end_turn" && c.storeErr == nil {
+			saveErr = c.recordNoticeRead(text)
+		} else {
+			saveErr = c.saveState()
+		}
+		if saveErr != nil {
+			outcome, c.storeErr = saveErr, saveErr
+			c.row.State, c.uncertain = session.StateUnknown, true
 		}
 		if result.StopReason != "end_turn" {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_did_not_end_normally", At: time.Now().Unix()})
@@ -523,6 +530,9 @@ func (c *conversation) bound() {
 		c.bytes += len(id)
 	}
 	for c.bytes > MaxViewBytes && len(c.entries) > 0 {
+		if c.entries[0].Role == "user" {
+			delete(c.noticeReads, nativeNoticeID(c.entries[0].Text))
+		}
 		c.entries[0] = contract.TranscriptEntry{}
 		c.entries = c.entries[1:]
 		c.omitted++
