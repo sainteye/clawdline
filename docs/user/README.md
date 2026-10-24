@@ -6,6 +6,7 @@ Start with the job you want to finish. These pages describe what to look for in 
 | --- | --- | --- |
 | Install Clawdline and see my first Session | [First Session](first-session.md) | The Session appears in the list and opens to its conversation. |
 | Keep track of work and answer an Agent | [Sessions](sessions.md) · [Board](board.md) | The answer appears in the conversation or the Board item shows its next phase. |
+| Use the Gemini personal preview | [Gemini](gemini.md) | The selected machine keeps the native conversation and its saved history. |
 | Give a Session a password or API key | [Secret Handoff](secret-handoff.md) | The Note moves to handled on receipt; the Session can still use the value once. |
 | Check my machines from a phone or another computer | [See another machine](cloud-first-look.md) | The selected machine and its Sessions appear with a fresh connection state. |
 | Understand a missing, offline, or unreadable state | [Recover from a problem](recovery.md) | The state changes after the named action, or you know which machine needs attention. |
