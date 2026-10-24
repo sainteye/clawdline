@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravityacp"
 	"github.com/sainteye/clawdline/internal/app/ports"
@@ -226,6 +227,15 @@ func TestUncertainContextPromptIsNotInjectedAgainOnResume(t *testing.T) {
 	}
 	if err := h.Send(context.Background(), row, "identical user"); err != nil {
 		t.Fatal(err)
+	}
+	// Pipe acceptance precedes peer observation. Wait for the synthetic peer's
+	// durable receipt before stopping it to test an actually observed prompt.
+	deadline := time.Now().Add(3 * time.Second)
+	for readFile(t, filepath.Join(opts.AccountDir, "prompts")) != "prompt\n" && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if readFile(t, filepath.Join(opts.AccountDir, "prompts")) != "prompt\n" {
+		t.Fatal("synthetic peer did not observe the accepted prompt")
 	}
 	stopHost(t, h)
 	if err := os.Remove(filepath.Join(opts.AccountDir, "prompt-uncertain")); err != nil {

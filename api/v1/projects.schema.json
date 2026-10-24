@@ -43,7 +43,8 @@
         "resume": { "type": "boolean" },
         "transcript": { "type": "boolean" },
         "send": { "type": "boolean" },
-        "menus": { "type": "boolean" }
+        "menus": { "type": "boolean" },
+        "roles": { "type": "boolean", "description": "This daemon can launch immutable roles through its current integration. Omission does not advertise Gemini role support." }
       }
     },
     "ProjectIconSetup": {

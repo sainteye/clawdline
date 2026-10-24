@@ -1267,5 +1267,7 @@
   "http.ff821b6116dd9e4a": "An item's phase is not edited; it moves through the item's own actions.",
   "http.ff9859775a615fc4": "This closure records why no delivery named this item — say what was done and where it landed. Without that it is a state change nobody can check later.",
   "http.ffd795cf51e7ebea": "place is board or backlog.",
-  "http.ffed8239d8e297e0": "Supply the expected version and text content."
+  "http.ffed8239d8e297e0": "Supply the expected version and text content.",
+  "http.0ae01c04ba06560a": "Select the Gemini model after opening the conversation.",
+  "http.2d525070efc0024d": "A resumed conversation keeps its original role snapshot."
 }

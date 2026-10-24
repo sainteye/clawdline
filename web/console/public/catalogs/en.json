@@ -9157,5 +9157,10 @@
   "antigravity.toolRunning": "running",
   "antigravity.toolPending": "pending",
   "antigravity.toolFailed": "failed",
-  "antigravity.toolCancelled": "cancelled"
+  "antigravity.toolCancelled": "cancelled",
+  "transparency.card.gemini-acp-context.title": "Gemini owned ACP context",
+  "transparency.card.gemini-acp-context.condition": "A configured personal ACP conversation has nonempty launch instructions",
+  "transparency.card.gemini-acp-context.summary": "Captures the selected role and handbook, enabled-skill references, shared Project memory, Board language and answer-Note rule. Role selection uses the same existing Squad snapshot as other assistants.",
+  "transparency.card.gemini-acp-context.how": "The first real user message carries one inline ACP resource and the original text. A blank open sends no model input. The owned and native conversation IDs bind the existing role actor; its private capability value is not included in instructions.",
+  "transparency.card.gemini-acp-context.effect": "Resume keeps the original snapshot and never resends an interrupted message. An exact known flattened first replay is restored to the original user text; unknown formats are retained. Skill use needs its own receipt. This path does not install or bypass the separate native-hook policy."
 }

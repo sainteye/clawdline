@@ -290,3 +290,32 @@ Session Start. Native turn failures keep their diagnostic code beneath readable
 English and Taiwan Traditional Chinese guidance. Known tool status labels are
 localized, and meaningful tool/unavailable text uses the existing dim text token.
 These corrections do not complete the full integration acceptance scope above.
+
+
+### Immutable context on an owned conversation
+
+`Starter.PrepareOwnedContext` publishes the same role/handbook/enabled-skill
+snapshot used by the other providers and captures shared Project memory and
+language. The owned HTTP start path binds the existing Squad launch to its owned
+terminal and exact native conversation. Capability values stay in their private
+file; only that file path is inherited by native tools. No extra approval route
+or model warm-up is introduced.
+
+`Host.OpenWithContext` persists the snapshot in the existing conversation JSON.
+The first real prompt uses the negotiated ACP embedded resource capability and
+one ordinary text block. Accepted/uncertain delivery records prevent automatic
+resends and duplicate context injection. Resume retains the original role and
+memory; requesting a different role is refused before native resume. The optional
+`StartCapabilities.roles` flag keeps a new console compatible with an older daemon
+whose ACP start route still rejects personas.
+
+A Root native measurement consumed both synthetic role and memory markers. Its
+fresh-client load emitted one flattened text user chunk, not a resource chunk:
+`Embedded resource (<URI>):\n<context> <original input>`. The Host normalizes only
+an exact match for the first injected turn. Later identical text is retained;
+unknown/split formats are left intact. The process/Host peer tests cover reopen,
+uncertain writes and atomic load; the HTTP peer test covers role and actor
+binding, skill references, original user text and immutable resume selection.
+These offline results do not constitute a new native-product, mobile, deployment
+or role-dispatch acceptance result. Native tool Session identity and role-based
+dispatch are the next integration boundary.

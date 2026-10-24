@@ -9157,5 +9157,10 @@
   "antigravity.toolRunning": "執行中",
   "antigravity.toolPending": "等待中",
   "antigravity.toolFailed": "失敗",
-  "antigravity.toolCancelled": "已取消"
+  "antigravity.toolCancelled": "已取消",
+  "transparency.card.gemini-acp-context.title": "Gemini 自有 ACP 對話內容",
+  "transparency.card.gemini-acp-context.condition": "已設定的個人 ACP 對話具有非空的啟動指示",
+  "transparency.card.gemini-acp-context.summary": "保存所選角色與團隊手冊、已啟用技能的入口、共用專案記憶、看板語言與回覆便條規則；角色沿用其他助理使用的既有小隊快照。",
+  "transparency.card.gemini-acp-context.how": "第一則實際訊息以一個 ACP 內嵌資源及原始文字傳送；開啟空白對話不送模型輸入。自有與原生對話身分綁定既有角色，私有憑證值不會放入指示。",
+  "transparency.card.gemini-acp-context.effect": "續接保留原始快照，不重送中斷的訊息。只有第一個重播回合完全符合已知展開格式時才還原原文，未知格式會保留。技能使用仍需另有收據；此路徑不安裝或繞過另一套原生 hook 政策。"
 }

@@ -61,3 +61,16 @@ this changes neither context preparation nor loaded proof, Project consent or
 native tool permissions; the English and Taiwan Traditional Chinese card copy
 therefore remains accurate. The source link and receipt track the reviewed
 implementation after this transport-only change.
+
+
+Owned Gemini ACP conversations have a separate conditional entry from managed
+native hooks. The daemon captures the existing Squad snapshot, Project memory
+and language, then includes an inline resource only with the first real user
+input. The native replay can flatten that resource into user text; only the
+exact saved first-turn expansion is normalized. Unknown text is retained.
+The existing actor capability stays in its private file and is never prompt
+content. Resume preserves the original snapshot without another injection or
+automatic prompt resend. The provider-sink guard and refresh tool also discover
+ACP `session/prompt` producers; the synthetic inventory test includes that case.
+This product inventory still requires an exact website snapshot update after
+landing, and does not claim deployed mobile or native role-dispatch acceptance.

@@ -8613,6 +8613,12 @@ export const StartAvailabilityValues: readonly StartAvailability[] = ["ok", "low
 export interface StartCapabilities {
   menus: boolean
   resume: boolean
+
+  /**
+   * This daemon can launch immutable roles through its current integration.
+   * Omission does not advertise Gemini role support.
+   */
+  roles?: boolean
   send: boolean
   start: boolean
   transcript: boolean

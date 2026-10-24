@@ -33,7 +33,7 @@ function walk(dir) {
     if (entry.isDirectory()) walk(file)
     else if (file.endsWith(".go") && !file.endsWith("_test.go")) {
       const text = fs.readFileSync(path.join(root, file), "utf8")
-      if (text.includes("developer_instructions") || text.includes("--append-system-prompt") || text.includes("injectSteps") || /\bPreInvocationResponse\s*\(/.test(text)) sources.add(file)
+      if (text.includes("developer_instructions") || text.includes("--append-system-prompt") || text.includes("injectSteps") || text.includes("session/prompt") || /\bPreInvocationResponse\s*\(/.test(text)) sources.add(file)
     }
   }
 }

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9157,
+  "englishKeys": 9162,
   "counts": {
-    "negation": 2649,
-    "state": 1520,
+    "negation": 2651,
+    "state": 1521,
     "permission": 550,
     "deletion": 201,
-    "uncertainty": 288
+    "uncertainty": 289
   },
-  "unionCount": 4091,
+  "unionCount": 4093,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2552,6 +2552,8 @@
       "transparency.card.core.effect",
       "transparency.card.core.summary",
       "transparency.card.direct-todo.summary",
+      "transparency.card.gemini-acp-context.effect",
+      "transparency.card.gemini-acp-context.how",
       "transparency.card.investigation.effect",
       "transparency.card.investigation.summary",
       "transparency.card.machine.summary",
@@ -4103,6 +4105,7 @@
       "transparency.card.direct-todo.condition",
       "transparency.card.direct-todo.effect",
       "transparency.card.direct-todo.summary",
+      "transparency.card.gemini-acp-context.how",
       "transparency.card.handoff.summary",
       "transparency.card.notice.condition",
       "transparency.card.report.summary",
@@ -5210,6 +5213,7 @@
       "survey.unavailable",
       "survey.unknown",
       "template.ad7d5cc31425",
+      "transparency.card.gemini-acp-context.effect",
       "work.assignSessionsIncomplete",
       "work.closureClock",
       "work.digestClosureAsked",
@@ -9127,6 +9131,8 @@
     "transparency.card.direct-todo.condition",
     "transparency.card.direct-todo.effect",
     "transparency.card.direct-todo.summary",
+    "transparency.card.gemini-acp-context.effect",
+    "transparency.card.gemini-acp-context.how",
     "transparency.card.handoff.summary",
     "transparency.card.investigation.effect",
     "transparency.card.investigation.how",

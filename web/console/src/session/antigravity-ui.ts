@@ -76,3 +76,8 @@ export function assistantStateCurrent(row: SessionRow | null, now = Date.now()):
   return (binding === "launch_hook" || assistantProtocolOwned(row)) && !!row?.sessionId && !!row.execution_generation && row.source?.freshness === "current" &&
     Number.isFinite(row.source.observed_at) && Math.abs(now - row.source.observed_at * 1000) <= ANTIGRAVITY_STATE_FRESH_MS
 }
+
+/** Old daemon versions must not offer a role their ACP start route rejects. */
+export function assistantRolesAdmit(assistant: string | null, facts?: AssistantFacts): boolean {
+  return assistant !== "antigravity" || facts?.capabilities?.roles === true
+}

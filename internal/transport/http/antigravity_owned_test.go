@@ -55,7 +55,8 @@ func TestOwnedHTTPPeer(t *testing.T) {
 				ConfigID  string `json:"configId"`
 				Value     string `json:"value"`
 				Prompt    []struct {
-					Text string `json:"text"`
+					Text     string                     `json:"text"`
+					Resource struct{ URI, Text string } `json:"resource"`
 				} `json:"prompt"`
 			} `json:"params"`
 		}
@@ -65,7 +66,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 		var result any = map[string]any{}
 		switch req.Method {
 		case "initialize":
-			result = map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}}
+			result = map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}}
 		case "session/list":
 			result = map[string]any{"sessions": []any{map[string]string{"sessionId": "synthetic-http-native", "cwd": req.Params.CWD, "title": "Saved synthetic conversation"}, map[string]string{"sessionId": "synthetic-old-native", "cwd": req.Params.CWD, "title": "Previous CLI conversation"}, map[string]string{"sessionId": "foreign-cwd", "cwd": "/another/project", "title": "Foreign workspace"}}, "nextCursor": "older-native"}
 			if req.Params.Cursor == "older-native" {
@@ -92,6 +93,10 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			}
 			result = map[string]any{"configOptions": config()}
 		case "session/prompt":
+			data, _ := json.Marshal(req.Params.Prompt)
+			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "last-prompt.json"), data, 0600)
+			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "last-capability-path"), []byte(os.Getenv("CLAWDLINE_SQUAD_CAPABILITY_FILE")), 0600)
+
 			if os.Getenv("CLW_HTTP_PERMISSION") == "yes" {
 				for i := 0; i < 2; i++ {
 					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": 77, "method": "session/request_permission", "params": map[string]any{"sessionId": "synthetic-http-native", "toolCall": map[string]string{"toolCallId": "native-http-tool", "title": "Run synthetic command?"}, "options": []any{map[string]string{"optionId": "native-allow", "name": "Allow once", "kind": "allow_once"}, map[string]string{"optionId": "native-deny", "name": "Reject once", "kind": "reject_once"}}}})

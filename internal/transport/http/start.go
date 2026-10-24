@@ -22,7 +22,6 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/terminal/owned"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app"
-	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
 	personas "github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -427,16 +426,16 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 		return
 	}
 	if assistant == projects.AssistantAntigravity {
-		if model != "" || persona != "" {
-			writePlaceRefusal(w, http.StatusConflict, "provider_operation_unsupported", "The personal ACP preview currently uses its native default model and no role.", "Gemini")
+		if model != "" {
+			writePlaceRefusal(w, http.StatusConflict, "provider_operation_unsupported", "Select the Gemini model after opening the conversation.", "Gemini")
 			return
 		}
-		made, err := (ownedAntigravityTerminal{s}).Open(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label})
+		made, err := s.openOwnedAntigravity(ctx, starter, place, persona)
 		if err != nil {
 			writePlaceRefusal(w, http.StatusConflict, "provider_start_failed", err.Error(), "Gemini")
 			return
 		}
-		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})
+		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Persona: made.Persona, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})
 		return
 	}
 	if assistantNeedsSignIn(ctx, assistant) {

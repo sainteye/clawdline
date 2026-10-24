@@ -73,10 +73,29 @@ Quota is the native account reading, with its observation age and reset time
 when available. Missing data is unknown, not zero usage. Context occupancy is
 the current context reading, not a bill or a currency estimate.
 
+## Roles and shared Project memory
+
+On a machine that advertises role support, choose a role in **Open a session**.
+The daemon uses the same immutable role, handbook and enabled-skill snapshot as
+its other assistants, together with shared Project memory and the selected
+language. Opening a blank conversation sends no model input; its first message
+carries these instructions separately from the original user text.
+
+A resumed conversation retains its original snapshot, even if the role settings
+have changed. It does not inject a new snapshot or resend an interrupted message.
+An older machine that does not support this path keeps its role picker hidden.
+
+The native CLI currently flattens embedded instructions into its replayed user
+text. Clawdline restores the original input only when that first replayed turn
+matches its saved context and original text exactly. Unknown replay formats are
+preserved rather than deleting text by guesswork.
+
+Role-based dispatch and native tool access to the Clawdline Session identity are
+still being integrated and are not established by this role-picker change.
+
 ## Preview boundaries
 
-Role selection, role-based dispatch and Project-memory injection are still
-separate integration work. This preview does not provide native terminal
+This preview does not provide native terminal
 attachment or turn-only cancellation. The owned native process implementation
 supports macOS and Linux; Windows is not enabled by this path.
 

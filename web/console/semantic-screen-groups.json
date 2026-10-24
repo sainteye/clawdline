@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9157,
-  "riskKeys": 4091,
-  "nonRiskCount": 5066,
+  "englishContentKeys": 9162,
+  "riskKeys": 4093,
+  "nonRiskCount": 5069,
   "groups": [
     {
       "name": "admin / other",
@@ -5166,7 +5166,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 131,
+      "count": 134,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -5225,6 +5225,9 @@
         "transparency.card.core.title",
         "transparency.card.direct-todo.how",
         "transparency.card.direct-todo.title",
+        "transparency.card.gemini-acp-context.condition",
+        "transparency.card.gemini-acp-context.summary",
+        "transparency.card.gemini-acp-context.title",
         "transparency.card.handoff.condition",
         "transparency.card.handoff.effect",
         "transparency.card.handoff.how",

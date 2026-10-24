@@ -16,7 +16,7 @@ import { STATUS_FRESH_MS, statusProjection } from "../cloud/status-projection.ts
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
 import { pinnedQuestion } from "../cloud/status-source.ts"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
-import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantMenuAdmits, assistantStateCurrent, assistantLabel, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
+import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantMenuAdmits, assistantStateCurrent, assistantLabel, assistantRolesAdmit, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
 
 const active: AssistantFacts = { id: "antigravity", installed: true, authState: "ready", integrationState: "active",
   capabilities: { start: true, resume: true, send: true, menus: true, transcript: true } }
@@ -190,4 +190,13 @@ test("an interrupted owned conversation can accept an explicit continuation with
   assert.equal(assistantComposeAdmits("antigravity", undefined, "working", false, true), false)
   assert.equal(assistantComposeAdmits("antigravity", undefined, "waiting", true, true), false)
   assert.equal(assistantComposeAdmits("antigravity", active, "unknown", false, false), false)
+})
+
+// A new hosted bundle can still reach an older installed daemon.
+test("Gemini roles require the new daemon capability while original providers retain their picker", () => {
+  assert.equal(assistantRolesAdmit("antigravity", active), false)
+  assert.equal(assistantRolesAdmit("antigravity", { ...active, capabilities: { ...active.capabilities!, roles: true } }), true)
+  assert.equal(assistantRolesAdmit("antigravity", { ...active, capabilities: { ...active.capabilities!, roles: false } }), false)
+  assert.equal(assistantRolesAdmit("codex"), true)
+  assert.equal(assistantRolesAdmit("claude"), true)
 })

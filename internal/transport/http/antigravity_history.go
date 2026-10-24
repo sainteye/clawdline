@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -55,10 +56,6 @@ func (s *Server) resumeOwnedAntigravity(w http.ResponseWriter, r *http.Request, 
 		refuseAntigravityFoundation(w)
 		return
 	}
-	if persona != "" {
-		writePlaceRefusal(w, http.StatusConflict, "provider_operation_unsupported", "The personal ACP preview currently uses its native default model and no role.", "Gemini")
-		return
-	}
 	release, ok := admitOpening(w, r)
 	if !ok {
 		return
@@ -71,10 +68,21 @@ func (s *Server) resumeOwnedAntigravity(w http.ResponseWriter, r *http.Request, 
 		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No place named that", "")
 		return
 	}
+	if persona != "" {
+		original, _, found, err := s.store.SquadSnapshotForConversation(ctx, conversation)
+		var snapshot struct {
+			DefinitionID string `json:"definition_id"`
+		}
+		if err != nil || !found || json.Unmarshal(original, &snapshot) != nil ||
+			(snapshot.DefinitionID != persona && snapshot.DefinitionID != "clawdline.persona."+persona) {
+			writePlaceRefusal(w, http.StatusConflict, "snapshot_persona_conflict", "A resumed conversation keeps its original role snapshot.", "Gemini")
+			return
+		}
+	}
 	row, err := h.Import(ctx, place.Path, conversation)
 	if err != nil {
 		writePlaceRefusal(w, http.StatusConflict, "provider_resume_failed", err.Error(), "Gemini")
 		return
 	}
-	writeJSON(w, contract.PlaceResumed{OK: true, ID: row.ID, Backend: contract.BackendOwned, Assistant: "antigravity", Place: place.ID, CWD: place.Path, Session: conversation, At: time.Now().Unix()})
+	writeJSON(w, contract.PlaceResumed{OK: true, ID: row.ID, Backend: contract.BackendOwned, Assistant: "antigravity", Persona: row.Persona, Place: place.ID, CWD: place.Path, Session: conversation, At: time.Now().Unix()})
 }

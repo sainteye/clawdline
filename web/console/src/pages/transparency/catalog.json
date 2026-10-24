@@ -2137,7 +2137,7 @@
       "sources": [
         {
           "path": "internal/adapters/projects/antigravity_context.go",
-          "line": 92
+          "line": 111
         },
         {
           "path": "internal/adapters/antigravitylaunch/response.go",
@@ -2193,20 +2193,8 @@
         }
       ],
       "original": [
-        "func AntigravityContextResponse(c AntigravityContext, event string, observer json.RawMessage) (json.RawMessage, error) {\n",
-        "\tif err := c.Validate(); err != nil {\n",
-        "\t\treturn nil, err\n",
-        "\t}\n",
-        "\tvar response map[string]json.RawMessage\n",
-        "\tif err := json.Unmarshal(observer, &response); err != nil || response == nil {\n",
-        "\t\treturn nil, ErrSquadContextUnavailable\n",
-        "\t}\n",
-        "\tif _, exists := response[\"injectSteps\"]; exists {\n",
-        "\t\treturn nil, ErrSquadContextUnavailable\n",
-        "\t}\n",
-        "\tif event != \"PreInvocation\" {\n",
-        "\t\treturn observer, nil\n",
-        "\t}\n",
+        "// Instructions joins the immutable role, language and shared Project memory.\n",
+        "func (c AntigravityContext) Instructions() string {\n",
         "\tvar parts []string\n",
         "\tif c.Prompt != \"\" {\n",
         "\t\tparts = append(parts, c.Prompt)\n",
@@ -2218,24 +2206,133 @@
         "\t\tparts = append(parts, c.Memory)\n",
         "\t}\n",
         "\tif len(parts) == 0 {\n",
-        "\t\treturn observer, nil\n",
+        "\t\treturn \"\"\n",
         "\t}\n",
         "\tparts = append(parts, codexNoteInstruction)\n",
-        "\tstep := map[string]any{\"systemMessage\": map[string]string{\"systemMessage\": strings.Join(parts, \"\\n\\n\")}}\n",
+        "\treturn strings.Join(parts, \"\\n\\n\")\n",
+        "}\n",
+        "\n",
+        "// AntigravityContextResponse composes with P2 ObserverResponse after local\n",
+        "// process/capability verification. Only PreInvocation injects, which also runs\n",
+        "// on exact resume. The root must persist a per-launch/process/conversation\n",
+        "// delivery receipt and suppress duplicate event execution before calling this.\n",
+        "// A response is prepared delivery, not proof the model loaded the context.\n",
+        "func AntigravityContextResponse(c AntigravityContext, event string, observer json.RawMessage) (json.RawMessage, error) {\n",
+        "\tif err := c.Validate(); err != nil {\n",
+        "\t\treturn nil, err\n",
+        "\t}\n",
+        "\tvar response map[string]json.RawMessage\n",
+        "\tif err := json.Unmarshal(observer, &response); err != nil || response == nil {\n",
+        "\t\treturn nil, ErrSquadContextUnavailable\n",
+        "\t}\n",
+        "\tif _, exists := response[\"injectSteps\"]; exists {\n",
+        "\t\treturn nil, ErrSquadContextUnavailable\n",
+        "\t}\n",
+        "\tif event != \"PreInvocation\" || c.Instructions() == \"\" {\n",
+        "\t\treturn observer, nil\n",
+        "\t}\n",
+        "\tstep := map[string]any{\"systemMessage\": map[string]string{\"systemMessage\": c.Instructions()}}\n",
         "\tencoded, err := json.Marshal([]any{step})\n",
         "\tif err != nil {\n",
         "\t\treturn nil, err\n",
         "\t}\n",
         "\tresponse[\"injectSteps\"] = encoded\n",
         "\treturn json.Marshal(response)\n",
-        "}\n",
-        "\n",
-        "const codexNoteInstruction = \"When you need the person to choose between concrete options in a Clawdline Session, read `clawdline guide note` and create one answer Note with the question and complete suggested replies before asking in chat. Wait for the person's sent message before acting on the choice. For Codex's non-blocking request_user_input_async, also create one answer Note with the same question and complete replies so the person can return to it later. A blocking question prompt already waits for an answer and needs no duplicate Note. Never act on a suggested or preselected option before the person sends an answer.\"\n"
+        "}\n"
       ],
       "locations": [
         "<state>/antigravity/launches/<id>/context.json",
         "<state>/antigravity/context-index.json",
         "Antigravity PreInvocation / injectSteps"
+      ]
+    },
+    {
+      "id": "gemini-acp-context",
+      "scope": "conditional",
+      "agents": [
+        "antigravity"
+      ],
+      "stages": [
+        "start",
+        "turn"
+      ],
+      "scenes": [
+        "role",
+        "memory",
+        "skill",
+        "board",
+        "workflow"
+      ],
+      "sources": [
+        {
+          "path": "internal/app/owned_context.go",
+          "line": 22
+        },
+        {
+          "path": "internal/adapters/projects/antigravity_context.go",
+          "line": 88
+        },
+        {
+          "path": "internal/adapters/antigravityprocess/client.go",
+          "line": 450
+        },
+        {
+          "path": "internal/adapters/antigravitysession/host.go",
+          "line": 115
+        },
+        {
+          "path": "internal/adapters/antigravitysession/context.go",
+          "line": 48
+        },
+        {
+          "path": "internal/transport/http/antigravity_owned.go",
+          "line": 43
+        },
+        {
+          "path": "internal/transport/http/antigravity_history.go",
+          "line": 53
+        }
+      ],
+      "original": [
+        "func (c *Client) prompt(ctx context.Context, text, uri, contextText string, before func() error, written func()) (PromptResult, error) {\n",
+        "\tif !c.callMu.TryLock() {\n",
+        "\t\treturn PromptResult{}, failure(\"busy\", NotWritten)\n",
+        "\t}\n",
+        "\tdefer c.callMu.Unlock()\n",
+        "\tif !c.authenticated || !c.free || c.SessionID() == \"\" {\n",
+        "\t\treturn PromptResult{}, failure(\"not_ready\", NotWritten)\n",
+        "\t}\n",
+        "\tif err := c.checkPersonal(); err != nil {\n",
+        "\t\treturn PromptResult{}, err\n",
+        "\t}\n",
+        "\tprompt := []any{map[string]string{\"type\": \"text\", \"text\": text}}\n",
+        "\tif contextText != \"\" {\n",
+        "\t\tif !c.embeddedContext {\n",
+        "\t\t\treturn PromptResult{}, failure(\"embedded_context_unsupported\", NotWritten)\n",
+        "\t\t}\n",
+        "\t\tu, err := url.Parse(uri)\n",
+        "\t\tif err != nil || u.Scheme != \"file\" || u.Host != \"\" || !filepath.IsAbs(u.Path) || u.RawQuery != \"\" || u.Fragment != \"\" {\n",
+        "\t\t\treturn PromptResult{}, failure(\"invalid_context_uri\", NotWritten)\n",
+        "\t\t}\n",
+        "\t\tprompt = append([]any{map[string]any{\"type\": \"resource\", \"resource\": map[string]string{\"uri\": uri, \"mimeType\": \"text/plain\", \"text\": contextText}}}, prompt...)\n",
+        "\t}\n",
+        "\tr, err := c.callAccepted(ctx, \"session/prompt\", map[string]any{\"sessionId\": c.SessionID(), \"prompt\": prompt}, before, written)\n",
+        "\tif err != nil {\n",
+        "\t\treturn PromptResult{}, err\n",
+        "\t}\n",
+        "\tm, err := object(r)\n",
+        "\tvar stop string\n",
+        "\tif err != nil || json.Unmarshal(m[\"stopReason\"], &stop) != nil || stop == \"\" {\n",
+        "\t\treturn PromptResult{}, c.badResult(\"invalid_stop_reason\")\n",
+        "\t}\n",
+        "\treturn PromptResult{StopReason: stop, Raw: r}, nil\n",
+        "}\n",
+        "\n"
+      ],
+      "locations": [
+        "<state>/antigravity-sessions/conversations.sqlite",
+        "<state>/squad/launches/<id>/personas",
+        "ACP session/prompt embedded resource"
       ]
     }
   ],
@@ -2246,9 +2343,12 @@
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
     "internal/adapters/antigravitylaunch/store.go": "e3a2344fda42de6142bc0d8646cb73527211c3eaea6547cf03107a21bd430a12",
+    "internal/adapters/antigravityprocess/client.go": "95ed754321ccd9ddd736b4e2646eb8480f5999beff35564d5d3d5a71a3ccc6ef",
+    "internal/adapters/antigravitysession/context.go": "7f7490cb414f00633f3e436d484f9d02e8a91e6f541eda148eefa6e83d6d854b",
+    "internal/adapters/antigravitysession/host.go": "16fed6d2692cf383b77661e452ea8fcd8a542f7b43124dc5b99996970779ea1d",
     "internal/adapters/memory/memory.go": "b85b11cd849f61bcb55c449acc868a4605950dcb5a408ac65a228babbfab9fb0",
     "internal/adapters/nextconfig/nextconfig.go": "aa82a75d236592c194c8b4b5fa81f76e1d83416d395ef9a1666dfcf5dc6d8587",
-    "internal/adapters/projects/antigravity_context.go": "af2f72bca504765de63bc45bbeb208e201c063bacf51ff3ff5cbe0fd5e5aac1a",
+    "internal/adapters/projects/antigravity_context.go": "9706da1b7af1d019ac3c7feb3713fa02698f95bfe76b81bc430de5efa62fbb53",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "11473172607d2736aa2b46f85dc7126331814e659f8654e3e3f8f4f5dcd4122b",
     "internal/adapters/skillfile/skillfile.go": "a10a410e8966b71a8c4d6666e0155a4b0b12cb3f513d9843038e3e2e2118ffde",
@@ -2267,6 +2367,7 @@
     "internal/app/orchestrator/policy_projection.go": "964d5d2db030ae7a489bfc00d393c68c74d8aaef05be70c3dd489cf45191d925",
     "internal/app/orchestrator/scheduled.go": "21d1e8c60de795ba9fa31e27a423ef3ceceaf6170170aaff625870e3a8f3941e",
     "internal/app/orchestrator/session_pause.go": "f1407a0ece5a3d54ee45062e71c688ffdd844c5aefe0fabaf4d1b3fdc3d6a164",
+    "internal/app/owned_context.go": "0827fd9f6c9cb3526858fea7facdd6901c5e0b4aaefa0632d1c0d38f98002515",
     "internal/app/squad_launch.go": "1ec83ebede904f62d9ad82471743702829e85a66f87ad575e9ee03408ee8065d",
     "internal/app/start.go": "6372d443897d6c8eeba4bc9f6eafefee239ee54b2d0ce5f21bfa21ca1be37492",
     "internal/app/work_v2_todos.go": "fb992a3c595450d28507e6b8de14fe0c4be72e0cb84e398445f8c2622e0e171a",
@@ -2275,24 +2376,26 @@
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_workflow.go": "3a4d21963243a0b6dd2af553b4cd67b0d1bfaeabedfc2d43d629ba8b02e0bf08",
     "internal/transport/http/agent_session_close.go": "4cfb1d376e50119026dc079346a7253e826472305263e66ade6982b8e8b958f3",
+    "internal/transport/http/antigravity_history.go": "b6a8dd8a7f132ba70d76bcb759044d14c8c83a9f3244d766c8da0fedb1ddebf1",
     "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
     "internal/transport/http/antigravity_managed_hooks.go": "02087850934cc1daedc9c71d5efcf7cb304910a0c90be4efb276fb2ec6d4b7c7",
+    "internal/transport/http/antigravity_owned.go": "d6445e0cc1b6f92bf34d705a3bf15be758d80ac302b377e7628c47515dac5631",
     "internal/transport/http/antigravity_policy.go": "ed646015b98fa641123d74c344225a5ba12db02787ba2d4107d7bd8c2bf67474",
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "f27a2f0242a39b7a77792b88ad8d2337760d2da49cd4374b6f010887bbacab21",
     "internal/transport/http/coordinator.go": "5f139556883583d34320783d063ee1e6a4a1124a726f69510cc4a9324a6cb3df",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
-    "internal/transport/http/start.go": "722571ee272ed494b8a3e5cf0273cc37c37c82a2acb06990faeafe13d040c38f",
+    "internal/transport/http/start.go": "4abc872edbe0e2f367da9a11bf2e32abac419fde2ccc999a0542718b2f9f6888",
     "internal/transport/http/work_v2_brief.go": "444e7aa2297733c71a1ed4b64c9ee9f616fa934bf1061824072aa7dd36e9eaf9",
     "skills/clawdline/SKILL.md": "22ecbbe8ffa2da28d8442f6bc2535846fb9b75d155b8d457d3329f35098d6edc",
     "skills/clawdline/guide.md": "af7f6bd66be286a1d97e07ff47304748283c6727cc242b6c0e011b564c2d5690",
     "skills/clawdline/guide.zh-TW.md": "25476dd60dc4dc75c7902dfe151820925739564d04bb416874b7c7a99a68ae64",
     "skills/sections.go": "ba3de38ebe0e26817f337bd4ae93e19d07ba07af8971b4fba397e6fe9082b903",
     "skills/skills.go": "146b2605f5e82e4093f731222da229df949be007b19005a428b538686feed330",
-    "web/console/src/session/Start.tsx": "2362948db63d6eeccd168d4721cc428966ac8d37137358fc44b07e5872946032"
+    "web/console/src/session/Start.tsx": "f169de2179bd51ea92a968e08f3f2778a39c9d308177e61e45785d0e93c6db0f"
   },
   "copyChecks": {
-    "en": "bcfbac8feb667c93c20f1703b4518af42ceff893d97d491218ae6c67cbcbfa18",
-    "zh-Hant": "5a478bf3762f1029f5da1c37dce38ee12b5e5dbb7a4e346d3075f76ccc7ae8a1"
+    "en": "ee58dafa3361d5e466d51159194a715c6dbd575dd7b52373eb537f642cc5f5ef",
+    "zh-Hant": "7b732fcae89291864681217ea6fcb46686e7e4ee0bfd04e01f850c848c999fbc"
   }
 }

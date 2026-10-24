@@ -7121,8 +7121,12 @@ var StartAvailabilityValues = []StartAvailability{StartAvailabilityOK, StartAvai
 // Operations admitted by this daemon's verified integration. CLI syntax alone
 // never makes an operation available.
 type StartCapabilities struct {
-	Menus      bool `json:"menus"`
-	Resume     bool `json:"resume"`
+	Menus  bool `json:"menus"`
+	Resume bool `json:"resume"`
+
+	// This daemon can launch immutable roles through its current integration. Omission
+	// does not advertise Gemini role support.
+	Roles      bool `json:"roles,omitempty"`
 	Send       bool `json:"send"`
 	Start      bool `json:"start"`
 	Transcript bool `json:"transcript"`

@@ -6,11 +6,15 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
+	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -32,6 +36,52 @@ func (p ownedAntigravityTerminal) Open(ctx context.Context, r ports.OpenRequest)
 		return h.Open(ctx, r)
 	}
 	return session.Session{}, ownedAntigravityUnavailable()
+}
+
+// Prepare role files and shared memory through the same Starter as the other
+// providers. No model input is sent while opening the blank conversation.
+func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, place projects.Place, persona string) (session.Session, error) {
+	prepared, err := starter.PrepareOwnedContext(ctx, place, persona)
+	if err != nil {
+		return session.Session{}, err
+	}
+	h := s.antigravitySessions.Load()
+	if h == nil {
+		if prepared.LaunchID != "" {
+			_ = s.store.FailSquadLaunch(ctx, prepared.LaunchID)
+		}
+		return session.Session{}, ownedAntigravityUnavailable()
+	}
+	resource := prepared.Context.PromptPath
+	if resource == "" {
+		// An inline resource can identify the existing Project directory. It
+		// neither creates a Project file nor asks the provider to read one.
+		resource = place.Path
+	}
+	launch := antigravitysession.LaunchContext{
+		URI: (&url.URL{Scheme: "file", Path: resource}).String(), Text: prepared.Context.Instructions(),
+		Persona: prepared.Persona, SquadLaunchID: prepared.LaunchID, SquadCapabilityPath: prepared.Files.CapabilityPath,
+	}
+	row, err := h.OpenWithContext(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label}, launch)
+	if err != nil {
+		if prepared.LaunchID != "" {
+			_ = s.store.FailSquadLaunch(ctx, prepared.LaunchID)
+		}
+		return session.Session{}, err
+	}
+	if prepared.LaunchID != "" {
+		// Opening has already succeeded. A pending receipt is recovered by
+		// the existing inventory observer; never invite a duplicate open.
+		if err := squadfiles.RecordTerminal(prepared.Files, row.ID); err != nil {
+			log.Print("gemini: squad terminal receipt pending")
+		}
+		if err := s.store.RecordSquadTerminal(ctx, prepared.LaunchID, row.ID); err != nil {
+			log.Print("gemini: squad terminal binding pending")
+		} else if err := s.store.BindSquadConversation(ctx, prepared.LaunchID, row.ConversationID); err != nil {
+			log.Print("gemini: squad conversation binding pending")
+		}
+	}
+	return row, nil
 }
 func (p ownedAntigravityTerminal) Send(ctx context.Context, s session.Session, text string) error {
 	return p.SendProtocol(ctx, s, text, nil)
@@ -132,7 +182,7 @@ func (s *Server) availableAssistants() []contract.StartAssistant {
 			if count > 0 {
 				rows[n].AuthState = contract.StartAuthStateReady
 			}
-			rows[n].Capabilities = &contract.StartCapabilities{Start: true, Resume: true, Send: count > 0, Menus: count > 0, Transcript: count > 0}
+			rows[n].Capabilities = &contract.StartCapabilities{Roles: true, Start: true, Resume: true, Send: count > 0, Menus: count > 0, Transcript: count > 0}
 		}
 	}
 	return rows

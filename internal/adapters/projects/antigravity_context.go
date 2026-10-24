@@ -84,6 +84,25 @@ func RestoreAntigravityContext(document []byte, digest string) (AntigravityConte
 	return c, nil
 }
 
+// Instructions joins the immutable role, language and shared Project memory.
+func (c AntigravityContext) Instructions() string {
+	var parts []string
+	if c.Prompt != "" {
+		parts = append(parts, c.Prompt)
+	}
+	if c.Language != "" {
+		parts = append(parts, fmt.Sprintf("Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag %q.", c.Language))
+	}
+	if c.Memory != "" {
+		parts = append(parts, c.Memory)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	parts = append(parts, codexNoteInstruction)
+	return strings.Join(parts, "\n\n")
+}
+
 // AntigravityContextResponse composes with P2 ObserverResponse after local
 // process/capability verification. Only PreInvocation injects, which also runs
 // on exact resume. The root must persist a per-launch/process/conversation
@@ -100,24 +119,10 @@ func AntigravityContextResponse(c AntigravityContext, event string, observer jso
 	if _, exists := response["injectSteps"]; exists {
 		return nil, ErrSquadContextUnavailable
 	}
-	if event != "PreInvocation" {
+	if event != "PreInvocation" || c.Instructions() == "" {
 		return observer, nil
 	}
-	var parts []string
-	if c.Prompt != "" {
-		parts = append(parts, c.Prompt)
-	}
-	if c.Language != "" {
-		parts = append(parts, fmt.Sprintf("Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag %q.", c.Language))
-	}
-	if c.Memory != "" {
-		parts = append(parts, c.Memory)
-	}
-	if len(parts) == 0 {
-		return observer, nil
-	}
-	parts = append(parts, codexNoteInstruction)
-	step := map[string]any{"systemMessage": map[string]string{"systemMessage": strings.Join(parts, "\n\n")}}
+	step := map[string]any{"systemMessage": map[string]string{"systemMessage": c.Instructions()}}
 	encoded, err := json.Marshal([]any{step})
 	if err != nil {
 		return nil, err

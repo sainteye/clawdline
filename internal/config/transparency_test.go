@@ -60,7 +60,7 @@ func transparencyInjectionSources(t *testing.T, root string) []string {
 				if err != nil {
 					return true
 				}
-				for _, marker := range []string{"developer_instructions", "--append-system-prompt", "injectSteps"} {
+				for _, marker := range []string{"developer_instructions", "--append-system-prompt", "injectSteps", "session/prompt"} {
 					if strings.Contains(text, marker) {
 						found = true
 					}
@@ -162,6 +162,7 @@ func TestTransparencyDiscoversNativeInjectionAndIndirectResponses(t *testing.T) 
 		}
 	}
 	files := map[string]string{
+		"acp.go":       `package sample; const prompt = "session/prompt"`,
 		"native.go":    `package sample; const response = "injectSteps"`,
 		"indirect.go":  `package sample; func invoke(){ owner.PreInvocationResponse(ctx,binding) }`,
 		"unrelated.go": `package sample; const event = "PreInvocation" // injectSteps is only mentioned in a comment`,
@@ -172,7 +173,7 @@ func TestTransparencyDiscoversNativeInjectionAndIndirectResponses(t *testing.T) 
 		}
 	}
 	got := transparencyInjectionSources(t, root)
-	want := []string{"internal/sample/indirect.go", "internal/sample/native.go"}
+	want := []string{"internal/sample/acp.go", "internal/sample/indirect.go", "internal/sample/native.go"}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("native instruction sources=%v, want %v", got, want)
 	}

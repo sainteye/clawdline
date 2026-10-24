@@ -16,7 +16,7 @@ import { terminalRefusalWords, unavailableWords } from "../pages/terminal/words.
 import { ProjectFolderPicker } from "../pages/projects/ProjectFolderPicker.js"
 import { removeProjectPlace } from "../pages/work/api.js"
 import { catalogRefusalDetail, catalogWord } from "../catalog.js"
-import { assistantAdmits, assistantLabel, assistantUnavailable, type AssistantOperation } from "./antigravity-ui.js"
+import { assistantAdmits, assistantLabel, assistantRolesAdmit, assistantUnavailable, type AssistantOperation } from "./antigravity-ui.js"
 
 /**
  * Starting a session, and picking one back up, against the `div#start` sheet
@@ -363,7 +363,7 @@ function drawWith(): void {
 
 /** The chosen persona, when the catalog still names it; "" for none. */
 function chosenPersona(): string {
-  if (with_ === "antigravity") return ""
+  if (!assistantRolesAdmit(with_, assistants.find((a) => a.id === with_))) return ""
   const id = at ? resumeAs : persona
   return personaById(personasNow(onMachine?.id ?? null), id) ? id : ""
 }
@@ -375,7 +375,7 @@ function drawPersona(): void {
   // Every draw rebuilds the chips; the sideways scroll is kept across it, so a
   // press on a chip the person scrolled to does not throw the row back.
   const scrolled = row.scrollLeft
-  row.hidden = with_ === "antigravity" || !catalog.length || (!at && resume && resumable())
+  row.hidden = !assistantRolesAdmit(with_, assistants.find((a) => a.id === with_)) || !catalog.length || (!at && resume && resumable())
   row.innerHTML = ""
   if (row.hidden) return
   const choose = (id: string) => {
