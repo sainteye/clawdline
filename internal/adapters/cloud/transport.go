@@ -826,7 +826,11 @@ func (t *Transport) admitTraced(raw []byte, directViewer string, h connectionhea
 	}
 	if strings.HasPrefix(envelope.Ch, "termi/") {
 		parts := strings.Split(envelope.Ch, "/")
-		if len(parts) != 3 || parts[2] != envelope.Sender || envelope.KeyID != MasterKeyID {
+		// The channel binds the viewer; the shared content-key ladder below
+		// binds the installed epoch, just as it does for Session requests.
+		// Legacy callers without an epoch still require the legacy master id.
+		if len(parts) != 3 || parts[2] != envelope.Sender ||
+			(t.opts.KeyEpoch == nil && envelope.KeyID != MasterKeyID) {
 			t.opts.Status.Dropped(DropWrongChannel)
 			return false
 		}

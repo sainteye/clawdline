@@ -231,58 +231,80 @@ func TestAReconnectResendCannotOutliveTheCutoverOfItsRows(t *testing.T) {
 // cutover returns, a frame claiming the new id under the old key does not
 // open, and the legitimate new key does.
 func TestInboundOpensOnlyUnderTheInstalledContentKey(t *testing.T) {
-	keys, first := epochKeys(t)
-	viewer, err := domain.NewDeviceKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	admitted := 0
-	tr := &Transport{opts: Options{
-		Identity:     Identity{MachineID: "machine"},
-		Status:       NewStatusRecorder(time.Now()),
-		Replay:       domain.NewReplayWindow(64),
-		ContentKey:   first.Key, // the legacy field is ignored once KeyEpoch is set
-		KeyEpoch:     keys,
-		PublicKeyFor: func(sender string) (ed25519.PublicKey, bool) { return viewer.PublicKey(), sender == "viewer" },
-		Inbound:      func(domain.Envelope, []byte, ed25519.PublicKey) { admitted++ },
-	}}
-	seq := uint64(0)
-	seal := func(keyID string, key domain.ContentKey) []byte {
-		t.Helper()
-		seq++
-		env, err := domain.Seal([]byte(`{"v":1}`), domain.SealParams{Ch: "ctl/machine", Seq: seq,
-			Ts: uint64(time.Now().UnixMilli()), Class: domain.ClassCtl, KeyID: keyID, Sender: "viewer",
-			Key: key, Signer: viewer})
-		if err != nil {
-			t.Fatal(err)
-		}
-		raw, err := env.CanonicalJSON()
-		if err != nil {
-			t.Fatal(err)
-		}
-		return raw
-	}
-	if !tr.admitEnvelope(seal(first.KeyID, first.Key), "") {
-		t.Fatal("the installed key was refused")
-	}
-	next := nextEpoch(t, 2)
-	if _, err := keys.Cutover(func(domain.ContentKeyState) (domain.ContentKeyState, error) { return next, nil },
-		func(_, _ domain.ContentKeyState) error { return nil }); err != nil {
-		t.Fatal(err)
-	}
-	cases := map[string][]byte{
-		"the retired key and id":         seal(first.KeyID, first.Key),
-		"the new id under the old key":   seal(next.KeyID, first.Key),
-		"the old id under the new key":   seal(first.KeyID, next.Key),
-		"a reply key id on a ctl answer": seal("rk-aaaaaaaaaaaaaaaaaaaaaa", next.Key),
-	}
-	for name, raw := range cases {
-		if tr.admitEnvelope(raw, "") {
-			t.Errorf("%s: admitted", name)
-		}
-	}
-	if !tr.admitEnvelope(seal(next.KeyID, next.Key), "") || admitted != 2 {
-		t.Fatalf("the new key's canary: admitted %d, want 2", admitted)
+	for _, channel := range []string{"ctl/machine", "r/machine", "termi/machine/viewer"} {
+		t.Run(channel, func(t *testing.T) {
+			keys, first := epochKeys(t)
+			viewer, err := domain.NewDeviceKey(rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			admitted := 0
+			tr := &Transport{opts: Options{
+				Identity:     Identity{MachineID: "machine"},
+				Status:       NewStatusRecorder(time.Now()),
+				Replay:       domain.NewReplayWindow(64),
+				ContentKey:   first.Key, // the legacy field is ignored once KeyEpoch is set
+				KeyEpoch:     keys,
+				PublicKeyFor: func(sender string) (ed25519.PublicKey, bool) { return viewer.PublicKey(), sender == "viewer" },
+				Inbound:      func(domain.Envelope, []byte, ed25519.PublicKey) { admitted++ },
+			}}
+			seq := uint64(0)
+			seal := func(keyID string, key domain.ContentKey) []byte {
+				t.Helper()
+				seq++
+				env, err := domain.Seal([]byte(`{"v":1}`), domain.SealParams{Ch: channel, Seq: seq,
+					Ts: uint64(time.Now().UnixMilli()), Class: domain.ClassCtl, KeyID: keyID, Sender: "viewer",
+					Key: key, Signer: viewer})
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw, err := env.CanonicalJSON()
+				if err != nil {
+					t.Fatal(err)
+				}
+				return raw
+			}
+			if !tr.admitEnvelope(seal(first.KeyID, first.Key), "") {
+				t.Fatal("the installed key was refused")
+			}
+			next := nextEpoch(t, 2)
+			if _, err := keys.Cutover(func(domain.ContentKeyState) (domain.ContentKeyState, error) { return next, nil },
+				func(_, _ domain.ContentKeyState) error { return nil }); err != nil {
+				t.Fatal(err)
+			}
+			cases := map[string]struct {
+				id  string
+				key domain.ContentKey
+			}{
+				"the retired key and id":           {first.KeyID, first.Key},
+				"the new id under the old key":     {next.KeyID, first.Key},
+				"the old id under the new key":     {first.KeyID, next.Key},
+				"a connection key id on a request": {"rk-aaaaaaaaaaaaaaaaaaaaaa", next.Key},
+			}
+			for name, c := range cases {
+				if tr.admitEnvelope(seal(c.id, c.key), "") {
+					t.Errorf("%s: admitted", name)
+				}
+			}
+			if !tr.admitEnvelope(seal(next.KeyID, next.Key), "") || admitted != 2 {
+				t.Fatalf("the new key's canary: admitted %d, want 2", admitted)
+			}
+			if channel != "ctl/machine" {
+				for name, c := range cases {
+					if tr.AcceptDirect("viewer", seal(c.id, c.key)) {
+						t.Errorf("direct %s: admitted", name)
+					}
+				}
+				raw := seal(next.KeyID, next.Key)
+				if !tr.AcceptDirect("viewer", raw) || admitted != 3 {
+					t.Fatalf("the new key's direct canary: admitted %d, want 3", admitted)
+				}
+				if tr.admitEnvelope(raw, "") {
+					t.Fatal("a direct request was replayed on the relay")
+				}
+			}
+
+		})
 	}
 }
 
