@@ -36,6 +36,18 @@ func TestMenuFingerprintIsTheSameHexOnBothEnds(t *testing.T) {
 	}
 }
 
+func TestMenuFingerprintIncludesNativeOfferRevision(t *testing.T) {
+	m := fingerprintVector()
+	m.Revision = "native-offer-2"
+	if got := MenuFingerprint(m); got != "74dca102ee9eece26056ce00b9e7f0fa6f2e0f112648a4b34c7a43319b6c9d0b" {
+		t.Fatal(got)
+	}
+	m.Revision = "native-offer-3"
+	if MenuFingerprint(m) == "74dca102ee9eece26056ce00b9e7f0fa6f2e0f112648a4b34c7a43319b6c9d0b" {
+		t.Fatal("later offer reused fingerprint")
+	}
+}
+
 // What the page saw is the question and its rows. The caret, a tick, a row's
 // note and the button move while the same question is up — a multi-select's
 // tick is the page's own last press — and must not make a second press read

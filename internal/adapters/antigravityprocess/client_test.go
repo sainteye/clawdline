@@ -167,14 +167,23 @@ func TestACPProcess(t *testing.T) {
 				time.Sleep(time.Hour)
 			}
 			enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fake-session", "update": map[string]string{"sessionUpdate": "agent_message_chunk", "text": "visible"}}})
-			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "permission-exact", "method": "session/request_permission", "params": map[string]any{"sessionId": "fake-session", "options": []any{map[string]string{"optionId": "only-real-offer", "kind": "allow_once"}}}})
+			paramsPermission := map[string]any{"sessionId": "fake-session", "options": []any{map[string]string{"optionId": "only-real-offer", "kind": "allow_once"}}}
+			if strings.HasPrefix(mode, "permission-") {
+				paramsPermission["toolCall"] = map[string]string{"toolCallId": "tool-exact", "title": "Synthetic command"}
+				paramsPermission["options"] = []any{map[string]string{"optionId": "only-real-offer", "name": "Allow once", "kind": "allow_once"}, map[string]string{"optionId": "reject-exact", "name": "Reject once", "kind": "reject_once"}}
+			}
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "permission-exact", "method": "session/request_permission", "params": paramsPermission})
 			if !scanner.Scan() {
 				os.Exit(36)
 			}
 			line = append([]byte(nil), scanner.Bytes()...)
 			wire.Write(append(line, '\n'))
 			wire.Sync()
-			if !strings.Contains(string(line), `"id":"permission-exact"`) || !strings.Contains(string(line), `"outcome":"cancelled"`) || strings.Contains(string(line), "optionId") {
+			valid := strings.Contains(string(line), `"outcome":"cancelled"`) && !strings.Contains(string(line), "optionId")
+			if mode == "permission-select" {
+				valid = strings.Contains(string(line), `"outcome":"selected"`) && strings.Contains(string(line), `"optionId":"reject-exact"`)
+			}
+			if !strings.Contains(string(line), `"id":"permission-exact"`) || !valid {
 				os.Exit(37)
 			}
 			enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fake-session", "update": map[string]string{"sessionUpdate": "tool_call_update", "status": "completed"}}})
@@ -404,6 +413,9 @@ func TestMetadataErrorsCancellationAndBusyNeverRetry(t *testing.T) {
 }
 
 func fake(t *testing.T, mode string, update func(context.Context, json.RawMessage) error) (*Client, string) {
+	return fakePermission(t, mode, update, nil)
+}
+func fakePermission(t *testing.T, mode string, update func(context.Context, json.RawMessage) error, permission func(context.Context, *PermissionRequest) error) (*Client, string) {
 	t.Helper()
 	t.Setenv("CLAWDLINE_ACP_FAKE", "1")
 	t.Setenv("OPENAI_API_KEY", "synthetic")
@@ -419,7 +431,7 @@ func fake(t *testing.T, mode string, update func(context.Context, json.RawMessag
 	if mode == "stall-write" {
 		maxFrame = 1 << 22
 	}
-	c, err := Start(context.Background(), Options{Executable: exe, Args: []string{"-test.run=^TestACPProcess$", "--", mode}, AccountDir: dir, WorkingDir: dir, MaxFrameBytes: maxFrame, CallTimeout: 2 * time.Second, OnUpdate: update})
+	c, err := Start(context.Background(), Options{Executable: exe, Args: []string{"-test.run=^TestACPProcess$", "--", mode}, AccountDir: dir, WorkingDir: dir, MaxFrameBytes: maxFrame, CallTimeout: 2 * time.Second, OnUpdate: update, OnPermission: permission})
 	if err != nil {
 		t.Fatal(err)
 	}

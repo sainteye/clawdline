@@ -46,6 +46,12 @@ func (p ownedAntigravityTerminal) OwnsProtocol(s session.Session) bool {
 	h := p.server.antigravitySessions.Load()
 	return h != nil && h.OwnsProtocol(s)
 }
+func (p ownedAntigravityTerminal) SelectProtocol(ctx context.Context, s session.Session, digit int, expect string, before func() error) error {
+	if h := p.server.antigravitySessions.Load(); h != nil {
+		return h.SelectProtocol(ctx, s, digit, expect, before)
+	}
+	return ownedAntigravityUnavailable()
+}
 func (p ownedAntigravityTerminal) Interrupt(context.Context, session.Session) error {
 	return ownedAntigravityUnavailable()
 }
@@ -126,7 +132,7 @@ func (s *Server) availableAssistants() []contract.StartAssistant {
 			if count > 0 {
 				rows[n].AuthState = contract.StartAuthStateReady
 			}
-			rows[n].Capabilities = &contract.StartCapabilities{Start: true, Resume: true, Send: count > 0, Transcript: count > 0}
+			rows[n].Capabilities = &contract.StartCapabilities{Start: true, Resume: true, Send: count > 0, Menus: count > 0, Transcript: count > 0}
 		}
 	}
 	return rows

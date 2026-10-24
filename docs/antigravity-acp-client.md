@@ -94,11 +94,19 @@ response. It does not duplicate the normalized event decoder. The owner callback
 is synchronous backpressure, must honor its context, and must not synchronously
 reenter the client; queueing and durable delivery, if desired, belong to the
 owner. A callback error terminates the process without exposing callback text.
-Other notifications are ignored. Requests are never automatically granted:
-`session/request_permission` receives `outcome: {outcome: "cancelled"}` using
-the original RPC ID, with no invented option ID. Other server requests receive
-JSON-RPC -32601. This conservative client currently has no permission grant API;
-the owner must add its separately reviewed offer/decision composition when needed.
+Other notifications are ignored. Requests are never automatically granted.
+`session/request_permission` is decoded by the existing immutable permission
+codec against this connection and its exact native Session ID. `OnPermission`
+publishes one `PermissionRequest` and must return promptly. The reader then
+waits in wire order, within the existing call/process deadlines, with no queue
+or retry. `Select` accepts only an exact offered option ID and performs the
+normal operation check under the pipe write lock before writing one selected
+outcome with the original RPC ID. Duplicate, unknown and expired selections
+write nothing. `Cancel` writes a cancelled outcome without inventing an option.
+No callback, an unsupported offer, or a callback refusal defaults to cancelled.
+Close, lifetime cancellation and prompt timeout invalidate outstanding offers;
+an uncertain reply write is never replayed. Other server requests receive
+JSON-RPC -32601.
 
 ## Lifetime and platform boundary
 
@@ -128,7 +136,7 @@ the native deployment environment and preserve any cleanup failure.
 
 Behavioral tests re-exec the Go test executable as a fake ACP peer and exchange
 real pipe bytes. They exercise setup/prompt methods and IDs, raw update order,
-permission cancellation, personal/free refusal, Credits changed between calls,
+permission selection/cancellation, personal/free refusal, Credits changed between calls,
 sanitized RPC errors, EOF/malformed/oversized/exclusive-result failures, stalled
 read/write cancellation, deadline/busy/no-replay behavior, repeated concurrent
 Close and actual descendant cleanup. No real provider, API key, model call or
@@ -136,13 +144,21 @@ account cache was used. Darwin is runtime-tested; Linux shares the Unix
 implementation but has not received runtime acceptance here. Windows and other
 platforms explicitly return unsupported.
 
-Root retains HTTP/ordinary Session authorization, existing admin operationsAccess
-entry visibility, Cloud/mobile display, event normalization, permission UI,
-capacity registration, native provider acceptance, commit and integration.
-There is no backend admin entitlement or pilot authorization framework here.
+The owner composes permissions through the ordinary Session inventory/menu/key
+routes. Existing HTTP/Cloud authorization, terminal lanes, operation receipts
+and entry visibility remain the authority. There is no separate approval API,
+permission ledger, backend admin entitlement or pilot authorization framework.
+Synthetic tests cover native waiting inventory, allow/reject IDs, same-looking
+later offers, duplicates, wrong Sessions, revocation before writing and Close.
+Process tests also cover cancellation and timeout. These tests use real pipes
+and synthetic settings; they make no model calls and establish no native mobile
+or production Cloud deployment acceptance.
 
 
-## Native owner acceptance and existing Session composition
+## Historical native owner acceptance
+
+The following one-shot measurements predate interactive permission composition
+and durable history. They establish only the specific behavior measured then.
 
 Root ran this client against the pinned official ACP 1.4.1 executable with the
 already authenticated isolated personal profile. The initialize/authenticate/
@@ -174,7 +190,9 @@ and write receipts remain the authority; there is no new admin entitlement API.
 
 `antigravitysession.Host` composes the measured process client and update decoder
 behind the existing Session start, send and transcript routes. An explicitly
-configured machine can open one personal ACP preview at a time. The native
+configured machine opens personal ACP previews within the registered active-process
+limit in `antigravitysession/limits.go`. Each conversation owns its process,
+native identity and permission offer. The native
 `session/new` identity is carried as `protocol`, with the real owned PID and an
 `owned:acp:` terminal identifier. Inventory does not overwrite this structured
 reading with the standalone CLI's screen or on-disk transcript resolver.
@@ -194,14 +212,36 @@ configuration does not copy credentials or launch a process. Daemon shutdown
 cancels and joins the owned processes and prompts. Entry visibility reuses the
 Cloud console's existing administrator decision, with no new entitlement API.
 
-The retained transcript is a bounded memory snapshot, not durable native history.
-Oldest whole entries are evicted with an explicit truncation notice. Restart and
-resume, role/context injection, model selection, interactive permission grants,
-terminal attachment and turn-only cancellation remain outside this preview and
-are not advertised as available. The original full-integration acceptance scope
-still requires those capabilities and independent UI/UX and brand acceptance.
+With a configured state directory, history is persisted locally and read through
+bounded pages. Restarted conversations retain their stable local identity;
+resume/load verifies the exact native conversation and workspace before making
+it writable. The in-memory fallback remains bounded and explicitly truncated.
+Native model and thinking choices use acknowledged configuration responses and
+subsequent updates in wire order. `/model` and `/effort` do not become prompts.
 
-A Root-only one-shot acceptance on the new Host returned the expected synthetic
+A live native permission is projected as the existing waiting Session menu,
+preserving its title and all offered labels. Its numeric rows map only to the
+original option IDs. Reject is the offered reject option, not a synthesized
+cancel. An optional opaque `menu.revision` distinguishes each occurrence, even
+when request ID, tool title and options are identical. Go and TypeScript include
+that revision in the same fingerprint; absent revisions preserve all historical
+provider fingerprints. Older pages cannot answer native offers whose revision
+they omitted. The waiting card's hold key also uses that revision so a previous
+answer cannot keep a later identical question closed. Owned previews advertise
+menu capability, and current native offers carry the ordinary waiting reply
+signal in Cloud status without claiming a terminal screen was read. The normal
+`/key` route requires the exact current fingerprint
+and Session identity; only rows 1–9 are actionable through its existing key
+allowlist. Native requests with more options retain the additional visible,
+unanswerable rows. Close may terminate a Session waiting on permission and
+removes its menu; cancellation/timeout also remove the live projection. Pending
+offers are not persisted or restored after restart.
+
+Terminal attachment, turn-only cancellation and independent UI/UX and brand
+acceptance remain outside this composition. This change does not broaden preview
+visibility, model/role/memory behavior or the existing public-network policy.
+
+An earlier Root-only one-shot acceptance on the Host returned the expected synthetic
 reply and `end_turn` in 8.192 seconds with one model input, the native Starter tier
 and AI Credits off checked by the client, and both owned leader and process group
 absent after close. There were no automatic retries or paid API calls. This is

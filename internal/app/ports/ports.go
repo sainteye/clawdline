@@ -213,3 +213,10 @@ type ProtocolSessionHost interface {
 	OwnsProtocol(session.Session) bool
 	SendProtocol(context.Context, session.Session, string, func() error) error
 }
+
+// ProtocolMenuHost selects an exact live native offer under the ordinary
+// operation authorization and terminal lane, without a terminal screen.
+type ProtocolMenuHost interface {
+	ProtocolSessionHost
+	SelectProtocol(context.Context, session.Session, int, string, func() error) error
+}

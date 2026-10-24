@@ -131,6 +131,19 @@ func TestOwnedPeer(t *testing.T) {
 			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "model"), []byte(req.Params.ModelID), 0600)
 		case "session/prompt":
 			dir := os.Getenv("GEMINI_HOME")
+			if os.Getenv("CLW_PERMISSION_PEER") == "yes" {
+				for i := 0; i < 2; i++ {
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "native-permission", "method": "session/request_permission", "params": map[string]any{"sessionId": nativeID, "toolCall": map[string]string{"toolCallId": "tool-1", "title": "Run synthetic command?"}, "options": []any{map[string]string{"optionId": "allow-exact", "name": "Allow once", "kind": "allow_once"}, map[string]string{"optionId": "reject-exact", "name": "Reject once", "kind": "reject_once"}}}})
+					if !scanner.Scan() {
+						os.Exit(34)
+					}
+					f, _ := os.OpenFile(filepath.Join(dir, "permissions"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+					_, _ = f.Write(append(append([]byte(nil), scanner.Bytes()...), '\n'))
+					_ = f.Close()
+				}
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]string{"stopReason": "end_turn"}})
+				continue
+			}
 			if len(req.Params.Prompt) == 1 && req.Params.Prompt[0].Text == "/usage" {
 				f, _ := os.OpenFile(filepath.Join(dir, "usage"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 				f.WriteString("usage\n")

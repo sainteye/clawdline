@@ -106,6 +106,32 @@ func TestStatusReplySignalRequiresAProvenCurrentQuestion(t *testing.T) {
 	}
 }
 
+func TestNativePermissionStatusRequiresExactOwnedProtocolOffer(t *testing.T) {
+	row := map[string]any{"state": "waiting", "assistant": "antigravity", "backend": "owned", "identity": "protocol",
+		"source": map[string]any{"freshness": "current", "provenance": "owned"},
+		"menu":   map[string]any{"revision": "native-offer", "options": []any{map[string]any{"label": "private native option"}}}}
+	got := ProjectSessionStatus("machine_a", "owned:acp:synthetic", row, true, 100)
+	if !got.WaitingForReply || got.Assistant != "antigravity" || got.Backend != "owned" || got.Source.Provenance != "owned" {
+		t.Fatalf("native offer status=%+v", got)
+	}
+	raw, _ := json.Marshal(got)
+	if strings.Contains(string(raw), "private") || strings.Contains(string(raw), "native-offer") {
+		t.Fatalf("status leaked offer: %s", raw)
+	}
+	for _, patch := range []map[string]any{{"identity": "launch_hook"}, {"backend": "tmux"}, {"source": map[string]any{"freshness": "unverified"}}, {"menu": map[string]any{"options": []any{map[string]any{"label": "private option"}}}}} {
+		copy := map[string]any{}
+		for k, v := range row {
+			copy[k] = v
+		}
+		for k, v := range patch {
+			copy[k] = v
+		}
+		if ProjectSessionStatus("machine_a", "owned:acp:synthetic", copy, true, 100).WaitingForReply {
+			t.Fatalf("unproven native offer accepted: %v", patch)
+		}
+	}
+}
+
 func TestStatusRelayFailureDoesNotBlockLegacyInventory(t *testing.T) {
 	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}}
 	p.Publish = func(_ context.Context, out Outbound) error {

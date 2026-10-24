@@ -6835,8 +6835,9 @@ export interface SessionLimits {
 }
 
 /**
- * The question on a waiting session's screen, as rows a finger can hit (the Swift
- * app's menuObject). Present only on a waiting session whose screen could be read
+ * The question on a waiting Session, as rows a finger can hit. An owned protocol
+ * may supply an exact live native offer; otherwise this is a screen menu (the Swift
+ * app's menuObject). For screen menus, present only when the screen could be read
  * as a menu; a waiting row without it is a question drawn in a shape nothing
  * recognised. The row labels and details may be refilled from the session's own
  * transcript, but only once the screen proves which question it is showing; the
@@ -6850,6 +6851,12 @@ export interface SessionMenu {
    * could not be read.
    */
   question?: string
+
+  /**
+   * Opaque identity of one live native offer. Included in the menu fingerprint when
+   * present; repeated identical questions have distinct revisions.
+   */
+  revision?: string
 
   /**
    * The number of the row the caret is on. Absent when it is on none of them — a
