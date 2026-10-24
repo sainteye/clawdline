@@ -1,4 +1,6 @@
 {
+  "capacityRow.schedule.history_page_rows.what": "How many scheduled runs the history sheet reveals at a time, keeping long histories easy to browse.",
+  "capacityRow.schedule.history_page_rows.full": "Load more items reveals the next batch. This display limit does not delete stored history; the schedule detail currently includes at most the newest 200 runs.",
   "http.adfb122018780903": "The personal ACP preview currently uses its native default model and no role.",
   "admin.accountsNew30": "New, last 30 days",
   "admin.accountsNew7": "New, last 7 days",

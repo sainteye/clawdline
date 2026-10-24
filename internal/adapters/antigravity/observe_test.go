@@ -277,6 +277,9 @@ func TestExecutableFingerprintChecksKernelChangeStamp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Linux can assign writes within one kernel clock tick the same ctime.
+	// Cross that tick so this test exercises a changed kernel stamp.
+	time.Sleep(20 * time.Millisecond)
 	data[0] = 'X'
 	if err = os.WriteFile(f.exe, data, 0700); err != nil {
 		t.Fatal(err)

@@ -1778,6 +1778,11 @@
     "Note": true
   },
   {
+    "Name": "schedule.history_page_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "schedule.run_transcript_head",
     "Known": true,
     "Note": true

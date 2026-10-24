@@ -1830,6 +1830,8 @@ export function openScheduleFrom(draft: SpokenScheduleDraft, instructions: strin
 type WebhookHook = { hook_id: string; state: string; revision: number; availability?: string } | null
 
 const ScheduleHistory = (() => {
+  const historyPageRows = 10
+  let visibleRuns = historyPageRows
   let scheduleId: string | null = null
   let record: ScheduleRecord | null = null
   let places: SchedulePlace[] = []
@@ -2205,6 +2207,24 @@ const ScheduleHistory = (() => {
   function draw(): void {
     ensureRunNowButton()
     const runs = (record && record.runs) || []
+    let more = document.getElementById("schedule-history-more") as HTMLButtonElement | null
+    if (!more) {
+      more = document.createElement("button")
+      more.id = "schedule-history-more"
+      more.type = "button"
+      more.className = "chip"
+      el("schedule-run-rows").after(more)
+      more.addEventListener("click", () => {
+        visibleRuns += historyPageRows
+        draw()
+        const rows = el("schedule-run-rows").querySelectorAll<HTMLButtonElement>(".schedule-run-button")
+        rows[Math.max(0, visibleRuns - historyPageRows)]?.focus()
+        if (more?.hidden && document.activeElement === more) el("schedule-history-close").focus()
+      })
+    }
+    more.textContent = catalogWord("literal", "70ee17f5b118")
+    more.hidden = loading || visibleRuns >= runs.length
+    more.disabled = !!pressing || runningNow
     el("schedule-history-sheet").setAttribute("aria-busy", loading || pressing || runningNow ? "true" : "false")
     el("schedule-history-title").textContent = (record && record.title) || T().webScheduleEdit
     const path = record && record.task && record.task.project_dir
@@ -2225,7 +2245,7 @@ const ScheduleHistory = (() => {
     el("schedule-history-runs-label").textContent = nextWord("scheduleRunsHeading")
     el("schedule-run-rows").innerHTML = loading && !record
       ? '<li role="presentation">' + loadingSkeletonHTML(T().webLoading, "SK-12") + "</li>"
-      : scheduleRunsHTML(runs, Date.now() / 1000, terminalIsOpen)
+      : scheduleRunsHTML(runs.slice(0, visibleRuns), Date.now() / 1000, terminalIsOpen)
     el("schedule-history-empty").textContent = nextWord("scheduleRunsEmpty")
     el("schedule-history-empty").hidden = loading || started || runs.length > 0 || !!el("schedule-history-said").textContent
     el("schedule-history-capped").textContent = T().webResumeCapped
@@ -2263,6 +2283,7 @@ const ScheduleHistory = (() => {
     if (sheet.shown) close(true)
     webhook = scheduleWebhookManagement()
     scheduleId = id
+    visibleRuns = historyPageRows
     record = null
     places = []
     placesNote = ""
@@ -2653,6 +2674,7 @@ function ensureOverlays(): void {
         ),
       )
       .concat(Array.from(el("schedule-run-rows").querySelectorAll<HTMLElement>(".schedule-run-button:not([disabled])")))
+      .concat(Array.from(el("schedule-history-sheet").querySelectorAll<HTMLElement>("#schedule-history-more:not([hidden])")))
       .concat([el("schedule-history-close")])
       .filter((item): item is HTMLElement => !!item && !(item as HTMLButtonElement).disabled)
     const at = items.indexOf(document.activeElement as HTMLElement)

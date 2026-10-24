@@ -374,7 +374,7 @@ test("a copied row lands in the list the relay's own row would have filled", asy
   assert.equal(native.backend, "owned")
 })
 
-test("fault injection: a read takes the carrier while this page's own socket is between connections", async () => {
+test("fault injection: a read takes the carrier while this page's own socket is between connections", { timeout: 10_000 }, async () => {
   const { client, carrier, masterKey, signing } = await sealedClient()
   // The real publisher this time, because the refusal being tested is inside it.
   delete client._publishCommand
@@ -388,12 +388,16 @@ test("fault injection: a read takes the carrier while this page's own socket is 
   // in a row were refused `offline` in under a second. A read on an open carrier never touches
   // the relay, so the socket being between connections is not its failure.
   //
-  // Waited for rather than counted: the real publisher signs and seals, and how many turns of the
-  // loop that takes is the platform's WebCrypto's business. Six flushes were enough here and were
-  // not on CI (run 38099929548, Linux), where the read was still in flight when the assertion ran
-  // and the test called a slow seal a refusal.
+  // WebCrypto completes on its own thread pool. Observe the send itself rather than
+  // exhausting a fixed number of event-loop turns before the crypto worker finishes.
+  const published = new Promise((resolve) => {
+    const send = carrier.send.bind(carrier)
+    carrier.send = (envelope) => { send(envelope); resolve() }
+  })
   const answer = read(client)
-  for (let i = 0; i < 500 && carrier.written.length === 0; i++) await flush()
+  await Promise.race([published, answer.then(() => {
+    throw new Error("read settled before its carrier published")
+  })])
   assert.equal(carrier.written.length, 1, "the read was refused instead of taking the open carrier")
   assert.equal(carrier.written[0].ch, "r/m")
   assert.deepEqual([...client.subscribed], [], "the carrier read subscribed to a relay channel")

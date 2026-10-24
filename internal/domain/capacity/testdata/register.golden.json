@@ -7001,6 +7001,23 @@
   },
   {
     "Register": "daemon",
+    "Name": "schedule.history_page_rows",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 10,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "schedule.run_transcript_head",
     "Class": "observation",
     "Unit": "bytes",

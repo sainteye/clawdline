@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestPinnedExecutableRejectsReplacementAndSameStampRewrites(t *testing.T) {
@@ -36,6 +37,8 @@ func TestPinnedExecutableRejectsReplacementAndSameStampRewrites(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "rewrite":
+				// Linux ctime can remain equal for writes in the same clock tick.
+				time.Sleep(20 * time.Millisecond)
 				if err := os.WriteFile(path, []byte("synthetic changedexe"), 0700); err != nil {
 					t.Fatal(err)
 				}
