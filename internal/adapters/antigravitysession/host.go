@@ -70,6 +70,9 @@ type conversation struct {
 	replaying        bool
 	storeErr         error
 	permission       *antigravityprocess.PermissionRequest
+	launchContext    LaunchContext
+	injected         *injectedTurn
+	replaySawUser    bool
 }
 
 type Error struct {
@@ -106,6 +109,13 @@ func New(ctx context.Context, opts Options) (*Host, error) {
 func (h *Host) Name() string { return string(session.BackendOwned) }
 
 func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session, error) {
+	return h.OpenWithContext(ctx, req, LaunchContext{})
+}
+
+func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launch LaunchContext) (session.Session, error) {
+	if err := launch.validate(); err != nil {
+		return session.Session{}, err
+	}
 	if !filepath.IsAbs(req.Cwd) || req.Command != "" || len(req.Env) != 0 {
 		return session.Session{}, refusal("unsupported_launch")
 	}
@@ -120,8 +130,8 @@ func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 	h.mu.Unlock()
 	defer h.jobs.Done()
 	defer func() { h.mu.Lock(); h.opening = false; h.mu.Unlock() }()
-	c := &conversation{tools: map[string]int{}, textIndex: -1, store: h.store, profile: filepath.Clean(h.opts.AccountDir), generation: rand.Text()}
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
+	c := &conversation{tools: map[string]int{}, textIndex: -1, store: h.store, profile: filepath.Clean(h.opts.AccountDir), generation: rand.Text(), launchContext: launch}
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
 	if err != nil {
 		return session.Session{}, err
 	}
@@ -150,7 +160,7 @@ func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 		c.mu.Unlock()
 		return session.Session{}, err
 	}
-	c.row = session.Session{ID: "owned:acp:" + rand.Text(), Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
+	c.row = session.Session{ID: "owned:acp:" + rand.Text(), Persona: launch.Persona, SquadLaunchID: launch.SquadLaunchID, Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
 	if err := c.saveState(); err != nil {
 		c.mu.Unlock()
 		return session.Session{}, err
@@ -270,6 +280,8 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		h.mu.Unlock()
 		return refusal("text_too_large")
 	}
+	inject := c.launchContext.Text != "" && c.injected == nil
+	launch := c.launchContext
 	c.busy = true
 	c.writeGate = make(chan struct{})
 	c.mu.Unlock()
@@ -299,7 +311,11 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		turn, cancel := context.WithCancel(h.ctx)
 		defer cancel()
 		stop := context.AfterFunc(ctx, cancel)
-		result, err := client.PromptChecked(turn, text, func() error {
+		contextText := ""
+		if inject {
+			contextText = launch.Text
+		}
+		result, err := client.PromptContextChecked(turn, text, launch.URI, contextText, func() error {
 			if before != nil {
 				if err := before(); err != nil {
 					return err
@@ -312,6 +328,9 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 			}
 			// Persist uncertainty before the pipe write. A crash never replays a prompt.
 			c.uncertain = true
+			if inject {
+				c.injected = &injectedTurn{OriginalText: text}
+			}
 			return c.saveState()
 		}, func() {
 			stop()
@@ -335,6 +354,9 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 			var local interface{ BeforeWrite() bool }
 			if errors.As(err, &local) && local.BeforeWrite() {
 				c.row.State = session.StateIdle
+				if inject {
+					c.injected = nil
+				}
 				c.uncertain = false
 				_ = c.saveState()
 				return
@@ -552,6 +574,7 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 		}
 		return c.readMetadata(envelope.Params.Update, false)
 	}
+	c.cleanReplayContext(&u)
 	if u.Ignored {
 		return nil
 	}
@@ -574,12 +597,20 @@ func (c *conversation) update(ctx context.Context, frame json.RawMessage) error 
 		c.textIndex = -1
 		c.changed()
 		c.bound()
-	case u.Kind == "agent_message_chunk":
+	case u.Kind == "agent_message_chunk" || u.Kind == "user_message_chunk" && c.replaying:
+		role := "assistant"
+		if u.Kind == "user_message_chunk" {
+			role = "user"
+		}
+		if c.textRole != role {
+			c.textIndex = -1
+		}
+		c.textRole = role
 		if u.Text == "" {
 			return nil
 		}
 		if c.textIndex < 0 || c.textIndex >= len(c.entries) {
-			c.entries = append(c.entries, contract.TranscriptEntry{Role: "assistant", At: time.Now().Unix()})
+			c.entries = append(c.entries, contract.TranscriptEntry{Role: role, At: time.Now().Unix()})
 			c.textIndex = len(c.entries) - 1
 		}
 		c.entries[c.textIndex].Text += u.Text

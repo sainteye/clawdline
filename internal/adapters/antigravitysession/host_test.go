@@ -51,7 +51,12 @@ func TestOwnedPeer(t *testing.T) {
 				ConfigID  string `json:"configId"`
 				Value     string `json:"value"`
 				Prompt    []struct {
-					Text string `json:"text"`
+					Text     string `json:"text"`
+					Type     string `json:"type"`
+					Resource struct {
+						URI  string `json:"uri"`
+						Text string `json:"text"`
+					} `json:"resource"`
 				} `json:"prompt"`
 			} `json:"params"`
 		}
@@ -68,7 +73,7 @@ func TestOwnedPeer(t *testing.T) {
 		case "initialize":
 			result = map[string]any{"protocolVersion": 1}
 			if os.Getenv("CLW_RESTORE_PEER") == "yes" {
-				result.(map[string]any)["agentCapabilities"] = map[string]any{"loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
+				result.(map[string]any)["agentCapabilities"] = map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
 			}
 		case "session/list":
 			result = map[string]any{"sessions": []any{}}
@@ -102,6 +107,10 @@ func TestOwnedPeer(t *testing.T) {
 		case "session/load", "session/resume":
 			nativeID = req.Params.SessionID
 			if req.Method == "session/load" {
+				if raw, err := os.ReadFile(filepath.Join(dir, nativeID+"-context-replay")); err == nil {
+					notify(map[string]any{"sessionUpdate": "user_message_chunk", "content": map[string]string{"type": "text", "text": string(raw)}})
+					notify(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "context reply"}})
+				}
 				for i := 0; i < 2; i++ {
 					notify(map[string]any{"sessionUpdate": "user_message_chunk", "content": map[string]string{"type": "text", "text": "identical user"}})
 					notify(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "identical reply"}})
@@ -159,6 +168,13 @@ func TestOwnedPeer(t *testing.T) {
 			f, err := os.OpenFile(filepath.Join(dir, "prompts"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 			if err != nil {
 				os.Exit(31)
+			}
+			payload, _ := json.Marshal(req.Params.Prompt)
+			_ = os.WriteFile(filepath.Join(dir, nativeID+"-prompt"), payload, 0600)
+			_ = os.WriteFile(filepath.Join(dir, nativeID+"-capability"), []byte(os.Getenv("CLAWDLINE_SQUAD_CAPABILITY_FILE")), 0600)
+			if len(req.Params.Prompt) == 2 && req.Params.Prompt[0].Type == "resource" {
+				flattened := "Embedded resource (" + req.Params.Prompt[0].Resource.URI + "):\n" + req.Params.Prompt[0].Resource.Text + " " + req.Params.Prompt[1].Text
+				_ = os.WriteFile(filepath.Join(dir, nativeID+"-context-replay"), []byte(flattened), 0600)
 			}
 			f.WriteString("prompt\n")
 			f.Close()

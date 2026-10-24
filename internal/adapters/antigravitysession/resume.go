@@ -99,7 +99,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	h.jobs.Add(1)
 	oldClient := c.client
 	c.client = nil
-	stage := &conversation{store: c.store, profile: c.profile, row: c.row, generation: c.generation, revision: c.revision, ordinal: c.ordinal, tools: map[string]int{}, textIndex: -1, staging: true}
+	stage := &conversation{store: c.store, profile: c.profile, row: c.row, generation: c.generation, revision: c.revision, ordinal: c.ordinal, tools: map[string]int{}, textIndex: -1, staging: true, launchContext: c.launchContext, injected: c.injected}
 	needsLoad := importing || c.uncertain || c.store == nil || (oldClient != nil && oldClient.Err() != nil)
 	c.mu.Unlock()
 	h.mu.Unlock()
@@ -121,7 +121,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	// callbacks; it never calls a client method or waits on an RPC from a callback.
 	var relay sync.Mutex
 	target := stage
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: func(ctx context.Context, raw json.RawMessage) error {
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: cwd, SquadCapabilityPath: stage.launchContext.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: func(ctx context.Context, raw json.RawMessage) error {
 		relay.Lock()
 		defer relay.Unlock()
 		return target.update(ctx, raw)
@@ -220,6 +220,12 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 		}
 	}
 	c.client = client
+	c.launchContext = stage.launchContext
+	c.injected = stage.injected
+	c.entries = stage.entries
+	c.tools = stage.tools
+	c.omitted = stage.omitted
+	c.bytes = stage.bytes
 	c.row = stage.row
 	c.generation = stage.generation
 	c.revision = stage.revision

@@ -24,8 +24,10 @@ type historyStore struct{ db *sql.DB }
 // Domain Session intentionally omits Activity from its JSON wire shape. Keep
 // the activity clock explicitly in the storage record, independent of that wire.
 type savedConversation struct {
-	Row      session.Session  `json:"row"`
-	Activity session.Activity `json:"activity"`
+	Row           session.Session  `json:"row"`
+	Activity      session.Activity `json:"activity"`
+	LaunchContext LaunchContext    `json:"launch_context,omitempty"`
+	Injected      *injectedTurn    `json:"injected_turn,omitempty"`
 }
 
 func openHistory(dir string) (*historyStore, error) {
@@ -97,6 +99,10 @@ func (s *historyStore) restore(profile string) (map[string]*conversation, error)
 		} else {
 			c.row = saved.Row
 			c.row.Activity = saved.Activity
+			c.launchContext = saved.LaunchContext
+			c.injected = saved.Injected
+			c.row.Persona = c.launchContext.Persona
+			c.row.SquadLaunchID = c.launchContext.SquadLaunchID
 		}
 		c.row.PID = 0
 		if c.row.State == session.StateWorking {
@@ -123,7 +129,7 @@ func (c *conversation) saveRow(w historyWriter) error {
 	if c.staging {
 		return nil
 	}
-	raw, err := json.Marshal(savedConversation{Row: c.row, Activity: c.row.Activity})
+	raw, err := json.Marshal(savedConversation{Row: c.row, Activity: c.row.Activity, LaunchContext: c.launchContext, Injected: c.injected})
 	if err == nil {
 		_, err = w.Exec(`INSERT INTO conversations(id,native_id,cwd,profile,row_json,generation,revision,ordinal,uncertain,hidden)
 		 VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET row_json=excluded.row_json,generation=excluded.generation,
