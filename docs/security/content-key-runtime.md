@@ -62,6 +62,20 @@ did before: `Secret`/`KeyID` seal, `ContentKey` opens, the drain is unfenced.
 The viewer's `ContentKeyFor`, per-connection `rk-*` terminal keys and the peer
 paths never go through `KeyEpoch`.
 
+## Terminal ingress uses the installed content key
+
+Terminal and shared-carrier requests on `termi/<machine>/<viewer>` use the same
+installed content-key validation as Session requests on `ctl/` and `r/`, on both
+the relay and direct carriers. The channel still binds its viewer segment to the
+signed sender. Per-connection `rk-*` reply keys cannot authorize ingress, and
+retired content keys remain refused after cutover. Library callers without a
+`KeyEpoch` retain the legacy `ms-1` requirement for terminal requests.
+
+The rotation regression now exercises all three request channels. Before the
+fix, only the terminal canary failed after cutover: its channel precheck required
+`ms-1` before the installed-key validator could run, silently dropping valid
+requests and leaving the browser waiting for a receipt.
+
 ## The cutover, in order
 
 1. `Cutover` takes the write lock. Go's `RWMutex` stops new `Use` callers once a
