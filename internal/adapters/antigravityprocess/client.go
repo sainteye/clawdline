@@ -143,7 +143,8 @@ type Client struct {
 	configResult                     func(json.RawMessage) error // stateMu; invoked by readLoop before later updates
 	configResultID                   string
 	embeddedContext                  bool
-	canLoad, canResume, canList      bool // negotiated before opening a session
+	configOptions                    json.RawMessage // stateMu; current native metadata, never persisted
+	canLoad, canResume, canList      bool            // negotiated before opening a session
 }
 
 type usageCapture struct {
@@ -499,7 +500,7 @@ func (c *Client) SetConfigOptionChecked(ctx context.Context, configID, value str
 	if !c.authenticated || !c.free || c.SessionID() == "" {
 		return failure("not_ready", NotWritten)
 	}
-	if (configID != "model" && configID != "thinking_level") || value == "" {
+	if (configID != "model" && configID != "thinking_level" && configID != "mode") || value == "" {
 		return failure("invalid_config", NotWritten)
 	}
 	if err := c.checkPersonal(); err != nil {
@@ -516,6 +517,26 @@ func (c *Client) SetConfigOptionChecked(ctx context.Context, configID, value str
 	}()
 	_, err := c.callAccepted(ctx, "session/set_config_option", map[string]string{"sessionId": c.SessionID(), "configId": configID, "value": value}, before, nil)
 	return err
+}
+
+// ConfigOptions returns the latest native options observed in wire order. The
+// process frame budget bounds this ephemeral snapshot; a new process starts empty.
+func (c *Client) ConfigOptions() json.RawMessage {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	return append(json.RawMessage(nil), c.configOptions...)
+}
+
+func (c *Client) observeConfig(raw json.RawMessage) {
+	m, err := object(raw)
+	if err != nil {
+		return
+	}
+	if options, ok := m["configOptions"]; ok {
+		c.stateMu.Lock()
+		c.configOptions = append(json.RawMessage(nil), options...)
+		c.stateMu.Unlock()
+	}
 }
 
 // Usage reads only the provider's exact /usage metadata command. It accepts no
@@ -824,6 +845,13 @@ func (c *Client) readLoop() {
 					return
 				}
 			} else if equalString(method, "session/update") {
+				params, _ := object(m["params"])
+				if equalString(params["sessionId"], c.SessionID()) {
+					update, _ := object(params["update"])
+					if equalString(update["sessionUpdate"], "config_option_update") {
+						c.observeConfig(params["update"])
+					}
+				}
 				captured, err := c.captureUsage(frame)
 				if err != nil {
 					c.shutdown(failure("update_rejected", Uncertain))
@@ -844,6 +872,7 @@ func (c *Client) readLoop() {
 		}
 		// The reply is the metadata boundary. Clear it here in wire order,
 		// before handing the response to the waiting caller.
+		c.observeConfig(m["result"])
 		c.stateMu.Lock()
 		if c.usage != nil {
 			c.usage.active = false

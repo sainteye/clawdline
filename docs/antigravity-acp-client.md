@@ -319,3 +319,32 @@ binding, skill references, original user text and immutable resume selection.
 These offline results do not constitute a new native-product, mobile, deployment
 or role-dispatch acceptance result. Native tool Session identity and role-based
 dispatch are the next integration boundary.
+
+
+### Metadata-only worker preparation
+
+`Host.ConfigureDispatch` selects a native offered permission mode, then an
+explicit model, then an explicit effort under the existing metadata lease.
+The native mode IDs are `default` for ask, `auto_edit` for edits and `yolo` for
+full. Each acknowledged options snapshot must report the selected mode before
+preparation continues. Model changes replace the effort offers before an effort
+is validated. Missing or malformed mode support refuses dispatch configuration
+without disabling ordinary chat. The process keeps only an ephemeral copied
+options snapshot, re-read by a replacement process; it is not persisted authority.
+
+A personal/free native probe acknowledged all three mode selections, returned
+to default, produced no transcript and left the personal settings file unchanged.
+It made four metadata selections and zero model inputs in 4.23 seconds. These
+ACKs establish configuration mapping, not every tool's behavior under each mode.
+Fake peers cover wrong or missing ACKs, changed effort offers, no prompt writes,
+shutdown and close contention. The broker executor and root-notice composition
+remain a separate integration step.
+
+The broker can reuse `Starter.OwnedContextFromPublished` after its existing
+Squad publisher has selected task claims. It reads the same immutable prompt
+and capability address instead of publishing a second snapshot. `Host.Stop`
+terminates and joins only the exact owned/native/workspace process, including
+an active turn, and retains its history. A wrong native identity is refused;
+a stopped conversation needs explicit resume. Ordinary user close behavior is
+unchanged. Local notice evidence is read only after a clean acknowledged turn,
+never from a pipe echo or an uncertain turn, and it launches no process.

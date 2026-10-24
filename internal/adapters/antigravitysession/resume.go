@@ -74,7 +74,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 		return session.Session{}, refusal("not_found")
 	}
 	c.mu.Lock()
-	if c.busy {
+	if c.busy || c.stopping {
 		c.mu.Unlock()
 		h.mu.Unlock()
 		return session.Session{}, refusal("busy")

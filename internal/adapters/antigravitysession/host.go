@@ -49,6 +49,7 @@ type conversation struct {
 	omitted          int
 	bytes            int
 	busy             bool
+	stopping         bool
 	textIndex        int
 	writeGate        chan struct{}
 	model            string

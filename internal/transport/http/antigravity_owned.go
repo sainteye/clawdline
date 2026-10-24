@@ -52,17 +52,7 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 		}
 		return session.Session{}, ownedAntigravityUnavailable()
 	}
-	resource := prepared.Context.PromptPath
-	if resource == "" {
-		// An inline resource can identify the existing Project directory. It
-		// neither creates a Project file nor asks the provider to read one.
-		resource = place.Path
-	}
-	launch := antigravitysession.LaunchContext{
-		URI: (&url.URL{Scheme: "file", Path: resource}).String(), Text: prepared.Context.Instructions(),
-		Persona: prepared.Persona, SquadLaunchID: prepared.LaunchID, SquadCapabilityPath: prepared.Files.CapabilityPath,
-	}
-	row, err := h.OpenWithContext(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label}, launch)
+	row, err := h.OpenWithContext(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label}, ownedAntigravityContext(place, prepared))
 	if err != nil {
 		if prepared.LaunchID != "" {
 			_ = s.store.FailSquadLaunch(ctx, prepared.LaunchID)
@@ -83,6 +73,19 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 	}
 	return row, nil
 }
+func ownedAntigravityContext(place projects.Place, prepared app.OwnedContext) antigravitysession.LaunchContext {
+	resource := prepared.Context.PromptPath
+	if resource == "" {
+		// An inline resource can identify the existing Project directory. It
+		// neither creates a Project file nor asks the provider to read one.
+		resource = place.Path
+	}
+	return antigravitysession.LaunchContext{
+		URI: (&url.URL{Scheme: "file", Path: resource}).String(), Text: prepared.Context.Instructions(),
+		Persona: prepared.Persona, SquadLaunchID: prepared.LaunchID, SquadCapabilityPath: prepared.Files.CapabilityPath,
+	}
+}
+
 func (p ownedAntigravityTerminal) Send(ctx context.Context, s session.Session, text string) error {
 	return p.SendProtocol(ctx, s, text, nil)
 }

@@ -18,8 +18,10 @@ func TestOwnedContextUsesPublishedRoleSkillsAndProjectMemory(t *testing.T) {
 	}
 	defer st.Close()
 	place := projects.Place{Path: t.TempDir()}
+	resolutions := 0
 	s := Starter{Squad: st, SquadDir: t.TempDir(),
 		ResolveSquadSnapshot: func(_ context.Context, id, path string) (json.RawMessage, error) {
+			resolutions++
 			if id != "backend" || path != place.Path {
 				t.Fatal("role preparation changed Project or persona")
 			}
@@ -58,6 +60,10 @@ func TestOwnedContextUsesPublishedRoleSkillsAndProjectMemory(t *testing.T) {
 	}
 	if data, err := os.ReadFile(got.Files.CapabilityPath); err != nil || strings.Contains(got.Context.Instructions(), string(data)) {
 		t.Fatal("missing capability or secret included in instructions")
+	}
+	reused, err := s.OwnedContextFromPublished(context.Background(), place, got.Persona, got.LaunchID, got.Files)
+	if err != nil || resolutions != 1 || reused.Context.Instructions() != got.Context.Instructions() || reused.LaunchID != got.LaunchID || reused.Files.CapabilityPath != got.Files.CapabilityPath {
+		t.Fatal("published role was prepared again or changed", err)
 	}
 	plain, err := s.PrepareOwnedContext(context.Background(), place, "")
 	if err != nil || plain.LaunchID != "" || plain.Files.CapabilityPath != "" || !strings.Contains(plain.Context.Instructions(), "Original Project memory") {

@@ -30,19 +30,32 @@ func (s Starter) PrepareOwnedContext(ctx context.Context, place projects.Place, 
 		}
 		return OwnedContext{}, err
 	}
-	if persona != "" && prepared.files.PromptPath == "" {
-		return fail(projects.ErrSquadContextUnavailable)
+	owned, err := s.OwnedContextFromPublished(ctx, place, persona, prepared.launch.ID, prepared.files)
+	if err != nil {
+		return fail(err)
+	}
+	return owned, nil
+}
+
+// OwnedContextFromPublished reads the immutable publication already prepared by
+// the broker, preserving its task claims and actor instead of publishing twice.
+func (s Starter) OwnedContextFromPublished(ctx context.Context, place projects.Place, persona, launchID string, files squadfiles.Files) (OwnedContext, error) {
+	if err := ctx.Err(); err != nil {
+		return OwnedContext{}, err
+	}
+	if persona != "" && files.PromptPath == "" {
+		return OwnedContext{}, projects.ErrSquadContextUnavailable
 	}
 	prompt := ""
-	if prepared.files.PromptPath != "" {
-		f, err := os.Open(prepared.files.PromptPath)
+	if files.PromptPath != "" {
+		f, err := os.Open(files.PromptPath)
 		if err != nil {
-			return fail(err)
+			return OwnedContext{}, err
 		}
 		b, err := io.ReadAll(io.LimitReader(f, squad.MaxSquadRequestBytes+1))
 		f.Close()
 		if err != nil || len(b) > squad.MaxSquadRequestBytes {
-			return fail(projects.ErrSquadContextUnavailable)
+			return OwnedContext{}, projects.ErrSquadContextUnavailable
 		}
 		prompt = string(b)
 	}
@@ -53,9 +66,9 @@ func (s Starter) PrepareOwnedContext(ctx context.Context, place projects.Place, 
 	if s.Language != nil {
 		language = s.Language(projects.AssistantAntigravity)
 	}
-	bound, err := projects.PrepareAntigravityContext(prepared.files.PromptPath, prompt, memory, language)
+	bound, err := projects.PrepareAntigravityContext(files.PromptPath, prompt, memory, language)
 	if err != nil {
-		return fail(err)
+		return OwnedContext{}, err
 	}
-	return OwnedContext{Context: bound, Files: prepared.files, LaunchID: prepared.launch.ID, Persona: persona}, nil
+	return OwnedContext{Context: bound, Files: files, LaunchID: launchID, Persona: persona}, nil
 }
