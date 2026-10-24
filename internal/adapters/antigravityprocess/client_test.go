@@ -80,7 +80,7 @@ func TestACPProcess(t *testing.T) {
 			}
 			result = map[string]any{"protocolVersion": 1, "authMethods": []any{map[string]string{"id": "oauth-personal"}}}
 			if mode != "no-restore" {
-				result.(map[string]any)["agentCapabilities"] = map[string]any{"loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
+				result.(map[string]any)["agentCapabilities"] = map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": mode != "no-context"}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}
 			}
 		case "authenticate":
 			if !strings.Contains(string(m["params"]), `"methodId":"oauth-personal"`) {

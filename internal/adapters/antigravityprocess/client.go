@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,10 +52,12 @@ func failure(code string, delivery Delivery) *Error { return &Error{Code: code, 
 // the process; its text is never propagated. No callback means discard updates.
 type Options struct {
 	Executable, AccountDir, WorkingDir string
-	Args                               []string
-	MaxFrameBytes                      int
-	CallTimeout                        time.Duration
-	OnUpdate                           func(ctx context.Context, frame json.RawMessage) error
+	// SquadCapabilityPath is the exact daemon-prepared capability file, never its value.
+	SquadCapabilityPath string
+	Args                []string
+	MaxFrameBytes       int
+	CallTimeout         time.Duration
+	OnUpdate            func(ctx context.Context, frame json.RawMessage) error
 	// OnPermission publishes one live request and returns promptly. No callback
 	// or an unsupported offer is cancelled. The reader waits in wire order.
 	OnPermission func(context.Context, *PermissionRequest) error
@@ -137,6 +140,7 @@ type Client struct {
 	usage                            *usageCapture               // stateMu; readLoop owns chunk order
 	configResult                     func(json.RawMessage) error // stateMu; invoked by readLoop before later updates
 	configResultID                   string
+	embeddedContext                  bool
 	canLoad, canResume, canList      bool // negotiated before opening a session
 }
 
@@ -149,6 +153,7 @@ type usageCapture struct {
 // kills the private group before reaping its leader and unblocks both pipes.
 func Start(ctx context.Context, opts Options) (*Client, error) {
 	if ctx == nil || opts.MaxFrameBytes <= 0 || opts.MaxFrameBytes == int(^uint(0)>>1) || opts.CallTimeout <= 0 ||
+		(opts.SquadCapabilityPath != "" && !filepath.IsAbs(opts.SquadCapabilityPath)) ||
 		!filepath.IsAbs(opts.Executable) || !filepath.IsAbs(opts.AccountDir) || !filepath.IsAbs(opts.WorkingDir) {
 		return nil, failure("invalid_options", NotWritten)
 	}
@@ -167,6 +172,9 @@ func Start(ctx context.Context, opts Options) (*Client, error) {
 	}
 	defer stderr.Close()
 	cmd.Dir, cmd.Env, cmd.Stderr = opts.WorkingDir, personalEnv(opts.AccountDir), stderr
+	if opts.SquadCapabilityPath != "" {
+		cmd.Env = append(cmd.Env, "CLAWDLINE_SQUAD_CAPABILITY_FILE="+opts.SquadCapabilityPath)
+	}
 	childIn, in, err := os.Pipe()
 	if err != nil {
 		return nil, failure("pipe_failed", NotWritten)
@@ -207,7 +215,9 @@ func personalEnv(account string) []string {
 	for _, pair := range os.Environ() {
 		key, _, _ := strings.Cut(pair, "=")
 		key = strings.ToUpper(key)
-		blocked := key == "BROWSER" || key == "LC_ALL"
+		blocked := key == "BROWSER" || key == "LC_ALL" || key == "CLAWDLINE_SQUAD_CAPABILITY_FILE" ||
+			key == "CODEX_THREAD_ID" || key == "CODEX_SESSION_ID" || strings.HasPrefix(key, "CLAUDE") ||
+			key == "CLAWDLINE_SESSION_ID" || key == "CLAWDLINE_CONVERSATION_ID" || key == "CLAWDLINE_TASK_SECRET"
 		for _, marker := range []string{"API_KEY", "APIKEY", "VERTEX", "ADC", "APPLICATION_CREDENTIALS", "GOOGLE", "CLOUDSDK", "GCLOUD", "ENTERPRISE", "MODEL_PROVIDER", "GEMINI", "ANTIGRAVITY", "AGY_", "ANTHROPIC", "OPENAI", "AI_CREDIT"} {
 			blocked = blocked || strings.Contains(key, marker)
 		}
@@ -239,11 +249,15 @@ func (c *Client) Initialize(ctx context.Context) (json.RawMessage, error) {
 	c.initialized = true
 	var caps struct {
 		AgentCapabilities struct {
+			PromptCapabilities struct {
+				EmbeddedContext bool `json:"embeddedContext"`
+			} `json:"promptCapabilities"`
 			LoadSession         bool                       `json:"loadSession"`
 			SessionCapabilities map[string]json.RawMessage `json:"sessionCapabilities"`
 		} `json:"agentCapabilities"`
 	}
 	_ = json.Unmarshal(r, &caps)
+	c.embeddedContext = caps.AgentCapabilities.PromptCapabilities.EmbeddedContext
 	c.canLoad = caps.AgentCapabilities.LoadSession
 	_, c.canResume = caps.AgentCapabilities.SessionCapabilities["resume"]
 	_, c.canList = caps.AgentCapabilities.SessionCapabilities["list"]
@@ -415,20 +429,26 @@ type PromptResult struct {
 // Prompt sends one text turn, once. A successful result is completion evidence;
 // updates alone do not acknowledge a prompt or establish a stop reason.
 func (c *Client) Prompt(ctx context.Context, text string) (PromptResult, error) {
-	return c.prompt(ctx, text, nil, nil)
+	return c.prompt(ctx, text, "", "", nil, nil)
 }
 
 // PromptAccepted calls written once after the complete request reaches the
 // private pipe. It is acceptance evidence, not completion or provider-read
 // evidence. The callback must not block or reenter the client.
 func (c *Client) PromptAccepted(ctx context.Context, text string, written func()) (PromptResult, error) {
-	return c.prompt(ctx, text, nil, written)
+	return c.prompt(ctx, text, "", "", nil, written)
 }
 
 // PromptChecked checks existing operation authority under the pipe write lock,
 // after profile I/O and serialization. A refusal proves no prompt bytes were sent.
 func (c *Client) PromptChecked(ctx context.Context, text string, before func() error, written func()) (PromptResult, error) {
-	return c.prompt(ctx, text, before, written)
+	return c.prompt(ctx, text, "", "", before, written)
+}
+
+// PromptContextChecked sends the embedded context and original user text in one
+// request, under the same authority and acceptance boundary as PromptChecked.
+func (c *Client) PromptContextChecked(ctx context.Context, text, uri, contextText string, before func() error, written func()) (PromptResult, error) {
+	return c.prompt(ctx, text, uri, contextText, before, written)
 }
 
 type beforeWriteError struct{ error }
@@ -554,7 +574,7 @@ func (c *Client) captureUsage(frame json.RawMessage) (bool, error) {
 	return true, nil
 }
 
-func (c *Client) prompt(ctx context.Context, text string, before func() error, written func()) (PromptResult, error) {
+func (c *Client) prompt(ctx context.Context, text, uri, contextText string, before func() error, written func()) (PromptResult, error) {
 	if !c.callMu.TryLock() {
 		return PromptResult{}, failure("busy", NotWritten)
 	}
@@ -565,7 +585,18 @@ func (c *Client) prompt(ctx context.Context, text string, before func() error, w
 	if err := c.checkPersonal(); err != nil {
 		return PromptResult{}, err
 	}
-	r, err := c.callAccepted(ctx, "session/prompt", map[string]any{"sessionId": c.SessionID(), "prompt": []any{map[string]string{"type": "text", "text": text}}}, before, written)
+	prompt := []any{map[string]string{"type": "text", "text": text}}
+	if contextText != "" {
+		if !c.embeddedContext {
+			return PromptResult{}, failure("embedded_context_unsupported", NotWritten)
+		}
+		u, err := url.Parse(uri)
+		if err != nil || u.Scheme != "file" || u.Host != "" || !filepath.IsAbs(u.Path) || u.RawQuery != "" || u.Fragment != "" {
+			return PromptResult{}, failure("invalid_context_uri", NotWritten)
+		}
+		prompt = append([]any{map[string]any{"type": "resource", "resource": map[string]string{"uri": uri, "mimeType": "text/plain", "text": contextText}}}, prompt...)
+	}
+	r, err := c.callAccepted(ctx, "session/prompt", map[string]any{"sessionId": c.SessionID(), "prompt": prompt}, before, written)
 	if err != nil {
 		return PromptResult{}, err
 	}
