@@ -1,4 +1,6 @@
 {
+  "capacityRow.schedule.history_page_rows.what": "How many scheduled runs the history sheet reveals at a time, keeping long histories easy to browse.",
+  "capacityRow.schedule.history_page_rows.full": "Load more items reveals the next batch. This display limit does not delete stored history; the schedule detail currently includes at most the newest 200 runs.",
   "capacityRow.session.codex_past_page.what": "How many Codex history records are requested for one page, so opening the picker does not wait for the whole project history.",
   "capacityRow.session.codex_past_page.full": "Load older sessions follows the next page. Background records may be filtered out; failed reads can be retried without losing loaded sessions.",
   "next.startPastFiltered": "This page has no resumable sessions. Load older sessions to continue.",

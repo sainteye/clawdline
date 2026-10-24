@@ -5,6 +5,13 @@ package capacity
 func sessionBounds() []Entry {
 	return []Entry{
 		{
+			// The sheet reveals retained runs in batches; older rows remain available.
+			// TestScheduleHistoryPageIsRegistered checks the console's matching bound.
+			Name: "schedule.history_page_rows", Class: Observation, Unit: Rows,
+			Limit: 10, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// One provider page per explicit history request; older rows remain on
 			// disk and are reached only by following the opaque continuation.
 			Name: SessionCodexPastPage, Class: Observation, Unit: Rows,

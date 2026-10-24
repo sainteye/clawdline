@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 8275,
-  "riskKeys": 3688,
-  "nonRiskCount": 4587,
+  "englishContentKeys": 8277,
+  "riskKeys": 3689,
+  "nonRiskCount": 4588,
   "groups": [
     {
       "name": "admin / other",
@@ -275,7 +275,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 246,
+      "count": 247,
       "sources": [
         null
       ],
@@ -471,6 +471,7 @@
         "capacityRow.release.unpacked_bytes.what",
         "capacityRow.run.claimed_items.what",
         "capacityRow.run.created_items.what",
+        "capacityRow.schedule.history_page_rows.what",
         "capacityRow.schedule.run_transcript_head.what",
         "capacityRow.screens.capture_slots.what",
         "capacityRow.session.human_intervention_text_bytes.what",

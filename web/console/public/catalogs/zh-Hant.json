@@ -1,4 +1,6 @@
 {
+  "capacityRow.schedule.history_page_rows.what": "排程歷史每次展開的執行紀錄筆數，讓較長的歷史也方便瀏覽。",
+  "capacityRow.schedule.history_page_rows.full": "按「載入更多項目」展開下一批。這項顯示限制不會刪除已儲存的歷史；排程詳細資料目前最多包含最新 200 筆執行紀錄。",
   "capacityRow.session.codex_past_page.what": "每一頁向 Codex 要求的歷史紀錄筆數，讓開啟清單時不必等待整個專案的歷史。",
   "capacityRow.session.codex_past_page.full": "點選「載入較早的 session」即可接續下一頁。背景紀錄可能被排除；讀取失敗時可重試，已載入的 session 會保留。",
   "next.startPastFiltered": "這一頁沒有可接續的 session，請載入較早的紀錄。",
