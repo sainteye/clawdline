@@ -7,7 +7,7 @@ Antigravity ACP CLI on the selected machine. Gemini CLI and Antigravity are
 separate products; installing or signing into one does not establish that the
 other is ready.
 
-The preview appears only for an administrator when the machine owner has enabled
+The preview appears for connected users when the machine owner has enabled
 it. It uses an already signed-in personal Google account, with **AI Credits off**.
 Keep those settings when using the preview. Free-account quota can still run out;
 Clawdline does not switch to an API key or a paid fallback.
@@ -90,8 +90,11 @@ text. Clawdline restores the original input only when that first replayed turn
 matches its saved context and original text exactly. Unknown replay formats are
 preserved rather than deleting text by guesswork.
 
-Role-based dispatch and native tool access to the Clawdline Session identity are
-still being integrated and are not established by this role-picker change.
+Native tools use their own Clawdline Session identity. CLI dispatch can start a
+Gemini child with the existing role squad, worktree, acceptance and result
+workflow. Native model and permission choices must be acknowledged by the CLI.
+Worker completion notices are recorded as read only after their own normal turn
+completes; cancelled or limited turns do not create that receipt.
 
 ## Preview boundaries
 
