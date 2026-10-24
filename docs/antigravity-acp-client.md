@@ -186,6 +186,28 @@ controls whether the Antigravity start option appears. The separate chat-endpoin
 proposal was not enabled. Ordinary machine pairing, capabilities, execution pins
 and write receipts remain the authority; there is no new admin entitlement API.
 
+## Integrated native acceptance
+
+The two-process composition was exercised against the native CLI as well as
+pipe-based peers. Two empty conversations in one synthetic workspace were opened
+concurrently, the Host and store were reopened, and both exact identities were
+resumed concurrently. That test took 15.24 seconds, made 12 setup RPC calls and
+sent no model prompt.
+
+Two separate free-account inputs then exercised tool execution. An owned
+synthetic path outside the workspace was rejected by the native pre-tool hook;
+the test failed its expected file check after 18.62 seconds. Loading that exact
+native conversation without another prompt established the rejection reason.
+An independent positive case inside the workspace received one native
+permission offer, selected its exact `allow_once` option through the Host, and
+produced the expected file and completed tool projection in 13.57 seconds.
+The projection retained both the native failed and completed tool rows.
+
+Each model test had a 35-second Host lifetime and at most one input and one
+selection; no user message was resent. Personal OAuth, AI Credits off and native
+Starter-tier admission remained enforced. These are configuration and behavior
+receipts, not billing measurements or a production-phone acceptance claim.
+
 ## Existing Session preview
 
 `antigravitysession.Host` composes the measured process client and update decoder
