@@ -28,6 +28,20 @@ func TestOwnedPeer(t *testing.T) {
 	enc := json.NewEncoder(os.Stdout)
 	nativeID := "synthetic-native"
 	dir := os.Getenv("GEMINI_HOME")
+	if os.Getenv("CLW_IDENTITY_CHECK") == "yes" {
+		path := os.Getenv("CLAWDLINE_PROTOCOL_SESSION_FILE")
+		if raw, err := os.ReadFile(path); err == nil {
+			var identity struct {
+				ID string `json:"conversation_id"`
+			}
+			if json.Unmarshal(raw, &identity) != nil || identity.ID == "" {
+				os.Exit(38)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "identity-start-"+identity.ID), []byte(path), 0600); err != nil {
+				os.Exit(39)
+			}
+		}
+	}
 	if os.Getenv("CLW_RESTORE_PEER") == "yes" {
 		f, _ := os.OpenFile(filepath.Join(dir, "starts"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		f.WriteString("start\n")
@@ -131,6 +145,20 @@ func TestOwnedPeer(t *testing.T) {
 			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "model"), []byte(req.Params.ModelID), 0600)
 		case "session/prompt":
 			dir := os.Getenv("GEMINI_HOME")
+			if os.Getenv("CLW_IDENTITY_CHECK") == "yes" {
+				path := os.Getenv("CLAWDLINE_PROTOCOL_SESSION_FILE")
+				raw, err := os.ReadFile(path)
+				var identity struct {
+					Assistant string `json:"assistant"`
+					ID        string `json:"conversation_id"`
+				}
+				if err != nil || json.Unmarshal(raw, &identity) != nil || identity.Assistant != "antigravity" || identity.ID != nativeID {
+					os.Exit(36)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "identity-read-"+nativeID), []byte(path), 0600); err != nil {
+					os.Exit(37)
+				}
+			}
 			if os.Getenv("CLW_PERMISSION_PEER") == "yes" {
 				for i := 0; i < 2; i++ {
 					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "native-permission", "method": "session/request_permission", "params": map[string]any{"sessionId": nativeID, "toolCall": map[string]string{"toolCallId": "tool-1", "title": "Run synthetic command?"}, "options": []any{map[string]string{"optionId": "allow-exact", "name": "Allow once", "kind": "allow_once"}, map[string]string{"optionId": "reject-exact", "name": "Reject once", "kind": "reject_once"}}}})

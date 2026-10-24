@@ -51,10 +51,12 @@ func failure(code string, delivery Delivery) *Error { return &Error{Code: code, 
 // the process; its text is never propagated. No callback means discard updates.
 type Options struct {
 	Executable, AccountDir, WorkingDir string
-	Args                               []string
-	MaxFrameBytes                      int
-	CallTimeout                        time.Duration
-	OnUpdate                           func(ctx context.Context, frame json.RawMessage) error
+	// SessionIdentityPath points to a daemon-published address, not a capability.
+	SessionIdentityPath string
+	Args                []string
+	MaxFrameBytes       int
+	CallTimeout         time.Duration
+	OnUpdate            func(ctx context.Context, frame json.RawMessage) error
 	// OnPermission publishes one live request and returns promptly. No callback
 	// or an unsupported offer is cancelled. The reader waits in wire order.
 	OnPermission func(context.Context, *PermissionRequest) error
@@ -148,7 +150,7 @@ type usageCapture struct {
 // Start does not authenticate. ctx owns the entire process lifetime. Cancellation
 // kills the private group before reaping its leader and unblocks both pipes.
 func Start(ctx context.Context, opts Options) (*Client, error) {
-	if ctx == nil || opts.MaxFrameBytes <= 0 || opts.MaxFrameBytes == int(^uint(0)>>1) || opts.CallTimeout <= 0 ||
+	if (opts.SessionIdentityPath != "" && !filepath.IsAbs(opts.SessionIdentityPath)) || ctx == nil || opts.MaxFrameBytes <= 0 || opts.MaxFrameBytes == int(^uint(0)>>1) || opts.CallTimeout <= 0 ||
 		!filepath.IsAbs(opts.Executable) || !filepath.IsAbs(opts.AccountDir) || !filepath.IsAbs(opts.WorkingDir) {
 		return nil, failure("invalid_options", NotWritten)
 	}
@@ -167,6 +169,9 @@ func Start(ctx context.Context, opts Options) (*Client, error) {
 	}
 	defer stderr.Close()
 	cmd.Dir, cmd.Env, cmd.Stderr = opts.WorkingDir, personalEnv(opts.AccountDir), stderr
+	if opts.SessionIdentityPath != "" {
+		cmd.Env = append(cmd.Env, "CLAWDLINE_PROTOCOL_SESSION_FILE="+opts.SessionIdentityPath)
+	}
 	childIn, in, err := os.Pipe()
 	if err != nil {
 		return nil, failure("pipe_failed", NotWritten)
@@ -207,7 +212,9 @@ func personalEnv(account string) []string {
 	for _, pair := range os.Environ() {
 		key, _, _ := strings.Cut(pair, "=")
 		key = strings.ToUpper(key)
-		blocked := key == "BROWSER" || key == "LC_ALL"
+		blocked := key == "BROWSER" || key == "LC_ALL" || key == "CLAWDLINE_PROTOCOL_SESSION_FILE" ||
+			key == "CLAWDLINE_SQUAD_CAPABILITY_FILE" || strings.HasPrefix(key, "CLAUDE") || key == "CODEX_THREAD_ID" || key == "CODEX_SESSION_ID" ||
+			key == "CLAWDLINE_SESSION_ID" || key == "CLAWDLINE_CONVERSATION_ID" || key == "CLAWDLINE_TASK_SECRET"
 		for _, marker := range []string{"API_KEY", "APIKEY", "VERTEX", "ADC", "APPLICATION_CREDENTIALS", "GOOGLE", "CLOUDSDK", "GCLOUD", "ENTERPRISE", "MODEL_PROVIDER", "GEMINI", "ANTIGRAVITY", "AGY_", "ANTHROPIC", "OPENAI", "AI_CREDIT"} {
 			blocked = blocked || strings.Contains(key, marker)
 		}

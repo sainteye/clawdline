@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -117,11 +118,21 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 			return session.Session{}, err
 		}
 	}
+	identityPath := h.identityPath(stage.row.ID)
+	if err := publishIdentity(identityPath, conversationID); err != nil {
+		return session.Session{}, err
+	}
+	importedIdentityKept := false
+	defer func() {
+		if importing && !importedIdentityKept && identityPath != "" {
+			_ = os.Remove(identityPath)
+		}
+	}()
 	// The relay lock serializes update delivery and publication. readLoop owns
 	// callbacks; it never calls a client method or waits on an RPC from a callback.
 	var relay sync.Mutex
 	target := stage
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: func(ctx context.Context, raw json.RawMessage) error {
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: func(ctx context.Context, raw json.RawMessage) error {
 		relay.Lock()
 		defer relay.Unlock()
 		return target.update(ctx, raw)
@@ -242,6 +253,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	}
 	target = c
 	keep = true
+	importedIdentityKept = true
 	return c.row, nil
 }
 

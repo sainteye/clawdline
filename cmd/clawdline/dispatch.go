@@ -45,9 +45,10 @@ const dispatchInstructionsLimit = 16 * 1024
 // conversationAssistant says which assistant exports each variable in
 // conversationEnv.
 var conversationAssistant = map[string]string{
-	"CLAUDE_CODE_SESSION_ID": "claude",
-	"CODEX_THREAD_ID":        "codex",
-	"CODEX_SESSION_ID":       "codex",
+	"CLAUDE_CODE_SESSION_ID":          "claude",
+	"CODEX_THREAD_ID":                 "codex",
+	"CODEX_SESSION_ID":                "codex",
+	"CLAWDLINE_PROTOCOL_SESSION_FILE": "antigravity",
 }
 
 // listFlag is a flag that may be given more than once, each value split on
@@ -240,7 +241,11 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 		}
 	} else if rootAssistant == "" {
 		for _, name := range conversationEnv {
-			if strings.TrimSpace(env.getenv(name)) != conversation {
+			v, err := conversationEnvValue(env.getenv, name)
+			if err != nil {
+				return usage("%s", conversationRefusal(err, "--root-assistant"))
+			}
+			if v != conversation {
 				continue
 			}
 			assistant := conversationAssistant[name]
