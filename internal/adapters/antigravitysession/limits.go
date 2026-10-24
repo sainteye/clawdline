@@ -4,7 +4,7 @@ package antigravitysession
 import "time"
 
 const (
-	MaxSessions           = 1
+	MaxSessions           = 2
 	MaxFrameBytes         = 1 << 20
 	MaxViewBytes          = 1 << 20
 	MaxCallTime           = 45 * time.Second

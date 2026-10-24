@@ -511,8 +511,15 @@ func TestOwnedSessionChecksRevocationAndExactIdentityBeforeWriting(t *testing.T)
 	if p, _ := h.Transcript(row, 100); len(p.Entries) != 0 {
 		t.Fatal("local refusal appeared as sent user turn")
 	}
+	second, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir})
+	if err != nil {
+		t.Fatal("second preview refused", err)
+	}
 	if _, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir}); err == nil {
 		t.Fatal("preview process limit ignored")
+	}
+	if err := h.Close(context.Background(), second); err != nil {
+		t.Fatal(err)
 	}
 	if err := h.Close(context.Background(), row); err != nil {
 		t.Fatal(err)

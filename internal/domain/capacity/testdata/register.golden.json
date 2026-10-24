@@ -44,7 +44,7 @@
     "Name": "antigravity.acp_sessions",
     "Class": "buffer",
     "Unit": "rows",
-    "Limit": 1,
+    "Limit": 2,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
