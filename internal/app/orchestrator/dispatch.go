@@ -933,7 +933,11 @@ func permissionArgs(r Record, cwd, taskExecutable string) []string {
 		case "edits":
 			return []string{"--ask-for-approval", "on-request", "--sandbox", "workspace-write"}
 		case "full":
-			return []string{"--ask-for-approval", "never", "--sandbox", "workspace-write"}
+			// Non-interactive work cannot ask to retry outside the network
+			// sandbox. Keep filesystem confinement, but let the task reach
+			// Clawdline's receipt routes and its network dependencies.
+			return []string{"--ask-for-approval", "never", "--sandbox", "workspace-write",
+				"-c", "sandbox_workspace_write.network_access=true"}
 		}
 	}
 	return nil

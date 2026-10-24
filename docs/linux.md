@@ -403,10 +403,16 @@ section with a `+` that leads nowhere.
   does not read it. Rule 4's second half is unbuilt.
 - **`/v1/work` refuses the orchestrator token** (`401`) although the agent guide lists `/v1/work/`
   under it. `/v1/board` accepts it.
-- **A codex child cannot reach `127.0.0.1`** from inside its own `workspace-write` sandbox: its
-  `/accepted` and `/inflight` curls failed with exit 7. The file fallbacks the briefing documents
-  (`accepted.json`, `progress.json`) and the broker's own collection of `result.json` carried the
-  task through, which is the design working as written.
+- **Non-interactive Codex tasks need network access inside their filesystem sandbox.**
+  Dispatch with `permission_mode: full` keeps `workspace-write` and now explicitly sets
+  `sandbox_workspace_write.network_access=true`. Previously, pairing that sandbox's default
+  network denial with `--ask-for-approval never` left tasks unable to create TCP/UDP sockets,
+  including calls to the local daemon. On 2026-10-24, Codex CLI 0.161.0 on the Ubuntu host
+  reproduced `Operation not permitted`; the same workspace sandbox with network access enabled
+  created both socket types, resolved DNS, fetched external HTTPS and read local health (`200`).
+  `ask`, `edits`, and verification-gate profiles retain their existing network policy.
+  Existing Codex processes require a permissions change or an exact-conversation resume before
+  new launch settings apply. File fallbacks remain available for disconnected receipt delivery.
 - **A codex child's sandbox needs the task root to be writable by the child's own user.** A task
   directory whose parent belongs to somebody else fails with
   `bwrap: Can't mkdir <task root>/.git: Permission denied` and the child cannot even read

@@ -77,7 +77,7 @@ func TestACodexChildIsLaunchedPastTheTrustDialogAndBriefed(t *testing.T) {
 	line := launcher.line()
 	for _, want := range []string{
 		"codex ",
-		"--ask-for-approval never --sandbox workspace-write",
+		"--ask-for-approval never --sandbox workspace-write -c sandbox_workspace_write.network_access=true",
 		`-c 'projects={"` + b.Dir + `"={trust_level="trusted"}}'`,
 	} {
 		if !strings.Contains(line, want) {
@@ -162,12 +162,15 @@ func TestTheLaunchLineIsSpelledForItsOwnCLI(t *testing.T) {
 		want, notWant   []string
 	}{
 		{"codex", "full",
-			[]string{"--add-dir '" + tasks + "'", "--ask-for-approval never --sandbox workspace-write",
+			[]string{"--add-dir '" + tasks + "'", "--ask-for-approval never --sandbox workspace-write -c sandbox_workspace_write.network_access=true",
 				`-c 'projects={"` + cwd + `"={trust_level="trusted"}}'`},
 			[]string{"--permission-mode"}},
 		{"codex", "edits",
 			[]string{"--ask-for-approval on-request --sandbox workspace-write", "trust_level"},
-			[]string{"--permission-mode"}},
+			[]string{"--permission-mode", "network_access=true"}},
+		{"codex", "ask",
+			[]string{"trust_level"},
+			[]string{"--ask-for-approval", "--sandbox", "network_access=true"}},
 		{"claude", "full",
 			[]string{"--add-dir '" + tasks + "'", "--permission-mode bypassPermissions"},
 			[]string{"trust_level", "--ask-for-approval"}},
