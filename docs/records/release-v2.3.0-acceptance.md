@@ -49,6 +49,7 @@ procedure. Existing free-account and AI Credits-off restrictions remain in place
 
 No separate macOS account or VM, Finder drag installation, browser download or first launch on a
 clean account was exercised. The isolated DMG harness is the native installation evidence.
-Independent public-network reviews requested after publication are separate from the release
-integrity checks and are published on the [review page](https://clawdline.com/ai-review/); their
-findings and reading limits must not be replaced with a security-certificate claim.
+The person cancelled the additional post-publication independent reviews while away from the
+login device. The [review page](https://clawdline.com/ai-review/) retains its earlier valid
+rounds; no new v2.3.0 security-review result is claimed. Release integrity and installation
+acceptance do not constitute a security certificate.
