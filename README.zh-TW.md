@@ -54,7 +54,7 @@ Clawdline 在你自己的機器上讀取 Claude Code 與 Codex 對話、終端�
 
 ## 安裝
 
-[![下載 Clawdline v2.3.0 macOS 版 — Apple Silicon、macOS 13 以上](docs/assets/download-macos-zh-TW.svg)](https://github.com/sainteye/clawdline/releases/download/v2.3.0/Clawdline-v2.3.0-macos-arm64.dmg)
+[![下載 Clawdline v2.4.0 macOS 版 — Apple Silicon、macOS 13 以上](docs/assets/download-macos-zh-TW.svg)](https://github.com/sainteye/clawdline/releases/download/v2.4.0/Clawdline-v2.4.0-macos-arm64.dmg)
 
 Apple Silicon · macOS 13+ · [安裝教學](https://clawdline.com/docs/install/#mac-dmg)
 
