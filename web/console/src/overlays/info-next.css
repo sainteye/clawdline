@@ -95,3 +95,13 @@
   .role-detail-content dl { grid-template-columns: 1fr; gap: 4px; }
   .role-detail-content dd { margin-bottom: 10px; }
 }
+
+.info-sheet .effort-reading { display: flex; align-items: baseline; margin-bottom: 10px; }
+.info-sheet .effort-reading strong { color: var(--dim); font-size: 13px; font-weight: 500; }
+.info-sheet .effort-scale { display: flex; }
+.info-sheet .effort-tick { position: relative; flex: 1 1 0; min-width: 0; text-align: center; color: var(--faint); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.info-sheet .effort-tick:not(:last-child)::after { content: ""; position: absolute; top: 4px; left: 50%; width: 100%; height: 1px; background: var(--line); }
+.info-sheet .effort-tick i { position: relative; z-index: 1; display: block; width: 7px; height: 7px; margin: 1px auto 9px; border-radius: 50%; }
+.info-sheet .effort-tick[data-current="1"] { color: var(--ink); font-weight: 500; }
+.info-sheet .effort-tick[data-current="1"] i { background: var(--accent); }
+.info-sheet .sec .effort-source { margin-top: 12px; }

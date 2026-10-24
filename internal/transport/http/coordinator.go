@@ -229,15 +229,11 @@ func machineStartBlock(st app.State, stateDir string) string {
 		}
 		return "coordinator_online"
 	}
-	// A previous binding already identifies the managed machine Session, and
-	// its own source has proved it offline above. A deliberately disabled
-	// unrelated source must not make replacement impossible forever. First
-	// registration still needs the whole inventory to rule out an unregistered
-	// machine Session; actual read failures also keep the refusal.
-	complete := st.Seen.Inventory.Complete
-	if st.Record != nil && st.Liveness == coordinator.Offline {
-		complete = st.Seen.Inventory.CompleteApartFromDisabled()
-	}
+	// Machine workspace detection comes from the complete process inventory,
+	// including assistants in unmanaged terminals. Opting out of iTerm2 must
+	// not prevent the first managed tmux Session from being created. A real
+	// enabled-source failure or an observed workspace still vetoes launch.
+	complete := st.Seen.Inventory.CompleteApartFromDisabled()
 	if !complete {
 		return "coordinator_liveness_unknown"
 	}

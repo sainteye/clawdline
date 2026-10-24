@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/sainteye/clawdline/internal/domain/session"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,132 @@ import (
 	"testing"
 	"time"
 )
+
+func syntheticAntigravityPermission(selected int) string {
+	var b strings.Builder
+	b.WriteString("Command\n────────────────────────\nRequesting permission for:\n   printf SAMPLE\n\nRun this command?\n")
+	for i, label := range []string{"Yes, run command", "Yes, and always allow in this conversation for commands that start with 'printf'", "Yes, and always allow for commands that start with 'printf' (Persist to settings.json)", "No, cancel"} {
+		prefix := "  "
+		if i+1 == selected {
+			prefix = "> "
+		}
+		b.WriteString(prefix + string(rune('1'+i)) + ". " + label + "\n")
+	}
+	b.WriteString("\n  ↑/↓ Navigate · tab Amend · ctrl+g edit/expand command\nesc to cancel                     Gemini 3.8 Flash · high")
+	return b.String()
+}
+
+func TestAntigravityMenuUsesCurrentArrowSelection(t *testing.T) {
+	for _, option := range []int{1, 2, 3, 4} {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		selected := 1
+		var keys []string
+		read := func(context.Context) (string, error) { return syntheticAntigravityPermission(selected), nil }
+		key := func(_ context.Context, k string) error {
+			keys = append(keys, k)
+			if k == "Down" {
+				selected++
+			}
+			if k == "Up" {
+				selected--
+			}
+			return nil
+		}
+		revision := session.ReadAntigravityScreen(syntheticAntigravityPermission(1), false).Revision
+		if err := SubmitAntigravityMenu(ctx, read, key, revision, option); err != nil {
+			t.Fatal(err)
+		}
+		if selected != option || len(keys) != option || keys[len(keys)-1] != "Enter" {
+			t.Fatal(keys, selected)
+		}
+		cancel()
+	}
+}
+
+func TestAntigravityMenuRejectsChangesAndUncertainKeys(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	before := syntheticAntigravityPermission(1)
+	revision := session.ReadAntigravityScreen(before, false).Revision
+	for _, changeAt := range []int{1, 2} {
+		reads, keys := 0, 0
+		err := SubmitAntigravityMenu(ctx, func(context.Context) (string, error) {
+			reads++
+			if reads >= changeAt {
+				return strings.ReplaceAll(before, "SAMPLE", "OTHER"), nil
+			}
+			return before, nil
+		}, func(context.Context, string) error { keys++; return nil }, revision, 1)
+		if !errors.Is(err, ErrAntigravityMenuChanged) || keys != 0 {
+			t.Fatal(err, keys)
+		}
+	}
+	keys := 0
+	sentinel := errors.New("uncertain write")
+	err := SubmitAntigravityMenu(ctx, func(context.Context) (string, error) { return before, nil }, func(context.Context, string) error { keys++; return sentinel }, revision, 4)
+	if !errors.Is(err, sentinel) || keys != 1 {
+		t.Fatal("retried uncertain key", err, keys)
+	}
+	if err := SubmitAntigravityMenu(context.Background(), nil, nil, revision, 1); !errors.Is(err, ErrAntigravityMenuUnavailable) {
+		t.Fatal(err)
+	}
+}
+
+func TestAntigravityTextPreservesDraftAndChecksBeforeEnter(t *testing.T) {
+	frame := strings.Repeat("─", 60)
+	compose := func(text string) string {
+		return "Antigravity CLI 1.4.5\n" + frame + "\n> " + text + "\n" + frame + "\n? for shortcuts                  Gemini 3.8 Flash · high"
+	}
+	for _, scenario := range []string{"sent", "draft", "slash", "menu after paste", "uncertain Enter", "cancelled"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			reads, pastes, keys := 0, 0, 0
+			current := compose("")
+			text := "SYNTHETIC_MESSAGE"
+			if scenario == "draft" {
+				current = compose("keep this")
+			}
+			if scenario == "slash" {
+				text = "/usage"
+			}
+			if scenario == "cancelled" {
+				cancel()
+			}
+			read := func(context.Context) (string, error) {
+				reads++
+				if scenario == "menu after paste" && reads > 2 {
+					return syntheticAntigravityPermission(1), nil
+				}
+				return current, nil
+			}
+			paste := func(_ context.Context, text string) error { pastes++; current = compose(text); return nil }
+			uncertain := errors.New("unknown key outcome")
+			key := func(context.Context, string) error {
+				keys++
+				if scenario == "uncertain Enter" {
+					return uncertain
+				}
+				return nil
+			}
+			err := SubmitAntigravityText(ctx, read, paste, key, text, false, time.Millisecond)
+			switch scenario {
+			case "sent":
+				if err != nil || pastes != 1 || keys != 1 {
+					t.Fatal(err, pastes, keys)
+				}
+			case "uncertain Enter":
+				if !errors.Is(err, uncertain) || keys != 1 {
+					t.Fatal(err, keys)
+				}
+			default:
+				if err == nil || keys != 0 {
+					t.Fatal(err, pastes, keys)
+				}
+			}
+		})
+	}
+}
 
 // fakeInput is a session whose screen is scripted look by look, and which
 // records every paste, Enter and look in the order they happened.
@@ -302,5 +429,24 @@ func TestLooksWithinCountsTheLooksAWindowHolds(t *testing.T) {
 	}
 	if spent > sendConfirm || spent+submitPauses[len(submitPauses)-1] <= sendConfirm {
 		t.Fatalf("%d looks span %s of a %s window", looksWithin(sendConfirm), spent, sendConfirm)
+	}
+}
+
+func TestAntigravityTextStopsWhenTheLiveReadLosesItsFence(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	lost := errors.New("synthetic live authorization lost")
+	reads, pastes, keys := 0, 0, 0
+	read := func(context.Context) (string, error) {
+		reads++
+		if reads > 1 {
+			return "", lost
+		}
+		frame := strings.Repeat("─", 60)
+		return "Antigravity CLI 1.4.5\n" + frame + "\n> \n" + frame + "\n? for shortcuts                  Gemini 3.8 Flash · high", nil
+	}
+	err := SubmitAntigravityText(ctx, read, func(context.Context, string) error { pastes++; return nil }, func(context.Context, string) error { keys++; return nil }, "synthetic message", false, time.Second)
+	if !errors.Is(err, lost) || reads != 2 || pastes != 1 || keys != 0 {
+		t.Fatalf("lost fence was polled or submitted: err=%v reads=%d pastes=%d keys=%d", err, reads, pastes, keys)
 	}
 }

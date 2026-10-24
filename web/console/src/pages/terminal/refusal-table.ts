@@ -26,5 +26,6 @@ export const TERMINAL_REFUSAL_WORDS: Record<TerminalRefusalCode, NextWord> = {
   terminal_access_revoked: "terminalRefusalAccessRevoked",
   terminal_cloud_not_supported: "terminalRefusalCloudNotSupported",
   terminal_socket_path_too_long: "terminalRefusalSocketPathTooLong",
+  viewer_read_only: "terminalRefusalViewerReadOnly",
   terminal_invalid: "terminalRefusalInvalid",
 }

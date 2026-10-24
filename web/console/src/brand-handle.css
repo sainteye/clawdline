@@ -79,3 +79,13 @@
     .brand-handle canvas,
     .brand-chevron { transition: none; }
 }
+
+/* The mascot opens navigation; the adjacent wordmark opens machine load. */
+.top .brand { padding-inline-end: 0; }
+.brand-wordmark {
+    flex: 0 0 auto; min-height: 44px; margin-left: -11px;
+    padding: 5px 8px; border-radius: 7px;
+}
+.brand-wordmark b { font-size: 13.5px; font-weight: 600; letter-spacing: .2px; }
+.brand-wordmark:hover { background: var(--card-hi); }
+.brand-wordmark:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

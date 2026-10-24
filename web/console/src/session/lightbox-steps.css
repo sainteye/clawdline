@@ -35,7 +35,6 @@
     border: 1px solid rgba(255,255,255,0.25); border-radius: 999px;
     background: rgba(15,15,18,0.90); color: white; cursor: pointer;
 }
-.image-lightbox-share { right: 56px; }
 .image-lightbox-share[hidden], .image-lightbox-download[hidden] { display: none; }
 .image-lightbox-download:disabled { opacity: 0.55; cursor: wait; }
 .image-lightbox-share:hover, .image-lightbox-download:hover { background: rgba(40,40,46,0.92); }

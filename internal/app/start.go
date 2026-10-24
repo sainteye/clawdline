@@ -11,6 +11,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/app/launchplan"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/app/tmuxview"
 )
@@ -20,11 +21,19 @@ import (
 //
 // This is the only thing on this daemon that creates execution from a request,
 // and its shape is the Swift app's for that reason: a place is an id resolved
-// against a list built now, the assistant is one of two literals, a model is a
-// closed name, a conversation is a UUID this machine has just listed for that
+// against a list built now, the assistant is one of the admitted literals, a
+// model is a closed name, a conversation is a UUID this machine just listed for that
 // place, and the terminal is chosen here from what is running rather than
 // named by the caller.
 type Starter struct {
+	// PrepareAntigravity is the composition root's validated standalone,
+	// permission and immutable-context preparer. It receives the original
+	// resume snapshot path, not a fresh mutable role catalog. Nil fails closed.
+	// Returned environment values are private launch capability assignments.
+	PrepareAntigravity func(context.Context, projects.LaunchRequest) (PreparedAntigravity, error)
+	// RestoreAntigravity verifies native historical evidence and original files
+	// before a resume can publish a fresh Squad capability. Nil refuses resumes.
+	RestoreAntigravity func(context.Context, string, string) (projects.AntigravityContext, error)
 	// Places is the place list, built at the moment of asking.
 	Places func(ctx context.Context) []projects.Place
 	// Terminal is the machine's `terminal` setting.
@@ -44,8 +53,10 @@ type Starter struct {
 	// DefaultModel is the machine setting for a new session of assistant.
 	// It is consulted only when a new launch did not name a model; resumes and
 	// explicit per-session choices keep their own model. Nil is provider default.
-	DefaultModel           func(assistant string) string
-	DefaultReasoningEffort func() string
+	DefaultModel func(assistant string) string
+	// DefaultReasoningEffort selects the provider's own validated setting.
+	// Resumes retain their original context rather than reading a new default.
+	DefaultReasoningEffort func(assistant string) string
 	// PersonaDir is where the daemon wrote the persona texts
 	// (persona.Dir). Empty refuses every persona, which only a test wants.
 	PersonaDir string
@@ -61,6 +72,11 @@ type Starter struct {
 	Memory func(dir string) string
 }
 
+// PreparedAntigravity is one private durable launch intent. AttachTerminal
+// closes over that intent's ID; it must never allocate another intent or open a
+// terminal. Nil refuses admission before the terminal can be created.
+type PreparedAntigravity = launchplan.PreparedAntigravity
+
 // Started is StartPoints.Outcome.started. Attach is filled for the one plan
 // that puts a session where nobody is looking: a tmux server started detached.
 type Started struct {
@@ -70,6 +86,10 @@ type Started struct {
 	// Model is the explicit or machine-default model handed to the provider,
 	// empty when the provider was left to choose.
 	Model string
+	// BindingPending means the terminal exists but its durable native binding
+	// could not be recorded. It is not a failed open and must not be replayed.
+	// Native actions remain unavailable until the exact terminal is verified.
+	BindingPending bool
 }
 
 // StartRefusal is StartPoints.Outcome.refused: an HTTP status, the code a page
@@ -110,11 +130,11 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		model = s.DefaultModel(assistant)
 	}
 	effort := ""
-	if assistant == projects.AssistantCodex && resume == "" && s.DefaultReasoningEffort != nil {
-		effort = s.DefaultReasoningEffort()
+	if (assistant == projects.AssistantCodex || assistant == projects.AssistantAntigravity) && resume == "" && s.DefaultReasoningEffort != nil {
+		effort = s.DefaultReasoningEffort(assistant)
 	}
 	language := ""
-	if s.Language != nil {
+	if s.Language != nil && (assistant != projects.AssistantAntigravity || resume == "") {
 		language = s.Language(assistant)
 	}
 	preflightPersona := persona
@@ -122,8 +142,12 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		preflightPersona = ""
 	}
 	memory := ""
-	if s.Memory != nil {
+	if s.Memory != nil && (assistant != projects.AssistantAntigravity || resume == "") {
 		memory = s.Memory(place.Path)
+	}
+	if assistant == projects.AssistantAntigravity {
+		return s.startAntigravity(ctx, place, projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
+			Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: persona, Memory: memory})
 	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
 		Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: preflightPersona, PersonaDir: s.PersonaDir,

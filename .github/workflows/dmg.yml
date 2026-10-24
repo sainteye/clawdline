@@ -1,0 +1,105 @@
+name: Package a published App as DMG
+
+# No App rebuild, updater-manifest rewrite, public upload or Actions artifact.
+# The separate draft is staging only; root gates it locally before attaching
+# its three assets to the existing release (docs/releasing.md).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Published App version"
+        default: "v2.1.2"
+        required: true
+      source_commit:
+        description: "Expected full App source commit (from the signed manifest)"
+        default: "239adc8ad4020f31509bff017bd4e5a3ff913197"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ inputs.version }}
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Verify the published source and its existing evidence
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "package from main only" >&2; exit 1; }
+          [[ "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.[0-9]+)?$ ]]
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          bash tools/release/dmg.test.sh
+          [ "$(gh release view "$VERSION" --repo sainteye/clawdline --json isDraft -q .isDraft)" = false ]
+          mkdir "$RUNNER_TEMP/source"
+          # An earlier supplementary DMG is not an input to repackaging.
+          gh release download "$VERSION" --repo sainteye/clawdline --dir "$RUNNER_TEMP/source" \
+            --pattern '*.tar.gz' --pattern '*.tar.gz.spdx.json' \
+            --pattern manifest.json --pattern manifest.sig.json --pattern SHA256SUMS
+          go run ./tools/release verify "$RUNNER_TEMP/source"
+          python3 tools/release/dmg-evidence.py source "$RUNNER_TEMP/source" "$VERSION" "$SOURCE_COMMIT"
+          tools/release/sbom.sh verify "$RUNNER_TEMP/source"
+          tools/release/provenance.sh "$RUNNER_TEMP/source"
+
+      - name: Package, sign, notarize, staple and validate the DMG
+        env:
+          CODESIGN_P12_BASE64: ${{ secrets.CLAWDLINE_CODESIGN_P12_BASE64 }}
+          CLAWDLINE_CODESIGN_PASSWORD: ${{ secrets.CLAWDLINE_CODESIGN_PASSWORD }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.CLAWDLINE_NOTARY_KEY_P8_BASE64 }}
+          CLAWDLINE_NOTARY_KEY_ID: ${{ secrets.CLAWDLINE_NOTARY_KEY_ID }}
+          CLAWDLINE_NOTARY_ISSUER: ${{ secrets.CLAWDLINE_NOTARY_ISSUER }}
+        run: |
+          set -euo pipefail
+          for s in CODESIGN_P12_BASE64 NOTARY_KEY_P8_BASE64 CLAWDLINE_NOTARY_KEY_ID CLAWDLINE_NOTARY_ISSUER; do
+            [ -n "${!s}" ] || { echo "missing signing/notary secret: $s" >&2; exit 1; }
+          done
+          umask 077
+          export CLAWDLINE_CODESIGN_P12="$RUNNER_TEMP/dmg-codesign.p12"
+          export CLAWDLINE_NOTARY_KEY="$RUNNER_TEMP/dmg-notary.p8"
+          trap 'rm -f "$CLAWDLINE_CODESIGN_P12" "$CLAWDLINE_NOTARY_KEY"' EXIT
+          printf '%s' "$CODESIGN_P12_BASE64" | base64 --decode >"$CLAWDLINE_CODESIGN_P12"
+          printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode >"$CLAWDLINE_NOTARY_KEY"
+          bash tools/release/dmg.sh pack "$RUNNER_TEMP/source" "$RUNNER_TEMP/dmg" \
+            "$VERSION" "$SOURCE_COMMIT" "$GITHUB_SHA" .github/workflows/dmg.yml
+
+      - name: Attest the delivery set at the packaging commit
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/dmg/*.dmg
+            ${{ runner.temp }}/dmg/*.dmg.spdx.json
+            ${{ runner.temp }}/dmg/*.dmg.delivery.json
+
+      - name: Verify provenance and create a separate draft for root acceptance
+        run: |
+          set -euo pipefail
+          tools/release/provenance.sh "$RUNNER_TEMP/dmg" --dmg
+          stage="dmg-${VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$stage" --repo sainteye/clawdline --draft --prerelease --latest=false \
+            --target "$GITHUB_SHA" --title "DMG staging for $VERSION (not a program release)" \
+            --notes "Staging only. App source: $SOURCE_COMMIT. Packaging: $GITHUB_SHA. Run the DMG gate in docs/releasing.md; never publish this staging release." \
+            "$RUNNER_TEMP"/dmg/*.dmg "$RUNNER_TEMP"/dmg/*.dmg.spdx.json "$RUNNER_TEMP"/dmg/*.dmg.delivery.json
+          echo "Draft $stage awaits root privacy, Gatekeeper and installation acceptance. No public release was modified."

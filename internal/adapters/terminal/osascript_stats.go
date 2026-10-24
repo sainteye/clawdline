@@ -10,34 +10,22 @@ import (
 	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
-// The iTerm2 scan switch (setting `iterm_scan`, docs/interface.md "Turning
-// iTerm2 scanning off").
-//
-// Off, this daemon sends iTerm2 no Apple Event of its own accord: it does not
-// list its sessions or sample their screens for the session list, and the
-// iTerm2 source answers a reading that says it was turned off rather than an
-// empty one (session.Inventory.Disabled).
-//
-// **What somebody asked for still happens** (ports.Asked). A send, a key, an
-// Enter, an interrupt or a close on one session, a viewer tab for a tmux
-// session, Reveal, and closing a child tab this daemon opened itself each send
-// the Apple Events that one action needs: those are effects a person or the
-// broker asked for, not a poll. A row only the process table saw is reached
-// through the tty iTerm2 holds it on (itermIs).
-//
-// The zero value is on, which is what every machine did before the switch
-// existed; the composition root sets it from the settings file.
+// iTerm2 integration requires a new explicit opt-in. Existing iterm_scan
+// settings and macOS Automation grants never enable it implicitly.
+var itermIntegration atomic.Bool
 var itermScanOff atomic.Bool
 
-// SetITermScan turns iTerm2 scanning on or off for this whole process.
+func SetITermIntegration(on bool) { itermIntegration.Store(on) }
+func ITermIntegration() bool      { return itermIntegration.Load() }
+
+// SetITermScan preserves the optional polling preference inside the integration.
 func SetITermScan(on bool) { itermScanOff.Store(!on) }
+func ITermScan() bool      { return ITermIntegration() && !itermScanOff.Load() }
 
-// ITermScan reports whether iTerm2 scanning is on.
-func ITermScan() bool { return !itermScanOff.Load() }
-
-// itermMayAct is whether one call may send iTerm2 an Apple Event: always for
-// an action somebody asked for, and otherwise only while scanning is on.
-func itermMayAct(ctx context.Context) bool { return ITermScan() || ports.WasAsked(ctx) }
+// A requested action may bypass polling, but never the integration consent.
+func itermMayAct(ctx context.Context) bool {
+	return ITermIntegration() && (ITermScan() || ports.WasAsked(ctx))
+}
 
 // ITermScanDisabledBy is the typed reason a disabled iTerm2 source carries on
 // a reading and on the wire.
@@ -50,7 +38,7 @@ const ITermScanDisabledBy = "setting"
 type ITermScanOff struct{ Op string }
 
 func (e ITermScanOff) Error() string {
-	return "iTerm2 scanning is turned off in Settings, so Clawdline did not " + e.Op
+	return "iTerm2 integration or scanning is turned off in Settings, so Clawdline did not " + e.Op
 }
 func (e ITermScanOff) Unwrap() error { return Unsent{Why: e.Error()} }
 

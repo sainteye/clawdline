@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	"strings"
 )
@@ -179,6 +180,7 @@ type Authority struct {
 	// WriteGateAllows is the machine's own switch: may a remote device cause
 	// an effect here at all. False by default, everywhere.
 	WriteGateAllows bool
+	ViewerReadOnly  bool
 	// ReadTranscriptAllows is set only after the machine rechecks the viewer's
 	// current roster capability and signing key for the separate r/ rail.
 	ReadTranscriptAllows bool
@@ -663,6 +665,14 @@ func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer 
 	// own credential, so the sender is what makes one phone's subscriptions
 	// and receipts its own rather than the whole account's.
 	req.Viewer = cmd.Sender
+	if !o.read && !o.readLevel {
+		ctx = app.WithOperationCheck(ctx, func() error {
+			if refusal, denied := b.authorize(ctx, cmd.Sender, cmd.VerifiedKey, true); denied {
+				return app.Refusal{Code: refusal.Code, Detail: refusal.Message}
+			}
+			return nil
+		})
+	}
 	res, err := b.Router.Do(ctx, req)
 	if err != nil {
 		return b.publish(cmd, plan, Refusal{Status: 502, Code: "route_failed",
@@ -754,6 +764,9 @@ func authorityRefusal(a Authority) (Refusal, bool) {
 	case !a.WriteGateAllows:
 		return Refusal{Status: 403, Code: "cloud_commands_disabled",
 			Message: "Cloud commands are disabled on this machine.", fixedCopy: true}, true
+	}
+	if a.ViewerReadOnly {
+		return Refusal{Status: 403, Code: "viewer_read_only", Message: "This device may read, and not send.", fixedCopy: true}, true
 	}
 	return Refusal{}, false
 }

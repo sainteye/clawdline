@@ -124,3 +124,32 @@ func TestProbeReadBoundsAreRegistered(t *testing.T) {
 		}
 	}
 }
+
+func TestInvestigationUIBoundsAreRegistered(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "web", "console", "src", "cloud", "admin", "health", "investigations.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, name := range map[string]string{"perIncident": "console.health_ui_investigations", "reportRefs": "console.health_ui_investigation_refs"} {
+		m := regexp.MustCompile(key + `: ([0-9]+)`).FindStringSubmatch(string(raw))
+		if len(m) != 2 {
+			t.Fatalf("missing investigation bound %s", key)
+		}
+		limit, err := strconv.ParseInt(m[1], 10, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, row := range Register() {
+			if row.Name == name {
+				found = true
+				if row.Limit != limit {
+					t.Errorf("%s is %d, decoder says %d", name, row.Limit, limit)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("investigation bound %s has no registered row", key)
+		}
+	}
+}

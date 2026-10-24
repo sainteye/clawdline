@@ -366,6 +366,12 @@ test("a copied row lands in the list the relay's own row would have filled", asy
   await client._applySnapshot({ kind: "session", machine: "m", session: "s2" },
     { session: { id: "s2", label: "a row" }, at: 1 }, { seq: 40, ts: 1 }, true)
   assert.equal(client.sessionSnapshots.get("m\u0000s2").label, "a row")
+  await client._applySnapshot({ kind: "session", machine: "m", session: "s2" },
+    { session: { id: "s2", identity: "protocol", backend: "owned" }, at: 1 }, { seq: 41, ts: 1 }, true)
+  const native = client.sessionSnapshots.get("m\u0000s2")
+  assert.equal(native.sessionBinding, "protocol")
+  assert.deepEqual(native.identity, { machine: "m", session: "s2" })
+  assert.equal(native.backend, "owned")
 })
 
 test("fault injection: a read takes the carrier while this page's own socket is between connections", async () => {
@@ -421,4 +427,43 @@ test("same-network enable waits for a confirmed receipt before retiring its sugg
   }
   await client.enableSameNetwork("m")
   assert.equal(client.sameNetworkAvailable("m"), false)
+})
+
+
+test("concurrent carrier replies keep arrival order when the first key lookup is slow", async () => {
+  const { client, carrier, applied, envelope } = await sealedClient()
+  const first = await envelope(1, "image.first")
+  const second = await envelope(2, "image.second")
+  const pairing = client._machinePairing.bind(client)
+  let release
+  const held = new Promise((resolve) => { release = resolve })
+  let calls = 0
+  client._machinePairing = async (...args) => {
+    if (++calls === 1) await held
+    return pairing(...args)
+  }
+  const one = client.receiveCarrierEnvelope("m", first, 1)
+  const two = client.receiveCarrierEnvelope("m", second, 1)
+  await flush()
+  release()
+  await Promise.all([one, two])
+  assert.deepEqual(applied, [["transcript", "image.first"], ["transcript", "image.second"]])
+  assert.equal(carrier.closed, null)
+})
+
+
+test("a stalled authentication queue is bounded and drains without leaking held bytes", async () => {
+  const { client, carrier, envelope } = await sealedClient()
+  let release
+  const held = new Promise((resolve) => { release = resolve })
+  client._receiveCarrierEnvelope = () => held
+  const raw = await envelope(1, "transcript")
+  const reads = Array.from({ length: 33 }, () => client.receiveCarrierEnvelope("m", raw, 1))
+  assert.equal(client.carrierReceiveRows, 32)
+  assert.equal(carrier.closed, "carrier_receive_full")
+  release()
+  await Promise.all(reads)
+  assert.equal(client.carrierReceiveRows, 0)
+  assert.equal(client.carrierReceiveBytes, 0)
+  assert.equal(client.carrierReceiveQueues.size, 0)
 })

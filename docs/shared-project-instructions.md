@@ -163,3 +163,24 @@ never does) and over `integrate` (which already means landing work in this repos
 5. Integrate this repository first as the pilot.
 
 <!-- clawdline-doc: kind=spec audience=agent -->
+
+## Antigravity CLI workspace applicability (2026-10-22)
+
+Antigravity CLI shares workspace `AGENTS.md` and `.agents/skills` with Codex.
+Unify therefore exposes a third applicability column while retaining its existing
+Claude/Codex file operations and conflict checks. A `.claude/skills` relative link
+still points to the canonical `.agents` directory; no extra Antigravity copy is
+created. Older replies without Antigravity fields remain explicitly unreported.
+
+The official [skills](https://antigravity.google/docs/skills) and
+[rules](https://antigravity.google/docs/rules) pages distinguish CLI from IDE/App
+paths. CLI global skills use `~/.gemini/antigravity-cli/skills`, whereas the IDE/App
+document different global locations. Native-only project and global candidates
+are listed read-only, outside Unify's managed two-directory migration. See
+[Project file applicability](project-files.md#antigravity-cli-applicability) for the
+exact bounded inventory and wire compatibility rules.
+
+Evidence differs by claim: the root observed a synthetic workspace `AGENTS.md`
+marker in a native CLI probe; additional native locations are documentation-derived.
+No new model call was made for this implementation. Disk presence or a preview
+column does not prove active Session context or skill execution.

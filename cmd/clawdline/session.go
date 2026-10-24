@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -20,13 +22,14 @@ import (
 // The conversation is this assistant's own id, which both assistants export
 // to the commands they run: Claude Code as CLAUDE_CODE_SESSION_ID (the
 // transcript's uuid; measured with Claude Code on 2026-09-19) and Codex as
-// CODEX_THREAD_ID. `--conversation` names it when neither is there, and
+// CODEX_THREAD_ID. Owned ACP tools use CLAWDLINE_PROTOCOL_SESSION_FILE,
+// published after session/new. `--conversation` names an explicit ID, and
 // `--terminal` skips the lookup when the caller already knows the row.
 
 // conversationEnv are the variables that name this assistant's conversation,
 // in the order they are asked. Read them through conversationFromEnv, which
 // refuses when two assistants' variables disagree.
-var conversationEnv = []string{"CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"}
+var conversationEnv = []string{"CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAWDLINE_PROTOCOL_SESSION_FILE"}
 
 func sessionCommand(args []string) {
 	if len(args) > 0 && args[0] == "close" {
@@ -211,7 +214,10 @@ func conversationFromEnv(getenv func(string) string) (id, name string, err error
 	var found []string
 	seen := map[string]string{} // assistant -> its conversation
 	for _, env := range conversationEnv {
-		v := strings.TrimSpace(getenv(env))
+		v, readErr := conversationEnvValue(getenv, env)
+		if readErr != nil {
+			return "", "", readErr
+		}
 		if v == "" {
 			continue
 		}
@@ -231,6 +237,49 @@ func conversationFromEnv(getenv func(string) string) (id, name string, err error
 		return "", "", err
 	}
 	return id, name, nil
+}
+
+// conversationEnvValue reads only the explicit pointer, never searches for an
+// identity. A record is an address; broker and Squad authorization are unchanged.
+func conversationEnvValue(getenv func(string) string, name string) (string, error) {
+	if name != "CLAWDLINE_PROTOCOL_SESSION_FILE" {
+		return strings.TrimSpace(getenv(name)), nil
+	}
+	path := getenv(name)
+	if path == "" {
+		return "", nil
+	}
+	invalid := func() (string, error) {
+		return "", errors.New(cliCopy("workflow", "session.protocol_identity_invalid", "CLAWDLINE_PROTOCOL_SESSION_FILE must name a readable plain JSON file with assistant antigravity and a nonempty conversation_id"))
+	}
+	if !filepath.IsAbs(path) {
+		return invalid()
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > brokerTokenLimit {
+		return invalid()
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return invalid()
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return invalid()
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, brokerTokenLimit+1))
+	if err != nil || len(raw) > brokerTokenLimit {
+		return invalid()
+	}
+	var record struct {
+		Assistant      string `json:"assistant"`
+		ConversationID string `json:"conversation_id"`
+	}
+	if json.Unmarshal(raw, &record) != nil || record.Assistant != "antigravity" || strings.TrimSpace(record.ConversationID) == "" {
+		return invalid()
+	}
+	return record.ConversationID, nil
 }
 
 // twoConversationsError lists the variables, as NAME=value, of two assistants

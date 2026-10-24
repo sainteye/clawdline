@@ -155,5 +155,5 @@ func (b *Broker) endDialog(ctx context.Context, r Record, why string, present bo
 
 // leftAtDialog is whether r is a child left at a dialog.
 func (r Record) leftAtDialog() bool {
-	return r.State == StateSpawning && !r.AwaitingDialogSince.IsZero()
+	return r.ChildBackend != "owned" && r.State == StateSpawning && !r.AwaitingDialogSince.IsZero()
 }

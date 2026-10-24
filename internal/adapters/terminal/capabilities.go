@@ -58,6 +58,9 @@ func (l Launcher) tmuxReach(ctx context.Context) backendReach {
 // itermReach is whether iTerm2 is running: its sessions are read and typed
 // into through Apple Events, and a closed iTerm2 has no sessions to drive.
 func (l Launcher) itermReach(ctx context.Context) backendReach {
+	if !ITermIntegration() {
+		return backendReach{name: "iterm", state: ports.CapabilityUnavailable, reason: "iTerm2 integration is turned off in Settings"}
+	}
 	running, err := l.ITermRunning(ctx)
 	switch {
 	case err != nil:

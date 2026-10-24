@@ -178,6 +178,10 @@ const (
 	// CodeSocketPathTooLong is a CLAWDLINE_NEXT_DIR so deep that the
 	// server's socket path does not fit a Unix socket address (plan v3 D1).
 	CodeSocketPathTooLong RefusalCode = "terminal_socket_path_too_long"
+	// CodeViewerReadOnly is a Cloud viewer this machine limited to readonly
+	// asking for an effect: it may still watch the screen, and not type,
+	// resize, close or take the control lease (docs/cloud-wire.md).
+	CodeViewerReadOnly RefusalCode = "viewer_read_only"
 	// CodeInvalid is a request whose own values are wrong: a size of zero, a
 	// directory that is not one, an empty key, an id of the wrong shape.
 	CodeInvalid RefusalCode = "terminal_invalid"
@@ -189,7 +193,7 @@ var RefusalCodes = []RefusalCode{
 	CodeForbidden, CodeNotController, CodeControlled, CodeLeaseSuperseded, CodeLeaseExpired,
 	CodeInputGap, CodeInputStateUnknown, CodeInputTooLarge, CodeBusy, CodeClosed, CodeUnreachable,
 	CodeUnsupported, CodeFull, CodeViewersFull, CodeAccessRevoked, CodeCloudNotSupported,
-	CodeSocketPathTooLong, CodeInvalid,
+	CodeSocketPathTooLong, CodeViewerReadOnly, CodeInvalid,
 }
 
 // Refusal is a request this terminal layer did not carry out, by code, with

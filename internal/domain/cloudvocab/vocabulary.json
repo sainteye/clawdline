@@ -184,7 +184,7 @@
       "shapes": [
         {"body": ["changes", "request", "session"], "path": "/v1/settings/default-models", "local_body": ["claude_default_model"]}
       ],
-      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 3, "properties": {"codex_default_model": {"type": "string", "nullable": true}, "claude_default_model": {"type": "string", "nullable": true}, "codex_default_effort": {"type": "string", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/default-models", "body": {"object": "changes"}}}
+      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 5, "properties": {"antigravity_default_model": {"type": "string", "nullable": true}, "antigravity_default_effort": {"type": "string", "nullable": true}, "codex_default_model": {"type": "string", "nullable": true}, "claude_default_model": {"type": "string", "nullable": true}, "codex_default_effort": {"type": "string", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/default-models", "body": {"object": "changes"}}}
     },
     {
       "op": "diagnostics.events",
@@ -363,16 +363,18 @@
       "kind": "read",
       "write_gate": false,
       "console": "carried",
-      "console_route": "GET /v1/artifacts/images/{id}?session={id}",
+      "console_route": "GET /v1/artifacts/images/{id}?session={id}[&size=thumb]",
       "console_seam": "writer",
       "local": {"method": "GET"},
       "special": ["content_read", "shaped_answer"],
-      "example": {"expected_generation": "0123456789abcdef0123456789abcdef", "id": "img_7f3a", "session": "%19"},
+      "example": {"expected_generation": "0123456789abcdef0123456789abcdef", "id": "img_7f3a", "session": "%19", "size": "thumb"},
       "shapes": [
         {"body": ["id", "session"], "path": "/v1/artifacts/images/{id}", "query": ["session"]},
-        {"body": ["expected_generation", "id", "session"], "path": "/v1/artifacts/images/{id}", "query": ["session"]}
+        {"body": ["expected_generation", "id", "session"], "path": "/v1/artifacts/images/{id}", "query": ["session"]},
+        {"body": ["id", "session", "size"], "path": "/v1/artifacts/images/{id}", "query": ["session", "size"]},
+        {"body": ["expected_generation", "id", "session", "size"], "path": "/v1/artifacts/images/{id}", "query": ["session", "size"]}
       ],
-      "decode": {"reply": "session", "name": "image.{id}", "fields": {"id": {"type": "string", "non_empty": true, "into": "id"}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/artifacts/images/{id}", "query": {"session": {"from": "session"}}}}
+      "decode": {"reply": "session", "name": "image.{id}", "name_suffix": {"field": "size", "text": ".{size}"}, "fields": {"size": {"type": "string", "enum": ["thumb"]}, "id": {"type": "string", "non_empty": true, "into": "id"}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/artifacts/images/{id}", "query": {"session": {"from": "session"}, "size": {"from": "size"}}}}
     },
     {
       "op": "info",
@@ -652,6 +654,104 @@
       "decode": {"reply": "action", "fields": {"path": {"type": "string", "non_empty": true, "max_bytes": 4096, "checks": ["printable", "absolute_path"]}}, "route": {"path": "/v1/places", "body": {"fields": {"paths": {"from": "path", "list": true}}}}}
     },
     {
+      "op": "project-antigravity-consent-change",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/projects/{project}/antigravity-consent",
+      "console_seam": "writer",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "item": {
+          "action": "disable",
+          "revision": 0,
+          "scope": "project-and-linked-worktrees"
+        },
+        "project": "p1",
+        "request": "apply-1",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "item",
+            "project",
+            "request",
+            "session"
+          ],
+          "path": "/v1/projects/{project}/antigravity-consent",
+          "local_body": [
+            "action",
+            "revision",
+            "scope"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "project": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 200
+          },
+          "item": {
+            "type": "object",
+            "max_bytes": 4096,
+            "copies": {"max_bytes": "capacity.AntigravityConsentRequestBytesLimit"}
+          }
+        },
+        "route": {
+          "path": "/v1/projects/{project}/antigravity-consent",
+          "body": {
+            "object": "item"
+          }
+        }
+      }
+    },
+    {
+      "op": "project-antigravity-consent-status",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/antigravity-consent",
+      "console_seam": "reader",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "project": "p1",
+        "request": "plan-1",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "project",
+            "request",
+            "session"
+          ],
+          "path": "/v1/projects/{project}/antigravity-consent"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "project": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 200
+          }
+        },
+        "route": {
+          "path": "/v1/projects/{project}/antigravity-consent"
+        }
+      }
+    },
+    {
       "op": "project-entry",
       "kind": "read",
       "write_gate": false,
@@ -906,6 +1006,37 @@
         {"body": ["request", "session"], "path": "/v1/projects"}
       ],
       "decode": {"reply": "machine", "route": {"path": "/v1/projects"}}
+    },
+    {
+      "op": "provider-quotas",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/provider-quotas",
+      "console_seam": "writer",
+      "console_note": "Account quota snapshots for the global footer. Credentials remain on the machine.",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "request": "req",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/provider-quotas"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/provider-quotas"
+        }
+      }
     },
     {
       "op": "push-key",
@@ -1653,7 +1784,7 @@
       "console_seam": "reader",
       "local": {"method": "GET"},
       "special": ["content_read", "divergence"],
-      "example": {"before": 12345, "expected_generation": "0123456789abcdef0123456789abcdef", "limit": 200, "priority": "foreground", "session": "%19"},
+      "example": {"revision": "agy1:synthetic:12345:abc", "before": 12345, "expected_generation": "0123456789abcdef0123456789abcdef", "limit": 200, "priority": "foreground", "session": "%19"},
       "shapes": [
         {"body": ["limit", "session"], "path": "/v1/transcript", "query": ["limit", "session"]},
         {"body": ["before", "limit", "session"], "path": "/v1/transcript", "query": ["before", "limit", "session"]},
@@ -1662,9 +1793,13 @@
         {"body": ["before", "expected_generation", "limit", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "session"]},
         {"body": ["before", "limit", "priority", "session"], "path": "/v1/transcript", "query": ["before", "limit", "session"]},
         {"body": ["expected_generation", "limit", "priority", "session"], "path": "/v1/transcript", "query": ["expected_generation", "limit", "session"]},
-        {"body": ["before", "expected_generation", "limit", "priority", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "session"]}
+        {"body": ["before", "expected_generation", "limit", "priority", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "session"]},
+        {"body": ["before", "limit", "revision", "session"], "path": "/v1/transcript", "query": ["before", "limit", "revision", "session"]},
+        {"body": ["before", "expected_generation", "limit", "revision", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session"]},
+        {"body": ["before", "limit", "priority", "revision", "session"], "path": "/v1/transcript", "query": ["before", "limit", "revision", "session"]},
+        {"body": ["before", "expected_generation", "limit", "priority", "revision", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session"]}
       ],
-      "decode": {"reply": "session", "name": "transcript", "name_suffix": {"field": "before", "text": ".before.{before}"}, "fields": {"limit": {"type": "integer", "min": 1, "max": 1000}, "before": {"type": "integer", "min": 1}, "priority": {"type": "string", "enum": ["foreground", "background"]}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/transcript", "query": {"session": {"from": "session"}, "limit": {"from": "limit"}, "before": {"from": "before"}, "expected_generation": {"from": "expected_generation"}}}}
+      "decode": {"reply": "session", "name": "transcript", "name_suffix": {"field": "before", "text": ".before.{before}"}, "fields": {"limit": {"type": "integer", "min": 1, "max": 1000}, "before": {"type": "integer", "min": 1}, "priority": {"type": "string", "enum": ["foreground", "background"]}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}, "revision": {"type": "string", "checks": ["session_name"]}}, "route": {"path": "/v1/transcript", "query": {"session": {"from": "session"}, "limit": {"from": "limit"}, "before": {"from": "before"}, "expected_generation": {"from": "expected_generation"}, "revision": {"from": "revision"}}}, "name_suffixes": [{"field": "revision", "text": ".revision.{revision}"}]}
     },
     {
       "op": "update",
@@ -2414,6 +2549,34 @@
         {"body": ["id", "item", "request", "session", "terminal"], "path": "/v1/work/v2/session-todos/{terminal}/{id}/images", "local_body": ["data_url", "expected_version"]}
       ],
       "decode": {"reply": "action", "fields": {"terminal": {"type": "string", "non_empty": true, "max_bytes": 256, "into": "target"}, "id": {"type": "string", "non_empty": true, "max_bytes": 256}, "item": {"type": "object", "max_bytes": 18874368, "copies": {"max_bytes": "workV2CloudImageBodyLimit"}}}, "route": {"path": "/v1/work/v2/session-todos/{terminal}/{id}/images", "body": {"object": "item"}}}
+    },
+    {
+      "op": "workflow-settings",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/settings/workflow",
+      "console_seam": "writer",
+      "local": {"method": "GET"},
+      "example": {"request": "req-read", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["request", "session"], "path": "/v1/settings/workflow"}
+      ],
+      "decode": {"reply": "machine", "route": {"path": "/v1/settings/workflow"}}
+    },
+    {
+      "op": "workflow-settings-update",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/settings/workflow",
+      "console_seam": "writer",
+      "local": {"method": "POST", "device": true},
+      "example": {"changes": {"dispatch_full_permission": false, "session_auto_discovery": true, "iterm_integration": false}, "request": "req-write", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["changes", "request", "session"], "path": "/v1/settings/workflow", "local_body": ["dispatch_full_permission", "iterm_integration", "session_auto_discovery"]}
+      ],
+      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "max_keys": 3, "properties": {"iterm_integration": {"type": "bool", "nullable": true}, "dispatch_full_permission": {"type": "bool", "nullable": true}, "session_auto_discovery": {"type": "bool", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/workflow", "body": {"object": "changes"}}}
     }
   ]
 }

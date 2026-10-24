@@ -23,4 +23,7 @@ OLD_CLI=yes bash "$root/tools/heavy.sh" true 2> "$scratch/old.log"
 ! grep -Fxq -- --handoff "$HANDOFF_CALLS"
 grep -q predates "$scratch/old.log"
 if COMMAND_EXIT=17 bash "$root/tools/heavy.sh" true > /dev/null 2>&1; then exit 1; else [ "$?" = 17 ]; fi
+bash "$root/tools/heavy.sh" --compile bash build-app.sh
+grep -Fxq -- --compile "$HANDOFF_CALLS"
+grep -Fxq -- build-app.sh "$HANDOFF_CALLS"
 echo 'heavy handoff capability: PASS'

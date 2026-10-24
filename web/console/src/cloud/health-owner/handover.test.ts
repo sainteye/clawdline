@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 // @ts-expect-error -- Node's strip-types tests import this module directly.
-import { HandoverController, forgetHandovers, heldMasterKeyFor, loadHandover, takeIdentityPairing } from "./handover.ts"
+import { HandoverController, forgetHandovers, heldMasterKeyFor, loadHandover, takeIdentityPairing, saveHandover } from "./handover.ts"
 // @ts-expect-error -- Node's strip-types tests import this module directly.
 import { sealedKeyFor } from "./source.ts"
 // @ts-expect-error -- Node's strip-types tests import this module directly.
@@ -23,11 +23,16 @@ function memoryIDB(rows = new Map<string, unknown>()) {
         close() {},
         transaction() {
           const tx: Record<string, any> = {}
+          let pending = 0
+          let aborted = false
+          const commit = () => { if (!aborted && pending === 0) tx.oncomplete?.() }
+          tx.abort = () => { aborted = true; tx.error = new Error("transaction aborted"); later(() => tx.onabort?.()) }
           const store = {
             put(value: unknown, key: string) { rows.set(key, value) },
             get(key: string) {
               const request: Record<string, any> = {}
-              later(() => { request.result = rows.get(key); request.onsuccess?.() })
+              pending++
+              later(() => { request.result = rows.get(key); request.onsuccess?.(); pending--; later(commit) })
               return request
             },
             delete(range: { lower: string; upper: string }) {
@@ -35,7 +40,7 @@ function memoryIDB(rows = new Map<string, unknown>()) {
             },
           }
           tx.objectStore = () => store
-          later(() => tx.oncomplete?.())
+          later(commit)
           return tx
         },
       }
@@ -171,4 +176,22 @@ test("the #pairid= link leaves the address as soon as it is read", () => {
   scope.location.hash = ""
   assert.equal(takeIdentityPairing(scope), "abc", "kept through a sign-in redirect")
   assert.equal(takeIdentityPairing({ ...scope, location: { hash: "#pair=legacy", pathname: "/", search: "" } }), "abc")
+})
+
+test("diagnostic handovers retain their epoch floor and trusted machine key on reload", async () => {
+  const idb = memoryIDB()
+  const held = { accountID: "usr_a", machineID: "mac_1", machineFingerprint: "MACH-FP",
+    contentKeyEpoch: 3, identityEpoch: 4, contentKeyID: "mk-3-" + "ab".repeat(32),
+    machineSigningKey: "trusted-machine", ...await keys() }
+  await saveHandover(held, 100, idb)
+  for (const change of [
+    { contentKeyEpoch: 2 }, { identityEpoch: 3 },
+    { contentKeyID: "mk-3-" + "cd".repeat(32) }, { machineSigningKey: "substituted" },
+  ]) {
+    await assert.rejects(saveHandover({ ...held, ...change }, 200, idb))
+    const reloaded = await loadHandover("usr_a", "mac_1", memoryIDB(idb.rows))
+    assert.equal(reloaded?.contentKeyEpoch, 3)
+    assert.equal(reloaded?.contentKeyID, held.contentKeyID)
+    assert.equal(reloaded?.machineSigningKey, held.machineSigningKey)
+  }
 })

@@ -139,3 +139,28 @@ test("each conflict says what it is and what the person can do, with the lines C
   assert.match(differs.sentence, /skill「style」/)
   assert.match(differs.remedy, /\.agents\/skills\/style/)
 })
+
+
+test("Antigravity distinguishes legacy unreported, known empty and shared applicability", () => {
+ const p = drifting()
+ assert.equal(unifyColumns(p)[2].unreported, true)
+ p.rules.now.antigravity = []; p.rules.after.antigravity = []; p.skills = []
+ assert.equal(unifyColumns(p)[2].unreported, false)
+ assert.deepEqual(unifyColumns(p)[2].rows, [])
+ p.rules.now.antigravity = ["AGENTS.md"]; p.rules.after.antigravity = ["AGENTS.md"]
+ p.skills = [{name: "review", place: "claude", now: {antigravity: false}, after: {antigravity: true}}]
+ assert.deepEqual(marks(unifyColumns(p)[2]), {"AGENTS.md": "same", review: "added"})
+ p.skills[0].now.antigravity = null
+ assert.equal(unifyColumns(p)[2].unreported, true)
+})
+
+
+test("link previews do not claim a copy or unavailable symbolic links", () => {
+ const p = drifting()
+ const row = unifyColumns(p)[2]
+ assert.equal(row.unreported, true)
+ const [claude] = unifyColumns(p)
+ assert.equal(claude.rows.find(r => r.name === "deploy")?.note, "")
+ p.skills[0].copy = true
+ assert.match(unifyColumns(p)[0].rows.find(r => r.name === "deploy")?.note ?? "", /副本/)
+})

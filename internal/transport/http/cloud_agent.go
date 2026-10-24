@@ -38,6 +38,7 @@ import (
 	"time"
 	"unicode"
 
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/limits"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
@@ -96,6 +97,9 @@ func (s *Server) startPairingAgent(w http.ResponseWriter, r *http.Request, raw [
 		Offer       string `json:"offer"`
 		MachineID   string `json:"machine_id"`
 		MachineName string `json:"machine_name"`
+		// Scope is this machine's choice of ceiling. Omitted keeps the
+		// device's existing pin; the offer itself never carries one.
+		Scope string `json:"scope"`
 	}
 	// The same eight KiB the offer route reads, for the same reason.
 	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&body); err != nil {
@@ -117,13 +121,17 @@ func (s *Server) startPairingAgent(w http.ResponseWriter, r *http.Request, raw [
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_machine", "machine_id is not a Clawdline Cloud machine id.")
 		return
 	}
+	if body.Scope != "" && !adaptercloud.ValidViewerScope(body.Scope) {
+		writeAuthRefusal(w, 400, "invalid_viewer_scope", "Choose readonly or operate.")
+		return
+	}
 	name := pairAgentMachineName(body.MachineName)
 	if name == "" {
 		name = machineID
 	}
 
 	if machineID == pairing.MachineID {
-		state, err := pairing.Complete(r.Context(), offer)
+		state, err := pairing.Complete(r.Context(), offer, body.Scope)
 		if err != nil {
 			writeCloudPairingError(w, err)
 			return
@@ -132,6 +140,14 @@ func (s *Server) startPairingAgent(w http.ResponseWriter, r *http.Request, raw [
 		return
 	}
 
+	if body.Scope != "" {
+		// The hand-off carries no scope to the other machine, and dropping the
+		// one asked for would hand that machine's default to a browser this
+		// person meant to limit.
+		writeAuthRefusal(w, 400, "invalid_viewer_scope",
+			"A scope can only be chosen when pairing with this machine; choose it on the other machine instead.")
+		return
+	}
 	checked, _ := pairing.CheckOffer(offer)
 	projectDir, err := orchestrator.PairingAgentDir(s.cfg.Dir)
 	if err != nil {

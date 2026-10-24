@@ -84,6 +84,8 @@ func init() {
 		op{name: "project-tree-read", read: true},
 		// Unify (docs/project-files.md): the plan is a read a paired device
 		// may make with remote writes off; apply is a write and needs the gate.
+		op{name: "project-antigravity-consent-status", read: true},
+		op{name: "project-antigravity-consent-change"},
 		op{name: "project-unify-plan", read: true},
 		op{name: "project-unify-apply",
 			partial: stoppedUnify},
@@ -110,6 +112,7 @@ func init() {
 		// a parameter, as the local route is; a read, since the route writes
 		// nothing.
 		op{name: "capacity", read: true},
+		op{name: "provider-quotas", read: true},
 
 		// The machine-wide launch defaults shown on Settings. This is deliberately
 		// narrower than /v1/settings: a paired phone receives and changes only
@@ -128,6 +131,8 @@ func init() {
 		// /v1/settings: a paired device can neither read nor write another
 		// machine setting through this word.
 		op{name: "work-gate-settings", read: true},
+		op{name: "workflow-settings", read: true},
+		op{name: "workflow-settings-update"},
 
 		op{name: "notification-settings", read: true},
 

@@ -134,7 +134,7 @@ func projectUnifyCommand(args []string) {
 	asJSON := fs.Bool("json", false, cliCopy("unify", "flag_json", "print the daemon's answer"))
 	_ = fs.Parse(args)
 	if fs.NArg() > 1 || *apply && *check {
-		fmt.Fprintln(os.Stderr, cliCopy("unify", "usage", "usage: clawdline project unify [--apply | --check] [--json] [directory]"))
+		fmt.Fprintln(os.Stderr, cliCopy("unify", "usage", "usage: clawdline project unify [--apply | --check] [--json] [directory]\nPreview shared workspace file applicability for Claude, Codex and Antigravity. Native-only files remain read-only."))
 		os.Exit(2)
 	}
 	dir := "."
@@ -281,15 +281,22 @@ func printUnifyCheck(w io.Writer, p contract.ProjectUnifyPlan) {
 }
 
 func seenText(s contract.ProjectUnifySeen) string {
-	switch {
-	case s.Claude && s.Codex:
-		return cliCopy("unify", "seen_both", "Claude and Codex")
-	case s.Claude:
-		return cliCopy("unify", "seen_claude", "Claude only")
-	case s.Codex:
-		return cliCopy("unify", "seen_codex", "Codex only")
+	parts := []string{}
+	if s.Claude {
+		parts = append(parts, "Claude")
 	}
-	return cliCopy("unify", "seen_neither", "neither")
+	if s.Codex {
+		parts = append(parts, "Codex")
+	}
+	if s.Antigravity == nil {
+		parts = append(parts, cliCopy("unify", "antigravity_unreported", "Antigravity unreported"))
+	} else if *s.Antigravity {
+		parts = append(parts, "Antigravity")
+	}
+	if len(parts) == 0 {
+		return cliCopy("unify", "seen_neither", "neither")
+	}
+	return strings.Join(parts, ", ")
 }
 
 func unifyStatusText(status contract.ProjectUnifyStatus) string {
@@ -333,6 +340,12 @@ func printUnifyPlan(w io.Writer, dir string, p contract.ProjectUnifyPlan) {
 	fmt.Fprintf(t, cliCopy("unify", "claude_will_read", "  Claude will read:\t%s\n"), listText(p.Rules.After.Claude))
 	fmt.Fprintf(t, cliCopy("unify", "codex_reads_now", "  Codex reads now:\t%s\n"), listText(p.Rules.Now.Codex))
 	fmt.Fprintf(t, cliCopy("unify", "codex_will_read", "  Codex will read:\t%s\n"), listText(p.Rules.After.Codex))
+	if p.Rules.Now.Antigravity == nil || p.Rules.After.Antigravity == nil {
+		fmt.Fprintln(t, cliCopy("unify", "antigravity_unreported", "Antigravity unreported"))
+	} else {
+		fmt.Fprintf(t, cliCopy("unify", "antigravity_now", "  Antigravity applicable now:\t%s\n"), listText(p.Rules.Now.Antigravity))
+		fmt.Fprintf(t, cliCopy("unify", "antigravity_after", "  Antigravity applicable after:\t%s\n"), listText(p.Rules.After.Antigravity))
+	}
 	_ = t.Flush()
 	if len(p.Rules.ClaudeOnlyLines) > 0 {
 		fmt.Fprintln(w, cliCopy("unify", "claude_only_lines", "  Lines in CLAUDE.md that Codex does not see:"))
@@ -344,6 +357,15 @@ func printUnifyPlan(w io.Writer, dir string, p contract.ProjectUnifyPlan) {
 		fmt.Fprintf(w, cliCopy("unify", "claude_only_files", "  Read by Claude only, never changed here: %s\n"), strings.Join(p.Rules.ClaudeOnlyFiles, ", "))
 	}
 	fmt.Fprintln(w)
+	fmt.Fprintln(w, cliCopy("unify", "applicability", "File applicability, not active Session context or skill execution."))
+	if p.NativeOnly == nil {
+		fmt.Fprintln(w, cliCopy("unify", "native_unreported", "Antigravity-only candidates unreported."))
+	} else if len(p.NativeOnly) > 0 {
+		fmt.Fprintln(w, cliCopy("unify", "native_read_only", "Antigravity-only candidates (read-only; Unify leaves these unchanged):"))
+		for _, f := range p.NativeOnly {
+			fmt.Fprintf(w, "  %s (%s)\n", f.Path, f.Status)
+		}
+	}
 	fmt.Fprintln(w, cliCopy("unify", "skills", "Skills"))
 	if len(p.Skills) == 0 {
 		fmt.Fprintln(w, cliCopy("unify", "skills_none", "  none in .agents/skills or .claude/skills"))

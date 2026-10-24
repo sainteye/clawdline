@@ -82,6 +82,9 @@ it.running() ? "windows: " + it.windows().length : "iTerm2 is not running";
 func itermStallSteps(dir string) []stallStep {
 	return []stallStep{
 		{Title: "probe: iTerm2 windows().length", Timeout: stallProbeTimeout, Run: func(ctx context.Context) ([]byte, error) {
+			if !ITermIntegration() {
+				return nil, ITermScanOff{Op: "probe iTerm2"}
+			}
 			cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-e", itermProbe)
 			run := startOsascript(ctx, "probe", "")
 			out, err := stallRun(cmd)
@@ -113,6 +116,9 @@ func stallRun(cmd *exec.Cmd) ([]byte, error) {
 // comes from the process table: asking iTerm2 for it would be one more Apple
 // Event to an application that is not answering them.
 func sampleITerm(ctx context.Context, dir string) ([]byte, error) {
+	if !ITermIntegration() {
+		return nil, ITermScanOff{Op: "sample iTerm2"}
+	}
 	out, err := stallRun(exec.CommandContext(ctx, "/bin/ps", "-Ao", "pid=,comm="))
 	if err != nil {
 		return out, fmt.Errorf("the process table could not be read: %w", err)
@@ -160,6 +166,9 @@ func itermPID(table string) int {
 // frontmostApp says which application is in front, so a diagnosis can tell an
 // iTerm2 waiting on a dialog of its own from one that is busy.
 func frontmostApp(ctx context.Context) ([]byte, error) {
+	if !ITermIntegration() {
+		return nil, ITermScanOff{Op: "inspect an iTerm2 stall"}
+	}
 	front, err := stallRun(exec.CommandContext(ctx, "/usr/bin/lsappinfo", "front"))
 	asn := strings.TrimSpace(string(front))
 	if err != nil || asn == "" {

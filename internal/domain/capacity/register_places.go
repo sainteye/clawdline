@@ -3,6 +3,24 @@ package capacity
 // placesBounds is every registered row named places.*.
 func placesBounds() []Entry {
 	return []Entry{
+		{Name: "places.antigravity_history_entries", Class: Buffer, Unit: Rows, Limit: 512, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/projects.AntigravityHistoryEntryLimit"}},
+		{Name: "places.antigravity_history_bytes", Class: Buffer, Unit: Bytes, Limit: 67108864, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/projects.AntigravityHistoryByteLimit"}},
+		{Name: "places.antigravity_history_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 250, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/projects.AntigravityHistoryTimeLimit"}},
+		{Name: "places.antigravity_history_title_characters", Class: Buffer, Unit: Characters, Limit: 80, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/projects.AntigravityHistoryTitleLimit"}},
+
+		{
+			// Executable compatibility probes retain only one bounded stdout.
+			Name: "places.antigravity_probe_output_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/antigravity.CLIProbeOutputLimit"},
+		},
+		{
+			// One changed executable gets one deadline; orphan pipe draining
+			// is independently bounded by the same WaitDelay.
+			Name: "places.antigravity_probe_seconds", Class: Buffer, Unit: Seconds,
+			Limit: 3, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/antigravity.CLIProbeTimeLimit"},
+		},
 		{
 			// CLAWDLINE_NEXT_DIR/places.json: explicit project directories and
 			// directories deliberately hidden from the lists. Each

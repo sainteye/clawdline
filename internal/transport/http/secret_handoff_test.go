@@ -59,12 +59,28 @@ func TestSecretHandoffOnlyTargetMayClaimOnce(t *testing.T) {
 	var waiting struct {
 		Rows []humanInterventionWire `json:"rows"`
 	}
-	if err := json.Unmarshal(listed.Body.Bytes(), &waiting); err != nil || len(waiting.Rows) != 1 || !waiting.Rows[0].SecretReceived {
-		t.Fatalf("received state missing after reload: %+v %v", waiting, err)
+	if err := json.Unmarshal(listed.Body.Bytes(), &waiting); err != nil || len(waiting.Rows) != 1 || waiting.Rows[0].ResolvedAt == nil {
+		t.Fatalf("completed state missing after reload: %+v %v", waiting, err)
 	}
 	note, err := s.store.HumanIntervention(t.Context(), id)
 	if err != nil || strings.Contains(note.Title+note.Summary+note.Action+note.Reason+note.Detail+note.Resolution, secret) {
 		t.Fatalf("Note stored value: %v", err)
+	}
+	if note.ResolvedAt == nil || note.ReadAt == nil {
+		t.Fatalf("handoff did not complete the Note before claim: %+v", note)
+	}
+	if !s.secretHandoffs.Pending(id, target) {
+		t.Fatal("completing the Note discarded the unclaimed value")
+	}
+	replayed := httptest.NewRecorder()
+	s.workV2Route(replayed, personWorkV2Request(http.MethodPost, base, `{"value":"`+secret+`"}`, "secret-submit"))
+	if replayed.Code != http.StatusOK || replayed.Body.String() != submitted.Body.String() {
+		t.Fatalf("completed handoff replay: %d %s", replayed.Code, replayed.Body)
+	}
+	duplicate := httptest.NewRecorder()
+	s.workV2Route(duplicate, personWorkV2Request(http.MethodPost, base, `{"value":"replacement"}`, "secret-resubmit"))
+	if duplicate.Code != http.StatusNotFound {
+		t.Fatalf("completed Note accepted a new submission: %d %s", duplicate.Code, duplicate.Body)
 	}
 	claimPath := "/v1/work/v2/agent/human-interventions/" + id + "/claim"
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -150,5 +166,55 @@ func TestSecretHandoffOnlyTargetMayClaimOnce(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSecretHandoffRejectedSubmissionKeepsNotePending(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		value  string
+		full   bool
+		status int
+	}{
+		{"empty", "", false, http.StatusUnprocessableEntity},
+		{"too large", strings.Repeat("x", app.MaxSecretHandoffBytes+1), false, http.StatusRequestEntityTooLarge},
+		{"full", "SAFE_FIXTURE", true, http.StatusServiceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, source, target := humanInterventionTestServer(t)
+			s.secretHandoffs = app.NewSecretHandoffs()
+			created := httptest.NewRecorder()
+			body, _ := json.Marshal(map[string]any{
+				"source_conversation": source, "target_session": "pane-target", "kind": "secret",
+				"title": "Credential", "summary": "Tool credential", "action": "Hand off the value.", "reason": "The tool needs it.",
+			})
+			s.workV2Route(created, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/human-interventions", string(body), "create"))
+			var result struct {
+				Note humanInterventionWire `json:"note"`
+			}
+			if err := json.Unmarshal(created.Body.Bytes(), &result); err != nil || created.Code != http.StatusCreated {
+				t.Fatalf("create: %d %s %v", created.Code, created.Body, err)
+			}
+			if tc.full {
+				for i := 0; i < app.MaxSecretHandoffPending; i++ {
+					if err := s.secretHandoffs.Put(fmt.Sprint(i), target, []byte("SAFE_FIXTURE")); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			payload, _ := json.Marshal(map[string]string{"value": tc.value})
+			submitted := httptest.NewRecorder()
+			s.workV2Route(submitted, personWorkV2Request(http.MethodPost, "/v1/work/v2/human-interventions/conversation:"+target+"/"+result.Note.ID+"/handoff", string(payload), "submit"))
+			if submitted.Code != tc.status {
+				t.Fatalf("submit: %d %s", submitted.Code, submitted.Body)
+			}
+			note, err := s.store.HumanIntervention(t.Context(), result.Note.ID)
+			if err != nil || note.ResolvedAt != nil || note.ReadAt != nil || note.Version != result.Note.Version {
+				t.Fatalf("rejected submission changed the Note: %+v %v", note, err)
+			}
+			if s.secretHandoffs.Pending(note.ID, target) {
+				t.Fatal("rejected value was accepted")
+			}
+		})
 	}
 }

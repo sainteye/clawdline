@@ -62,10 +62,10 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 	if v, _ := row["execution_generation"].(string); len(v) == 32 && strings.Trim(v, "0123456789abcdef") == "" {
 		out.ExecutionGeneration = v
 	}
-	if v, _ := row["assistant"].(string); v == "claude" || v == "codex" {
+	if v, _ := row["assistant"].(string); v == "claude" || v == "codex" || v == "antigravity" {
 		out.Assistant = v
 	}
-	if v, _ := row["backend"].(string); v == "tmux" || v == "iterm" || v == "ps" {
+	if v, _ := row["backend"].(string); v == "tmux" || v == "iterm" || v == "ps" || v == "owned" {
 		out.Backend = v
 	}
 	out.MachineScope, _ = row["machine_scope"].(bool)
@@ -74,7 +74,7 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 		out.State = v
 	}
 	if source, ok := row["source"].(map[string]any); ok {
-		if v, _ := source["provenance"].(string); v == "tmux" || v == "iterm" || v == "ps" {
+		if v, _ := source["provenance"].(string); v == "tmux" || v == "iterm" || v == "ps" || v == "owned" {
 			out.Source.Provenance = v
 		}
 		if v, _ := source["observed_at"].(float64); v > 0 {
@@ -105,8 +105,10 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 			if options, ok := menu["options"].([]any); ok && len(options) > 0 {
 				screen, _ := row["screen_reading"].(string)
 				menuSource, _ := menu["source"].(string)
+				revision, _ := menu["revision"].(string)
+				native := row["backend"] == "owned" && row["identity"] == "protocol" && revision != "" && menuSource == ""
 				out.WaitingForReply = screen == "read" && menuSource == "" ||
-					screen == "unavailable" && menuSource == "transcript"
+					screen == "unavailable" && menuSource == "transcript" || native
 			}
 		}
 	}

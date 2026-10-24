@@ -8,7 +8,7 @@ export type AdminLocale = "en" | "zh-TW"
 
 /** Catalog loading needs only the public build declaration, never a paired machine. */
 export function bootAdminCatalog(config: StringsConfig | null, baseURI: string, get: typeof fetch = fetch) {
-  return bootCatalog((tag) => catalogURL(config ?? { build: "", strings: {} }, tag, baseURI), get)
+  return bootCatalog((tag) => catalogURL(config ?? { build: "", strings: {} }, tag, new URL("/", baseURI).href), get)
 }
 
 /* ---- the pages and their addresses --------------------------------------- */

@@ -11,6 +11,11 @@ import { catalogWord } from "../../../catalog.ts"
 
 const ownWords = {
   en: {
+    settingsITermIntegration: "Enable iTerm2 integration",
+    settingsITermIntegrationHint: "Off by default. While off, Clawdline does not detect, read or control iTerm2 or request its Automation permission. Enabling permits listing tabs, reading screens, sending input, and opening, showing or closing tabs, and may request macOS Automation permission. Existing installations must also opt in.",
+    settingsITermIntegrationUpgrade: "This daemon does not support the iTerm2 consent switch. Update Clawdline on this machine to control all iTerm2 access. Its current access cannot be inferred from this page.",
+    settingsSessionTerminalConsentHint: "Automatic uses tmux while iTerm2 integration is off. With integration enabled, Automatic uses iTerm2 while it is open; with tmux installed, the Session runs in tmux and is shown in an iTerm2 tab. Explicit iTerm2 choices require enabled integration and a running iTerm2. iTerm2 (native tab) runs directly in its tab. tmux always uses tmux. The next Session follows this choice.",
+
     settingsRemoteHint:
       "When this is off, nothing outside this machine can reach it. When it is on, the session list is available on 127.0.0.1 — to a browser here, a phone connected through a tunnel, or a script. What it exposes is repository names, branches, and work titles, so it stays off until you turn it on.",
     settingsTailscaleHostname: "Tailscale address",
@@ -20,7 +25,7 @@ const ownWords = {
       "Clawdline no longer runs a Cloudflare tunnel, so the tunnel this machine used to open stays closed and its settings are no longer read. To reach this machine from your phone, use Tailscale Serve (the Tailscale address above) or Clawdline Cloud.",
     settingsCloudflareRetiredDone: "Got it",
     settingsRemoteWriteHint:
-      "Every signed-in device paired with this machine can send. Clawdline Cloud commands can still be turned off for this machine with clawdline cloud commands off.",
+      "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. Clawdline Cloud operation is a separate switch for this whole machine: clawdline cloud commands off.",
     settingsOrchestratorMaxHint:
       "The default is five. The limit is per session, not per machine. Each child is a terminal tab with an assistant doing work in it.",
     settingsHotkeyHint:
@@ -60,10 +65,10 @@ const ownWords = {
     cloudLineNeedsLogin: "Finish account sign-in before connecting this machine.",
     cloudLineState: "Machine connection: {state}",
     cloudLineFailure: "Connection blocked by {kind}: {detail}",
-    cloudCommandsTitle: "Allow paired devices to operate this machine",
-    cloudCommandsHint: "Allows paired devices to send messages, start sessions, and use published terminal features. This machine checks the switch on every request. Turning it off or revoking a device takes effect on its next request.",
-    cloudCommandsOn: "Allow operation",
-    cloudCommandsOff: "Stop operation",
+    cloudCommandsTitle: "Allow Cloud devices to operate this machine",
+    cloudCommandsHint: "Applies only to browsers and phones that reach this machine through Clawdline Cloud: sending messages, starting Sessions, and published terminal features. Devices paired directly with this machine are set one by one on the Devices page. This machine checks the switch on every request; turning it off takes effect on the next request.",
+    cloudCommandsOn: "Allow Cloud operation",
+    cloudCommandsOff: "Stop Cloud operation",
     cloudDirectTitle: "Direct connection for Terminal and Session reads",
     cloudDirectHint: "When off, these use the Cloud relay. Changing this briefly reconnects this machine to Cloud and moves open direct connections back to the relay.",
     cloudDirectOn: "Turn on direct connection",
@@ -106,6 +111,11 @@ const ownWords = {
     dictationNoWhisper: "Voice: Apple only — whisper-cli is not installed",
   },
   "zh-Hant": {
+    settingsITermIntegration: "啟用 iTerm2 整合",
+    settingsITermIntegrationHint: "預設關閉。關閉時不偵測、讀取或控制 iTerm2，也不要求其自動化權限。開啟後可列出分頁、讀取畫面、傳送輸入與開啟、顯示或關閉分頁，並可能要求 macOS 自動化授權。舊安裝也需要主動開啟。",
+    settingsITermIntegrationUpgrade: "這台機器的 daemon 尚未支援 iTerm2 授權總開關。請更新這台機器的 Clawdline，才能關閉所有 iTerm2 存取；此頁目前無法判定其存取狀態。",
+    settingsSessionTerminalConsentHint: "iTerm2 整合關閉時，「自動」使用 tmux。開啟整合後，「自動」會在 iTerm2 開著時使用它；有 tmux 時，Session 在 tmux 裡執行，並以 iTerm2 分頁顯示。明確選擇 iTerm2 時，必須先啟用整合並開啟 iTerm2。「iTerm2（原生分頁）」直接在分頁內執行；「tmux」一律使用 tmux。下一個 Session 開始套用。",
+
     settingsRemoteHint:
       "關著的時候，這台機器以外的東西什麼都碰不到。打開之後，session 清單就在 127.0.0.1 上讀得到——給這裡的瀏覽器、隔著通道連進來的手機，或一支腳本。交出去的是儲存庫名稱、分支和工作標題，所以在你開口之前，它一直是關著的。",
     settingsTailscaleHostname: "Tailscale 位址",
@@ -115,7 +125,7 @@ const ownWords = {
       "Clawdline 不再內建 Cloudflare 通道，這台機器以前開的通道不會再開，它的設定也不再讀取。要從手機連回這台機器，請改用 Tailscale Serve（上面的 Tailscale 位址）或 Clawdline Cloud。",
     settingsCloudflareRetiredDone: "知道了",
     settingsRemoteWriteHint:
-      "每台已登入並配對這台機器的裝置都可傳送。若要停止這台機器的 Cloud 遠端操作，可執行 clawdline cloud commands off。",
+      "直接配對這台機器的裝置，各自是只讀或可讀可操作，在「裝置」頁逐台設定。Clawdline Cloud 的操作是整台機器另一個開關：clawdline cloud commands off。",
     settingsOrchestratorMaxHint:
       "預設五個，一個 session 算一份，不是整台機器算一份。每一個都是一個終端機分頁，裡面有一個 assistant 在做事。",
     settingsHotkeyHint:
@@ -153,10 +163,10 @@ const ownWords = {
     cloudLineNeedsLogin: "先完成帳號登入，才能連接這台機器。",
     cloudLineState: "機器連線：{state}",
     cloudLineFailure: "連線受 {kind} 阻擋：{detail}",
-    cloudCommandsTitle: "允許已配對裝置操作這台機器",
-    cloudCommandsHint: "允許已配對裝置傳送訊息、開始 Session，以及使用已發布的終端功能。這台機器每次請求都檢查開關；關閉或撤銷裝置後，下一次請求立即生效。",
-    cloudCommandsOn: "允許操作",
-    cloudCommandsOff: "停止操作",
+    cloudCommandsTitle: "允許 Cloud 裝置操作這台機器",
+    cloudCommandsHint: "只適用於透過 Clawdline Cloud 連到這台機器的瀏覽器與手機：傳送訊息、開始 Session，以及已發布的終端功能。直接配對這台機器的裝置，請在「裝置」頁逐台設定。這台機器每次請求都檢查開關；關閉後下一次請求立即生效。",
+    cloudCommandsOn: "允許 Cloud 操作",
+    cloudCommandsOff: "停止 Cloud 操作",
     cloudDirectTitle: "終端機與 Session 讀取直連",
     cloudDirectHint: "關閉後改走 Cloud 中繼。切換時這台機器會短暫重新連接 Cloud，已開啟的直連會回到中繼。",
     cloudDirectOn: "開啟直連",
@@ -211,6 +221,11 @@ function ownWord(key: OwnWord): string {
 }
 
 const baseW = {
+  settingsITermIntegration: ownWord("settingsITermIntegration"),
+  settingsITermIntegrationHint: ownWord("settingsITermIntegrationHint"),
+  settingsITermIntegrationUpgrade: ownWord("settingsITermIntegrationUpgrade"),
+  settingsSessionTerminalConsentHint: ownWord("settingsSessionTerminalConsentHint"),
+
   settingsTitle: "Clawdline 設定",
   settingsGeneral: "一般",
   settingsBar: "輸入條",
@@ -574,7 +589,7 @@ export function seconds(value: number): string {
 }
 
 /** `Assistant.label` (`Assistant.swift`), the two product names as they are written there. */
-export const ASSISTANT_LABEL = { claude: "Claude Code", codex: "Codex" } as const
+export const ASSISTANT_LABEL = { claude: "Claude Code", codex: "Codex", antigravity: "Gemini" } as const
 
 /**
  * `dictationStatus(_:)`, composed here from the reading the shell sends rather

@@ -17,16 +17,16 @@ import { client } from "../client.js"
  * the deadline is longer than that on a machine that is swapping — which is
  * exactly when this is opened.
  */
-export function readMachineUsage(): Promise<MachineUsage> {
-  return call("GET", "/v1/machine/usage")
+export function readMachineUsage(fetcher: typeof fetch = globalThis.fetch): Promise<MachineUsage> {
+  return call("GET", "/v1/machine/usage", fetcher)
 }
 
-async function call(method: string, path: string): Promise<MachineUsage> {
+async function call(method: string, path: string, fetcher: typeof fetch): Promise<MachineUsage> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 20_000)
   let res: Response
   try {
-    res = await fetch(client.url(path), { method, credentials: "same-origin", signal: controller.signal })
+    res = await fetcher(client.url(path), { method, credentials: "same-origin", signal: controller.signal })
   } catch (cause) {
     throw new TransportError(`${method} ${path} did not complete`, cause)
   } finally {

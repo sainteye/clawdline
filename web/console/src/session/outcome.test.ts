@@ -34,7 +34,7 @@ test("nothing answered is not known; what the far side says wins", () => {
 
 test("a failed card retries only while the composer would still accept it", () => {
   assert.equal(writeIsOff("busy"), false)
-  for (const code of ["write_disabled", "cloud_commands_disabled", "command_writes_disabled", "cloud_read_only", "cloud_read_needs_send_prompt", "unknown_sender"]) {
+  for (const code of ["write_disabled", "cloud_commands_disabled", "command_writes_disabled", "viewer_read_only", "cloud_read_only", "cloud_read_needs_send_prompt", "unknown_sender"]) {
     assert.equal(writeIsOff(code), true, code)
   }
 })
@@ -58,4 +58,12 @@ test("a send refused under a question did not happen", () => {
   for (const code of ["send_unsubmitted", "session_not_idle", "menu_moved", ""]) {
     assert.equal(waitsOnQuestion(code), false, code)
   }
+})
+
+// A browser this machine limited to readonly is refused every send with
+// `viewer_read_only`. The refusal is final, not retryable: the box closes on
+// the first one instead of making a failed card for every press.
+test("a readonly viewer's refusal closes the box and is not retried", () => {
+  assert.equal(writeIsOff("viewer_read_only"), true)
+  assert.equal(outcomeOf({ status: 403, code: "viewer_read_only", said: "not_done" }), "not_done")
 })

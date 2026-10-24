@@ -184,3 +184,34 @@ test("a machine refusal keeps its explicit key through the copied client and nes
     client.stop()
   }
 })
+
+// @ts-expect-error -- Node executes TypeScript directly.
+import { newCloudSession } from "./copied.ts"
+import { CloudViewerSession } from "../legacy/js/net/cloud-boot.js"
+
+test("the hosted factory connects an active rekey receiver while library boot stays opt-in", async () => {
+ const config={apiOrigin:"https://api.example.test",appOrigin:"https://app.example.test",relayURL:"wss://relay.example.test",build:"synthetic",strings:{}}
+ assert.equal((new CloudViewerSession({config}) as any).enableViewerRekey,false)
+ const session:any=newCloudSession({config,deviceKind:"browser",deviceName:"Synthetic browser"})
+ const viewer=await crypto.subtle.generateKey("Ed25519",false,["sign","verify"])
+ const machine=await crypto.subtle.generateKey("Ed25519",false,["sign","verify"])
+ const sent:string[]=[]
+ session.account="account-1";session.deviceID="viewer-1";session.caps=[]
+ session.devicePrivateKey=viewer.privateKey
+ session.devicePublicKey=new Uint8Array(await crypto.subtle.exportKey("raw",viewer.publicKey))
+ session.ensureSession=async()=>({state:"ready"})
+ session.accountKey=async()=>crypto.subtle.importKey("raw",new Uint8Array(32),"AES-GCM",false,["encrypt","decrypt"])
+ session.accountKeyID=async()=>"ms-1"
+ session.deviceToken=async()=>({relayURL:"wss://relay.example.test",token:"synthetic"})
+ session.WebSocket=class {
+  readyState=1;onmessage:any
+  constructor(){setImmediate(()=>this.onmessage?.({data:JSON.stringify({type:"ready",v:1,role:"viewer",account:"account-1",device:"viewer-1"})}))}
+  send(raw:string){sent.push(raw)} close(){this.readyState=3}
+ }
+ const result=await session.connect()
+ try {
+  assert.equal(result.state,"connected")
+  assert.equal(await result.client.viewerRekey.request({machineID:"machine-test",senderID:"machine-test",keyID:"ms-1",epoch:1,legacy:false,senderKey:machine.publicKey}),true)
+  assert.equal(sent.map(raw=>JSON.parse(raw)).filter(frame=>frame.type==="content_key_offer").length,1)
+ } finally {result.client.stop()}
+})

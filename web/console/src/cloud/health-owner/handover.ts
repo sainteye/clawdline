@@ -39,6 +39,8 @@ export interface HandoverRecord {
   machineFingerprint: string
   contentKeyEpoch: number
   identityEpoch: number
+  contentKeyID?: string
+  machineSigningKey?: string
   pairedAtMs: number
   hkdfKey: CryptoKey
   masterKey: CryptoKey
@@ -48,6 +50,7 @@ function validRecord(value: unknown, account: string, machine: string): value is
   const r = value as HandoverRecord | null
   return !!r && r.v === 1 && r.accountID === account && r.machineID === machine &&
     Number.isSafeInteger(r.contentKeyEpoch) && r.contentKeyEpoch >= 1 &&
+    Number.isSafeInteger(r.identityEpoch) && r.identityEpoch >= 0 &&
     typeof CryptoKey !== "undefined" && r.hkdfKey instanceof CryptoKey && r.hkdfKey.algorithm?.name === "HKDF" &&
     r.hkdfKey.extractable === false && r.masterKey instanceof CryptoKey && r.masterKey.extractable === false
 }
@@ -56,6 +59,7 @@ export async function saveHandover(result: IdentityViewerResult, nowMs: number, 
   const record: HandoverRecord = {
     v: 1, accountID: result.accountID, machineID: result.machineID, machineFingerprint: result.machineFingerprint,
     contentKeyEpoch: result.contentKeyEpoch, identityEpoch: result.identityEpoch, pairedAtMs: nowMs,
+    contentKeyID: result.contentKeyID, machineSigningKey: result.machineSigningKey,
     hkdfKey: result.hkdfKey, masterKey: result.masterKey,
   }
   if (!validRecord(record, result.accountID, result.machineID)) throw new IdentityPairingError("bad_result", "the handover result is not storable")

@@ -1,6 +1,525 @@
 [
   {
     "Register": "daemon",
+    "Name": "antigravity.acp_call_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 45,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxCallTime"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_frame_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxFrameBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_sessions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxSessions"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_view_bytes",
+    "Class": "observation",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxViewBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.ancestry_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxAncestry"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.context_history",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxHistory"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.context_index_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4194304,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxIndexBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.context_receipts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxReceipts"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.first_input_slots",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxFirstInputs"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.history_connections",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxHistoryConnections"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.hook_config_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxHookConfigBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.hook_connections",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxHookConnections"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.hook_frame_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2097152,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxHookFrameBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.hook_payload_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxHookPayloadBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.hook_request_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxHookRequestTime"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.hook_timeout_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxHookTimeoutSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.launch_context_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 262144,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxContextBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.live_bindings",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxLiveBindings"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.managed_launches",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxLiveBindings"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.native_process_file_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxNativeProcessFileBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.native_tty_entries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxNativeTTYEntries"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.observation_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4194304,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxObservationBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.process_read_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxProcessReadTime"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.retention_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxObservationRetention"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.saved_launches",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitylaunch.MaxLaunches"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.state_age_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 15,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.MaxObservationAge"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "artifacts.drops",
     "Class": "user_input",
     "Unit": "bytes",
@@ -330,6 +849,82 @@
   },
   {
     "Register": "daemon",
+    "Name": "cache.provider_quota",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/providerquota.CacheLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cache.provider_quota_refresh_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 900,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/providerquota.RefreshSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cache.provider_quota_request_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 10,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/providerquota.RequestSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cache.provider_quota_response_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/providerquota.ResponseBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cache.reclaim_summary",
     "Class": "cache",
     "Unit": "seconds",
@@ -654,6 +1249,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.envelope_key_id",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/cloud.MaxKeyIDBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cloud.header_read_diagnostic_rows",
     "Class": "observation",
     "Unit": "rows",
@@ -798,6 +1413,82 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/connectionhealth.MaxCapturesPerWindow"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.health_investigation_bundle_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/schedulewebhook.MaxInvestigationBundleBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.health_investigation_read_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "disconnect",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/schedulewebhook.MaxInvestigationReadSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.health_investigation_report_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2048,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/schedulewebhook.MaxInvestigationReportBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.health_investigation_report_refs",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/schedulewebhook.MaxInvestigationReportRefs"
     ]
   },
   {
@@ -1721,6 +2412,27 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.lane_refusals",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 16,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "log"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.CloudLaneRefusalsLimit",
+      "internal/transport/cloud.(*Link).runService:chan(refusalDepth)"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cloud.peer_body_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -1912,6 +2624,109 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/peerstore.PairLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.read_queue",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "log",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.CloudReadQueueLimit",
+      "internal/transport/cloud.(*Link).runService:chan(readDepth)"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.rekey_body",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/cloud.MaxRekeyBodyBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.rekey_interval",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.RawRekeyIntervalSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.rekey_lifetime",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 120,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/cloud.RekeyLifetimeMSLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.rekey_pending",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/cloud.RawRekeyPendingLimit",
+      "internal/adapters/cloud.(*Transport).dispatchRawRekey:chan(RawRekeyPendingLimit)"
     ]
   },
   {
@@ -2946,6 +3761,94 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.viewer_rekey_cooldown",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 120,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.viewer_rekey_pending",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.assistant_facts_read_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 15000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.carrier_receive_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 33554432,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.carrier_receive_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.direct_history_hours",
     "Class": "observation",
     "Unit": "rows",
@@ -3168,6 +4071,40 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.health_ui_investigation_refs",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.health_ui_investigations",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.health_ui_page_rows",
     "Class": "buffer",
     "Unit": "rows",
@@ -3346,6 +4283,24 @@
     "AtLimit": "expire",
     "Deviation": "",
     "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.native_pairing_save_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 15,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "sender",
       "diagnostics"
     ],
     "EvictedBy": "daemon",
@@ -3576,6 +4531,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.transcript_fill_pages",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.transcript_follow_fast_seconds",
     "Class": "cache",
     "Unit": "seconds",
@@ -3635,6 +4608,24 @@
     "AtLimit": "expire",
     "Deviation": "",
     "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.transcript_revision_restarts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
       "diagnostics"
     ],
     "EvictedBy": "daemon",
@@ -4799,6 +5790,124 @@
   },
   {
     "Register": "daemon",
+    "Name": "places.antigravity_history_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 67108864,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/projects.AntigravityHistoryByteLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "places.antigravity_history_entries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/projects.AntigravityHistoryEntryLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "places.antigravity_history_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 250,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/projects.AntigravityHistoryTimeLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "places.antigravity_history_title_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 80,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/projects.AntigravityHistoryTitleLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "places.antigravity_probe_output_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.CLIProbeOutputLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "places.antigravity_probe_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravity.CLIProbeTimeLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "places.git_config_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -5133,6 +6242,45 @@
   },
   {
     "Register": "daemon",
+    "Name": "projects.antigravity_consent_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.antigravityConsentBodyBytesLimit",
+      "internal/domain/capacity.AntigravityConsentRequestBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.antigravity_consent_request_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 15000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "projects.folder_rows",
     "Class": "buffer",
     "Unit": "rows",
@@ -5149,6 +6297,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/transport/http.maxProjectFolderRows"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.workspace_metadata_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/projects.WorkspaceMetadataBytesLimit"
     ]
   },
   {
@@ -7213,6 +8381,65 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "store.antigravity_consent_identity_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.AntigravityConsentIdentityBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "store.antigravity_consent_root_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.AntigravityConsentRootBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "store.antigravity_project_consents",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 1024,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "notice",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.AntigravityProjectConsentLimit"
+    ]
   },
   {
     "Register": "daemon",

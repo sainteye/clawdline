@@ -300,3 +300,27 @@ func TestInterruptTypesOneEscapeAndNotControlC(t *testing.T) {
 		t.Fatalf("tmux was asked %q, want %q", got, want)
 	}
 }
+
+func TestManagedInventoryKeepsOnlyClawdlineConversationDetails(t *testing.T) {
+	lines := "%1\x01/dev/ttys001\x01claude\x01personal\x01private title\x01/private-project\x01\n" +
+		"%2\x01/dev/ttys002\x01claude\x01clawdline-session-aaaaaaaa\x01owned title\x01/tmp/fixture\x01\n" +
+		"%3\x01/dev/ttys003\x01codex\x01renamed\x01marked title\x01/tmp/fixture\x011\n"
+	tmux := &Tmux{Binary: stubTmux(t, lines)}
+	got, err := tmux.ManagedInventory(context.Background())
+	if err != nil || !got.Complete || len(got.Sessions) != 3 {
+		t.Fatalf("reading: %+v %v", got, err)
+	}
+	external := got.Sessions[0]
+	if !external.DiscoveryExcluded || external.IsAssistant() || external.Label != "" || external.CWD != "" {
+		t.Fatalf("external details survived: %+v", external)
+	}
+	for _, row := range got.Sessions[1:] {
+		if row.DiscoveryExcluded || !row.IsAssistant() {
+			t.Fatalf("owned conversation hidden: %+v", row)
+		}
+	}
+	all, err := tmux.Inventory(context.Background())
+	if err != nil || all.Sessions[0].DiscoveryExcluded || !all.Sessions[0].IsAssistant() {
+		t.Fatalf("normal discovery: %+v %v", all, err)
+	}
+}

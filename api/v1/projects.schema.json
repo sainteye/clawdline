@@ -16,7 +16,35 @@
       "properties": {
         "availability": { "$ref": "#/$defs/StartAvailability" },
         "id": { "type": "string" },
-        "label": { "type": "string" }
+        "label": { "type": "string" },
+        "installed": { "description": "Whether a local executable was found; null when not checked. Does not prove protocol compatibility or authentication.", "type": "boolean", "nullable": true },
+        "version": { "description": "Validated standalone CLI version, absent when compatibility could not be established.", "type": "string" },
+        "authState": { "$ref": "#/$defs/StartAuthState" },
+        "integrationState": { "$ref": "#/$defs/StartIntegrationState" },
+        "capabilities": { "$ref": "#/$defs/StartCapabilities" }
+      }
+    },
+    "StartAuthState": {
+      "description": "Authentication evidence, separate from executable presence and quota. Unknown never means ready.",
+      "type": "string",
+      "enum": ["ready", "required", "unknown", "unsupported_account"]
+    },
+    "StartIntegrationState": {
+      "type": "string",
+      "enum": ["active", "disabled", "missing", "incompatible"]
+    },
+    "StartCapabilities": {
+      "description": "Operations admitted by this daemon's verified integration. CLI syntax alone never makes an operation available.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "resume", "transcript", "send", "menus"],
+      "properties": {
+        "start": { "type": "boolean" },
+        "resume": { "type": "boolean" },
+        "transcript": { "type": "boolean" },
+        "send": { "type": "boolean" },
+        "menus": { "type": "boolean" },
+        "roles": { "type": "boolean", "description": "This daemon can launch immutable roles through its current integration. Omission does not advertise Gemini role support." }
       }
     },
     "ProjectIconSetup": {
@@ -141,12 +169,12 @@
       "properties": {
         "id": { "description": "A lowercase UUID: the conversation's own id.", "type": "string" },
         "title": { "type": "string" },
-        "at": { "description": "When it was last written to, Unix seconds.", "type": "integer" },
+        "at": { "description": "When it was last written to, Unix seconds; zero when native history does not report a timestamp.", "type": "integer" },
         "live": { "description": "Something is writing to it right now; resuming it would put a second process on the same record.", "type": "boolean" }
       }
     },
     "PastSessionList": {
-      "description": "GET /v1/places/{id}/sessions[/{assistant}]: what that assistant has recorded in the place, newest first. Codex returns one provider page of twenty with an opaque next_cursor; other assistants return at most two hundred. Dispatched children and `-p` runs are not conversations and are left out.",
+      "description": "GET /v1/places/{id}/sessions[/{assistant}]: what that assistant has recorded in the place, newest first. Codex returns one provider page of twenty. Gemini returns saved local pages of at most two hundred, then explicit native pages bounded by the ACP frame budget. Both use opaque next_cursor values; other assistants return at most two hundred. Dispatched children and `-p` runs are not conversations and are left out.",
       "type": "object",
       "additionalProperties": false,
       "required": ["at", "place", "assistant", "more", "sessions"],
@@ -154,7 +182,7 @@
         "at": { "type": "integer" },
         "place": { "type": "string" },
         "assistant": { "type": "string" },
-        "next_cursor": { "description": "Opaque continuation for the next Codex page; omitted at the end.", "type": "string" },
+        "next_cursor": { "description": "Opaque continuation for the next provider page; omitted at the end.", "type": "string" },
         "more": { "description": "The list stopped at its cap and there were more.", "type": "boolean" },
         "sessions": { "type": "array", "items": { "$ref": "#/$defs/PastSession" } }
       }
@@ -167,6 +195,7 @@
       "properties": {
         "code": { "type": "string" },
         "message": { "type": "string" },
+        "detail_key": { "description": "Producer catalog key for a known fixed refusal; omitted for raw or external messages.", "type": "string" },
         "request_id": { "type": "string" },
         "app": { "description": "The terminal the refusal is about, on terminal_closed and iterm_attention_required, so a page can name it in its own language.", "type": "string" }
       }
@@ -469,7 +498,8 @@
       "required": ["claude", "codex"],
       "properties": {
         "claude": { "type": "array", "items": { "type": "string" } },
-        "codex": { "type": "array", "items": { "type": "string" } }
+        "codex": { "type": "array", "items": { "type": "string" } },
+        "antigravity": { "description": "Antigravity CLI applicable workspace candidates; absent or null means unreported by an older machine. Empty means checked and none. Not active Session context.", "type": "array", "nullable": true, "items": { "type": "string" } }
       }
     },
     "ProjectUnifyRules": {
@@ -497,7 +527,8 @@
       "required": ["claude", "codex"],
       "properties": {
         "claude": { "type": "boolean" },
-        "codex": { "type": "boolean" }
+        "codex": { "type": "boolean" },
+        "antigravity": { "description": "Applicability through .agents/skills. Null or absent is unreported; false is checked and unavailable.", "type": "boolean", "nullable": true }
       }
     },
     "ProjectUnifyActionKind": {
@@ -557,6 +588,15 @@
         "detail": { "type": "string" }
       }
     },
+    "ProjectUnifyNativeFile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "kind", "status"],
+      "properties": {
+        "path": {"type": "string"},
+        "kind": {"type": "string"},
+        "status": {"type": "string"}
+      }
+    },
     "ProjectUnifyPlan": {
       "description": "GET /v1/projects/:id/unify. Computed from disk at the Project's repository root; reading it writes nothing.",
       "type": "object",
@@ -568,6 +608,7 @@
         "links_available": { "description": "False where this machine cannot create symbolic links; skills are then copied (skill_copy).", "type": "boolean" },
         "rules": { "$ref": "#/$defs/ProjectUnifyRules" },
         "skills": { "type": "array", "items": { "$ref": "#/$defs/ProjectUnifySkill" } },
+        "native_only": { "description": "Documented Antigravity-only root candidates, read-only and outside Unify actions. Missing or null means unreported. Does not assert activation.", "type": "array", "nullable": true, "items": { "$ref": "#/$defs/ProjectUnifyNativeFile" } },
         "actions": { "description": "In the order apply performs them.", "type": "array", "items": { "$ref": "#/$defs/ProjectUnifyAction" } },
         "conflicts": { "type": "array", "items": { "$ref": "#/$defs/ProjectUnifyConflict" } }
       }
@@ -675,6 +716,105 @@
         "error": { "type": "string" },
         "detail": { "type": "string" }
       }
+    },
+    "AntigravityConsentPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "before_digest",
+        "helper_digest",
+        "managed_digest"
+      ],
+      "properties": {
+        "before_digest": {
+          "type": "string"
+        },
+        "helper_digest": {
+          "type": "string"
+        },
+        "managed_digest": {
+          "type": "string"
+        }
+      }
+    },
+    "AntigravityConsentStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "revision",
+        "scope",
+        "hooks"
+      ],
+      "properties": {
+        "phase": {
+          "$ref": "#/$defs/AntigravityConsentStatusPhase"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scope": {
+          "type": "string"
+        },
+        "hooks": {
+          "$ref": "#/$defs/AntigravityConsentStatusHooks"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "preview": {
+          "$ref": "#/$defs/AntigravityConsentPreview"
+        }
+      }
+    },
+    "AntigravityConsentChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "revision",
+        "scope"
+      ],
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/AntigravityConsentChangeAction"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scope": {
+          "type": "string"
+        },
+        "preview": {
+          "$ref": "#/$defs/AntigravityConsentPreview"
+        }
+      }
+    },
+    "AntigravityConsentStatusPhase": {
+      "type": "string",
+      "enum": [
+        "absent",
+        "preparing",
+        "active",
+        "disabled"
+      ]
+    },
+    "AntigravityConsentStatusHooks": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "installed",
+        "removed"
+      ]
+    },
+    "AntigravityConsentChangeAction": {
+      "type": "string",
+      "enum": [
+        "enable",
+        "disable"
+      ]
     }
   }
 }

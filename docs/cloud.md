@@ -18,9 +18,21 @@ An envelope carries routing metadata the relay needs, while its payload is encry
 
 ## Starting the line and pairing
 
-`clawdline cloud login` registers this machine and waits for account approval. `clawdline cloud on` sets `cloud_enabled`; restart `serve` to open the line. The daemon checks the switch before loading Cloud identity or keys. `clawdline cloud status` and local `GET /v1/cloud/status` distinguish off, unconfigured, connected and reconnecting states and expose typed failure information and counters. Default endpoints are defined in [`settings.go`](../internal/adapters/cloud/settings.go); configured endpoints can differ.
+`clawdline cloud login` registers this machine and waits for account approval. `clawdline cloud on` sets `cloud_enabled` and asks the running daemon to apply it immediately. If no daemon is running, the switch applies at its next start. The daemon checks the switch before loading Cloud identity or keys. `clawdline cloud status` and local `GET /v1/cloud/status` distinguish off, unconfigured, connected and reconnecting states and expose typed failure information and counters. Default endpoints are defined in [`settings.go`](../internal/adapters/cloud/settings.go); configured endpoints can differ.
 
-The machine can create a one-time pairing link with `clawdline cloud pair`, or accept a browser-originated offer with `clawdline cloud pair --offer <code>`. Pairing transfers the content key and trust information through the handover protocol. Compare the fingerprints shown at both ends. `clawdline cloud devices` lists viewers known to the machine, and `clawdline cloud revoke <device-id>` revokes one locally. Local pairing and revoke routes require this machine's own credential. The [remote access guide](user/remote-access.md) gives setup steps.
+The machine can create a one-time pairing link with `clawdline cloud pair`, or accept a browser-originated offer with `clawdline cloud pair --offer <code>`. Pairing transfers the content key and trust information through the handover protocol. Compare the fingerprints shown at both ends. A browser that retains old account or key records can appear paired while the machine lacks its local pin. The machine list therefore keeps the normal pairing action under each machine’s more menu even when it appears paired. Repeating the authenticated handover repairs that browser without deleting the machine or admitting it from roster membership alone. `clawdline cloud devices` lists viewers known to the machine, and `clawdline cloud revoke <device-id>` revokes one locally. Local pairing and revoke routes require this machine's own credential. The [remote access guide](user/remote-access.md) gives setup steps.
+
+### Per-browser machine grants
+
+A local pin can carry `scope: "readonly"` or `scope: "operate"`. A pin written by an older daemon with no scope retains `operate`; an unknown scope never grants operations. The machine's `cloud_commands` switch remains an independent prerequisite. Account roster membership, revocation and signing-key checks still apply, but legacy account `send_prompt` bits do not override the machine's local grant. A roster cannot expand a readonly pin. Content-key rotation is not part of this grant change. Older daemons ignore the new scope field: rolling back to a pre-scope daemon restores its legacy operation rules. Keep a scope-aware daemon installed when relying on readonly grants; this migration does not make older executables enforce a new policy.
+
+Select scope on the machine with `clawdline cloud pair --scope readonly`, including `--offer <code>` for a browser-originated offer. An omitted scope is not a choice of `operate`: a device this machine already holds a pin for keeps that pin's scope, so pairing a readonly browser again after its keys drift leaves it readonly. Only a device with no pin row takes the old `operate` default. The scope kept is read before the handover leaves and written under the pin store's own lock, so a grant made while the handover is in flight survives. A pin file that cannot be read, or a row whose scope this build does not know, refuses the pairing before any content key leaves. Only an explicit `--scope operate` raises a readonly device. To change an existing active pin, use `clawdline cloud grant <device-id> readonly` or `operate`. `cloud devices` and local `GET /v1/cloud/status` expose the nonsecret effective scope; pairing responses also return it.
+
+Local APIs are `POST /v1/cloud/pairing` with optional `{ "scope": "readonly" }`, `POST /v1/cloud/pairing/offer` with `{ "offer": "…", "scope": "readonly" }`, and `POST /v1/cloud/pairing/agent` with an optional `"scope"` (same rules; it is refused with `invalid_viewer_scope` when the offer is handed to another machine, because the hand-off brief carries no scope and dropping it would hand that machine's default to the browser), and `POST /v1/cloud/devices/grant` with `{ "device": "…", "scope": "readonly" }`. Only the machine's own token can manage grants. In-process Cloud requests are refused even when their router carries that token; remote directly paired operators cannot manage grants either. Missing or revoked pins cannot be promoted through the grant API. Scope changes are idempotent and persisted before lease revalidation; write failures leave the previous in-memory and on-disk grant intact.
+
+A readonly ceiling is persisted **before** releasing a pairing handover. Otherwise a failed final pin write could turn an explicitly readonly browser into a legacy roster-only operator. A failed readonly handover can therefore leave a visible readonly pin; it never grants operate. The reservation only lowers an existing row's ceiling: it keeps that row's key, pairing time and any refusal, written under the pin store's lock, so a failed or cancelled handover never re-admits a browser this machine revoked. Only the pin written after a completed handover restores a revoked browser, which is what pairing it again on this machine means. Ordinary legacy/default pairings continue to pin after successful handover.
+
+Readonly viewers retain Session, document, image and terminal-screen reads and notification registration. Terminal reads still require the existing machine commands switch; this does not widen that switch. Session effects return `viewer_read_only`, separately from `cloud_commands_disabled`; the console closes the Session composer on it (as on the older spelling `cloud_read_only`, still recognised) instead of failing every press. Terminal routes answer the same code, now in the closed `TerminalRefusalCode` list with its own English and Traditional Chinese sentence. Terminal create, input, paste, resize, close and control-lease mutations are also refused. Downgrading voids existing control leases and keeps read streams open. The original viewer's pin is rechecked after terminal lane and pasteboard waits, using request-local authorization rather than the router's local bearer. An effect already committed before a downgrade cannot be recalled.
 
 The [local CLI viewer authorization contract](cloud-local-viewer.md) records the separate viewer device flow and its current integration boundary.
 
@@ -39,6 +51,15 @@ The [independent-reader baseline](performance/cloud-independent-reads.md) separa
 The [Go CPU attribution](performance/cloud-read-cpu.md) measures the parser and independent-reader cost separately from Node and network waiting.
 
 ## Publications, reads and commands
+
+The hosted console offers pairing again only for a named pairing failure. A timed-out read,
+an unavailable descriptor, and account presence do not establish that a pairing is broken,
+regardless of how long the warning has been held. A live Session row or status update from
+the affected machine clears its transient refresh warning; a retained replay, another
+machine's update, or a descriptor heartbeat does not. Publications cannot clear a named
+pairing refusal because receiving updates does not prove outbound permission. A successful
+live read from that machine clears either kind of warning. Regression coverage is in
+[`state.test.ts`](../web/console/src/cloud/state.test.ts).
 
 The publisher sends a machine descriptor on `orch/<machine>`, one complete row per session on `s/<machine>/<session>`, a content-free status projection on `ss/<machine>/<session>`, and an inventory marker after the rows. It polls the daemon's local routes, skips unchanged session content row by row on both channels, and periodically restates values so an idle machine does not appear stale. A `sessions.snapshot` request can ask the machine to restate rows after a reconnect. The publisher preserves previously known rows when a partial local scan cannot prove they disappeared. The descriptor includes the supported command words. See [`publish.go`](../internal/transport/cloud/publish.go) for current timing, freshness and inventory rules.
 
@@ -101,6 +122,9 @@ The separate encrypted `r/<machine>` request channel carries generation-pinned S
 An incoming request arrives on `ctl/<machine>`. The transport verifies and decrypts it, then [`Service`](../internal/transport/cloud/cloud.go) hands it to `cloudops`. The answer is sealed for `t/<machine>/<session>`, including the reserved machine reply session for machine-wide reads. `cloudops.Implemented()` is the machine's current operation list; the hosted console's [`carry.ts`](../web/console/src/cloud/carry.ts) maps routes to that vocabulary. Unsupported or machine-only routes, including terminal control, are not general Cloud capabilities.
 
 Every signed-in viewer paired with the target machine may send. The machine verifies the viewer's account identity and decrypts its request with that machine's content key before handling it. A machine-local key pin, when present, takes precedence over the account roster; a local or account revocation refuses the viewer. This also admits older browsers that hold the machine key from a pairing completed before local pins existed. `cloud_commands` is checked for each effectful request. `clawdline cloud commands on|off` changes that machine switch without restarting the daemon. A Cloud command uses the same in-process HTTP handler and authorization gate as a direct request.
+
+Conversation picture previews, original reads, capacity boundaries and the relay follow-up are described in
+[Conversation image delivery](image-transfers.md).
 
 The separate `cloud_terminal_direct` switch controls the WebRTC carrier for Terminal and Session
 reads. It defaults on; `clawdline cloud direct on|off` or this machine's local Settings → Remote
@@ -206,6 +230,9 @@ complete `ss/` set or authenticated machine list; its
 already authorized presentation can supply the original Session pane's display row when a rich
 `s/` replay is absent. The pane then reads `info` and transcript for that exact execution. This
 keeps a quiet Session readable without asking every machine to restate its whole rich list.
+The detail selects that pinned destination during render, before local selection effects run.
+Until its machine and execution match a display row, it shows no conversation; an earlier local
+selection cannot supply the detail while a newly opened Session is arriving.
 
 Scheduled Tasks wait for the fleet roster, then ask each eligible machine independently. The
 section shows loading, empty, partial failure and last answered rows separately; remounting the
@@ -281,3 +308,27 @@ No follow-up replays an answer key. Switching Session or execution cancels the o
 follow-up; ordinary unread questions stop following when the Session resumes.
 
 The [static HTML report reader](html-artifacts.md) describes the document format, isolation, compatibility and measurement boundary for self-contained artifacts.
+
+
+### Recovering a browser that can sign in but cannot read
+
+An account session and a machine's cryptographic pairing are separate. A cached
+machine list can survive a missing local pin. A read timeout alone does not prove
+that pairing is broken: the read alert therefore offers both retry and pairing,
+without silently deleting a device, changing its permissions, or trusting the
+account roster as a replacement for the machine's pin.
+
+The pairing card offers a complete CLI command containing the short-lived offer.
+Run it on the named machine, keep the requesting browser open, and compare the
+fingerprints. The code is sensitive until it expires; do not publish it. On phones,
+Safari and the Home Screen app have distinct keys: complete the flow in the same
+browser container that failed to read.
+
+A macOS shell exposing `clawdlinePairLocal` also offers a direct handover when the
+requested machine matches the authenticated local daemon. A native confirmation
+names that machine and explains access before the ordinary pairing offer route
+runs. The bridge accepts only the Cloud main frame, never exports the local token,
+never launches an assistant, and retains existing access by omitting a new scope.
+The existing fingerprint comparison still completes in the browser. Older shells
+continue to use the copied command; hosted deployment alone cannot add a native
+message handler to an installed App.

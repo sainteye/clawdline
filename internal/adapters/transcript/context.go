@@ -76,6 +76,8 @@ type ClaudeStatusLine struct {
 	// Found is whether the file was there and decoded. Every other field is
 	// meaningless without it.
 	Found bool
+	// Effort is the live effort.level supplied by Claude Code, when retained by the writer.
+	Effort string
 	// CostUsd is `cost.total_cost_usd`.
 	CostUsd float64
 	HasCost bool
@@ -109,6 +111,9 @@ func ReadClaudeStatusLine(home, sessionID string) ClaudeStatusLine {
 		return ClaudeStatusLine{}
 	}
 	out := ClaudeStatusLine{Found: true}
+	if effort, ok := rec.object("effort"); ok {
+		out.Effort, _ = effort.str("level")
+	}
 	if cost, ok := rec.object("cost"); ok {
 		if v, ok := looseFloat(cost["total_cost_usd"]); ok && !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 {
 			out.CostUsd, out.HasCost = v, true

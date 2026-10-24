@@ -90,3 +90,32 @@ func TestReadShowsEveryRowBeforeAskingForAnIdentity(t *testing.T) {
 		t.Fatalf("identities asked after %v observed rows; want every row first", id.askedAt)
 	}
 }
+
+func TestInventoryPublishesVerifiedSquadRolesForBothProviders(t *testing.T) {
+	for _, provider := range []session.Assistant{session.AssistantCodex, session.AssistantClaude} {
+		t.Run(string(provider), func(t *testing.T) {
+			row := session.Session{ID: "%1", TTY: "tty1", Assistant: provider, SquadLaunchID: "launch"}
+			calls := 0
+			in := Inventory{
+				Process: stubProcess{inv: session.Inventory{Sessions: []session.Session{row}, Complete: true}},
+				SquadRole: func(_ context.Context, observed session.Session) string {
+					calls++
+					if observed.ID != row.ID || observed.SquadLaunchID != row.SquadLaunchID {
+						t.Fatalf("wrong execution: %+v", observed)
+					}
+					return "personal.persona.editor"
+				},
+			}
+			got := in.Read(context.Background())
+			if len(got.Sessions) != 1 || got.Sessions[0].Persona != "personal.persona.editor" || calls != 1 {
+				t.Fatalf("inventory=%+v calls=%d", got, calls)
+			}
+			row.SquadLaunchID = ""
+			in.Process = stubProcess{inv: session.Inventory{Sessions: []session.Session{row}, Complete: true}}
+			got = in.Read(context.Background())
+			if len(got.Sessions) != 1 || got.Sessions[0].Persona != "" || calls != 1 {
+				t.Fatalf("replacement inherited role: %+v calls=%d", got, calls)
+			}
+		})
+	}
+}

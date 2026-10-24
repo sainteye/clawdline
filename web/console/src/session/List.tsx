@@ -59,7 +59,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
   machineScope = false, coordinatorBound = false,
   freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, status, swiped = false, onOpen, onClose, onArchive, consumePress }: {
   title: string; sessionID: string; machineID: string; machineName: string
-  assistant?: "claude" | "codex"
+  assistant?: "claude" | "codex" | "antigravity"
   icon?: SessionRow["icon"]; cwd?: string
   machineScope?: boolean; coordinatorBound?: boolean
   state: string; stateLabel: string; freshness: string; lastMovementAt?: number; attention: boolean; open: boolean

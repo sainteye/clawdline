@@ -54,7 +54,7 @@ clawdline dispatch --title "Add a test for the parser" --claims internal/parser 
 - `--isolation worktree` gives the child a git worktree of its own; without it the child works in
   the project directory.
 - Also: `--assistant claude|codex`, `--model`, `--permission-mode ask|edits|full` (default
-  `full`), `--timeout` in minutes (default 30, up to 240).
+  the machine setting; initially `full`), `--timeout` in minutes (default 30, up to 240).
 - It prints `dispatched <id> <state> [worktree <path>]`.
 
 A root session may have **5** children at once by default (20 for the whole machine). The child

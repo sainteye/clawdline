@@ -36,6 +36,9 @@ import (
 // `activate: false` stops after the tab, and no fallback anywhere: raising
 // iTerm2 is the one thing not activating is a promise not to do.
 func revealFollow(ctx context.Context, t *Tmux, paneID string, activate bool) {
+	if !ITermIntegration() {
+		return
+	}
 	number, ok := tmuxMirrorPaneNumber(paneID)
 	if !ok {
 		return

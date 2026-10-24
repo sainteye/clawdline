@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,32 @@ import (
 
 	domain "github.com/sainteye/clawdline/internal/domain/cloud"
 )
+
+func TestRekeyControlReceipts(t *testing.T) {
+	// Recorded AccountDO reply shapes; operation identifiers are anonymized.
+	cases := []struct{ raw, want string }{
+		{`{"type":"content_key_routed","frame":"content_key_answer","operation_id":"recorded-route-operation","delivered":1}`, "cloud rekey control code=content_key_routed"},
+		{`{"type":"content_key_error","frame":"content_key_answer","code":"content_key_no_target","operation_id":"recorded-error-operation"}`, "cloud rekey control code=content_key_no_target"},
+		{`{"type":"content_key_error","frame":"content_key_answer","code":"secret raw error"}`, "cloud dropped rekey control code=malformed_control"},
+		{`{"type":"content_key_routed","frame":"content_key_answer","operation_id":"op","delivered":0}`, "cloud dropped rekey control code=malformed_control"},
+		{`{"type":"content_key_error","frame":"content_key_answer","code":"content_key_forbidden","operation_id":42}`, "cloud dropped rekey control code=malformed_control"},
+		{`{"type":"content_key_error","frame":"content_key_answer","code":"content_key_no_target","operation_id":null}`, "cloud dropped rekey control code=malformed_control"},
+		{`{"type":"content_key_error","frame":"content_key_offer","code":"content_key_malformed"}`, "cloud rekey control code=content_key_malformed"},
+		{`{"type":"content_key_error","frame":"content_key_answer","code":"content_key_no_target","extra":"private"}`, "cloud dropped rekey control code=malformed_control"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.want+tc.raw, func(t *testing.T) {
+			var logs []string
+			tr := &Transport{opts: Options{Log: func(line string) { logs = append(logs, line) }}}
+			if err := tr.handle(nil, []byte(tc.raw)); err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(logs) != "["+tc.want+"]" {
+				t.Fatalf("logs: %q", logs)
+			}
+		})
+	}
+}
 
 func TestMissedKeepaliveAfterMachineSleep(t *testing.T) {
 	before := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)

@@ -1,6 +1,6 @@
 # 此 build 的 Agent 路由索引
 
-由已註冊的路由與 `api/v1/agent-routes.json` 產生；API 等級：25。請先讀 `clawdline guide`，再讀表格指定的部分。路由出現在此只表示可以探索，**不授權呼叫，也不代表操作完成**。每個前綴下的具體動作、輸入、權限、拒絕與收據，必須由該部分及本 build 的 schema 明示；若未載明該動作，Agent 就不得呼叫。缺少能力或版本、身分不符、結果未知時停止，不改走另一台機器或舊介面。
+由已註冊的路由與 `api/v1/agent-routes.json` 產生；API 等級：29。請先讀 `clawdline guide`，再讀表格指定的部分。路由出現在此只表示可以探索，**不授權呼叫，也不代表操作完成**。每個前綴下的具體動作、輸入、權限、拒絕與收據，必須由該部分及本 build 的 schema 明示；若未載明該動作，Agent 就不得呼叫。缺少能力或版本、身分不符、結果未知時停止，不改走另一台機器或舊介面。
 
 | 方法 | 已註冊路由 | 起始 API 等級 | Agent 指南 | 使用者目標 |
 | --- | --- | ---: | --- | --- |
@@ -12,6 +12,7 @@
 | `*` | `/v1/board/tracks` | 1 | `clawdline guide board` | `docs/user/board.md` |
 | `*` | `/v1/capacity` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/cloud/commands` | 9 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
+| `*` | `/v1/cloud/devices/grant` | 27 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/cloud/devices/revoke` | 1 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/cloud/direct` | 15 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/cloud/direct/local-network` | 21 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
@@ -88,6 +89,7 @@
 | `*` | `/v1/project-sync/` | 1 | `clawdline guide project` | `docs/user/projects.md` |
 | `*` | `/v1/projects` | 1 | `clawdline guide project` | `docs/user/projects.md` |
 | `*` | `/v1/projects/` | 1 | `clawdline guide project` | `docs/user/projects.md` |
+| `*` | `/v1/provider-quotas` | 28 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/push/` | 1 | `clawdline guide notify` | `docs/user/notifications.md` |
 | `*` | `/v1/remote/inbox/` | 14 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/remote/inspect` | 14 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
@@ -102,6 +104,7 @@
 | `*` | `/v1/settings/dispatch-policy` | 12 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/settings/notifications` | 8 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/settings/work-gates` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/settings/workflow` | 26 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/skill` | 16 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/skill/install` | 16 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/snippets` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |

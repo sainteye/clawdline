@@ -6,10 +6,13 @@ import (
 	"context"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
-type PS struct{}
+type PS struct {
+	Antigravity ports.AntigravityProcessVerifier
+}
 
 func New() *PS { return &PS{} }
 

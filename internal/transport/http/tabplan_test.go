@@ -119,7 +119,7 @@ func TestTheTabRulesAndTheContractNameTheSameRules(t *testing.T) {
 		return orchestrator.Record{ScheduleID: "5c000000-0000-4000-8000-000000000005",
 			ScheduleCloseTab: closeTab}
 	}
-	shapes := []orchestrator.Record{{}, scheduled("on_success"), scheduled("always"), scheduled("never")}
+	shapes := []orchestrator.Record{{}, {ChildBackend: "owned"}, scheduled("on_success"), scheduled("always"), scheduled("never")}
 	ends := []orchestrator.State{orchestrator.StateSuccess, orchestrator.StateFailure,
 		orchestrator.StateTimeout, orchestrator.StateCancelled, orchestrator.StateSpawnFailed}
 

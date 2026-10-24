@@ -222,6 +222,8 @@ function Door({ shown, password, onSignedIn }: { shown: boolean; password: boole
             <li>{nextWord("doorAskStep2")}</li>
             <li>{nextWord("doorAskStep3")}</li>
           </ol>
+          <p className="fine door-scope">{nextWord("doorAskScope")}</p>
+          <p className="fine door-scope">{nextWord("doorAskControl")}</p>
           <label htmlFor="door-name">{T.webDoorName}</label>
           <input id="door-name" name="d1n" {...nameAttrs} />
           <button className="go" id="door-ask" type="button">

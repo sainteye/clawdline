@@ -13,12 +13,12 @@
       "translation": "f181551a1b964d1f6a2acc88ae2e0e00ef25e4aa6fc8059d8b5bd163e897b7af"
     },
     "connect": {
-      "source": "8ad619c7be0f243ccdf3dc4e06fa7b7eb57d3280e59d95c202a4d54177da56be",
-      "translation": "4c488f6d284b1369941ec9954f17b9452b05c8cddf42222c9af6a4e6f3a4a53b"
+      "source": "e22231e46a9a94989e292d04720b4dbdb31a81daf5df33185ad74eb805c7804e",
+      "translation": "17120379f9e0d0f8bc8b99ca8590f797a28f9cb6979f2a0a84d80c82f3a5200d"
     },
     "cloud": {
-      "source": "17e894064b656c927deb30910aab3ad66d8e9181db635c0c9899992f36f399ac",
-      "translation": "714c94923bfed63cd33a41a9fbd384131c00c4c8f2f672701a04f2a30d376442"
+      "source": "cd00735a16f8583eee874a3b22ae0480cbfca3e246a079d802d4b562f485726f",
+      "translation": "17bb4a448252643b3d4f1e9b90023bb2f62fdcd833ab3bc61494ae9ca6f6978d"
     },
     "project": {
       "source": "90bb6cc2a37229aad9f0d424865827969fe6f117cb2bbf16c35c9c675c4da657",
@@ -33,8 +33,8 @@
       "translation": "a01560e303e98bb4690c9d4a7ffed784ff0c9864458fd5ef41ce0c5dd3b13d1e"
     },
     "dispatch": {
-      "source": "1c7b6f5b7b93e4f778de7865462a5dcfde1df040465538fc4c1157c2f4a51b9a",
-      "translation": "92c004f217838268dae77093383344673b597a5bed75240048459123fe170167"
+      "source": "0031500fe89fb9957575ba074851201c2a60c834c18d06498521edd4794948ac",
+      "translation": "54cf01146cac45173f8d18ee8dd83a4732b1e0812911a53c2e0be1e4af3e301a"
     },
     "running": {
       "source": "4068d290982cb7d60df26645a81fba8d1e38cbf5a0e5a02075e7fa908df786ef",
@@ -53,12 +53,12 @@
       "translation": "1c45d565eb4b8e0657cc49b2ed37054feb18fb64b8713aa6be6200466cc718f2"
     },
     "report": {
-      "source": "a3831f94fba62c81f7068f4a19120adc99e5a3d822b31044cd8837eef4e9a05e",
-      "translation": "1d8c86a25389c8252dc166eb4a4f31de8d13fd3b330d2b1efe901a731c267440"
+      "source": "f1fcc4cd15e70e3fbef8f33e14c7dbe91ea53ea989d43c88329729b7018f6468",
+      "translation": "56e7d32bcc4713fe753eb9ea9d6c6aaf6678b44e770a695225222151a61986d3"
     },
     "send": {
-      "source": "6d4ac759920aa021352b040996beeba8c0b787f9af7c0988b52d602d992a07bd",
-      "translation": "cf98fb5cbf8e037d06ddac2f5c188cf1b8a0c58190dbe211c3d444377749d501"
+      "source": "87b3161a7ed7f1c220824e78d8c1e337fb40e07d321e1298d43be0f441515961",
+      "translation": "97dcf3f4b1d2b4de19edad1215c51e057783d27a5c1a2b76b6f59541bd2e88f1"
     },
     "notify": {
       "source": "ff16a882ba8051bc9195e82e06d8944dd63f25d98ac84e3bf18813b1246eb618",
@@ -77,8 +77,8 @@
       "translation": "a6ac6f9c59f6fbe921982e5e9d338043f92ea01edb430878eb6d556243dfe60d"
     },
     "coordination": {
-      "source": "d196aabd8ec4fb6cb1bf0e1bc39c3f58bab7cc223552a60fd2ffbc7bbf1de82c",
-      "translation": "c2ac4a9dd3161cfa3fb37e580d486aab43e05771cd6604fba6040440c1b002cc"
+      "source": "4989fe02097be5035d82199ef2fd6ae119fc7bb41b870350d81c1a9cbf6b50cc",
+      "translation": "97600db309e157a98725dc78eb32adc6b9e3767dd259faad0417132ae427ebf5"
     },
     "refused": {
       "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"math/rand/v2"
 	"time"
@@ -127,7 +128,33 @@ func (r *ScheduleWebhookRuntime) admit(ctx context.Context, claim schedulewebhoo
 		taskID = newUUID()
 	}
 	now := r.now().Unix()
+	var evidence []byte
+	if claim.Investigation != nil {
+		reader, ok := r.Cloud.(interface {
+			InvestigationBundle(context.Context, schedulewebhook.Claim) ([]byte, error)
+		})
+		if !ok {
+			return schedulewebhook.ErrInvestigationBundleUnavailable
+		}
+		raw, err := reader.InvestigationBundle(ctx, claim)
+		if err != nil {
+			return fmt.Errorf("%w: %w", schedulewebhook.ErrInvestigationBundleUnavailable, err)
+		}
+		if err := schedulewebhook.ValidateInvestigationBundle(raw, *claim.Investigation, r.Identity); err != nil {
+			return err
+		}
+		if err := claim.Validate(r.Identity, r.now()); err != nil {
+			return err
+		}
+		evidence = raw
+		if bound && bindingErr == nil {
+			if err := r.Book.InvestigationBound(ctx, scheduleID); err != nil {
+				outcome = "schedule_invalid"
+			}
+		}
+	}
 	fresh := store.ScheduleWebhookDelivery{
+		Investigation: claim.Investigation, InvestigationBundle: evidence,
 		Version: 1, DeliveryID: claim.DeliveryID, DeliveryDigest: claim.DeliveryDigest,
 		HookID: claim.HookID, HookGeneration: claim.HookGeneration, ScheduleID: scheduleID,
 		PreflightOutcome: outcome, State: webhookPrepared, TaskID: taskID,
@@ -216,9 +243,20 @@ func (r *ScheduleWebhookRuntime) advance(ctx context.Context, row store.Schedule
 		if row.ScheduleID == "" || row.TaskID == "" {
 			return r.queueAndAdvance(ctx, row, webhookRefused, "outcome_unknown", "outcome_unknown", "", time.Time{}, true)
 		}
-		reply := r.Book.RunWebhook(ctx, row.ScheduleID, row.TaskID)
+		var reply ScheduleReply
+		if row.Investigation != nil {
+			if err := schedulewebhook.ValidateInvestigationBundle(row.InvestigationBundle, *row.Investigation, r.Identity); err != nil {
+				return err
+			}
+			reply = r.Book.RunInvestigationWebhook(ctx, row.ScheduleID, row.TaskID, *row.Investigation, row.InvestigationBundle)
+		} else {
+			reply = r.Book.RunWebhook(ctx, row.ScheduleID, row.TaskID)
+		}
 		if reply.OK() {
 			return r.queueAndAdvance(ctx, row, webhookAccepted, webhookAccepted, "", "", time.Time{}, false)
+		}
+		if reply.Code == "outcome_unknown" {
+			return fmt.Errorf("schedule_dispatch_outcome_unknown")
 		}
 		if reply.Code == "over_capacity" || reply.Code == "terminal_busy" {
 			retry := r.now().Add(time.Duration(rand.Int64N(int64(time.Minute) + 1)))
@@ -226,7 +264,7 @@ func (r *ScheduleWebhookRuntime) advance(ctx context.Context, row store.Schedule
 		}
 		code := reply.Code
 		switch code {
-		case "schedule_not_found", "schedule_disabled", "schedule_spent", "schedule_active", "orchestrator_disabled":
+		case "schedule_invalid", "schedule_not_found", "schedule_disabled", "schedule_spent", "schedule_active", "orchestrator_disabled":
 		default:
 			code = "dispatch_failed"
 		}
@@ -238,6 +276,15 @@ func (r *ScheduleWebhookRuntime) advance(ctx context.Context, row store.Schedule
 			return err
 		}
 		if cloudState := webhookTerminalOutcome(state); cloudState != "" {
+			if row.Investigation != nil {
+				report, err := r.Store.InvestigationTaskReport(ctx, row.TaskID, row.ScheduleID)
+				if err != nil {
+					return err
+				}
+				if report != nil && report.InvestigationID == row.Investigation.InvestigationID {
+					row.InvestigationReport = report
+				}
+			}
 			return r.queueAndAdvance(ctx, row, webhookTerminal, webhookTerminal, "", cloudState, time.Time{}, true)
 		}
 	}
@@ -270,6 +317,9 @@ func (r *ScheduleWebhookRuntime) queueAndAdvance(ctx context.Context, row store.
 	}
 	if outcome != "" {
 		receipt.OutcomeCode = &outcome
+	}
+	if kind == webhookTerminal {
+		receipt.InvestigationReport = row.InvestigationReport
 	}
 	if terminal != "" {
 		receipt.TaskTerminalState = &terminal

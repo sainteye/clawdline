@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -46,6 +47,35 @@ type Files struct {
 	PromptPath     string
 	CapabilityPath string
 	SnapshotPath   string
+}
+
+// PublishAntigravityContext adds one immutable context document to the private
+// launch directory. Identical retries succeed; different bytes never overwrite.
+// Root pins the returned digest in its launch record and retains it on resume.
+func PublishAntigravityContext(files Files, prepared projects.AntigravityContext) (string, string, error) {
+	if files.SnapshotPath == "" || !filepath.IsAbs(files.SnapshotPath) ||
+		(prepared.PromptPath != "" && prepared.PromptPath != files.PromptPath) {
+		return "", "", projects.ErrSquadContextUnavailable
+	}
+	body, digest, err := prepared.Document()
+	if err != nil {
+		return "", "", err
+	}
+	path := filepath.Join(filepath.Dir(files.SnapshotPath), "antigravity-context.json")
+	if err := writePrivate(path, body); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return "", "", err
+		}
+		info, statErr := os.Lstat(path)
+		if statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || info.Size() != int64(len(body)) {
+			return "", "", projects.ErrSquadContextUnavailable
+		}
+		existing, readErr := os.ReadFile(path)
+		if readErr != nil || string(existing) != string(body) {
+			return "", "", projects.ErrSquadContextUnavailable
+		}
+	}
+	return path, digest, nil
 }
 
 func (f Files) PrivateEnv() string {

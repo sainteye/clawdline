@@ -20,6 +20,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/schedule"
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -106,6 +107,12 @@ type ScheduleBook struct {
 	// `401 no_machine_credential` for.
 	// expectedRevision is the revision the hook is at: 0 for a new one.
 	Activate func(ctx context.Context, hookID, requestID string, expectedRevision int64) (int64, error)
+	// ActivateInvestigation is Activate declaring that the hook is bound to an
+	// enabled, trigger-only `health_investigation` schedule, so Cloud lists it
+	// as an investigation destination before its first run. BindWebhook picks
+	// it from the schedule as stored, never from the request. Nil, with
+	// Activate set, refuses such a bind rather than activating it unmarked.
+	ActivateInvestigation func(ctx context.Context, hookID, requestID string, expectedRevision int64) (int64, error)
 	// Conversations matches a run to the conversation its child had, so a
 	// finished run can be resumed (schedule_resume.go). Zero answers none.
 	Conversations RunConversations
@@ -563,7 +570,7 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 		if s, isString := model.(string); !isString || s != "" {
 			tmpl["model"] = model
 		}
-	} else if kept, ok := carried["model"]; ok {
+	} else if kept, ok := carried["model"]; ok && (carried["assistant"] == nil || carried["assistant"] == tmpl["assistant"]) {
 		tmpl["model"] = kept
 	}
 	// `permission_mode` as `model`: no key keeps what the file says, `""`
@@ -591,16 +598,16 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 			tmpl[key] = kept
 		}
 	}
-	if tmpl["assistant"] == "codex" {
+	if tmpl["assistant"] == "codex" || tmpl["assistant"] == "antigravity" {
 		if effort, ok := body["reasoning_effort"]; ok {
 			if name, isString := effort.(string); !isString || name != "" {
 				tmpl["reasoning_effort"] = effort
 			}
-		} else if kept, ok := carried["reasoning_effort"]; ok {
+		} else if kept, ok := carried["reasoning_effort"]; ok && (carried["assistant"] == nil || carried["assistant"] == tmpl["assistant"]) {
 			tmpl["reasoning_effort"] = kept
 		}
 	} else if effort, ok := body["reasoning_effort"]; ok && effort != "" {
-		r := refusedSchedule(400, "bad_request", "reasoning_effort is only valid when assistant is codex")
+		r := refusedSchedule(400, "bad_request", "reasoning_effort is only valid when assistant is codex or antigravity")
 		return nil, schedule.Schedule{}, &r
 	}
 	when := map[string]any{"at": orEmpty(body, "at"), "days": orEmpty(body, "days")}
@@ -1043,6 +1050,27 @@ func (b *ScheduleBook) run(ctx context.Context, id string, force bool) ScheduleR
 // by the delivery journal. Unlike a manual validation press, a webhook honors
 // enabled: it is unattended execution and must not revive a paused schedule.
 func (b *ScheduleBook) RunWebhook(ctx context.Context, id, taskID string) ScheduleReply {
+	return b.runWebhook(ctx, id, taskID, nil, nil)
+}
+
+func (b *ScheduleBook) InvestigationBound(ctx context.Context, id string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	h, ok, err := b.named(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !ok || !h.s.When.TriggerOnly || h.s.TaskString("kind") != schedulewebhook.InvestigationKind {
+		return schedulewebhook.ErrInvestigationInvalid
+	}
+	return nil
+}
+
+func (b *ScheduleBook) RunInvestigationWebhook(ctx context.Context, id, taskID string, ref schedulewebhook.InvestigationRef, evidence []byte) ScheduleReply {
+	return b.runWebhook(ctx, id, taskID, &ref, evidence)
+}
+
+func (b *ScheduleBook) runWebhook(ctx context.Context, id, taskID string, investigation *schedulewebhook.InvestigationRef, evidence []byte) ScheduleReply {
 	if !b.dispatchEnabled() {
 		return refusedSchedule(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
 	}
@@ -1060,11 +1088,13 @@ func (b *ScheduleBook) RunWebhook(ctx context.Context, id, taskID string) Schedu
 		return refusedSchedule(500, "binding_store_unavailable", "The schedule's runs could not be read.")
 	}
 	replay := false
+	recordedReplay := false
 	for _, run := range runs {
 		if run.TaskID == taskID {
 			// The broker is idempotent by task id. Let it replay the exact
 			// dispatch so a crash after admission advances the receipt journal.
 			replay = true
+			recordedReplay = run.State != ""
 			continue
 		}
 		if run.State != "" && !finished(run.State) {
@@ -1074,8 +1104,11 @@ func (b *ScheduleBook) RunWebhook(ctx context.Context, id, taskID string) Schedu
 	if !replay && !h.s.Enabled {
 		return refusedSchedule(409, "schedule_disabled", "This schedule is disabled.")
 	}
+	if !recordedReplay && ((investigation == nil && h.s.TaskString("kind") == schedulewebhook.InvestigationKind) || (investigation != nil && (!h.s.When.TriggerOnly || h.s.TaskString("kind") != schedulewebhook.InvestigationKind))) {
+		return refusedSchedule(409, "schedule_invalid", "The schedule is not investigation-bound.")
+	}
 	b.audit("orchestrator.schedule.run", map[string]string{"schedule": id, "how": "webhook"})
-	id, dir, replayed, warning, err := b.dispatchID(ctx, h.s, time.Time{}, "webhook", taskID)
+	id, dir, replayed, warning, err := b.dispatchInvestigationID(ctx, h.s, time.Time{}, "webhook", taskID, investigation, evidence)
 	if err != nil {
 		var refusal orchestrator.Refusal
 		if errors.As(err, &refusal) {
@@ -1134,6 +1167,10 @@ func (b *ScheduleBook) dispatch(ctx context.Context, s schedule.Schedule, fire t
 }
 
 func (b *ScheduleBook) dispatchID(ctx context.Context, s schedule.Schedule, fire time.Time, how, id string) (string, string, bool, string, error) {
+	return b.dispatchInvestigationID(ctx, s, fire, how, id, nil, nil)
+}
+
+func (b *ScheduleBook) dispatchInvestigationID(ctx context.Context, s schedule.Schedule, fire time.Time, how, id string, investigation *schedulewebhook.InvestigationRef, evidence []byte) (string, string, bool, string, error) {
 	if b.Broker == nil {
 		return id, "", false, "", errors.New("this daemon has no broker to run a schedule through")
 	}
@@ -1147,9 +1184,13 @@ func (b *ScheduleBook) dispatchID(ctx context.Context, s schedule.Schedule, fire
 	defer cancel()
 	out, err := b.Broker.DispatchScheduled(opening, orchestrator.ScheduledRun{
 		TaskID: id, ScheduleID: s.ID, Title: s.Title, Template: s.Task, CloseTab: string(s.CloseTab),
+		Investigation: investigation, InvestigationBundle: evidence,
 	})
 	if out.Absent {
 		_ = b.Store.ForgetScheduleRun(ctx, id)
+	}
+	if err != nil && !out.Absent {
+		return id, "", false, "", orchestrator.Refusal{Status: 503, Code: "outcome_unknown", Message: "The broker could not confirm the scheduled dispatch."}
 	}
 	if err != nil {
 		return id, "", false, "", err
@@ -1289,11 +1330,16 @@ func (b *ScheduleBook) BindWebhook(ctx context.Context, requestID, hookID, sched
 		}
 		return finish(status, code, body)
 	}
-	if _, ok, err := b.named(ctx, scheduleID); err != nil {
+	bound, ok, err := b.named(ctx, scheduleID)
+	if err != nil {
 		return complete(failure(503, "binding_store_unavailable"))
 	} else if !ok {
 		return complete(failure(404, "schedule_not_found"))
 	}
+	// The declaration covers this activation only. A schedule changed after it
+	// is still refused before each run by InvestigationBound.
+	investigation := bound.s.Enabled && bound.s.When.TriggerOnly &&
+		bound.s.TaskString("kind") == schedulewebhook.InvestigationKind
 	if !hookPattern.MatchString(hookID) || (replaceHookID != nil && !hookPattern.MatchString(*replaceHookID)) ||
 		expected < 0 {
 		return complete(failure(503, "binding_store_unavailable"))
@@ -1311,8 +1357,22 @@ func (b *ScheduleBook) BindWebhook(ctx context.Context, requestID, hookID, sched
 	if b.Activate == nil {
 		return complete(failure(401, "no_machine_credential"))
 	}
-	revision, err := b.Activate(ctx, hookID, requestID, expected)
+	activate := b.Activate
+	if investigation {
+		if b.ActivateInvestigation == nil {
+			return finish(failure(503, "cloud_upgrade_required"))
+		}
+		activate = b.ActivateInvestigation
+	}
+	revision, err := activate(ctx, hookID, requestID, expected)
 	if err != nil {
+		// A Cloud that does not know the purpose is not asked again without
+		// it: the same key must keep its body, and an unmarked investigation
+		// hook is the miss this declaration exists to prevent. Not recorded,
+		// so the same request succeeds once Cloud is upgraded.
+		if errors.Is(err, adaptercloud.ErrCloudUpgradeRequired) {
+			return finish(failure(503, "cloud_upgrade_required"))
+		}
 		// Cloud's own refusal is said as itself — `stale_revision` once hid
 		// behind this 503 for every moved hook. What did not reach Cloud, or
 		// came back unreadable, stays temporarily unavailable.

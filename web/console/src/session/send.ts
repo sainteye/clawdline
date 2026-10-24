@@ -22,7 +22,10 @@ import { outcomeOf } from "./outcome.js"
 import { newRequestID, PendingSends, turnWords, type PendingSend } from "./pending.js"
 import { Cards, type CardStore } from "./persist.js"
 import { postCard, postEnter, readTranscript, Sender } from "./sender.js"
-import { retryCloudConnection } from "../cloud/install.js"
+import { captureMachineFetch, retryCloudConnection } from "../cloud/install.js"
+import { readWorkflowSettings, writeWorkflowSettings } from "../pages/settings/api.js"
+import { byId } from "../legacy/bridge.js"
+import { itermConsent } from "./iterm-consent.js"
 
 /** The page's one set of cards: a card outlives the composer that made it and the session being switched away from. */
 export const pendingSends = new PendingSends()
@@ -89,7 +92,17 @@ const sender = new Sender({
   cards: pendingSends,
   now: () => Date.now(),
   wakeConnection: retryCloudConnection,
-  post: (card) => postCard(doFetch, url, card),
+  post: async (card) => {
+    const target = captureMachineFetch()
+    const iterm = byId(card.session)?.backend === "iterm"
+    const posted = await postCard(target.fetch, url, card)
+    if (!posted.ok && iterm) void itermConsent.offer(posted.code, {
+      current: target.current,
+      read: () => readWorkflowSettings(target.fetch),
+      enable: () => writeWorkflowSettings({ iterm_integration: true }, target.fetch),
+    })
+    return posted
+  },
   enter: (card) => postEnter(doFetch, url, card, newRequestID()),
   readBack: (session) => readTranscript(doFetch, url, session),
   outcomeOf,

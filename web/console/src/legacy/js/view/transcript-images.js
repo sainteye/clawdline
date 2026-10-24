@@ -121,10 +121,14 @@ export function reconcileArtifactTiles(currentTiles, nextTiles, artifacts, optio
 /** Hand back whatever bytes a tile was holding. Safe to call twice and on a tile that held none. */
 export function releaseArtifactTile(tile) {
     var binding = artifactTileBindings.get(tile);
-    if (!binding || !binding.release) return;
-    var release = binding.release;
-    binding.release = null;
-    release();
+    if (!binding) return;
+    binding.active = false;
+    if (binding.cancelVisibility) { binding.cancelVisibility(); binding.cancelVisibility = null; }
+    for (var key of ["release", "fullRelease"]) {
+        var release = binding[key];
+        binding[key] = null;
+        if (release) release();
+    }
 }
 
 /**
@@ -142,11 +146,12 @@ export function connectArtifactTile(tile, artifact, options = {}) {
     var status = tile.querySelector(".message-image-state");
     var now = options.now == null ? Math.floor(Date.now() / 1000) : options.now;
     var presentation = artifactPresentation(artifact, now);
-    var binding = { key: artifactReconciliationKey(artifact, now), release: null };
+    var binding = { key: artifactReconciliationKey(artifact, now), release: null, fullRelease: null, active: true, cancelVisibility: null };
     artifactTileBindings.set(tile, binding);
 
     function say(state, words) {
         releaseArtifactTile(tile);
+        fullURL = null;
         tile.dataset.imageState = state;
         tile.disabled = true;
         image.hidden = true;
@@ -178,7 +183,10 @@ export function connectArtifactTile(tile, artifact, options = {}) {
         var code = error && error.code ? String(error.code) : "";
         var words = options.describeFailure ? options.describeFailure(code, artifact) : "";
         if (!words) { expire(); return; }
-        say("unavailable", words);
+        say("unavailable", words + (options.retryLabel ? " · " + options.retryLabel : ""));
+        // A failed transfer is a finished attempt. A press can start a new one;
+        // permanent absence remains disabled above and is never retried.
+        if (typeof options.source === "function") tile.disabled = false;
     }
 
     if (presentation.state === "unknown") {
@@ -205,36 +213,77 @@ export function connectArtifactTile(tile, artifact, options = {}) {
     // The endpoint types 404 and 410, but `<img>` does not expose the status. Every request
     // failure therefore takes the same conservative, unmistakable visible branch.
     image.addEventListener("error", expire);
+    var fullURL = null;
+    var opening = false;
     tile.addEventListener("click", function () {
-        if (tile.dataset.imageState === "live" && options.open) {
-            options.open(tile, image.src, expire);
+        if (tile.dataset.imageState === "unavailable") { start(); return; }
+        if ((tile.dataset.imageState !== "live" && !(options.thumbnails && tile.dataset.imageState === "loading")) || !options.open || opening) return;
+        if (typeof options.fullSource !== "function") {
+            options.open(tile, options.thumbnails ? presentation.url : image.src, expire);
+            return;
         }
+        if (fullURL) { options.open(tile, fullURL, expire); return; }
+        opening = true;
+        tile.setAttribute("aria-busy", "true");
+        status.hidden = false;
+        status.textContent = options.loadingLabel || "Loading…";
+        Promise.resolve().then(function () { return options.fullSource(artifact); }).then(function (delivery) {
+            if (!binding.active || artifactTileBindings.get(tile) !== binding) {
+                if (delivery && delivery.release) delivery.release();
+                return;
+            }
+            if (!delivery || !delivery.url) throw Object.assign(new Error("no image url"), { code: "bad_payload" });
+            binding.fullRelease = delivery.release || null;
+            fullURL = delivery.url;
+            status.hidden = true;
+            options.open(tile, fullURL, expire);
+        }).catch(function (error) {
+            if (!binding.active) return;
+            // Keep the usable thumbnail. Another press retries the original.
+            status.textContent = options.describeFailure ? options.describeFailure(error.code || "", artifact) : "";
+            if (!status.textContent) status.textContent = options.expiredLabel || "Image expired";
+        }).finally(function () { opening = false; tile.removeAttribute("aria-busy"); });
     });
-    if (typeof options.source !== "function") {
-        image.src = presentation.url;
-        return { presentation: presentation, expire: expire, refuse: refuse };
-    }
-    // The tile is already announcing "Loading…" and the request is a round trip through a relay,
-    // so nothing here waits for it. A tile that has been replaced by the time the bytes land has
-    // had its binding overwritten; releasing against the tile rather than closing over the URL is
-    // what keeps that from freeing somebody else's picture.
-    var carried = Promise.resolve()
-        .then(function () { return options.source(artifact); })
-        .then(function (delivery) {
+    function start() {
+        binding.active = true;
+        tile.dataset.imageState = "loading";
+        tile.disabled = !options.thumbnails;
+        status.hidden = false;
+        status.textContent = options.loadingLabel || "Loading…";
+        if (typeof options.source !== "function") {
+            image.loading = "eager";
+            image.src = presentation.url + (options.thumbnails ? "?size=thumb" : "");
+            return Promise.resolve();
+        }
+        return Promise.resolve().then(function () { return options.source(artifact); }).then(function (delivery) {
             if (!delivery || typeof delivery.url !== "string" || !delivery.url) {
                 throw Object.assign(new Error("no image url"), { code: "bad_payload" });
             }
-            if (artifactTileBindings.get(tile) !== binding) {
+            if (!binding.active || artifactTileBindings.get(tile) !== binding) {
                 if (delivery.release) delivery.release();
                 return;
             }
             binding.release = delivery.release || null;
             image.src = delivery.url;
-        })
-        .catch(function (error) {
-            if (artifactTileBindings.get(tile) !== binding) return;
+        }).catch(function (error) {
+            if (!binding.active || artifactTileBindings.get(tile) !== binding) return;
             refuse(error);
         });
+    }
+    var carried;
+    if (options.thumbnails) { tile.dataset.imageOpenable = "true"; tile.disabled = false; }
+    if (options.lazy && typeof IntersectionObserver === "function") {
+        carried = new Promise(function (resolve) {
+            var observer = new IntersectionObserver(function (entries) {
+                if (!entries.some(function (entry) { return entry.isIntersecting; })) return;
+                observer.disconnect();
+                binding.cancelVisibility = null;
+                resolve(start());
+            });
+            binding.cancelVisibility = function () { observer.disconnect(); resolve(); };
+            observer.observe(tile);
+        });
+    } else { carried = start(); }
     return { presentation: presentation, expire: expire, refuse: refuse, carried: carried };
 }
 

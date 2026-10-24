@@ -73,6 +73,9 @@ var itermChildEnder = itermEnder{
 // is gone, or not seen past a window that will not list, closes nothing and is
 // not an error; a close iTerm2 did not answer is Unconfirmed.
 func (l Launcher) CloseITermChild(ctx context.Context, id string, startedBefore time.Time) (bool, error) {
+	if !ITermIntegration() {
+		return false, ITermScanOff{Op: "close a child tab"}
+	}
 	if id == "" {
 		return false, nil
 	}

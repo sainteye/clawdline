@@ -30,6 +30,7 @@
         "terminal_access_revoked",
         "terminal_cloud_not_supported",
         "terminal_socket_path_too_long",
+        "viewer_read_only",
         "terminal_invalid"
       ]
     },

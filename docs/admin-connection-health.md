@@ -340,6 +340,62 @@ as part of adding a chart. Reconnect storm and upstream outage group related inc
 quota does not suppress the visible fact that observations are incomplete. Never automatically
 retry a user mutation based on an incident or a lost receipt.
 
+### Reading an incident: people first, agents and engineers one disclosure away
+
+An incident revision (M05) is read in this order:
+
+1. **What happened** (`incident-summary.ts`): a plain summary built only from the revision's own
+   typed fields — what was observed at the time, what the frozen evidence can and cannot say now,
+   what is missing, and the next place to look. It names no event or stage codes.
+2. **Agent investigation** (`investigation-view.tsx`), one card: the newest investigation's state
+   (*Investigating*, *Needs you*, *Verified recovered*), the Cloud's reason in a fixed sentence with
+   its next step, then the agent's enumerated report (conclusion, fix commit, cited evidence).
+   Earlier investigations fold away; ids, hashes and delivery codes are under its own disclosure.
+3. **Recovery evidence and human review**, side by side. Acknowledgement stays an explicit
+   two-step act and never marks recovery.
+4. **Evidence records**: one card per frozen record, with the event and stage in words, the
+   producer's own measured time when it sent one, and Cloud's receive time. Every exact field —
+   raw event and stage names, the full build commit, record and event ids, digest, producer wall
+   clock — is under the card's *Technical record* disclosure.
+5. **Context** (neighbouring records) and **Technical details for engineers and agents**
+   (revision hashes and sizes, retention, the proven/active stages as stored, sequence coverage,
+   the manifest) are disclosures; the audited export stays at the end. Nothing is removed, and the
+   exported bytes are unchanged.
+
+The summary's limits are deliberate. An *active* incident is described as "no ending or recovery
+recorded, current status unknown", never as stuck now: a frozen revision cannot observe the
+present, and a missing ending may be a missing record. It gives no cause, no percentage and no
+threshold value; the only duration is the producer's own `elapsed_ms`, and the only age is the
+read's `as_of` minus the newest receive time, both Cloud's clock. A completed stage such as
+`api_dependency_completed` means downstream work returned; when no final stage or recovery follows,
+the summary says no final response was recorded, not that the dependency was slow. Slow and stall
+are the producer's threshold observations at that moment, and a `pending` result is not final.
+Old records that carry no request route cannot be joined to service logs from this page, so the
+next step for such an operation is a log search around the last receive time, stated as such.
+
+### Handing an incident to an agent
+
+The operator detail carries `investigations` from the Cloud's private investigation contract
+(v1). The page reads it as three cases and never folds them together: no field at all is an older
+Cloud (*not supported*, nothing may start), `{status: "unavailable"}` is storage Cloud could not
+read (whether one is running is unknown, so nothing may start), and `{status: "ok", items}` is the
+list. An investigation row whose state, reason, report conclusion or recovery basis this page does
+not know keeps that value as unknown and is still shown; it never refuses the incident, and an open
+row the page cannot place blocks a start because it may hold the one live slot.
+
+*Hand to an agent…* lists the operator's own active schedule webhooks from
+`GET /v1/schedule-webhooks` (`clawdline.schedule_webhook.list.v1`). That list has no field saying
+which hook is bound to an investigation schedule, so the page says so and asks the operator to
+confirm the binding; a machine without it refuses the delivery and the investigation reads
+*Needs you / refused*. The page creates no webhook and changes no schedule. The start is
+`POST /su/v1/health/incidents/:id/investigations` with exactly `hook_id` and
+`expected_incident_revision` (the latest revision; `deliver_within_seconds` is left to Cloud's
+default) and an `Idempotency-Key` the page keeps until a definite answer. A lost answer, an
+untyped 5xx or an unreadable 202 keeps the key and body and offers *Send the same request again*;
+Cloud's typed refusals spend it. `investigation_open` and `incident_revision_moved` reload the
+incident so the live investigation or newer revision is shown. Task success is never recovery,
+and human review stays separate: acknowledgement changes no investigation.
+
 ## Delivery plan and ownership
 
 This plan preserves the complete scope; phases determine order, not which requested surfaces disappear.

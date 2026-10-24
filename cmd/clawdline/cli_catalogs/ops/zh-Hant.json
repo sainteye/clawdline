@@ -137,5 +137,10 @@
   "dev.follow_unavailable": "clawdline：切換已交出；`clawdline update` 會顯示結果（%v）\n",
   "dev.way_back": "要回到 release：clawdline update --apply，或版本面板上的按鈕\n",
   "dev.source_config": "原始碼 dev 安裝需要 Linux，並使用服務設定的連接埠；請省略 --port",
-  "dev.source_failed": "dev 部署失敗；請查看部署輸出中的建置或回復狀態：%v\n"
+  "dev.source_failed": "dev 部署失敗；請查看部署輸出中的建置或回復狀態：%v\n",
+  "devices.usage.permission": "       clawdline devices permission <裝置識別碼> <read-only|read-and-operate>",
+  "devices.usage.pairing_permission": "       clawdline devices pairing-permission <配對識別碼> <read-only|read-and-operate>",
+  "devices.permission_saved": "權限已儲存。",
+  "devices.pair_permission_help": "在顯示配對碼前，由這台機器選擇 read-only（只讀）或 read-and-operate（可讀及操作）",
+  "devices.permission_invalid": "permission 必須為 read-only（只讀）或 read-and-operate（可讀及操作）"
 }

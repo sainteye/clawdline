@@ -265,14 +265,15 @@ func (f *Files) AuditPath() string { return f.path(AuditFile) }
 // The file's shape is the Swift app's remote.json, key for key, so one
 // person's description of either is true of both.
 type storedDevice struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Hash     string   `json:"hash"`
-	Caps     []string `json:"caps"`
-	Created  float64  `json:"created"`
-	LastSeen *float64 `json:"last_seen,omitempty"`
-	Approved bool     `json:"approved"`
-	Local    bool     `json:"local"`
+	PermissionSelected bool     `json:"permission_selected,omitempty"`
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Hash               string   `json:"hash"`
+	Caps               []string `json:"caps"`
+	Created            float64  `json:"created"`
+	LastSeen           *float64 `json:"last_seen,omitempty"`
+	Approved           bool     `json:"approved"`
+	Local              bool     `json:"local"`
 }
 
 type storedPassword struct {
@@ -317,14 +318,15 @@ type fileIn struct {
 }
 
 type deviceIn struct {
-	ID       *string   `json:"id"`
-	Name     *string   `json:"name"`
-	Hash     *string   `json:"hash"`
-	Caps     *[]string `json:"caps"`
-	Created  *float64  `json:"created"`
-	LastSeen *float64  `json:"last_seen"`
-	Approved *bool     `json:"approved"`
-	Local    *bool     `json:"local"`
+	PermissionSelected bool      `json:"permission_selected"`
+	ID                 *string   `json:"id"`
+	Name               *string   `json:"name"`
+	Hash               *string   `json:"hash"`
+	Caps               *[]string `json:"caps"`
+	Created            *float64  `json:"created"`
+	LastSeen           *float64  `json:"last_seen"`
+	Approved           *bool     `json:"approved"`
+	Local              *bool     `json:"local"`
 }
 
 type passwordIn struct {
@@ -415,7 +417,8 @@ func (row deviceIn) device() (auth.Device, error) {
 	}
 	d := auth.Device{
 		ID: *row.ID, Name: *row.Name, Hash: *row.Hash, Caps: auth.NewCaps(caps...),
-		Created: fromUnix(*row.Created), Approved: *row.Approved, Local: *row.Local,
+		PermissionSelected: row.PermissionSelected,
+		Created:            fromUnix(*row.Created), Approved: *row.Approved, Local: *row.Local,
 	}
 	if d.Name == "" {
 		d.Name = "?"
@@ -455,7 +458,7 @@ func (f *Files) Save(state auth.State) error {
 		}
 		sort.Strings(caps)
 		row := storedDevice{
-			ID: d.ID, Name: d.Name, Hash: d.Hash, Caps: caps,
+			ID: d.ID, Name: d.Name, Hash: d.Hash, Caps: caps, PermissionSelected: d.PermissionSelected,
 			Created: toUnix(d.Created), Approved: d.Approved, Local: d.Local,
 		}
 		if !d.LastSeen.IsZero() {

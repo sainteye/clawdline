@@ -312,6 +312,17 @@ func TestEveryNewNoticeIsTypedWhole(t *testing.T) {
 // whole and the rest reminders, and then dead letter.
 func TestRemindersSpendTheSameBudgetAndEndInDeadLetter(t *testing.T) {
 	b, ctx := newTestBroker(t)
+	// The dead-letter push is deliberately asynchronous. Its durable outcome
+	// must finish before newTestBroker closes the store and removes its home.
+	done := make(chan struct{})
+	b.pushed = func() { close(done) }
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the dead-letter effect did not finish before broker cleanup")
+		}
+	})
 	now := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
 	b.Clock = func() time.Time { return now }
 	y := &typings{}

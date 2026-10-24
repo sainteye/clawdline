@@ -103,5 +103,6 @@
   "sessions.print_the_daemon_s_answer_as_it_is": "原樣輸出 daemon 回應",
   "sessions.terminal_assistant_state_work_task_label_cwd": "終端機\t助理\t狀態\t工作\t任務\t標籤\t目錄",
   "sessions.the_daemon_s_port_default_clawdline_next_port": "daemon 的連接埠（預設 CLAWDLINE_NEXT_PORT，否則 7727）",
-  "sessions.usage_clawdline_sessions_json_port_n": "用法：clawdline sessions [--json] [--port n]"
+  "sessions.usage_clawdline_sessions_json_port_n": "用法：clawdline sessions [--json] [--port n]",
+  "session.protocol_identity_invalid": "CLAWDLINE_PROTOCOL_SESSION_FILE 必須指向可讀取的一般 JSON 檔案，assistant 為 antigravity，且 conversation_id 不得為空"
 }

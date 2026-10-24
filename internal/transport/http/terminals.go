@@ -68,7 +68,7 @@ func (s *Server) terminalService() (*terminals.Service, error) {
 			}
 			host = h
 		}
-		svc := terminals.New(host, s.terminalAccess)
+		svc := terminals.NewWithOperation(host, s.terminalAccess, s.terminalOperate)
 		if g := s.gate(); g.auth != nil {
 			// Swept on every change to the devices or the grants. The
 			// subscription lives as long as the daemon does.
@@ -109,7 +109,7 @@ func (s *Server) terminalDiagnostics() *contract.TerminalDiagnostics {
 		Osascript: osascriptDiagnostics()}
 }
 
-// terminalAccess is whether p may still see and operate terminals. It is asked
+// terminalAccess is whether p may still read terminals. It is asked
 // when a lease or a stream begins, before every frame and beat, and whenever
 // the paired devices or Cloud roster change.
 func (s *Server) terminalAccess(p terminals.Principal) error {
@@ -133,9 +133,29 @@ func (s *Server) terminalAccess(p terminals.Principal) error {
 	if p.Local && d.Local {
 		return nil
 	}
-	if !d.Caps.Has(auth.Send) {
+	if !d.Caps.Has(auth.Read) {
 		return terminal.Refuse(terminal.CodeForbidden,
-			"this paired device may read but not send commands or use terminals")
+			"this device is no longer paired")
+	}
+	return nil
+}
+
+// terminalOperate rechecks the current grant immediately before terminal effects.
+func (s *Server) terminalOperate(p terminals.Principal) error {
+	if p.Cloud {
+		if line, ok := s.cloudTerminalLine().(interface{ TerminalViewerOperate(string) error }); ok {
+			return line.TerminalViewerOperate(p.Device)
+		}
+		// Legacy in-process providers have only the original access callback.
+		return s.terminalAccess(p)
+	}
+	if err := s.terminalAccess(p); err != nil {
+		return err
+	}
+
+	d, ok := s.gate().auth.Holds(p.Device)
+	if !ok || !d.Caps.Has(auth.Send) {
+		return terminal.Refuse(terminal.CodeForbidden, "This device may read, and not send.")
 	}
 	return nil
 }

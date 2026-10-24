@@ -135,12 +135,13 @@ The "Today" column is clawdline-go on macOS (master `d40545e`).
 | Voice recording | Browser MediaRecorder → 16 kHz PCM | ✅ | ✅ needs a secure context | ✅ same | An http origin that is not localhost: the microphone button must say "this address cannot record" | S |
 | Speech to text | `whisper-cli` + `ggml-*.bin` | ✅ | ✅ search paths already written | ✅ search paths already written | Already right: `ErrNoBinary` and `ErrNoModel` are separate | S (what is missing is install guidance, §4.4) |
 
-Image previews keep **Download image** separate from **Share image**. Download uses the browser's
-save picker when available, otherwise its ordinary download behavior; cancelling the picker does
-not start another download. Share appears only when the browser can share the loaded image file.
-The preview permits the browser's native long-press image menu. On iPhone, saving to Photos still
-requires a system action: a web page cannot choose a Photos destination through the Web Share API.
-An ordinary download is not a promise that the image will appear in Photos.
+Image previews show one action in the bottom-right corner. When the browser can share the loaded
+image file, **Share image** opens the native share sheet and **Download image** is hidden. Otherwise,
+**Download image** uses the browser's save picker when available, or its ordinary download behavior;
+cancelling the picker does not start another download. Dismissing the share sheet also does not
+start a download. Both actions stay hidden until the image file is ready.
+The preview permits the browser's native long-press image menu. On iPhone, saving to Photos is
+chosen through the system share sheet.
 
 ### 3.3 Secrets, permissions, storage
 
@@ -748,14 +749,20 @@ local token, and — since 2026-09-27 — a `Cloud` tab that loads the hosted co
 (`WKWebsiteDataStore(forIdentifier:)`, in memory before macOS 14). The Cloud view may follow the GitHub sign-in round
 trip but never navigates to the console's address; a link out of Cloud opens in the system browser, and the bar's
 open-outside button hands the Cloud page in front to the system browser. Signing in to Cloud from that tab runs the
-GitHub round trip in the default browser through `ASWebAuthenticationSession`, so the browser's own GitHub session and
+GitHub round trip in the default browser through `NSWorkspace.open`, so the browser's own GitHub session and
 password manager are used; the Cloud API hands the result back over `clawdline-next://cloud-signed-in` as a 60-second
 token bound to a PKCE verifier only the shell holds, and the Cloud view trades it at `/v1/auth/oauth/handoff` for the
-ordinary login ticket. When the system cannot open a browser sign-in, the tab signs in in place as before. When Cloud
-then asks that tab to be paired, the shell pairs it with this Mac itself (`CloudPairing.swift`): it draws an invitation
-from its own daemon (`POST /v1/cloud/pairing`, the one `clawdline cloud pair` prints), puts the link in the tab, answers
-it, and closes the card only when the two fingerprints the page shows equal the ones the daemon reports. Anything else
-leaves the manual pairing screen to the person, once per launch. Pairing the tab with **another** machine can be
+ordinary login ticket. When the system cannot open a browser sign-in, the tab signs in in place as before. The first-use gate and the website's workflow settings expose **Connect this machine** before
+this viewer has pairing keys. The main-frame, trusted-Cloud-only `clawdlinePairLocal` bridge asks
+for native consent, starts local `POST /v1/cloud/login`, opens its approval URL in the default
+browser, and reads `GET /v1/cloud/login` no sooner than `next_poll_at`. Only that handler's current
+consent may turn Cloud on through `POST /v1/cloud/enabled`; cancelling fences a pending reply.
+**Pair this app** uses the same local offer route as browser-code entry. Native confirmation
+precedes each handover, and the result retains both fingerprints for comparison. A browser on
+this computer can open `clawdline-next://pair-browser?offer=…`; an optional machine ID must match
+this daemon, and the daemon still validates the account, expiry and proof. The website can also
+request a QR invitation through the same local-only bridge for iPhone or Android. None of these
+bridges exposes the daemon token to the hosted page. Pairing the tab with **another** machine can be
 handed to this Mac's own assistant: the Cloud view alone registers a `clawdlinePairAgent` reply handler, answered only
 for the main frame of Cloud's origin, and the offer card then shows **Give this to this Mac's AI** as its primary, full-width
 button first under the lede, with the copy box folded under a closed Paste it yourself disclosure. The shell

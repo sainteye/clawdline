@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/devices"
 	"github.com/sainteye/clawdline/internal/adapters/qrcode"
 	"github.com/sainteye/clawdline/internal/config"
@@ -128,18 +129,29 @@ func cloudPairJSON(method, path string, body any, out any) error {
 	return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(out)
 }
 
+// cloudPairFlags is the command's flag set, kept apart so its help can be read
+// without parsing (and exiting on) -h.
+func cloudPairFlags() (*flag.FlagSet, *string, *string, *time.Duration) {
+	fs := flag.NewFlagSet("cloud pair", flag.ExitOnError)
+	scope := fs.String("scope", "", cliCopy("cloud", "pair.scope_help", "viewer access: readonly or operate; when omitted, a browser this machine already paired keeps its scope and only a never-paired browser gets operate"))
+	offer := fs.String("offer", "", cliCopy("cloud", "pair.offer_help", "finish a pairing with the code the browser is showing"))
+	wait := fs.Duration("wait", 10*time.Minute, cliCopy("cloud", "pair.wait_help", "how long to wait for a browser"))
+	return fs, scope, offer, wait
+}
+
 // cloudPairCommand shows a pairing link and waits, or finishes a pairing from
 // a code the person carried from their browser.
 func cloudPairCommand(args []string) {
-	fs := flag.NewFlagSet("cloud pair", flag.ExitOnError)
-	offer := fs.String("offer", "", cliCopy("cloud", "pair.offer_help", "finish a pairing with the code the browser is showing"))
-	wait := fs.Duration("wait", 10*time.Minute, cliCopy("cloud", "pair.wait_help", "how long to wait for a browser"))
+	fs, scope, offer, wait := cloudPairFlags()
 	_ = fs.Parse(args)
+	if *scope != "" && !adaptercloud.ValidViewerScope(*scope) {
+		fail(errors.New(cliCopy("cloud", "grant.invalid_scope", "scope must be readonly or operate")))
+	}
 
 	if *offer != "" {
 		var state cloudtransport.PairingState
 		if err := cloudPairJSON(http.MethodPost, "/v1/cloud/pairing/offer",
-			map[string]any{"offer": strings.TrimSpace(*offer)}, &state); err != nil {
+			map[string]any{"offer": strings.TrimSpace(*offer), "scope": *scope}, &state); err != nil {
 			fail(err)
 		}
 		printPairingState(state)
@@ -147,7 +159,7 @@ func cloudPairCommand(args []string) {
 	}
 
 	var state cloudtransport.PairingState
-	if err := cloudPairJSON(http.MethodPost, "/v1/cloud/pairing", nil, &state); err != nil {
+	if err := cloudPairJSON(http.MethodPost, "/v1/cloud/pairing", map[string]any{"scope": *scope}, &state); err != nil {
 		fail(err)
 	}
 	// The code first: on an iPhone the pairing has to happen inside the Home
@@ -203,7 +215,11 @@ func printPairingState(state cloudtransport.PairingState) {
 		fmt.Printf(cliCopy("cloud", "pair.paired", "paired     %s\n"), state.ViewerDeviceID)
 		fmt.Printf(cliCopy("cloud", "pair.browser", "browser    %s\n"), state.ViewerFingerprint)
 		fmt.Printf(cliCopy("cloud", "pair.machine", "machine    %s\n"), state.MachineFingerprint)
-		fmt.Println(cliCopy("cloud", "pair.access", "           that browser can now read and, if commands are on, drive this machine"))
+		if state.Scope == adaptercloud.ScopeReadOnly {
+			fmt.Println(cliCopy("cloud", "pair.readonly", "           that browser may read; operating this machine is disabled"))
+		} else {
+			fmt.Println(cliCopy("cloud", "pair.access", "           that browser can now read and, if commands are on, drive this machine"))
+		}
 	case cloudtransport.PairingFailed:
 		fmt.Fprintf(os.Stderr, cliCopy("cloud", "pair.failed", "clawdline: the pairing did not complete: %s\n"), state.Error)
 	default:
@@ -237,6 +253,9 @@ func cloudDevicesCommand() {
 			source = cliCopy("cloud", "devices.pinned_here", "paired here")
 		default:
 			accountOnly = true
+		}
+		if device.Pinned {
+			source += " / " + device.Scope
 		}
 		name := device.Name
 		if name == "" {
@@ -321,4 +340,18 @@ func cloudRotateCommand(args []string) {
 	if outcome.Reconnected {
 		fmt.Println(cliCopy("cloud", "rotate.reconnecting", "           the line went down and is coming back on the new key"))
 	}
+}
+
+func cloudGrantCommand(args []string) {
+	if len(args) != 2 || !adaptercloud.ValidViewerScope(args[1]) {
+		fail(errors.New(cliCopy("cloud", "grant.usage", "usage: clawdline cloud grant <device-id> <readonly|operate>")))
+	}
+	var answer struct {
+		Device string `json:"device"`
+		Scope  string `json:"scope"`
+	}
+	if err := cloudDaemonJSON(http.MethodPost, "/v1/cloud/devices/grant", map[string]any{"device": args[0], "scope": args[1]}, &answer); err != nil {
+		fail(err)
+	}
+	fmt.Printf(cliCopy("cloud", "grant.changed", "viewer %s: %s\n"), answer.Device, answer.Scope)
 }

@@ -165,3 +165,14 @@ func TestACodexRolloutThatNamedNoWindowHasNoContext(t *testing.T) {
 		t.Fatalf("context = %+v, want none", facts.Context)
 	}
 }
+
+func TestClaudeStatusLineReadsLiveEffortWithoutContext(t *testing.T) {
+	home := statusCache(t, "effort", `{"effort":{"level":"xhigh"}}`)
+	if got := ReadClaudeStatusLine(home, "effort"); !got.Found || got.Effort != "xhigh" {
+		t.Fatalf("live effort = %+v", got)
+	}
+	home = statusCache(t, "old", `{"cost":{"total_cost_usd":1}}`)
+	if got := ReadClaudeStatusLine(home, "old"); got.Effort != "" {
+		t.Fatalf("invented effort: %+v", got)
+	}
+}

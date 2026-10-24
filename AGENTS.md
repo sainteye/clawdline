@@ -78,13 +78,17 @@ node tools/check-console-tests.mjs      # every console test file is run by npm 
 node tools/check-mirror-tests.mjs       # no console test asserts on the shape of the code
 tools/heavy.sh node --test tools/check-plan.test.mjs tools/check-profile.test.mjs tools/check-scope.test.mjs
 tools/heavy.sh bash tools/test-check-modes.sh # entrypoint scope, fallback and failure propagation
+tools/heavy.sh bash tools/release/supply-chain.test.sh # release evidence fails on what it exists to catch
+tools/heavy.sh sh tools/test-shell-pairing-permission.sh # macOS only: a pairing's code waits for its saved permission
 tools/heavy.sh bash tools/test-linux-dev-build.sh # Linux only: dev skips full checks; ordinary builds preserve failures
 tools/heavy.sh bash tools/test-heavy-linux-cache.sh # Linux only: cache ownership, retention and pressure cleanup
 ( cd web && npm run check && ../tools/heavy.sh npm run build && ../tools/heavy.sh npm test )   # when anything under web/ changed
 ```
 
-- **Every compile, test suite or bundle build goes through `tools/heavy.sh`** (`clawdline heavy`).
-  Wrap the whole script once; wait for it with one long wait. If it exits 75 before acquiring the
+- **Only application builds and native compilation queue through `tools/heavy.sh`** (`clawdline heavy`).
+  Go/Swift tests, Python, frontend bundles, type checks and ordinary checks run directly; CPU usage
+  alone never requires a queue. For opaque native build scripts use `tools/heavy.sh --compile <command>`.
+  Do not wrap a whole check/test script as compilation. Wait for queued native builds with one long wait. If it exits 75 before acquiring the
   slot, run it later. A queued `tools/check.sh` hands itself to a callback and exits 76: a root
   ends its turn and waits for the notice; a child waits in place. See `docs/working-rules.md` for
   the incident and procedure.

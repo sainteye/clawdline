@@ -1,6 +1,6 @@
 # Clawdline
 
-[English](README.md)
+[English](README.md)・[安全性](https://clawdline.com/security/)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](go.mod)
@@ -42,15 +42,31 @@ Clawdline 的常駐服務與主控台在你的機器上執行，管理你已使�
 
 可以在機器的「設定 → 遠端」或執行 `clawdline cloud direct off` 關閉直連。AWS Linux 可把 ICE 固定在單一 UDP 埠；請看 [Cloud 設定說明](docs/cloud.md#aws-linux-direct-connection)與[完整 Linux 步驟](docs/linux.md#let-a-cloud-browser-connect-directly-to-ec2)。固定埠設定目前提供於開發版本。
 
+## 安全性與你的資料
+
+Clawdline 在你自己的機器上讀取 Claude Code 與 Codex 對話、終端與專案檔案。本機使用不需要帳號，Cloud 預設關閉，由你決定是否開啟。
+
+開啟 Cloud 後，內容先在本機加密才送出。Cloud 只轉送密文，不持有解密金鑰；只有你的機器與你配對的瀏覽器能讀取。Cloud 仍看得到帳號、裝置與流量等中繼資料。
+
+配對的瀏覽器可以傳送指示、操作你的終端，請只配對你信任的裝置。Claude Code 與 Codex 仍會依各自 AI 供應商的政策傳送請求。
+
+[運作方式、資料流圖解與原始碼](https://clawdline.com/security/)・[AI 資安檢視比較](https://clawdline.com/zh-TW/ai-review/)
+
 ## 安裝
 
-在 macOS 13 以上或 Linux，先安裝 Claude Code 或 Codex，再執行：
+[![下載 Clawdline v2.4.0 macOS 版 — Apple Silicon、macOS 13 以上](docs/assets/download-macos-zh-TW.svg)](https://github.com/sainteye/clawdline/releases/download/v2.4.0/Clawdline-v2.4.0-macos-arm64.dmg)
+
+Apple Silicon · macOS 13+ · [安裝教學](https://clawdline.com/docs/install/#mac-dmg)
+
+使用 macOS 13 以上或 Linux 的命令列安裝器時，先安裝 Claude Code 或 Codex、受信任的 Python 3 與 OpenSSL 3 以上版本。macOS 內建的 LibreSSL 不足以驗證；請看[驗證工具需求](docs/user/install.md#before-you-start)。接著執行：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh | sh
+curl -fsSL https://clawdline.com/install.sh | sh
 ```
 
-安裝程式會驗證發行版、啟動使用者服務並開啟主控台。你可以從主控台開 Session，或在 tmux 執行 `claude` 或 `codex`；需要時可用發行版內附的 tmux。[安裝與首次使用](docs/user/install.md)・[第一個 Session](docs/user/first-session.md)
+安裝腳本會先用本機 OpenSSL，對照已審查腳本內固定的公鑰驗證 manifest 簽章，再核對已簽署的壓縮檔大小與 SHA-256；通過後才解壓縮、執行下載的程式。缺少驗證工具或檢查失敗都會停止安裝。你仍須信任安裝腳本與本機工具；驗證通過的程式才會啟動使用者服務並開啟主控台。你可以從主控台開 Session，或在 tmux 執行 `claude` 或 `codex`；需要時可用發行版內附的 tmux。[安裝與首次使用](docs/user/install.md)・[第一個 Session](docs/user/first-session.md)
+
+短網址指向經審查的驗簽腳本，並安裝最新穩定版。腳本版本與安裝程式的版本是兩個獨立來源；已簽署的發行 manifest 會標明程式的原始碼版本。入口會隨經審查的安裝器更新。[先審查再固定版本安裝](docs/user/install.md#review-and-pin-an-installation)保留固定腳本與發行版的替代方式，並說明首次安裝的信任邊界。
 
 ## 支援範圍
 

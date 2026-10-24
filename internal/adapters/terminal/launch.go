@@ -165,6 +165,10 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 	if !strings.HasPrefix(id, "%") {
 		return "", Failure{Message: "tmux returned no new pane id."}
 	}
+	if _, err := runTmux(ctx, bin, "set-option", "-p", "-t", id, "@clawdline_managed", "1"); err != nil {
+		l.discard(ctx, bin, id)
+		return "", Failure{Message: "tmux could not mark the new Clawdline pane: " + err.Error()}
+	}
 	sessionEnv, err := runTmux(ctx, bin, "show-environment", "-t", id)
 	if err != nil {
 		l.discard(ctx, bin, id)

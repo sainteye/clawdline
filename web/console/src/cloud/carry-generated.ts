@@ -43,7 +43,7 @@ export const CARRIED = {
   "forget-archived": "POST /v1/sessions/archived/forget",
   git: "GET /v1/sessions/{id}/git",
   "git-diff": "GET /v1/sessions/{id}/git/diff?path=",
-  image: "GET /v1/artifacts/images/{id}?session={id}",
+  image: "GET /v1/artifacts/images/{id}?session={id}[&size=thumb]",
   info: "GET /v1/sessions/{id}/info[?parts=summary]",
   intents: "POST /v1/intents",
   interrupt: "POST /v1/sessions/{id}/interrupt",
@@ -67,6 +67,8 @@ export const CARRIED = {
   personas: "GET /v1/personas",
   places: "GET /v1/places",
   "project-add": "POST /v1/places?machine=",
+  "project-antigravity-consent-change": "POST /v1/projects/{project}/antigravity-consent",
+  "project-antigravity-consent-status": "GET /v1/projects/{project}/antigravity-consent",
   "project-entry": "GET /v1/project-sync/entry?repo=",
   "project-file-list": "GET /v1/projects/{project}/files",
   "project-file-read": "GET /v1/projects/{project}/files/{file}",
@@ -91,6 +93,9 @@ export const CARRIED = {
   "project-worktree-lifecycle-refresh": "POST /v1/projects/{project}/worktrees/refresh",
   "project-worktree-remove": "DELETE /v1/projects/{project}/worktrees/{worktree}",
   projects: "GET /v1/projects",
+  // Account quota snapshots for the global footer. Credentials remain on the
+  // machine.
+  "provider-quotas": "GET /v1/provider-quotas",
   "push-key": "GET /v1/push/key",
   "push-subscribe": "POST /v1/push/subscribe",
   "push-test": "POST /v1/push/test",
@@ -228,6 +233,8 @@ export const CARRIED = {
   "work.v2.todo-action": "POST /v1/work/v2/session-todos/{terminal}/{id}/{action}",
   "work.v2.todo-create": "POST /v1/work/v2/session-todos/{terminal}",
   "work.v2.todo-image-create": "POST /v1/work/v2/session-todos/{terminal}/{id}/images",
+  "workflow-settings": "GET /v1/settings/workflow",
+  "workflow-settings-update": "POST /v1/settings/workflow",
 } as const
 
 /**

@@ -55,6 +55,61 @@ type AdoptRequest struct {
 	Token string `json:"token"`
 }
 
+type AntigravityConsentChange struct {
+	Action   AntigravityConsentChangeAction `json:"action"`
+	Preview  *AntigravityConsentPreview     `json:"preview,omitempty"`
+	Revision int64                          `json:"revision"`
+	Scope    string                         `json:"scope"`
+}
+
+type AntigravityConsentChangeAction string
+
+const (
+	AntigravityConsentChangeActionEnable  AntigravityConsentChangeAction = "enable"
+	AntigravityConsentChangeActionDisable AntigravityConsentChangeAction = "disable"
+)
+
+// AntigravityConsentChangeActionValues is every value the contract allows, in contract order.
+var AntigravityConsentChangeActionValues = []AntigravityConsentChangeAction{AntigravityConsentChangeActionEnable, AntigravityConsentChangeActionDisable}
+
+type AntigravityConsentPreview struct {
+	BeforeDigest  string `json:"before_digest"`
+	HelperDigest  string `json:"helper_digest"`
+	ManagedDigest string `json:"managed_digest"`
+}
+
+type AntigravityConsentStatus struct {
+	Hooks    AntigravityConsentStatusHooks `json:"hooks"`
+	Phase    AntigravityConsentStatusPhase `json:"phase"`
+	Preview  *AntigravityConsentPreview    `json:"preview,omitempty"`
+	Reason   string                        `json:"reason,omitempty"`
+	Revision int64                         `json:"revision"`
+	Scope    string                        `json:"scope"`
+}
+
+type AntigravityConsentStatusHooks string
+
+const (
+	AntigravityConsentStatusHooksUnknown   AntigravityConsentStatusHooks = "unknown"
+	AntigravityConsentStatusHooksInstalled AntigravityConsentStatusHooks = "installed"
+	AntigravityConsentStatusHooksRemoved   AntigravityConsentStatusHooks = "removed"
+)
+
+// AntigravityConsentStatusHooksValues is every value the contract allows, in contract order.
+var AntigravityConsentStatusHooksValues = []AntigravityConsentStatusHooks{AntigravityConsentStatusHooksUnknown, AntigravityConsentStatusHooksInstalled, AntigravityConsentStatusHooksRemoved}
+
+type AntigravityConsentStatusPhase string
+
+const (
+	AntigravityConsentStatusPhaseAbsent    AntigravityConsentStatusPhase = "absent"
+	AntigravityConsentStatusPhasePreparing AntigravityConsentStatusPhase = "preparing"
+	AntigravityConsentStatusPhaseActive    AntigravityConsentStatusPhase = "active"
+	AntigravityConsentStatusPhaseDisabled  AntigravityConsentStatusPhase = "disabled"
+)
+
+// AntigravityConsentStatusPhaseValues is every value the contract allows, in contract order.
+var AntigravityConsentStatusPhaseValues = []AntigravityConsentStatusPhase{AntigravityConsentStatusPhaseAbsent, AntigravityConsentStatusPhasePreparing, AntigravityConsentStatusPhaseActive, AntigravityConsentStatusPhaseDisabled}
+
 // The answer to an archive: the close's answer (`ok`, `id`, `action` =
 // `archived`, `forced`) and the row it recorded.
 type ArchiveAnswer struct {
@@ -112,12 +167,13 @@ type ArchivedSessions struct {
 type Assistant string
 
 const (
-	AssistantClaude Assistant = "claude"
-	AssistantCodex  Assistant = "codex"
+	AssistantClaude      Assistant = "claude"
+	AssistantCodex       Assistant = "codex"
+	AssistantAntigravity Assistant = "antigravity"
 )
 
 // AssistantValues is every value the contract allows, in contract order.
-var AssistantValues = []Assistant{AssistantClaude, AssistantCodex}
+var AssistantValues = []Assistant{AssistantClaude, AssistantCodex, AssistantAntigravity}
 
 // One of four things this Mac can honestly say about an assistant's
 // account-level quota, tightest to loosest. Never a percentage: both providers
@@ -1514,12 +1570,13 @@ type BrokerTabEnd struct {
 // Which rule decides one task's child tab. `child_linger` closes a finished
 // unscheduled child `orchestrator_child_linger` after it ends;
 // `child_linger_off` is that setting negative, which keeps every finished child
-// open; `unfinished_left_open` is a timeout, whose child may still be working;
-// the three `schedule_…` rules are a scheduled run's `close_tab`;
-// `spawn_failed` is a child that never started, closed at once whatever else is
-// set; `cancelled_closed` is a task its root or the person cancelled, whose
-// child is stopped at once whatever else is set (its commits stay on its
-// branch).
+// open; `unfinished_left_open` is a timeout, whose terminal child may still be
+// working; `owned_timeout_closed` stops an owned native worker at its timeout
+// while preserving its history; the three `schedule_…` rules are a scheduled
+// run's `close_tab`; `spawn_failed` is a child that never started, closed at
+// once whatever else is set; `cancelled_closed` is a task its root or the
+// person cancelled, whose child is stopped at once whatever else is set (its
+// commits stay on its branch).
 type BrokerTabRule string
 
 const (
@@ -1531,10 +1588,11 @@ const (
 	BrokerTabRuleScheduleNever      BrokerTabRule = "schedule_never"
 	BrokerTabRuleSpawnFailed        BrokerTabRule = "spawn_failed"
 	BrokerTabRuleCancelledClosed    BrokerTabRule = "cancelled_closed"
+	BrokerTabRuleOwnedTimeoutClosed BrokerTabRule = "owned_timeout_closed"
 )
 
 // BrokerTabRuleValues is every value the contract allows, in contract order.
-var BrokerTabRuleValues = []BrokerTabRule{BrokerTabRuleChildLinger, BrokerTabRuleChildLingerOff, BrokerTabRuleUnfinishedLeftOpen, BrokerTabRuleScheduleOnSuccess, BrokerTabRuleScheduleAlways, BrokerTabRuleScheduleNever, BrokerTabRuleSpawnFailed, BrokerTabRuleCancelledClosed}
+var BrokerTabRuleValues = []BrokerTabRule{BrokerTabRuleChildLinger, BrokerTabRuleChildLingerOff, BrokerTabRuleUnfinishedLeftOpen, BrokerTabRuleScheduleOnSuccess, BrokerTabRuleScheduleAlways, BrokerTabRuleScheduleNever, BrokerTabRuleSpawnFailed, BrokerTabRuleCancelledClosed, BrokerTabRuleOwnedTimeoutClosed}
 
 // One dispatched piece of work, as the console and a dispatching root read it.
 type BrokerTask struct {
@@ -1747,6 +1805,8 @@ type BrowserDevice struct {
 // POST /v1/auth/devices/browser: `clawdline open` asking for a device of its
 // own. Local token only.
 type BrowserRequest struct {
+	// Optional local selection; omission preserves read-and-operate.
+	Permission string `json:"permission,omitempty"`
 }
 
 // One build: the commit it was built from and, when its BUILD.json said so,
@@ -2059,14 +2119,15 @@ var CapacityStateValues = []CapacityState{CapacityStateOK, CapacityStateWarn, Ca
 type CapacityUnit string
 
 const (
-	CapacityUnitBytes      CapacityUnit = "bytes"
-	CapacityUnitCharacters CapacityUnit = "characters"
-	CapacityUnitRows       CapacityUnit = "rows"
-	CapacityUnitSeconds    CapacityUnit = "seconds"
+	CapacityUnitBytes        CapacityUnit = "bytes"
+	CapacityUnitCharacters   CapacityUnit = "characters"
+	CapacityUnitRows         CapacityUnit = "rows"
+	CapacityUnitSeconds      CapacityUnit = "seconds"
+	CapacityUnitMilliseconds CapacityUnit = "milliseconds"
 )
 
 // CapacityUnitValues is every value the contract allows, in contract order.
-var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitCharacters, CapacityUnitRows, CapacityUnitSeconds}
+var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitCharacters, CapacityUnitRows, CapacityUnitSeconds, CapacityUnitMilliseconds}
 
 type CatalogError struct {
 	Code    string `json:"code"`
@@ -2256,6 +2317,40 @@ const (
 
 // CloseabilityStateValues is every value the contract allows, in contract order.
 var CloseabilityStateValues = []CloseabilityState{CloseabilityStateSafe, CloseabilityStateBlocked, CloseabilityStateNeedsAttestation, CloseabilityStateUnknown}
+
+type CloudPairingOfferRequest struct {
+	Offer string `json:"offer"`
+
+	// Selected by the machine, never by the browser's encrypted offer.
+	Scope CloudViewerScope `json:"scope,omitempty"`
+}
+
+type CloudPairingRequest struct {
+	// Omitted preserves the legacy operate default.
+	Scope CloudViewerScope `json:"scope,omitempty"`
+}
+
+type CloudViewerGrantRequest struct {
+	Device string           `json:"device"`
+	Scope  CloudViewerScope `json:"scope"`
+}
+
+type CloudViewerGrantResponse struct {
+	Device string           `json:"device"`
+	Scope  CloudViewerScope `json:"scope"`
+}
+
+// The machine-local operation ceiling; the machine commands switch and account
+// identity checks remain independent requirements.
+type CloudViewerScope string
+
+const (
+	CloudViewerScopeReadonly CloudViewerScope = "readonly"
+	CloudViewerScopeOperate  CloudViewerScope = "operate"
+)
+
+// CloudViewerScopeValues is every value the contract allows, in contract order.
+var CloudViewerScopeValues = []CloudViewerScope{CloudViewerScopeReadonly, CloudViewerScopeOperate}
 
 // GET /v1/orchestrator/completions?pending=true|false. `pending=true` (the
 // default) is every envelope not yet acknowledged, dead letters included;
@@ -2612,6 +2707,15 @@ type DeviceList struct {
 	Configured bool           `json:"configured"`
 	Devices    []PairedDevice `json:"devices"`
 	Password   bool           `json:"password"`
+}
+
+// Local token only. POST /v1/auth/devices/{id}/permission persists a grant;
+// POST /v1/auth/pairings/{id}/permission selects the pending pairing before
+// confirmation. Missing/invalid permission is 400 bad_request; unknown/expired
+// id is 404 not_found. Public pair/confirm fields never select a grant.
+// Repeated writes are idempotent.
+type DevicePermission struct {
+	Permission string `json:"permission"`
 }
 
 // GET /v1/diagnostics, this machine's own token only (a paired device is 403):
@@ -2975,13 +3079,15 @@ const (
 	IdentityBindingOpenFile    IdentityBinding = "open_file"
 	IdentityBindingLiveTitle   IdentityBinding = "live_title"
 	IdentityBindingRegistry    IdentityBinding = "registry"
+	IdentityBindingLaunchHook  IdentityBinding = "launch_hook"
+	IdentityBindingProtocol    IdentityBinding = "protocol"
 	IdentityBindingNoRecord    IdentityBinding = "no_record"
 	IdentityBindingUnreadable  IdentityBinding = "unreadable"
 	IdentityBindingAmbiguous   IdentityBinding = "ambiguous"
 )
 
 // IdentityBindingValues is every value the contract allows, in contract order.
-var IdentityBindingValues = []IdentityBinding{IdentityBindingCommandLine, IdentityBindingOpenFile, IdentityBindingLiveTitle, IdentityBindingRegistry, IdentityBindingNoRecord, IdentityBindingUnreadable, IdentityBindingAmbiguous}
+var IdentityBindingValues = []IdentityBinding{IdentityBindingCommandLine, IdentityBindingOpenFile, IdentityBindingLiveTitle, IdentityBindingRegistry, IdentityBindingLaunchHook, IdentityBindingProtocol, IdentityBindingNoRecord, IdentityBindingUnreadable, IdentityBindingAmbiguous}
 
 // Why a reference has no picture behind it: `expired` when the store held it
 // and no longer does, `unknown` when no store here ever held that id.
@@ -3555,7 +3661,8 @@ type PairStarted struct {
 }
 
 type PairedDevice struct {
-	// Paired devices have read and send access.
+	// Read-only grants have read; read-and-operate grants have read and send. Legacy
+	// rows and unselected new pairings default to read and send.
 	Caps []string `json:"caps"`
 
 	// Unix seconds.
@@ -3596,7 +3703,8 @@ type PasswordSet struct {
 // One conversation an assistant has already recorded in a place. `id` is the
 // only part a client sends back.
 type PastSession struct {
-	// When it was last written to, Unix seconds.
+	// When it was last written to, Unix seconds; zero when native history does not
+	// report a timestamp.
 	At int64 `json:"at"`
 
 	// A lowercase UUID: the conversation's own id.
@@ -3609,9 +3717,11 @@ type PastSession struct {
 }
 
 // GET /v1/places/{id}/sessions[/{assistant}]: what that assistant has recorded
-// in the place, newest first. Codex returns one provider page of twenty with an
-// opaque next_cursor; other assistants return at most two hundred. Dispatched
-// children and `-p` runs are not conversations and are left out.
+// in the place, newest first. Codex returns one provider page of twenty. Gemini
+// returns saved local pages of at most two hundred, then explicit native pages
+// bounded by the ACP frame budget. Both use opaque next_cursor values; other
+// assistants return at most two hundred. Dispatched children and `-p` runs are
+// not conversations and are left out.
 type PastSessionList struct {
 	Assistant string `json:"assistant"`
 	At        int64  `json:"at"`
@@ -3619,7 +3729,7 @@ type PastSessionList struct {
 	// The list stopped at its cap and there were more.
 	More bool `json:"more"`
 
-	// Opaque continuation for the next Codex page; omitted at the end.
+	// Opaque continuation for the next provider page; omitted at the end.
 	NextCursor string        `json:"next_cursor,omitempty"`
 	Place      string        `json:"place"`
 	Sessions   []PastSession `json:"sessions"`
@@ -3699,8 +3809,12 @@ type PersonaSuggestionRequest struct {
 type PlaceError struct {
 	// The terminal the refusal is about, on terminal_closed and
 	// iterm_attention_required, so a page can name it in its own language.
-	App       string `json:"app,omitempty"`
-	Code      string `json:"code"`
+	App  string `json:"app,omitempty"`
+	Code string `json:"code"`
+
+	// Producer catalog key for a known fixed refusal; omitted for raw or external
+	// messages.
+	DetailKey string `json:"detail_key,omitempty"`
 	Message   string `json:"message"`
 	RequestID string `json:"request_id"`
 }
@@ -4335,6 +4449,12 @@ const (
 // ProjectUnifyFileStateValues is every value the contract allows, in contract order.
 var ProjectUnifyFileStateValues = []ProjectUnifyFileState{ProjectUnifyFileStatePresent, ProjectUnifyFileStateMissing, ProjectUnifyFileStateLink, ProjectUnifyFileStateUnreadable}
 
+type ProjectUnifyNativeFile struct {
+	Kind   string `json:"kind"`
+	Path   string `json:"path"`
+	Status string `json:"status"`
+}
+
 type ProjectUnifyOutcome string
 
 const (
@@ -4354,10 +4474,14 @@ type ProjectUnifyPlan struct {
 
 	// False where this machine cannot create symbolic links; skills are then copied
 	// (skill_copy).
-	LinksAvailable bool                `json:"links_available"`
-	Rules          ProjectUnifyRules   `json:"rules"`
-	Skills         []ProjectUnifySkill `json:"skills"`
-	Status         ProjectUnifyStatus  `json:"status"`
+	LinksAvailable bool `json:"links_available"`
+
+	// Documented Antigravity-only root candidates, read-only and outside Unify
+	// actions. Missing or null means unreported. Does not assert activation.
+	NativeOnly []ProjectUnifyNativeFile `json:"native_only"`
+	Rules      ProjectUnifyRules        `json:"rules"`
+	Skills     []ProjectUnifySkill      `json:"skills"`
+	Status     ProjectUnifyStatus       `json:"status"`
 
 	// SHA-256 of every input the plan read. Apply refuses plan_changed when it
 	// differs.
@@ -4368,8 +4492,11 @@ type ProjectUnifyPlan struct {
 // root, following the measured loading rules in
 // docs/shared-project-instructions.md.
 type ProjectUnifyReads struct {
-	Claude []string `json:"claude"`
-	Codex  []string `json:"codex"`
+	// Antigravity CLI applicable workspace candidates; absent or null means unreported
+	// by an older machine. Empty means checked and none. Not active Session context.
+	Antigravity []string `json:"antigravity"`
+	Claude      []string `json:"claude"`
+	Codex       []string `json:"codex"`
 }
 
 type ProjectUnifyRules struct {
@@ -4391,8 +4518,11 @@ type ProjectUnifyRules struct {
 }
 
 type ProjectUnifySeen struct {
-	Claude bool `json:"claude"`
-	Codex  bool `json:"codex"`
+	// Applicability through .agents/skills. Null or absent is unreported; false is
+	// checked and unavailable.
+	Antigravity *bool `json:"antigravity"`
+	Claude      bool  `json:"claude"`
+	Codex       bool  `json:"codex"`
 }
 
 // One skill name found in .agents/skills or .claude/skills at the repository
@@ -4467,6 +4597,35 @@ type ProposalDiagnostics struct {
 	// Proposals waiting for an answer: the "to confirm" area and the ones asked in a
 	// conversation.
 	Pending int64 `json:"pending"`
+}
+
+// An account quota observation. Empty windows means unknown, never zero.
+// Credentials and account identifiers are never included. A provider with no
+// windows is omitted from the footer.
+type ProviderQuotaRow struct {
+	ID         string                `json:"id"`
+	Label      string                `json:"label"`
+	ObservedAt int64                 `json:"observed_at,omitempty"`
+	Problem    string                `json:"problem,omitempty"`
+	Source     string                `json:"source"`
+	Stale      bool                  `json:"stale"`
+	Windows    []ProviderQuotaWindow `json:"windows"`
+}
+
+// GET /v1/provider-quotas. Current machine only; file observations for Claude
+// and Codex, cached metadata reads for Gemini and Grok. Network refreshes are
+// asynchronous and single-flight per provider; failures retain the last
+// successful snapshot marked stale.
+type ProviderQuotaSnapshot struct {
+	At        int64              `json:"at"`
+	Providers []ProviderQuotaRow `json:"providers"`
+	Updating  bool               `json:"updating"`
+}
+
+type ProviderQuotaWindow struct {
+	Name        string  `json:"name"`
+	ResetsAt    int64   `json:"resets_at,omitempty"`
+	UsedPercent float64 `json:"used_percent"`
 }
 
 // GET /v1/push/key. The application server key the page passes to `subscribe({
@@ -5018,7 +5177,9 @@ type ScheduleRequest struct {
 	PermissionMode string `json:"permission_mode,omitempty"`
 	PlaceID        string `json:"place_id"`
 
-	// Codex high or xhigh; no key keeps the saved value, an empty string takes it off.
+	// Codex high or xhigh; Antigravity low, medium, high, xhigh or max. No key keeps
+	// the saved value for the same provider; changing provider does not inherit
+	// another provider's effort. An empty string takes it off.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 
 	// The conversation the person's message was sent to. Required with via for a
@@ -5147,7 +5308,8 @@ type ScheduleTask struct {
 // generator has no type for it). `permission_mode` is refused by name
 // (`template_permission_mode`): it is sent as the form's own field, where who
 // may set it is checked. Any other key is refused by name. `reasoning_effort`
-// is kept only when the assistant is codex, as a save keeps it.
+// is kept for codex or antigravity and validated against that provider's
+// vocabulary, as a save keeps it.
 type ScheduleTemplate struct {
 	Claims          []string `json:"claims,omitempty"`
 	Deliverables    []string `json:"deliverables,omitempty"`
@@ -5461,7 +5623,12 @@ type SessionInfo struct {
 	// having nothing to show. Without it a project with a wedged poller and a project
 	// between runs are one blank cell.
 	DeployQuiet *ProjectDeployQuiet `json:"deployQuiet,omitempty"`
-	Limits      *SessionLimits      `json:"limits,omitempty"`
+
+	// Native offered thinking_level option values for this owned ACP session. May
+	// change with model selection. Absent when structured options are unavailable; no
+	// inferred effort control.
+	Efforts []string       `json:"efforts,omitempty"`
+	Limits  *SessionLimits `json:"limits,omitempty"`
 
 	// Where this project can be opened, the same rows GET /v1/sessions/{id}/links
 	// answers with (links.schema.json). Served from the same maintained projection, so
@@ -5518,14 +5685,17 @@ type SessionInfoSession struct {
 	Assistant Assistant `json:"assistant,omitempty"`
 	CWD       string    `json:"cwd,omitempty"`
 
-	// The reasoning effort explicitly named by the newest Codex turn context, or its
-	// startup card before a turn context names it. Absent when unknown.
+	// The reasoning effort explicitly named by the session record or startup card, or
+	// the current native ACP thinking_level configOption. Never inferred from model ID
+	// suffixes. Absent when unknown.
 	Effort string `json:"effort,omitempty"`
 	Icon   *Icon  `json:"icon,omitempty"`
 	ID     string `json:"id"`
 
-	// The model explicitly named by the session record, or by Codex's startup card
-	// before a record names it. Absent without evidence.
+	// The model explicitly named by the session record, Codex startup card, or owned
+	// ACP metadata. Structured ACP model configOptions provide the native base ID
+	// independently of thinking_level; legacy IDs are not split. Absent without
+	// evidence.
 	Model string `json:"model,omitempty"`
 
 	// The assistant selected in Settings for one-turn session naming. The confirmation
@@ -5613,19 +5783,24 @@ type SessionLimits struct {
 	Windows       []SessionLimitWindow   `json:"windows"`
 }
 
-// The question on a waiting session's screen, as rows a finger can hit (the
-// Swift app's menuObject). Present only on a waiting session whose screen could
-// be read as a menu; a waiting row without it is a question drawn in a shape
-// nothing recognised. The row labels and details may be refilled from the
-// session's own transcript, but only once the screen proves which question it
-// is showing; the numbers, the caret, Submit and the steps are always the
-// screen's.
+// The question on a waiting Session, as rows a finger can hit. An owned
+// protocol may supply an exact live native offer; otherwise this is a screen
+// menu (the Swift app's menuObject). For screen menus, present only when the
+// screen could be read as a menu; a waiting row without it is a question drawn
+// in a shape nothing recognised. The row labels and details may be refilled
+// from the session's own transcript, but only once the screen proves which
+// question it is showing; the numbers, the caret, Submit and the steps are
+// always the screen's.
 type SessionMenu struct {
 	Options []SessionMenuOption `json:"options"`
 
 	// The prose above the rows, or the question as the call asked it. Absent when it
 	// could not be read.
 	Question string `json:"question,omitempty"`
+
+	// Opaque identity of one live native offer. Included in the menu fingerprint when
+	// present; repeated identical questions have distinct revisions.
+	Revision string `json:"revision,omitempty"`
 
 	// The number of the row the caret is on. Absent when it is on none of them — a
 	// multi-select's button can hold it — and on a menu taken from the transcript,
@@ -6075,6 +6250,14 @@ type SessionsSnapshot struct {
 
 // The keys to change. A null key is left as it is.
 type SettingsRequest struct {
+	// Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the
+	// choice to Antigravity.
+	AntigravityDefaultEffort *string `json:"antigravity_default_effort"`
+
+	// Native Antigravity model slug. Empty leaves the choice to Antigravity; no
+	// fallback to another provider.
+	AntigravityDefaultModel *string `json:"antigravity_default_model"`
+
 	// `claude` or `codex`.
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
@@ -6121,12 +6304,14 @@ type SettingsRequest struct {
 	// A combination the shell can register (`cmd+shift+k`), or empty for none.
 	Hotkey *string `json:"hotkey"`
 
-	// Whether this daemon asks iTerm2 for its sessions, their screens and their input
-	// over Apple Events. Absent means true. Off, the iTerm2 source answers `disabled:
-	// setting` instead of a list, and typing, keys, screen reads and closes on iTerm2
-	// sessions are refused before any Apple Event; opening a viewer tab for a tmux
-	// session, Reveal and closing a child tab this daemon opened still send their one
-	// Apple Event each. It takes effect on the next reading, without a restart.
+	// Explicit opt-in to reading and controlling iTerm2; absent is off, including
+	// existing installations.
+	ItermIntegration *bool `json:"iterm_integration"`
+
+	// Legacy polling preference inside an explicitly enabled iterm_integration. Absent
+	// means true. This preference never grants integration consent. Off, background
+	// listing and screen sampling stop; requested actions are allowed only while
+	// integration is enabled.
 	ItermScan *bool `json:"iterm_scan"`
 
 	// Existing agent and Board authoring language and voice auto fallback.
@@ -6222,7 +6407,25 @@ type SettingsRequest struct {
 	ReopenOnReturn *bool `json:"reopen_on_return"`
 
 	// Bundle identifiers separated by commas, or empty for every app.
-	ScopeApp *string `json:"scope_app"`
+	ScopeApp             *string `json:"scope_app"`
+	SessionAutoDiscovery *bool   `json:"session_auto_discovery"`
+
+	// The Cloud device id the macOS app's own tab paired as, recorded by the setup
+	// wizard from the invitation it handed the app. Empty or absent is not known.
+	SetupAppDevice *string `json:"setup_app_device"`
+
+	// Unix seconds when the console first saw all three setup items paired; 0 or
+	// absent is not complete. The header setup button folds away one day later.
+	SetupCompletedAt *int64 `json:"setup_completed_at"`
+
+	// Empty, cloud or local. What the person chose in the setup wizard: local keeps
+	// the header from showing unfinished Cloud setup. Empty or absent is not chosen
+	// yet.
+	SetupMode *string `json:"setup_mode"`
+
+	// Setup items the person chose to skip, comma separated: app, browser, phone. A
+	// skipped item counts as settled.
+	SetupSkipped *string `json:"setup_skipped"`
 
 	// Have a model write the sentence a notification carries.
 	SmartNotifications *bool `json:"smart_notifications"`
@@ -6260,6 +6463,14 @@ type SettingsRequest struct {
 }
 
 type SettingsSnapshot struct {
+	// Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the
+	// choice to Antigravity.
+	AntigravityDefaultEffort *string `json:"antigravity_default_effort"`
+
+	// Native Antigravity model slug. Empty leaves the choice to Antigravity; no
+	// fallback to another provider.
+	AntigravityDefaultModel *string `json:"antigravity_default_model"`
+
 	// Whose quota that naming turn spends, `claude` or `codex`. Remembered while the
 	// switch above is off, so turning it back on does not quietly change providers.
 	AutoNameAssistant *string `json:"auto_name_assistant"`
@@ -6321,12 +6532,14 @@ type SettingsSnapshot struct {
 	// does; an empty string means the person asked for none, and registers nothing.
 	Hotkey *string `json:"hotkey"`
 
-	// Whether this daemon asks iTerm2 for its sessions, their screens and their input
-	// over Apple Events. Absent means true. Off, the iTerm2 source answers `disabled:
-	// setting` instead of a list, and typing, keys, screen reads and closes on iTerm2
-	// sessions are refused before any Apple Event; opening a viewer tab for a tmux
-	// session, Reveal and closing a child tab this daemon opened still send their one
-	// Apple Event each. It takes effect on the next reading, without a restart.
+	// Explicit opt-in to reading and controlling iTerm2; absent is off, including
+	// existing installations.
+	ItermIntegration *bool `json:"iterm_integration"`
+
+	// Legacy polling preference inside an explicitly enabled iterm_integration. Absent
+	// means true. This preference never grants integration consent. Off, background
+	// listing and screen sampling stop; requested actions are allowed only while
+	// integration is enabled.
 	ItermScan *bool `json:"iterm_scan"`
 
 	// Existing agent and Board authoring language and voice auto fallback. Its stored
@@ -6434,7 +6647,25 @@ type SettingsSnapshot struct {
 
 	// The file's `scope_app`, or null when absent — which the shell reads as
 	// com.googlecode.iterm2. Empty is every app.
-	ScopeApp *string `json:"scope_app"`
+	ScopeApp             *string `json:"scope_app"`
+	SessionAutoDiscovery *bool   `json:"session_auto_discovery"`
+
+	// The Cloud device id the macOS app's own tab paired as, recorded by the setup
+	// wizard from the invitation it handed the app. Empty or absent is not known.
+	SetupAppDevice *string `json:"setup_app_device"`
+
+	// Unix seconds when the console first saw all three setup items paired; 0 or
+	// absent is not complete. The header setup button folds away one day later.
+	SetupCompletedAt *int64 `json:"setup_completed_at"`
+
+	// Empty, cloud or local. What the person chose in the setup wizard: local keeps
+	// the header from showing unfinished Cloud setup. Empty or absent is not chosen
+	// yet.
+	SetupMode *string `json:"setup_mode"`
+
+	// Setup items the person chose to skip, comma separated: app, browser, phone. A
+	// skipped item counts as settled.
+	SetupSkipped *string `json:"setup_skipped"`
 
 	// Have a model write the sentence a notification carries.
 	SmartNotifications *bool `json:"smart_notifications"`
@@ -6845,10 +7076,35 @@ type SquadWriteReply struct {
 }
 
 type StartAssistant struct {
-	Availability StartAvailability `json:"availability"`
-	ID           string            `json:"id"`
-	Label        string            `json:"label"`
+	AuthState    StartAuthState     `json:"authState,omitempty"`
+	Availability StartAvailability  `json:"availability"`
+	Capabilities *StartCapabilities `json:"capabilities,omitempty"`
+	ID           string             `json:"id"`
+
+	// Whether a local executable was found; null when not checked. Does not prove
+	// protocol compatibility or authentication.
+	Installed        *bool                 `json:"installed"`
+	IntegrationState StartIntegrationState `json:"integrationState,omitempty"`
+	Label            string                `json:"label"`
+
+	// Validated standalone CLI version, absent when compatibility could not be
+	// established.
+	Version string `json:"version,omitempty"`
 }
+
+// Authentication evidence, separate from executable presence and quota. Unknown
+// never means ready.
+type StartAuthState string
+
+const (
+	StartAuthStateReady              StartAuthState = "ready"
+	StartAuthStateRequired           StartAuthState = "required"
+	StartAuthStateUnknown            StartAuthState = "unknown"
+	StartAuthStateUnsupportedAccount StartAuthState = "unsupported_account"
+)
+
+// StartAuthStateValues is every value the contract allows, in contract order.
+var StartAuthStateValues = []StartAuthState{StartAuthStateReady, StartAuthStateRequired, StartAuthStateUnknown, StartAuthStateUnsupportedAccount}
 
 // AssistantQuota.Availability. This daemon reads no quota, so it answers
 // unknown.
@@ -6863,6 +7119,32 @@ const (
 
 // StartAvailabilityValues is every value the contract allows, in contract order.
 var StartAvailabilityValues = []StartAvailability{StartAvailabilityOK, StartAvailabilityLow, StartAvailabilityExhausted, StartAvailabilityUnknown}
+
+// Operations admitted by this daemon's verified integration. CLI syntax alone
+// never makes an operation available.
+type StartCapabilities struct {
+	Menus  bool `json:"menus"`
+	Resume bool `json:"resume"`
+
+	// This daemon can launch immutable roles through its current integration. Omission
+	// does not advertise Gemini role support.
+	Roles      bool `json:"roles,omitempty"`
+	Send       bool `json:"send"`
+	Start      bool `json:"start"`
+	Transcript bool `json:"transcript"`
+}
+
+type StartIntegrationState string
+
+const (
+	StartIntegrationStateActive       StartIntegrationState = "active"
+	StartIntegrationStateDisabled     StartIntegrationState = "disabled"
+	StartIntegrationStateMissing      StartIntegrationState = "missing"
+	StartIntegrationStateIncompatible StartIntegrationState = "incompatible"
+)
+
+// StartIntegrationStateValues is every value the contract allows, in contract order.
+var StartIntegrationStateValues = []StartIntegrationState{StartIntegrationStateActive, StartIntegrationStateDisabled, StartIntegrationStateMissing, StartIntegrationStateIncompatible}
 
 // One directory a session can be started in. `id` is sixteen hex characters of
 // the path's SHA-256 and names session and project-file operations. `projectId`
@@ -7361,11 +7643,12 @@ const (
 	TerminalRefusalCodeTerminalAccessRevoked     TerminalRefusalCode = "terminal_access_revoked"
 	TerminalRefusalCodeTerminalCloudNotSupported TerminalRefusalCode = "terminal_cloud_not_supported"
 	TerminalRefusalCodeTerminalSocketPathTooLong TerminalRefusalCode = "terminal_socket_path_too_long"
+	TerminalRefusalCodeViewerReadOnly            TerminalRefusalCode = "viewer_read_only"
 	TerminalRefusalCodeTerminalInvalid           TerminalRefusalCode = "terminal_invalid"
 )
 
 // TerminalRefusalCodeValues is every value the contract allows, in contract order.
-var TerminalRefusalCodeValues = []TerminalRefusalCode{TerminalRefusalCodeTerminalForbidden, TerminalRefusalCodeNotController, TerminalRefusalCodeTerminalControlled, TerminalRefusalCodeLeaseSuperseded, TerminalRefusalCodeLeaseExpired, TerminalRefusalCodeInputGap, TerminalRefusalCodeInputStateUnknown, TerminalRefusalCodeInputTooLarge, TerminalRefusalCodeTerminalBusy, TerminalRefusalCodeTerminalClosed, TerminalRefusalCodeTerminalUnreachable, TerminalRefusalCodeTerminalUnsupported, TerminalRefusalCodeTerminalsFull, TerminalRefusalCodeTerminalViewersFull, TerminalRefusalCodeTerminalAccessRevoked, TerminalRefusalCodeTerminalCloudNotSupported, TerminalRefusalCodeTerminalSocketPathTooLong, TerminalRefusalCodeTerminalInvalid}
+var TerminalRefusalCodeValues = []TerminalRefusalCode{TerminalRefusalCodeTerminalForbidden, TerminalRefusalCodeNotController, TerminalRefusalCodeTerminalControlled, TerminalRefusalCodeLeaseSuperseded, TerminalRefusalCodeLeaseExpired, TerminalRefusalCodeInputGap, TerminalRefusalCodeInputStateUnknown, TerminalRefusalCodeInputTooLarge, TerminalRefusalCodeTerminalBusy, TerminalRefusalCodeTerminalClosed, TerminalRefusalCodeTerminalUnreachable, TerminalRefusalCodeTerminalUnsupported, TerminalRefusalCodeTerminalsFull, TerminalRefusalCodeTerminalViewersFull, TerminalRefusalCodeTerminalAccessRevoked, TerminalRefusalCodeTerminalCloudNotSupported, TerminalRefusalCodeTerminalSocketPathTooLong, TerminalRefusalCodeViewerReadOnly, TerminalRefusalCodeTerminalInvalid}
 
 // POST /v1/terminals/{id}/resize. The holder only; the newest size asked for
 // wins.
@@ -7448,6 +7731,11 @@ type TranscriptEntry struct {
 	// Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent
 	// on every other entry.
 	FileChanges []TranscriptFileChange `json:"fileChanges,omitempty"`
+
+	// Stable entry identity when the provider has a durable projection. Owned ACP uses
+	// acp2:generation:ordinal, preserving distinct repeated turns and replacing
+	// streamed content in place. Absent for providers without entry identities.
+	ID string `json:"id,omitempty"`
 
 	// Images attached to a user turn. Absent when there were none: the Swift app
 	// writes an explicit 0 on user rows, and a reader treats absence as that 0.
@@ -7558,8 +7846,9 @@ type TranscriptPage struct {
 	// reader without it keeps reading the newest page whole.
 	NextAfter int64 `json:"nextAfter,omitempty"`
 
-	// Exclusive byte cursor for the next older page; absent at the beginning of the
-	// record, and on an after= page.
+	// Exclusive provider cursor for the next older page: a JSONL byte offset or a
+	// durable owned ACP entry ordinal. Pass it back unchanged with this page's
+	// signature. Absent at the beginning of the record, and on an after= page.
 	NextBefore int64  `json:"nextBefore,omitempty"`
 	Note       string `json:"note,omitempty"`
 
@@ -7567,8 +7856,16 @@ type TranscriptPage struct {
 	// evidence.
 	Path string `json:"path,omitempty"`
 
-	// The record's size and modification time, `<bytes>-<unix seconds>`, and empty
-	// when nothing was read. It changes whenever the entries could have.
+	// Optional exclusive opaque cursor for rereading this exact durable ACP page with
+	// its signature, including after its entries leave the newest window.
+	ReadBefore int64 `json:"readBefore,omitempty"`
+
+	// Opaque record revision, empty when nothing was read. Claude/Codex use size and
+	// modification time; native Antigravity uses
+	// agy1:file-generation:prefix-bytes:sha256; durable owned ACP uses
+	// acp2:generation:revision, where only a native history replacement changes
+	// generation. Return this exact held page signature as revision with its
+	// before/after cursor; never substitute another page's signature.
 	Signature  string                `json:"signature"`
 	Truncation *TranscriptTruncation `json:"truncation,omitempty"`
 	Unread     *TranscriptUnread     `json:"unread,omitempty"`
@@ -9276,6 +9573,24 @@ const (
 
 // WorkStateValues is every value the contract allows, in contract order.
 var WorkStateValues = []WorkState{WorkStateReady, WorkStateWorking, WorkStateHolding, WorkStateWaitingYou, WorkStateWaitingSession, WorkStateUnknown, WorkStateMilestoneComplete, WorkStateWorkComplete}
+
+type WorkflowSettingsRequest struct {
+	DispatchFullPermission *bool `json:"dispatch_full_permission"`
+
+	// Explicit opt-in to iTerm2 access. False by default; older daemons omit this
+	// field.
+	ItermIntegration     *bool `json:"iterm_integration"`
+	SessionAutoDiscovery *bool `json:"session_auto_discovery"`
+}
+
+type WorkflowSettingsSnapshot struct {
+	DispatchFullPermission bool `json:"dispatch_full_permission"`
+
+	// Explicit opt-in to iTerm2 access. False by default; older daemons omit this
+	// field.
+	ItermIntegration     *bool `json:"iterm_integration"`
+	SessionAutoDiscovery bool  `json:"session_auto_discovery"`
+}
 
 type WorktreeCanonical struct {
 	Error      *WorktreeIssue           `json:"error"`

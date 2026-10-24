@@ -20,6 +20,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/lane"
 	"github.com/sainteye/clawdline/internal/app/tmuxview"
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -64,8 +65,9 @@ type DispatchRequest struct {
 
 // ScheduleOrigin is the schedule a scheduled dispatch belongs to.
 type ScheduleOrigin struct {
-	ID    string
-	Title string
+	Investigation *schedulewebhook.InvestigationRef
+	ID            string
+	Title         string
 	// CloseTab is the schedule's close_tab — on_success, always or never —
 	// which decides what the run's end does to its tab (tabPolicy).
 	CloseTab string
@@ -141,6 +143,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	}
 	if req.Schedule != nil {
 		record.ScheduleID = req.Schedule.ID
+		record.Investigation = req.Schedule.Investigation
 		record.ScheduleTitle = truncate(req.Schedule.Title, rootLabelLimit)
 		record.ScheduleCloseTab = req.Schedule.CloseTab
 	}
@@ -187,8 +190,15 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	}
 	// A machine that cannot open a child says so here, by name, before
 	// anything exists (capability.go, broker-design #43).
-	if err := b.checkChildCapability(ctx); err != nil {
-		return Dispatched{}, err
+	if record.Assistant == projects.AssistantAntigravity {
+		if !b.ownedChildAvailable(ctx) {
+			return Dispatched{}, refuse(http.StatusUnprocessableEntity, "provider_permission_unsupported",
+				"Antigravity owned dispatch is unavailable.")
+		}
+	} else {
+		if err := b.checkChildCapability(ctx); err != nil {
+			return Dispatched{}, err
+		}
 	}
 	if err := b.admitDispatch(); err != nil {
 		return Dispatched{}, err
@@ -448,6 +458,9 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	record, err = b.mutate(ctx, record.ID, "task.spawned", func(r *Record) error {
 		r.ChildTerminalID = spawned.ChildTerminalID
 		r.ChildBackend = spawned.ChildBackend
+		if spawned.ChildConversationID != "" {
+			r.ChildConversationID = spawned.ChildConversationID
+		}
 		r.SpawnedAt = spawned.SpawnedAt
 		r.SpawnError = spawned.SpawnError
 		r.Unbriefed = spawned.Unbriefed
@@ -504,7 +517,7 @@ func (b *Broker) resolveRoot(ctx context.Context, root *RootRef) (string, error)
 	}
 	const tail = " Resend from the Root's own terminal, where the conversation id is read from the environment, or " +
 		"name it: `clawdline dispatch --title <title> --claims <paths> --conversation <conversation id> " +
-		"--root-assistant <claude|codex>`. Do not downgrade owned work to detached polling."
+		"--root-assistant <claude|codex|antigravity>`. Do not downgrade owned work to detached polling."
 	if ref.Code == "conversation_ambiguous" {
 		return "", refuse(http.StatusConflict, "conversation_ambiguous",
 			"More than one live process of the declared assistant proves root.session_id; no owner was selected."+tail)
@@ -665,8 +678,11 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if r.Model == "" && b.DefaultModel != nil {
 		r.Model = b.DefaultModel(r.Assistant)
 	}
-	if r.Assistant == projects.AssistantCodex && r.ReasoningEffort == "" && b.DefaultReasoningEffort != nil {
-		r.ReasoningEffort = b.DefaultReasoningEffort()
+	if (r.Assistant == projects.AssistantCodex || r.Assistant == projects.AssistantAntigravity) && r.ReasoningEffort == "" && b.DefaultReasoningEffort != nil {
+		r.ReasoningEffort = b.DefaultReasoningEffort(r.Assistant)
+	}
+	if r.Assistant == projects.AssistantAntigravity {
+		return b.spawnOwnedChild(ctx, r, cwd, secret, opened)
 	}
 	preflightPersona := r.Persona
 	if b.ResolveSquadSnapshot != nil && r.Persona != "" {
@@ -677,9 +693,8 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
 		Model:       r.Model,
-		// Codex only, and already refused by name on anything else when the
-		// brief was admitted; `Admit` refuses it again rather than trusting
-		// that, because it is the gate between a brief and a command line.
+		// Revalidate the selected provider's vocabulary at the command-line
+		// boundary, including defaults read after brief admission.
 		ReasoningEffort: r.ReasoningEffort,
 		Language:        b.SessionLanguage(r.Assistant),
 		// Admitted by name with the brief, and admitted again here for the
@@ -861,7 +876,7 @@ func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 
 func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, taskExecutable string, launchEnv ...string) string {
 	args := append([]string{}, l.Arguments...)
-	if r.Gate == nil {
+	if r.Gate == nil && l.Assistant != projects.AssistantAntigravity {
 		args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
 	}
 	args = append(args, permissionArgs(r, cwd, taskExecutable)...)
@@ -889,6 +904,10 @@ func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, task
 			q("CARGO_TARGET_DIR", filepath.Join(root, "build")))
 	}
 	set = append(set, launchEnv...)
+	if l.Assistant == projects.AssistantAntigravity {
+		l.Arguments = args
+		return l.ShellCommandWithEnv(set)
+	}
 	return envPrefix(l.Assistant, set) + strings.Join(append([]string{l.Assistant}, args...), " ")
 }
 
@@ -1125,6 +1144,9 @@ func nothingTyped(err error) bool {
 // naming neither what was there nor what was looked for.
 func (b *Broker) composerReady(ctx context.Context, terminalID, assistant string) (bool, error) {
 	if b.Screen == nil {
+		if assistant == projects.AssistantAntigravity {
+			return false, errors.New("provider_state_unknown")
+		}
 		return true, nil
 	}
 	screen, ok := b.Screen(ctx, terminalID)
@@ -1150,6 +1172,8 @@ func assistantName(assistant string) string {
 		return "Claude Code"
 	case "codex":
 		return "Codex"
+	case projects.AssistantAntigravity:
+		return "Antigravity CLI"
 	}
 	return "an assistant"
 }
@@ -1308,6 +1332,17 @@ func (b *Broker) settleOnce(ctx context.Context, id string, state State, why str
 		if l, ok := b.lingerFor(*r, now); ok {
 			if err := tx.PutLinger(l); err != nil {
 				return nil, err
+			}
+		}
+		if r.ChildBackend == "owned" && (state == StateTimeout || state == StateSpawnFailed) {
+			owed := false
+			for _, e := range effects {
+				if e.Kind == EffectCloseChild {
+					owed = true
+				}
+			}
+			if !owed {
+				effects = append(effects, b.closeChild(*r, true)...)
 			}
 		}
 		if also != nil {

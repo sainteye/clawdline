@@ -319,7 +319,11 @@ On a release install with `update_available`, the session list also shows a per-
 Its **Update now** button rechecks the signed release source, starts the update directly, and shows
 progress and the final result in the same place. A withdrawn release or an unavailable source
 cannot be installed from an old banner. Dismissing the banner is remembered per version in that
-browser. Settings retains the full version check, release notes, and update controls.
+browser. A newer available release replaces the previous update's completion message and exposes
+its install action immediately, without first dismissing that message. Dismissing the newer
+offer does not bring the older completion back; a later release can still appear. Closing a
+result remembers only the result being shown, not a newer offer hidden behind it. Settings
+retains the full version check, release notes, update history, and update controls.
 
 A running dev build keeps a banner visible on both the machine's console and the Cloud
 **All machines** list, including Linux source deployments and source checkouts. It shows

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravity"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -133,7 +134,30 @@ func installedAssistants() []contract.StartAssistant {
 				Availability: contract.StartAvailabilityUnknown})
 		}
 	}
+	out = append(out, antigravityStartAssistant(antigravityResolver().Snapshot(context.Background())))
 	return out
+}
+
+var antigravityResolver = sync.OnceValue(func() *antigravity.Resolver {
+	return antigravity.NewResolver(antigravity.DefaultCandidates(), nil)
+})
+
+func antigravityStartAssistant(info antigravity.Installation) contract.StartAssistant {
+	state := contract.StartIntegrationStateMissing
+	if info.Compatible {
+		state = contract.StartIntegrationStateDisabled
+	}
+	if info.Installed && info.Reason == "provider_cli_incompatible" {
+		state = contract.StartIntegrationStateIncompatible
+	}
+	var installed *bool
+	if info.InstalledKnown {
+		installed = &info.Installed
+	}
+	return contract.StartAssistant{ID: projects.AssistantAntigravity, Label: "Gemini",
+		Availability: contract.StartAvailabilityUnknown, Installed: installed,
+		Version: info.Version, AuthState: contract.StartAuthState(info.AuthState),
+		IntegrationState: state, Capabilities: &contract.StartCapabilities{}}
 }
 
 func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +186,7 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 		keys = append(keys, setupLookupKey{path: p.Path, repo: repos[p.Path], icon: source})
 	}
 	setups := readers.setups.Resolve(keys)
-	out := contract.StartPlaceList{At: time.Now().Unix(), Assistants: installedAssistants(),
+	out := contract.StartPlaceList{At: time.Now().Unix(), Assistants: s.availableAssistants(),
 		Places: make([]contract.StartPlace, 0, len(list))}
 	for _, p := range list {
 		// `repo` is what a schedule moving here from another machine finds its
@@ -286,6 +310,10 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) == 3 && parts[0] != "" && parts[1] == "memory-groups" && parts[2] != "" {
 		s.projectMemoryGroupRoute(w, r, parts[0], parts[2])
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "antigravity-consent" {
+		s.antigravityProjectConsentRoute(w, r, parts[0])
 		return
 	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "unify" {

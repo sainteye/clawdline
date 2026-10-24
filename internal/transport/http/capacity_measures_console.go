@@ -8,6 +8,12 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"console.transcript_revision_restarts": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console older-page recovery guard; daemon cannot measure another device's restart count"}
+		},
+		"console.assistant_facts_read_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console inventory read deadline; daemon cannot measure another device's pending read"}
+		},
 		// The connection-health page's bounds live in each open operator tab.
 		capacity.ConsoleHealthUIRequestSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console operator tab bound; daemon cannot measure another device's health page"}
@@ -49,6 +55,12 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console operator tab bound; daemon cannot measure another device's health page"}
 		},
 		capacity.ConsoleHealthUIProbeClaims: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console operator tab bound; daemon cannot measure another device's health page"}
+		},
+		capacity.ConsoleHealthUIInvestigations: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console operator tab bound; daemon cannot measure another device's health page"}
+		},
+		capacity.ConsoleHealthUIInvestigationRefs: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console operator tab bound; daemon cannot measure another device's health page"}
 		},
 		capacity.ConsoleHealthUITrendLanes: func() capacity.Reading {
@@ -114,6 +126,12 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.ConsoleOwnerRetentionRequestSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Settings window read deadline; daemon cannot measure another window's wait"}
 		},
+		"console.carrier_receive_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser encoded carrier queue; daemon cannot measure another device's held bytes"}
+		},
+		"console.carrier_receive_rows": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser authentication queue; daemon cannot measure another device's pending envelopes"}
+		},
 		capacity.ConsoleExecutionRecoveryAttempts: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console opening recovery guard; daemon cannot measure another device's recovery attempts"}
 		},
@@ -136,6 +154,9 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		},
 		capacity.ConsoleTranscriptFollowSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
+		},
+		capacity.ConsoleTranscriptFillPages: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console opening history fill budget; daemon cannot measure another device’s reads"}
 		},
 		capacity.ConsoleTranscriptMergedRows: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab guard; daemon cannot measure a tab's merged page"}
@@ -160,6 +181,9 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		},
 		capacity.ConsolePinnedListReadTimeout: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console pinned machine list read deadline; daemon cannot measure another device's wait"}
+		},
+		capacity.ConsoleNativePairingSaveSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "macOS shell's deadline for saving a pairing's permission; the daemon answers the save but does not see the shell's timer"}
 		},
 		capacity.ConsoleStatusMarkerRecoveryWait: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console retained inventory replay deadline; daemon cannot measure another device's wait"}

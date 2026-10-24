@@ -215,20 +215,27 @@ func (h *connectionHealthLife) Stop(ctx context.Context) error {
 // stopConnectionHealthOnSignal stops the monitor when the daemon is told to
 // stop, then lets the signal do what it did before: the process ends the
 // way the service manager expects.
-func stopConnectionHealthOnSignal(h *connectionHealthLife) {
-	if h == nil {
+func stopConnectionHealthOnSignal(h *connectionHealthLife, stopCloud context.CancelFunc) {
+	if h == nil && stopCloud == nil {
 		return
 	}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	sig := <-signals
-	ctx, cancel := context.WithTimeout(context.Background(), connectionHealthStopTimeout)
-	if err := h.Stop(ctx); err != nil {
-		log.Printf("%v", err)
-	} else {
-		log.Printf("connection health: stopped; the durable store is flushed and closed")
+	// Close the deferred activation gate before flushing health. In particular,
+	// an update accepted during that flush must not open a new Cloud link.
+	if stopCloud != nil {
+		stopCloud()
 	}
-	cancel()
+	if h != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), connectionHealthStopTimeout)
+		if err := h.Stop(ctx); err != nil {
+			log.Printf("%v", err)
+		} else {
+			log.Printf("connection health: stopped; the durable store is flushed and closed")
+		}
+		cancel()
+	}
 	signal.Reset(os.Interrupt, syscall.SIGTERM)
 	if p, err := os.FindProcess(os.Getpid()); err == nil && p.Signal(sig) == nil {
 		// The default action ends the process; this wait is never reached

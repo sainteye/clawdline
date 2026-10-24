@@ -105,6 +105,14 @@ jobs:
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/check-machine-words.sh
 
+      # CI does not run tools/check.sh, so the release evidence checks
+      # (docs/security/release-evidence.md) are run here by name. Linux covers
+      # the SBOM, provenance, rebuild and gate cases; the darwin job adds the
+      # Mach-O and release-signature cases.
+      - name: Check that the release evidence fails on what it exists to catch
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
+        run: bash tools/release/supply-chain.test.sh
+
   go-linux:
     name: Go tests on Linux
     runs-on: ubuntu-latest
@@ -211,6 +219,16 @@ jobs:
       - name: Run Darwin tests with four named host exclusions and the quarantine list
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         run: tools/test-go-ci.sh
+
+      # check.sh does not run in CI; the native shell's pairing flow is
+      # exercised here, on the runner's own architecture.
+      - name: Check that the native shell saves a pairing's permission before showing its code
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
+        run: sh tools/test-shell-pairing-permission.sh
+
+      - name: Check the release evidence, including the macOS signature cases
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
+        run: bash tools/release/supply-chain.test.sh
 
   # Runs last on every push to main and tells the person once when main goes
   # from green to red; tools/ci-notify-red.sh says how. The URL is the

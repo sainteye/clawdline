@@ -81,8 +81,11 @@ func newBroker(s *Server) *orchestrator.Broker {
 			}
 			return snapshot.AutoAssignEnabled, nil
 		},
-		Tasks: taskdir.New(s.cfg.Dir),
-		Git:   git.New(),
+		OwnedChildAvailable: func(context.Context) bool { return s.antigravitySessions.Load() != nil },
+		OpenOwnedChild:      s.openOwnedAntigravityChild,
+		CloseOwnedChild:     s.stopOwnedAntigravityChild,
+		Tasks:               taskdir.New(s.cfg.Dir),
+		Git:                 git.New(),
 		AssistantQuotas: func(now time.Time) ([]orchestrator.AssistantQuotaSnapshot, error) {
 			rows := make([]orchestrator.AssistantQuotaSnapshot, 0, len(limits.Assistants))
 			for _, id := range limits.Assistants {
@@ -182,6 +185,12 @@ func newBroker(s *Server) *orchestrator.Broker {
 		// names sessions. A daemon whose identity port is not that host reads
 		// no records, and its notices are resent as before.
 		NoticeRead: func(ctx context.Context, root session.Session, noticeID string) (bool, error) {
+			if root.Backend == session.BackendOwned && root.Binding == session.BindingProtocol && root.Assistant == session.AssistantAntigravity {
+				if h := s.antigravitySessions.Load(); h != nil {
+					return h.NoticeRead(ctx, root, noticeID)
+				}
+				return false, ownedAntigravityUnavailable()
+			}
 			h, ok := s.inventory.Identity.(*transcript.Host)
 			if !ok {
 				return false, transcript.ErrNoNoticeRecord
@@ -256,12 +265,12 @@ func newBroker(s *Server) *orchestrator.Broker {
 		// The same live-read rule as terminal and compaction: the next launch
 		// sees a saved default without restarting the daemon.
 		DefaultModel: func(assistant string) string { return brokerDefaultModel(s, assistant) },
-		DefaultReasoningEffort: func() string {
+		DefaultReasoningEffort: func(assistant string) string {
 			values, err := nextconfig.Open(s.cfg.Dir).Read()
 			if err != nil {
 				return ""
 			}
-			return nextconfig.DefaultReasoningEffort(values)
+			return nextconfig.DefaultEffort(values, assistant)
 		},
 
 		ReclaimAuto:  os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",

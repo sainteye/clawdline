@@ -199,6 +199,25 @@ test("older transcript reads name their cursor and do not replace the newest cac
   assert.equal(client.asks, 1)
 })
 
+test("same-offset older reads carry distinct held revisions through the relay", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 10_000 })
+  for (const revision of ["agy1:a:123:abc", "agy1:b:123:def"]) {
+    await r.fetch(`/v1/transcript?session=s1&before=123&revision=${encodeURIComponent(revision)}`)
+  }
+  assert.deepEqual(client.sessionPageReads.map((read) => read.body.revision), ["agy1:a:123:abc", "agy1:b:123:def"])
+  assert.notEqual(client.sessionPageReads[0].answer, client.sessionPageReads[1].answer)
+})
+
+test("an equal-offset page from another conversation cannot be drawn as this Session", async () => {
+  const client = new FakeClient()
+  client._read = async () => ({ id: "other", entries: [{ role: "user", text: "another conversation" }], signature: "agy1:other", evidence: "transcript" })
+  const r = reader(client, { t: 10_000 })
+  const response = await r.fetch("/v1/transcript?session=s1&before=123&revision=agy1:held")
+  assert.equal(response.status, 502)
+  assert.equal((await response.json()).error, "bad_payload")
+})
+
 /** A snippet row as the copied client tags it, with nothing of anybody's in it. */
 function snippet(machine: string, id: string, extra: Record<string, unknown> = {}) {
   return { id, machine, title: "a title", body: "a body", scope: "global", position: 0, ...extra }
@@ -1831,6 +1850,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/projects", "projects", {}],
   ["/v1/projects/cloud-p1/files", "project-file-list", { project: "p1" }],
   ["/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-read", { project: "p1", file: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
+  ["/v1/projects/cloud-p1/antigravity-consent", "project-antigravity-consent-status", { project: "p1" }],
   ["/v1/projects/cloud-p1/unify", "project-unify-plan", { project: "p1" }],
   ["/v1/projects/cloud-p1/tree?directory=", "project-tree-list", { project: "p1", directory: "" }],
   ["/v1/projects/cloud-p1/tree?directory=src%2Fnested", "project-tree-list", { project: "p1", directory: "src/nested" }],
@@ -2144,4 +2164,76 @@ test("a transcript generation refusal requests recovery without needing a diagno
   assert.equal(response.status, 409)
   assert.deepEqual(recoveries, ["mac-a/s1"])
   assert.deepEqual(client.pinnedReads, [], "the old execution is never read as a substitute")
+})
+
+
+test("a pinned native Cloud conversation retains its binding and admits the current execution", async () => {
+  // @ts-expect-error -- Node tests resolve source extensions.
+  const { assistantStateCurrent, assistantProtocolOwned, assistantComposeAdmits } = await import("../session/antigravity-ui.ts")
+  const client = new FakeClient()
+  const execution = "a".repeat(32), now = 1_000_000
+  const destination = { machineID: "mac-a", sessionID: "owned:acp:synthetic", executionGeneration: execution }
+  // Current machines omit owned/provider in ss/, but their authorized list names the native binding.
+  const projected = { destination, state: "idle", freshness: "current" as const, observedAt: now - 30_000 }
+  const reader = new RelayReader("mac-a", { classicStatus: true, now: () => now,
+    machineProjection: async () => ({ kind: "ready", complete: true, observedAt: now,
+      snapshotGeneration: execution, rows: [projected] }),
+    listPresentations: async () => [{ destination, title: "Native conversation", assistant: "antigravity",
+      status: { state: "idle", identity: "protocol", sessionId: "native-conversation", work_state: "ready" }, projection: projected }],
+  })
+  reader.attach(client)
+  const row = (await reader.snapshot()).sessions[0]
+  assert.equal(row.backend, "owned")
+  assert.equal(assistantProtocolOwned(row), true)
+  assert.equal(assistantComposeAdmits(row.assistant, undefined, row.state, false, assistantProtocolOwned(row)), true)
+  assert.equal(assistantComposeAdmits(row.assistant, undefined, "working", false, assistantProtocolOwned(row)), false)
+  assert.equal(assistantStateCurrent(row, now), false, "native text input does not require a terminal observation")
+  assert.deepEqual(documentIdentityForSession([row], destination.sessionID, "cloud"),
+    { machine: "mac-a", session: destination.sessionID })
+})
+
+
+test("a native-looking title or another execution cannot supply a Cloud protocol binding", async () => {
+  // @ts-expect-error -- Node tests resolve source extensions.
+  const { assistantProtocolOwned } = await import("../session/antigravity-ui.ts")
+  for (const variant of ["missing_binding", "different_execution"] as const) {
+    const client = new FakeClient(), execution = "a".repeat(32), now = 1_000_000
+    const destination = { machineID: "mac-a", sessionID: "owned:acp:synthetic", executionGeneration: execution }
+    const projected = { destination, state: "idle", freshness: "current" as const, observedAt: now }
+    const reader = new RelayReader("mac-a", { classicStatus: true, now: () => now,
+      machineProjection: async () => ({ kind: "ready", complete: true, observedAt: now,
+        snapshotGeneration: execution, rows: [projected] }),
+      listPresentations: async () => [{ destination: { ...destination,
+        executionGeneration: variant === "different_execution" ? "b".repeat(32) : execution },
+        title: "Antigravity conversation", assistant: "antigravity", status: { state: "idle",
+          identity: variant === "missing_binding" ? undefined : "protocol", sessionId: "native-conversation" }, projection: projected }],
+    })
+    reader.attach(client)
+    assert.equal(assistantProtocolOwned((await reader.snapshot()).sessions[0]), false, variant)
+  }
+})
+
+
+test("a native reply is read after its user echo without waiting for terminal activity", async () => {
+  const client = new FakeClient(), clock = { t: 1_000_000 }
+  client.rows = [row("mac-a", "s1", { assistant: "antigravity", backend: "owned", sessionBinding: "protocol" })]
+  let revision = 0, reads = 0
+  client.transcript = async () => {
+    reads++
+    return { id: "s1", signature: "acp:synthetic:" + revision, evidence: "structured", entries:
+      revision === 0 ? [] : revision === 1 ? [{ role: "user", text: "hello" }] :
+        [{ role: "user", text: "hello" }, { role: "assistant", text: "reply" }] } as any
+  }
+  const r = reader(client, clock)
+  await r.transcript("s1")
+  r.wrote("s1", "done")
+  revision = 1
+  await r.transcript("s1")
+  revision = 2
+  clock.t += 4_001
+  const next = await r.transcript("s1")
+  assert.equal(next.page.entries.at(-1)?.text, "reply")
+  assert.equal(reads, 3)
+  await r.transcript("s1")
+  assert.equal(reads, 3, "unchanged redraws share the existing short read window")
 })

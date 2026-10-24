@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravity"
+	"github.com/sainteye/clawdline/internal/adapters/release/updater"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app"
@@ -99,6 +101,8 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "provider":
+		os.Exit(providerObserveCommand(context.Background(), os.Args[2:], config.Load().Dir, os.Stdin, os.Stdout, os.Stderr))
 	case "serve":
 		serve()
 	case "doctor":
@@ -282,12 +286,53 @@ func serve() {
 	// starts and whether or not Cloud is on (health.go).
 	// A stopping daemon stops it first, so the durable store is flushed and
 	// closed rather than abandoned mid-write.
-	go stopConnectionHealthOnSignal(startConnectionHealth(cfg.Dir, srv))
+	cloudCtx, stopCloud := context.WithCancel(context.Background())
+	defer stopCloud()
 	// A device file that cannot be read stops the daemon here, rather than
 	// letting it listen and refuse everybody.
 	if err := srv.AuthReady(); err != nil {
 		refuseToServe(1, err.Error())
 	}
+	stopAntigravityProjects, projectConsentErr := srv.StartAntigravityProjectConsent(cloudCtx)
+	if projectConsentErr != nil {
+		log.Print("antigravity: antigravity_project_consent_unavailable")
+	}
+	stopAntigravityContext, contextErr := srv.StartAntigravityLaunchStore(cloudCtx)
+	if contextErr != nil {
+		log.Print("antigravity: antigravity_context_unavailable")
+	}
+	stopAntigravity, antigravityErr := srv.StartAntigravity(cloudCtx, srv.ManagedAntigravityOptions())
+	if antigravityErr != nil {
+		var typed *antigravity.BridgeError
+		if errors.As(antigravityErr, &typed) {
+			log.Printf("antigravity: %s", typed.Code)
+		} else {
+			log.Print("antigravity: antigravity_runtime_failed")
+		}
+	}
+	stopAntigravitySessions, sessionsErr := srv.StartAntigravitySessions(cloudCtx)
+	if sessionsErr != nil {
+		log.Print("antigravity: owned_session_start_failed")
+	}
+	stopAntigravityAll := func() {
+		if stopAntigravitySessions != nil {
+			stopAntigravitySessions()
+		}
+		if stopAntigravity != nil {
+			stopAntigravity()
+		}
+		if stopAntigravityContext != nil {
+			stopAntigravityContext()
+		}
+		if stopAntigravityProjects != nil {
+			stopAntigravityProjects()
+		}
+	}
+	defer stopAntigravityAll()
+	go stopConnectionHealthOnSignal(startConnectionHealth(cfg.Dir, srv), func() {
+		stopCloud()
+		stopAntigravityAll()
+	})
 	srv.StartScheduler(context.Background())
 	// The broker's beat: collect what children wrote, run the two clocks, and
 	// keep telling a root its child finished until somebody acknowledges it.
@@ -307,8 +352,10 @@ func serve() {
 	// Things waiting to be verified: the records this daemon owes are planted
 	// once (docs/verifications.md "The first one").
 	srv.StartVerifications(context.Background())
-	startCloudLine(context.Background(), cfg, srv)
+	startCloudLine(cloudCtx, cfg, srv)
 	if err := srv.Serve(ln); err != nil {
+		stopCloud()
+		stopAntigravityAll()
 		refuseToServe(1, err.Error())
 	}
 }
@@ -323,14 +370,19 @@ func serve() {
 // behind. Each of those is recorded where `/v1/cloud/status` can say it, which
 // is the difference between a quiet failure and a legible one.
 func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.Server) {
+	admit := cloudAdmission(cfg.Dir)
+	httptransport.SetCloudUnavailable(cfg.Dir)
 	opts := cloudtransport.LinkOptions{
-		Dir:            cfg.Dir,
-		ForeignDirs:    foreignDirs(),
-		Receipts:       srv.CloudSessionReceipts(),
-		AdmitExecution: srv.CloudAdmitExecution,
-		Sessions:       srv.CloudSessions,
-		SessionsFresh:  srv.CloudSessionsFresh,
-		SessionLook:    srv.CloudSessionLook,
+		// Receivers ship first; update admission keeps this off until this
+		// executable is accepted and cannot automatically return to v2.0.0.
+		ContentKeyRuntime: true,
+		Dir:               cfg.Dir,
+		ForeignDirs:       foreignDirs(),
+		Receipts:          srv.CloudSessionReceipts(),
+		AdmitExecution:    srv.CloudAdmitExecution,
+		Sessions:          srv.CloudSessions,
+		SessionsFresh:     srv.CloudSessionsFresh,
+		SessionLook:       srv.CloudSessionLook,
 		// The daemon's own routes, gate and all. A Cloud request is answered by
 		// exactly the handler a paired browser on this machine's own network
 		// reaches — one set of permission checks, not two.
@@ -359,7 +411,9 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		APILevel: httptransport.APILevel,
 		Log:      func(format string, args ...any) { log.Printf(format, args...) },
 		// The request queue is the register's `cloud.relay_queue` row.
-		QueueDepth: int(httptransport.CapacityLimit(capacity.CloudRelayQueue)),
+		QueueDepth:        int(httptransport.CapacityLimit(capacity.CloudRelayQueue)),
+		ReadQueueDepth:    int(httptransport.CapacityLimit(capacity.CloudReadQueue)),
+		RefusalQueueDepth: int(httptransport.CapacityLimit(capacity.CloudLaneRefusals)),
 		// The outbound spool is its four rows: two global, one per wire
 		// channel, and the receipt table.
 		SpoolRows:         int(httptransport.CapacityLimit(capacity.CloudSpool)),
@@ -396,9 +450,15 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 			stop, done = nil, nil
 			webhooksDone = nil
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		link, err := cloudtransport.Open(opts)
 		if err != nil {
 			httptransport.SetCloudLine(cfg.Dir, nil)
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		httptransport.SetCloudLine(cfg.Dir, link)
@@ -420,11 +480,17 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		}()
 		return nil
 	}
-	srv.SetCloudReload(reload)
-	if err := reload(); err != nil {
+	gate := &cloudUpdateGate{ctx: ctx, ready: admit, open: reload}
+	srv.SetCloudReload(gate.reload)
+	if err := gate.reload(); err != nil {
 		// A malformed setting is loud, but never takes the local daemon down.
 		log.Printf("cloud: the line is off: %v", err)
 	}
+	go func() {
+		ticker := time.NewTicker(updater.AppSwapPollSecondsLimit * time.Second)
+		defer ticker.Stop()
+		gate.resume(ticker.C)
+	}()
 }
 
 func doctor() {

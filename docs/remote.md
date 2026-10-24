@@ -58,7 +58,10 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
    沒有桌面環境的 Linux 仍退回 0600 檔案，並在設定頁寫明。
 5. **配對的承諾照搬**（`~/code/clawdline/docs/remote.md` 的 How a device is paired）：碼只顯示在本機，
    不出現在回應、log、audit；最多猜 5 次、2 分鐘失效、一次一個、10 分鐘 3 次；token 以 constant-time 比對、
-   只存雜湊；寫入是另一個權限，預設關閉；本機也沒有例外；還沒有配對任何裝置之前 tunnel 不准啟動。
+   只存雜湊；本機也沒有例外；還沒有配對任何裝置之前 tunnel 不准啟動。直接配對的裝置逐台是只讀
+   （`read`）或可讀可操作（`read`+`send`），只有本機 token 能選（`POST /v1/auth/devices/{id}/permission`、
+   配對前的 `POST /v1/auth/pairings/{id}/permission`）；舊裝置與本機沒選過的新配對維持可讀可操作。
+   Cloud 是整台機器一個操作開關（`clawdline cloud commands`）；Cloud 逐個 viewer 的權限尚未實作。
    沒有原生殼的平台（Linux、Windows），碼由 CLI 在終端印出。
 
 ## 順序
@@ -123,7 +126,7 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
   `termi`, `term`, and `termr` channels. The machine checks the Cloud principal and local pairing pin for every terminal operation; the relay cannot turn a generic machine request
   into terminal authority. See `docs/cloud-terminal-wire.md`.
 - **本機自己的 token** 直接可以。
-- **已配對裝置預設可傳送**：本機配對裝置須仍在裝置清單（`Holds`）；Cloud viewer 須登入且本機 pin 的公鑰與 roster 相符。已撤銷、未配對或公鑰不符者皆被拒絕；該機器的 Cloud 命令開關仍可停止遠端操作。不再要求獨立的 `terminal_control` 或本機終端 grant；看畫面仍須符合資格，打字另需控制租約。
+- **直接配對裝置依其權限**：只讀裝置可看畫面、不能取得控制租約或輸入；可讀可操作的裝置須仍在裝置清單（`Holds`）；Cloud viewer 須登入且本機 pin 的公鑰與 roster 相符。已撤銷、未配對或公鑰不符者皆被拒絕；該機器的 Cloud 命令開關仍可停止遠端操作。不再要求獨立的 `terminal_control` 或本機終端 grant；看畫面仍須符合資格，打字另需控制租約。
 - **舊 grant 檔已移除**：`terminal-grants.json` 與本機 `POST /v1/auth/devices/{id}/terminal` 已刪除（後者現在回 `404`）；裝置清單不再有 `terminal` 欄位，診斷也不再報告 `grants_ok`。
 - **撤銷立即生效**：裝置或配對 pin 被撤銷時，服務重新檢查租約與串流；失去資格的租約作廢，串流送出 `terminal_access_revoked` 後關閉。每個效果和畫面也重新檢查。
 - **一次一個控制者**：租約 30 秒、每 10 秒續約；別人持有時 `acquire` 回 `terminal_controlled` 並說明是誰；

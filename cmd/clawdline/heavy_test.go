@@ -106,7 +106,7 @@ func TestAHeavyCommandWaitsForTheSlotThenRunsAndGivesItBack(t *testing.T) {
 			asks++
 			if asks <= 2 {
 				// The line moves while this one waits: number 2, then 1.
-				return 200, `{"ok":true,"state":"queued","position":` + strconv.Itoa(3-asks) + `,"retry_after_seconds":5,"lease":{"resource":"heavy_compile","key":"machine","holder":{"holder":"other: go test ./...","lease_id":"l1","acquired_at":1,"held_seconds":40,"liveness":"alive"},"queue":[]}}`
+				return 200, `{"ok":true,"state":"queued","position":` + strconv.Itoa(3-asks) + `,"retry_after_seconds":5,"lease":{"resource":"heavy_compile","key":"machine","holder":{"holder":"other: go build ./...","lease_id":"l1","acquired_at":1,"held_seconds":40,"liveness":"alive"},"queue":[]}}`
 			}
 			return 200, `{"ok":true,"state":"granted","lease_id":"l2","lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
 		case "/v1/orchestrator/leases/renew", "/v1/orchestrator/leases/release":
@@ -115,13 +115,13 @@ func TestAHeavyCommandWaitsForTheSlotThenRunsAndGivesItBack(t *testing.T) {
 		return 404, `{"error":"not_found"}`
 	})
 	h := &heavyHarness{exit: 3, during: func() { time.Sleep(60 * time.Millisecond) }}
-	code := runHeavy(heavyOptions{wait: time.Hour}, []string{"go", "test", "./..."},
+	code := runHeavy(heavyOptions{wait: time.Hour}, []string{"go", "build", "./..."},
 		h.deps(b, map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation}))
 
 	if code != 3 {
 		t.Fatalf("exit %d, want the command's 3; stderr %s", code, h.stderr.String())
 	}
-	if len(h.ran) != 1 || strings.Join(h.ran[0], " ") != "go test ./..." {
+	if len(h.ran) != 1 || strings.Join(h.ran[0], " ") != "go build ./..." {
 		t.Fatalf("ran %v", h.ran)
 	}
 	if got := h.env[0]; len(got) != 1 || got[0] != heavyEnv+"="+heavyID {
@@ -137,7 +137,7 @@ func TestAHeavyCommandWaitsForTheSlotThenRunsAndGivesItBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	if first["resource"] != "heavy_compile" || first["request_id"] != heavyID || first["session_id"] != thinConversation ||
-		first["pid"] != float64(os.Getpid()) || !strings.HasSuffix(first["holder"].(string), ": go test ./...") {
+		first["pid"] != float64(os.Getpid()) || !strings.HasSuffix(first["holder"].(string), ": go build ./...") {
 		t.Fatalf("the ask %v", first)
 	}
 	if s.requests()[0].Token != thinToken {
@@ -149,7 +149,7 @@ func TestAHeavyCommandWaitsForTheSlotThenRunsAndGivesItBack(t *testing.T) {
 	// One line when it joins the line and one when the slot is its own: a
 	// moving place in line is not news worth waking an agent for.
 	lines := stderrLines(h)
-	if len(lines) != 2 || !strings.Contains(lines[0], "number 2 in line, held by other: go test ./...") ||
+	if len(lines) != 2 || !strings.Contains(lines[0], "number 2 in line, held by other: go build ./...") ||
 		!strings.Contains(lines[1], "the compile slot is ours after 10s") {
 		t.Fatalf("stderr %q", h.stderr.String())
 	}
@@ -166,7 +166,7 @@ func TestAHeavyCommandRunsWhenTheDaemonDoesNotAnswer(t *testing.T) {
 	b.base = "http://127.0.0.1:1" // nothing listens here
 	b.client.Timeout = 2 * time.Second
 	h := &heavyHarness{}
-	if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"make"}, h.deps(b, nil)); code != 0 || len(h.ran) != 1 {
+	if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"clang", "source.c"}, h.deps(b, nil)); code != 0 || len(h.ran) != 1 {
 		t.Fatalf("exit %d ran %v", code, h.ran)
 	}
 	if !strings.Contains(h.stderr.String(), "running without the compile slot") {
@@ -181,7 +181,7 @@ func TestAnUnknownRefusalRunsWithoutTheSlot(t *testing.T) {
 		return 400, `{"error":{"code":"bad_lease","message":"no"}}`
 	})
 	h := &heavyHarness{}
-	if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"make"}, h.deps(b, nil)); code != 0 || len(h.ran) != 1 {
+	if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"clang", "source.c"}, h.deps(b, nil)); code != 0 || len(h.ran) != 1 {
 		t.Fatalf("exit %d ran %v", code, h.ran)
 	}
 	if p := paths(s); len(p) != 1 {
@@ -209,7 +209,7 @@ func TestALineLongerThanMaxWaitIsLeftAndTheCommandIsNotRun(t *testing.T) {
 		return 200, `{"ok":true,"state":"cancelled","lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
 	})
 	h := &heavyHarness{exit: 0}
-	if code := runHeavy(heavyOptions{wait: 12 * time.Second}, []string{"make"}, h.deps(b, nil)); code != heavyExitTimedOut || len(h.ran) != 0 {
+	if code := runHeavy(heavyOptions{wait: 12 * time.Second}, []string{"clang", "source.c"}, h.deps(b, nil)); code != heavyExitTimedOut || len(h.ran) != 0 {
 		t.Fatalf("exit %d ran %v", code, h.ran)
 	}
 	if heavyExitTimedOut != 75 {
@@ -249,7 +249,7 @@ func TestAFullQueueIsOneLineToo(t *testing.T) {
 		return 200, `{"ok":true,"state":"renewed","lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
 	})
 	h := &heavyHarness{}
-	if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"make"}, h.deps(b, nil)); code != 0 || len(h.ran) != 1 {
+	if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"clang", "source.c"}, h.deps(b, nil)); code != 0 || len(h.ran) != 1 {
 		t.Fatalf("exit %d ran %v", code, h.ran)
 	}
 	lines := stderrLines(h)
@@ -270,7 +270,7 @@ func TestAHeavyCommandWaitsForMemory(t *testing.T) {
 		},
 		roomy,
 	}}
-	if code := runHeavy(heavyOptions{wait: time.Hour, noSlot: true}, []string{"make"}, h.deps(nil, nil)); code != 0 || len(h.ran) != 1 {
+	if code := runHeavy(heavyOptions{wait: time.Hour, noSlot: true}, []string{"clang", "source.c"}, h.deps(nil, nil)); code != 0 || len(h.ran) != 1 {
 		t.Fatalf("exit %d ran %v", code, h.ran)
 	}
 	if len(h.slept) != 2 {
@@ -290,7 +290,7 @@ func TestMemoryThatNeverComesBackIsWaitedForOnlyUntilMaxWait(t *testing.T) {
 		return machineusage.Sample{MemTotal: 4 << 30, MemAvailable: 100 << 20}, nil
 	}
 	h := &heavyHarness{samples: []func() (machineusage.Sample, error){short}}
-	if code := runHeavy(heavyOptions{wait: 2 * time.Minute, noSlot: true}, []string{"make"}, h.deps(nil, nil)); code != heavyExitTimedOut || len(h.ran) != 0 {
+	if code := runHeavy(heavyOptions{wait: 2 * time.Minute, noSlot: true}, []string{"clang", "source.c"}, h.deps(nil, nil)); code != heavyExitTimedOut || len(h.ran) != 0 {
 		t.Fatalf("exit %d ran %v", code, h.ran)
 	}
 	lines := stderrLines(h)
@@ -312,7 +312,7 @@ func TestASlotIsGivenBackWhenMemoryTimesOut(t *testing.T) {
 	h := &heavyHarness{samples: []func() (machineusage.Sample, error){func() (machineusage.Sample, error) {
 		return machineusage.Sample{MemTotal: 4 << 30, MemAvailable: 100 << 20}, nil
 	}}}
-	if code := runHeavy(heavyOptions{wait: time.Minute}, []string{"make"}, h.deps(b, nil)); code != heavyExitTimedOut || len(h.ran) != 0 {
+	if code := runHeavy(heavyOptions{wait: time.Minute}, []string{"clang", "source.c"}, h.deps(b, nil)); code != heavyExitTimedOut || len(h.ran) != 0 {
 		t.Fatalf("exit %d ran %v", code, h.ran)
 	}
 	if p := paths(s); p[len(p)-1] != "/v1/orchestrator/leases/release" {
@@ -325,7 +325,7 @@ func TestNoMemoryReaderIsNoWait(t *testing.T) {
 	h := &heavyHarness{samples: []func() (machineusage.Sample, error){
 		func() (machineusage.Sample, error) { return machineusage.Sample{}, machineusage.ErrUnsupported },
 	}}
-	if code := runHeavy(heavyOptions{wait: time.Hour, noSlot: true}, []string{"make"}, h.deps(nil, nil)); code != 0 || len(h.slept) != 0 || h.stderr.Len() != 0 {
+	if code := runHeavy(heavyOptions{wait: time.Hour, noSlot: true}, []string{"clang", "source.c"}, h.deps(nil, nil)); code != 0 || len(h.slept) != 0 || h.stderr.Len() != 0 {
 		t.Fatalf("exit %d slept %v stderr %q", code, h.slept, h.stderr.String())
 	}
 }
@@ -411,7 +411,7 @@ func TestHeavyHandoff(t *testing.T) {
 			if wait == 0 {
 				wait = 40 * time.Minute
 			}
-			code := runHeavy(heavyOptions{wait: wait, handoff: true, noSlot: tc.noSlot, reason: "checks", port: 7727}, []string{"go", "test", "./..."}, d)
+			code := runHeavy(heavyOptions{wait: wait, compile: tc.name == "busy slot", handoff: true, noSlot: tc.noSlot, reason: "checks", port: 7727}, []string{"go", "build", "./..."}, d)
 			if tc.wantHandoff {
 				if code != 76 || callbacks != 1 || len(h.ran) != 0 || len(h.slept) != 0 || !strings.Contains(h.stderr.String(), callbackID) || !strings.Contains(h.stderr.String(), "End your turn") {
 					t.Fatalf("exit %d callbacks %d ran %v slept %v stderr %q", code, callbacks, h.ran, h.slept, h.stderr.String())
@@ -434,6 +434,9 @@ func TestHeavyHandoff(t *testing.T) {
 					t.Fatalf("callback argv %v", argv)
 				}
 				if tc.name == "busy slot" {
+					if !strings.Contains(strings.Join(anyStrings(argv), " "), "--compile") {
+						t.Fatal("callback lost native script declaration")
+					}
 					t.Logf("exit 76: %s", strings.TrimSpace(h.stderr.String()))
 				}
 				if tc.noSlot {
@@ -508,7 +511,7 @@ func TestAChildWorktreeCannotHandOff(t *testing.T) {
 	h := &heavyHarness{}
 	d := h.deps(b, map[string]string{"HOME": home, "CODEX_THREAD_ID": thinConversation})
 	d.cwd, d.executable = cwd, "/usr/local/bin/clawdline"
-	if code := runHeavy(heavyOptions{wait: time.Minute, handoff: true}, []string{"make"}, d); code != 0 || len(h.ran) != 1 || len(h.slept) != 1 {
+	if code := runHeavy(heavyOptions{wait: time.Minute, handoff: true}, []string{"clang", "source.c"}, d); code != 0 || len(h.ran) != 1 || len(h.slept) != 1 {
 		t.Fatalf("exit %d ran %v slept %v stderr %q", code, h.ran, h.slept, h.stderr.String())
 	}
 }
@@ -583,5 +586,62 @@ func TestALongCommandLineIsCutToTheBrokersBytes(t *testing.T) {
 	}
 	if got := clipBytes("short\nline", 200); got != "short line" {
 		t.Fatalf("%q", got)
+	}
+}
+
+func TestHeavyOrdinaryCommandsNeverWait(t *testing.T) {
+	for _, argv := range [][]string{
+		{"python3", "analysis.py"}, {"python3", "-m", "compileall", "."},
+		{"pytest"}, {"go", "test", "./..."}, {"go", "vet", "./..."},
+		{"swift", "test"}, {"npm", "test"}, {"npm", "run", "build"},
+		{"tsc", "--noEmit"}, {"bash", "tools/check.sh"},
+		{"sh", "-c", "echo go build"}, {"make", "test"},
+		{"xcodebuild", "test"}, {"clang", "-fsyntax-only", "source.c"},
+	} {
+		t.Run(strings.Join(argv, " "), func(t *testing.T) {
+			h := &heavyHarness{exit: 17}
+			d := h.deps(nil, map[string]string{"CLAWDLINE_DAEMON_RESTART_HELD": "1"})
+			d.now = func() time.Time { t.Fatal("ordinary work reached scheduling"); return time.Time{} }
+			d.sample = func() (machineusage.Sample, error) {
+				t.Fatal("ordinary work checked memory")
+				return machineusage.Sample{}, nil
+			}
+			if code := runHeavy(heavyOptions{handoff: true}, argv, d); code != 17 || len(h.ran) != 1 || len(h.env[0]) != 0 {
+				t.Fatalf("code=%d ran=%v env=%v", code, h.ran, h.env)
+			}
+		})
+	}
+}
+
+func TestNativeCompileCommands(t *testing.T) {
+	for _, argv := range [][]string{
+		{"go", "build", "./..."}, {"/usr/local/go/bin/go", "-C", "src", "install", "./cmd/app"},
+		{"swift", "--package-path", "app", "build"}, {"swiftc", "app.swift"},
+		{"clang", "-c", "app.m"}, {"xcrun", "--sdk", "macosx", "clang", "app.m"},
+		{"xcodebuild", "-scheme", "App", "archive"}, {"xcodebuild"},
+		{"env", "GOOS=linux", "go", "build"},
+		{"/repo/tools/run-heavy-linux.sh", "go", "build"},
+	} {
+		if !nativeCompile(argv) {
+			t.Errorf("native compile skipped: %v", argv)
+		}
+	}
+}
+
+func TestHeavyOpaqueCompileScriptStillQueues(t *testing.T) {
+	h := &heavyHarness{}
+	d := h.deps(nil, map[string]string{"CLAWDLINE_DAEMON_RESTART_HELD": "1"})
+	if code := runHeavy(heavyOptions{compile: true}, []string{"bash", "build-app.sh"}, d); code != 2 || len(h.ran) != 0 {
+		t.Fatalf("native script bypassed compile/restart boundary: code=%d ran=%v", code, h.ran)
+	}
+}
+
+func TestHeavyOrdinaryLinuxCommandBypassesCacheLock(t *testing.T) {
+	h := &heavyHarness{exit: 19}
+	d := h.deps(nil, nil)
+	d.now = func() time.Time { t.Fatal("ordinary Linux work reached scheduling"); return time.Time{} }
+	argv := []string{"/repo/tools/run-heavy-linux.sh", "python3", "analysis.py"}
+	if code := runHeavy(heavyOptions{handoff: true}, argv, d); code != 19 || len(h.ran) != 1 || strings.Join(h.ran[0], " ") != "python3 analysis.py" || len(h.env[0]) != 0 {
+		t.Fatalf("code=%d ran=%v env=%v", code, h.ran, h.env)
 	}
 }

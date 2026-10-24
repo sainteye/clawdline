@@ -80,6 +80,8 @@ func cloudCommand(args []string) {
 		cloudPeerCommand(args[1:])
 	case "devices":
 		cloudDevicesCommand()
+	case "grant":
+		cloudGrantCommand(args[1:])
 	case "revoke":
 		cloudRevokeCommand(args[1:])
 	case "rotate":
@@ -91,6 +93,7 @@ func cloudCommand(args []string) {
 }
 
 func cloudUsage() {
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.grant", "  grant <id> <scope>     set one paired browser to readonly or operate"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.overview", "usage: clawdline cloud <status|preflight|on|off|commands|direct|login|pair|devices|revoke|rotate|connect>"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.status", "  status                 the switch, the identity and the endpoints"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.preflight", "  preflight              check, without the network, that only the person's step is left"))

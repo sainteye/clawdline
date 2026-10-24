@@ -354,7 +354,7 @@ export type TraceStep =
 
 export type TraceLane = { key: string; machine_id: string; source: string | null; producer_instance: string; boot_id: string; steps: TraceStep[] }
 
-/** One operation's records per source and boot, in producer order, with the sequence holes between them.
+/** One operation's records per source and boot, in producer order. Source sequences also include other operations; a filtered trace cannot prove a loss.
  *  Lanes are never merged into one order: their clocks are unrelated. */
 export function traceLanes(events: StoredEvent[]): TraceLane[] {
   const byLane = new Map<string, StoredEvent[]>()
@@ -373,8 +373,6 @@ export function traceLanes(events: StoredEvent[]): TraceLane[] {
     for (const e of byReceipt) { if (e.producer_seq < maxSeq) late.add(e.id); else maxSeq = e.producer_seq }
     const steps: TraceStep[] = []
     bySeq.forEach((e, i) => {
-      const prev = bySeq[i - 1]
-      if (prev && e.producer_seq > prev.producer_seq + 1) steps.push({ kind: "gap", from: prev.producer_seq + 1, to: e.producer_seq - 1 })
       steps.push({ kind: "record", id: e.id, seq: e.producer_seq, event: e.event, stage: e.stage, role: stageRole(e.stage), outcome: e.outcome, elapsedMs: e.elapsed_ms, received_at: e.received_at, late: late.has(e.id) })
     })
     const h = list[0]

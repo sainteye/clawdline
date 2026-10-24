@@ -223,17 +223,16 @@ func TestStoppingFlushesAndClosesTheStoreForTheNextBoot(t *testing.T) {
 	}
 }
 
-// A shutdown that began while the store was opening, and whose Stop gave up
-// waiting: the open still completes and closes its own handle, so the lock
-// does not outlive the shutdown.
+// Stop immediately after startup. The worker may already have published the
+// store, or may still be opening it; either branch must release its lock before
+// the next boot. Cancellation alone does not join an already-published store.
 func TestStoppingWhileTheStoreOpensDoesNotLeakIt(t *testing.T) {
 	dir, srv := newHealthServer(t)
 	h := startConnectionHealth(dir, srv)
-	h.cancel()
-	select {
-	case <-h.opened:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the open never finished")
+	ctx, cancel := context.WithTimeout(context.Background(), connectionHealthStopTimeout)
+	defer cancel()
+	if err := h.Stop(ctx); err != nil {
+		t.Fatal(err)
 	}
 	next, err := healthjournal.Open(healthjournal.Options{Dir: connectionHealthStoreDir(dir), BootID: "boot-next", Build: "abc"})
 	if err != nil {

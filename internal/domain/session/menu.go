@@ -19,6 +19,9 @@ import (
 // false), where the position is all there is and the same flag that took the
 // numbers off also stopped the dialog accepting digits.
 type Menu struct {
+	// Revision distinguishes repeated native offers with identical visible prose.
+	// Empty retains the historical screen-menu fingerprint.
+	Revision string
 	// Question is the prose above the rows, or the call's own words once the
 	// transcript proves which question is up. Empty when it could not be read.
 	Question string
@@ -117,6 +120,13 @@ func trimSpacesAndNewlines(s string) string { return strings.TrimFunc(s, unicode
 // asserts nothing — AskUserQuestion draws its selected row flush left, the
 // same column as the composer's caret, and that shape is trusted only then.
 func ReadMenu(screen string, assistant Assistant, gate bool) (Menu, bool) {
+	if assistant == AssistantAntigravity {
+		facts := ReadAntigravityScreen(screen, false)
+		return facts.Menu, facts.Kind == AntigravityMenu
+	}
+	if assistant != AssistantClaude && assistant != AssistantCodex {
+		return Menu{}, false
+	}
 	return readMenu(screen, assistant, 30, gate)
 }
 

@@ -391,13 +391,51 @@ func TestTerminalAdmissionUsesCommandKeyPinAndFreshRoster(t *testing.T) {
 	if l.TerminalViewerAllowed("another-viewer") {
 		t.Fatal("another viewer inherited the authorized viewer connection")
 	}
+	if err := pinned.SetScope("viewer", adaptercloud.ScopeReadOnly); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.TerminalViewerAccess("viewer"); err != nil {
+		t.Fatalf("readonly screen access: %v", err)
+	}
+	if code, _ := terminal.CodeOf(l.TerminalViewerOperate("viewer")); code != "viewer_read_only" {
+		t.Fatalf("readonly effects: %v", code)
+	}
+	l.pinned = adaptercloud.NewPinnedStore(filepath.Join(dir, "pins"))
+	if code, _ := terminal.CodeOf(l.TerminalViewerOperate("viewer")); code != "viewer_read_only" {
+		t.Fatalf("restart elevated viewer: %v", code)
+	}
+	if a := l.authority(context.Background(), "viewer", pub, true); !a.ViewerReadOnly || !a.RosterAllowsSender || !a.WriteGateAllows {
+		t.Fatalf("readonly authority: %+v", a)
+	}
+	if a := l.authority(context.Background(), "viewer", pub, false); a.ViewerReadOnly || !a.RosterAllowsSender {
+		t.Fatalf("readonly read authority: %+v", a)
+	}
+	if err := l.pinned.SetScope("viewer", adaptercloud.ScopeOperate); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.TerminalViewerOperate("viewer"); err != nil {
+		t.Fatalf("operator: %v", err)
+	}
 	mu.Lock()
-	row.Caps = []string{"read_sessions"}
+	row.Caps = []string{"read_sessions", "read_transcript"}
 	mu.Unlock()
 	l.rosterReadAt = time.Time{}
 	if !l.TerminalViewerAllowed("viewer") {
 		t.Fatal("legacy read-only viewer was refused")
 	}
+	if err := l.TerminalViewerOperate("viewer"); err != nil {
+		t.Fatalf("stale account send bit refused a local operator: %v", err)
+	}
+	if err := l.pinned.SetScope("viewer", adaptercloud.ScopeReadOnly); err != nil {
+		t.Fatal(err)
+	}
+	if a := l.transcriptAuthority(context.Background(), "viewer", pub); !a.RosterAllowsSender || !a.ReadTranscriptAllows {
+		t.Fatalf("readonly Session/image/document content: %+v", a)
+	}
+	if err := l.pinned.SetScope("viewer", adaptercloud.ScopeOperate); err != nil {
+		t.Fatal(err)
+	}
+
 	mu.Lock()
 	row.Caps = []string{"send_prompt"}
 	row.PublicKey = base64.StdEncoding.EncodeToString(make([]byte, 32))
@@ -777,5 +815,26 @@ func TestRevocationTombstoneRetiresWithoutRelayAck(t *testing.T) {
 	case <-retired:
 	case <-time.After(time.Second):
 		t.Fatal("relay retirement did not run")
+	}
+}
+
+func TestReadonlyTerminalEffectsRefuseBeforeAnyHostIsReached(t *testing.T) {
+	pins := adaptercloud.NewPinnedStore(t.TempDir())
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pins.Pin("account", adaptercloud.PinnedDevice{DeviceID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(pub), Scope: adaptercloud.ScopeReadOnly}); err != nil {
+		t.Fatal(err)
+	}
+	l := &Link{pinned: pins}
+	for _, operation := range []string{"open", "input", "paste", "resize", "close", "control"} {
+		t.Run(operation, func(t *testing.T) {
+			_, err := l.terminalOperation(context.Background(), nil, terminals.Principal{Cloud: true, Device: "viewer"}, nil,
+				terminalRequest{Operation: operation, Body: json.RawMessage(`{"action":"acquire"}`)})
+			if code, _ := terminal.CodeOf(err); code != "viewer_read_only" {
+				t.Fatalf("effect: %v", err)
+			}
+		})
 	}
 }

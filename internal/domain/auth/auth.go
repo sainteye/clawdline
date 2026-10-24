@@ -97,10 +97,12 @@ type Device struct {
 	ID   string
 	Name string
 	// Hash is the SHA-256 of the token, hex. Never the token itself.
-	Hash     string
-	Caps     Caps
-	Created  time.Time
-	LastSeen time.Time // zero when never seen
+	Hash string
+	Caps Caps
+	// PermissionSelected distinguishes an explicit local grant from a legacy row.
+	PermissionSelected bool
+	Created            time.Time
+	LastSeen           time.Time // zero when never seen
 	// Approved on the Mac. The Swift store keeps the flag; this port only ever
 	// stores approved devices, and reads the flag so a file written by either
 	// means the same thing.
@@ -184,11 +186,12 @@ const (
 // pairing route, and only somebody who can see this machine's screen can
 // finish it.
 type pairing struct {
-	ID      string
-	Name    string
-	Code    string
-	token   string
-	Expires time.Time
+	ReadOnly bool
+	ID       string
+	Name     string
+	Code     string
+	token    string
+	Expires  time.Time
 }
 
 // Hash is the stored form of a token.

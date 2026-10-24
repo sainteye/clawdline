@@ -42,6 +42,8 @@ export interface IdentityViewerResult {
   machineFingerprint: string
   contentKeyEpoch: number
   identityEpoch: number
+  contentKeyID?: string
+  machineSigningKey?: string
   masterKey: CryptoKey
   hkdfKey: CryptoKey
 }
@@ -109,6 +111,8 @@ export async function pairThisViewer(fragment: string, deps: IdentityViewerDeps)
   const result: IdentityViewerResult = {
     accountID: qr.account_id, machineID: activated.machineID, machineFingerprint: activated.machineFingerprint,
     contentKeyEpoch: activated.contentKeyEpoch, identityEpoch: activated.identityEpoch,
+    contentKeyID: activated.contentKeyID,
+    machineSigningKey: btoa(String.fromCharCode(...activated.machineSigningKey)),
     masterKey: activated.masterKey, hkdfKey: activated.hkdfKey,
   }
   await deps.persist(result)

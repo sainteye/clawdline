@@ -41,16 +41,22 @@ export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) 
   // machine now read; what was kept from before is not shown meanwhile.
   else if (read?.kind === "checking") last.current = null
 
-  const version = updateBannerVersion(read?.kind === "status" ? read.status : null, dismissed)
+  const availableVersion = updateBannerVersion(read?.kind === "status" ? read.status : null, null)
+  const version = availableVersion === dismissed ? null : availableVersion
   const view = updatePanel({
     read, last: last.current, following, sending, pressRefused, pressOlder,
     overCloud: followsRelay(), autoSaving: false, autoFailed: "",
   }, nextWord, (at) => new Date(at).toLocaleString(document.documentElement.lang || undefined))
   const problem = target && (!version || version === target) ? view.problem : null
+  const finishedVersion = last.current?.apply?.state === "healthy" ? last.current.apply.to : ""
+  // A newer offer retires the previous completion even after the offer is
+  // dismissed. Otherwise closing the new release brings the old result back.
+  const done = availableVersion && availableVersion !== finishedVersion ? null : view.done
+  const showCompleted = completed && (!availableVersion || availableVersion === target)
 
   useEffect(() => {
-    if (completed && version && version !== target) setCompleted(false)
-  }, [completed, version, target])
+    if (completed && availableVersion && availableVersion !== target) setCompleted(false)
+  }, [completed, availableVersion, target])
 
   useEffect(() => {
     if (!following) return
@@ -107,15 +113,15 @@ export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) 
     }
   }
 
-  const finishedVersion = last.current?.apply?.state === "healthy" ? last.current.apply.to : ""
   const overCloud = followsRelay()
   const dev = devStrip(read?.kind === "status" ? read.status : last.current, overCloud, nextWord)
   const visible = Boolean(dev || version || sending || following || releaseSaid || (!dismissedResult && (
-    completed || checkFailed || pressRefused || pressOlder || problem || view.progress || (view.done && dismissed !== finishedVersion)
+    showCompleted || checkFailed || pressRefused || pressOlder || problem || view.progress || (done && dismissed !== finishedVersion)
   )))
   if (!visible) return null
   const dismiss = () => {
-    const dismissedRelease = version || finishedVersion
+    // Remember the release actually shown, never an offer hidden by a result.
+    const dismissedRelease = offer ? version : done ? finishedVersion : ""
     if (dismissedRelease) {
       setDismissed(dismissedRelease)
       try { localStorage.setItem(UPDATE_BANNER_DISMISSED_KEY, dismissedRelease) } catch { /* current page only */ }
@@ -136,14 +142,14 @@ export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) 
       setReleaseSaid(devReleaseSentence(answer, nextWord))
     })
   }
-  const canPress = read?.kind === "status" && (Boolean(version) || view.press.shown) && !sending && !following && !completed
+  const canPress = read?.kind === "status" && (Boolean(version) || view.press.shown) && !sending && !following && !showCompleted
   const busy = Boolean(sending || following || view.progress || releasing)
   const restartVersion = view.staged ? last.current?.apply?.to || "" : ""
   const message = checkFailed ? nextWord("updateIsUnknown")
     : releaseSaid || (dismissedResult ? null : problem?.sentence || view.progress || (sending ? nextWord("updateVerifying", { to: target }) : null)
-      || (completed ? view.done || nextWord("updateHealthy", { to: target }) : null)
-      || (view.done && dismissed !== finishedVersion ? view.done : null))
-  const offer = !message && !sending && !following && !completed && !problem
+      || (showCompleted ? done || nextWord("updateHealthy", { to: target }) : null)
+      || (done && dismissed !== finishedVersion ? done : null))
+  const offer = !message && !sending && !following && !showCompleted && !problem
   const notes = version && read?.kind === "status" ? read.status.latest.notes_url : undefined
   // After a failure or a rollback the press retries, beside the sentence that says what went wrong.
   const pressLabel = problem ? view.press.label : dev?.back || (version ? nextWord("updateNow") : view.press.label)

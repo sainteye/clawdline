@@ -25,6 +25,28 @@ func TestCodexEffortComesFromNewestTurnContext(t *testing.T) {
 	}
 }
 
+func TestClaudeEffortComesFromTheNewestParentTurn(t *testing.T) {
+	for _, field := range []string{"effort", "perTurnEffort"} {
+		parent := assistantTurn("claude-opus-5", 1, 0, 0, 0)
+		parent["effort"] = "low"
+		parent[field] = "high"
+		side := assistantTurn("claude-opus-5", 1, 0, 0, 0)
+		side["isSidechain"], side["perTurnEffort"] = true, "max"
+		path := writeRecord(t, parent, side, assistantTurn("<synthetic>", 0, 0, 0, 0))
+		facts, err := NewRecordFacts().Read(path, "claude")
+		if err != nil || facts.Effort != "high" {
+			t.Fatalf("%s: %+v, %v", field, facts, err)
+		}
+	}
+	old := assistantTurn("claude-opus-5", 1, 0, 0, 0)
+	old["effort"] = "high"
+	path := writeRecord(t, old, assistantTurn("claude-opus-5", 1, 0, 0, 0))
+	facts, err := NewRecordFacts().Read(path, "claude")
+	if err != nil || facts.Effort != "" {
+		t.Fatalf("old effort leaked: %+v, %v", facts, err)
+	}
+}
+
 func TestProjectSlugDashesEveryUTF16UnitThatIsNotAlphanumeric(t *testing.T) {
 	cases := map[string]string{
 		"/Users/a/code/clawdline-go": "-Users-a-code-clawdline-go",

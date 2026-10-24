@@ -15,6 +15,24 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) storeCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		capacity.StoreAntigravityProjectConsents: func() capacity.Reading {
+			if s.store == nil {
+				return capacity.Unmeasured("antigravity_consent_unreadable")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			n, err := s.store.AntigravityProjectConsentCount(ctx)
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: n}
+		},
+		capacity.StoreAntigravityConsentRootBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-command canonical Project root byte guard; no retained buffer"}
+		},
+		capacity.StoreAntigravityConsentIdentityBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-field actor, request key and operation identity byte guard; no retained buffer"}
+		},
 		// The store's read-only pool: connections in use now, and how often a
 		// reader has waited for one since the daemon opened it.
 		capacity.StoreReadConnections: func() capacity.Reading {

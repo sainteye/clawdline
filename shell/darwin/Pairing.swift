@@ -127,7 +127,8 @@ final class PairingWatcher: @unchecked Sendable {
         gate.unlock()
     }
 
-    private func deliver(_ notice: PairingNotice) {
+    /// Internal rather than private so the gate can be driven by a test.
+    func deliver(_ notice: PairingNotice) {
         gate.lock()
         if showing {
             gate.unlock()
@@ -170,5 +171,183 @@ final class PairingWatcher: @unchecked Sendable {
         } catch {
             return error.localizedDescription
         }
+    }
+}
+
+/// The two grants a pairing may be given (api/v1/auth.schema.json
+/// DevicePermission). Read-and-operate stays the daemon's default for a
+/// pairing nobody chose for; the shell never relies on that default and always
+/// writes the one the person picked.
+enum PairingPermission: String, CaseIterable {
+    case readOnly = "read-only"
+    case readAndOperate = "read-and-operate"
+}
+
+/// What saving the choice came to.
+enum PairingPermissionOutcome: Equatable {
+    case saved
+    /// 404: the pairing is gone or past its two minutes.
+    case expired
+    /// Any other answer from the daemon, with its status.
+    case refused(Int)
+    /// No answer at all, or no local token to ask with.
+    case unreachable
+}
+
+/// POST /v1/auth/pairings/{pairing_id}/permission with this machine's token.
+/// Only a 200 that says `{"ok":true}` counts as saved: anything less and the
+/// code is not shown.
+struct PairingPermissionClient {
+    /// How long one save may take: well inside the two minutes a code lives,
+    /// so the gate is never held by a request that will not end. Registered as
+    /// console.native_pairing_save_seconds (internal/domain/capacity
+    /// register_console.go; native_pairing_test.go holds the two together).
+    static let saveTimeoutSeconds: TimeInterval = 15
+
+    let base: URL
+    let token: () -> String?
+    let session: URLSession
+
+    init(base: URL, token: @escaping () -> String? = LocalToken.read, session: URLSession = .shared) {
+        self.base = base
+        self.token = token
+        self.session = session
+    }
+
+    func request(pairingID: String, permission: PairingPermission, token: String) -> URLRequest? {
+        var segment = CharacterSet.urlPathAllowed
+        segment.remove(charactersIn: "/")
+        guard !pairingID.isEmpty,
+              let id = pairingID.addingPercentEncoding(withAllowedCharacters: segment),
+              let url = URL(string: "v1/auth/pairings/\(id)/permission", relativeTo: base)?.absoluteURL
+        else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["permission": permission.rawValue])
+        request.timeoutInterval = Self.saveTimeoutSeconds
+        return request
+    }
+
+    static func outcome(status: Int?, body: Data?) -> PairingPermissionOutcome {
+        guard let status else { return .unreachable }
+        switch status {
+        case 200:
+            let object = body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+            return object?["ok"] as? Bool == true ? .saved : .refused(status)
+        case 404: return .expired
+        default: return .refused(status)
+        }
+    }
+
+    /// Asks off the main queue and answers on it.
+    func save(_ notice: PairingNotice, _ permission: PairingPermission,
+              then done: @escaping (PairingPermissionOutcome) -> Void) {
+        guard let token = token(),
+              let request = request(pairingID: notice.pairing_id, permission: permission, token: token) else {
+            DispatchQueue.main.async { done(.unreachable) }
+            return
+        }
+        session.dataTask(with: request) { data, response, _ in
+            let status = (response as? HTTPURLResponse)?.statusCode
+            let result = Self.outcome(status: status, body: data)
+            DispatchQueue.main.async { done(result) }
+        }.resume()
+    }
+}
+
+/// What the person at the machine answered.
+enum PairingChoice: Equatable {
+    case grant(PairingPermission)
+    case ignore
+}
+
+/// The screens one pairing can put up, kept apart from AppKit so the flow can
+/// be driven without one.
+struct PairingScreens {
+    /// Pick a permission, or ignore. Nothing about the code is on this screen.
+    var choose: (PairingNotice) -> PairingChoice
+    /// The code and the permission that was saved for it.
+    var showCode: (PairingNotice, PairingPermission) -> Void
+    /// Saving failed: true to try again, false to ignore the pairing.
+    var showFailure: (PairingNotice, PairingPermissionOutcome) -> Bool
+}
+
+/// One pairing, from the request to the code: choose, save, and only then
+/// show the code. Every path ends in `finished` exactly once, which is what
+/// lets PairingWatcher show the next pairing.
+///
+/// Runs on the main queue; `save` answers there.
+final class PairingPermissionFlow {
+    typealias Save = (PairingNotice, PairingPermission, @escaping (PairingPermissionOutcome) -> Void) -> Void
+
+    private let notice: PairingNotice
+    private let screens: PairingScreens
+    private let save: Save
+    private let now: () -> Date
+    private let finished: () -> Void
+    private var ended = false
+
+    init(_ notice: PairingNotice, screens: PairingScreens, save: @escaping Save,
+         now: @escaping () -> Date = Date.init, finished: @escaping () -> Void) {
+        self.notice = notice
+        self.screens = screens
+        self.save = save
+        self.now = now
+        self.finished = finished
+    }
+
+    private var expired: Bool { now().timeIntervalSince1970 >= Double(notice.expires) }
+
+    func start() {
+        guard !expired else { return end("expired before it was shown") }
+        switch screens.choose(notice) {
+        case .ignore:
+            end("ignored")
+        case .grant(let permission):
+            store(permission)
+        }
+    }
+
+    private func store(_ permission: PairingPermission) {
+        // Logs the choice, never the code.
+        shellLog("pairing: saving \(permission.rawValue) for \(notice.name)")
+        save(notice, permission) { [self] outcome in
+            var outcome = outcome
+            if outcome == .saved, expired { outcome = .expired }
+            if outcome == .saved {
+                screens.showCode(notice, permission)
+                return end("code shown with \(permission.rawValue)")
+            }
+            shellLog("pairing: permission not saved (\(outcome))")
+            if outcome != .expired, screens.showFailure(notice, outcome) {
+                return store(permission)
+            }
+            if outcome == .expired { _ = screens.showFailure(notice, outcome) }
+            end("not paired")
+        }
+    }
+
+    private func end(_ why: String) {
+        guard !ended else { return }
+        ended = true
+        shellLog("pairing: \(notice.name) — \(why)")
+        finished()
+    }
+}
+
+
+/// Admission for the Cloud-only local pairing bridge. Both the initiating
+/// frame and the currently displayed top-level page must be the trusted origin.
+enum CloudPairingAccess {
+    static func allows(mainFrame: Bool, scheme: String, host: String, port: Int,
+                       page: URL?, trusted: URL) -> Bool {
+        guard mainFrame, let page else { return false }
+        let originPort: Int? = port == 0 ? nil : port
+        return scheme.lowercased() == trusted.scheme?.lowercased() &&
+            host.lowercased() == trusted.host?.lowercased() && originPort == trusted.port &&
+            page.scheme?.lowercased() == trusted.scheme?.lowercased() &&
+            page.host?.lowercased() == trusted.host?.lowercased() && page.port == trusted.port
     }
 }

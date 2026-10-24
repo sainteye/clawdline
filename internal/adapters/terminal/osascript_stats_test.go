@@ -1,8 +1,10 @@
 package terminal
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"github.com/sainteye/clawdline/internal/app/ports"
 	"testing"
 	"time"
 )
@@ -73,6 +75,7 @@ func TestOsascriptKindsPastTheLimitAreOther(t *testing.T) {
 // The switch defaults to on, and a refusal while it is off is Unsent: nothing
 // reached iTerm2, so a retry cannot type a line twice.
 func TestITermScanSwitch(t *testing.T) {
+	enableITermForTest(t)
 	if !ITermScan() {
 		t.Fatal("iTerm2 scanning is off before anything turned it off")
 	}
@@ -84,5 +87,29 @@ func TestITermScanSwitch(t *testing.T) {
 	var unsent Unsent
 	if err := error(ITermScanOff{Op: "type"}); !errors.As(err, &unsent) {
 		t.Fatalf("ITermScanOff does not unwrap to Unsent: %v", err)
+	}
+}
+
+// Existing iTerm fixtures exercise enabled behavior. Production stays off.
+func enableITermForTest(t *testing.T) {
+	previous := ITermIntegration()
+	SetITermIntegration(true)
+	t.Cleanup(func() { SetITermIntegration(previous) })
+}
+
+func TestITermIntegrationConsentCannotBeBypassed(t *testing.T) {
+	previous := ITermIntegration()
+	t.Cleanup(func() { SetITermIntegration(previous); SetITermScan(true) })
+	for _, enabled := range []bool{false, true, false} {
+		SetITermIntegration(enabled)
+		for _, scan := range []bool{false, true} {
+			SetITermScan(scan)
+			if ITermScan() != (enabled && scan) {
+				t.Fatal("polling ignored consent")
+			}
+			if itermMayAct(ports.Asked(context.Background())) != enabled {
+				t.Fatal("requested action bypassed consent")
+			}
+		}
 	}
 }

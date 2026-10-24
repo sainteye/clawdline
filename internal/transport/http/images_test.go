@@ -133,3 +133,30 @@ func TestTheRetiredAppsPicturesAreNotRead(t *testing.T) {
 		t.Fatalf("reference: %+v", r)
 	}
 }
+
+func TestTranscriptImageThumbnailKeepsTheOriginalAndExpiresWithIt(t *testing.T) {
+	s, id := picturesFixture(t)
+	get := func(query string) *httptest.ResponseRecorder {
+		out := httptest.NewRecorder()
+		s.imageRoute(out, httptest.NewRequest(http.MethodGet, "/v1/artifacts/images/"+id+query, nil))
+		return out
+	}
+	original := get("")
+	thumb := get("?size=thumb")
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(thumb.Body.Bytes()))
+	if thumb.Code != http.StatusOK || thumb.Header().Get("Content-Type") != "image/jpeg" || err != nil || format != "jpeg" || cfg.Width != 3 || cfg.Height != 2 {
+		t.Fatalf("thumbnail: status=%d config=%+v format=%s err=%v", thumb.Code, cfg, format, err)
+	}
+	if again := get(""); !bytes.Equal(again.Body.Bytes(), original.Body.Bytes()) {
+		t.Fatal("thumbnail changed the original")
+	}
+	for _, query := range []string{"?size=", "?size=full", "?size=thumb&size=thumb"} {
+		if out := get(query); out.Code != http.StatusBadRequest {
+			t.Fatalf("invalid query %s: %d", query, out.Code)
+		}
+	}
+	s.pictures.store.Delete([]string{id}, time.Now())
+	if out := get("?size=thumb"); out.Code != http.StatusGone {
+		t.Fatalf("deleted thumbnail: %d", out.Code)
+	}
+}

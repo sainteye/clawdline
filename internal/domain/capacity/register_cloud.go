@@ -4,7 +4,42 @@ package capacity
 // rows are declared in register_connection_health.go, and the
 // cloud.health_store_* rows in register_healthjournal.go.
 func cloudBounds() []Entry {
-	return append(append(append(append(connectionHealthBounds(), healthJournalBounds()...), healthUploadBounds()...), healthSealedBounds()...), []Entry{
+	return append(append(append(append(connectionHealthBounds(), healthJournalBounds()...), healthUploadBounds()...), healthSealedBounds()...), append(healthInvestigationBounds(), []Entry{
+		{
+			Name: "cloud.viewer_rekey_pending", Class: Buffer, Unit: Rows,
+			Limit: 1, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			Name: "cloud.viewer_rekey_cooldown", Class: Cache, Unit: Seconds,
+			Limit: 120, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			Name: "cloud.rekey_pending", Class: Buffer, Unit: Rows,
+			Limit: 8, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/cloud.RawRekeyPendingLimit", "internal/adapters/cloud.(*Transport).dispatchRawRekey:chan(RawRekeyPendingLimit)"},
+		},
+		{
+			Name: "cloud.rekey_interval", Class: Buffer, Unit: Seconds,
+			Limit: 2, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.RawRekeyIntervalSecondsLimit"},
+		},
+		{
+			Name: "cloud.envelope_key_id", Class: Buffer, Unit: Bytes,
+			Limit: 128, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/cloud.MaxKeyIDBytes"},
+		},
+		{
+			Name: "cloud.rekey_lifetime", Class: Cache, Unit: Seconds,
+			Limit: 120, AtLimit: Expire, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/cloud.RekeyLifetimeMSLimit"},
+		},
+		{
+			Name: "cloud.rekey_body", Class: Buffer, Unit: Bytes,
+			Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/cloud.MaxRekeyBodyBytes"},
+		},
 		{
 			// A Cloud Session row (s/), status row (ss/) or status marker
 			// whose only change is its activity time, its sub-agents or its
@@ -166,6 +201,27 @@ func cloudBounds() []Entry {
 				"internal/transport/cloud.(*Link).runOnce:chan(PeerAckIngressLimit)",
 				"internal/transport/cloud.(*Link).runOnce:chan(PeerTaskStartIngressLimit)",
 				"internal/transport/cloud.(*Link).runOnce:chan(PeerProbeIngressLimit)"},
+		},
+		{
+			// Busy replies must not synchronously hold the request dispatcher.
+			// One worker sends them while this FIFO bounds what may wait; an
+			// unsent reply is counted and logged instead of spawning a goroutine.
+			Name: CloudLaneRefusals, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Log}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudLaneRefusalsLimit",
+				"internal/transport/cloud.(*Link).runService:chan(refusalDepth)"},
+		},
+		{
+			// Eight workers execute reads while a separate FIFO absorbs finite
+			// viewer bursts. A full worker pool does not refuse an ordinary read;
+			// a full waiting queue answers the new request, by name, with 429
+			// cloud_ingress_busy and retry_after. Commands never wait on reads.
+			Name: CloudReadQueue, Class: Buffer, Unit: Rows,
+			Limit: 64, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Log, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudReadQueueLimit",
+				"internal/transport/cloud.(*Link).runService:chan(readDepth)"},
 		},
 		{
 			// Decrypted Cloud requests waiting for the bridge (limits N20).
@@ -562,5 +618,5 @@ func cloudBounds() []Entry {
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalReceiptBusyRetrySecondsLimit"},
 		},
-	}...)
+	}...)...)
 }

@@ -597,3 +597,57 @@ func TestChangesWakesOnEveryDeviceChange(t *testing.T) {
 	default:
 	}
 }
+
+func TestExplicitReadOnlySurvivesReloadAndFailedGrant(t *testing.T) {
+	store := &memStore{}
+	a, _ := newAuthority(t, store)
+	id, token, err := a.AddDevice("phone", NewCaps(Read), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a.Verify(token).Caps.Has(Send) {
+		t.Fatal("legacy default changed")
+	}
+	if err := a.SetPermission(id, true); err != nil {
+		t.Fatal(err)
+	}
+	a, _ = newAuthority(t, store)
+	if a.Verify(token).Caps.Has(Send) {
+		t.Fatal("explicit read-only upgraded at restart")
+	}
+	store.fail = true
+	if err := a.SetPermission(id, false); err == nil {
+		t.Fatal("disk failure accepted")
+	}
+	if a.Verify(token).Caps.Has(Send) {
+		t.Fatal("failed grant changed in-memory authority")
+	}
+	store.fail = false
+	if err := a.SetPermission(id, false); err != nil {
+		t.Fatal(err)
+	}
+	if !a.Verify(token).Caps.Has(Send) {
+		t.Fatal("operation grant did not apply")
+	}
+}
+
+func TestLocalPairingPermissionSelection(t *testing.T) {
+	a, _ := newAuthority(t, &memStore{})
+	started, err := a.BeginPairing("phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetPairingPermission(started.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.ConfirmPairing(started.ID, codeFor(t, a, started.ID))
+	if err != nil || result.Kind != Paired {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if got := a.Verify(result.Token); !got.Caps.Has(Read) || got.Caps.Has(Send) {
+		t.Fatalf("grant: %+v", got)
+	}
+	if err := a.SetPairingPermission(started.ID, false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("finished pairing: %v", err)
+	}
+}

@@ -12,6 +12,7 @@ import { Mark } from "../../session/List.js"
 import { readProjectPlaces, type ProjectPlace } from "../work/api.js"
 import { BEFORE_PAGE_CHANGE } from "../../overlays/index.js"
 import { ProjectFiles } from "./ProjectFiles.js"
+import { AntigravityConsent } from "./AntigravityConsent.js"
 import { ProjectUnify } from "./ProjectUnify.js"
 import { ProjectExplorer } from "./ProjectExplorer.js"
 import {
@@ -91,12 +92,14 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   // A readiness row's sharing press: which Project's unify preview to open,
   // and a count so a second press on the same one opens it again.
   const [unifyRequest, setUnifyRequest] = useState({ place: "", count: 0 })
+  const consentBusy = useRef(false)
+  const updateConsentBusy = useCallback((busy: boolean) => { consentBusy.current = busy }, [])
   const filesState = useRef({ dirty: false, busy: false })
   const [closeNotice, setCloseNotice] = useState("")
   const updateFilesState = useCallback((state: { dirty: boolean; busy: boolean }) => { filesState.current = state }, [])
   const mayLeave = useCallback(() => {
     if (!dialog.current?.open) return true
-    if (filesState.current.busy) { setCloseNotice(catalogWord("literal", "167e00adca12")); return false }
+    if (filesState.current.busy || consentBusy.current) { setCloseNotice(catalogWord("literal", "167e00adca12")); return false }
     if (filesState.current.dirty && !window.confirm(catalogWord("literal", "1167bc91fa0c"))) {
       dialog.current?.querySelector<HTMLTextAreaElement>(".project-files-editor textarea")?.focus()
       return false
@@ -255,6 +258,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
         </ol>}
         {projectPath && visiblePlaces[0] && <ProjectUnify key={`unify:${visiblePlaces[0].id}`} place={visiblePlaces[0]}
           openRequest={unifyRequest.place === visiblePlaces[0].id ? unifyRequest.count : 0} />}
+        {projectPath && visiblePlaces[0] && <AntigravityConsent key={`consent:${visiblePlaces[0].id}`} place={visiblePlaces[0].id} onBusy={updateConsentBusy} />}
         {projectPath && visiblePlaces[0] && <ProjectFiles key={`files:${visiblePlaces[0].id}`} place={visiblePlaces[0]} onState={updateFilesState} />}
         {!loading && !error && visiblePlaces.length === 0 && <p className="project-setup-empty" role="status">{projectPath ? catalogWord("literal", "0e8fb42d973e") : <>{catalogWord("inline", "76d12ea59749")} <code>{catalogWord("inline", "fa482be8fef0")}</code>{catalogWord("inline", "7aa0955db160")}</>}</p>}
         {error && <p role="alert">{error}</p>}

@@ -30,7 +30,7 @@ import {
   type MachineOnly,
 } from "../cloud.js"
 import { directLocalNetworkShown } from "../direct-local.js"
-import { DEFAULTS, reading, type SettingKey } from "./defaults.js"
+import { DEFAULTS, reading, supportsITermIntegration, type SettingKey } from "./defaults.js"
 import { installVoiceModel, readVoiceLanguage, readVoiceSetup } from "../voice.js"
 import {
   APP_EVENT,
@@ -53,40 +53,17 @@ import { gateModeOptions, gateModeText } from "./gate-mode.js"
 import { BrowserLanguageControl } from "../../../ui-language/BrowserLanguageControl.js"
 import { CATALOG_TAGS, catalogWord } from "../../../catalog.js"
 import { askShell } from "../shell.js"
+import { WorkflowSettingsBlock } from "../WorkflowSettingsBlock.js"
 import { DispatchPolicyPane } from "./DispatchPolicyPane.js"
 
 /**
- * The native "Clawdline 設定" window, as a web page.
+ * Retained machine panes for the local browser console. The standalone macOS
+ * settings surface is sunset; shared controls belong on the website Settings
+ * page instead. Cloud intentionally omits these local-only panes.
  *
- * The Swift app draws this window in AppKit, 3,822 lines of it
- * (`Sources/Settings.swift`). The retained tabs and rows use the same columns
- * and words — every one of
- * them a property of `Copy+Chinese.swift`, in copy.ts — and the same behaviour,
- * which is that **there is no OK button** because there is nothing to cancel.
- * Each control writes what the config file would have said, and the shell picks
- * it up the way it would pick up a hand edit.
- *
- * ## Why the window is a page
- *
- * Because of what has to be true on Linux and on Windows. The shell around this
- * is a window, a hotkey and a file picker; everything above that — layout,
- * words, state, what a row does — is the same on all three, so it is written
- * once, here, and the next platform ships a shell rather than a settings
- * window. The parts that genuinely cannot be done by a page go over the bridge
- * in bridge.ts, and the list is short enough to read in one sitting.
- *
- * In a browser with no shell around it the window still draws and still works:
- * every row that is a value in the file reads and writes, and the handful that
- * need the machine — recording a key, picking an application, the Claude Code
- * hook — say plainly that they need one instead of pretending.
- *
- * ## What is not here
- *
- * The input bar and hook tabs remain paused. The voice tab shows only the
- * setting the current Whisper route reads; the old engine and timing values
- * are retained in config for compatibility, without controls that imply they
- * affect a recording. The dispatch rules tab edits only the local additions.
- * See docs/shell-bridge.md.
+ * WorkflowSettingsBlock owns workflow defaults and iTerm2 consent for both
+ * browser transports. Keep its controls and persistence path shared rather
+ * than adding Cloud settings only to generalPane below.
  */
 
 /** The value being written, over what the file last said, so a slider moves while it saves. */
@@ -360,7 +337,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
 
   // MARK: the tabs
 
-  const panes = [generalPane, ...(INPUT_BAR_ENABLED ? [barPane] : []), ...(VOICE_ENABLED ? [voicePane] : []), remotePane, orchestratorPane, () => <DispatchPolicyPane />, ...(HOOKS_ENABLED ? [hooksPane] : [])]
+  const panes = [generalPane, ...(INPUT_BAR_ENABLED ? [barPane] : []), ...(VOICE_ENABLED ? [voicePane] : []), remotePane, orchestratorPane, () => <DispatchPolicyPane />, () => <div className="sw-column"><WorkflowSettingsBlock shown /></div>, ...(HOOKS_ENABLED ? [hooksPane] : [])]
   const titles = [
     W.settingsGeneral,
     ...(INPUT_BAR_ENABLED ? [W.settingsBar] : []),
@@ -368,6 +345,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
     W.settingsRemote,
     W.settingsOrchestrator,
     catalogWord("dispatchPolicy", "navTitle"),
+    catalogWord("workflowSettings", "tab"),
     ...(HOOKS_ENABLED ? [W.settingsHooks] : []),
   ]
 
@@ -436,7 +414,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
               onPick={pick("mascot")}
             />
           </Row>
-          <Row label={W.settingsSessionTerminal} hint={W.settingsSessionTerminalHint}>
+          <Row label={W.settingsSessionTerminal} hint={supportsITermIntegration(snapshot) ? W.settingsSessionTerminalConsentHint : W.settingsSessionTerminalHint}>
             <PopUp
               label={W.settingsSessionTerminal}
               value={String(now("terminal"))}
@@ -448,9 +426,6 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
               ]}
               onPick={pick("terminal")}
             />
-          </Row>
-          <Row label={W.settingsITermScan} hint={W.settingsITermScanHint}>
-            <Switch label={W.settingsITermScan} on={!!now("iterm_scan")} onChange={flip("iterm_scan")} />
           </Row>
           {INPUT_BAR_ENABLED && <><Row label={W.settingsScopeGlobal}>
             <Switch
@@ -554,6 +529,16 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
               disabled={!defaultModels}
               onPick={(value) => void change({ claude_default_model: value })}
             />
+          </Row>
+          <Row label={catalogWord("next", "defaultAntigravityModel")} hint={catalogWord("next", "defaultAntigravityCatalogUnknown")}>
+            <PopUp label={catalogWord("next", "defaultAntigravityModel")} value={String(now("antigravity_default_model"))}
+              options={defaultModelOptions(defaultModels, "antigravity", String(now("antigravity_default_model")), W.settingsProviderDefault)}
+              disabled={!defaultModels} onPick={value => void change({ antigravity_default_model: value })} />
+          </Row>
+          <Row label={catalogWord("next", "defaultAntigravityEffort")}>
+            <PopUp label={catalogWord("next", "defaultAntigravityEffort")} value={String(now("antigravity_default_effort"))}
+              options={Array.from(new Set(["", "low", "medium", "high", "xhigh", "max", String(now("antigravity_default_effort"))])).map(value => ({value,label:value || W.settingsProviderDefault}))}
+              onPick={value => void change({ antigravity_default_effort: value })} />
           </Row></>}
           <Row label={W.settingsCodexAutoName} hint={W.settingsCodexAutoNameHint}>
             <PopUp

@@ -22,7 +22,8 @@ import { viewerEventLogFor } from "./cloud-viewer-events.js";
 import { classifyViewerError, viewerHealthBegin } from "./viewer-health-hook.js";
 import {
     importSenderPublicKey, loadCryptoKey, loadCryptoKeyID, loadPairingBinding,
-    storeCryptoKey, storePairingBinding, storePairingCryptoKeys
+    storeCryptoKey, storePairingBinding, storePairingCryptoKeys, loadMachineCryptoState,
+    adoptMachineRekey, importMasterSecret
 } from "./cloud-crypto.js";
 import {
     createPairingOffer, ed25519Fingerprint, encryptPairingOfferForInvitation,
@@ -315,12 +316,15 @@ export class CloudViewerSession {
         this.deviceKind = ["browser", "ios", "android"].indexOf(options.deviceKind) >= 0
             ? options.deviceKind : "browser";
         this.returnTo = options.returnTo || this.config.appOrigin + "/";
+        this.operationsAccessChanged = typeof options.onOperationsAccess === "function" ? options.onOperationsAccess : function () {};
         this.account = null;
         this.deviceID = null;
         this.caps = [];
         this.devicePrivateKey = null;
         this.tokenIdentity = null;
         this.devicePublicKey = null;
+        // Additive relay support must ship before the production composition root opts in.
+        this.enableViewerRekey = options.enableViewerRekey === true;
         this.client = null;
     }
 
@@ -339,10 +343,12 @@ export class CloudViewerSession {
      * `web_devices` row invalidates the cookie that names it (`api/src/routes/guards.ts`).
      */
     async ensureSession() {
+        this.operationsAccessChanged(false);
         var existing = await json(this.fetch, this.config.apiOrigin + "/v1/auth/session");
         if (existing.status === 200 && existing.body && existing.body.device_id) {
             var restored = await this.restoreDeviceKey(existing.body.device_id);
             if (restored) {
+                this.operationsAccessChanged(existing.body.operations_access === true);
                 this.account = existing.body.account_id;
                 this.deviceID = existing.body.device_id;
                 this.caps = await this.readCapabilities();
@@ -386,6 +392,7 @@ export class CloudViewerSession {
                 created.status >= 500 ? "session_unavailable" : "session_failed",
                 "Clawdline could not create this browser's session", created.status < 500);
         }
+        this.operationsAccessChanged(created.body.operations_access === true);
         this.account = created.body.account_id;
         this.deviceID = created.body.device_id;
         this.caps = Array.isArray(created.body.caps) ? created.body.caps : VIEWER_CAPABILITIES;
@@ -530,11 +537,19 @@ export class CloudViewerSession {
             var legacy = masterKeyConnection(await this.accountKey(), await this.accountKeyID());
             masterKey = legacy.masterKeys[binding.keyID];
         } else {
-            var values = await Promise.all([
-                loadCryptoKey(this.machineMasterKeyName(machine), this.indexedDB),
-                loadCryptoKeyID(this.machineMasterKeyIDName(machine), this.indexedDB)
-            ]);
-            if (values[1] === binding.keyID) masterKey = values[0];
+            var snapshot = await loadMachineCryptoState({
+                bindingName: this.machineBindingName(machine),
+                masterName: this.machineMasterKeyName(machine),
+                masterKeyIDName: this.machineMasterKeyIDName(machine), senderName: senderName
+            }, this.indexedDB);
+            // A concurrent explicit pairing may have changed the pin's storage name. Ask again
+            // on the next operation, rather than mixing two pairing generations.
+            if (!snapshot.bindingName || snapshot.bindingName.senderID !== binding.senderID) {
+                throw bootError("machine_key_incomplete", "machine pairing changed during lookup");
+            }
+            binding = snapshot.bindingName;
+            senderKey = snapshot.senderName;
+            if (snapshot.masterKeyIDName === binding.keyID) masterKey = snapshot.masterName;
         }
         if (!masterKey || !senderKey) {
             throw bootError("machine_key_incomplete",
@@ -543,7 +558,20 @@ export class CloudViewerSession {
         }
         return { machineID: binding.machineID, senderID: binding.senderID,
             keyID: binding.keyID, masterKey: masterKey, senderKey: senderKey,
-            legacy: binding.legacy };
+            legacy: binding.legacy, epoch: binding.epoch === undefined && binding.keyID === "ms-1"
+                ? 1 : binding.epoch, revision: binding.revision };
+    }
+
+    async persistMachineRekey(pairing, state, operation, valid) {
+        var masterKey = await importMasterSecret(state.key);
+        var binding = await adoptMachineRekey({
+            bindingName: this.machineBindingName(pairing.machineID),
+            masterName: this.machineMasterKeyName(pairing.machineID),
+            masterKeyIDName: this.machineMasterKeyIDName(pairing.machineID),
+            expected: pairing, masterKey: masterKey, keyID: state.key_id, epoch: state.epoch,
+            operation: operation, valid: valid
+        }, this.indexedDB);
+        return Object.assign({}, pairing, { keyID: binding.keyID, epoch: binding.epoch, masterKey: masterKey });
     }
 
     /**
@@ -691,7 +719,9 @@ export class CloudViewerSession {
             senderKey: senderKey,
             bindingName: this.machineBindingName(opened.machineID),
             binding: { v: 1, machineID: opened.machineID, senderID: opened.machineDeviceID,
-                keyID: opened.keyID, legacy: false },
+                keyID: opened.keyID, legacy: false,
+                epoch: opened.keyID === "ms-1" ? 1 : Number((/^mk-([1-9][0-9]*)-[a-f0-9]{64}$/
+                    .exec(opened.keyID) || [])[1]) || undefined },
             // Compatibility aliases are written only if no old account key exists. `put` is
             // deliberately forbidden for an existing alias: pairing AWS must not evict the Mac.
             preserve: { masterName: this.masterKeyName(),
@@ -719,6 +749,11 @@ export class CloudViewerSession {
             relayURL: token.relayURL,
             deviceToken: token.token,
             devicePrivateKey: this.devicePrivateKey,
+            devicePublicKey: this.devicePublicKey,
+            enableViewerRekey: this.enableViewerRekey,
+            persistMachineRekey: function (pairing, state, operation, valid) {
+                return self.persistMachineRekey(pairing, state, operation, valid);
+            },
             deviceID: this.deviceID,
             account: this.account,
             keyID: keyConnection.keyID,

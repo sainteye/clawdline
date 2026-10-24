@@ -3,7 +3,7 @@ import test from "node:test"
 import type { SessionRow } from "@clawdline/contract"
 import {
   afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment,
-  displayedPresentationStatus, fleetRowTitle, mergeListPresentation, identifyOpenedFleetRow, withConfirmedFleetTitle,
+  displayedPresentationStatus, fleetRowTitle, mergeListPresentation, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
   destinationKey, prependOlderPage, projectionRefreshAt, settleProjection, SessionDetailCache, shownDestinationKeys,
   SessionExecutionRecovery, supersedingDestination,
   type MachineSessionProjection, type ProjectedSession,
@@ -16,6 +16,29 @@ const row = (machineID: string, sessionID: string, executionGeneration: string):
 })
 const ready = (machine: string, rows: ProjectedSession[]): MachineSessionProjection =>
   checkedProjection(machine, { kind: "ready", complete: true, observedAt: 1000, rows })
+
+test("a newly opened Cloud Session selects its own detail before local selection catches up", () => {
+  const target = row("machine/a", "new", "7").destination
+  const old = { id: "old", execution_generation: target.executionGeneration } as SessionRow
+  const next = { id: "new", execution_generation: target.executionGeneration } as SessionRow
+  assert.equal(sessionDetailID("old", target, "machine/a", [old, next]), "new")
+  assert.equal(sessionDetailID(null, target, "machine/a", [old, next]), "new")
+})
+
+test("a pending Cloud detail never falls back to the previously opened conversation", () => {
+  const target = row("machine/a", "new", "7").destination
+  const old = { id: "old", execution_generation: target.executionGeneration } as SessionRow
+  const replaced = { id: "new", execution_generation: "8".padStart(32, "0") } as SessionRow
+  const next = { ...replaced, execution_generation: target.executionGeneration }
+  assert.equal(sessionDetailID("old", target, "machine/a", [old]), null)
+  assert.equal(sessionDetailID("old", target, "machine/a", [old, replaced]), null)
+  assert.equal(sessionDetailID("old", target, "machine/b", [old, next]), null)
+})
+
+test("a local detail keeps its selected Session without a Cloud destination", () => {
+  assert.equal(sessionDetailID("old", null, null, []), "old")
+  assert.equal(sessionDetailID(null, null, null, []), null)
+})
 
 test("fleet list names come from authorized presentations, never routing ids", () => {
   const ordinary = row("machine/a", "%14", "7")
@@ -221,6 +244,16 @@ test("older pages prepend only to the exact execution and requested cursor", () 
   assert.equal(prependOlderPage(current, { ...older, nextBefore: undefined })?.nextBefore, undefined)
   assert.equal(prependOlderPage(current, { kind: "unavailable", reason: "old_version" }), null)
   assert.deepEqual(current.entries, [{ role: "assistant", text: "newest" }])
+})
+
+test("an old transcript revision cannot fill an equal cursor from a newer held page", () => {
+  const destination = row("one", "same", "1").destination
+  const current = { kind: "ready" as const, destination, observedAt: 1000, info: {}, signature: "agy1:new",
+    entries: [{ role: "assistant", text: "newest" }], nextBefore: 123, question: null }
+  const older = { kind: "ready" as const, destination, before: 123, signature: "agy1:old", requestedRevision: "agy1:old",
+    entries: [{ role: "user", text: "older" }], nextBefore: 40 }
+  assert.equal(prependOlderPage(current, older), null)
+  assert.equal(prependOlderPage(current, { ...older, requestedRevision: "agy1:new", signature: "agy1:new" })?.signature, "agy1:new")
 })
 
 test("current status is reread when its earliest status time expires", () => {

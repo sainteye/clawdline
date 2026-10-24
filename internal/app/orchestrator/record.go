@@ -27,6 +27,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 )
 
 // Protocol is the version written into every task.json and read back out of
@@ -361,11 +362,12 @@ func ladder(base, ceiling time.Duration, attempts int) time.Duration {
 // is the protocol and a second spelling of the same field is how two halves of
 // one system stop agreeing.
 type Record struct {
-	Protocol       int    `json:"clawdline_protocol"`
-	ID             string `json:"task_id"`
-	Kind           string `json:"kind"`
-	Assistant      string `json:"assistant"`
-	PermissionMode string `json:"permission_mode"`
+	Investigation  *schedulewebhook.InvestigationRef `json:"investigation,omitempty"`
+	Protocol       int                               `json:"clawdline_protocol"`
+	ID             string                            `json:"task_id"`
+	Kind           string                            `json:"kind"`
+	Assistant      string                            `json:"assistant"`
+	PermissionMode string                            `json:"permission_mode"`
 	// Claims is the declared write set, as task.json spells it — D21's
 	// `declared_writes`. It is written once at dispatch and never changed;
 	// Lease is what it reserves, and that depends on LeaseScope.
@@ -600,6 +602,7 @@ func (r Record) Brief() taskdir.Brief {
 	}
 	b := taskdir.Brief{
 		Protocol:       Protocol,
+		Investigation:  r.Investigation,
 		TaskID:         r.ID,
 		Kind:           r.Kind,
 		Assistant:      r.Assistant,

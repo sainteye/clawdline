@@ -211,7 +211,7 @@ func TestUnifyPlanSkillsRows(t *testing.T) {
 	}
 	for name, w := range want {
 		row := skillRow(t, p, name)
-		if row.Place != w.place || row.Action != w.action || row.Now != w.now || row.After != w.after {
+		if row.Place != w.place || row.Action != w.action || row.Now.Claude != w.now.Claude || row.Now.Codex != w.now.Codex || row.After.Claude != w.after.Claude || row.After.Codex != w.after.Codex || row.Now.Antigravity == nil || *row.Now.Antigravity != w.now.Codex || row.After.Antigravity == nil || *row.After.Antigravity != w.after.Codex {
 			t.Errorf("%s: %+v, want %+v", name, row, w)
 		}
 	}

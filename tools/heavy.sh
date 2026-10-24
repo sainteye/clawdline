@@ -1,8 +1,8 @@
 #!/bin/bash
 # tools/heavy.sh <command> [args…]
 #
-# Runs a build, a test suite or anything else that needs much of the machine
-# through `clawdline heavy`: after the machine's one compile slot and enough
+# Queues native compilation through `clawdline heavy`; ordinary checks run
+# directly. Use --compile for scripts that build native code. Builds wait for enough
 # available memory, at a lower priority, and as the first thing the kernel
 # kills if memory still runs out (cmd/clawdline/heavy.go says why).
 #
@@ -16,6 +16,12 @@ set -euo pipefail
 
 [ "$#" -gt 0 ] || { echo "usage: tools/heavy.sh <command> [args…]" >&2; exit 2; }
 
+compile_flags=()
+if [ "${1:-}" = --compile ]; then
+  compile_flags=(--compile)
+  shift
+fi
+[ "$#" -gt 0 ] || { echo "--compile requires a command" >&2; exit 2; }
 run=("$@")
 if [ "$(uname -s)" = Linux ]; then
   script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
@@ -30,6 +36,7 @@ done
 
 if [ -n "$cl" ] && { "$cl" 2>&1 || true; } | grep -q '|heavy|'; then
   heavy_flags=()
+  if [ "${#compile_flags[@]}" -gt 0 ]; then heavy_flags=(--compile); fi
   if [ -n "${HEAVY_REASON:-}" ]; then heavy_flags+=(--reason "$HEAVY_REASON"); fi
   if [ "${HEAVY_HANDOFF:-}" = 0 ]; then
     heavy_flags+=(--handoff=false)

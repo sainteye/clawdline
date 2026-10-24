@@ -13,6 +13,7 @@ import (
 // what is typed is short, and running it runs the same assistant, in the same
 // directory, with the same arguments.
 func TestANewITermTabIsNeverTypedMoreThanATTYLine(t *testing.T) {
+	enableITermForTest(t)
 	dir := t.TempDir()
 	t.Setenv("CLAWDLINE_NEXT_DIR", dir)
 	line := personaLaunchLine(t)

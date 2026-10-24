@@ -100,5 +100,11 @@
   "rotate.cancelled": "未更換金鑰",
   "rotate.rotated": "已更換    %s（原為 %s）\n",
   "rotate.epoch": "世代      金鑰 %d、身分 %d\n",
-  "rotate.reconnecting": "           連線已中斷，正以新金鑰重新連線"
+  "rotate.reconnecting": "           連線已中斷，正以新金鑰重新連線",
+  "pair.scope_help": "瀏覽器權限：readonly 或 operate；省略時，這台機器配對過的瀏覽器保留原權限，只有從未配對的瀏覽器預設為 operate",
+  "grant.invalid_scope": "權限必須是 readonly 或 operate",
+  "pair.readonly": "           該瀏覽器可以讀取；不能操作這台機器",
+  "grant.usage": "用法：clawdline cloud grant <device-id> <readonly|operate>",
+  "grant.changed": "瀏覽器 %s：%s\n",
+  "usage.grant": "  grant <id> <scope>     將一個已配對瀏覽器設為 readonly 或 operate"
 }

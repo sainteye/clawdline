@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -197,6 +198,8 @@ type harness struct {
 	cred  string
 	f     *fixture
 	state string
+	// transport, when set, replaces the loopback server's.
+	transport http.RoundTripper
 }
 
 func newHarness(t *testing.T, f *fixture, c *cloud, state string) *harness {
@@ -219,6 +222,7 @@ func (h *harness) make() *Uploader {
 			return h.f.store
 		},
 		Now:               func() time.Time { return h.now },
+		Transport:         h.transport,
 		AllowLoopbackHTTP: true,
 		AttemptTimeout:    300 * time.Millisecond,
 	})
@@ -477,28 +481,87 @@ func TestTooManyRequestsWaitsForRetryAfter(t *testing.T) {
 	}
 }
 
+// stalledCloud answers no request: each one waits on its own context, so an
+// attempt ends only when the uploader's deadline reaches the request. It
+// records the time each request was given and how it ended.
+type stalledCloud struct {
+	mu      sync.Mutex
+	budgets []time.Duration // the request's deadline less its arrival; 0 without one
+	ended   []error
+}
+
+func (s *stalledCloud) RoundTrip(r *http.Request) (*http.Response, error) {
+	arrived := time.Now()
+	if r.Body != nil {
+		_ = r.Body.Close()
+	}
+	var budget time.Duration
+	if d, ok := r.Context().Deadline(); ok {
+		budget = d.Sub(arrived)
+	}
+	var err error
+	select {
+	case <-r.Context().Done():
+		err = r.Context().Err()
+	case <-time.After(5 * time.Second):
+		// Fails the test rather than hanging it when no deadline arrives.
+		err = errors.New("the request outlived any deadline")
+	}
+	s.mu.Lock()
+	s.budgets = append(s.budgets, budget)
+	s.ended = append(s.ended, err)
+	s.mu.Unlock()
+	return nil, err
+}
+
+func (s *stalledCloud) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.ended)
+}
+
+// The bound under test is the one the request carries, not the wall clock
+// of a whole Step: a Step also reads the journal and fsyncs its state twice,
+// which a loaded CI disk stretched to 4.9s.
 func TestATimeoutIsBoundedAndTheBatchIsAbandonedAfterItsAttempts(t *testing.T) {
 	dir := t.TempDir()
 	f := newFixture(t, dir, "boot-t")
 	f.add(1)
-	c := newCloud()
-	c.answer = func(int, http.ResponseWriter, *http.Request, []byte) bool {
-		time.Sleep(time.Second)
-		return false
-	}
-	h := newHarness(t, f, c, filepath.Join(dir, "upload"))
-	start := time.Now()
+	h := newHarness(t, f, newCloud(), filepath.Join(dir, "upload"))
+	s := &stalledCloud{}
+	h.transport = s
+	h.u = h.make()
 	h.step(t)
-	if took := time.Since(start); took > 900*time.Millisecond {
-		t.Fatalf("an attempt took %s past its deadline", took)
+	s.mu.Lock()
+	if len(s.ended) != 1 {
+		s.mu.Unlock()
+		t.Fatalf("the first Step returned after %d finished requests", len(s.ended))
+	}
+	budget, ended := s.budgets[0], s.ended[0]
+	s.mu.Unlock()
+	if budget <= 0 || budget > 300*time.Millisecond {
+		t.Fatalf("the request was given %s, not the attempt's 300ms", budget)
+	}
+	if !errors.Is(ended, context.DeadlineExceeded) {
+		t.Fatalf("the request ended with %v, not its deadline", ended)
+	}
+	if st := h.u.Status(); st.Totals.Attempts != 1 || st.Totals.AbandonedBatches != 0 {
+		t.Fatalf("after one timed-out attempt, totals %+v", st.Totals)
 	}
 	for i := 0; i < 2*MaxAttempts; i++ {
 		h.now = h.now.Add(10 * time.Minute)
 		h.step(t)
 	}
 	st := h.u.Status()
-	if c.count() != MaxAttempts || st.Totals.AbandonedBatches != 1 || st.Totals.AbandonedEvents != 2 {
-		t.Fatalf("%d attempts, totals %+v", c.count(), st.Totals)
+	if s.count() != MaxAttempts || st.Totals.AbandonedBatches != 1 || st.Totals.AbandonedEvents != 2 {
+		t.Fatalf("%d attempts, totals %+v", s.count(), st.Totals)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, err := range s.ended {
+		if !errors.Is(err, context.DeadlineExceeded) || s.budgets[i] <= 0 || s.budgets[i] > 300*time.Millisecond {
+			t.Fatalf("attempt %d: given %s, ended with %v", i+1, s.budgets[i], err)
+		}
 	}
 }
 

@@ -2,11 +2,130 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
+
+// A successful merge names a row by its terminal id. When that terminal
+// source times out, ps names the same execution by tty instead. Retention
+// must replace that weaker row, not append a second copy beside it.
+func TestRetainedTerminalsDoNotDuplicateTheirProcessRows(t *testing.T) {
+	for _, backend := range []session.Backend{session.BackendITerm, session.BackendTmux} {
+		t.Run(string(backend), func(t *testing.T) {
+			clock := time.Unix(6_000_000, 0)
+			firstAt := clock
+			complete := true
+			source := session.SourceFor(backend)
+			terminals := make([]session.Session, 6)
+			processes := make([]session.Session, 6)
+			for n := range terminals {
+				tty := fmt.Sprintf("ttys%03d", n)
+				terminals[n] = session.Session{ID: fmt.Sprintf("terminal-%d", n), TTY: tty,
+					Backend: backend, PID: n + 10, Assistant: session.AssistantCodex,
+					Label: "same title", State: session.StateWorking}
+				processes[n] = terminals[n]
+				processes[n].ID = tty
+				processes[n].Backend = session.BackendITerm
+				processes[n].State = session.StateUnknown
+			}
+			// A genuinely different terminal may have the same title.
+			newcomer := session.Session{ID: "ttys099", TTY: "ttys099", Backend: session.BackendITerm,
+				Assistant: session.AssistantCodex, Label: "same title", State: session.StateIdle}
+			r := NewInventoryReading(func(context.Context) session.Inventory {
+				rows := processes
+				if complete {
+					rows = terminals
+				}
+				return session.Inventory{ObservedAt: clock, Complete: complete, Provenance: "merged",
+					Sources:  map[string]bool{"ps": true, source: complete},
+					Sessions: append(append([]session.Session(nil), rows...), newcomer)}
+			}, time.Second)
+			r.now = func() time.Time { return clock }
+			assertRows := func(inv session.Inventory, retained bool) {
+				t.Helper()
+				if len(inv.Sessions) != 7 {
+					t.Fatalf("listed %d rows for 7 terminals", len(inv.Sessions))
+				}
+				seen := map[string]bool{}
+				for _, row := range inv.Sessions {
+					if seen[row.TTY] {
+						t.Fatalf("terminal %s was listed twice", row.TTY)
+					}
+					seen[row.TTY] = true
+					if row.ID == newcomer.ID {
+						if row.Observation.Freshness != session.FreshnessCurrent {
+							t.Fatalf("new process row lost freshness: %+v", row)
+						}
+						continue
+					}
+					if row.ID == row.TTY || row.State != session.StateWorking {
+						t.Fatalf("terminal identity or state was replaced: %+v", row)
+					}
+					if retained && (row.Observation.Freshness != session.FreshnessUnverified ||
+						!row.Observation.ObservedAt.Equal(firstAt)) {
+						t.Fatalf("retained row claimed a current observation: %+v", row)
+					}
+				}
+			}
+			assertRows(r.Recent(context.Background()), false)
+			complete = false
+			clock = clock.Add(2 * time.Second)
+			assertRows(r.Recent(context.Background()), true)
+			clock = clock.Add(2 * time.Second)
+			fresh := r.Fresh(context.Background())
+			if len(fresh.Sessions) != 7 || fresh.Sessions[0].ID != processes[0].ID {
+				t.Fatalf("decision reader received retained terminal identities: %+v", fresh)
+			}
+			assertRows(r.Recent(context.Background()), true)
+			clock = firstAt.Add(LastGoodInventoryAgeLimit)
+			expired := r.Recent(context.Background())
+			if len(expired.Sessions) != 7 {
+				t.Fatalf("expired shelf lost process rows: %+v", expired)
+			}
+			for _, row := range expired.Sessions {
+				if row.ID != row.TTY {
+					t.Fatalf("expired terminal remained on screen: %+v", row)
+				}
+			}
+			complete = true
+			clock = clock.Add(2 * time.Second)
+			assertRows(r.Recent(context.Background()), false)
+		})
+	}
+}
+
+func TestRetainedRowsDoNotReplaceCurrentTerminalReadings(t *testing.T) {
+	for _, previousBackend := range []session.Backend{session.BackendITerm, session.BackendTmux} {
+		t.Run(string(previousBackend), func(t *testing.T) {
+			clock := time.Unix(7_000_000, 0)
+			previous := session.Session{ID: "previous", TTY: "ttys001", Backend: previousBackend,
+				Assistant: session.AssistantCodex, State: session.StateWorking}
+			// Cover both a retained process placeholder and a retained terminal.
+			if previousBackend == session.BackendITerm {
+				previous.ID = previous.TTY
+			}
+			source := rowSource(previous)
+			current := session.Session{ID: "current", TTY: previous.TTY, Backend: session.BackendITerm,
+				Assistant: session.AssistantCodex, State: session.StateIdle}
+			r := NewInventoryReading(nil, time.Second)
+			r.now = func() time.Time { return clock }
+			r.retainLocked(session.Inventory{ObservedAt: clock, Complete: true,
+				Sources: map[string]bool{source: true}, Sessions: []session.Session{previous}})
+			clock = clock.Add(2 * time.Second)
+			got := r.retainLocked(session.Inventory{ObservedAt: clock,
+				Sources: map[string]bool{source: false, "iterm": true}, Sessions: []session.Session{current}})
+			if len(got.Sessions) != 1 || got.Sessions[0].ID != current.ID ||
+				got.Sessions[0].State != session.StateIdle ||
+				got.Sessions[0].Observation.Freshness != session.FreshnessCurrent ||
+				!got.Sessions[0].Observation.ObservedAt.Equal(clock) {
+				t.Fatalf("retention displaced the current terminal: %+v", got)
+			}
+		})
+	}
+}
 
 // One failed iTerm2 listing used to replace six known states with the six
 // process-table placeholders from that pass. This is the screenshot's flash,

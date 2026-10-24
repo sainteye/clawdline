@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 	"time"
 )
 
@@ -13,24 +14,27 @@ var ErrWebhookDeliveryConflict = errors.New("schedule webhook delivery conflict"
 // delivery. PendingReceipt is already-encoded JSON so a retry resends exactly
 // the same version and bytes after a restart.
 type ScheduleWebhookDelivery struct {
-	Version                  int             `json:"clawdline_schedule_webhook_delivery"`
-	DeliveryID               string          `json:"delivery_id"`
-	DeliveryDigest           string          `json:"delivery_digest"`
-	HookID                   string          `json:"hook_id"`
-	HookGeneration           int             `json:"hook_generation"`
-	ScheduleID               string          `json:"schedule_id,omitempty"`
-	PreflightOutcome         string          `json:"preflight_outcome,omitempty"`
-	State                    string          `json:"state"`
-	TaskID                   string          `json:"task_id,omitempty"`
-	LastReceiptVersion       int             `json:"last_receipt_version"`
-	CloudAcknowledgedThrough int             `json:"cloud_acknowledged_through"`
-	LeaseToken               string          `json:"lease_token"`
-	LeaseRevision            int             `json:"lease_revision"`
-	PendingReceipt           json.RawMessage `json:"pending_receipt,omitempty"`
-	RetryAt                  int64           `json:"retry_at,omitempty"`
-	CreatedAt                int64           `json:"created_at"`
-	UpdatedAt                int64           `json:"updated_at"`
-	TerminalAt               int64           `json:"terminal_at,omitempty"`
+	Investigation            *schedulewebhook.InvestigationRef    `json:"investigation,omitempty"`
+	InvestigationBundle      json.RawMessage                      `json:"investigation_bundle,omitempty"`
+	InvestigationReport      *schedulewebhook.InvestigationReport `json:"investigation_report,omitempty"`
+	Version                  int                                  `json:"clawdline_schedule_webhook_delivery"`
+	DeliveryID               string                               `json:"delivery_id"`
+	DeliveryDigest           string                               `json:"delivery_digest"`
+	HookID                   string                               `json:"hook_id"`
+	HookGeneration           int                                  `json:"hook_generation"`
+	ScheduleID               string                               `json:"schedule_id,omitempty"`
+	PreflightOutcome         string                               `json:"preflight_outcome,omitempty"`
+	State                    string                               `json:"state"`
+	TaskID                   string                               `json:"task_id,omitempty"`
+	LastReceiptVersion       int                                  `json:"last_receipt_version"`
+	CloudAcknowledgedThrough int                                  `json:"cloud_acknowledged_through"`
+	LeaseToken               string                               `json:"lease_token"`
+	LeaseRevision            int                                  `json:"lease_revision"`
+	PendingReceipt           json.RawMessage                      `json:"pending_receipt,omitempty"`
+	RetryAt                  int64                                `json:"retry_at,omitempty"`
+	CreatedAt                int64                                `json:"created_at"`
+	UpdatedAt                int64                                `json:"updated_at"`
+	TerminalAt               int64                                `json:"terminal_at,omitempty"`
 }
 
 // ReserveScheduleWebhookDelivery records the stable task id before any
@@ -52,7 +56,7 @@ func (s *Store) ReserveScheduleWebhookDelivery(ctx context.Context, fresh Schedu
 	if err != nil {
 		return ScheduleWebhookDelivery{}, false, err
 	}
-	if row.DeliveryDigest != fresh.DeliveryDigest || row.HookID != fresh.HookID {
+	if row.DeliveryDigest != fresh.DeliveryDigest || row.HookID != fresh.HookID || !sameInvestigation(row.Investigation, fresh.Investigation) {
 		return ScheduleWebhookDelivery{}, false, ErrWebhookDeliveryConflict
 	}
 	return row, created == 1, nil
@@ -116,4 +120,35 @@ func (s *Store) CleanupScheduleWebhookDeliveries(ctx context.Context, before tim
 	_, err := s.db.ExecContext(ctx, `DELETE FROM schedule_webhook_deliveries
 		WHERE updated_at < ? AND state IN ('schedule_dispatch_refused','task_execution_terminal','outcome_unknown','expired','canceled')`, before.Unix())
 	return err
+}
+
+func sameInvestigation(a, b *schedulewebhook.InvestigationRef) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+// InvestigationTaskReport reads only the authenticated, settled broker result
+// belonging to the journal's exact task and schedule. Never read a live file.
+func (s *Store) InvestigationTaskReport(ctx context.Context, taskID, scheduleID string) (*schedulewebhook.InvestigationReport, error) {
+	var raw string
+	err := s.rd.QueryRowContext(ctx, `SELECT t.record FROM broker_tasks t JOIN schedule_runs r ON r.task_id=t.id WHERE t.id=? AND r.schedule_id=?`, taskID, scheduleID).Scan(&raw)
+	if err != nil {
+		return nil, err
+	}
+	var record struct {
+		ID         string `json:"task_id"`
+		ScheduleID string `json:"schedule_id"`
+		Result     *struct {
+			Report json.RawMessage `json:"investigation_report"`
+		} `json:"result"`
+	}
+	if json.Unmarshal([]byte(raw), &record) != nil || record.ID != taskID || record.ScheduleID != scheduleID {
+		return nil, ErrWebhookDeliveryConflict
+	}
+	if record.Result == nil || len(record.Result.Report) == 0 {
+		return nil, nil
+	}
+	return schedulewebhook.ParseInvestigationReport(record.Result.Report)
 }

@@ -88,3 +88,16 @@ html.booting body {
 }
 /* A modal receives initial focus for keyboard access; its controls show a ring only after navigation. */
 [data-modal-initial-focus]:focus { outline: none; }
+
+/* Drawer rows that leave the console are links; they read like the buttons beside them. */
+a.sidebar-item { text-decoration: none; }
+
+/* Something an administrator has to act on: only the Cloud's actionable items draw it. */
+.sidebar-attention {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--bad);
+}

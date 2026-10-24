@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/cloud"
 	"github.com/sainteye/clawdline/internal/domain/connectionhealth"
 )
 
@@ -91,6 +92,10 @@ const (
 	BurnAttemptCapExpired  = "attempt_cap_expired"
 	BurnStaleReadyAtSend   = "stale_ready_at_restart"
 	BurnReplacedByCoalesce = "replaced_by_coalescing"
+	// BurnKeyRetired is a row sealed, or about to be sealed, under a master
+	// content key a cutover retired (RetireKeys). Its bytes must never be
+	// written again, whatever state it was in.
+	BurnKeyRetired = "content_key_retired"
 )
 
 // AttemptTransportUncertain is the marker a burn at the attempt window records:
@@ -291,6 +296,11 @@ type SpoolRow struct {
 	// the wire, and is dropped with Sealed once the row is terminal. It is an
 	// opaque tracker id (connectionhealth.ValidID) or "".
 	Correlation string
+	// KeyID is the content key id the row is sealed under, set at
+	// reservation by LabelKey. It is local bookkeeping — the same id is inside
+	// Sealed — and it is what RetireKeys selects on. "" is a row nobody
+	// labelled, whose key is unknown.
+	KeyID string
 
 	State      SpoolState
 	ReservedAt time.Time
@@ -617,6 +627,70 @@ func (s *Spool) admitLocked(channel SpoolChannel, recipient, logicalID string, c
 	return seq, nil
 }
 
+// LabelKey records which content key a reserved row will be sealed under, so
+// a later cutover can retire it without reading the sealed bytes. It is legal
+// only before Seal: a label added after the bytes exist could disagree with
+// them.
+func (s *Spool) LabelKey(seq uint64, keyID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row, ok := s.rows[seq]
+	if !ok {
+		return fmt.Errorf("%w: %d", ErrSpoolRow, seq)
+	}
+	if row.State != SpoolReserved {
+		return fmt.Errorf("%w: %d is %s", ErrSpoolReseal, seq, row.State)
+	}
+	row.KeyID = keyID
+	return nil
+}
+
+// RetireKeys burns, in one step, every live row — reserved, ready or sent —
+// whose KeyID keep refuses, and answers their sequences in ascending order.
+//
+// It is the spool half of a content-key cutover. A sent row is burned too:
+// its bytes may already be at the relay, so it is marked uncertain, and a
+// late receipt for it is ignored like any other terminal row's. The burned
+// rows are handed out by TakeBurned like every burn, which is how their
+// waiters hear SettleBurned. The sequence counter does not move back, and the
+// tombstones keep each sequence's identity for the retention window.
+func (s *Spool) RetireKeys(keep func(keyID string) bool) []uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	var retired []uint64
+	for _, seq := range s.sortedLiveSequencesLocked() {
+		row := s.rows[seq]
+		if keep(row.KeyID) {
+			continue
+		}
+		if row.State == SpoolSent {
+			row.Outcome = AttemptTransportUncertain
+			s.tally.uncertain++
+		} else {
+			s.tally.dropped++
+		}
+		row.State = SpoolBurned
+		row.BurnReason = BurnKeyRetired
+		row.Sealed = nil
+		row.Correlation = ""
+		row.Tombstoned = now
+		retired = append(retired, seq)
+	}
+	if len(retired) > 0 {
+		s.tally.lastAt = now
+	}
+	return retired
+}
+
+// RetireForCutover is the spool's cloud.KeyRetire: once next is installed,
+// only rows labelled with next's id, or with a per-connection rk-* key, are
+// still owed. Everything else live is burned (RetireKeys).
+func (s *Spool) RetireForCutover(_, next cloud.ContentKeyState) error {
+	s.RetireKeys(next.Sendable)
+	return nil
+}
+
 // Seal attaches the exact bytes that will go on the wire and makes the row
 // sendable. sealedAt is the envelope's own `ts`, which is what staleness is
 // measured from.
@@ -656,6 +730,14 @@ func (s *Spool) SealCorrelated(seq uint64, sealed []byte, sealedAt time.Time, co
 // successful write: a write that fails halfway has still put bytes on a socket
 // somebody else may have read.
 func (s *Spool) SendNext() Disposition {
+	return s.SendNextKeyed(nil)
+}
+
+// SendNextKeyed is SendNext for a sender under a content-key fence: a ready
+// row whose KeyID keep refuses is burned as BurnKeyRetired instead of being
+// handed out, so bytes sealed under a retired key are never marked sent. A
+// nil keep is SendNext.
+func (s *Spool) SendNextKeyed(keep func(keyID string) bool) Disposition {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
@@ -686,6 +768,16 @@ func (s *Spool) SendNext() Disposition {
 			// receiver's replay window can never fill.
 			return Disposition{BlockedOnSeal: true, HeadSeq: seq}
 		case SpoolReady:
+			if keep != nil && !keep(row.KeyID) {
+				row.State = SpoolBurned
+				row.BurnReason = BurnKeyRetired
+				row.Sealed = nil
+				row.Correlation = ""
+				row.Tombstoned = now
+				s.tally.dropped++
+				s.tally.lastAt = now
+				continue
+			}
 			if inflightRows+1 > s.limits.OutboundWindowRowCap ||
 				inflightBytes+len(row.Sealed) > s.limits.OutboundWindowByteCap {
 				return Disposition{BlockedOnAck: true, HeadSeq: lowestSent}

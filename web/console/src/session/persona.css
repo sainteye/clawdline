@@ -137,3 +137,9 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Use the Board picker geometry for providers on the ordinary Start sheet. */
+#start-with .chip { display: inline-flex; align-items: center; gap: 6px; }
+#start-with .chip .assistant-logo { display: block; width: 13px; height: 13px; }
+#start-with .chip:not(.on) .assistant-logo { opacity: 0.5; }
+#start-with .chip:hover:not(:disabled) .assistant-logo { opacity: 1; }

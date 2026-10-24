@@ -324,3 +324,31 @@ func TestAFailedRotationKeepsTheLineAndSaysSo(t *testing.T) {
 		t.Fatalf("current: %v", current)
 	}
 }
+
+func TestExplicitReadOnlyFileRestartAndLegacyMigration(t *testing.T) {
+	for _, selected := range []bool{false, true} {
+		t.Run(fmt.Sprint(selected), func(t *testing.T) {
+			dir := t.TempDir()
+			f, err := Open(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := auth.State{Devices: []auth.Device{{ID: "phone", Name: "Phone", Hash: auth.Hash("synthetic-token"), Caps: auth.NewCaps(auth.Read), Approved: true, PermissionSelected: selected}}}
+			if err := f.Save(state); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := Open(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a, err := auth.New(reopened, auth.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			v := a.Verify("synthetic-token")
+			if !v.Allowed || v.Caps.Has(auth.Send) == selected {
+				t.Fatalf("selected=%v verdict=%+v", selected, v)
+			}
+		})
+	}
+}

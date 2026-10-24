@@ -34,6 +34,7 @@ export function menuFingerprint(menu: SessionMenu): string {
     parts.push(encoder.encode(tag + String(bytes.length) + ":"), bytes)
   }
   field("q", typeof menu.question === "string" ? menu.question : "")
+  if (menu.revision) field("r", menu.revision)
   for (const o of menu.options ?? []) field("o" + String(o.n) + ",", o.label == null ? "" : String(o.label))
   for (const s of menu.steps ?? []) field("s" + (s.done ? "1" : "0") + ",", s.label == null ? "" : String(s.label))
   let length = 0

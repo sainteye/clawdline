@@ -39,6 +39,7 @@ type pairAgentHarness struct {
 	offer      domaincloud.PairingOffer
 	dispatched []orchestrator.PairingAgentRun
 	completed  int
+	pinned     *adaptercloud.PinnedStore
 }
 
 func newPairAgentHarness(t *testing.T) *pairAgentHarness {
@@ -66,6 +67,7 @@ func newPairAgentHarness(t *testing.T) *pairAgentHarness {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	h.pinned = adaptercloud.NewPinnedStore(t.TempDir())
 	h.s = &Server{cfg: config.Config{Dir: dir}}
 	h.s.pairAgent = func(_ context.Context, run orchestrator.PairingAgentRun) (orchestrator.Dispatched, error) {
 		h.dispatched = append(h.dispatched, run)
@@ -77,7 +79,7 @@ func newPairAgentHarness(t *testing.T) *pairAgentHarness {
 		Keys: func() (domaincloud.DeviceKey, domaincloud.ContentKey, error) {
 			return key, secret, nil
 		},
-		Pinned: adaptercloud.NewPinnedStore(t.TempDir()),
+		Pinned: h.pinned,
 	}})
 	t.Cleanup(func() { SetCloudLine(dir, nil) })
 	return h
@@ -392,5 +394,62 @@ func TestAPairingHandOffProgressAnswersOnlyForAHandOff(t *testing.T) {
 		if rec.Code != c.status || strings.Contains(rec.Body.String(), "secret work") {
 			t.Errorf("%s: %d %s", c.name, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+// A browser this machine limited to readonly shows a fresh pairing code after
+// its keys drift. Handing that code to the assistant without a scope must keep
+// the limit; only an explicit operate from this machine raises it.
+func TestAPairingHandOffToThisMachineKeepsAReadonlyCeiling(t *testing.T) {
+	h := newPairAgentHarness(t)
+	if err := h.pinned.Pin("usr_test", adaptercloud.PinnedDevice{DeviceID: h.offer.ViewerDeviceID,
+		PublicKey: h.offer.ViewerSigningKey, Fingerprint: h.offer.ViewerFingerprint,
+		Scope: adaptercloud.ScopeReadOnly}); err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{"offer": h.offer.Fragment(), "machine_id": "mac_this-one"}
+	if rec := h.post(t, body, true); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if got, err := h.pinned.ViewerScope(h.offer.ViewerDeviceID); err != nil || got != adaptercloud.ScopeReadOnly {
+		t.Fatalf("the agent route promoted a readonly device: %q %v", got, err)
+	}
+	body["scope"] = "admin"
+	if rec := h.post(t, body, true); rec.Code != http.StatusBadRequest || refusalCode(rec) != "invalid_viewer_scope" {
+		t.Fatalf("an unknown scope: %d %s", rec.Code, rec.Body.String())
+	}
+	body["scope"] = adaptercloud.ScopeOperate
+	if rec := h.post(t, body, true); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if got, err := h.pinned.ViewerScope(h.offer.ViewerDeviceID); err != nil || got != adaptercloud.ScopeOperate {
+		t.Fatalf("an explicit operate did not raise: %q %v", got, err)
+	}
+}
+
+// The hand-off brief carries no scope, so a scope asked for another machine
+// is refused rather than dropped on the way there.
+func TestAPairingHandOffToAnotherMachineRefusesAScopeItCannotCarry(t *testing.T) {
+	h := newPairAgentHarness(t)
+	rec := h.post(t, map[string]any{"offer": h.offer.Fragment(), "machine_id": "mac_other",
+		"scope": adaptercloud.ScopeReadOnly}, true)
+	if rec.Code != http.StatusBadRequest || refusalCode(rec) != "invalid_viewer_scope" {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if len(h.dispatched) != 0 || h.completed != 0 {
+		t.Fatalf("%d tasks, %d completions", len(h.dispatched), h.completed)
+	}
+}
+
+// A pin file this machine cannot read is not "no grant": the route refuses
+// before any content key leaves.
+func TestAPairingHandOffRefusesWhenTheCeilingCannotBeRead(t *testing.T) {
+	h := newPairAgentHarness(t)
+	if err := os.WriteFile(h.pinned.Path(), []byte("{not json"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rec := h.post(t, map[string]any{"offer": h.offer.Fragment(), "machine_id": "mac_this-one"}, true)
+	if rec.Code < 400 || h.completed != 0 {
+		t.Fatalf("%d %s after %d completions", rec.Code, rec.Body.String(), h.completed)
 	}
 }

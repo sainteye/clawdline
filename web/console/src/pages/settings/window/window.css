@@ -561,36 +561,52 @@
   color: var(--sw-faint);
 }
 
-/* The order of steps sits right under the code and in the accent, because on
-   an iPhone the wrong order is discovered only after the work is done. */
+/* The steps sit above the code in the setup guide's shape: a platform
+   switch and three numbered lines, with no box around them. */
 .sw-qr-order {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(217, 119, 87, 0.38);
-  background: rgba(217, 119, 87, 0.08);
+  margin: 8px 0 12px;
 }
-.sw-qr-order-head {
-  display: block;
+.sw-qr-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--sw-hairline);
+  border-radius: 7px;
+}
+.sw-qr-tab {
+  min-height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--sw-soft);
+  font: inherit;
   font-size: 11.5px;
-  font-weight: 600;
+  cursor: pointer;
+}
+.sw-qr-tab[aria-selected="true"] {
+  background: var(--sw-chip-fill);
   color: var(--sw-label);
 }
-.sw-qr-order ol {
-  margin: 6px 0 0;
-  padding-left: 18px;
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: var(--sw-soft);
+.sw-qr-tab:focus-visible {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: 1px;
 }
-.sw-qr-order-warn,
-.sw-qr-order-other {
+.sw-qr-order ol {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--sw-label);
+}
+.sw-qr-order code {
+  font-family: var(--sw-mono);
+  color: var(--sw-accent);
+}
+.sw-qr-order-warn {
   margin: 6px 0 0;
   font-size: 10.5px;
   line-height: 1.45;
-  color: var(--sw-soft);
-}
-.sw-qr-order-other {
   color: var(--sw-faint);
 }
 
@@ -637,9 +653,16 @@
 /* Enlarged: the whole window turns white, so the camera exposes for the code
    and not for a dark room around a bright square. */
 .sw-qr-full {
+  box-sizing: border-box;
   position: fixed;
   inset: 0;
-  z-index: 20;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 12px;
+  border: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -648,6 +671,20 @@
   background: #fff;
   cursor: zoom-out;
 }
+.sw-qr-full:not([open]) { display: none; }
+.sw-qr-full::backdrop { background: #fff; }
+.sw-qr-full-close {
+  min-width: 88px;
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 1px solid #3a3a3c;
+  border-radius: 8px;
+  color: #3a3a3c;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+.sw-qr-full-close:focus-visible { outline: 2px solid #3a3a3c; outline-offset: 3px; }
 .sw-qr-full-line {
   margin: 0;
   font-size: 13px;

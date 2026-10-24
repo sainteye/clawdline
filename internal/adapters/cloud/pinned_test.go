@@ -200,3 +200,149 @@ func TestThePinFileIsOwnerOnly(t *testing.T) {
 		t.Fatalf("the pin file is %o, wanted 600", mode)
 	}
 }
+
+func TestViewerScopePersistsAndCannotBeExpandedByLegacyPinReads(t *testing.T) {
+	dir := t.TempDir()
+	s := NewPinnedStore(dir)
+	for _, id := range []string{"reader", "operator", "legacy"} {
+		d := freshPin(t, id)
+		if id == "reader" {
+			d.Scope = ScopeReadOnly
+		}
+		if id == "operator" {
+			d.Scope = ScopeOperate
+		}
+		if err := s.Pin("account", d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, store := range []*PinnedStore{s, NewPinnedStore(dir)} {
+		for id, want := range map[string]string{"reader": ScopeReadOnly, "operator": ScopeOperate, "legacy": ScopeOperate} {
+			if got, err := store.ViewerScope(id); err != nil || got != want {
+				t.Fatalf("%s: %q %v", id, got, err)
+			}
+		}
+	}
+	if err := s.SetScope("reader", "admin"); !errors.Is(err, ErrViewerScope) {
+		t.Fatal(err)
+	}
+	if err := s.SetScope("missing", ScopeOperate); !errors.Is(err, ErrViewerNotPinned) {
+		t.Fatal(err)
+	}
+	if err := s.SetScope("operator", ScopeReadOnly); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetScope("operator", ScopeReadOnly); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := NewPinnedStore(dir).ViewerScope("operator"); err != nil || got != ScopeReadOnly {
+		t.Fatalf("restart: %q %v", got, err)
+	}
+	if _, err := s.Revoke("reader", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetScope("reader", ScopeOperate); !errors.Is(err, ErrViewerNotPinned) {
+		t.Fatal(err)
+	}
+}
+
+func TestFailedScopeWriteDoesNotChangeLiveOrRestartedAuthority(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permissions")
+	}
+	dir := t.TempDir()
+	s := NewPinnedStore(dir)
+	d := freshPin(t, "reader")
+	d.Scope = ScopeReadOnly
+	if err := s.Pin("account", d); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+	if err := s.SetScope("reader", ScopeOperate); err == nil {
+		t.Fatal("write unexpectedly succeeded")
+	}
+	for _, store := range []*PinnedStore{s, NewPinnedStore(dir)} {
+		if got, err := store.ViewerScope("reader"); err != nil || got != ScopeReadOnly {
+			t.Fatalf("failed write elevated: %q %v", got, err)
+		}
+	}
+	d.Scope = ScopeOperate
+	if err := s.Pin("account", d); err == nil {
+		t.Fatal("re-pin unexpectedly succeeded")
+	}
+	if got, err := s.ViewerScope("reader"); err != nil || got != ScopeReadOnly {
+		t.Fatalf("failed re-pin elevated: %q %v", got, err)
+	}
+}
+
+func TestAReadonlyReservationKeepsARefusalAndOnlyLowersAnExistingRow(t *testing.T) {
+	dir := t.TempDir()
+	s := NewPinnedStore(dir)
+	revoked, active := freshPin(t, "revoked"), freshPin(t, "active")
+	for _, d := range []PinnedDevice{revoked, active} {
+		if err := s.Pin("account", d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Revoke("revoked", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"revoked", "active", "new"} {
+		if err := s.ReserveReadOnly("account", freshPin(t, id)); err != nil {
+			t.Fatalf("reserve %s: %v", id, err)
+		}
+	}
+	restarted := NewPinnedStore(dir)
+	if refused, err := restarted.Refused("revoked"); err != nil || !refused {
+		t.Fatalf("a reservation lifted a refusal: %v %v", refused, err)
+	}
+	if key, ok, err := restarted.PublicKeyFor("active"); err != nil || !ok || base64.StdEncoding.EncodeToString(key) != active.PublicKey {
+		t.Fatalf("a reservation replaced an active pin's key: %v %v", ok, err)
+	}
+	for _, id := range []string{"active", "new"} {
+		if got, err := restarted.ViewerScope(id); err != nil || got != ScopeReadOnly {
+			t.Fatalf("%s ceiling: %q %v", id, got, err)
+		}
+	}
+	if err := restarted.Pin("account", freshPin(t, "revoked")); err != nil {
+		t.Fatal(err)
+	}
+	if refused, err := restarted.Refused("revoked"); err != nil || refused {
+		t.Fatalf("the completed pairing's pin did not restore the device: %v %v", refused, err)
+	}
+	if err := s.ReserveReadOnly("other", freshPin(t, "x")); err == nil {
+		t.Fatal("a reservation merged into another account's file")
+	}
+}
+
+func TestAFailedReservationWriteLeavesTheRecordAsItWas(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permissions")
+	}
+	dir := t.TempDir()
+	s := NewPinnedStore(dir)
+	if err := s.Pin("account", freshPin(t, "operator")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+	if err := s.ReserveReadOnly("account", freshPin(t, "operator")); err == nil {
+		t.Fatal("write unexpectedly succeeded")
+	}
+	if err := s.ReserveReadOnly("account", freshPin(t, "newcomer")); err == nil {
+		t.Fatal("write unexpectedly succeeded")
+	}
+	for _, store := range []*PinnedStore{s, NewPinnedStore(dir)} {
+		if got, err := store.ViewerScope("operator"); err != nil || got != ScopeOperate {
+			t.Fatalf("failed reservation changed live or stored scope: %q %v", got, err)
+		}
+		if _, ok, err := store.PublicKeyFor("newcomer"); err != nil || ok {
+			t.Fatalf("failed reservation left a row: %v %v", ok, err)
+		}
+	}
+}

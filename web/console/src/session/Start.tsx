@@ -15,7 +15,8 @@ import { TAB } from "../pages/terminal/tab.js"
 import { terminalRefusalWords, unavailableWords } from "../pages/terminal/words.js"
 import { ProjectFolderPicker } from "../pages/projects/ProjectFolderPicker.js"
 import { removeProjectPlace } from "../pages/work/api.js"
-import { catalogWord } from "../catalog.js"
+import { catalogRefusalDetail, catalogWord } from "../catalog.js"
+import { assistantAdmits, assistantLabel, assistantRolesAdmit, assistantUnavailable, type AssistantOperation } from "./antigravity-ui.js"
 
 /**
  * Starting a session, and picking one back up, against the `div#start` sheet
@@ -256,6 +257,10 @@ function why(e: Failure, reading?: "past"): string {
 
 function ownWhy(e: Failure, reading?: "past"): string {
   const code = e && e.code
+  if (e?.detailKey || e?.detail_key) {
+    const detail = catalogRefusalDetail(e)
+    if (detail) return detail.text
+  }
   // A Mac across Clawdline Cloud that does not list `past-sessions` among its
   // commands — the Go daemon today — is refused that read by the client before
   // it leaves. Said here, where it happens, with what can be done instead.
@@ -294,7 +299,20 @@ function matchingPast(): PastRow[] {
 }
 
 function resumable(): boolean {
-  return (with_ === "claude" || with_ === "codex") && typeof api.pastSessions === "function"
+  return admitted("resume") && typeof api.pastSessions === "function"
+}
+
+function admitted(operation: AssistantOperation): boolean {
+  return assistantAdmits(assistants.find(a => a.id === with_), operation)
+}
+
+function assistantStatus(operation: AssistantOperation): string {
+  const selected = assistants.find(a => a.id === with_)
+  const reason = assistantUnavailable(selected, operation)
+  if (!selected || !reason) return ""
+  const name = (selected.id === "antigravity" ? assistantLabel(selected.id) : selected.label || assistantLabel(selected.id)) + (selected.version ? " " + selected.version : "")
+  const status = reason
+  return catalogWord("antigravity", status).replace("{assistant}", name)
 }
 
 function when(unix: number | undefined): string {
@@ -314,7 +332,7 @@ function when(unix: number | undefined): string {
 function drawWith(): void {
   const row = el("start-with")
   // No `machines` read on this transport, so the first half is always false.
-  row.hidden = assistants.length < 2 || !!at || !places?.length
+  row.hidden = (assistants.length < 2 && assistants[0]?.id !== "antigravity") || !!at || !places?.length
   if (row.hidden) {
     row.innerHTML = ""
     return
@@ -328,12 +346,14 @@ function drawWith(): void {
     const chip = document.createElement("button")
     chip.type = "button"
     chip.className = "chip" + (a.id === with_ ? " on" : "")
-    chip.textContent = a.label || a.id
+    chip.innerHTML = L.assistantLogoHTML(a.id) + '<span>' + L.escapeHTML(a.id === "antigravity" ? assistantLabel(a.id) : a.label || a.id) + '</span>'
+    const reason = assistantUnavailable(a, "start")
+    if (reason) chip.title = catalogWord("antigravity", reason).replace("{assistant}", (a.id === "antigravity" ? assistantLabel(a.id) : a.label || assistantLabel(a.id)))
     chip.disabled = !!pressing || !!wait
     chip.setAttribute("aria-pressed", a.id === with_ ? "true" : "false")
     chip.onclick = () => {
       with_ = a.id
-      if (!resumable()) leave()
+      if (!resumable()) { resume = false; leave() }
       draw()
     }
     row.appendChild(chip)
@@ -342,6 +362,7 @@ function drawWith(): void {
 
 /** The chosen persona, when the catalog still names it; "" for none. */
 function chosenPersona(): string {
+  if (!assistantRolesAdmit(with_, assistants.find((a) => a.id === with_))) return ""
   const id = at ? resumeAs : persona
   return personaById(personasNow(onMachine?.id ?? null), id) ? id : ""
 }
@@ -353,7 +374,7 @@ function drawPersona(): void {
   // Every draw rebuilds the chips; the sideways scroll is kept across it, so a
   // press on a chip the person scrolled to does not throw the row back.
   const scrolled = row.scrollLeft
-  row.hidden = !catalog.length || (!at && resume && resumable())
+  row.hidden = !assistantRolesAdmit(with_, assistants.find((a) => a.id === with_)) || !catalog.length || (!at && resume && resumable())
   row.innerHTML = ""
   if (row.hidden) return
   const choose = (id: string) => {
@@ -450,6 +471,7 @@ function drawResume(): void {
       '<span class="label"></span>'
     ;(chip.querySelector(".label") as HTMLElement).textContent = T().webResumeWith
     chip.disabled = !!pressing || !!wait || !resumable()
+    if (!resumable()) chip.title = assistantStatus("resume")
     chip.setAttribute("aria-pressed", resume && resumable() ? "true" : "false")
     chip.onclick = () => {
       resume = !resume
@@ -503,7 +525,7 @@ function draw(): void {
   editProjects.setAttribute("aria-pressed", editingProjects ? "true" : "false")
   el("start-title").textContent = machineOnly ? "Clawdfather" : mode === "terminal" ? nextWord("terminalStartTitle") : T().webStart
   machineAction.hidden = !machineOnly
-  machineAction.disabled = !!pressing || !!wait || !with_ || !write
+  machineAction.disabled = !!pressing || !!wait || !admitted("start") || !write
   machineAction.querySelector(".label")!.textContent =
     pressing === MACHINE_PLACE ? T().webStarting : nextWord("machineSessionStart")
 
@@ -573,7 +595,7 @@ function draw(): void {
           // A terminal is a shell: it needs a folder, not an AI tool.
           : places?.length && assistants.length === 0 && mode !== "terminal"
             ? nextWord("firstSessionAgentMissing")
-          : "",
+          : mode !== "terminal" ? assistantStatus(resume ? "resume" : "start") : "",
   )
 
   box.hidden = terminalAccess.state !== "ready" && mode === "terminal" || !(places && places.length > MANY)
@@ -589,7 +611,7 @@ function draw(): void {
     row.type = "button"
     row.className = "place"
     row.dataset.id = p.id
-    row.disabled = !!pressing || !!wait || editingProjects || (mode !== "terminal" && !with_)
+    row.disabled = !!pressing || !!wait || editingProjects || (mode !== "terminal" && !admitted(resume && resumable() ? "resume" : "start"))
     if (pressing === p.id) row.dataset.busy = "1"
     row.innerHTML = '<canvas></canvas><span class="name"></span><span class="where"></span>'
 
@@ -669,7 +691,7 @@ function drawPast(list: HTMLElement, box: HTMLInputElement): void {
     row.className = "place past"
     row.dataset.session = r.id
     const open = r.live ? L.bySessionId(r.id) : null
-    row.disabled = !!pressing || !!wait || (!!r.live && !open)
+    row.disabled = !!pressing || !!wait || (!!r.live && !open) || (!r.live && !admitted("resume"))
     if (pressing === r.id) row.dataset.busy = "1"
     row.innerHTML = '<span class="name"></span><span class="where"></span>'
 
@@ -697,7 +719,7 @@ function drawPast(list: HTMLElement, box: HTMLInputElement): void {
     const li = document.createElement("li")
     const button = document.createElement("button")
     button.type = "button"
-    button.className = "place"
+    button.className = "start-past-more"
     button.disabled = reading || !!pressing || !!wait
     button.textContent = reading ? T().webLoading : pastFailed ? nextWord("usageRetry") : nextWord("startPastMore")
     button.onclick = () => readPast(pastCursor)
@@ -727,7 +749,7 @@ function load(background = false): void {
       places = (d && d.places) || []
       assistants = (d && d.assistants) || []
       if (!with_ || !assistants.some((a) => a.id === with_)) {
-        with_ = assistants.length ? assistants[0].id : null
+        with_ = assistants.find(a => assistantAdmits(a, "start"))?.id || assistants[0]?.id || null
       }
     })
     .catch((e: Failure) => {
@@ -761,7 +783,7 @@ function enter(place: Place): void {
 }
 
 function readPast(cursor: string): void {
-  if (!at || reading) return
+  if (!at || reading || !admitted("resume")) return
   const place = at
   const assistant = with_
   const generation = ++pastGeneration
@@ -842,6 +864,7 @@ function press(id: string): void {
     enter(place)
     return
   }
+  if (!admitted("start")) { said(assistantStatus("start")); return }
   pressing = id
   agentSignInRequired = false
   said("")
@@ -888,6 +911,7 @@ function pick(sessionID: string): void {
     host.open(open.id)
     return
   }
+  if (!admitted("resume")) { said(assistantStatus("resume")); return }
 
   const place = at
   pressing = sessionID
@@ -987,10 +1011,11 @@ function hideBand(): void {
 function openMode(machine: boolean, requested: StartMode = "session", on: { id: string; name: string } | null = null): void {
   onMachine = on
   const active = document.activeElement
-  opener = machine ? el("counts") : active instanceof HTMLElement && active !== document.body ? active : el("start-go")
+  opener = machine ? el("machine-dashboard-open") : active instanceof HTMLElement && active !== document.body ? active : el("start-go")
   machineOnly = machine
   mode = machine ? "session" : requested
   editingProjects = false
+  resume = false
   el("start-title").textContent = machine ? "Clawdfather" : T().webStart
   el("start").hidden = false
   said("")

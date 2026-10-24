@@ -181,7 +181,7 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
             : !readFailure && <span id="session-todos-count">{L.strings.webLoading}</span>}
           {readReady && readFailure && <ReadFailure state={todoHeaderState(summary !== null, true)} reason={readFailure.reason}
             retrying={reading} onRetry={() => { void refresh(true) }} needsUpdate={!!readFailure.update} />}
-          {attention.head}
+          <span className="session-todos-attention">{attention.head}</span>
         </summary>
         <div className="session-todos-body" inert={!open}>
           {row.sessionId && <SessionUsage conversation={row.sessionId} />}

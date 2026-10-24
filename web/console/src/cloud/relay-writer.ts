@@ -117,7 +117,7 @@ export interface CloudWriteClient extends CloudReadClient {
   infoSummary(identity: CloudIdentity): Promise<unknown>
   infoForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
   skillsForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
-  imageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, id: string, signal?: AbortSignal): Promise<unknown>
+  imageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, id: string, signal?: AbortSignal, size?: "thumb"): Promise<unknown>
   readForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string },
     word: string, fields: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
   skills?(identity: CloudIdentity): Promise<unknown>
@@ -198,7 +198,7 @@ export interface CloudWriteClient extends CloudReadClient {
   updateSnippet?(id: string, snippet: unknown, identity: CloudIdentity): Promise<unknown>
   deleteSnippet?(id: string, identity: CloudIdentity): Promise<unknown>
   orderSnippets?(scope: string, project: string, order: string[], identity: CloudIdentity): Promise<unknown>
-  image?(identity: CloudIdentity, id: string): Promise<{ id: string; media_type: string; bytes: Uint8Array }>
+  image?(identity: CloudIdentity, id: string, size?: "thumb"): Promise<{ id: string; media_type: string; bytes: Uint8Array }>
   /**
    * The copied client's one read, which `answer` itself calls for a machine that
    * has shown `cloud_status`. See `RelayWriter.answer` for why it is called
@@ -253,6 +253,7 @@ export type WriteRoute =
   | { op: "project-hide"; word: Carried<"project-hide"> }
   | { op: "project-add"; word: Carried<"project-add"> }
   | { op: "project-file-save"; word: Carried<"project-file-save">; project: string; file: string }
+  | { op: "project-antigravity-consent-change"; word: Carried<"project-antigravity-consent-change">; project: string }
   | { op: "project-unify-apply"; word: Carried<"project-unify-apply">; project: string }
   | { op: "project-mirror-apply"; word: Carried<"project-mirror-apply"> }
   | { op: "project-mirror-detach"; word: Carried<"project-mirror-detach"> }
@@ -286,12 +287,15 @@ export type WriteRoute =
   | { op: "usage-overview"; word: Carried<"usage.overview"> }
   | { op: "usage-work-samples"; word: Carried<"usage.work-samples"> }
   | { op: "capacity"; word: Carried<"capacity"> }
+  | { op: "provider-quotas"; word: Carried<"provider-quotas"> }
   | { op: "default-models"; word: Carried<"default-models"> }
   | { op: "default-models-update"; word: Carried<"default-models-update"> }
   | { op: "notification-rules"; word: Carried<"notification-rules"> }
   | { op: "notification-rules-update"; word: Carried<"notification-rules-update"> }
   | { op: "work-gate-settings"; word: Carried<"work-gate-settings"> }
+  | { op: "workflow-settings"; word: Carried<"workflow-settings"> }
   | { op: "work-gate-settings-update"; word: Carried<"work-gate-settings-update"> }
+  | { op: "workflow-settings-update"; word: Carried<"workflow-settings-update"> }
   | { op: "notification-settings"; word: Carried<"notification-settings"> }
   | { op: "notification-settings-update"; word: Carried<"notification-settings-update"> }
   | { op: "board-command"; word: Carried<"board-command"> }
@@ -439,6 +443,7 @@ const HTTP_STATUS: Readonly<Record<string, number>> = {
   // is for one that arrives without it, so a page that backs off on 429
   // (`pages/work/reference-images.ts`) still sees one.
   cloud_read_busy: 429,
+  viewer_read_only: 403,
   cloud_read_only: 403,
   cloud_read_needs_send_prompt: 403,
   cloud_commands_disabled: 403,
@@ -464,9 +469,11 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "usage-work-samples",
   "usage",
   "capacity",
+  "provider-quotas",
   "default-models",
   "notification-rules",
   "work-gate-settings",
+  "workflow-settings",
   "notification-settings",
   "restorable",
   "archived",
@@ -532,6 +539,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     // The capacity block on Settings: the register's rows and the dead
     // letters, machine-wide, on the machine's one reply channel.
+    if (head === "provider-quotas" && segments.length === 1) return { op: "provider-quotas", word: "provider-quotas" }
     if (head === "capacity" && segments.length === 1) return { op: "capacity", word: "capacity" }
     if (head === "settings" && a === "default-models" && segments.length === 2) {
       return { op: "default-models", word: "default-models" }
@@ -539,6 +547,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "notification-rules" && segments.length === 1) return { op: "notification-rules", word: "notification-rules" }
     if (head === "settings" && a === "work-gates" && segments.length === 2) {
       return { op: "work-gate-settings", word: "work-gate-settings" }
+    }
+    if (head === "settings" && a === "workflow" && segments.length === 2) {
+      return { op: "workflow-settings", word: "workflow-settings" }
     }
     if (head === "settings" && a === "notifications" && segments.length === 2) {
       return { op: "notification-settings", word: "notification-settings" }
@@ -637,6 +648,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "projects" && a && b === "files" && c && segments.length === 4 && method === "PUT" && /^[0-9a-f]{32}$/.test(c)) {
     return { op: "project-file-save", word: "project-file-save", project: a, file: c }
   }
+  if (head === "projects" && a && b === "antigravity-consent" && segments.length === 3 && method === "POST") {
+    return { op: "project-antigravity-consent-change", word: "project-antigravity-consent-change", project: a }
+  }
   if (head === "projects" && a && b === "unify" && segments.length === 3 && method === "POST") {
     return { op: "project-unify-apply", word: "project-unify-apply", project: a }
   }
@@ -672,6 +686,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   }
   if (head === "settings" && a === "work-gates" && segments.length === 2) {
     return { op: "work-gate-settings-update", word: "work-gate-settings-update" }
+  }
+  if (head === "settings" && a === "workflow" && segments.length === 2) {
+    return { op: "workflow-settings-update", word: "workflow-settings-update" }
   }
   if (head === "settings" && a === "notifications" && segments.length === 2) {
     return { op: "notification-settings-update", word: "notification-settings-update" }
@@ -902,7 +919,9 @@ function spellingOf(route: WriteRoute): Spelling {
     case "notification-rules":
     case "notification-rules-update":
     case "work-gate-settings":
+    case "workflow-settings":
     case "work-gate-settings-update":
+    case "workflow-settings-update":
     case "notification-settings":
     case "notification-settings-update":
     case "squad-write":
@@ -911,6 +930,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "project-hide":
     case "project-add":
     case "project-file-save":
+    case "project-antigravity-consent-change":
     case "project-unify-apply":
     case "project-mirror-apply":
     case "project-mirror-detach":
@@ -1333,7 +1353,8 @@ export class RelayWriter {
         const exact = this.fleetTarget(session)
         if (exact) {
           if (!client.imageForGeneration) throw failure("cloud_not_carried", "Pinned Session images are unavailable.", 501)
-          const answer = await client.imageForGeneration(exact, route.artifact, init?.signal ?? undefined) as
+          const answer = await client.imageForGeneration(exact, route.artifact, init?.signal ?? undefined,
+            url.searchParams.get("size") === "thumb" ? "thumb" : undefined) as
             { id?: unknown; media_type?: unknown; byte_count?: unknown; data?: unknown } | null
           if (answer?.id !== route.artifact || typeof answer.media_type !== "string" ||
             typeof answer.data !== "string" || !Number.isSafeInteger(answer.byte_count) ||
@@ -1347,7 +1368,8 @@ export class RelayWriter {
         if (!session || typeof client.image !== "function") {
           throw failure("malformed_read", "a picture is read with the session it belongs to", 400)
         }
-        return client.image(await this.identity(client, session), route.artifact)
+        return client.image(await this.identity(client, session), route.artifact,
+          url.searchParams.get("size") === "thumb" ? "thumb" : undefined)
       }
       case "documents":
       case "document": {
@@ -1393,10 +1415,12 @@ export class RelayWriter {
         }
         return client._machineRequest(this.host.machine, route.word, { id: route.id }, "read")
       }
+      case "provider-quotas":
       case "capacity":
       case "default-models":
       case "notification-rules":
       case "work-gate-settings":
+      case "workflow-settings":
       case "notification-settings":
       case "machine-usage":
       case "update":
@@ -1731,7 +1755,8 @@ export class RelayWriter {
         }
         return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"))
       }
-      case "work-gate-settings-update": {
+      case "work-gate-settings-update":
+      case "workflow-settings-update": {
         for (const [key] of url.searchParams) {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
         }
@@ -1809,13 +1834,14 @@ export class RelayWriter {
         return client._machineRequestAs(request, place.machine, route.word,
           { project: place.id, file: route.file, item: await bodyOf(init) }, "action")
       }
+      case "project-antigravity-consent-change":
       case "project-unify-apply": {
         if (typeof client._place !== "function" || typeof client._machineRequestAs !== "function") throw failure("cloud_not_carried", route.word, 501)
-        if ([...url.searchParams].length) throw failure("cloud_not_carried", "Applying a unify plan takes no query fields.", 501)
+        if ([...url.searchParams].length) throw failure("cloud_not_carried", "Project settings changes take no query fields.", 501)
         const place = client._place(route.project)
         if (place.machine !== this.host.machine) throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
         const request = headerOf(init, "idempotency-key")
-        if (!request) throw failure("idempotency_key_required", "Applying a unify plan needs an Idempotency-Key.", 400)
+        if (!request) throw failure("idempotency_key_required", "Changing Project settings needs an Idempotency-Key.", 400)
         return client._machineRequestAs(request, place.machine, route.word, { project: place.id, item: await bodyOf(init) }, "action")
       }
       case "project-mirror-apply":

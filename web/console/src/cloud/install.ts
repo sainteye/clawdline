@@ -23,6 +23,13 @@ import type { RelayReader } from "./relay-reader.js"
 let activeReader: RelayReader | null = null
 let networkFetch: typeof globalThis.fetch | null = null
 let cloudConnectionRetry: (() => void) | null = null
+
+/** Keep a remediation's settings requests on the machine that refused the send. */
+export function captureMachineFetch(): { fetch: typeof fetch; current(): boolean } {
+  const reader = activeReader
+  const request = reader ? reader.fetch.bind(reader) : globalThis.fetch.bind(globalThis)
+  return { fetch: request, current: () => activeReader === reader }
+}
 /** Record a failed card without its message, attachment, session or request identifier. */
 export async function recordSendDiagnostic(code: string): Promise<void> {
   if (!activeReader) throw new Error("Diagnostic delivery is unavailable")
@@ -73,9 +80,10 @@ export function readThroughRelay(reader: RelayReader): void {
   }
   followFleetFrom(changingFleet)
   followFleetWriteAccess(() => activeReader?.mayWrite() === true)
-  carryPictures(async (artifact, session) => {
+  carryPictures(async (artifact, session, size) => {
     const res = await activeReader!.fetch(
-      "/v1/artifacts/images/" + encodeURIComponent(artifact.id) + "?session=" + encodeURIComponent(session),
+      "/v1/artifacts/images/" + encodeURIComponent(artifact.id) + "?session=" + encodeURIComponent(session) +
+        (size === "thumb" ? "&size=thumb" : ""),
     )
     if (!res.ok) {
       // The tile says the refusal in its own words, by its code

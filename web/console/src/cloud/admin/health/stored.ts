@@ -6,8 +6,12 @@
  * `no_presence_contract`, per-group states are only what `cloud-derive/1`
  * derived, `null` is unknown and never zero, and coverage gaps are kept as the
  * server listed them. Only listed fields are copied, so a field the server adds
- * later never reaches a screen or an export by accident. Nothing is imported at
- * run time, so node's strip-types tests load it as it is. */
+ * later never reaches a screen or an export by accident. Only the investigation
+ * adapter, which itself imports nothing, is imported at run time, so node's
+ * strip-types tests load it as it is. */
+import type { Investigations } from "./investigations.ts"
+// @ts-expect-error -- a `.ts` path, so node's strip-types tests can import this module.
+import { parseInvestigations } from "./investigations.ts"
 
 export const STORED_SCHEMA_VERSION = 1
 
@@ -301,6 +305,8 @@ export type IncidentDetailBody = Envelope & {
   incident: IncidentRow & { revisions: number[] }
   revision: { number: number; created_at: string; content_hash: string; bytes: number }
   bundle: Bundle
+  /** Agent investigations of this incident; `unsupported` when an older Cloud sent no field. */
+  investigations: Investigations
 }
 
 /* ---- readers ---------------------------------------------------------------- */
@@ -730,7 +736,7 @@ export function parseIncidentDetail(body: unknown): IncidentDetailBody {
   const bundle = parseBundle(o.bundle)
   if (bundle.manifest.incident_id !== row.id) return shape("$.bundle.manifest.incident_id")
   if (bundle.manifest.revision !== revision.number) return shape("$.bundle.manifest.revision")
-  return { ...env, incident: { ...row, revisions }, revision, bundle }
+  return { ...env, incident: { ...row, revisions }, revision, bundle, investigations: parseInvestigations(o.investigations) }
 }
 
 /* ---- what a service stage means (contract §10.3) --------------------------- */

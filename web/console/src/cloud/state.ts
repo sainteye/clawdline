@@ -45,11 +45,13 @@ export function retryReason(error: unknown, browserOnline: boolean): RetryReason
 }
 
 export interface AccessProblem {
+  trace?: string
   machine: string
   code: string
 }
 
 export interface AccessEvent {
+  realign?: boolean
   type: string
   machine?: string
   identity?: { machine?: string }
@@ -68,7 +70,7 @@ export interface ViewerEventLog {
 const ACCESS_PROBLEMS = new Set([
   "forbidden", "unauthorized", "revoked", "missing_capability", "capability_denied",
   "unknown_key", "unknown_sender", "extractable_key", "unreadable_envelope",
-  "machine_pairing_required",
+  "machine_pairing_required", "cloud_read_timeout", "offline", "socket_error", "cloud_read_unavailable",
 ])
 const SIGN_IN_CODES = new Set(["forbidden", "unauthorized", "revoked", "device_revoked", "session_expired"])
 const PAIR_CODES = new Set([
@@ -88,7 +90,7 @@ export function machineAccessProblem(
   viewerEvents?: ViewerEventLog,
   onlyListedMachine?: string | null,
 ): AccessProblem | null {
-  if (event.type !== "error") return null
+  if (event.realign || (event.type !== "error" && event.type !== "read")) return null
   const code = failureCode(event.error)
   if (!code || !ACCESS_PROBLEMS.has(code)) return null
   const error = object(event.error)
@@ -96,7 +98,9 @@ export function machineAccessProblem(
   const direct = string(detail?.machine) ?? string(event.machine) ?? string(event.identity?.machine)
   const recorded = direct ? null : recordedMachine(error, viewerEvents)
   const machine = direct ?? recorded ?? onlyListedMachine ?? null
-  return machine ? { machine, code } : null
+  const ref = object(error?.ref)
+  const trace = string(ref?.request) ?? (Number.isSafeInteger(ref?.seq) ? String(ref?.seq) : null)
+  return machine ? { machine, code, ...(trace ? {trace} : {}) } : null
 }
 
 function recordedMachine(error: Record<string, unknown> | null, log?: ViewerEventLog): string | null {
@@ -124,4 +128,21 @@ function object(value: unknown): Record<string, unknown> | null {
 
 function string(value: unknown): string | null {
   return typeof value === "string" && value ? value : null
+}
+
+/** Only a named pairing failure can offer pairing; timeouts cannot diagnose its cause. */
+export function readProblemOffersPairing(code: string): boolean {
+  return PAIR_CODES.has(code)
+}
+
+/** Retained publications and another machine answering cannot clear this machine's warning. */
+export function accessProblemAfterRead(held: AccessProblem | null, event: AccessEvent): AccessProblem | null {
+  const machine = event.machine ?? event.identity?.machine
+  if (!held || event.error || event.realign || machine !== held.machine) return held
+  if (event.type === "read") return null
+  // A live Session publication disproves a machine-wide refresh warning, but
+  // cannot prove that the machine still authorizes this viewer's requests.
+  const transient = held.code === "cloud_read_timeout" || held.code === "cloud_read_unavailable" ||
+    held.code === "offline" || held.code === "socket_error"
+  return transient && (event.type === "sessions" || event.type === "session_status") ? null : held
 }

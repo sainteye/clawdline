@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { pageFromHash, sessionsPageHash, sessionsTerminalMode, sessionsTerminalRoute, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
+import { pageAdmitted, pageFromHash, sessionsPageHash, sessionsTerminalMode, sessionsTerminalRoute, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
 
 const knows = (name: string): name is "sessions" | "devices" => name === "sessions" || name === "devices"
 
@@ -88,4 +88,16 @@ test("usage bookmarks open the overview when its module is available", () => {
   const withUsage = (name: string): name is "sessions" | "usage" => name === "sessions" || name === "usage"
   assert.equal(pageFromHash("#page=usage", withUsage), "usage")
   assert.equal(pageFromHash("#page=dashboard", withUsage), "sessions")
+})
+
+test("a typed reach-page address opens it only for an administrator", () => {
+  const built = (name: string) => ["sessions", "settings", "transparency"].includes(name)
+  const route = (operationsAccess: boolean, hash: string) => pageFromHash(hash,
+    (name: string): name is "sessions" | "settings" | "transparency" => pageAdmitted(name, { knows: built, peerAccess: false, operationsAccess }))
+  assert.equal(route(false, "#page=transparency"), "sessions")
+  assert.equal(route(true, "#page=transparency"), "transparency")
+  // Settings stays open to everybody; only the reach page moved behind the administrator section.
+  assert.equal(route(false, "#page=settings"), "settings")
+  // An administrator cannot open a page this console does not have.
+  assert.equal(pageAdmitted("transparency", { knows: () => false, peerAccess: false, operationsAccess: true }), false)
 })

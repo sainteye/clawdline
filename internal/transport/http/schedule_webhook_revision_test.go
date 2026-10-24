@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	cloudadapter "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 )
 
 // hookCloud is Cloud's activate rule and nothing else: a hook activates only
@@ -20,6 +22,8 @@ type hookCloud struct {
 	mu      sync.Mutex
 	hooks   map[string]*hookAtCloud
 	answers map[string][2]any
+	// purposes is each activation's binding_purpose, "" when it had none.
+	purposes []string
 }
 
 type hookAtCloud struct {
@@ -57,11 +61,13 @@ func (c *hookCloud) activate(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/schedule-webhooks/"), "/activate")
 	var in struct {
 		ExpectedRevision *int64 `json:"expected_revision"`
+		BindingPurpose   string `json:"binding_purpose"`
 	}
 	if json.NewDecoder(r.Body).Decode(&in) != nil || in.ExpectedRevision == nil {
 		refuse(400, "invalid_request")
 		return
 	}
+	c.purposes = append(c.purposes, in.BindingPurpose)
 	hook, ok := c.hooks[id]
 	switch {
 	case !ok:
@@ -159,4 +165,34 @@ func TestAMovedWebhookActivatesAtTheRevisionItIsAt(t *testing.T) {
 			t.Fatalf("Cloud's refusal was answered as %d/%q, want 404/not_found", answer.Status, answer.Code)
 		}
 	})
+}
+
+// TestStartingScheduleWebhooksWiresTheInvestigationActivation: the book HTTP
+// and the clock share gets both activations from the real client, and the
+// investigation one reaches Cloud with its purpose.
+func TestStartingScheduleWebhooksWiresTheInvestigationActivation(t *testing.T) {
+	s := cloudStandIn(t)
+	hooks, client := newHookCloud(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	identity := schedulewebhook.Identity{AccountID: "acct_test", MachineID: "mac_test"}
+	<-s.server.StartScheduleWebhooks(ctx, identity, client, "test")
+	book := s.server.scheduleBook()
+	if book.Activate == nil || book.ActivateInvestigation == nil {
+		t.Fatalf("the book was not wired: activate %v, investigation %v", book.Activate != nil, book.ActivateInvestigation != nil)
+	}
+	hook := "swh_" + strings.Repeat("w", 26)
+	hooks.hooks[hook] = &hookAtCloud{state: "pending_binding"}
+	if _, err := book.ActivateInvestigation(context.Background(), hook, "b1000009-0000-4000-8000-000000000009", 0); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(hooks.purposes) != "[health_investigation]" {
+		t.Fatalf("Cloud saw purposes %q", hooks.purposes)
+	}
+
+	// A Cloud without the method leaves no stale activation behind.
+	<-s.server.StartScheduleWebhooks(ctx, identity, struct{ schedulewebhook.Cloud }{client}, "test")
+	if book.ActivateInvestigation != nil {
+		t.Fatal("a client without the investigation activation kept the previous one")
+	}
 }

@@ -18,6 +18,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravity"
+	"github.com/sainteye/clawdline/internal/adapters/antigravitylaunch"
+	"github.com/sainteye/clawdline/internal/adapters/antigravityproject"
+	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
@@ -28,6 +32,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projectlinks"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	psync "github.com/sainteye/clawdline/internal/adapters/projectsync"
+	"github.com/sainteye/clawdline/internal/adapters/providerquota"
 	"github.com/sainteye/clawdline/internal/adapters/release/updater"
 	"github.com/sainteye/clawdline/internal/adapters/skillfile"
 	"github.com/sainteye/clawdline/internal/adapters/skillmenu"
@@ -50,7 +55,16 @@ import (
 )
 
 type Server struct {
-	cfg config.Config
+	antigravityProjectMu      sync.Mutex
+	antigravityProjectOwner   atomic.Pointer[antigravityproject.Manager]
+	antigravityPolicyInputs   atomic.Pointer[antigravityPolicyInputs]
+	antigravityRuntimeMu      sync.Mutex
+	antigravityRuntimeStarted bool
+	antigravityInstallation   func(context.Context) antigravity.Installation
+	antigravityBridge         atomic.Pointer[antigravity.Bridge]
+	antigravityLaunchStore    atomic.Pointer[antigravitylaunch.Store]
+	antigravityLaunchMu       sync.Mutex
+	cfg                       config.Config
 	// routeStats counts every API call by route and caller (route_stats.go).
 	routeStats      *routeStats
 	routeStatsOnce  sync.Once
@@ -83,6 +97,7 @@ type Server struct {
 	// replaceMachineItemReceipt is a test seam for a failed post-create
 	// receipt refinement. Nil uses the durable store implementation.
 	replaceMachineItemReceipt func(context.Context, store.ReceiptKey, store.ReceiptAnswer) error
+	antigravitySessions       atomic.Pointer[antigravitysession.Host]
 	terminals                 []ports.TerminalHost
 	// closes is the Sessions' own closes waiting for their turn to end
 	// (agent_close_schedule.go).
@@ -165,6 +180,9 @@ type Server struct {
 	// usage keeps the previous reading of this machine's CPU and memory, so
 	// the dashboard's shares are measured between two (machine_usage.go).
 	usageOnce sync.Once
+	// Quota metadata readers are shared by every paired browser on this daemon.
+	providerQuotaOnce    sync.Once
+	providerQuotaService *providerquota.Service
 	// update is the update check behind GET /v1/update (update.go), made on
 	// first use; StartScheduler starts its background refresh.
 	update     *updatecheck.Checker
@@ -246,11 +264,12 @@ func New(cfg config.Config) (*Server, error) {
 	icons.SetMirror(mirrorLookup(mirror))
 	home, _ := os.UserHomeDir()
 	agents := subagents.New(home)
+	hosts := terminal.Hosts()
 	srv := &Server{
 		store:          st,
 		secretHandoffs: app.NewSecretHandoffs(),
 		cfg:            cfg,
-		terminals:      terminal.Hosts(),
+		terminals:      hosts,
 		facts:          transcript.NewRecordFacts(),
 		icons:          icons,
 		pictures:       newPictures(cfg.Dir),
@@ -260,7 +279,7 @@ func New(cfg config.Config) (*Server, error) {
 		agents:         agents,
 		inventory: app.Inventory{
 			Process:   process.New(),
-			Terminals: terminal.Hosts(),
+			Terminals: hosts,
 			Identity:  transcript.NewHost(),
 			Agents:    agents,
 			Screen:    terminal.NewScreens(),
@@ -272,6 +291,17 @@ func New(cfg config.Config) (*Server, error) {
 			Activity: app.NewActivityReads(),
 		},
 	}
+	hosts = append(hosts, ownedAntigravityTerminal{srv})
+	srv.terminals = hosts
+	srv.inventory.Terminals = hosts
+	srv.inventory.SquadRole = srv.sessionSquadRole
+	// Inventory, actions and native identity share actual backend instances.
+	srv.wireAntigravity()
+	srv.inventory.DiscoverExternal = func() bool {
+		v, err := srv.settingsFile().Read()
+		// An unreadable preference must not broaden discovery.
+		return err == nil && v.SessionAutoDiscovery()
+	}
 	// Background agents live beside the Session's own record, so they are
 	// found through the same resolver as the conversation itself.
 	agents.Record = srv.recordPath
@@ -281,7 +311,7 @@ func New(cfg config.Config) (*Server, error) {
 	srv.nameSession = localPlanner.Name
 	srv.draftRole = localPlanner.DraftRole
 	// One producer in front of it, so three loops are one scan.
-	srv.readings = app.NewInventoryReading(srv.inventory.Read, 0)
+	srv.readings = app.NewInventoryReading(func(ctx context.Context) session.Inventory { return srv.inventory.Read(ctx) }, 0)
 	srv.readings.SetRetentionAge(CapacityLimit(capacity.CacheSessionInventory))
 	srv.readings.SetAnswerAge(CapacityLimit(capacity.CacheSourceAnswer))
 	inventoryBackoffMax := time.Duration(CapacityLimit(capacity.CacheSessionInventory)) * time.Second
@@ -307,7 +337,8 @@ func New(cfg config.Config) (*Server, error) {
 	if v, err := srv.settingsFile().Read(); err == nil {
 		applyITermScan(v)
 	} else {
-		log.Printf("settings: could not read iterm_scan, iTerm2 scanning stays on: %v", err)
+		terminal.SetITermIntegration(false)
+		log.Printf("settings: could not read iTerm2 consent; integration stays off: %v", err)
 	}
 	srv.restore = srv.newSessionRestore()
 	srv.archive = srv.newSessionArchive()
@@ -344,20 +375,9 @@ func New(cfg config.Config) (*Server, error) {
 	// not under a temporary one somebody else may empty.
 	srv.broker = newBroker(srv)
 	srv.screenBus = newScreenBus()
-	hosts := terminal.Hosts()
 	screenDir := filepath.Join(cfg.Dir, "screens")
 	srv.screens = app.NewScreens(hosts, terminal.NewPaneSignal(screenDir, terminal.NewTmux()),
 		srv.screenBus.publish)
-	// Panes piped by a previous run, taken back. Once, at start, and off the
-	// startup path: it is a subprocess, and a daemon that cannot reach tmux
-	// must still come up.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if taken := srv.screens.Reclaim(ctx); len(taken) > 0 {
-			log.Printf("live screens: took back %d pipe(s) from a previous run: %v", len(taken), taken)
-		}
-	}()
 	srv.projectSync = srv.newProjectSync(mirror)
 	return srv, nil
 }
@@ -482,6 +502,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/cloud/pairing/agent"}, s.cloudPairingAgentRoute},
 		{Route{"*", "/v1/cloud/pairing/agent/"}, s.cloudPairingAgentTaskRoute},
 		{Route{"*", "/v1/cloud/devices/revoke"}, s.cloudDeviceRoute},
+		{Route{"*", "/v1/cloud/devices/grant"}, s.cloudViewerScopeRoute},
 		{Route{"*", "/v1/cloud/keys/rotate"}, s.cloudRotateRoute},
 		{Route{"*", "/v1/sessions"}, s.sessions},
 		// Everything under a session id is about that session: its info, which is
@@ -620,6 +641,7 @@ func (s *Server) routeTable() []route {
 		// own notification, and the durable-report promotion this daemon does not
 		// keep (orchestrator.go).
 		{Route{"*", "/v1/orchestrator/assistants"}, s.brokerAssistants},
+		{Route{"*", "/v1/provider-quotas"}, s.providerQuotas},
 		{Route{"*", "/v1/orchestrator/landings"}, s.brokerLandings},
 		{Route{"*", "/v1/orchestrator/notify"}, s.brokerMachineNotify},
 		// The coordination plane (W5): the machine role, file waits, leases (the
@@ -654,6 +676,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/settings/notifications"}, s.notificationSettingsRoute},
 		{Route{"*", "/v1/settings/default-models"}, s.defaultModelsRoute},
 		{Route{"*", "/v1/settings/work-gates"}, s.workGateSettingsRoute},
+		{Route{"*", "/v1/settings/workflow"}, s.workflowSettingsRoute},
 		{Route{"*", "/v1/places"}, s.placesRoute},
 		{Route{"GET", "/v1/project-folders"}, s.projectFoldersRoute},
 		// The input bar's server list (devstacks.go): what the projects' own
@@ -857,6 +880,19 @@ func Listen(cfg config.Config) (net.Listener, error) {
 
 // Serve answers on a listener Listen bound.
 func (s *Server) Serve(ln net.Listener) error {
+	// Construction does not launch subprocesses. Serve owns and joins the
+	// bounded reclaim worker, including when the HTTP listener fails early.
+	if s.screens != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if taken := s.screens.Reclaim(ctx); len(taken) > 0 {
+				log.Printf("live screens: took back %d pipe(s) from a previous run: %v", len(taken), taken)
+			}
+		}()
+		defer func() { cancel(); <-done }()
+	}
 	addr := ln.Addr().String()
 	if s.cfg.Host != "127.0.0.1" && s.cfg.Host != "localhost" {
 		// Said out loud, once, in the log a person reads when something is

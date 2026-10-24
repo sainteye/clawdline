@@ -54,6 +54,16 @@ func (s *Server) authRoute(w http.ResponseWriter, r *http.Request) {
 		g.logout(w, r)
 	case r.Method == http.MethodGet && p == "/v1/auth/open":
 		openPage(w)
+	case post && strings.HasPrefix(p, "/v1/auth/pairings/") && strings.HasSuffix(p, "/permission"):
+		if !requireLocal(w, r) {
+			return
+		}
+		readOnly, ok := readPermission(w, r)
+		if !ok {
+			return
+		}
+		id := strings.TrimSuffix(strings.TrimPrefix(p, "/v1/auth/pairings/"), "/permission")
+		writeDeviceChange(w, g.auth.SetPairingPermission(decodeSegment(id), readOnly))
 	case r.Method == http.MethodGet && p == "/v1/auth/pairings":
 		g.pairings(w, r)
 	case p == "/v1/auth/devices" || strings.HasPrefix(p, "/v1/auth/devices/"):
@@ -329,6 +339,12 @@ func (g *gate) devicesRoute(w http.ResponseWriter, r *http.Request, rest string)
 			return
 		}
 		writeAuthJSON(w, contract.AuthOK{OK: true})
+	case post && len(parts) == 2 && parts[0] != "" && parts[1] == "permission":
+		readOnly, ok := readPermission(w, r)
+		if !ok {
+			return
+		}
+		writeDeviceChange(w, g.auth.SetPermission(parts[0], readOnly))
 	case post && len(parts) == 2 && parts[0] != "" && parts[1] == "revoke":
 		writeDeviceChange(w, g.auth.Revoke(parts[0]))
 	default:
@@ -360,7 +376,19 @@ func (g *gate) listDevices(w http.ResponseWriter) {
 // machine's token, because they are not the same thing — the local token may
 // administer, while a browser tab may read and send.
 func (g *gate) browserDevice(w http.ResponseWriter, r *http.Request) {
-	id, token, err := g.auth.AddDevice(browserName, auth.NewCaps(auth.Read, auth.Send), false)
+	body := readBody(r)
+	readOnly := false
+	if permission, exists := body["permission"]; exists {
+		switch permission {
+		case "read-only":
+			readOnly = true
+		case "read-and-operate":
+		default:
+			writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "Could not read that request")
+			return
+		}
+	}
+	id, token, err := g.auth.AddDeviceWithPermission(browserName, readOnly)
 	if err != nil {
 		writeStoreFailure(w, err)
 		return
@@ -439,4 +467,17 @@ func openPage(w http.ResponseWriter) {
 })();
 </script></body></html>
 `)
+}
+
+// readPermission accepts only the two explicit local choices.
+func readPermission(w http.ResponseWriter, r *http.Request) (bool, bool) {
+	permission, _ := stringField(readBody(r), "permission")
+	switch permission {
+	case "read-only":
+		return true, true
+	case "read-and-operate":
+		return false, true
+	}
+	writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "Could not read that request")
+	return false, false
 }

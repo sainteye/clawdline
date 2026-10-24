@@ -33,9 +33,13 @@ type recordingTerminal struct {
 	mu   sync.Mutex
 	ids  []string
 	fail map[string]bool
+	hold <-chan struct{}
 }
 
 func (r *recordingTerminal) Capture(_ context.Context, row session.Session) (string, bool) {
+	if r.hold != nil {
+		<-r.hold
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ids = append(r.ids, row.ID)
@@ -191,9 +195,15 @@ func TestUnreadScreenGetsASlotBeforeEarlierRowsRefresh(t *testing.T) {
 		t.Fatal("capture did not finish")
 	}
 	for round := 0; round < len(rows); round++ {
+		// Keep this round's one slot occupied until every row has asked.
+		// A fast fake may otherwise finish within the walk, so all first
+		// captures finish early and a later round legitimately refreshes.
+		release := make(chan struct{})
+		host.hold = release
 		for _, row := range rows {
 			h.Capture(context.Background(), row)
 		}
+		close(release)
 		settle()
 		now = now.Add(ScreenHeldOnDemand + time.Second)
 	}

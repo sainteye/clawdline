@@ -529,7 +529,7 @@
 .composer .menu .opt.go-submit { margin-top: 4px; font-weight: 600; }
 .composer .menu .opt.go-submit .n { color: var(--dim); }
 
-.composer .why { color: var(--faint); font-size: 11.5px; margin-top: 7px; }
+.composer .why { color: var(--dim); font-size: 11.5px; margin-top: 7px; }
 /* Nothing to explain, no row. The line under the box now only ever says why the box will not
    take what you type; when everything is working it says nothing, and a line that says nothing
    should not be costing a row of a phone screen to do it. */

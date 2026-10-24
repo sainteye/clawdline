@@ -65,6 +65,9 @@ func (i *ITerm) Name() string { return "iterm" }
 // holds nothing — an action is then refused rather than aimed at a terminal
 // nobody showed belongs to iTerm2.
 func (i *ITerm) HoldsTTY(ctx context.Context, tty string) bool {
+	if !ITermIntegration() {
+		return false
+	}
 	tty = strings.TrimPrefix(tty, "/dev/")
 	if tty == "" {
 		return false
@@ -353,11 +356,14 @@ func disabledITermInventory(now time.Time) session.Inventory {
 		Provenance: "iterm",
 		Complete:   false,
 		Disabled:   ITermScanDisabledBy,
-		Notes:      []string{"iTerm2 scanning is turned off (setting iterm_scan); iTerm2 tabs are not listed"},
+		Notes:      []string{"iTerm2 integration or scanning is turned off in Settings; iTerm2 tabs are not listed"},
 	}
 }
 
 func runITermList(ctx context.Context) ([]byte, error) {
+	if !ITermScan() {
+		return nil, ITermScanOff{Op: "list iTerm2 tabs"}
+	}
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript")
 	cmd.Stdin = strings.NewReader(itermList)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
@@ -503,6 +509,9 @@ var itermSendLimit = sendConfirm + 6*time.Second
 // on a current macOS, and iTerm2's own `write` does not bring the window
 // forward, which is the whole point.
 func (i *ITerm) Send(ctx context.Context, s session.Session, text string) error {
+	if s.Assistant == session.AssistantAntigravity {
+		return Unsent{Why: ErrAntigravityInputUnavailable.Error()}
+	}
 	if !itermMayAct(ctx) {
 		return ITermScanOff{Op: "type into that iTerm2 session"}
 	}
@@ -590,11 +599,18 @@ var appleEvents = make(chan struct{}, 1)
 // taken after the request expired used to launch an osascript already doomed
 // to be killed, adding another Apple Event to a jammed application.
 func effect(ctx context.Context) (func(), error) {
+	if !ITermIntegration() {
+		return nil, ITermScanOff{Op: "control iTerm2"}
+	}
 	if ctx.Err() != nil {
 		return nil, EffectBusy{Why: "iTerm2 was busy before this action began"}
 	}
 	select {
 	case appleEvents <- struct{}{}:
+		if !ITermIntegration() {
+			<-appleEvents
+			return nil, ITermScanOff{Op: "control iTerm2"}
+		}
 		if ctx.Err() != nil {
 			<-appleEvents
 			return nil, EffectBusy{Why: "iTerm2 was busy before this action began"}

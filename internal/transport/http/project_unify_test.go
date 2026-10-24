@@ -59,6 +59,9 @@ func TestProjectUnifyRoutePlansAndAppliesOnce(t *testing.T) {
 	if read.Code != 200 || json.Unmarshal(read.Body.Bytes(), &plan) != nil || plan.Status != "drifting" || len(plan.Actions) != 2 {
 		t.Fatalf("plan: %d %s", read.Code, read.Body.String())
 	}
+	if len(plan.Rules.Now.Antigravity) != 1 || plan.Rules.Now.Antigravity[0] != "AGENTS.md" || plan.NativeOnly == nil || len(plan.Skills) != 1 || plan.Skills[0].Now.Antigravity == nil || !*plan.Skills[0].Now.Antigravity {
+		t.Fatalf("Antigravity wire applicability: %s", read.Body.String())
+	}
 	if got, _ := os.ReadFile(filepath.Join(project.Path, "CLAUDE.md")); string(got) != "claude\n" {
 		t.Fatalf("reading the plan wrote CLAUDE.md: %q", got)
 	}

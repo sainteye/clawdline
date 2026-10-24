@@ -1,5 +1,6 @@
 .tx-older {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -16,3 +17,8 @@
   padding: 7px 12px;
 }
 .tx-older .go:disabled { opacity: .6; cursor: default; }
+
+/* Keep the loading surface mounted across raw-history pages. Hidden content
+   still lays out, so measuring the viewport never measures the placeholder. */
+.tx-history-wrap { position: relative; }
+.tx-history-loading { position: sticky; top: 0; height: 0; }

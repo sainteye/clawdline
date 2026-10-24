@@ -2,7 +2,16 @@ import { useEffect, useState } from "react"
 import type { PairedDevice } from "@clawdline/contract"
 import { failureSentence } from "../../legacy/bridge.js"
 import { nextWord } from "../../next-strings.js"
-import { readSignedIn, revokeDevice, signOutThisBrowser, type SignedIn } from "./signed-in.js"
+import {
+  devicePermission,
+  grantOutcome,
+  readSignedIn,
+  revokeDevice,
+  setDevicePermission,
+  signOutThisBrowser,
+  type Permission,
+  type SignedIn,
+} from "./signed-in.js"
 
 function when(unix: number): string {
   return new Date(unix * 1000).toLocaleString(document.documentElement.lang || undefined)
@@ -22,6 +31,12 @@ function when(unix: number): string {
  *   the list at all (403), so the block says this browser is a device and
  *   offers only to sign it out, again after asking.
  *
+ * Each device row says what its `caps` grant — read only, or read and
+ * operate — and offers the other one. Only the list (this machine's own key)
+ * draws that choice; a browser signed in as a device never sees one. A change
+ * is shown only after the list has been read again, so a refused or unsaved
+ * grant never looks applied.
+ *
  * Nothing is drawn on the console Clawdline Cloud serves: the browsers there
  * are the Cloud's, and `clawdline cloud devices` is their list.
  */
@@ -30,6 +45,7 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
   const [asking, setAsking] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [said, setSaid] = useState("")
+  const [granting, setGranting] = useState<string | null>(null)
 
   const reload = () => readSignedIn().then(setState)
 
@@ -59,6 +75,35 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  const permissionWord = (permission: Permission) =>
+    nextWord(permission === "read-only" ? "signedInPermissionReadOnly" : "signedInPermissionOperate")
+
+  const grant = async (device: PairedDevice, permission: Permission) => {
+    setGranting(device.id)
+    setSaid(nextWord("signedInPermissionSaving", { name: device.name }))
+    try {
+      await setDevicePermission(device.id, permission)
+    } catch (error) {
+      setSaid(nextWord("signedInPermissionFailed", { name: device.name, why: failureSentence(error) }))
+      // The row keeps showing what the machine holds, read again, not what was asked for.
+      setState(await readSignedIn())
+      setGranting(null)
+      return
+    }
+    const next = await readSignedIn()
+    setState(next)
+    const outcome = grantOutcome(next, device.id, permission)
+    if (outcome.kind === "saved") {
+      setSaid(nextWord("signedInPermissionSaved", { name: device.name, permission: permissionWord(permission) }))
+    } else if (outcome.kind === "unread") {
+      setSaid(nextWord("signedInPermissionUnread", { name: device.name, why: outcome.why }))
+    } else {
+      const now = outcome.now === "unknown" ? outcome.caps.join(", ") || "—" : permissionWord(outcome.now)
+      setSaid(nextWord("signedInPermissionMismatch", { name: device.name, permission: now }))
+    }
+    setGranting(null)
   }
 
   const signOut = async () => {
@@ -104,15 +149,27 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
         <div className="devices-rows">
           <p className="device-help signed-in-self">{nextWord("signedInThisWindow")}</p>
           {state.list.devices.length === 0 && <p className="devices-empty">{nextWord("signedInNone")}</p>}
-          <p className="device-help">{nextWord("terminalDefaultLocalHelp")}</p>
-          {state.list.devices.map((device) => (
+          {state.list.devices.length > 0 && (
+            <>
+              <p className="device-help">{nextWord("signedInPermissionHelp")}</p>
+              <p className="device-help">{nextWord("signedInRevokeLimits")}</p>
+            </>
+          )}
+          {state.list.devices.map((device) => {
+            const permission = devicePermission(device.caps)
+            const group = "signed-in-grant-" + device.id
+            return (
             <article className="device-card" key={device.id} data-device={device.id}>
               <div className="device-card-heading">
                 <h3>{device.name}</h3>
                 <code>{device.id}</code>
               </div>
               <div className="device-facts">
-                <span data-tone="warn">{nextWord("signedInCapsSendTerminal")}</span>
+                <span data-tone={permission === "read-only" ? undefined : "warn"} data-permission={permission}>
+                  {permission === "unknown"
+                    ? nextWord("signedInPermissionUnknown", { caps: (device.caps ?? []).join(", ") || "—" })
+                    : permissionWord(permission)}
+                </span>
                 <span>{nextWord("signedInSince", { time: when(device.created) })}</span>
                 <span>
                   {device.last_seen
@@ -120,6 +177,22 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
                     : nextWord("signedInNeverSeen")}
                 </span>
               </div>
+              <fieldset className="signed-in-grant" aria-busy={granting === device.id}>
+                <legend>{nextWord("signedInPermissionLegend", { name: device.name })}</legend>
+                {(["read-only", "read-and-operate"] as const).map((choice) => (
+                  <label key={choice}>
+                    <input
+                      type="radio"
+                      name={group}
+                      value={choice}
+                      checked={permission === choice}
+                      disabled={busy || granting !== null}
+                      onChange={() => grant(device, choice)}
+                    />
+                    {permissionWord(choice)}
+                  </label>
+                ))}
+              </fieldset>
               {asking === device.id ? (
                 <div className="signed-in-ask" role="group">
                   <p className="device-help">{nextWord("signedInRevokeAsk", { name: device.name, id: device.id })}</p>
@@ -146,7 +219,8 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
                 </button>
               )}
             </article>
-          ))}
+            )
+          })}
           {state.list.password && <p className="device-help">{nextWord("signedInPassword")}</p>}
         </div>
       )}

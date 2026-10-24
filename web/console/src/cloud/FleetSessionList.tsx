@@ -1,3 +1,8 @@
+import { SessionStateEmpty } from "../session/SessionStateEmpty.js"
+import { createPortal } from "react-dom"
+import { SessionStateFilterControl } from "../session/SessionStateFilter.js"
+import { stateFilterCounts } from "../session/state-filter.js"
+import { totalSessionWords } from "../session-reading.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { useEffect, useRef, useState } from "react"
 import { nextWord } from "../next-strings.js"
@@ -6,6 +11,7 @@ import * as L from "../legacy/bridge.js"
 import { ProjectedRow } from "../session/List.js"
 import { onAttentionRead } from "../session/attention-changed.js"
 import { Swipes, sessionSwipeActions } from "../session/swipe.js"
+import { usePullToRefresh } from "../session/use-pull-to-refresh.js"
 import { useSwipeToEnd } from "../session/use-swipe.js"
 import type { OrderHold } from "../session/order.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
@@ -49,6 +55,8 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   onArchiveRequest: (target: SessionDestination, title: string) => void
 }) {
   const [readings, setReadings] = useState<Record<string, Reading>>({})
+  const [filterSlot, setFilterSlot] = useState<HTMLElement | null>(null)
+  useEffect(() => { setFilterSlot(document.getElementById("session-state-filter-slot")) }, [])
   useEffect(() => {
     for (const machine of machines) {
       const reading = readings[machine.id]
@@ -62,6 +70,13 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const [manualRefresh, setManualRefresh] = useState(0)
   const [refreshFeedback, setRefreshFeedback] = useState<"idle" | "loading" | "done" | "failed">("idle")
   const refreshStartedAt = useRef(0)
+  const refreshCompletion = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null)
+  useEffect(() => {
+    if (refreshFeedback === "loading") return
+    refreshCompletion.current?.resolve()
+    refreshCompletion.current = null
+  }, [refreshFeedback])
+  useEffect(() => () => { refreshCompletion.current?.resolve() }, [])
   const previousTarget = useRef(target)
   useEffect(() => {
     if (!target || !source?.refreshSessionStatus) return
@@ -88,11 +103,15 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     if (titleRevision) refreshList()
   }, [titleRevision])
   const refreshFromButton = () => {
-    if (refreshFeedback === "loading") return
+    if (refreshCompletion.current) return refreshCompletion.current.promise
     if (!source) { setRefreshFeedback("failed"); return }
+    let resolve!: () => void
+    const promise = new Promise<void>((done) => { resolve = done })
+    refreshCompletion.current = { promise, resolve }
     refreshStartedAt.current = Date.now()
     setRefreshFeedback("loading")
     refreshList()
+    return promise
   }
   useEffect(() => {
     if (refreshFeedback !== "done" && refreshFeedback !== "failed") return
@@ -112,6 +131,8 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const listScroll = useRef<HTMLDivElement | null>(null)
   const swipe = useRef(new Swipes()).current
   const swiped = useSwipeToEnd(listScroll, swipe)
+  const pullPad = useRef<HTMLDivElement | null>(null)
+  const pullWord = usePullToRefresh(listScroll, pullPad, refreshFromButton, swipe)
   const orderHolds = useRef(new Map<string, OrderHold>())
   const [, redrawOrder] = useState(0)
 
@@ -286,6 +307,17 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     }
   }, [source, passesKey, presentationRevision, onPresentations])
 
+  const filterRows = machines.flatMap((machine) => {
+    const reading = readings[machine.id]
+    return reading?.phase === "settled" ? reading.value.rows ?? [] : []
+  })
+  const filterIncomplete = machines.some((machine) => {
+    const reading = readings[machine.id]
+    return !reading || reading.phase !== "settled" || reading.value.kind !== "ready"
+  })
+  const filterCounts = stateFilterCounts(filterRows, (row, value) => matchesFleetFilter(row, value,
+    displayedPresentationStatus(row, presentations.current.get(destinationKey(row.destination)))))
+
   const search = filter.trim().toLocaleLowerCase()
   const groups = machines.map((machine) => {
     const reading = readings[machine.id]
@@ -374,24 +406,13 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     <div className="scroller list-scroll cloud-all-list-scroll" id="list-scroll" ref={listScroll}
       onMouseEnter={freezeOrder} onMouseLeave={thawOrder} onTouchStart={freezeOrder}
       onTouchEnd={() => window.setTimeout(() => { if (swipe.openId() === null) thawOrder() }, 1200)}>
-      <div className="cloud-all-status-filters" role="group" aria-label={nextWord("cloudAllState")}>
-        <button type="button" className="cloud-all-status-filter cloud-all-refresh" onClick={refreshFromButton}
-          data-state={refreshFeedback} disabled={refreshFeedback === "loading"} aria-busy={refreshFeedback === "loading"}
-          aria-label={refreshFeedback === "done" ? nextWord("cloudAllRefreshDone") : undefined}>
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            {refreshFeedback === "done" ? <path d="m5 12 4 4L19 6" /> :
-              <><path d="M19 12a7 7 0 1 1-2.05-4.95" /><path d="M19 4.5V9h-4.5" /></>}
-          </svg>
-          <span aria-live="polite">{nextWord(refreshFeedback === "loading" ? "cloudAllRefreshing" :
-            refreshFeedback === "failed" ? "cloudAllRefreshFailed" : "cloudAllRefresh")}</span>
-          <span className="sr-only" aria-live="polite">{refreshFeedback === "done" ? nextWord("cloudAllRefreshDone") : ""}</span>
-        </button>
-        <button type="button" className="cloud-all-status-filter" aria-pressed={statusFilter === "attention"}
-          onClick={() => setStatusFilter((value) => value === "attention" ? "all" : "attention")}>{nextWord("cloudAllAttention")}</button>
-        <button type="button" className="cloud-all-status-filter" aria-pressed={statusFilter === "working"}
-          onClick={() => setStatusFilter((value) => value === "working" ? "all" : "working")}>{nextWord("cloudAllStateWorking")}</button>
-        <button type="button" className="cloud-all-status-filter" aria-pressed={statusFilter === "idle"}
-          onClick={() => setStatusFilter((value) => value === "idle" ? "all" : "idle")}>{nextWord("cloudAllFilterIdle")}</button>
+      {filterSlot && createPortal(<SessionStateFilterControl value={statusFilter} onChange={setStatusFilter}
+        counts={filterCounts} incomplete={filterIncomplete} onRefresh={refreshFromButton} refreshState={refreshFeedback}
+        summary={filterIncomplete ? null : <span id="counts">{filterCounts.working
+          ? L.fillString(L.strings.webCountWorking, { n: filterCounts.working }) : totalSessionWords(filterCounts.all)}</span>} />, filterSlot)}
+      <div className="ptr" id="ptr" ref={pullPad}>
+        <span id="ptr-label">{pullWord === "release" ? L.strings.webPullRelease :
+          pullWord === "busy" ? L.strings.webPullBusy : L.strings.webPull}</span>
       </div>
       <div className="cloud-all-groups">
         {groups.map(({ machine, reading, rows, presentationFailed, presentationLoading }) => {
@@ -476,7 +497,9 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         </section>
         })}
       </div>
-      {groups.length === 0 && <p>{nextWord("cloudAllNoMatch")}</p>}
+      {groups.length === 0 && (statusFilter !== "all"
+        ? <SessionStateEmpty filter={statusFilter} incomplete={filterIncomplete} onReset={() => setStatusFilter("all")} />
+        : <p>{nextWord("cloudAllNoMatch")}</p>)}
       <ScheduleSection arrived={true} waitForFleet onOpen={openScheduled} canOpen={canOpenScheduled} />
     </div>
     {/* Which machine, asked once for an action that needs one. Starting asks

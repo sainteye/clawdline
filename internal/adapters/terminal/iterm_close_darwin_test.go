@@ -21,6 +21,7 @@ import (
 // a session it does not find past such a window is not seen, and only a
 // complete walk says gone.
 func TestTheITermFindSaysThereNotSeenOrGone(t *testing.T) {
+	enableITermForTest(t)
 	run := runInModel(t, itermFindScript, []string{"GUID-A"})
 	if run.Answer["found"] != true || run.Answer["tty"] != "/dev/ttys031" || len(run.Writes) != 0 {
 		t.Fatalf("find: %+v", run)
@@ -53,6 +54,7 @@ func TestTheITermFindSaysThereNotSeenOrGone(t *testing.T) {
 // there, or not seen, is Unconfirmed — never a failure to be retried and
 // never a success.
 func TestAnUnansweredCloseIsLookedForAndNotCountedUntilGone(t *testing.T) {
+	enableITermForTest(t)
 	asked := Failure{Attention: true, Message: "iTerm2 did not answer in time."}
 	script := func(seen ...sighting) (func(context.Context, string) sighting, *int) {
 		n := 0
@@ -154,6 +156,7 @@ func (f *fakeTab) said() string { return strings.Join(f.calls, ",") }
 // The child still running in its tab is ended first — it is the job iTerm2
 // would ask a person about — and the tab closed once the shell is in front.
 func TestAChildsJobIsEndedBeforeItsTabIsClosed(t *testing.T) {
+	enableITermForTest(t)
 	f := &fakeTab{seen: sightingThere, gone: true}
 	f.reading("claude", ended.Add(-30*time.Minute))
 	f.reading("", time.Time{})
@@ -167,6 +170,7 @@ func TestAChildsJobIsEndedBeforeItsTabIsClosed(t *testing.T) {
 
 // A shell at its prompt has nothing to end: the tab is closed as it is.
 func TestATabAtItsShellPromptIsClosedWithoutASignal(t *testing.T) {
+	enableITermForTest(t)
 	f := &fakeTab{seen: sightingThere}
 	f.reading("", time.Time{})
 	if err := f.ender().end(context.Background(), "GUID-A", ended); err != nil || f.said() != "find,processes,close" {
@@ -178,6 +182,7 @@ func TestATabAtItsShellPromptIsClosedWithoutASignal(t *testing.T) {
 // on in the tab — and is never signalled; neither is one whose start the
 // kernel would not give, nor any job when the task's end is not known.
 func TestAJobThatIsNotProvablyTheChildsKeepsItsTab(t *testing.T) {
+	enableITermForTest(t)
 	for name, c := range map[string]struct {
 		started time.Time
 		ended   time.Time
@@ -203,6 +208,7 @@ func TestAJobThatIsNotProvablyTheChildsKeepsItsTab(t *testing.T) {
 // A child that does not leave when asked keeps its tab: closing it then would
 // put iTerm2's question on the person's screen.
 func TestAChildThatDoesNotLeaveKeepsItsTab(t *testing.T) {
+	enableITermForTest(t)
 	f := &fakeTab{seen: sightingThere, gone: false}
 	f.reading("claude", ended.Add(-time.Hour))
 	err := f.ender().end(context.Background(), "GUID-A", ended)
@@ -214,6 +220,7 @@ func TestAChildThatDoesNotLeaveKeepsItsTab(t *testing.T) {
 // Something that comes to the front while the child leaves is not the child's
 // either, and the tab is left open.
 func TestAJobThatComesUpAsTheChildLeavesKeepsTheTab(t *testing.T) {
+	enableITermForTest(t)
 	f := &fakeTab{seen: sightingThere, gone: true}
 	f.reading("claude", ended.Add(-time.Hour))
 	f.reading("vim", ended.Add(time.Minute))
@@ -226,6 +233,7 @@ func TestAJobThatComesUpAsTheChildLeavesKeepsTheTab(t *testing.T) {
 // A session that is gone, or not seen, is Unsent: nothing on its tty is read,
 // signalled or closed.
 func TestASessionThatIsNotThereIsNotTouched(t *testing.T) {
+	enableITermForTest(t)
 	for _, seen := range []sighting{sightingGone, sightingUnknown} {
 		f := &fakeTab{seen: seen}
 		f.reading("claude", ended.Add(-time.Hour))
@@ -241,6 +249,7 @@ func TestASessionThatIsNotThereIsNotTouched(t *testing.T) {
 // tree, or login's child — is not; the assistant, a command, or a shell
 // started inside the shell is.
 func TestWhatIsInFrontOfATTYIsAJob(t *testing.T) {
+	enableITermForTest(t)
 	at := ended.Add(-time.Hour)
 	login := ttyProc{PID: 100, PPID: 1, PGID: 100, Comm: "login", Start: at}
 	zsh := ttyProc{PID: 101, PPID: 100, PGID: 101, Comm: "zsh", Start: at}

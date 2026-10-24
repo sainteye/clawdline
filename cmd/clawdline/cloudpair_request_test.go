@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/config"
+	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 func TestPairRequestUsesVerifiedInstalledDaemonWhenShellStateHasNoToken(t *testing.T) {
@@ -59,5 +61,42 @@ func TestPairRequestUsesVerifiedInstalledDaemonWhenShellStateHasNoToken(t *testi
 	}
 	if _, err := cloudPairRequestFor(http.MethodPost, "/v1/cloud/pairing", nil, stale, installed, selectedPort, port); err == nil {
 		t.Fatal("a reachable selected daemon must not silently select the installed daemon")
+	}
+}
+
+func TestCloudReadonlyPairingOutputNamesTheMachineGrantInBothLanguages(t *testing.T) {
+	previous := commandLanguage
+	t.Cleanup(func() { commandLanguage = previous })
+	for language, want := range map[string]string{"en": "operating this machine is disabled", "zh-Hant": "不能操作這台機器"} {
+		commandLanguage = language
+		out := captureCloudStream(t, &os.Stdout, func() {
+			printPairingState(cloudtransport.PairingState{Phase: cloudtransport.PairingPaired, Scope: "readonly", ViewerDeviceID: "synthetic-viewer"})
+		})
+		if !strings.Contains(out, want) || !strings.Contains(out, "synthetic-viewer") {
+			t.Fatalf("%s: %s", language, out)
+		}
+	}
+}
+
+func TestCloudPairScopeHelpSaysAnOmittedScopeKeepsTheDevicesOwn(t *testing.T) {
+	previous := commandLanguage
+	t.Cleanup(func() { commandLanguage = previous })
+	for language, want := range map[string][]string{
+		"en":      {"already paired keeps its scope", "never-paired browser gets operate"},
+		"zh-Hant": {"保留原權限", "從未配對的瀏覽器預設為 operate"},
+	} {
+		commandLanguage = language
+		fs, _, _, _ := cloudPairFlags()
+		var help bytes.Buffer
+		fs.SetOutput(&help)
+		fs.PrintDefaults()
+		for _, phrase := range want {
+			if !strings.Contains(help.String(), phrase) {
+				t.Fatalf("%s help lacks %q:\n%s", language, phrase, help.String())
+			}
+		}
+		if strings.Contains(help.String(), "compatibility") || strings.Contains(help.String(), "相容預設") {
+			t.Fatalf("%s help still promises a compatibility default:\n%s", language, help.String())
+		}
 	}
 }

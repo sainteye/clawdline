@@ -1,3 +1,4 @@
+import { fileAssistants } from "./project-files-api.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
 import { localizedLiteralMap } from "../../catalog.js"
 import { catalogFormat } from "../../catalog.js"
@@ -50,7 +51,7 @@ function FolderRows({ folder, selected, busy, choose }: {
       disabled={busy} onClick={() => choose(file)}>
       <ProjectTreeIcon kind="file" />
       <strong>{file.name}</strong><span>{file.location}</span>
-      <small>{STATUS[file.status]}{catalogWord("literal", "cfa37229f340")}</small>
+      <small>{fileAssistants(file)} · {STATUS[file.status]}{!file.editable && catalogWord("literal", "cfa37229f340")}</small>
     </button>)}
   </>
 }
@@ -78,8 +79,8 @@ function describe(error: unknown): string {
   return catalogWord("literal", "d928fb3f9c80")
 }
 
-function groupOf(file: ProjectFile): "codex" | "claude" | "skills" {
-  return file.kind === "skill" ? "skills" : file.assistant
+function groupOf(file: ProjectFile): "shared" | "codex" | "claude" | "antigravity" | "skills" {
+  return file.kind === "skill" ? "skills" : (file.assistants?.length ?? 0) > 1 ? "shared" : file.assistant
 }
 
 export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(state: EditState): void }) {
@@ -169,6 +170,7 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
   }
 
   const groups = useMemo(() => ([
+    { id: "shared", title: catalogWord("projectFiles", "sharedInstructions") }, { id: "antigravity", title: catalogWord("projectFiles", "antigravityInstructions") },
     { id: "codex", title: catalogWord("literal", "8669637f659c") }, { id: "claude", title: catalogWord("literal", "4a596dd065ba") }, { id: "skills", title: catalogWord("literal", "03f843cf3e55") },
   ] as const), [])
   const chosen = list?.files.find(f => f.id === selected)
@@ -199,6 +201,7 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
           {!selected && <p className="project-files-hint">{catalogWord("inline", "e0e91da1e831")}</p>}
           {chosen && <>
             <h4 ref={contentHeading} tabIndex={-1}>{chosen.name}</h4>
+            <p>{fileAssistants(chosen)} · {catalogWord("projectFiles", "applicability")}</p>
             <p className="project-files-location">{chosen.source === "global" ? catalogWord("literal", "23bf8eafeef3") : catalogWord("literal", "450e5d731947")} · <code>{chosen.location}</code></p>
             {chosen.source === "global" && <p>{catalogWord("inline", "bb3ee00241a5")}</p>}
             {chosen.status !== "ready" && <p role="status">{STATUS[chosen.status]}{fullStop()}{wordGap()}{chosen.status === "missing" ? catalogWord("literal", "ddc43085429e") : catalogWord("literal", "565085a5da03")}</p>}

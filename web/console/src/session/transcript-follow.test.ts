@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { appendedReadFrom, FOLLOW_FAST_MS, FOLLOW_LATER_MS, FOLLOW_MS, FOLLOW_WINDOW_MS, joinAppended, MERGED_ROWS_LIMIT, SAFETY_MS, BLIND_MS, transcriptPace } from "./transcript-follow.ts"
+import { appendedReadFrom, FOLLOW_FAST_MS, FOLLOW_LATER_MS, FOLLOW_MS, FOLLOW_WINDOW_MS, joinAppended, MERGED_ROWS_LIMIT, SAFETY_MS, BLIND_MS, transcriptPace, olderTranscriptPage, readOlderRecovering, nativeHistoryChanged, readableTranscriptHistory } from "./transcript-follow.ts"
 // @ts-expect-error -- a `.ts` path, for node.
 import { SharedTranscripts } from "./transcript-share.ts"
 
@@ -13,6 +13,53 @@ const page = (entries: string[], nextAfter?: number, signature = "1-1"): Transcr
   signature,
   entries: entries.map((text) => ({ role: "assistant", text })),
   ...(nextAfter === undefined ? {} : { nextAfter }),
+})
+
+test("older history keeps the exact cursor revision while the newest tail refreshes", () => {
+  const base = { ...page(["base"], 300, "agy1:old"), nextBefore: 200 }
+  const older = { ...page(["older"], 300, "agy1:old"), nextBefore: 100 }
+  const newest = { ...page(["newest"], 400, "agy1:new"), nextBefore: 350 }
+  assert.equal(olderTranscriptPage(newest, { base, pages: [older] }), older)
+  assert.equal(olderTranscriptPage(newest, { base, pages: [] }), base)
+  assert.equal(olderTranscriptPage(newest, null), newest)
+})
+
+test("a whole native reread invalidates uncertain older history without changing other providers", () => {
+  assert.equal(nativeHistoryChanged(page([], 100, "agy1:old"), page([], 200, "agy1:new")), true)
+  assert.equal(nativeHistoryChanged(page([], 100, "agy1:same"), page([], 100, "agy1:same")), false)
+  assert.equal(nativeHistoryChanged(page([], 100, "claude-old"), page([], 200, "claude-new")), false)
+  assert.equal(nativeHistoryChanged(null, page([], 200, "agy1:new")), false)
+})
+
+test("owned Gemini history survives streamed tail updates and restarts only on native replacement", () => {
+  const held = { ...page(["saved"], undefined, "acp2:g1:7"), evidence: "structured" as const, nextBefore: 80 }
+  assert.equal(readableTranscriptHistory(held), true)
+  assert.equal(readableTranscriptHistory({ ...held, signature: "acp:legacy:7" }), false)
+  assert.equal(readableTranscriptHistory({ ...held, evidence: "none" }), false)
+  assert.equal(readableTranscriptHistory(page([])), true)
+  assert.equal(nativeHistoryChanged(held, { ...held, signature: "acp2:g1:8" }), false)
+  assert.equal(nativeHistoryChanged(held, { ...held, signature: "acp2:g2:1" }), true)
+  assert.equal(appendedReadFrom(held, "poke", false), null, "mutable ACP rows are read as whole pages")
+})
+
+test("stale older history clears before one newest read and one retry, then exposes a second stale", async () => {
+  const held = { ...page(["old"], 300, "old"), nextBefore: 200 }
+  const fresh = { ...page(["new"], 400, "new"), nextBefore: 250 }
+  const events: string[] = []
+  await assert.rejects(readOlderRecovering(held, async (cursor, revision) => {
+    events.push(`older:${cursor}:${revision}`)
+    throw Object.assign(new Error("changed"), { code: "transcript_cursor_stale" })
+  }, async () => { events.push("newest"); return fresh }, (page) => events.push(`restart:${page?.signature ?? "clear"}`)),
+  { code: "transcript_cursor_stale" })
+  assert.deepEqual(events, ["older:200:old", "restart:clear", "newest", "restart:new", "older:250:new"])
+})
+
+test("an unanswered older read does not replace the held transcript or retry", async () => {
+  let restarted = false
+  const error = Object.assign(new Error("offline"), { code: "offline" })
+  await assert.rejects(readOlderRecovering({ ...page(["held"]), nextBefore: 100 }, async () => { throw error },
+    async () => { throw new Error("must not refresh") }, () => { restarted = true }), error)
+  assert.equal(restarted, false)
 })
 
 test("the pace: fast for 90 s after the newest send, then the safety read; the old pace for a row with no time", () => {

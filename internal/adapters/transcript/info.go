@@ -36,7 +36,7 @@ type Summary struct {
 
 // Facts is what an info read learns from the record itself.
 type Facts struct {
-	// Effort is the reasoning effort explicitly named by the newest turn context.
+	// Effort is the reasoning effort explicitly named by the newest parent turn.
 	Effort string
 	// Usage is absent when there is no honest total: a Claude transcript
 	// larger than the read limit, or a record with no counted turn at all.
@@ -70,6 +70,7 @@ type factsKey struct {
 	assistant string
 	size      int64
 	mod       int64
+	identity  string
 }
 
 const factsKept = 24
@@ -84,6 +85,16 @@ func (r *RecordFacts) Read(path, assistant string) (Facts, error) {
 		return Facts{}, recordError(err)
 	}
 	key := factsKey{path: path, assistant: assistant, size: st.Size(), mod: st.ModTime().UnixNano()}
+	if assistant == "antigravity" {
+		if !antigravityNativePath(path) {
+			return Facts{}, antigravityError("path_invalid")
+		}
+		key.identity = antigravityChangeIdentity(st)
+		if key.identity == "" {
+			info, err := ReadAntigravityInfo(path)
+			return Facts{Usage: info.Usage}, err
+		}
+	}
 	r.mu.Lock()
 	if hit, ok := r.held[key]; ok {
 		r.touch(key)
@@ -92,15 +103,23 @@ func (r *RecordFacts) Read(path, assistant string) (Facts, error) {
 	}
 	r.mu.Unlock()
 
-	data, complete, err := tailData(path, recordReadLimit)
-	if err != nil {
-		return Facts{}, recordError(err)
-	}
 	var facts Facts
-	if assistant == "codex" {
-		facts = codexFacts(data)
+	if assistant == "antigravity" {
+		info, err := ReadAntigravityInfo(path)
+		if err != nil {
+			return Facts{}, err
+		}
+		facts.Usage = info.Usage
 	} else {
-		facts = claudeFacts(data, complete)
+		data, complete, err := tailData(path, recordReadLimit)
+		if err != nil {
+			return Facts{}, recordError(err)
+		}
+		if assistant == "codex" {
+			facts = codexFacts(data)
+		} else {
+			facts = claudeFacts(data, complete)
+		}
 	}
 
 	r.mu.Lock()
@@ -175,7 +194,7 @@ func reversedLines(data []byte, fn func(line []byte) (stop bool)) {
 // Per-turn counters are not cumulative, so a partial sum would be a smaller
 // number labelled as the total.
 func claudeFacts(data []byte, complete bool) Facts {
-	out := Facts{Model: claudeStatedModel(data), Fill: claudeFill(data)}
+	out := Facts{Model: claudeStatedModel(data), Fill: claudeFill(data), Effort: claudeEffort(data)}
 	if complete {
 		out.Usage = claudeSummary(data)
 	}
@@ -183,6 +202,40 @@ func claudeFacts(data []byte, complete bool) Facts {
 		out.Model = out.Usage.Model
 	}
 	return out
+}
+
+// claudeEffort reads the newest real parent assistant turn. Older values and
+// subagent turns must not fill a missing setting in the current parent turn.
+func claudeEffort(data []byte) string {
+	effort := ""
+	reversedLines(data, func(line []byte) bool {
+		if !bytes.Contains(line, []byte(`"assistant"`)) {
+			return false
+		}
+		rec, ok := decodeObject(line)
+		if !ok {
+			return false
+		}
+		kind, _ := rec.str("type")
+		side, _ := rec.boolean("isSidechain")
+		if kind != "assistant" || side {
+			return false
+		}
+		message, ok := rec.object("message")
+		if !ok {
+			return false
+		}
+		model, _ := message.str("model")
+		if model == "" || strings.HasPrefix(model, "<") {
+			return false
+		}
+		effort, _ = rec.str("perTurnEffort")
+		if effort == "" {
+			effort, _ = rec.str("effort")
+		}
+		return true
+	})
+	return effort
 }
 
 // claudeSummary sums every assistant record's `message.usage`, as

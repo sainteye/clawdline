@@ -138,11 +138,11 @@ test("service stages keep each stage's own time, follow contract order, and a pe
   assert.equal(b.cell.role, "downstream")
 })
 
-test("one operation's stages stay per source in producer order, with the holes between them", () => {
+test("interleaved source sequences do not invent missing records in an operation trace", () => {
   const lanes = traceLanes([ev(5, 30, { correlation: "c" }), ev(2, 10, { correlation: "c" }), ev(3, 12, { correlation: "c" }), ev(1, 50, { source_id: "r", source: "relay", correlation: "c" })])
   assert.equal(lanes.length, 2)
   const daemon = lanes.find((l: { key: string }) => l.key.startsWith("s1"))!
-  assert.deepEqual(daemon.steps.map((s: { kind: string; seq?: number; from?: number; to?: number }) => s.kind === "gap" ? `gap ${s.from}-${s.to}` : s.seq), [2, 3, "gap 4-4", 5])
+  assert.deepEqual(daemon.steps.map((s: { kind: string; seq?: number; from?: number; to?: number }) => s.kind === "gap" ? `gap ${s.from}-${s.to}` : s.seq), [2, 3, 5])
 })
 
 test("stale sources come first, and a local filter says how much of the page it kept", () => {

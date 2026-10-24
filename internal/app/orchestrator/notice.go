@@ -16,6 +16,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // Telling the root its child finished, and keeping at it until somebody says
@@ -581,7 +582,14 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 	if b.Choosing != nil && b.Choosing(ctx, target.ID) {
 		return b.holdNotice(ctx, r.ID, seen, at, holdChoosing)
 	}
-	state, screen := b.readComposer(ctx, target.ID, r.Root.Assistant)
+	native := nativeNoticeTarget(target)
+	if native && (target.Menu != nil || target.State != session.StateIdle) {
+		return b.holdNotice(ctx, r.ID, seen, at, noticeHold{"native_not_idle", productcopy.Format(b.Language, "notice.native_wait", nil)})
+	}
+	state, screen := ComposerEmpty, ""
+	if !native {
+		state, screen = b.readComposer(ctx, target.ID, r.Root.Assistant)
+	}
 	var prepare Prepare
 	composer := ""
 	switch state {
@@ -634,6 +642,15 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		// was typed: the draft is held for as it was before stash.go.
 		if errors.Is(err, errStashWithheld) {
 			return b.holdNotice(ctx, r.ID, seen, at, holdComposer)
+		}
+		if native && !nothingTyped(err) {
+			b.moveNotice(ctx, r.ID, seen, "task.completion.dead_letter", func(n *Notice) {
+				deadLetter(n, at)
+				n.Attempts++
+				n.LastAttemptAt = at
+				n.LastError = &NoticeError{Code: "native_delivery_uncertain", Message: productcopy.Format(b.Language, "notice.native_uncertain", nil), At: at}
+			})
+			return false
 		}
 		return b.spendAttempt(ctx, r.ID, seen, at, "transport_failed", err.Error())
 	}
@@ -867,6 +884,9 @@ func (b *Broker) retypeDeadLetters(ctx context.Context, now time.Time) {
 // retypeIfIdle types one dead letter at its root if that root reads idle now,
 // answering whether it was typed.
 func (b *Broker) retypeIfIdle(ctx context.Context, r Record, live []session.Session, now time.Time) bool {
+	if r.Notice != nil && r.Notice.LastError != nil && r.Notice.LastError.Code == "native_delivery_uncertain" {
+		return false
+	}
 	var target session.Session
 	found := 0
 	for _, s := range live {
@@ -882,8 +902,13 @@ func (b *Broker) retypeIfIdle(ctx context.Context, r Record, live []session.Sess
 	if b.Choosing != nil && b.Choosing(ctx, target.ID) {
 		return false
 	}
-	if state, _ := b.readComposer(ctx, target.ID, r.Root.Assistant); state != ComposerEmpty {
+	if target.Menu != nil {
 		return false
+	}
+	if !nativeNoticeTarget(target) {
+		if state, _ := b.readComposer(ctx, target.ID, r.Root.Assistant); state != ComposerEmpty {
+			return false
+		}
 	}
 	wire, err := b.completionWire(ctx, r)
 	if err != nil {
@@ -900,6 +925,9 @@ func (b *Broker) retypeIfIdle(ctx context.Context, r Record, live []session.Sess
 		n.LastAttemptAt = now
 		if typeErr != nil {
 			n.LastError = &NoticeError{Code: "transport_failed", Message: typeErr.Error(), At: now}
+			if nativeNoticeTarget(target) && !nothingTyped(typeErr) {
+				n.LastError = &NoticeError{Code: "native_delivery_uncertain", Message: productcopy.Format(b.Language, "notice.native_uncertain", nil), At: now}
+			}
 			return
 		}
 		n.Recipient = target.ID
@@ -1067,4 +1095,10 @@ func deadLetter(n *Notice, at time.Time) {
 		Message: "No root acknowledgement arrived within the bounded retry budget.",
 		At:      at,
 	}
+}
+
+// Native turns have no terminal composer. Their Host supplies delivery and read
+// receipts, and a possibly written prompt is never automatically replayed.
+func nativeNoticeTarget(row session.Session) bool {
+	return row.Backend == session.BackendOwned && row.Binding == session.BindingProtocol && row.Assistant == session.AssistantAntigravity
 }

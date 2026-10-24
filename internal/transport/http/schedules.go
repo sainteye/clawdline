@@ -107,11 +107,21 @@ func (s *Server) scheduleBook() *app.ScheduleBook {
 	return actual.(*app.ScheduleBook)
 }
 
+// investigationActivator is a Cloud client that can declare a hook's
+// investigation binding purpose when it activates it (cloud.ScheduleWebhookClient).
+type investigationActivator interface {
+	ActivateInvestigation(ctx context.Context, hookID, requestID string, expectedRevision int64) (int64, error)
+}
+
 // StartScheduleWebhooks attaches the Cloud activation method to the same book
 // used by HTTP and the clock, then starts the durable claim/receipt loop.
 func (s *Server) StartScheduleWebhooks(ctx context.Context, identity schedulewebhook.Identity, cloud schedulewebhook.Cloud, build string) <-chan struct{} {
 	book := s.scheduleBook()
 	book.Activate = cloud.Activate
+	book.ActivateInvestigation = nil
+	if investigation, ok := cloud.(investigationActivator); ok {
+		book.ActivateInvestigation = investigation.ActivateInvestigation
+	}
 	runtime := &app.ScheduleWebhookRuntime{
 		Cloud: cloud, Identity: identity, Store: s.store, Book: book, Build: build,
 		Log: func(format string, args ...any) { log.Printf(format, args...) },

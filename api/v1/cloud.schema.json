@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawdline.com/api/v1/cloud.schema.json",
+  "title": "Machine-local Cloud viewer grants",
+  "description": "Only the machine's local credential may select or change a viewer scope. Cloud-routed local credentials are refused. Scope changes do not rotate content keys.",
+  "$defs": {
+    "CloudViewerScope": {
+      "type": "string",
+      "enum": ["readonly", "operate"],
+      "description": "The machine-local operation ceiling; the machine commands switch and account identity checks remain independent requirements."
+    },
+    "CloudViewerGrantRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device", "scope"],
+      "properties": {
+        "device": {"type": "string"},
+        "scope": {"$ref": "#/$defs/CloudViewerScope"}
+      }
+    },
+    "CloudViewerGrantResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device", "scope"],
+      "properties": {
+        "device": {"type": "string"},
+        "scope": {"$ref": "#/$defs/CloudViewerScope"}
+      }
+    },
+    "CloudPairingRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {"$ref": "#/$defs/CloudViewerScope", "description": "Omitted preserves the legacy operate default."}
+      }
+    },
+    "CloudPairingOfferRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offer"],
+      "properties": {
+        "offer": {"type": "string"},
+        "scope": {"$ref": "#/$defs/CloudViewerScope", "description": "Selected by the machine, never by the browser's encrypted offer."}
+      }
+    }
+  }
+}

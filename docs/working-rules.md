@@ -93,7 +93,17 @@ The Windows vet was red on exactly that from the day it could have been run unti
 a check that is always red is one nobody runs. A test that needs a Unix facility asks for it through
 a per-platform file (`gone_unix_test.go` beside `gone_other_test.go`), not through `syscall` inline.
 
-## Why every build runs through heavy
+## Native compilation uses the compile slot
+
+Only application builds and native compilation (for example Go build/install, Swift build,
+Objective-C/C compilation and Xcode builds) queue through `tools/heavy.sh` (`clawdline heavy`).
+Python, ordinary tests (including Go/Swift tests), frontend bundles, type checks and checks run
+directly, regardless of expected CPU usage. The CLI recognizes executable arguments, not shell
+text. Mark an opaque native build script with `tools/heavy.sh --compile <command>`; do not mark
+an entire test/check script. Unknown commands run directly without a memory wait or callback.
+`--no-slot` remains an explicit request for a memory-only wait.
+
+The previous broad build/test policy came from this incident:
 
 `tools/heavy.sh` (`clawdline heavy`) waits for the machine's one compile slot and available memory,
 runs the command at a lower priority, and gives the slot back. On 2026-09-26 several sessions built
@@ -102,10 +112,10 @@ Code killed a landing's checks twice for low memory. The wrapper still runs when
 missing and says so. If `--max-wait` (default 30m) passes before it gets the slot and memory, it
 does not run the command and exits 75; run it again later. It prints one line when waiting starts
 and one when waiting ends, so use one long wait rather than repeated short polls. Wrap the whole
-script once; a nested `heavy` runs directly.
-`heavy --handoff` gives a queued wait to a callback and exits 76 with its id; `tools/check.sh`
-enables it by default for roots. End that turn and wait for the notice. Children and failed
-handoffs keep the in-turn wait.
+native build script once; a nested `heavy` runs directly.
+`heavy --handoff` gives a queued native build to a callback and exits 76 with its id. End that
+turn and wait for the notice. Ordinary check scripts do not queue. Children and failed handoffs
+keep the in-turn wait. On Linux, ordinary commands also bypass the native build cache lock.
 
 When a build or check uses a private cache created by this Session (for example an explicitly set
 `GOCACHE` in its own scratch directory), remove that exact cache after the command and any child

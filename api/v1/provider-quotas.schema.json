@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "provider-quotas.schema.json",
+  "title": "Provider quotas",
+  "$defs": {
+    "ProviderQuotaWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "",
+      "required": [
+        "name",
+        "used_percent"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "used_percent": {
+          "type": "number"
+        },
+        "resets_at": {
+          "type": "integer"
+        }
+      }
+    },
+    "ProviderQuotaRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An account quota observation. Empty windows means unknown, never zero. Credentials and account identifiers are never included. A provider with no windows is omitted from the footer.",
+      "required": [
+        "id",
+        "label",
+        "windows",
+        "stale",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex",
+            "gemini",
+            "grok"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "windows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderQuotaWindow"
+          }
+        },
+        "observed_at": {
+          "type": "integer"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "problem": {
+          "type": "string"
+        }
+      }
+    },
+    "ProviderQuotaSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GET /v1/provider-quotas. Current machine only; file observations for Claude and Codex, cached metadata reads for Gemini and Grok. Network refreshes are asynchronous and single-flight per provider; failures retain the last successful snapshot marked stale.",
+      "required": [
+        "at",
+        "providers",
+        "updating"
+      ],
+      "properties": {
+        "at": {
+          "type": "integer"
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderQuotaRow"
+          }
+        },
+        "updating": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

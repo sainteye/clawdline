@@ -118,6 +118,17 @@ What replaces it keeps Clawdline reading transcripts and writing none:
 clawdline image send /absolute/path/to/screenshot.png
 ```
 
+Put all flags before the first image path, including `--target`, `--from` and `--port`:
+
+```sh
+clawdline image send --port 7727 /absolute/path/to/screenshot.png
+```
+
+The CLI treats every argument after the first image path as another image path.
+A trailing `--port 7727` therefore adds two nonexistent files to the batch and causes
+`400 invalid_image_path`, even when the actual pictures are readable. The batch is refused
+before any pictures are stored.
+
 It is `POST /v1/artifacts/images` with `{"images": [{"path": …}], "terminal": "<terminal id>"}`,
 the terminal being the caller's own Session. The store keeps each picture with the conversation record of
 that Session and the start of the first row written after it (`artifacts.Shown`); the transcript

@@ -53,3 +53,28 @@ web/console/public/catalogs/zh-Hant.json	settings.webCloudManagedElsewhere = "Cl
 # browser and system a new viewer device is named by.
 web/console/src/cloud/device-limit.test.ts	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 web/console/src/cloud/device-limit.test.ts	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+
+# The setup guide's step for the macOS app's own Cloud tab. The console draws
+# that step only where /v1/diagnostics says darwin or the app's bridge is
+# present (web/console/src/setup/SetupGuide.tsx `hasApp`), so the app it names
+# really runs on this machine; elsewhere setup is the browser and phone only.
+web/console/public/catalogs/en.json	next.setupAppPair = "Pair the Mac app"
+web/console/public/catalogs/en.json	next.setupAppDone = "The Mac app is connected to Cloud"
+web/console/public/catalogs/en.json	next.setupAppElsewhere = "To pair the Mac app, open this guide there: Help → Setup Guide…"
+web/console/public/catalogs/zh-Hant.json	next.setupAppPair = "配對 Mac App"
+web/console/public/catalogs/zh-Hant.json	next.setupAppDone = "Mac App 已連上 Cloud"
+web/console/public/catalogs/zh-Hant.json	next.setupAppElsewhere = "要配對 Mac App，請在 Mac App 裡打開這個精靈：說明 → 設定精靈…"
+web/console/src/next-strings.ts	"Pair the Mac app"
+web/console/src/next-strings.ts	"The Mac app is connected to Cloud"
+web/console/src/next-strings.ts	"To pair the Mac app, open this guide there: Help → Setup Guide…"
+web/console/src/next-strings.ts	"配對 Mac App"
+web/console/src/next-strings.ts	"Mac App 已連上 Cloud"
+web/console/src/next-strings.ts	"要配對 Mac App，請在 Mac App 裡打開這個精靈：說明 → 設定精靈…"
+web/console/public/catalogs/en.json	next.setupItemApp = "Mac app"
+web/console/public/catalogs/zh-Hant.json	next.setupItemApp = "Mac App"
+web/console/src/next-strings.ts	"Mac app"
+web/console/src/next-strings.ts	"Mac App"
+
+# What the macOS app's Cloud tab sends as its user agent, in the test that
+# holds the device name it registers to it.
+web/console/src/cloud/device-limit.test.ts	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) ClawdlineApp/1"

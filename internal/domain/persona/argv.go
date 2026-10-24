@@ -4,11 +4,11 @@ import "regexp"
 
 // How a persona is carried on a command line, and read back from one.
 //
-// The process table is the record. A session's persona is not stored
-// anywhere else: while the process runs, its argv says which persona it was
-// launched with, so a badge drawn from it cannot outlive or contradict the
-// session it is drawn on (a person retyping `claude` in the same terminal
-// gets a row without one).
+// For legacy launches, the process table is the record: argv says which
+// built-in persona was selected. Squad launches instead carry an immutable
+// launch ID, resolved against the recorded terminal and snapshot by the
+// inventory. Retyping `claude` in the same terminal carries neither marker
+// and cannot inherit the previous process's badge.
 
 // Marker opens the Codex pointer, and is what reads it back.
 const Marker = "clawdline-persona:"

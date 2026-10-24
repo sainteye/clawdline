@@ -193,3 +193,44 @@ func TestSquadLaunchPrepareIsAtomicAndBounded(t *testing.T) {
 		t.Fatalf("partial prepare persisted: %d snapshots, %d launches", snapshots, launches)
 	}
 }
+
+func TestSquadRoleFollowsTheLiveLaunchAndTerminal(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	launch, err := s.PrepareSquadLaunch(ctx, json.RawMessage(`{"definition_id":"personal.persona.editor","scope_id":"project-test"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordSquadTerminal(ctx, launch.ID, "%1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, launch, terminal, want string }{
+		{"before conversation binding", launch.ID, "%1", "personal.persona.editor"},
+		{"another terminal", launch.ID, "%2", ""},
+		{"new process in same terminal", "", "%1", ""},
+		{"unknown launch", "unknown", "%1", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := s.SquadRoleForLaunch(ctx, tc.launch, tc.terminal)
+			if err != nil || got != tc.want {
+				t.Fatalf("role=%q err=%v; want %q", got, err, tc.want)
+			}
+		})
+	}
+	if err := s.BindSquadConversation(ctx, launch.ID, "conversation"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.SquadRoleForLaunch(ctx, launch.ID, "%1"); err != nil || got != "personal.persona.editor" {
+		t.Fatalf("bound launch role=%q err=%v", got, err)
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE squad_snapshots SET document=? WHERE id=?`, []byte(`{"definition_id":"personal.persona.changed"}`), launch.SnapshotID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.SquadRoleForLaunch(ctx, launch.ID, "%1"); err == nil || got != "" {
+		t.Fatalf("corrupt snapshot role=%q err=%v", got, err)
+	}
+}

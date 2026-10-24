@@ -25,6 +25,7 @@ struct ShellCopy {
     var menuClose: String { word("menuClose") }
     var menuHome: String { word("menuHome") }
     var menuHelpDocumentation: String { word("menuHelpDocumentation") }
+    var menuHelpSetup: String { word("menuHelpSetup") }
     func menuAbout(_ app: String) -> String { word("menuAbout", [app]) }
     var menuServices: String { word("menuServices") }
     func menuHide(_ app: String) -> String { word("menuHide", [app]) }
@@ -36,6 +37,28 @@ struct ShellCopy {
     var menuMascot: String { word("menuMascot") }
     var menuLogin: String { word("menuLogin") }
     var menuEditConfig: String { word("menuEditConfig") }
+    var menuEdit: String { word("menuEdit") }
+    var menuUndo: String { word("menuUndo") }
+    var menuCut: String { word("menuCut") }
+    var menuCopy: String { word("menuCopy") }
+    var menuPaste: String { word("menuPaste") }
+    var menuSelectAll: String { word("menuSelectAll") }
+    var pairInvitationAsks: String { word("pairInvitationAsks") }
+    var pairInvitationBody: String { word("pairInvitationBody") }
+    var pairLinkDone: String { word("pairLinkDone") }
+    var pairLinkReturn: String { word("pairLinkReturn") }
+    var pairLinkFailed: String { word("pairLinkFailed") }
+    var pairLinkRetry: String { word("pairLinkRetry") }
+    func cloudConnectAsks(_ machine: String) -> String { word("cloudConnectAsks", [machine]) }
+    var cloudConnectBody: String { word("cloudConnectBody") }
+    var cloudConnectStart: String { word("cloudConnectStart") }
+    func pairMachineFingerprint(_ fingerprint: String) -> String { word("pairMachineFingerprint", [fingerprint]) }
+    func pairBrowserFingerprint(_ fingerprint: String) -> String { word("pairBrowserFingerprint", [fingerprint]) }
+    var pairWrongMachine: String { word("pairWrongMachine") }
+    var pairNeedsCloud: String { word("pairNeedsCloud") }
+    var pairCodeExpired: String { word("pairCodeExpired") }
+    var pairWrongAccount: String { word("pairWrongAccount") }
+    var pairUnavailable: String { word("pairUnavailable") }
     var menuReload: String { word("menuReload") }
     var menuQuit: String { word("menuQuit") }
     var menuNoTarget: String { word("menuNoTarget") }
@@ -87,12 +110,32 @@ struct ShellCopy {
     var browserShowCloud: String { word("browserShowCloud") }
     var dialogOK: String { word("dialogOK") }
     var dialogCancel: String { word("dialogCancel") }
+    func pairLocalAsks(_ machine: String) -> String { word("pairLocalAsks", [machine]) }
+    var pairLocalBody: String { word("pairLocalBody") }
+    var pairLocalStart: String { word("pairLocalStart") }
     func pairAgentAsks(_ machine: String) -> String { word("pairAgentAsks", [machine]) }
     func pairAgentCommand(_ offer: String) -> String { word("pairAgentCommand", [offer]) }
     var pairAgentStart: String { word("pairAgentStart") }
     var pairingIgnore: String { word("pairingIgnore") }
     func pairingAsks(_ device: String) -> String { word("pairingAsks", [device]) }
     func pairingCode(_ code: String) -> String { word("pairingCode", [code]) }
+    var pairingChooseBody: String { word("pairingChooseBody") }
+    var pairingReadOnly: String { word("pairingReadOnly") }
+    var pairingReadAndOperate: String { word("pairingReadAndOperate") }
+    var pairingRetry: String { word("pairingRetry") }
+    func pairingSaved(_ permission: PairingPermission) -> String {
+        switch permission {
+        case .readOnly: return word("pairingSavedReadOnly")
+        case .readAndOperate: return word("pairingSavedReadAndOperate")
+        }
+    }
+    func pairingFailed(_ outcome: PairingPermissionOutcome) -> String {
+        switch outcome {
+        case .expired: return word("pairingFailedExpired")
+        case .refused(let status): return word("pairingFailedRefused", [String(status)])
+        case .unreachable, .saved: return word("pairingFailedUnreachable")
+        }
+    }
     var daemonUnavailableTitle: String { word("daemonUnavailableTitle") }
     func daemonUnavailableBody(_ address: String) -> String { word("daemonUnavailableBody", [address]) }
     var daemonUnavailableStart: String { word("daemonUnavailableStart") }

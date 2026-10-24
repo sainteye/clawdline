@@ -3,6 +3,9 @@ package orchestrator
 import (
 	"context"
 	"net/http"
+	"os"
+
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 )
 
 // A schedule's run is a task like any other (docs/design-decisions.md D07).
@@ -35,7 +38,9 @@ type ScheduledRun struct {
 	// Template is the schedule's `task` object as it is stored. It becomes
 	// the task.json the task is admitted from, with the three keys the broker
 	// owns — protocol, id and root — set over whatever the template says.
-	Template map[string]any
+	Template            map[string]any
+	Investigation       *schedulewebhook.InvestigationRef
+	InvestigationBundle []byte
 }
 
 // ScheduledDispatch is what DispatchScheduled answers.
@@ -63,23 +68,44 @@ func (b *Broker) DispatchScheduled(ctx context.Context, run ScheduledRun) (Sched
 		return ScheduledDispatch{Absent: true}, refuse(http.StatusUnprocessableEntity, "bad_task",
 			"A scheduled dispatch names the schedule it runs.")
 	}
+	if held, _, err := b.Record(ctx, run.TaskID); err == nil {
+		if held.ScheduleID != run.ScheduleID || !sameInvestigationOrigin(held.Investigation, run.Investigation) {
+			return ScheduledDispatch{}, refuse(409, "delivery_conflict", "The task belongs to another schedule.")
+		}
+		return ScheduledDispatch{Dispatched: Dispatched{Record: held, Replayed: true}}, nil
+	} else if !isNotFound(err) {
+		return ScheduledDispatch{}, err
+	}
 	brief := make(map[string]any, len(run.Template)+3)
 	for k, v := range run.Template {
 		brief[k] = v
+	}
+	if run.Investigation != nil {
+		if run.Template["kind"] != schedulewebhook.InvestigationKind || run.Investigation.Validate() != nil {
+			return ScheduledDispatch{Absent: true}, refuse(422, "schedule_invalid", "The schedule is not investigation-bound.")
+		}
+		path, err := b.Tasks.WriteInvestigationEvidence(run.TaskID, run.InvestigationBundle)
+		if err != nil {
+			return ScheduledDispatch{Absent: true}, refuse(500, "investigation_evidence_unavailable", "The investigation evidence could not be saved.")
+		}
+		instructions, _ := brief["instructions"].(string)
+		brief["instructions"] = instructions + schedulewebhook.InvestigationInstructions(run.TaskID, run.ScheduleID, path, *run.Investigation)
 	}
 	brief["clawdline_protocol"] = Protocol
 	brief["task_id"] = run.TaskID
 	brief["root"] = map[string]any{"session_id": nil, "label": run.Title}
 	if err := b.writeBriefOnce(run.TaskID, brief); err != nil {
-		// Nothing was admitted; the directory, if it was made, holds a brief
-		// no task will ever read.
-		return ScheduledDispatch{Absent: true}, refuse(http.StatusInternalServerError, "internal",
-			"Could not write the scheduled task file.")
+		// A capacity refusal or crash may leave the brief before admission.
+		// Only the identical bounded file can be retried under this task id.
+		if !os.IsExist(err) || !b.Tasks.MatchesScheduledBrief(run.TaskID, brief) {
+			return ScheduledDispatch{Absent: true}, refuse(http.StatusInternalServerError, "internal",
+				"Could not write the scheduled task file.")
+		}
 	}
 	out, err := b.Dispatch(ctx, DispatchRequest{
 		TaskID:   run.TaskID,
 		Secret:   NewSecret(),
-		Schedule: &ScheduleOrigin{ID: run.ScheduleID, Title: run.Title, CloseTab: run.CloseTab},
+		Schedule: &ScheduleOrigin{ID: run.ScheduleID, Title: run.Title, CloseTab: run.CloseTab, Investigation: run.Investigation},
 	})
 	if err == nil {
 		return ScheduledDispatch{Dispatched: out}, nil
@@ -95,5 +121,12 @@ func scheduleOf(r Record) *ScheduleOrigin {
 	if r.ScheduleID == "" {
 		return nil
 	}
-	return &ScheduleOrigin{ID: r.ScheduleID, Title: r.ScheduleTitle, CloseTab: r.ScheduleCloseTab}
+	return &ScheduleOrigin{ID: r.ScheduleID, Title: r.ScheduleTitle, CloseTab: r.ScheduleCloseTab, Investigation: r.Investigation}
+}
+
+func sameInvestigationOrigin(a, b *schedulewebhook.InvestigationRef) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }

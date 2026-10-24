@@ -22,3 +22,15 @@
 @media (prefers-reduced-motion: reduce) {
     .sheet #start-say.loading::before, .sheet .start-past-skeleton span { animation: none; }
 }
+
+/* Pagination is a secondary action, separate from conversation/project rows. */
+.sheet .start-past-more {
+    display: block; width: 100%; box-sizing: border-box;
+    margin: 8px 0 0; padding: 12px 16px; min-height: 44px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: transparent; color: var(--dim);
+    font: inherit; text-align: center; white-space: normal;
+    cursor: pointer;
+}
+.sheet .start-past-more:hover:not(:disabled) { background: var(--card-hi); }
+.sheet .start-past-more:disabled { opacity: .45; cursor: default; }

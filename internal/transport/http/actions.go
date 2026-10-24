@@ -14,9 +14,11 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/task"
+	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // sessionVerb reads `/v1/sessions/{id}/{verb}` off the string the mux
@@ -82,7 +84,23 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	requestContext := r.Context()
+	// Network requests always carry the gate. In-process callers may supply a
+	// trusted verdict directly and keep their existing application contract.
+	if accessOf(r).gate != nil && !cloud.ViaCloud(r.Context()) {
+		requestContext = app.WithOperationCheck(r.Context(), func() error {
+			a := accessOf(r)
+			if a.gate == nil || a.gate.auth == nil {
+				return app.Refusal{Code: "forbidden", Detail: "This device may read, and not send."}
+			}
+			d, ok := a.gate.auth.Holds(a.verdict.Device)
+			if !ok || !d.Caps.Has(auth.Send) {
+				return app.Refusal{Code: "forbidden", Detail: "This device may read, and not send."}
+			}
+			return nil
+		})
+	}
+	ctx, cancel := context.WithTimeout(requestContext, 15*time.Second)
 	defer cancel()
 
 	switch verb {
@@ -106,7 +124,7 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			// picture; the read of the machine before it keeps the ordinary bound.
 			if len(body.Images) > 0 {
 				var more context.CancelFunc
-				ctx, more = context.WithTimeout(r.Context(), 45*time.Second)
+				ctx, more = context.WithTimeout(requestContext, 45*time.Second)
 				defer more()
 			}
 			sent, err := s.actions().SendWithPictures(ctx, id, body.Text, body.Images)
@@ -482,7 +500,7 @@ func sessionWriteFiled(status int) bool {
 
 // actions builds the action surface for one request.
 func (s *Server) actions() app.Actions {
-	return app.Actions{Inventory: s.inventory, Reading: s.readings, Terminals: s.terminals, Store: s.store,
+	a := app.Actions{Inventory: s.inventory, Reading: s.readings, Terminals: s.terminals, Store: s.store,
 		Restore:   s.restore,
 		Archives:  s.archive,
 		Processes: terminal.ProcessCloser{},
@@ -490,6 +508,11 @@ func (s *Server) actions() app.Actions {
 		Owed: func(ctx context.Context) ([]task.Obligation, error) {
 			return s.owed(ctx, s.reading(ctx).Sessions)
 		}}
+	if bridge := s.antigravityBridge.Load(); bridge != nil {
+		a.Antigravity = bridge
+	}
+	a.AntigravityPolicy = s.checkAntigravityActionPolicy
+	return a
 }
 
 // closeActions is actions for a person's close: a forced one first takes the
@@ -608,6 +631,10 @@ func writeActionRefusal(w http.ResponseWriter, err error) {
 
 func actionStatus(code string) int {
 	switch code {
+	case "forbidden", "viewer_read_only", "cloud_commands_disabled", "unknown_sender":
+		return http.StatusForbidden
+	case "command_roster_unreadable", "command_clock_uncertain":
+		return http.StatusServiceUnavailable
 	case "session_not_found":
 		return http.StatusNotFound
 	case "session_unknown", "closeability_unknown", "close_inventory_unavailable":

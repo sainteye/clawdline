@@ -450,3 +450,35 @@ changed (`TestTheSchedulePermissionFieldRoundTrips`, `TestAnAgentMayNotSetOrChan
 Codex 的舊 run 不回補，只有新的 run 從讀數記下對話。
 
 `TestAFinishedRunIsResumedByItsChildsConversation`、`TestAChildConversationIsFoundByItsFirstLine`。
+
+## Incident investigation schedules
+
+A trigger-only schedule with `task.kind: "health_investigation"` can receive a
+frozen incident through its bound Cloud webhook. Permission remains the person's
+choice; ordinary hooks never become investigation workers automatically. See
+[Health investigations](health-investigations.md) for the binding, read-only
+evidence, bounded result format and restart behavior.
+
+
+## Antigravity model and effort preservation
+
+The website schedule form retains an explicit native model and effort when a stored
+schedule is reopened, saved or copied through its existing template path. The native
+model catalog is unknown: only the native default and an existing model are offered.
+The effort choices are `low`, `medium`, `high`, `xhigh` and `max`, with an empty value
+meaning native default. Unknown saved values remain visible; they are not silently
+replaced with another provider's choices. The backend still validates every save.
+
+Switching providers keeps separate form choices for each provider. Switching back
+restores that provider's draft. A backend save which changes provider does not inherit
+the previous provider's model or effort when the request omits those fields. Explicit
+empty strings clear them. A template with no provider identity is validated against
+the provider named by its create request.
+
+Antigravity schedule saving checks the selected machine's current inventory and the
+shared start-admission helper. Missing, stale, refused or unsupported readiness does
+not authorize a save. This client check never grants backend dispatch permission:
+the existing draft permission ceiling and native launch refusals still apply. Saving
+or choosing a model does not authorize paid calls or automatic paid fallback.
+
+The default model settings are documented in [Defaults for new sessions](default-models.md).

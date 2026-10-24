@@ -24,10 +24,13 @@
 // value can be copied, but it has no border, focus ring, action or editable
 // state that could promise navigation this shell does not offer.
 import AppKit
-import AuthenticationServices
 import CryptoKit
 import UniformTypeIdentifiers
 import WebKit
+
+/// What the Cloud tab adds to its user agent; `web/console/src/legacy/js/net/cloud-onboarding.js`
+/// looks for the same word.
+let cloudAppUserAgentToken = "ClawdlineApp/1"
 
 /// The Cloud console. `CLAWDLINE_NEXT_CLOUD` points the Cloud tab at something
 /// else, which is how a development build opens a test service.
@@ -418,11 +421,10 @@ func isCloud(_ url: URL) -> Bool {
 /// It goes wherever the Cloud page sends it over http or https, because signing
 /// in is a round trip through the Cloud API and GitHub. It never goes to the
 /// console's own address: the tab beside it is how somebody gets there.
-final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthenticationPresentationContextProviding {
+final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
     let view: WKWebView
 
     /// Signing in, while the person's browser has it (see `signInThroughBrowser`).
-    private var signIn: ASWebAuthenticationSession?
     /// The PKCE verifier for the sign-in in flight, and the API it was started
     /// at. Held here and nowhere else: the browser only ever sees its hash.
     private var pending: (verifier: String, api: URL, start: URL)?
@@ -432,9 +434,6 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthent
 
     /// The bar's cue: something about where this view is has changed.
     var onNavigation: (() -> Void)?
-
-    /// Pairs this view with this Mac when Cloud asks it to; see CloudPairing.swift.
-    private var selfPairing: CloudSelfPairing?
 
     /// A fixed identifier, so signing in to Cloud survives a relaunch, and an
     /// identifier *of its own*, so this is a different jar from the one the
@@ -453,12 +452,20 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthent
             // nuisance, a shared jar is a leak.
             config.websiteDataStore = .nonPersistent()
         }
-        // The one page-to-shell message this view answers: carrying a pairing
+        // The assistant hand-off is separate from direct local pairing. Carrying a pairing
         // offer to another machine through this Mac's assistant, after the
         // person says yes (CloudPairing.swift `CloudPairAgent`). On this
         // view's controller only; the console tab never has it.
         config.userContentController.addScriptMessageHandler(
             CloudPairAgent(), contentWorld: .page, name: CloudPairAgent.name)
+        config.userContentController.addScriptMessageHandler(
+            CloudPairLocal(), contentWorld: .page, name: CloudPairLocal.name)
+        // Cloud's page names the device it registers from the user agent
+        // (`cloudViewerDeviceMetadata`). This token is how it tells this
+        // tab from Safari on the same Mac, so the console's setup progress
+        // can say whether the app itself is paired. It names no version and
+        // carries no authority: it only labels a device the person pairs.
+        config.applicationNameForUserAgent = cloudAppUserAgentToken
         view = WKWebView(frame: .zero, configuration: config)
         super.init()
         view.navigationDelegate = self
@@ -489,7 +496,7 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthent
     }
 
     /// Sign in where the person's GitHub session and password manager already
-    /// are — their default browser, through `ASWebAuthenticationSession` — and
+    /// are — their default browser, through Launch Services — and
     /// bring only the result back into this view.
     ///
     /// This view shares no cookies with Safari or Chrome, and it cannot: that
@@ -519,20 +526,14 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthent
             signInHere(start)
             return
         }
-        signIn?.cancel()
         pending = (verifier, apiRoot, start)
-        let session = ASWebAuthenticationSession(url: asked, callbackURLScheme: "clawdline-next") { [weak self] url, error in
-            DispatchQueue.main.async { self?.signedIn(url, error: error) }
-        }
-        session.presentationContextProvider = self
-        // Not ephemeral: the whole point is the browser's own GitHub session.
-        session.prefersEphemeralWebBrowserSession = false
-        signIn = session
-        if session.start() {
+        // AuthenticationServices falls back to Safari when the default browser
+        // does not implement web authentication sessions. Open the normal URL
+        // instead; main.swift receives the existing PKCE-bound callback.
+        if NSWorkspace.shared.open(asked) {
             shellLog("cloud: signing in through the default browser")
         } else {
             shellLog("cloud: the system would not open a browser sign-in; signing in here instead")
-            signIn = nil
             pending = nil
             signInHere(start)
         }
@@ -540,19 +541,14 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthent
 
     /// The browser came back, or did not.
     func signedIn(_ callback: URL?, error: Error?) {
-        signIn = nil
         guard let pending else {
             shellLog("cloud: a sign-in answer arrived with none in flight; ignored")
             return
         }
         if let error {
             self.pending = nil
-            if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin {
-                shellLog("cloud: the browser sign-in was cancelled")
-            } else {
-                shellLog("cloud: the browser sign-in failed — \(error.localizedDescription); signing in here instead")
-                signInHere(pending.start)
-            }
+            shellLog("cloud: the browser sign-in failed — \(error.localizedDescription); signing in here instead")
+            signInHere(pending.start)
             return
         }
         guard let callback, callback.host == "cloud-signed-in",
@@ -577,10 +573,6 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthent
     private func signInHere(_ start: URL) {
         allowInView = start
         view.load(URLRequest(url: start))
-    }
-
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        view.window ?? NSApp.keyWindow ?? ASPresentationAnchor()
     }
 
     /// An address fit for the log: the hand-off's token and verifier are a
@@ -734,8 +726,6 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthent
         shellLog("cloud: loaded \(loggable(webView.url)) title=\(webView.title ?? "?")")
         onNavigation?()
         report(webView, attempt: 0)
-        if selfPairing == nil { selfPairing = CloudSelfPairing(view: webView) }
-        selfPairing?.look()
     }
 
     /// What Cloud drew, once it has drawn: the page is rendered by script, so

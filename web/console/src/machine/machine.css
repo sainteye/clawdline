@@ -1,12 +1,7 @@
-/* The machine dashboard (MachineDashboard.tsx), opened from the session counts. The sheet's
+/* The machine dashboard (MachineDashboard.tsx), opened from the wordmark. The sheet's
    furniture (`.overlay`, `.sheet`) is the other sheets'; this adds a wider card that scrolls
    inside itself, three gauges, the memory bar and the rows. Colours are the console's tokens;
    the session hues are the validated slots in model.ts. */
-
-.counts[role="button"] { cursor: pointer; border-radius: 6px; transition: background 120ms var(--ease), color 120ms var(--ease); }
-.counts[role="button"]:hover { color: var(--ink); }
-.counts[role="button"]:hover .quiet { color: var(--dim); }
-.counts[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .overlay.machine-overlay { align-items: flex-start; padding: 40px 16px 24px; }
 /* The card scrolls inside itself, so its title and close button stay put while the rows move. */

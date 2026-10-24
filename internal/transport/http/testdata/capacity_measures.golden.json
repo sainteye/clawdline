@@ -1,5 +1,126 @@
 [
   {
+    "Name": "antigravity.acp_call_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.acp_frame_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.acp_sessions",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.acp_view_bytes",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.ancestry_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.context_history",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.context_index_bytes",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.context_receipts",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.first_input_slots",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.history_connections",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.hook_config_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_connections",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_frame_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_payload_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_request_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.hook_timeout_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.launch_context_bytes",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.live_bindings",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.managed_launches",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.native_process_file_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.native_tty_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.observation_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.process_read_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.retention_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "antigravity.saved_launches",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.state_age_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "artifacts.drops",
     "Known": true,
     "Note": true,
@@ -68,6 +189,26 @@
   },
   {
     "Name": "cache.pinned_read",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cache.provider_quota",
+    "Known": true,
+    "WindowSeconds": true
+  },
+  {
+    "Name": "cache.provider_quota_refresh_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cache.provider_quota_request_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cache.provider_quota_response_bytes",
     "Known": true,
     "Note": true
   },
@@ -154,6 +295,11 @@
     "Note": true
   },
   {
+    "Name": "cloud.envelope_key_id",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cloud.header_read_diagnostic_rows",
     "Known": true,
     "Note": true
@@ -190,6 +336,26 @@
   },
   {
     "Name": "cloud.health_captures_per_minute",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.health_investigation_bundle_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.health_investigation_read_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.health_investigation_report_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.health_investigation_report_refs",
     "Known": true,
     "Note": true
   },
@@ -434,6 +600,11 @@
     "Note": true
   },
   {
+    "Name": "cloud.lane_refusals",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cloud.peer_body_bytes",
     "Known": true,
     "Note": true
@@ -473,6 +644,31 @@
   {
     "Name": "cloud.peer_pairs",
     "Known": true
+  },
+  {
+    "Name": "cloud.read_queue",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.rekey_body",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.rekey_interval",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.rekey_lifetime",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.rekey_pending",
+    "Known": true,
+    "Note": true
   },
   {
     "Name": "cloud.relay_queue",
@@ -735,6 +931,31 @@
     "Note": true
   },
   {
+    "Name": "cloud.viewer_rekey_cooldown",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.viewer_rekey_pending",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.assistant_facts_read_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.carrier_receive_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.carrier_receive_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.direct_history_hours",
     "Known": true,
     "Note": true
@@ -800,6 +1021,16 @@
     "Note": true
   },
   {
+    "Name": "console.health_ui_investigation_refs",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.health_ui_investigations",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.health_ui_page_rows",
     "Known": true,
     "Note": true
@@ -851,6 +1082,11 @@
   },
   {
     "Name": "console.machine_list_poll_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.native_pairing_save_seconds",
     "Known": true,
     "Note": true
   },
@@ -920,6 +1156,11 @@
     "Note": true
   },
   {
+    "Name": "console.transcript_fill_pages",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.transcript_follow_fast_seconds",
     "Known": true,
     "Note": true
@@ -936,6 +1177,11 @@
   },
   {
     "Name": "console.transcript_merged_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.transcript_revision_restarts",
     "Known": true,
     "Note": true
   },
@@ -1228,6 +1474,36 @@
     "Note": true
   },
   {
+    "Name": "places.antigravity_history_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_history_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_history_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_history_title_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_probe_output_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "places.antigravity_probe_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "places.git_config_bytes",
     "Known": true,
     "Note": true
@@ -1308,7 +1584,22 @@
     "Note": true
   },
   {
+    "Name": "projects.antigravity_consent_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.antigravity_consent_request_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "projects.folder_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.workspace_metadata_bytes",
     "Known": true,
     "Note": true
   },
@@ -1483,6 +1774,11 @@
   },
   {
     "Name": "run.created_items",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "schedule.history_page_rows",
     "Known": true,
     "Note": true
   },
@@ -1818,6 +2114,20 @@
     "Name": "sse.screen_pending",
     "Known": true,
     "Note": true
+  },
+  {
+    "Name": "store.antigravity_consent_identity_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "store.antigravity_consent_root_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "store.antigravity_project_consents",
+    "Known": true
   },
   {
     "Name": "store.db",

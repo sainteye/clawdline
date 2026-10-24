@@ -75,6 +75,30 @@ func (a Actions) Key(ctx context.Context, id, key, expect string) (session.Sessi
 	if err != nil {
 		return session.Session{}, err
 	}
+	if protocol, owned := h.(ports.ProtocolMenuHost); owned && protocol.OwnsProtocol(s) {
+		release, err := a.turn(ctx, s)
+		if err != nil {
+			return s, err
+		}
+		defer release()
+		if digit == 0 || expect == "" {
+			return s, antigravityMenuMoved()
+		}
+		err = protocol.SelectProtocol(ctx, s, digit, expect, func() error { return checkOperation(ctx) })
+		a.record(ctx, "session.key", s.ID, map[string]any{"key": key, "expect": expect, "selected": err == nil})
+		if err != nil {
+			var ref Refusal
+			if errors.As(err, &ref) {
+				return s, ref
+			}
+			var local interface{ BeforeWrite() bool }
+			if errors.As(err, &local) && local.BeforeWrite() {
+				return s, Refusal{Code: "menu_moved", Detail: antigravityMenuMoved().Detail, Cause: err}
+			}
+			return s, Refusal{Code: "terminal_io_failed", Detail: "The Antigravity key could not be confirmed. Refresh the Session before trying again.", Cause: err}
+		}
+		return s, nil
+	}
 	keys, ok := h.(ports.KeyHost)
 	if !ok {
 		return s, Refusal{Code: "backend_unsupported",
@@ -87,6 +111,9 @@ func (a Actions) Key(ctx context.Context, id, key, expect string) (session.Sessi
 		return s, err
 	}
 	defer release()
+	if s.Assistant == session.AssistantAntigravity {
+		return a.keyAntigravity(ctx, s, h, digit, expect)
+	}
 	p := presser{keys: keys, screen: a.Inventory.Screen, s: s, note: map[string]any{"key": key},
 		refill: func(ctx context.Context, m session.Menu) session.Menu { return a.Inventory.refillMenu(ctx, s, m) }}
 	// Read once, before any byte, and that reading is the one the answer is

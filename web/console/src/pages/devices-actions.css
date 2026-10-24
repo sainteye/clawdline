@@ -16,6 +16,13 @@
 .signed-in .signed-in-self { margin: 0 2px; }
 .signed-in .device-start + .device-start { margin-left: 8px; }
 .signed-in .signed-in-danger { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+/* The read only / read and operate choice on each directly paired device. */
+.signed-in .signed-in-grant { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 12px; padding: 0; border: 0; min-width: 0; }
+.signed-in .signed-in-grant legend { width: 100%; margin-bottom: 4px; padding: 0; color: var(--dim); font-size: 13px; overflow-wrap: anywhere; }
+.signed-in .signed-in-grant label { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; font-size: 14px; cursor: pointer; }
+.signed-in .signed-in-grant input { margin: 0; accent-color: var(--accent); }
+.signed-in .signed-in-grant input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.signed-in .signed-in-grant[aria-busy="true"] label { opacity: .6; }
 
 @media (max-width: 560px) {
   .signed-in .device-start { width: 100%; }

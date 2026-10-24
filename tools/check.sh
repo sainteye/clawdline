@@ -25,9 +25,8 @@
 # --quick runs explicitly named Go packages for development, never the gate.
 # See docs/checks.md.
 #
-# The whole script runs once inside tools/heavy.sh, which is what AGENTS.md
-# asks for: a `heavy` inside a `heavy` runs directly, so the steps below that
-# AGENTS.md writes with tools/heavy.sh share this one slot.
+# Ordinary check/test scripts do not reserve the native compile slot. Explicit
+# application/native builds must wrap only their build step with tools/heavy.sh.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
@@ -70,13 +69,6 @@ if [ "$plan_only" = yes ]; then
   args=(); [ "$full" = no ] && [ "$profile" = no ] || args+=(--full)
   [ "$web" = auto ] || args+=(--web)
   exec node tools/check-scope.mjs ${args[@]+"${args[@]}"}
-fi
-
-# heavy.sh without a daemon runs the command directly and sets nothing, so the
-# script marks its own second run rather than trusting CLAWDLINE_HEAVY alone.
-if [ -z "${CLAWDLINE_HEAVY:-}" ] && [ -z "${CLAWDLINE_CHECK_WRAPPED:-}" ]; then
-  export CLAWDLINE_CHECK_WRAPPED=1
-  HEAVY_REASON="${HEAVY_REASON:-tools/check.sh}" HEAVY_HANDOFF="${HEAVY_HANDOFF:-1}" exec tools/heavy.sh "$0" "$@"
 fi
 
 if [ "$quick" = yes ]; then
@@ -144,9 +136,9 @@ run_go_module() {
 if selected format; then check "gofmt -l internal cmd" gofmt_silent; fi
 if [ "$go_checks" = yes ]; then
   check "go vet ./..." go vet ./...
-  check "go build ./..." go build ./...
-  check "linux/amd64 build ./cmd/clawdline" env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
-  check "windows/amd64 build ./cmd/clawdline" env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
+  check "go build ./..." env HEAVY_HANDOFF=0 tools/heavy.sh go build ./...
+  check "linux/amd64 build ./cmd/clawdline" env HEAVY_HANDOFF=0 tools/heavy.sh env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
+  check "windows/amd64 build ./cmd/clawdline" env HEAVY_HANDOFF=0 tools/heavy.sh env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
   check "windows go vet ./..." env GOOS=windows go vet ./...
 else
   summary+=("SKIP  Go vet and cross-builds  (local scope; integration/CI runs them)")
@@ -199,8 +191,21 @@ check "heavy handoff capability" bash tools/test-heavy-handoff.sh
 if [ "$(uname -s)" = Darwin ]; then
   check "Swift staged app watcher" sh tools/test-staged-app-watcher.sh
   check "Swift native shell language" sh tools/test-shell-language.sh
+  check "Swift pairing permission before the code" sh tools/test-shell-pairing-permission.sh
 fi
 fi
+# The release evidence checks (docs/security/release-evidence.md) run in
+# every full check and whenever their scripts or the workflows that call them
+# change; nothing else exercises their failure cases before a release.
+release_evidence=$scope_full
+for path in ${private_paths[@]+"${private_paths[@]}"}; do
+  case "$path" in tools/release/*|tools/check.sh|.github/workflows/release.yml|.github/workflows/dmg.yml|.github/workflows/tmux.yml) release_evidence=true ;; esac
+done
+if [ "$release_evidence" = true ]; then check "release evidence (supply-chain.test.sh)" bash tools/release/supply-chain.test.sh
+if [ "$(uname -s)" = Darwin ]; then
+  check "DMG install harness (synthetic images)" bash tools/release/test-dmg-install-smoke.sh
+fi
+else summary+=("SKIP  release evidence  (tools/release and the release workflows unchanged; full checks run it)"); fi
 if [ "$web" = yes ]; then
   check "web: npm run check" sh -c 'cd web && npm run deps && npm run check'
   check "web: npm run build" sh -c 'cd web && npm run build'

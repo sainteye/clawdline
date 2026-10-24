@@ -47,7 +47,7 @@ const (
 	// MaxSegmentBytes bounds one channel segment and the sender.
 	MaxSegmentBytes = 128
 	// MaxKeyIDBytes bounds key_id.
-	MaxKeyIDBytes = 64
+	MaxKeyIDBytes = 128
 	// MaxCiphertextBytes is the largest ciphertext whose base64 frame still fits
 	// Cloudflare's 32 MiB WebSocket message: floor((32 MiB - 4 KiB) * 3/4).
 	// An account's own cap is separate and lower; do not read this as an

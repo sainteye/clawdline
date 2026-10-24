@@ -18,6 +18,7 @@ import (
 	"unicode"
 	"unicode/utf16"
 
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -99,6 +100,11 @@ func Finish(dir string) (Finished, error) {
 	var decoded Result
 	if err := json.Unmarshal(resultBody, &decoded); err != nil {
 		return Finished{}, InvalidResult{Reason: "result.json.tmp is not what the broker reads: " + err.Error()}
+	}
+	if len(decoded.InvestigationReport) != 0 {
+		if _, err := schedulewebhook.ParseInvestigationReport(decoded.InvestigationReport); err != nil {
+			return Finished{}, InvalidResult{Reason: "investigation_report is not a bounded typed report"}
+		}
 	}
 	id, _ := task["task_id"].(string)
 	secret, _ := result["task_secret"].(string)
@@ -203,6 +209,22 @@ func ValidateResult(task, result map[string]any) string {
 		return "task.json has no valid protocol identity"
 	}
 	var reasons []string
+	if value, present := result["investigation_report"]; present {
+		raw, err := json.Marshal(value)
+		report, parseErr := schedulewebhook.ParseInvestigationReport(raw)
+		if err != nil || parseErr != nil {
+			reasons = append(reasons, "investigation_report must use the bounded health investigation report schema")
+		}
+		binding, _ := task["investigation"].(map[string]any)
+		if report != nil && (binding == nil || binding["investigation_id"] != report.InvestigationID) {
+			reasons = append(reasons, "investigation_report must match this task's investigation")
+		}
+
+		if task["kind"] != schedulewebhook.InvestigationKind {
+			reasons = append(reasons, "investigation_report requires an investigation task")
+		}
+	}
+
 	if !isOne(result["clawdline_protocol"]) {
 		reasons = append(reasons, "clawdline_protocol must be 1")
 	}

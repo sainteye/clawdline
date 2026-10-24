@@ -40,10 +40,16 @@ func capacityServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { _ = w.Close(); daemonLogs.Delete(dir) })
 	SetDaemonLog(dir, w)
-	return &Server{cfg: config.Config{Dir: dir}, store: st, agents: subagents.New(t.TempDir()),
+	srv := &Server{cfg: config.Config{Dir: dir}, store: st, agents: subagents.New(t.TempDir()),
 		inventory: app.Inventory{Identity: transcript.NewHost()},
 		screenBus: newScreenBus(),
 		pictures:  pictures{store: artifacts.NewStore(dir), drops: artifacts.NewDrops(dir)}}
+	stop, err := srv.StartAntigravityLaunchStore(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	return srv
 }
 
 // The register guard's other half (limits §4.1): every registered row has a

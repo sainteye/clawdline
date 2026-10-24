@@ -1,3 +1,5 @@
+import { assistantStateCurrent, assistantProtocolOwned } from "./antigravity-ui.js"
+import { assistantFactsMachine, useAssistantFacts } from "./assistant-facts.js"
 import { catalogWord } from "../catalog.js"
 import type { Icon, ScanSource, SessionAgent, SessionRow, SessionShell, TaskRow } from "@clawdline/contract"
 import {
@@ -119,6 +121,8 @@ export function Detail({
   scanSources?: readonly ScanSource[]
 }) {
   const T = L.strings
+  const readiness = useAssistantFacts(assistantFactsMachine(row), row?.execution_generation, row?.source?.observed_at, row?.assistant === "antigravity" && !assistantProtocolOwned(row) && assistantStateCurrent(row))
+  const assistantFacts = readiness.assistants.find(facts => facts.id === row?.assistant)
   const [agentId, setAgentId] = useState<string | null>(null)
   const [savedComposerDraft, setSavedComposerDraft] = useState<{ target: InterventionTarget; text: string } | null>(null)
   const [suggestedDraft, setSuggestedDraft] = useState<{ target: InterventionTarget; text: string; id: number } | null>(null)
@@ -357,7 +361,7 @@ export function Detail({
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
-      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer draftHandoff={draftHandoff} row={row} onDid={onDid} onSent={onSent} onScreen={() => setScreenOpen(true)} restoredDraft={savedComposerDraft} suggestedDraft={suggestedDraft} />}
+      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer assistantReadiness={readiness.kind} assistantFacts={assistantFacts} draftHandoff={draftHandoff} row={row} onDid={onDid} onSent={onSent} onScreen={() => setScreenOpen(true)} restoredDraft={savedComposerDraft} suggestedDraft={suggestedDraft} />}
       {selectedAgent || !row ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens
@@ -516,6 +520,7 @@ function Tools({
   const T = L.strings
   const steward = !!row && !!(row.machine_scope || row.coordinator)
   const actions = richSessionSwipeActions(row)
+  const protocolOwned = assistantProtocolOwned(row)
   const [open, setOpen] = useState(false)
   const [more, setMore] = useState(false)
   const [openingTerminal, setOpeningTerminal] = useState(false)
@@ -717,7 +722,7 @@ function Tools({
         className="chip"
         id="tx-focus"
         type="button"
-        hidden={!atMac()}
+        hidden={!atMac() || protocolOwned}
         disabled={!row || ending}
         title={T.webShowOnMacTip}
         onClick={focusMac}
@@ -769,6 +774,7 @@ function Tools({
             >
               <button
                 id="session-interrupt"
+                hidden={protocolOwned}
                 type="button"
                 role="menuitem"
                 disabled={!row || ending}
@@ -781,6 +787,7 @@ function Tools({
               </button>
               <button
                 id="session-focus"
+                hidden={protocolOwned}
                 type="button"
                 role="menuitem"
                 disabled={!row || ending}
@@ -818,6 +825,7 @@ function Tools({
                   it sits in cannot be opened without a session. */}
               <button
                 id="session-screen"
+                hidden={protocolOwned}
                 type="button"
                 role="menuitem"
                 onClick={() => {

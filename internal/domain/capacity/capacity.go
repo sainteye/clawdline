@@ -116,6 +116,8 @@ const (
 	// horizon. It is a capacity in the literal sense: once filled, the held
 	// observation expires and the reader must say it does not know.
 	Seconds Unit = "seconds"
+	// Milliseconds retains subsecond deadlines without rounding the capacity.
+	Milliseconds Unit = "milliseconds"
 )
 
 // Channel is a way a full row reaches somebody.
@@ -173,6 +175,8 @@ const (
 	CacheSessionProjectKeys = "cache.session_project_keys"
 	BoardReceipts           = "board.receipts"
 	CloudRelayQueue         = "cloud.relay_queue"
+	CloudReadQueue          = "cloud.read_queue"
+	CloudLaneRefusals       = "cloud.lane_refusals"
 	StoreReceipts           = "store.receipts"
 	// How long the store keeps what nothing reads any more.
 	StoreDoneEffectRetention       = "store.done_effect_retention_seconds"
@@ -344,9 +348,12 @@ const (
 	// at once, and how many screens are held between them.
 	ScreensCaptureSlots = "screens.capture_slots"
 	// The store's read-only connections for reads made outside a write.
-	StoreReadConnections  = "store.read_connections"
-	CacheTerminalScreens  = "cache.terminal_screens"
-	CacheSessionInventory = "cache.session_inventory"
+	StoreReadConnections                 = "store.read_connections"
+	StoreAntigravityProjectConsents      = "store.antigravity_project_consents"
+	StoreAntigravityConsentRootBytes     = "store.antigravity_consent_root_bytes"
+	StoreAntigravityConsentIdentityBytes = "store.antigravity_consent_identity_bytes"
+	CacheTerminalScreens                 = "cache.terminal_screens"
+	CacheSessionInventory                = "cache.session_inventory"
 	// An iTerm2 that stops answering Apple Events writes its own diagnosis:
 	// the failures held for it, the files kept, how often one is written,
 	// and what each of its steps may take (docs/limits.md N64).
@@ -475,6 +482,7 @@ const (
 	// change to any of them is a change to this register.
 	ConsoleTranscriptSafetySeconds    = "console.transcript_safety_seconds"
 	ConsoleTranscriptFollowSeconds    = "console.transcript_follow_seconds"
+	ConsoleTranscriptFillPages        = "console.transcript_fill_pages"
 	ConsoleTranscriptMergedRows       = "console.transcript_merged_rows"
 	ConsoleTranscriptBackoffSeconds   = "console.transcript_backoff_seconds"
 	ConsoleRelayTranscriptExpectReask = "console.relay_transcript_expect_reask_seconds"
@@ -484,13 +492,16 @@ const (
 	ConsolePersonaRetry               = "console.persona_retry_seconds"
 	ConsoleStatusMarkerRetry          = "console.status_marker_retry_seconds"
 	ConsolePinnedListReadTimeout      = "console.pinned_list_read_timeout_seconds"
-	ConsoleStatusMarkerRecoveryWait   = "console.status_marker_recovery_wait_seconds"
-	ConsoleTranscriptFollowFast       = "console.transcript_follow_fast_seconds"
-	ConsoleTranscriptFollowLater      = "console.transcript_follow_later_seconds"
-	ConsoleHealthLive                 = "console.health_live_seconds"
-	ConsoleSessionNotesSafety         = "console.session_notes_safety_seconds"
-	ConsoleOpenedRowRestate           = "console.opened_row_restate_seconds"
-	ConsoleOpenedRowQuiet             = "console.opened_row_quiet_seconds"
+	// One save of a pairing's permission by the macOS shell
+	// (shell/darwin/Pairing.swift saveTimeoutSeconds).
+	ConsoleNativePairingSaveSeconds = "console.native_pairing_save_seconds"
+	ConsoleStatusMarkerRecoveryWait = "console.status_marker_recovery_wait_seconds"
+	ConsoleTranscriptFollowFast     = "console.transcript_follow_fast_seconds"
+	ConsoleTranscriptFollowLater    = "console.transcript_follow_later_seconds"
+	ConsoleHealthLive               = "console.health_live_seconds"
+	ConsoleSessionNotesSafety       = "console.session_notes_safety_seconds"
+	ConsoleOpenedRowRestate         = "console.opened_row_restate_seconds"
+	ConsoleOpenedRowQuiet           = "console.opened_row_quiet_seconds"
 	// This browser's own record of direct attempts per machine, drawn on the
 	// machine sheet (web/console/src/cloud/direct-history.ts), and how often
 	// the open machine list re-reads (pages/devices/AccountMachines.tsx).
