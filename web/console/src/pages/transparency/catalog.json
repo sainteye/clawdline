@@ -1860,7 +1860,8 @@
       "scope": "conditional",
       "agents": [
         "claude",
-        "codex"
+        "codex",
+        "antigravity"
       ],
       "stages": [
         "start",
@@ -1897,7 +1898,8 @@
         "\n",
         "- **Only for a finished turn.** Not for partial work, a diagnosis, a blocker or a question back to\n",
         "  the person. A child never sends it (`409 child_session`).\n",
-        "- The command finds your conversation from `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`\n",
+        "- The command finds your conversation from `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`,\n",
+        "  or the daemon-published `CLAWDLINE_PROTOCOL_SESSION_FILE` for an owned Gemini conversation\n",
         "  (`--conversation` otherwise), asks `GET /v1/orchestrator/whoami` for the terminal, and posts\n",
         "  `{\"summary\"}` to `POST /v1/orchestrator/sessions/<terminal>/complete`.\n",
         "- The summary is 1–500 characters. Each call is a new receipt; the newest counts.\n",
@@ -2338,14 +2340,14 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/main.go": "7157ff1a2b7dda22efc4c71dda68c00c4867af641c139cf39d344345e222ae89",
-    "cmd/clawdline/session.go": "de2e47caf092efedfb633b4f5242ee9cb0989fdf5d7f97dd95a1ff33667f5efc",
+    "cmd/clawdline/session.go": "36c97435b123e283e9c8e99593eceead3adad058993b22ef93d22bbecc0770aa",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
     "internal/adapters/antigravitylaunch/store.go": "e3a2344fda42de6142bc0d8646cb73527211c3eaea6547cf03107a21bd430a12",
-    "internal/adapters/antigravityprocess/client.go": "95ed754321ccd9ddd736b4e2646eb8480f5999beff35564d5d3d5a71a3ccc6ef",
+    "internal/adapters/antigravityprocess/client.go": "69b8be0fafa065e17688fd39eff383757b7e98ac255c22529a1268ee8f06c0b3",
     "internal/adapters/antigravitysession/context.go": "7f7490cb414f00633f3e436d484f9d02e8a91e6f541eda148eefa6e83d6d854b",
-    "internal/adapters/antigravitysession/host.go": "16fed6d2692cf383b77661e452ea8fcd8a542f7b43124dc5b99996970779ea1d",
+    "internal/adapters/antigravitysession/host.go": "1c3335c7f743133d7e77696d196319c965b17573a60c7f524ca9fa5ce57f6ffc",
     "internal/adapters/memory/memory.go": "b85b11cd849f61bcb55c449acc868a4605950dcb5a408ac65a228babbfab9fb0",
     "internal/adapters/nextconfig/nextconfig.go": "aa82a75d236592c194c8b4b5fa81f76e1d83416d395ef9a1666dfcf5dc6d8587",
     "internal/adapters/projects/antigravity_context.go": "9706da1b7af1d019ac3c7feb3713fa02698f95bfe76b81bc430de5efa62fbb53",
@@ -2388,8 +2390,8 @@
     "internal/transport/http/start.go": "4abc872edbe0e2f367da9a11bf2e32abac419fde2ccc999a0542718b2f9f6888",
     "internal/transport/http/work_v2_brief.go": "444e7aa2297733c71a1ed4b64c9ee9f616fa934bf1061824072aa7dd36e9eaf9",
     "skills/clawdline/SKILL.md": "22ecbbe8ffa2da28d8442f6bc2535846fb9b75d155b8d457d3329f35098d6edc",
-    "skills/clawdline/guide.md": "af7f6bd66be286a1d97e07ff47304748283c6727cc242b6c0e011b564c2d5690",
-    "skills/clawdline/guide.zh-TW.md": "25476dd60dc4dc75c7902dfe151820925739564d04bb416874b7c7a99a68ae64",
+    "skills/clawdline/guide.md": "8b54616f412a442aec9a4ddd85e91283d96d417cfd67264e9545fa0a64b31639",
+    "skills/clawdline/guide.zh-TW.md": "f5fe044a6f706e040a4a63f3be7e235cb4e4ab339683308e8d1529c8105bb3b9",
     "skills/sections.go": "ba3de38ebe0e26817f337bd4ae93e19d07ba07af8971b4fba397e6fe9082b903",
     "skills/skills.go": "146b2605f5e82e4093f731222da229df949be007b19005a428b538686feed330",
     "web/console/src/session/Start.tsx": "f169de2179bd51ea92a968e08f3f2778a39c9d308177e61e45785d0e93c6db0f"

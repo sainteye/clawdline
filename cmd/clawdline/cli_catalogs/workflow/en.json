@@ -103,5 +103,6 @@
   "sessions.print_the_daemon_s_answer_as_it_is": "print the daemon's answer as it is",
   "sessions.terminal_assistant_state_work_task_label_cwd": "TERMINAL\tASSISTANT\tSTATE\tWORK\tTASK\tLABEL\tCWD",
   "sessions.the_daemon_s_port_default_clawdline_next_port": "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)",
-  "sessions.usage_clawdline_sessions_json_port_n": "usage: clawdline sessions [--json] [--port n]"
+  "sessions.usage_clawdline_sessions_json_port_n": "usage: clawdline sessions [--json] [--port n]",
+  "session.protocol_identity_invalid": "CLAWDLINE_PROTOCOL_SESSION_FILE must name a readable plain JSON file with assistant antigravity and a nonempty conversation_id"
 }

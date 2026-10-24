@@ -614,7 +614,13 @@ writes、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 | `work_id` | 選填，這個 task 所服務的看板項目的 UUID |
 | `persona` | 選填，內建角色的 id（`GET /v1/personas`）；預設沒有 |
 | `auto_compact_window` | 選填，只限 Claude：child 在 context 到多少 token（50000–1000000）時壓縮，或 `null` 表示不壓縮。不寫就跟著這台機器的 `claude_auto_compact_window`，使用者沒設就是關閉。用來比較兩次執行，不是每份 brief 都要寫：壓縮可能漏掉細節 |
-| `root` | **必填**：`{"session_id": "<你的 conversation id>", "assistant": "claude"\|"codex", "project_dir": "<與外層 project_dir 相同的絕對 repository 路徑>", "label": "…"}`。有角色範圍的 root 需要 `root.project_dir`，daemon 才能驗證 Project 範圍。 |
+| `root` | **必填**：`{"session_id": "<你的 conversation id>", "assistant": "claude"\|"codex"\|"antigravity", "project_dir": "<與外層 project_dir 相同的絕對 repository 路徑>", "label": "…"}`。有角色範圍的 root 需要 `root.project_dir`，daemon 才能驗證 Project 範圍。 |
+
+原生 Gemini root 透過 daemon 發布的身分檔取得自己的原生 conversation，可用 `antigravity`
+作為 `root.assistant`；worker 啟動仍受 daemon 的供應商權限支援限制。請傳入
+`--assistant codex` 或 `--assistant claude` 選擇既有支援的 worker。這不代表 Gemini worker
+已可啟動，也不能繞過權限拒絕。
+
 
 **派工前，要讓 worker surface 與啟動模式符合 child 必須使用的每一項工具。** brief 必須列出必要工具，
 root 也必須證明選到的 surface 真的提供它們。Codex CLI child 不會因為調整 permission flag，就得到
@@ -962,7 +968,8 @@ terminal 還掛著同一個 conversation 時顯示。
 
 - **只用在完成的 turn。** 做一半、只做了診斷、被擋住、正在反問使用者，都不要送。child 絕對不送
   （`409 child_session`）。
-- 指令從 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID` 找出你的 conversation（都沒有就用
+- 指令從 `CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`，或 daemon 為原生 Gemini 對話發布的
+  `CLAWDLINE_PROTOCOL_SESSION_FILE` 找出你的 conversation（都沒有就用
   `--conversation`），向 `GET /v1/orchestrator/whoami` 問出 terminal，再把 `{"summary"}` 送到
   `POST /v1/orchestrator/sessions/<terminal>/complete`。
 - summary 長度 1–500 字元。每呼叫一次就是一張新的收據；以最新的為準。

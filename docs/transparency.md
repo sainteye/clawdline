@@ -74,3 +74,11 @@ automatic prompt resend. The provider-sink guard and refresh tool also discover
 ACP `session/prompt` producers; the synthetic inventory test includes that case.
 This product inventory still requires an exact website snapshot update after
 landing, and does not claim deployed mobile or native role-dispatch acceptance.
+
+
+Owned ACP tools now receive a private conversation-address file in addition to
+the existing, separate actor capability path. Shared CLI commands read that
+exact address rather than a parent assistant's environment. This changes root
+identity resolution, not authorization or the existing Gemini worker refusal.
+The report entry's original excerpt and both guide languages include the new
+identity source; the conditional context explanation remains unchanged.

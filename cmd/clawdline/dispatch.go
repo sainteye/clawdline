@@ -45,9 +45,10 @@ const dispatchInstructionsLimit = 16 * 1024
 // conversationAssistant says which assistant exports each variable in
 // conversationEnv.
 var conversationAssistant = map[string]string{
-	"CLAUDE_CODE_SESSION_ID": "claude",
-	"CODEX_THREAD_ID":        "codex",
-	"CODEX_SESSION_ID":       "codex",
+	"CLAUDE_CODE_SESSION_ID":          "claude",
+	"CODEX_THREAD_ID":                 "codex",
+	"CODEX_SESSION_ID":                "codex",
+	"CLAWDLINE_PROTOCOL_SESSION_FILE": "antigravity",
 }
 
 // listFlag is a flag that may be given more than once, each value split on
@@ -118,7 +119,7 @@ func dispatchCommand(args []string) {
 	fs.StringVar(&o.Label, "label", "", "this root's label on screen")
 	instructionsFile := fs.String("instructions-file", "", "the brief (default: stdin)")
 	fs.StringVar(&o.Conversation, "conversation", "", "this assistant's conversation id (default: from the environment)")
-	fs.StringVar(&o.RootAssistant, "root-assistant", "", "claude or codex, when --conversation names one the environment does not")
+	fs.StringVar(&o.RootAssistant, "root-assistant", "", "claude, codex or antigravity, when --conversation names one the environment does not")
 	fs.BoolVar(&o.JSON, "json", false, "print the daemon's answer as it came")
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
@@ -158,7 +159,7 @@ func dispatchUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "dispatch.usage", "usage: clawdline dispatch --title <t> --claims a,b [--claims c] [--project-dir d] "+
 		"[--assistant claude|codex] [--isolation none|worktree] [--permission-mode ask|edits|full] [--timeout min] "+
 		"[--kind k] [--deliverable p …] [--model m] [--persona id] [--work-id uuid …] [--task-id uuid] [--label l] "+
-		"[--instructions-file f | instructions on stdin] [--conversation id] [--root-assistant claude|codex] [--port n] [--json]"))
+		"[--instructions-file f | instructions on stdin] [--conversation id] [--root-assistant claude|codex|antigravity] [--port n] [--json]"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "dispatch.dispatches_an_owned_child_writes_ta.5756ae0b", "  dispatches an owned child: writes task.json, reads the inventory, posts the task"))
 	os.Exit(2)
 }
@@ -240,12 +241,16 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 		}
 	} else if rootAssistant == "" {
 		for _, name := range conversationEnv {
-			if strings.TrimSpace(env.getenv(name)) != conversation {
+			v, err := conversationEnvValue(env.getenv, name)
+			if err != nil {
+				return usage("%s", conversationRefusal(err, "--root-assistant"))
+			}
+			if v != conversation {
 				continue
 			}
 			assistant := conversationAssistant[name]
 			if rootAssistant != "" && rootAssistant != assistant {
-				return usage(cliCopy("misc", "dispatch.conversation_ambiguous", "conversation %s matches both assistants. Pass --root-assistant claude or codex."), conversation)
+				return usage(cliCopy("misc", "dispatch.conversation_ambiguous", "conversation %s matches multiple assistants. Pass --root-assistant claude, codex or antigravity."), conversation)
 			}
 			rootAssistant = assistant
 		}
@@ -255,7 +260,7 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 			"Pass --conversation <this assistant's conversation id>."), strings.Join(conversationEnv, ", "))
 	}
 	if rootAssistant == "" {
-		return usage(cliCopy("misc", "dispatch.assistant_unknown", "cannot tell which assistant %s belongs to. Pass --root-assistant claude or codex."), conversation)
+		return usage(cliCopy("misc", "dispatch.assistant_unknown", "cannot tell which assistant %s belongs to. Pass --root-assistant claude, codex or antigravity."), conversation)
 	}
 	if o.Assistant == "" {
 		o.Assistant = rootAssistant

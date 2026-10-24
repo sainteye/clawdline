@@ -613,8 +613,10 @@ Large text entries split on UTF-8 boundaries into adjacent durable entries. A
 single tool snapshot larger than the page budget still reports truncation; this
 change does not add a cursor inside one tool result.
 
-The existing one-active-process pilot restriction remains. This work does not
-claim full role, permission or public-release acceptance.
+At this recovery milestone, the pilot still allowed one active process. The later
+continuation supports two independent active conversations, including the same
+workspace, while saved history remains separate from that active-process limit.
+Recovery alone did not establish full role, permission or public-release acceptance.
 
 #### Reproducing the native recovery probe
 
@@ -640,3 +642,43 @@ also needs `CLAWDLINE_GEMINI_IMPORT_TARGET`, a private JSON receipt with `cwd` a
 `nativeId` obtained from a native listing. It verifies discovery, import and
 offline older pages with zero model prompts. Neither probe authorizes a paid
 API, API key, credit fallback or retries.
+
+
+### Owned role context and native CLI identity
+
+Owned ACP launches now reuse the existing immutable Squad publication, Project
+memory and language preparation. The first real input carries one standard
+embedded resource; opening a blank conversation sends no model input. Resume
+keeps the original role and context. Native load can flatten the resource into
+user text, so only the exact saved first-turn expansion is normalized; unknown
+or split text remains visible and later identical turns are preserved.
+
+Each durable owned conversation has a private identity companion beside its
+history, published atomically before tools run. The native process receives only
+its own `CLAWDLINE_PROTOCOL_SESSION_FILE` and, when selected, its own Squad
+capability path. Parent provider IDs and actor pointers are excluded. The CLI
+uses the exact companion for whoami, todos, delivery and dispatch root identity;
+this address does not replace broker or Squad authorization. Restore republishes
+the same owned/native identity before starting its native process.
+
+An isolated personal/free acceptance used one input, one native allow-once
+selection and a 35-second input/tool lifetime. A workspace script read its
+synthetic published skill, queried the Session's todos and recorded two existing
+Squad receipts (read and applied) with the exact native conversation and role.
+The assistant also returned both supplied role and Project memory markers.
+Only the test observer captured native permission option kinds; product menus
+kept the original labels and existing key action. The running daemon was not
+called. A preceding attempt stopped without selecting a permission because the
+private probe incorrectly matched English labels; it was not accepted evidence.
+
+The HTTP test harness replaces HOME before tests run. A zero-input control
+confirmed that native personal authentication needs its explicitly selected
+original HOME, while the HTTP fixture stays isolated. The existing opt-in
+configuration helper supplies that native environment without modifying product
+code. Credentials and private receipts remain outside the repository.
+
+CLI dispatch identity tests prove the existing request contract against a local
+stand-in. They do **not** prove Gemini worker launch or completion notice delivery:
+the broker still rejects Gemini workers pending a verified native permission-mode
+mapping and owned executor wiring. The role/dispatch Board step stays open until
+those paths and the actual administrator mobile flow pass acceptance.

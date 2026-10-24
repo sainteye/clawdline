@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -131,7 +132,9 @@ func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launc
 	defer h.jobs.Done()
 	defer func() { h.mu.Lock(); h.opening = false; h.mu.Unlock() }()
 	c := &conversation{tools: map[string]int{}, textIndex: -1, store: h.store, profile: filepath.Clean(h.opts.AccountDir), generation: rand.Text(), launchContext: launch}
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
+	ownedID := "owned:acp:" + rand.Text()
+	identityPath := h.identityPath(ownedID)
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
 	if err != nil {
 		return session.Session{}, err
 	}
@@ -139,9 +142,13 @@ func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launc
 	c.client = client
 	c.mu.Unlock()
 	keep := false
+	historySaved := false
 	defer func() {
 		if !keep {
 			_ = client.Close()
+			if !historySaved && identityPath != "" {
+				_ = os.Remove(identityPath)
+			}
 		}
 	}()
 	if _, err = client.Initialize(ctx); err != nil {
@@ -154,17 +161,21 @@ func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launc
 	if err != nil {
 		return session.Session{}, err
 	}
+	if err := publishIdentity(identityPath, client.SessionID()); err != nil {
+		return session.Session{}, err
+	}
 	now := time.Now()
 	c.mu.Lock()
 	if err := c.readMetadata(created, true); err != nil {
 		c.mu.Unlock()
 		return session.Session{}, err
 	}
-	c.row = session.Session{ID: "owned:acp:" + rand.Text(), Persona: launch.Persona, SquadLaunchID: launch.SquadLaunchID, Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
+	c.row = session.Session{ID: ownedID, Persona: launch.Persona, SquadLaunchID: launch.SquadLaunchID, Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
 	if err := c.saveState(); err != nil {
 		c.mu.Unlock()
 		return session.Session{}, err
 	}
+	historySaved = true
 	row := c.row
 	c.mu.Unlock()
 	h.mu.Lock()

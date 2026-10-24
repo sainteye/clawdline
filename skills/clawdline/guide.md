@@ -699,7 +699,13 @@ included — so the task the child reads is the one that was validated, and it d
 | `work_id` | optional UUID of the board item this serves |
 | `persona` | optional built-in persona id (`GET /v1/personas`); none by default |
 | `auto_compact_window` | optional, Claude only: the context size in tokens (50000–1000000) the child compacts at, or `null` for none. Absent follows the machine's `claude_auto_compact_window`, which is off unless the person set it. For comparing runs, not for everyday briefs: a compaction may lose detail |
-| `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "project_dir": "<the same absolute repository path as project_dir>", "label": "…"}`. A role-scoped root needs `root.project_dir` for the daemon to verify its Project scope. |
+| `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex"\|"antigravity", "project_dir": "<the same absolute repository path as project_dir>", "label": "…"}`. A role-scoped root needs `root.project_dir` for the daemon to verify its Project scope. |
+
+An owned Gemini root uses its daemon-published identity file for its exact native conversation.
+It can name `antigravity` as `root.assistant`; worker launch remains subject to the daemon's
+provider permission support. Pass `--assistant codex` or `--assistant claude` to select an existing
+supported worker. This does not enable a Gemini worker or bypass a permission refusal.
+
 
 **Match the worker surface and launch mode to every tool the child must use before dispatching it.**
 The brief names the required tools and the root proves that the chosen surface supplies them. A
@@ -1098,7 +1104,8 @@ conversation.
 
 - **Only for a finished turn.** Not for partial work, a diagnosis, a blocker or a question back to
   the person. A child never sends it (`409 child_session`).
-- The command finds your conversation from `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`
+- The command finds your conversation from `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`,
+  or the daemon-published `CLAWDLINE_PROTOCOL_SESSION_FILE` for an owned Gemini conversation
   (`--conversation` otherwise), asks `GET /v1/orchestrator/whoami` for the terminal, and posts
   `{"summary"}` to `POST /v1/orchestrator/sessions/<terminal>/complete`.
 - The summary is 1–500 characters. Each call is a new receipt; the newest counts.
