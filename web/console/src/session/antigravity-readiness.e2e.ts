@@ -359,7 +359,25 @@ test("Bar checks exact selected machine capabilities and keeps slash commands as
  } catch (error) { console.error(error); throw error } finally { await tab.close() }
 })
 
-for (const width of [390, 1280]) test(`Work picker ${width}px: preview stays hidden without administrator access`, { timeout: 60_000 }, async () => {
+for (const width of [390, 1280]) for (const lang of ["en", "zh-Hant"]) test(`Session picker ${width}px ${lang}: Gemini is available without administrator access`, { timeout: 60_000 }, async () => {
+ language = lang; mode = "ready"
+ const tab = await Tab.open(browser, width, 900, width === 390)
+ try {
+  await tab.go("/?ordinary-user=1")
+  await tab.until("session list is visible", s => s.text.includes("Antigravity synthetic alpha"))
+  await tab.run(`document.querySelector('.setup-dialog[open] .setup-x')?.click()`)
+  await tab.click("#start-go")
+  await tab.run(`(async()=>{while(!document.querySelector('#start-with .chip'))await new Promise(r=>setTimeout(r,20))})()`)
+  assert.deepEqual(await tab.run(`[...document.querySelectorAll('#start-with .chip')].map(c=>c.textContent)`), ["Gemini"])
+  await tab.pressChip("#start-with", "Gemini")
+  assert.equal(await tab.run(`document.querySelector('#start-with .chip').getAttribute('aria-pressed')`), "true")
+  assert.equal(await tab.run(`document.querySelector('#start').hidden`), false)
+  assert.ok((await tab.run(PROBE)).wide <= width)
+  await tab.shot(`gemini-ordinary-user-${width}-${lang}`)
+ } finally { await tab.close() }
+})
+
+for (const width of [390, 1280]) test(`Work picker ${width}px: unsupported role assignment is not offered`, { timeout: 60_000 }, async () => {
  language = "zh-Hant"
  const tab = await Tab.open(browser, width, 900, width === 390)
  try {

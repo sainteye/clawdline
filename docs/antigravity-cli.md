@@ -458,10 +458,11 @@ billed input/output tokens. These are native script and decoder results; the
 product's ACP process owner, message flow and admin mobile entry still need
 integration and end-to-end acceptance.
 
-For the initial mobile pilot, the existing admin/operations-access UI decision
-controls entry visibility. The pilot does not introduce a new backend admin
-entitlement service or change ordinary session authorization. Other accounts do
-not receive the pilot entry. Paid API use continues to require separate approval.
+The initial mobile pilot restricted entry visibility to administrators. That
+restriction has been retired: ordinary Session Start now offers Gemini to every
+user when the selected machine advertises it. No backend entitlement service is
+added, and ordinary session authorization is unchanged. Paid API use continues
+to require separate approval.
 
 
 The subsequent whole-tree gate exposed an older hook-service refusal race, not

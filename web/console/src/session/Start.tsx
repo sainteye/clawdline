@@ -85,7 +85,6 @@ let write = true // `S.write`
 
 let places: Place[] | null = null
 let assistants: L.StartAssistantRow[] = []
-let antigravityPreviewAccess = false
 let with_: string | null = null
 /** The persona chosen for the next start; "" for none. */
 let persona = ""
@@ -748,7 +747,7 @@ function load(background = false): void {
       placesUnread = false
       said("")
       places = (d && d.places) || []
-      assistants = ((d && d.assistants) || []).filter((a) => a.id !== "antigravity" || antigravityPreviewAccess)
+      assistants = (d && d.assistants) || []
       if (!with_ || !assistants.some((a) => a.id === with_)) {
         with_ = assistants.find(a => assistantAdmits(a, "start"))?.id || assistants[0]?.id || null
       }
@@ -1078,12 +1077,6 @@ export const Start = {
   scrolled: edge,
   isOpen: () => !sheetHidden(),
 
-  /** Reuse the existing Cloud administrator decision for entry visibility. */
-  antigravityPreview(allowed: boolean) {
-    antigravityPreviewAccess = allowed
-    if (!allowed) {assistants = assistants.filter((a) => a.id !== "antigravity"); if (with_ === "antigravity") with_ = null}
-    if (!sheetHidden()) {if (allowed) load(true); else draw()}
-  },
   /** Bind the page: how to open a row, and which row is open. */
   host(next: StartHost) {
     host = next

@@ -37,7 +37,6 @@ import { hasDocumentIntent } from "./legacy/documents-bridge.js"
 import { NewBuild } from "./NewBuild.js"
 import { MachineDashboard, type DashboardSource } from "./machine/MachineDashboard.js"
 import { Start } from "./session/Start.js"
-import { AntigravityPreviewAccess } from "./session/antigravity-preview.js"
 import { startedRow } from "./session/started-row.js"
 import { askedSession } from "./session/asked-session.js"
 import type { StartAnswer, StartPlaceRow } from "./legacy/start-bridge.js"
@@ -262,7 +261,6 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     if (fleetList) return
     return onAttentionRead(() => fleet.refresh())
   }, [fleetList, fleet.refresh])
-  useEffect(() => { Start.antigravityPreview(cloudOperationsAccess); return () => Start.antigravityPreview(false) }, [cloudOperationsAccess])
   const light = useConnectionLight(fleet.live, fleet.refresh)
   const machineVersion = useMachineVersion()
   const updateRead = useSyncExternalStore(subscribeUpdate, currentUpdateRead, currentUpdateRead)
@@ -980,7 +978,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const sidebarPages = drawerEntries(PAGES, PAGE_MODULES)
 
   return (
-    <AntigravityPreviewAccess.Provider value={cloudOperationsAccess}>
+    <>
       <header className="top">
         <button
           className="brand"
@@ -1202,7 +1200,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         }}
       /> : null}
       <NewBuild />
-    </AntigravityPreviewAccess.Provider>
+    </>
   )
 }
 

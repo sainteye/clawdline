@@ -181,8 +181,8 @@ before any prompt write. `PID()` exposes the originally started child for the
 existing kernel-start/execution binding; its number alone is not liveness proof.
 
 The mobile pilot will compose these operations through the existing Session
-start/send/transcript and encrypted Cloud paths. The existing administrator UI
-controls whether the Antigravity start option appears. The separate chat-endpoint
+start/send/transcript and encrypted Cloud paths. The machine's advertised assistant
+capabilities control whether the Gemini start option appears for every user. The separate chat-endpoint
 proposal was not enabled. Ordinary machine pairing, capabilities, execution pins
 and write receipts remain the authority; there is no new admin entitlement API.
 
@@ -231,8 +231,8 @@ The preview is disabled unless the machine's state directory contains
 `antigravity-acp-pilot.json`, with absolute `executable` and `accountDir` paths and
 optional `args`. These paths select an already authenticated personal profile;
 configuration does not copy credentials or launch a process. Daemon shutdown
-cancels and joins the owned processes and prompts. Entry visibility reuses the
-Cloud console's existing administrator decision, with no new entitlement API.
+cancels and joins the owned processes and prompts. Entry visibility follows the
+machine's advertised assistant capabilities for all users, with no administrator-only gate.
 
 With a configured state directory, history is persisted locally and read through
 bounded pages. Restarted conversations retain their stable local identity;
@@ -285,7 +285,7 @@ The capacity reading uses that same total; it is a payload budget, not a measure
 of Go allocator overhead.
 
 The Board's role-based assignment route does not accept the ordinary text preview,
-so it does not offer Antigravity. The administrator preview remains in ordinary
+so it does not offer Antigravity. Gemini remains available in ordinary
 Session Start. Native turn failures keep their diagnostic code beneath readable
 English and Taiwan Traditional Chinese guidance. Known tool status labels are
 localized, and meaningful tool/unavailable text uses the existing dim text token.
