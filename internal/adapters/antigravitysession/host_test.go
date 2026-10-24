@@ -34,6 +34,7 @@ func TestOwnedPeer(t *testing.T) {
 		f.Close()
 	}
 	model, effort := "synthetic-flash", "high"
+	mode := "default"
 	efforts := []string{"low", "medium", "high"}
 	scanner := bufio.NewScanner(os.Stdin)
 	notify := func(u any) {
@@ -112,16 +113,29 @@ func TestOwnedPeer(t *testing.T) {
 				}
 			}
 			result = map[string]any{"_meta": map[string]any{"antigravity": map[string]any{"tier": map[string]string{"id": "free-tier", "name": "Antigravity Starter Quota"}}}}
+			if os.Getenv("CLW_CONFIG_PEER") == "yes" {
+				result.(map[string]any)["configOptions"] = syntheticConfigOptions(model, effort, efforts)
+			}
 		case "session/set_config_option":
 			dir := os.Getenv("GEMINI_HOME")
 			f, _ := os.OpenFile(filepath.Join(dir, "config-writes"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 			f.WriteString(req.Params.ConfigID + "=" + req.Params.Value + "\n")
 			f.Close()
+			if _, err := os.Stat(filepath.Join(dir, "hold-config")); err == nil {
+				for {
+					if _, err := os.Stat(filepath.Join(dir, "release-config")); err == nil {
+						break
+					}
+					time.Sleep(time.Millisecond)
+				}
+			}
 			if _, err := os.Stat(filepath.Join(dir, "config-error")); err == nil {
 				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32001, "message": "SECRET provider diagnostic"}})
 				continue
 			}
-			if req.Params.ConfigID == "model" {
+			if req.Params.ConfigID == "mode" {
+				mode = req.Params.Value
+			} else if req.Params.ConfigID == "model" {
 				model, effort, efforts = req.Params.Value, "medium", []string{"medium", "high"}
 			} else {
 				effort = req.Params.Value
@@ -182,6 +196,16 @@ func TestOwnedPeer(t *testing.T) {
 			notify(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "read-1", "title": "Read synthetic file", "kind": "read", "status": "in_progress"})
 			notify(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic reply"}})
 			result = map[string]string{"stopReason": "end_turn"}
+		}
+		if os.Getenv("CLW_MODE_PEER") != "" && (req.Method == "session/new" || req.Method == "session/resume" || req.Method == "session/load" || req.Method == "session/set_config_option") {
+			options, _ := result.(map[string]any)["configOptions"].([]any)
+			native := mode
+			if req.Method == "session/set_config_option" && os.Getenv("CLW_MODE_PEER") == "wrong-ack" {
+				native = "default"
+			}
+			if !(req.Method == "session/set_config_option" && os.Getenv("CLW_MODE_PEER") == "missing-ack") {
+				result.(map[string]any)["configOptions"] = append(options, syntheticModeOption(native))
+			}
 		}
 		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
 		if req.Method == "session/set_config_option" {
