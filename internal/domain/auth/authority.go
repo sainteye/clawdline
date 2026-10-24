@@ -147,7 +147,7 @@ func New(store Store, opts Options) (*Authority, error) {
 	changed := false
 	for i := range state.Devices {
 		d := &state.Devices[i]
-		if !d.Approved || d.Local || d.Caps.Has(Send) {
+		if !d.Approved || d.Local || d.PermissionSelected || d.Caps.Has(Send) {
 			continue
 		}
 		d.Caps = NewCaps(append(d.Caps, Read, Send)...)
@@ -451,12 +451,13 @@ func (a *Authority) ConfirmPairing(id, code string) (PairResult, error) {
 	}
 	next := a.copyDevices()
 	next[entry.ID] = Device{
-		ID:       entry.ID,
-		Name:     entry.Name,
-		Hash:     Hash(entry.token),
-		Caps:     NewCaps(Read, Send),
-		Created:  now,
-		Approved: true,
+		ID:                 entry.ID,
+		Name:               entry.Name,
+		Hash:               Hash(entry.token),
+		Caps:               pairingCaps(entry.ReadOnly),
+		PermissionSelected: true,
+		Created:            now,
+		Approved:           true,
 	}
 	if err := a.commit(next, a.password); err != nil {
 		// The pairing stays open: the person typed the right code and the
@@ -468,6 +469,46 @@ func (a *Authority) ConfirmPairing(id, code string) (PairResult, error) {
 	return PairResult{Kind: Paired, Token: entry.token, Device: entry.ID}, nil
 }
 
+func pairingCaps(readOnly bool) Caps {
+	if readOnly {
+		return NewCaps(Read)
+	}
+	return NewCaps(Read, Send)
+}
+
+// SetPairingPermission changes only the pending pairing selected on this machine.
+func (a *Authority) SetPairingPermission(id string, readOnly bool) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.pending == nil || a.pending.ID != id || !a.pending.Expires.After(a.now()) {
+		return ErrNotFound
+	}
+	a.pending.ReadOnly = readOnly
+	return nil
+}
+
+// SetPermission atomically persists an explicit local choice. Repeating it is safe.
+func (a *Authority) SetPermission(id string, readOnly bool) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	d, ok := a.devices[id]
+	if !ok || !d.Approved {
+		return ErrNotFound
+	}
+	if d.Local {
+		return ErrLocalDevice
+	}
+	next := a.copyDevices()
+	d.Caps = pairingCaps(readOnly)
+	d.PermissionSelected = true
+	next[id] = d
+	if err := a.commit(next, a.password); err != nil {
+		return err
+	}
+	a.store.Audit("device.permission", map[string]string{"id": id, "caps": d.Caps.Joined()})
+	return nil
+}
+
 // AddDevice approves a device from this machine directly — "Open in a
 // browser" and a password exchange both end here.
 func (a *Authority) AddDevice(name string, caps Caps, local bool) (id, token string, err error) {
@@ -476,10 +517,18 @@ func (a *Authority) AddDevice(name string, caps Caps, local bool) (id, token str
 	return a.addDevice(name, caps, local)
 }
 
-func (a *Authority) addDevice(name string, caps Caps, local bool) (string, string, error) {
-	// A paired device cannot be issued a read-only credential, including by
-	// older callers that still pass only Read.
-	if !local {
+// AddDeviceWithPermission creates an explicitly scoped browser credential atomically.
+func (a *Authority) AddDeviceWithPermission(name string, readOnly bool) (string, string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.addDevice(name, pairingCaps(readOnly), false, true)
+}
+
+func (a *Authority) addDevice(name string, caps Caps, local bool, selected ...bool) (string, string, error) {
+	explicit := len(selected) > 0 && selected[0]
+	// Legacy callers retain the operational default. Explicit local selection
+	// is the only path that can issue a read-only credential.
+	if !local && !explicit {
 		caps = NewCaps(append(caps, Read, Send)...)
 	}
 	id, err := newID(a.random)
@@ -493,7 +542,7 @@ func (a *Authority) addDevice(name string, caps Caps, local bool) (string, strin
 	next := a.copyDevices()
 	next[id] = Device{
 		ID: id, Name: name, Hash: Hash(token), Caps: caps,
-		Created: a.now(), Approved: true, Local: local,
+		Created: a.now(), Approved: true, Local: local, PermissionSelected: explicit,
 	}
 	if err := a.commit(next, a.password); err != nil {
 		return "", "", err

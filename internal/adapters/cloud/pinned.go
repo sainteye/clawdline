@@ -16,9 +16,12 @@ package cloud
 //
 // Three rules worth naming:
 //
-//   - **A pin is written after delivery, never before.** A browser that never
-//     received this machine's content key cannot produce a command, so pinning
-//     first would leave a pinned viewer behind every failed handover.
+//   - **Operate pins follow delivery.** A readonly pairing first reserves its
+//     ceiling before key delivery, so a failed final write cannot admit the
+//     viewer through the legacy roster fallback as an operator. A failed
+//     readonly handover can leave a readonly reservation behind, but a
+//     reservation never lifts a refusal: only the pin written after a
+//     completed handover does.
 //   - **Revoking is local and it is final here.** The control plane's
 //     `DELETE /v1/devices/:id` needs a browser session, which a daemon does not
 //     have; and even when the account revokes a device, "the roster no longer
@@ -50,6 +53,14 @@ const PinnedFile = "paired-devices-v1.json"
 // ErrPinnedUnreadable is a pin file that exists and is not readable as one.
 var ErrPinnedUnreadable = errors.New("the paired-device file cannot be read")
 
+const ScopeReadOnly = "readonly"
+const ScopeOperate = "operate"
+
+var ErrViewerScope = errors.New("viewer scope must be readonly or operate")
+var ErrViewerNotPinned = errors.New("the viewer has no active local pin")
+
+func ValidViewerScope(scope string) bool { return scope == ScopeReadOnly || scope == ScopeOperate }
+
 // PinnedDevice is one browser this machine paired.
 //
 // `PublicKey` is standard padded base64 of 32 bytes — the same spelling the
@@ -57,9 +68,14 @@ var ErrPinnedUnreadable = errors.New("the paired-device file cannot be read")
 // wire agree byte for byte. No private material is ever in this file: it holds
 // public keys, ids and times, which is why it is JSON a person can read.
 type PinnedDevice struct {
-	DeviceID    string `json:"device_id"`
-	PublicKey   string `json:"public_key"`
-	Fingerprint string `json:"fingerprint"`
+	// Scope is machine-local authority. Empty preserves pre-scope grants.
+	Scope string `json:"scope,omitempty"`
+	// PairingPending distinguishes a readonly ceiling reservation from a
+	// completed handover; raw key exchange never treats it as a pairing pin.
+	PairingPending bool   `json:"pairing_pending,omitempty"`
+	DeviceID       string `json:"device_id"`
+	PublicKey      string `json:"public_key"`
+	Fingerprint    string `json:"fingerprint"`
 	// PairedAt is when this machine sealed the handover, in Unix seconds.
 	PairedAt int64 `json:"paired_at"`
 	// Name is what the person will recognise the browser by, as the offer's
@@ -73,6 +89,58 @@ type PinnedDevice struct {
 
 // Active reports whether this row still admits its device.
 func (d PinnedDevice) Active() bool { return d.RevokedAt == 0 }
+
+func (d PinnedDevice) EffectiveScope() string {
+	if d.Scope == "" {
+		return ScopeOperate
+	}
+	return d.Scope
+}
+
+// ViewerScope returns the local ceiling. Missing pins retain legacy admission;
+// malformed, revoked or future scopes fail closed rather than becoming operate.
+func (s *PinnedStore) ViewerScope(sender string) (string, error) {
+	rows, err := s.Devices()
+	if err != nil {
+		return "", err
+	}
+	for _, row := range rows {
+		if row.DeviceID == sender {
+			if !row.Active() {
+				return "", ErrViewerNotPinned
+			}
+			if !ValidViewerScope(row.EffectiveScope()) {
+				return "", ErrViewerScope
+			}
+			return row.EffectiveScope(), nil
+		}
+	}
+	return ScopeOperate, nil
+}
+
+// SetScope changes only an existing active local pin, atomically and idempotently.
+func (s *PinnedStore) SetScope(sender, scope string) error {
+	if !ValidViewerScope(scope) {
+		return ErrViewerScope
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return err
+	}
+	for i := range s.record.Devices {
+		if s.record.Devices[i].DeviceID == sender && s.record.Devices[i].Active() {
+			before := s.record.Devices[i].Scope
+			s.record.Devices[i].Scope = scope
+			if err := s.saveLocked(); err != nil {
+				s.record.Devices[i].Scope = before
+				return err
+			}
+			return nil
+		}
+	}
+	return ErrViewerNotPinned
+}
 
 // Key answers the pinned public key, and whether the row holds a usable one.
 func (d PinnedDevice) Key() (ed25519.PublicKey, bool) {
@@ -185,34 +253,107 @@ func (s *PinnedStore) Refused(sender string) (bool, error) {
 	return false, nil
 }
 
+// ActiveRekeyPin excludes legacy roster fallback and pre-delivery reservations.
+// All pin facts are read together, including the owning account.
+func (s *PinnedStore) ActiveRekeyPin(account, viewer string) (ed25519.PublicKey, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return nil, err
+	}
+	if s.record.AccountID != account || account == "" {
+		return nil, ErrViewerNotPinned
+	}
+	for _, row := range s.record.Devices {
+		if row.DeviceID == viewer && row.Active() && !row.PairingPending && ValidViewerScope(row.EffectiveScope()) {
+			if key, ok := row.Key(); ok {
+				return key, nil
+			}
+		}
+	}
+	return nil, ErrViewerNotPinned
+}
+
 // Pin records a browser this machine has just handed the account key to.
 //
 // Re-pinning an existing device replaces its key and clears any refusal: that
 // is what "pair this browser again" means, and it is the browser's own
 // repair path when its keys drift.
 func (s *PinnedStore) Pin(accountID string, device PinnedDevice) error {
+	_, err := s.pin(accountID, device, false)
+	return err
+}
+
+// RepairScope is the ceiling a re-pairing keeps when nobody on this machine
+// chose one. A device this machine already holds a row for keeps that row's
+// scope, so pairing a readonly browser again is not a silent promotion; only a
+// device it has never pinned takes the legacy operate default. An unreadable
+// file or a scope this build does not know refuses instead of guessing.
+func (s *PinnedStore) RepairScope(sender string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return "", err
+	}
+	return s.repairScopeLocked(sender)
+}
+
+func (s *PinnedStore) repairScopeLocked(sender string) (string, error) {
+	for _, row := range s.record.Devices {
+		if row.DeviceID == sender {
+			if !ValidViewerScope(row.EffectiveScope()) {
+				return "", ErrViewerScope
+			}
+			return row.EffectiveScope(), nil
+		}
+	}
+	return ScopeOperate, nil
+}
+
+// PinKeepingScope is Pin for a re-pairing with no scope chosen: the scope
+// written is RepairScope's answer, read under the same lock as the write, so a
+// grant that lands while the handover is in flight is not overwritten. It
+// answers the scope it wrote.
+func (s *PinnedStore) PinKeepingScope(accountID string, device PinnedDevice) (string, error) {
+	return s.pin(accountID, device, true)
+}
+
+func (s *PinnedStore) pin(accountID string, device PinnedDevice, keepScope bool) (string, error) {
+	if device.Scope != "" && !ValidViewerScope(device.Scope) {
+		return "", ErrViewerScope
+	}
 	if device.DeviceID == "" {
-		return errors.New("refusing to pin a device with no id")
+		return "", errors.New("refusing to pin a device with no id")
 	}
 	if _, ok := device.Key(); !ok {
-		return errors.New("refusing to pin a device with no usable public key")
+		return "", errors.New("refusing to pin a device with no usable public key")
 	}
 	if device.PairedAt == 0 {
 		device.PairedAt = time.Now().Unix()
 	}
 	device.RevokedAt = 0
+	device.PairingPending = false
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.loadLocked(); err != nil {
-		return err
+		return "", err
 	}
 	if s.record.AccountID != "" && accountID != "" && s.record.AccountID != accountID {
 		// A record from another account is not merged into. Signing out is
 		// what empties it; quietly mixing two accounts' pins would make the
 		// file say something no single account ever agreed to.
-		return fmt.Errorf("the paired-device file belongs to account %s, not %s",
+		return "", fmt.Errorf("the paired-device file belongs to account %s, not %s",
 			s.record.AccountID, accountID)
 	}
+	if keepScope {
+		scope, err := s.repairScopeLocked(device.DeviceID)
+		if err != nil {
+			return "", err
+		}
+		device.Scope = scope
+	}
+	before := s.record
+	before.Devices = append([]PinnedDevice(nil), s.record.Devices...)
 	s.record.Version = 1
 	if accountID != "" {
 		s.record.AccountID = accountID
@@ -227,7 +368,66 @@ func (s *PinnedStore) Pin(accountID string, device PinnedDevice) error {
 	if !replaced {
 		s.record.Devices = append(s.record.Devices, device)
 	}
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		s.record = before
+		return "", err
+	}
+	return device.EffectiveScope(), nil
+}
+
+// ReserveReadOnly lowers a device's ceiling to readonly before a handover
+// leaves, without otherwise changing what this machine knows about it.
+//
+// It exists for the pairing's pre-delivery step, which is not yet a pairing:
+// the handover may still fail or be cancelled. So, unlike Pin, it keeps a
+// refusal — the revoked row stays revoked, read and written under the same
+// lock so no concurrent writer slips between them — and it keeps an existing
+// row's key and pairing time. Only a device this machine holds no row for gets
+// a new active readonly row, which is what stops a failed final write from
+// leaving it to the roster's legacy operate fallback. The pin written after a
+// completed handover is what restores a revoked device.
+func (s *PinnedStore) ReserveReadOnly(accountID string, device PinnedDevice) error {
+	if device.DeviceID == "" {
+		return errors.New("refusing to reserve a device with no id")
+	}
+	if _, ok := device.Key(); !ok {
+		return errors.New("refusing to reserve a device with no usable public key")
+	}
+	if device.PairedAt == 0 {
+		device.PairedAt = time.Now().Unix()
+	}
+	device.Scope, device.RevokedAt = ScopeReadOnly, 0
+	device.PairingPending = true
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return err
+	}
+	if s.record.AccountID != "" && accountID != "" && s.record.AccountID != accountID {
+		return fmt.Errorf("the paired-device file belongs to account %s, not %s",
+			s.record.AccountID, accountID)
+	}
+	before := s.record
+	before.Devices = append([]PinnedDevice(nil), s.record.Devices...)
+	s.record.Version = 1
+	if accountID != "" {
+		s.record.AccountID = accountID
+	}
+	found := false
+	for i := range s.record.Devices {
+		if s.record.Devices[i].DeviceID == device.DeviceID {
+			s.record.Devices[i].Scope, found = ScopeReadOnly, true
+			break
+		}
+	}
+	if !found {
+		s.record.Devices = append(s.record.Devices, device)
+	}
+	if err := s.saveLocked(); err != nil {
+		s.record = before
+		return err
+	}
+	return nil
 }
 
 // Revoke marks a device refused. It answers whether a row changed, so that a
@@ -247,7 +447,12 @@ func (s *PinnedStore) Revoke(deviceID string, at time.Time) (bool, error) {
 			continue
 		}
 		s.record.Devices[i].RevokedAt = when
-		return true, s.saveLocked()
+		if err := s.saveLocked(); err != nil {
+			s.record.Devices[i].RevokedAt = 0
+			s.loaded = false
+			return false, err
+		}
+		return true, nil
 	}
 	return false, nil
 }
@@ -303,6 +508,15 @@ func (s *PinnedStore) saveLocked() error {
 		return err
 	}
 	if err := writeFileAtomically(s.dir, s.Path(), append(body, '\n')); err != nil {
+		return err
+	}
+	d, err := os.Open(s.dir)
+	if err != nil {
+		return err
+	}
+	err = d.Sync()
+	_ = d.Close()
+	if err != nil {
 		return err
 	}
 	s.stamp = stampOf(s.Path())

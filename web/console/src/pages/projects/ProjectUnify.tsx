@@ -1,4 +1,3 @@
-import { nextWord } from "../../next-strings.js"
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord } from "../../catalog.js"
 import { showModalWithoutChoice } from "../../modal-focus.js"
@@ -39,11 +38,12 @@ type Stopped ={ ran: ProjectUnifyAction[]; failed?: ProjectUnifyAction; reason: 
 function Columns({ columns }: { columns: SeenColumn[] }) {
   return <div className="project-unify-columns">
     {columns.map(column => <section key={column.assistant} className="project-unify-column" aria-labelledby={`project-unify-col-${column.assistant}`}>
-      <h4 id={`project-unify-col-${column.assistant}`}>{nextWord("unifyVisibleTo", { assistant: column.title })}</h4>
+      <h4 id={`project-unify-col-${column.assistant}`}>{catalogFormat("projectUnify", "applicableTo", [column.title])}</h4>
       <ul>
-        {column.rows.length === 0 && <li className="project-unify-empty">{catalogWord("inline", "dca1ae03a159")}</li>}
+        {column.unreported && <li className="project-unify-empty">{catalogWord("projectUnify", "unreported")}</li>}
+        {!column.unreported && column.rows.length === 0 && <li className="project-unify-empty">{catalogWord("inline", "dca1ae03a159")}</li>}
         {column.rows.map(row => <li key={row.key} className={`project-unify-seen is-${row.mark}`}>
-          <span className="project-unify-seen-kind">{catalogWord("literal", "09b167988430")}</span>
+          <span className="project-unify-seen-kind">{row.kind === "skill" ? catalogWord("literal", "03f843cf3e55") : catalogWord("literal", "09b167988430")}</span>
           <span className="project-unify-seen-name"><code>{row.name}</code>{row.note && <small>{row.note}</small>}</span>
           <span className="project-unify-seen-mark"><span aria-hidden="true">{row.mark === "same" ? "＝" : row.mark === "added" ? "＋" : "！"}</span>{MARK_WORDS[row.mark]}</span>
           {row.mark === "added" && <span className="project-unify-seen-flow">{catalogWord("inline", "da26afc0fb6a")}</span>}
@@ -75,9 +75,17 @@ function ActionItem({ picture }: { picture: ActionPicture }) {
 
 function Preview({ plan }: { plan: ProjectUnifyPlan }) {
   const columns = unifyColumns(plan)
+  const native = <div className="project-unify-native">
+    <p>{catalogWord("projectUnify", "applicability")}</p>
+    {plan.native_only == null ? <p>{catalogWord("projectUnify", "nativeUnreported")}</p> : plan.native_only.length > 0 && <>
+      <h3 className="project-unify-section">{catalogWord("projectUnify", "nativeReadOnly")}</h3>
+      <ul>{plan.native_only.map(file => <li key={file.path}><code>{file.path}</code> · {({ready: catalogWord("literal", "92363068f5b3"), missing: catalogWord("literal", "8c6019531435"), unsafe: catalogWord("literal", "bec019f69985"), unreadable: catalogWord("literal", "82c6e1d1683d"), too_large: catalogWord("literal", "abc92ff61a07")} as Record<string, string>)[file.status] ?? catalogWord("projectUnify", "unreported")}</li>)}</ul>
+    </>}
+  </div>
   if (plan.status === "unified") return <>
-    <p className="project-unify-verdict is-ready">{catalogWord("inline", "1de4dda49ddb")}</p>
+    <p className="project-unify-verdict is-ready">{catalogWord("projectUnify", "unified")}</p>
     <Columns columns={columns} />
+    {native}
   </>
   const pictures = actionPictures(plan)
   const moves = movesSummary(plan)
@@ -86,6 +94,7 @@ function Preview({ plan }: { plan: ProjectUnifyPlan }) {
     {plan.status === "unknown" && <p className="project-unify-verdict is-unknown" role="alert">{catalogLabel("inline", "83cc34a2d090")}{unknownReason(plan)}{catalogWord("inline", "846d711dc077")}</p>}
     <h3 className="project-unify-section">{catalogWord("inline", "da3f4f610025")}</h3>
     <Columns columns={columns} />
+    {native}
     {pictures.length > 0 && <>
       <h3 className="project-unify-section">{catalogWord("inline", "c4dd64880f20")}</h3>
       <ol className="project-unify-actions">{pictures.map(picture => <ActionItem key={picture.key} picture={picture} />)}</ol>
@@ -225,7 +234,7 @@ export function ProjectUnify({ place, openRequest = 0 }: { place: ProjectPlace; 
   return <section className="project-unify" aria-labelledby="project-unify-title">
     <div className="project-unify-head">
       <div>
-        <h3 id="project-unify-title">{catalogWord("inline", "f5b3ce33e1f4")}</h3>
+        <h3 id="project-unify-title">{catalogWord("projectUnify", "title")}</h3>
         <p>{catalogWord("inline", "e0b340925204")}</p>
       </div>
       <div className="project-unify-buttons">
@@ -241,10 +250,10 @@ export function ProjectUnify({ place, openRequest = 0 }: { place: ProjectPlace; 
       // dialog around it too, which then closes itself: measured in the e2e,
       // Escape here closed both until it stopped here.
       onCancel={event => { event.stopPropagation(); if (applying) event.preventDefault() }}
-      onClose={() => opener.current?.focus({ preventScroll: true })}>
+      onClose={event => { event.stopPropagation(); opener.current?.focus({ preventScroll: true }) }}>
       <div className="project-unify-dialog-heading">
-        <h2 id="project-unify-dialog-title" ref={heading} tabIndex={-1}>{place.label} {catalogWord("inline", "b622a21f5371")}</h2>
-        <button type="button" className="project-unify-close" disabled={applying} onClick={() => dialog.current?.close()}>{catalogWord("inline", "c7fdddf79eaa")}</button>
+        <h2 id="project-unify-dialog-title" ref={heading} tabIndex={-1}>{place.label} · {catalogWord("projectUnify", "title")}</h2>
+        <button type="button" className="project-unify-close" disabled={applying} onClick={() => dialog.current?.close()}>{catalogWord("projectUnify", "close")}</button>
       </div>
       <div className="project-unify-dialog-body">
         {plan && <p className={`project-unify-status is-${unifyStatusLine(plan).tone}`}><span className="project-unify-dot" aria-hidden="true" />{unifyStatusLine(plan).text}</p>}

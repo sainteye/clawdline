@@ -12,11 +12,31 @@ import (
 
 // The floor was 118 until 2026-10-17, when the 13 strings of the removed
 // `board tracks --store` replay mode were deleted with nothing reading them.
-func TestWorkflowCatalogHasNineCompleteLanguages(t *testing.T) {
+func TestWorkflowCatalogKeepsBaselineAndTwoLanguageCompleteness(t *testing.T) {
+	bundle := cliCatalogGroups["workflow"]
+	if len(bundle.baseline) != 105 {
+		t.Fatal("the shipped nine-language baseline changed")
+	}
+	previous := commandLanguage
+	t.Cleanup(func() { commandLanguage = previous })
 	for _, language := range []string{"en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"} {
 		translated, total := cliCatalogCoverage("workflow", language)
-		if total < 105 || translated != total {
-			t.Errorf("workflow catalog %s = %d/%d, baseline is 105", language, translated, total)
+		if total < len(bundle.baseline) || translated < len(bundle.baseline) ||
+			(language == "en" || language == "zh-Hant") && translated != total {
+			t.Errorf("workflow catalog %s = %d/%d", language, translated, total)
+		}
+		selected := bundle.locales[language]
+		if language == "en" {
+			selected = bundle.english
+		}
+		if !hasCLIBaseline(selected, bundle.baseline) {
+			t.Errorf("%s lost a shipped baseline entry", language)
+		}
+		commandLanguage = language
+		for key, english := range bundle.english {
+			if selected[key] == "" && cliCopy("workflow", key, english) != english {
+				t.Errorf("%s missing %s did not use English fallback", language, key)
+			}
 		}
 	}
 }

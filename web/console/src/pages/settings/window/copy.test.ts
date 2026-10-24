@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node runs the TypeScript source test directly.
+import { reading, supportsITermIntegration } from "./defaults.ts"
 // The sentence under the voice language picker:
 //   node --test web/console/src/pages/settings/window/copy.test.ts
 import { afterEach, beforeEach, test } from "node:test"
@@ -76,4 +78,13 @@ test("Voice composes complete Chinese names and readable sentences in every cata
     assert.ok(automatic.includes(displayNames.of("zh-Hant")!), `${tag}: ${automatic}`)
     assert.doesNotMatch(fixed + automatic, /\{(?:name|why|where|tag)\}|\(으\)로|です\s+です|。\s*。/u, tag)
   }
+})
+
+test("iTerm2 consent distinguishes old daemons from an explicit default-off setting", () => {
+  assert.equal(supportsITermIntegration(null), false)
+  assert.equal(supportsITermIntegration({}), false)
+  assert.equal(supportsITermIntegration({ iterm_integration: null }), true)
+  assert.equal(supportsITermIntegration({ iterm_integration: false }), true)
+  assert.equal(supportsITermIntegration({ iterm_integration: true }), true)
+  assert.equal(reading(null, "iterm_integration"), false)
 })

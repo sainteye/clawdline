@@ -76,11 +76,24 @@ func (s *Server) imageRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	query := r.URL.Query()
+	if values, present := query["size"]; present && (len(values) != 1 || values[0] != "thumb") {
+		writeRefusal(w, http.StatusBadRequest, "bad_query", "An image is read whole, or with size=thumb.")
+		return
+	}
 	now := time.Now()
 	found := s.pictures.store.Lookup(id, now)
 	data, state, mediaType := found.Data, found.State, found.Artifact.MediaType
 	switch state {
 	case artifacts.Live:
+		if query.Get("size") == "thumb" {
+			thumbnail, err := s.thumbs.Get(id, data)
+			if err != nil {
+				writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", "The image could not be drawn small.")
+				return
+			}
+			data, mediaType = thumbnail.JPEG, "image/jpeg"
+		}
 		if r.Header.Get("X-Clawdline-Target-Machine") != "" || r.Header.Get("X-Clawdline-Execution-Generation") != "" {
 			if !s.admitPinnedTarget(w, r, r.URL.Query().Get("session")) {
 				return

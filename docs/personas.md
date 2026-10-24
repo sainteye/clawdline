@@ -23,6 +23,12 @@ Chinese with `clawdline guide zh-Hant squad`. The published copies are
 The CLI uses the machine orchestrator credential on explicitly admitted Squad routes; it never
 borrows a browser credential. Catalog writes are handwritten and do not call a paid AI provider.
 
+Session lists resolve Squad roles from the current process's immutable launch ID and its recorded
+terminal. This includes private roles and launches made before the daemon was updated; no restart
+of the assistant is needed. Built-in roles keep their short presentation IDs. A process without
+the launch marker cannot inherit a previous process's role just because it reuses its terminal.
+Legacy launches continue to use the built-in command-line markers described below.
+
 ## The catalog
 
 The built-in catalog is closed and compiled into the daemon (`internal/domain/persona`). Each built-in persona is
@@ -335,9 +341,10 @@ daemon.
 
 ## Reading it back
 
-Clawdline does not keep a persona in a side table that could drift from the running processes. It
-reads the persona off the process's command line instead. `persona.FromCommandLine` recognises the
-following in the command line that `ps` reports:
+For Squad launches, the process command line carries an immutable launch ID. The inventory
+resolves that ID against the recorded terminal and snapshot before publishing `persona`, including
+private roles. Legacy launches use `persona.FromCommandLine`, which recognises the following
+in the command line that `ps` reports:
 
 - **Claude:** `--append-system-prompt-file …/personas/<id>.md`, with or without `=`.
 - **Codex:** the `clawdline-persona:<id>` marker.

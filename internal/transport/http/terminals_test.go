@@ -440,3 +440,46 @@ func TestAFullTerminalRefusesTheNextViewer(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestQueuedTerminalInputRechecksDowngradeBeforeHostEffect(t *testing.T) {
+	host := newFakeTerms()
+	f := newTermFixture(t, host)
+	term := f.open(f.local)
+	device, token := f.device("phone", true)
+	if _, rec := f.control(term.ID, token, "tab", "acquire"); rec.Code != http.StatusOK {
+		t.Fatal(rec.Body)
+	}
+	svc, err := f.s.terminalService()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.mu.Lock()
+	host.keysDelay = 300 * time.Millisecond
+	host.mu.Unlock()
+	first := make(chan string, 1)
+	second := make(chan string, 1)
+	go func() { first <- f.input(term.ID, token, "tab", 1, 1, "first").Body.String() }()
+	deadline := time.Now().Add(time.Second)
+	for svc.Lanes().Stats().Admitted < 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	go func() { second <- f.input(term.ID, token, "tab", 1, 2, "second").Body.String() }()
+	for svc.Lanes().Stats().Admitted < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if svc.Lanes().Stats().Admitted < 2 {
+		t.Fatal("the second input never entered the terminal lane")
+	}
+	if err := f.s.gate().auth.SetPermission(device, true); err != nil {
+		t.Fatalf("downgrade device: %v", err)
+	}
+	<-first
+	if got := <-second; !strings.Contains(got, "terminal_forbidden") {
+		t.Fatalf("queued input after downgrade: %s", got)
+	}
+	for _, typed := range host.typedNow() {
+		if typed == "second" {
+			t.Fatal("downgraded queued input reached the host")
+		}
+	}
+}

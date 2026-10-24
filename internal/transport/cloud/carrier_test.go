@@ -9,6 +9,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -382,5 +384,86 @@ func TestAPublishedSessionRowTakesTheCarrierToo(t *testing.T) {
 	case raw := <-b.msgs:
 		t.Fatalf("a channel that stays on the relay reached the carrier: %s", raw)
 	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+// The refusal must survive the exact content-key failure that blocks the read.
+func TestCarrierReportsMissingPairingWithoutDisclosingContent(t *testing.T) {
+	for _, pinned := range []bool{false, true} {
+		t.Run(map[bool]string{false: "missing-pin", true: "paired"}[pinned], func(t *testing.T) {
+			f := newDirectFixture(t)
+			b, _, _ := f.carrier(t)
+			f.l.pinned = adaptercloud.NewPinnedStore(t.TempDir())
+			if pinned {
+				if err := f.l.pinned.Pin("account", adaptercloud.PinnedDevice{DeviceID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(f.viewer.PublicKey())}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			epoch, err := domaincloud.NewKeyEpoch(domaincloud.ContentKeyState{Epoch: 1, KeyID: "ms-1", Key: f.master})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.l.contentEpoch = epoch
+			err = f.l.sendCarrierEnvelope("viewer", "t/machine/session", domaincloud.ClassStream, []byte(`{"secret":"must-not-leak"}`))
+			if pinned && err != nil {
+				t.Fatal(err)
+			}
+			if !pinned && !errors.Is(err, domaincloud.ErrRekey) {
+				t.Fatalf("missing typed refusal: %v", err)
+			}
+			select {
+			case raw := <-b.msgs:
+				var frame map[string]any
+				if err := json.Unmarshal(raw, &frame); err != nil {
+					t.Fatal(err)
+				}
+				if !pinned && (len(frame) != 2 || frame["t"] != "read_error" || frame["code"] != "machine_pairing_required") {
+					t.Fatalf("unexpected disclosure: %s", raw)
+				}
+				if pinned && frame["t"] != "env" {
+					t.Fatalf("paired read was refused: %s", raw)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("browser received no outcome")
+			}
+		})
+	}
+}
+
+// A roster-backed viewer has the same read authority on either transport.
+func TestCarrierReadsForLegacyViewerAndStillRejectsRevocation(t *testing.T) {
+	f := newDirectFixture(t)
+	b, _, _ := f.carrier(t)
+	f.l.pinned = adaptercloud.NewPinnedStore(t.TempDir())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"devices": []adaptercloud.RosterDevice{{ID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(f.viewer.PublicKey()), Caps: []string{"read_transcript"}}}})
+	}))
+	defer server.Close()
+	f.l.roster = adaptercloud.NewRoster(server.URL, "synthetic", time.Now)
+	epoch, err := domaincloud.NewKeyEpoch(domaincloud.ContentKeyState{Epoch: 1, KeyID: "ms-1", Key: f.master})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.l.contentEpoch = epoch
+	if err := f.l.sendCarrierEnvelope("viewer", "t/machine/session", domaincloud.ClassStream, []byte(`{"read":"transcript","body":{"text":"synthetic"}}`)); err != nil {
+		t.Fatalf("legacy viewer's answer was dropped: %v", err)
+	}
+	_, body := f.openMaster(t, b.next(t))
+	if body["read"] != "transcript" {
+		t.Fatalf("unexpected answer: %v", body)
+	}
+	if err := f.l.pinned.Pin("account", adaptercloud.PinnedDevice{DeviceID: "viewer", PublicKey: base64.StdEncoding.EncodeToString(f.viewer.PublicKey())}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.l.pinned.Revoke("viewer", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.l.sendCarrierEnvelope("viewer", "t/machine/session", domaincloud.ClassStream, []byte(`{"private":"must not leave"}`)); !errors.Is(err, domaincloud.ErrRekey) {
+		t.Fatalf("revoked viewer admitted by roster fallback: %v", err)
+	}
+	select {
+	case frame := <-b.msgs:
+		t.Fatalf("revoked viewer received content: %s", frame)
+	default:
 	}
 }

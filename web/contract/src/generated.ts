@@ -53,6 +53,49 @@ export interface AdoptRequest {
   token: string
 }
 
+export interface AntigravityConsentChange {
+  action: AntigravityConsentChangeAction
+  preview?: AntigravityConsentPreview
+  revision: number
+  scope: string
+}
+
+export type AntigravityConsentChangeAction =
+    "enable"
+  | "disable"
+
+export const AntigravityConsentChangeActionValues: readonly AntigravityConsentChangeAction[] = ["enable", "disable"] as const
+
+export interface AntigravityConsentPreview {
+  before_digest: string
+  helper_digest: string
+  managed_digest: string
+}
+
+export interface AntigravityConsentStatus {
+  hooks: AntigravityConsentStatusHooks
+  phase: AntigravityConsentStatusPhase
+  preview?: AntigravityConsentPreview
+  reason?: string
+  revision: number
+  scope: string
+}
+
+export type AntigravityConsentStatusHooks =
+    "unknown"
+  | "installed"
+  | "removed"
+
+export const AntigravityConsentStatusHooksValues: readonly AntigravityConsentStatusHooks[] = ["unknown", "installed", "removed"] as const
+
+export type AntigravityConsentStatusPhase =
+    "absent"
+  | "preparing"
+  | "active"
+  | "disabled"
+
+export const AntigravityConsentStatusPhaseValues: readonly AntigravityConsentStatusPhase[] = ["absent", "preparing", "active", "disabled"] as const
+
 /**
  * The answer to an archive: the close's answer (`ok`, `id`, `action` = `archived`,
  * `forced`) and the row it recorded.
@@ -134,8 +177,9 @@ export interface ArchivedSessions {
 export type Assistant =
     "claude"
   | "codex"
+  | "antigravity"
 
-export const AssistantValues: readonly Assistant[] = ["claude", "codex"] as const
+export const AssistantValues: readonly Assistant[] = ["claude", "codex", "antigravity"] as const
 
 /**
  * One of four things this Mac can honestly say about an assistant's account-level
@@ -1748,11 +1792,13 @@ export interface BrokerTabEnd {
  * Which rule decides one task's child tab. `child_linger` closes a finished
  * unscheduled child `orchestrator_child_linger` after it ends; `child_linger_off`
  * is that setting negative, which keeps every finished child open;
- * `unfinished_left_open` is a timeout, whose child may still be working; the three
- * `schedule_…` rules are a scheduled run's `close_tab`; `spawn_failed` is a child
- * that never started, closed at once whatever else is set; `cancelled_closed` is a
- * task its root or the person cancelled, whose child is stopped at once whatever
- * else is set (its commits stay on its branch).
+ * `unfinished_left_open` is a timeout, whose terminal child may still be working;
+ * `owned_timeout_closed` stops an owned native worker at its timeout while
+ * preserving its history; the three `schedule_…` rules are a scheduled run's
+ * `close_tab`; `spawn_failed` is a child that never started, closed at once
+ * whatever else is set; `cancelled_closed` is a task its root or the person
+ * cancelled, whose child is stopped at once whatever else is set (its commits stay
+ * on its branch).
  */
 export type BrokerTabRule =
     "child_linger"
@@ -1763,8 +1809,9 @@ export type BrokerTabRule =
   | "schedule_never"
   | "spawn_failed"
   | "cancelled_closed"
+  | "owned_timeout_closed"
 
-export const BrokerTabRuleValues: readonly BrokerTabRule[] = ["child_linger", "child_linger_off", "unfinished_left_open", "schedule_on_success", "schedule_always", "schedule_never", "spawn_failed", "cancelled_closed"] as const
+export const BrokerTabRuleValues: readonly BrokerTabRule[] = ["child_linger", "child_linger_off", "unfinished_left_open", "schedule_on_success", "schedule_always", "schedule_never", "spawn_failed", "cancelled_closed", "owned_timeout_closed"] as const
 
 /**
  * One dispatched piece of work, as the console and a dispatching root read it.
@@ -2034,6 +2081,10 @@ export interface BrowserDevice {
  * Local token only.
  */
 export interface BrowserRequest {
+  /**
+   * Optional local selection; omission preserves read-and-operate.
+   */
+  permission?: string
 }
 
 /**
@@ -2425,8 +2476,9 @@ export type CapacityUnit =
   | "characters"
   | "rows"
   | "seconds"
+  | "milliseconds"
 
-export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "characters", "rows", "seconds"] as const
+export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "characters", "rows", "seconds", "milliseconds"] as const
 
 export interface CatalogError {
   code: string
@@ -2655,6 +2707,42 @@ export type CloseabilityState =
   | "unknown"
 
 export const CloseabilityStateValues: readonly CloseabilityState[] = ["safe", "blocked", "needs_attestation", "unknown"] as const
+
+export interface CloudPairingOfferRequest {
+  offer: string
+
+  /**
+   * Selected by the machine, never by the browser's encrypted offer.
+   */
+  scope?: CloudViewerScope
+}
+
+export interface CloudPairingRequest {
+  /**
+   * Omitted preserves the legacy operate default.
+   */
+  scope?: CloudViewerScope
+}
+
+export interface CloudViewerGrantRequest {
+  device: string
+  scope: CloudViewerScope
+}
+
+export interface CloudViewerGrantResponse {
+  device: string
+  scope: CloudViewerScope
+}
+
+/**
+ * The machine-local operation ceiling; the machine commands switch and account
+ * identity checks remain independent requirements.
+ */
+export type CloudViewerScope =
+    "readonly"
+  | "operate"
+
+export const CloudViewerScopeValues: readonly CloudViewerScope[] = ["readonly", "operate"] as const
 
 /**
  * GET /v1/orchestrator/completions?pending=true|false. `pending=true` (the default)
@@ -3048,6 +3136,17 @@ export interface DeviceList {
   configured: boolean
   devices: PairedDevice[]
   password: boolean
+}
+
+/**
+ * Local token only. POST /v1/auth/devices/{id}/permission persists a grant; POST
+ * /v1/auth/pairings/{id}/permission selects the pending pairing before
+ * confirmation. Missing/invalid permission is 400 bad_request; unknown/expired id
+ * is 404 not_found. Public pair/confirm fields never select a grant. Repeated
+ * writes are idempotent.
+ */
+export interface DevicePermission {
+  permission: string
 }
 
 /**
@@ -3471,11 +3570,13 @@ export type IdentityBinding =
   | "open_file"
   | "live_title"
   | "registry"
+  | "launch_hook"
+  | "protocol"
   | "no_record"
   | "unreadable"
   | "ambiguous"
 
-export const IdentityBindingValues: readonly IdentityBinding[] = ["command_line", "open_file", "live_title", "registry", "no_record", "unreadable", "ambiguous"] as const
+export const IdentityBindingValues: readonly IdentityBinding[] = ["command_line", "open_file", "live_title", "registry", "launch_hook", "protocol", "no_record", "unreadable", "ambiguous"] as const
 
 /**
  * Why a reference has no picture behind it: `expired` when the store held it and no
@@ -4159,7 +4260,8 @@ export interface PairStarted {
 
 export interface PairedDevice {
   /**
-   * Paired devices have read and send access.
+   * Read-only grants have read; read-and-operate grants have read and send. Legacy
+   * rows and unselected new pairings default to read and send.
    */
   caps: string[]
 
@@ -4213,7 +4315,8 @@ export interface PasswordSet {
  */
 export interface PastSession {
   /**
-   * When it was last written to, Unix seconds.
+   * When it was last written to, Unix seconds; zero when native history does not
+   * report a timestamp.
    */
   at: number
 
@@ -4232,9 +4335,11 @@ export interface PastSession {
 
 /**
  * GET /v1/places/{id}/sessions[/{assistant}]: what that assistant has recorded in
- * the place, newest first. Codex returns one provider page of twenty with an opaque
- * next_cursor; other assistants return at most two hundred. Dispatched children and
- * `-p` runs are not conversations and are left out.
+ * the place, newest first. Codex returns one provider page of twenty. Gemini
+ * returns saved local pages of at most two hundred, then explicit native pages
+ * bounded by the ACP frame budget. Both use opaque next_cursor values; other
+ * assistants return at most two hundred. Dispatched children and `-p` runs are not
+ * conversations and are left out.
  */
 export interface PastSessionList {
   assistant: string
@@ -4246,7 +4351,7 @@ export interface PastSessionList {
   more: boolean
 
   /**
-   * Opaque continuation for the next Codex page; omitted at the end.
+   * Opaque continuation for the next provider page; omitted at the end.
    */
   next_cursor?: string
   place: string
@@ -4350,6 +4455,12 @@ export interface PlaceError {
    */
   app?: string
   code: string
+
+  /**
+   * Producer catalog key for a known fixed refusal; omitted for raw or external
+   * messages.
+   */
+  detail_key?: string
   message: string
   request_id: string
 }
@@ -5073,6 +5184,12 @@ export type ProjectUnifyFileState =
 
 export const ProjectUnifyFileStateValues: readonly ProjectUnifyFileState[] = ["present", "missing", "link", "unreadable"] as const
 
+export interface ProjectUnifyNativeFile {
+  kind: string
+  path: string
+  status: string
+}
+
 export type ProjectUnifyOutcome =
     "applied"
   | "stopped"
@@ -5095,6 +5212,12 @@ export interface ProjectUnifyPlan {
    * (skill_copy).
    */
   links_available: boolean
+
+  /**
+   * Documented Antigravity-only root candidates, read-only and outside Unify
+   * actions. Missing or null means unreported. Does not assert activation.
+   */
+  native_only: ProjectUnifyNativeFile[] | null
   rules: ProjectUnifyRules
   skills: ProjectUnifySkill[]
   status: ProjectUnifyStatus
@@ -5111,6 +5234,12 @@ export interface ProjectUnifyPlan {
  * following the measured loading rules in docs/shared-project-instructions.md.
  */
 export interface ProjectUnifyReads {
+  /**
+   * Antigravity CLI applicable workspace candidates; absent or null means
+   * unreported by an older machine. Empty means checked and none. Not active
+   * Session context.
+   */
+  antigravity: string[] | null
   claude: string[]
   codex: string[]
 }
@@ -5140,6 +5269,11 @@ export interface ProjectUnifyRules {
 }
 
 export interface ProjectUnifySeen {
+  /**
+   * Applicability through .agents/skills. Null or absent is unreported; false is
+   * checked and unavailable.
+   */
+  antigravity: boolean | null
   claude: boolean
   codex: boolean
 }
@@ -5226,6 +5360,39 @@ export interface ProposalDiagnostics {
    * conversation.
    */
   pending: number
+}
+
+/**
+ * An account quota observation. Empty windows means unknown, never zero.
+ * Credentials and account identifiers are never included. A provider with no
+ * windows is omitted from the footer.
+ */
+export interface ProviderQuotaRow {
+  id: string
+  label: string
+  observed_at?: number
+  problem?: string
+  source: string
+  stale: boolean
+  windows: ProviderQuotaWindow[]
+}
+
+/**
+ * GET /v1/provider-quotas. Current machine only; file observations for Claude and
+ * Codex, cached metadata reads for Gemini and Grok. Network refreshes are
+ * asynchronous and single-flight per provider; failures retain the last successful
+ * snapshot marked stale.
+ */
+export interface ProviderQuotaSnapshot {
+  at: number
+  providers: ProviderQuotaRow[]
+  updating: boolean
+}
+
+export interface ProviderQuotaWindow {
+  name: string
+  resets_at?: number
+  used_percent: number
 }
 
 /**
@@ -5905,8 +6072,9 @@ export interface ScheduleRequest {
   place_id: string
 
   /**
-   * Codex high or xhigh; no key keeps the saved value, an empty string takes it
-   * off.
+   * Codex high or xhigh; Antigravity low, medium, high, xhigh or max. No key keeps
+   * the saved value for the same provider; changing provider does not inherit
+   * another provider's effort. An empty string takes it off.
    */
   reasoning_effort?: string
 
@@ -6069,7 +6237,8 @@ export interface ScheduleTask {
  * has no type for it). `permission_mode` is refused by name
  * (`template_permission_mode`): it is sent as the form's own field, where who may
  * set it is checked. Any other key is refused by name. `reasoning_effort` is kept
- * only when the assistant is codex, as a save keeps it.
+ * for codex or antigravity and validated against that provider's vocabulary, as a
+ * save keeps it.
  */
 export interface ScheduleTemplate {
   claims?: string[]
@@ -6449,6 +6618,13 @@ export interface SessionInfo {
    * between runs are one blank cell.
    */
   deployQuiet?: ProjectDeployQuiet
+
+  /**
+   * Native offered thinking_level option values for this owned ACP session. May
+   * change with model selection. Absent when structured options are unavailable; no
+   * inferred effort control.
+   */
+  efforts?: string[]
   limits?: SessionLimits
 
   /**
@@ -6523,16 +6699,19 @@ export interface SessionInfoSession {
   cwd?: string
 
   /**
-   * The reasoning effort explicitly named by the newest Codex turn context, or its
-   * startup card before a turn context names it. Absent when unknown.
+   * The reasoning effort explicitly named by the session record or startup card, or
+   * the current native ACP thinking_level configOption. Never inferred from model
+   * ID suffixes. Absent when unknown.
    */
   effort?: string
   icon?: Icon
   id: string
 
   /**
-   * The model explicitly named by the session record, or by Codex's startup card
-   * before a record names it. Absent without evidence.
+   * The model explicitly named by the session record, Codex startup card, or owned
+   * ACP metadata. Structured ACP model configOptions provide the native base ID
+   * independently of thinking_level; legacy IDs are not split. Absent without
+   * evidence.
    */
   model?: string
 
@@ -6659,8 +6838,9 @@ export interface SessionLimits {
 }
 
 /**
- * The question on a waiting session's screen, as rows a finger can hit (the Swift
- * app's menuObject). Present only on a waiting session whose screen could be read
+ * The question on a waiting Session, as rows a finger can hit. An owned protocol
+ * may supply an exact live native offer; otherwise this is a screen menu (the Swift
+ * app's menuObject). For screen menus, present only when the screen could be read
  * as a menu; a waiting row without it is a question drawn in a shape nothing
  * recognised. The row labels and details may be refilled from the session's own
  * transcript, but only once the screen proves which question it is showing; the
@@ -6674,6 +6854,12 @@ export interface SessionMenu {
    * could not be read.
    */
   question?: string
+
+  /**
+   * Opaque identity of one live native offer. Included in the menu fingerprint when
+   * present; repeated identical questions have distinct revisions.
+   */
+  revision?: string
 
   /**
    * The number of the row the caret is on. Absent when it is on none of them — a
@@ -7266,6 +7452,18 @@ export interface SessionsSnapshot {
  */
 export interface SettingsRequest {
   /**
+   * Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the
+   * choice to Antigravity.
+   */
+  antigravity_default_effort: string | null
+
+  /**
+   * Native Antigravity model slug. Empty leaves the choice to Antigravity; no
+   * fallback to another provider.
+   */
+  antigravity_default_model: string | null
+
+  /**
    * `claude` or `codex`.
    */
   auto_name_assistant: string | null
@@ -7338,12 +7536,16 @@ export interface SettingsRequest {
   hotkey: string | null
 
   /**
-   * Whether this daemon asks iTerm2 for its sessions, their screens and their input
-   * over Apple Events. Absent means true. Off, the iTerm2 source answers `disabled:
-   * setting` instead of a list, and typing, keys, screen reads and closes on iTerm2
-   * sessions are refused before any Apple Event; opening a viewer tab for a tmux
-   * session, Reveal and closing a child tab this daemon opened still send their one
-   * Apple Event each. It takes effect on the next reading, without a restart.
+   * Explicit opt-in to reading and controlling iTerm2; absent is off, including
+   * existing installations.
+   */
+  iterm_integration: boolean | null
+
+  /**
+   * Legacy polling preference inside an explicitly enabled iterm_integration.
+   * Absent means true. This preference never grants integration consent. Off,
+   * background listing and screen sampling stop; requested actions are allowed only
+   * while integration is enabled.
    */
   iterm_scan: boolean | null
 
@@ -7503,6 +7705,32 @@ export interface SettingsRequest {
    * Bundle identifiers separated by commas, or empty for every app.
    */
   scope_app: string | null
+  session_auto_discovery: boolean | null
+
+  /**
+   * The Cloud device id the macOS app's own tab paired as, recorded by the setup
+   * wizard from the invitation it handed the app. Empty or absent is not known.
+   */
+  setup_app_device: string | null
+
+  /**
+   * Unix seconds when the console first saw all three setup items paired; 0 or
+   * absent is not complete. The header setup button folds away one day later.
+   */
+  setup_completed_at: number | null
+
+  /**
+   * Empty, cloud or local. What the person chose in the setup wizard: local keeps
+   * the header from showing unfinished Cloud setup. Empty or absent is not chosen
+   * yet.
+   */
+  setup_mode: string | null
+
+  /**
+   * Setup items the person chose to skip, comma separated: app, browser, phone. A
+   * skipped item counts as settled.
+   */
+  setup_skipped: string | null
 
   /**
    * Have a model write the sentence a notification carries.
@@ -7562,6 +7790,18 @@ export interface SettingsRequest {
 }
 
 export interface SettingsSnapshot {
+  /**
+   * Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the
+   * choice to Antigravity.
+   */
+  antigravity_default_effort: string | null
+
+  /**
+   * Native Antigravity model slug. Empty leaves the choice to Antigravity; no
+   * fallback to another provider.
+   */
+  antigravity_default_model: string | null
+
   /**
    * Whose quota that naming turn spends, `claude` or `codex`. Remembered while the
    * switch above is off, so turning it back on does not quietly change providers.
@@ -7652,12 +7892,16 @@ export interface SettingsSnapshot {
   hotkey: string | null
 
   /**
-   * Whether this daemon asks iTerm2 for its sessions, their screens and their input
-   * over Apple Events. Absent means true. Off, the iTerm2 source answers `disabled:
-   * setting` instead of a list, and typing, keys, screen reads and closes on iTerm2
-   * sessions are refused before any Apple Event; opening a viewer tab for a tmux
-   * session, Reveal and closing a child tab this daemon opened still send their one
-   * Apple Event each. It takes effect on the next reading, without a restart.
+   * Explicit opt-in to reading and controlling iTerm2; absent is off, including
+   * existing installations.
+   */
+  iterm_integration: boolean | null
+
+  /**
+   * Legacy polling preference inside an explicitly enabled iterm_integration.
+   * Absent means true. This preference never grants integration consent. Off,
+   * background listing and screen sampling stop; requested actions are allowed only
+   * while integration is enabled.
    */
   iterm_scan: boolean | null
 
@@ -7834,6 +8078,32 @@ export interface SettingsSnapshot {
    * com.googlecode.iterm2. Empty is every app.
    */
   scope_app: string | null
+  session_auto_discovery: boolean | null
+
+  /**
+   * The Cloud device id the macOS app's own tab paired as, recorded by the setup
+   * wizard from the invitation it handed the app. Empty or absent is not known.
+   */
+  setup_app_device: string | null
+
+  /**
+   * Unix seconds when the console first saw all three setup items paired; 0 or
+   * absent is not complete. The header setup button folds away one day later.
+   */
+  setup_completed_at: number | null
+
+  /**
+   * Empty, cloud or local. What the person chose in the setup wizard: local keeps
+   * the header from showing unfinished Cloud setup. Empty or absent is not chosen
+   * yet.
+   */
+  setup_mode: string | null
+
+  /**
+   * Setup items the person chose to skip, comma separated: app, browser, phone. A
+   * skipped item counts as settled.
+   */
+  setup_skipped: string | null
 
   /**
    * Have a model write the sentence a notification carries.
@@ -8296,10 +8566,37 @@ export interface SquadWriteReply {
 }
 
 export interface StartAssistant {
+  authState?: StartAuthState
   availability: StartAvailability
+  capabilities?: StartCapabilities
   id: string
+
+  /**
+   * Whether a local executable was found; null when not checked. Does not prove
+   * protocol compatibility or authentication.
+   */
+  installed: boolean | null
+  integrationState?: StartIntegrationState
   label: string
+
+  /**
+   * Validated standalone CLI version, absent when compatibility could not be
+   * established.
+   */
+  version?: string
 }
+
+/**
+ * Authentication evidence, separate from executable presence and quota. Unknown
+ * never means ready.
+ */
+export type StartAuthState =
+    "ready"
+  | "required"
+  | "unknown"
+  | "unsupported_account"
+
+export const StartAuthStateValues: readonly StartAuthState[] = ["ready", "required", "unknown", "unsupported_account"] as const
 
 /**
  * AssistantQuota.Availability. This daemon reads no quota, so it answers unknown.
@@ -8311,6 +8608,32 @@ export type StartAvailability =
   | "unknown"
 
 export const StartAvailabilityValues: readonly StartAvailability[] = ["ok", "low", "exhausted", "unknown"] as const
+
+/**
+ * Operations admitted by this daemon's verified integration. CLI syntax alone never
+ * makes an operation available.
+ */
+export interface StartCapabilities {
+  menus: boolean
+  resume: boolean
+
+  /**
+   * This daemon can launch immutable roles through its current integration.
+   * Omission does not advertise Gemini role support.
+   */
+  roles?: boolean
+  send: boolean
+  start: boolean
+  transcript: boolean
+}
+
+export type StartIntegrationState =
+    "active"
+  | "disabled"
+  | "missing"
+  | "incompatible"
+
+export const StartIntegrationStateValues: readonly StartIntegrationState[] = ["active", "disabled", "missing", "incompatible"] as const
 
 /**
  * One directory a session can be started in. `id` is sixteen hex characters of the
@@ -8923,9 +9246,10 @@ export type TerminalRefusalCode =
   | "terminal_access_revoked"
   | "terminal_cloud_not_supported"
   | "terminal_socket_path_too_long"
+  | "viewer_read_only"
   | "terminal_invalid"
 
-export const TerminalRefusalCodeValues: readonly TerminalRefusalCode[] = ["terminal_forbidden", "not_controller", "terminal_controlled", "lease_superseded", "lease_expired", "input_gap", "input_state_unknown", "input_too_large", "terminal_busy", "terminal_closed", "terminal_unreachable", "terminal_unsupported", "terminals_full", "terminal_viewers_full", "terminal_access_revoked", "terminal_cloud_not_supported", "terminal_socket_path_too_long", "terminal_invalid"] as const
+export const TerminalRefusalCodeValues: readonly TerminalRefusalCode[] = ["terminal_forbidden", "not_controller", "terminal_controlled", "lease_superseded", "lease_expired", "input_gap", "input_state_unknown", "input_too_large", "terminal_busy", "terminal_closed", "terminal_unreachable", "terminal_unsupported", "terminals_full", "terminal_viewers_full", "terminal_access_revoked", "terminal_cloud_not_supported", "terminal_socket_path_too_long", "viewer_read_only", "terminal_invalid"] as const
 
 /**
  * POST /v1/terminals/{id}/resize. The holder only; the newest size asked for wins.
@@ -9027,6 +9351,13 @@ export interface TranscriptEntry {
    * on every other entry.
    */
   fileChanges?: TranscriptFileChange[]
+
+  /**
+   * Stable entry identity when the provider has a durable projection. Owned ACP
+   * uses acp2:generation:ordinal, preserving distinct repeated turns and replacing
+   * streamed content in place. Absent for providers without entry identities.
+   */
+  id?: string
 
   /**
    * Images attached to a user turn. Absent when there were none: the Swift app
@@ -9172,8 +9503,9 @@ export interface TranscriptPage {
   nextAfter?: number
 
   /**
-   * Exclusive byte cursor for the next older page; absent at the beginning of the
-   * record, and on an after= page.
+   * Exclusive provider cursor for the next older page: a JSONL byte offset or a
+   * durable owned ACP entry ordinal. Pass it back unchanged with this page's
+   * signature. Absent at the beginning of the record, and on an after= page.
    */
   nextBefore?: number
   note?: string
@@ -9185,8 +9517,18 @@ export interface TranscriptPage {
   path?: string
 
   /**
-   * The record's size and modification time, `<bytes>-<unix seconds>`, and empty
-   * when nothing was read. It changes whenever the entries could have.
+   * Optional exclusive opaque cursor for rereading this exact durable ACP page with
+   * its signature, including after its entries leave the newest window.
+   */
+  readBefore?: number
+
+  /**
+   * Opaque record revision, empty when nothing was read. Claude/Codex use size and
+   * modification time; native Antigravity uses
+   * agy1:file-generation:prefix-bytes:sha256; durable owned ACP uses
+   * acp2:generation:revision, where only a native history replacement changes
+   * generation. Return this exact held page signature as revision with its
+   * before/after cursor; never substitute another page's signature.
    */
   signature: string
   truncation?: TranscriptTruncation
@@ -11127,6 +11469,28 @@ export type WorkState =
   | "work_complete"
 
 export const WorkStateValues: readonly WorkState[] = ["ready", "working", "holding", "waiting_you", "waiting_session", "unknown", "milestone_complete", "work_complete"] as const
+
+export interface WorkflowSettingsRequest {
+  dispatch_full_permission: boolean | null
+
+  /**
+   * Explicit opt-in to iTerm2 access. False by default; older daemons omit this
+   * field.
+   */
+  iterm_integration: boolean | null
+  session_auto_discovery: boolean | null
+}
+
+export interface WorkflowSettingsSnapshot {
+  dispatch_full_permission: boolean
+
+  /**
+   * Explicit opt-in to iTerm2 access. False by default; older daemons omit this
+   * field.
+   */
+  iterm_integration: boolean | null
+  session_auto_discovery: boolean
+}
 
 export interface WorktreeCanonical {
   error: WorktreeIssue | null

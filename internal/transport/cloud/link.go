@@ -27,6 +27,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -142,6 +143,7 @@ type Status struct {
 // Viewer is one enrolled device, as the status route shows it. It carries no
 // key material: a fingerprint is what a person compares, a public key is not.
 type Viewer struct {
+	Scope       string   `json:"scope,omitempty"`
 	ID          string   `json:"id"`
 	Kind        string   `json:"kind,omitempty"`
 	Name        string   `json:"name,omitempty"`
@@ -167,6 +169,9 @@ const StateOff = "off"
 
 // LinkOptions is everything the wiring needs from the daemon.
 type LinkOptions struct {
+	// ContentKeyRuntime enables the integrated protocol only after relay/viewer acceptance.
+	// Production callers intentionally leave this false.
+	ContentKeyRuntime bool
 	// Dir is this daemon's own state directory. Keys, the identity record and
 	// the sequence fence live under it.
 	Dir string
@@ -221,6 +226,12 @@ type LinkOptions struct {
 	// QueueDepth is how many decrypted requests may wait for the bridge: the
 	// capacity register's `cloud.relay_queue` limit. Zero is its default.
 	QueueDepth int
+	// ReadQueueDepth may lower the read waiting queue independently of ingress.
+	// Zero uses CloudReadQueueLimit; it cannot raise that bound.
+	ReadQueueDepth int
+	// RefusalQueueDepth may lower the queue for busy replies. A stalled reply
+	// never holds the dispatcher, and cannot grow an unbounded set of senders.
+	RefusalQueueDepth int
 	// SpoolRows and SpoolBytes are the outbound spool's two global caps: the
 	// register's `cloud.spool` and `cloud.spool_bytes` limits. Zero, or a
 	// number above the default, is the default.
@@ -240,9 +251,11 @@ type LinkOptions struct {
 
 // Link is one machine's Cloud line.
 type Link struct {
-	opts     LinkOptions
-	file     *nextconfig.File
-	settings adaptercloud.Settings
+	contentEpoch     *domaincloud.KeyEpoch
+	contentAuthority *runtimeAuthority
+	opts             LinkOptions
+	file             *nextconfig.File
+	settings         adaptercloud.Settings
 
 	identity        adaptercloud.Identity
 	keys            *cloudkeys.Files
@@ -267,8 +280,14 @@ type Link struct {
 	refused   int
 	// reading is how many reads are being answered beside the command lane,
 	// at most CloudReadConcurrencyLimit.
-	reading     int
-	fingerprint string
+	reading            int
+	readQueue          chan pending
+	readFlights        map[*readFlight]struct{}
+	readQueueRefused   int64
+	readPressureAt     time.Time
+	laneRefusals       chan laneRefusal
+	laneRefusalDropped int64
+	fingerprint        string
 	// taskListMoved is set when this machine has written a task row and
 	// cleared by the publisher pass that reads the list because of it
 	// (TaskListChanged, tasklist.go). It is on the Link rather than on the
@@ -659,11 +678,12 @@ func Open(opts LinkOptions) (*Link, error) {
 		// Read from the store rather than captured, so that a rotation
 		// between two pairings cannot hand the second browser the first
 		// browser's key.
-		Keys:     link.pairingKeys,
-		Pinned:   link.pinned,
-		OnRevoke: link.revokeTerminalViewer,
-		Now:      opts.Now,
-		Log:      opts.Log,
+		Keys:          link.pairingKeys,
+		Pinned:        link.pinned,
+		OnRevoke:      link.revokeTerminalViewer,
+		OnScopeChange: link.viewerScopeChanged,
+		Now:           opts.Now,
+		Log:           opts.Log,
 	}
 	// The identity pairing hands the master secret over with a recorded
 	// content-key epoch; its epoch record sits beside the key files.
@@ -705,9 +725,39 @@ func (l *Link) wire() error {
 	if err != nil {
 		return err
 	}
-	secret, err := domaincloud.LoadOrCreateMasterSecret(keys, rand.Reader)
-	if err != nil {
-		return err
+	var secret domaincloud.ContentKey
+	var epoch *domaincloud.KeyEpoch
+	keyID := adaptercloud.MasterKeyID
+	if opts.ContentKeyRuntime {
+		state, loadErr := keys.LoadOrCreateContentKey(rand.Reader)
+		if errors.Is(loadErr, domaincloud.ErrContentKeyPending) {
+			state, loadErr = keys.RecoverContentKey()
+		}
+		if loadErr != nil {
+			return loadErr
+		}
+		epoch, err = domaincloud.NewKeyEpoch(state)
+		if err != nil {
+			return err
+		}
+		secret, keyID = state.Key, state.KeyID
+		l.contentEpoch = epoch
+		if l.contentAuthority == nil {
+			l.contentAuthority = &runtimeAuthority{}
+		}
+		l.pairing.Authority = &l.contentAuthority.mu
+		l.pairing.Generation = &l.contentAuthority.generation
+		l.pairing.ContentState = epoch.Current
+		l.pairing.RevokeContent = l.revokeContentViewer
+		l.identityPairing.Authority = &l.contentAuthority.mu
+		l.identityPairing.Generation = &l.contentAuthority.generation
+		l.identityPairing.ContentState = epoch.Current
+		l.identityPairing.Pinned = l.pinned
+	} else {
+		secret, err = domaincloud.LoadOrCreateMasterSecret(keys, rand.Reader)
+		if err != nil {
+			return err
+		}
 	}
 	l.mu.Lock()
 	l.fingerprint = key.Fingerprint()
@@ -745,7 +795,8 @@ func (l *Link) wire() error {
 		MachineID: identity.MachineID,
 		Signer:    key,
 		Secret:    secret,
-		KeyID:     adaptercloud.MasterKeyID,
+		KeyID:     keyID,
+		Keys:      epoch,
 		Now:       opts.Now,
 		Log:       opts.Log,
 		Depth:     opts.QueueDepth,
@@ -781,6 +832,8 @@ func (l *Link) wire() error {
 		OnAck:                l.publicationAcked,
 		PublicKeyFor:         l.publicKeyFor,
 		ContentKey:           secret,
+		KeyEpoch:             epoch,
+		RawRekeyOffer:        l.rawRekeyCallback(),
 		Log:                  func(line string) { l.logf("%s", line) },
 		Now:                  opts.Now,
 		Health:               opts.Health,
@@ -790,6 +843,15 @@ func (l *Link) wire() error {
 	}
 	l.transport = transport
 	l.relay.Transport = transport
+	if epoch != nil {
+		if r, pending, err := keys.PendingRevocation(); err != nil {
+			return err
+		} else if pending {
+			if err := l.resumeRevocation(r); err != nil {
+				return err
+			}
+		}
+	}
 	l.service = Service{
 		MachineID: identity.MachineID,
 		Bridge: cloudops.Bridge{
@@ -1067,11 +1129,18 @@ func (l *Link) refreshRoster(ctx context.Context) {
 	}
 }
 
-// CloudReadConcurrencyLimit is how many Cloud reads may be answered at once
-// beside the command lane. Past it a read is told `cloud_ingress_busy` at once
-// rather than waited for: waiting would put the command lane behind reads,
-// which is the same stall the other way round.
+// CloudReadConcurrencyLimit bounds execution, independently of waiting reads.
+// A finite burst may wait without making the dispatcher or command lane wait.
 const CloudReadConcurrencyLimit = 8
+
+// CloudReadQueueLimit bounds reads waiting for those workers. Only a full
+// waiting queue is refused as cloud_ingress_busy; eight occupied workers alone
+// are ordinary load, not evidence that the next read cannot be answered.
+const CloudReadQueueLimit = 64
+
+// CloudLaneRefusalsLimit bounds pending busy replies independently of reads
+// and commands. A blocked carrier or spool must not hold their dispatcher.
+const CloudLaneRefusalsLimit = 16
 
 // runService answers requests, counting what it answered.
 //
@@ -1084,15 +1153,15 @@ const CloudReadConcurrencyLimit = 8
 // answer it — the Board's Project picker and the new-session dialog both wait
 // on `places`, and both stayed there while one request upstream never
 // returned and the pushed Session list kept moving. So a read is answered
-// beside the command lane, up to CloudReadConcurrencyLimit at once.
+// beside the command lane, up to CloudReadConcurrencyLimit at once, with a
+// separate bounded FIFO for bursts while those workers are occupied.
 //
 // Neither lane may make this goroutine wait, because whatever it waits on is
 // what every later request of the other kind waits behind. A read past its
-// bound and a command past the lane's depth are both answered
-// `cloud_ingress_busy` at once — the sentence Relay already sends for a full
-// queue, which the hosted console draws as "busy, try again", rather than a
-// request that silently never returns. The refusal asks no route, so it
-// cannot be what is stuck.
+// waiting queue and a command past the lane's depth both queue a typed
+// `cloud_ingress_busy` reply. That reply has its own bounded worker: even a
+// small answer can be stuck in a carrier or spool, and that must not hold the
+// next command. A reply that cannot even be queued is counted as unanswered.
 //
 // Every answer this starts is waited for before it returns, so nothing is
 // written after the link has stopped.
@@ -1104,6 +1173,31 @@ func (l *Link) runService(ctx context.Context) error {
 	// now, and no more.
 	depth := l.relay.QueueDepth()
 	commands := make(chan pending, depth)
+	readDepth := min(depth, CloudReadQueueLimit)
+	if l.opts.ReadQueueDepth > 0 {
+		readDepth = min(readDepth, l.opts.ReadQueueDepth)
+	}
+	reads := make(chan pending, readDepth)
+	refusalDepth := CloudLaneRefusalsLimit
+	if l.opts.RefusalQueueDepth > 0 {
+		refusalDepth = min(refusalDepth, l.opts.RefusalQueueDepth)
+	}
+	refusals := make(chan laneRefusal, refusalDepth)
+	l.mu.Lock()
+	l.readQueue = reads
+	l.laneRefusals = refusals
+	l.mu.Unlock()
+	answers.Add(1)
+	go func() { defer answers.Done(); l.runLaneRefusals(ctx, refusals) }()
+	defer close(refusals)
+	for i := 0; i < CloudReadConcurrencyLimit; i++ {
+		answers.Add(1)
+		go func() {
+			defer answers.Done()
+			l.runReads(ctx, reads)
+		}()
+	}
+	defer close(reads)
 	answers.Add(1)
 	go func() {
 		defer answers.Done()
@@ -1111,13 +1205,27 @@ func (l *Link) runService(ctx context.Context) error {
 	}()
 	defer close(commands)
 	requests := l.relay.Requests()
+	ingressRefusals := l.relay.Refused()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case request, open := <-ingressRefusals:
+			if !open {
+				ingressRefusals = nil
+				if requests == nil {
+					return nil
+				}
+				continue
+			}
+			l.queueBusy(refusals, laneRefusal{service: l.service, request: request, lane: "ingress", limit: depth, ingress: true})
 		case request, open := <-requests:
 			if !open {
-				return nil
+				requests = nil
+				if ingressRefusals == nil {
+					return nil
+				}
+				continue
 			}
 			// The service is taken here, on this goroutine, for every answer
 			// started off it: a rotation rewires l.service and must not race
@@ -1135,17 +1243,18 @@ func (l *Link) runService(ctx context.Context) error {
 					l.answerTraced(ctx, service, request, h, connectionhealth.LocSessionsHandler)
 				}()
 			case cloudops.IsRead(request.Plaintext):
-				if !l.takeReadSlot() {
-					l.refuseBusy(ctx, service, request, "read lane", CloudReadConcurrencyLimit)
-					continue
-				}
 				h := l.lanePhase(request, connectionhealth.ClassRead, connectionhealth.LocReadLane)
-				answers.Add(1)
-				go func() {
-					defer answers.Done()
-					defer l.releaseReadSlot()
-					l.answerTraced(ctx, service, request, h, connectionhealth.LocReadHandler)
-				}()
+				select {
+				case reads <- pending{service: service, request: request, health: h, queuedAt: time.Now()}:
+					l.observeReadPressure(request)
+				default:
+					h.End(false)
+					l.mu.Lock()
+					l.readQueueRefused++
+					l.mu.Unlock()
+					l.observeReadPressure(request)
+					l.queueBusy(refusals, laneRefusal{service: service, request: request, lane: "read queue", limit: readDepth})
+				}
 			default:
 				// The phase begins before the send, so a command waiting
 				// behind a stuck one shows lane_queued with its own age.
@@ -1154,19 +1263,83 @@ func (l *Link) runService(ctx context.Context) error {
 				case commands <- pending{service: service, request: request, health: h}:
 				default:
 					h.End(false)
-					l.refuseBusy(ctx, service, request, "command lane", depth)
+					l.queueBusy(refusals, laneRefusal{service: service, request: request, lane: "command lane", limit: depth})
 				}
 			}
 		}
 	}
 }
 
-// pending is one command waiting for its turn, with the service that was
-// current when it arrived.
-type pending struct {
+type laneRefusal struct {
 	service Service
 	request Inbound
-	health  connectionhealth.Handle
+	lane    string
+	limit   int
+	ingress bool
+}
+
+func (l *Link) queueBusy(queue chan<- laneRefusal, next laneRefusal) {
+	select {
+	case queue <- next:
+	default:
+		l.unansweredBusy(next, "the busy reply queue is full")
+	}
+}
+
+func (l *Link) unansweredBusy(next laneRefusal, why string) {
+	l.mu.Lock()
+	l.laneRefusalDropped++
+	l.mu.Unlock()
+	if next.ingress {
+		l.relay.Unanswered(next.request, why)
+	} else {
+		l.logf("cloud: a full %s refused a request and its sender could not be told: %s", next.lane, why)
+	}
+}
+
+func (l *Link) runLaneRefusals(ctx context.Context, queue <-chan laneRefusal) {
+	for next := range queue {
+		if ctx.Err() != nil {
+			l.unansweredBusy(next, "the Cloud line stopped before its busy reply")
+			continue
+		}
+		if !l.refuseBusy(ctx, next.service, next.request, next.lane, next.limit) {
+			l.unansweredBusy(next, "the busy reply could not be published")
+		}
+	}
+}
+
+// pending is one read or command waiting for its turn, with the service that was
+// current when it arrived.
+type pending struct {
+	service  Service
+	request  Inbound
+	health   connectionhealth.Handle
+	queuedAt time.Time
+}
+
+// runReads uses a fixed pool: neither a burst nor an unresponsive route can
+// grow the number of executing goroutines. Cancellation discards queued reads
+// before routing them; a normal queue close drains the reads already accepted.
+func (l *Link) runReads(ctx context.Context, reads <-chan pending) {
+	for next := range reads {
+		if ctx.Err() != nil {
+			next.health.End(false)
+			continue
+		}
+		flight := l.takeReadSlot(next)
+		l.observeReadPressure(next.request)
+		func() {
+			defer l.releaseReadSlot(flight)
+			service := next.service
+			service.ReadHandled = func() {
+				l.mu.Lock()
+				flight.handledAt = time.Now()
+				l.mu.Unlock()
+			}
+			l.answerTraced(ctx, service, next.request, next.health, connectionhealth.LocReadHandler)
+		}()
+	}
 }
 
 // runCommands answers commands one at a time until the lane is closed. A
@@ -1182,27 +1355,116 @@ func (l *Link) runCommands(ctx context.Context, commands <-chan pending) {
 	}
 }
 
-// takeReadSlot claims one of the read lane's slots, or reports that none is
-// free. It never waits: the goroutine asking is the command lane's.
-func (l *Link) takeReadSlot() bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.reading >= CloudReadConcurrencyLimit {
-		return false
-	}
-	l.reading++
-	return true
+type readFlight struct {
+	word, rail                     string
+	queuedAt, startedAt, handledAt time.Time
+	observed                       bool
 }
 
-func (l *Link) releaseReadSlot() {
+// readKind logs catalog words and channel families only, never a body, Session
+// identifier, request key, or arbitrary text supplied by a viewer.
+func readKind(request Inbound) (word, rail string) {
+	var body struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(request.Plaintext, &body) == nil && cloudops.Knows(body.Type) {
+		word = body.Type
+	} else {
+		word = "unknown"
+	}
+	rail = "unknown"
+	if strings.HasPrefix(request.Channel, "ctl/") {
+		rail = "ctl"
+	}
+	if strings.HasPrefix(request.Channel, "r/") {
+		rail = "r"
+	}
+	return
+}
+
+// Only the fixed read workers take slots. Tracking lives for exactly the same
+// scope as execution, including authorization and publication failures.
+func (l *Link) takeReadSlot(next pending) *readFlight {
+	word, rail := readKind(next.request)
+	f := &readFlight{word: word, rail: rail, queuedAt: next.queuedAt, startedAt: time.Now()}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.readFlights == nil {
+		l.readFlights = make(map[*readFlight]struct{})
+	}
+	l.reading++
+	// A read queued at the last pressure snapshot still needs its own queue
+	// timing when it starts, including the last item leaving the FIFO.
+	f.observed = len(l.readQueue) > 0 || (!l.readPressureAt.IsZero() && !f.queuedAt.After(l.readPressureAt))
+	l.readFlights[f] = struct{}{}
+	return f
+}
+
+func (l *Link) releaseReadSlot(f *readFlight) {
+	now := time.Now()
 	l.mu.Lock()
 	l.reading--
+	delete(l.readFlights, f)
+	observed, handledAt := f.observed, f.handledAt
 	l.mu.Unlock()
+	if observed || now.Sub(f.startedAt) > slowReadAnswer {
+		if handledAt.IsZero() {
+			handledAt = now
+		}
+		l.logf("cloud: read slot released: operation=%s rail=%s queue_ms=%d handler_ms=%d publish_ms=%d slot_ms=%d",
+			f.word, f.rail, f.startedAt.Sub(f.queuedAt).Milliseconds(), handledAt.Sub(f.startedAt).Milliseconds(),
+			now.Sub(handledAt).Milliseconds(), now.Sub(f.startedAt).Milliseconds())
+	}
+}
+
+// Pressure snapshots explain all active slots, including time spent waiting
+// for shared authority or publication. Fast quiet reads still produce no log.
+func (l *Link) observeReadPressure(request Inbound) {
+	now := time.Now()
+	l.mu.Lock()
+	if l.reading != CloudReadConcurrencyLimit || len(l.readQueue) == 0 {
+		l.mu.Unlock()
+		return
+	}
+	var slots []string
+	l.readPressureAt = now
+	for f := range l.readFlights {
+		f.observed = true
+		phase := "handler"
+		if !f.handledAt.IsZero() {
+			phase = "publish"
+		}
+		slots = append(slots, fmt.Sprintf("%s/%s:%s:%dms", f.rail, f.word, phase, now.Sub(f.startedAt).Milliseconds()))
+	}
+	waiting := len(l.readQueue)
+	l.mu.Unlock()
+	word, rail := readKind(request)
+	l.logf("cloud: read workers occupied: operation=%s rail=%s waiting=%d active=%d slots=[%s]",
+		word, rail, waiting, CloudReadConcurrencyLimit, strings.Join(slots, ","))
+}
+
+// ReadLaneReadings exposes execution and waiting separately; a busy worker
+// pool must not be reported as a full ingress queue.
+func (l *Link) ReadLaneReadings() (active, waiting capacity.Reading) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	active = capacity.Reading{Known: true, Used: int64(l.reading)}
+	waiting = capacity.Reading{Known: true, Used: int64(len(l.readQueue)), Counters: capacity.Counters{Refused: l.readQueueRefused}}
+	if l.readQueue != nil && cap(l.readQueue) != CloudReadQueueLimit {
+		waiting.Note = fmt.Sprintf("the read queue holds %d, not the register's %d", cap(l.readQueue), CloudReadQueueLimit)
+	}
+	return
+}
+
+func (l *Link) LaneRefusalReading() capacity.Reading {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return capacity.Reading{Known: true, Used: int64(len(l.laneRefusals)), Counters: capacity.Counters{Dropped: l.laneRefusalDropped}}
 }
 
 // refuseBusy tells a request a lane had no room for that it was not taken,
 // and counts it as an answered refusal.
-func (l *Link) refuseBusy(ctx context.Context, service Service, request Inbound, lane string, limit int) {
+func (l *Link) refuseBusy(ctx context.Context, service Service, request Inbound, lane string, limit int) bool {
 	why := service.Busy(ctx, request, limit)
 	l.mu.Lock()
 	l.answered++
@@ -1211,10 +1473,11 @@ func (l *Link) refuseBusy(ctx context.Context, service Service, request Inbound,
 	if why != "" {
 		l.logf("cloud: a request from %s seq=%d was refused at a full %s (%d) and its sender could not be told: %s",
 			request.Sender, request.Sequence, lane, limit, why)
-		return
+		return false
 	}
 	l.logf("cloud: the %s is full (%d); refused a request from %s seq=%d, and its sender is told to retry",
 		lane, limit, request.Sender, request.Sequence)
+	return true
 }
 
 // lanePhase begins the finite phase of one request as it is put on a lane.
@@ -1251,6 +1514,13 @@ func (l *Link) answerTraced(ctx context.Context, service Service, request Inboun
 // answer handles one request, counting what it answered, and reports
 // whether the answer was OK.
 func (l *Link) answer(ctx context.Context, service Service, request Inbound) bool {
+	// Read routes recheck authority before returning content; publication owns
+	// the epoch fence. Holding the mutation lock during a read serializes all
+	// eight read slots, including slow local routes and roster I/O.
+	if l.contentAuthority != nil && !cloudops.IsRead(request.Plaintext) && !cloudops.AsksForSessions(request.Plaintext) {
+		l.contentAuthority.mu.Lock()
+		defer l.contentAuthority.mu.Unlock()
+	}
 	answer := service.Answer(ctx, request)
 	l.mu.Lock()
 	l.answered++
@@ -1339,6 +1609,10 @@ func (l *Link) pairingKeys() (domaincloud.DeviceKey, domaincloud.ContentKey, err
 	if err != nil {
 		return domaincloud.DeviceKey{}, domaincloud.ContentKey{}, err
 	}
+	if l.contentEpoch != nil {
+		state, err := l.contentEpoch.Current()
+		return key, state.Key, err
+	}
 	secret, err := domaincloud.LoadOrCreateMasterSecret(l.keys, rand.Reader)
 	if err != nil {
 		return domaincloud.DeviceKey{}, domaincloud.ContentKey{}, err
@@ -1400,6 +1674,14 @@ func (l *Link) authority(ctx context.Context, sender string, verifiedKey ed25519
 			return a
 		}
 		a.WriteGateAllows = l.allowCommands()
+		if l.pinned != nil {
+			scope, err := l.pinned.ViewerScope(sender)
+			if err != nil {
+				a.RosterAllowsSender = false
+				return a
+			}
+			a.ViewerReadOnly = scope != adaptercloud.ScopeOperate
+		}
 		return a
 	}
 	return a
@@ -1539,7 +1821,7 @@ func (l *Link) Status() Status {
 			seen[device.DeviceID] = len(out.Devices)
 			out.Devices = append(out.Devices, Viewer{
 				ID: device.DeviceID, Name: device.Name, Fingerprint: device.Fingerprint,
-				Pinned: true, PairedAt: device.PairedAt,
+				Scope: device.EffectiveScope(), Pinned: true, PairedAt: device.PairedAt,
 				Revoked: !device.Active(), RevokedAt: device.RevokedAt,
 			})
 		}
@@ -1849,4 +2131,34 @@ func (l *Link) Fingerprint() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.fingerprint
+}
+
+// TerminalViewerOperate is distinct from read access and is rechecked by the
+// terminal service after lane waits and immediately before each effect.
+func (l *Link) TerminalViewerOperate(device string) error {
+	// A local downgrade is definitive even when the account cannot be read.
+	// Check it before a retryable roster failure so Revalidate voids the lease.
+	if l.pinned != nil {
+		scope, err := l.pinned.ViewerScope(device)
+		if err != nil {
+			return terminal.Refuse(terminal.CodeForbidden, "the viewer grant cannot be verified")
+		}
+		if scope != adaptercloud.ScopeOperate {
+			return terminal.Refuse(terminal.CodeViewerReadOnly, "This device may read, and not send.")
+		}
+	}
+	return l.TerminalViewerAccess(device)
+}
+
+func (l *Link) viewerScopeChanged(_ string) error {
+	if l.opts.TerminalService != nil {
+		svc, err := l.opts.TerminalService()
+		if err != nil {
+			return err
+		}
+		if svc != nil {
+			svc.Revalidate()
+		}
+	}
+	return nil
 }

@@ -613,8 +613,10 @@ export async function openIdentityGrant(input) {
     }
     var raw = requireLength(base64Bytes(grant.master_secret, "master_secret"), 32, "master_secret");
     grant.master_secret = "";
-    var masterKey, hkdfKey;
+    var masterKey, hkdfKey, contentKeyID;
     try {
+        contentKeyID = grant.content_key_epoch === 1 ? "ms-1" :
+            "mk-" + grant.content_key_epoch + "-" + hexOf(await sha256(raw));
         masterKey = await importMasterSecret(raw);
         hkdfKey = await subtle().importKey("raw", raw, { name: "HKDF" }, false, ["deriveKey", "deriveBits"]);
     } finally {
@@ -642,6 +644,7 @@ export async function openIdentityGrant(input) {
         activateSHA256: await identityPhaseDigest(wrapper),
         contentKeyEpoch: grant.content_key_epoch,
         identityEpoch: grant.identity_epoch,
+        contentKeyID: contentKeyID,
         machineID: qr.machine_id,
         machineSigningKey: base64Bytes(qr.machine_signing_key, "machine_signing_key"),
         machineFingerprint: qr.machine_fingerprint,

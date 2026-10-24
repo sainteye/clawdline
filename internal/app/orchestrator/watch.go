@@ -12,6 +12,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -397,6 +398,12 @@ func (b *Broker) collect(ctx context.Context, r Record) (bool, error) {
 // this task's directory, and settling on it would close a task whose child is
 // still working.
 func (b *Broker) authentic(ctx context.Context, r Record, result taskdir.Result) bool {
+	if len(result.InvestigationReport) != 0 {
+		report, err := schedulewebhook.ParseInvestigationReport(result.InvestigationReport)
+		if err != nil || r.Investigation == nil || r.ScheduleID == "" || report.InvestigationID != r.Investigation.InvestigationID {
+			return false
+		}
+	}
 	if result.Protocol != Protocol || result.TaskID != r.ID || result.GateVerdict != nil {
 		return false
 	}
@@ -475,7 +482,7 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 			present = false
 		}
 		choosing := false
-		if present && b.Screen != nil {
+		if present && r.ChildBackend != "owned" && b.Screen != nil {
 			if screen, ok := b.Screen(ctx, r.ChildTerminalID); ok {
 				choosing = Choosing(screen, session.Assistant(r.Assistant))
 			}
@@ -532,6 +539,14 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 // task, run after it, and — if this process dies in between — run by the next
 // broker, once, rather than never.
 func (b *Broker) closeChild(r Record, present bool) []store.Effect {
+	if r.ChildBackend == "owned" {
+		if r.ChildTerminalID == "" || r.ChildConversationID == "" {
+			return nil
+		}
+		payload, _ := json.Marshal(closeChildEffect{Backend: "owned", Pane: r.ChildTerminalID,
+			NativeID: r.ChildConversationID, CWD: childCWD(r)})
+		return []store.Effect{{Kind: EffectCloseChild, Subject: r.ID, Payload: payload}}
+	}
 	if !present || r.ChildTerminalID == "" || b.Launcher == nil {
 		return nil
 	}

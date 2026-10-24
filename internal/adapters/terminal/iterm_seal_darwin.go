@@ -65,6 +65,9 @@ type itermPTYs struct {
 // A reading that fails seals nothing: false is returned, every gap stays open
 // and the whole listing goes on being incomplete. Unknown never seals.
 func systemITermPTYs(ctx context.Context) (itermPTYs, bool) {
+	if !ITermIntegration() {
+		return itermPTYs{}, false
+	}
 	// `comm=` and not `command=`: it prints the executable and none of its
 	// arguments, so a process whose *arguments* name iTerm2 — this daemon's
 	// own `ps` pipeline, a grep somebody typed — cannot be taken for it. It

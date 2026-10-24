@@ -375,6 +375,18 @@ func TestANoticeOutlivesAMissingRootAndARestartAndIsTypedOnce(t *testing.T) {
 // the Swift app, rather than one rung later.
 func TestTheLastFailedAttemptDeadLetters(t *testing.T) {
 	b, ctx := newTestBroker(t)
+	// The dead-letter transition schedules a durable push off the beat. Join
+	// that attempt before the fixture closes SQLite and removes its directory.
+	done := make(chan struct{})
+	b.pushed = func() { close(done) }
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the dead letter's push never finished")
+		}
+	})
+
 	now := time.Date(2026, 9, 18, 9, 0, 0, 0, time.UTC)
 	b.Clock = func() time.Time { return now }
 	b.Live = func(context.Context) []session.Session { return nil }

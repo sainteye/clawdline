@@ -2,7 +2,10 @@ package cloud
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -27,11 +30,33 @@ func NewScheduleWebhookClient(baseURL, credential string) ScheduleWebhookClient 
 	return ScheduleWebhookClient{Client: client, Credential: credential}
 }
 
+// InvestigationBindingPurpose is the one purpose a machine may declare when it
+// activates a hook: it bound the hook to a trigger-only `health_investigation`
+// schedule. It names no schedule title, instruction or secret.
+const InvestigationBindingPurpose = "health_investigation"
+
+// ErrCloudUpgradeRequired is a Cloud that predates `binding_purpose` refusing
+// it. The activation is not retried without the purpose under the same key:
+// the hook would be active yet not known as an investigation destination.
+var ErrCloudUpgradeRequired = errors.New("the control plane does not yet accept an investigation binding purpose")
+
 // Activate asks Cloud to turn the hook on at expectedRevision, the revision it
 // is at. A new hook is at 0; Cloud's `/move` raises it, and Cloud refuses
 // `stale_revision` for any other number, so a moved hook is activated at the
 // revision the move answered. The answer must be the next revision, active.
+// Its body is `{"expected_revision": n}` and nothing else.
 func (c ScheduleWebhookClient) Activate(ctx context.Context, hookID, requestID string, expectedRevision int64) (int64, error) {
+	return c.activate(ctx, hookID, requestID, expectedRevision, "")
+}
+
+// ActivateInvestigation is Activate declaring InvestigationBindingPurpose,
+// for a hook bound to a trigger-only investigation schedule. A Cloud that
+// refuses the field as unknown answers ErrCloudUpgradeRequired.
+func (c ScheduleWebhookClient) ActivateInvestigation(ctx context.Context, hookID, requestID string, expectedRevision int64) (int64, error) {
+	return c.activate(ctx, hookID, requestID, expectedRevision, InvestigationBindingPurpose)
+}
+
+func (c ScheduleWebhookClient) activate(ctx context.Context, hookID, requestID string, expectedRevision int64, purpose string) (int64, error) {
 	if expectedRevision < 0 {
 		return 0, fmt.Errorf("%w: negative schedule webhook revision", ErrIncompatible)
 	}
@@ -44,8 +69,16 @@ func (c ScheduleWebhookClient) Activate(ctx context.Context, hookID, requestID s
 			Revision int64  `json:"revision"`
 		} `json:"hook"`
 	}
+	body := map[string]any{"expected_revision": expectedRevision}
+	if purpose != "" {
+		body["binding_purpose"] = purpose
+	}
 	if err := c.Client.postWithHeaders(ctx, path, c.Credential,
-		map[string]any{"expected_revision": expectedRevision}, map[string]string{"Idempotency-Key": requestID}, &out); err != nil {
+		body, map[string]string{"Idempotency-Key": requestID}, &out); err != nil {
+		var refusal *APIError
+		if purpose != "" && errors.As(err, &refusal) && refusal.Status == 400 && refusal.Code == "unknown_field" {
+			return 0, fmt.Errorf("%w: %v", ErrCloudUpgradeRequired, err)
+		}
 		return 0, err
 	}
 	if out.Schema != "clawdline.schedule_webhook.management.v1" || out.Hook.HookID != hookID ||
@@ -66,7 +99,7 @@ func (c ScheduleWebhookClient) Claim(ctx context.Context, waitSeconds int) (sche
 		PollAfter  int                    `json:"poll_after_ms"`
 	}
 	if err := c.Client.post(ctx, "/v1/schedule-webhook-deliveries/claim", c.Credential,
-		map[string]any{"protocol": schedulewebhook.ProtocolSchema, "wait_seconds": waitSeconds}, &out); err != nil {
+		map[string]any{"protocol": schedulewebhook.ClaimProtocol, "wait_seconds": waitSeconds}, &out); err != nil {
 		return schedulewebhook.ClaimResult{}, err
 	}
 	if out.Schema != schedulewebhook.ClaimSchema || out.ServerTime == "" || out.PollAfter < 0 || out.PollAfter > 300000 {
@@ -97,4 +130,39 @@ func (c ScheduleWebhookClient) Receipt(ctx context.Context, deliveryID string, r
 	}
 	return schedulewebhook.ReceiptAck{DeliveryID: out.DeliveryID, ReceiptVersion: out.ReceiptVersion,
 		State: out.State, AcknowledgedAt: out.AcknowledgedAt, Duplicate: out.Duplicate}, nil
+}
+
+// InvestigationBundle reads only through the leased machine transport. There
+// is one request per claim, a hard deadline and no transport-level retry.
+func (c ScheduleWebhookClient) InvestigationBundle(ctx context.Context, claim schedulewebhook.Claim) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(schedulewebhook.MaxInvestigationReadSeconds)*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Client.BaseURL+"/v1/schedule-webhook-deliveries/"+url.PathEscape(claim.DeliveryID)+"/investigation-bundle", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Credential)
+	req.Header.Set("X-Clawdline-Lease", claim.Lease.Token)
+	// Refuse redirects so credentials and leases cannot follow a supplied URL.
+	client := *c.Client.HTTP
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, schedulewebhook.MaxInvestigationBundleBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > schedulewebhook.MaxInvestigationBundleBytes {
+		return nil, schedulewebhook.ErrInvestigationInvalid
+	}
+	if resp.StatusCode >= 400 {
+		return nil, decodeAPIError("investigation-bundle", resp.StatusCode, raw)
+	}
+	if resp.StatusCode != http.StatusOK || !json.Valid(raw) {
+		return nil, schedulewebhook.ErrInvestigationInvalid
+	}
+	return raw, nil
 }

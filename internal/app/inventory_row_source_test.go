@@ -20,3 +20,14 @@ func TestInventoryRowWithNoBackendIsTheProcessTables(t *testing.T) {
 		t.Fatalf("an owned pty answered by %q, want the whole reading", got)
 	}
 }
+
+func TestInventoryACPSourceDoesNotTakeOwnershipOfOrdinaryPTYs(t *testing.T) {
+	row := session.Session{ID: "owned:acp:synthetic", Backend: session.BackendOwned}
+	if got := rowSource(row); got != "owned" {
+		t.Fatalf("ACP source=%q", got)
+	}
+	row.ID = "owned-1"
+	if got := rowSource(row); got != "" {
+		t.Fatalf("ordinary PTY acquired ACP source: %q", got)
+	}
+}

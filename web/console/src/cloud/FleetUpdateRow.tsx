@@ -65,13 +65,25 @@ export function FleetUpdateRow({ client, machine, appVersion }: {
           ? nextWord("fleetUpdateMoving")
           : null
 
+  // A successful update to the running, current version repeats the version row.
+  // Keep failures, rollbacks, in-flight work and other historical results visible.
+  const showResult = result && !(facts.result === "healthy" && facts.state === "current" && facts.to === facts.running)
+
   return (
-    <span className="cloud-fleet-update" data-compatibility={facts.compatibility} data-update-result={facts.result ?? undefined}>
-      <span>{machine.freshness === "current" ? nextWord("fleetVersion") : nextWord("fleetLastVersion")}: {facts.running || nextWord("updateUnknownVersion")}</span>
-      {facts.latest && <span>{nextWord("updateLatest")}: {facts.latest}</span>}
-      <span>{nextWord("fleetCompatibility")}: {compatible}</span>
-      {state && <span>{state}</span>}
-      {result && <span className={facts.result === "rolled_back" || facts.result === "failed" ? "cloud-fleet-update-problem" : ""}>{result}</span>}
-    </span>
+    <dl className="cloud-fleet-update cloud-machine-details" data-compatibility={facts.compatibility} data-update-result={facts.result ?? undefined}>
+      <div>
+        <dt>{nextWord(machine.freshness === "current" ? "fleetVersion" : "fleetLastVersion")}</dt>
+        <dd>
+          <span>{facts.running || nextWord("updateUnknownVersion")}</span>
+          {state && <span>{state}</span>}
+        </dd>
+      </div>
+      {facts.latest && facts.latest !== facts.running && <div><dt>{nextWord("updateLatest")}</dt><dd>{facts.latest}</dd></div>}
+      <div><dt>{nextWord("fleetCompatibility")}</dt><dd>{compatible}</dd></div>
+      {showResult && <div>
+        <dt>{nextWord("cloudMachineUpdateResultLabel")}</dt>
+        <dd className={facts.result === "rolled_back" || facts.result === "failed" ? "cloud-fleet-update-problem" : ""}>{result}</dd>
+      </div>}
+    </dl>
   )
 }

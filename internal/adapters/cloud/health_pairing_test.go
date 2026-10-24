@@ -169,3 +169,39 @@ func TestIdentityPairingEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRuntimeEpochBridgeNeverOverwritesAnInconsistentFloor(t *testing.T) {
+	key, err := cloud.NewContentKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := cloud.ContentKeyID(key.Bytes())
+	state := cloud.ContentKeyState{Epoch: 3, KeyID: "not-used-by-record-check", Key: key}
+	for _, tc := range []struct {
+		name   string
+		rec    ContentEpoch
+		refuse bool
+	}{
+		{"historical", ContentEpoch{V: 1, AccountID: "account", ContentKeyEpoch: 1, KeyID: "old-key"}, false},
+		{"current", ContentEpoch{V: 1, AccountID: "account", ContentKeyEpoch: 3, KeyID: id}, false},
+		{"future", ContentEpoch{V: 1, AccountID: "account", ContentKeyEpoch: 4, KeyID: id}, true},
+		{"same-epoch-other-key", ContentEpoch{V: 1, AccountID: "account", ContentKeyEpoch: 3, KeyID: "other"}, true},
+		{"other-account", ContentEpoch{V: 1, AccountID: "other", ContentKeyEpoch: 1, KeyID: id}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := ContentEpochStore{Dir: t.TempDir()}
+			if err := store.Save(tc.rec); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := os.ReadFile(filepath.Join(store.Dir, ContentEpochFile))
+			err := store.CheckRuntime("account", state)
+			if (err != nil) != tc.refuse {
+				t.Fatalf("floor result: %v", err)
+			}
+			after, _ := os.ReadFile(filepath.Join(store.Dir, ContentEpochFile))
+			if !bytes.Equal(before, after) {
+				t.Fatal("floor check overwrote journal")
+			}
+		})
+	}
+}

@@ -1,0 +1,45 @@
+{
+  "schema": "clawdline.health_investigation.bundle.v1",
+  "investigation_id": "hiv_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "incident_id": "hi_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "revision": 3,
+  "content_hash": "sha256:5302652d84f5afb81267f3830f2ac81649e714d22e4444de720d94215f21437e",
+  "hash_basis": "sha256 over key-sorted JSON of `bundle`",
+  "scope": {
+    "machine_id": "mac_fixture",
+    "source_id": "fixture-source",
+    "boot_id": "boot_fixture",
+    "group": {
+      "rule": "connection-health/1",
+      "kind": "connection",
+      "correlation": "fixture-operation"
+    },
+    "seq_watermark": 41
+  },
+  "bundle": {
+    "manifest": {
+      "schema": "clawdline.health-incident-bundle/1",
+      "incident_id": "hi_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "revision": 3,
+      "scope": {
+        "machine_id": "mac_fixture",
+        "source_id": "fixture-source",
+        "boot_id": "boot_fixture",
+        "group": {
+          "rule": "connection-health/1",
+          "kind": "connection",
+          "correlation": "fixture-operation"
+        }
+      }
+    },
+    "facts": [
+      {
+        "key": "he_cccccccccccccccccccccccccccccccccccccccc",
+        "producer_seq": 41,
+        "event": "timeout",
+        "build_commit": "dddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "context": []
+  }
+}

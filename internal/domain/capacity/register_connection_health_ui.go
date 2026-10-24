@@ -25,16 +25,26 @@ const (
 	ConsoleHealthUIIncidentPages = "console.health_ui_incident_pages"
 	// The trend view over the Cloud's minute rollups (HEALTH_UI_LIMITS
 	// trendLanes, trendSignals).
-	ConsoleHealthUITrendLanes   = "console.health_ui_trend_lanes"
-	ConsoleHealthUITrendSignals = "console.health_ui_trend_signals"
-	ConsoleHealthUIProbeTargets = "console.health_ui_probe_targets"
-	ConsoleHealthUIProbeHosts   = "console.health_ui_probe_hosts"
-	ConsoleHealthUIProbeClaims  = "console.health_ui_probe_claims"
+	ConsoleHealthUITrendLanes        = "console.health_ui_trend_lanes"
+	ConsoleHealthUITrendSignals      = "console.health_ui_trend_signals"
+	ConsoleHealthUIProbeTargets      = "console.health_ui_probe_targets"
+	ConsoleHealthUIProbeHosts        = "console.health_ui_probe_hosts"
+	ConsoleHealthUIProbeClaims       = "console.health_ui_probe_claims"
+	ConsoleHealthUIInvestigations    = "console.health_ui_investigations"
+	ConsoleHealthUIInvestigationRefs = "console.health_ui_investigation_refs"
 )
 
 // connectionHealthUIBounds is every console.health_ui_* row.
 func connectionHealthUIBounds() []Entry {
 	return []Entry{
+		{
+			// INVESTIGATION_BOUNDS.perIncident rejects oversized remote investigation lists.
+			Name: ConsoleHealthUIInvestigations, Class: Buffer, Unit: Rows, Limit: 5, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// INVESTIGATION_BOUNDS.reportRefs rejects oversized result evidence references.
+			Name: ConsoleHealthUIInvestigationRefs, Class: Buffer, Unit: Rows, Limit: 8, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
 		{
 			// One stored read's deadline (requestMs, 6 s, just above the
 			// Cloud's own 5 s request deadline). Past it that read is

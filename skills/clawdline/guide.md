@@ -74,7 +74,7 @@ the command instead.
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |
 | `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Reads and advances a Board item you own (`clawdline guide feature-root`, §10) |
 | `clawdline todo add\|list\|done` | This Session's own to-dos, only when the person asks (§10) |
-| `clawdline heavy [--handoff] -- <command…>` | Runs a build or test suite in the machine's one compile slot; `--handoff` gives a queued wait to a callback (§11) |
+| `clawdline heavy [--handoff] -- <command…>` | Queues application/native compilation; ordinary commands run directly; `--handoff` gives a queued wait to a callback (§11) |
 | `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | Leaves one actionable note above a Session (§9a) |
@@ -123,7 +123,7 @@ ledger has not read, or can no longer read, answers `not_yet_read`, `transcript_
 **Continue on the completion notice.** After dispatching a child, end the turn: the child's own
 completion notice wakes you, so do not add a callback to watch it. For a queued `heavy`, CI, deploy,
 long build or other command that can run without Agent decisions, register `clawdline callback`
-(or use `heavy --handoff` / `tools/check.sh`) and end the turn. On its notice, run
+(or use `heavy --handoff` for native compilation) and end the turn. On its notice, run
 `clawdline task show <id>` once; the read closes the notice. Treat success, failure and timeout as
 different results. Inspect a failure, timeout or uncertain outcome before deciding whether a retry
 is safe; do not start the same work again just because a wait expired. Do not poll from later turns,
@@ -179,7 +179,7 @@ print nothing while running; for long commands use the callback path above.
   exit code: 75 means the compile-slot or memory wait expired before the build ran; 76 means `heavy --handoff` started a callback, so end your turn and wait for its notice.
 
 `clawdline heavy` waits at most `--max-wait` (default 30m) and then exits 75 without running the
-command. With `--handoff`, a queued wait starts a callback and exits 76; `tools/check.sh` requests this by default. A child needs no waiting callback. If a callback is refused, read the typed refusal and choose a supported path; a refusal has not started the command.
+command. With `--handoff`, a queued wait starts a callback and exits 76; Ordinary `tools/check.sh` runs do not queue. A child needs no waiting callback. If a callback is refused, read the typed refusal and choose a supported path; a refusal has not started the command.
 
 **Curl to an orchestrator route.** Read `<state dir>/orchestrator-token` and send it in the
 `X-Clawdline-Orchestrator` header. Keep the token out of command arguments: use
@@ -283,7 +283,7 @@ For `read`, `send`, `answer`, `interrupt`, `end`, and `receipt`, pass all of `--
 lowercase hexadecimal characters. `read` returns the newest transcript page and `next_before`
 when older messages remain. Fetch
 one older page with the same three values and `--before NEXT_BEFORE`, repeating only while the
-reply supplies another cursor. Every page rechecks the current execution; do not invent a cursor
+reply supplies another cursor. For a native page with a `signature`, also pass `--revision SIGNATURE` from the held page that supplied that cursor; never use a newer poll’s signature. A `transcript_cursor_stale` refusal requires reading the newest page again before choosing its new cursor and signature. Every page rechecks the current execution; do not invent a cursor
 or treat the first 200 entries as the complete conversation. `send` needs `--text`; `answer` needs a displayed option's
 `--answer` key and `--expect` question fingerprint. An Agent may not invent either. A mutation
 prints its request ID before sending. Keep that ID; after an uncertain result use
@@ -687,19 +687,28 @@ included — so the task the child reads is the one that was validated, and it d
 |---|---|
 | `clawdline_protocol` | `1` |
 | `task_id` | the same id |
-| `assistant` | `claude` or `codex` |
+| `assistant` | `claude`, `codex`, or `antigravity` when the owned personal CLI is configured |
 | `project_dir` | absolute path to an existing directory |
 | `title` | shown on screen: one line of at most 60 characters saying what will be different. A colon (`:` or `：`), "the user" as the subject, or an opening code-formatted identifier is refused as `bad_task` (`title: …`) |
 | `instructions` | required, at most 16 KiB. They must stand on their own: the child knows nothing else. Carry the facts you already verified, each with its `file:line` or command; an investigation child also gets a stop condition and a turn limit |
 | `claims` | **required**: at most 32 relative paths the child may write. `[]` means it writes nothing and is warned about (`claims_missing`) |
 | `isolation` | `none` (default) or `worktree` for a private checkout on its own branch |
-| `permission_mode` | `ask`, `edits` or `full` |
+| `permission_mode` | `ask`, `edits` or `full`; absent follows the machine setting (initially `full`) |
 | `timeout_minutes` | 1–240, default 30 |
 | `kind`, `deliverables`, `model` | optional; `model` is `[a-z0-9._-]`, at most 64 characters |
 | `work_id` | optional UUID of the board item this serves |
 | `persona` | optional built-in persona id (`GET /v1/personas`); none by default |
 | `auto_compact_window` | optional, Claude only: the context size in tokens (50000–1000000) the child compacts at, or `null` for none. Absent follows the machine's `claude_auto_compact_window`, which is off unless the person set it. For comparing runs, not for everyday briefs: a compaction may lose detail |
-| `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "project_dir": "<the same absolute repository path as project_dir>", "label": "…"}`. A role-scoped root needs `root.project_dir` for the daemon to verify its Project scope. |
+| `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex"\|"antigravity", "project_dir": "<the same absolute repository path as project_dir>", "label": "…"}`. A role-scoped root needs `root.project_dir` for the daemon to verify its Project scope. |
+
+An owned Gemini root uses its daemon-published identity file for its exact native conversation.
+It can name `antigravity` as `root.assistant`. An explicitly configured owned personal CLI also
+supports `--assistant antigravity` workers through this same task lifecycle, without a terminal.
+Permission `ask`/`edits`/`full` maps to native `default`/`auto_edit`/`yolo` and must be acknowledged
+before the one first input; an explicit model and effort must also be native offers. Cancellation
+and timeout stop the exact worker and retain its history. A possibly written briefing or completion
+notice is not automatically resent. This does not authorize paid APIs or AI Credits.
+
 
 **Match the worker surface and launch mode to every tool the child must use before dispatching it.**
 The brief names the required tools and the root proves that the chosen surface supplies them. A
@@ -1098,7 +1107,8 @@ conversation.
 
 - **Only for a finished turn.** Not for partial work, a diagnosis, a blocker or a question back to
   the person. A child never sends it (`409 child_session`).
-- The command finds your conversation from `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`
+- The command finds your conversation from `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`,
+  or the daemon-published `CLAWDLINE_PROTOCOL_SESSION_FILE` for an owned Gemini conversation
   (`--conversation` otherwise), asks `GET /v1/orchestrator/whoami` for the terminal, and posts
   `{"summary"}` to `POST /v1/orchestrator/sessions/<terminal>/complete`.
 - The summary is 1–500 characters. Each call is a new receipt; the newest counts.
@@ -1172,6 +1182,12 @@ screenshot", 「傳圖片給我」「給我看截圖」 — and whenever a scree
 ```sh
 clawdline image send /absolute/path.png [more.png …]
 ```
+
+Put every flag before the first picture path: for example,
+`clawdline image send --port 7727 /absolute/path.png`. This also applies to
+`--target` and `--from`. After the first path, arguments are treated as more image paths;
+a trailing `--port 7727` becomes two nonexistent files and the whole batch is refused with
+`400 invalid_image_path`.
 
 It stores the pictures as shown in your own Session, and the console draws them under **the first
 reply your Session writes into its record after they are stored** — usually the message that ran
@@ -1977,7 +1993,7 @@ checkout), and `daemon_restart` (one machine-wide restart window).
 
 Build before taking `daemon_restart`. Never put `clawdline dev install` or another command that requests `heavy_compile` inside that wrapper: the restart lease blocks the compile slot. Run `clawdline dev install` directly after arranging the maintenance window; it builds before switching. Run `clawdline update --apply` directly too: it performs its own download, switch, health check and rollback. Use the wrapper only for a separate restart command that does not build.
 
-**Run a build or a test suite through `clawdline heavy -- <command>`**, not bare. It queues for
+**Only application builds and native compilation use `clawdline heavy -- <command>`.** Go build/install, Swift build, Objective-C/C compilation and Xcode builds queue. Python, ordinary tests (including Go/Swift tests), frontend bundles and type checks run directly, regardless of CPU use. Unknown commands also run directly without a memory wait or callback. Use `--compile` (or `tools/heavy.sh --compile`) only to declare an opaque application/native build script; never wrap an entire check/test script as compilation. `--no-slot` explicitly requests a memory-only wait. Native compilation queues for
 `heavy_compile`, waits until the machine has memory available (a quarter of it, at most 1 GB, and
 no memory stall above 10%), runs the command at a lower priority — on Linux also as the first
 thing the kernel kills if memory runs out — renews the lease while it runs and releases it after. It keeps the
@@ -1989,7 +2005,7 @@ prints one line when the wait starts and one when it ends, nothing in between: w
 long (§2, "Waiting on a long command"). A `heavy` inside a `heavy` runs directly. `--min-available 1500M` asks for more; `--no-slot` checks memory only. In a repository
 that has it, `tools/heavy.sh <command>` finds the binary for you.
 
-`heavy` starts a callback by default when a Root would wait; it then exits **76** with the callback id and queue position when known. End your turn and wait for the notice. `tools/check.sh` enables this by default; a child, missing conversation, refused callback, or unreachable daemon keeps waiting in place.
+`heavy` starts a callback by default when a Root would wait; it then exits **76** with the callback id and queue position when known. End your turn and wait for the notice. Ordinary `tools/check.sh` runs do not queue; a child, missing conversation, refused callback, or unreachable daemon keeps waiting in place.
 
 **Session pause and wake.** Read `docs/session-resource-coordination.md` before ordering conflicting work. `clawdline coordination status` shows durable pause receipts. `clawdline coordination pause --reason "…" --wake "lease:heavy_compile" <target conversation id>…` accepts a request and tries to deliver it. The receiver finishes important commands, runs `clawdline coordination observed <request id>`, then `clawdline coordination safe <request id>` at a safe turn boundary and ends its model turn. Only that final receiver receipt means paused. Use `wake <request id>` after the condition holds; the receiver runs `resumed <request id>` and still acquires its lease or confirms its wait release before working. `retry <request id>` reattempts failed or uncertain delivery. A new registered Clawdfather can wake its offline predecessor's parked Session. Do not poll from a waiting model turn.
 

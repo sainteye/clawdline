@@ -52,13 +52,18 @@ const ROW = {
 // when the test says a new one has landed.
 let turns = 60
 let paged = false
+let structured = false
+let toolDone = false
 function transcript(before = false) {
   const entries = Array.from({ length: turns }, (_, i) => ({
+    ...(structured ? { id: "acp2:history-generation:" + (i + 1) } : {}),
     role: i % 2 ? "assistant" : "user",
     text: "Turn " + (i + 1) + ". " + "This is a line of the conversation that wraps across the reading column. ".repeat(3),
   }))
+  if (structured) entries[0] = { ...entries[0], role: "tool", text: "Read synthetic earlier result", activity: { kind: "called", title: "Read earlier file", actions: [], durationMs: -1, status: toolDone ? "completed" : "inProgress", ...(toolDone ? { result: "COMPLETE EARLIER RESULT" } : {}) } } as typeof entries[number]
   if (paged) return { entries: before ? entries.slice(0, 30) : entries.slice(30),
-    evidence: "transcript", id: ID, signature: "turns-" + turns,
+    evidence: structured ? "structured" : "transcript", id: ID, signature: structured ? "acp2:history-generation:" + turns : "turns-" + turns,
+    ...(structured ? { readBefore: before ? 12345 : turns + 1 } : {}),
     ...(!before ? { nextBefore: 12345 } : {}) }
   return { entries, evidence: "transcript", id: ID, signature: "turns-" + turns }
 }
@@ -68,7 +73,7 @@ function snapshot() {
     at: Date.now(),
     scan: { complete: true, completed: { complete: true, sequence: 1 }, emptyAuthoritative: true, epoch: 1,
       generation: 1, provenance: "fixture" },
-    sessions: [ROW],
+    sessions: [{ ...ROW, ...(structured ? { assistant: "antigravity", isClaude: false, identity: "protocol" } : {}) }],
   }
 }
 
@@ -291,6 +296,7 @@ for (const [name, size] of [["desk-1280", DESK], ["phone-390", PHONE]] as const)
       await shot("far-up")
 
       // A turn lands below the reader: it says so.
+      toolDone = true
       turns = 61
       await until("the new turn is read", `/Turn 61\\./.test(document.getElementById("tx").textContent)`, 10_000)
       await until("it says something is new", `document.querySelector(".tx-jump")?.dataset.fresh === "on"`)
@@ -324,9 +330,10 @@ for (const [name, size] of [["desk-1280", DESK], ["phone-390", PHONE]] as const)
   })
 }
 
-test("phone: loading an older page keeps the current turn in place", async () => {
+for (const provider of ["Claude", "Gemini"]) test(provider + " phone: loading an older page keeps the current turn in place", async () => {
   turns = 60
   paged = true
+  structured = provider === "Gemini"
   const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
   const { sessionId: s } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
   const run = async (expression: string) => {
@@ -353,15 +360,30 @@ test("phone: loading an older page keeps the current turn in place", async () =>
     await run(`document.getElementById("tx-scroll").scrollTop = 0`)
     const before = await run(turnTop)
     await run(`document.querySelector(".tx-older .go").click()`)
-    while (!(await run(`document.getElementById("tx").textContent.includes("Turn 1.")`))) {
+    while (!(await run(`document.getElementById("tx").textContent.includes("Turn 3.")`))) {
       if (Date.now() > deadline + 8_000) assert.fail("the older page did not appear")
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
     const after = await run(turnTop)
     assert.ok(Math.abs(after - before) <= 3, `Turn 31 moved from ${before} to ${after}`)
     assert.equal(await run(`document.querySelector(".tx-older") === null`), true)
+    if (structured) {
+      toolDone = true
+      turns = 61
+      while (!(await run(`document.getElementById("tx").textContent.includes("Turn 61.")`))) {
+        if (Date.now() > deadline + 18_000) assert.fail("the Gemini tail did not refresh")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      assert.equal(await run(`document.getElementById("tx").textContent.includes("Turn 3.")`), true, "a streamed revision discarded older Gemini pages")
+      while (!(await run(`document.getElementById("tx").textContent.includes("COMPLETE EARLIER RESULT")`))) {
+        if (Date.now() > deadline + 20_000) assert.fail("the retained earlier tool result did not refresh")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    }
   } finally {
     paged = false
+    structured = false
+    toolDone = false
     await browser.send("Target.closeTarget", { targetId }).catch(() => undefined)
   }
 })

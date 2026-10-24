@@ -140,10 +140,11 @@ func refuse(code terminal.RefusalCode, detail string) *Refusal {
 
 // Service is the machine's terminals, their leases and their viewers.
 type Service struct {
-	host   ports.OwnedTerminals
-	access Access
-	lanes  *lane.Lanes
-	now    func() time.Time
+	host    ports.OwnedTerminals
+	access  Access
+	operate Access
+	lanes   *lane.Lanes
+	now     func() time.Time
 
 	// InputTimeout replaces inputTimeout, for tests.
 	InputTimeout time.Duration
@@ -203,6 +204,23 @@ func New(host ports.OwnedTerminals, access Access) *Service {
 	}
 }
 
+// NewWithOperation separates terminal reads from effects. Both callbacks are immutable.
+func NewWithOperation(host ports.OwnedTerminals, read, operate Access) *Service {
+	s := New(host, read)
+	s.operate = operate
+	return s
+}
+
+func (s *Service) operating(p Principal) error {
+	if err := s.allowed(p); err != nil {
+		return err
+	}
+	if s.operate != nil {
+		return s.operate(p)
+	}
+	return nil
+}
+
 // Lanes is the service's own lanes, for diagnostics and for the test that
 // fills them.
 func (s *Service) Lanes() *lane.Lanes { return s.lanes }
@@ -246,7 +264,7 @@ func (s *Service) Allow(p Principal) error { return s.allowed(p) }
 
 // Open starts a shell in dir.
 func (s *Service) Open(ctx context.Context, p Principal, req ports.OpenTerminal) (terminal.Terminal, error) {
-	if err := s.allowed(p); err != nil {
+	if err := s.operating(p); err != nil {
 		return terminal.Terminal{}, err
 	}
 	return s.host.Open(ctx, req)
@@ -375,7 +393,7 @@ func (l *lease) heldBy(p Principal, client string) bool {
 
 // Control acquires, renews, releases or takes over id's lease for p's client.
 func (s *Service) SetControl(ctx context.Context, p Principal, id terminal.ID, client string, action Action) (Control, error) {
-	if err := s.allowed(p); err != nil {
+	if err := s.operating(p); err != nil {
 		return Control{}, err
 	}
 	switch action {
@@ -387,6 +405,9 @@ func (s *Service) SetControl(ctx context.Context, p Principal, id terminal.ID, c
 	case Renew, Release:
 	default:
 		return Control{}, refuse(terminal.CodeInvalid, "action is acquire, renew, release or takeover")
+	}
+	if err := s.operating(p); err != nil {
+		return Control{}, err
 	}
 	s.mu.Lock()
 	now := s.now()
@@ -491,7 +512,7 @@ func (s *Service) Paste(ctx context.Context, p Principal, id terminal.ID, client
 // — nothing between them can interleave another input for the same terminal.
 func (s *Service) typed(ctx context.Context, p Principal, id terminal.ID, client string, epoch, seq uint64,
 	typeIt func(context.Context) error) (uint64, bool, error) {
-	if err := s.allowed(p); err != nil {
+	if err := s.operating(p); err != nil {
 		return 0, false, err
 	}
 	release, err := s.lanes.Acquire(ctx, string(id))
@@ -506,7 +527,7 @@ func (s *Service) typed(ctx context.Context, p Principal, id terminal.ID, client
 	defer release()
 	// A request can wait in the lane while a pin or grant is revoked. The
 	// earlier check is only admission to the queue, not admission to the host.
-	if err := s.allowed(p); err != nil {
+	if err := s.operating(p); err != nil {
 		return 0, false, err
 	}
 
@@ -541,7 +562,7 @@ func (s *Service) typed(ctx context.Context, p Principal, id terminal.ID, client
 	s.mu.Unlock()
 	// The host effect begins after this last access verdict. An effect already
 	// running cannot be rolled back; its receipt reports applied or unknown.
-	if err := s.allowed(p); err != nil {
+	if err := s.operating(p); err != nil {
 		return 0, false, err
 	}
 
@@ -593,7 +614,7 @@ func definite(err error) bool {
 // Resize sets id's size for the lease's holder. It does not wait in the lane:
 // a size is not an input, and the newest one asked for wins.
 func (s *Service) Resize(ctx context.Context, p Principal, id terminal.ID, client string, epoch uint64, cols, rows int) error {
-	if err := s.allowed(p); err != nil {
+	if err := s.operating(p); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -620,12 +641,15 @@ func (s *Service) Resize(ctx context.Context, p Principal, id terminal.ID, clien
 		// counts, and it is applied by its own request.
 		return nil
 	}
+	if err := s.operating(p); err != nil {
+		return err
+	}
 	return s.host.Resize(ctx, id, cols, rows)
 }
 
 // Close ends id for the lease's holder, and tells every viewer who closed it.
 func (s *Service) Close(ctx context.Context, p Principal, id terminal.ID, client string, epoch uint64) error {
-	if err := s.allowed(p); err != nil {
+	if err := s.operating(p); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -635,6 +659,12 @@ func (s *Service) Close(ctx context.Context, p Principal, id terminal.ID, client
 	}
 	s.closing[id] = closer{who: p, client: client}
 	s.mu.Unlock()
+	if err := s.operating(p); err != nil {
+		s.mu.Lock()
+		delete(s.closing, id)
+		s.mu.Unlock()
+		return err
+	}
 	if err := s.host.Close(ctx, id); err != nil {
 		s.mu.Lock()
 		delete(s.closing, id)
@@ -679,7 +709,7 @@ func (s *Service) Revalidate() {
 	// again and refused while it lasts.
 	voided := map[terminal.ID]bool{}
 	for id, p := range holders {
-		if err := s.allowed(p); err != nil && !Unverified(err) {
+		if err := s.operating(p); err != nil && !Unverified(err) {
 			voided[id] = true
 		}
 	}

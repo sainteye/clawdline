@@ -14,6 +14,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 func (s *Server) secretHandoffNote(ctx context.Context, id string) (bool, bool, string, string) {
@@ -27,8 +28,8 @@ func (s *Server) secretHandoffNote(ctx context.Context, id string) (bool, bool, 
 // The person-facing response contains only a receipt. In particular the
 // Note, work receipts, audit stream and Cloud response never hold the value.
 func (s *Server) personSubmitSecretHandoff(w http.ResponseWriter, r *http.Request, conversation, id, actor string) {
-	valid, resolved, target, _ := s.secretHandoffNote(r.Context(), id)
-	if !valid || resolved || target != conversation {
+	note, err := s.store.HumanIntervention(r.Context(), id)
+	if err != nil || note.Kind != "secret" || note.TargetConversation != conversation {
 		writeRefusal(w, http.StatusNotFound, "secret_handoff_unavailable", "This Secret Handoff is no longer available.")
 		return
 	}
@@ -51,19 +52,30 @@ func (s *Server) personSubmitSecretHandoff(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if err := s.secretHandoffs.Put(id, conversation, []byte(body.Value)); err != nil {
+	// Replay a successful submission before checking the now-completed Note.
+	if note.ResolvedAt != nil {
 		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
-		switch {
-		case errors.Is(err, app.ErrSecretFull):
-			writeRefusal(w, http.StatusServiceUnavailable, "secret_handoffs_full", "Too many handoffs are pending. Try again later.")
-		default:
-			writeRefusal(w, http.StatusConflict, "secret_handoff_unavailable", "This Secret Handoff cannot accept another value.")
-		}
+		writeRefusal(w, http.StatusNotFound, "secret_handoff_unavailable", "This Secret Handoff is no longer available.")
 		return
 	}
 	answer := []byte(`{"ok":true,"received":true}`)
-	if err := s.store.CompleteReceipt(r.Context(), k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}); err != nil {
-		writeRefusal(w, http.StatusServiceUnavailable, "receipt_unavailable", "The handoff receipt could not be recorded. Check the Session before trying again.")
+	// Completion acknowledges the person's handoff, not the tool's later
+	// claim. Commit the Note and receipt together before publishing the value.
+	if err := s.secretHandoffs.PutAndCommit(id, conversation, []byte(body.Value), func() error {
+		_, _, err := s.humanInterventions().Update(r.Context(), id, conversation, "resolve", "", note.Version, k,
+			func(work.HumanIntervention) []byte { return answer })
+		return err
+	}); err != nil {
+		switch {
+		case errors.Is(err, app.ErrSecretFull):
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			writeRefusal(w, http.StatusServiceUnavailable, "secret_handoffs_full", "Too many handoffs are pending. Try again later.")
+		case errors.Is(err, app.ErrSecretUnavailable):
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			writeRefusal(w, http.StatusConflict, "secret_handoff_unavailable", "This Secret Handoff cannot accept another value.")
+		default:
+			writeRefusal(w, http.StatusServiceUnavailable, "receipt_unavailable", "The handoff receipt could not be recorded. Check the Session before trying again.")
+		}
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

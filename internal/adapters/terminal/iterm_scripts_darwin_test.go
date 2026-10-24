@@ -83,6 +83,7 @@ process.stdout.write(JSON.stringify({ answer: JSON.parse(answer), writes: writes
 `
 
 func TestFailedITermListingsBackOffAndNameTheDegradedSource(t *testing.T) {
+	enableITermForTest(t)
 	clock := time.Unix(1_700_000_000, 0)
 	calls := 0
 	it := NewITerm()
@@ -128,6 +129,7 @@ func TestFailedITermListingsBackOffAndNameTheDegradedSource(t *testing.T) {
 }
 
 func TestUnreadableITermListingNamesTheGap(t *testing.T) {
+	enableITermForTest(t)
 	it := NewITerm()
 	it.list = func(context.Context) ([]byte, error) { return []byte(`not json`), nil }
 	inv, err := it.Inventory(context.Background())
@@ -139,6 +141,7 @@ func TestUnreadableITermListingNamesTheGap(t *testing.T) {
 }
 
 func TestExpiredAppleEventWaitDoesNotEnterTheEffectsLane(t *testing.T) {
+	enableITermForTest(t)
 	release, err := effect(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -171,6 +174,7 @@ func TestExpiredAppleEventWaitDoesNotEnterTheEffectsLane(t *testing.T) {
 }
 
 func TestOnlySourceWideCaptureFailureQuietsITerm(t *testing.T) {
+	enableITermForTest(t)
 	if !captureSourceFailed(Failure{Attention: true, Message: "iTerm2 did not answer in time."}) {
 		t.Fatal("Apple Event timeout was treated as a missing tab")
 	}
@@ -233,6 +237,7 @@ func runInModelWith(t *testing.T, script string, argv []string, complete bool) m
 // The listing publishes the session iTerm2 does name, under its session id,
 // and counts what it could not read instead of throwing on it.
 func TestTheITermListingSkipsAWindowThatWillNotListItsTabs(t *testing.T) {
+	enableITermForTest(t)
 	run := runInModel(t, itermList, nil)
 	sessions, _ := run.Answer["sessions"].([]any)
 	if len(sessions) != 3 || sessions[0].(map[string]any)["id"] != "GUID-A" || sessions[1].(map[string]any)["id"] != "GUID-C" ||
@@ -245,6 +250,7 @@ func TestTheITermListingSkipsAWindowThatWillNotListItsTabs(t *testing.T) {
 }
 
 func TestTheITermListingReadsAWholeWindowInFourBatches(t *testing.T) {
+	enableITermForTest(t)
 	run := runInModelWith(t, itermList, nil, true)
 	rows, _ := run.Answer["sessions"].([]any)
 	if run.BulkRequests != 4 || len(rows) != 3 || run.Answer["unreadable"] != float64(0) {
@@ -258,6 +264,7 @@ func TestTheITermListingReadsAWholeWindowInFourBatches(t *testing.T) {
 }
 
 func TestITermInventoryDoesNotCompeteWithAnEffect(t *testing.T) {
+	enableITermForTest(t)
 	release, err := effect(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -279,6 +286,7 @@ func TestITermInventoryDoesNotCompeteWithAnEffect(t *testing.T) {
 }
 
 func TestITermEffectWaitingOnAListingIsTypedBusy(t *testing.T) {
+	enableITermForTest(t)
 	started := make(chan struct{})
 	finish := make(chan struct{})
 	i := NewITerm()
@@ -311,6 +319,7 @@ func TestITermEffectWaitingOnAListingIsTypedBusy(t *testing.T) {
 
 // Every script that looks for one session finds it past such a window.
 func TestEveryITermScriptFindsASessionPastAWindowThatWillNotList(t *testing.T) {
+	enableITermForTest(t)
 	if run := runInModel(t, itermTypeScript, []string{"GUID-A", "hello"}); run.Answer["ok"] != true ||
 		len(run.Writes) != 1 || run.Writes[0].Text != "\x1b[200~hello\x1b[201~" || run.Writes[0].Newline {
 		t.Fatalf("type: %+v", run)
@@ -341,6 +350,7 @@ func TestEveryITermScriptFindsASessionPastAWindowThatWillNotList(t *testing.T) {
 // its own. It used to call a command iTerm2 does not have and send no Return
 // at all.
 func TestTheITermSendPastesThenSubmits(t *testing.T) {
+	enableITermForTest(t)
 	run := runInModel(t, itermSendScript, []string{"GUID-A", "line one\nline two"})
 	if run.Answer["ok"] != true || len(run.Writes) != 2 {
 		t.Fatalf("send: %+v", run)
@@ -355,6 +365,7 @@ func TestTheITermSendPastesThenSubmits(t *testing.T) {
 
 // What a script answered is read: "not done" is a failure, never a delivery.
 func TestAnITermAnswerOfNotDoneIsAFailure(t *testing.T) {
+	enableITermForTest(t)
 	if err := itermAnswer([]byte(`{"ok":true}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -375,6 +386,7 @@ func TestAnITermAnswerOfNotDoneIsAFailure(t *testing.T) {
 // "❯" — so for Claude the look never found a composer and never helped. Once
 // the composer lets go, no more Returns are sent.
 func TestTheITermSendNudgesAClaudeComposerThatKeptThePaste(t *testing.T) {
+	enableITermForTest(t)
 	run := runInModel(t, itermSendScript, []string{"GUID-C", "please read CHILD.md 0123456789abcdef0123456789abcdef"})
 	if run.Answer["ok"] != true || len(run.Writes) != 3 {
 		t.Fatalf("a Claude composer that kept the paste once got %+v, want the paste and two Returns", run)
@@ -390,6 +402,7 @@ func TestTheITermSendNudgesAClaudeComposerThatKeptThePaste(t *testing.T) {
 // arriving gets no Return at all, and the send answers Unsubmitted — the text
 // is in the session, so it is not Unsent either.
 func TestTheITermSendPressesNoReturnUntilTheSessionShowsThePaste(t *testing.T) {
+	enableITermForTest(t)
 	run := runInModel(t, itermSendScript, []string{"GUID-D", "please read CHILD.md 0123456789abcdef0123456789abcdef"})
 	if run.Answer["ok"] != false || run.Answer["typed"] != true {
 		t.Fatalf("a session that never showed the paste answered %+v", run.Answer)
@@ -408,6 +421,7 @@ func TestTheITermSendPressesNoReturnUntilTheSessionShowsThePaste(t *testing.T) {
 // seen, which is not the same as gone. Each script that looks for one session
 // says which; a complete walk still says gone.
 func TestAnITermScriptThatCouldNotReadEveryWindowDoesNotSayGone(t *testing.T) {
+	enableITermForTest(t)
 	for name, argv := range map[string][]string{
 		"type":    nil,
 		"send":    nil,
@@ -439,6 +453,7 @@ func TestAnITermScriptThatCouldNotReadEveryWindowDoesNotSayGone(t *testing.T) {
 // F5: the close finds its session by id past a window that will not list, and
 // closes that session only — not its tab, whose other panes are not ours.
 func TestTheITermCloseClosesOnlyTheSessionItNames(t *testing.T) {
+	enableITermForTest(t)
 	run := runInModel(t, itermCloseScript, []string{"GUID-A"})
 	if run.Answer["ok"] != true || len(run.Writes) != 1 || run.Writes[0].ID != "GUID-A" || run.Writes[0].Text != "<close>" {
 		t.Fatalf("close: %+v", run)
@@ -450,6 +465,7 @@ func TestTheITermCloseClosesOnlyTheSessionItNames(t *testing.T) {
 // and a caller may type again. An answer that is not JSON came from a script
 // that ran, and is not.
 func TestAnITermNotDoneIsUnsentAndAnUnreadableAnswerIsNot(t *testing.T) {
+	enableITermForTest(t)
 	var unsent Unsent
 	if err := itermAnswer([]byte(`{"ok":false,"error":"That session is gone"}`)); !errors.As(err, &unsent) {
 		t.Fatalf("not done answered %T %v, want Unsent", err, err)
@@ -464,6 +480,7 @@ func TestAnITermNotDoneIsUnsentAndAnUnreadableAnswerIsNot(t *testing.T) {
 // shows and a record's spawn_error, is a sentence. And a script that failed
 // part way is not Unsent: it may have written before it failed.
 func TestAnITermScriptFailureCarriesASentenceNotOsascriptsWords(t *testing.T) {
+	enableITermForTest(t)
 	if _, err := exec.LookPath("/usr/bin/osascript"); err != nil {
 		t.Skip("no osascript")
 	}
@@ -487,6 +504,7 @@ func TestAnITermScriptFailureCarriesASentenceNotOsascriptsWords(t *testing.T) {
 // closed them. A session with no id is refused before any Apple Event, as a
 // write that sent nothing.
 func TestTheITermCloseIsImplemented(t *testing.T) {
+	enableITermForTest(t)
 	err := NewITerm().Close(context.Background(), session.Session{Backend: session.BackendITerm})
 	var unsupported Unsupported
 	if errors.As(err, &unsupported) {
@@ -503,6 +521,7 @@ func TestTheITermCloseIsImplemented(t *testing.T) {
 // client is on. `revealtty` used to be no command at all, and the whole reveal
 // tail did nothing for this shape.
 func TestTheITermRevealFindsATabByTheTTYItIsHolding(t *testing.T) {
+	enableITermForTest(t)
 	run := runInModel(t, itermRevealScript, []string{"revealtty", "ttys032", "0"})
 	if run.Answer["ok"] != true {
 		t.Fatalf("revealtty: %+v", run)
@@ -521,6 +540,7 @@ func TestTheITermRevealFindsATabByTheTTYItIsHolding(t *testing.T) {
 // argument that matched the rows with no tty — every `tmux -CC` mirror — would
 // select a tab for a client that is not it.
 func TestTheITermRevealRefusesATTYItDoesNotHold(t *testing.T) {
+	enableITermForTest(t)
 	for _, want := range []string{"ttys999", ""} {
 		run := runInModel(t, itermRevealScript, []string{"revealtty", want, "1"})
 		if run.Answer["ok"] != false || len(run.Selects) != 0 {
@@ -543,6 +563,7 @@ func TestTheITermRevealRefusesATTYItDoesNotHold(t *testing.T) {
 // with iTerm2's listing switched off. A tty iTerm2 holds no session on finds
 // nothing and writes nothing.
 func TestEveryITermActionFindsAProcessTableRowByItsTTY(t *testing.T) {
+	enableITermForTest(t)
 	if run := runInModel(t, itermSendScript, []string{"ttys031", "hello"}); run.Answer["ok"] != true ||
 		len(run.Writes) != 2 || run.Writes[0].ID != "GUID-A" || run.Writes[1].Text != "\r" {
 		t.Fatalf("send: %+v", run)

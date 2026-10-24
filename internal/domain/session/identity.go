@@ -19,6 +19,10 @@ import (
 type Binding string
 
 const (
+	// BindingProtocol is the conversation returned by an owned protocol process.
+	BindingProtocol Binding = "protocol"
+	// BindingLaunchHook ties a native conversation to independently verified process facts.
+	BindingLaunchHook Binding = "launch_hook"
 	// BindingCommandLine: the conversation id is in the process's own argv,
 	// which is how a resumed session of either assistant carries it.
 	BindingCommandLine Binding = "command_line"
@@ -58,7 +62,7 @@ const (
 // not are deliberately not one value: see Binding.
 func (b Binding) Bound() bool {
 	switch b {
-	case BindingCommandLine, BindingOpenFile, BindingLiveTitle, BindingRegistry:
+	case BindingCommandLine, BindingOpenFile, BindingLiveTitle, BindingRegistry, BindingLaunchHook, BindingProtocol:
 		return true
 	}
 	return false
@@ -80,6 +84,9 @@ func Coordinate(s Session) string {
 		where = s.ID
 	}
 	name := strings.ToUpper(assistant[:1]) + assistant[1:]
+	if s.Assistant == AssistantAntigravity {
+		name = "Gemini"
+	}
 	if where == "" {
 		return name
 	}

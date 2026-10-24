@@ -34,8 +34,8 @@ func heavyConversation(getenv func(string) string) string {
 	return conversationOf(getenv)
 }
 
-// `clawdline heavy -- <command>` runs a build, a test suite or anything else
-// that needs much of the machine, after the machine can take it.
+// `clawdline heavy -- <command>` queues native compilation; ordinary checks run directly.
+// Native builds wait until the machine can take them.
 //
 // On 2026-09-26 this machine had 2 cores and 1.9 GB (later 3.7 GB), and
 // several sessions each ran `go test ./...` or `go vet ./...` whenever their
@@ -117,6 +117,7 @@ type heavyOptions struct {
 	reason       string
 	minAvailable int64 // bytes; 0 chooses a quarter of the machine, at most heavyFloorCap
 	wait         time.Duration
+	compile      bool // an opaque script explicitly declared to build native code
 	noSlot       bool
 	handoff      bool
 	port         int
@@ -146,6 +147,7 @@ func heavyCommand(args []string) {
 	reason := fs.String("reason", "", "what this is, shown to whoever waits behind it")
 	minAvail := fs.String("min-available", "", "memory that must be available first, e.g. 1500M or 1G (default: a quarter of the machine, at most 1G)")
 	wait := fs.Duration("max-wait", heavyDefaultWait, "how long to wait for the slot and memory; past it the command is not run and heavy exits 75")
+	compile := fs.Bool("compile", false, "this script builds an application or native code; use only for compilation")
 	noSlot := fs.Bool("no-slot", false, "check memory only; do not queue for the compile slot")
 	handoff := fs.Bool("handoff", true, "hand a queued wait to a callback and exit 76 (default for a root Session)")
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
@@ -175,38 +177,121 @@ func heavyCommand(args []string) {
 		// daemon port in the heavy command it runs later.
 		*port, _ = daemonPort()
 	}
-	if os.Getenv(heavyEnv) == "" && (!*noSlot || *handoff) {
+	if os.Getenv(heavyEnv) == "" && (*compile || nativeCompile(fs.Args()) || *noSlot) && (!*noSlot || *handoff) {
 		if b, err := openBroker(*port); err == nil {
 			deps.broker = b
 		} else if !*noSlot {
 			fmt.Fprintf(os.Stderr, cliCopy("misc", "heavy.clawdline_heavy_no_compile_slot_v_r.a110b265", "clawdline heavy: no compile slot (%v); running without one\n"), err)
 		}
 	}
-	os.Exit(runHeavy(heavyOptions{reason: *reason, minAvailable: floor, wait: *wait, noSlot: *noSlot, handoff: *handoff, port: *port}, fs.Args(), deps))
+	os.Exit(runHeavy(heavyOptions{compile: *compile, reason: *reason, minAvailable: floor, wait: *wait, noSlot: *noSlot, handoff: *handoff, port: *port}, fs.Args(), deps))
 }
 
 func heavyUsage() {
-	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.usage_handoff", "usage: clawdline heavy [--reason text] [--min-available 1G] [--max-wait 30m] [--no-slot] [--handoff] -- <command> [args…]"))
-	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.waits_for_the_machine_s_compile_slo.6480ade2", "  waits for the machine's compile slot and for memory, then runs the command and gives the slot back"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.usage_handoff", "usage: clawdline heavy [--compile] [--reason text] [--min-available 1G] [--max-wait 30m] [--no-slot] [--handoff] -- <command> [args…]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.waits_for_the_machine_s_compile_slo.6480ade2", "  queues native compilation for the compile slot and memory; ordinary commands run directly; --compile declares a native build script"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.exit_handoff", "  exits with the command's own status; 75 when --max-wait passed; 76 when a callback took the queued command"))
 	os.Exit(2)
 }
 
-// runHeavy is the whole command after its flags: the answer is the exit status
-// to leave with, which is the command's own whenever it ran, and
-// heavyExitTimedOut when --max-wait passed first.
+// nativeCompile recognizes executable arguments, never shell text or an estimate
+// of CPU usage. Opaque build scripts opt in with --compile. In particular, Go
+// and Swift tests compile internally but are ordinary tests under this policy.
+func nativeCompile(argv []string) bool {
+	if len(argv) == 0 {
+		return false
+	}
+	name := strings.TrimSuffix(filepath.Base(argv[0]), ".exe")
+	args := argv[1:]
+	if name == "run-heavy-linux.sh" {
+		return nativeCompile(args)
+	}
+	if name == "env" {
+		for len(args) > 0 {
+			if strings.Contains(args[0], "=") || args[0] == "--" {
+				args = args[1:]
+				continue
+			}
+			if args[0] == "-u" && len(args) > 1 {
+				args = args[2:]
+				continue
+			}
+			break
+		}
+		return nativeCompile(args)
+	}
+	if name == "xcrun" {
+		for len(args) > 0 {
+			if (args[0] == "--sdk" || args[0] == "--toolchain") && len(args) > 1 {
+				args = args[2:]
+				continue
+			}
+			break
+		}
+		return nativeCompile(args)
+	}
+	switch name {
+	case "go", "swift", "cargo":
+		for len(args) > 0 {
+			if (args[0] == "-C" || args[0] == "--package-path") && len(args) > 1 {
+				args = args[2:]
+				continue
+			}
+			if strings.HasPrefix(args[0], "-C=") || strings.HasPrefix(args[0], "--package-path=") {
+				args = args[1:]
+				continue
+			}
+			break
+		}
+		return len(args) > 0 && (args[0] == "build" || (name == "go" && args[0] == "install"))
+	case "xcodebuild":
+		for _, arg := range args {
+			switch arg {
+			case "test", "test-without-building", "-list", "-showBuildSettings", "-version", "-help":
+				return false
+			}
+		}
+		return true // xcodebuild's default action is build.
+	case "clang", "clang++", "gcc", "g++", "cc", "c++", "swiftc", "rustc":
+		if len(args) == 0 {
+			return false
+		}
+		for _, arg := range args {
+			switch arg {
+			case "--version", "-version", "--help", "-help", "-fsyntax-only", "-E", "-M", "-MM":
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// runHeavy preserves the command exit status or reports a queue/memory timeout.
 func runHeavy(opts heavyOptions, argv []string, d heavyDeps) int {
 	say := func(format string, a ...any) {
 		fmt.Fprintf(d.stderr, cliCopy("misc", "heavy.clawdline_heavy.a7592dd3", "clawdline heavy: ")+format+"\n", a...)
-	}
-	if !opts.noSlot && d.getenv("CLAWDLINE_DAEMON_RESTART_HELD") != "" {
-		say(cliCopy("misc", "heavy.restart_lease_conflict", "cannot build while daemon_restart is held by this command; build first, then run only the restart step under daemon_restart"))
-		return 2
 	}
 	if held := d.getenv(heavyEnv); held != "" {
 		// The parent holds the slot and checked memory already.
 		code, err := d.run(argv, []string{heavyEnv + "=" + held})
 		return heavyExit(code, err, say)
+	}
+	// Ordinary checks must neither acquire a lease nor wait for memory. Do not
+	// mark their environment as holding a slot: a nested native build still
+	// needs to acquire its own lease.
+	if !opts.compile && !nativeCompile(argv) && !opts.noSlot {
+		// The Linux cache wrapper holds an exclusive filesystem lock too.
+		// Ordinary work must bypass that lock as well as the broker lease.
+		if len(argv) > 0 && filepath.Base(argv[0]) == "run-heavy-linux.sh" {
+			argv = argv[1:]
+		}
+		code, err := d.run(argv, nil)
+		return heavyExit(code, err, say)
+	}
+	if !opts.noSlot && d.getenv("CLAWDLINE_DAEMON_RESTART_HELD") != "" {
+		say(cliCopy("misc", "heavy.restart_lease_conflict", "cannot build while daemon_restart is held by this command; build first, then run only the restart step under daemon_restart"))
+		return 2
 	}
 	if d.requestID == "" {
 		d.requestID = newUUID()
@@ -496,6 +581,9 @@ func heavyHandoff(opts heavyOptions, argv []string, d heavyDeps) (string, error)
 	}
 	cmd = append(cmd, "--max-wait", opts.wait.String())
 	cmd = append(cmd, "--handoff=false")
+	if opts.compile {
+		cmd = append(cmd, "--compile")
+	}
 	if opts.noSlot {
 		cmd = append(cmd, "--no-slot")
 	}

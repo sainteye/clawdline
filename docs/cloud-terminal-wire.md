@@ -268,3 +268,33 @@ A list-only browser sends `release_connection` after its list receipt. The machi
 While the tab holds its lease and is only opening, synchronizing, rotating to a new connection (as when it moves to the direct path or falls back to the relay), or waiting for the next frame of a stale screen whose key still lasts, a key or paste typed then waits in the tab, unsent and inside the same 64 KiB queue bound, and is published once typing resumes; after `CloudTerminalTypeAheadSecondsLimit` it is dropped and the page says the keys typed during the pause were not sent. A tab that is taking control (on entry to a terminal nobody else holds, or by the person's button) holds a key typed meanwhile the same way, until that answer: sent once it holds control and has a current screen, refused with `not_controller` if another holder kept it. A key refused for any other reason is refused with that reason (input state unknown, no lease, key expired, offline, revoked, ended). Every refused key is said in a notice on the terminal's own screen, with the action that recovers (take control, take over, take new control, reconnect); the screen never stops taking keys, so none vanishes unsaid, and none refused is ever sent later. A key the transport refused because the DC was no longer open was never published: the tab falls back to the relay at once and sends that key there with the same input `seq`, so even a copy that did arrive would be absorbed by the machine's high-water mark. A lease renewal that goes unanswered, cannot be sent, or is refused as `terminal_busy`, `rate_limited` or `over_capacity` is asked again after `CloudTerminalRenewRetrySecondsLimit`; it neither marks the input state unknown nor ends the lease, whose own expiry still stops typing. Only the machine's answer that the lease is gone ends it. A key rotation that fails is tried again after `CloudTerminalRotationRetrySecondsLimit` while the old key lasts. The page says it is connecting meanwhile. Since such a key was never published, sending it later replays nothing. The browser may publish at most four numbered input or paste requests before their receipts arrive. Publication is ordered; a later key waits when the window is full. Each receipt still proves its own applied sequence, and a receipt never moves the next input number back: on 2026-10-06 a receipt that reset it to its own `seq + 1` while three later keys were in flight gave the fifth key of a burst an earlier key's number, the machine answered it as a duplicate, and the burst lost that key and stopped. Any unknown input outcome pauses further typing and requires reconciliation; no key or paste is automatically replayed. The viewer redraws changed rows from each verified complete frame, while a resize or alternate-screen transition redraws the full frame. It draws with autowrap off, so a row wider than the screen (a capture that raced a resize, or a character the two ends measure differently) is cut at the last column instead of wrapping on the bottom row and scrolling every unchanged row a line off.
 
 When a complete frame is awaiting relay settlement, the machine defers a newer frame without advancing the watch’s last delivered revision. Its next read retries the newest full frame, so a change during backpressure need not wait for the three-second idle heartbeat. Failed relay settlement still retires the connection.
+
+
+### Content-free read refusal on an authenticated carrier
+
+An open carrier can send exactly `{"t":"read_error","code":"machine_pairing_required"}` when the enabled content-key runtime finds neither a completed local public-key pin nor an admitted legacy roster identity for that viewer. The signed offer/answer has already authenticated this DTLS peer; the control does not depend on the account content key that prevented the response. It contains no request body, keys or content, and never grants authority or installs a pairing. Revoked or unreadable pins are not classified as this repairable absence. A normal paired read remains a signed, encrypted envelope.
+
+The browser closes that carrier, settles its machine's pending reads with the typed refusal, and does not replay those reads onto relay. Other machines are unaffected. It records a content-free viewer diagnostic and shows a persistent error on both machine-list and console screens. Pairing starts only after the person's press through the existing confirmed handover. Retry renews the connection, preserving the console and drafts. A normal read deadline instead shows an unknown-cause error; silence never proves a pairing failure. Only a live successful read from the affected machine clears the message; a cached inventory or another machine answering does not.
+
+Older daemons cannot send this control. Their unchanged local read deadlines provide the unknown-cause fallback. This change does not enable automatic pairing, repair or deployment.
+
+
+### Legacy read compatibility and visible failures
+
+Carrier publication uses the same pin-first, roster-fallback identity rule as relay reads.
+A locally revoked viewer or unreadable pin store still fails closed; the content-key epoch
+fence still covers the final socket enqueue. Absence of a newer pin alone is not evidence that
+an already authenticated legacy viewer needs to pair again.
+
+For older daemons that send the pin-only control above, the viewer retries only reads on the
+relay, inside the original timeout, and stops offering that machine a carrier for this client.
+The relay still performs its normal pairing and authority checks; a successful fallback is
+not a read failure. Mutations are never replayed by this path.
+
+An unresolved read failure appears in a dismissible, polite inline status row. It never covers
+the console, changes focus, or asks the person to pair based only on a transport refusal.
+A current successful read from the same machine clears it; cached rows and other machines do not.
+
+Read handlers do not hold the mutation authority mutex while routes or roster reads run.
+Their existing authority checks and publication epoch fences remain in place. Mutations,
+pairing completion, and revocation retain their authority serialization.

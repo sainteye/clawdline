@@ -39,6 +39,7 @@ ttys070 31337   999 /usr/bin/script
 
 // What the process table says iTerm2 owns, and what it deliberately does not.
 func TestTheProcessTableNamesITerm2sOwnPseudoTerminals(t *testing.T) {
+	enableITermForTest(t)
 	found := parseITermPTYs(itermTable)
 	for _, want := range []string{"ttys001", "ttys002", "ttys005", "ttys099"} {
 		if !found.ttys[want] {
@@ -83,6 +84,7 @@ func ptys(ttys ...string) func(context.Context) (itermPTYs, bool) {
 // would publish, and that is a fact the process table states rather than a
 // length of time anybody waited out.
 func TestAWindowHidingNoPseudoTerminalStopsCostingTheListingItsAnswer(t *testing.T) {
+	enableITermForTest(t)
 	inv := sealITermGaps(context.Background(), blindInventory("ttys001", "ttys002"), ptys("ttys001", "ttys002"))
 	if !inv.Complete {
 		t.Errorf("the listing is still incomplete: %v", inv.Notes)
@@ -100,6 +102,7 @@ func TestAWindowHidingNoPseudoTerminalStopsCostingTheListingItsAnswer(t *testing
 // One pty iTerm2 owns and the listing did not read is the whole seal refused,
 // and the reading says which pty it was.
 func TestAPseudoTerminalTheListingMissedRefusesTheSeal(t *testing.T) {
+	enableITermForTest(t)
 	inv := sealITermGaps(context.Background(), blindInventory("ttys001"), ptys("ttys001", "ttys077"))
 	if inv.Complete || inv.Gaps[0].Sealed {
 		t.Fatalf("a listing that missed a pty sealed anyway: %+v", inv)
@@ -125,6 +128,7 @@ func TestAPseudoTerminalTheListingMissedRefusesTheSeal(t *testing.T) {
 // So the sets must be equal. The attribution has to account for the ptys the
 // listing *did* read before it is believed about the ones it did not.
 func TestAnAttributionThatAccountsForNothingSealsNothing(t *testing.T) {
+	enableITermForTest(t)
 	blind := func(context.Context) (itermPTYs, bool) { return itermPTYs{ttys: map[string]bool{}, hosts: 0}, true }
 	inv := sealITermGaps(context.Background(), blindInventory("ttys001", "ttys002"), blind)
 	if inv.Complete || inv.Gaps[0].Sealed {
@@ -151,6 +155,7 @@ func TestAnAttributionThatAccountsForNothingSealsNothing(t *testing.T) {
 // Unknown never seals: a process table that could not be read accounts for
 // nothing, and neither does a region the listing could not name.
 func TestNothingSealsOnASourceThatDidNotAnswer(t *testing.T) {
+	enableITermForTest(t)
 	unread := func(context.Context) (itermPTYs, bool) { return itermPTYs{}, false }
 	inv := sealITermGaps(context.Background(), blindInventory("ttys001"), unread)
 	if inv.Complete || inv.Gaps[0].Sealed {
@@ -172,6 +177,7 @@ func TestNothingSealsOnASourceThatDidNotAnswer(t *testing.T) {
 // The script's answer becomes named gaps, and a count it could not attribute
 // to any window becomes a gap of its own that nothing can seal.
 func TestAnUnreadableWindowReachesTheReadingWithItsIDOnIt(t *testing.T) {
+	enableITermForTest(t)
 	gaps := itermGaps([]itermGap{{Window: "27898", Why: "tabs() answered null", Regions: 1}}, 1)
 	if len(gaps) != 1 || gaps[0].ID != "27898" || gaps[0].Source != "iterm" || gaps[0].Scope != "window" {
 		t.Fatalf("got %+v", gaps)
@@ -199,6 +205,7 @@ func TestAnUnreadableWindowReachesTheReadingWithItsIDOnIt(t *testing.T) {
 // did not answer held it for its whole 10 s Apple Event timeout before the
 // skip, and its outcome followed the machine rather than the code.
 func TestTheRealListingCarriesWhateverItCouldNotRead(t *testing.T) {
+	enableITermForTest(t)
 	if os.Getenv("CLAWDLINE_LIVE_ITERM") != "1" {
 		t.Skip("set CLAWDLINE_LIVE_ITERM=1 to walk this machine's iTerm2")
 	}

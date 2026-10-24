@@ -9,6 +9,7 @@ package cloud
 // original guards at four separate sites.
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/tls"
@@ -28,7 +29,14 @@ import (
 )
 
 // Options configure one transport.
+// ErrRekeyOverload is a bounded raw-control admission refusal.
+const RawRekeyPendingLimit = 8
+
+var ErrRekeyOverload = errors.New("content_key_offer_overloaded")
+
 type Options struct {
+	// RawRekeyOffer runs in a bounded worker, outside the socket reader.
+	RawRekeyOffer func([]byte) error
 	// RelayURL is ws:// or wss:// and either has no path or ends in
 	// /v1/connect. A path this does not recognise is refused rather than
 	// rewritten, because silently sending a device token to somebody else's
@@ -96,6 +104,13 @@ type Options struct {
 	// ContentKeyFor selects a paired machine's secret for a viewer. The sender
 	// must already have passed PublicKeyFor and signature verification.
 	ContentKeyFor func(sender, keyID string) (cloud.ContentKey, bool)
+	// KeyEpoch, when set on a machine, replaces ContentKey: an inbound
+	// envelope opens only under the installed state's key and only when it
+	// names that state's id, and every spool write and re-send happens under
+	// its fence after checking the row is still owed. It must be the same
+	// authority the Relay seals with. Nil keeps ContentKey as it was; a
+	// viewer's ContentKeyFor is never affected.
+	KeyEpoch *cloud.KeyEpoch
 	// Log is one line per material event. nil means silence.
 	Log func(string)
 	// Now and Jitter exist so a test can drive the clock.
@@ -112,7 +127,8 @@ type Options struct {
 
 // Transport is one line to the relay.
 type Transport struct {
-	opts Options
+	rawRekeyPending chan struct{}
+	opts            Options
 
 	mu         sync.Mutex
 	conn       *Conn
@@ -509,6 +525,12 @@ func (t *Transport) handleFrame(conn *Conn, data []byte, h connectionhealth.Hand
 		return nil
 	}
 	switch kind {
+	case "content_key_routed", "content_key_error":
+		t.handleRekeyControl(data, kind)
+		return nil
+	case "content_key_offer":
+		t.dispatchRawRekey(data)
+		return nil
 	case FramePing:
 		return conn.WriteText([]byte(`{"type":"pong"}`), t.opts.Now().Add(KeepaliveInterval))
 	case FramePong, FrameSubscriptions:
@@ -601,6 +623,57 @@ func (t *Transport) handleFrame(conn *Conn, data []byte, h connectionhealth.Hand
 	}
 	t.logf("cloud ignored an unknown frame type=%s", kind)
 	return nil
+}
+
+// A route receipt is not key adoption. Answers are never retained or retried.
+func (t *Transport) handleRekeyControl(data []byte, kind string) {
+	var frame struct {
+		Type      string  `json:"type"`
+		Frame     string  `json:"frame"`
+		Operation *string `json:"operation_id"`
+		Code      *string `json:"code"`
+		Delivered *int64  `json:"delivered"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	valid := decoder.Decode(&frame) == nil && (frame.Frame == "content_key_offer" || frame.Frame == "content_key_answer")
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil {
+		valid = false
+	}
+	for _, value := range fields {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			valid = false
+		}
+	}
+	if frame.Operation != nil {
+		id := *frame.Operation
+		valid = valid && len(id) > 0 && len(id) <= 128
+		for _, c := range id {
+			if c < '!' || c > '~' || c == '<' || c == '>' || c == '&' {
+				valid = false
+			}
+		}
+	}
+	code := "content_key_routed"
+	if kind == "content_key_routed" {
+		valid = valid && frame.Operation != nil && frame.Delivered != nil && *frame.Delivered > 0 && frame.Code == nil
+	} else {
+		valid = valid && frame.Delivered == nil && frame.Code != nil
+		if frame.Code != nil {
+			code = *frame.Code
+		}
+		switch code {
+		case "content_key_malformed", "content_key_forbidden", "content_key_no_target", "content_key_rate_limited", "content_key_unavailable":
+		default:
+			valid = false
+		}
+	}
+	if !valid {
+		t.logf("cloud dropped rekey control code=malformed_control")
+		return
+	}
+	t.logf("cloud rekey control code=%s", code)
 }
 
 func (t *Transport) handleAck(data []byte) {
@@ -753,7 +826,11 @@ func (t *Transport) admitTraced(raw []byte, directViewer string, h connectionhea
 	}
 	if strings.HasPrefix(envelope.Ch, "termi/") {
 		parts := strings.Split(envelope.Ch, "/")
-		if len(parts) != 3 || parts[2] != envelope.Sender || envelope.KeyID != MasterKeyID {
+		// The channel binds the viewer; the shared content-key ladder below
+		// binds the installed epoch, just as it does for Session requests.
+		// Legacy callers without an epoch still require the legacy master id.
+		if len(parts) != 3 || parts[2] != envelope.Sender ||
+			(t.opts.KeyEpoch == nil && envelope.KeyID != MasterKeyID) {
 			t.opts.Status.Dropped(DropWrongChannel)
 			return false
 		}
@@ -796,6 +873,17 @@ func (t *Transport) admitTraced(raw []byte, directViewer string, h connectionhea
 	_ = h.Step(connectionhealth.StageSenderVerified, connectionhealth.LocOpenEnvelope)
 	var plaintext []byte
 	contentKey := t.opts.ContentKey
+	if t.opts.KeyEpoch != nil && t.opts.Role != "viewer" {
+		// A retired id is refused, not tried: nothing here keeps an old
+		// master key to open ordinary requests with.
+		state, err := t.opts.KeyEpoch.Current()
+		if err != nil || envelope.KeyID != state.KeyID {
+			t.opts.Status.Dropped(DropDecryptFailed)
+			t.logf("cloud dropped an envelope reason=%s sender=%s seq=%d key=not_current", DropDecryptFailed, envelope.Sender, envelope.Seq)
+			return false
+		}
+		contentKey = state.Key
+	}
 	if t.opts.Role == "viewer" {
 		var paired bool
 		if t.opts.ContentKeyFor != nil {
@@ -973,16 +1061,21 @@ func (t *Transport) drain(conn *Conn, done <-chan struct{}, reconnect bool) {
 	if reconnect {
 		pass := t.drainPass()
 		for _, seq := range t.opts.Spool.InFlight() {
-			sealed, correlation, err := t.opts.Spool.ResendCorrelated(seq)
-			if err != nil {
-				continue
+			wrote, err := t.resend(conn, seq)
+			if errors.Is(err, cloud.ErrKeyEpochHalted) {
+				// Nothing is written until recovery; the attempt window
+				// settles these rows if it does not come in time.
+				t.logf("cloud re-send stopped seq=%d reason=content_key_halted", seq)
+				break
 			}
-			if err := conn.WriteTextTraced(PublishFrame(sealed), t.opts.Now().Add(OpeningTimeout), correlation); err != nil {
+			if err != nil {
 				t.logf("cloud re-send failed seq=%d reason=%s", seq, FailureCode(err))
 				pass.End(false)
 				return
 			}
-			t.logf("cloud re-sent seq=%d", seq)
+			if wrote {
+				t.logf("cloud re-sent seq=%d", seq)
+			}
 		}
 		pass.End(true)
 	}
@@ -1018,14 +1111,24 @@ func (t *Transport) drainOnce(conn *Conn) bool {
 	t.opts.Spool.BurnExpired()
 	t.settleBurned()
 	for {
-		disposition := t.opts.Spool.SendNext()
-		if disposition.Row == nil {
+		var row *SpoolRow
+		var werr error
+		err := t.fenced(func(keep func(string) bool) error {
+			row = t.opts.Spool.SendNextKeyed(keep).Row
+			if row != nil {
+				werr = conn.WriteTextTraced(PublishFrame(row.Sealed), t.opts.Now().Add(OpeningTimeout), row.Correlation)
+			}
+			return nil
+		})
+		if err != nil || row == nil {
+			// A halted content key sends nothing this tick, and the next
+			// tick asks again: Recover is what reopens it.
 			break
 		}
-		if err := conn.WriteTextTraced(PublishFrame(disposition.Row.Sealed), t.opts.Now().Add(OpeningTimeout), disposition.Row.Correlation); err != nil {
+		if werr != nil {
 			// The row stays `sent`. Whether those bytes reached the relay
 			// is unknown, and only the attempt window decides.
-			t.logf("cloud publish failed seq=%d reason=%s", disposition.Row.Seq, FailureCode(err))
+			t.logf("cloud publish failed seq=%d reason=%s", row.Seq, FailureCode(werr))
 			_ = conn.Close()
 			ok = false
 			return false
@@ -1034,6 +1137,43 @@ func (t *Transport) drainOnce(conn *Conn) bool {
 	}
 	t.settleBurned()
 	return true
+}
+
+// fenced runs one spool write under the content-key fence, with the test a
+// row's KeyID must pass to be written. Without a KeyEpoch there is no fence
+// and every row passes, which is the legacy behaviour; with one, the
+// fence's error (ErrKeyEpochHalted) is returned and fn does not run.
+func (t *Transport) fenced(fn func(keep func(string) bool) error) error {
+	if t.opts.KeyEpoch == nil {
+		return fn(nil)
+	}
+	return t.opts.KeyEpoch.Use(func(state cloud.ContentKeyState) error {
+		return fn(state.Sendable)
+	})
+}
+
+// resend re-writes one sent row's exact bytes after a reconnect, under the
+// fence, and only while the row is still sent and its key still current. A
+// row sealed under a retired key is burned, never written. wrote is false for
+// a row skipped; err is the write's, or the fence's.
+func (t *Transport) resend(conn *Conn, seq uint64) (wrote bool, err error) {
+	err = t.fenced(func(keep func(string) bool) error {
+		row, found := t.opts.Spool.Row(seq)
+		if !found || row.State != SpoolSent {
+			return nil
+		}
+		if keep != nil && !keep(row.KeyID) {
+			t.opts.Spool.RetireKeys(keep)
+			return nil
+		}
+		sealed, correlation, err := t.opts.Spool.ResendCorrelated(seq)
+		if err != nil {
+			return nil
+		}
+		wrote = true
+		return conn.WriteTextTraced(PublishFrame(sealed), t.opts.Now().Add(OpeningTimeout), correlation)
+	})
+	return wrote, err
 }
 
 // settleBurned tells OnSettled about every row the spool burned since the
@@ -1081,4 +1221,61 @@ func trimSlash(s string) string {
 
 func (t *Transport) PublishPeerDiscovery(frame []byte) error {
 	return t.publishPeerFrame(frame, "peer_discovery_publish")
+}
+
+// PublishRekeyAnswer sends a targeted signed raw answer; it never enters the spool.
+func (t *Transport) PublishRekeyAnswer(raw []byte) error {
+	if len(raw) == 0 || len(raw) > cloud.MaxRekeyBodyBytes {
+		return cloud.ErrRekey
+	}
+	var answer cloud.RekeyAnswer
+	if json.Unmarshal(raw, &answer) != nil || answer.Type != "content_key_answer" {
+		return cloud.ErrRekey
+	}
+	t.mu.Lock()
+	conn := t.conn
+	t.mu.Unlock()
+	if conn == nil {
+		return ErrNotConnected
+	}
+	if err := conn.WriteText(raw, t.opts.Now().Add(OpeningTimeout)); err != nil {
+		_ = conn.Close()
+		return err
+	}
+	return nil
+}
+
+func (t *Transport) dispatchRawRekey(raw []byte) {
+	if t.opts.RawRekeyOffer == nil {
+		return
+	}
+	if len(raw) > cloud.MaxRekeyBodyBytes {
+		t.logf("cloud: raw rekey refused: oversized")
+		return
+	}
+	t.mu.Lock()
+	if t.rawRekeyPending == nil {
+		t.rawRekeyPending = make(chan struct{}, RawRekeyPendingLimit)
+	}
+	slots := t.rawRekeyPending
+	t.mu.Unlock()
+	select {
+	case slots <- struct{}{}:
+	default:
+		t.logf("cloud: raw rekey refused: %v", ErrRekeyOverload)
+		return
+	}
+	body := append([]byte(nil), raw...)
+	go func() {
+		defer func() { <-slots }()
+		if err := t.opts.RawRekeyOffer(body); err != nil {
+			t.logf("cloud: raw rekey refused: %v", err)
+		}
+	}()
+}
+
+func (t *Transport) RekeyPending() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.rawRekeyPending)
 }

@@ -21,8 +21,9 @@
 #                                      `licenses/`, `libexec/tmux.json`), the
 #                                      layout `current` points at
 #   Clawdline-<v>-macos-arm64.tar.gz   the app bundle (macOS hosts with swiftc)
-#   SHA256SUMS                         for install.sh, which cannot read JSON
+#   SHA256SUMS                         for manual checks and older installers
 #   manifest.json                      what `tools/release sign` signs
+#   <archive>.spdx.json                the SBOM of each archive (not for dev)
 #
 # The tmux each archive carries is built by tools/release/tmux/build.sh
 # (pinned, hash-checked sources; Docker for the Linux two). --tmux-from <dir>
@@ -92,10 +93,19 @@ finished=0
 # shellcheck source=tools/release/codesign.sh
 . "$(dirname "$0")/codesign.sh"
 trap 's=$?; codesign_end; rm -rf -- "$work"; if [ "$finished" != 1 ] && [ "$s" = 0 ]; then exit 1; fi' EXIT
+# official_mac: an official release built on a Mac is signed with the
+# hardened runtime and notarized (codesign.sh). The notary credentials are
+# checked here, before anything is compiled, so a release that could not be
+# notarized stops at once instead of after the build.
+official_mac=0
 if [ "$(uname -s)" = Darwin ]; then
   codesign_begin
   if [ "$channel" != dev ] && [ -z "$test_key" ]; then
     codesign_require_developer_id
+    official_mac=1
+    export CLAWDLINE_CODESIGN_HARDENED=1
+    [ -n "${CLAWDLINE_NOTARY_KEY:-}" ] && [ -n "${CLAWDLINE_NOTARY_KEY_ID:-}" ] && [ -n "${CLAWDLINE_NOTARY_ISSUER:-}" ] ||
+      die "an official macOS release is notarized: set CLAWDLINE_NOTARY_KEY, CLAWDLINE_NOTARY_KEY_ID and CLAWDLINE_NOTARY_ISSUER"
   fi
 fi
 
@@ -166,6 +176,9 @@ for target in $targets; do
   if [ "$goos" = darwin ] && command -v codesign >/dev/null; then
     codesign_path "$stage/clawdline"
   fi
+  if [ "$goos" = darwin ] && [ "$official_mac" = 1 ]; then
+    codesign_notarize "clawdline_${version}_${goos}_${goarch}" "$stage/clawdline" "$stage/libexec/tmux"
+  fi
   cp -R "$dist" "$stage/dist"
   printf '{"stamp":"%s","committed_at":"%s","version":"%s"}\n' "$commit" "$committed_at" "$version" >"$stage/dist/BUILD.json"
   tar_into "$out/clawdline_${version}_${goos}_${goarch}.tar.gz" "$stage"
@@ -180,6 +193,11 @@ if [ "$app" = 1 ]; then
   mkdir -p "$appdir"
   CLAWDLINE_RELEASE_VERSION=$version CLAWDLINE_WEB_SOURCE="$PWD/$dist" CLAWDLINE_TMUX_DIR="${tmux_from:-$work/tmux}/darwin-arm64" \
     tools/package-macos.sh --build-only "$appdir"
+  if [ "$official_mac" = 1 ]; then
+    bundle=$(find "$appdir" -maxdepth 1 -name '*.app' -print)
+    [ -n "$bundle" ] || die "the app build left no .app in $appdir"
+    codesign_notarize "Clawdline-${version}-macos-arm64" "$bundle"
+  fi
   tar_into "$out/Clawdline-${version}-macos-arm64.tar.gz" "$appdir"
 fi
 
@@ -187,6 +205,14 @@ fi
 args=(-version "$version" -commit "$commit" -committed-at "$committed_at" -channel "$channel" -base-url "$base_url")
 [ -z "$min_version" ] || args+=(-min-version "$min_version")
 go run ./tools/release manifest ${args[@]+"${args[@]}"} "$out"
+# A release carries an SBOM per archive (docs/security/release-evidence.md);
+# a dev build stays on the machine that built it and needs none.
+[ "$channel" = dev ] || tools/release/sbom.sh generate "$out"
+# DMG is a delivery container, not a new updater artifact kind. Its evidence
+# binds the unsigned manifest bytes; the workflow signs those same bytes next.
+if [ "$official_mac" = 1 ] && [ "$app" = 1 ]; then
+  bash tools/release/dmg.sh pack "$out" "$out" "$version" "$commit" "$commit" .github/workflows/release.yml
+fi
 if [ "$channel" = dev ]; then
   echo "dev build $version ($commit) built in $out"
 else

@@ -13,6 +13,7 @@ import (
 
 const (
 	ProtocolSchema = "clawdline.schedule_webhook.v1"
+	ClaimProtocol  = "clawdline.schedule_webhook.v2"
 	ClaimSchema    = "clawdline.schedule_webhook.claim.v1"
 	ReceiptSchema  = "clawdline.schedule_webhook.receipt.v1"
 )
@@ -35,14 +36,15 @@ type Lease struct {
 }
 
 type Claim struct {
-	DeliveryID     string `json:"delivery_id"`
-	HookID         string `json:"hook_id"`
-	HookGeneration int    `json:"hook_generation"`
-	AcceptedAt     string `json:"accepted_at"`
-	ExpiresAt      string `json:"expires_at"`
-	DeliveryDigest string `json:"delivery_digest"`
-	Attempt        int    `json:"attempt"`
-	Lease          Lease  `json:"lease"`
+	Investigation  *InvestigationRef `json:"investigation,omitempty"`
+	DeliveryID     string            `json:"delivery_id"`
+	HookID         string            `json:"hook_id"`
+	HookGeneration int               `json:"hook_generation"`
+	AcceptedAt     string            `json:"accepted_at"`
+	ExpiresAt      string            `json:"expires_at"`
+	DeliveryDigest string            `json:"delivery_digest"`
+	Attempt        int               `json:"attempt"`
+	Lease          Lease             `json:"lease"`
 }
 
 type ClaimResult struct {
@@ -52,17 +54,18 @@ type ClaimResult struct {
 }
 
 type Receipt struct {
-	Schema                 string  `json:"schema"`
-	ReceiptVersion         int     `json:"receipt_version"`
-	PreviousReceiptVersion int     `json:"previous_receipt_version"`
-	Kind                   string  `json:"kind"`
-	OccurredAt             string  `json:"occurred_at"`
-	MacBuild               string  `json:"mac_build"`
-	LeaseToken             *string `json:"lease_token"`
-	TaskID                 *string `json:"task_id"`
-	OutcomeCode            *string `json:"outcome_code"`
-	TaskTerminalState      *string `json:"task_terminal_state"`
-	RetryAt                *string `json:"retry_at"`
+	InvestigationReport    *InvestigationReport `json:"investigation_report,omitempty"`
+	Schema                 string               `json:"schema"`
+	ReceiptVersion         int                  `json:"receipt_version"`
+	PreviousReceiptVersion int                  `json:"previous_receipt_version"`
+	Kind                   string               `json:"kind"`
+	OccurredAt             string               `json:"occurred_at"`
+	MacBuild               string               `json:"mac_build"`
+	LeaseToken             *string              `json:"lease_token"`
+	TaskID                 *string              `json:"task_id"`
+	OutcomeCode            *string              `json:"outcome_code"`
+	TaskTerminalState      *string              `json:"task_terminal_state"`
+	RetryAt                *string              `json:"retry_at"`
 }
 
 type ReceiptAck struct {
@@ -82,6 +85,12 @@ type Cloud interface {
 }
 
 func (c Claim) Validate(identity Identity, now time.Time) error {
+	if c.Investigation != nil {
+		deadline, err := time.Parse(time.RFC3339Nano, c.ExpiresAt)
+		if c.Investigation.Validate() != nil || err != nil || !deadline.After(now) {
+			return ErrInvestigationInvalid
+		}
+	}
 	deadline, err := time.Parse(time.RFC3339Nano, c.Lease.ExpiresAt)
 	if err != nil {
 		deadline, err = time.Parse(time.RFC3339, c.Lease.ExpiresAt)

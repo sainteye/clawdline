@@ -9,7 +9,8 @@ export interface ProjectFile {
   description?: string
   location: string
   source: "project" | "global"
-  assistant: "codex" | "claude"
+  assistant: "codex" | "claude" | "antigravity"
+  assistants?: ("codex" | "claude" | "antigravity")[]
   kind: "instruction" | "skill" | "command"
   status: "ready" | "missing" | "unsafe" | "unreadable" | "too_large"
   editable: boolean
@@ -109,4 +110,10 @@ function refusal(data: any, write: boolean): ProjectFileError {
   const detail = catalogRefusalDetail(data)?.text
   const uncertain = write && (data?.outcome === "unknown" || data?.error?.outcome === "unknown")
   return new ProjectFileError(code, detail || catalogWord("literal", "101992e0e2e3"), uncertain)
+}
+
+// Old inventories report a single assistant. Do not infer additional providers
+// from a path when the machine did not report them.
+export function fileAssistants(file: ProjectFile): string {
+  return (file.assistants ?? [file.assistant]).map(id => id === "claude" ? "Claude" : id === "codex" ? "Codex" : "Gemini").join(" · ")
 }

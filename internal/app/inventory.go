@@ -15,10 +15,15 @@ import (
 )
 
 type Inventory struct {
-	Process   ports.ProcessHost
-	Terminals []ports.TerminalHost
-	Identity  ports.IdentityHost
-	Agents    ports.AgentHost
+	// SquadRole resolves a process's immutable launch ID against its terminal.
+	// It is optional for inventories without a durable role store.
+	SquadRole func(context.Context, session.Session) string
+	// DiscoverExternal defaults to true; false keeps external terminal presence only.
+	DiscoverExternal func() bool
+	Process          ports.ProcessHost
+	Terminals        []ports.TerminalHost
+	Identity         ports.IdentityHost
+	Agents           ports.AgentHost
 	// Screen is one capture, now, on the caller's own clock. It is what
 	// answers a menu (Actions.Key) and what the broker reads before it types a
 	// briefing into a child — both of which act on what is drawn now, and a
@@ -65,6 +70,9 @@ func (in Inventory) screens() ports.ScreenHost {
 // much narrower than "this source is unreliable", and Inventory.ProvesAbsence
 // is where the narrower thing is read.
 func (in Inventory) Read(ctx context.Context) session.Inventory {
+	if in.DiscoverExternal != nil && !in.DiscoverExternal() {
+		in = in.managedOnly(ctx)
+	}
 	// The identity source is refreshed here rather than by whoever calls this.
 	// It used to be the caller's job, and of the six places that read an
 	// inventory only two remembered — so the board, the coordinator, the
@@ -191,7 +199,18 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 		h.Begin()
 	}
 	for _, key := range order {
+		if byTTY[key].DiscoveryExcluded {
+			merged.Sessions = append(merged.Sessions, byTTY[key])
+			continue
+		}
+		if row := byTTY[key]; row.Backend == session.BackendOwned && row.Binding == session.BindingProtocol && row.Evidence == session.EvidenceStructured {
+			merged.Sessions = append(merged.Sessions, row)
+			continue
+		}
 		row := in.enrich(ctx, byTTY[key])
+		if row.IsAssistant() && row.SquadLaunchID != "" && in.SquadRole != nil {
+			row.Persona = in.SquadRole(ctx, row)
+		}
 		if in.Agents != nil {
 			row = in.Agents.ForSession(row)
 		}

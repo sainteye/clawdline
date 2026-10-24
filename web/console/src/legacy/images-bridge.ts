@@ -108,7 +108,7 @@ function describeArtifactFailure(code: string, artifact: ArtifactRef | undefined
 let lightbox: Lightbox | null = null
 
 /** A picture's bytes as a URL the tile can show, and the way to let them go. */
-export type PictureSource = (artifact: ArtifactRef, session: string) => Promise<{ url: string; release?: () => void }>
+export type PictureSource = (artifact: ArtifactRef, session: string, size?: "thumb" | "full") => Promise<{ url: string; release?: () => void }>
 
 let carried: PictureSource | null = null
 
@@ -180,8 +180,14 @@ function hydrate(tiles: HTMLElement[], queue: (ArtifactRef | undefined)[], sessi
   for (const tile of newestImageTiles(tiles)) {
     const artifact = queue[Number(tile.dataset.artifactSlot)]
     connectArtifactTile(tile, artifact, {
-      ...(source && session ? { source: (a: ArtifactRef) => source(a, session) } : {}),
+      ...(source && session ? {
+        source: (a: ArtifactRef) => source(a, session, "thumb"),
+        fullSource: (a: ArtifactRef) => source(a, session, "full"),
+      } : {}),
+      thumbnails: true,
+      lazy: true,
       loadingLabel: T.webLoading,
+      retryLabel: T.webPlanRetry,
       expiredLabel: T.webImageExpired,
       unknownLabel: T.webImageUnknown,
       describeFailure: describeArtifactFailure,

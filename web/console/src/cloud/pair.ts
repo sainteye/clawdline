@@ -73,8 +73,25 @@ export type PairStart = (hooks: {
 }) => Promise<OpenedPairing>
 
 /** The line the machine is given. The offer is base64url, so nothing in it needs quoting. */
-export function pairingCommand(fragment: string): string {
-  return "clawdline cloud pair -offer " + fragment
+export function pairingCommand(fragment: string, notFound = "Clawdline was not found. Install and start Clawdline on this machine, then generate a new pairing code."): string {
+  if (!/^[A-Za-z0-9_-]+$/u.test(fragment)) throw new Error("invalid pairing offer")
+  // The app and the user service keep a reader binary even when an already
+  // open terminal has not picked up the installer's PATH change.
+  return '(clawdline_bin="$(command -v clawdline 2>/dev/null || true)"; ' +
+    'if [ -z "$clawdline_bin" ]; then for clawdline_candidate in ' +
+    '"${CLAWDLINE_NEXT_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/clawdline-next}/bin/clawdline" ' +
+    '"$HOME/.local/bin/clawdline" ' +
+    '"/Applications/Clawdline Next.app/Contents/MacOS/clawdline" ' +
+    '"$HOME/Applications/Clawdline Next.app/Contents/MacOS/clawdline"; do ' +
+    'if [ -x "$clawdline_candidate" ]; then clawdline_bin="$clawdline_candidate"; break; fi; done; fi; ' +
+    'if [ -n "$clawdline_bin" ]; then "$clawdline_bin" cloud pair --offer ' + fragment +
+    '; else printf "%s\\n" ' + "'" + notFound.replace(/'/gu, "'\"'\"'") + "'" + ' >&2; exit 127; fi)'
+}
+
+/** Carries only the browser's offer to the local app; its content key never enters the URL. */
+export function pairingAppLink(fragment: string, machine = ""): string {
+  if (!/^[A-Za-z0-9_-]+$/u.test(fragment)) throw new Error("invalid pairing offer")
+  return "clawdline-next://pair-browser?offer=" + encodeURIComponent(fragment) + (machine ? "&machine_id=" + encodeURIComponent(machine) : "")
 }
 
 /**

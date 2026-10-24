@@ -8,6 +8,13 @@ name: Release
 # the draft Release. The one exception is the Linux tmux the archives carry,
 # built from pinned public tarballs on Linux runners (tmux.yml), because a
 # macOS runner has no Docker to build it in.
+#
+# Every asset also gets a GitHub artifact attestation (SLSA build provenance
+# signed through Sigstore) binding its digest to this workflow, this
+# repository and the commit; each archive gets an SBOM; and the macOS
+# binaries and app are signed with the hardened runtime and notarized. The
+# gate (tools/release/gate.sh) refuses a draft that lacks any of it
+# (docs/security/release-evidence.md).
 
 on:
   workflow_dispatch:
@@ -31,6 +38,11 @@ jobs:
   tmux:
     name: Carried tmux for Linux
     uses: ./.github/workflows/tmux.yml
+    # The tmux job attests what it hands over; the release job checks it.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     with:
       upload: true
 
@@ -38,12 +50,16 @@ jobs:
     name: Build, sign and draft the release
     needs: tmux
     runs-on: macos-latest
-    timeout-minutes: 45
+    # Notarization waits for the daemon archives, App and DMG verdicts.
+    timeout-minutes: 90
     # The signing key is a secret of this environment, which waits for the
     # person's approval before the job may read it.
     environment: release
     permissions:
       contents: write
+      # id-token and attestations: the provenance attestation of each asset.
+      id-token: write
+      attestations: write
     env:
       VERSION: ${{ inputs.version }}
       MIN_VERSION: ${{ inputs.min_version }}
@@ -80,6 +96,7 @@ jobs:
         run: |
           go vet ./...
           tools/test-go-ci.sh
+          bash tools/release/dmg.test.sh
           (cd web && npm ci --ignore-scripts && npm run check)
 
       - uses: actions/download-artifact@v4
@@ -89,12 +106,21 @@ jobs:
 
       # Linux from the tmux job, darwin built here; build.sh checks that each
       # one names the pinned tmux and that its binary is the one it describes.
+      # The Linux two crossed jobs as Actions artifacts, so each must carry
+      # the tmux job's attestation for this commit before it is used.
       - name: Build the carried tmux for macOS
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           tmux_dir="$RUNNER_TEMP/tmux"
           mkdir -p "$tmux_dir"
           for arch in amd64 arm64; do
             mv "$RUNNER_TEMP/tmux-download/tmux-linux-$arch" "$tmux_dir/linux-$arch"
+            for f in tmux tmux.json; do
+              gh attestation verify "$tmux_dir/linux-$arch/$f" --repo "$GITHUB_REPOSITORY" \
+                --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/tmux.yml" \
+                --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" --deny-self-hosted-runners >/dev/null
+            done
             chmod +x "$tmux_dir/linux-$arch/tmux"
           done
           for arch in arm64 amd64; do
@@ -102,17 +128,27 @@ jobs:
           done
 
       # Every macOS binary and the app are signed with the release's code
-      # Developer ID Application certificate (tools/release/codesign.sh).
-      # The .p12 is written to the runner's temporary directory
-      # and removed with it.
+      # Developer ID Application certificate, with the hardened runtime, and
+      # notarized with an App Store Connect API key (tools/release/codesign.sh).
+      # The .p12 and .p8 are written to the runner's temporary directory and
+      # removed with it. A missing secret stops the build before it compiles.
+      # build.sh also writes each archive's SBOM.
       - name: Build every artifact
         env:
           CODESIGN_P12_BASE64: ${{ secrets.CLAWDLINE_CODESIGN_P12_BASE64 }}
           CLAWDLINE_CODESIGN_PASSWORD: ${{ secrets.CLAWDLINE_CODESIGN_PASSWORD }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.CLAWDLINE_NOTARY_KEY_P8_BASE64 }}
+          CLAWDLINE_NOTARY_KEY_ID: ${{ secrets.CLAWDLINE_NOTARY_KEY_ID }}
+          CLAWDLINE_NOTARY_ISSUER: ${{ secrets.CLAWDLINE_NOTARY_ISSUER }}
         run: |
           [ -n "$CODESIGN_P12_BASE64" ] || { echo "the release environment has no CLAWDLINE_CODESIGN_P12_BASE64" >&2; exit 1; }
+          for s in NOTARY_KEY_P8_BASE64 CLAWDLINE_NOTARY_KEY_ID CLAWDLINE_NOTARY_ISSUER; do
+            [ -n "${!s}" ] || { echo "the release environment has no ${s/#NOTARY/CLAWDLINE_NOTARY}" >&2; exit 1; }
+          done
           export CLAWDLINE_CODESIGN_P12="$RUNNER_TEMP/codesign.p12"
           printf '%s' "$CODESIGN_P12_BASE64" | base64 --decode >"$CLAWDLINE_CODESIGN_P12"
+          export CLAWDLINE_NOTARY_KEY="$RUNNER_TEMP/notary.p8"
+          printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode >"$CLAWDLINE_NOTARY_KEY"
           channel=stable
           [[ "$VERSION" == *-beta.* ]] && channel=beta
           args=(--channel "$channel" --skip-tests --tmux-from "$RUNNER_TEMP/tmux")
@@ -128,6 +164,30 @@ jobs:
           # Verified with the keys compiled into this commit, as an installed
           # binary will verify it.
           go run ./tools/release verify "$RUNNER_TEMP/release"
+          tools/release/sbom.sh verify "$RUNNER_TEMP/release"
+
+      # One provenance attestation over every asset the draft will hold.
+      # actions/attest v4.2.2, pinned by commit (github.com/actions/attest).
+      - name: Attest the build provenance of every asset
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/release/*.tar.gz
+            ${{ runner.temp }}/release/*.spdx.json
+            ${{ runner.temp }}/release/*.dmg
+            ${{ runner.temp }}/release/*.dmg.delivery.json
+            ${{ runner.temp }}/release/manifest.json
+            ${{ runner.temp }}/release/manifest.sig.json
+            ${{ runner.temp }}/release/SHA256SUMS
+
+      # The check the publication gate runs, run here first, so a draft
+      # whose attestations do not verify is never created.
+      - name: Verify the provenance as the gate will
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tools/release/provenance.sh "$RUNNER_TEMP/release"
+          tools/release/provenance.sh "$RUNNER_TEMP/release" --dmg
 
       - name: Create the draft release
         env:
@@ -139,6 +199,7 @@ jobs:
           if [ -f "$notes" ]; then notes_args=(--notes-file "$notes"); else notes_args=(--generate-notes); fi
           gh release create "$VERSION" --draft --target "$GITHUB_SHA" --title "Clawdline ${VERSION#v}" \
             "${prerelease[@]}" "${notes_args[@]}" \
-            "$RUNNER_TEMP"/release/*.tar.gz "$RUNNER_TEMP/release/SHA256SUMS" \
+            "$RUNNER_TEMP"/release/*.tar.gz "$RUNNER_TEMP"/release/*.spdx.json "$RUNNER_TEMP/release/SHA256SUMS" \
+            "$RUNNER_TEMP"/release/*.dmg "$RUNNER_TEMP"/release/*.dmg.delivery.json \
             "$RUNNER_TEMP/release/manifest.json" "$RUNNER_TEMP/release/manifest.sig.json"
           echo "drafted $VERSION at $GITHUB_SHA; run the privacy gate in docs/releasing.md before publishing"

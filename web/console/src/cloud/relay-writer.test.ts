@@ -241,7 +241,9 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["GET", "/v1/notification-rules", "notification-rules"],
     ["POST", "/v1/notification-rules", "notification-rules-update"],
     ["GET", "/v1/settings/work-gates", "work-gate-settings"],
+    ["GET", "/v1/settings/workflow", "workflow-settings"],
     ["POST", "/v1/settings/work-gates", "work-gate-settings-update"],
+    ["POST", "/v1/settings/workflow", "workflow-settings-update"],
     ["POST", "/v1/update/apply", "update-apply"],
     ["POST", "/v1/board", "board-command"],
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
@@ -259,6 +261,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/projects/%2Frepo/worktrees/refresh", "project-worktree-lifecycle-refresh"],
     ["DELETE", "/v1/projects/%2Frepo/worktrees/wt-0123456789abcdef01234567", "project-worktree-remove"],
     ["PUT", "/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-save"],
+    ["POST", "/v1/projects/cloud-p1/antigravity-consent", "project-antigravity-consent-change"],
     ["POST", "/v1/projects/cloud-p1/unify", "project-unify-apply"],
     // The plan is a read, answered by `relay-reader.ts`.
     ["GET", "/v1/projects/cloud-p1/unify", null],
@@ -1747,6 +1750,27 @@ test("a Project file save keeps its key, Project machine and exact file id", asy
   assert.equal(writeRoute("PUT", "/v1/projects/cloud-p1/files/%2Fetc%2Fpasswd"), null)
 })
 
+test("an Antigravity consent change keeps its key, exact approval and Project machine", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const path = "/v1/projects/cloud-p1/antigravity-consent"
+  const item = { action: "disable", revision: 2, scope: "project-and-linked-worktrees" }
+  const applied = await reader.fetch(path, { ...post(item), headers: { "Idempotency-Key": "unify-1" } })
+  assert.equal(applied.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "unify-1", "mac-a", "project-antigravity-consent-change", { project: "p1", item }, "action"])
+  const missingKey = await reader.fetch(path, post(item))
+  assert.equal(missingKey.status, 400)
+  assert.equal((await json<{ error: string }>(missingKey)).error, "idempotency_key_required")
+  const withQuery = await reader.fetch(path + "?force=1", { ...post(item), headers: { "Idempotency-Key": "unify-2" } })
+  assert.equal(withQuery.status, 501)
+  client._place = () => ({ machine: "different-machine", id: "p1", path: "/fixture" })
+  const wrongMachine = await reader.fetch(path, { ...post(item), headers: { "Idempotency-Key": "unify-3" } })
+  assert.equal(wrongMachine.status, 409)
+  assert.deepEqual(client.calls, [], "only the first apply reached the machine")
+  assert.equal(writeRoute("POST", "/v1/projects/cloud-p1/antigravity-consent/extra"), null)
+  assert.equal(writeRoute("PUT", "/v1/projects/cloud-p1/antigravity-consent"), null)
+})
+
 test("a unify apply keeps its key and Project machine, and carries only the plan version", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)
@@ -2441,10 +2465,12 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/usage/work-samples", "usage-work-samples"],
     ["/v1/usage/sessions/s1", "usage"],
     ["/v1/capacity", "capacity"],
+    ["/v1/provider-quotas", "provider-quotas"],
     ["/v1/settings/default-models", "default-models"],
     ["/v1/notification-rules", "notification-rules"],
     ["/v1/settings/notifications", "notification-settings"],
     ["/v1/settings/work-gates", "work-gate-settings"],
+    ["/v1/settings/workflow", "workflow-settings"],
     ["/v1/sessions/restorable", "restorable"],
     ["/v1/sessions/archived", "archived"],
     ["/v1/machine/usage", "machine-usage"],
@@ -2560,4 +2586,44 @@ test("older history pages preserve their opaque cursor across the Cloud seam", a
  const res = await reader.fetch("/v1/places/p1/sessions/codex?cursor=" + encodeURIComponent(cursor))
  assert.equal(res.status,200)
  assert.deepEqual(client.calls, [["pastSessions", "p1", "codex", cursor]])
+})
+
+// A machine's `viewer_read_only` that arrives without a status of its own is
+// still 403, so the page treats it as a refusal of this device and not as a
+// machine that broke (502).
+test("a readonly viewer's refusal without a status of its own answers 403 viewer_read_only", async () => {
+  for (const code of ["viewer_read_only", "cloud_read_only"]) {
+    const client = new FakeClient()
+    client.rows = [row("s1")]
+    client.fail._read = refusal(code)
+    const { reader } = seam(client)
+    const res = await reader.fetch("/v1/sessions/s1/send", post({ text: "hello" }, { "Idempotency-Key": "send-ro-" + code }))
+    assert.equal(res.status, 403, code)
+    const body = await json(res)
+    assert.equal(body.error, code)
+    assert.equal(body.outcome, "not_done", code)
+  }
+})
+
+
+test("the website workflow tab carries iTerm2 consent only to its selected machine", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal((await reader.fetch("/v1/settings/workflow")).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "workflow-settings", {}, "read"])
+  for (const on of [true, false]) {
+    assert.equal((await reader.fetch("/v1/settings/workflow", post({ iterm_integration: on }))).status, 200)
+    assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "workflow-settings-update", { changes: { iterm_integration: on } }, "action"])
+  }
+})
+
+
+test("provider quota metadata crosses Cloud as a machine read without credentials", async () => {
+  assert.deepEqual(writeRoute("GET", "/v1/provider-quotas"), { op: "provider-quotas", word: "provider-quotas" })
+  assert.equal(writeRoute("POST", "/v1/provider-quotas"), null)
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal((await reader.fetch("/v1/provider-quotas")).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "provider-quotas", {}, "read"])
+  assert.equal((await reader.fetch("/v1/provider-quotas?account=other")).status, 501)
 })

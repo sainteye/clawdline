@@ -37,7 +37,13 @@ type Actions struct {
 	// scans through Inventory directly, which is what a test wants.
 	Reading   *InventoryReading
 	Terminals []ports.TerminalHost
-	Store     *store.Store
+	// Antigravity verifies the live native conversation before every terminal effect.
+	Antigravity           ports.AntigravityBindings
+	AntigravityFirstInput ports.AntigravityFirstInputs
+	// AntigravityPolicy rechecks managed authority around every bound IO effect.
+	// Isolated unmanaged adapters may omit it; server composition always sets it.
+	AntigravityPolicy func(context.Context, ports.AntigravityBinding) error
+	Store             *store.Store
 	// Owed is what the sessions on this machine still owe — the broker's
 	// pending landings, read at the moment of asking (D01). Nil is a daemon
 	// that cannot say, and a close is then refused as unknown rather than
@@ -99,6 +105,20 @@ func (a Actions) lanes() *lane.Lanes {
 	return terminalLanes
 }
 
+type operationCheckKey struct{}
+
+// WithOperationCheck attaches caller authorization to this request, never to shared Actions.
+func WithOperationCheck(ctx context.Context, check func() error) context.Context {
+	return context.WithValue(ctx, operationCheckKey{}, check)
+}
+
+func checkOperation(ctx context.Context) error {
+	if check, ok := ctx.Value(operationCheckKey{}).(func() error); ok {
+		return check()
+	}
+	return nil
+}
+
 // turn takes the terminal's lane for one whole write. A full machine, or a
 // caller that gave up waiting, is `busy` — the Swift app's code for a full
 // terminal queue, answered 429 — and nothing was typed.
@@ -112,6 +132,10 @@ func (a Actions) turn(ctx context.Context, s session.Session) (func(), error) {
 	release, err := a.lanes().Acquire(wait, lane.TerminalKey(string(s.Backend), s.ID))
 	if err != nil {
 		return nil, Refusal{RawDetail: true, Code: "busy", Detail: err.Error(), Cause: err}
+	}
+	if err := checkOperation(ctx); err != nil {
+		release()
+		return nil, err
 	}
 	return release, nil
 }
@@ -323,8 +347,11 @@ func (a Actions) send(ctx context.Context, s session.Session, text string) (sess
 	// Whatever the message did to the screen is read live for a moment
 	// (HeldScreens.Pressed), as after a key.
 	defer a.Inventory.Held.Pressed(s.ID)
-	if err := h.Send(ctx, s, text); err != nil {
-		return s, sendRefusal(s, err)
+	if err := checkOperation(ctx); err != nil {
+		return s, err
+	}
+	if err := a.sendToHost(ctx, s, h, text); err != nil {
+		return s, err
 	}
 	return s, nil
 }
@@ -384,6 +411,9 @@ func (a Actions) SendPrepared(ctx context.Context, id, text string, prepare orch
 	if err != nil {
 		return session.Session{}, beforeTheFirstByte(err)
 	}
+	if s.Assistant == session.AssistantAntigravity {
+		return s, beforeTheFirstByte(antigravityOperationRefusal())
+	}
 	h, err := a.host(ctx, s)
 	if err != nil {
 		return session.Session{}, beforeTheFirstByte(err)
@@ -402,13 +432,21 @@ func (a Actions) SendPrepared(ctx context.Context, id, text string, prepare orch
 		return s, err
 	}
 	defer release()
-	press := func(b []byte) error { return keys.Keystroke(ctx, s, b) }
+	press := func(b []byte) error {
+		if err := checkOperation(ctx); err != nil {
+			return err
+		}
+		return keys.Keystroke(ctx, s, b)
+	}
 	look := func() (string, bool) { return a.Inventory.Screen.Capture(ctx, s) }
 	if err := prepare(ctx, press, look); err != nil {
 		return s, Refusal{RawDetail: true, Code: "send_withheld", Detail: err.Error(), Cause: err}
 	}
-	if err := h.Send(ctx, s, text); err != nil {
-		return s, sendRefusal(s, err)
+	if err := checkOperation(ctx); err != nil {
+		return s, err
+	}
+	if err := a.sendToHost(ctx, s, h, text); err != nil {
+		return s, err
 	}
 	return s, nil
 }
@@ -515,6 +553,10 @@ func (a Actions) SendWithPictures(ctx context.Context, id, text string, images [
 			log.Printf("send: a picture was left out: %v", err)
 			continue
 		}
+		if err := checkOperation(ctx); err != nil {
+			a.Pictures.Drops.Discard(paths)
+			return s, err
+		}
 		path, err := a.Pictures.Drops.Store(pic.Data, time.Now())
 		if err != nil {
 			log.Printf("send: a picture could not be kept: %v", err)
@@ -547,8 +589,11 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 		return strings.Join(parts, " ")
 	}
 	sendPaths := func() error {
-		if err := h.Send(ctx, s, asPaths(paths)); err != nil {
-			return sendRefusal(s, err)
+		if err := checkOperation(ctx); err != nil {
+			return err
+		}
+		if err := a.sendToHost(ctx, s, h, asPaths(paths)); err != nil {
+			return err
 		}
 		return nil
 	}
@@ -606,6 +651,9 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 
 	typed := false
 	if text != "" {
+		if err := checkOperation(work); err != nil {
+			return err
+		}
 		if err := typer.Type(work, s, text); err != nil {
 			return Refusal{RawDetail: true, Code: "send_failed", Detail: err.Error()}
 		}
@@ -613,6 +661,9 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 	}
 	asPath := 0
 	for _, p := range paths {
+		if err := checkOperation(work); err != nil {
+			return err
+		}
 		if err := lender.Offer(work, borrowed, p); err != nil {
 			// Its bytes would not load. The path still works and is only plainer.
 			asPath++
@@ -620,17 +671,26 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 			if typed {
 				words = " " + words
 			}
+			if err := checkOperation(work); err != nil {
+				return err
+			}
 			if err := typer.Type(work, s, words); err != nil {
 				return Refusal{RawDetail: true, Code: "send_failed", Detail: err.Error()}
 			}
 			typed = true
 			continue
 		}
+		if err := checkOperation(work); err != nil {
+			return err
+		}
 		if err := keys.Keystroke(work, s, keyPaste); err != nil {
 			return Refusal{RawDetail: true, Code: "send_failed", Detail: err.Error()}
 		}
 		typed = true
 		time.Sleep(pictureSettle)
+	}
+	if err := checkOperation(work); err != nil {
+		return err
 	}
 	if err := keys.Keystroke(work, s, keyReturn); err != nil {
 		return Refusal{RawDetail: true, Code: "send_failed", Detail: err.Error()}
@@ -691,7 +751,11 @@ func (a Actions) Interrupt(ctx context.Context, id string) (session.Session, err
 		return s, err
 	}
 	defer release()
-	if err := h.Interrupt(ctx, s); err != nil {
+	if s.Assistant == session.AssistantAntigravity {
+		if err := a.interruptAntigravity(ctx, s, h); err != nil {
+			return s, err
+		}
+	} else if err := h.Interrupt(ctx, s); err != nil {
 		return s, Refusal{RawDetail: true, Code: "interrupt_failed", Detail: err.Error()}
 	}
 	a.record(ctx, "session.interrupted", s.ID, nil)

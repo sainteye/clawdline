@@ -918,3 +918,46 @@ refused `idempotency_key_required`, and the model switch did nothing at all.
 
 The dated implementation mapping, differences, next-wave notes, and stage measurements are in the
 [Cloud wire implementation record](records/cloud-wire-implementation-2026-09.md).
+
+
+## Machine-local viewer scopes (Go contract)
+
+The local `paired-devices-v1.json` record adds optional `devices[].scope`, with
+`readonly` and `operate` values. Omission means the existing legacy operate
+eligibility, still ANDed with `cloud_commands` and account identity checks.
+Unknown values refuse effects. No content-key, CloudDB or envelope format changes
+are implied. Pre-scope daemons ignore this optional field and do not enforce its
+ceiling; rollback to such a binary is not a safe readonly downgrade path. Downgrading a pin does not rotate the content key or revoke reads.
+
+The machine-local APIs accept an optional `scope` in invitation and manual-offer
+requests. Scope is never taken from an untrusted browser offer, Cloud header or
+account roster. `POST /v1/cloud/devices/grant` accepts `{device, scope}` for an
+existing active local pin. The response is `{device, scope}`; status viewer rows
+and pairing states also expose nonsecret scope. An omitted pairing scope keeps
+the scope of the device's existing pin row and takes the legacy `operate`
+default only for a device with no row; an unreadable pin file or unknown stored
+scope refuses before the handover. `POST /v1/cloud/pairing/agent` takes the same
+optional `scope` for this machine and refuses one for a hand-off to another. There is no generated Cloud status contract in this tree; these
+shapes are owned by `transport/cloud` and consumed by the local CLI.
+
+`viewer_read_only` (403) identifies an effect refused by this pin. It is also a
+member of the closed `TerminalRefusalCode` enum in `api/v1/terminals.schema.json`;
+the console's write-off set and relay status table recognise it alongside the
+older `cloud_read_only`. The machine
+switch independently returns `cloud_commands_disabled` (403). Read-level push
+registration and content reads remain available. The dedicated terminal rail
+keeps its current total-switch prerequisite even for readonly screen reads.
+The same original sender grant governs relay and direct ingress; carriers confer
+no additional authority. Terminal lease changes and host effects recheck operate
+separately from screen access, including after service lane waits. Session
+Actions carry a request-scoped operation check through lane and pasteboard waits;
+the HTTP gate must not replace it with the in-process router's local bearer.
+
+Readonly pairing reserves the persistent ceiling before delivering the handover,
+so a failed post-delivery write cannot fall back to legacy operate authority.
+The reservation can survive a failed handover as a readonly pin. It keeps an
+existing row's refusal, key and pairing time (`PinnedStore.ReserveReadOnly`), so
+a revoked browser stays revoked until the post-handover pin. Grant writes
+are atomic and failed writes restore the prior live state. A successful local
+downgrade persists before lease revalidation; read streams remain open. Account
+revocation freshness and future content-key rotation remain separate contracts.

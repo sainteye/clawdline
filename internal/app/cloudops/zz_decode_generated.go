@@ -44,6 +44,8 @@ var generatedDecoders = map[string]genDecoder{
 	"personas":                           genDecodePersonas,
 	"places":                             genDecodePlaces,
 	"project-add":                        genDecodeProjectAdd,
+	"project-antigravity-consent-change": genDecodeProjectAntigravityConsentChange,
+	"project-antigravity-consent-status": genDecodeProjectAntigravityConsentStatus,
 	"project-entry":                      genDecodeProjectEntry,
 	"project-file-list":                  genDecodeProjectFileList,
 	"project-file-read":                  genDecodeProjectFileRead,
@@ -62,6 +64,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-worktree-lifecycle-refresh": genDecodeProjectWorktreeLifecycleRefresh,
 	"project-worktree-remove":            genDecodeProjectWorktreeRemove,
 	"projects":                           genDecodeProjects,
+	"provider-quotas":                    genDecodeProviderQuotas,
 	"push-key":                           genDecodePushKey,
 	"push-test":                          genDecodePushTest,
 	"push-unsubscribe":                   genDecodePushUnsubscribe,
@@ -161,6 +164,8 @@ var generatedDecoders = map[string]genDecoder{
 	"work.v2.todo-action":                genDecodeWorkV2TodoAction,
 	"work.v2.todo-create":                genDecodeWorkV2TodoCreate,
 	"work.v2.todo-image-create":          genDecodeWorkV2TodoImageCreate,
+	"workflow-settings":                  genDecodeWorkflowSettings,
+	"workflow-settings-update":           genDecodeWorkflowSettingsUpdate,
 }
 
 // generatedUnrouted is every generated word whose decode states no local
@@ -435,7 +440,7 @@ func genDecodeDefaultModelsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"claude_default_model": genRule{kind: "string", nullable: true}, "codex_default_effort": genRule{kind: "string", nullable: true}, "codex_default_model": genRule{kind: "string", nullable: true}}, closed: true, maxKeys: 3}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"antigravity_default_effort": genRule{kind: "string", nullable: true}, "antigravity_default_model": genRule{kind: "string", nullable: true}, "claude_default_model": genRule{kind: "string", nullable: true}, "codex_default_effort": genRule{kind: "string", nullable: true}, "codex_default_model": genRule{kind: "string", nullable: true}}, closed: true, maxKeys: 5}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)
@@ -675,6 +680,8 @@ func genDecodeImage(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "id", "session"},
 		[]string{"type", "expected_generation", "id", "session"},
+		[]string{"type", "id", "session", "size"},
+		[]string{"type", "expected_generation", "id", "session", "size"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -684,9 +691,15 @@ func genDecodeImage(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("id", genRule{kind: "string", nonEmpty: true}) {
 		return plan{}, LocalRequest{}, false
 	}
+	if !b.genValid("size", genRule{kind: "string", enum: []string{"thumb"}}) {
+		return plan{}, LocalRequest{}, false
+	}
 	p, ok := sessionPlan(b, "image."+genText(b["id"]))
 	if !ok {
 		return plan{}, LocalRequest{}, false
+	}
+	if _, named := b["size"]; named {
+		p.name += "." + genText(b["size"])
 	}
 	if v, named := b["expected_generation"]; named {
 		p.executionGeneration = genText(v)
@@ -696,7 +709,7 @@ func genDecodeImage(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/artifacts/images/" + segment(genText(b["id"]))
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"session": genValue{from: "session"}})
+	req.Query = b.genQuery(map[string]genValue{"session": genValue{from: "session"}, "size": genValue{from: "size"}})
 	return p, req, true
 }
 
@@ -1072,6 +1085,49 @@ func genDecodeProjectAdd(b body) (plan, LocalRequest, bool) {
 	return p, req, true
 }
 
+// genDecodeProjectAntigravityConsentChange is the `project-antigravity-consent-change` row's decode.
+func genDecodeProjectAntigravityConsentChange(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "item", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("item", genRule{kind: "object", maxBytes: 4096}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/antigravity-consent"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("item")
+	return p, req, true
+}
+
+// genDecodeProjectAntigravityConsentStatus is the `project-antigravity-consent-status` row's decode.
+func genDecodeProjectAntigravityConsentStatus(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/antigravity-consent"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
 // genDecodeProjectEntry is the `project-entry` row's decode.
 func genDecodeProjectEntry(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
@@ -1438,6 +1494,22 @@ func genDecodeProjects(b body) (plan, LocalRequest, bool) {
 		return plan{}, LocalRequest{}, false
 	}
 	path := "/v1/projects"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeProviderQuotas is the `provider-quotas` row's decode.
+func genDecodeProviderQuotas(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/provider-quotas"
 	req := LocalRequest{Method: "GET", Path: path}
 	return p, req, true
 }
@@ -2437,6 +2509,10 @@ func genDecodeTranscript(b body) (plan, LocalRequest, bool) {
 		[]string{"type", "before", "limit", "priority", "session"},
 		[]string{"type", "expected_generation", "limit", "priority", "session"},
 		[]string{"type", "before", "expected_generation", "limit", "priority", "session"},
+		[]string{"type", "before", "limit", "revision", "session"},
+		[]string{"type", "before", "expected_generation", "limit", "revision", "session"},
+		[]string{"type", "before", "limit", "priority", "revision", "session"},
+		[]string{"type", "before", "expected_generation", "limit", "priority", "revision", "session"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -2452,6 +2528,9 @@ func genDecodeTranscript(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("priority", genRule{kind: "string", enum: []string{"foreground", "background"}}) {
 		return plan{}, LocalRequest{}, false
 	}
+	if !b.genValid("revision", genRule{kind: "string", checks: []func(string) bool{genSessionName}}) {
+		return plan{}, LocalRequest{}, false
+	}
 	p, ok := sessionPlan(b, "transcript")
 	if !ok {
 		return plan{}, LocalRequest{}, false
@@ -2459,12 +2538,15 @@ func genDecodeTranscript(b body) (plan, LocalRequest, bool) {
 	if _, named := b["before"]; named {
 		p.name += ".before." + genText(b["before"])
 	}
+	if _, named := b["revision"]; named {
+		p.name += ".revision." + genText(b["revision"])
+	}
 	if v, named := b["expected_generation"]; named {
 		p.executionGeneration = genText(v)
 	}
 	path := "/v1/transcript"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"before": genValue{from: "before"}, "expected_generation": genValue{from: "expected_generation"}, "limit": genValue{from: "limit"}, "session": genValue{from: "session"}})
+	req.Query = b.genQuery(map[string]genValue{"before": genValue{from: "before"}, "expected_generation": genValue{from: "expected_generation"}, "limit": genValue{from: "limit"}, "revision": genValue{from: "revision"}, "session": genValue{from: "session"}})
 	return p, req, true
 }
 
@@ -3652,5 +3734,42 @@ func genDecodeWorkV2TodoImageCreate(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genObject("item")
+	return p, req, true
+}
+
+// genDecodeWorkflowSettings is the `workflow-settings` row's decode.
+func genDecodeWorkflowSettings(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/settings/workflow"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeWorkflowSettingsUpdate is the `workflow-settings-update` row's decode.
+func genDecodeWorkflowSettingsUpdate(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "changes", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"dispatch_full_permission": genRule{kind: "bool", nullable: true}, "iterm_integration": genRule{kind: "bool", nullable: true}, "session_auto_discovery": genRule{kind: "bool", nullable: true}}, closed: true, maxKeys: 3}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/settings/workflow"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("changes")
 	return p, req, true
 }

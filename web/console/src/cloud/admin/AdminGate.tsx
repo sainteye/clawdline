@@ -15,6 +15,7 @@ const ConnectionHealth = lazy(() => import("./health/ConnectionHealth.js").then(
 import { healthRoute } from "./health/route.js"
 import type { Refusal } from "./health/cloud.js"
 import "./admin.css"
+import { BrowserLanguageControl } from "../../ui-language/BrowserLanguageControl.js"
 import { BRAND_MARK } from "../../brand-mark.js"
 
 /*
@@ -466,6 +467,7 @@ function Shell({ route, go, say, consoleHref, stampText, refreshing, onRefresh, 
           </ul>
         </nav>
         <div className="adm-side-foot">
+          <BrowserLanguageControl id="admin-ui-language" />
           {stampText ? <p className="adm-stamp">{stampText}</p> : null}
           {onRefresh && !narrow ? (
             <button type="button" className="adm-btn adm-btn-quiet adm-btn-block" onClick={onRefresh} disabled={refreshing} aria-busy={refreshing}>

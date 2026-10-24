@@ -4,11 +4,11 @@ import test from "node:test"
 import { nextSettingsTab, settingsPanes } from "./navigation.ts"
 
 test("local settings expose each machine pane beside browser, work and status", () => {
-  assert.deepEqual(settingsPanes(false), ["browser", "work", "status", "general", "voice", "remote", "orchestrator", "dispatch-policy"])
+  assert.deepEqual(settingsPanes(false), ["browser", "work", "status", "workflow", "general", "voice", "remote", "orchestrator", "dispatch-policy"])
 })
 
 test("Cloud navigation exposes no machine settings", () => {
-  assert.deepEqual(settingsPanes(true), ["browser", "work", "status"])
+  assert.deepEqual(settingsPanes(true), ["browser", "work", "status", "workflow"])
 })
 
 test("keyboard navigation reaches every pane and wraps in both transports", () => {

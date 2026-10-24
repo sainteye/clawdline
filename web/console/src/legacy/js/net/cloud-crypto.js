@@ -2,6 +2,7 @@ const ENVELOPE_FIELDS = Object.freeze([
     "v", "ch", "seq", "ts", "class", "key_id", "nonce", "ct", "sender", "sig"
 ]);
 const encoder = new TextEncoder();
+export const MAX_CONTENT_KEY_ID_BYTES = 128;
 
 function subtle() {
     if (!globalThis.crypto || !globalThis.crypto.subtle) {
@@ -95,7 +96,7 @@ export function validateEnvelope(envelope) {
     var allowed = channel.kind === "ctl" ? ["ctl", "dispatch"] :
         channel.kind === "handoff" ? ["ho"] : ["stream"];
     if (allowed.indexOf(envelope.class) < 0) throw new TypeError("class does not match channel");
-    if (!validToken(envelope.key_id, 64)) throw new TypeError("bad key_id");
+    if (!validToken(envelope.key_id, MAX_CONTENT_KEY_ID_BYTES)) throw new TypeError("bad key_id");
     if (!validToken(envelope.sender, 128)) throw new TypeError("bad sender");
     if (base64Bytes(envelope.nonce, "nonce").length !== 12) throw new TypeError("bad nonce length");
     if (base64Bytes(envelope.ct, "ct").length < 16) throw new TypeError("empty ciphertext");
@@ -227,7 +228,7 @@ export async function storePairingCryptoKeys(value, indexedDBValue) {
         !value.senderKey || value.senderKey.extractable !== false) {
         throw new TypeError("only non-extractable pairing CryptoKeys are stored");
     }
-    if (!validToken(value.keyID, 64)) throw new TypeError("bad pairing key id");
+    if (!validToken(value.keyID, MAX_CONTENT_KEY_ID_BYTES)) throw new TypeError("bad pairing key id");
     ["masterName", "masterKeyIDName", "senderName"].forEach(function (field) {
         if (typeof value[field] !== "string" || !value[field]) {
             throw new TypeError("pairing key storage name is missing");
@@ -255,10 +256,20 @@ export async function storePairingCryptoKeys(value, indexedDBValue) {
     return new Promise(function (resolve, reject) {
         var tx = db.transaction("keys", "readwrite");
         var keys = tx.objectStore("keys");
+        if (value.binding !== undefined) {
+            var previous = keys.get(value.bindingName);
+            previous.onsuccess = function () {
+                var old = previous.result;
+                var floor = old && (old.epoch || (old.keyID === "ms-1" ? 1 : 0));
+                var next = value.binding.epoch || (value.keyID === "ms-1" ? 1 : 0);
+                if (floor && (next < floor || (next === floor && old.keyID !== value.keyID))) tx.abort();
+            };
+        }
         keys.put(value.masterKey, value.masterName);
         keys.put(value.keyID, value.masterKeyIDName);
         keys.put(value.senderKey, value.senderName);
-        if (value.binding !== undefined) keys.put(value.binding, value.bindingName);
+        if (value.binding !== undefined) keys.put(Object.assign({}, value.binding,
+            { revision: crypto.randomUUID() }), value.bindingName);
         // The first machine paired by a browser also seeds the old account-level names so an
         // already-shipped client remains usable. A later independently paired machine must never
         // replace those names: that would make the first Mac unreadable at the instant AWS pairs.
@@ -281,7 +292,8 @@ export async function storePairingCryptoKeys(value, indexedDBValue) {
 function validatePairingBinding(value) {
     if (!value || typeof value !== "object" || Array.isArray(value) || value.v !== 1 ||
         typeof value.legacy !== "boolean" || !validToken(value.machineID, 128) ||
-        !validToken(value.senderID, 128) || !validToken(value.keyID, 64)) {
+        !validToken(value.senderID, 128) || !validToken(value.keyID, MAX_CONTENT_KEY_ID_BYTES) ||
+        (value.epoch !== undefined && (!Number.isSafeInteger(value.epoch) || value.epoch < 1))) {
         throw new TypeError("bad pairing machine binding");
     }
     return value;
@@ -294,7 +306,18 @@ export async function storePairingBinding(name, binding, indexedDBValue) {
     var db = await keyDatabase(indexedDBValue);
     return new Promise(function (resolve, reject) {
         var tx = db.transaction("keys", "readwrite");
-        tx.objectStore("keys").put(binding, name);
+        var keys = tx.objectStore("keys");
+        var previous = keys.get(name);
+        previous.onsuccess = function () {
+            var old = previous.result;
+            var floor = old && (old.epoch || (old.keyID === "ms-1" ? 1 : 0));
+            var next = binding.epoch || (binding.keyID === "ms-1" ? 1 : 0);
+            // An old tab's legacy migration cannot replace a directly paired pin or roll back
+            // its durable floor after another tab completed a pairing or rekey.
+            if (old && ((old.legacy === false && binding.legacy) || floor > next ||
+                (floor && floor === next && old.keyID !== binding.keyID))) { tx.abort(); return; }
+            keys.put(binding, name);
+        };
         tx.oncomplete = function () { db.close(); resolve(binding); };
         tx.onerror = function () { db.close(); reject(tx.error); };
         tx.onabort = tx.onerror;
@@ -313,6 +336,61 @@ export async function loadPairingBinding(name, indexedDBValue) {
             catch (error) { reject(error); }
         };
         request.onerror = function () { db.close(); reject(request.error); };
+    });
+}
+
+/** All machine state is read in one snapshot; a different tab cannot mix key and floor. */
+export async function loadMachineCryptoState(names, indexedDBValue) {
+    var db = await keyDatabase(indexedDBValue);
+    return new Promise(function (resolve, reject) {
+        var tx = db.transaction("keys", "readonly"), keys = tx.objectStore("keys"), state = {};
+        ["bindingName", "masterName", "masterKeyIDName", "senderName"].forEach(function (name) {
+            var request = keys.get(names[name]);
+            request.onsuccess = function () { state[name] = request.result; };
+        });
+        tx.oncomplete = function () { db.close(); resolve(state); };
+        tx.onerror = function () { db.close(); reject(tx.error); };
+        tx.onabort = tx.onerror;
+    });
+}
+
+/** Compare the latest durable floor and consume the operation in the same key transaction.
+ * No await occurs inside the transaction. The sole pending operation lives in the caller;
+ * a restart loses it and cannot call this path from an unsolicited answer. */
+export async function adoptMachineRekey(value, indexedDBValue) {
+    if (!value.masterKey || value.masterKey.extractable !== false || !validToken(value.keyID, MAX_CONTENT_KEY_ID_BYTES) ||
+        !Number.isSafeInteger(value.epoch) || value.epoch < 1 || typeof value.valid !== "function") {
+        throw new TypeError("bad rekey adoption");
+    }
+    var db = await keyDatabase(indexedDBValue);
+    return new Promise(function (resolve, reject) {
+        var tx = db.transaction("keys", "readwrite"), keys = tx.objectStore("keys");
+        var refused = new Error("content key exchange rejected");
+        refused.code = "unknown_key";
+        var adopted;
+        var request = keys.get(value.bindingName);
+        request.onsuccess = function () {
+            var b = request.result;
+            var floor = b && (b.epoch === undefined && b.keyID === "ms-1" ? 1 : b.epoch);
+            if (!b || b.legacy !== false || b.machineID !== value.expected.machineID ||
+                b.senderID !== value.expected.senderID || b.revision !== value.expected.revision ||
+                !Number.isSafeInteger(floor) || floor < 1 || floor > value.epoch ||
+                (floor === value.epoch && b.keyID !== value.keyID)) {
+                refused.code = "machine_pairing_changed";
+                tx.abort(); return;
+            }
+            if (b.lastRekeyOperation === value.operation || !value.valid()) {
+                tx.abort(); return;
+            }
+            adopted = Object.assign({}, b, { keyID: value.keyID, epoch: value.epoch,
+                lastRekeyOperation: value.operation });
+            keys.put(value.masterKey, value.masterName);
+            keys.put(value.keyID, value.masterKeyIDName);
+            keys.put(adopted, value.bindingName);
+        };
+        tx.oncomplete = function () { db.close(); resolve(adopted); };
+        tx.onerror = function () { db.close(); reject(refused.code === "machine_pairing_changed" ? refused : tx.error || refused); };
+        tx.onabort = tx.onerror;
     });
 }
 
@@ -335,7 +413,7 @@ export async function loadCryptoKeyID(name, indexedDBValue) {
             db.close();
             var value = request.result;
             if (value === undefined || value === null) return resolve(null);
-            if (!validToken(value, 64)) return reject(new TypeError("bad stored pairing key id"));
+            if (!validToken(value, MAX_CONTENT_KEY_ID_BYTES)) return reject(new TypeError("bad stored pairing key id"));
             resolve(value);
         };
         request.onerror = function () { db.close(); reject(request.error); };
@@ -357,7 +435,22 @@ export async function storeHealthHandover(name, record, indexedDBValue) {
     var db = await keyDatabase(indexedDBValue);
     return new Promise(function (resolve, reject) {
         var tx = db.transaction("keys", "readwrite");
-        tx.objectStore("keys").put(record, name);
+        var keys = tx.objectStore("keys");
+        var previous = keys.get(name);
+        previous.onsuccess = function () {
+            var old = previous.result;
+            if (old && (!Number.isSafeInteger(old.contentKeyEpoch) || old.contentKeyEpoch < 1 ||
+                !Number.isSafeInteger(old.identityEpoch) || old.identityEpoch < 0 ||
+                old.accountID !== record.accountID || old.machineID !== record.machineID ||
+                record.contentKeyEpoch < old.contentKeyEpoch || record.identityEpoch < old.identityEpoch ||
+                (record.contentKeyEpoch === old.contentKeyEpoch && old.contentKeyID && old.contentKeyID !== record.contentKeyID) ||
+                (old.machineSigningKey && old.machineSigningKey !== record.machineSigningKey))) {
+                tx.abort();
+                return;
+            }
+            keys.put(record, name);
+        };
+        previous.onerror = function () { tx.abort(); };
         tx.oncomplete = function () { db.close(); resolve(record); };
         tx.onerror = function () { db.close(); reject(tx.error); };
         tx.onabort = tx.onerror;

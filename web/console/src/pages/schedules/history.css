@@ -10,6 +10,12 @@
 }
 .schedule-history-sheet .schedule-history-heading h2 { line-height: 1.3; }
 .schedule-history-sheet .schedule-history-heading p { font-size: 11.5px; }
+.schedule-history-sheet #schedule-history-agent {
+    margin-top: 8px;
+    color: var(--dim);
+    font-family: var(--ui);
+    font-size: 12px;
+}
 .schedule-history-actions {
     display: flex;
     gap: 8px;

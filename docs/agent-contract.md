@@ -1,5 +1,7 @@
 # Agent operation contract map
 
+See [What Clawdline changes](transparency.md) for the bilingual Console inventory and the source-freshness maintenance gate.
+
 ## Agent entry
 
 Read `clawdline guide` from the **installed binary on the machine that will act**, then read the named part when needed. `clawdline guide routes` prints this build's registered route inventory with its API level, the related guide part, and the corresponding human task. `clawdline guide capacity` prints the default bounds generated from this build's capacity register; check the target machine's live reading because an override may lower a bound. `clawdline guide refusals` lists statically declared typed codes; `clawdline guide refused <code>` finds an applicable handling rule, and an unknown code stops the action. Route presence is discovery, not permission or proof of completion. Compare a remote machine's advertised API level and capability before asking it to act; if it lacks the operation, stop and report that machine's update need. Do not try an older helper, a different machine, or a less restricted path.

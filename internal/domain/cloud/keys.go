@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -12,10 +13,10 @@ import (
 
 // The two key roles, kept apart on purpose (blueprint §02, PROTOCOL.md §1).
 //
-//   - A ContentKey seals payloads with AES-256-GCM. The account master secret
-//     is one, named on the wire by a key_id like "ms-1"; a ctlr response's
-//     request-scoped reply key is another, named "rk-<22>". One account secret
-//     is shared by every device the user paired; the cloud never holds it.
+//   - A ContentKey seals payloads with AES-256-GCM. Each machine holds its
+//     own content key and shares it with its paired viewers; Cloud never
+//     holds it. Legacy machine keys use "ms-1"; request-scoped reply keys
+//     use "rk-<22>". ContentKeyStore also prepares future content epochs.
 //   - A DeviceKey signs envelopes with Ed25519. Every device has its own, and a
 //     Mac pins the public half of each paired device at pairing time and trusts
 //     that pin rather than anything the cloud says.
@@ -299,13 +300,8 @@ func LoadOrCreateDeviceKey(store KeyStore, source io.Reader) (DeviceKey, error) 
 	return key, nil
 }
 
-// LoadOrCreateMasterSecret returns the account master secret, minting one the
-// first time.
-//
-// Minting is right only for an account this machine is the first device of.
-// A machine joining an existing account receives the secret through pairing and
-// must call SaveMasterSecret with what it received; minting there would leave
-// it unable to read anything the account already holds.
+// LoadOrCreateMasterSecret returns this machine's content key, minting only
+// on confirmed absence. The legacy name does not imply an account-wide key.
 func LoadOrCreateMasterSecret(store KeyStore, source io.Reader) (ContentKey, error) {
 	secret, found, err := store.MasterSecret()
 	if err != nil {
@@ -322,4 +318,35 @@ func LoadOrCreateMasterSecret(store KeyStore, source io.Reader) (ContentKey, err
 		return ContentKey{}, err
 	}
 	return secret, nil
+}
+
+// ContentKeyState selects key material and its identity together. Epoch 1 is
+// the unchanged legacy key (ms-1); later epochs have distinct key IDs.
+type ContentKeyState struct {
+	Epoch uint64
+	KeyID string
+	Key   ContentKey
+}
+
+var (
+	// ErrContentKeyPending means a durable transaction needs recovery. No key
+	// may be used until RecoverContentKey succeeds, including by legacy callers.
+	ErrContentKeyPending  = errors.New("content key recovery pending")
+	ErrContentKeyState    = errors.New("content key state is missing or inconsistent")
+	ErrContentKeyConflict = errors.New("content key operation conflicts with current epoch")
+)
+
+// ContentKeyStore is an additive storage seam; it does not enable runtime
+// rotation. Its owner must serialize access through one instance and must stop
+// publishing before rotation. On ANY rotation error, keep publishing stopped
+// until loading or recovery succeeds. A partial write may already be durable.
+//
+// Example: state, err := store.RotateContentKey(operationID, old.Epoch, nil).
+// Only on nil err may runtime atomically adopt state.Key AND state.KeyID.
+// Retrying the same operation/expected epoch resumes without minting again;
+// after a later rotation, that older retry conflicts. Recovery never mints.
+type ContentKeyStore interface {
+	LoadOrCreateContentKey(io.Reader) (ContentKeyState, error)
+	RotateContentKey(operationID string, expectedEpoch uint64, source io.Reader) (ContentKeyState, error)
+	RecoverContentKey() (ContentKeyState, error)
 }

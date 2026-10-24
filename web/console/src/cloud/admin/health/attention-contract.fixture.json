@@ -1,0 +1,54 @@
+{
+  "_comment": "Synthetic answers in the shape the Cloud's GET /su/v1/health/attention sends (rule attention/1). No real incident, account or content.",
+  "ok": {
+    "schema": "clawdline.health_attention.v1",
+    "status": "ok",
+    "complete": true,
+    "items": [
+      {
+        "id": "hat_11111111111111111111111111111111",
+        "incident_id": "hi_cccccccccccccccccccccccccccccccc",
+        "incident_revision": 1,
+        "action": "investigate",
+        "reason": "no_investigation",
+        "href": "/admin/health/incidents/hi_cccccccccccccccccccccccccccccccc"
+      },
+      {
+        "id": "hat_22222222222222222222222222222222",
+        "incident_id": "hi_dddddddddddddddddddddddddddddddd",
+        "incident_revision": 3,
+        "action": "review_fix",
+        "reason": "fix_prepared",
+        "href": "/admin/health/incidents/hi_dddddddddddddddddddddddddddddddd"
+      },
+      {
+        "id": "hat_33333333333333333333333333333333",
+        "incident_id": "hi_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "incident_revision": 2,
+        "action": "review_result",
+        "reason": "verified_recovered",
+        "href": "/admin/health/incidents/hi_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      {
+        "id": "hat_44444444444444444444444444444444",
+        "incident_id": "hi_ffffffffffffffffffffffffffffffff",
+        "incident_revision": 5,
+        "action": "review_result",
+        "reason": "verification_failed",
+        "href": "/admin/health/incidents/hi_ffffffffffffffffffffffffffffffff"
+      }
+    ]
+  },
+  "incomplete": {
+    "schema": "clawdline.health_attention.v1",
+    "status": "ok",
+    "complete": false,
+    "items": []
+  },
+  "unavailable": {
+    "schema": "clawdline.health_attention.v1",
+    "status": "unavailable",
+    "items": null,
+    "complete": false
+  }
+}

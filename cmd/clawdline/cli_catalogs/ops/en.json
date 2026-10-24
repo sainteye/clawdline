@@ -137,5 +137,10 @@
   "dev.way_back": "to go back: clawdline update --apply, or the version panel's button\n",
   "dev.usage": "usage: clawdline dev install [--rev <commit>] [--port n]\n\nBuilds a commit of this checkout and runs it on this machine in place of the\ninstalled release or Linux source deployment, to test it. On a release install,\ngoing back is the ordinary update: the version\npanel's button, or clawdline update --apply. If the build does not start,\nClawdline restores the previous installation.\n\n  --rev <commit>   the commit to build (default HEAD of this checkout)\n  --port <n>       release-install port; omit for a Linux source service\n\nRun it inside a clawdline checkout, on a release or Linux source installation.\ndocs/updates.md says more.",
   "dev.source_config": "source dev installation requires Linux and the configured service port; omit --port",
-  "dev.source_failed": "dev deployment failed; inspect the deployment output for build or rollback status: %v\n"
+  "dev.source_failed": "dev deployment failed; inspect the deployment output for build or rollback status: %v\n",
+  "devices.usage.permission": "       clawdline devices permission <device-id> <read-only|read-and-operate>",
+  "devices.usage.pairing_permission": "       clawdline devices pairing-permission <pairing-id> <read-only|read-and-operate>",
+  "devices.permission_saved": "Permission saved.",
+  "devices.pair_permission_help": "select read-only or read-and-operate on this machine before showing the pairing code",
+  "devices.permission_invalid": "permission must be read-only or read-and-operate"
 }

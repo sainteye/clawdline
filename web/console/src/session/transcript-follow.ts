@@ -33,6 +33,45 @@
  */
 import type { TranscriptPage } from "@clawdline/contract"
 
+/** The revision must belong to this cursor's page, even while the tail refreshes. */
+export function olderTranscriptPage(newest: TranscriptPage | null, earlier: { base: TranscriptPage; pages: TranscriptPage[] } | null): TranscriptPage | null {
+  return earlier ? earlier.pages.at(-1) ?? earlier.base : newest
+}
+
+export function transcriptCursorStale(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === "transcript_cursor_stale"
+}
+
+/** A whole native reread cannot prove retained older entries still match. */
+export function nativeHistoryChanged(held: TranscriptPage | null, newest: TranscriptPage): boolean {
+  if (held?.signature.startsWith("acp2:")) {
+    return held.signature.split(":")[1] !== newest.signature.split(":")[1]
+  }
+  return !!held?.signature.startsWith("agy1:") && held.signature !== newest.signature
+}
+
+/** Durable owned ACP pages share the existing older-history UI and cursor recovery. */
+export function readableTranscriptHistory(page: TranscriptPage): boolean {
+  return page.evidence === "transcript" || (page.evidence === "structured" && page.signature.startsWith("acp2:"))
+}
+
+/** Restart an incompatible chain once. A second stale read is exposed for manual retry. */
+export async function readOlderRecovering(
+  held: TranscriptPage,
+  older: (before: number, revision: string) => Promise<TranscriptPage>,
+  newest: () => Promise<TranscriptPage>,
+  restart: (page: TranscriptPage | null) => void,
+): Promise<TranscriptPage | null> {
+  if (!held.nextBefore) return null
+  try { return await older(held.nextBefore, held.signature) } catch (error) {
+    if (!transcriptCursorStale(error)) throw error
+    restart(null)
+    const page = await newest()
+    restart(page)
+    return page.nextBefore ? older(page.nextBefore, page.signature) : null
+  }
+}
+
 /** The whole page, read on this pace whatever the row says. */
 export const SAFETY_MS = 30_000
 /** While a card is on its way. */

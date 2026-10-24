@@ -26,9 +26,9 @@ interface Tile {
   closest(selector: string): Element | null
 }
 
-// A tile the reader can open: `connectArtifactTile` sets this state when the
-// bytes have arrived, and only then does its click open the preview.
-const LIVE_TILE = '.message-image-tile[data-image-state="live"]'
+// A deferred thumbnail still has a full-size source. Gallery navigation may
+// open it directly without downloading offscreen thumbnails first.
+const LIVE_TILE = '.message-image-tile[data-image-state="live"], .message-image-tile[data-image-state="loading"][data-image-openable="true"]'
 // The transcript a tile belongs to. Two transcripts can be on screen (the
 // fleet view), and stepping out of one into another would be a surprise.
 const TRANSCRIPT = ".tx"
@@ -84,7 +84,7 @@ export function saveImageFromClick(
   return "download"
 }
 
-/** Sharing is an explicit action, separate from downloading an image. */
+/** Open the native sheet directly from the press, preserving browser activation. */
 export function shareImageFromClick(file: File, platform: Pick<Navigator, "share">): void {
   void platform.share({ files: [file] }).catch(() => {
     // Dismissing the sheet does not start a download or close the preview.
@@ -232,7 +232,7 @@ export function attachLightboxSteps(
       imageName = name
       file = null
       share.hidden = true
-      download.hidden = false
+      download.hidden = true
       download.disabled = true
       // Cloud already holds a blob URL; the local console fetches its same-origin image. Do this
       // while the preview opens so a later button press can synchronously open the native sheet.
@@ -243,7 +243,12 @@ export function attachLightboxSteps(
         if (revision !== imageRevision || !blob.size) return
         file = new File([blob], name, { type: blob.type || (name.endsWith(".jpg") ? "image/jpeg" : "image/png") })
         download.disabled = false
-        share.hidden = !(typeof navigator.share === "function" && navigator.canShare?.({ files: [file] }))
+        const touchInterface = doc.defaultView?.matchMedia("(hover: none) and (pointer: coarse)").matches ?? false
+        const canShare = touchInterface && typeof navigator.share === "function" && navigator.canShare?.({ files: [file] })
+        share.hidden = !canShare
+        // Desktop browsers can share too, but their action is a direct save.
+        // Touch interfaces keep the native sheet when file sharing is supported.
+        download.hidden = !!canShare
       }).catch(() => {
         if (revision === imageRevision) download.hidden = true
       })

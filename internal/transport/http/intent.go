@@ -126,7 +126,7 @@ func (s *Server) inputsForIntent(ctx context.Context) ([]planner.Place, []string
 		places = append(places, planner.Place{ID: row.ID, Label: row.Label, Path: row.Path})
 	}
 	assistants := []string{}
-	for _, assistant := range installedAssistants() {
+	for _, assistant := range s.availableAssistants() {
 		assistants = append(assistants, assistant.ID)
 	}
 	return places, assistants

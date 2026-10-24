@@ -15,6 +15,19 @@ project, stop the turn it is on, and close it safely.
 
 Labels below follow the English interface; the console also supports other languages.
 
+## Sessions and access
+
+In **Settings → Sessions and access**, both switches start enabled. Select the ⓘ button beside
+one to expand its On, Off, and scope explanation. These are settings of the selected machine,
+including when changed from a paired Cloud browser with Send permission.
+
+- **Use full permission by default for dispatch**: off changes future dispatches that omit a
+  permission mode to the assistant’s own permission settings, without adding full-permission arguments.
+  An explicit task mode takes precedence; existing tasks keep their mode.
+- **Automatically discover other Sessions**: off keeps Sessions opened by Clawdline and stops
+  adding externally opened conversations. It takes effect on the next inventory refresh, without
+  closing conversations, deleting retained records, or changing pairing or Cloud command permission.
+
 ## Read the list
 
 Open **Sessions**. Each row is one session, marked with its project's pixel icon,
@@ -67,10 +80,10 @@ The **⋯** menu (**Session actions**) holds the rest:
   [How a picture finds its reply](../messages.md#pictures-a-session-shows-the-person).
 - **Snippets** are text you send often. Create them with **New snippet**, for this project
   or every project. Pressing one only fills the box; you still send it.
-- **Workflows** hold a complete launch message. Open the Workflow tab, select one, then press
-  **Start Workflow**. The shipped **Zero-Based Review** example reviews the current
+- **Playbooks** (called Workflows before 2026-10-23) hold a complete launch message. Open the
+  Playbook tab, select one, then press **Start Playbook**. The shipped **Zero-Based Review** example reviews the current
   Project and is available in every Project. Its unedited text follows the interface language;
-  you can edit or delete it like another Workflow. A deleted example stays deleted after restart.
+  you can edit or delete it like another Playbook. A deleted example stays deleted after restart.
 - **Skills:** type `/` (or `$` for Codex) as the whole message to list the session's skills and
   commands. Choosing one writes it into the box and does not send.
 
@@ -131,7 +144,8 @@ opens a new session without another model choice; a model chosen for one session
 wins, a child agent may explicitly choose any admitted model for its own task, and resuming an
 existing conversation does not change its model.
 The same two fields appear in Clawdline Cloud on a phone. The phone can read them through its paired
-machine; saving a change also requires **Settings → Remote → Allow Cloud commands** on that machine.
+machine; saving a change also requires that machine's Cloud command switch and this browser's local
+operation grant. See [Let paired devices act](remote-access.md#let-paired-devices-act).
 The same setting is available without a browser as
 `clawdline setting set codex_default_model gpt-6-sol` (or
 `claude_default_model claude-opus-5-5`); use `default` as the value to hand the choice back to the

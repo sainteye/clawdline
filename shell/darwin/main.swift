@@ -497,6 +497,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         content.add(WeakMessageHandler(self), name: "shellLanguage")
         content.add(WeakMessageHandler(self), name: "shellAgentSetup")
         content.add(WeakMessageHandler(self), name: "shellRestartApp")
+        content.add(WeakMessageHandler(self), name: "shellCloudPair")
         // The notch island listens to the same stream and opens this window
         // when its character is pressed (NotchIsland.swift).
         NotchIsland.shared.attach(to: content, open: { [weak self] in self?.showConsole() })
@@ -619,23 +620,34 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
     // MARK: - Pairing
 
-    /// The Swift app's alert, word for word, with its one button.
+    /// The pairing in flight, held until its flow ends.
+    private var pairingFlow: PairingPermissionFlow?
+
+    /// Choose a permission, save it, and only then show the code.
+    ///
+    /// The code never reaches the screen before the daemon has said the
+    /// permission is saved: a refusal, no answer or an expired pairing shows
+    /// why and no code. Saving runs off the main queue; the alerts are modal,
+    /// as the one before them was.
     ///
     /// One at a time: something hammering the pairing route must not stack a
     /// wall of alerts to dismiss one by one. The watcher holds that gate (see
-    /// PairingWatcher for why it cannot be held here); the daemon's rate limit
-    /// is the other half.
+    /// PairingWatcher for why it cannot be held here); the flow opens it again
+    /// on every way out. The daemon's rate limit is the other half.
     private func showPairing(_ pending: PairingNotice) {
-        defer { pairing.alertClosed() }
         // The name, never the code.
-        shellLog("pairing: \(pending.name) is asking; alert shown")
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = L.t.pairingAsks(pending.name)
-        alert.informativeText = L.t.pairingCode(pending.code)
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L.t.pairingIgnore)
-        alert.runModal()
+        shellLog("pairing: \(pending.name) is asking; choosing a permission")
+        let client = PairingPermissionClient(base: home)
+        let flow = PairingPermissionFlow(
+            pending,
+            screens: PairingDialogs.screens,
+            save: client.save,
+            finished: { [weak self] in
+                self?.pairingFlow = nil
+                self?.pairing.alertClosed()
+            })
+        pairingFlow = flow
+        flow.start()
     }
 
     // MARK: - Where the hotkey applies
@@ -785,6 +797,22 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
                                    action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         appItem.submenu = appMenu
         main.addItem(appItem)
+        // Standard responder actions also reach the Settings WKWebView. Only
+        // ConsoleWindow had an editing-key fallback, so Cmd-V did nothing in
+        // the pairing-code field in a separate native settings window.
+        let editItem = NSMenuItem(title: L.t.menuEdit, action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: L.t.menuEdit)
+        for (title, action, key) in [
+            (L.t.menuUndo, Selector(("undo:")), "z"),
+            (L.t.menuCut, #selector(NSText.cut(_:)), "x"),
+            (L.t.menuCopy, #selector(NSText.copy(_:)), "c"),
+            (L.t.menuPaste, #selector(NSText.paste(_:)), "v"),
+            (L.t.menuSelectAll, #selector(NSText.selectAll(_:)), "a"),
+        ] {
+            editMenu.addItem(NSMenuItem(title: title, action: action, keyEquivalent: key))
+        }
+        editItem.submenu = editMenu
+        main.addItem(editItem)
         main.addItem(browserMenuItem())
 
         let windowItem = NSMenuItem(title: L.t.menuWindow, action: nil, keyEquivalent: "")
@@ -803,6 +831,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         let documentation = NSMenuItem(title: L.t.menuHelpDocumentation,
                                        action: #selector(openDocumentation), keyEquivalent: "?")
         documentation.target = self
+        let setup = NSMenuItem(title: L.t.menuHelpSetup, action: #selector(openSetupGuide), keyEquivalent: "")
+        setup.target = self
+        helpMenu.addItem(setup)
         helpMenu.addItem(documentation)
         helpItem.submenu = helpMenu
         main.addItem(helpItem)
@@ -888,6 +919,21 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
                   page.host == home.host, page.port == home.port,
                   !showingCloud else { return }
             showAgentSetup()
+            return
+        }
+        // The setup wizard pairing this app: the console made a pairing
+        // invitation (`POST /v1/cloud/pairing`) and asks for its link to be
+        // opened in the Cloud tab, which is the device being paired. Only a
+        // Cloud link carrying a pairing fragment is accepted, so the console
+        // cannot use this to aim the Cloud tab anywhere else.
+        if message.name == "shellCloudPair" {
+            guard message.frameInfo.isMainFrame, message.webView === web,
+                  let page = web.url, isConsole(page),
+                  let body = message.body as? [String: String],
+                  let raw = body["link"], let link = URL(string: raw), isCloud(link),
+                  link.fragment?.hasPrefix("pair=") == true else { return }
+            showTab(cloud: true)
+            cloud.load(link)
             return
         }
         if message.name == "shellSettings" {
@@ -1079,6 +1125,15 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         NSWorkspace.shared.open(URL(string: "https://github.com/sainteye/clawdline/blob/main/docs/compatibility.md")!)
     }
 
+    /// The console's setup wizard (web/console/src/setup), over the console
+    /// tab: the page listens for this event rather than being navigated, so
+    /// whatever the person had open stays where it was.
+    @objc private func openSetupGuide() {
+        if showingCloud { showTab(cloud: false) }
+        showConsole()
+        web.evaluateJavaScript("window.dispatchEvent(new Event('clawdline-open-setup'))")
+    }
+
     @objc private func openDocumentation() {
         NSWorkspace.shared.open(URL(string: "https://github.com/sainteye/clawdline#readme")!)
     }
@@ -1094,7 +1149,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// summon the window without the built-in combination. Its own scheme: the
     /// Swift app owns clawdline://. Only what this app can do is answered.
     func application(_ application: NSApplication, open urls: [URL]) {
-        shellLog("url: \(urls.map { $0.host == "cloud-signed-in" ? "clawdline-next://cloud-signed-in" : $0.absoluteString }.joined(separator: " "))")
+        shellLog("url: \(urls.map { ["cloud-signed-in", "pair-browser"].contains($0.host ?? "") ? "clawdline-next://\($0.host ?? "")" : $0.absoluteString }.joined(separator: " "))")
         guard let url = urls.first else { return }
         switch url.host ?? "" {
         case "toggle":
@@ -1103,6 +1158,18 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             showConsole()
         case "setup":
             showAgentSetup()
+        case "pair-browser":
+            showConsole()
+            guard let window else { return }
+            Task { @MainActor in
+                let failure = await CloudPairLocal.pairFromLink(url, in: window)
+                guard !failure.isEmpty, failure != "cancelled", failure != "busy" else { return }
+                let alert = NSAlert()
+                alert.messageText = L.t.pairLinkFailed
+                alert.informativeText = CloudPairLocal.pairingFailureText(failure)
+                alert.addButton(withTitle: L.t.dialogOK)
+                _ = await alert.beginSheetModal(for: window)
+            }
         case "cloud-signed-in":
             // The browser sign-in's answer, when it reached the app rather than
             // the sign-in session that asked for it (Browser.swift). Without

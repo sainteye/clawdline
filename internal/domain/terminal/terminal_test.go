@@ -94,7 +94,7 @@ func TestARefusalCarriesItsCodeThroughWrapping(t *testing.T) {
 		}
 		seen[c] = true
 	}
-	if len(seen) != 18 {
+	if len(seen) != 19 {
 		t.Errorf("%d codes; the list and the constants disagree", len(seen))
 	}
 }

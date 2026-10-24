@@ -1,3 +1,6 @@
+import { SessionStateEmpty } from "./session/SessionStateEmpty.js"
+import { matchesLocalStateFilter, type SessionStateFilter } from "./session/state-filter.js"
+import { stateFilterLabel } from "./session/SessionStateFilter.js"
 import { catalogWord } from "./catalog.js"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react"
 import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskList, TaskRow } from "@clawdline/contract"
@@ -21,6 +24,7 @@ import { offerShape } from "./session/restore-offer.js"
 import "./session/empty-list.css"
 import { taskReads } from "./session/task-read.js"
 import { swipes } from "./session/swipe.js"
+import { usePullToRefresh } from "./session/use-pull-to-refresh.js"
 import { useSwipeToEnd } from "./session/use-swipe.js"
 import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
 import { ScheduleSection } from "./pages/schedules.js"
@@ -43,6 +47,7 @@ import { machineSeenWord } from "./cloud/machine-seen.js"
  */
 export function SessionsPage({
   rows,
+  statusFilter = "all", onStatusFilter,
   loaded,
   arrived,
   live,
@@ -70,6 +75,8 @@ export function SessionsPage({
   fleetDetailProblem,
 }: {
   rows: SessionRow[]
+  statusFilter?: SessionStateFilter
+  onStatusFilter?: (value: SessionStateFilter) => void
   /** The first reading has been answered, with a list or with a failure. */
   loaded: boolean
   /** A list has arrived: the original's `S.arrived`. */
@@ -157,7 +164,7 @@ export function SessionsPage({
   // the place it is arriving for stands there until it does (`Start.arrange`,
   // `Start.placeholder`). Both change with the wait, which is not a prop.
   useSyncExternalStore(Start.subscribe, Start.version)
-  const shown = Start.arrange(L.orderedRows())
+  const shown = Start.arrange(L.orderedRows().filter((row) => matchesLocalStateFilter(row, statusFilter)))
   const arriving = Start.placeholder()
   // From the whole fleet, as `byId` looks it up: a filter that hides the open
   // row does not close it.
@@ -252,11 +259,15 @@ export function SessionsPage({
   // An offline machine's empty page is the offline sentence even while the list
   // would otherwise still be "arriving": nothing is on its way from a machine that is off.
   const empty = offlineAt === "empty" || (!skeleton && drawn.length === 0 && !arriving && !listUnknown)
-  const homeEmpty = empty && rows.length === 0 && !filter
+  const homeEmpty = empty && rows.length === 0 && !filter && statusFilter === "all"
   const said = useRef<"skel" | [string, string] | null>(null)
   if (offlineAt === "empty") said.current = [nextWord("sessionsMachineOfflineTitle"),
     nextWord("sessionsMachineOfflineHint", { machine: machineOffline?.machine ?? "", seen: offlineSeen })]
   else if (skeleton) said.current = "skel"
+  else if (empty && statusFilter !== "all") {
+    said.current = [nextWord("sessionStateFilterEmpty", { state: stateFilterLabel(statusFilter) }),
+      nextWord("sessionStateFilterEmptyHint")]
+  }
   else if (empty) {
     said.current = rows.length
       ? [L.fillString(T.webEmptyFilterTitle, { q: filter }), T.webEmptyFilterHint]
@@ -346,8 +357,10 @@ export function SessionsPage({
                 />
               ))}
             </ul>
-            <div className={emptyClass} id="list-empty" hidden={!skeleton && !empty}>
-              {said.current === "skel" ? (
+            <div className={statusFilter !== "all" && !skeleton && offlineAt !== "empty" ? "session-state-empty-wrap" : emptyClass} id="list-empty" hidden={!skeleton && !empty}>
+              {statusFilter !== "all" && !skeleton && offlineAt !== "empty" ? (
+                <SessionStateEmpty filter={statusFilter} onReset={() => onStatusFilter?.("all")} />
+              ) : said.current === "skel" ? (
                 <ListSkeleton />
               ) : offerAt === "hero" && restore.offer ? (
                 <RestoreHero offer={restore.offer} onOpen={openRestore} />
@@ -604,92 +617,6 @@ function useListReorderAnimation(listRef: RefObject<HTMLUListElement | null>): v
  * every frame the daemon sends, and a listener per row would be rebound with
  * them, mid-gesture.
  */
-/**
- * Pull to refresh, phones only (`input/edges.js`): with resistance, released
- * past 62px it reads again and holds a 34px pad until the answer is in. The
- * original reloads the page instead when it is stale; this page has no stale
- * notice to answer.
- */
-function usePullToRefresh(
-  scrollRef: RefObject<HTMLDivElement | null>,
-  padRef: RefObject<HTMLDivElement | null>,
-  refresh: () => void,
-): "pull" | "release" | "busy" {
-  const [word, setWord] = useState<"pull" | "release" | "busy">("pull")
-  const refreshRef = useRef(refresh)
-  refreshRef.current = refresh
-  useEffect(() => {
-    const scroller = scrollRef.current
-    const pad = padRef.current
-    if (!scroller || !pad) return
-    const THRESHOLD = 62
-    let startY = 0
-    let pulling = false
-    let distance = 0
-    let busy = false
-    let alive = true
-    const start = (ev: TouchEvent) => {
-      if (busy || scroller.scrollTop > 0 || ev.touches.length !== 1) return
-      startY = ev.touches[0].clientY
-      pulling = true
-      distance = 0
-      pad.classList.add("dragging")
-    }
-    const move = (ev: TouchEvent) => {
-      if (!pulling) return
-      // One gesture has one owner. The swipe decides the axis from the first
-      // real movement, and a gesture it has taken is not also a pull: a
-      // diagonal drag used to open the pad and the row at once.
-      if (swipes.axis() === "row") {
-        distance = 0
-        pad.style.height = "0px"
-        return
-      }
-      const raw = ev.touches[0].clientY - startY
-      if (raw <= 0) {
-        distance = 0
-        pad.style.height = "0px"
-        return
-      }
-      distance = Math.min(90, Math.pow(raw, 0.82))
-      pad.style.height = distance + "px"
-      setWord(distance >= THRESHOLD ? "release" : "pull")
-    }
-    const end = () => {
-      if (!pulling) return
-      pulling = false
-      pad.classList.remove("dragging")
-      if (distance >= THRESHOLD && !busy) {
-        busy = true
-        setWord("busy")
-        pad.style.height = "34px"
-        void Promise.resolve(refreshRef.current()).then(() => {
-          setTimeout(() => {
-            if (!alive) return
-            pad.style.height = "0px"
-            setWord("pull")
-            busy = false
-          }, 260)
-        })
-      } else {
-        pad.style.height = "0px"
-      }
-    }
-    scroller.addEventListener("touchstart", start, { passive: true })
-    scroller.addEventListener("touchmove", move, { passive: true })
-    scroller.addEventListener("touchend", end, { passive: true })
-    scroller.addEventListener("touchcancel", end, { passive: true })
-    return () => {
-      alive = false
-      scroller.removeEventListener("touchstart", start)
-      scroller.removeEventListener("touchmove", move)
-      scroller.removeEventListener("touchend", end)
-      scroller.removeEventListener("touchcancel", end)
-    }
-  }, [scrollRef, padRef])
-  return word
-}
-
 /**
  * The dispatched-work list, `S.tasks` in the original.
  *

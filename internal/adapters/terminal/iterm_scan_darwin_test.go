@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -17,6 +18,7 @@ import (
 // the first byte. The test itself sends no Apple Event: each call returns
 // before any script would start, which the zero osascript count proves.
 func TestITermScanOffSendsNoAppleEvent(t *testing.T) {
+	enableITermForTest(t)
 	SetITermScan(false)
 	t.Cleanup(func() { SetITermScan(true) })
 	before, _ := OsascriptReading()
@@ -67,6 +69,7 @@ func TestITermScanOffSendsNoAppleEvent(t *testing.T) {
 // reader's — passes only while scanning is on, which the test above holds to
 // zero Apple Events.
 func TestAnAskedActionPassesTheITermScanSwitch(t *testing.T) {
+	enableITermForTest(t)
 	t.Cleanup(func() { SetITermScan(true) })
 	plain, asked := context.Background(), ports.Asked(context.Background())
 	for _, on := range []bool{true, false} {
@@ -84,6 +87,7 @@ func TestAnAskedActionPassesTheITermScanSwitch(t *testing.T) {
 // process table, never from iTerm2: it is asked with scanning off, before any
 // Apple Event may be sent. A table that could not be read holds nothing.
 func TestITermHoldsATTYOnlyWhenTheProcessTableSaysSo(t *testing.T) {
+	enableITermForTest(t)
 	i := NewITerm()
 	i.ptys = func(context.Context) (itermPTYs, bool) {
 		return itermPTYs{ttys: map[string]bool{"ttys037": true}, hosts: 1}, true
@@ -97,5 +101,59 @@ func TestITermHoldsATTYOnlyWhenTheProcessTableSaysSo(t *testing.T) {
 	i.ptys = func(context.Context) (itermPTYs, bool) { return itermPTYs{}, false }
 	if i.HoldsTTY(ctx, "ttys037") {
 		t.Fatal("an unreadable process table was taken to hold the tty")
+	}
+}
+
+func TestDisabledIntegrationRefusesEveryEntryWithoutAppleEvents(t *testing.T) {
+	previous := ITermIntegration()
+	SetITermIntegration(false)
+	t.Cleanup(func() { SetITermIntegration(previous) })
+	before, _ := OsascriptReading()
+	ctx := ports.Asked(context.Background())
+	i := NewITerm()
+	i.list = func(context.Context) ([]byte, error) { t.Fatal("disabled listing ran"); return nil, nil }
+	i.ptys = func(context.Context) (itermPTYs, bool) {
+		t.Fatal("disabled tty discovery ran")
+		return itermPTYs{}, false
+	}
+	s := session.Session{ID: "0A1B2C3D-0000-4000-8000-000000000001", Backend: session.BackendITerm}
+	inv, err := i.Inventory(ctx)
+	if err != nil || inv.Disabled != ITermScanDisabledBy {
+		t.Fatalf("disabled inventory: %+v %v", inv, err)
+	}
+	if i.HoldsTTY(ctx, "ttys037") {
+		t.Fatal("disabled integration claimed a tty")
+	}
+	if reach := (Launcher{}).itermReach(ctx); reach.state != ports.CapabilityUnavailable || reach.reason != "iTerm2 integration is turned off in Settings" {
+		t.Fatalf("disabled integration capability: %+v", reach)
+	}
+	if running, err := (Launcher{}).ITermRunning(ctx); running || err != nil {
+		t.Fatal("disabled integration detected iTerm2")
+	}
+	_, openErr := (Launcher{}).NewITermTab(ctx, "echo must-not-run")
+	_, closeErr := (Launcher{}).CloseITermChild(ctx, s.ID, time.Now())
+	for name, err := range map[string]error{
+		"send": i.Send(ctx, s, "hello"), "type": i.Type(ctx, s, "hello"),
+		"key": i.Keystroke(ctx, s, keyEscape), "interrupt": i.Interrupt(ctx, s),
+		"close": i.Close(ctx, s), "reveal": i.Reveal(ctx, s, true),
+		"tmux reveal": itermRevealTmuxPane(ctx, "1", true), "tty reveal": itermRevealTTY(ctx, "ttys037", true),
+		"activate": itermActivate(ctx), "open": openErr, "child close": closeErr,
+	} {
+		var unsent Unsent
+		if !errors.As(err, &unsent) {
+			t.Errorf("%s did not refuse before sending: %v", name, err)
+		}
+	}
+	if text, ok, failed := i.CaptureWithFailure(ctx, s); text != "" || ok || failed {
+		t.Fatal("disabled capture ran")
+	}
+	if seen, _ := findITermSession(ctx, s.ID); seen != sightingUnknown {
+		t.Fatal("disabled close verification ran")
+	}
+	after, _ := OsascriptReading()
+	a, _, _, _ := before.Runs()
+	b, _, _, _ := after.Runs()
+	if a != b {
+		t.Fatalf("disabled integration started %d scripts", b-a)
 	}
 }

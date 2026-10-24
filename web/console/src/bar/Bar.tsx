@@ -1,5 +1,9 @@
+import { assistantStateCurrent } from "../session/antigravity-ui.js"
+import { assistantFactsMachine, useAssistantFacts } from "../session/assistant-facts.js"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { AssistantSkill, DevStacksReply, SessionRow } from "@clawdline/contract"
+import { antigravitySlashDraft, assistantComposeAdmits, assistantProtocolOwned, assistantLabel, assistantUnavailable } from "../session/antigravity-ui.js"
+import { catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client } from "../client.js"
 import { useBarFleet } from "./fleet.js"
@@ -271,6 +275,8 @@ export default function Bar() {
   }, [rows, stickyID])
   const current: SessionRow | null = index >= 0 ? (rows[index] ?? null) : null
 
+  const readiness = useAssistantFacts(assistantFactsMachine(current), current?.execution_generation, current?.source?.observed_at, current?.assistant === "antigravity" && assistantStateCurrent(current))
+  const factsRef = useRef(readiness); factsRef.current = readiness
   const textRef = useRef(text)
   textRef.current = text
   const rowsRef = useRef(rows)
@@ -452,6 +458,16 @@ export default function Bar() {
     const target = at >= 0 ? list[at] : null
     if (!target) {
       say(words.nothingToSend, true)
+      return
+    }
+    if (antigravitySlashDraft(target.assistant, body)) {
+      say(catalogWord("antigravity", "slashDraft"), true)
+      return
+    }
+    if ((target.assistant === "antigravity" && !assistantStateCurrent(target)) || !assistantComposeAdmits(target.assistant, factsRef.current.assistants.find(facts => facts.id === target.assistant), target.state, !!target.menu, assistantProtocolOwned(target))) {
+      const reason = factsRef.current.kind !== "ready" ? factsRef.current.kind
+        : assistantUnavailable(factsRef.current.assistants.find(facts => facts.id === target.assistant), "send")
+      say(reason ? catalogWord("antigravity", reason).replace("{assistant}", assistantLabel(target.assistant)) : catalogWord("antigravity", "sendUnavailable"), true)
       return
     }
     remember(body)
@@ -672,6 +688,8 @@ export default function Bar() {
   const mark = current ? L.markForSession(current) : null
   const project = L.projectLabel(current?.cwd)
   const hints = keysShown ? HINTS : HINTS_CLOSED
+  const placeholder = current?.assistant === "antigravity"
+    ? catalogWord("antigravity", "placeholder") : placeholderFor(current?.assistant)
 
   return (
     <div className="bar-card" ref={cardRef}>
@@ -693,8 +711,8 @@ export default function Bar() {
           ref={boxRef}
           rows={1}
           value={text}
-          placeholder={placeholderFor(current?.assistant)}
-          aria-label={placeholderFor(current?.assistant)}
+          placeholder={placeholder}
+          aria-label={placeholder}
           spellCheck={false}
           onChange={(ev) => setText(ev.target.value)}
         />
@@ -724,14 +742,14 @@ export default function Bar() {
                 <span className="bar-badge">⌘{at + 1}</span>
                 <Mark icon={L.markForSession(row) ?? undefined} cellPx={2.75} className="bar-mark" />
                 <span className="bar-label">{row.label ?? row.id}</span>
-                {L.hasLogo(row.assistant) && (
+                {(L.hasLogo(row.assistant) || row.assistant === "antigravity") && (
                   <span
                     className="bar-who"
                     dangerouslySetInnerHTML={{
                       __html:
                         L.assistantLogoHTML(row.assistant) +
                         "<span>" +
-                        L.escapeHTML(L.assistantDisplayName(row.assistant)) +
+                        L.escapeHTML(row.assistant === "antigravity" ? assistantLabel(row.assistant) : L.assistantDisplayName(row.assistant)) +
                         "</span>",
                     }}
                   />
@@ -753,7 +771,7 @@ export default function Bar() {
       {listMode === "skills" && skillMatches.length > 0 && (
         // `rebuildRows()` for `.skills`: the command as it will be typed, and
         // the one line of description after it.
-        <div className="bar-list" role="listbox" aria-label={`${current?.assistant === "codex" ? "Codex" : "Claude Code"} skills`}>
+        <div className="bar-list" role="listbox" aria-label={`${assistantLabel(current?.assistant)} skills`}>
           {skillMatches.map((skill, at) => (
             <button
               key={skill.name}
@@ -782,7 +800,7 @@ export default function Bar() {
         {/* `updateTargetLabel`, bottom left. A hint takes the whole footer for
             a second and a half and then it comes back (`setHint`). */}
         {hint ? (
-          <div className="bar-target">
+          <div className="bar-target" role="status" aria-live="polite">
             <span className="said" data-warn={hint.warn ? "on" : "off"}>
               {hint.said}
             </span>

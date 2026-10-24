@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravity"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/contract"
 )
 
@@ -73,5 +75,68 @@ func TestEveryAssistantRowIsUsable(t *testing.T) {
 	}
 	if list.At < time.Now().Add(-time.Minute).Unix() {
 		t.Errorf("the answer is stamped %d", list.At)
+	}
+}
+
+func TestAntigravityInstallationNeverClaimsAuthenticationOrInteractiveReadiness(t *testing.T) {
+	for _, installed := range []bool{false, true} {
+		for _, compatible := range []bool{false, true} {
+			info := antigravity.Installation{InstalledKnown: true, Installed: installed, Compatible: compatible, AuthState: antigravity.AuthUnknown}
+			if installed && compatible {
+				info.Version = "1.4.5"
+			}
+			row := antigravityStartAssistant(info)
+			if row.ID != "antigravity" || row.AuthState != contract.StartAuthStateUnknown || row.Availability != contract.StartAvailabilityUnknown {
+				t.Fatalf("%+v", row)
+			}
+			if row.Installed == nil || *row.Installed != installed {
+				t.Fatalf("installed lost: %+v", row)
+			}
+			if compatible && row.IntegrationState != contract.StartIntegrationStateDisabled {
+				t.Fatalf("compatible CLI was reported missing: %+v", row)
+			}
+			if row.Capabilities == nil || *row.Capabilities != (contract.StartCapabilities{}) {
+				t.Fatalf("invented capabilities: %+v", row)
+			}
+			raw, err := json.Marshal(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var wire map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &wire); err != nil {
+				t.Fatal(err)
+			}
+			if wire["installed"] == nil || string(wire["installed"]) == "null" {
+				t.Fatalf("false became unknown: %s", raw)
+			}
+		}
+	}
+}
+
+func TestAntigravityFoundationRoutesNeverFallThroughToOtherProviders(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/", nil)
+	for _, operation := range []string{"start", "machine", "resume", "history"} {
+		rec := httptest.NewRecorder()
+		server := &Server{}
+		switch operation {
+		case "start":
+			server.startPlace(rec, request, "place", "antigravity", "", "")
+		case "machine":
+			server.startPlace(rec, request, projects.MachinePlaceID, "antigravity", "", "")
+		case "resume":
+			server.resumePlace(rec, request, "place", "antigravity", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "")
+		case "history":
+			server.pastRoute(rec, request, "place", "antigravity")
+		}
+		var got contract.PlaceRefusal
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusConflict || got.Error.Code != "provider_integration_unavailable" || got.Error.DetailKey != "http.1db27562f4ac9522" {
+			t.Fatalf("%s: %d %s", operation, rec.Code, rec.Body.String())
+		}
+	}
+	if assistantNeedsSignIn(request.Context(), "antigravity") {
+		t.Fatal("unknown authentication became signed out")
 	}
 }

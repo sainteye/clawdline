@@ -1,4 +1,4 @@
-export type SidebarIconName = "usage" | "sessions" | "devices" | "projects" | "workflow" | "plan" | "settings" | "notifications" | "work" | "verify" | "archive" | "squad" | "transfer"
+export type SidebarIconName = "usage" | "sessions" | "devices" | "projects" | "workflow" | "plan" | "settings" | "notifications" | "work" | "verify" | "archive" | "squad" | "transfer" | "access"
 
 /**
  * One visual language for Console navigation and suggestions. The adjacent
@@ -29,6 +29,12 @@ export function SidebarIcon({ name }: { name: SidebarIconName }) {
           <rect x="2.75" y="4" width="14" height="11" rx="2" />
           <path d="M7.5 19h4.5M9.75 15v4" />
           <rect x="17.25" y="8" width="4" height="11" rx="1.25" />
+        </>
+      )}
+      {name === "access" && (
+        <>
+          <path d="M12 3 4.5 6v5.5c0 4.25 3 7.5 7.5 9.5 4.5-2 7.5-5.25 7.5-9.5V6Z" />
+          <path d="m8.5 11.5 2.5 2.5 4.5-4.5" />
         </>
       )}
       {name === "projects" && (

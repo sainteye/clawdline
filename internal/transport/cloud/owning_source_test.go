@@ -15,6 +15,7 @@ func TestPublisherOwningSourceKeepsItsAnswers(t *testing.T) {
 		{"ttys003", inventoriedRow{backend: "iterm", tty: "ttys003"}, "ps"},
 		{"ttys009", inventoriedRow{tty: "ttys009"}, "ps"},
 		{"row-1", inventoriedRow{}, "ps"},
+		{"owned:acp:synthetic", inventoriedRow{backend: "owned"}, "owned"},
 		{"owned-1", inventoriedRow{backend: "owned", tty: "/dev/ttys010"}, "ps"},
 	} {
 		if got := owningSource(c.id, c.row); got != c.want {

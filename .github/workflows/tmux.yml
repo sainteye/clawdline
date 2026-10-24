@@ -9,7 +9,9 @@ name: Carried tmux
 # the pull request and not at release time. Only when the Release workflow
 # asks does it upload: the binaries are compiled from the pinned public
 # tarballs in tools/release/tmux/sources.sh and hold nothing of this
-# repository, and they are kept one day.
+# repository, and they are kept one day. Each upload is attested first, and
+# the release job refuses a tmux without this workflow's attestation for its
+# commit.
 
 on:
   workflow_call:
@@ -38,6 +40,12 @@ jobs:
     name: tmux for linux/${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    # id-token and attestations are used only by the attest step, which runs
+    # only when the Release workflow asks for an upload.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: true
       matrix:
@@ -69,6 +77,15 @@ jobs:
           "$TMUX_BIN" -S "$sock" list-sessions -F '#{session_name}' | grep -qx check
           "$TMUX_BIN" -S "$sock" kill-server
           cat "$RUNNER_TEMP/tmux/linux-${{ matrix.arch }}/tmux.json"
+
+      # actions/attest v4.2.2, pinned by commit (github.com/actions/attest).
+      - name: Attest what is uploaded
+        if: inputs.upload
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/tmux/linux-${{ matrix.arch }}/tmux
+            ${{ runner.temp }}/tmux/linux-${{ matrix.arch }}/tmux.json
 
       - name: Upload for the release job
         if: inputs.upload

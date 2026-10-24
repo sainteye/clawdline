@@ -10,6 +10,7 @@ import (
 
 func TestLaunchClearsInheritedSquadCapabilityAndSetsOnlyItsOwn(t *testing.T) {
 	t.Setenv("CLAWDLINE_SQUAD_CAPABILITY_FILE", "/stale")
+	t.Setenv("CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE", "/stale-native")
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
@@ -32,7 +33,7 @@ func TestLaunchClearsInheritedSquadCapabilityAndSetsOnlyItsOwn(t *testing.T) {
 					t.Fatalf("missing assistant in %q", tc.command)
 				}
 				prefix := tc.command[:end]
-				out, err := exec.Command("sh", "-c", prefix+" sh -c 'printf %s \"${CLAWDLINE_SQUAD_CAPABILITY_FILE-}\"'").Output()
+				out, err := exec.Command("sh", "-c", prefix+" sh -c 'printf %s \"${CLAWDLINE_SQUAD_CAPABILITY_FILE-}${CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE-}\"'").Output()
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -56,7 +57,7 @@ func TestLaunchLineIsTheSwiftAppsLine(t *testing.T) {
 	}
 	want := "cd '/tmp/it'\\''s here' && env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_CHILD_SESSION " +
 		"-u CLAUDE_PID -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN " +
-		"-u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_EFFORT -u AI_AGENT -u CLAWDLINE_SQUAD_CAPABILITY_FILE " + pathEnv + " claude"
+		"-u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_EFFORT -u AI_AGENT -u CLAWDLINE_SQUAD_CAPABILITY_FILE -u CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE " + pathEnv + " claude"
 	if got := l.ShellLine(); got != want {
 		t.Fatalf("line\n got %q\nwant %q", got, want)
 	}
@@ -66,7 +67,7 @@ func TestLaunchLineIsTheSwiftAppsLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, want := r.ShellCommand(), "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX "+
-		"-u CODEX_SANDBOX_NETWORK_DISABLED -u CLAWDLINE_SQUAD_CAPABILITY_FILE "+
+		"-u CODEX_SANDBOX_NETWORK_DISABLED -u CLAWDLINE_SQUAD_CAPABILITY_FILE -u CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE "+
 		"PATH='"+filepath.Join(state, "bin")+`':"$(dirname "$(command -v codex)")":"$PATH"`+
 		" codex resume 0f1e0000-0000-4000-8000-000000000001 --model opus"; got != want {
 		t.Fatalf("resume first\n got %q\nwant %q", got, want)
@@ -315,7 +316,7 @@ func TestLaunchCarriesTheCodexReasoningEffort(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX " +
-		"-u CODEX_SANDBOX_NETWORK_DISABLED -u CLAWDLINE_SQUAD_CAPABILITY_FILE " + pathEnv + " codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh"
+		"-u CODEX_SANDBOX_NETWORK_DISABLED -u CLAWDLINE_SQUAD_CAPABILITY_FILE -u CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE " + pathEnv + " codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh"
 	if got := l.ShellCommand(); got != want {
 		t.Fatalf("line\n got %q\nwant %q", got, want)
 	}
@@ -352,5 +353,42 @@ func TestOnlyCodexIsToldToSkipItsUpdateCheck(t *testing.T) {
 	}
 	if got := strings.Join(UpdateCheckArgs(AssistantCodex), " "); got != "-c check_for_update_on_startup=false" {
 		t.Fatalf("Codex was given %q", got)
+	}
+}
+
+// Execute the exact admitted standalone command against an owned inert script;
+// no vendor binary, account, network or model is involved.
+func TestAntigravityLaunchClearsParentCapabilitiesBeforeSettingItsOwn(t *testing.T) {
+	t.Setenv("CLAWDLINE_SQUAD_CAPABILITY_FILE", "/stale-role")
+	t.Setenv("CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE", "/stale-native")
+	path := filepath.Join(t.TempDir(), "synthetic agy")
+	body := "#!/bin/sh\nprintf '%s|%s' \"${CLAWDLINE_SQUAD_CAPABILITY_FILE-}\" \"${CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE-}\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	c, err := PrepareAntigravityContext("", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch, err := Admit(LaunchRequest{ProjectRoot: filepath.Dir(path), Assistant: AssistantAntigravity,
+		Executable: path, PermissionMode: "plan", AntigravityContext: &c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		env  []string
+		want string
+	}{
+		{"ordinary", nil, "|"},
+		{"native", []string{"CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE='/own-native'"}, "|/own-native"},
+		{"role", []string{"CLAWDLINE_ANTIGRAVITY_CAPABILITY_FILE='/own-native'", "CLAWDLINE_SQUAD_CAPABILITY_FILE='/own-role'"}, "/own-role|/own-native"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := exec.Command("sh", "-c", launch.ShellCommandWithEnv(tc.env)).CombinedOutput()
+			if err != nil || string(out) != tc.want {
+				t.Fatalf("capability environment = %q, %v", out, err)
+			}
+		})
 	}
 }

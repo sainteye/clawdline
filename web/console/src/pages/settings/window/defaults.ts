@@ -16,6 +16,8 @@ export const DEFAULTS = {
   language: "auto",
   mascot: "clawd",
   terminal: "auto",
+  antigravity_default_model: "",
+  antigravity_default_effort: "",
   codex_default_model: "",
   codex_default_effort: "",
   claude_default_model: "",
@@ -44,8 +46,10 @@ export const DEFAULTS = {
   smart_notifications: false,
   push_on_deploy: false,
   orchestrator_agent_notify: true,
-  /** On: the daemon lists iTerm2's sessions over Apple Events, as it always has. */
+  /** Polling preference inside an explicitly enabled integration. */
   iterm_scan: true,
+  iterm_integration: false,
+  session_auto_discovery: true,
   orchestrator_enabled: true,
   planning_gate: true,
   verify_gate: false,
@@ -67,4 +71,10 @@ export function reading<K extends SettingKey>(
   const value = snapshot ? (snapshot as unknown as Record<string, unknown>)[key] : undefined
   if (value === undefined || value === null) return DEFAULTS[key]
   return value as (typeof DEFAULTS)[K]
+}
+
+/** New daemons always return this nullable key, even before consent is saved.
+ * An older daemon omits it and must never be drawn as integration off. */
+export function supportsITermIntegration(snapshot: Partial<Pick<SettingsSnapshot, "iterm_integration">> | null): boolean {
+  return snapshot !== null && Object.hasOwn(snapshot, "iterm_integration")
 }

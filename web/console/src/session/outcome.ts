@@ -90,8 +90,10 @@ export function waitsOnQuestion(code: string): boolean {
 
 /**
  * Codes that mean this device may not write to this machine at all — the
- * daemon's own `write_disabled`, the machine's remote-write switch, an older
- * permission-contract refusal, or a browser the machine has not paired. The
+ * daemon's own `write_disabled`, the machine's remote-write switch, a browser
+ * this machine limited to readonly (`viewer_read_only`; `cloud_read_only` is
+ * the older spelling, still recognised), an older permission-contract
+ * refusal, or a browser the machine has not paired. The
  * box is closed on any of them, rather than
  * making one failed card per press (review F11).
  */
@@ -99,6 +101,7 @@ const WRITE_OFF: ReadonlySet<string> = new Set([
   "write_disabled",
   "cloud_commands_disabled",
   "command_writes_disabled",
+  "viewer_read_only",
   "cloud_read_only",
   "cloud_read_needs_send_prompt",
   "unknown_sender",

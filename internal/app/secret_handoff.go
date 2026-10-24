@@ -57,6 +57,13 @@ func (h *SecretHandoffs) expire(now time.Time) {
 // Put replaces an unclaimed value. The caller has checked that the Note is an
 // open Secret Handoff addressed to conversation. No value is returned.
 func (h *SecretHandoffs) Put(id, conversation string, value []byte) error {
+	return h.PutAndCommit(id, conversation, value, nil)
+}
+
+// PutAndCommit publishes a value only after commit succeeds. The callback runs
+// under the handoff lock so a competing submission or claim cannot replace or
+// consume a value before its Note and receipt are committed. It must not call h.
+func (h *SecretHandoffs) PutAndCommit(id, conversation string, value []byte, commit func() error) error {
 	if len(value) == 0 {
 		return ErrSecretEmpty
 	}
@@ -71,6 +78,11 @@ func (h *SecretHandoffs) Put(id, conversation string, value []byte) error {
 	}
 	if _, exists := h.values[id]; !exists && len(h.values) >= MaxSecretHandoffPending {
 		return ErrSecretFull
+	}
+	if commit != nil {
+		if err := commit(); err != nil {
+			return err
+		}
 	}
 	if old, exists := h.values[id]; exists {
 		wipeSecret(old.value)

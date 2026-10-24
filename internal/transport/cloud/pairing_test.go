@@ -13,8 +13,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -44,6 +48,7 @@ type fakeControlPlane struct {
 	delivered          []byte
 	deliveredFrom      string
 	echoWrongPrint     bool
+	failComplete       bool
 	invitationTTLHours int
 }
 
@@ -93,6 +98,11 @@ func (f *fakeControlPlane) start(t *testing.T) *httptest.Server {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if f.failComplete {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			writeTestJSON(w, map[string]any{"error": map[string]any{"code": "unavailable"}})
+			return
+		}
 		if body.PairingID != f.pairingID {
 			w.WriteHeader(http.StatusNotFound)
 			writeTestJSON(w, map[string]any{"error": map[string]any{"code": "unknown_pairing"}})
@@ -454,5 +464,311 @@ func TestCheckOfferRefusesWhatCompleteRefusesWithoutFailingThePairing(t *testing
 	}
 	if phase := h.pairing.State().Phase; phase != "" && phase != PairingIdle {
 		t.Fatalf("checking offers moved the pairing to %q", phase)
+	}
+}
+
+func TestPairingScopeIsMachineSelectedAndSurvivesRestart(t *testing.T) {
+	for _, scope := range []string{adaptercloud.ScopeReadOnly, adaptercloud.ScopeOperate} {
+		t.Run(scope, func(t *testing.T) {
+			h := newPairingHarness(t)
+			state, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment(), scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state.Scope != scope {
+				t.Fatalf("state scope: %q", state.Scope)
+			}
+			store := adaptercloud.NewPinnedStore(strings.TrimSuffix(h.pinned.Path(), "/"+adaptercloud.PinnedFile))
+			if got, err := store.ViewerScope(h.viewer.deviceID); err != nil || got != scope {
+				t.Fatalf("reloaded: %q %v", got, err)
+			}
+		})
+	}
+	h := newPairingHarness(t)
+	if _, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment(), "admin"); err != adaptercloud.ErrViewerScope {
+		t.Fatal(err)
+	}
+	if len(h.plane.delivered) != 0 {
+		t.Fatal("invalid scope released a handover")
+	}
+}
+
+func TestReadonlyCeilingExistsBeforeTheHandoverLeaves(t *testing.T) {
+	h := newPairingHarness(t)
+	checked := false
+	h.pairing.OnScopeChange = func(device string) error {
+		if got, err := h.pinned.ViewerScope(device); err != nil || got != adaptercloud.ScopeReadOnly {
+			t.Fatalf("ceiling: %q %v", got, err)
+		}
+		h.plane.mu.Lock()
+		defer h.plane.mu.Unlock()
+		if len(h.plane.delivered) != 0 {
+			t.Fatal("content key left before readonly ceiling")
+		}
+		checked = true
+		return nil
+	}
+	if _, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment(), adaptercloud.ScopeReadOnly); err != nil {
+		t.Fatal(err)
+	}
+	if !checked {
+		t.Fatal("readonly ceiling was never persisted before handover")
+	}
+}
+
+func TestInvitationCarriesItsMachineSelectedReadonlyScope(t *testing.T) {
+	h := newPairingHarness(t)
+	state, err := h.pairing.Begin(context.Background(), adaptercloud.ScopeReadOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.pairing.Cancel()
+	invitation, err := domaincloud.DecodePairingInvitation(strings.TrimPrefix(state.Link, "https://console.example/#pair="), time.Now().UnixMilli())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := invitation.SealEncryptedOffer(h.viewer.offer.Fragment(), make([]byte, domaincloud.NonceBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.plane.mu.Lock()
+	h.plane.encryptedOffer, h.plane.viewerDeviceID = sealed, h.viewer.deviceID
+	h.plane.mu.Unlock()
+	waitFor(t, "readonly invitation", func() bool { return h.pairing.State().Phase == PairingPaired })
+	if state := h.pairing.State(); state.Scope != adaptercloud.ScopeReadOnly {
+		t.Fatalf("pairing scope: %q", state.Scope)
+	}
+	if got, err := h.pinned.ViewerScope(h.viewer.deviceID); err != nil || got != adaptercloud.ScopeReadOnly {
+		t.Fatalf("pin scope: %q %v", got, err)
+	}
+}
+
+func TestFailedFinalReadonlyPinWriteCannotRestoreLegacyOperate(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permissions")
+	}
+	h := newPairingHarness(t)
+	dir := filepath.Dir(h.pinned.Path())
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+	h.pairing.OnScopeChange = func(string) error { return os.Chmod(dir, 0500) }
+	if _, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment(), adaptercloud.ScopeReadOnly); err == nil {
+		t.Fatal("final pin write unexpectedly succeeded")
+	}
+	h.plane.mu.Lock()
+	delivered := len(h.plane.delivered) > 0
+	h.plane.mu.Unlock()
+	if !delivered {
+		t.Fatal("the failure did not exercise the post-handover write")
+	}
+	if got, err := adaptercloud.NewPinnedStore(dir).ViewerScope(h.viewer.deviceID); err != nil || got != adaptercloud.ScopeReadOnly {
+		t.Fatalf("failed final pin elevated viewer: %q %v", got, err)
+	}
+}
+
+func TestFailedLeaseSweepKeepsThePersistedDowngradeAndNamesPartialSuccess(t *testing.T) {
+	h := newPairingHarness(t)
+	if _, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment()); err != nil {
+		t.Fatal(err)
+	}
+	h.pairing.OnScopeChange = func(string) error { return errors.New("synthetic terminal unavailable") }
+	for i := 0; i < 2; i++ {
+		if err := h.pairing.SetViewerScope(h.viewer.deviceID, adaptercloud.ScopeReadOnly); !errors.Is(err, ErrViewerScopeApplied) {
+			t.Fatalf("partial outcome: %v", err)
+		}
+		if got, err := adaptercloud.NewPinnedStore(filepath.Dir(h.pinned.Path())).ViewerScope(h.viewer.deviceID); err != nil || got != adaptercloud.ScopeReadOnly {
+			t.Fatalf("partial downgrade: %q %v", got, err)
+		}
+	}
+}
+
+// prePin stands for an earlier pairing of the same browser that this machine
+// then limited with `cloud grant <device> <scope>`.
+func (h *pairingHarness) prePin(t *testing.T, scope string) {
+	t.Helper()
+	if err := h.pinned.Pin(h.plane.accountID, adaptercloud.PinnedDevice{
+		DeviceID: h.viewer.deviceID, PublicKey: h.viewer.offer.ViewerSigningKey,
+		Fingerprint: h.viewer.offer.ViewerFingerprint, Scope: scope, PairedAt: time.Now().Unix() - 60,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (h *pairingHarness) deliveries() int {
+	h.plane.mu.Lock()
+	defer h.plane.mu.Unlock()
+	return len(h.plane.delivered)
+}
+
+func TestRepairingWithoutAScopeKeepsTheDevicesReadonlyCeiling(t *testing.T) {
+	h := newPairingHarness(t)
+	h.prePin(t, adaptercloud.ScopeReadOnly)
+	state, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Scope != adaptercloud.ScopeReadOnly {
+		t.Fatalf("pairing state reports %q for a readonly device paired again", state.Scope)
+	}
+	for _, store := range []*adaptercloud.PinnedStore{h.pinned, adaptercloud.NewPinnedStore(filepath.Dir(h.pinned.Path()))} {
+		if got, err := store.ViewerScope(h.viewer.deviceID); err != nil || got != adaptercloud.ScopeReadOnly {
+			t.Fatalf("re-pairing without a scope promoted the device: %q %v", got, err)
+		}
+	}
+}
+
+func TestRepairingByInvitationWithoutAScopeKeepsTheReadonlyCeiling(t *testing.T) {
+	h := newPairingHarness(t)
+	h.prePin(t, adaptercloud.ScopeReadOnly)
+	state, err := h.pairing.Begin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.pairing.Cancel()
+	invitation, err := domaincloud.DecodePairingInvitation(strings.TrimPrefix(state.Link, "https://console.example/#pair="), time.Now().UnixMilli())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := invitation.SealEncryptedOffer(h.viewer.offer.Fragment(), make([]byte, domaincloud.NonceBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.plane.mu.Lock()
+	h.plane.encryptedOffer, h.plane.viewerDeviceID = sealed, h.viewer.deviceID
+	h.plane.mu.Unlock()
+	waitFor(t, "invitation answered", func() bool { return h.pairing.State().Phase == PairingPaired })
+	if got, err := h.pinned.ViewerScope(h.viewer.deviceID); err != nil || got != adaptercloud.ScopeReadOnly {
+		t.Fatalf("invitation re-pairing promoted the device: %q %v", got, err)
+	}
+}
+
+func TestOnlyAnExplicitOperateRaisesAReadonlyDevice(t *testing.T) {
+	h := newPairingHarness(t)
+	h.prePin(t, adaptercloud.ScopeReadOnly)
+	if _, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment(), adaptercloud.ScopeOperate); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := h.pinned.ViewerScope(h.viewer.deviceID); err != nil || got != adaptercloud.ScopeOperate {
+		t.Fatalf("explicit operate: %q %v", got, err)
+	}
+	fresh := newPairingHarness(t)
+	if state, err := fresh.pairing.Complete(context.Background(), fresh.viewer.offer.Fragment()); err != nil || state.Scope != adaptercloud.ScopeOperate {
+		t.Fatalf("a never-pinned device lost the legacy default: %q %v", state.Scope, err)
+	}
+}
+
+func TestRepairingRefusesBeforeTheHandoverWhenTheCeilingCannotBeRead(t *testing.T) {
+	for name, raw := range map[string]string{
+		"unreadable":    "{not json",
+		"unknown scope": `{"version":1,"account_id":"usr_test","devices":[{"device_id":"dev_browser","public_key":"AAAA","fingerprint":"f","paired_at":1,"scope":"admin"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newPairingHarness(t)
+			if err := os.WriteFile(h.pinned.Path(), []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment()); err == nil {
+				t.Fatal("re-pairing over an unreadable ceiling succeeded")
+			}
+			if n := h.deliveries(); n != 0 {
+				t.Fatalf("the content key left %d times before the ceiling was known", n)
+			}
+		})
+	}
+}
+
+func TestFailedFinalPinOnARepairKeepsTheReadonlyCeiling(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permissions")
+	}
+	h := newPairingHarness(t)
+	h.prePin(t, adaptercloud.ScopeOperate)
+	if err := h.pinned.SetScope(h.viewer.deviceID, adaptercloud.ScopeReadOnly); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(h.pinned.Path())
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+	h.pairing.OnScopeChange = func(string) error { return os.Chmod(dir, 0500) }
+	if _, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment()); err == nil {
+		t.Fatal("final pin write unexpectedly succeeded")
+	}
+	if h.deliveries() == 0 {
+		t.Fatal("the failure did not exercise the post-handover write")
+	}
+	if got, err := adaptercloud.NewPinnedStore(dir).ViewerScope(h.viewer.deviceID); err != nil || got != adaptercloud.ScopeReadOnly {
+		t.Fatalf("failed repair pin elevated viewer: %q %v", got, err)
+	}
+}
+
+// A readonly re-pairing reserves its ceiling before the handover leaves. For a
+// browser this machine threw out, that reservation must not be what lets it
+// back in: only a handover that actually completed may restore it.
+func TestAFailedReadonlyRepairingDoesNotReviveARevokedBrowser(t *testing.T) {
+	failures := map[string]func(h *pairingHarness){
+		"scope change": func(h *pairingHarness) {
+			h.pairing.OnScopeChange = func(string) error { return errors.New("synthetic lease sweep failure") }
+		},
+		"handover": func(h *pairingHarness) {
+			h.plane.mu.Lock()
+			h.plane.failComplete = true
+			h.plane.mu.Unlock()
+		},
+	}
+	for _, scope := range []string{"", adaptercloud.ScopeReadOnly} {
+		for name, inject := range failures {
+			t.Run(fmt.Sprintf("%s/scope=%q", name, scope), func(t *testing.T) {
+				h := newPairingHarness(t)
+				h.prePin(t, adaptercloud.ScopeReadOnly)
+				if changed, err := h.pinned.Revoke(h.viewer.deviceID, time.Now()); err != nil || !changed {
+					t.Fatalf("revoke: %v %v", changed, err)
+				}
+				inject(h)
+				if _, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment(), scope); err == nil {
+					t.Fatal("the injected failure did not fail the pairing")
+				}
+				for _, store := range []*adaptercloud.PinnedStore{h.pinned, adaptercloud.NewPinnedStore(filepath.Dir(h.pinned.Path()))} {
+					if refused, err := store.Refused(h.viewer.deviceID); err != nil || !refused {
+						t.Fatalf("a failed re-pairing revived a revoked browser: refused=%v %v", refused, err)
+					}
+					if _, pinned, err := store.PublicKeyFor(h.viewer.deviceID); err != nil || pinned {
+						t.Fatalf("a revoked browser has a live pin: %v %v", pinned, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestASuccessfulRepairingRestoresARevokedBrowserAcrossRestart(t *testing.T) {
+	for _, scope := range []string{"", adaptercloud.ScopeReadOnly} {
+		t.Run(fmt.Sprintf("scope=%q", scope), func(t *testing.T) {
+			h := newPairingHarness(t)
+			h.prePin(t, adaptercloud.ScopeReadOnly)
+			if _, err := h.pinned.Revoke(h.viewer.deviceID, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			sawRefusal := false
+			h.pairing.OnScopeChange = func(device string) error {
+				refused, err := adaptercloud.NewPinnedStore(filepath.Dir(h.pinned.Path())).Refused(device)
+				sawRefusal = err == nil && refused
+				return err
+			}
+			state, err := h.pairing.Complete(context.Background(), h.viewer.offer.Fragment(), scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !sawRefusal {
+				t.Fatal("the reservation lifted the refusal before the handover completed")
+			}
+			if state.Scope != adaptercloud.ScopeReadOnly {
+				t.Fatalf("state scope: %q", state.Scope)
+			}
+			restarted := adaptercloud.NewPinnedStore(filepath.Dir(h.pinned.Path()))
+			if refused, err := restarted.Refused(h.viewer.deviceID); err != nil || refused {
+				t.Fatalf("still refused after a completed re-pairing: %v %v", refused, err)
+			}
+			if got, err := restarted.ViewerScope(h.viewer.deviceID); err != nil || got != adaptercloud.ScopeReadOnly {
+				t.Fatalf("restored scope: %q %v", got, err)
+			}
+		})
 	}
 }

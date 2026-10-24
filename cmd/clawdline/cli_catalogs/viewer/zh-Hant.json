@@ -21,7 +21,7 @@
   "machines_unpaired": "尚未配對",
   "machines_revoked": "已撤銷",
   "machines_paired": "已配對",
-  "sessions.usage": "用法：clawdline cloud viewer <sessions|read|send|answer|interrupt|end|receipt> [--machine ID] [--session ID --generation HEX] [--before CURSOR，僅限 read]",
+  "sessions.usage": "用法：clawdline cloud viewer <sessions|read|send|answer|interrupt|end|receipt> [--machine ID] [--session ID --generation HEX] [--before CURSOR [--revision SIGNATURE]，僅限 read]",
   "sessions.empty": "沒有工作階段",
   "action.request": "請求 %s\n",
   "action.lookup": "查詢：clawdline cloud viewer receipt --machine %s --session %s --generation %s --action %s --request %s\n",

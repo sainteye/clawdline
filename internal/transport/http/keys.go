@@ -79,6 +79,7 @@ func (s *Server) sessionKey(ctx context.Context, w http.ResponseWriter, id strin
 type menuWire struct {
 	Options  []menuOptionWire            `json:"options"`
 	Question string                      `json:"question,omitempty"`
+	Revision string                      `json:"revision,omitempty"`
 	Selected *int                        `json:"selected,omitempty"`
 	Source   string                      `json:"source,omitempty"`
 	Steps    []contract.SessionMenuStep  `json:"steps,omitempty"`
@@ -101,7 +102,7 @@ func wireMenu(item session.Session) *menuWire {
 	}
 	m := item.Menu
 	out := &menuWire{Options: make([]menuOptionWire, 0, len(m.Options)), Question: m.Question, Selected: m.Selected,
-		Source: string(m.Source)}
+		Source: string(m.Source), Revision: m.Revision}
 	for _, o := range m.Options {
 		out.Options = append(out.Options, menuOptionWire{
 			Can: o.Answerable(), Checked: o.Checked, Detail: o.Detail,

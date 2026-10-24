@@ -1,7 +1,9 @@
 package taskdir
 
 import (
+	"encoding/json"
 	"errors"
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,6 +32,74 @@ func finishDir(t *testing.T, task, result string) string {
 		}
 	}
 	return dir
+}
+
+func TestInvestigationFinishBindsReportToTaskAndPreservesIt(t *testing.T) {
+	const report = `{"schema":"clawdline.health_investigation.report.v1","investigation_id":"hiv_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","conclusion":"needs_evidence","fix_commit":null,"evidence_refs":[]}`
+	for _, mode := range []string{"valid", "wrong_investigation", "ordinary", "extra", "oversized"} {
+		t.Run(mode, func(t *testing.T) {
+			var task map[string]any
+			_ = json.Unmarshal([]byte(plainTask(schedulewebhook.InvestigationKind)), &task)
+			task["investigation"] = map[string]any{"investigation_id": "hiv_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+			value := report
+			switch mode {
+			case "wrong_investigation":
+				task["investigation"] = map[string]any{"investigation_id": "hiv_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+			case "ordinary":
+				task["kind"] = "custom"
+			case "extra":
+				value = strings.Replace(report, `"fix_commit":null`, `"fix_commit":null,"path":"/private/fixture"`, 1)
+			case "oversized":
+				value = strings.Replace(report, `"needs_evidence"`, `"`+strings.Repeat("x", schedulewebhook.MaxInvestigationReportBytes)+`"`, 1)
+			}
+			body, _ := json.Marshal(task)
+			dir := finishDir(t, string(body), resultWith(`,"investigation_report":`+value))
+			_, err := Finish(dir)
+			if mode != "valid" {
+				if err == nil {
+					t.Fatal("accepted unbound or invalid report")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, _, err := Root{Dir: filepath.Dir(dir)}.ReadResult(finishID)
+			if err != nil || len(result.InvestigationReport) == 0 {
+				t.Fatal("report lost during finish")
+			}
+		})
+	}
+}
+
+func TestInvestigationEvidencePublicationIsImmutableAndBounded(t *testing.T) {
+	r := Root{Dir: t.TempDir()}
+	body := []byte(`{"fixture":"evidence"}`)
+	path, err := r.WriteInvestigationEvidence(finishID, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm()&0o222 != 0 {
+		t.Fatal("evidence is writable")
+	}
+	if _, err := r.WriteInvestigationEvidence(finishID, body); err != nil {
+		t.Fatal("identical replay failed", err)
+	}
+	if _, err := r.WriteInvestigationEvidence(finishID, []byte(`{"fixture":"changed"}`)); err == nil {
+		t.Fatal("accepted changed evidence")
+	}
+	if _, err := r.WriteInvestigationEvidence(finishID, make([]byte, schedulewebhook.MaxInvestigationBundleBytes+1)); err == nil {
+		t.Fatal("accepted oversized evidence")
+	}
+	// A filesystem failure is an admission refusal, never a partial success.
+	blocked := Root{Dir: filepath.Join(t.TempDir(), "file")}
+	if err := os.WriteFile(blocked.Dir, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := blocked.WriteInvestigationEvidence(finishID, body); err == nil {
+		t.Fatal("ignored disk failure")
+	}
 }
 
 func plainTask(kind string) string {

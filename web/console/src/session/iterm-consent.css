@@ -1,0 +1,13 @@
+.iterm-consent-dialog {
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  padding: 24px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.iterm-consent-dialog::backdrop { background: #0009; }
+.iterm-consent-dialog h2 { margin-top: 0; font-size: 19px; }
+.iterm-consent-dialog p { color: var(--dim); line-height: 1.6; }
+.iterm-consent-dialog .buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 20px; }

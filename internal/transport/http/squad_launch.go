@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
@@ -107,4 +110,16 @@ func (s *Server) ResolveSquadLaunch(ctx context.Context, personaID, projectPath 
 		})
 	}
 	return out, nil
+}
+
+// sessionSquadRole keeps the presentation tied to the current provider process,
+// including launches that predate this daemon. It never uses a task title.
+func (s *Server) sessionSquadRole(ctx context.Context, row session.Session) string {
+	id, err := s.store.SquadRoleForLaunch(ctx, row.SquadLaunchID, row.ID)
+	if err != nil {
+		log.Printf("squad role reading: %v", err)
+		return ""
+	}
+	// The presentation catalog retains short IDs for built-in roles.
+	return strings.TrimPrefix(id, "clawdline.persona.")
 }

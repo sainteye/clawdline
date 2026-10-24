@@ -64,14 +64,17 @@ func TestMachineStartWithOnlyDisabledITermScan(t *testing.T) {
 		Sources:         map[string]bool{"ps": true, "tmux": true},
 		DisabledSources: map[string]string{"iterm": "setting"},
 	}}
-	if got := machineStartBlock(app.State{Seen: seen}, state); got != "coordinator_liveness_unknown" {
-		t.Fatalf("first machine Session did not require a complete inventory: %q", got)
+	if got := machineStartBlock(app.State{Seen: seen}, state); got != "" {
+		t.Fatalf("disabled iTerm2 blocked the first machine Session: %q", got)
 	}
 	bound := app.State{Seen: seen, Record: &coordinator.Record{}, Liveness: coordinator.Offline}
 	if got := machineStartBlock(bound, state); got != "" {
 		t.Fatalf("disabled iTerm scan blocked a new machine Session: %q", got)
 	}
 	seen.Sessions = map[string]session.Session{"%1": {CWD: projects.MachineWorkspace(state)}}
+	if got := machineStartBlock(app.State{Seen: seen}, state); got != "coordinator_session_exists" {
+		t.Fatalf("first launch missed an observed workspace: %q", got)
+	}
 	bound.Seen = seen
 	if got := machineStartBlock(bound, state); got != "coordinator_session_exists" {
 		t.Fatalf("existing machine Session was missed: %q", got)

@@ -100,5 +100,11 @@
   "rotate.cancelled": "nothing was rotated",
   "rotate.rotated": "rotated    %s (was %s)\n",
   "rotate.epoch": "epoch      key %d, identity %d\n",
-  "rotate.reconnecting": "           the line went down and is coming back on the new key"
+  "rotate.reconnecting": "           the line went down and is coming back on the new key",
+  "pair.scope_help": "viewer access: readonly or operate; when omitted, a browser this machine already paired keeps its scope and only a never-paired browser gets operate",
+  "grant.invalid_scope": "scope must be readonly or operate",
+  "pair.readonly": "           that browser may read; operating this machine is disabled",
+  "grant.usage": "usage: clawdline cloud grant <device-id> <readonly|operate>",
+  "grant.changed": "viewer %s: %s\n",
+  "usage.grant": "  grant <id> <scope>     set one paired browser to readonly or operate"
 }

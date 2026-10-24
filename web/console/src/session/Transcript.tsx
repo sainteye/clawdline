@@ -1,4 +1,5 @@
 import { catalogWord } from "../catalog.js"
+import { assistantLabel, assistantProtocolOwned } from "./antigravity-ui.js"
 import {
   useCallback,
   useEffect,
@@ -33,6 +34,10 @@ import {
   FOLLOW_WINDOW_MS,
   followingNow,
   joinAppended,
+  olderTranscriptPage,
+  readOlderRecovering,
+  nativeHistoryChanged,
+  readableTranscriptHistory,
   SAFETY_MS,
   TRAIL_MS,
   transcriptPace,
@@ -57,7 +62,8 @@ import "./agent-report.css"
 import "./lightbox-steps.css"
 import "./transcript-error.css"
 import { atNewest, jumpOffered } from "./jump.js"
-import { joinTranscript } from "./history.js"
+import { joinTranscript, pendingHistoryPages } from "./history.js"
+import { HistoryFill, historyAdvanced } from "./history-fill.js"
 import { recordSendDiagnostic } from "../cloud/install.js"
 import "./jump.css"
 import "./history.css"
@@ -125,37 +131,49 @@ interface EarlierPages {
   pages: TranscriptPage[]
 }
 
-export function Transcript({
-  id,
-  row,
-  agentId,
-  onAgent,
-}: {
+interface TranscriptProps {
   id: string
   row?: SessionRow
   agentId?: string
   onAgent?: (id: string) => void
-}) {
-  // Keyed, so a different session starts from nothing: no previous session's
-  // turns, error or opened folds are shown under the new name.
-  return <TranscriptOf key={`${id}:${agentId ?? ""}`} id={id} row={row} agentId={agentId} onAgent={onAgent} />
 }
 
-function TranscriptOf({ id, row, agentId, onAgent }: { id: string; row?: SessionRow; agentId?: string; onAgent?: (id: string) => void }) {
+export function Transcript(props: TranscriptProps) {
+  return <TranscriptFrame key={`${props.id}:${props.agentId ?? ""}`} {...props} />
+}
+
+function TranscriptFrame(props: TranscriptProps) {
+  const [filling, setFilling] = useState(true)
+  return <div className="tx-history-wrap" aria-busy={filling}>
+    {filling && <div className="tx-history-loading"><Skeleton /></div>}
+    <div className="tx-history-body" style={{ visibility: filling ? "hidden" : undefined }} aria-hidden={filling || undefined}>
+      <TranscriptOf {...props} onFilling={setFilling} />
+    </div>
+  </div>
+}
+
+function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps & { onFilling: (filling: boolean) => void }) {
   // The page last read, and whether the pane is on its fast pace: the read
   // asks only for what was appended to it unless this is the safety read of
   // the whole page (`transcript-follow.ts`).
   const heldPage = useRef<TranscriptPage | null>(null)
+  const readEpoch = useRef(0)
+  const [restartedPage, setRestartedPage] = useState<TranscriptPage | null>(null)
   const fast = useRef(false)
   const read = useMemo(
     () => async (why: ReadReason): Promise<TranscriptPage> => {
       if (agentId) return client.agentTranscript(id, agentId, LIMIT)
+      const epoch = readEpoch.current
       const was = heldPage.current
       const from = appendedReadFrom(was, why, fast.current)
       if (was && from !== null) {
         try {
-          const joined = joinAppended(was, await client.transcriptAfter(id, LIMIT, from))
-          if (joined) return (heldPage.current = joined)
+          const joined = joinAppended(was, await client.transcriptAfter(id, LIMIT, from, was.signature))
+          if (epoch !== readEpoch.current) {
+            if (heldPage.current) return heldPage.current
+            throw Object.assign(new Error(nextWord("transcriptEarlierFailed")), { code: "read_aborted" })
+          }
+          if (joined) { setRestartedPage(null); return (heldPage.current = joined) }
         } catch (err) {
           // A cursor the daemon would not read from is answered by reading the
           // page whole; a read nobody answered is a failed read like any other.
@@ -163,16 +181,33 @@ function TranscriptOf({ id, row, agentId, onAgent }: { id: string; row?: Session
         }
       }
       const page = await client.transcript(id, LIMIT)
+      if (epoch !== readEpoch.current) {
+        if (heldPage.current) return heldPage.current
+        throw Object.assign(new Error(nextWord("transcriptEarlierFailed")), { code: "read_aborted" })
+      }
+      if (nativeHistoryChanged(was, page)) {
+        readEpoch.current++
+        const scroll = document.getElementById("tx-scroll")
+        if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
+        setEarlier(null)
+      }
       heldPage.current = page
+      setRestartedPage(null)
       return page
     },
     [id, agentId],
   )
   const pendingVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   const cards = agentId ? [] : pendingSends.of(id)
-  const following = cards.some((card) => card.state !== "failed")
-  const newestSendAt = cards.reduce((at, card) => (card.state !== "failed" && card.sentAt > at ? card.sentAt : at), 0)
   const session = useSession(id, row)
+  const nativeSendAt = useRef(0)
+  const cardSendAt = cards.reduce((at, card) => (card.state !== "failed" && card.sentAt > at ? card.sentAt : at), 0)
+  // A native echo removes the delivery card before the reply exists. Keep the
+  // same bounded follow window for that reply instead of waiting for a tty tick.
+  if (assistantProtocolOwned(session ?? null)) nativeSendAt.current = Math.max(nativeSendAt.current, cardSendAt)
+  const newestSendAt = Math.max(cardSendAt, nativeSendAt.current)
+  const following = cards.some((card) => card.state !== "failed") ||
+    nativeSendAt.current > 0 && Date.now() - nativeSendAt.current < FOLLOW_WINDOW_MS
   // The fast pace ends FOLLOW_WINDOW_MS after the newest send; this draw is
   // what moves the pace back when it does.
   const [, setPaceClock] = useState(0)
@@ -192,7 +227,8 @@ function TranscriptOf({ id, row, agentId, onAgent }: { id: string; row?: Session
     : transcriptPace({ following, newestSendAt, now: Date.now(), rowTimed: typeof session?.activity?.at === "number" })
   fast.current = !agentId && followingNow({ following, newestSendAt, now: Date.now() })
   const poll = usePoll<TranscriptPage>(read, pace, agentId ? {} : { backoff: BACKOFF })
-  const { data, error } = poll
+  const { error } = poll
+  const data = restartedPage ?? poll.data
   // The row says the record grew, or the session changed what it is doing:
   // read what was appended now, and once more a little after the last such
   // change, because the row's time is in whole seconds.
@@ -241,7 +277,47 @@ function TranscriptOf({ id, row, agentId, onAgent }: { id: string; row?: Session
   const [earlier, setEarlier] = useState<EarlierPages | null>(null)
   const [olderLoading, setOlderLoading] = useState(false)
   const [olderError, setOlderError] = useState<string | null>(null)
+  // One background reread at a time, only for retained unfinished tool pages.
+  // Their exact upper cursor preserves the held window while the tail moves.
+  const olderRefreshBusy = useRef(false)
+  const olderRefreshFailed = useRef("")
+  useEffect(() => {
+    if (agentId || !data || !earlier || olderRefreshBusy.current || olderRefreshFailed.current === data.signature) return
+    const pending = pendingHistoryPages(earlier, data)
+    if (!pending.length) return
+    olderRefreshBusy.current = true
+    const epoch = readEpoch.current
+    void (async () => {
+      const fresh = new Map<number, TranscriptPage>()
+      try {
+        for (const page of pending) {
+          const updated = await client.transcript(id, LIMIT, page.readBefore, page.signature)
+          if (!alive.current || epoch !== readEpoch.current) return
+          if (!readableTranscriptHistory(updated) || nativeHistoryChanged(page, updated)) return
+          fresh.set(page.readBefore!, { ...updated, entries: joinTranscript(page.entries, updated.entries), nextBefore: page.nextBefore, readBefore: page.readBefore })
+        }
+      } catch {
+        // The normal next revision can try again; a failed read never loops.
+        olderRefreshFailed.current = data.signature
+      } finally {
+        olderRefreshBusy.current = false
+      }
+      if (!alive.current || epoch !== readEpoch.current || !fresh.size) return
+      const scroll = document.getElementById("tx-scroll")
+      if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
+      setEarlier((was) => was ? {
+        base: fresh.get(was.base.readBefore ?? 0) ?? was.base,
+        pages: was.pages.map((page) => fresh.get(page.readBefore ?? 0) ?? page),
+      } : was)
+    })()
+  }, [agentId, data, earlier, id])
   const olderBusy = useRef(false)
+  const historyFill = useRef(new HistoryFill())
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => { alive.current = false }
+  }, [])
   const olderAnchor = useRef<{ top: number; height: number } | null>(null)
   // The list row's spinner and live line, repeated under the conversation's
   // newest end, where the reader's eye already is. Only the session's own
@@ -259,36 +335,95 @@ function TranscriptOf({ id, row, agentId, onAgent }: { id: string; row?: Session
   // reads them, and a draw of their own when either changes.
   const newestFirst = useSyncExternalStore(L.subscribeSettings, L.settingsNewestFirst)
   const icons = useSyncExternalStore(L.subscribeSettings, L.settingsAssistantIcons)
-  const olderCursor = earlier
-    ? earlier.pages.length ? earlier.pages[earlier.pages.length - 1].nextBefore : earlier.base.nextBefore
-    : data?.nextBefore
-  const loadOlder = useCallback(async () => {
-    if (!olderCursor || olderBusy.current || !data) return
+  const olderHeld = olderTranscriptPage(data, earlier)
+  const olderCursor = olderHeld?.nextBefore
+  const loadOlder = useCallback(async (automatic = false) => {
+    if (!olderCursor || olderBusy.current || !data || !olderHeld) return
     olderBusy.current = true
+    historyFill.current.begin(automatic)
+    onFilling(true)
     setOlderLoading(true)
     setOlderError(null)
     const scroll = document.getElementById("tx-scroll")
+    let base = earlier?.base ?? data
+    let epoch = readEpoch.current
+    let requestedCursor = olderCursor
     try {
       const page = agentId
         ? await client.agentTranscript(id, agentId, LIMIT, olderCursor)
-        : await client.transcript(id, LIMIT, olderCursor)
-      if (page.evidence !== "transcript") throw new Error(page.note || "Earlier conversation could not be read")
+        : await readOlderRecovering(olderHeld,
+          (before, revision) => {
+            requestedCursor = before
+            return client.transcript(id, LIMIT, before, revision)
+          },
+          () => client.transcript(id, LIMIT),
+          (newest) => {
+            if (!alive.current) return
+            readEpoch.current++
+            epoch = readEpoch.current
+            heldPage.current = newest
+            setEarlier(null)
+            if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
+            if (newest) { base = newest; setRestartedPage(newest) }
+          })
+      if (!alive.current || epoch !== readEpoch.current) return
+      if (!page) return
+      if (!historyAdvanced(requestedCursor, page.nextBefore)) {
+        setOlderError(nextWord("transcriptEarlierStalled"))
+        return
+      }
+      if (!readableTranscriptHistory(page)) throw new Error(page.note || "Earlier conversation could not be read")
       if (scroll) olderAnchor.current = { top: scroll.scrollTop, height: scroll.scrollHeight }
-      setEarlier((was) => ({ base: was?.base ?? data, pages: [...(was?.pages ?? []), page] }))
+      setEarlier((was) => ({ base: was?.base ?? base, pages: [...(was?.pages ?? []), page] }))
     } catch (error) {
+      if (!alive.current || epoch !== readEpoch.current) return
       setOlderError(L.failureSentence(error, nextWord("transcriptEarlierFailed")))
     } finally {
       olderBusy.current = false
-      setOlderLoading(false)
+      if (alive.current) setOlderLoading(false)
     }
-  }, [agentId, data, id, olderCursor])
+  }, [agentId, data, earlier, id, olderCursor, olderHeld, onFilling])
+  // Empty raw-record windows and compact tool groups may leave no scrollbar.
+  // Fill after layout without requiring a scroll gesture. The per-opening
+  // budget survives polling and resizes; only the person can restart it.
+  useEffect(() => {
+    const scroll = document.getElementById("tx-scroll")
+    const box = document.getElementById("tx")
+    if (!scroll || !box || !data || !readableTranscriptHistory(data)) {
+      onFilling(show === "loading")
+      return
+    }
+    if (skeleton) { onFilling(true); return }
+    let frame = 0
+    const fill = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        if (olderBusy.current) return
+        const body = box.querySelector(".tx-history-body")
+        const style = getComputedStyle(scroll)
+        const viewportHeight = scroll.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+        if (historyFill.current.needed({
+          cursor: olderCursor, contentHeight: body?.getBoundingClientRect().height ?? 0, viewportHeight,
+          loading: false, failed: !!olderError || show === "failure",
+        })) {
+          onFilling(true)
+          void loadOlder(true)
+        } else onFilling(false)
+      })
+    }
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fill)
+    observer?.observe(scroll)
+    observer?.observe(box)
+    fill()
+    return () => { observer?.disconnect(); cancelAnimationFrame(frame) }
+  }, [data, earlier, olderCursor, olderError, olderLoading, show, skeleton, loadOlder, onFilling])
   useLayoutEffect(() => {
     const anchor = olderAnchor.current
     if (!anchor) return
     olderAnchor.current = null
     const scroll = document.getElementById("tx-scroll")
     if (scroll) scroll.scrollTop = anchor.top + (newestFirst ? 0 : scroll.scrollHeight - anchor.height)
-  }, [earlier, newestFirst])
+  }, [earlier, restartedPage, newestFirst])
   useEffect(() => {
     const scroll = document.getElementById("tx-scroll")
     if (!scroll || !olderCursor) return
@@ -517,8 +652,8 @@ function TranscriptOf({ id, row, agentId, onAgent }: { id: string; row?: Session
 
   const who: Record<string, string> = {
     user: T.webWhoYou,
-    assistant: L.assistantDisplayName(session?.assistant),
-    error: L.assistantDisplayName(session?.assistant),
+    assistant: session?.assistant === "antigravity" ? assistantLabel(session.assistant) : L.assistantDisplayName(session?.assistant),
+    error: session?.assistant === "antigravity" ? assistantLabel(session.assistant) : L.assistantDisplayName(session?.assistant),
     agent: T.webAgents,
     peer: "Claude ↔",
     message: "Clawdline ↔",
@@ -604,8 +739,8 @@ export function TranscriptEntries({ entries, assistant, working = false, picture
   const latestPictureSource = useRef(pictureSource)
   latestPictureSource.current = pictureSource
   const queue = useRef<NonNullable<TranscriptEntry["artifacts"]>>([])
-  tiles.current ??= new ArtifactTiles((artifact, session) => latestPictureSource.current
-    ? latestPictureSource.current(artifact, session)
+  tiles.current ??= new ArtifactTiles((artifact, session, size) => latestPictureSource.current
+    ? latestPictureSource.current(artifact, session, size)
     : Promise.reject(Object.assign(new Error("No image reader"), { code: "read_failed" })))
   queue.current = []
   useLayoutEffect(() => { tiles.current?.settle(box.current, queue.current, sessionID) })
@@ -622,7 +757,7 @@ export function TranscriptEntries({ entries, assistant, working = false, picture
     return next
   })
   const view: View = {
-    who: { user: T.webWhoYou, assistant: L.assistantDisplayName(assistant), error: L.assistantDisplayName(assistant),
+    who: { user: T.webWhoYou, assistant: assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant), error: assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant),
       agent: T.webAgents, peer: "Claude ↔", message: "Clawdline ↔", notice: "Clawdline", tool: T.webWhoTool },
     expanded, toggle, assistant, agents: [], onAgent: undefined, icons, slots: new Map(),
   }
@@ -1304,7 +1439,7 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
   if (role === "message") {
     const assistant = String(e.sourceAssistant || "")
     const meta = assistant
-      ? L.assistantLogoHTML(assistant) + "<span>" + esc(L.assistantDisplayName(assistant)) + "</span>"
+      ? L.assistantLogoHTML(assistant) + "<span>" + esc(assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant)) + "</span>"
       : ""
     const card =
       '<div class="message-card"><div class="message-source"><span>' +
@@ -1375,6 +1510,10 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
   const record = role === "user" ? L.parseWorkflowRecord(e.text, role) : null
   let body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") +
     L.richTextHTML(record ? (record as { text: string }).text : e.text)
+  if (role === "error" && /^antigravity_(?:session|process|turn)_/.test(e.text)) {
+    body = '<p class="turn-error-copy">' + esc(catalogWord("antigravity", "turnIncomplete")) + '</p><p class="turn-error-copy">' +
+      esc(catalogWord("antigravity", "inspectBeforeSending")) + "</p><code>" + esc(e.text) + "</code>"
+  }
   if (record) {
     // The label is the original's own literal; the catalog has no key for it.
     body += L.workflowRecordHTML(record, {
@@ -1624,7 +1763,9 @@ function activityCardHTML(v: View, e: Entry, at: number) {
   const activity = activityOf(e) || ({} as Partial<TranscriptActivity>)
   const kind = activity.kind === "explored" ? "explored" : "called"
   const title = kind === "called" ? String(activity.title || e.text || e.tool || "") : ""
-  const meta = [activity.status, durationText(activity.durationMs)].filter((value) => !!value)
+  const statusKeys: Record<string, string> = { completed: "toolCompleted", inProgress: "toolRunning", in_progress: "toolRunning", pending: "toolPending", failed: "toolFailed", cancelled: "toolCancelled" }
+  const status = activity.status && statusKeys[activity.status] ? catalogWord("antigravity", statusKeys[activity.status]) : activity.status
+  const meta = [status, durationText(activity.durationMs)].filter((value) => !!value)
   const actions = kind === "explored" ? activityActionsHTML(activity.actions || []) : ""
   const result =
     kind === "called" && typeof activity.result === "string" && activity.result.length
@@ -1632,7 +1773,7 @@ function activityCardHTML(v: View, e: Entry, at: number) {
       : ""
   const card =
     '<section class="activity-card"><header><span class="activity-kind">' +
-    (kind === "called" ? "Called" : "Explored") +
+    esc(catalogWord("antigravity", kind === "called" ? "toolCalled" : "toolExplored")) +
     "</span>" +
     (title ? '<span class="activity-title">' + esc(title) + "</span>" : "") +
     '<span class="activity-meta">' +

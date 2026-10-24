@@ -8,10 +8,20 @@ scratch=$(mktemp -d)
 trap 'rm -rf -- "$scratch"' EXIT
 mkdir -p "$scratch/repo/tools" "$scratch/repo/web/console/tools" "$scratch/bin"
 cp tools/check.sh tools/check-plan.mjs tools/check-scope.mjs tools/check-profile.mjs "$scratch/repo/tools/"
-for name in check-legacy-css.sh check-machine-words.sh check-shell-expansions.sh check-private.sh test-notify-release-success.sh test-heavy-linux-cache.sh test-linux-dev-build.sh test-machine-words-changes.sh test-heavy-handoff.sh test-check-modes.sh test-staged-app-watcher.sh test-shell-language.sh; do
-  printf '#!/bin/sh\nexit 0\n' > "$scratch/repo/tools/$name"
+for name in check-legacy-css.sh check-machine-words.sh check-shell-expansions.sh check-private.sh test-notify-release-success.sh test-heavy-linux-cache.sh test-linux-dev-build.sh test-machine-words-changes.sh test-heavy-handoff.sh test-check-modes.sh test-staged-app-watcher.sh test-shell-language.sh test-shell-pairing-permission.sh; do
+  printf '#!/bin/sh\nprintf "%%s\\n" "%s" >> "$CALLS"\n' "$name" > "$scratch/repo/tools/$name"
   chmod +x "$scratch/repo/tools/$name"
 done
+cat > "$scratch/repo/tools/heavy.sh" <<'MOCK'
+#!/bin/bash
+printf 'heavy %s\n' "$*" >> "$CALLS"
+if [ "${1:-}" = --compile ]; then shift; fi
+exec "$@"
+MOCK
+chmod +x "$scratch/repo/tools/heavy.sh"
+mkdir -p "$scratch/repo/tools/release"
+printf '#!/bin/sh\nprintf "supply-chain\\n" >> "$CALLS"\n' > "$scratch/repo/tools/release/supply-chain.test.sh"
+printf '#!/bin/sh\nprintf "dmg-install-harness\\n" >> "$CALLS"\n' > "$scratch/repo/tools/release/test-dmg-install-smoke.sh"
 cat > "$scratch/bin/go" <<'MOCK'
 #!/bin/bash
 printf 'go %s\n' "$*" >> "$CALLS"
@@ -58,7 +68,7 @@ printf 'Documentation edit\n' >> docs/fixture.md
 bash tools/check.sh > "$scratch/docs.log"
 ! grep -Fxq 'go test ./...' "$CALLS"
 grep -Fxq 'go test -count=1 ./internal/config' "$CALLS"
-! grep -q '^go build\|^go vet\|^npm' "$CALLS"
+! grep -q '^heavy\|^go build\|^go vet\|^npm' "$CALLS"
 mkdir -p internal/example
 printf 'package example\n' > internal/example/example.go
 : > "$CALLS"
@@ -70,12 +80,30 @@ grep -Fxq 'go test fixture/example' "$CALLS"
 bash tools/check.sh --callers > "$scratch/callers.log"
 grep -Fxq 'go test -run=^$ fixture/caller' "$CALLS"
 rm -- internal/example/example.go
+# A change to the native shell alone is enough to run its Swift tests on a Mac.
+mkdir -p shell/darwin
+printf 'let pairing = 1\n' > shell/darwin/Pairing.swift
+: > "$CALLS"
+bash tools/check.sh > "$scratch/shell.log"
+if [ "$(uname -s)" = Darwin ]; then grep -Fxq 'test-shell-pairing-permission.sh' "$CALLS"; fi
+rm -r shell
 rmdir internal/example internal
 : > "$CALLS"
 bash tools/check.sh --full > "$scratch/full.log"
 grep -Fxq 'go vet ./...' "$CALLS"
 grep -Fxq 'go build -o /dev/null ./cmd/clawdline' "$CALLS"
+grep -Fxq 'heavy go build ./...' "$CALLS"
+! grep -q '^heavy .*test\|^heavy .*vet' "$CALLS"
 grep -Fxq 'npm run build' "$CALLS"
+grep -Fxq 'supply-chain' "$CALLS"
+# The native shell's Swift tests run in every full check on a Mac, and only there.
+if [ "$(uname -s)" = Darwin ]; then
+  grep -Fxq 'test-shell-pairing-permission.sh' "$CALLS"
+  grep -Fxq 'test-shell-language.sh' "$CALLS"
+  grep -Fxq 'dmg-install-harness' "$CALLS"
+elif grep -Fxq 'test-shell-pairing-permission.sh' "$CALLS"; then
+  exit 1
+fi
 : > "$CALLS"
 bash tools/check.sh --quick ./internal/example > "$scratch/quick.log"
 [ "$(cat "$CALLS")" = 'go test ./internal/example' ]

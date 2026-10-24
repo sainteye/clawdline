@@ -17,6 +17,9 @@ import (
 // of iTerm2: an Apple Event to an application that is not running starts it,
 // and this question must never be the thing that opens a terminal.
 func (l Launcher) ITermRunning(ctx context.Context) (bool, error) {
+	if !ITermIntegration() {
+		return false, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "/usr/bin/lsappinfo", "find", "bundleid=com.googlecode.iterm2").Output()
@@ -70,6 +73,9 @@ function run(argv) {
 // new tab's tty is typed as the short line that runs it (typedLaunchLine). The id is returned as
 // iTerm2 spells it, which is how this daemon's inventory lists the tab.
 func (l Launcher) NewITermTab(ctx context.Context, line string) (string, error) {
+	if !ITermIntegration() {
+		return "", ITermScanOff{Op: "open an iTerm2 tab"}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	release, err := effect(ctx)
@@ -249,6 +255,9 @@ func lookITermSession(ctx context.Context, id string) sighting {
 // among the effects (appleEvents), as the listing does not: a look that
 // waited behind the close it is looking for would be no look at all.
 func findITermSession(ctx context.Context, id string) (sighting, string) {
+	if !ITermIntegration() {
+		return sightingUnknown, ""
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-", id)

@@ -32,6 +32,14 @@ func (s *Server) executionMachine() string {
 }
 
 func executionFingerprint(item session.Session, live ownrecords.Live) string {
+	// A durable protocol-owned conversation is the target, even while its
+	// private native process is stopped. The Host alone restores its exact ID
+	// before a pipe write. Keeping this identity across reconnects also lets a
+	// paired device read saved history without starting the provider.
+	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol &&
+		item.Assistant == session.AssistantAntigravity && item.ConversationID != "" {
+		return fmt.Sprintf("acp:%s:%s", item.ID, item.ConversationID)
+	}
 	if item.PID <= 0 || live.ProcessStart.IsZero() || !item.IsAssistant() {
 		return ""
 	}
@@ -48,7 +56,7 @@ func currentExecution(item session.Session, inv session.Inventory) bool {
 	return sourceCompleteRow(inv, item)
 }
 
-// observeExecutions uses only current, kernel-pinned rows. The previous
+// observeExecutions uses current kernel-pinned or protocol-owned rows. The previous
 // generation is withheld from the response whenever a source is unverified.
 func (s *Server) observeExecutions(ctx context.Context, inv session.Inventory,
 	items []session.Session, lives []ownrecords.Live) map[string]string {

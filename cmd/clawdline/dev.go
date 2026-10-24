@@ -142,7 +142,7 @@ func devInstall(stdout, stderr io.Writer, rev string, port int, r runner) int {
 		os.Setenv("CLAWDLINE_CODESIGN_P12", p12)
 		os.Setenv("CLAWDLINE_CODESIGN_PASSWORD", password)
 	}
-	if err := r.run(src, stdout, stderr, filepath.Join(src, "tools", "heavy.sh"), append([]string{"bash"}, build...)...); err != nil {
+	if err := r.run(src, stdout, stderr, filepath.Join(src, "tools", "heavy.sh"), append([]string{"--compile", "bash"}, build...)...); err != nil {
 		return fail(cliCopy("ops", "dev.build_failed", "the build failed, and nothing was changed: %v"), err)
 	}
 

@@ -69,7 +69,7 @@ An update that does not come up healthy rolls back by itself; the console's Sett
 
 | You see | It means | Do this |
 | --- | --- | --- |
-| The Cloud line stays off | `clawdline cloud status` gives the reason. A broken Cloud setting never stops the daemon, it only keeps the line down | Fix what it names. After `cloud on`, restart `serve` |
+| The Cloud line stays off | `clawdline cloud status` gives the reason. A broken Cloud setting never stops the daemon, it only keeps the line down | Fix what it names. `cloud on` applies to the running daemon; follow its printed error if that fails |
 | A paired phone can read but not act | Commands are off on this machine | `clawdline cloud commands on` ([remote-access.md](remote-access.md)) |
 
 ## Projects across machines

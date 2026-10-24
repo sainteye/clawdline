@@ -37,8 +37,8 @@ func imageCommand(args []string) {
 }
 
 func imageUsage() {
-	fmt.Fprintln(os.Stderr, cliCopy("misc", "image.usage", "usage: clawdline image send <picture> [<picture>…] [--target <terminal id>] [--from <conversation id>] [--port n]"))
-	fmt.Fprintln(os.Stderr, cliCopy("misc", "image.usage_detail", "  one to six PNG, JPEG or GIF files; they appear under the reply that ran this command, or the next one"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "image.usage", "usage: clawdline image send [--target <terminal id>] [--from <conversation id>] [--port n] <picture> [<picture>…]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "image.usage_detail", "  put all flags before the first picture path; one to six PNG, JPEG or GIF files appear under the reply that ran this command, or the next one"))
 	os.Exit(2)
 }
 

@@ -206,3 +206,17 @@ type Launcher interface {
 	// the proof of ownership: a name alone is not.
 	CloseTmuxSession(ctx context.Context, paneID, name string) (bool, error)
 }
+
+// ProtocolSessionHost owns a process whose private protocol supplies identity.
+// SendProtocol returns after pipe acceptance, while the host owns completion.
+type ProtocolSessionHost interface {
+	OwnsProtocol(session.Session) bool
+	SendProtocol(context.Context, session.Session, string, func() error) error
+}
+
+// ProtocolMenuHost selects an exact live native offer under the ordinary
+// operation authorization and terminal lane, without a terminal screen.
+type ProtocolMenuHost interface {
+	ProtocolSessionHost
+	SelectProtocol(context.Context, session.Session, int, string, func() error) error
+}

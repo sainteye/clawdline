@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
-import { PAIR_AGENT_EVENT, PAIR_AGENT_HANDLER, agentOutcome, agentSaid, elapsedSaid, handPairToAgent, listenPairAgent, pairAgentAvailable, progressSaid, readPairAgentEvent, type PairAgentReply } from "./pair-agent.ts"
+import { PAIR_AGENT_EVENT, PAIR_AGENT_HANDLER, agentOutcome, agentSaid, elapsedSaid, handPairToAgent, localPairing, listenPairAgent, pairAgentAvailable, progressSaid, readPairAgentEvent, type PairAgentReply } from "./pair-agent.ts"
 
 function host(answer: (body: unknown) => Promise<unknown>) {
   const sent: unknown[] = []
@@ -171,4 +171,23 @@ test("both languages carry every hand-off sentence", () => {
   ]) {
     assert.equal(words.split(`    ${key}:`).length - 1, 2, `${key} is in both languages`)
   }
+})
+
+
+test("local handover has no fallback to the assistant handler", async () => {
+  let assistantCalls = 0
+  const legacy = host(async () => { assistantCalls++; return { ok: true, mode: "agent" } })
+  assert.deepEqual(await localPairing({ machineID: INPUT.machineID, offer: INPUT.offer }, legacy.window),
+    { ok: false, machineID: "", error: "unavailable" })
+  assert.equal(assistantCalls, 0)
+  const sent: unknown[] = []
+  const native = { webkit: { messageHandlers: { clawdlinePairLocal: { postMessage: async (body: unknown) => {
+    sent.push(body); return { ok: true, machine_id: INPUT.machineID }
+  } } } } }
+  assert.equal((await localPairing({}, native)).machineID, INPUT.machineID)
+  assert.equal((await localPairing(INPUT, native)).ok, true)
+  assert.deepEqual(sent, [{ kind: "status" }, { machine_id: INPUT.machineID, offer: INPUT.offer }])
+  assert.deepEqual(await localPairing(INPUT, { webkit: { messageHandlers: { clawdlinePairLocal: {
+    postMessage: async () => { throw new Error("closed") },
+  } } } }), { ok: false, machineID: "", error: "unreachable" })
 })

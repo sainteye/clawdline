@@ -1,20 +1,5 @@
 .cloud-fleet-update {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 9px;
-  margin-top: 5px;
-  color: var(--dim);
-  font-size: 11px;
-  line-height: 1.4;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
-.cloud-fleet-update > span { min-width: 0; }
-.cloud-fleet-update > span + span::before {
-  content: "·";
-  margin-right: 9px;
-  color: var(--faint);
-}
-.cloud-fleet-update-problem { color: var(--warn); }
-@media (max-width: 390px) {
-  .cloud-fleet-update { display: grid; gap: 2px; }
-  .cloud-fleet-update > span + span::before { content: none; }
-}
+.cloud-fleet-update .cloud-fleet-update-problem { color: var(--warn); }

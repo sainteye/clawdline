@@ -1,6 +1,6 @@
 # Agent routes in this build
 
-Generated from the registered routes and `api/v1/agent-routes.json`; API level: 25. Read `clawdline guide` first, then the part named below. A route here is discoverability, **not authorization or proof of completion**. For an action under a prefix, its input, permission, refusals, and receipt must be stated by that part and this build's schema. If the part does not specify that action, treat the route as unavailable to an Agent. Stop on a missing capability or version, mismatched identity, or unknown outcome; do not switch machines or use an older interface.
+Generated from the registered routes and `api/v1/agent-routes.json`; API level: 29. Read `clawdline guide` first, then the part named below. A route here is discoverability, **not authorization or proof of completion**. For an action under a prefix, its input, permission, refusals, and receipt must be stated by that part and this build's schema. If the part does not specify that action, treat the route as unavailable to an Agent. Stop on a missing capability or version, mismatched identity, or unknown outcome; do not switch machines or use an older interface.
 
 | Method | Registered route | Since API level | Agent guide | Human goal |
 | --- | --- | ---: | --- | --- |
@@ -12,6 +12,7 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/board/tracks` | 1 | `clawdline guide board` | `docs/user/board.md` |
 | `*` | `/v1/capacity` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/cloud/commands` | 9 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
+| `*` | `/v1/cloud/devices/grant` | 27 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/cloud/devices/revoke` | 1 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/cloud/direct` | 15 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/cloud/direct/local-network` | 21 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
@@ -88,6 +89,7 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/project-sync/` | 1 | `clawdline guide project` | `docs/user/projects.md` |
 | `*` | `/v1/projects` | 1 | `clawdline guide project` | `docs/user/projects.md` |
 | `*` | `/v1/projects/` | 1 | `clawdline guide project` | `docs/user/projects.md` |
+| `*` | `/v1/provider-quotas` | 28 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/push/` | 1 | `clawdline guide notify` | `docs/user/notifications.md` |
 | `*` | `/v1/remote/inbox/` | 14 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
 | `*` | `/v1/remote/inspect` | 14 | `clawdline guide cloud` | `docs/user/cloud-first-look.md` |
@@ -102,6 +104,7 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/settings/dispatch-policy` | 12 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/settings/notifications` | 8 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/settings/work-gates` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/settings/workflow` | 26 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/skill` | 16 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/skill/install` | 16 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/snippets` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |

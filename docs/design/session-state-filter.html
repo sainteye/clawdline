@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 狀態篩選</title>
+<style>
+:root {
+  --bg: #0e0e11; --card: #16161a; --card-hi: #1c1c22; --line: #24242b;
+  --ink: #e8e6e3; --dim: #9a978f; --faint: #6d6a64;
+  --accent: #d97757; --accent-in: rgba(217,119,87,.13); --accent-ed: rgba(217,119,87,.34);
+  --ok: #5f9e73; --warn: #b08a4a; --bad: #a3564a;
+  --page: #0a0a0c;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
+  --ease: cubic-bezier(.2,.7,.2,1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--ui); }
+body { font-size: 15px; line-height: 1.6; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: 26px; line-height: 1.3; margin: 0 0 10px; font-weight: 650; }
+.lede { color: var(--dim); max-width: 68ch; margin: 0 0 22px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; padding: 14px 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.seg button { min-height: 44px; padding: 0 16px; color: var(--dim); }
+.seg button[aria-pressed="true"] { background: var(--card-hi); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+.ctl-label { color: var(--faint); font-size: 13px; margin-right: 8px; }
+.toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; color: var(--dim); }
+.toggle input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+.design { padding: 34px 0 10px; border-bottom: 1px solid var(--line); }
+.design-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 6px; }
+.design h2 { font-size: 21px; margin: 0; font-weight: 650; }
+.rec { font-size: 13px; color: var(--accent); border: 1px solid var(--accent-ed); border-radius: 999px; padding: 2px 10px; }
+.design p.why { color: var(--dim); margin: 4px 0 14px; max-width: 72ch; }
+.traits { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 24px; margin: 0 0 22px; padding: 0; list-style: none; font-size: 14px; }
+.traits li { color: var(--dim); padding-left: 14px; position: relative; }
+.traits li::before { content: ""; position: absolute; left: 0; top: .7em; width: 6px; height: 1px; background: var(--faint); }
+.traits b { color: var(--ink); font-weight: 600; }
+.frames { display: grid; grid-template-columns: repeat(2, minmax(0, 390px)); gap: 22px; align-items: start; }
+.frames .desk { grid-column: 1 / -1; }
+.frame-cap { font-size: 13px; color: var(--faint); margin: 0 0 8px; }
+@media (max-width: 860px) { .frames { grid-template-columns: minmax(0, 1fr); } }
+
+/* scale wrapper: frames keep their real pixel width and are shrunk to fit */
+.scaler { width: 100%; overflow: hidden; position: relative; }
+.scaler > .device { transform-origin: 0 0; position: absolute; top: 0; left: 0; }
+
+/* ----- the product, drawn ----- */
+.device { background: var(--bg); border: 1px solid #2b2b33; border-radius: 22px; overflow: hidden; display: flex; flex-direction: column; font-size: 14px; line-height: 1.45; }
+.device.phone { width: 390px; height: 720px; }
+.device.desktop { width: 1040px; height: 620px; border-radius: 12px; }
+.top { height: 52px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--line); background: rgba(14,14,17,.92); position: relative; z-index: 3; }
+.brand { display: flex; align-items: center; gap: 2px; flex: none; }
+.handle { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 10px; }
+.handle:hover { background: var(--card-hi); }
+.mascot { width: 20px; height: 16px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; image-rendering: pixelated; }
+.mascot i { background: var(--accent); }
+.mascot i.o { background: transparent; }
+.wordmark { min-height: 44px; padding: 0 6px; border-radius: 9px; font-weight: 600; font-size: 13.5px; letter-spacing: .2px; display: flex; align-items: center; }
+.wordmark:hover { background: var(--card-hi); }
+.conn { flex: none; display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 11px 0 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--dim); font-size: 12px; white-space: nowrap; margin-left: auto; max-width: 132px; }
+.conn span { overflow: hidden; text-overflow: ellipsis; }
+.conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
+.conn-hit { min-height: 44px; display: flex; align-items: center; margin-left: auto; }
+svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* entry A: the counts become a pressable pill that says it filters */
+.entryA { flex: 1 1 auto; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 10px; color: var(--dim); font-size: 12.5px; white-space: nowrap; }
+.entryA:hover { background: var(--card-hi); }
+.entryA .txt { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.entryA .w { color: var(--accent); font-weight: 600; }
+.entryA .sep { color: #3a3a44; padding: 0 5px; }
+.entryA[data-active="true"] { border: 1px solid var(--accent-ed); background: var(--accent-in); color: var(--ink); }
+.entryA[data-active="true"] svg.i { color: var(--accent); }
+.entryA .caret { margin-left: auto; color: var(--faint); width: 14px; height: 14px; }
+.phone .entryA .caret { display: none; }
+
+/* entry B: counts stay as quiet text, a filter button with a badge sits beside them */
+.entryB { flex: 1 1 auto; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 4px; border-radius: 10px; padding: 0 4px 0 8px; color: var(--dim); font-size: 12.5px; white-space: nowrap; }
+.entryB:hover { background: var(--card-hi); }
+.entryB .txt { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.entryB .w { color: var(--accent); font-weight: 600; }
+.entryB .sep { color: #3a3a44; padding: 0 5px; }
+.entryB .fbtn { position: relative; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; border: 1px solid var(--line); flex: none; margin-left: 4px; }
+.entryB[data-active="true"] .fbtn { border-color: var(--accent-ed); color: var(--accent); background: var(--accent-in); }
+.badge { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #1a0f0a; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+
+/* entry C: the current view's name is the header, like a picker */
+.entryC { flex: 1 1 auto; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 10px; white-space: nowrap; font-size: 13px; }
+.entryC:hover { background: var(--card-hi); }
+.entryC .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.entryC .n { color: var(--dim); }
+.entryC[data-active="true"] .name { color: var(--accent); }
+.entryC .w { color: var(--accent); font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.phone .txt .q:not(:only-child), .phone .txt .q:not(:only-child) + .sep { display: none; }
+
+/* body */
+.body { flex: 1 1 auto; display: flex; min-height: 0; position: relative; }
+.listcol { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
+.desktop .listcol { flex: 0 0 380px; border-right: 1px solid var(--line); }
+.detail { flex: 1 1 auto; display: grid; place-items: center; color: var(--faint); font-size: 13px; }
+.toolbar { display: flex; gap: 8px; padding: 10px 12px 8px; align-items: center; }
+.search { flex: 1 1 auto; min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: 11px; background: var(--card); color: var(--faint); display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: 13.5px; }
+.tool { width: 44px; height: 44px; flex: none; border: 1px solid var(--line); border-radius: 11px; display: grid; place-items: center; color: var(--dim); background: var(--card); }
+.tool:hover { color: var(--ink); }
+.tool[data-state="loading"] svg { animation: turn .9s linear infinite; color: var(--accent); }
+.tool[data-state="done"] { color: var(--ok); }
+@keyframes turn { to { transform: rotate(360deg); } }
+.list { flex: 1 1 auto; overflow: auto; padding: 0 12px 14px; }
+.mhead { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 12.5px; font-weight: 600; padding: 12px 2px 6px; }
+.mhead .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.mhead .dot.load { background: var(--warn); }
+.row { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 8px 12px; border-radius: 11px; background: var(--card); margin-bottom: 6px; }
+.row .t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .s { flex: none; font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+.sd { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.sd.att { background: var(--accent); } .sd.work { background: var(--ok); } .sd.idle { background: var(--faint); } .sd.stale { background: transparent; border: 1.5px dashed var(--faint); }
+.row .s.att { color: var(--accent); }
+.loadnote { color: var(--faint); font-size: 12.5px; padding: 4px 2px 10px; }
+.empty { text-align: center; padding: 48px 18px; color: var(--dim); }
+.empty b { display: block; color: var(--ink); font-size: 15px; margin-bottom: 4px; font-weight: 600; }
+.empty .btn { margin-top: 14px; }
+.ptr { text-align: center; color: var(--faint); font-size: 12px; padding: 6px 0 2px; }
+
+/* buttons inside the product */
+.btn { min-height: 44px; padding: 0 16px; border-radius: 11px; border: 1px solid var(--line); background: var(--card-hi); color: var(--ink); font-weight: 550; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #1a0f0a; }
+.btn.quiet { background: none; border-color: transparent; color: var(--dim); }
+.btn:disabled { opacity: .45; cursor: default; }
+
+/* overlays */
+.scrim { position: absolute; inset: 0; background: rgba(5,5,7,.62); z-index: 5; }
+.scrim.light { background: rgba(5,5,7,.28); }
+.sheet { position: absolute; z-index: 6; background: #18181d; border: 1px solid #2c2c34; display: flex; flex-direction: column; animation: rise .22s var(--ease); max-height: calc(100% - 24px); }
+@keyframes rise { from { transform: translateY(14px); opacity: .4; } }
+@keyframes drop { from { transform: translateY(-10px); opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .sheet, .tool[data-state="loading"] svg { animation: none !important; } }
+.phone .sheet.bottom { left: 0; right: 0; bottom: 0; border-radius: 18px 18px 0 0; border-bottom: 0; }
+.phone .sheet.bottom::before { content: ""; width: 38px; height: 4px; border-radius: 2px; background: #3a3a44; margin: 8px auto 0; flex: none; }
+.desktop .sheet.center { left: 50%; top: 70px; width: 440px; margin-left: -220px; border-radius: 16px; }
+.sheet.dropdown { animation-name: drop; top: 52px; border-radius: 0 0 16px 16px; border-top: 0; }
+.phone .sheet.dropdown { left: 0; right: 0; }
+.desktop .sheet.dropdown { left: 150px; width: 380px; top: 56px; border-radius: 14px; border-top: 1px solid #2c2c34; }
+.desktop .sheet.menu { left: 150px; width: 320px; top: 56px; border-radius: 14px; animation-name: drop; }
+.sh-head { padding: 14px 18px 6px; display: flex; align-items: flex-start; gap: 10px; }
+.sh-head h3 { margin: 0; font-size: 16px; font-weight: 650; }
+.sh-head .sub { color: var(--faint); font-size: 12.5px; margin-top: 2px; }
+.sh-head .x { margin-left: auto; width: 44px; height: 44px; margin: -6px -10px 0 auto; display: grid; place-items: center; color: var(--dim); border-radius: 10px; }
+.sh-body { padding: 4px 10px; overflow: auto; }
+.sh-foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--line); margin-top: 6px; }
+.sh-foot .grow { flex: 1; }
+.note { color: var(--faint); font-size: 12.5px; padding: 6px 8px 2px; }
+.note.warn { color: var(--warn); }
+
+/* A: checklist rows */
+.opt { width: 100%; min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 8px 8px; border-radius: 12px; text-align: left; }
+.opt:hover { background: var(--card-hi); }
+.box { width: 22px; height: 22px; flex: none; border-radius: 6px; border: 1.5px solid #4a4952; display: grid; place-items: center; }
+.box svg { width: 14px; height: 14px; stroke: #1a0f0a; stroke-width: 2.6; fill: none; opacity: 0; }
+.opt[aria-checked="true"] .box { background: var(--accent); border-color: var(--accent); }
+.opt[aria-checked="true"] .box svg { opacity: 1; }
+.opt .lbl { flex: 1 1 auto; min-width: 0; }
+.opt .lbl b { display: block; font-weight: 600; font-size: 14.5px; }
+.opt .lbl small { color: var(--faint); font-size: 12.5px; display: block; }
+.opt .cnt { color: var(--dim); font-variant-numeric: tabular-nums; font-size: 14px; min-width: 2ch; text-align: right; }
+.opt.all { min-height: 52px; }
+.opt.radio .box { border-radius: 50%; }
+.opt.radio[aria-checked="true"] .box { background: none; border-color: var(--accent); }
+.opt.radio[aria-checked="true"] .box::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.opt.radio .box svg { display: none; }
+.opt.radio[aria-checked="true"] .lbl b { color: var(--accent); }
+
+/* B: big toggle tiles, applied as you press */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 6px 8px 4px; }
+.tile { min-height: 72px; border: 1px solid var(--line); border-radius: 13px; background: var(--card); padding: 10px 12px; text-align: left; display: flex; flex-direction: column; gap: 2px; }
+.tile .top2 { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.tile .num { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; margin-left: auto; color: var(--dim); }
+.tile small { color: var(--faint); font-size: 12px; }
+.tile[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-in); }
+.tile[aria-pressed="true"] .num { color: var(--accent); }
+.refrow { display: flex; align-items: center; gap: 10px; min-height: 52px; margin: 2px 8px 6px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line); color: var(--dim); width: calc(100% - 16px); text-align: left; }
+.refrow .when { margin-left: auto; color: var(--faint); font-size: 12px; }
+.refrow[data-state="loading"] svg { animation: turn .9s linear infinite; color: var(--accent); }
+.refrow[data-state="done"] { color: var(--ok); }
+
+/* the closing mirror: what the reader takes away */
+.compare { margin-top: 34px; }
+.compare h2 { font-size: 19px; margin: 0 0 12px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th, .tbl td { text-align: left; padding: 10px 10px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tbl th { color: var(--faint); font-weight: 500; }
+.tbl td:first-child { color: var(--dim); white-space: nowrap; }
+.tblwrap { overflow-x: auto; }
+.qs { color: var(--dim); padding-left: 20px; max-width: 76ch; }
+.qs li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>頂列的 Session 狀態篩選</h1>
+  <p class="lede">頂列計數那一格不再打開機器負載，而是打開「顯示哪些 Session」的篩選視窗；清單上方「重新整理／需要注意／工作中／靜置」那一整列收進視窗裡。以下三個方向都可以直接點：按頂列計數打開，按選項、套用、取消或點背景關閉。裡面的 Session 名稱都是示意。</p>
+
+  <div class="controls">
+    <div><span class="ctl-label">範圍</span><span class="seg" role="group" aria-label="範圍">
+      <button type="button" data-scope="one" aria-pressed="false">單台機器</button>
+      <button type="button" data-scope="all" aria-pressed="true">全部機器</button>
+    </span></div>
+    <label class="toggle"><input type="checkbox" id="loading-toggle"> 模擬一台機器還在讀取</label>
+    <button type="button" class="btn quiet" id="reset-all">全部回到初始狀態</button>
+  </div>
+
+  <section class="design" data-design="A">
+    <div class="design-head"><h2>A　計數即篩選鈕，勾選後套用</h2><span class="rec">建議</span></div>
+    <p class="why">頂列照舊說「幾個在跑、幾個在等你」，只是整格變成看得出能按的鈕。視窗是勾選清單，可複選；按「顯示 N 個」才生效，取消或點背景不改變目前的篩選。重新整理變成搜尋框旁的圖示鈕。</p>
+    <ul class="traits">
+      <li><b>複選</b>：勾幾項就顯示幾項的聯集；不勾任何一項等於全部顯示</li>
+      <li><b>套用</b>：按鈕直接寫出結果數量，0 個時也照樣能套用</li>
+      <li><b>篩選中</b>：頂列換成已選的狀態名稱，加橘色框</li>
+      <li><b>重新整理</b>：搜尋框右側 44px 圖示鈕，不佔整列</li>
+    </ul>
+    <div class="frames">
+      <div><p class="frame-cap">手機 390px・關閉</p><div class="scaler"><div class="device phone" data-vp="phone" data-start="closed"></div></div></div>
+      <div><p class="frame-cap">手機 390px・打開視窗</p><div class="scaler"><div class="device phone" data-vp="phone" data-start="open"></div></div></div>
+      <div class="desk"><p class="frame-cap">桌面・打開視窗</p><div class="scaler"><div class="device desktop" data-vp="desktop" data-start="open"></div></div></div>
+    </div>
+  </section>
+
+  <section class="design" data-design="B">
+    <div class="design-head"><h2>B　按了就生效的狀態磚，重新整理在視窗頂端</h2></div>
+    <p class="why">計數文字保留成安靜的資訊，旁邊多一顆漏斗鈕，選了幾項就掛幾的徽章。視窗從頂列往下展開，四塊大磚按一下就立刻篩選，清單在背後跟著變；沒有「套用」，「完成」與點背景都只是收起來。重新整理和「多久前更新」放在視窗最上面，跟狀態數字在一起。</p>
+    <ul class="traits">
+      <li><b>複選</b>：磚可以同時按亮多塊，結果是聯集</li>
+      <li><b>套用</b>：即時，沒有取消；要回去就按「全部顯示」</li>
+      <li><b>篩選中</b>：漏斗鈕變橘並顯示已選項目數</li>
+      <li><b>重新整理</b>：視窗第一列，附上次更新時間</li>
+    </ul>
+    <div class="frames">
+      <div><p class="frame-cap">手機 390px・關閉</p><div class="scaler"><div class="device phone" data-vp="phone" data-start="closed"></div></div></div>
+      <div><p class="frame-cap">手機 390px・打開視窗</p><div class="scaler"><div class="device phone" data-vp="phone" data-start="open"></div></div></div>
+      <div class="desk"><p class="frame-cap">桌面・打開視窗</p><div class="scaler"><div class="device desktop" data-vp="desktop" data-start="open"></div></div></div>
+    </div>
+  </section>
+
+  <section class="design" data-design="C">
+    <div class="design-head"><h2>C　單選的檢視切換，等同現在的行為</h2></div>
+    <p class="why">頂列直接寫出目前的檢視名稱，像下拉選單。一次只能看一種狀態，點一下就切換並關閉，跟現在清單上那排按鈕的單選行為完全一樣，實作風險最低。代價是不能同時看「需要注意」和「工作中」。重新整理在選單底部，手機上也可以在清單頂端往下拉。</p>
+    <ul class="traits">
+      <li><b>單選</b>：全部、需要注意、工作中、靜置，四選一</li>
+      <li><b>套用</b>：點選即切換並關閉</li>
+      <li><b>篩選中</b>：頂列的檢視名稱變橘</li>
+      <li><b>重新整理</b>：選單底部一顆鈕，加上下拉更新</li>
+    </ul>
+    <div class="frames">
+      <div><p class="frame-cap">手機 390px・關閉</p><div class="scaler"><div class="device phone" data-vp="phone" data-start="closed"></div></div></div>
+      <div><p class="frame-cap">手機 390px・打開視窗</p><div class="scaler"><div class="device phone" data-vp="phone" data-start="open"></div></div></div>
+      <div class="desk"><p class="frame-cap">桌面・打開視窗</p><div class="scaler"><div class="device desktop" data-vp="desktop" data-start="open"></div></div></div>
+    </div>
+  </section>
+
+  <section class="compare">
+    <h2>三個方向的差別</h2>
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th></th><th>A 勾選後套用</th><th>B 即時狀態磚</th><th>C 單選檢視</th></tr></thead>
+      <tbody>
+        <tr><td>可否複選</td><td>可以，聯集</td><td>可以，聯集</td><td>不行</td></tr>
+        <tr><td>何時生效</td><td>按「顯示 N 個」</td><td>按下磚的當下</td><td>點選的當下</td></tr>
+        <tr><td>取消／點背景</td><td>放棄這次勾選</td><td>只是收起</td><td>只是收起</td></tr>
+        <tr><td>頂列仍顯示計數</td><td>未篩選時顯示</td><td>一直顯示</td><td>只顯示目前檢視的數量</td></tr>
+        <tr><td>重新整理</td><td>搜尋框旁圖示鈕</td><td>視窗第一列</td><td>選單底部＋下拉</td></tr>
+        <tr><td>「狀態未更新」</td><td>第四個選項</td><td>第四塊磚</td><td>只在「全部」裡出現</td></tr>
+        <tr><td>改動量</td><td>中：篩選改成集合</td><td>中：篩選改成集合</td><td>小：沿用現有單選</td></tr>
+      </tbody>
+    </table></div>
+    <h2 style="margin-top:28px">等你決定的事</h2>
+    <ol class="qs">
+      <li>採用哪個方向，或混搭（例如 A 的勾選＋套用，配 B 把重新整理放進視窗）。</li>
+      <li>要不要複選。建議複選、取聯集，「全部顯示」等於清空勾選。</li>
+      <li>是否加入第四個「狀態未更新」選項，讓勾滿四項真的等於全部。現在的篩選裡，這類 Session 只在「全部」看得到。</li>
+      <li>單台機器的檢視要不要也加上相同的篩選。目前單台清單只有文字搜尋，需要先定義「需要注意」在單台資料上怎麼判斷。</li>
+      <li>篩選要不要記住：重新開頁後保留，或每次回到全部。</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+(() => {
+  const KEYS = ["att", "work", "idle", "stale"]
+  const NAME = { att: "需要注意", work: "工作中", idle: "靜置", stale: "狀態未更新" }
+  const HINT = { att: "在等你回覆，或有事要你處理", work: "正在執行，或有 shell 在跑", idle: "沒有在做事", stale: "還沒收到最新狀態" }
+  const MACHINES = [{ id: "m1", name: "工作室 Mac" }, { id: "m2", name: "Linux 主機" }]
+  // att overlaps the other three; work/idle/stale are exclusive (stale = freshness not current)
+  const SESSIONS = [
+    { t: "修正登入逾時", m: "m1", k: ["work"] },
+    { t: "整理月報匯出", m: "m1", k: ["att", "idle"] },
+    { t: "更新說明文件", m: "m1", k: ["work"] },
+    { t: "重構匯入流程", m: "m1", k: ["work"], shell: true },
+    { t: "檢查相依套件", m: "m1", k: ["idle"] },
+    { t: "夜間備份腳本", m: "m2", k: ["work"] },
+    { t: "清理暫存檔", m: "m2", k: ["att", "work"] },
+    { t: "翻譯介面字串", m: "m2", k: ["idle"] },
+    { t: "部署預覽環境", m: "m2", k: ["stale"] },
+  ]
+  const G = { scope: "all", loading: false }
+  const frames = []
+
+  const icon = {
+    filter: '<svg class="i" viewBox="0 0 24 24"><path d="M4 5h16l-6 7.5V19l-4-2v-4.5z"/></svg>',
+    caret: '<svg class="i caret" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>',
+    refresh: '<svg class="i" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.05-4.95"/><path d="M19 4.5V9h-4.5"/></svg>',
+    check: '<svg class="i" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>',
+    x: '<svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    search: '<svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg>',
+  }
+  const mascot = () => '<span class="mascot" aria-hidden="true">' +
+    "o x x x o x o x o x x x x x x o x o x o".split(" ").map(c => `<i class="${c === "o" ? "o" : ""}"></i>`).join("") + "</span>"
+
+  function visible() {
+    return SESSIONS.filter(s => (G.scope === "all" || s.m === "m1") && !(G.loading && s.m === "m2"))
+  }
+  function count(rows, k) { return rows.filter(s => s.k.includes(k)).length }
+  function match(rows, set) { return set.size === 0 ? rows : rows.filter(s => s.k.some(k => set.has(k))) }
+  function keysShown() { return G.scope === "all" ? KEYS : KEYS }
+  const same = (a, b) => a.size === b.size && [...a].every(x => b.has(x))
+
+  function countsText(rows, vp) {
+    const work = count(rows, "work"), att = count(rows, "att")
+    let parts = [`<span class="q">${rows.length} 個 Session</span>`]
+    const w = work && `<span>${work} 個在跑</span>`, a = att && `<span class="w">${att} 個在等你</span>`
+    // a phone cuts the end of the line, so what wants the person goes first there
+    parts.push(...(vp === "phone" ? [a, w] : [w, a]).filter(Boolean))
+    // as responsive.css does today: on a phone the total gives way to what is running and waiting
+    return parts.map((p, i) => i ? `<span class="sep">·</span>${p}` : p).join("")
+  }
+  function selectedNames(set) { return KEYS.filter(k => set.has(k)).map(k => NAME[k]).join("、") }
+
+  function entry(f, rows) {
+    const set = f.applied, active = set.size > 0, shown = match(rows, set).length
+    const aria = active ? `篩選中：${selectedNames(set)}，顯示 ${shown} 個。按一下調整篩選` : `Session 狀態篩選，目前全部顯示`
+    if (f.d === "A") return `<button type="button" class="entryA" data-act="open" data-active="${active}" aria-haspopup="dialog" aria-label="${aria}">
+      ${icon.filter}<span class="txt">${active ? `${selectedNames(set)}<span class="sep">·</span>${shown} 個` : countsText(rows, f.vp)}</span>${icon.caret}</button>`
+    if (f.d === "B") return `<button type="button" class="entryB" data-act="open" data-active="${active}" aria-haspopup="dialog" aria-label="${aria}">
+      <span class="txt">${countsText(rows, f.vp)}</span><span class="fbtn">${icon.filter}${active ? `<span class="badge">${set.size}</span>` : ""}</span></button>`
+    const k = [...set][0]
+    return `<button type="button" class="entryC" data-act="open" data-active="${active}" aria-haspopup="dialog" aria-label="${aria}">
+      <span class="name">${active ? NAME[k] : "全部"}</span><span class="n">${shown}</span>
+      ${!active && count(rows, "att") ? `<span class="w">${count(rows, "att")} 個在等你</span>` : ""}${icon.caret}</button>`
+  }
+
+  function rowHTML(s) {
+    const k = s.k.includes("att") ? "att" : s.k[0]
+    const label = s.k.includes("att") ? "在等你" : k === "work" ? (s.shell ? "shell 執行中" : "工作中") : k === "idle" ? "靜置" : "未更新"
+    return `<div class="row"><span class="t">${s.t}</span><span class="s ${k}"><span class="sd ${k}"></span>${label}</span></div>`
+  }
+
+  function listHTML(f, rows) {
+    const shown = match(rows, f.applied)
+    let h = ""
+    if (f.d === "C" && f.vp === "phone") h += `<div class="ptr">在清單頂端往下拉可以重新整理</div>`
+    if (shown.length === 0) {
+      const what = selectedNames(f.applied)
+      return h + `<div class="empty"><b>沒有符合「${what}」的 Session</b>${G.scope === "all" ? "所有機器" : "這台機器"}目前沒有這個狀態的 Session。<br><button type="button" class="btn" data-act="clear-apply">全部顯示</button></div>`
+    }
+    const ms = G.scope === "all" ? MACHINES : MACHINES.slice(0, 1)
+    for (const m of ms) {
+      const mr = shown.filter(s => s.m === m.id)
+      const loading = G.loading && m.id === "m2"
+      if (G.scope === "all") {
+        if (!mr.length && !loading) continue
+        h += `<div class="mhead"><span class="dot ${loading ? "load" : ""}"></span>${m.name}</div>`
+      }
+      if (loading) h += `<div class="loadnote">正在讀取這台機器的 Session…</div>`
+      h += mr.map(rowHTML).join("")
+    }
+    return h
+  }
+
+  function refreshTool(f) {
+    const st = f.refresh
+    const lab = st === "loading" ? "正在重新整理…" : st === "done" ? "已重新整理" : "重新整理"
+    return `<button type="button" class="tool" data-act="refresh" data-state="${st}" aria-label="${lab}" title="${lab}" ${st === "loading" ? "disabled aria-busy=\"true\"" : ""}>${st === "done" ? icon.check : icon.refresh}</button>`
+  }
+
+  function loadingNote() {
+    return G.scope === "all" && G.loading ? `<p class="note warn">Linux 主機還在讀取，數字可能偏少。</p>` : ""
+  }
+  function sub(rows) { return `${G.scope === "all" ? "全部機器" : "工作室 Mac"}・共 ${rows.length} 個` }
+
+  function sheetA(f, rows) {
+    const d = f.draft, n = match(rows, d).length
+    const opts = keysShown().map(k => `<button type="button" class="opt" role="checkbox" aria-checked="${d.has(k)}" data-act="toggle" data-k="${k}">
+      <span class="box">${icon.check}</span><span class="lbl"><b>${NAME[k]}</b><small>${HINT[k]}</small></span><span class="cnt">${count(rows, k)}</span></button>`).join("")
+    return `<div class="sheet ${f.vp === "phone" ? "bottom" : "center"}" role="dialog" aria-modal="true" aria-label="顯示哪些 Session">
+      <div class="sh-head"><div><h3>顯示哪些 Session</h3><div class="sub">${sub(rows)}</div></div>
+        <button type="button" class="x" data-act="cancel" aria-label="取消">${icon.x}</button></div>
+      <div class="sh-body">${opts}
+        <p class="note">可以複選；一個 Session 可能同時是「需要注意」和「工作中」，數字加起來不一定等於總數。</p>${loadingNote()}</div>
+      <div class="sh-foot"><button type="button" class="btn quiet" data-act="clear" ${d.size ? "" : "disabled"}>全部顯示</button><span class="grow"></span>
+        <button type="button" class="btn" data-act="cancel">取消</button>
+        <button type="button" class="btn primary" data-act="apply">${d.size ? `顯示 ${n} 個` : "顯示全部"}</button></div></div>`
+  }
+
+  function sheetB(f, rows) {
+    const a = f.applied, st = f.refresh
+    const tiles = keysShown().map(k => `<button type="button" class="tile" aria-pressed="${a.has(k)}" data-act="toggle-now" data-k="${k}">
+      <span class="top2"><span class="sd ${k}"></span>${NAME[k]}<span class="num">${count(rows, k)}</span></span><small>${HINT[k]}</small></button>`).join("")
+    const lab = st === "loading" ? "正在重新整理…" : st === "done" ? "已重新整理" : "重新整理"
+    return `<div class="sheet dropdown" role="dialog" aria-label="Session 狀態">
+      <div class="sh-head"><div><h3>Session 狀態</h3><div class="sub">${sub(rows)}・${a.size ? `顯示 ${match(rows, a).length} 個` : "全部顯示"}</div></div>
+        <button type="button" class="x" data-act="close" aria-label="收起">${icon.x}</button></div>
+      <button type="button" class="refrow" data-act="refresh" data-state="${st}" ${st === "loading" ? "disabled aria-busy=\"true\"" : ""}>${st === "done" ? icon.check : icon.refresh}<span aria-live="polite">${lab}</span><span class="when">${st === "done" ? "剛剛" : "2 分鐘前更新"}</span></button>
+      <div class="tiles">${tiles}</div>${loadingNote() ? `<div class="sh-body">${loadingNote()}</div>` : ""}
+      <div class="sh-foot"><button type="button" class="btn quiet" data-act="clear-now" ${a.size ? "" : "disabled"}>全部顯示</button><span class="grow"></span>
+        <button type="button" class="btn" data-act="close">完成</button></div></div>`
+  }
+
+  function sheetC(f, rows) {
+    const cur = [...f.applied][0] || "all"
+    const items = [["all", "全部", "所有 Session，包含狀態未更新的", rows.length], ...["att", "work", "idle"].map(k => [k, NAME[k], HINT[k], count(rows, k)])]
+    const opts = items.map(([k, n, h, c]) => `<button type="button" class="opt radio" role="menuitemradio" aria-checked="${cur === k}" data-act="pick" data-k="${k}">
+      <span class="box">${icon.check}</span><span class="lbl"><b>${n}</b><small>${h}</small></span><span class="cnt">${c}</span></button>`).join("")
+    const st = f.refresh, lab = st === "loading" ? "正在重新整理…" : st === "done" ? "已重新整理" : "重新整理"
+    return `<div class="sheet ${f.vp === "phone" ? "bottom" : "menu"}" role="menu" aria-label="顯示哪些 Session">
+      ${f.vp === "phone" ? `<div class="sh-head"><div><h3>顯示哪些 Session</h3><div class="sub">${sub(rows)}</div></div></div>` : ""}
+      <div class="sh-body">${opts}${loadingNote()}</div>
+      <div class="sh-foot"><button type="button" class="btn" data-act="refresh" data-state="${st}" ${st === "loading" ? "disabled aria-busy=\"true\"" : ""}>${st === "done" ? icon.check : icon.refresh}<span aria-live="polite">${lab}</span></button></div></div>`
+  }
+
+  function render(f) {
+    const rows = visible()
+    const sheet = f.open ? (f.d === "A" ? sheetA : f.d === "B" ? sheetB : sheetC)(f, rows) : ""
+    const scrim = f.open ? `<div class="scrim ${f.d === "A" ? "" : "light"}" data-act="${f.d === "A" ? "cancel" : "close"}"></div>` : ""
+    const machine = G.scope === "all" ? "全部機器" : "工作室 Mac"
+    f.el.innerHTML = `
+      <div class="top">
+        <span class="brand"><button type="button" class="handle" aria-label="打開側欄">${mascot()}</button>
+          <button type="button" class="wordmark" aria-label="打開機器負載">clawdline</button></span>
+        ${entry(f, rows)}
+        <span class="conn-hit"><button type="button" class="conn" aria-label="切換機器，目前：${machine}"><span class="dot"></span><span>${machine}</span></button></span>
+      </div>
+      <div class="body">
+        <div class="listcol">
+          <div class="toolbar"><div class="search">${icon.search}搜尋 Session</div>${f.d === "A" ? refreshTool(f) : ""}</div>
+          <div class="list">${listHTML(f, rows)}</div>
+        </div>
+        ${f.vp === "desktop" ? `<div class="detail">選一個 Session 來看它的對話</div>` : ""}
+        ${scrim}${sheet}
+      </div>`
+  }
+
+  function startRefresh(f) {
+    if (f.refresh === "loading") return
+    f.refresh = "loading"; render(f)
+    setTimeout(() => { f.refresh = "done"; render(f); setTimeout(() => { f.refresh = "idle"; render(f) }, 1600) }, 900)
+  }
+
+  function handle(f, act, k) {
+    switch (act) {
+      case "open": f.open = true; f.draft = new Set(f.applied); break
+      case "cancel": f.open = false; f.draft = new Set(f.applied); break
+      case "close": f.open = false; break
+      case "toggle": f.draft.has(k) ? f.draft.delete(k) : f.draft.add(k); break
+      case "clear": f.draft = new Set(); break
+      case "apply": f.applied = new Set(f.draft); f.open = false; break
+      case "toggle-now": f.applied.has(k) ? f.applied.delete(k) : f.applied.add(k); break
+      case "clear-now": f.applied = new Set(); break
+      case "pick": f.applied = k === "all" ? new Set() : new Set([k]); f.open = false; break
+      case "clear-apply": f.applied = new Set(); f.draft = new Set(); break
+      case "refresh": return startRefresh(f)
+      default: return
+    }
+    render(f)
+    if (act === "open") f.el.querySelector(".sheet button")?.focus({ preventScroll: true })
+    if (["cancel", "close", "apply", "pick"].includes(act)) f.el.querySelector("[data-act=open]")?.focus({ preventScroll: true })
+  }
+
+  function initFrame(el) {
+    const d = el.closest(".design").dataset.design
+    const f = { el, d, vp: el.dataset.vp, start: el.dataset.start, open: el.dataset.start === "open",
+      applied: new Set(), draft: new Set(), refresh: "idle" }
+    // the open frames start mid-decision so the selected state is visible
+    if (f.open) f.draft = d === "C" ? new Set() : new Set(["att", "work"])
+    if (f.open && d === "B") f.applied = new Set(["att", "work"])
+    if (f.open && d === "C") f.applied = new Set(["att"])
+    el.addEventListener("click", e => {
+      const t = e.target.closest("[data-act]")
+      if (t && !t.disabled) handle(f, t.dataset.act, t.dataset.k)
+    })
+    el.addEventListener("keydown", e => {
+      if (e.key === "Escape" && f.open) { e.preventDefault(); handle(f, f.d === "A" ? "cancel" : "close") }
+    })
+    frames.push(f); render(f)
+  }
+
+  function fit() {
+    document.querySelectorAll(".scaler").forEach(s => {
+      const dev = s.firstElementChild, w = dev.offsetWidth, h = dev.offsetHeight
+      const k = Math.min(1, s.clientWidth / w)
+      dev.style.transform = `scale(${k})`; s.style.height = `${Math.ceil(h * k)}px`
+    })
+  }
+
+  document.querySelectorAll(".device").forEach(initFrame)
+  document.querySelectorAll("[data-scope]").forEach(b => b.addEventListener("click", () => {
+    G.scope = b.dataset.scope
+    document.querySelectorAll("[data-scope]").forEach(x => x.setAttribute("aria-pressed", String(x === b)))
+    frames.forEach(render)
+  }))
+  document.getElementById("loading-toggle").addEventListener("change", e => { G.loading = e.target.checked; frames.forEach(render) })
+  document.getElementById("reset-all").addEventListener("click", () => {
+    frames.length = 0
+    // a shallow clone drops the old listeners along with the drawn content
+    document.querySelectorAll(".device").forEach(el => { const fresh = el.cloneNode(false); el.replaceWith(fresh); initFrame(fresh) })
+    fit()
+  })
+  addEventListener("resize", fit); fit()
+  window.__designFrames = frames
+})()
+</script>
+</body>
+</html>

@@ -1,4 +1,6 @@
 import type {
+  WorkflowSettingsSnapshot,
+  WorkflowSettingsRequest,
   SettingsRequest,
   SettingsSnapshot,
   WorkGateSettingsRequest,
@@ -7,9 +9,9 @@ import type {
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"
 
-export type DefaultModelAssistant = "codex" | "claude"
+export type DefaultModelAssistant = "codex" | "claude" | "antigravity"
 export type DefaultModelOption = { value: string; label: string }
-type DefaultModelValues = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model" | "codex_default_effort">
+type DefaultModelValues = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model" | "codex_default_effort" | "antigravity_default_model" | "antigravity_default_effort">
 export type DefaultModelsSnapshot = DefaultModelValues & {
   models: Record<DefaultModelAssistant, DefaultModelOption[]>
 }
@@ -196,4 +198,42 @@ export function writeWorkGateSettings(change: Partial<WorkGateSettingsRequest>):
     headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
     body: JSON.stringify(change),
   })
+}
+
+async function callWorkflow(init: RequestInit, request: typeof fetch = fetch): Promise<WorkflowSettingsSnapshot> {
+  const path = "/v1/settings/workflow"
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  let res: Response
+  try {
+    res = await request(client.url(path), { ...init, signal: controller.signal })
+  } catch (cause) {
+    throw new TransportError(`${init.method ?? "GET"} ${path} did not complete`, cause)
+  } finally {
+    clearTimeout(timer)
+  }
+  const text = await res.text()
+  let parsed: unknown
+  try {
+    parsed = text ? JSON.parse(text) : null
+  } catch (cause) {
+    throw new TransportError(`${path} answered with something that is not JSON`, cause)
+  }
+  if (!res.ok) {
+    if (isRefusal(parsed)) throw new RefusalError(res.status, parsed, path)
+    throw new TransportError(`${path} answered ${res.status} with no refusal in it`)
+  }
+  return parsed as WorkflowSettingsSnapshot
+}
+
+export function readWorkflowSettings(request?: typeof fetch): Promise<WorkflowSettingsSnapshot> {
+  return callWorkflow({ method: "GET" }, request)
+}
+
+export function writeWorkflowSettings(change: Partial<WorkflowSettingsRequest>, request?: typeof fetch): Promise<WorkflowSettingsSnapshot> {
+  return callWorkflow({
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify(change),
+  }, request)
 }

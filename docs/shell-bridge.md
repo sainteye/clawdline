@@ -1,5 +1,10 @@
 # 殼與網頁之間的介面
 
+Current entry point (2026-10-21): the standalone macOS settings surface is sunset.
+Use website Settings for configuration. iTerm2 consent is under **Workflow and
+control** in both Cloud and local browser consoles; see [the current boundary](interface.md#turning-iterm2-scanning-off).
+The native-window sections below document the retained bridge, not the primary settings workflow.
+
 > 這份文件給「之後要寫 Linux／Windows 殼的人」。每一節寫一個畫面：**殼負責什麼、網頁負責什麼、
 > 兩邊怎麼講話**。寫 Linux 殼的時候，照著同一組訊息名字實作一次，同一份 web 就能用。
 >

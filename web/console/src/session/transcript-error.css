@@ -2,3 +2,6 @@
 .entry[data-role="error"] .body {
   color: var(--bad);
 }
+
+/* Readable next steps keep the diagnostic code in its secondary error tone. */
+.entry[data-role="error"] .body .turn-error-copy { color: var(--dim); }

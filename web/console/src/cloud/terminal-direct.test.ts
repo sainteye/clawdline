@@ -308,3 +308,14 @@ test("the recorder writes one cloud.direct.attempt row naming its machine, keyed
   assert.deepEqual(rows, [["cloud.direct.attempt", { kind: "terminal", stage: "timed_out", attempt: "A", machine: "machine_test" }, "cloud.direct.attempt|terminal|timed_out"]])
   assert.equal(directAttemptRecorder({}, "machine_test"), null)
 })
+
+
+test("the authenticated carrier can refuse pairing without an encrypted content envelope", () => {
+  const r = new DirectReassembler(() => {})
+  assert.throws(() => r.push(JSON.stringify({t: "read_error", code: "machine_pairing_required"})), /machine_pairing_required/)
+  for (const value of [
+    {t: "read_error", code: "revoked"},
+    {t: "read_error", code: "machine_pairing_required", key: "untrusted"},
+    {t: "read_error", code: "unknown"},
+  ]) assert.throws(() => r.push(JSON.stringify(value)), /terminal_direct_violation/)
+})

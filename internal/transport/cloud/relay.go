@@ -62,6 +62,13 @@ type Relay struct {
 	Secret domaincloud.ContentKey
 	// KeyID is the content key's id on the wire, `ms-1`.
 	KeyID string
+	// Keys, when set, is the content-key authority and replaces Secret and
+	// KeyID: every master-key seal reads one state from it and holds its
+	// fence from reservation to the mirror, so a cutover can neither tear a
+	// key from its id nor overtake a row it has not retired. Nil keeps the
+	// trusted legacy pair above. A terminal answer's rk-* key is never
+	// Keys' (docs/security/content-key-runtime.md).
+	Keys *domaincloud.KeyEpoch
 	// Now exists so a test can drive the clock.
 	Now func() time.Time
 	// Log is one line per refused request. Nil is silence.
@@ -300,7 +307,21 @@ func (r *Relay) PublishTracked(ctx context.Context, out Outbound) (uint64, error
 		h.End(err == nil)
 		return 0, err
 	}
-	key, keyID := r.Secret, r.keyID()
+	if r.Keys == nil {
+		return r.publishSealed(ctx, out, class, r.Secret, r.keyID())
+	}
+	var seq uint64
+	err := r.Keys.Use(func(state domaincloud.ContentKeyState) error {
+		var err error
+		seq, err = r.publishSealed(ctx, out, class, state.Key, state.KeyID)
+		return err
+	})
+	return seq, err
+}
+
+// publishSealed reserves, labels, seals and queues one relay answer under
+// key and keyID, which a terminal answer replaces with its connection's own.
+func (r *Relay) publishSealed(ctx context.Context, out Outbound, class domaincloud.Class, key domaincloud.ContentKey, keyID string) (uint64, error) {
 	if strings.HasPrefix(out.Channel, "term/") || strings.HasPrefix(out.Channel, "termd/") || strings.HasPrefix(out.Channel, "termr/") {
 		if !out.Key.Valid() || !strings.HasPrefix(out.KeyID, "rk-") {
 			return 0, errors.New("a terminal answer needs its connection key")
@@ -338,6 +359,9 @@ func (r *Relay) PublishTracked(ctx context.Context, out Outbound) (uint64, error
 		seq, err = r.Spool.ReserveAnswer(kind, out.Channel, out.Channel, len(out.Payload), out.Headroom)
 	}
 	if err != nil {
+		return 0, err
+	}
+	if err := r.Spool.LabelKey(seq, keyID); err != nil {
 		return 0, err
 	}
 

@@ -49,6 +49,17 @@ export function workProjectID(routeProject: string, projects: readonly WorkRoute
   return projects.find((project) => project.id === wanted || project.path === wanted)?.id ?? ""
 }
 
+/** Who may reach a page by any route — sidebar, fragment or link. The reach page belongs to the
+ *  administrator section, so a typed `#page=transparency` is no way in for anyone else. */
+export function pageAdmitted(
+  name: string,
+  { knows, peerAccess, operationsAccess }: { knows: (name: string) => boolean; peerAccess: boolean; operationsAccess: boolean },
+): boolean {
+  if (name === "peer-access") return peerAccess
+  if (name === "transparency") return operationsAccess && knows(name)
+  return knows(name)
+}
+
 /** An absent or retired page address (including Dashboard and Board) lands on Sessions. */
 export function pageFromHash<Page extends string>(
   hash: string,

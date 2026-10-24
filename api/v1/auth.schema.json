@@ -4,6 +4,13 @@
   "title": "Who may ask",
   "description": "The gate in front of every route, pairing, the local token and the device list. A port of the Swift app's RemoteAuth and RemoteServer: the bodies, the sentences and the cookie are the ones its page (net/fetch.js, door/door.js) already reads, which is why a refusal here is the Swift envelope `{\"error\":{\"code\",\"message\",\"request_id\"}}` rather than this daemon's flat Refusal. Open without a token: the page, its bundle (/app/, /assets/, /strings/), the icons, /v1/health, /v1/strings and /v1/auth/*. Everything else needs `Authorization: Bearer <token>` or the `clawdline-next` cookie. Anything but GET and HEAD is a change, and the gate asks three more things of it: an Origin, when there is one, is this request's own (scheme, host and port); a change carried by the cookie has an Origin, and a Sec-Fetch-Site of same-origin when it has one; and its body is application/json or nothing at all, else 415 unsupported_media_type. The cookie is not called `clawdline`, as the Swift app's is, because a browser does not separate cookies by port: one name on 127.0.0.1 would make each app sign the other out.",
   "$defs": {
+    "DevicePermission": {
+      "description": "Local token only. POST /v1/auth/devices/{id}/permission persists a grant; POST /v1/auth/pairings/{id}/permission selects the pending pairing before confirmation. Missing/invalid permission is 400 bad_request; unknown/expired id is 404 not_found. Public pair/confirm fields never select a grant. Repeated writes are idempotent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["permission"],
+      "properties": { "permission": { "type": "string", "enum": ["read-only", "read-and-operate"] } }
+    },
     "AuthError": {
       "description": "The inside of every refusal the gate and the auth routes give. `code` is the part a client may branch on; `message` is English, for a person.",
       "type": "object",
@@ -96,7 +103,7 @@
       "additionalProperties": false,
       "required": ["caps", "created", "id", "name"],
       "properties": {
-        "caps": { "description": "Paired devices have read and send access.", "type": "array", "items": { "type": "string" } },
+        "caps": { "description": "Read-only grants have read; read-and-operate grants have read and send. Legacy rows and unselected new pairings default to read and send.", "type": "array", "items": { "type": "string" } },
         "created": { "description": "Unix seconds.", "type": "integer" },
         "id": { "type": "string" },
         "last_seen": { "description": "Unix seconds of the last request it made since the daemon started or last saved; absent when never.", "type": "integer" },
@@ -128,7 +135,7 @@
       "description": "POST /v1/auth/devices/browser: `clawdline open` asking for a device of its own. Local token only.",
       "type": "object",
       "additionalProperties": false,
-      "properties": {}
+      "properties": { "permission": { "description": "Optional local selection; omission preserves read-and-operate.", "type": "string", "enum": ["read-only", "read-and-operate"] } }
     },
     "BrowserDevice": {
       "description": "A device minted for a browser on this machine. `url` carries the token in its fragment, which a browser never sends and never logs; the page trades it for the cookie with /v1/auth/adopt.",

@@ -1,0 +1,63 @@
+/* A shared footer reserves its measured height in both fixed pages and the Session grid. */
+.app { margin-bottom: var(--quota-footer-height, 0px); }
+.page { bottom: var(--quota-footer-height, 0px); }
+.provider-quota-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 42;
+  display: flex; align-items: center; gap: 14px;
+  min-height: 34px; padding: 5px 14px calc(5px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line); background: var(--bg); color: var(--dim);
+  font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.quota-machine { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quota-providers { display: flex; align-items: center; gap: 18px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.quota-provider { display: flex; align-items: center; gap: 7px; white-space: nowrap; min-width: 0; padding: 3px 0; }
+.quota-provider:hover { color: var(--ink); }
+.quota-logo, .quota-logo svg { display: block; width: 16px; height: 16px; flex: 0 0 16px; }
+.provider-quota-bar .quota-logo, .provider-quota-bar .quota-logo svg { width: 12px; height: 12px; flex-basis: 12px; }
+.quota-full-windows { display: flex; align-items: center; gap: 8px; }
+.quota-window-separator { color: var(--faint); }
+.quota-compact-window { display: none; }
+.quota-window { display: inline-flex; align-items: center; gap: 5px; }
+.quota-window progress { width: 56px; height: 5px; border: 0; appearance: none; background: var(--line); border-radius: 4px; overflow: hidden; color: var(--dim); }
+.quota-window progress::-webkit-progress-bar { background: var(--line); }
+.quota-window progress::-webkit-progress-value { background: var(--dim); }
+.quota-window progress::-moz-progress-bar { background: var(--dim); }
+.quota-window[data-urgent] progress::-webkit-progress-value { background: var(--accent); }
+.quota-window[data-urgent] progress::-moz-progress-bar { background: var(--accent); }
+.quota-window[data-urgent] { color: var(--accent); }
+.quota-window-name, .quota-reset, .quota-caption { color: var(--faint); }
+.quota-window-name { font-size: 10px; }
+.quota-provider[data-provider="gemini"] .quota-window-name { display: none; }
+.quota-stale { font-size: 10px; color: var(--faint); }
+.quota-provider[data-stale] progress { opacity: .5; }
+.quota-refresh, .quota-more { flex: 0 0 auto; padding: 4px; }
+.quota-refresh { display: grid; place-items: center; min-width: 28px; min-height: 28px; font-size: 14px; line-height: 1; }
+.quota-refresh:disabled { opacity: .4; cursor: default; }
+.quota-dialog { width: min(620px, calc(100vw - 28px)); max-height: min(80dvh, 780px); overflow: auto; padding: 20px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--bg); }
+.quota-dialog::backdrop { background: rgb(0 0 0 / .55); }
+.quota-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.quota-dialog-heading h2 { margin: 0; font-size: 17px; }
+.quota-dialog-heading button { font-size: 24px; padding: 0 8px; }
+.quota-detail-row { border-top: 1px solid var(--line); padding: 12px 0; }
+.quota-detail-row h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 14px; }
+.quota-detail-row .quota-window { display: flex; gap: 10px; margin: 9px 0; flex-wrap: wrap; }
+.quota-detail-row .quota-window progress { width: 100px; }
+.quota-caption, .quota-problem { font-size: 12px; margin: 7px 0; }
+.quota-problem { color: var(--warn); }
+@media (max-width: 1300px) {
+  .quota-provider-name { display: none; }
+}
+@media (max-width: 899px) {
+  .provider-quota-bar {
+    gap: 8px; padding: 8px 10px calc(8px + max(var(--indicator, 0px), env(safe-area-inset-bottom, 0px), 12px));
+  }
+  .app[data-view="detail"] ~ .provider-quota-bar { display: none; }
+  .quota-full-windows { display: none; }
+  .quota-compact-window { display: inline-flex; }
+  .quota-compact-window .quota-window-name { display: none; }
+  .quota-machine { display: none; }
+  .quota-providers { gap: 12px; }
+  .quota-compact-window progress, .quota-compact-window .quota-reset { display: none; }
+}
+
+.quota-setting-toggle + .quota-setting-toggle { margin-top: 14px; }

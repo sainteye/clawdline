@@ -30,8 +30,8 @@ import (
 
 var sessionNamed = regexp.MustCompile(`(?i)session`)
 
-// Not identities: collections, counts, and states.
-var notAnIdentity = regexp.MustCompile(`(?i)^sessions$|count$|_state$|_generation$`)
+// Not identities: collections, counts, states, and the discovery preference.
+var notAnIdentity = regexp.MustCompile(`(?i)^sessions$|^session_auto_discovery$|count$|_state$|_generation$`)
 
 const (
 	conversation = "conversation"

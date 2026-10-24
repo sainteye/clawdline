@@ -21,6 +21,7 @@ func TestOwningSourceIsTheSourceThatListedTheRow(t *testing.T) {
 		{"no backend, no id shape", Session{ID: "row-1"}, "ps"},
 		{"no backend, pane id", Session{ID: "%2"}, "tmux"},
 		{"no backend, iTerm2 id", Session{ID: guid}, "iterm"},
+		{"owned ACP", Session{ID: "owned:acp:synthetic", Backend: BackendOwned}, "owned"},
 		{"owned pty", Session{ID: "owned-1", Backend: BackendOwned, TTY: "/dev/ttys010"}, ""},
 	} {
 		if got := OwningSource(c.row); got != c.want {

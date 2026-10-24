@@ -14,6 +14,7 @@ import { ProbeScreen } from "./probe-view"
 import { healthHref, isProbeView, STORED_WINDOWS_S, TREND_RANGE_WORDS, type HealthRoute, type HealthScope, type HealthScreen, type TrendRangeWord } from "./route"
 import { TrendScreen } from "./trend-view"
 import { exactUTC, StoredScreen, type StoredNav } from "./stored-screens"
+import { AttentionPanel } from "./attention-view"
 
 export type ConnectionHealthProps = {
   route: HealthRoute
@@ -134,6 +135,8 @@ export function ConnectionHealth({ route, go, apiOrigin, get, fixture, onRefused
         {state.window ? say("st_window", { from: exactUTC(state.window.from), to: exactUTC(state.window.to) }) : null}
         {" "}{scope.until === null ? say("st_liveEvery", { s: HEALTH_UI_LIMITS.refreshMs / 1000 }) : say("st_pinned")}
       </p>}
+
+      {route.screen === "M01" && !fixture ? <AttentionPanel apiOrigin={apiOrigin} get={get} say={say} go={go} /> : null}
 
       {state.status === "loading" ? (
         <div className="adm-skeleton" aria-busy="true">

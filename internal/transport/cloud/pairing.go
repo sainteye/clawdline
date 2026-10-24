@@ -20,10 +20,10 @@ package cloud
 //     id. If it disagrees with the offer this machine just answered, the offer
 //     was not the one that opened this pairing — the substitution a person
 //     comparing two screens cannot see.
-//   - **The pin is written last.** Pinning is what lets a browser drive this
-//     machine. A browser that never received the key cannot produce a command
-//     anyway, so pinning earlier would only leave a pinned viewer behind every
-//     failed delivery.
+//   - **Operate pins are written last.** Readonly pairings instead reserve the
+//     durable ceiling before key delivery; a failed final write must not turn
+//     an explicitly readonly browser into a legacy roster-only operator. That
+//     reservation keeps a revoked browser revoked until the handover completes.
 //
 // The secret never reaches a log, a status route or the control plane. What
 // leaves this file is an invitation id, a fragment a person carries, and
@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
@@ -70,6 +71,7 @@ const PairingPollInterval = 2 * time.Second
 // and never written to a log — but the state a route answers is otherwise
 // ids, fingerprints and times.
 type PairingState struct {
+	Scope string `json:"scope,omitempty"`
 	// Phase is idle | waiting | sealing | paired | failed.
 	Phase string `json:"phase"`
 	// InvitationID is the control plane's handle for this invitation.
@@ -115,13 +117,21 @@ type Pairing struct {
 	Log        func(format string, args ...any)
 	// OnRevoke clears a legacy grant record and the active Cloud connection
 	// after the pin has been refused. A failure is reported as partial revoke.
-	OnRevoke func(string) error
+	Authority     *sync.Mutex
+	Generation    *atomic.Uint64
+	ContentState  func() (domaincloud.ContentKeyState, error)
+	RevokeContent func(string) (bool, error)
+	OnRevoke      func(string) error
+	OnScopeChange func(string) error
 
 	mu         sync.Mutex
 	state      PairingState
 	invitation domaincloud.PairingInvitation
 	cancel     context.CancelFunc
 }
+
+// ErrViewerScopeApplied distinguishes persisted authority from a failed lease sweep.
+var ErrViewerScopeApplied = errors.New("viewer scope was persisted but terminal lease revalidation failed")
 
 // ErrPairingUnavailable is what a link with no identity answers. It is not a
 // pairing failure: there is nothing to pair a browser *to* yet.
@@ -146,7 +156,21 @@ func (p *Pairing) State() PairingState {
 //
 // The returned state carries the link. It is handed to the local settings page
 // and to the terminal, and to nothing else.
-func (p *Pairing) Begin(ctx context.Context) (PairingState, error) {
+type pairingGenerationContext struct{}
+
+func (p *Pairing) withGeneration(ctx context.Context) context.Context {
+	if p != nil && p.Generation != nil {
+		return context.WithValue(ctx, pairingGenerationContext{}, p.Generation.Load())
+	}
+	return ctx
+}
+
+func (p *Pairing) Begin(ctx context.Context, scopes ...string) (PairingState, error) {
+	ctx = p.withGeneration(ctx)
+	scope, err := pairingScope(scopes)
+	if err != nil {
+		return PairingState{}, err
+	}
 	if p == nil || p.Client == nil || p.Credential == "" || p.MachineID == "" {
 		return PairingState{}, ErrPairingUnavailable
 	}
@@ -187,6 +211,7 @@ func (p *Pairing) Begin(ctx context.Context) (PairingState, error) {
 	}
 	p.invitation = invitation
 	p.state = PairingState{
+		Scope:              scope,
 		Phase:              PairingWaiting,
 		InvitationID:       invitation.InvitationID,
 		Link:               link,
@@ -200,7 +225,7 @@ func (p *Pairing) Begin(ctx context.Context) (PairingState, error) {
 	state := p.state
 	p.mu.Unlock()
 
-	go p.wait(loop, invitation)
+	go p.wait(loop, invitation, scope)
 	p.logf("cloud: pairing invitation %s is waiting until %s", invitation.InvitationID, expires.Format(time.RFC3339))
 	return state, nil
 }
@@ -224,7 +249,7 @@ func (p *Pairing) Cancel() PairingState {
 }
 
 // wait polls one invitation until it is answered, expires, or is replaced.
-func (p *Pairing) wait(ctx context.Context, invitation domaincloud.PairingInvitation) {
+func (p *Pairing) wait(ctx context.Context, invitation domaincloud.PairingInvitation, scopes ...string) {
 	defer func() {
 		p.mu.Lock()
 		if p.invitation.InvitationID == invitation.InvitationID {
@@ -238,7 +263,7 @@ func (p *Pairing) wait(ctx context.Context, invitation domaincloud.PairingInvita
 		answer, err := p.Client.PollInvitation(ctx, p.Credential, invitation.InvitationID)
 		switch {
 		case err == nil:
-			p.answer(ctx, invitation, answer)
+			p.answer(ctx, invitation, answer, scopes...)
 			return
 		case errors.Is(err, adaptercloud.ErrPairingPending):
 			// The ordinary state. Nothing is recorded for it: a status route
@@ -262,7 +287,7 @@ func (p *Pairing) wait(ctx context.Context, invitation domaincloud.PairingInvita
 }
 
 // answer opens what the browser left and completes the handover.
-func (p *Pairing) answer(ctx context.Context, invitation domaincloud.PairingInvitation, poll adaptercloud.InvitationPoll) {
+func (p *Pairing) answer(ctx context.Context, invitation domaincloud.PairingInvitation, poll adaptercloud.InvitationPoll, scopes ...string) {
 	if poll.AccountID != p.AccountID || poll.MachineID != p.MachineID {
 		// The route is authenticated, but its answer is still input. Refusing
 		// here keeps a mismatched response from reaching the seal.
@@ -286,7 +311,7 @@ func (p *Pairing) answer(ctx context.Context, invitation domaincloud.PairingInvi
 			offer.ViewerDeviceID, poll.ViewerDeviceID))
 		return
 	}
-	if _, err := p.deliver(ctx, offer); err != nil {
+	if _, err := p.deliver(ctx, offer, scopes...); err != nil {
 		p.failed(err)
 	}
 }
@@ -298,7 +323,11 @@ func (p *Pairing) answer(ctx context.Context, invitation domaincloud.PairingInvi
 // laptop in front of it is a camera that is not there. The cryptography is
 // identical — the invitation exists only to carry these same bytes when the
 // browser is a phone.
-func (p *Pairing) Complete(ctx context.Context, offerFragment string) (PairingState, error) {
+func (p *Pairing) Complete(ctx context.Context, offerFragment string, scopes ...string) (PairingState, error) {
+	ctx = p.withGeneration(ctx)
+	if _, err := pairingScope(scopes); err != nil {
+		return PairingState{}, err
+	}
 	if p == nil || p.Client == nil || p.Credential == "" || p.MachineID == "" {
 		return PairingState{}, ErrPairingUnavailable
 	}
@@ -308,7 +337,7 @@ func (p *Pairing) Complete(ctx context.Context, offerFragment string) (PairingSt
 		return p.State(), err
 	}
 	p.setPhase(PairingSealing)
-	state, err := p.deliver(ctx, offer)
+	state, err := p.deliver(ctx, offer, scopes...)
 	if err != nil {
 		p.failed(err)
 		return p.State(), err
@@ -336,7 +365,25 @@ func (p *Pairing) CheckOffer(offerFragment string) (domaincloud.PairingOffer, er
 
 // deliver seals, delivers, checks the echo and pins. It is the one place any
 // of those four happen.
-func (p *Pairing) deliver(ctx context.Context, offer domaincloud.PairingOffer) (PairingState, error) {
+func (p *Pairing) deliver(ctx context.Context, offer domaincloud.PairingOffer, scopes ...string) (PairingState, error) {
+	var generation uint64
+	if p.Generation != nil {
+		generation = p.Generation.Load()
+		if started, ok := ctx.Value(pairingGenerationContext{}).(uint64); ok {
+			generation = started
+		}
+	}
+	if p.Authority != nil {
+		p.Authority.Lock()
+		defer p.Authority.Unlock()
+	}
+	if p.Generation != nil && generation != p.Generation.Load() {
+		return PairingState{}, domaincloud.ErrRekey
+	}
+	scope, err := pairingScope(scopes)
+	if err != nil {
+		return PairingState{}, err
+	}
 	key, secret, err := p.Keys()
 	if err != nil {
 		return PairingState{}, err
@@ -352,6 +399,14 @@ func (p *Pairing) deliver(ctx context.Context, offer domaincloud.PairingOffer) (
 		KeyID:              adaptercloud.MasterKeyID,
 		MasterSecret:       base64.StdEncoding.EncodeToString(secret.Bytes()),
 	}
+	if p.ContentState != nil {
+		state, err := p.ContentState()
+		if err != nil {
+			return PairingState{}, err
+		}
+		handover.KeyID = state.KeyID
+		handover.MasterSecret = base64.StdEncoding.EncodeToString(state.Key.Bytes())
+	}
 	ephemeral, err := domaincloud.NewX25519PrivateKey(rand.Reader)
 	if err != nil {
 		return PairingState{}, err
@@ -364,6 +419,32 @@ func (p *Pairing) deliver(ctx context.Context, offer domaincloud.PairingOffer) (
 	if err != nil {
 		return PairingState{}, err
 	}
+	// No scope chosen is not a choice of operate: a device this machine already
+	// holds keeps its own ceiling, read before the content key is released so
+	// an unreadable pin file or an unknown scope refuses the pairing outright.
+	kept := scope == ""
+	reserve := scope
+	if kept {
+		if reserve, err = p.Pinned.RepairScope(offer.ViewerDeviceID); err != nil {
+			return PairingState{}, err
+		}
+	}
+	// Reserve the readonly ceiling before releasing the content key. Otherwise a
+	// failed pin write after delivery would fall back to legacy roster authority.
+	// The reservation keeps a refusal: a revoked browser is restored only by the
+	// pin below, after the handover has actually completed.
+	if reserve == adaptercloud.ScopeReadOnly {
+		if err := p.Pinned.ReserveReadOnly(p.AccountID, adaptercloud.PinnedDevice{DeviceID: offer.ViewerDeviceID,
+			PublicKey: offer.ViewerSigningKey, Fingerprint: offer.ViewerFingerprint, Scope: reserve,
+			PairedAt: p.now().Unix()}); err != nil {
+			return PairingState{}, err
+		}
+		if p.OnScopeChange != nil {
+			if err := p.OnScopeChange(offer.ViewerDeviceID); err != nil {
+				return PairingState{}, err
+			}
+		}
+	}
 	delivery, err := p.Client.CompletePairing(ctx, p.Credential, offer.PairingID, wrapper.CanonicalJSON())
 	if err != nil {
 		return PairingState{}, err
@@ -375,12 +456,21 @@ func (p *Pairing) deliver(ctx context.Context, offer domaincloud.PairingOffer) (
 	}
 
 	now := p.now()
-	if err := p.Pinned.Pin(p.AccountID, adaptercloud.PinnedDevice{
+	pinned := adaptercloud.PinnedDevice{
+		Scope:       scope,
 		DeviceID:    offer.ViewerDeviceID,
 		PublicKey:   offer.ViewerSigningKey,
 		Fingerprint: offer.ViewerFingerprint,
 		PairedAt:    now.Unix(),
-	}); err != nil {
+	}
+	if kept {
+		// Kept under the write's own lock, so a grant that landed during the
+		// handover is what survives, not the scope read before it.
+		scope, err = p.Pinned.PinKeepingScope(p.AccountID, pinned)
+	} else {
+		err = p.Pinned.Pin(p.AccountID, pinned)
+	}
+	if err != nil {
 		// The browser already holds the key by now, so this is not "pairing
 		// failed"; it is "this machine will not remember it". Both halves of
 		// that go in the error rather than only the tidy one.
@@ -389,6 +479,7 @@ func (p *Pairing) deliver(ctx context.Context, offer domaincloud.PairingOffer) (
 	}
 
 	p.mu.Lock()
+	p.state.Scope = scope
 	p.state.Phase = PairingPaired
 	p.state.ViewerDeviceID = offer.ViewerDeviceID
 	p.state.ViewerFingerprint = offer.ViewerFingerprint
@@ -412,6 +503,9 @@ func (p *Pairing) deliver(ctx context.Context, offer domaincloud.PairingOffer) (
 func (p *Pairing) Revoke(deviceID string) (bool, error) {
 	if p == nil || p.Pinned == nil {
 		return false, ErrPairingUnavailable
+	}
+	if p.RevokeContent != nil {
+		return p.RevokeContent(deviceID)
 	}
 	changed, err := p.Pinned.Revoke(deviceID, p.now())
 	if err == nil && changed {
@@ -535,13 +629,17 @@ type IdentityPairingState struct {
 // IdentityPairing drives one identity pairing at a time, for the same reason
 // Pairing does: two live codes and one person is how the wrong one is used.
 type IdentityPairing struct {
-	AccountID string
-	AppOrigin string
-	Client    *adaptercloud.IdentityClient
-	Keys      PairingKeys
-	Epochs    adaptercloud.ContentEpochStore
-	Now       func() time.Time
-	Log       func(format string, args ...any)
+	Authority    *sync.Mutex
+	Generation   *atomic.Uint64
+	ContentState func() (domaincloud.ContentKeyState, error)
+	Pinned       *adaptercloud.PinnedStore
+	AccountID    string
+	AppOrigin    string
+	Client       *adaptercloud.IdentityClient
+	Keys         PairingKeys
+	Epochs       adaptercloud.ContentEpochStore
+	Now          func() time.Time
+	Log          func(format string, args ...any)
 	// Run replaces the adapter's run in tests; nil runs MachineIdentityPairing.
 	Run func(ctx context.Context, m *adaptercloud.MachineIdentityPairing, accountID string) (adaptercloud.IdentityPairingResult, error)
 
@@ -577,6 +675,10 @@ func (p *IdentityPairing) Begin(ctx context.Context) (IdentityPairingState, erro
 	if p == nil || p.Client == nil || p.Keys == nil || p.AccountID == "" {
 		return IdentityPairingState{}, ErrPairingUnavailable
 	}
+	var authorityGeneration uint64
+	if p.Generation != nil {
+		authorityGeneration = p.Generation.Load()
+	}
 	key, _, err := p.Keys()
 	if err != nil {
 		return IdentityPairingState{}, err
@@ -585,6 +687,9 @@ func (p *IdentityPairing) Begin(ctx context.Context) (IdentityPairingState, erro
 		return IdentityPairingState{}, ErrPairingUnavailable
 	}
 
+	if p.Authority != nil {
+		p.Authority.Lock()
+	}
 	p.mu.Lock()
 	if p.cancel != nil {
 		p.cancel()
@@ -597,6 +702,9 @@ func (p *IdentityPairing) Begin(ctx context.Context) (IdentityPairingState, erro
 	p.decide = decide
 	p.state = IdentityPairingState{Phase: IdentityPairingWaiting, MachineFingerprint: key.Fingerprint()}
 	p.mu.Unlock()
+	if p.Authority != nil {
+		p.Authority.Unlock()
+	}
 
 	shown := make(chan struct{})
 	finished := make(chan error, 1)
@@ -622,6 +730,57 @@ func (p *IdentityPairing) Begin(ctx context.Context) (IdentityPairingState, erro
 		Approve: func(ctx context.Context, viewerFingerprint, code string) (bool, error) {
 			return p.awaitDecision(ctx, gen, decide, viewerFingerprint, code)
 		},
+	}
+	m.ContentState = p.ContentState
+	m.Authorize = func(ctx context.Context, fn func() error) error {
+		if p.Authority != nil {
+			p.Authority.Lock()
+			defer p.Authority.Unlock()
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if p.Generation != nil && p.Generation.Load() != authorityGeneration {
+			return domaincloud.ErrRekey
+		}
+		p.mu.Lock()
+		current := p.gen == gen
+		p.mu.Unlock()
+		if !current {
+			return context.Canceled
+		}
+		return fn()
+	}
+	if p.ContentState != nil {
+		m.Reserve = func(offer domaincloud.IdentityOffer) error {
+			if p.Pinned == nil {
+				return adaptercloud.ErrViewerNotPinned
+			}
+			rows, err := p.Pinned.Devices()
+			if err != nil {
+				return err
+			}
+			scope := adaptercloud.ScopeReadOnly
+			for _, row := range rows {
+				if row.DeviceID == offer.ViewerDeviceID {
+					scope = row.EffectiveScope()
+				}
+			}
+			if !adaptercloud.ValidViewerScope(scope) {
+				return adaptercloud.ErrViewerScope
+			}
+			if scope == adaptercloud.ScopeReadOnly {
+				return p.Pinned.ReserveReadOnly(p.AccountID, adaptercloud.PinnedDevice{DeviceID: offer.ViewerDeviceID, PublicKey: offer.ViewerSigningKey, Fingerprint: offer.ViewerFingerprint, PairedAt: p.now().Unix()})
+			}
+			return nil
+		}
+		m.Complete = func(result adaptercloud.IdentityPairingResult) error {
+			if p.Pinned == nil {
+				return adaptercloud.ErrViewerNotPinned
+			}
+			_, err := p.Pinned.PinKeepingScope(p.AccountID, adaptercloud.PinnedDevice{DeviceID: result.ViewerDeviceID, PublicKey: result.ViewerSigningKey, Fingerprint: result.ViewerFingerprint, PairedAt: p.now().Unix()})
+			return err
+		}
 	}
 	go func() {
 		defer cancel()
@@ -686,6 +845,10 @@ func (p *IdentityPairing) Decide(pairingID string, approve bool) (IdentityPairin
 func (p *IdentityPairing) Cancel() IdentityPairingState {
 	if p == nil {
 		return IdentityPairingState{Phase: IdentityPairingIdle}
+	}
+	if p.Authority != nil {
+		p.Authority.Lock()
+		defer p.Authority.Unlock()
 	}
 	p.mu.Lock()
 	if p.cancel != nil {
@@ -810,4 +973,36 @@ func (p *IdentityPairing) logf(format string, args ...any) {
 	if p.Log != nil {
 		p.Log(format, args...)
 	}
+}
+
+// pairingScope keeps old callers compatible; scope is selected only on the machine.
+// Omitted answers "": deliver resolves it against the device's existing pin,
+// because "nobody chose" and "the person chose operate" are different requests.
+func pairingScope(scopes []string) (string, error) {
+	if len(scopes) > 1 {
+		return "", adaptercloud.ErrViewerScope
+	}
+	if len(scopes) == 0 || scopes[0] == "" {
+		return "", nil
+	}
+	if len(scopes) != 1 || !adaptercloud.ValidViewerScope(scopes[0]) {
+		return "", adaptercloud.ErrViewerScope
+	}
+	return scopes[0], nil
+}
+
+// SetViewerScope persists first, then voids leases without closing read streams.
+func (p *Pairing) SetViewerScope(device, scope string) error {
+	if p == nil || p.Pinned == nil {
+		return ErrPairingUnavailable
+	}
+	if err := p.Pinned.SetScope(device, scope); err != nil {
+		return err
+	}
+	if p.OnScopeChange != nil {
+		if err := p.OnScopeChange(device); err != nil {
+			return fmt.Errorf("%w: %v", ErrViewerScopeApplied, err)
+		}
+	}
+	return nil
 }

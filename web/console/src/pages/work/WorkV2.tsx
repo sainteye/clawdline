@@ -1,3 +1,5 @@
+import { useAssistantFacts } from "../../session/assistant-facts.js"
+import { assistantAdmits, assistantUnavailable } from "../../session/antigravity-ui.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
 import { ProjectPicker } from "../../ui/ProjectPicker.js"
 import { catalogFormat } from "../../catalog.js"
@@ -824,7 +826,10 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
   foldDescription?: boolean
 }) {
   const [terminal, setTerminal] = useState("")
-  const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
+  const providerReading = useAssistantFacts("", `${item.id}:${item.version}`)
+  const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? (id === "antigravity" ? undefined : { id })
+  const [selectedAssistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
+  const assistant = selectedAssistant === "antigravity" ? "claude" : selectedAssistant
   // A new Session has no role until the person chooses one or asks AI.
   const personas = usePersonas()
   const [personaChoice, setPersonaChoice] = useState("")
@@ -1010,9 +1015,9 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
         <div className="work-new-session" role="radiogroup" aria-label={catalogWord("inline", "d7c6293edaf2")}>
         {/* The product mark alone: the button beside it already spells out the
             chosen assistant, so the name is kept for the label and tooltip. */}
-        {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
-          role="radio" aria-checked={choice === assistant} disabled={!!busy || aiSuggestionBusy}
-          aria-label={assistantName(choice)} title={assistantName(choice)}
+        {NEW_SESSION_ASSISTANTS.filter((choice) => choice !== "antigravity").map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
+          role="radio" aria-checked={choice === assistant} disabled={!!busy || aiSuggestionBusy || !assistantAdmits(providerFacts(choice), "start")}
+          aria-label={assistantName(choice)} title={assistantUnavailable(providerFacts(choice), "start") ? catalogWord("antigravity", assistantUnavailable(providerFacts(choice), "start")!).replace("{assistant}", assistantName(choice)) : assistantName(choice)}
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
         </div>
@@ -1036,8 +1041,8 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
             rememberTeam(next)
             setPersonaChoice(switched.chosen)
           }} />}
-        <button className="chip on work-assignment-action" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id && assigningRoute === "new"}
-          onClick={() => assign("new", () => assignNewWorkV2(item, assistant, persona?.id))}>
+        <button className="chip on work-assignment-action" type="button" disabled={!!busy || aiSuggestionBusy || !assistantAdmits(providerFacts(assistant), "start")} aria-busy={busy === item.id && assigningRoute === "new"}
+          onClick={() => { if (assistantAdmits(providerFacts(assistant), "start")) void assign("new", () => assignNewWorkV2(item, assistant, persona?.id)) }}>
           {busy === item.id && assigningRoute === "new" && <span className="work-assignment-spinner" aria-hidden="true" />}
           {persona
             ? nextWord(busy === item.id && assigningRoute === "new" ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })

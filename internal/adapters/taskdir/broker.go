@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -92,21 +93,22 @@ var ErrResultExists = errors.New("result.json already exists")
 // reads this file with its own tools, and every assistant on this machine has
 // been told these names.
 type Brief struct {
-	Protocol       int      `json:"clawdline_protocol"`
-	TaskID         string   `json:"task_id"`
-	Kind           string   `json:"kind"`
-	Assistant      string   `json:"assistant"`
-	PermissionMode string   `json:"permission_mode"`
-	Claims         []string `json:"claims"`
-	Isolation      string   `json:"isolation"`
-	ProjectDir     string   `json:"project_dir"`
-	Title          string   `json:"title"`
-	Instructions   string   `json:"instructions"`
-	Deliverables   []string `json:"deliverables,omitempty"`
-	TimeoutMinutes int      `json:"timeout_minutes"`
-	Persona        string   `json:"persona,omitempty"`
-	CreatedAt      string   `json:"created_at"`
-	Root           *RootRef `json:"root,omitempty"`
+	Investigation  *schedulewebhook.InvestigationRef `json:"investigation,omitempty"`
+	Protocol       int                               `json:"clawdline_protocol"`
+	TaskID         string                            `json:"task_id"`
+	Kind           string                            `json:"kind"`
+	Assistant      string                            `json:"assistant"`
+	PermissionMode string                            `json:"permission_mode"`
+	Claims         []string                          `json:"claims"`
+	Isolation      string                            `json:"isolation"`
+	ProjectDir     string                            `json:"project_dir"`
+	Title          string                            `json:"title"`
+	Instructions   string                            `json:"instructions"`
+	Deliverables   []string                          `json:"deliverables,omitempty"`
+	TimeoutMinutes int                               `json:"timeout_minutes"`
+	Persona        string                            `json:"persona,omitempty"`
+	CreatedAt      string                            `json:"created_at"`
+	Root           *RootRef                          `json:"root,omitempty"`
 	// WorkID is the work item the dispatch named, kept in the file so a
 	// respawn — which copies this file — is the same work (D36).
 	WorkID string `json:"work_id,omitempty"`
@@ -145,15 +147,16 @@ type RootRef struct {
 // dropped: a broker that silently discards a field the protocol documents is
 // how a protocol stops being one.
 type Result struct {
-	Protocol  int             `json:"clawdline_protocol"`
-	TaskID    string          `json:"task_id"`
-	Secret    string          `json:"task_secret"`
-	Status    string          `json:"status"`
-	Summary   string          `json:"summary"`
-	Symbols   []string        `json:"symbols,omitempty"`
-	Artifacts []string        `json:"artifacts,omitempty"`
-	Review    json.RawMessage `json:"review,omitempty"`
-	Verify    *Verification   `json:"verification,omitempty"`
+	InvestigationReport json.RawMessage `json:"investigation_report,omitempty"`
+	Protocol            int             `json:"clawdline_protocol"`
+	TaskID              string          `json:"task_id"`
+	Secret              string          `json:"task_secret"`
+	Status              string          `json:"status"`
+	Summary             string          `json:"summary"`
+	Symbols             []string        `json:"symbols,omitempty"`
+	Artifacts           []string        `json:"artifacts,omitempty"`
+	Review              json.RawMessage `json:"review,omitempty"`
+	Verify              *Verification   `json:"verification,omitempty"`
 	// GateVerdict is filled only by the broker after it independently reads a
 	// durable verification-gate submission. Ordinary result.json files cannot
 	// author it.
@@ -375,4 +378,84 @@ func (r Root) Modified(id string) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return info.ModTime(), true
+}
+
+// WriteInvestigationEvidence publishes the one bounded, read-only attachment
+// before dispatch. A crash/retry accepts only identical bytes, never an edit.
+func (r Root) WriteInvestigationEvidence(id string, body []byte) (string, error) {
+	if len(body) > schedulewebhook.MaxInvestigationBundleBytes {
+		return "", schedulewebhook.ErrInvestigationInvalid
+	}
+	dir := r.Path(id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "investigation-evidence.json")
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0o222 != 0 || info.Size() != int64(len(body)) {
+			return "", schedulewebhook.ErrInvestigationInvalid
+		}
+		old, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		if !bytes.Equal(old, body) {
+			return "", schedulewebhook.ErrInvestigationInvalid
+		}
+		return path, nil
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, ".investigation-evidence-")
+	if err != nil {
+		return "", err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err = f.Chmod(0o400); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	if _, err = f.Write(body); err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err != nil {
+		return "", err
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	if err = os.Rename(tmp, path); err != nil {
+		return "", err
+	}
+	if err = syncDir(dir); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// MatchesScheduledBrief permits a pre-admission replay only for the identical
+// template. The normal task-file bound also applies to an abandoned brief.
+func (r Root) MatchesScheduledBrief(id string, brief map[string]any) bool {
+	raw, err := readBounded(filepath.Join(r.Path(id), "task.json"), resultLimit)
+	if err != nil {
+		return false
+	}
+	var old map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&old) != nil {
+		return false
+	}
+	var tail any
+	if decoder.Decode(&tail) != io.EOF {
+		return false
+	}
+	a, err := json.Marshal(old)
+	if err != nil {
+		return false
+	}
+	b, err := json.Marshal(brief)
+	return err == nil && bytes.Equal(a, b)
 }

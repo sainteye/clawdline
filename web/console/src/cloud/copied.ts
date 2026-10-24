@@ -195,10 +195,11 @@ export function newCloudSession(options: {
   deviceKind: string
   deviceName: string
   returnTo?: string
+  onOperationsAccess?: (allowed: boolean) => void
 }): RecoverableCloudSession & { ensureSession(): Promise<EnsuredSession> } {
   // `handlers` is the Swift page's render seam (`net/handlers.js`, not copied):
   // this console draws from the client's events instead, so none is given.
-  return new CloudViewerSessionOriginal({ ...options, Client: PairedCloudClient, handlers: null }) as unknown as RecoverableCloudSession & {
+  return new CloudViewerSessionOriginal({ ...options, Client: PairedCloudClient, handlers: null, enableViewerRekey: true }) as unknown as RecoverableCloudSession & {
     ensureSession(): Promise<EnsuredSession>
   }
 }

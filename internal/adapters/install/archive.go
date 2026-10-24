@@ -14,10 +14,11 @@ import (
 )
 
 // Release archives are gzipped tars with their contents at the root
-// (tools/release/build.sh `tar_into`). install.sh unpacks the daemon archive
-// before any signature has been checked, because the checking binary is inside
-// it; setup then proves that every file it unpacked is the file the signed
-// manifest's archive holds, so what is activated is what was signed.
+// (tools/release/build.sh `tar_into`). The current install.sh verifies the
+// signed archive before unpacking or running it with local Python and OpenSSL.
+// setup independently proves that every unpacked file is the file the signed
+// manifest's archive holds, so what is activated is what was signed. Older
+// bootstraps did not provide the pre-execution check.
 
 // entryName is a tar entry's path, cleaned, or "" for the root itself. An
 // absolute path or one that climbs out is refused.

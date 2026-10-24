@@ -460,6 +460,11 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		return 0, "", ""
 	}
 	send := v.Allowed && v.Caps.Has(auth.Send)
+	if v.Allowed && !v.Local && !send && !machine && !strings.HasPrefix(p, "/v1/auth/") && p != "/v1/terminals" && !strings.HasPrefix(p, "/v1/terminals/") &&
+		p != "/v1/squad-packages/preview" && p != "/v1/squad-packages/export" &&
+		p != "/v1/push/subscribe" && p != "/v1/push/unsubscribe" && p != "/v1/push/test" {
+		return http.StatusForbidden, "forbidden", "This device may read, and not send."
+	}
 	switch {
 	case strings.HasPrefix(p, "/v1/cloud/peer/"):
 		if !send {
@@ -533,7 +538,7 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may read, and not change default models."
 		}
-	case p == "/v1/settings/work-gates":
+	case p == "/v1/settings/work-gates" || p == "/v1/settings/workflow":
 		// This narrow route exposes only the two future-assignment gate
 		// defaults. A paired device needs Send to change them, as it does for
 		// the other machine-wide controls carried to Settings.

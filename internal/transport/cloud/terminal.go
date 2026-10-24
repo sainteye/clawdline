@@ -766,6 +766,10 @@ func (l *Link) terminalService() (*terminals.Service, error) {
 // handleTerminal handles only the dedicated termi rail. It is deliberately
 // separate from cloudops.Bridge and Router, which cannot grant terminal access.
 func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
+	if l.contentAuthority != nil {
+		l.contentAuthority.mu.Lock()
+		defer l.contentAuthority.mu.Unlock()
+	}
 	if in.Channel != "termi/"+l.identity.MachineID+"/"+in.Sender || in.Class != string(domaincloud.ClassCtl) {
 		return
 	}
@@ -1440,6 +1444,27 @@ func (l *Link) publishTerminal(ctx context.Context, out Outbound) error {
 
 func (l *Link) terminalOperation(ctx context.Context, svc *terminals.Service, p terminals.Principal,
 	c *terminalConnection, req terminalRequest) (any, error) {
+	// Carrier choice does not grant operation authority. The shared service
+	// repeats this check after its lane waits; this check also protects custom
+	// in-process terminal providers that predate the operation callback.
+	effect := req.Operation == "open" || req.Operation == "input" || req.Operation == "paste" || req.Operation == "resize" || req.Operation == "close"
+	if req.Operation == "control" {
+		var body struct {
+			Action string `json:"action"`
+		}
+		if json.Unmarshal(req.Body, &body) == nil {
+			effect = body.Action != ""
+		}
+	}
+	if effect && l.pinned != nil {
+		scope, err := l.pinned.ViewerScope(p.Device)
+		if err != nil {
+			return nil, terminal.Refuse(terminal.CodeForbidden, "the viewer grant cannot be verified")
+		}
+		if scope != adaptercloud.ScopeOperate {
+			return nil, terminal.Refuse(terminal.CodeViewerReadOnly, "This device may read, and not send.")
+		}
+	}
 	id := terminal.ID(req.TerminalID)
 	if req.Operation != "list" && req.Operation != "open" && req.Operation != "renew_connection" && req.Operation != "activate_connection" && req.Operation != "release_connection" &&
 		(!id.Valid() || req.TerminalID == "") {

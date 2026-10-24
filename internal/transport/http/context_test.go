@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
@@ -37,6 +38,38 @@ func TestNewCodexInfoShowsModelWithoutTranscript(t *testing.T) {
 		}
 		if rec.Code != 200 || reply.Info.Session.Model != "gpt-5.6-sol" || reply.Info.Session.Effort != "high" || reply.Info.Usage != nil || reply.Info.Context != nil {
 			t.Fatalf("new session info: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestClaudeInfoCarriesLiveStatusEffortWithoutATranscript(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".claude", "statusline-cache")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "session-test-effort.json"), []byte(`{"effort":{"level":"high"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := &pane{s: session.Session{ID: "%19", Backend: session.BackendTmux,
+		Assistant: session.AssistantClaude, ConversationID: "test-effort", State: session.StateIdle}}
+	s := paneServer(t, p)
+	for _, parts := range []string{"summary", "all"} {
+		rec := httptest.NewRecorder()
+		s.sessionInfoRoute(rec, httptest.NewRequest("GET", "/v1/sessions/%2519/info?parts="+parts, nil), "%19")
+		var reply struct {
+			Info struct {
+				Session struct {
+					Effort string `json:"effort"`
+				} `json:"session"`
+			} `json:"info"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != 200 || reply.Info.Session.Effort != "high" {
+			t.Fatalf("Claude effort: %d %s", rec.Code, rec.Body.String())
 		}
 	}
 }

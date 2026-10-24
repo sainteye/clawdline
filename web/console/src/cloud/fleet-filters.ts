@@ -1,7 +1,8 @@
 import type { SessionRow } from "@clawdline/contract"
 import type { ProjectedSession } from "./all-machine-sessions.js"
 
-export type FleetFilter = "all" | "attention" | "working" | "idle"
+import type { SessionStateFilter } from "../session/state-filter.js"
+export type FleetFilter = SessionStateFilter
 
 export function matchesFleetFilter(row: ProjectedSession, filter: FleetFilter, status?: Pick<Partial<SessionRow>, "shells">): boolean {
   const hasShells = (status?.shells?.length ?? 0) > 0

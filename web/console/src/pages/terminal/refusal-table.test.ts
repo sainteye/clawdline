@@ -48,3 +48,15 @@ test("every terminal refusal code the contract lists has its own sentence in bot
   const zh = inLanguage("zh-Hant", () => nextWord(TERMINAL_REFUSAL_WORDS.terminal_busy))
   assert.match(zh, /[一-鿿]/, "the zh-Hant sentence is Chinese")
 })
+
+test("a readonly viewer's terminal refusal says it may watch and not type, in both languages", () => {
+  assert.ok(contractCodes().includes("viewer_read_only"), "the contract closes over the readonly refusal")
+  // This file loads the zh-Hant catalog; the English words are the shipped catalog's own.
+  const english = JSON.parse(readFileSync(new URL("../../../public/catalogs/en.json", import.meta.url), "utf8"))
+  const en: string = english["next." + TERMINAL_REFUSAL_WORDS.viewer_read_only]
+  assert.match(en, /watch/)
+  assert.match(en, /not type/)
+  const zh = inLanguage("zh-Hant", () => nextWord(TERMINAL_REFUSAL_WORDS.viewer_read_only))
+  assert.match(zh, /觀看/)
+  assert.match(zh, /不能輸入/)
+})

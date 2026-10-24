@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -240,7 +241,15 @@ func (s ContentEpochStore) Save(rec ContentEpoch) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), filepath.Join(s.Dir, ContentEpochFile))
+	if err := os.Rename(tmp.Name(), filepath.Join(s.Dir, ContentEpochFile)); err != nil {
+		return err
+	}
+	directory, err := os.Open(s.Dir)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 // Forget removes the record (sign-out, account change).
@@ -258,8 +267,14 @@ func (s ContentEpochStore) Forget() error {
 // injected: the tests and the end-to-end experiment use synthetic keys and
 // never read a real key file.
 type MachineIdentityPairing struct {
-	Client     *IdentityClient
-	MachineKey cloud.DeviceKey
+	// Authorize serializes only key reads, disclosure, and confirmed local commit.
+	// Polls and human decisions must never run inside this callback.
+	Authorize    func(context.Context, func() error) error
+	ContentState func() (cloud.ContentKeyState, error)
+	Reserve      func(cloud.IdentityOffer) error
+	Complete     func(IdentityPairingResult) error
+	Client       *IdentityClient
+	MachineKey   cloud.DeviceKey
 	// Master reads the account master secret (cloudkeys.Files.MasterSecret).
 	Master func() ([]byte, bool, error)
 	Epochs ContentEpochStore
@@ -279,6 +294,7 @@ type IdentityPairingResult struct {
 	PairingID         string
 	ViewerDeviceID    string
 	ViewerFingerprint string
+	ViewerSigningKey  string
 	ContentKeyEpoch   int64
 	IdentityEpoch     int64
 }
@@ -333,22 +349,60 @@ func (m *MachineIdentityPairing) poll(ctx context.Context, q cloud.IdentityPairi
 // Run performs start → (offer) → grant → (activate) → attested confirm and
 // records the epoch only from Cloud's grant receipt.
 func (m *MachineIdentityPairing) Run(ctx context.Context, accountID string) (IdentityPairingResult, error) {
-	master, ok, err := m.Master()
-	if err != nil {
-		return IdentityPairingResult{}, err
-	}
-	if !ok || len(master) != cloud.ContentKeyBytes {
-		return IdentityPairingResult{}, ErrIdentityNoMaster
-	}
+	var master []byte
+	var epoch int64
+	var known bool
+	var initial cloud.ContentKeyState
+	err := m.authorized(ctx, func() error {
+		if m.ContentState != nil {
+			state, err := m.ContentState()
+			if err != nil {
+				return err
+			}
+			if _, err := cloud.NewKeyEpoch(state); err != nil {
+				return err
+			}
+			if state.Epoch > math.MaxInt64 {
+				return cloud.ErrIdentityEpoch
+			}
+			initial = state
+			master = bytes.Clone(state.Key.Bytes())
+			epoch = int64(state.Epoch)
+			return m.Epochs.CheckRuntime(accountID, state)
+		}
+		var ok bool
+		var err error
+		master, ok, err = m.Master()
+		if err != nil {
+			return err
+		}
+		if !ok || len(master) != cloud.ContentKeyBytes {
+			return ErrIdentityNoMaster
+		}
+		epoch, known, err = m.Epochs.Load(accountID, master)
+		if err == nil && !known {
+			epoch = 1
+		}
+		return err
+	})
 	defer clear(master)
-	epoch, known, err := m.Epochs.Load(accountID, master)
 	if err != nil {
 		return IdentityPairingResult{}, err
 	}
-	if !known {
-		// The first attested handover of this secret names it epoch 1. It
-		// becomes a recorded fact only when Cloud records the grant below.
-		epoch = 1
+	// A state reader cannot silently change the selected key mid-transcript.
+	guarded := func(fn func() error) error {
+		return m.authorized(ctx, func() error {
+			if m.ContentState != nil {
+				state, err := m.ContentState()
+				if err != nil {
+					return err
+				}
+				if state.Epoch != initial.Epoch || state.KeyID != initial.KeyID || !bytes.Equal(state.Key.Bytes(), master) {
+					return cloud.ErrRekey
+				}
+			}
+			return fn()
+		})
 	}
 	ephemeral, err := cloud.NewX25519Private(m.Rand)
 	if err != nil {
@@ -383,6 +437,10 @@ func (m *MachineIdentityPairing) Run(ctx context.Context, accountID string) (Ide
 		q.MachineEphemeralKey != base64.StdEncoding.EncodeToString(ephemeralPublic) {
 		return IdentityPairingResult{}, cloud.ErrIdentityTranscript
 	}
+	// The signed invitation expires independently of the wrapper's lifetime.
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithDeadline(ctx, time.UnixMilli(q.ExpiresAt))
+	defer cancel()
 	if m.Show != nil {
 		m.Show(q.Fragment())
 	}
@@ -413,63 +471,132 @@ func (m *MachineIdentityPairing) Run(ctx context.Context, accountID string) (Ide
 		return IdentityPairingResult{}, cloud.ErrPairingNotApproved
 	}
 
-	grantNonce, err := m.random(cloud.NonceBytes)
+	var grantReceipt IdentityPhaseReceipt
+	var grantDigest string
+	err = guarded(func() error {
+		if m.Reserve != nil {
+			if err := m.Reserve(offer); err != nil {
+				return err
+			}
+		}
+		grantNonce, err := m.random(cloud.NonceBytes)
+		if err != nil {
+			return err
+		}
+		grant := cloud.IdentityGrant{
+			PairingID: q.PairingID, AccountID: q.AccountID, MachineID: q.MachineID,
+			MachineSigningKey: q.MachineSigningKey, MachineFingerprint: q.MachineFingerprint,
+			ViewerDeviceID: offer.ViewerDeviceID, OfferSHA256: offerDigest,
+			ContentKeyEpoch: epoch, IdentityEpoch: start.Identity.IdentityEpoch,
+			MasterSecret: base64.StdEncoding.EncodeToString(master),
+		}
+		grantPlain := grant.Canonical()
+		grantWrapper, err := cloud.SealIdentityPhase(q, cloud.IdentityPhaseGrant, q.MachineID, ephemeral, offer.ViewerEphKey, grantNonce, grantPlain)
+		clear(grantPlain)
+		if err != nil {
+			return err
+		}
+		grantReceipt, err = m.Client.WritePhase(ctx, q.ClaimNonce, grantWrapper, "")
+		if err != nil {
+			return err
+		}
+		grantDigest = cloud.PhaseDigest(grantWrapper)
+		if grantReceipt.PhaseSHA256 != grantDigest || grantReceipt.ContentKeyEpoch != epoch {
+			return cloud.ErrIdentityPhaseDigest
+		}
+
+		return nil
+	})
 	if err != nil {
 		return IdentityPairingResult{}, err
-	}
-	grant := cloud.IdentityGrant{
-		PairingID: q.PairingID, AccountID: q.AccountID, MachineID: q.MachineID,
-		MachineSigningKey: q.MachineSigningKey, MachineFingerprint: q.MachineFingerprint,
-		ViewerDeviceID: offer.ViewerDeviceID, OfferSHA256: offerDigest,
-		ContentKeyEpoch: epoch, IdentityEpoch: start.Identity.IdentityEpoch,
-		MasterSecret: base64.StdEncoding.EncodeToString(master),
-	}
-	grantPlain := grant.Canonical()
-	grantWrapper, err := cloud.SealIdentityPhase(q, cloud.IdentityPhaseGrant, q.MachineID, ephemeral, offer.ViewerEphKey, grantNonce, grantPlain)
-	clear(grantPlain)
-	if err != nil {
-		return IdentityPairingResult{}, err
-	}
-	grantReceipt, err := m.Client.WritePhase(ctx, q.ClaimNonce, grantWrapper, "")
-	if err != nil {
-		return IdentityPairingResult{}, err
-	}
-	grantDigest := cloud.PhaseDigest(grantWrapper)
-	if grantReceipt.PhaseSHA256 != grantDigest || grantReceipt.ContentKeyEpoch != epoch {
-		return IdentityPairingResult{}, cloud.ErrIdentityPhaseDigest
 	}
 
 	activateWrapper, activateDigest, err := m.poll(ctx, q, cloud.IdentityPhaseActivate)
 	if err != nil {
 		return IdentityPairingResult{}, err
 	}
-	confirmNonce, err := m.random(cloud.NonceBytes)
-	if err != nil {
-		return IdentityPairingResult{}, err
-	}
-	attested, err := cloud.AttestVerifiedActivate(cloud.ActivateCheck{
-		QR: q, Offer: offer, GrantSHA256: grantDigest, ActivateWrapper: activateWrapper, ActivatePhaseSHA: activateDigest,
-		MachineEphemeral: ephemeral, Master: master, ContentKeyEpoch: epoch, IdentityEpoch: start.Identity.IdentityEpoch,
-		MachineKeyEpoch: start.Identity.MachineKeyEpoch, ViewerKeyEpoch: grantReceipt.ViewerKeyEpoch, ConfirmNonce: confirmNonce,
-	}, m.MachineKey)
-	if err != nil {
-		return IdentityPairingResult{}, err
-	}
-	confirmReceipt, err := m.Client.WritePhase(ctx, q.ClaimNonce, attested.Confirm, attested.Attestation)
-	if err != nil {
-		return IdentityPairingResult{}, err
-	}
-	g := confirmReceipt.ContentKeyGrant
-	if g == nil || g.Status != "recorded" || g.ViewerDeviceID != offer.ViewerDeviceID || g.ContentKeyEpoch != epoch ||
-		g.IdentityEpoch != start.Identity.IdentityEpoch {
-		return IdentityPairingResult{}, ErrIdentityGrantMissing
-	}
-	if !known {
-		if err := m.Epochs.Save(ContentEpoch{V: 1, ContentKeyEpoch: epoch, KeyID: keyID, AccountID: q.AccountID,
-			MachineID: q.MachineID, PairingID: q.PairingID, RecordedAtMS: m.now().UnixMilli()}); err != nil {
-			return IdentityPairingResult{}, err
+	var result IdentityPairingResult
+	err = guarded(func() error {
+		confirmNonce, err := m.random(cloud.NonceBytes)
+		if err != nil {
+			return err
 		}
+		attested, err := cloud.AttestVerifiedActivate(cloud.ActivateCheck{
+			QR: q, Offer: offer, GrantSHA256: grantDigest, ActivateWrapper: activateWrapper, ActivatePhaseSHA: activateDigest,
+			MachineEphemeral: ephemeral, Master: master, ContentKeyEpoch: epoch, IdentityEpoch: start.Identity.IdentityEpoch,
+			MachineKeyEpoch: start.Identity.MachineKeyEpoch, ViewerKeyEpoch: grantReceipt.ViewerKeyEpoch, ConfirmNonce: confirmNonce,
+		}, m.MachineKey)
+		if err != nil {
+			return err
+		}
+		confirmReceipt, err := m.Client.WritePhase(ctx, q.ClaimNonce, attested.Confirm, attested.Attestation)
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		g := confirmReceipt.ContentKeyGrant
+		if g == nil || g.Status != "recorded" || g.ViewerDeviceID != offer.ViewerDeviceID || g.ContentKeyEpoch != epoch ||
+			g.IdentityEpoch != start.Identity.IdentityEpoch {
+			return ErrIdentityGrantMissing
+		}
+		if !known || m.ContentState != nil {
+			if err := m.Epochs.Save(ContentEpoch{V: 1, ContentKeyEpoch: epoch, KeyID: keyID, AccountID: q.AccountID,
+				MachineID: q.MachineID, PairingID: q.PairingID, RecordedAtMS: m.now().UnixMilli()}); err != nil {
+				return err
+			}
+		}
+		result = IdentityPairingResult{PairingID: q.PairingID, ViewerDeviceID: offer.ViewerDeviceID,
+			ViewerFingerprint: offer.ViewerFingerprint, ViewerSigningKey: offer.ViewerSigningKey,
+			ContentKeyEpoch: epoch, IdentityEpoch: start.Identity.IdentityEpoch}
+		if m.Complete != nil {
+			return m.Complete(result)
+		}
+		return nil
+	})
+	if err != nil {
+		return IdentityPairingResult{}, err
 	}
-	return IdentityPairingResult{PairingID: q.PairingID, ViewerDeviceID: offer.ViewerDeviceID,
-		ViewerFingerprint: offer.ViewerFingerprint, ContentKeyEpoch: epoch, IdentityEpoch: start.Identity.IdentityEpoch}, nil
+	return result, nil
+}
+
+func (m *MachineIdentityPairing) authorized(ctx context.Context, fn func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.Authorize != nil {
+		return m.Authorize(ctx, fn)
+	}
+	return fn()
+}
+
+// CheckRuntime bridges an old attested epoch without allowing it to reset the
+// durable runtime floor. Older records describe historical keys, not the new key.
+func (s ContentEpochStore) CheckRuntime(accountID string, state cloud.ContentKeyState) error {
+	raw, err := os.ReadFile(filepath.Join(s.Dir, ContentEpochFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(raw) > maxEpochRecordBytes {
+		return cloud.ErrContentKeyState
+	}
+	var rec ContentEpoch
+	if json.Unmarshal(raw, &rec) != nil || rec.V != 1 || rec.AccountID != accountID || rec.ContentKeyEpoch < 1 || rec.KeyID == "" {
+		return cloud.ErrContentKeyState
+	}
+	if uint64(rec.ContentKeyEpoch) > state.Epoch {
+		return cloud.ErrContentKeyConflict
+	}
+	id, err := cloud.ContentKeyID(state.Key.Bytes())
+	if err != nil {
+		return err
+	}
+	if uint64(rec.ContentKeyEpoch) == state.Epoch && rec.KeyID != id {
+		return cloud.ErrContentKeyConflict
+	}
+	return nil
 }

@@ -34,7 +34,7 @@ func TestHTTPRefusalTextRequiresExactWireDetailAndKnownKey(t *testing.T) {
 			t.Errorf("%+v rendered %q", test, got)
 		}
 	}
-	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1234 || total != 1234 {
+	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1271 || total != 1271 {
 		t.Fatalf("Traditional Chinese coverage = %d/%d", translated, total)
 	}
 	const updateDetail = "force needs the version it installs"
@@ -70,6 +70,19 @@ func TestNoteWithdrawalRefusalsHaveTraditionalChineseCopy(t *testing.T) {
 		key := HTTPRefusalKey(detail)
 		if key == "" || HTTPRefusalText("zh-Hant", key, detail) == detail {
 			t.Fatalf("missing withdrawal translation: %s", detail)
+		}
+	}
+}
+
+func TestAntigravityFirstInputRefusalsHaveTraditionalChineseCopy(t *testing.T) {
+	for _, detail := range []string{
+		"Antigravity's prepared launch could not be verified. No input was sent.",
+		"This Antigravity launch has already reserved its first input. Refresh the Session before continuing.",
+		"The first-input attempt could not be confirmed. Refresh the Session; it will not be retried automatically.",
+	} {
+		key := HTTPRefusalKey(detail)
+		if key == "" || HTTPRefusalText("zh-Hant", key, detail) == detail || HTTPRefusalText("ja", key, detail) != detail {
+			t.Fatalf("first-input translation or fallback missing: %q", detail)
 		}
 	}
 }

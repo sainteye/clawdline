@@ -9,8 +9,12 @@
 // browser.
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { spawnSync } from "node:child_process"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts. It sits on one line because the directive answers for the line the path is on.
-import { INVITATION_KEY, PairingRun, dropInvitation, invitationInHash, pairingCommand, pairingEnding, takeInvitation, watchInvitations, type OpenedPairing, type PairState, type PairStart, type PendingOffer } from "./pair.ts"
+import { INVITATION_KEY, PairingRun, dropInvitation, invitationInHash, pairingAppLink, pairingCommand, pairingEnding, takeInvitation, watchInvitations, type OpenedPairing, type PairState, type PairStart, type PendingOffer } from "./pair.ts"
 
 const OFFER: PendingOffer = {
   pairingID: "pair_1",
@@ -154,10 +158,35 @@ test("the three endings are three words: ran out, not this browser's, and anythi
   assert.deepEqual(await run.begin(), { phase: "refused", code: "wrong_claimant" })
 })
 
-test("the line the machine is given needs no quoting", () => {
-  assert.equal(pairingCommand(OFFER.fragment), "clawdline cloud pair -offer " + OFFER.fragment)
-  // base64url: the alphabet a shell passes through untouched.
+test("a pairing offer rejects shell syntax outside its base64url alphabet", () => {
+  for (const invalid of ["", "$(id)", "abc;id", "abc\nexit", "'abc'"]) assert.throws(() => pairingCommand(invalid))
   assert.match(OFFER.fragment, /^[A-Za-z0-9_-]+$/)
+})
+
+test("the local app link carries the selected machine and offer without executing shell text", () => {
+  const link = new URL(pairingAppLink(OFFER.fragment, "mac_pair_fixture"))
+  assert.equal(link.protocol, "clawdline-next:")
+  assert.equal(link.host, "pair-browser")
+  assert.equal(link.searchParams.get("machine_id"), "mac_pair_fixture")
+  assert.equal(link.searchParams.get("offer"), OFFER.fragment)
+  assert.throws(() => pairingAppLink("bad; command", "mac_pair_fixture"))
+  const firstBrowser = new URL(pairingAppLink(OFFER.fragment))
+  assert.equal(firstBrowser.searchParams.has("machine_id"), false)
+  assert.equal(firstBrowser.searchParams.get("offer"), OFFER.fragment)
+})
+
+test("the copied command pairs through the running daemon's reader when PATH lacks clawdline", () => {
+  const dir = mkdtempSync(join(tmpdir(), "clawdline-pair-command-"))
+  try {
+    mkdirSync(join(dir, "bin"))
+    const reader = join(dir, "bin/clawdline")
+    writeFileSync(reader, '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o700 })
+    const result = spawnSync("/bin/sh", ["-c", pairingCommand(OFFER.fragment)], {
+      env: { ...process.env, CLAWDLINE_NEXT_DIR: dir, PATH: dir }, encoding: "utf8",
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(result.stdout.trim().split("\n"), ["cloud", "pair", "--offer", OFFER.fragment])
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
 /** A tab: an address, a history and session storage. */

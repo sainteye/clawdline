@@ -11,6 +11,32 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
+func TestProtocolConversationIdentitySurvivesAStoppedNativeProcess(t *testing.T) {
+	row := session.Session{ID: "owned:acp:synthetic", Backend: session.BackendOwned, Binding: session.BindingProtocol, Assistant: session.AssistantAntigravity, ConversationID: "native-one"}
+	held := executionFingerprint(row, ownrecords.Live{})
+	if held == "" {
+		t.Fatal("saved protocol history has no paired-device identity")
+	}
+	row.PID = 123
+	if got := executionFingerprint(row, ownrecords.Live{}); got != held {
+		t.Fatal("native reconnect changed the durable conversation target")
+	}
+	row.ConversationID = "native-two"
+	if got := executionFingerprint(row, ownrecords.Live{}); got == held {
+		t.Fatal("another native conversation reused the target")
+	}
+	row.PID = 0
+	row.Binding = session.BindingNoRecord
+	if got := executionFingerprint(row, ownrecords.Live{}); got != "" {
+		t.Fatal("unbound terminal bypassed process identity")
+	}
+	row.Binding = session.BindingProtocol
+	row.Assistant = session.AssistantClaude
+	if got := executionFingerprint(row, ownrecords.Live{}); got != "" {
+		t.Fatal("another provider bypassed process identity")
+	}
+}
+
 func TestPinnedSessionAdmissionRequiresFreshProcessAndMatchingMachine(t *testing.T) {
 	if ownrecords.ProcessStart(os.Getpid()).IsZero() {
 		t.Skip("this platform has no kernel process-start reader")

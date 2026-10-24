@@ -1,0 +1,44 @@
+/* C: the ordinary counts remain quiet; only an applied state names itself in orange. */
+.session-state-entry { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; text-align: left; }
+.session-state-entry:hover { color: var(--ink); }
+.session-state-entry:focus-visible { outline: none; }
+.session-state-entry:focus-visible .session-state-caret { stroke: var(--ink); }
+.session-state-entry .counts { flex: 0 1 auto; }
+.session-state-entry[data-active="false"] .waiting { color: var(--dim); font-weight: inherit; }
+.session-state-selected { color: var(--accent); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.session-state-count { color: var(--dim); font-size: 12px; flex: none; }
+.session-state-caret { width: 12px; height: 12px; flex: none; fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.session-state-slot > .session-state-entry { width: 100%; }
+.session-state-dialog { padding: 0; width: min(440px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink); }
+.session-state-dialog::backdrop { background: rgba(0, 0, 0, .6); }
+.session-state-sheet { padding: 16px 0 0; }
+.session-state-head { display: flex; align-items: center; gap: 12px; padding: 0 16px 6px; }
+.session-state-head h2 { margin: 0; font-size: 16px; flex: 1; }
+.session-state-close { width: 44px; min-height: 44px; color: var(--dim); font-size: 22px; }
+.session-state-option { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 72px; padding: 12px 18px; text-align: left; }
+.session-state-option:hover { background: var(--card-hi); }
+.session-state-radio { width: 20px; height: 20px; border: 1px solid var(--faint); border-radius: 50%; flex: none; }
+.session-state-option[aria-checked="true"] .session-state-radio { border-color: var(--accent); box-shadow: inset 0 0 0 4px var(--card); background: var(--accent); }
+.session-state-option[aria-checked="true"] b { color: var(--accent); }
+.session-state-words { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.session-state-words b { font-size: 14px; }
+.session-state-words small { color: var(--dim); font-size: 12px; margin-top: 3px; }
+.session-state-footer { border-top: 1px solid var(--line); padding: 10px 16px; }
+.session-state-refresh { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--dim); }
+.session-state-refresh svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.session-state-incomplete { color: var(--dim); font-size: 12px; padding: 0 18px; }
+.session-state-empty { display: flex; align-items: flex-start; gap: 12px; margin: 12px 0 18px; padding: 16px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--dim); }
+.session-state-empty-icon { width: 24px; height: 24px; margin-top: 1px; flex: none; fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-linecap: round; }
+.session-state-empty-body { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; min-width: 0; flex: 1; }
+.session-state-empty-body p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.6; flex: 1 1 220px; }
+.session-state-reset { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--accent); font-size: 12px; }
+.session-state-reset:hover { background: var(--card-hi); }
+@media (max-width: 600px) {
+  .session-state-dialog { position: fixed; top: auto; bottom: 0; margin: 0 auto; width: 100%; max-width: none; border-radius: 18px 18px 0 0; }
+}
+
+.session-state-refresh[aria-busy="true"] svg { animation: session-state-refresh-turn .9s linear infinite; }
+@keyframes session-state-refresh-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .session-state-refresh[aria-busy="true"] svg { animation: none; } }

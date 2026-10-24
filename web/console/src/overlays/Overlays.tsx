@@ -5,6 +5,7 @@ import { nextWord } from "../next-strings.js"
 import { ActionConfirm, bindActionConfirm } from "./action-confirm.js"
 import { bindInfo } from "./info.js"
 import { bindRoleDetail } from "./role-detail.js"
+import { ITermConsentDialog } from "../session/ITermConsentDialog.js"
 
 /**
  * The three overlays and the toast, as `index.html` writes them: the keyboard
@@ -53,6 +54,7 @@ export function Overlays() {
 
   return (
     <>
+      <ITermConsentDialog />
       <div className="overlay" id="keys" hidden>
         <div className="sheet" role="dialog" aria-modal="true" aria-label={T.webKeysLabel}>
           <h2>{T.webKeysTitle}</h2>

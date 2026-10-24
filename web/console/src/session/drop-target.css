@@ -1,0 +1,11 @@
+/* Paint the drop frame above the to-do and attention panels (layer 6).
+   It is decoration only: drag events must still reach the pane underneath. */
+.pane-detail.dropping { outline: none; }
+.pane-detail.dropping::after {
+    content: ""; position: absolute; inset: 6px; z-index: 7;
+    border: 2px dashed var(--accent-ed); pointer-events: none;
+}
+/* The phone pane already uses fixed positioning to follow the viewport. */
+@media (min-width: 900px) {
+    .pane-detail.dropping { position: relative; }
+}

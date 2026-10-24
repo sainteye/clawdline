@@ -1,9 +1,18 @@
 package capacity
 
+const AntigravityConsentRequestBytesLimit = 4096
+
 // projectFilesBounds is every registered row named projectfiles.* and
 // projects.*.
 func projectFilesBounds() []Entry {
 	return []Entry{
+		// ANTIGRAVITY_CONSENT_REQUEST_MS in the Project consent website API
+		// bounds the entire response, including its JSON body, without retry.
+		{Name: "projects.antigravity_consent_request_ms", Class: Buffer, Unit: Milliseconds, Limit: 15000, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon},
+		{Name: "projects.antigravity_consent_body_bytes", Class: Buffer, Unit: Bytes, Limit: AntigravityConsentRequestBytesLimit, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.antigravityConsentBodyBytesLimit", "internal/domain/capacity.AntigravityConsentRequestBytesLimit"}},
+		{Name: "projects.workspace_metadata_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/projects.WorkspaceMetadataBytesLimit"}},
 		{
 			Name: "projects.folder_rows", Class: Buffer, Unit: Rows,
 			Limit: 128, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,

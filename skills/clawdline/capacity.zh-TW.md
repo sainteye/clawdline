@@ -4,6 +4,32 @@
 
 | 名稱 | 預設上限 | 單位 | 達上限時 | 告知管道 | 偏離既定規則 |
 | --- | ---: | --- | --- | --- | --- |
+| `antigravity.acp_call_seconds` | 45 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.acp_frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.acp_sessions` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.acp_view_bytes` | 1048576 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `antigravity.ancestry_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.context_history` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.context_index_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.context_receipts` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.first_input_slots` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.history_connections` | 1 | `rows` | `refuse` | `diagnostics` | — |
+| `antigravity.hook_config_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_connections` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_frame_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_payload_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_request_seconds` | 2 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.hook_timeout_seconds` | 3 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.launch_context_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.live_bindings` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.managed_launches` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.native_process_file_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.native_tty_entries` | 4096 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.observation_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.process_read_seconds` | 3 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.retention_seconds` | 86400 | `seconds` | `expire` | `diagnostics, sender` | — |
+| `antigravity.saved_launches` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.state_age_seconds` | 15 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `artifacts.drops` | 268435456 | `bytes` | `evict_oldest` | `diagnostics, log` | — |
 | `artifacts.drops_young` | 1 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
 | `artifacts.image_bytes` | 67108864 | `bytes` | `evict_oldest` | `diagnostics, notice, log` | — |
@@ -19,6 +45,10 @@
 | `cache.git_not_repo_rows` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.image_thumbs` | 8388608 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `cache.pinned_read` | 3 | `seconds` | `expire` | `diagnostics` | — |
+| `cache.provider_quota` | 4 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `cache.provider_quota_refresh_seconds` | 900 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `cache.provider_quota_request_seconds` | 10 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `cache.provider_quota_response_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `cache.reclaim_summary` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.session_activity` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.session_execution_memo` | 4096 | `rows` | `evict_oldest` | `diagnostics` | — |
@@ -36,6 +66,7 @@
 | `callback.per_root` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `callback.tail_bytes` | 8192 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `cloud.content_key_epoch_record_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.envelope_key_id` | 128 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.header_read_diagnostic_rows` | 24 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cloud.header_read_diagnostic_seconds` | 3600 | `seconds` | `expire` | `diagnostics` | — |
 | `cloud.health_active_slots` | 128 | `rows` | `refuse` | `diagnostics` | — |
@@ -44,6 +75,10 @@
 | `cloud.health_capture_frames` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `cloud.health_capture_raw_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `cloud.health_captures_per_minute` | 4 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.health_investigation_bundle_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.health_investigation_read_seconds` | 5 | `seconds` | `disconnect` | `diagnostics` | — |
+| `cloud.health_investigation_report_bytes` | 2048 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.health_investigation_report_refs` | 8 | `rows` | `refuse` | `diagnostics` | — |
 | `cloud.health_journal_bytes` | 4194304 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `cloud.health_journal_rows` | 4096 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cloud.health_owner_incidents` | 32 | `rows` | `refuse` | `diagnostics` | — |
@@ -92,6 +127,7 @@
 | `cloud.identity_pairing_decision_bytes` | 1024 | `bytes` | `refuse` | `diagnostics` | — |
 | `cloud.identity_pairing_poll_attempts` | 600 | `rows` | `refuse` | `diagnostics` | — |
 | `cloud.identity_pairing_run_seconds` | 660 | `seconds` | `disconnect` | `diagnostics` | — |
+| `cloud.lane_refusals` | 16 | `rows` | `refuse` | `diagnostics, log` | — |
 | `cloud.peer_body_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, notice, sender` | — |
 | `cloud.peer_discovery_reply` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `cloud.peer_frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, log, sender` | — |
@@ -101,6 +137,11 @@
 | `cloud.peer_ingress` | 16 | `rows` | `refuse` | `diagnostics, log, sender` | — |
 | `cloud.peer_outbox` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `cloud.peer_pairs` | 128 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `cloud.read_queue` | 64 | `rows` | `refuse` | `diagnostics, log, sender` | — |
+| `cloud.rekey_body` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `cloud.rekey_interval` | 2 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `cloud.rekey_lifetime` | 120 | `seconds` | `expire` | `diagnostics, sender` | — |
+| `cloud.rekey_pending` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `cloud.relay_queue` | 64 | `rows` | `refuse` | `diagnostics, notice, cloud_status, log, sender` | — |
 | `cloud.reload_stop_seconds` | 15 | `seconds` | `refuse` | `diagnostics, sender, log` | — |
 | `cloud.roster_short_read_attempts` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -153,6 +194,11 @@
 | `cloud.viewer_events_line_bytes` | 1024 | `bytes` | `coalesce` | `diagnostics, log` | — |
 | `cloud.viewer_events_logged_rows` | 128 | `rows` | `coalesce` | `diagnostics, log` | — |
 | `cloud.viewer_events_seen_batches` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `cloud.viewer_rekey_cooldown` | 120 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.viewer_rekey_pending` | 1 | `rows` | `refuse` | `diagnostics` | — |
+| `console.assistant_facts_read_milliseconds` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `console.carrier_receive_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `console.carrier_receive_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `console.direct_history_hours` | 24 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.direct_history_machines` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.execution_recovery_attempts` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
@@ -166,6 +212,8 @@
 | `console.health_ui_incident_pages` | 5 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_incident_rows` | 50 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_incident_window_seconds` | 604800 | `seconds` | `expire` | `diagnostics` | — |
+| `console.health_ui_investigation_refs` | 8 | `rows` | `refuse` | `diagnostics` | — |
+| `console.health_ui_investigations` | 5 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_page_rows` | 200 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_parallel_reads` | 2 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_probe_claims` | 8 | `rows` | `refuse` | `diagnostics` | — |
@@ -177,6 +225,7 @@
 | `console.health_ui_trend_lanes` | 12 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_trend_signals` | 20 | `rows` | `refuse` | `diagnostics` | — |
 | `console.machine_list_poll_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
+| `console.native_pairing_save_seconds` | 15 | `seconds` | `expire` | `sender, diagnostics` | — |
 | `console.opened_row_quiet_seconds` | 8 | `seconds` | `expire` | `diagnostics` | — |
 | `console.opened_row_restate_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.owner_retention_poll_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
@@ -190,10 +239,12 @@
 | `console.status_marker_recovery_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_retry_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_backoff_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
+| `console.transcript_fill_pages` | 32 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.transcript_follow_fast_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_follow_later_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_follow_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_merged_rows` | 1000 | `rows` | `expire` | `diagnostics` | — |
+| `console.transcript_revision_restarts` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.transcript_safety_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `console.viewer_health_attempts` | 4 | `rows` | `refuse` | `diagnostics` | — |
 | `console.viewer_health_backoff_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
@@ -254,6 +305,12 @@
 | `personas.catalog` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `personas.suggestion_context_bytes` | 16384 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `personas.text_bytes` | 8192 | `bytes` | `refuse` | `diagnostics` | — |
+| `places.antigravity_history_bytes` | 67108864 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `places.antigravity_history_entries` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `places.antigravity_history_milliseconds` | 250 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `places.antigravity_history_title_characters` | 80 | `characters` | `refuse` | `diagnostics, sender` | — |
+| `places.antigravity_probe_output_bytes` | 65536 | `bytes` | `refuse` | `diagnostics` | — |
+| `places.antigravity_probe_seconds` | 3 | `seconds` | `refuse` | `diagnostics` | — |
 | `places.git_config_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `places.registered` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `places.repo_lookups` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |
@@ -271,7 +328,10 @@
 | `projectfiles.tree_depth` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projectfiles.tree_path_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectfiles.write_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.antigravity_consent_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.antigravity_consent_request_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `projects.folder_rows` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.workspace_metadata_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.clones` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.entry_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.file_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -377,6 +437,9 @@
 | `squadpackage.preview_rows` | 1024 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `squadpackage.request_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `sse.screen_pending` | 64 | `rows` | `disconnect` | `diagnostics, notice` | — |
+| `store.antigravity_consent_identity_bytes` | 128 | `bytes` | `refuse` | `diagnostics` | — |
+| `store.antigravity_consent_root_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
+| `store.antigravity_project_consents` | 1024 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `store.db` | 1073741824 | `bytes` | `none` | `diagnostics, notice, health` | limits §7.1: C1 only measures this row. Its class refuses new writes at the limit (limits §4.4 step 5, 507 storage_exhausted); nothing refuses yet, and ok:false on /v1/health is the only effect of full. |
 | `store.done_effect_retention_seconds` | 604800 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `store.events` | 150000 | `rows` | `evict_oldest` | `diagnostics` | — |

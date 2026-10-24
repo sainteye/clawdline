@@ -112,3 +112,44 @@ func TestViewerOlderTranscriptPageKeepsThePinnedTargetAndCursor(t *testing.T) {
 		}
 	}
 }
+
+func TestViewerTranscriptRevisionsSeparateEqualOffsetRequests(t *testing.T) {
+	target := ViewerDestination{MachineID: "machine-a", SessionID: "same", ExecutionGeneration: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	first, a := viewerTranscriptCommand(target, 512, "agy1:first")
+	second, b := viewerTranscriptCommand(target, 512, "agy1:second")
+	if first == second || a["revision"] != "agy1:first" || b["revision"] != "agy1:second" {
+		t.Fatalf("revision requests collided: %q %q %+v %+v", first, second, a, b)
+	}
+}
+
+func TestViewerEqualOffsetRevisionsCannotFillEachOthersWaiter(t *testing.T) {
+	target := ViewerDestination{MachineID: "machine-a", SessionID: "same", ExecutionGeneration: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	first, _ := viewerTranscriptCommand(target, 512, "agy1:first")
+	second, _ := viewerTranscriptCommand(target, 512, "agy1:second")
+	a := &viewerPending{key: viewerReplyKey(target.MachineID, target.SessionID, first), seq: 51, pinnedRead: true,
+		destination: target, answer: make(chan viewerReply, 1)}
+	b := &viewerPending{key: viewerReplyKey(target.MachineID, target.SessionID, second), seq: 52, pinnedRead: true,
+		destination: target, answer: make(chan viewerReply, 1)}
+	client := &ViewerClient{pending: map[string]*viewerPending{a.key: a, b.key: b},
+		pendingSeq: map[uint64]*viewerPending{a.seq: a, b.seq: b}}
+	payload, err := json.Marshal(map[string]any{"read": first, "machine_id": target.MachineID,
+		"session_id": target.SessionID, "expected_generation": target.ExecutionGeneration, "seq": a.seq,
+		"status": 200, "body": map[string]any{"entries": []any{}, "signature": "agy1:first"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		client.acceptReply(domain.Envelope{Ch: "t/machine-a/same", Sender: "machine-a"}, payload)
+	}
+	if result := <-a.answer; result.err != nil {
+		t.Fatal(result.err)
+	}
+	select {
+	case <-b.answer:
+		t.Fatal("a duplicate revision answer filled another waiter")
+	default:
+	}
+	if client.pending[b.key] != b {
+		t.Fatal("the newer revision waiter was removed")
+	}
+}

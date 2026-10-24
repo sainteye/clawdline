@@ -3,6 +3,19 @@ package capacity
 // cacheBounds is every registered row named cache.*.
 func cacheBounds() []Entry {
 	return []Entry{
+		{Name: "cache.provider_quota", Class: Cache, Unit: Rows, Limit: 4, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/providerquota.CacheLimit"}},
+		{Name: "cache.provider_quota_response_bytes", Class: Buffer, Unit: Bytes, Limit: 1048576, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/providerquota.ResponseBytesLimit"}},
+		{Name: "cache.provider_quota_refresh_seconds", Class: Observation, Unit: Seconds, Limit: 900, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/providerquota.RefreshSecondsLimit"}},
+		{Name: "cache.provider_quota_request_seconds", Class: Observation, Unit: Seconds, Limit: 10, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/providerquota.RequestSecondsLimit"}},
+
 		{
 			// The one execution scan observeExecutions last committed, by
 			// terminal. A scan equal to it is answered from it and opens no

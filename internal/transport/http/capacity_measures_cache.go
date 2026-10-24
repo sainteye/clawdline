@@ -14,6 +14,16 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) cacheCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"cache.provider_quota": func() capacity.Reading { return s.providerQuotaReader().Reading() },
+		"cache.provider_quota_response_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read ceiling on credential and provider response bytes; oversized data is refused"}
+		},
+		"cache.provider_quota_refresh_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "minimum interval between provider metadata reads; Retry-After can extend it"}
+		},
+		"cache.provider_quota_request_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-provider deadline across metadata requests; no retries"}
+		},
 		capacity.CacheTranscriptTitles: func() capacity.Reading {
 			h, ok := s.inventory.Identity.(*transcript.Host)
 			if !ok {

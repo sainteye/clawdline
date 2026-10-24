@@ -10,6 +10,47 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) cloudCapacityMeasures() map[string]func() capacity.Reading {
 	out := map[string]func() capacity.Reading{
+		"cloud.viewer_rekey_pending": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "browser policy only; disabled by default; no daemon queue; live browser usage is not measured"}
+		},
+		"cloud.viewer_rekey_cooldown": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "browser interval policy only; disabled by default; live browser activity is not measured"}
+		},
+		"cloud.rekey_pending": func() capacity.Reading {
+			line, ok := cloudLines.Load(s.cfg.Dir)
+			if !ok {
+				return capacity.Reading{Known: true, Note: "Cloud key runtime is inactive"}
+			}
+			if reader, ok := line.(interface{ RekeyPendingReading() capacity.Reading }); ok {
+				return reader.RekeyPendingReading()
+			}
+			return capacity.Unmeasured("Cloud link does not expose raw key exchange usage")
+		},
+		"cloud.rekey_interval": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "global raw-offer admission interval; excess requests are refused"}
+		},
+		"cloud.envelope_key_id": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-envelope key identifier parse guard; no retained buffer"}
+		},
+		"cloud.rekey_lifetime": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "signed offer expiry; runtime remains disabled by default"}
+		},
+		"cloud.rekey_body": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-message signed raw-control parse guard"}
+		},
+		"cloud.health_investigation_bundle_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-leased bundle read byte guard; no retained network buffer"}
+		},
+		"cloud.health_investigation_report_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-task typed report byte guard; oversized reports are refused"}
+		},
+		"cloud.health_investigation_report_refs": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-task evidence reference guard; no shared queue"}
+		},
+		"cloud.health_investigation_read_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "one read per claim with a fixed deadline and no automatic retry"}
+		},
+
 		capacity.CloudTaskListReread: func() capacity.Reading {
 			line, ok := cloudLines.Load(s.cfg.Dir)
 			if !ok {
@@ -52,6 +93,31 @@ func (s *Server) cloudCapacityMeasures() map[string]func() capacity.Reading {
 				r.Note = fmt.Sprintf("the queue holds %d, not the register's %d", depth, limit)
 			}
 			return r
+		},
+		capacity.CloudReadQueue: func() capacity.Reading {
+			line, ok := cloudLines.Load(s.cfg.Dir)
+			if !ok {
+				return capacity.Reading{Known: true, Note: "the Cloud line is off: there is no read queue"}
+			}
+			reader, ok := line.(interface {
+				ReadLaneReadings() (active, waiting capacity.Reading)
+			})
+			if !ok {
+				return capacity.Unmeasured("this Cloud line does not report its read queue")
+			}
+			_, waiting := reader.ReadLaneReadings()
+			return waiting
+		},
+		capacity.CloudLaneRefusals: func() capacity.Reading {
+			line, ok := cloudLines.Load(s.cfg.Dir)
+			if !ok {
+				return capacity.Reading{Known: true, Note: "the Cloud line is off: there is no busy reply queue"}
+			}
+			reader, ok := line.(interface{ LaneRefusalReading() capacity.Reading })
+			if !ok {
+				return capacity.Unmeasured("this Cloud line does not report its busy reply queue")
+			}
+			return reader.LaneRefusalReading()
 		},
 		capacity.CloudPeerPairs:  func() capacity.Reading { return s.peerStoreCapacity(capacity.CloudPeerPairs) },
 		capacity.CloudPeerGrants: func() capacity.Reading { return s.peerStoreCapacity(capacity.CloudPeerGrants) },

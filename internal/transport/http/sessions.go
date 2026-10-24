@@ -280,7 +280,7 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 	// console could only describe as unreadable.
 	items := make([]session.Session, 0, len(inv.Sessions))
 	for _, item := range inv.Sessions {
-		if item.IsAssistant() {
+		if item.IsAssistant() && !item.DiscoveryExcluded {
 			items = append(items, item)
 		}
 	}

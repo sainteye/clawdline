@@ -4,9 +4,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh | sh
 #   curl -fsSL …/install.sh | sh -s -- --headless --port 7800
 #
-# This script only downloads a release, checks it against SHA256SUMS and
-# unpacks it into ~/.local/share/clawdline-next/releases/<version>/. Everything
-# else — the signature check, tmux, the service, the app, the health check — is
+# This script verifies a release's Ed25519 manifest and archive with trusted
+# local Python 3 and OpenSSL 3 before unpacking or running downloaded code.
+# It unpacks into ~/.local/share/clawdline-next/releases/<version>/. Everything
+# else — another signature check, tmux, the service, the app, the health check — is
 # `clawdline setup` from inside that release, which this ends by running with
 # every option it was given (`clawdline setup --help` lists them). Running it
 # again repairs or upgrades; `--uninstall` removes it, and `--uninstall
@@ -15,7 +16,8 @@
 #   --version vX.Y.Z             that release instead of the latest
 #   --channel beta               the newest release including pre-releases
 #   --verbose                    where each file came from and went
-#   CLAWDLINE_INSTALL_BASE_URL   where SHA256SUMS and the archives are (tests)
+#   CLAWDLINE_INSTALL_BASE_URL   where signed manifests and archives are (tests)
+#   CLAWDLINE_INSTALL_OPENSSL    a trusted local OpenSSL 3 executable
 set -eu
 
 repo_url=https://github.com/sainteye/clawdline
@@ -42,12 +44,6 @@ fetch() {
   die "neither curl nor wget is installed. Install one of them and run this again."
 }
 
-sha256_of() {
-  if have shasum; then shasum -a 256 "$1" | cut -d' ' -f1
-  elif have sha256sum; then sha256sum "$1" | cut -d' ' -f1
-  else die "neither shasum nor sha256sum is installed. Install coreutils (sha256sum) and run this again."
-  fi
-}
 
 platform() {
   case $(uname -s) in
@@ -136,6 +132,8 @@ main() {
 
   platform
   have tar || die "tar is not installed. Install it and run this again."
+  have python3 || die "verification_tool_missing: install trusted Python 3 and OpenSSL 3, then retry. / 請先安裝受信任的 Python 3 與 OpenSSL 3 再重試。"
+  umask 077
   mkdir -p "$root/staging"
   work=$(mktemp -d "$root/staging/install.XXXXXX")
   # The staging and root directories go too when nothing else is in them.
@@ -156,29 +154,178 @@ main() {
 
   say "Downloading Clawdline for ${os}/${arch}…"
   detail "from $base"
-  for f in SHA256SUMS manifest.json manifest.sig.json; do
-    status=0
-    fetch "$base/$f" "$work/$f" || status=$?
-    if [ "$status" = 22 ] && [ -z "$version" ] && [ -z "${CLAWDLINE_INSTALL_BASE_URL:-}" ]; then
-      die "no release is published yet at $repo_url/releases (the latest one has no $f). Try again later, or pass --version vX.Y.Z."
-    fi
-    [ "$status" = 0 ] || die "could not download $base/$f. Check your network and run this again, or pass --version vX.Y.Z."
-  done
+  # The verifier below is shipped in this script, never fetched from a release.
+  python3 -I - "$base" "$work" "$os" "$arch" "$version" <<'CLAWDLINE_VERIFY'
+# This verifier is part of the reviewed installer, not a downloaded program.
+# Python supplies JSON and bounded HTTPS reads; local OpenSSL supplies Ed25519.
+import base64
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.parse
+import urllib.request
 
-  suffix="_${os}_${arch}.tar.gz"
-  line=$(awk -v s="$suffix" '$2 ~ /^clawdline_/ && substr($2, length($2) - length(s) + 1) == s { print; exit }' "$work/SHA256SUMS")
-  [ -n "$line" ] || die "this release has no archive for $os/$arch. Pass --version with a release that has one ($repo_url/releases)."
-  want=${line%% *}
-  name=${line##* }
-  v=${name#clawdline_}
-  v=${v%"$suffix"}
-  case $v in v[0-9]*) ;; *) die "SHA256SUMS names an archive with no version: $name. Nothing was installed; report it at $repo_url/issues." ;; esac
-  named=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$work/manifest.json" | head -n 1)
-  [ "$named" = "$v" ] || die "the manifest is for ${named:-no version}, the archive for $v. Nothing was installed; run this again in a few minutes, or pass --version vX.Y.Z."
+# Keep in step with internal/adapters/release/keys.go. Never accept a key from
+# the download host or an environment variable. Rotation ships both keys here.
+TRUSTED_KEYS = ("2Du3yZ4jZF8zoMcZ2ANHFNbxZuz0wgAZdR0nZJ/g/O0=",)
+# Copies of the existing release bounds, held to their register by installer tests.
+MANIFEST_BYTES = 64 << 10
+SIGNATURE_BYTES = 16 << 10
+ARTIFACT_BYTES = 512 << 20
+FETCH_SECONDS = 30
+DOWNLOAD_SECONDS = 900
 
-  fetch "$base/$name" "$work/$name" || die "could not download $base/$name. Check your network and run this again."
-  got=$(sha256_of "$work/$name")
-  [ "$got" = "$want" ] || die "$name has sha256 $got, SHA256SUMS says $want; nothing was installed. Run this again; if it repeats, report it at $repo_url/issues."
+base, directory, system, arch, requested = sys.argv[1:]
+work = Path(directory)
+locale = os.environ.get("CLAWDLINE_LANG") or os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES") or os.environ.get("LANG", "en")
+chinese = locale.startswith(("zh-Hant", "zh_TW", "zh-TW"))
+
+
+def refuse(code, english, traditional):
+    print("clawdline install: " + code + ": " + (traditional if chinese else english), file=sys.stderr)
+    sys.exit(1)
+
+
+def openssl():
+    selected = os.environ.get("CLAWDLINE_INSTALL_OPENSSL")
+    choices = [selected] if selected else [shutil.which("openssl"), "/opt/homebrew/opt/openssl@3/bin/openssl", "/usr/local/opt/openssl@3/bin/openssl"]
+    for candidate in choices:
+        if not candidate:
+            continue
+        try:
+            result = subprocess.run([candidate, "version"], check=True, capture_output=True, text=True)
+        except (OSError, subprocess.CalledProcessError):
+            continue
+        match = re.match(r"OpenSSL ([0-9]+)\.", result.stdout)
+        if match and int(match[1]) >= 3:
+            return candidate
+    refuse("verification_tool_missing", "Install trusted OpenSSL 3 or newer, then retry. Set CLAWDLINE_INSTALL_OPENSSL to its local executable if needed. Nothing was installed.", "請先安裝受信任的 OpenSSL 3 以上版本再重試；必要時以 CLAWDLINE_INSTALL_OPENSSL 指定本機執行檔。尚未安裝任何程式。")
+
+
+def secure_url(url):
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("credentials in download URL")
+    # Plain HTTP is only for an explicit loopback fixture or local mirror.
+    if parsed.scheme != "https" and not (parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "::1", "localhost")):
+        raise ValueError("download requires HTTPS")
+    return url
+
+
+class SecureRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, url):
+        secure_url(url)
+        if urllib.parse.urlsplit(request.full_url).scheme == "https" and urllib.parse.urlsplit(url).scheme != "https":
+            raise ValueError("HTTPS downgrade")
+        return super().redirect_request(request, fp, code, message, headers, url)
+
+
+opener = urllib.request.build_opener(SecureRedirect())
+
+
+def download(name, maximum, timeout):
+    deadline = time.monotonic() + timeout
+    target = work / name
+    with opener.open(secure_url(base + "/" + name), timeout=FETCH_SECONDS) as response, target.open("wb") as output:
+        total = 0
+        while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("download deadline")
+            part = response.read(min(io.DEFAULT_BUFFER_SIZE, maximum - total + 1))
+            if not part:
+                break
+            total += len(part)
+            if total > maximum:
+                raise ValueError("download exceeds signed or registered size")
+            output.write(part)
+    return target
+
+
+def unique_object(pairs):
+    result = {}
+    for name, value in pairs:
+        if name in result:
+            raise ValueError("duplicate JSON field")
+        result[name] = value
+    return result
+
+
+def read_json(raw):
+    return json.loads(raw, object_pairs_hook=unique_object)
+
+
+try:
+    verifier = openssl()
+    manifest_path = download("manifest.json", MANIFEST_BYTES, FETCH_SECONDS)
+    signature_path = download("manifest.sig.json", SIGNATURE_BYTES, FETCH_SECONDS)
+    manifest_raw = manifest_path.read_bytes()
+    signatures = read_json(signature_path.read_bytes())
+    if not isinstance(signatures, list):
+        raise ValueError("signature list")
+    verified = False
+    for public in TRUSTED_KEYS:
+        key = base64.b64decode(public, validate=True)
+        key_id = hashlib.sha256(key).hexdigest()[:16]
+        # RFC 8410 SubjectPublicKeyInfo for an Ed25519 public key.
+        public_path = work / "release-key.der"
+        public_path.write_bytes(bytes.fromhex("302a300506032b6570032100") + key)
+        for signature in signatures:
+            if not isinstance(signature, dict) or signature.get("key_id") != key_id:
+                continue
+            try:
+                raw = base64.b64decode(signature["sig"], validate=True)
+            except (ValueError, KeyError, TypeError):
+                continue
+            signature_file = work / "release-signature.bin"
+            signature_file.write_bytes(raw)
+            check = subprocess.run([verifier, "pkeyutl", "-verify", "-rawin", "-pubin", "-keyform", "DER", "-inkey", str(public_path), "-sigfile", str(signature_file), "-in", str(manifest_path)], capture_output=True)
+            if check.returncode == 0:
+                verified = True
+                break
+        if verified:
+            break
+    if not verified:
+        refuse("manifest_signature_invalid", "No signature matches the installer's trusted release keys. Nothing was unpacked or executed. Download the installer from the official repository and retry.", "簽章不符合安裝腳本信任的發布公鑰，未解壓縮或執行任何下載程式。請從官方程式庫重新取得安裝腳本再重試。")
+    # Parse and follow the manifest only after OpenSSL verifies its exact bytes.
+    manifest = read_json(manifest_raw)
+    version = manifest["version"]
+    if not isinstance(version, str) or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?", version):
+        raise ValueError("release version")
+    if requested and requested != version:
+        refuse("release_version_mismatch", "The signed release differs from --version. Nothing was installed. Choose the intended published release and retry.", "簽署的發行版與 --version 不符，尚未安裝。請確認要安裝的正式版本再重試。")
+    name = "clawdline_" + version + "_" + system + "_" + arch + ".tar.gz"
+    artifacts = [item for item in manifest["artifacts"] if item.get("os") == system and item.get("arch") == arch and item.get("kind") == "daemon"]
+    if len(artifacts) != 1:
+        raise ValueError("one daemon artifact required")
+    artifact = artifacts[0]
+    size, digest = artifact["size"], artifact["sha256"]
+    if artifact["name"] != name or type(size) is not int or not 0 < size <= ARTIFACT_BYTES or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise ValueError("signed artifact fields")
+    archive = download(name, size, DOWNLOAD_SECONDS)
+    with archive.open("rb") as source:
+        actual = hashlib.file_digest(source, "sha256").hexdigest() if hasattr(hashlib, "file_digest") else None
+        if actual is None:
+            hasher = hashlib.sha256()
+            for part in iter(lambda: source.read(io.DEFAULT_BUFFER_SIZE), b""):
+                hasher.update(part)
+            actual = hasher.hexdigest()
+    if archive.stat().st_size != size or actual != digest:
+        refuse("artifact_mismatch", "The archive does not match the signed size and SHA-256. Nothing was unpacked or executed. Retry the official release download.", "壓縮檔不符合已簽署的大小與 SHA-256，未解壓縮或執行。請重新下載官方發行版。")
+    (work / "verified-version").write_text(version, encoding="ascii")
+    (work / "verified-name").write_text(name, encoding="ascii")
+    print("簽章與壓縮檔已驗證；接著才解壓縮並執行。" if chinese else "Release signature and archive verified before extraction and execution.")
+except Exception:
+    refuse("release_verification_failed", "Release download or verification failed. Nothing was unpacked or executed. Check the official release and your trusted Python 3 / OpenSSL 3 installation, then retry.", "發行版下載或驗證失敗，未解壓縮或執行。請檢查官方發行版及受信任的 Python 3、OpenSSL 3 安裝後重試。")
+CLAWDLINE_VERIFY
+  v=$(cat "$work/verified-version")
+  name=$(cat "$work/verified-name")
 
   # Unpacked beside its final place and renamed in, so a release directory is
   # whole or absent. setup proves every file matches the signed archive.

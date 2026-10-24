@@ -6,6 +6,8 @@ is available for readers who prefer a document.
 
 For passwords, credentials and API keys handed to a Session, see [Secret Handoff](secret-handoff.md).
 
+The proposed third-provider integration is described in [Antigravity CLI integration design](antigravity-cli.md).
+
 One Go binary is both the daemon and its command line. Work always runs on your own machine. Every
 client, whether the native window, a browser tab or the Cloud console, reads the same HTTP + SSE
 API, which is defined once, as JSON Schema, before any code is written against it.
@@ -105,6 +107,14 @@ The daemon lists tmux panes, and iTerm2 sessions on macOS, and matches each term
 evidence: what its screen shows and what its own records say. With no evidence, the state is
 `unknown`. Transcripts are read from the assistant's own files under `~/.claude` and `~/.codex`.
 Nothing is written there.
+
+Display retention uses the same tty join as the live inventory merge. If a terminal source
+fails while the process table still sees its tty, the retained tab or pane replaces the
+process-only row instead of adding a second Session. Its stable terminal id, state and original
+unverified observation stay together. A current terminal reading takes precedence over a retained
+one; distinct terminals remain distinct even when their conversation titles match. Retention
+still expires under [D55](design-decisions.md), and `Fresh` decision readers receive only the raw
+scan, without retained rows.
 
 Provider-native subagents are part of that same read-only inventory, not broker tasks. Claude Code
 puts the description written by the spawning turn in an immutable sidecar; Codex identifies an
@@ -240,6 +250,20 @@ Proposals and decisions (`/v1/work/proposals`, `/v1/work/decisions`) are where a
 The display states on a card ("queued", "in review", "landed") are derived from evidence each time
 they are read, never written back. [board-redesign.md](board-redesign.md) has the reasoning and the
 lifecycle of each structure.
+
+## Session reasoning effort
+
+The Session information sheet places an ordinal reasoning-effort meter immediately below
+model selection, including for read-only viewers. Its ticks show order, not percentages or
+comparable amounts of computation between providers or models. Unknown levels remain text;
+an absent reading says that the Session has not reported it yet.
+
+Codex reports `effort` from its newest `turn_context`, with its startup card as evidence before
+the first turn. A switch may therefore appear only when the next turn starts. Claude Code
+reports `perTurnEffort`, falling back to `effort`, from its newest real parent assistant record;
+sidechain and synthetic replies do not replace that reading. When the optional status-line
+cache retains Claude Code's live `effort.level`, that reading takes precedence. No machine-wide
+default is presented as a Session measurement. The same info payload crosses the Cloud relay.
 
 ## Schedules
 

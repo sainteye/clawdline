@@ -51,8 +51,18 @@ func openLocalDoor() (localDoor, error) {
 }
 
 func (d localDoor) do(method, path string, out any) error {
+	return d.doBody(method, path, nil, out)
+}
+
+func (d localDoor) doBody(method, path string, value any, out any) error {
 	var body io.Reader
-	if method == http.MethodPost {
+	if value != nil {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		body = strings.NewReader(string(data))
+	} else if method == http.MethodPost {
 		body = strings.NewReader("{}")
 	}
 	req, err := http.NewRequest(method, d.base+path, body)
@@ -78,6 +88,8 @@ func (d localDoor) do(method, path string, out any) error {
 }
 
 func devicesUsage(w io.Writer) {
+	fmt.Fprintln(w, cliCopy("ops", "devices.usage.permission", "       clawdline devices permission <device-id> <read-only|read-and-operate>"))
+	fmt.Fprintln(w, cliCopy("ops", "devices.usage.pairing_permission", "       clawdline devices pairing-permission <pairing-id> <read-only|read-and-operate>"))
 	fmt.Fprintln(w, cliCopy("ops", "devices.usage.list", "usage: clawdline devices [--json]"))
 	fmt.Fprintln(w, cliCopy("ops", "devices.usage.revoke", "       clawdline devices revoke [--yes] <device-id>"))
 	fmt.Fprintln(w, cliCopy("ops", "devices.usage.direct", "  the browsers and devices signed in to this machine directly (clawdline open, pairing, password);"))
@@ -88,6 +100,9 @@ func devicesCommand(args []string) {
 	door, err := openLocalDoor()
 	if err != nil {
 		fail(err)
+	}
+	if len(args) > 0 && (args[0] == "permission" || args[0] == "pairing-permission") {
+		os.Exit(devicesPermission(os.Stdout, os.Stderr, door, args))
 	}
 	if len(args) > 0 && args[0] == "revoke" {
 		os.Exit(devicesRevoke(os.Stdout, os.Stderr, os.Stdin, door, args[1:]))
@@ -176,5 +191,23 @@ func devicesRevoke(out, errs io.Writer, in io.Reader, door localDoor, args []str
 		return 1
 	}
 	fmt.Fprintf(out, cliCopy("ops", "devices.revoked", "revoked    %s (%s)\n"), found.ID, found.Name)
+	return 0
+}
+
+func devicesPermission(out, errs io.Writer, door localDoor, args []string) int {
+	if len(args) != 3 || strings.TrimSpace(args[1]) == "" || (args[2] != "read-only" && args[2] != "read-and-operate") {
+		devicesUsage(errs)
+		return 2
+	}
+	path := "/v1/auth/devices/"
+	if args[0] == "pairing-permission" {
+		path = "/v1/auth/pairings/"
+	}
+	var result contract.AuthOK
+	if err := door.doBody(http.MethodPost, path+url.PathEscape(args[1])+"/permission", contract.DevicePermission{Permission: args[2]}, &result); err != nil {
+		fmt.Fprintln(errs, "clawdline:", err)
+		return 1
+	}
+	fmt.Fprintln(out, cliCopy("ops", "devices.permission_saved", "Permission saved."))
 	return 0
 }

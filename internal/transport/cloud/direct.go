@@ -744,6 +744,28 @@ var errDirectClosed = errors.New("the direct terminal channel is not open")
 // send writes one message, in chunks when it is long, with no other message
 // between its chunks.
 func (p *directPeer) send(data []byte) error {
+	if p.l.contentEpoch == nil {
+		return p.sendWithinEpoch(data)
+	}
+	return p.l.contentEpoch.Use(func(state domaincloud.ContentKeyState) error {
+		var msg directMessage
+		var env struct {
+			KeyID string `json:"key_id"`
+		}
+		if json.Unmarshal(data, &msg) != nil {
+			return domaincloud.ErrRekey
+		}
+		if msg.T == "env" {
+			if json.Unmarshal(msg.E, &env) != nil || !state.Sendable(env.KeyID) {
+				return domaincloud.ErrKeyEpochRegress
+			}
+		}
+		return p.sendWithinEpoch(data)
+	})
+}
+
+// Caller owns the epoch fence, including the final socket enqueue.
+func (p *directPeer) sendWithinEpoch(data []byte) error {
 	p.mu.Lock()
 	dc, open := p.dc, p.open && !p.closed
 	p.mu.Unlock()
@@ -755,6 +777,23 @@ func (p *directPeer) send(data []byte) error {
 	}
 	p.sendMu.Lock()
 	defer p.sendMu.Unlock()
+	p.mu.Lock()
+	open = p.open && !p.closed
+	p.mu.Unlock()
+	if !open {
+		return errDirectClosed
+	}
+	if p.l.contentEpoch != nil {
+		if refused, err := p.l.pinned.Refused(p.viewer); err != nil || refused {
+			return domaincloud.ErrRekey
+		}
+		// A legacy viewer already authenticated with the current content key
+		// may use the roster fallback, just as it does on the relay. Local
+		// revocations and unreadable pins still take precedence.
+		if _, ok := p.l.publicKeyFor(p.viewer); !ok {
+			return domaincloud.ErrRekey
+		}
+	}
 	if len(data) <= directChunkUnits {
 		return dc.SendText(string(data))
 	}

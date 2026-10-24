@@ -37,7 +37,7 @@
 .project-unify-notice { margin: 10px 0; color: var(--dim); font-size: 13px; line-height: 1.5; }
 .project-unify-dialog .project-unify-error { margin: 10px 0; color: var(--gap-ink); font-size: 13px; line-height: 1.5; }
 
-.project-unify-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.project-unify-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .project-unify-column { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
 .project-unify-column h4 { margin: 0 0 8px; font-size: 15px; }
 .project-unify-column ul { margin: 0; padding: 0; list-style: none; }
@@ -103,6 +103,9 @@
   .project-unify-dialog-foot { padding: 10px 14px max(12px, env(safe-area-inset-bottom)); }
   .project-unify-apply { flex: 1 1 auto; }
 }
-@media (max-width: 639px) {
+@media (max-width: 899px) {
   .project-unify-columns { grid-template-columns: minmax(0, 1fr); }
 }
+
+.project-unify-native { color: var(--dim); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.project-unify-native code { font-family: var(--mono); }

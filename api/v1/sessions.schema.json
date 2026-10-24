@@ -79,7 +79,7 @@
     "IdentityBinding": {
       "description": "How a running process was tied to the conversation it is having, or — when `sessionId` is absent — which kind of nothing stands in the way. `command_line` is a resumed session, whose id is on its own command line; `open_file` is the transcript the process holds open, which the kernel names rather than a correlation between two clocks; `live_title` is Codex's managed app-server writer record and rollout agreeing with the exact title Codex put on this terminal; `registry` is the assistant's own live record, which only Claude Code writes. The three that carry no id are deliberately not one word: `no_record` is a session that has written nothing to match yet — Codex writes its rollout at the first message and not at startup, so a session nobody has typed into is this, and names itself as soon as somebody does; `unreadable` is this machine failing to read the table of open files, which is its own fault to fix; `ambiguous` is transcripts belonging to more than one conversation open on the same process, where naming the session at all would be a guess \u2014 it is the conversations that are counted and not the files, because a Codex session running sub-agents holds one transcript per thread open and every one of them names the same conversation at its head. Absent on a row no identity source was asked about.",
       "type": "string",
-      "enum": ["command_line", "open_file", "live_title", "registry", "no_record", "unreadable", "ambiguous"]
+      "enum": ["command_line", "open_file", "live_title", "registry", "launch_hook", "protocol", "no_record", "unreadable", "ambiguous"]
     },
     "ActivityUnknownReason": {
       "description": "Which kind of nothing took the place of a session's activity time. They are deliberately not one word, for the same reason `IdentityBinding`'s three are not: `no_record` is a session that has written no conversation record yet — which is a session opened a moment ago, never one that has been quiet, because both assistants write that file at the first turn; `unreadable` is this machine failing to read a record that should be there, which is its own fault to fix; `unread` is a row this reading of the machine did not get to, having already read as many records as its bound allows (the capacity register's `sessions.activity_reads`); `unsupported` is a row nothing here can answer for at all. None of them may be drawn as an age or ordered as an old time.",
@@ -235,13 +235,14 @@
 	  }
 	},
     "SessionMenu": {
-      "description": "The question on a waiting session's screen, as rows a finger can hit (the Swift app's menuObject). Present only on a waiting session whose screen could be read as a menu; a waiting row without it is a question drawn in a shape nothing recognised. The row labels and details may be refilled from the session's own transcript, but only once the screen proves which question it is showing; the numbers, the caret, Submit and the steps are always the screen's.",
+      "description": "The question on a waiting Session, as rows a finger can hit. An owned protocol may supply an exact live native offer; otherwise this is a screen menu (the Swift app's menuObject). For screen menus, present only when the screen could be read as a menu; a waiting row without it is a question drawn in a shape nothing recognised. The row labels and details may be refilled from the session's own transcript, but only once the screen proves which question it is showing; the numbers, the caret, Submit and the steps are always the screen's.",
       "type": "object",
       "additionalProperties": false,
       "required": ["options"],
       "properties": {
         "options": { "type": "array", "items": { "$ref": "#/$defs/SessionMenuOption" } },
         "question": { "description": "The prose above the rows, or the question as the call asked it. Absent when it could not be read.", "type": "string" },
+        "revision": { "description": "Opaque identity of one live native offer. Included in the menu fingerprint when present; repeated identical questions have distinct revisions.", "type": "string" },
         "selected": { "description": "The number of the row the caret is on. Absent when it is on none of them — a multi-select's button can hold it — and on a menu taken from the transcript, which cannot see the caret.", "type": "integer" },
         "source": { "description": "Absent for a menu read from the screen. `transcript` is a menu put together from the session's open AskUserQuestion call because this reading had no screen: the rows and numbers are what that call draws, inferred rather than seen. A press is still checked against the screen before anything is typed.", "type": "string", "enum": ["transcript"] },
         "steps": { "description": "Where this question sits in a set of them, as the picker's tab bar draws it. Absent for a lone question.", "type": "array", "items": { "$ref": "#/$defs/SessionMenuStep" } },
@@ -358,8 +359,8 @@
         "cwd": { "type": "string" },
         "icon": { "$ref": "common.schema.json#/$defs/Icon" },
         "id": { "type": "string" },
-        "model": { "description": "The model explicitly named by the session record, or by Codex's startup card before a record names it. Absent without evidence.", "type": "string" },
-        "effort": { "description": "The reasoning effort explicitly named by the newest Codex turn context, or its startup card before a turn context names it. Absent when unknown.", "type": "string" },
+        "model": { "description": "The model explicitly named by the session record, Codex startup card, or owned ACP metadata. Structured ACP model configOptions provide the native base ID independently of thinking_level; legacy IDs are not split. Absent without evidence.", "type": "string" },
+        "effort": { "description": "The reasoning effort explicitly named by the session record or startup card, or the current native ACP thinking_level configOption. Never inferred from model ID suffixes. Absent when unknown.", "type": "string" },
         "namingAssistant": { "description": "The assistant selected in Settings for one-turn session naming. The confirmation shows it before spending that assistant's quota. `auto` asks Claude Code first and Codex only when Claude Code has no usage left or is not installed.", "type": "string", "enum": ["claude", "codex", "auto"] },
         "sessionId": { "type": "string" },
         "title": { "description": "The same label the session list shows.", "type": "string" }
@@ -426,6 +427,7 @@
       "required": ["models", "session"],
       "properties": {
         "context": { "$ref": "#/$defs/SessionInfoContext" },
+        "efforts": { "description": "Native offered thinking_level option values for this owned ACP session. May change with model selection. Absent when structured options are unavailable; no inferred effort control.", "type": "array", "items": { "type": "string" } },
         "limits": { "$ref": "#/$defs/SessionLimits" },
         "models": { "type": "array", "items": { "$ref": "#/$defs/SessionModel" } },
         "session": { "$ref": "#/$defs/SessionInfoSession" },

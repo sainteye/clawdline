@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { focusModalContainer } from "../modal-focus.js"
-import { pairingCommand, type PairState } from "./pair.js"
+import { pairingAppLink, pairingCommand, type PairState } from "./pair.js"
+import { catalogWord } from "../catalog.js"
+import { nativePairing, nativePairingAvailable } from "./native-pairing.js"
 import { PairScanner } from "./PairScanner.js"
 import {
   agentOutcome,
@@ -10,6 +12,7 @@ import {
   elapsedSaid,
   handPairToAgent,
   listenPairAgent,
+  localPairing,
   pairAgentAvailable,
   progressSaid,
   type PairAgentProgress,
@@ -57,11 +60,19 @@ export function PairPanel(props: {
   device: PairDevice
   onScan: (fragment: string) => void
   /** The fingerprints differed: the machine that answered is not to be kept. */
+  viewerID?: string
   onMismatch?: (machine: string) => void
 }) {
   const { request, state, nameOf, onBegin, onStop, onAgain, onClose, onPaired, device, onScan, onMismatch } = props
   const T = L.strings
+  const [localMachine, setLocalMachine] = useState("")
+  const [localName, setLocalName] = useState("")
+  const [mismatched, setMismatched] = useState(false)
+  const [localBusy, setLocalBusy] = useState(false)
+  const [localError, setLocalError] = useState("")
+  const localRequested = useRef(false)
   const [copied, setCopied] = useState<"" | "yes" | "no">("")
+  const [commandCopied, setCommandCopied] = useState<"" | "yes" | "no">("")
   const [codeCopied, setCodeCopied] = useState<"" | "yes" | "no">("")
   // The hand-off to the Mac app's assistant: nothing yet, the native sheet is
   // up, or what the shell answered.
@@ -83,14 +94,16 @@ export function PairPanel(props: {
   const scanStart = useRef<HTMLButtonElement>(null)
   const phase = state.phase
   const offer = request.mode === "offer"
-  const asked = offer ? request.machine : null
+  const asked = offer ? request.machine ?? (localMachine ? { id: localMachine, name: localName || localMachine } : null) : null
   const requestKey = offer ? asked?.id ?? "" : request.code
   useLayoutEffect(() => {
     focusModalContainer(panel.current)
   }, [requestKey])
   useLayoutEffect(() => {
+    setMismatched(false)
     setCopied("")
     setCodeCopied("")
+    setCommandCopied("")
     setAgent(null)
     setProgress(null)
     setStartedAt(null)
@@ -155,6 +168,29 @@ export function PairPanel(props: {
     autoHelper.current = ""
     if (helper) startAgent(helper, asked)
   }, [state.phase, state.phase === "waiting" ? state.fragment : "", asked?.id])
+  useEffect(() => {
+    let active = true
+    void localPairing({}).then((reply) => { if (active && reply.ok) setLocalMachine(reply.machineID) })
+    if (nativePairingAvailable()) void nativePairing({ kind: "status" }).then(reply => {
+      if (active && reply.machine_id) { setLocalMachine(reply.machine_id); setLocalName(reply.machine_name || "") }
+    }, () => {})
+    return () => { active = false }
+  }, [])
+  const localAvailable = !!asked && asked.id === localMachine
+  async function finishLocally(fragment: string) {
+    if (!asked || !localAvailable) return
+    setLocalBusy(true)
+    setLocalError("")
+    const reply = await localPairing({ machineID: asked.id, offer: fragment })
+    setLocalBusy(false)
+    if (!reply.ok) setLocalError(reply.error)
+  }
+  useEffect(() => {
+    if (state.phase === "waiting" && localRequested.current) {
+      localRequested.current = false
+      void finishLocally(state.fragment)
+    }
+  }, [state.phase])
   const title = offer
     ? asked
       ? nextWord(device === "app" ? "cloudPairTitleApp" : "cloudPairTitle", { machine: asked.name })
@@ -188,6 +224,7 @@ export function PairPanel(props: {
               : nextWord("cloudPairLinkBad", { code: request.code }) // refusal-ok: a link that ran out sends the person to the machine list, and any other unreadable link says its own code in the sentence
             }
           </p>
+          {scannerRecovery()}
           <div className="buttons">
             <button className="chip" type="button" id="cloud-pair-close" ref={first} onClick={onClose}>
               {T.webClose}
@@ -196,13 +233,20 @@ export function PairPanel(props: {
         </>
       )
     }
+    if (mismatched) return <>
+      <p role="alert">{catalogWord("browserPairing", "mismatch")}</p>
+      {props.viewerID && <pre>clawdline cloud revoke {props.viewerID}</pre>}
+      <button className="chip" type="button" onClick={onClose}>{T.webClose}</button>
+    </>
     switch (state.phase) {
       case "idle":
         if (offer) {
           // A phone scans the machine's QR inside this page, so the key lands
           // in this browser's own store; a computer has no camera to point,
           // so it copies a code to paste on the machine.
-          const steps = device === "desktop"
+          const steps = localAvailable
+            ? ["cloudPairLocalHint", "cloudPairStepCompare"] as const
+            : device === "desktop"
             ? ["cloudPairStepCopy", "cloudPairStepPaste", "cloudPairStepCompare"] as const
             : ["cloudPairStepOpen", "cloudPairStepScanApp", "cloudPairStepCompare"] as const
           const begin = () => {
@@ -216,7 +260,13 @@ export function PairPanel(props: {
                 {steps.map((step) => <li key={step}>{nextWord(step)}</li>)}
               </ol>
               <p className="cloud-pair-outcome">{nextWord("cloudPairOutcome")}</p>
-              {device !== "desktop" ? (
+              {localAvailable ? (
+                <>
+                  <button className="go cloud-pair-primary" type="button" id="cloud-pair-local-start"
+                    onClick={() => { localRequested.current = true; onBegin() }}>{nextWord("cloudPairLocal")}</button>
+                  <p className="fine">{nextWord("cloudPairLocalHint")}</p>
+                </>
+              ) : device !== "desktop" ? (
                 <PairScanner onScanned={onScan} onUseCode={begin} startRef={scanStart} />
               ) : (
                 <button className="go cloud-pair-primary" type="button" id="cloud-pair-go" onClick={begin}>
@@ -283,7 +333,7 @@ export function PairPanel(props: {
           </>
         )
       case "waiting": {
-        const line = pairingCommand(state.fragment)
+        const line = pairingCommand(state.fragment, catalogWord("browserPairing", "cliMissing"))
         const target = asked ? `${JSON.stringify(asked.name)} (machine ID ${asked.id})` : nextWord("cloudPairTargetAny")
         const agentPrompt = nextWord("cloudPairAgentPrompt", { machine: target, command: line })
         // Only inside the Mac app's Cloud tab, and only for a named machine:
@@ -326,6 +376,16 @@ export function PairPanel(props: {
           <>
             {offer && (
               <>
+                {localAvailable && <div>
+                  <button className="go" type="button" id="cloud-pair-local" disabled={localBusy}
+                    onClick={() => { void finishLocally(state.fragment) }}>{nextWord("cloudPairLocal")}</button>
+                  <p className="fine">{nextWord("cloudPairLocalHint")}</p>
+                  {localError && <p role="status">{nextWord("cloudPairAgentRefused", { reason: localError })}</p>}
+                </div>}
+                {device === "desktop" && /Mac/i.test(navigator.platform) && !localAvailable && <div className="cloud-pair-native-way">
+                  <a className="go cloud-pair-primary" href={pairingAppLink(state.fragment, asked?.id)}>{catalogWord("browserPairing", "openApp")}</a>
+                  <p className="fine">{catalogWord("browserPairing", "openAppHint")}</p>
+                </div>}
                 <ol className="cloud-pair-steps cloud-pair-code-path">
                   <li data-done={codeCopied === "yes" ? "true" : undefined}>
                   <span id="cloud-pair-code-step">{nextWord("cloudPairCopyThis")}</span>
@@ -351,7 +411,16 @@ export function PairPanel(props: {
                     )}
                   </div>
                   </li>
-                  <li>{nextWord("cloudPairStepPaste")}</li>
+                  <li>{nextWord("cloudPairStepPaste")}
+                    <label className="sr-only" htmlFor="cloud-pair-cli">{nextWord("cloudPairCliCopy")}</label>
+                    <textarea className="cloud-pair-command" id="cloud-pair-cli" readOnly rows={3}
+                      spellCheck={false} autoCapitalize="off" autoCorrect="off" value={line}
+                      onFocus={(event) => event.currentTarget.select()} />
+                    <button className="chip" type="button" id="cloud-pair-cli-copy" onClick={() => copy(line, "command")}>
+                      {nextWord(commandCopied === "yes" ? "cloudPairCopyDone" : "cloudPairCliCopy")}
+                    </button>
+                    {commandCopied === "no" && <span role="status">{nextWord("cloudPairCopyFailed")}</span>}
+                  </li>
                 </ol>
                 <div className="cloud-pair-wait" role="status">
                   <span className="cloud-pair-spinner" aria-hidden="true" />
@@ -445,7 +514,7 @@ export function PairPanel(props: {
                 {nextWord("cloudPairSame")}
               </button>
               {onMismatch && (
-                <button className="chip cloud-pair-mismatch" type="button" id="cloud-pair-mismatch" onClick={() => onMismatch(state.machineID)}>
+                <button className="chip cloud-pair-mismatch" type="button" id="cloud-pair-mismatch" onClick={() => { setMismatched(true); onMismatch(state.machineID) }}>
                   {nextWord("cloudPairDifferent")}
                 </button>
               )}
@@ -469,16 +538,16 @@ export function PairPanel(props: {
               : state.phase === "refused"
                 ? nextWord("cloudPairRefused", { code: state.code })
                 : nextWord("cloudPairFailed", { code: state.code })
-        // A new code fixes a code that ran out or was abandoned; it does not
-        // fix a pairing that was never this browser's, and a machine's link
-        // is the machine's to print again.
-        const again = offer && state.phase !== "refused"
+        // A fresh browser offer can recover an expired or lost offer.
+        // A machine invitation must still be renewed on that machine.
+        const again = offer && (state.phase !== "refused" || state.code === "pairing_gone")
         return (
           <>
             <div className="cloud-pair-result" data-tone={state.phase === "stopped" ? "calm" : "warn"}>
               <b>{nextWord(resultTitle[state.phase])}</b>
               <p id="cloud-pair-said">{said}</p>
             </div>
+            {!offer && scannerRecovery()}
             {again && (
               <button className="go cloud-pair-primary" type="button" id="cloud-pair-again" ref={first} onClick={onAgain}>
                 {nextWord("cloudPairAgain")}
@@ -493,6 +562,10 @@ export function PairPanel(props: {
         )
       }
     }
+  }
+
+  function scannerRecovery() {
+    return device !== "desktop" ? <PairScanner onScanned={onScan} onUseCode={onClose} startRef={scanStart} /> : null
   }
 
   /**
@@ -538,12 +611,13 @@ export function PairPanel(props: {
     )
   }
 
-  function copy(line: string, destination: "code" | "agent") {
+  function copy(line: string, destination: "code" | "agent" | "command") {
     const done = (ok: boolean) => {
       if (destination === "code") setCodeCopied(ok ? "yes" : "no")
+      else if (destination === "command") setCommandCopied(ok ? "yes" : "no")
       else setCopied(ok ? "yes" : "no")
       if (!ok) {
-        const target = destination === "code" ? codeField.current : field.current
+        const target = destination === "command" ? document.getElementById("cloud-pair-cli") as HTMLTextAreaElement | null : destination === "code" ? codeField.current : field.current
         target?.focus({ preventScroll: true })
         target?.select()
       }

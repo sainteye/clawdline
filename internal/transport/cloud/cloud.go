@@ -130,6 +130,9 @@ type Service struct {
 	// publisher looks again now rather than on its next pass (Publisher.Settle),
 	// so the page sees the press land. Nil does nothing.
 	Acted func()
+	// ReadHandled marks the end of local handling, before publication. A read
+	// worker uses it to distinguish route/authority time from spool/carrier time.
+	ReadHandled func()
 }
 
 // slowReadAnswer is how long a read may take, from arrival to its answer
@@ -222,6 +225,9 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 		Sequence:    request.Sequence,
 		Plaintext:   request.Plaintext,
 	})
+	if s.ReadHandled != nil {
+		s.ReadHandled()
+	}
 	if !answer.Published() {
 		s.logf("cloud: %s answered nobody: session=%s status=%d code=%s sender=%s seq=%d",
 			answer.Name, subjectOrUnknown(answer.Subject), answer.Status, answer.Code,
@@ -384,7 +390,7 @@ func (s Service) Busy(ctx context.Context, request Inbound, limit int) string {
 		return err.Error()
 	}
 	out := Outbound{Channel: channel, Class: string(cloud.ClassStream), Payload: answer.Payload,
-		Direct: request.Direct,
+		Direct: request.Direct, Refusal: true,
 		Reply: Reply{Sender: request.Sender, Sequence: request.Sequence, Name: answer.Name,
 			Status: answer.Status, Code: answer.Code}}
 	if err := s.Transport.Publish(ctx, out); err != nil {

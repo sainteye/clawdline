@@ -10,6 +10,7 @@ test("a pane keeps a readable title until its conversation name arrives", () => 
   assert.equal(detailSessionName({ ...row, label: "A named task" }), "A named task")
   assert.equal(detailSessionName({ ...row, identity: "registry" }), "Codex Session")
   assert.equal(detailSessionName({ ...row, machine_scope: true }), "Clawdfather")
+  assert.equal(detailSessionName({ ...row, assistant: "antigravity" }), "Gemini Session")
 })
 
 test("Cloud Session cards keep the machine identity through registration", () => {

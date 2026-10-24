@@ -44,6 +44,8 @@ export type CloudRow = Record<string, unknown> & {
   machine?: string
   session?: string
   identity?: CloudIdentity
+  /** Native conversation binding, separate from the relay routing pair. */
+  sessionBinding?: SessionRow["identity"]
 }
 
 /** `CloudClient.sessions()`'s answer (`_sessionResponse`). */
@@ -116,6 +118,7 @@ export interface CloudSnippets {
 
 /** What `CloudClient.events()` hands a listener; only these fields are read. */
 export interface CloudEvent {
+  realign?: boolean
   type: string
   state?: string
   machine?: string
@@ -245,7 +248,7 @@ export interface CloudReadClient {
   snippets?(identity?: CloudIdentity, options?: { fresh?: boolean }): Promise<CloudSnippets>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
   transcriptForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
-  transcriptPageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, before: number, signal?: AbortSignal): Promise<unknown>
+  transcriptPageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, before: number, signal?: AbortSignal, revision?: string): Promise<unknown>
   readForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string },
     word: string, fields: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
   /**
@@ -914,6 +917,15 @@ export class RelayReader {
           projectFile.file ? "project-file-read" : "project-file-list",
           { project: place.id, ...(projectFile.file ? { file: projectFile.file } : {}) })
       }
+      const consentProject = projectUnifyRoute(path, "antigravity-consent")
+      if (consentProject) {
+        this.only(url, path)
+        const client = this.connected()
+        if (typeof client._place !== "function") throw Object.assign(new Error("the Cloud client cannot resolve this Project"), { code: "cloud_not_carried", status: 501 })
+        const place = client._place(consentProject)
+        if (place.machine !== this.machine) throw Object.assign(new Error("this Project belongs to another machine"), { code: "cloud_project_machine_mismatch", status: 409 })
+        return await this.machineRead(init?.signal, method, path, "project-antigravity-consent-status", { project: place.id })
+      }
       const unifyProject = projectUnifyRoute(path)
       if (unifyProject) {
         this.only(url, path)
@@ -1214,14 +1226,16 @@ export class RelayReader {
           const before = historyCursor(beforeRaw)
           if (beforeRaw !== null && !before) return this.refuse(method, path, 400, "invalid_cursor", "Invalid transcript cursor.")
           if (before) {
+            const revision = url.searchParams.get("revision") || undefined
             const client = this.connected()
             if (this.options.classicStatus ? !client.transcriptPageForGeneration : !client._read) {
               return this.refuse(method, path, 501, "cloud_not_carried", "This console cannot read earlier messages.")
             }
             const body = this.options.classicStatus
-              ? await client.transcriptPageForGeneration!(await this.coherentSession(session, init?.signal), before, init?.signal ?? undefined)
+              ? await client.transcriptPageForGeneration!(await this.coherentSession(session, init?.signal), before, init?.signal ?? undefined, revision)
               : await client._read?.({ machine: this.machine, session }, "transcript",
-                { limit: CLOUD_TRANSCRIPT_LIMIT, before, priority: "foreground" }, `transcript.before.${before}`)
+                { limit: CLOUD_TRANSCRIPT_LIMIT, before, ...(revision ? { revision } : {}), priority: "foreground" },
+                `transcript.before.${before}${revision ? `.revision.${revision}` : ""}`)
             const page = transcriptPage(body, session)
             this.note(method, path, "relay", undefined, { word: "transcript" })
             return json(200, page)
@@ -1669,17 +1683,18 @@ export class RelayReader {
         row.destination.executionGeneration)
       const status = presentation?.status?.state === row.state ? presentation.status : undefined
       const { identity: _displayIdentity, ...displayStatus } = status ?? {}
-      return { ...displayStatus, id: row.destination.sessionID, session: row.destination.sessionID,
+      return { ...displayStatus, sessionBinding: presentation?.status?.identity,
+        id: row.destination.sessionID, session: row.destination.sessionID,
         // The signed projection and this presentation name the same execution.
         // Its conversation id stays valid while their activity states cross in
         // flight; dropping it here makes the Session work fold say no message
         // was sent and suppresses the Board read until a later list pass.
         ...(presentation?.status?.sessionId ? { sessionId: presentation.status.sessionId } : {}),
-        machine: this.machine, execution_generation: row.destination.executionGeneration,
+        machine: this.machine, identity: { machine: this.machine, session: row.destination.sessionID }, execution_generation: row.destination.executionGeneration,
         parent_session_id: row.parentSessionID,
         machine_scope: row.machineScope === true, coordinator_bound: row.coordinatorBound === true,
         label: presentation?.title ?? row.destination.sessionID, cwd: presentation?.cwd, project_key: presentation?.projectKey,
-        icon: presentation?.icon, assistant: row.assistant ?? presentation?.assistant, backend: row.backend, state: row.state,
+        icon: presentation?.icon, assistant: row.assistant ?? presentation?.assistant, backend: row.backend ?? (presentation?.status?.identity === "protocol" && presentation.assistant === "antigravity" ? "owned" : undefined), state: row.state,
         source: { freshness: row.freshness === "current" ? "current" : "unverified",
           observed_at: row.observedAt / 1000 } }
     })
@@ -1870,13 +1885,14 @@ export class RelayReader {
             presentation.projection.snapshotGeneration === statusMarker?.payload?.snapshot_generation)
         if (hasInventory && !signedRow && !pinnedRow) continue
         const { identity: _displayIdentity, ...displayStatus } = presentation.status ?? {}
-        machineRows.push({ ...displayStatus, id: target.sessionID, session: target.sessionID,
-          machine: this.machine, execution_generation: target.executionGeneration, label: presentation.title,
+        machineRows.push({ ...displayStatus, sessionBinding: presentation.status?.identity, id: target.sessionID, session: target.sessionID,
+          machine: this.machine, identity: { machine: this.machine, session: target.sessionID }, execution_generation: target.executionGeneration, label: presentation.title,
           parent_session_id: signedRow && typeof data?.parent_session_id === "string"
             ? data.parent_session_id : presentation.projection?.parentSessionID,
           cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon,
           assistant: signedRow ? data?.assistant ?? presentation.assistant : presentation.projection?.assistant ?? presentation.assistant,
-          backend: signedRow ? data?.backend : presentation.projection?.backend,
+          backend: (signedRow ? data?.backend : presentation.projection?.backend) ??
+            (presentation.status?.identity === "protocol" && presentation.assistant === "antigravity" ? "owned" : undefined),
           state: signedRow ? data?.state : presentation.status?.state ?? "unknown",
           source: signedRow ? data?.source : { freshness: presentation.projection?.freshness === "current" ? "current" : "unverified",
             observed_at: (presentation.projection?.observedAt ?? this.now()) / 1000 } })
@@ -1902,11 +1918,12 @@ export class RelayReader {
         // signed ss/ pass. The old Session pane still needs a row to open its
         // transcript; a missing rich s/ replay must not hide that answer.
         const { identity: _displayIdentity, ...displayStatus } = presentation.status ?? {}
-        machineRows.push({ ...displayStatus, id: target.sessionID, session: target.sessionID,
-          machine: this.machine, execution_generation: target.executionGeneration,
+        machineRows.push({ ...displayStatus, sessionBinding: presentation.status?.identity, id: target.sessionID, session: target.sessionID,
+          machine: this.machine, identity: { machine: this.machine, session: target.sessionID }, execution_generation: target.executionGeneration,
           parent_session_id: typeof data.parent_session_id === "string" ? data.parent_session_id : undefined,
           label: presentation.title, cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon,
-          assistant: data.assistant, backend: data.backend, state: data.state, source: data.source })
+          assistant: data.assistant ?? presentation.assistant, backend: data.backend ??
+            (presentation.status?.identity === "protocol" && presentation.assistant === "antigravity" ? "owned" : undefined), state: data.state, source: data.source })
       }
     }
     this.askForOpenedRow(client, machineRows)
@@ -2024,7 +2041,11 @@ export class RelayReader {
       const age = now - held.at
       const moved = rowKey !== held.rowKey
       const lineMoved = line !== held.line
-      if (!moved && age < TRANSCRIPT_MAX_REUSE_MS && !(lineMoved && age >= TRANSCRIPT_LINE_REREAD_MS)) {
+      // A native user echo is delivery, not the completed model reply. Native
+      // pages have no terminal line whose movement invalidates this cache.
+      const native = held.answer.evidence === "structured" && held.answer.signature?.startsWith("acp:")
+      if (native ? !moved && age < TRANSCRIPT_EXPECT_REREAD_MS
+        : !moved && age < TRANSCRIPT_MAX_REUSE_MS && !(lineMoved && age >= TRANSCRIPT_LINE_REREAD_MS)) {
         return { page: held.answer, reused: true }
       }
     }
@@ -2167,12 +2188,12 @@ export class RelayReader {
       mark("ask_started")
       const answer = await abandonable(asked, signal, word)
       mark("answer_observed")
-      if (word === "personas") {
+      if (word === "personas" || word === "places") {
         try {
           const log = (client as { viewerEvents?: { record?(event: string, data: Record<string, unknown>): unknown } }).viewerEvents
           const personas = (answer as { personas?: unknown } | null)?.personas
-          log?.record?.("cloud.personas.read", { machine,
-            count: Array.isArray(personas) ? personas.length : null,
+          log?.record?.(word === "personas" ? "cloud.personas.read" : "cloud.places.read", { machine,
+            count: word === "personas" ? (Array.isArray(personas) ? personas.length : null) : undefined,
             ms: Math.max(0, Math.round(this.now() - started)) })
         } catch { /* diagnostics cannot fail the catalog read */ }
       }
@@ -2981,9 +3002,9 @@ function projectFileRoute(path: string): { project: string; file?: string } | nu
 }
 
 /** The Project a unify plan read names, or "" for any other path. */
-function projectUnifyRoute(path: string): string {
+function projectUnifyRoute(path: string, suffix = "unify"): string {
   const parts = path.split("/")
-  if (parts.length !== 5 || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== "unify") return ""
+  if (parts.length !== 5 || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== suffix) return ""
   try { return decodeURIComponent(parts[3]) } catch { return "" }
 }
 
@@ -3113,6 +3134,9 @@ function transcriptPage(body: unknown, session: string): TranscriptPage {
   // reads the daemon directly; over the relay the transcript is this seam's
   // held answer, so the cursor is not passed on (see the `after=` refusal).
   const { optimisticIdentity: _identity, nextAfter: _after, ...page } = body as Record<string, unknown>
+  if (page.id !== undefined && page.id !== session) {
+    throw Object.assign(new Error("the transcript answer names another Session"), { code: "bad_payload" })
+  }
   return {
     ...page,
     id: typeof page.id === "string" && page.id ? page.id : session,

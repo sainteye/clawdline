@@ -9,6 +9,7 @@ var capacityMeasureAreas = []struct {
 	area     string
 	measures func(*Server) map[string]func() capacity.Reading
 }{
+	{"antigravity", (*Server).antigravityCapacityMeasures},
 	{"artifacts", (*Server).artifactsCapacityMeasures},
 	{"board", (*Server).boardCapacityMeasures},
 	{"broker", (*Server).brokerCapacityMeasures},

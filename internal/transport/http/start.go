@@ -26,6 +26,7 @@ import (
 	personas "github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/squad"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // Starting a session in a place, and picking a recorded one back up — the
@@ -73,12 +74,16 @@ func (r *recorder) Write(b []byte) (int, error) {
 }
 
 func writePlaceRefusal(w http.ResponseWriter, status int, code, message, app string) {
+	writePlaceError(w, status, contract.PlaceError{Code: code, Message: message, App: app})
+}
+
+func writePlaceError(w http.ResponseWriter, status int, refusal contract.PlaceError) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(contract.PlaceRefusal{Error: contract.PlaceError{
-		Code: code, Message: message, RequestID: requestID(), App: app}})
+	refusal.RequestID = requestID()
+	_ = enc.Encode(contract.PlaceRefusal{Error: refusal})
 }
 
 // placeRoute answers everything under /v1/places/.
@@ -127,7 +132,11 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 		model := ""
 		if len(parts) == 4 {
 			model = parts[3]
-			if !projects.KnownStartModel(model) {
+			valid := projects.KnownStartModel(model)
+			if assistant == projects.AssistantAntigravity {
+				_, valid = projects.ModelName(model)
+			}
+			if !valid {
 				writePlaceRefusal(w, http.StatusNotFound, "not_found", "No model named that", "")
 				return
 			}
@@ -252,6 +261,10 @@ func (s *Server) starter(reading startReading) app.Starter {
 			return s.past(ctx, place, assistant, reading, 200)
 		},
 		VerifyPast: func(ctx context.Context, place projects.Place, assistant, id string) (bool, error) {
+			if assistant == projects.AssistantAntigravity {
+				return false, app.StartRefusal{Status: http.StatusConflict, Code: "provider_integration_unavailable",
+					Message: "Antigravity Session identity and interactive readiness have not been verified on this machine."}
+			}
 			if assistant == projects.AssistantCodex {
 				found, err := projects.CodexConversation(ctx, place, id)
 				if err != nil {
@@ -280,12 +293,12 @@ func (s *Server) starter(reading startReading) app.Starter {
 			}
 			return s.broker.SessionLanguage(assistant)
 		},
-		DefaultReasoningEffort: func() string {
+		DefaultReasoningEffort: func(assistant string) string {
 			values, err := nextconfig.Open(s.cfg.Dir).Read()
 			if err != nil {
 				return ""
 			}
-			return nextconfig.DefaultReasoningEffort(values)
+			return nextconfig.DefaultEffort(values, assistant)
 		},
 		DefaultModel: func(assistant string) string {
 			values, err := nextconfig.Open(s.cfg.Dir).Read()
@@ -300,6 +313,9 @@ func (s *Server) starter(reading startReading) app.Starter {
 // past is StartPoints.past(in:assistant:limit:). A Codex index that cannot be
 // asked is an empty list, as it is in the Swift app.
 func (s *Server) past(ctx context.Context, place projects.Place, assistant string, reading startReading, limit int) []projects.Past {
+	if assistant == projects.AssistantAntigravity {
+		return nil // No caller may substitute Claude's history for this provider.
+	}
 	rootTitles := map[string]ownrecords.BoardTitle{}
 	queriedRootTitle := map[string]bool{}
 	loggedRootTitleError := false
@@ -382,6 +398,10 @@ func manualConversationTitle(rows []swiftTitle, id, custom string) string {
 }
 
 func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistant, model, persona string) {
+	if assistant == projects.AssistantAntigravity && s.antigravitySessions.Load() == nil {
+		refuseAntigravityFoundation(w)
+		return
+	}
 	if id == projects.MachinePlaceID {
 		if model != "" || persona != "" {
 			writePlaceRefusal(w, http.StatusBadRequest, "machine_start_options_unsupported",
@@ -403,6 +423,19 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 	if !ok {
 		log.Printf("audit place.start place=%.64s ok=0 why=not_found", id)
 		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No place named that", "")
+		return
+	}
+	if assistant == projects.AssistantAntigravity {
+		if model != "" {
+			writePlaceRefusal(w, http.StatusConflict, "provider_operation_unsupported", "Select the Gemini model after opening the conversation.", "Gemini")
+			return
+		}
+		made, err := s.openOwnedAntigravity(ctx, starter, place, persona)
+		if err != nil {
+			writePlaceRefusal(w, http.StatusConflict, "provider_start_failed", err.Error(), "Gemini")
+			return
+		}
+		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Persona: made.Persona, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})
 		return
 	}
 	if assistantNeedsSignIn(ctx, assistant) {
@@ -431,6 +464,9 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 // A known signed-out CLI needs a guided retry before opening its tmux pane.
 // Unknown answers from older CLIs are left to the regular start path.
 func assistantNeedsSignIn(parent context.Context, assistant string) bool {
+	if assistant == projects.AssistantAntigravity {
+		return false // Auth remains unknown; never probe Claude instead.
+	}
 	if assistant == projects.AssistantClaude && (os.Getenv("ANTHROPIC_API_KEY") != "" ||
 		os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" || os.Getenv("CLAUDE_CODE_USE_BEDROCK") != "" ||
 		os.Getenv("CLAUDE_CODE_USE_VERTEX") != "" || os.Getenv("CLAUDE_CODE_USE_FOUNDRY") != "") ||
@@ -476,6 +512,10 @@ func assistantNeedsSignIn(parent context.Context, assistant string) bool {
 }
 
 func (s *Server) resumePlace(w http.ResponseWriter, r *http.Request, id, assistant, conversation, persona string) {
+	if assistant == projects.AssistantAntigravity {
+		s.resumeOwnedAntigravity(w, r, id, conversation, persona)
+		return
+	}
 	release, ok := admitOpening(w, r)
 	if !ok {
 		return
@@ -513,6 +553,10 @@ func (s *Server) resumePlace(w http.ResponseWriter, r *http.Request, id, assista
 }
 
 func (s *Server) pastRoute(w http.ResponseWriter, r *http.Request, id, assistant string) {
+	if assistant == projects.AssistantAntigravity && s.antigravitySessions.Load() == nil {
+		refuseAntigravityFoundation(w)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	reading := s.readForStart(ctx)
@@ -524,6 +568,10 @@ func (s *Server) pastRoute(w http.ResponseWriter, r *http.Request, id, assistant
 	}
 	// One more than is sent, so the answer can say whether there were more.
 	const limit = 200
+	if assistant == projects.AssistantAntigravity {
+		s.pastOwnedAntigravity(w, r, ctx, place, limit)
+		return
+	}
 	var found []projects.Past
 	next := ""
 	if assistant == projects.AssistantCodex {
@@ -556,6 +604,16 @@ func (s *Server) pastRoute(w http.ResponseWriter, r *http.Request, id, assistant
 			At: p.At.Unix(), Live: p.Live})
 	}
 	writeJSON(w, out)
+}
+
+// Identity, composer evidence and permission mapping are required before the
+// foundation can open a real Session. Keep every old-provider fallback closed.
+func refuseAntigravityFoundation(w http.ResponseWriter) {
+	const message = "Antigravity Session identity and interactive readiness have not been verified on this machine."
+	writePlaceError(w, http.StatusConflict, contract.PlaceError{
+		Code: "provider_integration_unavailable", Message: message, App: "Antigravity",
+		DetailKey: productcopy.HTTPRefusalKey(message),
+	})
 }
 
 // admitOpening takes the one opening slot, waiting in a bounded queue.

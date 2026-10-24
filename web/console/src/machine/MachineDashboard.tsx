@@ -42,12 +42,21 @@ function chinese(): boolean {
 }
 
 /**
- * The machine dashboard, opened from the session counts beside the wordmark:
+ * The machine dashboard, opened from the wordmark:
  * whether this machine is why everything is slow, and which session is using
  * it. Mounted only while open, so a closed dashboard asks nothing.
  */
-export function MachineDashboard({ sessions, onClose, onClawdfather }: {
+export type DashboardSource = {
+  name: string
   sessions: readonly SessionRow[]
+  readUsage: () => Promise<MachineUsage>
+  onClawdfather: (id: string | null) => void
+}
+
+export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage = readMachineUsage, machineName }: {
+  sessions: readonly SessionRow[]
+  readUsage?: () => Promise<MachineUsage>
+  machineName?: string
   onClose: () => void
   onClawdfather: (id: string | null) => void
 }) {
@@ -70,7 +79,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
         return
       }
       try {
-        const next = await readMachineUsage()
+        const next = await readUsage()
         if (!alive) return
         setUsage(next)
         setError(null)
@@ -89,7 +98,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
       alive = false
       if (timer) clearTimeout(timer)
     }
-  }, [])
+  }, [readUsage])
 
   useEffect(() => {
     focusModalContainer(dialogRef.current)
@@ -134,7 +143,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
       >
         <div className="machine-head">
           <div className="machine-heading">
-            <h2 id="machine-title">{catalogWord("literal", "0a0017caec11")}</h2>
+            <h2 id="machine-title">{machineName ? <>{machineName} · </> : null}{catalogWord("literal", "0a0017caec11")}</h2>
             <span className="machine-sub">
               {usage ? (
                 <>

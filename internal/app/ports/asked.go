@@ -2,6 +2,9 @@ package ports
 
 import "context"
 
+// Asked never grants integration consent. A disabled iTerm2 integration
+// refuses even a requested action.
+//
 // A terminal backend whose polling can be switched off (iTerm2's `iterm_scan`,
 // docs/interface.md "Turning iTerm2 scanning off") still has to do what was
 // asked of one session.

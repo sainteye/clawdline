@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -47,6 +48,9 @@ func splitPaneFields(line string) []string {
 var sendConfirm = 6 * time.Second
 
 type Tmux struct {
+	// Antigravity resolves pane identity from positive process proof. Merely
+	// seeing agy as pane_current_command does not classify the old IDE.
+	Antigravity func(context.Context, string, string) (ports.AntigravityProcess, error)
 	// Binary is the name looked up on the PATH, "tmux". An absolute path pins
 	// that executable instead: it is run as it is, on the default server, and
 	// nothing else is looked for.
@@ -118,6 +122,17 @@ func (t *Tmux) Name() string { return "tmux" }
 // authoritative "there are no panes" — the one answer that lets the broker
 // call a live child's tab gone (docs/design-decisions.md D05 ③).
 func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
+	return t.inventory(ctx, false)
+}
+
+// ManagedInventory retains bare presence for external panes, without reading their screens or records.
+func (t *Tmux) ManagedInventory(ctx context.Context) (session.Inventory, error) {
+	return t.inventory(ctx, true)
+}
+
+var managedSessionName = regexp.MustCompile(`^clawdline-(session|task)-[0-9a-f]{8}$`)
+
+func (t *Tmux) inventory(ctx context.Context, managedOnly bool) (session.Inventory, error) {
 	inv := session.Inventory{
 		ObservedAt: time.Now(),
 		Provenance: "tmux",
@@ -134,7 +149,7 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 
 	format := strings.Join([]string{
 		"#{pane_id}", "#{pane_tty}", "#{pane_current_command}",
-		"#{session_name}", "#{pane_title}", "#{pane_current_path}",
+		"#{session_name}", "#{pane_title}", "#{pane_current_path}", "#{@clawdline_managed}",
 	}, paneSeparator)
 
 	// `-u`: under LC_ALL=C tmux treats the client as non-UTF-8 and rewrites
@@ -181,11 +196,27 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 			State:    session.StateUnknown,
 			Evidence: session.EvidenceProcess,
 		}
+		if managedOnly && !managedSessionName.MatchString(parts[3]) && !(len(parts) > 6 && parts[6] == "1") {
+			inv.Sessions = append(inv.Sessions, session.Session{ID: s.ID, Backend: s.Backend, TTY: s.TTY, DiscoveryExcluded: true})
+			continue
+		}
 		switch parts[2] {
 		case "claude":
 			s.Assistant = session.AssistantClaude
 		case "codex":
 			s.Assistant = session.AssistantCodex
+		case "agy":
+			p, ok, complete := t.antigravityPaneStatus(ctx, s.ID, s.TTY)
+			if !complete {
+				inv.Complete = false
+				inv.Notes = append(inv.Notes, "antigravity_process_unreadable")
+			}
+			if ok {
+				s.Assistant = session.AssistantAntigravity
+				s.PID = p.PID
+				s.Binding = session.BindingNoRecord
+				s.ExpectedStart, _ = time.Parse(time.RFC3339Nano, p.Birth)
+			}
 		}
 		inv.Sessions = append(inv.Sessions, s)
 	}
@@ -198,6 +229,23 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 			fmt.Sprintf("tmux list-panes: %d line(s) did not carry six fields", dropped))
 	}
 	return inv, nil
+}
+
+func (t *Tmux) antigravityPane(ctx context.Context, id, tty string) (ports.AntigravityProcess, bool) {
+	p, ok, _ := t.antigravityPaneStatus(ctx, id, tty)
+	return p, ok
+}
+func (t *Tmux) antigravityPaneStatus(ctx context.Context, id, tty string) (ports.AntigravityProcess, bool, bool) {
+	if t.Antigravity == nil {
+		return ports.AntigravityProcess{}, false, true
+	}
+	p, err := t.Antigravity(ctx, id, tty)
+	if err != nil {
+		known, ok := err.(ports.AntigravityNonCLI)
+		return p, false, ok && known.AntigravityNotStandalone()
+	}
+	ok := p.PID > 0 && p.Birth != "" && p.Executable != "" && p.TTY == tty && p.TerminalID == id
+	return p, ok, ok
 }
 
 // NoServer is whether tmux's own sentence says there is no server to ask —
@@ -239,6 +287,9 @@ func (t *Tmux) Capture(ctx context.Context, s session.Session) (string, bool) {
 // stream to the program, which reads it in pieces of at most 1022 bytes, and a
 // 1045-byte notice reached a Claude Code root as its last 23 bytes.
 func (t *Tmux) Send(ctx context.Context, s session.Session, text string) error {
+	if s.Assistant == session.AssistantAntigravity {
+		return Unsent{Why: ErrAntigravityInputUnavailable.Error()}
+	}
 	return submit(ctx, tmuxInput{call: t.call, target: s.ID}, text, sendConfirm)
 }
 

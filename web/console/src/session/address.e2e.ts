@@ -123,6 +123,8 @@ let machineSettings: Record<string, unknown> = {
     ],
   },
 }
+let workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true }
+let refuseWorkflowWrite = false
 let refuseDefaultModelWrite = false
 let smartTitleRequestKey = ""
 let smartTitleRefusal = ""
@@ -268,6 +270,15 @@ function daemon(): Server {
       }
       if (heldSessions) return void heldSessions.push(() => json(res, 200, snapshot()))
       return json(res, 200, snapshot())
+    }
+    if (path === "/v1/settings/workflow" && req.method === "GET") return json(res, 200, workflowSettings)
+    if (path === "/v1/settings/workflow" && req.method === "POST") {
+      void requestJSON(req).then(change => {
+        if (refuseWorkflowWrite) { refuseWorkflowWrite = false; return json(res, 503, { error: "settings_unavailable", detail: "Could not save settings." }) }
+        workflowSettings = { ...workflowSettings, ...change }
+        json(res, 200, workflowSettings)
+      })
+      return
     }
     if (path === "/v1/settings/default-models" && req.method === "GET") return json(res, 200, machineSettings)
     if (path === "/v1/settings/default-models" && req.method === "POST") {
@@ -2898,3 +2909,54 @@ for (const size of [DESK, { width: 640, height: 844, mobile: true }, PHONE, { wi
     })
   })
 }
+
+
+test("workflow settings explain both switches and persist independent changes on desktop and phone", async () => {
+  for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
+    for (const tag of ["en", "zh-Hant"]) {
+      workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true }
+      await inTab(size, async tab => {
+        await tab.go("/")
+        await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)})`)
+        await tab.run(`location.hash = "page=settings"`)
+        await tab.reload()
+        const waitFor = async (expression: string) => {
+          const end = Date.now() + 5000
+          while (!await tab.run(expression)) {
+            if (Date.now() > end) assert.fail("workflow wait: " + expression)
+            await new Promise(resolve => setTimeout(resolve, 30))
+          }
+        }
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
+        const switches = `.settings-workflow [role="switch"]`
+        await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
+        assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute("aria-checked"))`), ["true", "true"])
+        assert.equal(await tab.run(`document.querySelectorAll('.workflow-setting-help:not([hidden])').length`), 0)
+        await tab.run(`document.querySelector('.workflow-info').focus()`)
+        await tab.press("Enter")
+        assert.equal(await tab.run(`document.querySelector('.workflow-info').getAttribute("aria-expanded")`), "true")
+        assert.ok(await tab.run(`document.getElementById('workflow-dispatch_full_permission-help').textContent.includes(${JSON.stringify(tag === "en" ? "Running tasks" : "執行中的任務")})`))
+        await tab.run(`document.querySelector('${switches}').click()`)
+        await waitFor(`document.querySelector('${switches}').getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
+        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: true })
+        await tab.run(`document.querySelectorAll('.workflow-info')[1].click()`)
+        await tab.run(`document.querySelectorAll('${switches}')[1].click()`)
+        await waitFor(`document.querySelectorAll('${switches}')[1].getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
+        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: false })
+        const bounds = await tab.run(`({ width: innerWidth, page: document.documentElement.scrollWidth })`)
+        assert.ok(bounds.page <= bounds.width + 1, `${tag} ${sizeName} workflow overflow: ${JSON.stringify(bounds)}`)
+        if (shots) { mkdirSync(shots, { recursive: true }); await tab.shot(`${tag}-${sizeName}-workflow-settings`) }
+        await tab.reload()
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
+        await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
+        assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["false", "false"])
+        refuseWorkflowWrite = true
+        await tab.run(`document.querySelector('${switches}').click()`)
+        await waitFor(`!document.querySelector('${switches}').disabled && !!document.querySelector('.settings-workflow .said').textContent`)
+        assert.equal(await tab.run(`document.querySelector('${switches}').getAttribute('aria-checked')`), "false")
+      })
+    }
+  }
+})

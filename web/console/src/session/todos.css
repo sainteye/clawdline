@@ -1,5 +1,9 @@
 /* A Session's to-do fold, the header's failure mark (session/todo-refresh.ts).
    It sits in the summary beside the count, so it is as small as the count. */
+/* Stretch the hit area through the summary's vertical padding while keeping
+   the attention button's visible surface centred at its original size. */
+.session-todos-attention { position: relative; align-self: stretch; display: flex; align-items: center; margin-left: auto; }
+.session-todos-attention > .human-interventions-head::before { content: ""; position: absolute; inset: -7px 0; }
 .session-todos-failed {
     display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 0 8px;
     border: 1px solid var(--warn); border-radius: 999px; background: transparent; color: var(--warn);

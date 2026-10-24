@@ -2,6 +2,7 @@ package cloudops
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -752,6 +753,15 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-file-save", method: "PUT", path: "/v1/projects/p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		body2: `{"content":"updated","expected_version":"v1"}`,
 	}, {
+		word:    "project-antigravity-consent-status",
+		body:    map[string]any{"type": "project-antigravity-consent-status", "session": machine, "request": "req-consent-status", "project": "p1"},
+		session: machine, name: "read:req-consent-status", method: "GET", path: "/v1/projects/p1/antigravity-consent",
+	}, {
+		word:    "project-antigravity-consent-change",
+		body:    map[string]any{"type": "project-antigravity-consent-change", "session": machine, "request": "req-consent-change", "project": "p1", "item": map[string]any{"action": "disable", "revision": 0, "scope": "project-and-linked-worktrees"}},
+		session: machine, name: "action:req-consent-change", method: "POST", path: "/v1/projects/p1/antigravity-consent",
+		body2: `{"action":"disable","revision":0,"scope":"project-and-linked-worktrees"}`,
+	}, {
 		word:    "project-unify-plan",
 		body:    map[string]any{"type": "project-unify-plan", "session": machine, "request": "req-unify-plan", "project": "p1"},
 		session: machine, name: "read:req-unify-plan", method: "GET", path: "/v1/projects/p1/unify",
@@ -790,6 +800,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-capacity",
 		method: "GET", path: "/v1/capacity",
 	}, {
+		word:    "provider-quotas",
+		body:    map[string]any{"type": "provider-quotas", "session": machine, "request": "req-provider-quotas"},
+		session: machine, name: "read:req-provider-quotas", method: "GET", path: "/v1/provider-quotas",
+	}, {
 		word:    "default-models",
 		body:    map[string]any{"type": "default-models", "session": machine, "request": "req-models"},
 		session: machine, name: "read:req-models",
@@ -825,6 +839,15 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-gates-write",
 		method: "POST", path: "/v1/settings/work-gates",
 		body2: `{"planning_gate":true,"verify_gate":true}`,
+	}, {
+		word:    "workflow-settings",
+		body:    map[string]any{"type": "workflow-settings", "session": machine, "request": "req-workflow"},
+		session: machine, name: "read:req-workflow", method: "GET", path: "/v1/settings/workflow",
+	}, {
+		word:    "workflow-settings-update",
+		body:    map[string]any{"type": "workflow-settings-update", "session": machine, "request": "req-workflow-write", "changes": map[string]any{"dispatch_full_permission": false, "session_auto_discovery": false}},
+		session: machine, name: "action:req-workflow-write", method: "POST", path: "/v1/settings/workflow",
+		body2: `{"dispatch_full_permission":false,"session_auto_discovery":false}`,
 	}, {
 		word:    "notification-settings",
 		body:    map[string]any{"type": "notification-settings", "session": machine, "request": "req-notifications"},
@@ -1258,5 +1281,59 @@ func TestPastPageCursorReachesTheLocalHistoryRoute(t *testing.T) {
 	req := r.last()
 	if req.Path != "/v1/places/project/sessions/codex" || req.Query["cursor"] != "older/+?= page" {
 		t.Fatalf("wrong request %v", req)
+	}
+}
+
+func TestViewerReadOnlyIsDistinctFromTheMachineCommandSwitch(t *testing.T) {
+	r := &router{}
+	b := open(r)
+	b.Authority = func(_ context.Context, _ string, _ ed25519.PublicKey, write bool) Authority {
+		return Authority{ClockReady: true, RosterReadable: true, RosterAllowsSender: true,
+			WriteGateAllows: true, ViewerReadOnly: write}
+	}
+	cmd := request(t, ClassCtl, map[string]any{"type": "send", "session": "%19", "text": "synthetic", "request": "readonly-test", "images": []any{}})
+	if a := b.Handle(context.Background(), cmd); a.Code != "viewer_read_only" {
+		t.Fatalf("reader: %s %s", a.Code, a.Payload)
+	}
+	if len(r.seen) != 0 {
+		t.Fatal("readonly request reached local effects")
+	}
+	b.AllowCommands = func() bool { return false }
+	if a := b.Handle(context.Background(), cmd); a.Code != "cloud_commands_disabled" {
+		t.Fatalf("switch: %s", a.Code)
+	}
+	b.AllowCommands = func() bool { return true }
+	b.Authority = func(_ context.Context, _ string, _ ed25519.PublicKey, _ bool) Authority {
+		return Authority{ClockReady: true, RosterReadable: true, RosterAllowsSender: true, WriteGateAllows: true}
+	}
+	if a := b.Handle(context.Background(), cmd); a.Status != 200 {
+		t.Fatalf("operator: %s", a.Payload)
+	}
+}
+
+func TestReadonlyViewerKeepsConversationDocumentAndImageReads(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, media string
+		fields            map[string]any
+	}{
+		{"transcript", `{}`, "application/json", map[string]any{"limit": 100}},
+		{"document", "# synthetic report", "text/markdown; charset=utf-8", map[string]any{"request": "doc-1", "scope": "project", "task": "", "path": "README.md"}},
+		{"image", "synthetic-image", "image/png", map[string]any{"id": "picture-1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &router{body: tc.body, media: tc.media}
+			b := open(r)
+			b.Authority = func(_ context.Context, _ string, _ ed25519.PublicKey, write bool) Authority {
+				return Authority{ClockReady: true, RosterReadable: true, RosterAllowsSender: true, WriteGateAllows: true, ViewerReadOnly: write}
+			}
+			b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority { return contentReadAuthority(true) }
+			body := map[string]any{"type": tc.name, "session": pane, "expected_generation": pinnedGeneration}
+			for k, v := range tc.fields {
+				body[k] = v
+			}
+			if a := b.Handle(context.Background(), contentReadRequest(t, body)); !a.OK() || len(r.seen) != 1 {
+				t.Fatalf("readonly read: %+v", a)
+			}
+		})
 	}
 }

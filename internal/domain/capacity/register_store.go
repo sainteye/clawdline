@@ -4,6 +4,21 @@ package capacity
 func storeBounds() []Entry {
 	return []Entry{
 		{
+			Name: StoreAntigravityProjectConsents, Class: Evidence, Unit: Rows,
+			Limit: 1024, AtLimit: Refuse, Told: []Channel{Diagnostics, Notice, Health}, EvictedBy: Person,
+			Sources: []string{"internal/adapters/store.AntigravityProjectConsentLimit"},
+		},
+		{
+			Name: StoreAntigravityConsentRootBytes, Class: Buffer, Unit: Bytes,
+			Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/store.AntigravityConsentRootBytesLimit"},
+		},
+		{
+			Name: StoreAntigravityConsentIdentityBytes, Class: Buffer, Unit: Bytes,
+			Limit: 128, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/store.AntigravityConsentIdentityBytesLimit"},
+		},
+		{
 			// clawdline.sqlite3 with its -wal and -shm. Evidence: the broker's
 			// task records and landings are in it.
 			Name: StoreDB, Class: Evidence, Unit: Bytes,

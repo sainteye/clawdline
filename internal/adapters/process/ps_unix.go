@@ -13,11 +13,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 type PS struct {
+	// Antigravity must validate the executable fingerprint and kernel birth.
+	// Nil leaves both the standalone CLI and the old same-name IDE unclassified.
+	Antigravity ports.AntigravityProcessVerifier
 	// Open is the table of open files, which is how a Codex session that was
 	// not resumed is tied to its conversation. New fills it with this
 	// platform's reader; a test puts its own table here.
@@ -45,7 +49,14 @@ var squadLaunchID = regexp.MustCompile(`(?:/|\\)squad(?:/|\\)launches(?:/|\\)([A
 // The column set deliberately excludes `lstart`, whose rendering follows the
 // locale and changes width during the month, so nothing here counts columns.
 // Subprocesses are pinned to LC_ALL=C for the same family of reasons.
-func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
+func (p *PS) Scan(ctx context.Context) (session.Inventory, error) { return p.scan(ctx, nil) }
+
+// ScanTTYs resolves only explicitly selected terminals, before reading provider records.
+func (p *PS) ScanTTYs(ctx context.Context, ttys map[string]bool) (session.Inventory, error) {
+	return p.scan(ctx, ttys)
+}
+
+func (p *PS) scan(ctx context.Context, ttys map[string]bool) (session.Inventory, error) {
 	inv := session.Inventory{
 		ObservedAt: time.Now(),
 		Provenance: "ps",
@@ -68,9 +79,25 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 			continue
 		}
 		tty, pidText, pgidText, tpgidText := fields[0], fields[1], fields[2], fields[3]
+		if ttys != nil && !ttys[tty] {
+			continue
+		}
 		command := strings.Join(fields[4:], " ")
 
 		assistant := classify(command)
+		pid, _ := strconv.Atoi(pidText)
+		var antigravity ports.AntigravityProcess
+		if assistant == "" && path.Base(fields[4]) == "agy" {
+			fact, ok, complete := p.antigravityProcessStatus(ctx, pid, tty)
+			if !complete {
+				inv.Complete = false
+				inv.Notes = append(inv.Notes, "antigravity_process_unreadable")
+			}
+			if ok {
+				assistant = session.AssistantAntigravity
+				antigravity = fact
+			}
+		}
 		if assistant == "" || tty == "??" || tty == "-" {
 			continue
 		}
@@ -84,7 +111,6 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 			continue
 		}
 
-		pid, _ := strconv.Atoi(pidText)
 		s := session.Session{
 			ID:        tty,
 			Backend:   session.BackendITerm,
@@ -94,7 +120,12 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 			State:     session.StateUnknown,
 			Evidence:  session.EvidenceProcess,
 		}
-		if m := resumeID.FindStringSubmatch(command); len(m) == 2 {
+		if assistant == session.AssistantAntigravity {
+			s.Binding = session.BindingNoRecord
+			// Launch argv is provisional: /clear, /fork and /resume can change it.
+			s.ExpectedStart, _ = time.Parse(time.RFC3339Nano, antigravity.Birth)
+		}
+		if m := resumeID.FindStringSubmatch(command); assistant != session.AssistantAntigravity && len(m) == 2 {
 			s.ConversationID = m[1]
 			s.Binding = session.BindingCommandLine
 			s.Evidence = session.EvidenceProcess
@@ -109,6 +140,23 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 	}
 	inv.Sessions = p.bindCodex(ctx, inv.Sessions)
 	return inv, nil
+}
+
+func (p *PS) antigravityProcess(ctx context.Context, pid int, tty string) (ports.AntigravityProcess, bool) {
+	fact, ok, _ := p.antigravityProcessStatus(ctx, pid, tty)
+	return fact, ok
+}
+func (p *PS) antigravityProcessStatus(ctx context.Context, pid int, tty string) (ports.AntigravityProcess, bool, bool) {
+	if p.Antigravity == nil {
+		return ports.AntigravityProcess{}, false, true
+	}
+	fact, err := p.Antigravity.VerifyAntigravityProcess(ctx, pid)
+	if err != nil {
+		known, ok := err.(ports.AntigravityNonCLI)
+		return fact, false, ok && known.AntigravityNotStandalone()
+	}
+	ok := fact.PID == pid && fact.Birth != "" && fact.Executable != "" && fact.TTY == tty && fact.TerminalID != ""
+	return fact, ok, ok
 }
 
 // bindCodex names the Codex sessions the command line could not.

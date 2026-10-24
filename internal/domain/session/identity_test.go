@@ -42,3 +42,10 @@ func TestOnlyABindingWithAnIdIsBound(t *testing.T) {
 		}
 	}
 }
+
+func TestGeminiCoordinateKeepsTheProviderIdentity(t *testing.T) {
+	s := Session{Assistant: AssistantAntigravity, TTY: "synthetic-terminal"}
+	if got := Coordinate(s); got != "Gemini · synthetic-terminal" {
+		t.Fatalf("display name = %q", got)
+	}
+}

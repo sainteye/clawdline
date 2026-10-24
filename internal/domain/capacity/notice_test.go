@@ -159,3 +159,11 @@ func last(events []Event, kind string) *Event {
 	}
 	return nil
 }
+
+func TestSubsecondDeadlinesKeepTheirUnitInNotices(t *testing.T) {
+	for _, tc := range []struct{ language, want string }{{"en", "250 milliseconds"}, {"zh-Hant", "250 毫秒"}} {
+		if got := amountOfLanguage(tc.language, Milliseconds, 250); got != tc.want {
+			t.Errorf("%s: %q", tc.language, got)
+		}
+	}
+}

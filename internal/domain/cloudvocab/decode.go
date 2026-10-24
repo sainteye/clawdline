@@ -25,6 +25,8 @@ type Decode struct {
 	Name string `json:"name,omitempty"`
 	// NameSuffix is appended to the name when its field is present.
 	NameSuffix *NameSuffix `json:"name_suffix,omitempty"`
+	// NameSuffixes adds further conditional suffixes while preserving old tables.
+	NameSuffixes []NameSuffix `json:"name_suffixes,omitempty"`
 	// Fields is the rule for every body field a shape names, except the
 	// `session` and `request` the reply reads itself.
 	Fields map[string]Field `json:"fields,omitempty"`
@@ -49,6 +51,15 @@ const (
 	// SessionAction is a command on the session it names.
 	SessionAction Reply = "session_action"
 )
+
+// AnswerNameSuffixes preserves the legacy suffix before any additional suffixes.
+func (d *Decode) AnswerNameSuffixes() []NameSuffix {
+	suffixes := make([]NameSuffix, 0, len(d.NameSuffixes)+1)
+	if d.NameSuffix != nil {
+		suffixes = append(suffixes, *d.NameSuffix)
+	}
+	return append(suffixes, d.NameSuffixes...)
+}
 
 // NameSuffix is text appended to the answer name when Field is present.
 type NameSuffix struct {
@@ -322,7 +333,7 @@ func validateDecode(o Operation) error {
 		return fmt.Errorf("cloudvocab: %s has no decode", o.Op)
 	}
 	if d.Hand != "" {
-		if d.Reply != "" || d.Name != "" || d.NameSuffix != nil || d.Fields != nil || d.Route != nil {
+		if d.Reply != "" || d.Name != "" || d.NameSuffix != nil || len(d.NameSuffixes) != 0 || d.Fields != nil || d.Route != nil {
 			return fmt.Errorf("cloudvocab: %s is decoded by hand and states a decode too", o.Op)
 		}
 		return nil
@@ -365,7 +376,7 @@ func validateDecode(o Operation) error {
 			return fmt.Errorf("cloudvocab: %s names its answer by %s, which no shape names", o.Op, field)
 		}
 	}
-	if s := d.NameSuffix; s != nil {
+	for _, s := range d.AnswerNameSuffixes() {
 		if !named[s.Field] {
 			return fmt.Errorf("cloudvocab: %s suffixes its name by %s, which no shape names", o.Op, s.Field)
 		}

@@ -2,12 +2,14 @@ package orchestrator
 
 import (
 	"strings"
+
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"testing"
 )
 
 func TestAChildUsesTheMachinesDefaultModelUnlessItsBriefOverridesIt(t *testing.T) {
 	b, _ := newTestBroker(t)
-	b.DefaultReasoningEffort = func() string { return "high" }
+	b.DefaultReasoningEffort = func(string) string { return "high" }
 	b.DefaultModel = func(assistant string) string {
 		if assistant == "codex" {
 			return "gpt-6-sol"
@@ -21,7 +23,7 @@ func TestAChildUsesTheMachinesDefaultModelUnlessItsBriefOverridesIt(t *testing.T
 
 	b, _ = newTestBroker(t)
 	b.DefaultModel = func(string) string { return "gpt-6-sol" }
-	b.DefaultReasoningEffort = func() string { return "high" }
+	b.DefaultReasoningEffort = func(string) string { return "high" }
 	r, line = dispatchWith(t, b, "c2800012-0000-4000-8000-000000000012", "codex",
 		map[string]any{"model": "gpt-5.6-luna", "reasoning_effort": "xhigh"})
 	if r.Model != "gpt-5.6-luna" || !strings.Contains(line, "--model gpt-5.6-luna") || strings.Contains(line, "gpt-6-sol") || r.ReasoningEffort != "xhigh" || !strings.Contains(line, "model_reasoning_effort=xhigh") {
@@ -50,5 +52,30 @@ func TestABrokerOpenedSessionUsesTheMachinesDefaultModel(t *testing.T) {
 	}
 	if !strings.Contains(launcher.line(), " claude --model sonnet") || strings.Contains(launcher.line(), "claude-opus-5-5") {
 		t.Fatalf("explicit override: %s", launcher.line())
+	}
+}
+
+func TestANativeChildSelectsItsOwnDefaultBeforeFailingClosedWithoutContext(t *testing.T) {
+	for _, explicit := range []string{"", "max"} {
+		b, ctx := newTestBroker(t)
+		reads := 0
+		b.DefaultReasoningEffort = func(assistant string) string {
+			reads++
+			if assistant != projects.AssistantAntigravity {
+				t.Errorf("wrong provider %q", assistant)
+			}
+			return "medium"
+		}
+		completed := false
+		got := b.spawn(ctx, Record{Assistant: projects.AssistantAntigravity, ReasoningEffort: explicit}, t.TempDir(), "synthetic", func() { completed = true })
+		want := explicit
+		wantReads := 0
+		if explicit == "" {
+			want = "medium"
+			wantReads = 1
+		}
+		if got.ReasoningEffort != want || reads != wantReads || got.State != StateSpawnFailed || !completed {
+			t.Fatalf("explicit=%q effort=%q reads=%d state=%s completion=%v", explicit, got.ReasoningEffort, reads, got.State, completed)
+		}
 	}
 }

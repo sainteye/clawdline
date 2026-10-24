@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/contract"
 )
@@ -183,11 +184,11 @@ func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 4 || got["codex_default_effort"] != "xhigh" || got["codex_default_model"] != "gpt-6" || got["claude_default_model"] != "claude-sonnet-4-5" {
+	if len(got) != 6 || got["codex_default_effort"] != "xhigh" || got["codex_default_model"] != "gpt-6" || got["claude_default_model"] != "claude-sonnet-4-5" {
 		t.Fatalf("narrow answer: %#v", got)
 	}
 	models, ok := got["models"].(map[string]any)
-	if !ok || len(models) != 2 || !strings.Contains(rec.Body.String(), `"value":"gpt-6-sol","label":"GPT-6 Sol"`) ||
+	if !ok || len(models) != 3 || !strings.Contains(rec.Body.String(), `"value":"gpt-6-sol","label":"GPT-6 Sol"`) ||
 		strings.Contains(rec.Body.String(), "gpt-hidden") ||
 		!strings.Contains(rec.Body.String(), `"value":"opus","label":"Opus 5.5"`) ||
 		!strings.Contains(rec.Body.String(), `"value":"fable","label":"Fable 5.1"`) ||
@@ -342,6 +343,8 @@ func TestSettingsEveryWindowRow(t *testing.T) {
 			switch {
 			case len(key.Choices) > 0:
 				sent[key.Name] = key.Choices[len(key.Choices)-1]
+			case key.Name == "antigravity_default_effort":
+				sent[key.Name] = "max"
 			case key.Name == "hotkey":
 				sent[key.Name] = "cmd+shift+k"
 			case key.Name == "scope_app":
@@ -350,6 +353,8 @@ func TestSettingsEveryWindowRow(t *testing.T) {
 				sent[key.Name] = "Menlo"
 			case key.Name == "tailscale_hostname":
 				sent[key.Name] = "mac.tailnet-example.ts.net"
+			case key.Name == "setup_skipped":
+				sent[key.Name] = "browser,phone"
 			default:
 				sent[key.Name] = "clawd"
 			}
@@ -467,5 +472,36 @@ func TestProductLanguageSettingDoesNotRewriteAgentOrVoicePreferences(t *testing.
 	}
 	if nextconfig.ProductLanguage(values) != "fr" {
 		t.Fatalf("rejected change altered saved product language: %#v", values.Raw)
+	}
+}
+
+func TestITermIntegrationRequiresFreshConsentAndCanBeRevoked(t *testing.T) {
+	previous := terminal.ITermIntegration()
+	t.Cleanup(func() { terminal.SetITermIntegration(previous); terminal.SetITermScan(true) })
+	for _, legacy := range []string{`{}`, `{"iterm_scan":true,"terminal":"iterm_native"}`, `{"iterm_scan":false}`, `{"iterm_integration":"true"}`, `{"iterm_integration":null}`} {
+		s := &Server{cfg: config.Config{Dir: filepath.Join(t.TempDir(), "next")}}
+		if err := os.MkdirAll(s.cfg.Dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(s.cfg.Dir, "config.json"), []byte(legacy), 0600); err != nil {
+			t.Fatal(err)
+		}
+		v, err := s.settingsFile().Read()
+		if err != nil {
+			t.Fatal(err)
+		}
+		terminal.SetITermIntegration(true)
+		applyITermScan(v)
+		if terminal.ITermIntegration() || terminal.ITermScan() {
+			t.Fatalf("legacy settings enabled iTerm2: %s", legacy)
+		}
+		rec, snap, _ := settingsCall(t, s, http.MethodPost, "application/json", `{"iterm_integration":true}`)
+		if rec.Code != http.StatusOK || snap.ItermIntegration == nil || !*snap.ItermIntegration || !terminal.ITermIntegration() {
+			t.Fatalf("opt-in failed: %d %s", rec.Code, rec.Body)
+		}
+		rec, snap, _ = settingsCall(t, s, http.MethodPost, "application/json", `{"iterm_integration":false}`)
+		if rec.Code != http.StatusOK || snap.ItermIntegration == nil || *snap.ItermIntegration || terminal.ITermIntegration() || terminal.ITermScan() {
+			t.Fatalf("revocation failed: %d %s", rec.Code, rec.Body)
+		}
 	}
 }

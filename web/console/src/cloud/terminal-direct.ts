@@ -81,6 +81,12 @@ export class DirectReassembler {
     let message: { t?: unknown; e?: unknown; id?: unknown; i?: unknown; n?: unknown; d?: unknown }
     try { message = JSON.parse(data) } catch { throw this.violation() }
     if (!message || typeof message !== "object") throw this.violation()
+    // Only the authenticated, offer-bound DTLS peer can supply this control.
+    // It settles a read; it never installs keys or grants pairing authority.
+    if (message.t === "read_error" && Object.keys(message).length === 2 &&
+      (message as { code?: unknown }).code === "machine_pairing_required") {
+      throw Object.assign(new Error("machine_pairing_required"), { code: "machine_pairing_required" })
+    }
     if (message.t === "env") {
       if (this.partial) throw this.violation()
       return this.envelope(message)

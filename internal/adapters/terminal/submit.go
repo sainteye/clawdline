@@ -5,13 +5,162 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
+
+var ErrAntigravityMenuChanged = errors.New("antigravity_menu_changed")
+var ErrAntigravityMenuUnavailable = errors.New("antigravity_menu_unavailable")
+
+var ErrAntigravityInputUnavailable = errors.New("antigravity_input_unavailable")
+
+// SendConfirmationWindow is the existing, registered paste-observation budget.
+func SendConfirmationWindow() time.Duration { return sendConfirm }
+
+// SubmitAntigravityText shares paste observation and the caller's send lane,
+// while requiring the native current surface before paste and before Enter.
+// It presses Enter at most once: subsequent delivery is reconciled by the
+// caller's existing uncertain-send receipt, never by another automatic Enter.
+// fullyIdle is eligible only from P2's verified, fresh, nonfailed Stop.
+func SubmitAntigravityText(ctx context.Context, read func(context.Context) (string, error), paste func(context.Context, string) error, key func(context.Context, string) error, text string, fullyIdle bool, window time.Duration) error {
+	if _, bounded := ctx.Deadline(); !bounded || read == nil || paste == nil || key == nil || window <= 0 {
+		return ErrAntigravityInputUnavailable
+	}
+	before, err := read(ctx)
+	if err != nil {
+		return err
+	}
+	if !session.AntigravitySendReady(before, text, fullyIdle) {
+		return ErrAntigravityInputUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := paste(ctx, text); err != nil {
+		return err
+	}
+	// A lost live fence is not a screen that may become ready on a later
+	// poll. Stop observation immediately and retain the original typed error.
+	observe, stop := context.WithCancel(ctx)
+	defer stop()
+	var readErr error
+	in := antigravityInput{read: func(c context.Context) (string, error) {
+		screen, err := read(c)
+		if err != nil {
+			readErr = err
+			stop()
+		}
+		return screen, err
+	}}
+	confirmed, err := awaitShown(observe, in, before, text, window)
+	if readErr != nil {
+		return readErr
+	}
+	if err != nil {
+		return err
+	}
+	current, err := read(ctx)
+	if err != nil {
+		return Unsubmitted{Why: "the pasted Antigravity input could not be reread; Enter was not pressed"}
+	}
+	was, now := session.ReadAntigravityScreen(confirmed, false), session.ReadAntigravityScreen(current, false)
+	if was.Kind != session.AntigravityDraft || now.Kind != session.AntigravityDraft || was.Draft != now.Draft ||
+		!HoldsTyped(current, text) {
+		return Unsubmitted{Why: "the Antigravity composer changed after paste; Enter was not pressed"}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return key(ctx, "Enter")
+}
+
+type antigravityInput struct {
+	read func(context.Context) (string, error)
+}
+
+func (a antigravityInput) paste(context.Context, string) error { return ErrAntigravityInputUnavailable }
+func (a antigravityInput) enter(context.Context) error         { return ErrAntigravityInputUnavailable }
+func (a antigravityInput) screen(ctx context.Context) (string, bool) {
+	s, err := a.read(ctx)
+	if err != nil {
+		return "", false
+	}
+	return s, session.ReadAntigravityScreen(s, false).Kind == session.AntigravityDraft
+}
+
+// SubmitAntigravityMenu runs inside the existing per-terminal send lane. The
+// callbacks must fence the exact process birth/conversation before every read
+// and key and honor ctx. No text/digit is pasted into the native arrow picker.
+// A key error may mean written bytes; callers retain their uncertain receipt
+// and must not automatically replay this operation.
+func SubmitAntigravityMenu(ctx context.Context, read func(context.Context) (string, error), key func(context.Context, string) error, revision string, option int) error {
+	if _, bounded := ctx.Deadline(); !bounded || read == nil || key == nil {
+		return ErrAntigravityMenuUnavailable
+	}
+	screen, err := read(ctx)
+	if err != nil {
+		return err
+	}
+	facts := session.ReadAntigravityScreen(screen, false)
+	if facts.Kind != session.AntigravityMenu || revision == "" || facts.Revision != revision || option < 1 || option > len(facts.Menu.Options) {
+		return ErrAntigravityMenuChanged
+	}
+	original := facts.Menu
+	selected := *facts.Menu.Selected
+	for selected != option {
+		direction, next := "Down", selected+1
+		if option < selected {
+			direction, next = "Up", selected-1
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := key(ctx, direction); err != nil {
+			return err
+		}
+		screen, err = read(ctx)
+		if err != nil {
+			return err
+		}
+		facts = session.ReadAntigravityScreen(screen, false)
+		if facts.Kind != session.AntigravityMenu || !sameAntigravityChoices(original, facts.Menu) || *facts.Menu.Selected != next {
+			return ErrAntigravityMenuChanged
+		}
+		selected = next
+	}
+	// Reread even when the offered selection was already on the desired row.
+	screen, err = read(ctx)
+	if err != nil {
+		return err
+	}
+	current := session.ReadAntigravityScreen(screen, false)
+	if current.Kind != session.AntigravityMenu || current.Revision != facts.Revision {
+		return ErrAntigravityMenuChanged
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return key(ctx, "Enter")
+}
+
+func sameAntigravityChoices(a, b session.Menu) bool {
+	if a.Question != b.Question || len(a.Options) != len(b.Options) {
+		return false
+	}
+	for i := range a.Options {
+		if a.Options[i].Number != b.Options[i].Number || a.Options[i].Label != b.Options[i].Label {
+			return false
+		}
+	}
+	return true
+}
 
 // How a line is put into the program in a terminal and submitted — on tmux
 // here, on iTerm2 in itermSendScript — and how either knows it went.

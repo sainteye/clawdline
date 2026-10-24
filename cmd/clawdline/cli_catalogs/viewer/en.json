@@ -21,7 +21,7 @@
   "machines_unpaired": "unpaired",
   "machines_revoked": "revoked",
   "machines_paired": "paired",
-  "sessions.usage": "usage: clawdline cloud viewer <sessions|read|send|answer|interrupt|end|receipt> [--machine ID] [--session ID --generation HEX] [--before CURSOR for read]",
+  "sessions.usage": "usage: clawdline cloud viewer <sessions|read|send|answer|interrupt|end|receipt> [--machine ID] [--session ID --generation HEX] [--before CURSOR [--revision SIGNATURE] for read]",
   "sessions.empty": "no Sessions",
   "action.request": "request %s\n",
   "action.lookup": "Check: clawdline cloud viewer receipt --machine %s --session %s --generation %s --action %s --request %s\n",

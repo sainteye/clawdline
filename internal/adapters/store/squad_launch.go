@@ -121,6 +121,36 @@ func (s *Store) SquadBindingForSession(ctx context.Context, terminalID, conversa
 	return binding, true, nil
 }
 
+// SquadRoleForLaunch reads the immutable role only when the current process's
+// launch ID belongs to this terminal. It also works before conversation binding.
+func (s *Store) SquadRoleForLaunch(ctx context.Context, launchID, terminalID string) (string, error) {
+	if launchID == "" || terminalID == "" {
+		return "", nil
+	}
+	var document []byte
+	var snapshotID string
+	err := s.rd.QueryRowContext(ctx, `SELECT s.document,s.id FROM squad_launches l
+		JOIN squad_snapshots s ON s.id=l.snapshot_id
+		WHERE l.id=? AND l.terminal_id=? AND l.state!='failed'`, launchID, terminalID).Scan(&document, &snapshotID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", classify(err)
+	}
+	sum := sha256.Sum256(document)
+	if hex.EncodeToString(sum[:]) != snapshotID {
+		return "", errors.New("squad_snapshot_digest_mismatch")
+	}
+	var identity struct {
+		DefinitionID string `json:"definition_id"`
+	}
+	if err := json.Unmarshal(document, &identity); err != nil || identity.DefinitionID == "" {
+		return "", errors.New("invalid_squad_snapshot_identity")
+	}
+	return identity.DefinitionID, nil
+}
+
 func randomSquadValue(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {

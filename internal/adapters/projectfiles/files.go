@@ -37,13 +37,15 @@ var (
 // File is a disk candidate. Location is relative to the project or the home
 // directory and never contains a person's absolute directory name.
 type File struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Title       string `json:"title,omitempty"`
-	Description string `json:"description,omitempty"`
-	Location    string `json:"location"`
-	Source      string `json:"source"`
-	Assistant   string `json:"assistant"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Title       string   `json:"title,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Location    string   `json:"location"`
+	Source      string   `json:"source"`
+	Assistant   string   `json:"assistant"`
+	Assistants  []string `json:"assistants,omitempty"`
+	readOnly    bool
 	Kind        string `json:"kind"`
 	Status      string `json:"status"`
 	Editable    bool   `json:"editable"`
@@ -79,6 +81,13 @@ func candidate(root, rel, source, assistant, kind string) File {
 	f := File{ID: hex.EncodeToString(sum[:16]), Name: filepath.Base(rel),
 		Location: filepath.ToSlash(rel), Source: source, Assistant: assistant,
 		Kind: kind, root: root, rel: rel}
+	f.Assistants = []string{assistant}
+	if assistant == "antigravity" {
+		f.readOnly = true
+	}
+	if source == "project" && assistant == "codex" && (filepath.Base(rel) == "AGENTS.md" || strings.Contains(filepath.ToSlash(rel), ".agents/skills/")) {
+		f.Assistants = []string{"codex", "antigravity"}
+	}
 	if kind == "skill" {
 		f.Title = filepath.Base(filepath.Dir(rel))
 	} else if kind == "command" {
@@ -264,7 +273,7 @@ func inspect(f *File) {
 		f.Status, f.Size = "too_large", st.Size()
 	default:
 		f.Status, f.Size = "ready", st.Size()
-		f.Editable = f.Source == "project" && st.Mode().Perm()&0200 != 0
+		f.Editable = f.Source == "project" && !f.readOnly && st.Mode().Perm()&0200 != 0
 		if f.Kind == "skill" || f.Kind == "command" {
 			body, readErr := io.ReadAll(io.LimitReader(file, MaxFileBytes+1))
 			if readErr == nil && utf8.Valid(body) && !strings.ContainsRune(string(body), 0) {
@@ -341,6 +350,10 @@ func skills(out *Listing, root, rel, source, assistant string) {
 }
 
 func commands(out *Listing, root, rel, source string) {
+	markdownFiles(out, root, rel, source, "claude", "command")
+}
+
+func markdownFiles(out *Listing, root, rel, source, assistant, kind string) {
 	base, err := os.OpenRoot(root)
 	if err != nil {
 		out.Skipped = append(out.Skipped, filepath.ToSlash(rel))
@@ -375,7 +388,7 @@ func commands(out *Listing, root, rel, source string) {
 		if name == "" || strings.HasPrefix(name, ".") || strings.ContainsAny(name, `/\`) || !strings.HasSuffix(name, ".md") {
 			continue
 		}
-		add(out, candidate(root, filepath.Join(rel, name), source, "claude", "command"))
+		add(out, candidate(root, filepath.Join(rel, name), source, assistant, kind))
 	}
 }
 
@@ -398,6 +411,7 @@ func List(place, home string) (Listing, error) {
 			skills(&out, root, filepath.Join(layer, spec.dir), "project", spec.assistant)
 		}
 		commands(&out, root, filepath.Join(layer, ".claude", "commands"), "project")
+		nativeProjectFiles(&out, root, layer)
 	}
 	for _, spec := range []struct{ name, assistant string }{
 		{filepath.Join(".codex", "AGENTS.md"), "codex"},
@@ -412,6 +426,13 @@ func List(place, home string) (Listing, error) {
 		skills(&out, home, spec.dir, "global", spec.assistant)
 	}
 	commands(&out, home, filepath.Join(".claude", "commands"), "global")
+	for _, rel := range []string{".gemini/AGENTS.md", ".gemini/GEMINI.md", ".gemini/config/AGENTS.md", ".gemini/config/GEMINI.md"} {
+		addNativeFile(&out, home, rel, "global")
+	}
+	for _, rel := range []string{".gemini/config/rules", ".gemini/antigravity-cli/rules"} {
+		markdownFiles(&out, home, filepath.FromSlash(rel), "global", "antigravity", "instruction")
+	}
+	skills(&out, home, filepath.FromSlash(".gemini/antigravity-cli/skills"), "global", "antigravity")
 	return out, nil
 }
 
@@ -455,7 +476,7 @@ func read(f File) (Content, error) {
 	}
 	sum := sha256.Sum256(data)
 	f.Status, f.Size = "ready", int64(len(data))
-	f.Editable = f.Source == "project" && st.Mode().Perm()&0200 != 0
+	f.Editable = f.Source == "project" && !f.readOnly && st.Mode().Perm()&0200 != 0
 	return Content{File: f, Text: string(data), Version: hex.EncodeToString(sum[:])}, nil
 }
 
@@ -474,7 +495,7 @@ func Save(place, home, id, expected, text string) (Content, error) {
 	if err != nil {
 		return Content{}, err
 	}
-	if f.Source != "project" {
+	if f.Source != "project" || f.readOnly {
 		return Content{}, ErrReadOnly
 	}
 	if len(text) > MaxFileBytes {
@@ -581,4 +602,28 @@ func Refusal(err error) (int, string, string) {
 	default:
 		return 503, "file_unavailable", "The file could not be opened. Check it on the machine and try again."
 	}
+}
+
+// Native-only candidates are listed read-only. Unify owns neither their layout
+// nor their activation modes. Only direct documented children are inspected.
+func addNativeFile(out *Listing, root, rel, source string) {
+	base, err := os.OpenRoot(root)
+	if err != nil {
+		return
+	}
+	defer base.Close()
+	if _, err := lstatBeneath(base, rel); errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	add(out, candidate(root, rel, source, "antigravity", "instruction"))
+}
+
+func nativeProjectFiles(out *Listing, root, layer string) {
+	for _, rel := range []string{"GEMINI.md", ".agents/AGENTS.md", ".agents/GEMINI.md"} {
+		addNativeFile(out, root, filepath.Join(layer, filepath.FromSlash(rel)), "project")
+	}
+	for _, rel := range []string{".agents/rules", ".agent/rules"} {
+		markdownFiles(out, root, filepath.Join(layer, filepath.FromSlash(rel)), "project", "antigravity", "instruction")
+	}
+	skills(out, root, filepath.Join(layer, ".agent", "skills"), "project", "antigravity")
 }

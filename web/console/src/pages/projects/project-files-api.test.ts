@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node strips source TypeScript in the browser-free test.
-import { ProjectFileError, applyUnify, readUnifyPlan, saveProjectFile } from "./project-files-api.ts"
+import { ProjectFileError, applyUnify, readUnifyPlan, saveProjectFile, fileAssistants } from "./project-files-api.ts"
 
 test("an unanswered Cloud save stays uncertain so the editor rereads before confirming it", async () => {
   const previous = globalThis.fetch
@@ -57,4 +57,12 @@ test("a plan read that is refused carries the machine's code, never an empty pla
   const { error } = await answering(404, { error: "project_not_found", detail: "gone" }, () => readUnifyPlan("project"))
   assert.ok(error instanceof ProjectFileError)
   assert.equal(error.code, "project_not_found")
+})
+
+
+test("shared file applicability uses the machine report and preserves old inventories", async () => {
+ const old: any = {assistant: "codex", location: "AGENTS.md"}
+ assert.equal(fileAssistants(old), "Codex")
+ assert.equal(fileAssistants({...old, assistants: ["codex", "antigravity"]}), "Codex · Gemini")
+ assert.equal(fileAssistants({assistant: "antigravity"} as any), "Gemini")
 })

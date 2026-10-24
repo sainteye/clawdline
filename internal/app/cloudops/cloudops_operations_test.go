@@ -232,6 +232,33 @@ func TestProjectFileCloudReadsDoNotGrantRemoteWrites(t *testing.T) {
 	}
 }
 
+func TestAntigravityConsentCloudReadAndExplicitChangeGate(t *testing.T) {
+	r := &router{}
+	closed := Bridge{MachineID: "mac-01", Router: r}
+	read := closed.Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "project-antigravity-consent-status", "session": MachineReplySession, "request": "plan-1", "project": "p1"}))
+	if read.Status != 200 || len(r.seen) != 1 {
+		t.Fatalf("plan with remote writes off: %+v; requests: %+v", read, r.seen)
+	}
+	apply := map[string]any{"type": "project-antigravity-consent-change", "session": MachineReplySession, "request": "apply-1", "project": "p1",
+		"item": map[string]any{"action": "disable", "revision": 0, "scope": "project-and-linked-worktrees"}}
+	refused := closed.Handle(context.Background(), request(t, ClassCtl, apply))
+	if refused.Code != "cloud_commands_disabled" || len(r.seen) != 1 {
+		t.Fatalf("apply with remote writes off: %+v; requests: %+v", refused, r.seen)
+	}
+	open := Bridge{MachineID: "mac-01", Router: r, AllowCommands: func() bool { return true }}
+	if answer := open.Handle(context.Background(), request(t, ClassCtl, apply)); answer.Status != 200 || len(r.seen) != 2 {
+		t.Fatalf("apply with remote writes on: %+v; requests: %+v", answer, r.seen)
+	}
+	if key := r.last().Header["Idempotency-Key"]; key != "apply-1" {
+		t.Fatalf("apply carried idempotency key %q", key)
+	}
+	if answer := open.Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "project-antigravity-consent-change",
+		"session": MachineReplySession, "request": "apply-2", "project": "p1"})); answer.Code != "malformed_command" {
+		t.Fatalf("apply without a version body: %+v", answer)
+	}
+}
+
 func TestProjectUnifyCloudPlanIsAReadAndApplyNeedsTheWriteGate(t *testing.T) {
 	r := &router{}
 	closed := Bridge{MachineID: "mac-01", Router: r}
@@ -776,8 +803,8 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"past-sessions", "schedules", "coordination.leases", "coordination.waits", "coordination.pauses", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "session-snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test", "diagnostics.events",
-		"board", "board-command", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-unify-plan", "project-unify-apply", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "project-worktree-remove", "capacity", "default-models", "default-models-update", "notification-rules", "notification-rules-update", "work-gate-settings", "work-gate-settings-update", "notification-settings", "notification-settings-update", "machine-usage", "update", "update-apply", "personas",
+		"board", "board-command", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-antigravity-consent-status", "project-antigravity-consent-change", "project-unify-plan", "project-unify-apply", "project-worktree-lifecycle",
+		"project-worktree-lifecycle-refresh", "project-worktree-remove", "capacity", "provider-quotas", "default-models", "default-models-update", "notification-rules", "notification-rules-update", "work-gate-settings", "work-gate-settings-update", "notification-settings", "notification-settings-update", "machine-usage", "update", "update-apply", "personas",
 		"work.proposals", "work.decisions", "work.decision", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.gate-export", "work.v2.gate-decision", "work.v2.gate-purge",
@@ -1701,6 +1728,39 @@ func TestDefaultModelsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 	}
 }
 
+func TestAntigravityDefaultsCrossTheSameNarrowCloudRoute(t *testing.T) {
+	for _, changes := range []map[string]any{
+		{"antigravity_default_model": "native-synthetic", "antigravity_default_effort": "max"},
+		{"antigravity_default_model": nil, "antigravity_default_effort": ""},
+		{"antigravity_default_model": "native-synthetic", "antigravity_default_effort": "low", "codex_default_model": "gpt-synthetic", "codex_default_effort": "xhigh", "claude_default_model": "opus"},
+	} {
+		r := &router{}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "default-models-update", "session": MachineReplySession, "request": "req-native-defaults", "changes": changes,
+		}))
+		if answer.Status != 200 || len(r.seen) != 1 {
+			t.Fatalf("native changes did not reach HTTP: %+v, asked %+v", answer, r.seen)
+		}
+		got := r.last()
+		var body map[string]any
+		if json.Unmarshal(got.Body, &body) != nil || !reflect.DeepEqual(body, changes) || got.Method != "POST" || got.Path != "/v1/settings/default-models" || got.Header[actorHeader] != actorDevice || got.Header["Idempotency-Key"] != "req-native-defaults" {
+			t.Fatalf("native changes crossed the wrong boundary: %+v", got)
+		}
+	}
+	for _, changes := range []map[string]any{
+		{"antigravity_default_model": 12}, {"antigravity_default_effort": true},
+		{"antigravity_default_model": "native-synthetic", "remote": true},
+	} {
+		r := &router{}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "default-models-update", "session": MachineReplySession, "request": "req-native-bad", "changes": changes,
+		}))
+		if answer.Code != "malformed_command" || len(r.seen) != 0 {
+			t.Fatalf("bad native changes escaped decoding: %+v", answer)
+		}
+	}
+}
+
 func TestWorkGateSettingsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 	r := &router{}
 	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
@@ -2008,5 +2068,69 @@ func TestSameNetworkEnableIsNarrowAndRequiresOperationPermission(t *testing.T) {
 	closed := Bridge{MachineID: "mac-01", Router: r, AllowCommands: func() bool { return false }}
 	if a := closed.Handle(context.Background(), request(t, ClassCtl, body)); a.OK() {
 		t.Fatal("enabled with operations forbidden")
+	}
+}
+
+func TestWorkflowSettingsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
+	r := &router{}
+	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": "workflow-settings", "session": MachineReplySession, "request": "req-read"}))
+	if answer.Status != 200 || len(r.seen) != 1 || r.last().Method != "GET" || r.last().Path != "/v1/settings/workflow" {
+		t.Fatalf("read answered %+v, asked %+v", answer, r.seen)
+	}
+
+	r = &router{}
+	answer = open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "workflow-settings-update", "session": MachineReplySession, "request": "req-write",
+		"changes": map[string]any{"dispatch_full_permission": false, "session_auto_discovery": true, "iterm_integration": false},
+	}))
+	if answer.Status != 200 || len(r.seen) != 1 {
+		t.Fatalf("write answered %+v, asked %+v", answer, r.seen)
+	}
+	got := r.last()
+	if got.Method != "POST" || got.Path != "/v1/settings/workflow" ||
+		string(got.Body) != `{"dispatch_full_permission":false,"iterm_integration":false,"session_auto_discovery":true}` ||
+		got.Header[actorHeader] != actorDevice || got.Header["Idempotency-Key"] != "req-write" {
+		t.Fatalf("write crossed too broadly: %+v body=%s", got, got.Body)
+	}
+
+	for _, changes := range []any{
+		map[string]any{"remote": true},
+		map[string]any{"iterm_scan": true},
+		map[string]any{"iterm_integration": "on"},
+		map[string]any{"dispatch_full_permission": "on"},
+		map[string]any{"dispatch_full_permission": true, "session_auto_discovery": false, "remote": nil},
+		[]any{true},
+	} {
+		r := &router{}
+		bad := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "workflow-settings-update", "session": MachineReplySession, "request": "req-bad", "changes": changes,
+		}))
+		if bad.Code != "malformed_command" || len(r.seen) != 0 {
+			t.Fatalf("took changes %#v: %+v, asked %+v", changes, bad, r.seen)
+		}
+	}
+}
+
+func TestTranscriptThumbnailCarriesItsVariantAndKeepsTheOriginalRead(t *testing.T) {
+	for _, size := range []string{"", "thumb"} {
+		r := &router{body: "image-bytes", media: "image/jpeg"}
+		body := map[string]any{"type": "image", "session": pane, "id": "picture"}
+		expected := "image.picture"
+		if size != "" {
+			body["size"] = size
+			expected += ".thumb"
+		}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, body))
+		if answer.Status != 200 || answerOf(t, answer)["read"] != expected || r.last().Query["size"] != size {
+			t.Fatalf("variant %q: answer=%s request=%+v", size, answer.Payload, r.last())
+		}
+	}
+	r := &router{body: "image-bytes", media: "image/jpeg"}
+	answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "image", "session": pane, "id": "picture", "size": "full",
+	}))
+	if answer.Status != 400 || len(r.seen) != 0 {
+		t.Fatalf("unknown variant was read: %+v", answer)
 	}
 }

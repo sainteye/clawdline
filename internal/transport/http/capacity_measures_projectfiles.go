@@ -8,6 +8,15 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) projectFilesCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"projects.antigravity_consent_request_ms": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "website whole-response deadline; no automatic retry or retained request"}
+		},
+		"projects.antigravity_consent_body_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request Antigravity consent change guard; no retained body"}
+		},
+		"projects.workspace_metadata_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-file Git membership metadata read guard; no retained buffer"}
+		},
 		"projects.folder_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-directory folder listing guard"}
 		},

@@ -43,15 +43,16 @@ function plan(state: "drifting" | "unified" | "unknown", version: string) {
       claude_imports_agents: unified,
       claude_only_files: [],
       claude_only_lines: CLAUDE_TEXT.trim().split("\n"),
-      now: unified ? { claude: ["CLAUDE.md", "AGENTS.md"], codex: ["AGENTS.md"] } : { claude: ["CLAUDE.md"], codex: ["AGENTS.md"] },
-      after: { claude: ["CLAUDE.md", "AGENTS.md"], codex: ["AGENTS.md"] },
+      now: unified ? { claude: ["CLAUDE.md", "AGENTS.md"], codex: ["AGENTS.md"], antigravity: ["AGENTS.md"] } : { claude: ["CLAUDE.md"], codex: ["AGENTS.md"], antigravity: ["AGENTS.md"] },
+      after: { claude: ["CLAUDE.md", "AGENTS.md"], codex: ["AGENTS.md"], antigravity: ["AGENTS.md"] },
     },
     skills: [
       { name: "deploy-checklist", place: unified ? "both_same" : "agents", linked: unified, copy: false,
-        now: { claude: unified, codex: true }, after: { claude: true, codex: true }, ...(unified ? {} : { action: "skill_link" }) },
+        now: { claude: unified, codex: true, antigravity: true }, after: { claude: true, codex: true, antigravity: true }, ...(unified ? {} : { action: "skill_link" }) },
       { name: "release-notes", place: unified ? "both_same" : "claude", linked: unified, copy: false,
-        now: { claude: true, codex: unified }, after: { claude: true, codex: true }, ...(unified ? {} : { action: "skill_move_and_link" }) },
+        now: { claude: true, codex: unified, antigravity: unified }, after: { claude: true, codex: true, antigravity: true }, ...(unified ? {} : { action: "skill_move_and_link" }) },
     ],
+    native_only: [{path: ".agent/skills/legacy/SKILL.md", kind: "skill", status: "ready"}],
     actions: state !== "drifting" ? [] : [
       { kind: "rules_add_import", paths: ["CLAUDE.md"], description: "Add an @AGENTS.md line at the top of CLAUDE.md.",
         edits: [{ path: "CLAUDE.md", before: CLAUDE_TEXT, after: "@AGENTS.md\n" + CLAUDE_TEXT }] },
@@ -66,6 +67,9 @@ function plan(state: "drifting" | "unified" | "unknown", version: string) {
   }
 }
 
+let fixtureLocale = "zh-Hant"
+let fixtureMode: "normal" | "legacy" | "empty" | "long" = "normal"
+let planDelay = 0
 let unifyState: "drifting" | "unified" | "unknown" = "drifting"
 let unifyVersion = "plan-one"
 let failPlanReads = 0
@@ -81,6 +85,7 @@ let refuseWorktrees = false
 let placeUnify: Record<string, unknown> = {}
 
 function reset() {
+  fixtureLocale = "zh-Hant"; fixtureMode = "normal"; planDelay = 0
   unifyState = "drifting"; unifyVersion = "plan-one"; failPlanReads = 0; changeBeforeNextApply = false; nextApply = "apply"; applies = []; refusePlaces = null; refuseWorktrees = false
   placeUnify = { unify: "drifting", unify_count: 4 }
 }
@@ -108,10 +113,10 @@ function requestJSON(req: IncomingMessage): Promise<Record<string, unknown>> {
 // The document with its words written in, as `page.go` writes them.
 function page(): string {
   const html = readFileSync(join(dist, "index.html"), "utf8")
-  const words = JSON.parse(readFileSync(join(dist, "strings", "zh-Hant.json"), "utf8"))
-  words.lang = "zh-Hant"
+  const words = fixtureLocale === "en" ? {} : JSON.parse(readFileSync(join(dist, "strings", fixtureLocale + ".json"), "utf8"))
+  words.lang = fixtureLocale
   words.dir = "ltr"
-  const slot = "<script>localStorage.setItem('ui_language','zh-Hant');window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>"
+  const slot = "<script>localStorage.setItem('ui_language'," + JSON.stringify(fixtureLocale) + ");window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>"
   return html.replace("<!-- clawdline:strings -->", slot).replace("<!-- clawdline:cloud -->", "")
 }
 
@@ -120,7 +125,7 @@ function daemon(): Server {
   return createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
-    if (path === "/v1/strings") return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
+    if (path === "/v1/strings") return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", fixtureLocale + ".json"), "utf8")))
     if (path === "/v1/sessions") {
       generation++
       return json(res, 200, { at: Date.now(), sessions: [], scan: { complete: true, completed: { complete: true, sequence: generation },
@@ -144,7 +149,7 @@ function daemon(): Server {
         setup: { icon: "generated", deploy: "ready", deploy_activity: "idle", servers: "missing", server_count: 0, sync: "ready", ...placeUnify } }],
     })
     if (path === "/v1/projects/fixture-place/files" && req.method === "GET") return json(res, 200, { files: [
-      { id: "agents-file", name: "AGENTS.md", location: "AGENTS.md", source: "project", assistant: "codex", kind: "instruction", status: "ready", editable: true },
+      { id: "agents-file", name: "AGENTS.md", location: "AGENTS.md", source: "project", assistant: "codex", assistants: ["codex", "antigravity"], kind: "instruction", status: "ready", editable: true },
       { id: "claude-file", name: "CLAUDE.md", location: "CLAUDE.md", source: "project", assistant: "claude", kind: "instruction", status: "ready", editable: true },
     ], truncated: false, skipped: [] })
     if (path === `/v1/projects/${PROJECT_ID}/worktrees` && refuseWorktrees) return json(res, 429, {
@@ -153,7 +158,17 @@ function daemon(): Server {
     })
     if (path === "/v1/projects/fixture-place/unify" && req.method === "GET") {
       if (failPlanReads > 0) { failPlanReads--; return json(res, 503, { error: "unavailable", detail: "the fixture refused one read" }) }
-      return json(res, 200, plan(unifyState, unifyVersion))
+      const data: any = plan(unifyState, unifyVersion)
+      if (fixtureMode === "legacy") {
+        delete data.rules.now.antigravity; delete data.rules.after.antigravity; delete data.native_only
+        for (const skill of data.skills) { delete skill.now.antigravity; delete skill.after.antigravity }
+      }
+      if (fixtureMode === "empty") {
+        data.rules.now.antigravity = []; data.rules.after.antigravity = []; data.skills = []; data.native_only = []
+      }
+      if (fixtureMode === "long") data.skills[0].name = "synthetic-long-skill-".repeat(8)
+      if (planDelay) { setTimeout(() => json(res, 200, data), planDelay); return }
+      return json(res, 200, data)
     }
     if (path === "/v1/projects/fixture-place/unify" && req.method === "POST") {
       const key = String(req.headers["idempotency-key"] ?? "")
@@ -357,7 +372,7 @@ before(async () => {
   const address = server.address()
   origin = "http://127.0.0.1:" + (typeof address === "object" && address ? address.port : 0)
   console.log(`Projects fixture origin: ${origin}; page: ${origin}/#page=projects`)
-  profile = mkdtempSync(join(tmpdir(), "clawdline-unify-"))
+  profile = mkdtempSync(join(process.env.CLAWDLINE_BROWSER_WORK || tmpdir(), "clawdline-unify-"))
   browserProcess = spawn(chrome, ["--headless=new", "--remote-debugging-port=0", "--user-data-dir=" + profile,
     "--no-first-run", "--no-default-browser-check", "about:blank"])
   const endpoint = await new Promise<string>((ok, fail) => {
@@ -408,8 +423,8 @@ const LAYOUT = `(() => {
   const cols = [...document.querySelectorAll(".project-unify-dialog .project-unify-column")].map(c => c.getBoundingClientRect())
   const wide = [...dialog.querySelectorAll("*")].filter(n => n.getBoundingClientRect().right > dialog.getBoundingClientRect().right + 1).map(n => n.className || n.tagName)
   return { page: document.documentElement.scrollWidth > innerWidth, body: body.scrollWidth > body.clientWidth, wide: wide.slice(0, 5),
-    stacked: cols.length === 2 && cols[0].left === cols[1].left && cols[1].top > cols[0].top,
-    sideBySide: cols.length === 2 && cols[0].top === cols[1].top && cols[1].left > cols[0].left }
+    stacked: cols.length === 3 && cols[0].left === cols[1].left && cols[1].top > cols[0].top && cols[2].top > cols[1].top,
+    sideBySide: cols.length === 3 && cols[0].top === cols[1].top && cols[1].left > cols[0].left && cols[2].left > cols[1].left }
 })()`
 
 /**
@@ -500,10 +515,11 @@ test("desk: a failed read says 無法判斷, the preview shows both columns, and
     assert.equal(await tab.until("the plan loads", `(() => { const s = ${STATUS}; return s.startsWith("有落差") && s })()`), "有落差（4 項）")
 
     await openPreview(tab)
-    assert.equal(await tab.run(`document.activeElement?.id`), "project-unify-dialog-title", "focus moves into the preview")
+    assert.equal(await tab.run(`document.activeElement === document.querySelector(".project-unify-dialog")`), true, "focus moves into the preview container without preselecting an action")
     assert.deepEqual(await tab.run(COLUMNS), [
-      { title: "Claude 看得到", rows: ["CLAUDE.md: 不變", "AGENTS.md: 新增（套用後才看得到）", "deploy-checklist: 新增（套用後才看得到）", "release-notes: 不變"] },
-      { title: "Codex 看得到", rows: ["AGENTS.md: 不變", "deploy-checklist: 不變", "release-notes: 新增（套用後才看得到）"] },
+      { title: "Claude 適用檔案", rows: ["CLAUDE.md: 不變", "AGENTS.md: 新增（套用後才看得到）", "deploy-checklist: 新增（套用後才看得到）", "release-notes: 不變"] },
+      { title: "Codex 適用檔案", rows: ["AGENTS.md: 不變", "deploy-checklist: 不變", "release-notes: 新增（套用後才看得到）"] },
+      { title: "Antigravity 適用檔案", rows: ["AGENTS.md: 不變", "deploy-checklist: 不變", "release-notes: 新增（套用後才看得到）"] },
     ])
     const preview = await tab.run(`(() => {
       const d = document.querySelector(".project-unify-dialog")
@@ -547,7 +563,7 @@ test("desk: a failed read says 無法判斷, the preview shows both columns, and
     await tab.until("a changed plan is reread, not applied", `document.querySelector(".project-unify-notice")?.textContent.includes("已重新讀取最新的預覽")`)
     assert.deepEqual(applies.map(a => [a.version, a.status]), [["plan-one", 409]])
     await tab.run(`${button("套用這些變更")}.click()`)
-    await tab.until("apply reaches 已共用", `document.querySelector(".project-unify-dialog .project-unify-verdict.is-ready")?.textContent === "Claude 和 Codex 已看到相同的規則與 skills"`)
+    await tab.until("apply reaches 已共用", `document.querySelector(".project-unify-dialog .project-unify-verdict.is-ready")?.textContent === "共用工作區規則與技能已一致。"`)
     assert.deepEqual(applies.map(a => [a.version, a.status]), [["plan-one", 409], ["plan-two", 200]])
     assert.notEqual(applies[0].key, applies[1].key, "each press carries a fresh Idempotency-Key")
     assert.ok(applies.every(a => /^[0-9a-f-]{36}$/.test(a.key)), "the key is a UUID")
@@ -673,7 +689,7 @@ for (const [name, size] of [["phone", PHONE], ["desk light", { ...DESK, scheme: 
       await tab.until("檢視共用 takes focus", `(() => { const b = ${button("檢視共用")}; if (!b) return false; b.focus(); return document.activeElement === b })()`)
       await tab.press("Enter")
       await tab.until("the preview opens", `document.querySelector(".project-unify-dialog")?.open`)
-      assert.match(await tab.run(`document.querySelector(".project-unify-dialog-title, #project-unify-dialog-title").textContent`), /Example project · Claude 與 Codex 共用/)
+      assert.match(await tab.run(`document.querySelector(".project-unify-dialog-title, #project-unify-dialog-title").textContent`), /Example project · 共用規則與技能/)
       assert.match(await tab.run(`document.querySelector("#project-setup-title").textContent`), /Example project · 設定/, "the settings view is scoped to that Project")
       await tab.shot(`unify-row-${name.replace(" ", "-")}-2-preview`)
       await tab.press("Escape")
@@ -706,3 +722,39 @@ test("phone: an older machine that sends no unify status shows 未知 and offers
     assert.equal(row.button, null)
     await tab.shot("unify-row-phone-4-older")
   }))
+
+
+for (const lang of ["en", "zh-Hant"]) for (const scheme of ["light", "dark"] as const) {
+ test(`Antigravity ${lang} ${scheme}: desktop and phone preserve long names and native-only boundaries`, async () => {
+  for (const size of [DESK, PHONE]) await inTab({...size, scheme}, async tab => {
+   reset(); fixtureLocale = lang; fixtureMode = "long"
+   await openGear(tab)
+   await tab.until("the preview opener is ready", `(() => { const b = document.querySelector('.project-unify-buttons button'); if (!b || b.disabled) return false; b.focus(); return document.activeElement === b })()`)
+   await tab.press("Enter")
+   await tab.until("three applicability columns open", `document.querySelector('.project-unify-dialog')?.open && document.querySelectorAll('.project-unify-dialog .project-unify-column').length === 3`)
+   assert.match(await tab.run(`document.querySelectorAll('.project-unify-column h4')[2].textContent`), /Antigravity/)
+   assert.match(await tab.run(`document.querySelector('.project-unify-native').textContent`), /\.agent\/skills\/legacy/)
+   const layout = await tab.run(LAYOUT)
+   assert.equal(layout.page, false); assert.equal(layout.body, false); assert.deepEqual(layout.wide, [])
+   assert.equal(size.mobile ? layout.stacked : layout.sideBySide, true)
+   await tab.shot(`antigravity-${lang}-${scheme}-${size.width}-long`)
+   if (size.mobile) {
+    await tab.run(`document.querySelectorAll('.project-unify-column')[2].scrollIntoView({block: 'start'})`)
+    await tab.shot(`antigravity-${lang}-${scheme}-${size.width}-third-column`)
+   }
+  })
+ })
+}
+
+test("Antigravity old machine, known empty and loading remain distinct", async () => {
+ for (const mode of ["legacy", "empty"] as const) await inTab(PHONE, async tab => {
+  reset(); fixtureMode = mode; planDelay = 1000
+  await openGear(tab)
+  assert.equal(await tab.run(`document.querySelector('.project-unify-buttons button')?.disabled`), true)
+  await openPreview(tab)
+  const text = await tab.run(`document.querySelectorAll('.project-unify-column')[2].textContent`)
+  assert.equal(text.includes("未回報"), mode === "legacy")
+  assert.equal(await tab.run(`document.querySelectorAll('.project-unify-column')[2].querySelectorAll('.project-unify-seen').length`), 0)
+  await tab.shot(`antigravity-${mode}-390`)
+ })
+})

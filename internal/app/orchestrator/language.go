@@ -59,7 +59,7 @@ func (b *Broker) SessionLanguage(assistant string) string {
 			return ""
 		}
 		return projects.ClaudeLanguage(b.DisplayLanguage())
-	case projects.AssistantCodex:
+	case projects.AssistantCodex, projects.AssistantAntigravity:
 		return projects.CodexBoardLanguage(b.DisplayLanguage())
 	}
 	return ""
