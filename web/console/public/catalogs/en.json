@@ -4686,6 +4686,7 @@
   "legacy.webFailClockIn": "The machine is confirming its clock. Try again in about {n} seconds.",
   "legacy.webFailDecrypt": "This browser cannot decrypt what the machine sent.",
   "legacy.webFailExecutionGeneration": "This Session has changed or its current execution cannot be verified. Refresh it before acting.",
+  "legacy.webFailExecutionUnverified": "This machine cannot currently verify the Session’s execution. Try again.",
   "legacy.webFailForbidden": "Cloud does not allow this device to do that.",
   "legacy.webFailGeminiHistory": "Gemini history could not be read. Try again.",
   "legacy.webFailGeminiResume": "Gemini could not resume this conversation. Try again.",

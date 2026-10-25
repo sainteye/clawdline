@@ -8,7 +8,9 @@
  * - **A card keeps its request across unanswered attempts.** Its `request`
  *   goes as the Idempotency-Key locally and across Cloud. After a confirmed
  *   terminal `send_failed`, a person may accept duplicate risk and send with
- *   a new request; a filed 500 cannot be retried under its old key.
+ *   a new request; a filed 500 cannot be retried under its old key. An explicit
+ *   retry of a refused execution check also needs a new request: its receipt
+ *   permanently records that no terminal operation was admitted.
  * - **A failure is `failed` only when it proves nothing was typed**
  *   (`outcome.ts`); otherwise the card is `unknown` and says so (F3).
  * - **"Try again" reads the transcript first when it can.** If a read fails,
@@ -208,7 +210,8 @@ export class Sender {
     const { cards, now } = this.deps
     const previous = cards.card(token)
     const failed = previous?.state === "failed"
-    const newRequest = previous?.failure === "execution_generation_changed" ||
+    const newRequest = (failed && ["execution_generation_changed", "execution_source_unknown",
+      "execution_check_unavailable", "execution_records_full"].includes(previous?.failure ?? "")) ||
       (previous?.state === "unknown" && previous.absent && previous.failure === "send_failed")
     const failure = previous?.failure || READ_BACK_FAILED
     const card = cards.retrying(token)

@@ -1,6 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import japanese from "../../public/catalogs/ja.json" with { type: "json" }
+import traditional from "../../public/catalogs/zh-Hant.json" with { type: "json" }
 import english from "../../public/catalogs/en.json" with { type: "json" }
 // @ts-expect-error -- Node runs the TypeScript source test directly.
 import { activateCatalog, resetCatalogForTest } from "../catalog.ts"
@@ -80,3 +81,26 @@ test("a secondary catalog owns the frame and code-only sentence while ref and ac
     Object.defineProperty(globalThis, "document", { configurable: true, value: oldDocument })
   }
 })
+
+for (const [lang, catalog] of [["en", english], ["zh-Hant", traditional]] as const) {
+  test(`${lang} separates an unverified execution from a changed Session`, () => {
+    const oldDocument = globalThis.document
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { documentElement: { lang: "en", dir: "ltr", setAttribute() {} } },
+    })
+    try {
+      assert.equal(activateCatalog(catalog, lang), lang)
+      for (const code of ["execution_source_unknown", "execution_check_unavailable", "execution_records_full"]) {
+        const sentence = failureSentence({ code })
+        assert.ok(sentence.includes(catalog["legacy.webFailExecutionUnverified"]))
+        assert.ok(!sentence.includes(catalog["legacy.webFailExecutionGeneration"]))
+        assert.ok(sentence.includes(code))
+      }
+      assert.ok(failureSentence({ code: "execution_generation_changed" }).includes(catalog["legacy.webFailExecutionGeneration"]))
+    } finally {
+      resetCatalogForTest()
+      Object.defineProperty(globalThis, "document", { configurable: true, value: oldDocument })
+    }
+  })
+}

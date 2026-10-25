@@ -106,6 +106,51 @@ test("retry after an execution change uses a fresh request", async () => {
   assert.equal(h.posts[1].text, h.posts[0].text)
 })
 
+for (const code of ["execution_source_unknown", "execution_check_unavailable", "execution_records_full"]) {
+  test(`an explicit retry escapes a filed ${code} without replaying an uncertain send`, async () => {
+    const cards = new PendingSends()
+    const receipts = new Map<string, Posted>()
+    const requests: string[] = []
+    let admitted = false
+    let effects = 0
+    const sender = new Sender({
+      cards, now: () => T0,
+      post: async (card) => {
+        requests.push(card.request)
+        const replay = receipts.get(card.request)
+        if (replay) return replay
+        const answer: Posted = admitted ? { ok: true } : { ok: false, status: 503, code }
+        if (answer.ok) effects++
+        receipts.set(card.request, answer)
+        return answer
+      },
+      readBack: async () => null,
+      outcomeOf,
+    })
+    const card = cards.add("s", "follow up", [], T0)
+    await sender.deliver(card)
+    assert.equal(cards.card(card.token)?.state, "failed", "admission refused before any terminal effect")
+    admitted = true
+    assert.equal(effects, 0, "recovery alone never sends the draft")
+    await sender.resend(card.token)
+    assert.equal(requests.length, 2)
+    assert.notEqual(requests[1], requests[0], "the old receipt still contains the original refusal")
+    assert.equal(effects, 1)
+    assert.equal(cards.card(card.token)?.state, "accepted")
+  })
+}
+
+test("an unknown execution-check outcome keeps its request after transcript inspection", async () => {
+  const h = harness()
+  h.answer({ ok: false, status: 503, code: "execution_source_unknown", outcome: "unknown" })
+  const card = h.cards.add("s", "follow up", [], T0)
+  await h.sender.deliver(card)
+  await h.sender.look(card.token)
+  await h.sender.resend(card.token)
+  assert.equal(h.posts.length, 2)
+  assert.equal(h.posts[1].request, h.posts[0].request, "an unknown outcome cannot authorize a new effect")
+})
+
 test("try again after an uncertain send still stops when read-back fails", async () => {
   const h = harness()
   h.answer({ ok: false, status: 504, code: "cloud_read_timeout", outcome: "unknown" })

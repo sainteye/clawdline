@@ -32,6 +32,8 @@ const NOT_DONE: ReadonlySet<string> = new Set([
   "bad_request", "empty_text", "too_large", "not_found", "method_not_allowed",
   // The session.
   "session_not_found", "session_unknown", "execution_generation_changed", "backend_unsupported", "pictures_unavailable",
+  // Execution admission refuses before the bridge or HTTP route can type.
+  "execution_source_unknown", "execution_check_unavailable", "execution_records_full",
   // A question on the session's screen: nothing was typed at it.
   "session_asking",
   // Its terminal's lane was full.

@@ -4686,6 +4686,7 @@
   "legacy.webFailClockIn": "機器正在確認時間，約 {n} 秒後再試。",
   "legacy.webFailDecrypt": "這個瀏覽器解不開機器傳來的資料。",
   "legacy.webFailExecutionGeneration": "這個 Session 已變更，或目前的執行世代無法核實。請重新整理後再操作。",
+  "legacy.webFailExecutionUnverified": "這台機器目前無法確認這個 Session 的執行來源，請再試一次。",
   "legacy.webFailForbidden": "Cloud 不允許這台裝置這麼做。",
   "legacy.webFailGeminiHistory": "無法讀取 Gemini 歷史紀錄，請再試一次。",
   "legacy.webFailGeminiResume": "Gemini 無法續接這個對話，請再試一次。",

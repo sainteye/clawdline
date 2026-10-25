@@ -9,7 +9,7 @@ import { outcomeOf, sitsUnsubmitted, waitsOnQuestion, writeIsOff } from "./outco
 // "try again", and a try again of something that ran is the same words twice.
 test("only a refusal decided before the terminal was touched says it did not happen", () => {
   for (const code of [
-    "bad_request", "empty_text", "too_large", "session_not_found", "session_unknown", "execution_generation_changed", "busy",
+    "bad_request", "empty_text", "too_large", "session_not_found", "session_unknown", "execution_generation_changed", "execution_source_unknown", "execution_check_unavailable", "execution_records_full", "busy",
     "pictures_unavailable", "backend_unsupported", "write_disabled", "forbidden", "unauthorized",
     "menu_moved", "menu_unreadable", "menu_unverified", "idempotency_key_reused", "receipts_full",
     "store_busy", "store_unavailable", "close_blocked", "closeability_unknown", "close_inventory_unavailable",
