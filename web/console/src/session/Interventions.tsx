@@ -1,3 +1,4 @@
+import { shortcutAria, shortcutLabel } from "../shortcuts.js"
 import { ActionProgress, ActionSpinner } from "../ui/ActionProgress.js"
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
@@ -314,7 +315,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   }
 
   const countWords = readUpdate ? `${catalogWord("inline", "a4f8e0fcaaf8")}: ${nextWord("machineNeedsUpdate")}` : readError ? catalogWord("literal", "ff569bc2e31d") : unresolved !== null ? catalogFormat("template", "f16df8b87a41", [unresolved]) : catalogWord("literal", "e44c005aa593")
-  const head = <button className="human-interventions-head" type="button" aria-expanded={expanded} aria-controls={expanded ? "human-interventions-body" : undefined}
+  const head = <button aria-keyshortcuts={shortcutAria("attention")} title={nextWord("shortcutAttention") + " · " + shortcutLabel("attention")} className="human-interventions-head" type="button" aria-expanded={expanded} aria-controls={expanded ? "human-interventions-body" : undefined}
     aria-label={`${countWords}${actionError ? catalogWord("literal", "f095f6af37ff") : ""}`}
     onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (receiptTimer.current) clearTimeout(receiptTimer.current); if (collapseTimer.current) clearTimeout(collapseTimer.current); receiptTimer.current = null; collapseTimer.current = null; setCollapsing(false); if (readError) { void load(destination); return } if (!expanded) { onExpand?.(); setActionStatus("") } setExpanded(!expanded) }}>
       <span>{catalogWord("inline", "a4f8e0fcaaf8")}</span>

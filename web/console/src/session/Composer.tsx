@@ -1,3 +1,4 @@
+import { shortcutAria } from "../shortcuts.js"
 import type { AssistantFactsReading } from "./assistant-facts.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { ReactNode, RefObject } from "react"
@@ -697,6 +698,7 @@ export function Composer({
           ref={msg}
           className={text.trim() ? "msg" : "msg blank"}
           id="msg"
+          aria-keyshortcuts={shortcutAria("compose")}
           role="textbox"
           aria-multiline="true"
           autoCapitalize="none"

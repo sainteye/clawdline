@@ -1,3 +1,4 @@
+import { shortcutAria, shortcutLabel } from "../shortcuts.js"
 import * as L from "../legacy/bridge.js"
 import { catalogWord } from "../catalog.js"
 import { nextWord } from "../next-strings.js"
@@ -34,7 +35,7 @@ export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onT
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7.5 10 3 2.5-3 2.5M12.5 15h4"/></svg>
       </button>
     </div>
-    <button className="start" id="voice-go" type="button" title={T.webCommand} aria-label={T.webCommandLabel}
+    <button className="start" id="voice-go" type="button" title={T.webCommand + " · " + shortcutLabel("voice")} aria-label={T.webCommandLabel} aria-keyshortcuts={shortcutAria("voice")}
       aria-pressed="false" onClick={onVoice}>
       <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />
@@ -45,14 +46,14 @@ export function SessionToolbar({ filter, onFilter, terminalMode, onSessions, onT
         <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor" />
       </svg>
     </button>
-    <button className="start" id="work-create-go" type="button" title={catalogWord("inline", "2c58f0c0b5ae")}
+    <button className="start" id="work-create-go" type="button" title={catalogWord("inline", "2c58f0c0b5ae") + " · " + shortcutLabel("task")} aria-keyshortcuts={shortcutAria("task")}
       aria-label={catalogWord("inline", "2c58f0c0b5ae")} onClick={onWork}>
       <svg className="ico ico-work-add" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <rect x="4" y="5" width="11" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.7" />
         <path d="M7.5 9h4M7.5 12.5h4M18.5 10.5v7M15 14h7" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
       </svg>
     </button>
-    <button className="start" id="start-go" type="button" title={terminalMode ? nextWord("terminalStartTitle") : T.webStart}
+    <button className="start" id="start-go" type="button" title={(terminalMode ? nextWord("terminalStartTitle") : T.webStart) + " · " + shortcutLabel("start")} aria-keyshortcuts={shortcutAria("start")}
       aria-label={terminalMode ? nextWord("terminalStartTitle") : T.webStart} onClick={onStart}>
       <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
         <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />

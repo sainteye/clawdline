@@ -101,3 +101,27 @@ a.sidebar-item { text-decoration: none; }
   border-radius: 50%;
   background: var(--bad);
 }
+
+/* Hints stay secondary and keep the existing single-line navigation. */
+.sidebar-shortcut {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--faint);
+  font: 11px/1 var(--mono);
+  white-space: nowrap;
+}
+.sidebar-shortcuts-entry { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.sidebar-help-mark { width: 18px; flex: 0 0 18px; margin-right: 12px; text-align: center; }
+.shortcuts-sheet { width: min(760px, 100%); max-height: calc(100dvh - 48px); overflow-y: auto; }
+.shortcuts-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.shortcuts-head h2 { margin: 0; }
+.shortcuts-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.shortcuts-group h3 { margin: 0 0 12px; color: var(--faint); font-size: 11.5px; font-weight: 600; }
+.shortcuts-group dl { grid-template-columns: max-content minmax(0, 1fr); gap: 10px 12px; }
+.shortcuts-group dt { white-space: nowrap; }
+.shortcuts-group dd { line-height: 1.5; overflow-wrap: anywhere; }
+.shortcuts-sheet .foot { line-height: 1.6; }
+@media (max-width: 599px) {
+  .shortcuts-groups { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .shortcuts-sheet { padding: 18px; }
+}

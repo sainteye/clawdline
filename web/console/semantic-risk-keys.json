@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9165,
+  "englishKeys": 9182,
   "counts": {
-    "negation": 2653,
-    "state": 1521,
+    "negation": 2654,
+    "state": 1524,
     "permission": 550,
     "deletion": 202,
     "uncertainty": 289
   },
-  "unionCount": 4095,
+  "unionCount": 4098,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2284,6 +2284,7 @@
       "next.setupAppBody",
       "next.setupFailed",
       "next.setupLocalBody",
+      "next.shortcutFoot",
       "next.signedInFailed",
       "next.signedInNeverSeen",
       "next.signedInNone",
@@ -3927,6 +3928,9 @@
       "next.setupPhoneWaiting",
       "next.setupWelcomePhoneHint",
       "next.setupWelcomeSessionsHint",
+      "next.shortcutAttention",
+      "next.shortcutFoot",
+      "next.shortcutVoice",
       "next.sidebarShow",
       "next.signedInCapsSendTerminal",
       "next.signedInLede",
@@ -8672,6 +8676,9 @@
     "next.setupPhoneWaiting",
     "next.setupWelcomePhoneHint",
     "next.setupWelcomeSessionsHint",
+    "next.shortcutAttention",
+    "next.shortcutFoot",
+    "next.shortcutVoice",
     "next.sidebarShow",
     "next.sidebarVersionUnknown",
     "next.signedInCapsSendTerminal",

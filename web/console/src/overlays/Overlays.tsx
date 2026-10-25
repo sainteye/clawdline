@@ -1,3 +1,4 @@
+import { macKeyboard, shortcutLabel } from "../shortcuts.js"
 import { catalogWord } from "../catalog.js"
 import { Fragment, useEffect } from "react"
 import * as L from "../legacy/bridge.js"
@@ -34,46 +35,61 @@ export function Overlays() {
     ActionConfirm.paint()
   })
 
-  // The shortcuts card, `paintStatic`'s rows. The keys are symbols printed on a
-  // keyboard and stay as they are; only the sentences come from the catalog,
-  // with its `*emphasis*` and backticks.
-  const rows: [string[], string][] = [
-    [["↑", "↓"], T.webKeysMove],
-    [["⏎"], T.webKeysOpen],
-    [["/"], T.webKeysFilter],
-    [["esc"], T.webKeysEscape],
-    // The terminal page's one key that is not the program's (pages/terminal/keys.ts).
-    [["F6"], nextWord("terminalKeysLeave")],
-    [["⌘K"], T.webKeysList],
-    [["⌘J"], T.webKeysPane],
-    [["⌘I"], T.webSessionInfo],
-    [["g", "G"], T.webKeysEnds],
-    [["r"], T.webKeysReverse],
-    [["?"], T.webKeysThis],
+  const mod = macKeyboard() ? "⌘" : "Ctrl+"
+  const groups: { title: string; rows: [string[], string][] }[] = [
+    { title: nextWord("shortcutNavigation"), rows: [
+      [[shortcutLabel("sessions")], nextWord("shortcutSessions")],
+      [[shortcutLabel("board")], nextWord("shortcutBoard")],
+      [[shortcutLabel("sidebar")], nextWord("shortcutSidebar")],
+      [[shortcutLabel("help"), "?"], nextWord("shortcutHelp")],
+      [["Esc"], T.webKeysEscape],
+    ] },
+    { title: nextWord("shortcutActions"), rows: [
+      [[shortcutLabel("start")], nextWord("shortcutStart")],
+      [[shortcutLabel("task")], nextWord("shortcutTask")],
+      [[shortcutLabel("voice")], nextWord("shortcutVoice")],
+    ] },
+    { title: nextWord("shortcutSession"), rows: [
+      [[shortcutLabel("compose")], nextWord("shortcutCompose")],
+      [[shortcutLabel("attention")], nextWord("shortcutAttention")],
+      [["/"], T.webKeysFilter],
+      [["↑", "↓"], T.webKeysMove],
+      [["⏎"], T.webKeysOpen],
+      [[mod + "J"], T.webKeysPane],
+      [[mod + "I"], T.webSessionInfo],
+      [["g", "G"], T.webKeysEnds],
+      [["r"], T.webKeysReverse],
+      [["F6"], nextWord("terminalKeysLeave")],
+    ] },
+    { title: nextWord("shortcutWriting"), rows: [
+      [["⏎"], nextWord("shortcutSend")],
+      [["Shift+⏎"], nextWord("shortcutNewline")],
+    ] },
   ]
 
   return (
     <>
       <ITermConsentDialog />
       <div className="overlay" id="keys" hidden>
-        <div className="sheet" role="dialog" aria-modal="true" aria-label={T.webKeysLabel}>
-          <h2>{T.webKeysTitle}</h2>
-          <dl>
-            {rows.map(([keys, words], i) => (
-              <Fragment key={i}>
-                <dt>
-                  {keys.map((key, k) => (
-                    <Fragment key={k}>
-                      {k ? " " : null}
-                      <kbd>{key}</kbd>
-                    </Fragment>
-                  ))}
-                </dt>
-                <dd dangerouslySetInnerHTML={{ __html: L.wordsHTML(words) }} />
-              </Fragment>
-            ))}
-          </dl>
-          <div className="foot">{T.webKeysFoot}</div>
+        <div className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-labelledby="keys-title">
+          <div className="shortcuts-head">
+            <h2 id="keys-title">{nextWord("shortcutTitle")}</h2>
+            <button className="chip" type="button" id="keys-close" onClick={closeKeys}>{T.webClose}</button>
+          </div>
+          <div className="shortcuts-groups">
+            {groups.map(({ title, rows }) => <section key={title} className="shortcuts-group">
+              <h3>{title}</h3>
+              <dl>
+                {rows.map(([keys, words], i) => <Fragment key={i}>
+                  <dt>{keys.map((key, k) => <Fragment key={k}>
+                    {k ? " " : null}<kbd>{key}</kbd>
+                  </Fragment>)}</dt>
+                  <dd dangerouslySetInnerHTML={{ __html: L.wordsHTML(words) }} />
+                </Fragment>)}
+              </dl>
+            </section>)}
+          </div>
+          <div className="foot">{nextWord("shortcutFoot")}</div>
         </div>
       </div>
 
@@ -138,28 +154,51 @@ export function shown(id: string): boolean {
   return document.getElementById(id)?.hidden === false
 }
 
-/** `?`: the shortcuts card on and off. */
+let keysReturnFocus: HTMLElement | null = null
+
+/** Open from either the keyboard or navigation, with a keyboard way out. */
 export function toggleKeys(): void {
   const keys = document.getElementById("keys")
-  if (keys) keys.hidden = !keys.hidden
+  if (!keys) return
+  if (!keys.hidden) { closeKeys(); return }
+  keysReturnFocus = document.activeElement as HTMLElement | null
+  keys.hidden = false
+  document.getElementById("keys-close")?.focus({ preventScroll: true })
 }
 
 export function closeKeys(): void {
   const keys = document.getElementById("keys")
-  if (keys) keys.hidden = true
+  if (!keys || keys.hidden) return
+  keys.hidden = true
+  if (keysReturnFocus?.isConnected && keysReturnFocus.getClientRects().length) keysReturnFocus.focus({ preventScroll: true })
+  keysReturnFocus = null
 }
 
-/** A press on the dark part closes the card; a press on the card does not (`detail-actions.js`). */
+/** The sheet owns focus and its keys; the page behind it does not move. */
 function bindKeys(): () => void {
   const keys = document.getElementById("keys")
   const sheet = keys?.querySelector(".sheet")
   if (!keys || !sheet) return () => {}
   const onOverlay = () => closeKeys()
   const onSheet = (ev: Event) => ev.stopPropagation()
+  const onKey = (event: KeyboardEvent) => {
+    if (keys.hidden || event.isComposing) return
+    if (event.key === "Tab") {
+      event.preventDefault()
+      document.getElementById("keys-close")?.focus({ preventScroll: true })
+    }
+    if (event.key === "Escape") {
+      event.preventDefault()
+      event.stopPropagation()
+      closeKeys()
+    }
+  }
   keys.addEventListener("click", onOverlay)
   sheet.addEventListener("click", onSheet)
+  document.addEventListener("keydown", onKey, true)
   return () => {
     keys.removeEventListener("click", onOverlay)
     sheet.removeEventListener("click", onSheet)
+    document.removeEventListener("keydown", onKey, true)
   }
 }

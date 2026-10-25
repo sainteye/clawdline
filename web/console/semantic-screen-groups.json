@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9165,
-  "riskKeys": 4095,
-  "nonRiskCount": 5070,
+  "englishContentKeys": 9182,
+  "riskKeys": 4098,
+  "nonRiskCount": 5084,
   "groups": [
     {
       "name": "admin / other",
@@ -3361,7 +3361,7 @@
     },
     {
       "name": "next / other",
-      "count": 428,
+      "count": 442,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3667,6 +3667,20 @@
         "next.setupWelcomeReplyHint",
         "next.setupWelcomeSessions",
         "next.setupWelcomeTitle",
+        "next.shortcutActions",
+        "next.shortcutBoard",
+        "next.shortcutCompose",
+        "next.shortcutHelp",
+        "next.shortcutNavigation",
+        "next.shortcutNewline",
+        "next.shortcutSend",
+        "next.shortcutSession",
+        "next.shortcutSessions",
+        "next.shortcutSidebar",
+        "next.shortcutStart",
+        "next.shortcutTask",
+        "next.shortcutTitle",
+        "next.shortcutWriting",
         "next.sidebarAdministrator",
         "next.sidebarAppStaged",
         "next.sidebarChooseMachineVersion",

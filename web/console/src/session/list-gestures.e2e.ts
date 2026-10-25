@@ -417,6 +417,8 @@ function daemon(): Server {
       return json(res, 200, snapshot())
     }
     if (path === "/v1/health") return json(res, 200, { ok: true })
+    if (path.startsWith("/v1/work/v2/human-interventions/") && req.method === "GET")
+      return json(res, 200, { ok: true, rows: [], truncated: false })
     if (path === "/v1/machine/usage") return json(res, 200, {
       at: Date.now(), interval_ms: 3000, cores: 4, cpu_percent: 40, load: [1.6, 1.2, 1.0],
       memory_total_bytes: 8 * 1024 ** 3, memory_used_bytes: 4 * 1024 ** 3,
@@ -1154,6 +1156,13 @@ class Tab {
     await this.b.send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: code, modifiers }, this.session)
   }
 
+  async shortcut(key: string, modifiers = 0): Promise<void> {
+    const code = key === "/" || key === "?" ? "Slash" : key === "\\" ? "Backslash" : "Key" + key.toUpperCase()
+    const windowsVirtualKeyCode = code === "Slash" ? 191 : code === "Backslash" ? 220 : key.toUpperCase().charCodeAt(0)
+    await this.b.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode, modifiers }, this.session)
+    await this.b.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode, modifiers }, this.session)
+  }
+
   async accessibilityOptions(): Promise<string[]> {
     const tree = await this.b.send("Accessibility.getFullAXTree", {}, this.session)
     return tree.nodes.filter((node: any) => node.role?.value === "option").map((node: any) => node.name?.value ?? "")
@@ -1412,6 +1421,123 @@ test("keyboard moves through focused options and Enter opens the highlighted Ses
       await tab.until("the opened Session is read fresh", () => openedLooks.length > before)
       assert.equal(openedLooks.at(-1), NEEDS_ATTESTATION)
     }
+  }))
+
+/** Wait for a visible keyboard outcome rather than a fixed animation delay. */
+async function shortcutUntil(tab: Tab, expression: string): Promise<void> {
+  await tab.run(`new Promise((resolve, reject) => {
+    const deadline = Date.now() + 5000
+    const read = () => {
+      if (${expression}) return resolve(true)
+      if (Date.now() > deadline) return reject(new Error("Shortcut outcome missing: " + ${JSON.stringify(expression)}))
+      setTimeout(read, 25)
+    }
+    read()
+  })`)
+}
+
+test("navigation shortcuts switch pages and the cheat sheet owns focus on both layouts", () =>
+  inTab(async (tab) => {
+    for (const size of ["phone", "desktop"] as const) {
+      if (size === "desktop") await tab.desktop()
+      await list(tab)
+      await tab.run(`Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' }); document.activeElement?.blur()`)
+      await tab.shortcut("b", 4)
+      await shortcutUntil(tab, `document.documentElement.dataset.page === "work"`)
+      await tab.shortcut("/", 4)
+      await shortcutUntil(tab, `document.getElementById("keys")?.hidden === false`)
+      const sheet = await tab.run(`(() => {
+        const el = document.querySelector('.shortcuts-sheet')
+        const box = el.getBoundingClientRect()
+        return { title: document.getElementById('keys-title').textContent, focus: document.activeElement.id,
+          fits: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
+          noHorizontalOverflow: el.scrollWidth <= el.clientWidth,
+          text: el.textContent }
+      })()`)
+      assert.equal(sheet.title, "快速鍵速查表")
+      assert.equal(sheet.focus, "keys-close")
+      assert.equal(sheet.fits, true)
+      assert.equal(sheet.noHorizontalOverflow, true)
+      assert.match(sheet.text, /⌘B/)
+      assert.match(sheet.text, /關注便條/)
+      await tab.key("Tab", true)
+      assert.equal((await tab.seen()).focused, "keys-close")
+      await tab.shortcut("k", 4)
+      assert.equal(await tab.run(`document.documentElement.dataset.page`), "work", "the sheet blocks navigation behind it")
+      await shortcutUntil(tab, `getComputedStyle(document.getElementById("keys")).opacity === "1"`)
+      await tab.shot("shortcut-cheat-sheet-" + size)
+      await tab.key("Escape")
+      assert.equal(await tab.run(`document.getElementById('keys').hidden`), true)
+      assert.equal((await tab.seen()).focused, "brand")
+      await tab.shortcut("k", 4)
+      await shortcutUntil(tab, `document.documentElement.dataset.page === "sessions" && document.activeElement?.closest('#rows')`)
+      await tab.shortcut("\\", 4)
+      await shortcutUntil(tab, `!document.getElementById("sidebar").hidden`)
+      await tab.run(`document.getElementById('nav-shortcuts').click()`)
+      await shortcutUntil(tab, `!document.getElementById("keys").hidden && document.getElementById("sidebar").hidden`)
+      await tab.key("Escape")
+    }
+  }))
+
+test("common action shortcuts keep drafts and modal decisions intact", () =>
+  inTab(async (tab) => {
+    await tab.desktop()
+    await list(tab)
+    await tab.run(`Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' });
+      document.getElementById('filter').focus(); document.getElementById('filter').value = 'my draft'`)
+    await tab.shortcut("n")
+    await tab.shortcut("b", 4)
+    assert.equal(await tab.run(`document.getElementById('start').hidden`), true)
+    assert.equal(await tab.run(`document.documentElement.dataset.page`), "sessions")
+    assert.equal(await tab.run(`document.getElementById('filter').value`), "my draft")
+    await tab.run(`document.getElementById('filter').blur()`)
+    await tab.shortcut("n")
+    await shortcutUntil(tab, `!document.getElementById("start").hidden`)
+    await tab.shortcut("b", 4)
+    assert.equal(await tab.run(`document.documentElement.dataset.page`), "sessions")
+    await tab.run(`document.getElementById('start-close').click()`)
+    await tab.run(`document.activeElement?.blur()`)
+    await tab.shortcut("t")
+    await shortcutUntil(tab, `!!document.querySelector('.work-new-modal')`)
+    assert.equal(closes.length, 0, "opening controls never closes a Session")
+  }))
+
+test("Session shortcuts reach the composer, attention notes and existing voice control", () =>
+  inTab(async (tab) => {
+    await tab.desktop()
+    await list(tab)
+    await tab.run(`document.querySelector('#rows > li.row').click()`)
+    await tab.until("the Session opens", (state) => !!state.open)
+    await tab.run(`document.getElementById('brand').focus()`)
+    await tab.shortcut("c")
+    await shortcutUntil(tab, `document.activeElement?.id === "msg"`)
+    await tab.run(`document.getElementById('brand').focus()`)
+    await tab.shortcut("a")
+    await shortcutUntil(tab, `document.querySelector('.human-interventions-head')?.getAttribute('aria-expanded') === "true"`)
+    await tab.run(`document.getElementById('brand').focus()`)
+    await tab.shortcut("a")
+    await shortcutUntil(tab, `document.querySelector('.human-interventions-head')?.getAttribute('aria-expanded') === "false"`)
+    // Observe the existing control without recording audio or calling a provider.
+    await tab.run(`window.shortcutVoiceClicks = 0; document.getElementById('voice-go').click = () => { window.shortcutVoiceClicks++ }; document.getElementById('brand').focus()`)
+    await tab.shortcut("v")
+    await shortcutUntil(tab, `window.shortcutVoiceClicks === 1`)
+    await tab.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', repeat: true, bubbles: true, cancelable: true }))`)
+    assert.equal(await tab.run(`window.shortcutVoiceClicks`), 1, "holding the key does not reopen voice")
+    assert.equal(closes.length, 0)
+  }))
+
+test("Ctrl shortcuts and the cheat sheet use a non-Apple keyboard", () =>
+  inTab(async (tab) => {
+    await tab.desktop()
+    await list(tab)
+    await tab.run(`Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Linux x86_64' }); document.activeElement?.blur()`)
+    await tab.shortcut("b", 2)
+    await shortcutUntil(tab, `document.documentElement.dataset.page === "work"`)
+    await tab.shortcut("/", 2)
+    await shortcutUntil(tab, `!document.getElementById("keys").hidden`)
+    const words = await tab.run(`document.querySelector('.shortcuts-sheet').textContent`)
+    assert.match(words, /Ctrl\+B/)
+    assert.doesNotMatch(words, /⌘/)
   }))
 
 test("the phone option exposes the legacy identity and state without a crown button", () =>

@@ -1,3 +1,5 @@
+import { macKeyboard, matchShortcut, shortcutAria, shortcutLabel } from "./shortcuts.js"
+import { openNewWorkItem } from "./pages/work/new-item.js"
 import { QuotaBar } from "./provider-quota/QuotaBar.js"
 import { SessionStateFilterControl } from "./session/SessionStateFilter.js"
 import { matchesLocalStateFilter, stateFilterCounts, type SessionStateFilter } from "./session/state-filter.js"
@@ -792,6 +794,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   // to reverse here. The session menu answers its own Escape before this sees
   // it, as `detail-actions.js` does.
   const onKey = (ev: KeyboardEvent) => {
+    if (ev.defaultPrevented || ev.isComposing || ev.keyCode === 229) return
     if (document.querySelector("#session-state-filter[open]")) return
     const key = ev.key
     const meta = ev.metaKey || ev.ctrlKey
@@ -808,6 +811,57 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       return
     }
 
+    const shortcut = matchShortcut(ev, macKeyboard(), typing(document.activeElement),
+      !!document.activeElement?.closest('select, summary, [role="combobox"], [role="menu"], [role="menuitem"], [role="tree"], [role="grid"], [role="slider"], [role="spinbutton"]'))
+    const modal = [...document.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"]')]
+      .some((node) => !node.closest("#keys") && node.getClientRects().length > 0)
+    if (shown("keys")) {
+      if (shortcut === "help" || key === "Escape") {
+        ev.preventDefault()
+        if (!ev.repeat) closeKeys()
+      }
+      return
+    }
+    if (shortcut && !modal) {
+      // Never toggle twice on key repeat, or let the browser handle that repeat.
+      ev.preventDefault()
+      if (ev.repeat) return
+      if (shortcut === "help") { closeMenu(); toggleKeys(); return }
+      if (shortcut === "sidebar") { if (menuRef.current) closeMenu(); else setMenu(true); return }
+      if (shortcut === "board") { if (offered("work")) { go("work"); closeMenu() }; return }
+      if (shortcut === "task") { if (offered("work")) { closeMenu(); openNewWorkItem() }; return }
+      if (shortcut === "compose" || shortcut === "attention") {
+        if (pageRef.current !== "sessions" || !openRef.current) return
+        setPane(true)
+        if (phone()) setView("detail")
+        requestAnimationFrame(() => {
+          if (shortcut === "compose") document.getElementById("msg")?.focus()
+          else document.querySelector<HTMLButtonElement>(".human-interventions-head")?.click()
+        })
+        return
+      }
+      if (pageRef.current !== "sessions" && !go("sessions")) return
+      closeMenu()
+      if (phone()) setView("list")
+      requestAnimationFrame(() => {
+        if (shortcut === "sessions") {
+          // A fleet has its own rows. Its search field is the stable landing.
+          const list = document.getElementById("rows")
+          if (!fleetList && !cloudSessions && list?.getClientRects().length) {
+            list.focus()
+            if (!selectedRef.current) move(1)
+            else select(selectedRef.current)
+          } else document.getElementById("filter")?.focus()
+        } else {
+          const button = document.getElementById(shortcut === "start" ? "start-go" : "voice-go") as HTMLButtonElement | null
+          if (button && !button.disabled && button.getClientRects().length) button.click()
+        }
+      })
+      return
+    }
+    // A visible modal owns all keys except its own Escape handling below.
+    if (modal && key !== "Escape" && !(meta && key.toLowerCase() === "i" && (Info.isOpen() || RoleDetail.isOpen()))) return
+
     // Cloud's status list has its own rows, search and pinned destination in
     // both scopes. The original list's shortcuts must not move a hidden row.
     if (cloudSessions && pageRef.current === "sessions") {
@@ -815,13 +869,6 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       return
     }
 
-    if (meta && (key === "k" || key === "K")) {
-      ev.preventDefault()
-      rowsEl?.focus()
-      if (!selectedRef.current) move(1)
-      else select(selectedRef.current)
-      return
-    }
     if (meta && (key === "j" || key === "J")) {
       ev.preventDefault()
       if (phone()) {
@@ -903,7 +950,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     // A sheet is over the page, so `j` is not "move down the list behind it",
     // and the drawer is one more thing that is over it (keys.js). Settings is
     // the one such sheet this console has so far.
-    if (menuRef.current || pageRef.current === "settings") return
+    if (menuRef.current || pageRef.current !== "sessions" || shown("info") || shown("role-detail")) return
 
     switch (key) {
       case "ArrowDown":
@@ -938,10 +985,6 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         ev.preventDefault()
         toggleOrder()
         break
-      case "?":
-        ev.preventDefault()
-        toggleKeys()
-        break
       default:
         break
     }
@@ -969,10 +1012,12 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       disabled={!offered(p.id)}
       onClick={() => go(p.id)}
       title={tooOldTitle(p.id)}
+      aria-keyshortcuts={p.id === "sessions" ? shortcutAria("sessions") : undefined}
     >
       <SidebarIcon name={p.icon} />
       {p.id === "usage" ? nextWord("usageOverview") : p.id === "notifications" ? nextWord("notificationNav") : p.id === "workflow" ? catalogWord("workflow", "workflow") : p.key ? T[p.key] : p.text}
       {tooOldMark(p.id)}
+      {p.id === "sessions" && <kbd className="sidebar-shortcut" aria-hidden="true">{shortcutLabel("sessions")}</kbd>}
     </button>
   )
   const sidebarPages = drawerEntries(PAGES, PAGE_MODULES)
@@ -986,6 +1031,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
           type="button"
           aria-label={nextWord(menu ? "sidebarHide" : "sidebarShow")}
           aria-controls="sidebar"
+          aria-keyshortcuts={shortcutAria("sidebar")}
           aria-expanded={menu}
           ref={brandRef}
           onClick={() => (menu ? closeMenu() : setMenu(true))}
@@ -1078,10 +1124,12 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
               disabled={!offered("work")}
               onClick={() => go("work")}
               title={tooOldTitle("work")}
+              aria-keyshortcuts={shortcutAria("board")}
             >
               <SidebarIcon name="work" />
               {workWord("nav")}
               {tooOldMark("work")}
+              <kbd className="sidebar-shortcut" aria-hidden="true">{shortcutLabel("board")}</kbd>
             </button>
             {sidebarPages.filter((p) => p.id === "workflow").map(sidebarPage)}
             <button
@@ -1130,6 +1178,13 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
           <AdministratorSection allowed={cloudOperationsAccess} attention={cloudOperationsAttention}>
             {sidebarPages.filter((p) => p.id === "transparency").map(sidebarPage)}
           </AdministratorSection>
+          <div className="sidebar-shortcuts-entry">
+            <button className="sidebar-item" id="nav-shortcuts" type="button" aria-haspopup="dialog"
+              aria-keyshortcuts={shortcutAria("help") + " ?"} onClick={() => { closeMenu(); toggleKeys() }}>
+              <span className="sidebar-help-mark" aria-hidden="true">?</span>{nextWord("shortcutTitle")}
+              <kbd className="sidebar-shortcut" aria-hidden="true">{shortcutLabel("help")}</kbd>
+            </button>
+          </div>
           <div className="sidebar-version" role="status">
             {focusCloudSessions
               ? nextWord("sidebarChooseMachineVersion")
