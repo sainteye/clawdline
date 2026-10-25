@@ -239,7 +239,9 @@ func (b *Broker) runEffect(ctx context.Context, id int64) (res effectResult, err
 	if err := outside(); err != nil {
 		return effectResult{err: err}, err
 	}
-	b.hold(id)
+	if !b.hold(id) {
+		return effectResult{err: store.ErrEffectTaken}, store.ErrEffectTaken
+	}
 	defer b.release(id)
 	run, cancel := effectContext(ctx)
 	defer cancel()
@@ -315,6 +317,22 @@ func (b *Broker) runRecorded(ctx context.Context, ids []int64) []effectResult {
 //     process can settle the rest, and the proof it uses is the in-memory hold
 //     plus an age past which a row that is still unheld is not a race.
 func (b *Broker) RecoverEffects(ctx context.Context) int {
+	return b.recoverEffects(ctx, nil)
+}
+
+func (b *Broker) recoverEffects(ctx context.Context, rd *reading) int {
+	// Delivery receipts deliberately leave their push pending. Share the beat's
+	// single machine reading; standalone recovery reads lazily only if needed.
+	settle := func(e store.Effect, why string) int {
+		if e.Kind == EffectSessionDeliveryPush && e.State == store.EffectPending {
+			if rd == nil {
+				r := b.read(ctx)
+				rd = &r
+			}
+			return b.settleDeliveryPush(ctx, e, *rd)
+		}
+		return b.settleEffect(ctx, e, why)
+	}
 	adopted, err := b.Store.AdoptEffects(ctx)
 	if err != nil {
 		log.Printf("orchestrator: unfinished effects could not be read: %v", err)
@@ -322,11 +340,11 @@ func (b *Broker) RecoverEffects(ctx context.Context) int {
 	}
 	n := 0
 	for _, e := range adopted {
-		n += b.settleEffect(ctx, e, "The broker that began this effect stopped before it recorded the outcome, "+
+		n += settle(e, "The broker that began this effect stopped before it recorded the outcome, "+
 			"and this kind cannot find out whether it happened; it is not repeated.")
 	}
 	for _, e := range b.unattended(ctx) {
-		n += b.settleEffect(ctx, e, "The request that recorded this effect went away while it was being carried "+
+		n += settle(e, "The request that recorded this effect went away while it was being carried "+
 			"out, and this kind cannot find out whether it happened; it is not repeated.")
 	}
 	return n
@@ -344,6 +362,10 @@ func (b *Broker) unattended(ctx context.Context) []store.Effect {
 	out := make([]store.Effect, 0, len(own))
 	for _, e := range own {
 		if b.holding(e.ID) {
+			continue
+		}
+		if e.Kind == EffectSessionDeliveryPush && e.State == store.EffectPending {
+			out = append(out, e)
 			continue
 		}
 		since, limit := e.CreatedAt, unattendedPending

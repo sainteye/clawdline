@@ -146,7 +146,9 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	}
 	// Effects a broker that has since died left unfinished are settled first
 	// (effects.go): a message it recorded and never typed is typed now, once.
-	p.Recovered = b.RecoverEffects(ctx)
+	rd := b.read(ctx)
+	b.keepReading(rd)
+	p.Recovered = b.recoverEffects(ctx, &rd)
 	// Only the live rows. The beat's cost is the number of tasks still
 	// running, not the length of the history (G33).
 	live, bad, err := b.liveLedger(ctx)
@@ -155,8 +157,6 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 		return p
 	}
 	p.Unreadable = len(bad)
-	rd := b.read(ctx)
-	b.keepReading(rd)
 	for _, r := range live {
 		p.Watched++
 		// A callback has no tab, brief or result.json: its command's exit

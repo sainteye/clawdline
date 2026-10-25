@@ -328,13 +328,17 @@ func (b *Broker) taskListChanged() {
 // the row is attempted and given up after its outcome is recorded, so the
 // beat can tell a row somebody is running from one a departed request left
 // behind. holding answers whether it is claimed now.
-func (b *Broker) hold(id int64) {
+func (b *Broker) hold(id int64) bool {
 	b.effectsMu.Lock()
 	defer b.effectsMu.Unlock()
+	if b.held[id] {
+		return false
+	}
 	if b.held == nil {
 		b.held = map[int64]bool{}
 	}
 	b.held[id] = true
+	return true
 }
 
 func (b *Broker) release(id int64) {

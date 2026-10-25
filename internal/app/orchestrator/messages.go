@@ -429,16 +429,17 @@ func (b *Broker) ReportSessionDelivery(ctx context.Context, terminalID, summary 
 		"assistant": string(s.Assistant), "summary": trimmed, "at": at.Unix(),
 	})
 	push, _ := json.Marshal(completionPush{
-		Terminal: terminalID, Summary: trimmed,
+		Terminal: terminalID, Conversation: s.ConversationID, After: at, Summary: trimmed,
 		Language: b.notificationLanguage(), Tag: "session-delivery-" + terminalID,
 	})
-	ids, err := b.Store.AppendWithEffects(ctx, store.Event{
+	_, err = b.Store.AppendWithEffects(ctx, store.Event{
 		Kind: "session.delivered", Subject: terminalID, Payload: payload,
 	}, store.Effect{Kind: EffectSessionDeliveryPush, Subject: terminalID, Payload: push})
 	if err != nil {
 		return SessionDelivery{}, err
 	}
-	b.runRecorded(ctx, ids)
+	// The receipt precedes the final answer. The beat releases its durable
+	// push only after a fresh idle reading of this same conversation.
 	return SessionDelivery{
 		Terminal:     terminalID,
 		Conversation: s.ConversationID,

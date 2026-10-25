@@ -3,10 +3,13 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
@@ -16,17 +19,78 @@ const (
 )
 
 type completionPush struct {
-	Terminal string `json:"terminal"`
-	Language string `json:"language"`
-	Tag      string `json:"tag"`
-	Summary  string `json:"summary,omitempty"`
-	Count    int    `json:"count,omitempty"`
-	Failed   int    `json:"failed,omitempty"`
-	Titles   string `json:"titles,omitempty"`
+	Conversation string    `json:"conversation,omitempty"`
+	After        time.Time `json:"after,omitempty"`
+	Terminal     string    `json:"terminal"`
+	Language     string    `json:"language"`
+	Tag          string    `json:"tag"`
+	Summary      string    `json:"summary,omitempty"`
+	Count        int       `json:"count,omitempty"`
+	Failed       int       `json:"failed,omitempty"`
+	Titles       string    `json:"titles,omitempty"`
 }
 
 func (b *Broker) notificationLanguage() string {
 	return productcopy.Resolve(b.ProductLanguage())
+}
+
+// settleDeliveryPush leaves an unattempted push pending for as long as the
+// final answer takes. Time alone, missing sessions and retained idle rows are
+// never evidence that the reporting turn finished. An unknown attempted push
+// still follows ordinary recovery and is never sent again.
+func (b *Broker) settleDeliveryPush(ctx context.Context, e store.Effect, rd reading) int {
+	var p completionPush
+	if err := json.Unmarshal(e.Payload, &p); err != nil || p.Terminal == "" || p.Tag == "" {
+		return b.settleEffect(ctx, e, "") // The normal handler records malformed payloads.
+	}
+	skip := ""
+	if p.Conversation == "" || p.After.IsZero() {
+		// Pre-upgrade intents cannot prove which conversation owed the push.
+		skip = "session_binding_missing"
+	} else if s, ok := rd.session(p.Terminal); ok {
+		if s.Observation.Freshness != session.FreshnessCurrent || !s.Observation.ObservedAt.After(p.After) {
+			return 0
+		}
+		if s.ConversationID == "" {
+			return 0
+		}
+		if s.ConversationID != p.Conversation {
+			skip = "session_rebound"
+		} else {
+			if s.State != session.StateIdle || s.Menu != nil {
+				return 0
+			}
+			switch s.Evidence {
+			case session.EvidenceRegistry, session.EvidenceScreen, session.EvidenceStructured, session.EvidenceTranscript:
+			default:
+				return 0
+			}
+		}
+	} else {
+		if !rd.at.After(p.After) || !rd.sourceComplete(session.SourceForID(p.Terminal)) {
+			return 0
+		}
+		skip = "session_gone"
+	}
+	if skip != "" {
+		if !b.hold(e.ID) {
+			return 0
+		}
+		defer b.release(e.ID)
+		started, err := b.Store.StartEffect(ctx, e.ID)
+		if err != nil {
+			return 0
+		}
+		if err := b.finishEffect(ctx, started, effectResult{state: store.EffectDone, outcome: skip}); err != nil {
+			log.Printf("orchestrator: delivery push %d could not be skipped: %v", e.ID, err)
+			return 0
+		}
+		return 1
+	}
+	if _, err := b.runEffect(ctx, e.ID); err != nil {
+		return 0
+	}
+	return 1
 }
 
 func runCompletionPush(ctx context.Context, b *Broker, e store.Effect) effectResult {

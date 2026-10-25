@@ -48,7 +48,7 @@ notification arrives on this device.
 | A schedule misses its run, dispatch is refused, or its file cannot be read | `push_on_schedule_failure`: missed and refused runs also require **Notify on failure** on the schedule. An invalid file is reported when its fingerprint changes. These open the list. |
 | A capacity row crosses a notification threshold | `push_on_capacity`: the capacity monitor sends the recorded notice; it opens the list. |
 | A task completion notice becomes a dead letter | `push_on_dead_letter`: once for that dead letter; it opens the root Session while present. |
-| A Session records its delivery report | `push_on_delivery`: one push for that report; it opens the reporting Session while present. |
+| A Session records its delivery report | `push_on_delivery`: one push after the reporting Session finishes its final answer; it opens that Session while present. |
 | All tasks in one dispatched batch finish | `push_on_fanout`: one push when the last task finishes; a batch has at least two tasks dispatched by the same Root while it has active children. It opens the Root Session while present. |
 | Completion wording includes details | `smart_notifications` changes the two preceding notifications: the Session's own delivery summary or task titles appear in the body. It does not send an extra notification or call an external model. |
 | A Cloud or running macOS app release passes its production checks | `push_on_cloud_release_success` and `push_on_app_release_success` are separate. Unset keys inherit the older `push_on_deploy` choice; a fresh installation has both off. Each opens the list. |
@@ -82,3 +82,28 @@ change the site's notification permission in the browser's own settings.
 
 - [push.md](../push.md) — the Web Push implementation, what never leaves the machine, retries and
   the ten-minute measurement (in Chinese).
+
+## Delivery reports wait for the final answer
+
+`clawdline session report` records the receipt immediately. The agent calls it
+before writing its final answer, so the receipt itself does not send a push.
+The broker keeps the notification in its durable outbox until a fresh reading
+taken after the report shows the same conversation idle. A working, waiting,
+unknown, retained or pre-report reading cannot release it. There is no fixed
+sleep that could expire while a long answer is still being printed; delivery
+follows the next broker pass that observes idle.
+
+Restart recovery uses the same condition for an unattempted notification. An
+attempt interrupted before its outcome was recorded is marked unknown rather
+than sent again. A replaced conversation or a Session proven gone closes the
+pending notification without sending it. An unreadable or unbound Session
+keeps it pending. Older intents without a conversation binding are closed
+without sending. Fan-out and Board completion notifications retain their own
+triggers.
+
+The regression first failed with `pushed before the final answer was printed`
+on the immediate-send implementation. It also holds a ten-minute working
+answer, stale idle observations, unknown states, incomplete absence and a
+restarted broker before allowing one fresh idle observation to release the
+notification. Recovery of an attempted push and concurrent recovery cannot
+send it twice.
