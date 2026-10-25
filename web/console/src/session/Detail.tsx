@@ -33,6 +33,7 @@ import { UserMessages } from "./UserMessages.js"
 import { Snippets } from "./Snippets.js"
 import { conversationNotStarted } from "./readiness.js"
 import { agentName, agentStateWord } from "./WorkTree.js"
+import { agentModelName } from "./work-tree.js"
 import { nextWord } from "../next-strings.js"
 import { readProjectPlaces } from "../pages/work/api.js"
 import { hostedConsole, openTerminal, TerminalRequestError } from "../pages/terminal/api.js"
@@ -224,6 +225,7 @@ export function Detail({
   return (
     <DetailPane
       id="pane-detail"
+      data-agent-view={selectedAgent ? "on" : undefined}
       data-panel={screenOpen ? "screen" : gitOpen ? "git" : shellOpen ? "shell" : undefined}
     >
       {selectedAgent ? (
@@ -332,12 +334,14 @@ export function Detail({
         }}
       />
       {/* A sent reply went to the Root conversation; show it there. */}
-      <Todos row={row} onReplySent={() => setAgentId(null)} onCompose={(text) => {
+      {selectedAgent ? <button className="agent-close-bar" type="button" onClick={() => chooseAgent(null)}>
+        <span aria-hidden="true">×</span> {T.webClose}
+      </button> : <Todos row={row} onReplySent={() => setAgentId(null)} onCompose={(text) => {
         const target = interventionTarget(row)
         if (!target) return
         setAgentId(null)
         setSuggestedDraft({ target, text, id: ++suggestedDraftSerial.current })
-      }} />
+      }} />}
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
@@ -387,7 +391,7 @@ function AgentHead({
   const seconds = Math.max(0, Math.round(agent.seconds ?? 0))
   const clock = seconds ? (seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`) : ""
   const state = agentStateWord(agent, assistant)
-  const facts = [agent.type, state, agent.model, clock, agent.tokens ? `↓ ${L.agentTokens(agent.tokens)}` : "",
+  const facts = [agentModelName(agent.model), agent.type, state, clock, agent.tokens ? `↓ ${L.agentTokens(agent.tokens)}` : "",
     agent.tools ? L.fillString(T.agentTools, { n: agent.tools }) : ""]
     .filter(Boolean).join(" · ")
   return (
@@ -397,7 +401,7 @@ function AgentHead({
           the facts together ("…session UIExplore · …"). */}
       <div className="who">
         <div className="name">{agentName(agent, assistant, ordinal)}</div>
-        <div className="sub">{facts}</div>
+        <div className="sub" title={agent.model}>{facts}</div>
       </div>
     </div>
   )

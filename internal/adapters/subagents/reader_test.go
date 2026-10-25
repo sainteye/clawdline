@@ -74,6 +74,67 @@ func TestRunningAgentIsReadAndStableBeatOpensNothing(t *testing.T) {
 	}
 }
 
+func TestClaudeAgentModelComesFromItsOwnChangingRecord(t *testing.T) {
+	home, row, parent, folder := fixture(t)
+	writeAgent(t, folder, "agent_model")
+	if err := os.WriteFile(parent, []byte(`{"type":"assistant","message":{"model":"claude-haiku-4-5","content":[]}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metaPath := filepath.Join(folder, "agent-agent_model.meta.json")
+	if err := os.WriteFile(metaPath, []byte(`{"description":"Inspect fixture","agentType":"general-purpose","spawnDepth":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(folder, "agent-agent_model.jsonl")
+	write := func(model string) {
+		t.Helper()
+		body := fmt.Sprintf(`{"type":"assistant","isSidechain":true,"message":{"model":%q,"content":[{"type":"tool_use","name":"Read"}]}}`+"\n", model)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := New(home)
+	for _, model := range []string{"claude-sonnet-4-6", "claude-opus-5-5"} {
+		write(model)
+		got := r.ForSession(row)
+		if len(got.Agents) != 1 || got.Agents[0].Model != model || got.Agents[0].Doing != "Read" {
+			t.Fatalf("agent %+v, want its recorded model %s", got.Agents, model)
+		}
+		r.ForSession(row)
+		if cost := r.LastMeasurement(); cost.Opened != 0 {
+			t.Fatalf("stable model reading opened %d files", cost.Opened)
+		}
+	}
+	if err := os.WriteFile(parent, []byte(`{"content":"<task-notification><task-id>agent_model</task-id><status>completed</status></task-notification>"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metaPath, []byte(`{"agentType":"general-purpose","model":"sonnet"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := New(home).ForSession(row)
+	if len(got.Agents) != 1 || got.Agents[0].State != session.AgentDone || got.Agents[0].Model != "claude-opus-5-5" || got.Agents[0].Doing != "" {
+		t.Fatalf("completed agent lost its recorded model: %+v", got.Agents)
+	}
+}
+
+func TestClaudeAgentModelDoesNotComeFromPromptsOrSyntheticMessages(t *testing.T) {
+	home, row, _, folder := fixture(t)
+	writeAgent(t, folder, "agent_model")
+	if err := os.WriteFile(filepath.Join(folder, "agent-agent_model.meta.json"), []byte(`{"agentType":"general-purpose"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"type":"user","message":{"model":"claude-opus-5-5","content":"Please use Opus"}}
+{"type":"assistant","message":{"model":"<synthetic>","content":[]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"}]}}
+`
+	if err := os.WriteFile(filepath.Join(folder, "agent-agent_model.jsonl"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := New(home).ForSession(row)
+	if len(got.Agents) != 1 || got.Agents[0].Model != "" {
+		t.Fatalf("unrecorded model was invented: %+v", got.Agents)
+	}
+}
+
 func TestCodexHeadNamesOtherwiseIdenticalSpawnRowsAndIsMemoized(t *testing.T) {
 	home := t.TempDir()
 	folder := filepath.Join(home, ".codex", "sessions", "2026", "09", "21")

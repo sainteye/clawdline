@@ -9,6 +9,19 @@
     border-top: 1px solid var(--line);
 }
 .pane-detail[data-panel] > .bg-strip { display: none; }
+/* The agent view has no composer or status line to reserve the phone's home
+   indicator. Keep the strip's hit area above it using the existing inset. */
+.pane-detail[data-agent-view="on"] > .bg-strip {
+    padding-bottom: max(var(--indicator, 0px), env(safe-area-inset-bottom, 0px));
+}
+.agent-close-bar {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+    width: 100%; min-height: 40px; padding: 8px 14px;
+    border-bottom: 1px solid var(--line);
+    color: var(--dim); font: 12px/1.5 var(--ui); cursor: pointer;
+}
+.agent-close-bar:hover { color: var(--ink); background: var(--card); }
 .bg-strip-line {
     display: flex; align-items: center; gap: 7px;
     width: 100%; min-width: 0; min-height: 28px;
@@ -100,7 +113,7 @@
         position: fixed; left: 0; right: 0; bottom: 0;
         width: auto; max-height: 72vh;
         border-radius: 14px 14px 0 0; border-bottom: 0;
-        padding-bottom: env(safe-area-inset-bottom);
+        padding-bottom: max(var(--indicator, 0px), env(safe-area-inset-bottom, 0px));
     }
     .bg-sheet-body { padding-left: 12px; padding-right: 12px; }
 }

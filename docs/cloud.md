@@ -245,6 +245,18 @@ subagents are running. Complete zero, unknown readings and omitted-row counts re
 their meanings. An opened detail missing that reading asks a machine supporting
 `sessions.row` to restate just that row, sharing the question recovery's existing
 throttle. Unopened list rows initiate no additional reads.
+
+The provider subagent view replaces the main Session's to-do fold with **Close**,
+which returns to the parent conversation without stopping the agent. Claude and
+Codex share this layout. With no composer or status line below it, the background
+strip reserves the existing `--indicator` inset itself; the phone's background
+sheet uses that inset too, since this page does not request `viewport-fit=cover`.
+The agent header shows its own recorded model before its type and activity.
+Claude's actual assistant-message model takes precedence over an optional launch
+sidecar alias, including for recently completed agents. It shares the bounded,
+stat-invalidated activity tail cache, so an unchanged reading opens no files.
+An absent model stays absent rather than inheriting the parent Session's model.
+
 The detail selects that pinned destination during render, before local selection effects run.
 Until its machine and execution match a display row, it shows no conversation; an earlier local
 selection cannot supply the detail while a newly opened Session is arriving.

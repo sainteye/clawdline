@@ -77,8 +77,13 @@ type metaCache struct {
 type doingCache struct {
 	size  int64
 	mod   time.Time
-	value string
+	value agentActivity
 	used  uint64
+}
+
+type agentActivity struct {
+	Doing string
+	Model string
 }
 
 type noticeCache struct {
@@ -382,11 +387,15 @@ func (r *Reader) readClaude(s session.Session, cost *Measurement) ([]session.Age
 	}
 	out := make([]session.Agent, 0, len(eligible))
 	for _, item := range eligible {
+		activity, readable := r.readActivity(item.path, cost)
+		if !readable && item.agent.State == session.AgentRunning {
+			return nil, unknown(session.AgentsUnreadable)
+		}
+		if activity.Model != "" {
+			item.agent.Model = activity.Model
+		}
 		if item.agent.State == session.AgentRunning {
-			item.agent.Doing, ok = r.readDoing(item.path, cost)
-			if !ok {
-				return nil, unknown(session.AgentsUnreadable)
-			}
+			item.agent.Doing = activity.Doing
 		}
 		out = append(out, item.agent)
 	}
@@ -495,11 +504,11 @@ func (r *Reader) readCodexMeta(id string, cost *Measurement) (meta, codexMeta, b
 	return value, identity, true
 }
 
-func (r *Reader) readDoing(path string, cost *Measurement) (string, bool) {
+func (r *Reader) readActivity(path string, cost *Measurement) (agentActivity, bool) {
 	cost.Stats++
 	st, err := os.Stat(path)
 	if err != nil {
-		return "", false
+		return agentActivity{}, false
 	}
 	r.mu.Lock()
 	if hit, ok := r.doings[path]; ok && hit.size == st.Size() && hit.mod.Equal(st.ModTime()) {
@@ -512,7 +521,7 @@ func (r *Reader) readDoing(path string, cost *Measurement) (string, bool) {
 	r.mu.Unlock()
 	f, err := os.Open(path)
 	if err != nil {
-		return "", false
+		return agentActivity{}, false
 	}
 	defer f.Close()
 	start := st.Size() - latestToolWindow
@@ -524,7 +533,7 @@ func (r *Reader) readDoing(path string, cost *Measurement) (string, bool) {
 	cost.Opened++
 	cost.Bytes += int64(n)
 	if err != nil && err != io.EOF {
-		return "", false
+		return agentActivity{}, false
 	}
 	data = data[:n]
 	if start > 0 {
@@ -532,7 +541,7 @@ func (r *Reader) readDoing(path string, cost *Measurement) (string, bool) {
 			data = data[cut+1:]
 		}
 	}
-	value := latestTool(data)
+	value := latestActivity(data)
 	r.mu.Lock()
 	r.clock++
 	r.doings[path] = doingCache{size: st.Size(), mod: st.ModTime(), value: value, used: r.clock}
@@ -541,15 +550,19 @@ func (r *Reader) readDoing(path string, cost *Measurement) (string, bool) {
 	return value, true
 }
 
-func latestTool(data []byte) string {
-	latest := ""
+// The model belongs to this agent's own assistant message. A launch sidecar
+// may omit an inherited model or name only an alias; neither the parent's
+// model nor text mentioning a model can establish what this agent used.
+func latestActivity(data []byte) agentActivity {
+	latest := agentActivity{}
 	for _, line := range bytes.Split(data, []byte{'\n'}) {
-		if !bytes.Contains(line, []byte(`"tool_use"`)) {
+		if !bytes.Contains(line, []byte(`"tool_use"`)) && !bytes.Contains(line, []byte(`"model"`)) {
 			continue
 		}
 		var row struct {
 			Type    string `json:"type"`
 			Message struct {
+				Model   string `json:"model"`
 				Content []struct {
 					Type string `json:"type"`
 					Name string `json:"name"`
@@ -559,9 +572,12 @@ func latestTool(data []byte) string {
 		if json.Unmarshal(line, &row) != nil || row.Type != "assistant" {
 			continue
 		}
+		if row.Message.Model != "" && !strings.HasPrefix(row.Message.Model, "<") {
+			latest.Model = row.Message.Model
+		}
 		for _, block := range row.Message.Content {
 			if block.Type == "tool_use" && block.Name != "" {
-				latest = block.Name
+				latest.Doing = block.Name
 			}
 		}
 	}
