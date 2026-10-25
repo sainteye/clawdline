@@ -151,7 +151,8 @@ func TestConfigureDispatchShutdownCancelsLease(t *testing.T) {
 	go func() { done <- h.ConfigureDispatch(context.Background(), row, "synthetic-pro", "high", "full") }()
 	deadline := time.Now().Add(time.Second)
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "config-writes")); err == nil {
+		// File creation precedes the peer write; wait for the request bytes.
+		if raw, err := os.ReadFile(filepath.Join(dir, "config-writes")); err == nil && string(raw) == "mode=yolo\n" {
 			break
 		}
 		if time.Now().After(deadline) {

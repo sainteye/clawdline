@@ -4,6 +4,8 @@ This inventory records the 2026-10-20 source review and gives each screen a stab
 
 SK-01 was implemented and browser-checked in the original inventory. The person subsequently approved the 19 Recommended entries (SK-02, SK-04, SK-09–SK-17, SK-19, SK-21–SK-24, SK-26, SK-30 and SK-31). These now use skeletons; Conditional entries remain proposals. EX entries already have skeletons; NO entries should retain meaningful action or connection state. The review covered console pages, Session panels, project dialogs, Cloud entry points, admin panels and onboarding statistics. It did not measure production waiting times or establish end-to-end coverage for every loading branch.
 
+Person-triggered asynchronous writes and submissions have a separate [action waiting inventory](console-action-loading.md), with AL IDs and a screenshot report.
+
 ## Candidate screens
 
 | ID | Name | Feedback label | Recommendation | Priority | Source |
