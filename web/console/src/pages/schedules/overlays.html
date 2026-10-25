@@ -4,12 +4,15 @@
         <div class="schedule-history-head">
             <div class="schedule-history-heading">
                 <h2 id="schedule-history-title">Schedule</h2>
-                <p id="schedule-history-meta"></p>
-                <p id="schedule-history-agent" hidden></p>
             </div>
-            <div class="schedule-history-actions">
-                <button class="chip" id="schedule-history-edit" type="button">Edit schedule</button>
-            </div>
+            <button class="chip" id="schedule-history-close" type="button">Close</button>
+        </div>
+        <div class="schedule-history-heading">
+            <p id="schedule-history-meta"></p>
+            <p id="schedule-history-agent" hidden></p>
+        </div>
+        <div class="schedule-history-actions">
+            <button class="chip" id="schedule-history-edit" type="button">Edit schedule</button>
         </div>
         <p class="said" id="schedule-history-said" role="status" aria-live="polite"></p>
         <section class="schedule-webhook" id="schedule-webhook" hidden>
@@ -29,9 +32,6 @@
         <ul class="schedule-run-rows" id="schedule-run-rows"></ul>
         <p class="schedule-history-empty" id="schedule-history-empty" hidden></p>
         <p class="schedule-history-capped" id="schedule-history-capped" hidden></p>
-        <div class="buttons">
-            <button class="chip" id="schedule-history-close" type="button">Close</button>
-        </div>
     </div>
 </div>
 

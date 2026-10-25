@@ -2667,7 +2667,7 @@ function ensureOverlays(): void {
   })
   el("schedule-history").addEventListener("keydown", (ev) => {
     if (ev.key !== "Tab") return
-    const items = [document.getElementById("schedule-history-run-now"), el("schedule-history-edit")]
+    const items = [el("schedule-history-close"), document.getElementById("schedule-history-run-now"), el("schedule-history-edit")]
       .concat(
         Array.from(
           el("schedule-history-sheet").querySelectorAll<HTMLElement>("#schedule-webhook button:not([hidden]):not([disabled])"),
@@ -2675,7 +2675,6 @@ function ensureOverlays(): void {
       )
       .concat(Array.from(el("schedule-run-rows").querySelectorAll<HTMLElement>(".schedule-run-button:not([disabled])")))
       .concat(Array.from(el("schedule-history-sheet").querySelectorAll<HTMLElement>("#schedule-history-more:not([hidden])")))
-      .concat([el("schedule-history-close")])
       .filter((item): item is HTMLElement => !!item && !(item as HTMLButtonElement).disabled)
     const at = items.indexOf(document.activeElement as HTMLElement)
     if (at < 0 || !items.length) return
