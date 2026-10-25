@@ -1,3 +1,4 @@
+import { ActionProgress } from "../ui/ActionProgress.js"
 import { catalogFormat, catalogWord, catalogWordLanguage, currentCatalogTag } from "../catalog.js"
 import { createPortal } from "react-dom"
 import { showModalWithoutChoice } from "../modal-focus.js"
@@ -438,7 +439,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       {removeError && <p className="project-remove-error" role="alert">{removeError}</p>}
       <div className="project-remove-actions">
         <button type="button" disabled={removeBusy} onClick={() => setRemoveTarget(null)}>{nextWord("projectsRemoveCancel")}</button>
-        <button type="button" disabled={removeBusy} onClick={() => void confirmRemove()}>{removeBusy ? nextWord("projectsRemoveBusy") : nextWord("projectsRemoveConfirm")}</button>
+        <button type="button" disabled={removeBusy} aria-busy={removeBusy} onClick={() => void confirmRemove()}><ActionProgress busy={removeBusy}>{removeBusy ? nextWord("projectsRemoveBusy") : nextWord("projectsRemoveConfirm")}</ActionProgress></button>
       </div>
     </dialog>
     <dialog className="project-remove-dialog" ref={worktreeDialog}

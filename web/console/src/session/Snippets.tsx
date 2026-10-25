@@ -1,3 +1,4 @@
+import { ActionProgress, ActionSpinner } from "../ui/ActionProgress.js"
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react"
 import { focusModalContainer } from "../modal-focus.js"
 import { createPortal } from "react-dom"
@@ -211,6 +212,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
   // One write at a time: a second ↑ before the first has landed would send an
   // order built from rows the machine has already moved.
   const busy = useRef(false)
+  const [writing, setWriting] = useState<"save" | "delete" | "">("")
   // The same for Start: a second tap can land before the disabled button is drawn.
   const launching = useRef(false)
   // Which control the keyboard should be standing on after the next redraw.
@@ -360,6 +362,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
       if (event.key !== "Escape") return
       event.preventDefault()
       event.stopPropagation()
+      if (busy.current || workflowSaving || workflowDeleting || startingWorkflow) return
       if (workflowDraft) closeWorkflowEditor()
       else if (clawdfatherDraft) closeClawdfatherEditor()
       else if (editorOpen) closeEditor()
@@ -413,18 +416,17 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
    * at the end of the other one — and a sheet that guessed those would be showing
    * an order the next reader does not have.
    */
-  const write = (work: () => Promise<unknown>, options: { thenClose?: boolean; keepScroll?: boolean } = {}) => {
+  const write = (work: () => Promise<unknown>, options: { thenClose?: boolean; keepScroll?: boolean; action?: "save" | "delete" } = {}) => {
     if (busy.current) return Promise.resolve(false)
     busy.current = true
+    setWriting(options.action ?? "save")
     setSaid("")
     return work()
       .then(() => {
-        busy.current = false
         if (options.thenClose) closeEditor()
         return refresh({ keepScroll: options.keepScroll }).then(() => true)
       })
       .catch((failure: unknown) => {
-        busy.current = false
         // Nothing was redrawn, so the button the press came from still holds
         // the keyboard.
         pendingFocus.current = null
@@ -433,6 +435,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
         else setSaid(message)
         return false
       })
+      .finally(() => { busy.current = false; setWriting("") })
   }
 
   /** A press: the words into the box, the sheet shut, and nothing else. */
@@ -464,7 +467,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
     if (!snippet || !may.remove) return
     setMenuFor(-1)
     wantFocus("data-snippet-more", snippet)
-    void write(() => deleteSnippet(row.id, snippet.id), { thenClose: true })
+    void write(() => deleteSnippet(row.id, snippet.id), { thenClose: true, action: "delete" })
   }
 
   const move = (snippet: Snippet | undefined, delta: number) => {
@@ -544,20 +547,19 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
   useLayoutEffect(() => { if (draft) focusModalContainer(editorSheet.current) }, [draft !== null])
   useLayoutEffect(() => { if (clawdfatherDraft) focusModalContainer(clawdfatherSheet.current) }, [clawdfatherDraft !== null])
 
-  const clawdfatherWrite = async (work: () => Promise<unknown>) => {
+  const clawdfatherWrite = async (work: () => Promise<unknown>, action: "save" | "delete" = "save") => {
     if (busy.current) return
     busy.current = true
+    setWriting(action)
     setClawdfatherSaid("")
     try {
       await work()
-      busy.current = false
       closeClawdfatherEditor()
       await refresh({ keepScroll: true })
     } catch (failure) {
-      busy.current = false
       setClawdfatherSaid(failure instanceof SnippetFailure && failure.code === "snippet_limit_reached"
         ? clawdfatherWord("limitReached") : snippetSentence(failure, T.webRequestFailed))
-    }
+    } finally { busy.current = false; setWriting("") }
   }
 
   const saveClawdfather = () => {
@@ -578,7 +580,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
     if (!clawdfatherDraft?.id) return
     if (!clawdfatherArmed) { setClawdfatherArmed(true); return }
     const id = clawdfatherDraft.id
-    void clawdfatherWrite(() => deleteSnippet(row.id, id))
+    void clawdfatherWrite(() => deleteSnippet(row.id, id), "delete")
   }
 
   const saveWorkflow = async () => {
@@ -737,7 +739,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
           <button
             className="snippets-new"
             id="snippets-new"
-            type="button"
+            type="button" disabled={!!writing}
             ref={newButton}
             hidden={!may.create || loading || !!error || (tab === "workflow" && !!currentWorkflow) || (tab === "clawdfather" && coordination)}
             aria-label={tab === "workflow" ? W("new") : tab === "clawdfather" ? clawdfatherWord("new") : T.webSnippetNew}
@@ -753,19 +755,20 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
           <span className="workflow-detail-actions">
             <button type="button" aria-label={W("editAction")} title={W("editAction")} disabled={workflowDeleting || startingWorkflow}
               onClick={() => { setWorkflowSaveError(""); setWorkflowDraft({ id: currentWorkflow.id, title: currentWorkflow.title, body: currentWorkflow.body, global: !currentWorkflow.project, source: currentWorkflow.source }) }}><WorkIcon name="edit" /></button>
-            <button type="button" className="workflow-delete" aria-label={W("delete")} title={W("delete")} disabled={workflowDeleting || startingWorkflow}
-              onClick={() => void removeWorkflow()}><WorkIcon name="delete" /></button>
+            <button type="button" className="workflow-delete" aria-label={workflowDeleting ? catalogWord("literal", "a5df1fce3ed1") : W("delete")} title={workflowDeleting ? catalogWord("literal", "a5df1fce3ed1") : W("delete")} disabled={workflowDeleting || startingWorkflow}
+              aria-busy={workflowDeleting} onClick={() => void removeWorkflow()}>{workflowDeleting ? <ActionSpinner /> : <WorkIcon name="delete" />}</button>
           </span>
         </div> : <div className="snippets-tabs" role="tablist" aria-label={tabs.map(tabLabel).join(" / ")}
           onKeyDown={(event) => {
             if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
             event.preventDefault()
+            if (busy.current) return
             const next = tabs[(tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]
             setTab(next)
             ;(event.currentTarget.querySelector(`#${next}-tab`) as HTMLButtonElement | null)?.focus()
           }}>
           {tabs.map((each) => <button key={each} id={`${each}-tab`} type="button" role="tab" aria-controls={tabPanel[each]} tabIndex={tab === each ? 0 : -1}
-            aria-selected={tab === each} onClick={() => setTab(each)}>{tabLabel(each)}</button>)}
+            aria-selected={tab === each} disabled={!!writing} onClick={() => setTab(each)}>{tabLabel(each)}</button>)}
         </div>}
         {tab === "clawdfather" ? coordination
           ? <ResourceCoordination onBack={() => setCoordination(false)} onAsk={() => pickClawdfather(catalogWord("resourceCoordination", "prompt"))} />
@@ -777,6 +780,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
           role="tabpanel"
           aria-labelledby="snippet-tab"
           ref={list}
+          inert={!!writing} aria-busy={!!writing}
           onClick={pressed}
         >{loading ? <SnippetSkeleton label={T.webReading} /> : <div dangerouslySetInnerHTML={{ __html: listHTML }} />}</div> : currentWorkflow ? <div className="workflow-detail-scroll"><div className="workflow-launch">
           <span className="workflow-launch-label">{W("reviewLaunch")}</span><h3>{currentWorkflow.title}</h3><p>{currentWorkflow.source ? workflowPreview?.id === currentWorkflow.id ? workflowPreview.body : W("sourceChecking") : currentWorkflow.body}</p>
@@ -802,20 +806,20 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
           })}
         </div>}
         <p className="said" id="snippets-said" role="status" aria-live="polite">
-          {said}
+          {writing && !draft && !clawdfatherDraft ? <ActionProgress busy label={catalogWord("literal", writing === "delete" ? "a5df1fce3ed1" : "21aa64dd7446")}>{said}</ActionProgress> : said}
         </p>
         <div className="buttons">
           {tab === "workflow" && <button className="workflow-start" type="button" aria-busy={startingWorkflow} disabled={!currentWorkflow || startingWorkflow || !!currentWorkflow.source && workflowSourceStatus !== "ready"} onClick={() => void startWorkflow()}>
             {startingWorkflow && <span className="workflow-start-spinner" aria-hidden="true" />}
             {startingWorkflow ? W("starting") : W("start")}
           </button>}
-          <button className="chip" id="snippets-close" type="button" ref={closeButton} onClick={onClose}>
+          <button className="chip" id="snippets-close" type="button" disabled={!!writing} ref={closeButton} onClick={onClose}>
             {T.webClose}
           </button>
         </div>
       </div>
       {draft ? (
-        <div className="overlay" id="snippet-editor" onClick={closeEditor}>
+        <div className="overlay" id="snippet-editor" onClick={() => { if (!busy.current) closeEditor() }}>
           <div
             className="sheet snippet-editor-sheet"
             ref={editorSheet}
@@ -927,7 +931,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
               <button
                 className="chip danger"
                 id="snippet-editor-delete"
-                type="button"
+                type="button" disabled={!!writing} aria-busy={writing === "delete"}
                 hidden={!editing || !may.remove}
                 onClick={() => {
                   if (!editing) return
@@ -938,19 +942,19 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
                   remove(editing)
                 }}
               >
-                {armed ? T.webSnippetDeleteAsk : T.webSnippetDelete}
+                <ActionProgress busy={writing === "delete"} label={catalogWord("literal", "a5df1fce3ed1")}>{armed ? T.webSnippetDeleteAsk : T.webSnippetDelete}</ActionProgress>
               </button>
-              <button className="chip" id="snippet-editor-cancel" type="button" onClick={closeEditor}>
+              <button className="chip" id="snippet-editor-cancel" type="button" disabled={!!writing} onClick={closeEditor}>
                 {T.webCancel}
               </button>
-              <button className="chip confirm-go" id="snippet-editor-save" type="button" onClick={save}>
-                {T.webSnippetSave}
+              <button className="chip confirm-go" id="snippet-editor-save" type="button" disabled={!!writing} aria-busy={writing === "save"} onClick={save}>
+                <ActionProgress busy={writing === "save"} label={catalogWord("literal", "21aa64dd7446")}>{T.webSnippetSave}</ActionProgress>
               </button>
             </div>
           </div>
         </div>
       ) : null}
-      {clawdfatherDraft && <div className="overlay" id="clawdfather-editor" onClick={closeClawdfatherEditor}>
+      {clawdfatherDraft && <div className="overlay" id="clawdfather-editor" onClick={() => { if (!busy.current) closeClawdfatherEditor() }}>
         <div className="sheet snippet-editor-sheet" ref={clawdfatherSheet} role="dialog" aria-modal="true" aria-labelledby="clawdfather-editor-title" onClick={(event) => event.stopPropagation()}>
           <h2 id="clawdfather-editor-title">{clawdfatherWord(clawdfatherDraft.id ? "editing" : "new")}</h2>
           <div className="block"><label className="field-label" htmlFor="clawdfather-editor-title-field">{clawdfatherWord("name")}</label>
@@ -963,14 +967,14 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
               onChange={(event) => { setClawdfatherArmed(false); setClawdfatherDraft({ ...clawdfatherDraft, body: event.target.value }) }} /></div>
           <p className="said" id="clawdfather-editor-said" role="status" aria-live="polite">{clawdfatherSaid}</p>
           <div className="buttons">
-            {clawdfatherDraft.id && may.remove ? <button className="chip danger" id="clawdfather-editor-delete" type="button" onClick={removeClawdfather}>
-              {clawdfatherArmed ? T.webSnippetDeleteAsk : T.webSnippetDelete}</button> : null}
-            <button className="chip" type="button" onClick={closeClawdfatherEditor}>{T.webCancel}</button>
-            <button className="chip confirm-go" id="clawdfather-editor-save" type="button" onClick={saveClawdfather}>{T.webSnippetSave}</button>
+            {clawdfatherDraft.id && may.remove ? <button className="chip danger" id="clawdfather-editor-delete" type="button" disabled={!!writing} aria-busy={writing === "delete"} onClick={removeClawdfather}>
+              <ActionProgress busy={writing === "delete"} label={catalogWord("literal", "a5df1fce3ed1")}>{clawdfatherArmed ? T.webSnippetDeleteAsk : T.webSnippetDelete}</ActionProgress></button> : null}
+            <button className="chip" type="button" disabled={!!writing} onClick={closeClawdfatherEditor}>{T.webCancel}</button>
+            <button className="chip confirm-go" id="clawdfather-editor-save" type="button" disabled={!!writing} aria-busy={writing === "save"} onClick={saveClawdfather}><ActionProgress busy={writing === "save"} label={catalogWord("literal", "21aa64dd7446")}>{T.webSnippetSave}</ActionProgress></button>
           </div>
         </div>
       </div>}
-      {workflowDraft && <div className="overlay" id="workflow-quick-editor" onClick={closeWorkflowEditor}>
+      {workflowDraft && <div className="overlay" id="workflow-quick-editor" onClick={() => { if (!workflowSaving) closeWorkflowEditor() }}>
         <div className="sheet snippet-editor-sheet" role="dialog" aria-modal="true" aria-labelledby="workflow-quick-title" onClick={(event) => event.stopPropagation()}>
           <h2 id="workflow-quick-title">{W(workflowDraft.id ? "edit" : "new")}</h2>
           <div className="block"><label className="field-label" htmlFor="workflow-quick-name">{W("name")}</label>
@@ -988,8 +992,8 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
               aria-pressed={workflowDraft.global} onClick={() => setWorkflowDraft({ ...workflowDraft, global: true })}>{W("global")}</button>
           </div></div>}
           {workflowSaveError && <p className="said" role="alert">{workflowSaveError}</p>}
-          <div className="buttons"><button className="chip" type="button" onClick={closeWorkflowEditor}>{W("cancel")}</button>
-            <button className="chip confirm-go" type="button" disabled={workflowSaving} onClick={() => void saveWorkflow()}>{W("save")}</button></div>
+          <div className="buttons"><button className="chip" type="button" disabled={workflowSaving} onClick={closeWorkflowEditor}>{W("cancel")}</button>
+            <button className="chip confirm-go" type="button" disabled={workflowSaving} aria-busy={workflowSaving} onClick={() => void saveWorkflow()}><ActionProgress busy={workflowSaving} label={catalogWord("literal", "21aa64dd7446")}>{W("save")}</ActionProgress></button></div>
         </div>
       </div>}
     </>

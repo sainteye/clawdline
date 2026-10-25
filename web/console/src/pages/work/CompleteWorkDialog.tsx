@@ -1,3 +1,4 @@
+import { ActionProgress } from "../../ui/ActionProgress.js"
 import { useLayoutEffect, useRef } from "react"
 import { catalogWord } from "../../catalog.js"
 import { focusModalContainer } from "../../modal-focus.js"
@@ -20,7 +21,7 @@ export function CompleteWorkDialog({ item, busy, failure, onConfirm, onCancel }:
       <p>{completeConfirmWords(item)}</p>
       <div className="work-actions">
         <button className="chip on" type="submit" disabled={busy} aria-busy={busy}>
-          <WorkIcon name="check" />{busy ? catalogWord("literal", "935d3ef2ee45") : catalogWord("literal", "5a651fa3c7ca")}</button>
+          <ActionProgress busy={busy}>{!busy && <WorkIcon name="check" />}{busy ? catalogWord("literal", "935d3ef2ee45") : catalogWord("literal", "5a651fa3c7ca")}</ActionProgress></button>
         <button className="chip" type="button" disabled={busy} onClick={onCancel}>{catalogWord("inline", "2cd0f3be8738")}</button>
       </div>
       {failure && <p role="alert">{failure}</p>}

@@ -1,0 +1,4 @@
+.action-progress { display: inline-flex; align-items: center; justify-content: center; gap: .4em; vertical-align: middle; }
+.action-spinner { display: inline-block; box-sizing: border-box; flex: none; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: action-progress-spin .8s linear infinite; }
+@keyframes action-progress-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .action-spinner { animation: none; } }

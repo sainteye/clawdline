@@ -1,3 +1,4 @@
+import { ActionProgress } from "../../ui/ActionProgress.js"
 import { localizedLiteralMap } from "../../catalog.js"
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord } from "../../catalog.js"
@@ -49,6 +50,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [clone, setClone] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [detaching, setDetaching] = useState("")
   const [lines, setLines] = useState<string[]>([])
   const [error, setError] = useState("")
   const refreshed = useRef(false)
@@ -119,7 +121,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
 
   async function readSource() {
     if (!seam || !source || source.online === false || busy) return
-    setBusy(true); setError(""); setLines([]); setManifest(null)
+    setDetaching(""); setBusy(true); setError(""); setLines([]); setManifest(null)
     try {
       const offer = await seam.read<SyncManifest>(source.id, "project-manifest", {})
       setManifest(offer)
@@ -131,7 +133,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
 
   async function syncPicked() {
     if (!seam || !source || !manifest || busy) return
-    setBusy(true); setError("")
+    setDetaching(""); setBusy(true); setError("")
     const from: SyncSource = { machine: source.id, name: source.name }
     const out: string[] = []
     for (const p of manifest.projects) {
@@ -155,6 +157,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
 
   async function detach(repo: string) {
     if (busy) return
+    setDetaching(repo)
     setBusy(true); setError("")
     try {
       await detachProjectMirror(repo)
@@ -181,7 +184,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
       {mirror.projects.map((p) => <div className="project-sync-row" key={p.repo}>
         <Mark icon={p.icon as Icon} cellPx={3} />
         <span><strong>{p.label}</strong> <small>{p.repo}{catalogWord("inline", "752c8278d622")} {p.source.name || p.source.machine} · {when(p.applied_at)}</small></span>
-        <button type="button" disabled={busy} onClick={() => void detach(p.repo)}>{catalogWord("inline", "fd63b0b7a79b")}</button>
+        <button type="button" disabled={busy} aria-busy={busy && detaching === p.repo} onClick={() => void detach(p.repo)}><ActionProgress busy={busy && detaching === p.repo}>{catalogWord("inline", "fd63b0b7a79b")}</ActionProgress></button>
       </div>)}
     </div>}
     {mirror && mirror.clones.length > 0 && <div className="project-sync-list">

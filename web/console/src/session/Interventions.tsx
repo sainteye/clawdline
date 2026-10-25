@@ -1,3 +1,4 @@
+import { ActionProgress, ActionSpinner } from "../ui/ActionProgress.js"
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react"
@@ -364,6 +365,7 @@ function InterventionCard({ note, disabled, sending, secretReceived, onReplace, 
   onHandoff: (note: HumanInterventionV2, value: string) => void
 }) {
   const [replacingSecret, setReplacingSecret] = useState(false)
+  const [pendingAction, setPendingAction] = useState("")
   useEffect(() => { if (secretReceived && !sending) setReplacingSecret(false) }, [secretReceived, sending])
   const fromAnotherSession = note.source_conversation !== note.target_conversation
   const isReading = note.kind === "read" || note.kind === "report"
@@ -394,15 +396,16 @@ function InterventionCard({ note, disabled, sending, secretReceived, onReplace, 
       <p className="human-intervention-hint">{composeOnly ? catalogWord("literal", "981ea9fd14d5") : catalogWord("literal", "3e129c69ac26")}</p>
       {(note.options.length ? note.options : [{ label: catalogWord("literal", "cc6ade09e09b"), draft: note.action }]).map((option, index) =>
         <button className="human-intervention-option" type="button" key={`${index}:${option.label}`}
-          disabled={disabled} aria-label={labelled(composeOnly ? catalogWord("literal", "e3949613add9") : note.resolved_at ? catalogWord("literal", "7d6cc5d58935") : catalogWord("literal", "2ffd9b695259"), option.label) + clauseSeparator() + option.draft} onClick={() => composeOnly ? onCompose(note, option.draft) : onReply(note, interventionReplyText(note, option.draft))}>
+          disabled={disabled} aria-label={labelled(composeOnly ? catalogWord("literal", "e3949613add9") : note.resolved_at ? catalogWord("literal", "7d6cc5d58935") : catalogWord("literal", "2ffd9b695259"), option.label) + clauseSeparator() + option.draft} aria-busy={sending && pendingAction === "reply:" + index} onClick={() => { if (composeOnly) onCompose(note, option.draft); else { setPendingAction("reply:" + index); onReply(note, interventionReplyText(note, option.draft)) } }}>
+          {sending && pendingAction === "reply:" + index && <span className="action-progress" role="status"><ActionSpinner />{catalogWord("literal", "84b95f498939")}</span>}
           {note.options.length > 0 && <strong>{option.label}</strong>}
           <span>{option.draft}</span>
         </button>)}
     </div>}
     <div className="human-intervention-state">
       <div className="human-intervention-actions">
-        {!note.resolved_at ? <button className="human-intervention-resolve" type="button" disabled={disabled} onClick={() => onAction(note, "resolve")}><WorkIcon name="check" />{catalogWord("inline", "f51bfc3ed707")}</button>
-          : <button className="human-intervention-reopen" type="button" disabled={disabled} onClick={() => onAction(note, "reopen")}>{catalogWord("inline", "507ec6638095")}</button>}
+        {!note.resolved_at ? <button className="human-intervention-resolve" type="button" disabled={disabled} aria-busy={sending && pendingAction === "resolve"} onClick={() => { setPendingAction("resolve"); onAction(note, "resolve") }}><ActionProgress busy={sending && pendingAction === "resolve"}>{!(sending && pendingAction === "resolve") && <WorkIcon name="check" />}{catalogWord("inline", "f51bfc3ed707")}</ActionProgress></button>
+          : <button className="human-intervention-reopen" type="button" disabled={disabled} aria-busy={sending && pendingAction === "reopen"} onClick={() => { setPendingAction("reopen"); onAction(note, "reopen") }}><ActionProgress busy={sending && pendingAction === "reopen"}>{catalogWord("inline", "507ec6638095")}</ActionProgress></button>}
       </div>
     </div>
   </article>

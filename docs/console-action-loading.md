@@ -1,12 +1,30 @@
 # Console action waiting inventory
 
-Source review: 2026-10-25, base `11cfbfe32a879c5ab320f76681880548b2868502`. This is a bounded, single-pass inventory of the major person-triggered action surfaces under `web/console/src`, not an implementation plan approved by the person. Initial data reading remains in [the skeleton inventory](console-loading.md); none of its SK/EX/NO IDs are changed.
+Source review: 2026-10-25, base `11cfbfe32a879c5ab320f76681880548b2868502`. This page preserves the bounded, single-pass inventory of major person-triggered actions under `web/console/src` and records the implementation approved on 2026-10-25. Initial data reading remains in [the skeleton inventory](console-loading.md); none of its SK/EX/NO IDs are changed.
 
 [Open the Taiwan Traditional Chinese screenshot report](reports/action-loading-audit.html). The root must deliver that document through the canonical Clawdline Cloud document locator; this relative repository link is not Cloud acceptance.
 
-The complete numbered review set contains 27 entries: 1 completed, 15 recommended, 8 conditional, 3 not recommended. IDs and feedback labels are stable; append future findings instead of renumbering. AL-01 was deployed to the hosted console in `2d26bfb1b`; its baseline screenshot intentionally preserves the earlier text-only state.
+The person approved AL-01–AL-16, AL-25 and AL-27 on 2026-10-25. These 18 entries are now implemented; AL-01 was already deployed separately in `2d26bfb1b`. The other entries retain their original recommendations (5 recommended, 1 conditional, 3 retained). IDs and feedback labels remain unchanged.
 
-## Complete feedback table
+[Open the approved implementation screenshot report](reports/action-loading-implemented.html). The [original screenshot inventory](reports/action-loading-audit.html) remains available for comparison.
+
+## Approved implementation
+
+| IDs | Implemented feedback |
+| --- | --- |
+| AL-01 | Existing Playbook start spinner, busy state and reduced motion retained. |
+| AL-02–AL-05 | Playbook and reusable-text saves/deletes expose request progress; snippet writes remain serialized through refresh, with a visible list status for ordering and scope changes. |
+| AL-06–AL-09 | The selected task/answer/Note action exposes progress; create/edit submits retain a saving indicator across preparation and write stages. |
+| AL-10–AL-14 | Proposal decisions and Board create/edit/delete/complete controls expose progress on the pressed action. Existing operation labels remain. |
+| AL-15–AL-16 | Project instruction saving has an indicator on Save; detach exposes progress on the corresponding Project. Existing source-read and sync phases remain. |
+| AL-25 | Ordinary schedule create/save/delete expose progress; cross-machine move wording remains owned by its existing staged flow. |
+| AL-27 | Project removal gains a spinner beside its existing removing label. |
+
+The shared 14 px indicator uses the existing English and Taiwan Traditional Chinese catalogs. Busy controls expose `aria-busy`, keep request and delivery receipts separate and stop rotating under reduced motion. Icon-only actions retain accessible labels. No server request types or completion criteria are changed.
+
+The 18 approved representative states were rendered from the actual components with labeled synthetic data at 430 px, and checked at 390 px and 1024 px for action-control overflow. All had visible indicators and no recorded browser exceptions; reduced-motion checks passed. A separate full-console fixture delayed a real Playbook save, refused it, retried successfully and then deleted the Playbook. It verified the busy control, prevented duplicate requests, removed the indicator on failure, retained the error and completed the successful retry. Screenshot state fixtures do not establish production latency or every grouped action variant.
+
+## Original review table
 
 | ID | Name | Stable feedback label | Trigger | Current waiting behavior | Recommendation and reason | Priority | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |

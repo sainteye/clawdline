@@ -1,3 +1,4 @@
+import { paintActionProgress } from "../ui/ActionProgress.js"
 import { catalogWord } from "../catalog.js"
 import { assistantAdmits, assistantLabel, isAssistant, type AssistantFacts } from "../session/antigravity-ui.js"
 import { STATUS_FRESH_MS } from "../cloud/status-projection.js"
@@ -762,6 +763,7 @@ const Schedule = (() => {
 
   function paint(): void {
     const b = busy()
+    if (!moving()) paintActionProgress(el<HTMLButtonElement>("schedule-go"), creating, creating ? catalogWord("literal", editingId ? "21aa64dd7446" : "aca2a4fc28ff") : editingId ? T().webScheduleSave : T().webScheduleCreate)
     el("schedule-sheet").setAttribute("aria-busy", b ? "true" : "false")
     ;[
       "schedule-every-days",
@@ -1429,6 +1431,7 @@ const Schedule = (() => {
     el("schedule-delete-confirm-sheet").setAttribute("aria-busy", deleteBusy ? "true" : "false")
     el<HTMLButtonElement>("schedule-delete-confirm-cancel").disabled = deleteBusy
     el<HTMLButtonElement>("schedule-delete-confirm-go").disabled = deleteBusy
+    paintActionProgress(el<HTMLButtonElement>("schedule-delete-confirm-go"), deleteBusy, deleteBusy ? catalogWord("literal", "a5df1fce3ed1") : T().webScheduleDelete)
   }
 
   function confirmDelete(): void {

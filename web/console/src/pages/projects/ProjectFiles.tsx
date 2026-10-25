@@ -1,3 +1,4 @@
+import { ActionProgress } from "../../ui/ActionProgress.js"
 import { fileAssistants } from "./project-files-api.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
 import { localizedLiteralMap } from "../../catalog.js"
@@ -213,7 +214,7 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
                 : <pre className="project-files-text" tabIndex={0}>{content.text}</pre>}
               <div className="project-files-actions">
                 {!editing && content.file.editable && <button type="button" onClick={() => { setEditing(true); requestAnimationFrame(() => editor.current?.focus()) }}>{catalogWord("inline", "74aed729535a")}</button>}
-                {editing && <><button type="button" disabled={!dirty || busy} onClick={() => void save()}>{catalogWord("inline", "9c6bde88026e")}</button>
+                {editing && <><button type="button" disabled={!dirty || busy} aria-busy={busy} onClick={() => void save()}><ActionProgress busy={busy} label={catalogWord("literal", "d19eb852ab9d")}>{catalogWord("inline", "9c6bde88026e")}</ActionProgress></button>
                   <button type="button" disabled={busy} onClick={() => { if (!dirty || window.confirm(catalogWord("literal", "c5a4b86fa44f"))) { setDraft(content.text); setEditing(false) } }}>{catalogWord("inline", "7a3efd8a888d")}</button>
                   <button type="button" disabled={busy} onClick={() => void navigator.clipboard.writeText(draft).then(() => setNotice(catalogWord("literal", "d9489690da4d")),
                     // refusal-ok: a clipboard write is refused by the browser's permission, which carries no machine code to name.

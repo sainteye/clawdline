@@ -1,3 +1,4 @@
+import { ActionProgress } from "../../ui/ActionProgress.js"
 import { useAssistantFacts } from "../../session/assistant-facts.js"
 import { assistantAdmits, assistantUnavailable } from "../../session/antigravity-ui.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
@@ -680,10 +681,10 @@ function ProposalQueue({ proposals, items, places, busy, run }: {
           </details>
         </div>
         <div className="work-actions work-proposal-actions" aria-label={catalogFormat("template", "9e9521d6a3b6", [proposal.title])}>
-          <button className="chip on" type="button" disabled={!!busy}
-            onClick={() => void run(proposal.id, () => resolveWorkV2Proposal(proposal.id, "accept"))}>{catalogWord("inline", "44ae4672eed2")}</button>
-          <button className="chip danger" type="button" disabled={!!busy}
-            onClick={() => void run(proposal.id, () => resolveWorkV2Proposal(proposal.id, "reject"))}>{catalogWord("inline", "0f7e826a2f9f")}</button>
+          <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === proposal.id + ":accept"}
+            onClick={() => void run(proposal.id + ":accept", () => resolveWorkV2Proposal(proposal.id, "accept"))}><ActionProgress busy={busy === proposal.id + ":accept"}>{catalogWord("inline", "44ae4672eed2")}</ActionProgress></button>
+          <button className="chip danger" type="button" disabled={!!busy} aria-busy={busy === proposal.id + ":reject"}
+            onClick={() => void run(proposal.id + ":reject", () => resolveWorkV2Proposal(proposal.id, "reject"))}><ActionProgress busy={busy === proposal.id + ":reject"}>{catalogWord("inline", "0f7e826a2f9f")}</ActionProgress></button>
         </div>
       </li>
     })}</ul></div>
@@ -1399,7 +1400,7 @@ function EditWorkModal({ item, busy, failure, onClose, onSave }: {
       <label>{catalogWord("inline", "6fe38ed1ee10")}<input className="work-input" value={title} maxLength={240} onChange={(event) => setTitle(event.target.value)} /></label>
       <VoiceTextarea label={catalogWord("literal", "8561515b8b34")} value={description} maxLength={65536} onValue={setDescription} />
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? catalogWord("literal", "21aa64dd7446") : catalogWord("literal", "9a8097d8f563")}</button>
+      <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready} aria-busy={busy}><ActionProgress busy={busy}>{busy ? catalogWord("literal", "21aa64dd7446") : catalogWord("literal", "9a8097d8f563")}</ActionProgress></button>
         <button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
     </form>
   </div>
@@ -1420,7 +1421,7 @@ function DeleteWorkModal({ item, busy, failure, onClose, onDelete }: {
         <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       <p><strong>{item.title}</strong>{catalogWord("inline", "8e71e614ab8e")}</p>
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <div className="work-actions"><button className="chip danger" type="submit" disabled={busy}>{busy ? catalogWord("literal", "a5df1fce3ed1") : catalogWord("literal", "2f1a94aefc74")}</button>
+      <div className="work-actions"><button className="chip danger" type="submit" disabled={busy} aria-busy={busy}><ActionProgress busy={busy}>{busy ? catalogWord("literal", "a5df1fce3ed1") : catalogWord("literal", "2f1a94aefc74")}</ActionProgress></button>
         <button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "ec3a32317a03")}</button></div>
     </form>
   </div>
@@ -1578,6 +1579,6 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     {featureLike({ kind }) && <ReviewRequiredField id="work-new-review-required" checked={reviewRequired} disabled={busy} onChange={setReviewRequired} />}
     <PendingPictures images={images} busy={busy} note={catalogWord("literal", "983dac4efa86")} onChange={setImages} />
     {failure && <p className="work-note" role="alert">{failure}</p>}
-    <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? catalogWord("literal", "aca2a4fc28ff") : catalogWord("literal", "c5d8aaa266d8")}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
+    <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready} aria-busy={busy}><ActionProgress busy={busy}>{busy ? catalogWord("literal", "aca2a4fc28ff") : catalogWord("literal", "c5d8aaa266d8")}</ActionProgress></button><button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
   </form></div>
 }

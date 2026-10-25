@@ -1,3 +1,4 @@
+import { ActionProgress, ActionSpinner } from "../ui/ActionProgress.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
@@ -59,6 +60,7 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
   const [readFailure, setReadFailure] = useState<{ words: string; reason: string; update: MachineNeedsUpdate | null } | null>(null)
   const [reading, setReading] = useState(false)
   const [busy, setBusy] = useState("")
+  const actionPending = useRef(false)
   const ticket = useRef(0)
   const reader = useRef<OneRead | null>(null)
   // A create reply proves the durable row exists. Keep that receipt on screen
@@ -151,9 +153,10 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
   const hasCompletedDirect = !!completedDirect.length
   const empty = page !== null && !hasAssigned && !hasRecent && !hasDirect && !hasCompletedDirect && !openWorkflows.length && !completedWorkflows.length
   const run = async (key: string, task: () => Promise<unknown>) => {
-    if (busy) return false
+    if (actionPending.current) return false
+    actionPending.current = true
     setBusy(key); setFailure("")
-    try { await task(); expanded.current = true; await refresh(true); return true } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
+    try { await task(); expanded.current = true; await refresh(true); return true } catch (e) { setFailure(failureWords(e)); return false } finally { actionPending.current = false; setBusy("") }
   }
 
   return (
@@ -258,8 +261,8 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
           <VoiceTextarea value={text} maxLength={8192} aria-label={catalogWord("inline", "6c668a34f0bd")} onValue={setText} />
           <PendingPictures images={images} busy={busy === "new"} note={catalogWord("literal", "035492ae6343")} onChange={setImages} />
           <div className="work-actions">
-            <button className="chip on" type="submit" disabled={busy === "new" || !text.trim()}>{catalogWord("inline", "0006d696d8e1")}</button>
-            <button className="chip" type="button" onClick={() => { setAdding(false); setImages([]) }}>{catalogWord("inline", "2cd0f3be8738")}</button>
+            <button className="chip on" type="submit" disabled={busy === "new" || !text.trim()} aria-busy={busy === "new"}><ActionProgress busy={busy === "new"} label={catalogWord("literal", "21aa64dd7446")}>{catalogWord("inline", "0006d696d8e1")}</ActionProgress></button>
+            <button className="chip" type="button" disabled={busy === "new"} onClick={() => { setAdding(false); setImages([]) }}>{catalogWord("inline", "2cd0f3be8738")}</button>
           </div>
         </form>
       </div>}
@@ -277,7 +280,7 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
           <VoiceTextarea value={editText} maxLength={8192} aria-label={workWord("todoEdit")} onValue={setEditText} />
           {failure && <p role="alert" className="work-note">{failure}</p>}
           <div className="work-actions">
-            <button className="chip on" type="submit" disabled={busy === editing.id || !editText.trim()}>{workWord("todoSave")}</button>
+            <button className="chip on" type="submit" disabled={busy === editing.id || !editText.trim()} aria-busy={busy === editing.id}><ActionProgress busy={busy === editing.id} label={catalogWord("literal", "21aa64dd7446")}>{workWord("todoSave")}</ActionProgress></button>
             <button className="chip" type="button" disabled={busy === editing.id} onClick={() => setEditing(null)}>{workWord("todoCancel")}</button>
           </div>
         </form>
@@ -387,6 +390,8 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
 }
 
 function WorkflowTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolean; onAction: (action: "send" | "complete" | "reopen") => void }) {
+  const [pendingAction, setPendingAction] = useState("")
+  const act = (action: "send" | "complete" | "reopen") => { if (!busy) { setPendingAction(action); onAction(action) } }
   const run = workflowRunOf(todo.text)
   if (!run) return null
   const state = todo.completed_at ? "done" : todo.read_at ? "running" : todo.sent_at ? "sent" : "queued"
@@ -399,10 +404,10 @@ function WorkflowTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: bool
         {status}</span></span></summary>
       <p>{run.message}</p>
       <div className="work-actions">
-        {!todo.completed_at && !todo.sent_at && <button className="chip" type="button" disabled={busy} onClick={() => onAction("send")}>{W("send")}</button>}
+        {!todo.completed_at && !todo.sent_at && <button className="chip" type="button" disabled={busy} aria-busy={busy && pendingAction === "send"} onClick={() => act("send")}><ActionProgress busy={busy && pendingAction === "send"}>{W("send")}</ActionProgress></button>}
         {todo.completed_at
-          ? <button className="chip" type="button" disabled={busy} onClick={() => onAction("reopen")}>{W("reopen")}</button>
-          : <button className="chip" type="button" disabled={busy} onClick={() => onAction("complete")}>{W("complete")}</button>}
+          ? <button className="chip" type="button" disabled={busy} aria-busy={busy && pendingAction === "reopen"} onClick={() => act("reopen")}><ActionProgress busy={busy && pendingAction === "reopen"}>{W("reopen")}</ActionProgress></button>
+          : <button className="chip" type="button" disabled={busy} aria-busy={busy && pendingAction === "complete"} onClick={() => act("complete")}><ActionProgress busy={busy && pendingAction === "complete"}>{W("complete")}</ActionProgress></button>}
       </div>
     </details>
   </article>
@@ -411,6 +416,8 @@ function WorkflowTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: bool
 function DirectTodo({ todo, conversation, busy, onEdit, onAction }: { todo: DirectTodoV2; conversation?: string; busy: boolean; onEdit: () => void; onAction: (action: "send" | "complete" | "reopen" | "delete") => void }) {
   const completed = !!todo.completed_at
   const own = addedBySession(todo, conversation)
+  const [pendingAction, setPendingAction] = useState("")
+  const act = (action: "send" | "complete" | "reopen" | "delete") => { if (!busy) { setPendingAction(action); onAction(action) } }
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
   const send = todoSend(todo, now)
   // An unread delivery's Send comes back by itself when its window closes.
@@ -425,8 +432,8 @@ function DirectTodo({ todo, conversation, busy, onEdit, onAction }: { todo: Dire
   return <article className={`session-direct-todo${completed ? " completed" : ""}`} data-author={own ? "session" : "person"}>
     {completed
       ? <button className="session-todo-check completed" type="button" disabled={busy} aria-label={catalogWord("inline", "5959a1a7afc2")}
-        onClick={() => onAction("reopen")}><WorkIcon name="boxChecked" /></button>
-      : <button className="session-todo-check" type="button" disabled={busy} aria-label={catalogWord("inline", "c0b3fbff51cc")} onClick={() => onAction("complete")}><WorkIcon name="box" /></button>}
+        aria-busy={busy && pendingAction === "reopen"} onClick={() => act("reopen")}>{busy && pendingAction === "reopen" ? <ActionSpinner /> : <WorkIcon name="boxChecked" />}</button>
+      : <button className="session-todo-check" type="button" disabled={busy} aria-label={catalogWord("inline", "c0b3fbff51cc")} aria-busy={busy && pendingAction === "complete"} onClick={() => act("complete")}>{busy && pendingAction === "complete" ? <ActionSpinner /> : <WorkIcon name="box" />}</button>}
     <div><b>{todo.text}</b><small>{completed ? catalogFormat("template", "753c4151ac3b", [when(todo.completed_at!)]) : when(todo.created_at)} {own
       && <span className="session-todo-author" aria-label={workWord("todoAddedBySessionLabel")}
         title={workWord("todoAddedBySessionLabel")}>{workWord("todoAddedBySession")}</span>}{(completed || !own) && <span
@@ -438,11 +445,11 @@ function DirectTodo({ todo, conversation, busy, onEdit, onAction }: { todo: Dire
     <div className="work-actions session-todo-actions">
       {send.kind !== "none" && <button className={`chip session-todo-send${send.kind === "send" ? " on danger" : ""}`} type="button" disabled={busy || send.kind === "wait"}
         title={send.kind === "wait" ? catalogWord("literal", "d433aa4d8170") : undefined}
-        onClick={() => onAction("send")}><WorkIcon name="send" />{send.label}</button>}
+        aria-busy={busy && pendingAction === "send"} onClick={() => act("send")}><ActionProgress busy={busy && pendingAction === "send"} label={catalogWord("literal", "84b95f498939")}>{!(busy && pendingAction === "send") && <WorkIcon name="send" />}{send.label}</ActionProgress></button>}
       {!completed && <button className="session-todo-edit" type="button" disabled={busy} aria-label={workWord("todoEdit")} title={workWord("todoEdit")}
         onClick={onEdit}><WorkIcon name="edit" /></button>}
       <button className="session-todo-delete" type="button" disabled={busy} aria-label={catalogWord("inline", "18d1c08576de")} title={catalogWord("inline", "18d1c08576de")}
-        onClick={() => onAction("delete")}><WorkIcon name="delete" /></button>
+        aria-busy={busy && pendingAction === "delete"} onClick={() => act("delete")}>{busy && pendingAction === "delete" ? <ActionSpinner /> : <WorkIcon name="delete" />}</button>
     </div>
   </article>
 }

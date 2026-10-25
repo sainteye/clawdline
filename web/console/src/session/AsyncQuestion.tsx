@@ -1,3 +1,4 @@
+import { ActionSpinner } from "../ui/ActionProgress.js"
 import { assistantFactsMachine, useAssistantFacts } from "./assistant-facts.js"
 import { assistantComposeAdmits, assistantStateCurrent } from "./antigravity-ui.js"
 import type { SessionRow } from "@clawdline/contract"
@@ -32,12 +33,13 @@ export function AsyncQuestion({ sessionID, questions }: { sessionID: string; que
   }
   const sending = useRef(false)
   const [busy, setBusy] = useState(false)
+  const [pendingChoice, setPendingChoice] = useState<{ question: number; label: string } | null>(null)
   const [sent, setSent] = useState<Record<number, boolean>>({})
   const [status, setStatus] = useState("")
   const reply = async (q: Question, index: number, label: string) => {
     if (sending.current || sent[index] || !canReply()) return
     sending.current = true
-    setBusy(true)
+    setPendingChoice({ question: index, label }); setBusy(true)
     setSent((was) => ({ ...was, [index]: true }))
     setStatus("")
     try {
@@ -60,15 +62,16 @@ export function AsyncQuestion({ sessionID, questions }: { sessionID: string; que
       {q.header && <div className="askhead">{q.header}</div>}
       <div className="askq" dangerouslySetInnerHTML={{ __html: L.inlineMdHTML(q.text) }} />
       <ol className="askopts">{q.options.map((option, n) => <li key={n}>
-        <button type="button" className="askopt async-question-option" disabled={busy || !!sent[index] || !canReply()}
+        <button type="button" className="askopt async-question-option" aria-busy={busy && pendingChoice?.question === index && pendingChoice.label === option.label} disabled={busy || !!sent[index] || !canReply()}
           onClick={() => { void reply(q, index, option.label) }}>
-          <span className="n">{n + 1}</span><span className="what">
+          <span className="n">{busy && pendingChoice?.question === index && pendingChoice.label === option.label ? <ActionSpinner /> : n + 1}</span><span className="what">
             <b>{option.label}</b>{option.note && <span className="note">{option.note}</span>}
           </span>
         </button>
       </li>)}</ol>
     </div>)}
     <div className="askany">{canReply() ? nextWord("codexAsyncChoiceHint") : catalogWord("antigravity", "sendUnavailable")}</div>
+    {busy && <div role="status">{catalogWord("literal", "84b95f498939")}</div>}
     {status && <div role="status">{status}</div>}
   </div></div>
 }

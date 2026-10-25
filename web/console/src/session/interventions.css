@@ -52,6 +52,7 @@
 .human-intervention-option:hover { border-color: var(--accent); background: color-mix(in srgb, var(--card) 76%, var(--accent) 12%); }
 .human-intervention-option strong { display: block; margin-bottom: 5px; font-weight: 650; color: var(--accent); }
 .human-intervention-option span { display: block; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.human-intervention-option .action-progress { display: inline-flex; }
 .human-intervention-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
 .human-intervention-actions .human-intervention-resolve { border-color: var(--accent); color: var(--accent); }
 .human-intervention-actions .work-icon { width: 14px; height: 14px; }

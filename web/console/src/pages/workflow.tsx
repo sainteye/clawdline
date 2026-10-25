@@ -1,3 +1,5 @@
+import { ActionProgress } from "../ui/ActionProgress.js"
+import { catalogWord } from "../catalog.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { useEffect, useRef, useState } from "react"
 import { focusModalContainer } from "../modal-focus.js"
@@ -37,6 +39,8 @@ function WorkflowPage({ shown }: { shown: boolean }) {
   const [skillsUnavailable, setSkillsUnavailable] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
+  const [pendingAction, setPendingAction] = useState<"save" | "delete" | "">("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
@@ -131,7 +135,7 @@ function WorkflowPage({ shown }: { shown: boolean }) {
     if (!draft) return
     focusModalContainer(editor.current)
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); setDraft(null); return }
+      if (event.key === "Escape") { event.preventDefault(); if (!busyRef.current) setDraft(null); return }
       if (event.key !== "Tab") return
       const controls = Array.from(editor.current?.querySelectorAll<HTMLElement>("input, textarea, button:not(:disabled)") ?? [])
       if (!controls.length) return
@@ -223,7 +227,7 @@ function WorkflowPage({ shown }: { shown: boolean }) {
   }, [shown, place, globalView])
 
   const save = async () => {
-    if ((!place && !draft?.global) || !draft || busy) return
+    if ((!place && !draft?.global) || !draft || busyRef.current) return
     if (draft.source && (sourceCheck !== "matched" || (draft.global && draft.source.scope === "project"))) {
       setError(W(draft.global && draft.source.scope === "project" ? "sourceScopeConflict" : "sourceUnavailable")); return
     }
@@ -233,23 +237,23 @@ function WorkflowPage({ shown }: { shown: boolean }) {
     if (new TextEncoder().encode(title).length > 200 || new TextEncoder().encode(body).length > 4000) {
       setError(W("tooLong")); return
     }
-    setBusy(true); setError("")
+    busyRef.current = true; setPendingAction("save"); setBusy(true); setError("")
     try {
       if (draft.id) await updateWorkflow(place ? machineOf(place) : "", draft.id, title, body, draft.source)
       else await createWorkflow(place ? machineOf(place) : "", draft.global ? "" : place!.path, title, body, draft.source ?? undefined)
       if (await refresh(place)) setDraft(null)
     } catch (cause) { setError(cause instanceof SnippetFailure && cause.code === "snippet_limit_reached" ? W("limitReached")
       : cause instanceof SnippetFailure && cause.status !== null && cause.status < 500 ? W("saveRefused") : W("saveUnknown")) }
-    finally { setBusy(false) }
+    finally { busyRef.current = false; setBusy(false) }
   }
 
   const remove = async () => {
-    if ((!place && !draft?.global) || !draft?.id || busy) return
+    if ((!place && !draft?.global) || !draft?.id || busyRef.current) return
     if (!window.confirm(W("confirmDelete", { name: draft.title }))) return
-    setBusy(true); setError("")
+    busyRef.current = true; setPendingAction("delete"); setBusy(true); setError("")
     try { await deleteWorkflow(place ? machineOf(place) : "", draft.id); if (await refresh(place)) setDraft(null) }
     catch (cause) { setError(cause instanceof SnippetFailure && cause.status !== null && cause.status < 500 ? W("deleteRefused") : W("deleteUnknown")) }
-    finally { setBusy(false) }
+    finally { busyRef.current = false; setBusy(false) }
   }
 
   const importSkill = () => {
@@ -327,9 +331,9 @@ function WorkflowPage({ shown }: { shown: boolean }) {
           {draft.source && <small>{W("linkedMessageHint")}</small>}
           <textarea value={draft.body} readOnly={!!draft.source} rows={8} maxLength={4000} onChange={(event) => setDraft({ ...draft, body: event.target.value })} /></label>
         {error && <p role="alert" className="workflow-error">{error}</p>}
-        <div className="workflow-actions"><button className="workflow-primary" type="submit" disabled={busy || !!draft.source && (sourceCheck !== "matched" || draft.global && draft.source.scope === "project")}>{W("save")}</button>
+        <div className="workflow-actions"><button className="workflow-primary" type="submit" aria-busy={busy && pendingAction === "save"} disabled={busy || !!draft.source && (sourceCheck !== "matched" || draft.global && draft.source.scope === "project")}><ActionProgress busy={busy && pendingAction === "save"} label={catalogWord("literal", "21aa64dd7446")}>{W("save")}</ActionProgress></button>
           <button type="button" disabled={busy} onClick={() => setDraft(null)}>{W("cancel")}</button>
-          {draft.id && <button className="workflow-delete" type="button" disabled={busy} onClick={() => void remove()}>{W("delete")}</button>}</div>
+          {draft.id && <button className="workflow-delete" type="button" disabled={busy} aria-busy={busy && pendingAction === "delete"} onClick={() => void remove()}><ActionProgress busy={busy && pendingAction === "delete"} label={catalogWord("literal", "a5df1fce3ed1")}>{W("delete")}</ActionProgress></button>}</div>
       </form>
     </div>}
     {skillOpen && <div ref={skillDialog} className="workflow-skill-overlay" role="dialog" aria-modal="true" aria-labelledby="workflow-skill-dialog-title"
