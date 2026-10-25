@@ -6,6 +6,9 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -51,17 +54,17 @@ func generate(root string, check bool) error {
 				if attrs["href"] != "/"+name {
 					return fmt.Errorf("noncanonical launch image URL %q", attrs["href"])
 				}
-				png, ok := icon.Splash(width, height)
+				body, ok := icon.Splash(width, height)
 				if !ok {
 					return fmt.Errorf("unsupported launch image %s", name)
 				}
 				path := filepath.Join(console, "public", name)
 				if check {
 					got, err := os.ReadFile(path)
-					if err != nil || !bytes.Equal(got, png) {
+					if err != nil || !samePixels(got, body) {
 						return fmt.Errorf("%s is missing or stale; run go run ./internal/domain/icon/cmd/splashgen", name)
 					}
-				} else if err := os.WriteFile(path, png, 0644); err != nil {
+				} else if err := os.WriteFile(path, body, 0644); err != nil {
 					return err
 				}
 				count++
@@ -82,4 +85,23 @@ func generate(root string, check bool) error {
 	}
 	fmt.Printf("splashgen: %d launch images match the daemon renderer\n", count)
 	return nil
+}
+
+// PNG compression bytes are not stable across Go versions. The published
+// asset must decode to the same dimensions, colours and alpha as the renderer.
+func samePixels(actual, expected []byte) bool {
+	a, err := png.Decode(bytes.NewReader(actual))
+	if err != nil {
+		return false
+	}
+	b, err := png.Decode(bytes.NewReader(expected))
+	if err != nil || a.Bounds() != b.Bounds() {
+		return false
+	}
+	normalize := func(src image.Image) []byte {
+		dst := image.NewNRGBA(src.Bounds())
+		draw.Draw(dst, dst.Bounds(), src, src.Bounds().Min, draw.Src)
+		return dst.Pix
+	}
+	return bytes.Equal(normalize(a), normalize(b))
 }

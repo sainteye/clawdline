@@ -81,7 +81,9 @@ go run ./internal/domain/icon/cmd/splashgen -check
 ```
 
 The generator's Go tests verify that every declared launch image matches the daemon
-renderer byte for byte, including detecting missing files and an HTML fallback.
+renderer's decoded pixels and dimensions, including detecting missing files and an
+HTML fallback. PNG compression bytes can differ between Go versions, so regeneration
+checks compare the image content rather than the encoded bytes.
 After deployment, verify every declared URL returns `image/png`, the correct PNG
 signature and dimensions, and the same bytes as the built static asset. A successful
 HTTP status alone is insufficient. Device-level acceptance still requires launching
