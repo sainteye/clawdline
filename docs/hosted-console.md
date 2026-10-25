@@ -60,6 +60,33 @@ rg -l CloudGate console/dist/assets/main-*.js
 The last command must name the locally built main bundle. If it does not, the hosted build did
 not take the Cloud branch; stop before deployment.
 
+## PWA launch images
+
+The selected launch screen is the existing warm-orange logo centred on `#0e0e11`,
+without a wordmark or an artificial delay. Android derives its launch screen from
+`manifest.webmanifest`; iOS uses the device-specific `apple-touch-startup-image`
+links in `web/console/index.html`.
+
+The daemon draws these PNGs through `icon.Splash`, but Cloudflare Pages cannot call
+that renderer. The console therefore ships matching static PNGs in `public/`.
+Without them, Pages returns its HTML SPA fallback at the image URL, even with HTTP
+200, and iOS has no usable launch image.
+
+After changing the renderer or the declared launch geometries, regenerate from the
+repository root:
+
+```sh
+go run ./internal/domain/icon/cmd/splashgen
+go run ./internal/domain/icon/cmd/splashgen -check
+```
+
+The generator's Go tests verify that every declared launch image matches the daemon
+renderer byte for byte, including detecting missing files and an HTML fallback.
+After deployment, verify every declared URL returns `image/png`, the correct PNG
+signature and dimensions, and the same bytes as the built static asset. A successful
+HTTP status alone is insufficient. Device-level acceptance still requires launching
+the installed PWA on iOS; a browser preview does not exercise the OS launch screen.
+
 ## Deploy
 
 Cloudflare Pages, project `clawdline-app`, production branch `main`. The credentials belong to

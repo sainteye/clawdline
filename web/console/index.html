@@ -43,7 +43,9 @@
          which reads as an app that failed to launch rather than as one that is launching. There
          is no wildcard: a tag is matched by the exact geometry of the screen, so every geometry
          needs its own, and the daemon draws whichever size is asked for (`internal/domain/icon`,
-         `internal/transport/http/pwa.go`) rather than shipping twenty files.
+         `internal/transport/http/pwa.go`). Matching static PNGs in `public/` also serve
+         Cloud, where there is no daemon renderer. Regenerate them with
+         `go run ./internal/domain/icon/cmd/splashgen`; its tests detect missing or stale PNGs.
          iPhones only, deliberately. This is the screen people add this to a home screen from, and
          twenty tags is already a wall of markup; an iPad that matches none of them falls back to
          the black it has today, which is where it started. -->

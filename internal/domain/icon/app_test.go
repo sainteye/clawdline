@@ -126,6 +126,29 @@ func TestASplashIsTheSameTwice(t *testing.T) {
 	}
 }
 
+func TestSolidLogoRowsHaveNoGridSeams(t *testing.T) {
+	for _, size := range [][2]int{{1179, 2556}, {2556, 1179}, {1290, 2796}} {
+		w, h := size[0], size[1]
+		body, ok := Splash(w, h)
+		if !ok {
+			t.Fatal("refused")
+		}
+		img := decode(t, body)
+		cell := int(math.Round(float64(min(w, h)) * 0.26 / 16))
+		left, top := (w-16*cell)/2, (h-11*cell)/2
+		// Two uninterrupted rows in the head must remain a single solid area,
+		// including the boundaries between the source grid's cells.
+		for y := top + cell + 1; y < top+3*cell-1; y++ {
+			for x := left + 2*cell + 1; x < left+14*cell-1; x++ {
+				r, g, b, a := rgba(img.At(x, y))
+				if r != 0xD9 || g != 0x77 || b != 0x57 || a != 255 {
+					t.Fatalf("%dx%d: grid seam at %d,%d: #%02x%02x%02x/%d", w, h, x, y, r, g, b, a)
+				}
+			}
+		}
+	}
+}
+
 // TestASplashRefusesWhatIsNotAScreen. A device asks for the geometry of its own
 // screen; anything past the limit is somebody probing for a way to make this
 // machine allocate.

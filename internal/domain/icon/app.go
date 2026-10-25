@@ -79,8 +79,11 @@ func Splash(width, height int) ([]byte, bool) {
 	columns := float64(len(appRows[0]))
 	lines := float64(len(appRows))
 	cell := math.Round(float64(min(width, height)) * 0.26 / columns)
-	originX := (float64(width) - cell*columns) / 2
-	originY := (float64(height) - cell*lines) / 2
+	// Whole-pixel edges keep neighbouring cells from compositing twice over
+	// their shared half-pixel boundary and leaving a dark grid in the logo.
+	// On an odd-sized screen, the centre is at most half a pixel away.
+	originX := math.Round((float64(width) - cell*columns) / 2)
+	originY := math.Round((float64(height) - cell*lines) / 2)
 	drawMark(img, height, originX, originY, cell, cell)
 	return encode(img)
 }
@@ -114,12 +117,8 @@ func drawMark(img *image.NRGBA, height int, originX, originY, cell, size float64
 
 // fillRect paints an axis-aligned rectangle with exact coverage.
 //
-// Exact, rather than rounded to whole pixels, because the origins are halves:
-// a 1179-wide screen with a 19-point cell leaves the creature starting at
-// x=437.5, and snapping that would move the mark half a pixel off centre on
-// most of the twenty geometries. An axis-aligned rectangle's coverage of a
-// pixel is the product of its two overlaps, so this is the answer rather than
-// an approximation of it.
+// An axis-aligned rectangle's coverage of a pixel is the product of its two
+// overlaps. Splash aligns the grid to whole pixels to avoid compositing seams.
 func fillRect(img *image.NRGBA, x0, y0, x1, y1 float64, paint color.NRGBA) {
 	bounds := img.Bounds()
 	left := max(int(math.Floor(x0)), bounds.Min.X)
