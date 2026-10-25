@@ -805,7 +805,10 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
           {said}
         </p>
         <div className="buttons">
-          {tab === "workflow" && <button className="workflow-start" type="button" disabled={!currentWorkflow || startingWorkflow || !!currentWorkflow.source && workflowSourceStatus !== "ready"} onClick={() => void startWorkflow()}>{startingWorkflow ? W("starting") : W("start")}</button>}
+          {tab === "workflow" && <button className="workflow-start" type="button" aria-busy={startingWorkflow} disabled={!currentWorkflow || startingWorkflow || !!currentWorkflow.source && workflowSourceStatus !== "ready"} onClick={() => void startWorkflow()}>
+            {startingWorkflow && <span className="workflow-start-spinner" aria-hidden="true" />}
+            {startingWorkflow ? W("starting") : W("start")}
+          </button>}
           <button className="chip" id="snippets-close" type="button" ref={closeButton} onClick={onClose}>
             {T.webClose}
           </button>

@@ -36,8 +36,11 @@
 .workflow-launch .workflow-launch-source { width: fit-content; margin-top: .65rem; padding: .2rem .5rem; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: .4rem; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); font-size: .8rem; font-weight: 650; }
 .workflow-launch [role="status"] { margin-top: .65rem; color: var(--accent); font-size: .83rem; }
 .workflow-launch [role="alert"] { margin: .6rem 0 0; color: var(--danger, #d84a4a); }
-.snippets-sheet .buttons .workflow-start { min-height: 2.75rem; padding: .65rem 1rem; border: 1px solid var(--accent); border-radius: .6rem; background: var(--accent); color: #17191d; font: inherit; font-weight: 650; cursor: pointer; }
+.snippets-sheet .buttons .workflow-start { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.75rem; padding: .65rem 1rem; border: 1px solid var(--accent); border-radius: .6rem; background: var(--accent); color: #17191d; font: inherit; font-weight: 650; cursor: pointer; }
 .snippets-sheet .buttons .workflow-start:disabled { opacity: .5; cursor: default; }
+.workflow-start-spinner { display: inline-block; box-sizing: border-box; flex: none; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: workflow-start-spin .8s linear infinite; }
+@keyframes workflow-start-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .workflow-start-spinner { animation: none; } }
 @media (max-width: 899px) {
   .snippets-workflow-sheet { height: min(680px, calc(var(--vvh, 100dvh) - 48px)); }
 }
