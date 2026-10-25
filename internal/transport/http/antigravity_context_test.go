@@ -18,6 +18,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/icon"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 func TestGeminiRoleStartBindsTheExistingActorAndKeepsOriginalResumeRole(t *testing.T) {
@@ -82,21 +83,33 @@ func TestGeminiRoleStartBindsTheExistingActorAndKeepsOriginalResumeRole(t *testi
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		data, _ := os.ReadFile(filepath.Join(profile, "last-prompt.json"))
-		if len(data) > 0 {
-			var prompt []struct {
-				Text     string
-				Resource struct{ Text string }
-			}
-			if json.Unmarshal(data, &prompt) != nil || len(prompt) != 2 || !strings.Contains(prompt[0].Resource.Text, "golang-concurrency") || prompt[1].Text != "original user input" {
-				t.Fatalf("role/skill or original input missing: %s", data)
-			}
+	// The peer writes the prompt before the capability path. Its completed
+	// response, observed as idle, establishes that both files have been closed.
+	for {
+		inv, err := s.antigravitySessions.Load().Inventory(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(inv.Sessions) == 1 && inv.Sessions[0].State == session.StateIdle {
 			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("native prompt did not complete")
 		}
 		time.Sleep(time.Millisecond)
 	}
-	data, err := os.ReadFile(filepath.Join(profile, "last-capability-path"))
+	data, err := os.ReadFile(filepath.Join(profile, "last-prompt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prompt []struct {
+		Text     string
+		Resource struct{ Text string }
+	}
+	if json.Unmarshal(data, &prompt) != nil || len(prompt) != 2 || !strings.Contains(prompt[0].Resource.Text, "golang-concurrency") || prompt[1].Text != "original user input" {
+		t.Fatalf("role/skill or original input missing: %s", data)
+	}
+	data, err = os.ReadFile(filepath.Join(profile, "last-capability-path"))
 	if err != nil || len(data) == 0 {
 		t.Fatal("native tool environment lacks its role actor", err)
 	}
