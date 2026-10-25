@@ -237,6 +237,14 @@ complete `ss/` set or authenticated machine list; its
 already authorized presentation can supply the original Session pane's display row when a rich
 `s/` replay is absent. The pane then reads `info` and transcript for that exact execution. This
 keeps a quiet Session readable without asking every machine to restate its whole rich list.
+The compact display list does not carry provider-native subagents. The pane restores
+`agents` and `agents_reading` from the authenticated rich `s/` row for the same machine,
+Session and execution, within the existing status freshness window. This applies while
+the parent is working, waiting or idle: its activity state does not decide whether its
+subagents are running. Complete zero, unknown readings and omitted-row counts retain
+their meanings. An opened detail missing that reading asks a machine supporting
+`sessions.row` to restate just that row, sharing the question recovery's existing
+throttle. Unopened list rows initiate no additional reads.
 The detail selects that pinned destination during render, before local selection effects run.
 Until its machine and execution match a display row, it shows no conversation; an earlier local
 selection cannot supply the detail while a newly opened Session is arriving.

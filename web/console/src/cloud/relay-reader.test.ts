@@ -17,6 +17,95 @@ import { acceptSnapshot } from "../../../core/src/fleet-accept.ts"
 import { fetchWithDeadline } from "../pages/work/fetch-deadline.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { SESSION_LIST_READ } from "../pages/work/session-assignment.ts"
+import { SESSION_INVENTORY_ID } from "../legacy/js/net/client.js"
+// @ts-expect-error -- Node runs the source test with type stripping.
+import { backgroundCounts, showsBackground } from "../session/background.ts"
+
+test("Cloud restores provider work from the rich row when its display list omits agents", async () => {
+  for (const fleet of [false, true]) {
+    for (const projected of [false, true]) {
+      const client = new FakeClient()
+      const now = 1_000_000
+      const execution = "a".repeat(32)
+      const destination = { machineID: "mac-a", sessionID: "s1", executionGeneration: execution }
+      const projection = { destination, assistant: "claude" as const, state: "working", freshness: "current" as const, observedAt: now }
+      const agents = Array.from({ length: 6 }, (_, i) => ({ id: "agent-" + i, type: "Explore",
+        what: "Inspect fixture " + i, state: "running", depth: 1, at: now / 1000 }))
+      const rich = (extra: Record<string, unknown> = {}) => ({ machine: "mac-a", session: "s1",
+        execution_generation: execution, state: "working", agents, agents_reading: { state: "complete" },
+        source: { freshness: "current", observed_at: now / 1000 }, ...extra })
+      const held = new Map<string, unknown>([["mac-a\u0000s1", rich()]])
+      Object.assign(client, fleet ? { detailSnapshots: held } : { sessionSnapshots: held })
+      client.statusSnapshots = new Map([
+        [JSON.stringify(["mac-a", SESSION_INVENTORY_ID]), { payload: { at: now / 1000, complete: true,
+          snapshot_generation: execution, inventory: { version: 1, sessions: ["s1"] } } }],
+        [JSON.stringify(["mac-a", "s1"]), { payload: { machine_id: "mac-a", session_id: "s1",
+          execution_generation: execution, snapshot_generation: execution, state: "working", assistant: "claude",
+          source: { freshness: "current", observed_at: now / 1000 } } }],
+      ])
+      const reader = new RelayReader("mac-a", { classicStatus: true, now: () => now,
+        ...(fleet ? { fleetTarget: () => destination } : {}),
+        ...(projected ? { machineProjection: async () => ({ kind: "ready" as const, complete: true, observedAt: now,
+          snapshotGeneration: execution, rows: [projection] }) } : {}),
+        // This is the daemon's compact wire: provider work is absent here.
+        listPresentations: async () => [{ destination, title: "Fixture Session", assistant: "claude",
+          status: { state: "working" }, projection }],
+      })
+      reader.attach(client)
+      const drawn = async () => (await reader.snapshot()).sessions[0]
+      assert.deepEqual(backgroundCounts(await drawn()), { shells: 0, running: 6, listed: 6, truncated: 0 })
+      assert.equal(showsBackground(backgroundCounts(await drawn())), true)
+      held.set("mac-a\u0000s1", rich({ agents: [{ ...agents[0], state: "done" }],
+        agents_reading: { state: "complete", truncated: 2 } }))
+      assert.deepEqual(backgroundCounts(await drawn()), { shells: 0, running: 0, listed: 1, truncated: 2 })
+      held.set("mac-a\u0000s1", rich({ agents_reading: { state: "unknown", reason: "unreadable" } }))
+      assert.equal(backgroundCounts(await drawn()).running, null)
+      held.set("mac-a\u0000s1", rich({ agents: undefined }))
+      assert.equal(showsBackground(backgroundCounts(await drawn())), false, "complete omitted agents means zero")
+      for (const extra of [{ machine: "mac-b" }, { session: "s2" },
+        { execution_generation: "b".repeat(32) },
+        { source: { freshness: "unverified", observed_at: now / 1000 } },
+        { source: { freshness: "current", observed_at: (now - 600_000) / 1000 } }]) {
+        held.set("mac-a\u0000s1", rich(extra))
+        assert.equal(showsBackground(backgroundCounts(await drawn())), false,
+          "another or stale reading cannot populate this execution")
+      }
+      held.set("mac-a\u0000s1", rich({ state: "idle" }))
+      assert.equal(backgroundCounts(await drawn()).running, 6, "provider work survives a parent state transition")
+      assert.equal(client.reads.length, 0, "held work never starts another read")
+    }
+  }
+})
+
+test("an opened working Cloud Session recovers a missing provider reading without repeated redraw requests", async () => {
+  const client = new FakeClient()
+  let now = 1_000_000
+  const execution = "a".repeat(32)
+  const destination = { machineID: "mac-a", sessionID: "s1", executionGeneration: execution }
+  const projection = { destination, assistant: "claude" as const, state: "working", freshness: "current" as const, observedAt: now }
+  const held = new Map<string, unknown>()
+  Object.assign(client, { detailSnapshots: held,
+    _machineImplements: (_machine: string, word: string) => word === "sessions.row" ? "yes" : "unknown" })
+  const reader = new RelayReader("mac-a", { classicStatus: true, now: () => now, fleetTarget: () => destination,
+    machineProjection: async () => ({ kind: "ready", complete: true, observedAt: now,
+      snapshotGeneration: execution, rows: [projection] }),
+    listPresentations: async () => [{ destination, title: "Fixture Session", assistant: "claude", status: { state: "working" }, projection }],
+  })
+  reader.attach(client)
+  await reader.snapshot()
+  await reader.snapshot()
+  assert.deepEqual(client.reads, [{ machine: "mac-a", word: "sessions.row", body: { row: "s1" } }])
+  now += 6_001
+  await reader.snapshot()
+  assert.equal(client.reads.length, 2, "a missing reply can be recovered after the existing restatement window")
+  held.set("mac-a\u0000s1", { machine: "mac-a", session: "s1", execution_generation: execution,
+    state: "working", source: { freshness: "current", observed_at: now / 1000 },
+    agents_reading: { state: "complete" }, agents: [{ id: "agent-1", state: "running" }] })
+  now += 6_001
+  assert.equal(backgroundCounts((await reader.snapshot()).sessions[0]).running, 1)
+  assert.equal(client.reads.length, 2, "a held current reading needs no recovery request")
+})
+
 
 test("a diagnostic press waits for a receipt from the selected machine and propagates failure", async () => {
   const reader = new RelayReader("mac-a")

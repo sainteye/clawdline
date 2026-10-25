@@ -1714,7 +1714,7 @@ export class RelayReader {
       }
       absence.closed.push(id)
       return false
-    }).map((row) => consoleRow(this.withOpenedMenu(client, row)))
+    }).map((row) => consoleRow(this.withOpenedMenu(client, this.withProviderWork(client, row))))
     if (whole) {
       const present = new Set(machineRows.map((row) => String(row.session ?? row.id ?? "")))
       for (const id of this.closedAt.keys()) if (!present.has(id)) this.closedAt.delete(id)
@@ -1951,7 +1951,7 @@ export class RelayReader {
       }
       absence.closed.push(id)
       return false
-    }).map((row) => consoleRow(this.withOpenedMenu(client, row)))
+    }).map((row) => consoleRow(this.withOpenedMenu(client, this.withProviderWork(client, row))))
     if (whole) {
       const present = new Set(machineRows.map((row) => typeof row.session === "string" ? row.session : row.id))
       for (const id of this.closedAt.keys()) {
@@ -2509,6 +2509,40 @@ export class RelayReader {
     if (this.listDisagreement === key) return
     this.listDisagreement = key
     for (const stream of this.streams) this.queueFrame(stream)
+  }
+
+  /**
+   * The compact display list carries no provider work. Restore it from the
+   * authenticated s/ row for this exact execution, including complete zero
+   * and unknown readings. Parent activity can change while its agents run.
+   * Opening a detail before its rich row arrives asks for that one row using
+   * the existing bounded restatement path; list rows never initiate reads.
+   */
+  private withProviderWork(client: CloudReadClient, row: CloudRow): CloudRow {
+    if (row.assistant !== "claude" && row.assistant !== "codex") return row
+    const id = typeof row.session === "string" ? row.session : row.id
+    const source = row.source as { freshness?: unknown } | undefined
+    if (typeof id !== "string" || !id || typeof row.execution_generation !== "string" ||
+      source?.freshness !== "current") return row
+    const target = this.options.fleetTarget?.()
+    const opened = target?.machineID === this.machine && target.sessionID === id &&
+      target.executionGeneration === row.execution_generation ? target : null
+    const key = this.machine + "\u0000" + id
+    const rich = ((opened ? client.detailSnapshots?.get(key) : undefined) ??
+      (client as { sessionSnapshots?: ReadonlyMap<string, unknown> }).sessionSnapshots?.get(key)) as
+      | { machine?: unknown; session?: unknown; execution_generation?: unknown; agents?: unknown;
+        agents_reading?: { state?: unknown }; source?: { freshness?: unknown; observed_at?: unknown } } | undefined
+    const observedAt = Number(rich?.source?.observed_at) * 1000
+    if (!rich || rich.machine !== this.machine || rich.session !== id ||
+      rich.execution_generation !== row.execution_generation || rich.source?.freshness !== "current" ||
+      !Number.isFinite(observedAt) || Math.abs(this.now() - observedAt) > RICH_MENU_FRESH_MS ||
+      !["complete", "unknown"].includes(String(rich.agents_reading?.state))) {
+      // A waiting row already requests its missing question below. Share that
+      // request and its throttle rather than issue a second read for work.
+      if (opened && row.state !== "waiting" && this.machineImplements("sessions.row")) this.askForOpenedQuestion(opened)
+      return row
+    }
+    return { ...row, agents: Array.isArray(rich.agents) ? rich.agents : [], agents_reading: rich.agents_reading }
   }
 
   /**
