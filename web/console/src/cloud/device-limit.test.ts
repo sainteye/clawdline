@@ -331,3 +331,51 @@ test("operations discovery requires a fresh explicit session grant and clears be
   await assert.rejects(viewer.ensureSession(), /offline/)
   assert.equal(seen.at(-1), false)
 })
+
+test("session startup requires the API's named refusal before registering a device or asking for sign-in", async () => {
+  const faults = [
+    { status: 401, body: null },
+    { status: 403, body: null },
+    { status: 403, body: { error: { code: "forbidden" } } },
+    { status: 403, body: { error: { code: "no_login_ticket" } } },
+    { status: 401, body: { error: { code: "upstream_unavailable" } } },
+    { status: 408, body: null },
+    { status: 429, body: { error: { code: "rate_limited" } } },
+    { status: 503, body: { error: { code: "service_unavailable" } } },
+    { status: 200, body: null },
+    { status: 200, body: { device_id: "dev_test" } },
+    { status: 200, body: { account_id: "acct_test", device_id: 123 } },
+  ]
+  for (const method of ["GET", "POST"]) {
+    for (const fault of faults) {
+      const asked: string[] = []
+      const viewer = new CloudViewerSession({ config: CONFIG, storage: memoryStorage(), indexedDB: keyStore(),
+        fetch: async (_url: string, init?: RequestInit) => {
+          const current = init?.method ?? "GET"
+          asked.push(current)
+          if (method === "POST" && current === "GET") {
+            return new Response(JSON.stringify({ error: { code: "no_session" } }), { status: 401 })
+          }
+          return new Response(JSON.stringify(fault.body), { status: fault.status })
+        },
+      })
+      await assert.rejects(viewer.ensureSession(), (error: any) => error.terminal === false,
+        `${method} ${fault.status} ${JSON.stringify(fault.body)} must remain retryable`)
+      assert.deepEqual(asked, method === "GET" ? ["GET"] : ["GET", "POST"])
+      assert.equal(viewer.deviceID, null)
+    }
+  }
+})
+
+test("only no_login_ticket on a 401 session creation asks for GitHub sign-in", async () => {
+  const asked: string[] = []
+  const viewer = new CloudViewerSession({ config: CONFIG, storage: memoryStorage(), indexedDB: keyStore(),
+    fetch: async (_url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET"
+      asked.push(method)
+      return new Response(JSON.stringify({ error: { code: method === "GET" ? "no_session" : "no_login_ticket" } }), { status: 401 })
+    },
+  })
+  assert.deepEqual(await viewer.ensureSession(), { state: "sign_in", url: viewer.signInURL() })
+  assert.deepEqual(asked, ["GET", "POST"])
+})

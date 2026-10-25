@@ -196,6 +196,17 @@ and `fanout=0` on every ack say no viewer is subscribed — the relay had nobody
 publishes to. That pair separates "the Mac is down" from "the console cannot connect", and on
 2026-09-20 it is what showed the Mac was innocent.
 
+## Startup session checks
+
+Startup session checks distinguish authentication from transport failures. Only the session API's
+`401 no_session` permits device registration after a failed check, and only `401 no_login_ticket` from registration
+opens the GitHub sign-in card. Unrecognized 401/403 responses (including intermediary HTML),
+408/429, server failures, malformed successful responses and network errors stay in the existing
+bounded connection retry flow. They do not establish that the browser signed out. A successful
+retry restores the existing device; a genuine session refusal still requires sign-in. A valid
+session whose device key is no longer stored still registers a replacement device. The startup
+failure matrix and recovery path are exercised in `device-limit.test.ts` and `keep-connected.test.ts`.
+
 ## Explicit send diagnostics
 
 A failed message card's **Record diagnostics** button sends a content-free
