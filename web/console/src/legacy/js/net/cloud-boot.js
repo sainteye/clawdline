@@ -272,6 +272,22 @@ async function json(fetchImpl, url, options) {
 
 function refused(status) { return status === 401 || status === 403; }
 
+// An intermediary can return its own 401/403 (including an HTML error page).
+// Only the session API's named 401 refusals establish missing credentials.
+function sessionRefused(result, code) {
+    return result.status === 401 && result.body && result.body.error && result.body.error.code === code;
+}
+
+function sessionFailureIsTerminal(result) {
+    return result.status >= 400 && result.status < 500 &&
+        [401, 403, 408, 429].indexOf(result.status) < 0;
+}
+
+function hasSessionIdentity(body) {
+    return body && typeof body.account_id === "string" && body.account_id &&
+        typeof body.device_id === "string" && body.device_id;
+}
+
 function responseError(result, fallbackCode, fallbackMessage, terminal) {
     var api = result && result.body && result.body.error;
     return bootError(
@@ -345,7 +361,7 @@ export class CloudViewerSession {
     async ensureSession() {
         this.operationsAccessChanged(false);
         var existing = await json(this.fetch, this.config.apiOrigin + "/v1/auth/session");
-        if (existing.status === 200 && existing.body && existing.body.device_id) {
+        if (existing.status === 200 && hasSessionIdentity(existing.body)) {
             var restored = await this.restoreDeviceKey(existing.body.device_id);
             if (restored) {
                 this.operationsAccessChanged(existing.body.operations_access === true);
@@ -357,9 +373,9 @@ export class CloudViewerSession {
             // A cookie naming a device whose key this browser no longer holds is not this
             // browser's device. Registering a new one is honest; reusing the cookie would
             // leave a viewer that cannot sign a relay challenge.
-        } else if (!refused(existing.status)) {
+        } else if (!sessionRefused(existing, "no_session")) {
             throw responseError(existing, "session_unavailable",
-                "Clawdline could not check this browser's session", existing.status < 500);
+                "Clawdline could not check this browser's session", sessionFailureIsTerminal(existing));
         }
 
         var pair = await this.crypto.subtle.generateKey(
@@ -386,11 +402,11 @@ export class CloudViewerSession {
                     ? createdError.message : "The viewer-device limit has been reached"
             };
         }
-        if (refused(created.status)) return { state: "sign_in", url: this.signInURL() };
-        if (created.status !== 200 && created.status !== 201) {
+        if (sessionRefused(created, "no_login_ticket")) return { state: "sign_in", url: this.signInURL() };
+        if ((created.status !== 200 && created.status !== 201) || !hasSessionIdentity(created.body)) {
             throw responseError(created,
                 created.status >= 500 ? "session_unavailable" : "session_failed",
-                "Clawdline could not create this browser's session", created.status < 500);
+                "Clawdline could not create this browser's session", sessionFailureIsTerminal(created));
         }
         this.operationsAccessChanged(created.body.operations_access === true);
         this.account = created.body.account_id;

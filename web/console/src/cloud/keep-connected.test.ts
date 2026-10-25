@@ -12,7 +12,7 @@
 // have frozen it meanwhile.
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { keepConnected } from "../legacy/js/net/cloud-boot.js"
+import { CloudViewerSession, keepConnected } from "../legacy/js/net/cloud-boot.js"
 
 /** Timers and a clock the test moves by hand. */
 function fakeClock() {
@@ -196,4 +196,49 @@ test("a short hide changes nothing", async () => {
   assert.equal(session.clients.length, 1)
   assert.equal(session.clients[0].retired, false)
   line.stop()
+})
+
+test("a failed startup session check retries and restores the same device without showing sign-in", async () => {
+  for (const fault of ["network", "proxy_401", "proxy_403", "busy", "bad_body"]) {
+    const clock = fakeClock()
+    const page = fakePage()
+    const connected = fakeSession()
+    const asked: string[] = []
+    const states: string[] = []
+    const viewer = new CloudViewerSession({
+      config: { apiOrigin: "https://api.example.test", appOrigin: "https://app.example.test" },
+      fetch: async (_url: string, init?: RequestInit) => {
+        asked.push(init?.method ?? "GET")
+        if (asked.length === 1) {
+          if (fault === "network") throw new TypeError("Failed to fetch")
+          return new Response(fault === "busy" ? "{}" : "<html>Unavailable</html>", {
+            status: fault === "proxy_401" ? 401 : fault === "proxy_403" ? 403 : fault === "busy" ? 503 : 200,
+          })
+        }
+        return new Response(JSON.stringify({ account_id: "acct_test", device_id: "dev_existing" }))
+      },
+    })
+    viewer.restoreDeviceKey = async () => true
+    viewer.readCapabilities = async () => ["read_sessions"]
+    viewer.connect = async () => {
+      const ensured = await viewer.ensureSession()
+      return ensured.state === "ready" ? connected.connect() : ensured
+    }
+    const line = keepConnected(viewer, {
+      now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
+      jitter: () => 0.5, document: page.document, window: page.window, navigator: page.navigator,
+      onState: (update: { state: string }) => states.push(update.state),
+    })
+    try {
+      await clock.advance(0)
+      assert.deepEqual(states, ["retrying"], fault)
+      await clock.advance(2_000)
+      assert.deepEqual(states, ["retrying", "connected"], fault)
+      assert.deepEqual(asked, ["GET", "GET"], "no replacement device registration")
+      assert.equal(viewer.deviceID, "dev_existing")
+    } finally {
+      line.stop()
+      await line.done
+    }
+  }
 })
