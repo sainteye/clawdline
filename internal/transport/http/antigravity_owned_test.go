@@ -97,8 +97,18 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			result = map[string]any{"configOptions": config()}
 		case "session/prompt":
 			data, _ := json.Marshal(req.Params.Prompt)
-			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "last-prompt.json"), data, 0600)
-			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "last-capability-path"), []byte(os.Getenv("CLAWDLINE_SQUAD_CAPABILITY_FILE")), 0600)
+			// Prompt readers use this file as the receipt that the native tool
+			// environment is ready. Publish it atomically after its capability.
+			if err := os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "last-capability-path"), []byte(os.Getenv("CLAWDLINE_SQUAD_CAPABILITY_FILE")), 0600); err != nil {
+				t.Fatal(err)
+			}
+			promptPath := filepath.Join(os.Getenv("GEMINI_HOME"), "last-prompt.json")
+			if err := os.WriteFile(promptPath+".tmp", data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(promptPath+".tmp", promptPath); err != nil {
+				t.Fatal(err)
+			}
 
 			if os.Getenv("CLW_HTTP_PERMISSION") == "yes" {
 				for i := 0; i < 2; i++ {
