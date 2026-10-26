@@ -4,6 +4,11 @@ package capacity
 func consoleBounds() []Entry {
 	return append(append(append(connectionHealthUIBounds(), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
 		{
+			// NextMessages.add shares KEPT_CARDS from session/persist.ts.
+			Name: "console.next_messages", Class: Buffer, Unit: Rows,
+			Limit: 20, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
+		},
+		{
 			// readOlderRecovering in session/transcript-follow.ts clears stale
 			// held history, reads newest once, and retries older once per request.
 			// A second refusal remains visible for manual recovery.

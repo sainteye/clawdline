@@ -16,6 +16,7 @@ const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/M
 const now = () => Math.floor(Date.now() / 1000)
 let mode = "ready", language = "en", fixtureSequence = 0
 let sends: string[] = [], inventoryReads: string[] = []
+let queueReady = false
 let nativeEffortOverride = false
 let selectedModel = "synthetic-flash", selectedEffort = "high", modelWrites: string[] = [], fullInfoReads = 0
 const streams = new Set<ServerResponse>()
@@ -24,7 +25,7 @@ function snapshot() {
     epoch: 1, generation: fixtureSequence, source: { freshness: "current", observed_at: now(), provenance: "fixture" } },
     sessions: ["alpha", "beta"].map((machine, index) => ({ id: "fixture-" + machine, label: "Antigravity synthetic " + machine,
       machine, backend: mode.startsWith("owned-protocol") ? "owned" : "tmux", assistant: "antigravity", isClaude: true, identity: mode.startsWith("owned-protocol") ? "protocol" : "launch_hook", line: "synthetic menu revision", cwd: "/work/fixture", sessionId: "conversation-" + machine,
-      execution_generation: (index ? "b" : "a").repeat(32), state: mode.includes("menu") ? "waiting" : mode === "owned-protocol-interrupted" ? "unknown" : "idle", work_state: "ready", evidence: "process",
+      execution_generation: (index ? "b" : "a").repeat(32), state: mode === "owned-protocol-queue" && !queueReady ? "working" : mode.includes("menu") ? "waiting" : mode === "owned-protocol-interrupted" ? "unknown" : "idle", work_state: "ready", evidence: "process",
       source: { freshness: (mode === "stale-state" || mode === "async-unknown") ? "stale" : "current", observed_at: now(), provenance: "fixture" },
       activity: { known: true, at: now() },
       ...(mode.includes("menu") ? { menu: { question: "Allow synthetic command?", options: [{ n: 1, label: "Allow once", can: true }],
@@ -52,7 +53,8 @@ function document(file = "index.html"): string {
 function daemon(): Server {
  return createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://fixture"), path = url.pathname
-  if (path === "/fixture") { mode = url.searchParams.get("mode") || "ready"; for (const stream of streams) stream.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n"); return json(res, 200, {}) }
+  if (path === "/fixture") { if (url.searchParams.has("queueReady")) { queueReady = url.searchParams.get("queueReady") === "1"; for (const stream of streams) stream.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n") }
+     mode = url.searchParams.get("mode") || "ready"; for (const stream of streams) stream.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n"); return json(res, 200, {}) }
   if (path === "/v1/sessions") return json(res, 200, snapshot())
   if (path === "/v1/usage/items/fixture-work" || path === "/v1/usage/sessions/conversation-alpha" || path === "/v1/usage/sessions/conversation-beta") return json(res, 503, { error: { code: "fixture_unavailable", message: "Synthetic usage is unavailable" } })
   if (path === "/v1/work/v2/items") return json(res, 200, { ok: true, rows: [workItem()], counts: { open: 1 }, next_cursor: null, page_size: 1, truncated: false })
@@ -90,7 +92,7 @@ function daemon(): Server {
   if (path.endsWith("/info") && mode.startsWith("owned-protocol")) return json(res,200,{info:{session:{id:path.split("/")[3],assistant:"antigravity",model:"synthetic-flash-high",sessionId:"conversation-alpha"},models:[],context:{usedPercent:12,usedTokens:12,windowTokens:100}}})
   if (path.includes("transcript") && mode.startsWith("owned-protocol")) return json(res, 200, { id: path.split("/")[3], evidence: "structured", signature: "synthetic-owned:1", entries: [
     {role:"user",text:"Synthetic input",at:now()},
-    {role:"tool",tool:"read",text:"Read synthetic file",at:now(),activity:{kind:"called",title:"Read synthetic file",status:"completed",durationMs:-1,actions:[{kind:"read",path:"/work/fixture/sample.txt"}]}},
+    {role:"tool",tool:"read",text:"Read synthetic file",at:now(),activity:{kind:"called",title:mode === "owned-protocol-queue" ? "python3 -c "+"long_synthetic_command_".repeat(60) : "Read synthetic file",status:"completed",durationMs:-1,actions:[{kind:"read",path:"/work/fixture/sample.txt"}]}},
     {role:"assistant",text:"Synthetic owned protocol reply.",at:now()}] })
   if (path.includes("transcript")) return json(res, 200, { id: path.split("/")[3], entries: [{ role: "assistant", text: "Synthetic Antigravity reply.", at: now() }], more: false })
   if (path.startsWith("/v1/")) return json(res, 200, { rows: [], direct_todos: [], assigned_items: [], recent_items: [], open_decisions: [], entries: [], tasks: [], todos: [], skills: [], items: [], sessions: [], at: now(), counts: {} })
@@ -530,4 +532,26 @@ test("Gemini effort confirmation follows native state rather than the requested 
   assert.equal(await tab.run(`document.querySelector('#info [data-effort="high"]').getAttribute('aria-current')`),"true")
   assert.equal(await tab.run(`document.querySelector('#info-said').textContent`),"Next turn reasoning effort: High")
  }finally{nativeEffortOverride=false;await tab.close()}
+})
+
+for (const lang of ["en", "zh-Hant"]) test(`phone ${lang}: long tool labels stay horizontal and busy Gemini accepts a queued input`, {timeout:30000}, async()=>{
+ mode="owned-protocol-queue";language=lang;queueReady=false;sends=[]
+ const tab=await Tab.open(browser,390,844,true)
+ try {
+  await tab.go("/#session=fixture-alpha")
+  await tab.run(`localStorage.removeItem('clawdline.session.cards')`)
+  await tab.go("/?queuedCase="+lang+"#session=fixture-alpha")
+  await tab.until("busy owned composer opens",s=>s.message)
+  await tab.draft("Synthetic queued input")
+  await tab.until("busy owned composer allows queueing",s=>s.send)
+  const layout=await tab.run(`(() => {const label=document.querySelector('.activity-kind'),title=document.querySelector('.activity-title'); if(!label||!title)return null;const a=label.getBoundingClientRect(),b=title.getBoundingClientRect();return {nowrap:getComputedStyle(label).whiteSpace,labelHeight:a.height,lineHeight:parseFloat(getComputedStyle(label).lineHeight),overlap:a.right>b.left,wide:document.documentElement.scrollWidth}})()`)
+  assert.ok(layout);assert.equal(layout.nowrap,"nowrap");assert.ok(layout.labelHeight<=layout.lineHeight+1);assert.equal(layout.overlap,false);assert.ok(layout.wide<=390)
+  await tab.run(`document.querySelector('#composer button.send').click()`)
+  await tab.until("queued card appears",s=>s.text.includes(lang==="en"?"Queued in this browser":"已在此瀏覽器排隊"))
+  assert.equal(sends.length,0,"queueing during a native turn sends no second prompt")
+  await tab.shot("gemini-queued-tool-label-"+lang)
+  await tab.run(`fetch('/fixture?mode=owned-protocol-queue&queueReady=1')`)
+  await tab.until("queued input is accepted",s=>!s.text.includes(lang==="en"?"Queued in this browser":"已在此瀏覽器排隊"))
+  assert.equal(sends.length,1)
+ } finally {await tab.close()}
 })

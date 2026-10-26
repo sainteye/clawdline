@@ -61,6 +61,7 @@ import { agentReportIdentity } from "./agent-report.js"
 import "./agent-report.css"
 import "./lightbox-steps.css"
 import "./transcript-error.css"
+import "./activity.css"
 import { atNewest, jumpOffered } from "./jump.js"
 import { joinTranscript, pendingHistoryPages } from "./history.js"
 import { HistoryFill, historyAdvanced } from "./history-fill.js"
@@ -906,7 +907,9 @@ function pendingHTML(card: PendingSend): ReactElement {
   // pictures cannot go with them and the same words under a new request would
   // be the message twice.
   const partial = card.partial ? '<span class="pending-partial">' + esc(nextWord("sendKeptWords")) + "</span>" : ""
-  if (card.state === "failed") {
+  if (card.state === "queued") {
+    body += '<div class="pending-state" role="status"><span>' + esc(nextWord("sendQueuedHere")) + '</span>' + partial + dismiss + '</div>'
+  } else if (card.state === "failed") {
     body +=
       '<div class="pending-state" role="alert"><span>' +
       // A dialog on the session's screen refused the words before a byte was

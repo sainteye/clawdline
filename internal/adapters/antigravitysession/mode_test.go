@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 func syntheticModeOption(current string) any {
@@ -233,4 +235,53 @@ func TestConfigureDispatchRejectsUnsupportedPermissionAndModel(t *testing.T) {
 		t.Fatal("unoffered model accepted")
 	}
 	assertConfigWrites(t, dir, "mode=default\n")
+}
+
+func TestNewConversationSelectsYoloWithoutChangingExistingMode(t *testing.T) {
+	t.Setenv("CLW_CONFIG_PEER", "yes")
+	t.Setenv("CLW_MODE_PEER", "yes")
+	h, existing, dir := fixture(t)
+	h.opts.NewSessionMode = "yolo"
+	created, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertConfigWrites(t, dir, "mode=yolo\n")
+	old, err := h.lookup(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := nativeMode(old.client.ConfigOptions(), "default")
+	if err != nil || current != "default" {
+		t.Fatal(current, err)
+	}
+	fresh, err := h.lookup(created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err = nativeMode(fresh.client.ConfigOptions(), "yolo")
+	if err != nil || current != "yolo" {
+		t.Fatal(current, err)
+	}
+	if _, err := h.Resume(context.Background(), existing.CWD, existing.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	assertConfigWrites(t, dir, "mode=yolo\n")
+}
+
+func TestNewConversationNeverClaimsUnacknowledgedYolo(t *testing.T) {
+	for _, variant := range []string{"unoffered", "wrong-ack", "missing-ack"} {
+		t.Run(variant, func(t *testing.T) {
+			t.Setenv("CLW_CONFIG_PEER", "yes")
+			t.Setenv("CLW_MODE_PEER", variant)
+			h, _, dir := fixture(t)
+			h.opts.NewSessionMode = "yolo"
+			if _, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir}); err == nil {
+				t.Fatal("unavailable startup mode was claimed")
+			}
+			if _, err := os.Stat(filepath.Join(dir, "prompts")); !os.IsNotExist(err) {
+				t.Fatal("startup mode made a model request", err)
+			}
+		})
+	}
 }

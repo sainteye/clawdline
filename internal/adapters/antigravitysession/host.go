@@ -25,6 +25,8 @@ type Options struct {
 	Executable, AccountDir string
 	StateDir               string
 	Args                   []string
+	// NewSessionMode applies only to newly created conversations, never resume.
+	NewSessionMode string
 }
 
 type Host struct {
@@ -161,6 +163,9 @@ func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launc
 	}
 	created, err := client.NewSession(ctx)
 	if err != nil {
+		return session.Session{}, err
+	}
+	if err := selectInitialMode(ctx, client, created, h.opts.NewSessionMode); err != nil {
 		return session.Session{}, err
 	}
 	if err := publishIdentity(identityPath, client.SessionID()); err != nil {
@@ -395,7 +400,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 			outcome, c.storeErr = saveErr, saveErr
 			c.row.State, c.uncertain = session.StateUnknown, true
 		}
-		if result.StopReason != "end_turn" {
+		if result.StopReason != "end_turn" && result.StopReason != "cancelled" {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_did_not_end_normally", At: time.Now().Unix()})
 		}
 	}()
@@ -414,8 +419,8 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 func (h *Host) Send(ctx context.Context, s session.Session, text string) error {
 	return h.SendProtocol(ctx, s, text, nil)
 }
-func (h *Host) Interrupt(context.Context, session.Session) error {
-	return refusal("turn_interrupt_unsupported")
+func (h *Host) Interrupt(ctx context.Context, s session.Session) error {
+	return h.InterruptProtocol(ctx, s, nil)
 }
 func (h *Host) Reveal(context.Context, session.Session, bool) error {
 	return refusal("terminal_unavailable")

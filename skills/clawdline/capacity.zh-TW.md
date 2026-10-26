@@ -226,6 +226,7 @@
 | `console.health_ui_trend_signals` | 20 | `rows` | `refuse` | `diagnostics` | — |
 | `console.machine_list_poll_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.native_pairing_save_seconds` | 15 | `seconds` | `expire` | `sender, diagnostics` | — |
+| `console.next_messages` | 20 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.opened_row_quiet_seconds` | 8 | `seconds` | `expire` | `diagnostics` | — |
 | `console.opened_row_restate_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.owner_retention_poll_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |

@@ -220,3 +220,9 @@ type ProtocolMenuHost interface {
 	ProtocolSessionHost
 	SelectProtocol(context.Context, session.Session, int, string, func() error) error
 }
+
+// ProtocolInterruptHost stops the current native turn without terminal keys.
+type ProtocolInterruptHost interface {
+	ProtocolSessionHost
+	InterruptProtocol(context.Context, session.Session, func() error) error
+}

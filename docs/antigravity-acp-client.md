@@ -423,3 +423,42 @@ fix and pass after it. Separate regressions retain blocked-write and control-RPC
 timeouts, explicit caller cancellation, exact permission IDs and one reply per
 selection. These tests call no provider or model. They do not establish that the
 phone's earlier empty reply or attached-image pending card is fixed.
+
+
+### Native interruption and next-message input
+
+Owned Gemini interruptions use ACP `session/cancel`, not terminal Escape bytes
+or destructive process cancellation. The client answers an outstanding permission
+request with `cancelled`, writes one cancellation notification for the active
+prompt, and leaves completion to the native prompt result. Repeated stops do not
+cancel the next prompt. Machine write authorization is checked at the pipe write;
+the owned process and saved conversation stay available after a cancelled turn.
+
+While an owned turn runs, the composer accepts explicit next-message inputs into
+this browser's existing persisted pending cards. A queued card says it is held in
+this browser, can be dismissed, and is not a machine acceptance receipt. The open
+page dispatches one card on a fresh idle observation, under the same idempotency
+key. Another card waits for a later observation. Queued inputs share the existing
+card budget. A refreshed card that was already being sent stays unknown and is
+never automatically retried; a queued input that was never sent remains queued.
+A closed or suspended page cannot dispatch; another device does not inherit its
+queue. Unknown native state and revoked write access do not drain the queue.
+
+A zero-model diagnostic on 2026-10-26 found that both the installed ACP 1.4.1
+runtime and the official registry's ACP 1.4.3 runtime offer only `default`,
+`auto_edit` and `yolo`. ACP 1.4.1 rejects a `mode=auto` selection with JSON-RPC
+`-32602`. The standalone CLI's Auto mode is therefore not established for this
+ACP integration. After that finding, the person explicitly chose YOLO for new
+conversations.
+Production blank-session startup selects the offered `yolo` mode and requires
+the native acknowledgement before publishing the conversation. Existing active
+and resumed conversations are not reconfigured. There is no account setting
+change and YOLO is never described as the standalone Auto mode.
+A third completed diagnostic selected YOLO on the installed 1.4.1 runtime and
+received `currentValue=yolo`; the personal OAuth profile and disabled AI Credits
+setting were unchanged. These three diagnostics used eleven metadata requests.
+An additional sandboxed attempt stopped at authentication after two metadata
+requests; the same zero-model check then succeeded outside that restriction.
+All attempts used zero model inputs and zero paid API calls.
+The 1.4.3 archive matched the registry SHA256 and its two executable signatures
+were verified; it was tested in isolation, without replacing the installed runtime.

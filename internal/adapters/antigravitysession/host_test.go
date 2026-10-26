@@ -49,6 +49,8 @@ func TestOwnedPeer(t *testing.T) {
 	}
 	model, effort := "synthetic-flash", "high"
 	mode := "default"
+	var interruptedPrompt json.RawMessage
+	interruptTurns := 0
 	efforts := []string{"low", "medium", "high"}
 	scanner := bufio.NewScanner(os.Stdin)
 	notify := func(u any) {
@@ -85,6 +87,14 @@ func TestOwnedPeer(t *testing.T) {
 			f.Close()
 		}
 		switch req.Method {
+		case "session/cancel":
+			if len(req.ID) != 0 || len(interruptedPrompt) == 0 {
+				os.Exit(43)
+			}
+			os.WriteFile(filepath.Join(dir, "cancelled"), []byte(req.Params.SessionID), 0600)
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": interruptedPrompt, "result": map[string]string{"stopReason": "cancelled"}})
+			interruptedPrompt = nil
+			continue
 		case "initialize":
 			result = map[string]any{"protocolVersion": 1}
 			if os.Getenv("CLW_RESTORE_PEER") == "yes" {
@@ -167,6 +177,13 @@ func TestOwnedPeer(t *testing.T) {
 		case "session/set_model":
 			_ = os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "model"), []byte(req.Params.ModelID), 0600)
 		case "session/prompt":
+			if os.Getenv("CLW_INTERRUPT_PEER") == "yes" {
+				interruptTurns++
+				if interruptTurns == 1 {
+					interruptedPrompt = append(json.RawMessage(nil), req.ID...)
+					continue
+				}
+			}
 			dir := os.Getenv("GEMINI_HOME")
 			if os.Getenv("CLW_IDENTITY_CHECK") == "yes" {
 				path := os.Getenv("CLAWDLINE_PROTOCOL_SESSION_FILE")

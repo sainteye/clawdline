@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9182,
+  "englishKeys": 9186,
   "counts": {
     "negation": 2654,
-    "state": 1524,
+    "state": 1528,
     "permission": 550,
     "deletion": 202,
     "uncertainty": 289
   },
-  "unionCount": 4098,
+  "unionCount": 4102,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2893,6 +2893,8 @@
       "capacityRow.console.health_ui_probe_hosts.full",
       "capacityRow.console.machine_list_poll_seconds.what",
       "capacityRow.console.native_pairing_save_seconds.full",
+      "capacityRow.console.next_messages.full",
+      "capacityRow.console.next_messages.what",
       "capacityRow.console.opened_row_quiet_seconds.full",
       "capacityRow.console.owner_retention_poll_seconds.what",
       "capacityRow.console.persona_retry_seconds.what",
@@ -3902,6 +3904,8 @@
       "next.sendDiagnosticQueued",
       "next.sendInterrupted",
       "next.sendKeptWords",
+      "next.sendQueueFull",
+      "next.sendQueuedHere",
       "next.sessionNotStartedShort",
       "next.sessionStateFilterAttentionHint",
       "next.sessionStateFilterIdleHint",
@@ -5704,6 +5708,8 @@
     "capacityRow.console.machine_list_poll_seconds.what",
     "capacityRow.console.native_pairing_save_seconds.full",
     "capacityRow.console.native_pairing_save_seconds.what",
+    "capacityRow.console.next_messages.full",
+    "capacityRow.console.next_messages.what",
     "capacityRow.console.opened_row_quiet_seconds.full",
     "capacityRow.console.opened_row_restate_seconds.full",
     "capacityRow.console.opened_row_restate_seconds.what",
@@ -8620,6 +8626,8 @@
     "next.sendEnterUnknown",
     "next.sendInterrupted",
     "next.sendKeptWords",
+    "next.sendQueueFull",
+    "next.sendQueuedHere",
     "next.sendUnknown",
     "next.sendUnsubmitted",
     "next.sessionCountNotStarted",

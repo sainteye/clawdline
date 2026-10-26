@@ -240,6 +240,9 @@ func (a Actions) submitAntigravityTyped(ctx context.Context, s session.Session, 
 }
 
 func (a Actions) interruptAntigravity(ctx context.Context, s session.Session, h ports.TerminalHost) error {
+	if protocol, ok := h.(ports.ProtocolInterruptHost); ok && protocol.OwnsProtocol(s) {
+		return protocol.InterruptProtocol(ctx, s, func() error { return checkOperation(ctx) })
+	}
 	ctx, cancel := context.WithTimeout(ctx, terminal.SendConfirmationWindow())
 	defer cancel()
 	p, err := a.antigravityAction(ctx, s, h)

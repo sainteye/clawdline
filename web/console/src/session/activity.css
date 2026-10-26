@@ -1,0 +1,3 @@
+/* Keep the label and outcome readable; the command owns the remaining width. */
+.activity-kind { flex: 0 0 auto; white-space: nowrap; }
+.activity-title { flex: 1 1 0; }

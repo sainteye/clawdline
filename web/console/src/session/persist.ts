@@ -156,7 +156,7 @@ function cardOf(kept: Kept): PendingSend | null {
   // answered at all, and now never will be — its request went with the page —
   // so it is the unknown of F3 rather than a failure.
   const was = kept.st
-  const state = was === "accepted" ? "accepted" : was === "failed" ? "failed" : was === "unknown" ? "unknown" : "unknown"
+  const state = was === "queued" ? "queued" : was === "accepted" ? "accepted" : was === "failed" ? "failed" : was === "unknown" ? "unknown" : "unknown"
   const failure = was === "sending" || was === "accepted" ? INTERRUPTED : typeof kept.f === "string" ? kept.f : INTERRUPTED
   const known = new Map<string, number>()
   if (Array.isArray(kept.k)) {
@@ -218,8 +218,10 @@ function parse(raw: string | null): Record_ {
  */
 function shed(record: Record_, now: number): Record_ {
   let cards = record.cards.filter((card) => typeof card?.at === "number" && now - card.at < KEPT_MS)
-  cards.sort((a, b) => a.at - b.at)
+  // Unsent queued inputs have no machine copy. Retain them before attempted sends.
+  cards.sort((a, b) => Number(a.st === "queued") - Number(b.st === "queued") || a.at - b.at)
   if (cards.length > KEPT_CARDS) cards = cards.slice(cards.length - KEPT_CARDS)
+  cards.sort((a, b) => a.at - b.at)
   const gone = record.gone.filter(([, at]) => now - at < KEPT_MS).slice(-KEPT_LET_GO)
   const size = () => JSON.stringify({ v: 1, cards, gone }).length
   for (let i = 0; i < cards.length && size() > KEPT_CHARS; i++) {

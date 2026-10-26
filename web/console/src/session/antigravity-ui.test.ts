@@ -187,8 +187,8 @@ test("owned protocol identity admits a fresh composer without inventing a termin
 
 test("an interrupted owned conversation can accept an explicit continuation without reopening a terminal", () => {
   assert.equal(assistantComposeAdmits("antigravity", undefined, "unknown", false, true), true)
-  assert.equal(assistantComposeAdmits("antigravity", undefined, "working", false, true), false)
-  assert.equal(assistantComposeAdmits("antigravity", undefined, "waiting", true, true), false)
+  assert.equal(assistantComposeAdmits("antigravity", undefined, "working", false, true), true)
+  assert.equal(assistantComposeAdmits("antigravity", undefined, "waiting", true, true), true)
   assert.equal(assistantComposeAdmits("antigravity", active, "unknown", false, false), false)
 })
 

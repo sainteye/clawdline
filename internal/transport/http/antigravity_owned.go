@@ -106,7 +106,13 @@ func (p ownedAntigravityTerminal) SelectProtocol(ctx context.Context, s session.
 	}
 	return ownedAntigravityUnavailable()
 }
-func (p ownedAntigravityTerminal) Interrupt(context.Context, session.Session) error {
+func (p ownedAntigravityTerminal) Interrupt(ctx context.Context, s session.Session) error {
+	return p.InterruptProtocol(ctx, s, nil)
+}
+func (p ownedAntigravityTerminal) InterruptProtocol(ctx context.Context, s session.Session, before func() error) error {
+	if h := p.server.antigravitySessions.Load(); h != nil {
+		return h.InterruptProtocol(ctx, s, before)
+	}
 	return ownedAntigravityUnavailable()
 }
 func (p ownedAntigravityTerminal) Reveal(context.Context, session.Session, bool) error {
@@ -152,7 +158,7 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 	if st, err := os.Stat(cfg.Executable); err != nil || st.IsDir() || st.Mode()&0111 == 0 {
 		return nil, ownedAntigravityUnavailable()
 	}
-	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions")})
+	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions"), NewSessionMode: "yolo"})
 	if err != nil {
 		return nil, err
 	}

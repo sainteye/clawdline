@@ -52,7 +52,7 @@ export function assistantComposeAdmits(assistant: string | undefined, facts: Ass
   // Owned writes are checked at the server; do not preflight the account again in the view.
   // A stopped or interrupted owned conversation resumes on the person's next
   // explicit message. The Host reconciles native history before that one send.
-  if (protocolOwned) return (state === "idle" || state === "unknown") && !hasMenu
+  if (protocolOwned) return state === "idle" || state === "unknown" || state === "working" || state === "waiting"
   return facts?.id === assistant && assistantAdmits(facts, "send") && state === "idle" && !hasMenu
 }
 

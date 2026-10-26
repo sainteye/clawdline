@@ -34,7 +34,7 @@ import { nextWord } from "../next-strings.js"
 import { canOpenMachinePairing, openMachinePairing } from "../legacy/devices-bridge.js"
 import { watchMachinePaired } from "../cloud/pairing-completion.js"
 import { writeIsOff } from "./outcome.js"
-import { deliverUntilSeen, pendingSends } from "./send.js"
+import { deliverUntilSeen, pendingSends, nextMessages } from "./send.js"
 import { MENU_FOLLOW } from "./menu-follow.js"
 import { Waiting } from "./Waiting.js"
 import { ImageMarkup } from "./ImageMarkup.js"
@@ -177,6 +177,18 @@ export function Composer({
   const providerOn = assistantComposeAdmits(remote?.assistant ?? row?.assistant, remote?.assistantFacts ?? assistantFacts,
     remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu, protocolOwned)
   const on = (remote ? remote.canSend : write && !!row) && providerOn
+  const cardsVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
+  useEffect(() => {
+    if (!protocolOwned || !row) return
+    const observation = row.source?.freshness === "current" && row.source.observed_at
+      ? `${row.execution_generation}:${row.source.observed_at}` : ""
+    const card = nextMessages.take(row.id, row.state === "idle" && !row.menu, observation, on, Date.now())
+    if (!card) return
+    void deliverUntilSeen(card).then(code => {
+      if (writeIsOff(code)) setBlocked({ machine, code })
+      onDid()
+    })
+  }, [row, protocolOwned, on, machine, cardsVersion, onDid])
   // The picture listeners are bound once, and ask what is open when they fire.
   const open = useRef({ on })
   open.current = { on: on && (!remote || remote.allowPictures) }
@@ -513,6 +525,19 @@ export function Composer({
     }
     if ((!said && !pictures.length) || (!row && !remote) || !on ||
       (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
+    if (protocolOwned && row && ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
+      pendingSends.of(row.id).some(card => card.state === "queued"))) {
+      if (!nextMessages.add(row.id, said, pictures, Date.now())) {
+        setFailure(nextWord("sendQueueFull"))
+        return
+      }
+      if (msg.current) msg.current.textContent = ""
+      setText("")
+      setFailure("")
+      Shots.clear()
+      onSent?.()
+      return
+    }
     // A quit line is not a message: the original ends the session instead, while
     // its terminal is still known. Exact and per assistant, so a sentence that
     // mentions `/exit` is still an ordinary prompt.

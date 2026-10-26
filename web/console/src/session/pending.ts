@@ -44,7 +44,7 @@
 /** `outcome.ts` `sitsUnsubmitted`'s code, spelt here because this file imports nothing at run time. */
 const UNSUBMITTED = "send_unsubmitted"
 
-export type PendingState = "sending" | "accepted" | "failed" | "unknown"
+export type PendingState = "queued" | "sending" | "accepted" | "failed" | "unknown"
 
 export interface PendingSend {
   readonly token: string
@@ -202,7 +202,7 @@ export class PendingSends {
   }
 
   /** A card for words that are about to be sent. */
-  add(session: string, text: string, pictures: readonly string[], now: number): PendingSend {
+  add(session: string, text: string, pictures: readonly string[], now: number, queued = false): PendingSend {
     this.count += 1
     const card: PendingSend = {
       token: `p${this.count}-${now}-${pageMark}`,
@@ -210,7 +210,7 @@ export class PendingSends {
       text,
       pictures: [...pictures],
       request: newRequestID(),
-      state: "sending",
+      state: queued ? "queued" : "sending",
       failure: "",
       absent: false,
       sentAt: now,
@@ -220,6 +220,17 @@ export class PendingSends {
       partial: false,
     }
     this.cards.push(card)
+    this.changed()
+    return card
+  }
+
+  /** Claim an unsent queued card once, preserving its original request identity. */
+  startQueued(token: string, now: number): PendingSend | null {
+    const card = this.find(token)
+    if (!card || card.state !== "queued" || card.partial) return null
+    card.state = "sending"
+    card.sentAt = now
+    card.known = occurrences(this.seen.get(card.session) ?? [])
     this.changed()
     return card
   }
@@ -419,7 +430,7 @@ export class PendingSends {
         changed = true
       }
     }
-    const mine = this.of(session).filter((card) => !settled.has(card))
+    const mine = this.of(session).filter((card) => !settled.has(card) && card.state !== "queued")
     const stopped = (card: PendingSend) => card.state === "failed" || card.state === "unknown"
     const order = [...mine.filter((card) => !stopped(card)), ...mine.filter(stopped)]
     const used = new Set<number>()

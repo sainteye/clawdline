@@ -1091,6 +1091,11 @@
     "Note": true
   },
   {
+    "Name": "console.next_messages",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.opened_row_quiet_seconds",
     "Known": true,
     "Note": true

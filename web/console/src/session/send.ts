@@ -26,9 +26,11 @@ import { captureMachineFetch, retryCloudConnection } from "../cloud/install.js"
 import { readWorkflowSettings, writeWorkflowSettings } from "../pages/settings/api.js"
 import { byId } from "../legacy/bridge.js"
 import { itermConsent } from "./iterm-consent.js"
+import { NextMessages } from "./next-message.js"
 
 /** The page's one set of cards: a card outlives the composer that made it and the session being switched away from. */
 export const pendingSends = new PendingSends()
+export const nextMessages = new NextMessages(pendingSends)
 
 /** Beside the other per-browser things this origin keeps (`bar/history.ts`, `legacy/order-bridge.ts`). */
 const CARDS_KEY = "clawdline.session.cards"

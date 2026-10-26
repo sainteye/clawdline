@@ -36,6 +36,8 @@ func TestACPProcess(t *testing.T) {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), 1<<22)
 	enc := json.NewEncoder(os.Stdout)
+	var interruptedPrompt json.RawMessage
+	interruptTurns := 0
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
 		wire.Write(append(line, '\n'))
@@ -74,6 +76,13 @@ func TestACPProcess(t *testing.T) {
 		}
 		var result any
 		switch method {
+		case "session/cancel":
+			if len(m["id"]) != 0 || len(interruptedPrompt) == 0 {
+				os.Exit(40)
+			}
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": interruptedPrompt, "result": map[string]string{"stopReason": "cancelled"}})
+			interruptedPrompt = nil
+			continue
 		case "initialize":
 			if os.Getenv("OPENAI_API_KEY") != "" || os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") != "" || os.Getenv("GEMINI_API_KEY") != "" || os.Getenv("LC_ALL") != "C" {
 				os.Exit(33)
@@ -127,6 +136,27 @@ func TestACPProcess(t *testing.T) {
 				result = map[string]any{"configOptions": []any{map[string]string{"id": "thinking_level", "type": "select", "currentValue": "low"}}}
 			}
 		case "session/prompt":
+			if mode == "interrupt" || mode == "interrupt-permission" {
+				interruptTurns++
+				if interruptTurns > 1 {
+					result = map[string]string{"stopReason": "end_turn"}
+					break
+				}
+				interruptedPrompt = append(json.RawMessage(nil), id...)
+				if mode == "interrupt-permission" {
+					enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "permission-interrupt", "method": "session/request_permission", "params": map[string]any{"sessionId": "fake-session", "toolCall": map[string]string{"toolCallId": "pending-tool", "title": "Synthetic pending command"}, "options": []any{map[string]string{"optionId": "allow-exact", "name": "Allow once", "kind": "allow_once"}}}})
+					if !scanner.Scan() {
+						os.Exit(41)
+					}
+					line = append([]byte(nil), scanner.Bytes()...)
+					wire.Write(append(line, '\n'))
+					wire.Sync()
+					if !strings.Contains(string(line), `"outcome":"cancelled"`) || strings.Contains(string(line), "optionId") {
+						os.Exit(42)
+					}
+				}
+				continue
+			}
 			var params struct {
 				Prompt []struct {
 					Text string `json:"text"`

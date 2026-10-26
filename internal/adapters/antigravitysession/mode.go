@@ -5,8 +5,46 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/sainteye/clawdline/internal/adapters/antigravityprocess"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
+
+// A startup default must be offered and acknowledged before publishing the row.
+// Resume never calls this: a saved conversation retains its native permissions.
+func selectInitialMode(ctx context.Context, client *antigravityprocess.Client, created json.RawMessage, wanted string) error {
+	if wanted == "" {
+		return nil
+	}
+	var result struct {
+		Options json.RawMessage `json:"configOptions"`
+	}
+	if json.Unmarshal(created, &result) != nil {
+		return refusal("permission_unavailable")
+	}
+	current, err := nativeMode(result.Options, wanted)
+	if err != nil {
+		return err
+	}
+	if current == wanted {
+		return nil
+	}
+	var ackErr error
+	err = client.SetConfigOptionChecked(ctx, "mode", wanted, nil, func(raw json.RawMessage) error {
+		if json.Unmarshal(raw, &result) != nil {
+			ackErr = refusal("permission_unavailable")
+			return nil
+		}
+		current, ackErr = nativeMode(result.Options, wanted)
+		if ackErr == nil && current != wanted {
+			ackErr = refusal("permission_unavailable")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return ackErr
+}
 
 // nativeMode accepts only an unambiguous native select whose current value is
 // offered. Unknown or malformed mode metadata does not affect ordinary chat.

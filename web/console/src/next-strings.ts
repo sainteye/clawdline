@@ -1118,6 +1118,8 @@ const words = {
     sendAgainTip: "If the first attempt reached the machine after all, it is not typed a second time.",
     sendAgainMayDuplicate: "Send again anyway",
     sendAgainMayDuplicateTip: "Uses a new request because the first failure is filed; the message may be duplicated.",
+    sendQueuedHere: "Queued in this browser. It will send when Gemini finishes the current turn and this page is open.",
+    sendQueueFull: "This browser has reached its pending message limit. Finish or dismiss a pending message first.",
     sendInterrupted: "This page was reloaded while this was being sent, so it is not known whether it reached the machine.",
     sendKeptWords:
       "This page kept the words when it was reloaded, but not the pictures, so this one cannot be sent again from here.",
@@ -3055,6 +3057,8 @@ const words = {
     sendAgainTip: "如果第一次其實有送到，這次不會重打。",
     sendAgainMayDuplicate: "仍要重新送出",
     sendAgainMayDuplicateTip: "首次失敗已存為收據；這次使用新請求，訊息可能重複。",
+    sendQueuedHere: "已在此瀏覽器排隊；Gemini 完成目前回合且此頁面開啟時會送出。",
+    sendQueueFull: "此瀏覽器的待處理訊息已滿，請先完成或取消一則訊息。",
     sendInterrupted: "送出到一半這一頁被重新載入了，不知道有沒有送到那台機器。",
     sendKeptWords: "重新載入時這一頁留住了文字，但沒有留住圖片，所以這一則不能從這裡再送一次。",
     sendDiagnose: "記錄診斷",

@@ -4310,6 +4310,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.next_messages",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.opened_row_quiet_seconds",
     "Class": "cache",
     "Unit": "seconds",

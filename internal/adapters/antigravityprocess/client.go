@@ -144,8 +144,10 @@ type Client struct {
 	configResult                     func(json.RawMessage) error // stateMu; invoked by readLoop before later updates
 	configResultID                   string
 	embeddedContext                  bool
-	configOptions                    json.RawMessage // stateMu; current native metadata, never persisted
-	canLoad, canResume, canList      bool            // negotiated before opening a session
+	configOptions                    json.RawMessage    // stateMu; current native metadata, never persisted
+	canLoad, canResume, canList      bool               // negotiated before opening a session
+	activePrompt, cancelledPrompt    string             // stateMu; native turn, not process lifetime
+	activePermission                 *PermissionRequest // stateMu
 }
 
 type usageCapture struct {
@@ -717,6 +719,15 @@ func (c *Client) exchange(ctx context.Context, method string, params any, before
 	}
 	c.sequence++
 	id := strconv.FormatUint(c.sequence, 10)
+	if method == "session/prompt" {
+		defer func() {
+			c.stateMu.Lock()
+			if c.activePrompt == id {
+				c.activePrompt = ""
+			}
+			c.stateMu.Unlock()
+		}()
+	}
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(id), "method": method, "params": params})
 	if len(b) > c.opts.MaxFrameBytes {
 		return nil, failure("frame_too_large", NotWritten)
@@ -751,6 +762,11 @@ func (c *Client) exchange(ctx context.Context, method string, params any, before
 			}
 		}
 		attempted.Store(true)
+		if method == "session/prompt" {
+			c.stateMu.Lock()
+			c.activePrompt = id
+			c.stateMu.Unlock()
+		}
 		writeErr := c.writeUnlocked(b)
 		c.writeMu.Unlock()
 		if writeErr != nil {
@@ -927,6 +943,16 @@ func (c *Client) permission(frame json.RawMessage) bool {
 	ctx, cancel := context.WithCancel(c.ctx)
 	defer cancel()
 	p := &PermissionRequest{Offer: offer, Revision: rand.Text(), ctx: ctx, client: c, done: make(chan struct{})}
+	c.stateMu.Lock()
+	c.activePermission = p
+	c.stateMu.Unlock()
+	defer func() {
+		c.stateMu.Lock()
+		if c.activePermission == p {
+			c.activePermission = nil
+		}
+		c.stateMu.Unlock()
+	}()
 	if err := c.opts.OnPermission(ctx, p); err != nil {
 		_ = p.Cancel(ctx, nil)
 		return true

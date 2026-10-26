@@ -32,6 +32,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	enc := json.NewEncoder(os.Stdout)
+	var interruptedPrompt json.RawMessage
 	model, effort, mode := "synthetic-flash", "high", "default"
 	efforts := []string{"low", "medium", "high"}
 	config := func() []any {
@@ -66,6 +67,14 @@ func TestOwnedHTTPPeer(t *testing.T) {
 		}
 		var result any = map[string]any{}
 		switch req.Method {
+		case "session/cancel":
+			if len(req.ID) != 0 || len(interruptedPrompt) == 0 {
+				os.Exit(44)
+			}
+			os.WriteFile(filepath.Join(os.Getenv("GEMINI_HOME"), "native-cancel"), []byte(req.Params.SessionID), 0600)
+			enc.Encode(map[string]any{"jsonrpc": "2.0", "id": interruptedPrompt, "result": map[string]string{"stopReason": "cancelled"}})
+			interruptedPrompt = nil
+			continue
 		case "initialize":
 			result = map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}, "loadSession": true, "sessionCapabilities": map[string]any{"resume": map[string]any{}, "list": map[string]any{}}}}
 		case "session/list":
@@ -96,6 +105,10 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			}
 			result = map[string]any{"configOptions": config()}
 		case "session/prompt":
+			if os.Getenv("CLW_HTTP_INTERRUPT") == "yes" {
+				interruptedPrompt = append(json.RawMessage(nil), req.ID...)
+				continue
+			}
 			data, _ := json.Marshal(req.Params.Prompt)
 			// Prompt readers use this file as the receipt that the native tool
 			// environment is ready. Publish it atomically after its capability.
@@ -333,7 +346,7 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 		t.Fatal("model-specific effort list not enforced")
 	}
 	writes, _ := os.ReadFile(filepath.Join(dir, "config-writes"))
-	if string(writes) != "thinking_level=low\nmodel=synthetic-pro\n" {
+	if string(writes) != "mode=yolo\nthinking_level=low\nmodel=synthetic-pro\n" {
 		t.Fatalf("metadata writes=%q", writes)
 	}
 	if _, err := s.actions().Send(ctx, answer.ID, "synthetic HTTP input"); err != nil {

@@ -2275,7 +2275,7 @@ test("a pinned native Cloud conversation retains its binding and admits the curr
   assert.equal(row.backend, "owned")
   assert.equal(assistantProtocolOwned(row), true)
   assert.equal(assistantComposeAdmits(row.assistant, undefined, row.state, false, assistantProtocolOwned(row)), true)
-  assert.equal(assistantComposeAdmits(row.assistant, undefined, "working", false, assistantProtocolOwned(row)), false)
+  assert.equal(assistantComposeAdmits(row.assistant, undefined, "working", false, assistantProtocolOwned(row)), true)
   assert.equal(assistantStateCurrent(row, now), false, "native text input does not require a terminal observation")
   assert.deepEqual(documentIdentityForSession([row], destination.sessionID, "cloud"),
     { machine: "mac-a", session: destination.sessionID })
