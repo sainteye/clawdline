@@ -236,6 +236,17 @@ retry restores the existing device; a genuine session refusal still requires sig
 session whose device key is no longer stored still registers a replacement device. The startup
 failure matrix and recovery path are exercised in `device-limit.test.ts` and `keep-connected.test.ts`.
 
+Control-plane JSON requests use `cache: "no-store"`, including session and capability checks.
+The sign-in card retains the connection loop's page listeners: returning to the visible page,
+restoring it from the back-forward cache, or regaining network rechecks authorization with the
+existing minimum attempt spacing. A signed-out page does not poll. A fresh valid session can
+restore the same device without OAuth navigation or replacement registration; a named refusal
+keeps the card. Revocation and permanent protocol failures retain their terminal behavior.
+If a return happens during the session request, its wake is consumed by a spaced fresh check
+before showing a sign-in card, rather than being lost before the loop starts waiting.
+These tests establish cache bypass and recovery behavior, not the HTTP response or cookie state
+of any particular reported phone launch.
+
 ## Explicit send diagnostics
 
 A failed message card's **Record diagnostics** button sends a content-free

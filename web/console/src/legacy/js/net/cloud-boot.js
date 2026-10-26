@@ -264,7 +264,8 @@ export function durableSequence(storage, key, indexedDBValue) {
 }
 
 async function json(fetchImpl, url, options) {
-    var response = await fetchImpl(url, Object.assign({ credentials: "include" }, options || {}));
+    // Cookie identity and revocable grants must come from this request, not an HTTP cache.
+    var response = await fetchImpl(url, Object.assign({ credentials: "include", cache: "no-store" }, options || {}));
     var body = null;
     try { body = await response.json(); } catch (e) { body = null; }
     return { status: response.status, body: body };
@@ -935,6 +936,8 @@ export function keepConnected(session, options) {
     // Set when the page returns from a hide long enough that its socket cannot be trusted — a phone
     // that froze this page ran none of its timers, and its socket may be dead without saying so.
     var staleResume = false;
+    // A return can arrive while the cookie check is still in flight, before it can park.
+    var returnedDuringAttempt = false;
     var wakeListeners = new Set();
 
     function wake(reason) {
@@ -1132,6 +1135,7 @@ export function keepConnected(session, options) {
             wake(reason);
             return true;
         }
+        if (RESTART_WAKES.has(reason)) returnedDuringAttempt = true;
         var hiddenFor = hiddenSince === null ? 0 : now() - hiddenSince;
         hiddenSince = null;
         if (hiddenFor >= staleAfterHiddenMs && active) {
@@ -1166,6 +1170,7 @@ export function keepConnected(session, options) {
             if (stopped) return;
             var outcome = null;
             lastAttemptAt = now();
+            returnedDuringAttempt = false;
             // A connect while a client still serves replaces its carrier (a renewal, or a fresh socket
             // after a long hide); one after any earlier try is a reconnect; the loop's first is a connect.
             var healthStage = active && active.ready ? "viewer_carrier_replace"
@@ -1220,7 +1225,17 @@ export function keepConnected(session, options) {
                 // connection, only one that did not go on.
                 if (outcome.state === "sign_in") healthSpan.fail("auth_refused");
                 else healthSpan.complete("aborted");
+                if (outcome.state === "sign_in" && returnedDuringAttempt) {
+                    // The return's cookie state may be newer than this request. Consume that wake
+                    // before drawing a sign-in card; a burst still permits only one spaced check.
+                    await waitFor(Math.max(0, wakeSpacingMs - (now() - lastAttemptAt)), function () { return false; });
+                    continue;
+                }
                 onState(outcome);
+                // A suspended PWA can retain this card after its cookie becomes available again.
+                // Revalidate on a visible/network return, with the existing wake spacing and no
+                // signed-out polling. Only connect's fresh authorization can open the console.
+                if (outcome.state === "sign_in" && await parkUntilReturn(false)) continue;
                 return;
             }
             healthSpan.complete("ok");
