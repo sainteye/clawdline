@@ -33,7 +33,7 @@ func TestDispatchUsesMachinePermissionUnlessTaskExplicitlyOverrides(t *testing.T
 // of introducing a second permission policy over the person's provider settings.
 func TestAskDispatchLeavesNativePermissionSettingsUntouched(t *testing.T) {
 	for _, assistant := range []string{"claude", "codex"} {
-		args := permissionArgs(Record{Assistant: assistant, PermissionMode: "ask"}, "/tmp/fixture", "")
+		args := permissionArgs(Record{Assistant: assistant, PermissionMode: "ask"}, "/tmp/tasks", "/tmp/fixture", "")
 		if len(args) != 0 {
 			t.Fatalf("%s overrides native settings: %v", assistant, args)
 		}

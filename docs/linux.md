@@ -413,6 +413,15 @@ section with a `+` that leads nowhere.
   `ask`, `edits`, and verification-gate profiles retain their existing network policy.
   Existing Codex processes require a permissions change or an exact-conversation resume before
   new launch settings apply. File fallbacks remain available for disconnected receipt delivery.
+- **A Codex child that may edit must also be able to stage what it edited.** Codex's workspace
+  sandbox keeps a workspace root's git metadata read-only, and follows a worktree's `.git` file to
+  its gitdir and common directory, so `git add` failed on `.git/index.lock: Operation not permitted`
+  with the legacy `--sandbox workspace-write`. `edits` and `full` now launch a profile that extends
+  `:workspace` and names only the repository's `.git` and, for a worktree child, its
+  `.git/worktrees/<name>`. Measured with codex-cli 0.162.1 on macOS; on the Ubuntu host (0.161.0)
+  the probe could not run inside an already sandboxed Session (nested bubblewrap refused), so the
+  Linux half is unmeasured. A running Codex process keeps the sandbox it was launched with: only a
+  new launch picks this up.
 - **A codex child's sandbox needs the task root to be writable by the child's own user.** A task
   directory whose parent belongs to somebody else fails with
   `bwrap: Can't mkdir <task root>/.git: Permission denied` and the child cannot even read

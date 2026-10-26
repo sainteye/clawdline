@@ -879,7 +879,7 @@ func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, task
 	if r.Gate == nil && l.Assistant != projects.AssistantAntigravity {
 		args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
 	}
-	args = append(args, permissionArgs(r, cwd, taskExecutable)...)
+	args = append(args, permissionArgs(r, taskRoot, cwd, taskExecutable)...)
 	args = append(args, trustArgs(r.Assistant, cwd)...)
 	args = append(args, projects.UpdateCheckArgs(r.Assistant)...)
 	// The window was decided for this record at spawn; a Codex record never
@@ -913,7 +913,7 @@ func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, task
 
 // permissionArgs is the ceiling the dispatcher asked for, spelled the way each
 // CLI spells it.
-func permissionArgs(r Record, cwd, taskExecutable string) []string {
+func permissionArgs(r Record, taskRoot, cwd, taskExecutable string) []string {
 	if r.Gate != nil {
 		if r.Assistant == "codex" {
 			return gatePermissionArgs(r, cwd, taskExecutable)
@@ -931,8 +931,14 @@ func permissionArgs(r Record, cwd, taskExecutable string) []string {
 	case "codex":
 		switch r.PermissionMode {
 		case "edits":
+			if profile := workspaceProfileArgs(r, taskRoot, cwd, false); profile != nil {
+				return append(profile, "--ask-for-approval", "on-request")
+			}
 			return []string{"--ask-for-approval", "on-request", "--sandbox", "workspace-write"}
 		case "full":
+			if profile := workspaceProfileArgs(r, taskRoot, cwd, true); profile != nil {
+				return append(profile, "--ask-for-approval", "never")
+			}
 			// Non-interactive work cannot ask to retry outside the network
 			// sandbox. Keep filesystem confinement, but let the task reach
 			// Clawdline's receipt routes and its network dependencies.
@@ -941,6 +947,100 @@ func permissionArgs(r Record, cwd, taskExecutable string) []string {
 		}
 	}
 	return nil
+}
+
+// workspaceProfileArgs is workspace-write with the repository's own metadata
+// writable.
+//
+// Codex's workspace sandbox keeps a workspace root's git metadata read-only,
+// so a child could edit the files it was dispatched to change and then fail on
+// `.git/index.lock: Operation not permitted` the moment it staged them. It
+// follows a worktree's `.git` file, too: for a worktree child the protected
+// metadata is the checkout's own gitdir (`<repo>/.git/worktrees/<name>`) and
+// the common directory beside it. The documented way to lift that one rule is
+// a permission profile that extends `:workspace` and names the paths, the more
+// specific entry winning; everything else `:workspace` protects stays as it
+// was.
+//
+// Measured with codex-cli 0.162.1 on macOS, in a repository and a linked
+// worktree made for the purpose: `:workspace` alone refuses `git add`; naming
+// only the common directory still refuses the worktree's index.lock; naming
+// only the worktree's gitdir refuses the object write; naming both stages and
+// commits, while the main checkout's files and a path outside the workspace
+// are still refused. A `sandbox_mode` in the person's config.toml did not win
+// over `-c default_permissions` on the command line, so a machine configured
+// for full access is not widened further, and --strict-config stops a Codex
+// that cannot read the profile rather than letting it fall back to that file.
+//
+// Only directories this launch can check are granted: the toplevel's `.git`
+// directory, and a worktree gitdir only when it lies inside it. A repository
+// whose metadata is elsewhere (a submodule, a linked worktree used as the
+// project) keeps the legacy flags.
+func workspaceProfileArgs(r Record, taskRoot, cwd string, network bool) []string {
+	if r.Repository == "" || !filepath.IsAbs(r.Repository) {
+		return nil
+	}
+	metadata := filepath.Join(r.Repository, ".git")
+	if info, err := os.Lstat(metadata); err != nil || !info.IsDir() {
+		return nil
+	}
+	writable := []string{metadata}
+	if gitdir := worktreeGitdir(cwd, metadata); gitdir != "" {
+		writable = append(writable, gitdir)
+	}
+	if taskRoot != "" && filepath.IsAbs(taskRoot) {
+		// --add-dir already names it; the profile says so too rather than
+		// depend on the two spellings composing.
+		writable = append(writable, taskRoot)
+	}
+	entries := make([]string, 0, len(writable))
+	for _, path := range writable {
+		entries = append(entries, strconv.Quote(path)+"="+strconv.Quote("write"))
+	}
+	profile := "clawdline-workspace"
+	config := []string{
+		"default_permissions=" + strconv.Quote(profile),
+		"permissions." + profile + ".extends=" + strconv.Quote(":workspace"),
+		"permissions." + profile + ".filesystem={" + strings.Join(entries, ",") + "}",
+	}
+	if network {
+		// The legacy full mode's sandbox_workspace_write.network_access=true.
+		config = append(config, "permissions."+profile+".network.enabled=true")
+	}
+	args := []string{"--strict-config"}
+	for _, value := range config {
+		args = append(args, "-c", projects.ShellQuoted(value))
+	}
+	return args
+}
+
+// worktreeGitdir is the gitdir a linked worktree's `.git` file names, when it
+// is a directory under metadata/worktrees; anything else is "".
+func worktreeGitdir(cwd, metadata string) string {
+	if cwd == "" || !filepath.IsAbs(cwd) {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Join(cwd, ".git"))
+	if err != nil {
+		return ""
+	}
+	line, ok := strings.CutPrefix(strings.TrimSpace(string(raw)), "gitdir:")
+	if !ok {
+		return ""
+	}
+	gitdir := strings.TrimSpace(line)
+	if !filepath.IsAbs(gitdir) {
+		gitdir = filepath.Join(cwd, gitdir)
+	}
+	gitdir = filepath.Clean(gitdir)
+	rel, err := filepath.Rel(filepath.Join(metadata, "worktrees"), gitdir)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || strings.ContainsRune(rel, filepath.Separator) {
+		return ""
+	}
+	if info, err := os.Lstat(gitdir); err != nil || !info.IsDir() {
+		return ""
+	}
+	return gitdir
 }
 
 // gatePermissionArgs gives the checker a closed capability set. Codex's
