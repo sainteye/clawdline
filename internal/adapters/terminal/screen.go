@@ -40,6 +40,10 @@ func IsPaneID(id string) bool {
 // visible rows and nothing above them — and on an ordinary shell pane it is
 // two hundred lines of history. Nothing here promises which.
 func (t *Tmux) Screen(ctx context.Context, s session.Session, lines int) (string, bool) {
+	t, s = t.sessionTarget(s)
+	if t == nil {
+		return "", false
+	}
 	if s.Backend != session.BackendTmux || !IsPaneID(s.ID) {
 		return "", false
 	}

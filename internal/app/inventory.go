@@ -306,7 +306,7 @@ func (in Inventory) enrich(ctx context.Context, s session.Session) session.Sessi
 	if s.CWD == "" && id.CWD != "" {
 		s.CWD = id.CWD
 	}
-	if id.Pane != "" {
+	if id.Pane != "" && !session.IsTerminalPane(s.ID) {
 		s.ID = id.Pane
 		s.Backend = session.BackendTmux
 	}
