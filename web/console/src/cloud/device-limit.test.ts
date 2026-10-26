@@ -379,3 +379,25 @@ test("only no_login_ticket on a 401 session creation asks for GitHub sign-in", a
   assert.deepEqual(await viewer.ensureSession(), { state: "sign_in", url: viewer.signInURL() })
   assert.deepEqual(asked, ["GET", "POST"])
 })
+
+test("startup reads the current cookie session instead of a cached signed-out answer", async () => {
+  const asked: string[] = []
+  const viewer = new CloudViewerSession({ config: CONFIG, storage: memoryStorage(), indexedDB: keyStore(),
+    fetch: async (_url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET"
+      asked.push(method)
+      if (method === "GET" && init?.cache === "no-store") {
+        return new Response(JSON.stringify({ account_id: "acct_test", device_id: "dev_existing" }))
+      }
+      return new Response(JSON.stringify({ error: {
+        code: method === "GET" ? "no_session" : "no_login_ticket",
+      } }), { status: 401 })
+    },
+  })
+  viewer.restoreDeviceKey = async () => true
+  viewer.readCapabilities = async () => ["read_sessions"]
+  assert.deepEqual(await viewer.ensureSession(), {
+    state: "ready", accountID: "acct_test", deviceID: "dev_existing",
+  })
+  assert.deepEqual(asked, ["GET"], "a stale refusal must not trigger device registration")
+})

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -440,5 +441,109 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	inv = s.inventory.Read(context.Background())
 	if len(inv.Sessions) != 0 {
 		t.Fatal("shutdown retained live Session")
+	}
+}
+
+func TestOwnedSmartTitleReadsStructuredHistory(t *testing.T) {
+	t.Setenv("CLW_HTTP_PEER", "yes")
+	s := capacityServer(t)
+	s.icons = &icon.Registry{}
+	s.broker = newBroker(s)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "antigravity-acp"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "antigravity-acp", "settings.json"), []byte(`{"useG1Credits":false,"auth":{"type":"oauth-personal"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	opts := antigravitysession.Options{Executable: exe, AccountDir: dir, StateDir: filepath.Join(dir, "history"), Args: []string{"-test.run=^TestOwnedHTTPPeer$"}}
+	h, err := antigravitysession.New(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = h.Shutdown() }()
+	s.antigravitySessions.Store(h)
+	s.terminals = []ports.TerminalHost{ownedAntigravityTerminal{s}}
+	s.inventory = app.Inventory{Terminals: s.terminals}
+	row, err := h.Open(t.Context(), ports.OpenRequest{Cwd: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs := 0
+	s.nameSession = func(_ context.Context, text, _ string) (string, error) {
+		runs++
+		for _, want := range []string{"<opening_request>\nBuild a calendar", "<later_requests>\nAdd reminders", "<latest_reply>\nsynthetic HTTP reply"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("missing %q in naming context %q", want, text)
+			}
+		}
+		return "Calendar reminders", nil
+	}
+	if rec := act(t, s, "smart-title", row.ID, "empty-owned", `{}`); rec.Code != 409 || codeOf(t, rec) != "conversation_empty" {
+		t.Fatalf("empty: %d %s", rec.Code, rec.Body)
+	}
+	if runs != 0 {
+		t.Fatal("empty history spent a naming turn")
+	}
+	for _, text := range []string{"Build a calendar", "Add reminders"} {
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			err := h.Send(t.Context(), row, text)
+			if err == nil {
+				break
+			}
+			// Idle is published before the previous job releases its write
+			// admission. Retry only a proven refusal before any bytes were sent.
+			var typed *antigravitysession.Error
+			if !errors.As(err, &typed) || typed.Code != "busy" || !typed.BeforeWrite() || time.Now().After(deadline) {
+				t.Fatal(err)
+			}
+			time.Sleep(time.Millisecond)
+		}
+		deadline = time.Now().Add(3 * time.Second)
+		for {
+			inv, err := h.Inventory(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(inv.Sessions) == 1 && inv.Sessions[0].State == session.StateIdle {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("turn did not settle")
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if err := h.Shutdown(); err != nil {
+		t.Fatal(err)
+	}
+	h, err = antigravitysession.New(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.antigravitySessions.Store(h)
+	rec := act(t, s, "smart-title", row.ID, "name-owned", `{}`)
+	replay := act(t, s, "smart-title", row.ID, "name-owned", `{}`)
+	if rec.Code != 200 || replay.Code != 200 || runs != 1 {
+		t.Fatalf("naming: %d %s / %d %s, runs=%d", rec.Code, rec.Body, replay.Code, replay.Body, runs)
+	}
+	var reply contract.SessionTitleReply
+	if json.Unmarshal(rec.Body.Bytes(), &reply) != nil || reply.Title != "Calendar reminders" || reply.DisplayTitle != reply.Title {
+		t.Fatalf("saved title: %s", rec.Body)
+	}
+	if processes, _ := h.Stats(); processes != 0 {
+		t.Fatal("naming resumed the provider")
+	}
+	s.antigravitySessions.Store(nil)
+	if _, err := s.firstRequest(row); err == nil {
+		t.Fatal("missing host was treated as empty history")
+	}
+	if runs != 1 {
+		t.Fatal("unavailable history spent a naming turn")
 	}
 }

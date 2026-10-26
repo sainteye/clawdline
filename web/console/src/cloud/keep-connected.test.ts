@@ -76,6 +76,8 @@ function fakePage() {
       document.visibilityState = "visible"
       fire(docListeners, "visibilitychange")
     },
+    pageshow() { fire(winListeners, "pageshow") },
+    online() { fire(winListeners, "online") },
   }
 }
 
@@ -240,5 +242,146 @@ test("a failed startup session check retries and restores the same device withou
       line.stop()
       await line.done
     }
+  }
+})
+
+test("returning to the sign-in card rechecks the cookie and restores the existing device", async () => {
+  for (const wake of ["show", "pageshow", "online"] as const) {
+    const clock = fakeClock()
+    const page = fakePage()
+    const connected = fakeSession()
+    const states: string[] = []
+    const asked: string[] = []
+    let signedIn = false
+    const viewer = new CloudViewerSession({
+      config: { apiOrigin: "https://api.example.test", appOrigin: "https://app.example.test" },
+      fetch: async (_url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET"
+        asked.push(method)
+        return signedIn
+          ? new Response(JSON.stringify({ account_id: "acct_test", device_id: "dev_existing" }))
+          : new Response(JSON.stringify({ error: {
+            code: method === "GET" ? "no_session" : "no_login_ticket",
+          } }), { status: 401 })
+      },
+    })
+    viewer.restoreDeviceKey = async () => true
+    viewer.readCapabilities = async () => ["read_sessions"]
+    // Refused registration needs no native key generation; keep the fake clock deterministic.
+    viewer.crypto = { subtle: {
+      generateKey: async () => ({ publicKey: {} }),
+      exportKey: async () => new Uint8Array(32).buffer,
+    } }
+    viewer.connect = async () => {
+      const ensured = await viewer.ensureSession()
+      return ensured.state === "ready" ? connected.connect() : ensured
+    }
+    const line = keepConnected(viewer, {
+      now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
+      document: page.document, window: page.window, navigator: page.navigator,
+      onState: (update: { state: string }) => states.push(update.state),
+    })
+    try {
+      await clock.advance(0)
+      assert.deepEqual(states, ["sign_in"])
+      await clock.advance(60_000)
+      assert.deepEqual(asked, ["GET", "POST"], "signed-out pages do not poll")
+      signedIn = true
+      page[wake]()
+      await clock.advance(0)
+      assert.deepEqual(states, ["sign_in", "connected"], wake)
+      assert.deepEqual(asked, ["GET", "POST", "GET"], "restore without a replacement device")
+      assert.equal(viewer.deviceID, "dev_existing")
+    } finally {
+      line.stop()
+      await line.done
+    }
+  }
+})
+
+test("a signed-out wake burst is spaced, never grants access, and stops with the page", async () => {
+  const clock = fakeClock()
+  const page = fakePage()
+  const states: string[] = []
+  let attempts = 0
+  const line = keepConnected({ async connect() {
+    attempts++
+    return { state: "sign_in", url: "https://api.example.test/login" }
+  } }, {
+    now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
+    document: page.document, window: page.window, navigator: page.navigator,
+    onState: (update: { state: string }) => states.push(update.state),
+  })
+  await clock.advance(0)
+  for (let i = 0; i < 20; i++) { page.show(); page.pageshow(); page.online() }
+  await clock.advance(1_999)
+  assert.equal(attempts, 1)
+  await clock.advance(1)
+  assert.equal(attempts, 2)
+  assert.deepEqual(states, ["sign_in", "sign_in"])
+  await clock.advance(60_000)
+  assert.equal(attempts, 2, "a real sign-out waits for another return")
+  line.stop()
+  await line.done
+  page.show(); page.pageshow(); page.online()
+  await clock.advance(60_000)
+  assert.equal(attempts, 2, "unmounted pages keep no auth recovery listener")
+})
+
+test("a foreground return during an in-flight auth check is revalidated before showing sign-in", async () => {
+  const clock = fakeClock()
+  const page = fakePage()
+  const connected = fakeSession()
+  const states: string[] = []
+  let answer!: (value: { state: string; url: string }) => void
+  const pending = new Promise<{ state: string; url: string }>((resolve) => { answer = resolve })
+  let attempts = 0
+  const line = keepConnected({ async connect() {
+    attempts++
+    return attempts === 1 ? pending : connected.connect()
+  } }, {
+    now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
+    document: page.document, window: page.window, navigator: page.navigator,
+    onState: (update: { state: string }) => states.push(update.state),
+  })
+  try {
+    await clock.advance(0)
+    page.hide()
+    page.show()
+    page.pageshow()
+    answer({ state: "sign_in", url: "https://api.example.test/login" })
+    await clock.advance(1_999)
+    assert.deepEqual(states, [], "the pre-return refusal is not the current cookie's answer")
+    assert.equal(attempts, 1)
+    await clock.advance(1)
+    assert.deepEqual(states, ["connected"])
+    assert.equal(attempts, 2)
+  } finally {
+    line.stop()
+    await line.done
+  }
+})
+
+test("page returns do not restart revoked or permanently refused sessions", async () => {
+  for (const failure of [
+    { code: "revoked", terminal: false, state: "revoked" },
+    { code: "bad_protocol", terminal: true, state: "terminal_error" },
+  ]) {
+    const page = fakePage()
+    const states: string[] = []
+    let attempts = 0
+    const line = keepConnected({ async connect() {
+      attempts++
+      throw Object.assign(new Error(failure.code), failure)
+    } }, {
+      document: page.document, window: page.window, navigator: page.navigator,
+      onState: (update: { state: string }) => states.push(update.state),
+    })
+    await line.done
+    page.show(); page.pageshow(); page.online()
+    await settle()
+    assert.equal(attempts, 1, failure.code)
+    assert.deepEqual(states, [failure.state])
+    line.stop()
   }
 })

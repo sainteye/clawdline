@@ -581,6 +581,16 @@ terminal transcript cache. This follows reads only; it never resends the prompt.
 
 ### Durable owned history and restart recovery
 
+Smart naming reads an owned Gemini Session's opening user request from its
+published history generation, rather than looking for a terminal transcript file.
+The latest structured user requests and assistant reply supply the remaining
+naming context under the existing naming budget. Reading the saved conversation
+never resumes its provider process. Missing or unreadable owned history refuses
+naming before a model turn; only a successfully read empty history is reported as
+an empty conversation. The same local title store and idempotent action receipt
+apply to terminal and owned Sessions.
+
+
 The owned pilot now stores conversation identity, projected entries and turn
 uncertainty in a private SQLite database under the daemon state directory. Its
 owned ID, native ID, original workspace and personal profile survive shutdown.
