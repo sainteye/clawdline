@@ -119,3 +119,41 @@ func TestPermissionPipeDeadlineAndNoCallbackCancel(t *testing.T) {
 		}
 	})
 }
+
+// Waiting for the person must not consume the setup/RPC timeout.
+func TestPermissionWaitOutlivesCallTimeout(t *testing.T) {
+	for _, choice := range []struct{ mode, option string }{
+		{"permission-allow", "only-real-offer"},
+		{"permission-select", "reject-exact"},
+	} {
+		t.Run(choice.mode, func(t *testing.T) {
+			requests := make(chan *PermissionRequest, 1)
+			c, dir := fakePermission(t, choice.mode, nil, func(_ context.Context, p *PermissionRequest) error { requests <- p; return nil })
+			ready(t, c)
+			done := make(chan error, 1)
+			go func() { _, err := c.Prompt(context.Background(), "synthetic input"); done <- err }()
+			p := pipePermission(t, requests)
+			select {
+			case err := <-done:
+				t.Fatalf("prompt ended while waiting for a person: %v", err)
+			case <-time.After(c.opts.CallTimeout + 100*time.Millisecond):
+			}
+			if !p.Active() {
+				t.Fatal("offer expired while waiting for the person")
+			}
+			if err := p.Select(context.Background(), choice.option, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			wire, err := os.ReadFile(filepath.Join(dir, "wire"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Count(string(wire), `"id":"permission-exact"`) != 1 {
+				t.Fatal("permission was not answered exactly once")
+			}
+		})
+	}
+}

@@ -53,8 +53,13 @@ offered choices. Select the choice for the tool shown. An approval applies to th
 scope named by that native choice, such as once or always; Clawdline does not
 change a denial into an approval.
 
+Clawdline does not impose a 45-second limit on a model turn or on waiting for
+your permission choice. The question remains active until answered or the
+underlying turn/process is cancelled. A short timeout still protects setup,
+settings and pipe writes.
+
 If the request changes or expires, refresh the conversation and read the current
-question. Closing the conversation or timing out does not approve its pending
+question. Closing the conversation or cancellation does not approve its pending
 tool. A device with read-only access can read the conversation but cannot answer
 a permission request.
 

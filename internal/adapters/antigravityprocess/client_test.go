@@ -151,6 +151,11 @@ func TestACPProcess(t *testing.T) {
 				result = map[string]string{"stopReason": "end_turn"}
 				break
 			}
+			if mode == "slow-model" {
+				time.Sleep(2100 * time.Millisecond)
+				result = map[string]string{"stopReason": "end_turn"}
+				break
+			}
 			if mode == "stall-read" || mode == "tree" || mode == "tree-exit" {
 				if mode == "tree" || mode == "tree-exit" {
 					child := exec.Command(os.Args[0], "-test.run=^TestACPProcess$", "--", "descendant")
@@ -182,6 +187,9 @@ func TestACPProcess(t *testing.T) {
 			valid := strings.Contains(string(line), `"outcome":"cancelled"`) && !strings.Contains(string(line), "optionId")
 			if mode == "permission-select" {
 				valid = strings.Contains(string(line), `"outcome":"selected"`) && strings.Contains(string(line), `"optionId":"reject-exact"`)
+			}
+			if mode == "permission-allow" {
+				valid = strings.Contains(string(line), `"outcome":"selected"`) && strings.Contains(string(line), `"optionId":"only-real-offer"`)
 			}
 			if !strings.Contains(string(line), `"id":"permission-exact"`) || !valid {
 				os.Exit(37)
@@ -696,11 +704,13 @@ func TestOwnedChildCleanupAndConcurrentCancel(t *testing.T) {
 }
 
 func TestLifetimeCancellationAndBusyAndDeadline(t *testing.T) {
-	t.Run("busy-and-call-deadline", func(t *testing.T) {
+	t.Run("busy-and-explicit-deadline", func(t *testing.T) {
 		c, dir := fake(t, "stall-read", nil)
 		ready(t, c)
 		result := make(chan error)
-		go func() { _, err := c.Prompt(context.Background(), "once"); result <- err }()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		go func() { _, err := c.Prompt(ctx, "once"); result <- err }()
 		deadline := time.Now().Add(time.Second)
 		for time.Now().Before(deadline) {
 			if len(methods(t, dir)) == 4 {
@@ -767,4 +777,30 @@ func TestExitedLeaderStillOwnsLiveDescendant(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("descendant %d survived its exited leader", pid)
+}
+
+func TestModelTurnOutlivesControlCallTimeout(t *testing.T) {
+	c, dir := fake(t, "slow-model", nil)
+	ready(t, c)
+	if _, err := c.Prompt(context.Background(), "synthetic input"); err != nil {
+		t.Fatalf("normal model turn hit the control RPC deadline: %v", err)
+	}
+	got := methods(t, dir)
+	if len(got) != 4 || got[3] != "session/prompt" {
+		t.Fatalf("model turn was replayed: %v", got)
+	}
+}
+
+func TestBlockedPromptWriteRetainsCallTimeout(t *testing.T) {
+	c, _ := fake(t, "stall-write", nil)
+	ready(t, c)
+	_, err := c.Prompt(context.Background(), strings.Repeat("x", 1<<20))
+	requireError(t, err, "write_failed", Uncertain)
+}
+
+func TestControlRPCStillTimesOut(t *testing.T) {
+	c, _ := fake(t, "metadata-stall", nil)
+	ready(t, c)
+	err := c.SetModelChecked(context.Background(), "offered-model", nil)
+	requireError(t, err, "cancelled", Uncertain)
 }

@@ -82,3 +82,11 @@ exact address rather than a parent assistant's environment. This changes root
 identity resolution, not authorization or the existing Gemini worker refusal.
 The report entry's original excerpt and both guide languages include the new
 identity source; the conditional context explanation remains unchanged.
+
+
+The owned ACP client now separates model/permission lifetime from short control
+RPC and pipe-write timeouts. Review confirmed that the first-message embedded
+resource, original text, role identity, snapshot and permission choices remain
+unchanged. Both English and Taiwan Traditional Chinese context-card explanations
+remain accurate; only their original code excerpt, source line and receipt change.
+The website snapshot must follow this reviewed product source when published.

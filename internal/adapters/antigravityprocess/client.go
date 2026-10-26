@@ -45,7 +45,8 @@ func (e *Error) Error() string                      { return "antigravity_proces
 func failure(code string, delivery Delivery) *Error { return &Error{Code: code, Delivery: delivery} }
 
 // Options are explicit owner policy. MaxFrameBytes bounds incoming/outgoing
-// frames and the settings read. CallTimeout bounds calls and callback work.
+// frames and the settings read. CallTimeout bounds control RPCs, pipe writes and
+// update callbacks. Model turns and human permission waits follow their context.
 // OnUpdate receives a complete owned session/update envelope in wire order,
 // including notifications after a prompt response. It must honor ctx and must
 // not call Close or another client method synchronously. Returning an error stops
@@ -65,8 +66,8 @@ type Options struct {
 	OnPermission func(context.Context, *PermissionRequest) error
 }
 
-// PermissionRequest owns one native reply. Its lifetime is bounded by the
-// existing call timeout and process lifetime; selections never retry a write.
+// PermissionRequest owns one native reply. It stays active for the process
+// lifetime until answered or cancelled; selections never retry a write.
 type PermissionRequest struct {
 	Offer    *antigravityacp.PermissionOffer
 	Revision string
@@ -623,7 +624,7 @@ func (c *Client) prompt(ctx context.Context, text, uri, contextText string, befo
 		}
 		prompt = append([]any{map[string]any{"type": "resource", "resource": map[string]string{"uri": uri, "mimeType": "text/plain", "text": contextText}}}, prompt...)
 	}
-	r, err := c.callAccepted(ctx, "session/prompt", map[string]any{"sessionId": c.SessionID(), "prompt": prompt}, before, written)
+	r, err := c.exchange(ctx, "session/prompt", map[string]any{"sessionId": c.SessionID(), "prompt": prompt}, before, written, 0)
 	if err != nil {
 		return PromptResult{}, err
 	}
@@ -696,6 +697,13 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 }
 
 func (c *Client) callAccepted(ctx context.Context, method string, params any, before func() error, written func()) (json.RawMessage, error) {
+	return c.exchange(ctx, method, params, before, written, c.opts.CallTimeout)
+}
+
+// responseTimeout is zero for model turns: processing and waiting for the
+// person are not stalled control RPCs. Caller and process cancellation still
+// terminate the turn; every actual pipe write keeps its own timeout.
+func (c *Client) exchange(ctx context.Context, method string, params any, before func() error, written func(), responseTimeout time.Duration) (json.RawMessage, error) {
 	if ctx == nil {
 		return nil, failure("invalid_context", NotWritten)
 	}
@@ -713,7 +721,13 @@ func (c *Client) callAccepted(ctx context.Context, method string, params any, be
 	if len(b) > c.opts.MaxFrameBytes {
 		return nil, failure("frame_too_large", NotWritten)
 	}
-	callCtx, cancel := context.WithTimeout(ctx, c.opts.CallTimeout)
+	var callCtx context.Context
+	var cancel context.CancelFunc
+	if responseTimeout > 0 {
+		callCtx, cancel = context.WithTimeout(ctx, responseTimeout)
+	} else {
+		callCtx, cancel = context.WithCancel(ctx)
+	}
 	defer cancel()
 	var attempted atomic.Bool
 	type reply struct {
@@ -784,6 +798,9 @@ func (c *Client) write(b []byte) error {
 }
 
 func (c *Client) writeUnlocked(b []byte) error {
+	// Only a blocked write consumes this budget, never model or human time.
+	timer := time.AfterFunc(c.opts.CallTimeout, func() { c.shutdown(failure("write_failed", Uncertain)) })
+	defer timer.Stop()
 	b = append(b, '\n')
 	n, err := c.in.Write(b)
 	if err == nil && n != len(b) {
@@ -835,11 +852,7 @@ func (c *Client) readLoop() {
 					c.shutdown(failure("frame_too_large", Uncertain))
 					return
 				}
-				// A blocked response write is stopped by the active call deadline,
-				// or the owner lifetime ctx. Apply an idle deadline too.
-				timer := time.AfterFunc(c.opts.CallTimeout, func() { c.shutdown(failure("cancelled", Uncertain)) })
 				err := c.write(b)
-				timer.Stop()
 				if err != nil {
 					c.shutdown(failure("write_failed", Uncertain))
 					return
@@ -911,13 +924,9 @@ func (c *Client) permission(frame json.RawMessage) bool {
 	if err != nil {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(c.ctx, c.opts.CallTimeout)
+	ctx, cancel := context.WithCancel(c.ctx)
 	defer cancel()
 	p := &PermissionRequest{Offer: offer, Revision: rand.Text(), ctx: ctx, client: c, done: make(chan struct{})}
-	// The timer also unblocks a stalled reply write. Active prompt deadlines
-	// independently retain their original bound.
-	timer := time.AfterFunc(c.opts.CallTimeout, func() { c.shutdown(failure("cancelled", Uncertain)) })
-	defer timer.Stop()
 	if err := c.opts.OnPermission(ctx, p); err != nil {
 		_ = p.Cancel(ctx, nil)
 		return true

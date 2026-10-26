@@ -35,7 +35,11 @@ Both resource settings are required positive owner inputs; there are no default
 numeric production policies here. The composition must register its selected
 bounds in the product capacity registry. MaxFrameBytes bounds incoming and
 outgoing JSON frame bytes (excluding newline) and the local settings read.
-CallTimeout applies to each RPC, owner callback context and server reply write.
+CallTimeout applies to setup/configuration/usage RPCs, each actual pipe write,
+and update callback contexts. A normal model prompt has no client-imposed total
+response deadline; it follows the caller and process lifetime. Human permission
+waits also follow process lifetime until answered or cancelled. Waiting for model
+output or a person's choice does not consume the short control RPC budget.
 
 Only one call may be active; concurrent calls return `busy` without writing.
 There is no pending-call map, notification queue, replay cache, automatic retry,
@@ -98,14 +102,14 @@ Other notifications are ignored. Requests are never automatically granted.
 `session/request_permission` is decoded by the existing immutable permission
 codec against this connection and its exact native Session ID. `OnPermission`
 publishes one `PermissionRequest` and must return promptly. The reader then
-waits in wire order, within the existing call/process deadlines, with no queue
-or retry. `Select` accepts only an exact offered option ID and performs the
-normal operation check under the pipe write lock before writing one selected
+waits in wire order for an answer or process cancellation, with no queue or
+retry. The reply write itself remains bounded by CallTimeout. `Select` accepts
+only an exact offered option ID and performs the normal operation check under the pipe write lock before writing one selected
 outcome with the original RPC ID. Duplicate, unknown and expired selections
 write nothing. `Cancel` writes a cancelled outcome without inventing an option.
 No callback, an unsupported offer, or a callback refusal defaults to cancelled.
-Close, lifetime cancellation and prompt timeout invalidate outstanding offers;
-an uncertain reply write is never replayed. Other server requests receive
+Close, lifetime cancellation and an explicit caller deadline invalidate
+outstanding offers; an uncertain reply write is never replayed. Other server requests receive
 JSON-RPC -32601.
 
 ## Lifetime and platform boundary
@@ -118,9 +122,9 @@ is used. Deliberate descendant escape into another process group is outside
 this process-group ownership contract. Unsupported platforms refuse before any
 process starts; this pilot adds no Windows process-tree implementation.
 
-Lifetime cancellation, call timeout, Cancel and concurrent/repeated Close share
-one shutdown. Close joins the reader and lifetime watcher. An active call joins
-its own bounded worker before returning. The only channels are unbuffered
+Lifetime cancellation, control RPC/write timeout, Cancel and concurrent/repeated
+Close share one shutdown. Close joins the reader and lifetime watcher. An active call joins
+its own pipe worker before returning. The only channels are unbuffered
 handoffs and lifecycle signals. Close must be called by the owning composition;
 owner callbacks that ignore cancellation violate this API's contract.
 
@@ -403,3 +407,19 @@ fixtures remain unread after an unrelated successful turn and after reopen.
 The independent review verified the cancelled counterexample turning green;
 the transaction-failure variant was added and verified by the integrating Root.
 Neither verification called a model or the production daemon.
+
+## Model and permission lifetime regression
+
+The initial owned-session integration (`1feb08c9c`) selected a 45-second
+CallTimeout and applied it to the entire model turn as well as permission waits.
+A phone report on 2026-10-26 exposed the consequence: the accepted turn was
+cancelled 45 seconds later while its tool permission question was open. The
+client now keeps that value for control RPCs and actual writes only; it neither
+raises the timeout nor adds a second human-wait timer.
+
+Real-pipe regression peers reproduce both a slow model turn and a late permission
+answer beyond a deliberately shortened control budget. Both failed before the
+fix and pass after it. Separate regressions retain blocked-write and control-RPC
+timeouts, explicit caller cancellation, exact permission IDs and one reply per
+selection. These tests call no provider or model. They do not establish that the
+phone's earlier empty reply or attached-image pending card is fixed.

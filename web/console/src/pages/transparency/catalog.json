@@ -2276,7 +2276,7 @@
         },
         {
           "path": "internal/adapters/antigravityprocess/client.go",
-          "line": 450
+          "line": 605
         },
         {
           "path": "internal/adapters/antigravitysession/host.go",
@@ -2318,7 +2318,7 @@
         "\t\t}\n",
         "\t\tprompt = append([]any{map[string]any{\"type\": \"resource\", \"resource\": map[string]string{\"uri\": uri, \"mimeType\": \"text/plain\", \"text\": contextText}}}, prompt...)\n",
         "\t}\n",
-        "\tr, err := c.callAccepted(ctx, \"session/prompt\", map[string]any{\"sessionId\": c.SessionID(), \"prompt\": prompt}, before, written)\n",
+        "\tr, err := c.exchange(ctx, \"session/prompt\", map[string]any{\"sessionId\": c.SessionID(), \"prompt\": prompt}, before, written, 0)\n",
         "\tif err != nil {\n",
         "\t\treturn PromptResult{}, err\n",
         "\t}\n",
@@ -2345,7 +2345,7 @@
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
     "internal/adapters/antigravitylaunch/store.go": "e3a2344fda42de6142bc0d8646cb73527211c3eaea6547cf03107a21bd430a12",
-    "internal/adapters/antigravityprocess/client.go": "93e8abf83c388a9e7588b587cfa2cc27bdee98e96657c1aa3448472a7bc810d1",
+    "internal/adapters/antigravityprocess/client.go": "f59f44e55be554713a050ee530155a5d84ded28c9779ddbadfae11084e8df4d8",
     "internal/adapters/antigravitysession/context.go": "7f7490cb414f00633f3e436d484f9d02e8a91e6f541eda148eefa6e83d6d854b",
     "internal/adapters/antigravitysession/host.go": "c787098b602f635eea66477c8fdeab6cb39325038380d65151b6cf498f9c731d",
     "internal/adapters/memory/memory.go": "b85b11cd849f61bcb55c449acc868a4605950dcb5a408ac65a228babbfab9fb0",
