@@ -46,6 +46,8 @@ type SessionStatus struct {
 	AttentionRequired    bool   `json:"attention_required,omitempty"`
 	CloseBlocked         *bool  `json:"close_blocked,omitempty"`
 	FailedAgentCount     *int64 `json:"failed_agent_count,omitempty"`
+	RunningAgentCount    *int64 `json:"running_agent_count,omitempty"`
+	AgentCountUnknown    bool   `json:"agent_count_unknown,omitempty"`
 }
 
 // ProjectSessionStatus copies scalar facts from a full local row, never the
@@ -129,19 +131,38 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 			}
 		}
 	}
-	if reading, ok := row["agents_reading"].(map[string]any); ok && reading["state"] == "complete" {
-		if truncated, _ := reading["truncated"].(float64); truncated == 0 {
-			count := int64(0)
-			if agents, ok := row["agents"].([]any); ok {
-				for _, agent := range agents {
-					if info, ok := agent.(map[string]any); ok && info["state"] == "failed" {
-						count++
-					}
-				}
-			}
-			out.FailedAgentCount = &count
+	// Count the already-read provider rows, without another provider read or
+	// transcript subscription. A partial reading cannot claim an exact total.
+	reading, _ := row["agents_reading"].(map[string]any)
+	agents, _ := row["agents"].([]any)
+	truncated, _ := reading["truncated"].(float64)
+	known := reading["state"] == "complete" && truncated == 0
+	running, failed := int64(0), int64(0)
+	for _, agent := range agents {
+		info, ok := agent.(map[string]any)
+		if !ok {
+			known = false
+			continue
+		}
+		switch info["state"] {
+		case "running":
+			running++
+		case "failed":
+			failed++
+		case "done":
+		default:
+			known = false
 		}
 	}
+	if reading["state"] == "complete" && truncated == 0 {
+		out.FailedAgentCount = &failed
+	}
+	if known {
+		out.RunningAgentCount = &running
+	} else {
+		out.AgentCountUnknown = len(agents) > 0 || truncated > 0
+	}
+
 	return out
 }
 
@@ -290,6 +311,9 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		identity.Source.ObservedAt = 0
 		steady := identity
 		steady.LastMovementAt = 0
+		// Counts share the existing provider-work coalescing window.
+		steady.RunningAgentCount = nil
+		steady.AgentCountUnknown = false
 		if !p.changedCoalesced(statusRowKey(id), mustJSON(identity), mustJSON(steady)) {
 			continue
 		}

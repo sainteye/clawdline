@@ -1691,6 +1691,7 @@ export class RelayReader {
         // was sent and suppresses the Board read until a later list pass.
         ...(presentation?.status?.sessionId ? { sessionId: presentation.status.sessionId } : {}),
         machine: this.machine, identity: { machine: this.machine, session: row.destination.sessionID }, execution_generation: row.destination.executionGeneration,
+        running_agent_count: row.runningAgentCount, agent_count_unknown: row.agentCountUnknown,
         parent_session_id: row.parentSessionID,
         machine_scope: row.machineScope === true, coordinator_bound: row.coordinatorBound === true,
         label: presentation?.title ?? row.destination.sessionID, cwd: presentation?.cwd, project_key: presentation?.projectKey,
@@ -2511,6 +2512,27 @@ export class RelayReader {
     for (const stream of this.streams) this.queueFrame(stream)
   }
 
+  /** Reuse the exact signed status already held by both list reconstruction paths. */
+  private withProviderCount(client: CloudReadClient, row: CloudRow): CloudRow {
+    const id = typeof row.session === "string" ? row.session : row.id
+    const status = client.statusSnapshots?.get(JSON.stringify([this.machine, id])) as
+      | { payload?: Record<string, unknown> } | undefined
+    const marker = client.statusSnapshots?.get(JSON.stringify([this.machine, SESSION_INVENTORY_ID])) as
+      | { payload?: { snapshot_generation?: unknown; at?: unknown; complete?: unknown } } | undefined
+    const data = status?.payload
+    const source = data?.source as { freshness?: unknown; observed_at?: unknown } | undefined
+    if (!data || data.machine_id !== this.machine || data.session_id !== id ||
+      !row.execution_generation || data.execution_generation !== row.execution_generation ||
+      marker?.payload?.complete !== true || data.snapshot_generation !== marker.payload.snapshot_generation ||
+      source?.freshness !== "current" || !Number.isFinite(source.observed_at) ||
+      Math.abs(this.now() - Number(source.observed_at) * 1000) > RICH_MENU_FRESH_MS ||
+      !Number.isFinite(marker.payload.at) || Math.abs(this.now() - Number(marker.payload.at) * 1000) > RICH_MENU_FRESH_MS) return row
+    return { ...row,
+      running_agent_count: Number.isSafeInteger(data.running_agent_count) && Number(data.running_agent_count) >= 0
+        ? Number(data.running_agent_count) : undefined,
+      agent_count_unknown: data.agent_count_unknown === true }
+  }
+
   /**
    * The compact display list carries no provider work. Restore it from the
    * authenticated s/ row for this exact execution, including complete zero
@@ -2519,6 +2541,7 @@ export class RelayReader {
    * the existing bounded restatement path; list rows never initiate reads.
    */
   private withProviderWork(client: CloudReadClient, row: CloudRow): CloudRow {
+    row = this.withProviderCount(client, row)
     if (row.assistant !== "claude" && row.assistant !== "codex") return row
     const id = typeof row.session === "string" ? row.session : row.id
     const source = row.source as { freshness?: unknown } | undefined

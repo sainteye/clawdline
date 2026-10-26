@@ -94,13 +94,14 @@ function document(): string {
   const words = JSON.parse(readFileSync(join(dist, "strings", "zh-Hant.json"), "utf8"))
   words.lang = "zh-Hant"
   words.dir = "ltr"
-  const slot = "<script>window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>"
+  const slot = '<script>localStorage.setItem("ui_language","zh-Hant");window.__strings=' + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>"
   return html.replace("<!-- clawdline:strings -->", slot).replace("<!-- clawdline:cloud -->", "")
 }
 
 function daemon(): Server {
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
+    if (path === "/v1/strings") return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/events") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
@@ -259,9 +260,11 @@ for (const [name, size] of [["desk-1280", DESK], ["phone-390", PHONE]] as const)
       await browser.send("Runtime.enable", {}, s)
       await browser.send("Emulation.setDeviceMetricsOverride", { ...size, deviceScaleFactor: 2 }, s)
       const mark = browser.loadCount
-      await browser.send("Page.navigate", { url: origin + "/#session=" + ID }, s)
+      await browser.send("Page.navigate", { url: origin + "/" }, s)
       await browser.loaded(s, mark)
 
+      await until("the list shares the background count", `document.querySelector(".row .state .session-agent-count")?.textContent === "1 個 subagent 在跑"`)
+      await browser.send("Page.navigate", { url: origin + "/#session=" + ID }, s)
       // The strip: one line, right above the composer, saying both.
       await until("the strip is drawn", `!!${BOX}(".bg-strip-line")`)
       const strip = await run(`${BOX}(".bg-strip-line")`)

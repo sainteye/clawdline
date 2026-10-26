@@ -107,6 +107,9 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
       noProgressAfterMs: Number.isFinite(data.no_progress_after_ms) ? Number(data.no_progress_after_ms) : undefined,
       noMovement: typeof data.no_movement === "boolean" ? data.no_movement : undefined,
       closeBlocked: typeof data.close_blocked === "boolean" ? data.close_blocked : undefined,
+      runningAgentCount: Number.isSafeInteger(data.running_agent_count) && Number(data.running_agent_count) >= 0
+        ? Number(data.running_agent_count) : undefined,
+      agentCountUnknown: data.agent_count_unknown === true,
       failedAgentCount: Number.isSafeInteger(data.failed_agent_count) && Number(data.failed_agent_count) >= 0
         ? Number(data.failed_agent_count) : undefined,
     })

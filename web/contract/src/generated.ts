@@ -7000,6 +7000,12 @@ export interface SessionRow {
   activity?: SessionActivity
 
   /**
+   * The current Cloud status lists provider work whose running total cannot be
+   * confirmed.
+   */
+  agent_count_unknown?: boolean
+
+  /**
    * Provider-native background threads, newest running work first. Broker children
    * stay in the task list and are joined with these in the console, so their
    * durable state is not flattened into a file inference.
@@ -7101,6 +7107,12 @@ export interface SessionRow {
    */
   project_key?: string
   root_assignment?: RootAssignmentRecord
+
+  /**
+   * Exact provider subagent count from the current Cloud status projection,
+   * including zero; absent on older machines or incomplete readings.
+   */
+  running_agent_count?: number
   screen_reading?: SessionScreenReading
 
   /**

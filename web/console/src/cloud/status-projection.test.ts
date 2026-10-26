@@ -183,3 +183,18 @@ test("a gap still hands back every row that did arrive, as stale", () => {
   assert.equal(behind.kind === "unavailable" && behind.reason, "event_gap")
   assert.equal(behind.kind === "unavailable" && behind.latest?.[0].state, "waiting")
 })
+
+
+test("provider counts preserve zero and unknown without accepting malformed counts", () => {
+  const source = fleet("a", ["same"])
+  const entry = source.statusSnapshots.get(JSON.stringify(["a", "same"])) as { payload: Record<string, unknown> }
+  for (const count of [6, 0, undefined, -1, 1.5, "6", null]) {
+    entry.payload.running_agent_count = count
+    entry.payload.agent_count_unknown = count === undefined
+    const reading = statusProjection(source, "a", 2000)
+    assert.equal(reading.kind, "ready")
+    if (reading.kind !== "ready") continue
+    assert.equal(reading.rows[0].runningAgentCount, typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : undefined)
+    assert.equal(reading.rows[0].agentCountUnknown, count === undefined)
+  }
+})

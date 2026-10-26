@@ -359,3 +359,21 @@ never launches an assistant, and retains existing access by omitting a new scope
 The existing fingerprint comparison still completes in the browser. Older shells
 continue to use the copied command; hosted deployment alone cannot add a native
 message handler to an installed App.
+
+
+### Provider counts in Session lists
+
+Local and Cloud lists show the provider-native subagent count on the existing state line,
+using the same reading as the background-work sheet. The content-free `ss/` projection adds
+`running_agent_count` only for a current, complete, untruncated reading with known agent states.
+Measured zero is retained on the wire and draws nothing. Listed work with an incomplete or
+unknown reading sends `agent_count_unknown: true` and draws `subagents ?`; older machines
+omit both fields. Stale rows do not advertise a live count. These observations include the
+provider's inferred running states; they are not process-liveness guarantees.
+
+The publisher counts the already-read agents in its existing status projection loop. The fleet
+and single-machine readers reuse the authenticated status for the same machine, Session and
+execution. No additional timer, provider request, transcript subscription, or per-Session list
+read is introduced. Count changes update the existing status row without changing the display
+presentation generation or rereading titles. Tests cover running-to-finished, zero, partial,
+unknown, stale and older-machine readings.

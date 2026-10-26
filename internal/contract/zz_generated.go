@@ -5908,6 +5908,10 @@ type SessionRow struct {
 	Acceptance *SessionAcceptance `json:"acceptance,omitempty"`
 	Activity   *SessionActivity   `json:"activity,omitempty"`
 
+	// The current Cloud status lists provider work whose running total cannot be
+	// confirmed.
+	AgentCountUnknown bool `json:"agent_count_unknown,omitempty"`
+
 	// Provider-native background threads, newest running work first. Broker children
 	// stay in the task list and are joined with these in the console, so their durable
 	// state is not flattened into a file inference.
@@ -5986,7 +5990,11 @@ type SessionRow struct {
 	// absolute.
 	ProjectKey     string                `json:"project_key,omitempty"`
 	RootAssignment *RootAssignmentRecord `json:"root_assignment,omitempty"`
-	ScreenReading  SessionScreenReading  `json:"screen_reading,omitempty"`
+
+	// Exact provider subagent count from the current Cloud status projection,
+	// including zero; absent on older machines or incomplete readings.
+	RunningAgentCount int64                `json:"running_agent_count,omitempty"`
+	ScreenReading     SessionScreenReading `json:"screen_reading,omitempty"`
 
 	// The assistant's own conversation id, when one was recovered from its command
 	// line.

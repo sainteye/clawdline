@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { SessionRow, SessionShell, ShellOutputReply } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { backgroundCounts, backgroundLine, backgroundLive, openShell, showsBackground, stepShell, sticksToBottom } from "./background.ts"
+import { listRunningAgents, backgroundCounts, backgroundLine, backgroundLive, openShell, showsBackground, stepShell, sticksToBottom } from "./background.ts"
 
 const words = {
   shellOne: "1 background shell",
@@ -119,4 +119,17 @@ test("daemon callbacks open in the same strip and retain terminal state on the f
   assert.equal(done.poll, false)
   assert.equal(done.view.meta.state, "failure")
   assert.equal(done.view.text, "failed\n")
+})
+
+test("list counts use the background reading and distinguish zero, unknown, and stale", () => {
+  const agent = { id: "a1", at: 0, depth: 1, type: "Explore", state: "running" }
+  const known = { agents_reading: { state: "complete" }, agents: [agent, { ...agent, id: "a2", state: "done" }] } as Partial<SessionRow>
+  assert.equal(listRunningAgents(row(known)), 1)
+  assert.equal(listRunningAgents(row({ ...known, agents: [] })), 0)
+  assert.equal(listRunningAgents(row({})), undefined)
+  assert.equal(listRunningAgents(row({ agents_reading: { state: "unknown" } })), undefined)
+  assert.equal(listRunningAgents(row({ ...known, agents_reading: { state: "unknown" } })), null)
+  assert.equal(listRunningAgents(row({ ...known, agents_reading: { state: "complete", truncated: 1 } })), null)
+  assert.equal(listRunningAgents(row({ ...known, agents: [{ ...agent, state: "unknown" }] } as Partial<SessionRow>)), null)
+  assert.equal(listRunningAgents(row({ ...known, source: { freshness: "unverified" } } as Partial<SessionRow>)), undefined)
 })

@@ -323,3 +323,12 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* Provider counts share the state rail in local and fleet rows. The words
+ * stay whole while longer work notes take their existing ellipsis. */
+.row .state > .session-agent-count {
+  flex: 0 0 auto;
+  color: var(--dim);
+  white-space: nowrap;
+  font: 11.5px/1.2 var(--mono);
+}

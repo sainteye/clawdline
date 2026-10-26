@@ -19,7 +19,7 @@ import { fetchWithDeadline } from "../pages/work/fetch-deadline.ts"
 import { SESSION_LIST_READ } from "../pages/work/session-assignment.ts"
 import { SESSION_INVENTORY_ID } from "../legacy/js/net/client.js"
 // @ts-expect-error -- Node runs the source test with type stripping.
-import { backgroundCounts, showsBackground } from "../session/background.ts"
+import { listRunningAgents, backgroundCounts, showsBackground } from "../session/background.ts"
 
 test("Cloud restores provider work from the rich row when its display list omits agents", async () => {
   for (const fleet of [false, true]) {
@@ -2325,4 +2325,39 @@ test("a native reply is read after its user echo without waiting for terminal ac
   assert.equal(reads, 3)
   await r.transcript("s1")
   assert.equal(reads, 3, "unchanged redraws share the existing short read window")
+})
+
+
+test("both Cloud list paths reuse provider counts without opening rich rows or issuing reads", async () => {
+  for (const projected of [false, true]) {
+    const client = new FakeClient()
+    const now = 1_000_000
+    const generation = "a".repeat(32)
+    const destination = { machineID: "mac-a", sessionID: "s1", executionGeneration: generation }
+    const projection = { destination, state: "working", freshness: "current" as const, observedAt: now, runningAgentCount: 6 }
+    const payload = { machine_id: "mac-a", session_id: "s1", execution_generation: generation,
+      snapshot_generation: generation, running_agent_count: 6 as number | undefined, agent_count_unknown: false,
+      state: "working", source: { freshness: "current", observed_at: now / 1000 } }
+    client.statusSnapshots = new Map([
+      [JSON.stringify(["mac-a", SESSION_INVENTORY_ID]), { payload: { at: now / 1000, complete: true,
+        snapshot_generation: generation, inventory: { version: 1, sessions: ["s1"] } } }],
+      [JSON.stringify(["mac-a", "s1"]), { payload }],
+    ])
+    const reader = new RelayReader("mac-a", { classicStatus: true, now: () => now,
+      ...(projected ? { machineProjection: async () => ({ kind: "ready" as const, complete: true,
+        observedAt: now, snapshotGeneration: generation, rows: [projection] }) } : {}),
+      listPresentations: async () => [{ destination, title: "Fixture Session", assistant: "claude", status: { state: "working" }, projection }],
+    })
+    reader.attach(client)
+    const drawn = async () => listRunningAgents((await reader.snapshot()).sessions[0])
+    assert.equal(await drawn(), 6)
+    payload.running_agent_count = 0
+    assert.equal(await drawn(), 0, "an ended agent clears the previous total")
+    payload.running_agent_count = undefined
+    payload.agent_count_unknown = true
+    assert.equal(await drawn(), null)
+    payload.agent_count_unknown = false
+    assert.equal(await drawn(), undefined, "older machines do not invent zero")
+    assert.equal(client.reads.length, 0, "the list never requests per-Session provider work")
+  }
 })

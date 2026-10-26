@@ -37,6 +37,20 @@ export function backgroundCounts(row: SessionRow): BackgroundCounts {
   }
 }
 
+/** Exact list count from the same reading as the background sheet.
+ * Undefined means no evidence to show; null means listed work with an
+ * uncertain total. Retained observations never advertise a live count.
+ */
+export function listRunningAgents(row: SessionRow): number | null | undefined {
+  if (row.source && row.source.freshness !== "current") return undefined
+  if (row.agent_count_unknown) return null
+  if (Number.isSafeInteger(row.running_agent_count) && row.running_agent_count! >= 0) return row.running_agent_count
+  const counts = backgroundCounts(row)
+  if (counts.running !== null && !counts.truncated &&
+    !(row.agents ?? []).some((agent) => !["running", "done", "failed"].includes(agent.state))) return counts.running
+  return counts.listed || counts.truncated ? null : undefined
+}
+
 /**
  * Whether the strip is drawn: only when there is something in it to open.
  *

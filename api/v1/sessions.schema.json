@@ -111,6 +111,8 @@
 		"attention_count": { "description": "Unresolved attention notes for this conversation. Zero is a successful empty reading; absent means the count or current unique session identity could not be established.", "type": "integer", "minimum": 0 },
 		"agents": { "description": "Provider-native background threads, newest running work first. Broker children stay in the task list and are joined with these in the console, so their durable state is not flattened into a file inference.", "type": "array", "items": { "$ref": "#/$defs/SessionAgent" } },
 		"agents_reading": { "$ref": "#/$defs/SessionAgentReading" },
+        "running_agent_count": { "type": "integer", "description": "Exact provider subagent count from the current Cloud status projection, including zero; absent on older machines or incomplete readings." },
+        "agent_count_unknown": { "type": "boolean", "description": "The current Cloud status lists provider work whose running total cannot be confirmed." },
         "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
         "backend": { "$ref": "common.schema.json#/$defs/Backend" },
         "closeability": { "$ref": "#/$defs/Closeability" },

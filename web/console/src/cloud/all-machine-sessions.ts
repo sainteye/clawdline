@@ -135,6 +135,8 @@ export interface ProjectedSession {
   noMovement?: boolean
   closeBlocked?: boolean
   failedAgentCount?: number
+  runningAgentCount?: number
+  agentCountUnknown?: boolean
 }
 
 /** A signed fleet identity applies only to the opened execution on its reader machine. */

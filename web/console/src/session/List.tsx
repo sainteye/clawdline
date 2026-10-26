@@ -12,6 +12,7 @@ import { waitingForWords, runningShellCount } from "./waiting-for.js"
 import { retainedStateWords, sessionReadingChinese } from "../session-reading.js"
 import { rowPersonaLine } from "../personas.js"
 import { usePersonas } from "./PersonaBot.js"
+import { listRunningAgents } from "./background.js"
 import { runWorkingClock } from "./working-clock.js"
 import "./list-density.css"
 import "./list-tree.css"
@@ -56,7 +57,7 @@ function SwipeAction({ kind, title, hidden, onClick, word, closeability, disable
 
 /** Status-only rows keep the original list structure without inventing rich Session content. */
 export function ProjectedRow({ title, sessionID, machineID, machineName, assistant, state, stateLabel, icon, cwd,
-  machineScope = false, coordinatorBound = false,
+  machineScope = false, coordinatorBound = false, runningAgents,
   freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, status, swiped = false, onOpen, onClose, onArchive, consumePress }: {
   title: string; sessionID: string; machineID: string; machineName: string
   assistant?: "claude" | "codex" | "antigravity"
@@ -64,6 +65,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
   machineScope?: boolean; coordinatorBound?: boolean
   state: string; stateLabel: string; freshness: string; lastMovementAt?: number; attention: boolean; open: boolean
   depth: number; branchThrough: boolean; ancestorThrough: boolean
+  runningAgents?: number | null
   status?: Partial<SessionRow>
   selectionKey: string; onOpen: (element: HTMLLIElement) => void
   swiped?: boolean; onClose?: (element: HTMLButtonElement) => void; onArchive?: (element: HTMLButtonElement) => void; consumePress?: () => boolean
@@ -94,9 +96,9 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
       <RowActivity at={lastMovementAt ? lastMovementAt / 1000 : undefined} />
       {machineScope && coordinatorBound ? <span className="coordinator-chip" aria-hidden="true">Clawdfather</span> : null}</div>
     {status ? <StateLine row={{ ...status, id: sessionID, state } as SessionRow}
-      role={role} suffix={freshness} />
+      role={role} suffix={freshness} runningAgents={runningAgents} />
       : <div className="state">{state === "working" && <canvas className="spin" aria-hidden="true" />}
-        <span>{stateLabel}</span>{freshness && <span className="session-activity">{freshness}</span>}
+        <span>{stateLabel}</span><RunningAgents count={runningAgents} />{freshness && <span className="session-activity">{freshness}</span>}
         {attention && <span className="session-attention"><span className="session-attention-dot" /></span>}</div>}
     {identity.pending ? <p className="machine-registration" role="status">{nextWord("machineSessionPendingShort")}</p> : null}
     {onArchive && <SwipeAction kind="archive" title={shownTitle} hidden={!swiped} onClick={onArchive} />}
@@ -282,11 +284,12 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
  * one, and then `stateLine`'s words. The role is written into the same markup
  * as the words so that it swipes with them and adds no line of its own.
  */
-function StateLine({ row, role, suffix = "" }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine>;
-  suffix?: string }) {
+function StateLine({ row, role, suffix = "", runningAgents = listRunningAgents(row) }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine>;
+  suffix?: string; runningAgents?: number | null }) {
   const ref = useRef<HTMLDivElement>(null)
   const { html, shape } = stateLine(row)
-  const statusHTML = html + (suffix ? '<span class="session-activity">' + L.escapeHTML(suffix) + "</span>" : "")
+  const agentWord = runningAgentsWord(runningAgents)
+  const statusHTML = html + (agentWord ? '<span class="session-agent-count">' + L.escapeHTML(agentWord) + '</span>' : "") + (suffix ? '<span class="session-activity">' + L.escapeHTML(suffix) + "</span>" : "")
   const roleHTML = role
     ? '<span class="persona-state" title="' + L.escapeHTML(role.title) + '">' +
       '<canvas class="persona-state-bot" width="0" height="0" aria-hidden="true"></canvas>' +
@@ -345,9 +348,14 @@ function taskPlace(row: SessionRow, depth: number): {
   return { depth: 0, chip: null }
 }
 
-function agentCount(row: SessionRow): string {
-  const provider = (row.agents ?? []).filter((agent) => agent.state === "running").length
-  return provider ? String(provider) : ""
+function runningAgentsWord(count: number | null | undefined): string {
+  if (count === null) return nextWord("bgAgentUnknown")
+  return count ? nextWord(count === 1 ? "bgAgentRunningOne" : "bgAgentRunningMany", { n: count }) : ""
+}
+
+function RunningAgents({ count }: { count: number | null | undefined }) {
+  const word = runningAgentsWord(count)
+  return word ? <span className="session-agent-count">{word}</span> : null
 }
 
 /** A known movement as a relative sentence; an unknown reading owns no cell. */
@@ -471,10 +479,6 @@ export function Row({
         <span className="path">{L.path(row.cwd)}</span>
         <span className="tty">{row.tty || row.backend || ""}</span>
         <RowActivity at={row.activity?.known ? row.activity.at : undefined} />
-        <span className="agents-chip" hidden={!agentCount(row)} title={L.strings.webAgents}>
-          <span className="dot" />
-          <span className="n">{agentCount(row)}</span>
-        </span>
         {bound && (
           <span className="coordinator-chip" title={coordinator?.label ?? "Clawdfather"} aria-hidden="true">
             Clawdfather
