@@ -3,6 +3,9 @@
 English is the source language and the fallback for Clawdline's product copy. A
 translated interface must use a validated catalog. User, project, and
 agent-authored content is data and stays in the language in which it was written.
+The product name **Playbook** stays in English in the Taiwan Traditional Chinese
+interface, including tabs, dialogs, actions, and explanatory copy. Surrounding
+copy remains localized; saved Playbook names and messages remain authored data.
 Protocol names, JSON fields, error codes, and machine-readable CLI output stay
 stable. The retired Swift archive stays read-only, and the console stylesheets
 copied from it stay pinned byte for byte (`web/console/src/legacy/README.md`).
