@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -489,10 +490,21 @@ func TestOwnedSmartTitleReadsStructuredHistory(t *testing.T) {
 		t.Fatal("empty history spent a naming turn")
 	}
 	for _, text := range []string{"Build a calendar", "Add reminders"} {
-		if err := h.Send(t.Context(), row, text); err != nil {
-			t.Fatal(err)
-		}
 		deadline := time.Now().Add(3 * time.Second)
+		for {
+			err := h.Send(t.Context(), row, text)
+			if err == nil {
+				break
+			}
+			// Idle is published before the previous job releases its write
+			// admission. Retry only a proven refusal before any bytes were sent.
+			var typed *antigravitysession.Error
+			if !errors.As(err, &typed) || typed.Code != "busy" || !typed.BeforeWrite() || time.Now().After(deadline) {
+				t.Fatal(err)
+			}
+			time.Sleep(time.Millisecond)
+		}
+		deadline = time.Now().Add(3 * time.Second)
 		for {
 			inv, err := h.Inventory(t.Context())
 			if err != nil {
