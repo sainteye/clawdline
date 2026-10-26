@@ -14,7 +14,7 @@ function dismissedVersion(machine: string): string | null {
   try { return sessionStorage.getItem(dismissedKey(machine)) } catch { return null }
 }
 
-/** The all-machine list announces releases and keeps each running dev build visible. */
+/** The all-machine list keeps update notices except dev builds ahead of the release. */
 export function FleetUpdateNotice({ client, machine, onChoose }: {
   client: CloudReadClient | null
   machine: CloudMachine
@@ -53,6 +53,7 @@ export function FleetUpdateNotice({ client, machine, onChoose }: {
 
   const version = updateBannerVersion(read?.kind === "status" ? read.status : null, dismissed)
   const dev = devStrip(read?.kind === "status" ? read.status : null, true, nextWord)
+  if (dev?.relation === "ahead") return null
   if (!version && !dev) return null
   const name = machine.name || machine.label || machine.id
   return <div className="update-strip cloud-fleet-update-notice" role="status" data-machine={machine.id} data-version={version ?? undefined} data-dev={dev?.relation}>

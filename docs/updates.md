@@ -266,8 +266,9 @@ clawdline dev install [--rev <commit>]     # inside a clawdline checkout
   30 px line that cannot be dismissed: `DEV`, the commit, its standing, and the same presses as
   words (`UpdateBanner.tsx`). A newer release on an ordinary install takes the same line, with
   `NEW`, a press that installs it, the release notes and a close button; so does the Cloud list's
-  notice for each machine. Installing a dev build is not announced as a finished update: the line
-  already says what runs.
+  notice for each machine, except a dev build confirmed ahead of the release is hidden in
+  **All machines**. A selected machine still shows that dev line. Installing a dev build is not
+  announced as a finished update: the line already says what runs.
 - **Releasing it.** Beside the way back, the machine's own console shows **Release this version**.
   It posts `/v1/update/dev-release`, which finds the Project whose repository holds the running
   commit, fetches `main`, refuses a commit that is not on `origin/main`
@@ -325,8 +326,10 @@ offer does not bring the older completion back; a later release can still appear
 result remembers only the result being shown, not a newer offer hidden behind it. Settings
 retains the full version check, release notes, update history, and update controls.
 
-A running dev build keeps a banner visible on both the machine's console and the Cloud
-**All machines** list, including Linux source deployments and source checkouts. It shows
+A running dev build keeps a banner visible on the machine's console, including a single
+machine selected through Cloud. The Cloud **All machines** list hides the banner only when
+the dev build is confirmed ahead of the public release; behind, diverged, same and unknown
+standings remain visible, including Linux source deployments and source checkouts. It shows
 the dev commit even when there is no newer build. Source builds do not offer signed-release
 return or release actions; their update status includes the running daemon version so the
 console can recognize a dev build. The Cloud banner names the machine and opens its console.
