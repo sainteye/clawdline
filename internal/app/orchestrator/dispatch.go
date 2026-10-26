@@ -969,8 +969,18 @@ func permissionArgs(r Record, taskRoot, cwd, taskExecutable string) []string {
 // commits, while the main checkout's files and a path outside the workspace
 // are still refused. A `sandbox_mode` in the person's config.toml did not win
 // over `-c default_permissions` on the command line, so a machine configured
-// for full access is not widened further, and --strict-config stops a Codex
-// that cannot read the profile rather than letting it fall back to that file.
+// for full access is not widened further. The same four cases measured alike
+// with codex-cli 0.161.0 under bubblewrap on the Ubuntu host.
+//
+// The launch does not use --strict-config. It refuses the person's whole
+// config.toml for any key that Codex version does not know: 0.161.0 stopped on
+// `use_linux_sandbox_bwrap` before drawing a composer, so no edits child ever
+// started there. Instead a `-c sandbox_mode="workspace-write"` (with the
+// legacy network switch for full) is the fallback a Codex that cannot read the
+// profile lands on, rather than the file's own sandbox_mode. On 0.161.0,
+// `/status` read "Profile clawdline-workspace" with that fallback present; the
+// `--sandbox` flag, by contrast, replaced the profile ("Custom"), so it is not
+// used.
 //
 // Only directories this launch can check are granted: the toplevel's `.git`
 // directory, and a worktree gitdir only when it lies inside it. A repository
@@ -1003,11 +1013,14 @@ func workspaceProfileArgs(r Record, taskRoot, cwd string, network bool) []string
 		"permissions." + profile + ".extends=" + strconv.Quote(":workspace"),
 		"permissions." + profile + ".filesystem={" + strings.Join(entries, ",") + "}",
 	}
+	config = append(config, "sandbox_mode="+strconv.Quote("workspace-write"))
 	if network {
-		// The legacy full mode's sandbox_workspace_write.network_access=true.
-		config = append(config, "permissions."+profile+".network.enabled=true")
+		// The legacy full mode's sandbox_workspace_write.network_access=true,
+		// once for the profile and once for the fallback.
+		config = append(config, "permissions."+profile+".network.enabled=true",
+			"sandbox_workspace_write.network_access=true")
 	}
-	args := []string{"--strict-config"}
+	args := make([]string, 0, 2*len(config))
 	for _, value := range config {
 		args = append(args, "-c", projects.ShellQuoted(value))
 	}

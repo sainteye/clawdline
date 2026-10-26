@@ -418,10 +418,18 @@ section with a `+` that leads nowhere.
   its gitdir and common directory, so `git add` failed on `.git/index.lock: Operation not permitted`
   with the legacy `--sandbox workspace-write`. `edits` and `full` now launch a profile that extends
   `:workspace` and names only the repository's `.git` and, for a worktree child, its
-  `.git/worktrees/<name>`. Measured with codex-cli 0.162.1 on macOS; on the Ubuntu host (0.161.0)
-  the probe could not run inside an already sandboxed Session (nested bubblewrap refused), so the
-  Linux half is unmeasured. A running Codex process keeps the sandbox it was launched with: only a
-  new launch picks this up.
+  `.git/worktrees/<name>`. Measured with codex-cli 0.162.1 on macOS and, on 2026-10-26, with
+  0.161.0 under bubblewrap 0.9.0 on the Ubuntu host from an ordinary shell (inside an already
+  sandboxed Session nested bubblewrap refuses the probe): with nothing named, or only `.git`, the
+  worktree's `index.lock` was `Read-only file system`; with only the gitdir the object write
+  failed; with both, `git add` and `git commit` succeeded while the main checkout's files and a
+  path outside the workspace stayed refused. A plain repository needs only its `.git`. The first
+  launch on that host never drew a composer: `--strict-config` refused the person's
+  `~/.codex/config.toml` for a key 0.161.0 does not know (`use_linux_sandbox_bwrap`), and the task
+  ended `spawn_failed`. The launch now drops `--strict-config` and adds
+  `-c sandbox_mode="workspace-write"` as the fallback for a Codex that cannot read the profile;
+  `/status` still reads `Profile clawdline-workspace` with it. A running Codex process keeps the
+  sandbox it was launched with: only a new launch picks this up.
 - **A codex child's sandbox needs the task root to be writable by the child's own user.** A task
   directory whose parent belongs to somebody else fails with
   `bwrap: Can't mkdir <task root>/.git: Permission denied` and the child cannot even read
