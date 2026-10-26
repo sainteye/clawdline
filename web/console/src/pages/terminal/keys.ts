@@ -58,21 +58,34 @@ export function pasteRefusal(state: { holding: boolean; stale: boolean } | null)
   return null
 }
 
-/** Read only in a user gesture; recheck authority after the asynchronous clipboard read. */
+/**
+ * Touch devices open a native paste target in the original gesture, without waiting for a
+ * clipboard permission prompt. Desktop reads still recheck authority before sending.
+ */
 export async function readClipboardPaste(
   clipboard: Pick<Clipboard, "readText"> | undefined,
   refusal: () => NextWord | null,
   send: (text: string) => void | Promise<void>,
+  native?: { preferred: boolean; open: () => void },
+  observe: (stage: string) => void = () => {},
 ): Promise<NextWord | null> {
+  const record = (stage: string) => { try { observe(stage) } catch { /* Diagnostics cannot affect pasting. */ } }
+  const open = () => { native?.open(); record("native_opened") }
   const before = refusal()
-  if (before) return before
-  if (!clipboard?.readText) return "terminalPasteReadFailed"
+  if (before) { record("refused"); return before }
+  if (native?.preferred) { open(); return null }
+  if (!clipboard?.readText) { record("read_unavailable"); if (native) open(); return "terminalPasteReadFailed" }
+  record("read_started")
   let text: string
-  try { text = await clipboard.readText() } catch { return "terminalPasteReadFailed" }
-  if (!text) return "terminalPasteEmpty"
+  try { text = await clipboard.readText() } catch {
+    record("read_failed"); if (native) open(); return "terminalPasteReadFailed"
+  }
+  if (!text) { record("read_empty"); if (native) open(); return "terminalPasteEmpty" }
   const after = refusal()
-  if (after) return after
-  await send(text)
+  if (after) { record("refused"); return after }
+  record("send_started")
+  try { await send(text) } catch (failure) { record("send_failed"); throw failure }
+  record("sent")
   return null
 }
 

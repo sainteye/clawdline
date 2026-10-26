@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { flushSync } from "react-dom"
 import type { Terminal as TerminalRow } from "@clawdline/contract"
 import type { Terminal as XTerm } from "@xterm/xterm"
 import type { FitAddon } from "@xterm/addon-fit"
@@ -350,15 +351,22 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     terminal.current?.focus()
     showInputLine()
   }
+  const recordPaste = (stage: string) => {
+    try {
+      const log = (host?.client as { viewerEvents?: { record(event: string, data: Record<string, unknown>, key?: string): unknown } } | undefined)?.viewerEvents
+      log?.record("cloud.terminal.paste", { machine, stage }, `cloud.terminal.paste|${stage}`)
+    } catch { /* Diagnostics cannot affect pasting. */ }
+  }
   const pasteFromClipboard = async () => {
     if (pasteBusy.current) return
     pasteBusy.current = true; setPasting(true); setPasteMessage("")
     try {
       const outcome = await readClipboardPaste(navigator.clipboard,
         () => session?.snapshot.canType && !history ? null : "terminalPasteUnavailable",
-        text => session!.paste(text))
-      if (outcome === "terminalPasteReadFailed" || outcome === "terminalPasteEmpty") setNativePaste(true)
-      else if (outcome) setPasteMessage(nextWord(outcome))
+        text => session!.paste(text),
+        { preferred: window.matchMedia("(any-pointer: coarse)").matches,
+          open: () => flushSync(() => setNativePaste(true)) }, recordPaste)
+      if (outcome && outcome !== "terminalPasteReadFailed" && outcome !== "terminalPasteEmpty") setPasteMessage(nextWord(outcome))
     } catch (failure) { setError(reason(failure)) }
     finally { pasteBusy.current = false; setPasting(false) }
   }
@@ -525,10 +533,11 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
       {dockNote && <p className="terminal-note" role="status">{dockNote}</p>}
       {diagnosticsText !== null && <pre className="terminal-diagnostics-text">{diagnosticsText}</pre>}
       {pasteMessage && <p className="terminal-note" role="status">{pasteMessage}</p>}
-      {nativePaste && history === null && <PasteField available={snapshot.canType} close={() => setNativePaste(false)} send={async text => {
+      {nativePaste && history === null && <PasteField failure={keyRefused?.why || pasteMessage} available={snapshot.canType} close={() => setNativePaste(false)} send={async text => {
         if (!session?.snapshot.canType || history !== null) { setPasteMessage(nextWord("terminalPasteUnavailable")); return false }
-        try { await session.paste(text); keySent(); return true }
-        catch (failure) { keyFailed(failure); return false }
+        recordPaste("send_started")
+        try { await session.paste(text); recordPaste("sent"); keySent(); return true }
+        catch (failure) { recordPaste("send_failed"); keyFailed(failure); return false }
       }} />}
     </div>
   </div>

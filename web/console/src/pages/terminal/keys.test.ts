@@ -21,6 +21,56 @@ test("clipboard paste reports empty, denied, and lost control without sending", 
   assert.deepEqual(sent, ["hello"])
 })
 
+test("touch paste opens its native field synchronously without reading or sending", async () => {
+  let opened = false
+  let reads = 0
+  const sent: string[] = []
+  const stages: string[] = []
+  const pending = readClipboardPaste({ readText: () => { reads++; return new Promise(() => {}) } },
+    () => null, text => { sent.push(text) }, { preferred: true, open: () => { opened = true } }, stage => stages.push(stage))
+  assert.equal(opened, true, "focus can be taken before the original gesture returns")
+  assert.equal(reads, 0, "no native clipboard permission request can hold up the field")
+  assert.equal(await pending, null)
+  assert.deepEqual(sent, [])
+  assert.deepEqual(stages, ["native_opened"])
+})
+
+test("native paste does not open after control is refused", async () => {
+  let opened = false
+  assert.equal(await readClipboardPaste(undefined, () => "terminalPasteWatching", () => assert.fail("sent"),
+    { preferred: true, open: () => { opened = true } }), "terminalPasteWatching")
+  assert.equal(opened, false)
+})
+
+test("desktop paste keeps direct reads and offers a native field for unavailable, denied or empty reads", async () => {
+  let opened = 0
+  const stages: string[] = []
+  const native = { preferred: false, open: () => { opened++ } }
+  for (const clipboard of [undefined, { readText: async () => { throw Error("denied") } }, { readText: async () => "" }]) {
+    const result = await readClipboardPaste(clipboard, () => null, () => assert.fail("sent"), native)
+    assert.ok(result === "terminalPasteReadFailed" || result === "terminalPasteEmpty")
+  }
+  assert.equal(opened, 3)
+  const sent: string[] = []
+  assert.equal(await readClipboardPaste({ readText: async () => "first\nsecond" }, () => null,
+    text => { sent.push(text) }, native, stage => stages.push(stage)), null)
+  assert.deepEqual(sent, ["first\nsecond"])
+  assert.equal(opened, 3)
+  assert.deepEqual(stages, ["read_started", "send_started", "sent"], "diagnostics contain stages only")
+})
+
+test("failed sends are surfaced once without opening a field that could replay the input", async () => {
+  let sends = 0
+  let opened = false
+  const stages: string[] = []
+  await assert.rejects(readClipboardPaste({ readText: async () => "first\nsecond" }, () => null,
+    async () => { sends++; throw Error("unknown outcome") },
+    { preferred: false, open: () => { opened = true } }, stage => stages.push(stage)), /unknown outcome/)
+  assert.equal(sends, 1)
+  assert.equal(opened, false)
+  assert.deepEqual(stages, ["read_started", "send_started", "send_failed"])
+})
+
 const key = (k: string, mods: Partial<{ altKey: boolean; ctrlKey: boolean; metaKey: boolean }> = {}) =>
   ({ key: k, altKey: false, ctrlKey: false, metaKey: false, ...mods })
 

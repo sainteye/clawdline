@@ -22,9 +22,17 @@
 
 .terminal-note { margin: 10px 0 0; color: var(--dim); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .terminal-note[role="alert"] { color: var(--bad); }
-.terminal-paste-field { flex: none; display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.terminal-paste-field {
+    inset: calc(var(--vvt, 0px) + 16px) 0 auto; margin: 0 auto;
+    width: min(440px, calc(100% - 32px)); max-height: calc(var(--vvh, 100dvh) - 32px);
+    box-sizing: border-box; overflow: auto; padding: 16px; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+}
+.terminal-paste-field[open] { display: grid; gap: 12px; }
+.terminal-paste-field::backdrop { background: #0008; }
+.terminal-paste-field .board-button { min-height: 44px; }
 .terminal-paste-field label { display: grid; gap: 8px; color: var(--ink); font-size: 13px; }
-.terminal-paste-field textarea { width: 100%; min-height: 72px; box-sizing: border-box; resize: vertical; font: 14px var(--mono); color: var(--ink); background: var(--card-hi); border: 1px solid var(--line); border-radius: 6px; }
+.terminal-paste-field textarea { width: 100%; min-height: 72px; box-sizing: border-box; resize: vertical; font: 16px var(--mono); color: var(--ink); background: var(--card-hi); border: 1px solid var(--line); border-radius: 6px; }
 .terminal-paste-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .terminal-session-note { color: var(--faint); font-size: 12px; }
 .terminal-status-line { margin: 2px 0 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }

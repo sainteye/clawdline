@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { flushSync } from "react-dom"
 import type { Terminal as TerminalRow, TerminalControl, TerminalFrame, TerminalHolder, TerminalRefusal, TerminalState, TerminalStatus } from "@clawdline/contract"
 import type { Terminal as XTerm } from "@xterm/xterm"
 import type { FitAddon } from "@xterm/addon-fit"
@@ -573,9 +574,9 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
         return pasteRefusal(input.current?.state ?? null)
       }, text => {
         if (!input.current?.paste(text)) setSaid(nextWord("terminalPasteUnavailable"))
-      })
-      if (outcome === "terminalPasteReadFailed" || outcome === "terminalPasteEmpty") setNativePaste(true)
-      else if (outcome) setSaid(nextWord(outcome))
+      }, { preferred: window.matchMedia("(any-pointer: coarse)").matches,
+        open: () => flushSync(() => setNativePaste(true)) })
+      if (outcome && outcome !== "terminalPasteReadFailed" && outcome !== "terminalPasteEmpty") setSaid(nextWord(outcome))
     } finally { pasteBusy.current = false; setPasting(false) }
   }
   const holderName = holderWords(holder)
@@ -732,7 +733,7 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
           </button>
         ))}
       </div>
-      {nativePaste && history === null && <PasteField available={canType} close={() => setNativePaste(false)} send={text => {
+      {nativePaste && history === null && <PasteField failure={said} available={canType} close={() => setNativePaste(false)} send={text => {
         if (!running || history !== null) { setSaid(nextWord("terminalPasteUnavailable")); return false }
         const refused = pasteRefusal(input.current?.state ?? null)
         if (refused) { setSaid(nextWord(refused)); return false }

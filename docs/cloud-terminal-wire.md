@@ -298,3 +298,31 @@ A current successful read from the same machine clears it; cached rows and other
 Read handlers do not hold the mutation authority mutex while routes or roster reads run.
 Their existing authority checks and publication epoch fences remain in place. Mutations,
 pairing completion, and revocation retain their authority serialization.
+
+## Clipboard paste on touch devices
+
+The Paste button on a device with a coarse pointer opens a modal native textarea
+synchronously in the original click gesture. React commits that field with
+`flushSync`, then its layout effect opens the dialog and focuses the textarea.
+It does not request `Clipboard.readText` on that path: WebKit may require its own
+Paste callout, and a pending permission request must not delay the native target
+or move its focus outside the user gesture. The person pastes using the native
+menu, reviews the text, and presses the terminal paste action. This is a temporary
+paste target, separate from the terminal's direct keyboard input.
+
+Desktop devices retain direct clipboard reads. Unavailable, refused or empty
+reads open the same dialog. The dialog occupies the browser's modal top layer,
+with bounded viewport height and scrolling, so it stays reachable when the
+terminal screen and keyboard leave little vertical space. Sending checks the
+current control and history state again and preserves the draft on refusal.
+Cloud sends close the dialog only after the existing paste receipt resolves;
+they do not retry an unknown input outcome.
+
+`cloud.terminal.paste` viewer events record only the machine and a fixed stage:
+`native_opened`, `read_started`, `read_unavailable`, `read_failed`, `read_empty`,
+`refused`, `send_started`, `send_failed` or `sent`. `sent` on Cloud means the
+session's paste promise resolved, not that a person observed the new screen.
+No clipboard text or exception message enters these events. The existing bounded
+viewer-event delivery path carries them to the paired machine's daemon log.
+Native iOS clipboard menus and keyboard activation still require device-level
+acceptance; headless WebKit can verify the dialog, focus and send behavior only.
