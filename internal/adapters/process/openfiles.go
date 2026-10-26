@@ -11,10 +11,10 @@ import (
 // OpenFiles lists the files each pid holds open and the directory it is
 // running in. `ok` is false when the open-file table itself could not be read.
 //
-// It is the one place a running Codex says which conversation it is having.
+// It is the kernel evidence for which conversation a running Codex is having.
 // Claude Code writes `~/.claude/sessions/<pid>.json` and so can be asked about
 // a pid directly; Codex writes nothing that carries a pid at all. What it does
-// do is hold its own rollout open for as long as the session lives, so the
+// do is hold its rollout open in the TUI or its proven managed writer, so the
 // kernel answers the question — not a correlation between a file's timestamp
 // and a process's start, which on a machine that opens several sessions a
 // minute would pair the wrong two often enough to matter.

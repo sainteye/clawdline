@@ -19,6 +19,8 @@ import (
 )
 
 type PS struct {
+	// table is a single process-table observation; nil uses the kernel reader.
+	table func(context.Context) ([]byte, error)
 	// Antigravity must validate the executable fingerprint and kernel birth.
 	// Nil leaves both the standalone CLI and the old same-name IDE unclassified.
 	Antigravity ports.AntigravityProcessVerifier
@@ -63,9 +65,7 @@ func (p *PS) scan(ctx context.Context, ttys map[string]bool) (session.Inventory,
 		Complete:   true,
 	}
 
-	cmd := exec.CommandContext(ctx, "/bin/ps", "-ax", "-o", "tty=,pid=,pgid=,tpgid=,command=")
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
-	out, err := cmd.Output()
+	out, err := p.processTable(ctx)
 	if err != nil {
 		// An unreadable process table proves nothing about what is running.
 		inv.Complete = false
@@ -75,19 +75,19 @@ func (p *PS) scan(ctx context.Context, ttys map[string]bool) (session.Inventory,
 
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 5 {
+		if len(fields) < 6 {
 			continue
 		}
 		tty, pidText, pgidText, tpgidText := fields[0], fields[1], fields[2], fields[3]
 		if ttys != nil && !ttys[tty] {
 			continue
 		}
-		command := strings.Join(fields[4:], " ")
+		command := strings.Join(fields[5:], " ")
 
 		assistant := classify(command)
 		pid, _ := strconv.Atoi(pidText)
 		var antigravity ports.AntigravityProcess
-		if assistant == "" && path.Base(fields[4]) == "agy" {
+		if assistant == "" && path.Base(fields[5]) == "agy" {
 			fact, ok, complete := p.antigravityProcessStatus(ctx, pid, tty)
 			if !complete {
 				inv.Complete = false
@@ -138,8 +138,17 @@ func (p *PS) scan(ctx context.Context, ttys map[string]bool) (session.Inventory,
 		}
 		inv.Sessions = append(inv.Sessions, s)
 	}
-	inv.Sessions = p.bindCodex(ctx, inv.Sessions)
+	inv.Sessions = p.bindCodex(ctx, inv.Sessions, codexWriterPIDs(string(out), inv.Sessions))
 	return inv, nil
+}
+
+func (p *PS) processTable(ctx context.Context) ([]byte, error) {
+	if p.table != nil {
+		return p.table(ctx)
+	}
+	cmd := exec.CommandContext(ctx, "/bin/ps", "-ax", "-o", "tty=,pid=,pgid=,tpgid=,ppid=,command=")
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	return cmd.Output()
 }
 
 func (p *PS) antigravityProcess(ctx context.Context, pid int, tty string) (ports.AntigravityProcess, bool) {
@@ -171,7 +180,11 @@ func (p *PS) antigravityProcessStatus(ctx context.Context, pid int, tty string) 
 // What exists from the first message on in direct mode is the open descriptor:
 // the process holds its own rollout open, and that file says which conversation
 // it belongs to. Managed app-server versions may put that descriptor on the
-// shared daemon instead; transcript.Host validates their live writer record,
+// dedicated no-tty app-server descendant instead; its parent chain and native
+// subcommand are read from this same process snapshot. That writer joins the
+// one open-file batch, and conflicting conversation roots remain ambiguous.
+// A shared daemon outside that ancestry remains unbound here; transcript.Host
+// can separately validate its live writer record,
 // rollout, name, cwd and exact iTerm title after this scan. Before the first
 // message the answer is `no_record` rather than silence — which is the whole
 // difference between a session that will name itself shortly and one this
@@ -199,11 +212,23 @@ func (p *PS) antigravityProcessStatus(ctx context.Context, pid int, tty string) 
 // conversation an unnamed process belongs to, and which positively-classified
 // subagent threads it currently holds open. Running is therefore direct
 // process evidence for Codex, not the missing-ending inference Claude needs.
-func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Session {
+func (p *PS) bindCodex(ctx context.Context, rows []session.Session, writers ...map[int][]int) []session.Session {
 	var pids []int
+	seen := map[int]bool{}
+	addPID := func(pid int) {
+		if !seen[pid] {
+			seen[pid] = true
+			pids = append(pids, pid)
+		}
+	}
 	for _, s := range rows {
 		if s.Assistant == session.AssistantCodex && s.PID != 0 {
-			pids = append(pids, s.PID)
+			addPID(s.PID)
+			if len(writers) > 0 {
+				for _, pid := range writers[0][s.PID] {
+					addPID(pid)
+				}
+			}
 		}
 	}
 	if len(pids) == 0 {
@@ -240,8 +265,15 @@ func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Se
 		if rows[i].CWD == "" {
 			rows[i].CWD = cwds[s.PID]
 		}
+		paths := files[s.PID]
+		// Keep a directly-owned rollout authoritative. Managed app-server
+		// versions keep it on a no-tty descendant instead; only fall back to
+		// those proven descendants when the foreground TUI holds no rollout.
+		if len(writers) > 0 && !hasCodexRollout(paths) {
+			paths = codexWriterFiles(files, writers[0][s.PID])
+		}
 		if s.ConversationID == "" {
-			id, binding, detail, cwd := codexConversation(files[s.PID], read, head)
+			id, binding, detail, cwd := codexConversation(paths, read, head)
 			rows[i].ConversationID = id
 			rows[i].Binding = binding
 			rows[i].BindingDetail = detail
@@ -253,7 +285,7 @@ func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Se
 			}
 		}
 		rows[i].Agents, rows[i].AgentReading = codexAgents(
-			files[s.PID], read, rows[i].ConversationID, head)
+			paths, read, rows[i].ConversationID, head)
 	}
 	return rows
 }

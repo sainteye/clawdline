@@ -108,6 +108,13 @@ evidence: what its screen shows and what its own records say. With no evidence, 
 `unknown`. Transcripts are read from the assistant's own files under `~/.claude` and `~/.codex`.
 Nothing is written there.
 
+Managed Codex versions may keep the rollout on a no-tty `codex app-server` descendant instead of
+on the foreground TUI. The same process-table snapshot supplies the parent chain and native
+subcommand; only those scoped writers join the existing batched open-file read. Other terminals,
+independent `codex exec` trees and unrelated shared daemons are excluded. A directly-held rollout
+remains authoritative, and multiple descendant conversation roots remain ambiguous. This binds
+both the Terminal Session and its transcript without sending the user's message again.
+
 Display retention uses the same tty join as the live inventory merge. If a terminal source
 fails while the process table still sees its tty, the retained tab or pane replaces the
 process-only row instead of adding a second Session. Its stable terminal id, state and original
