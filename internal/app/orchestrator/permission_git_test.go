@@ -23,7 +23,7 @@ func TestCodexEditingChildMayWriteItsRepositoryMetadata(t *testing.T) {
 		network        bool
 	}{{"edits", "--ask-for-approval on-request", false}, {"full", "--ask-for-approval never", true}} {
 		line := strings.Join(permissionArgs(Record{Assistant: "codex", PermissionMode: c.mode, Repository: repo}, tasks, repo, ""), " ")
-		for _, want := range []string{"--strict-config", `default_permissions="clawdline-workspace"`,
+		for _, want := range []string{`default_permissions="clawdline-workspace"`,
 			`permissions.clawdline-workspace.extends=":workspace"`, metadata, `"` + tasks + `"="write"`, c.approval} {
 			if !strings.Contains(line, want) {
 				t.Errorf("%s: %q missing from %s", c.mode, want, line)
@@ -37,6 +37,35 @@ func TestCodexEditingChildMayWriteItsRepositoryMetadata(t *testing.T) {
 		}
 		if strings.Contains(line, `":root"`) || strings.Contains(line, "danger") {
 			t.Errorf("%s: the profile is wider than the workspace: %s", c.mode, line)
+		}
+	}
+}
+
+// The person's config.toml is theirs, and a Codex refuses to start under
+// --strict-config when it carries a key that version does not know: on the
+// Ubuntu host, codex-cli 0.161.0 stopped every edits child on
+// `use_linux_sandbox_bwrap`, before drawing a composer. So the profile launch
+// does not ask for strict parsing, and confinement does not depend on it: a
+// Codex that cannot read the profile still finds workspace-write on the
+// command line instead of the file's own sandbox_mode.
+func TestCodexEditingChildStartsDespiteUnknownConfigKeys(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		mode    string
+		network bool
+	}{{"edits", false}, {"full", true}} {
+		line := strings.Join(permissionArgs(Record{Assistant: "codex", PermissionMode: c.mode, Repository: repo}, "", repo, ""), " ")
+		if strings.Contains(line, "--strict-config") {
+			t.Errorf("%s: --strict-config refuses a config.toml with keys this Codex does not know: %s", c.mode, line)
+		}
+		if !strings.Contains(line, `sandbox_mode="workspace-write"`) {
+			t.Errorf("%s: no workspace-write fallback for a Codex without profiles: %s", c.mode, line)
+		}
+		if got := strings.Contains(line, "sandbox_workspace_write.network_access=true"); got != c.network {
+			t.Errorf("%s: fallback network access = %v, want %v: %s", c.mode, got, c.network, line)
 		}
 	}
 }
