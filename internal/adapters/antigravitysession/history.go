@@ -268,6 +268,48 @@ func (h *Host) Past(ctx context.Context, cwd, cursor string, limit int) ([]Past,
 	return out, next, nil
 }
 
+// FirstRequest reads the opening user text from the published history generation,
+// including after its process has exited or its opening rows left the view cache.
+// It never resumes the provider or starts a model turn.
+func (h *Host) FirstRequest(ctx context.Context, s session.Session) (string, error) {
+	c, err := h.lookup(s)
+	if err != nil {
+		return "", err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.storeErr != nil {
+		return "", c.storeErr
+	}
+	if c.store == nil {
+		for _, e := range c.entries {
+			if e.Role == "user" && strings.TrimSpace(e.Text) != "" {
+				return strings.TrimSpace(e.Text), nil
+			}
+		}
+		return "", nil
+	}
+	rows, err := c.store.db.QueryContext(ctx, `SELECT body FROM entries WHERE id=? AND generation=? AND json_extract(body,'$.role')='user' ORDER BY ordinal`, c.row.ID, c.generation)
+	if err != nil {
+		return "", refusal("history_unavailable")
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw []byte
+		var e contract.TranscriptEntry
+		if rows.Scan(&raw) != nil || json.Unmarshal(raw, &e) != nil {
+			return "", refusal("history_unavailable")
+		}
+		if text := strings.TrimSpace(e.Text); text != "" {
+			return text, nil
+		}
+	}
+	if rows.Err() != nil {
+		return "", refusal("history_unavailable")
+	}
+	return "", nil
+}
+
 func (h *Host) TranscriptPage(ctx context.Context, s session.Session, limit int, before int64, revision string) (contract.TranscriptPage, error) {
 	c, err := h.lookup(s)
 	if err != nil {

@@ -37,6 +37,29 @@ func (s *Server) sessionTail(item session.Session) (transcript.Page, error) {
 	if s.sessionTailRead != nil {
 		return s.sessionTailRead(item)
 	}
+	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
+		h := s.antigravitySessions.Load()
+		if h == nil {
+			return transcript.Page{}, transcript.ErrNoRecord
+		}
+		page, err := h.Transcript(item, namingTailLimit)
+		if err != nil {
+			return transcript.Page{}, err
+		}
+		out := transcript.Page{}
+		if page.NextBefore > 0 || page.Truncation != nil {
+			out.Unread = 1
+		}
+		for _, e := range page.Entries {
+			switch e.Role {
+			case "user":
+				out.Entries = append(out.Entries, transcript.Entry{Kind: transcript.KindUser, Text: e.Text})
+			case "assistant":
+				out.Entries = append(out.Entries, transcript.Entry{Kind: transcript.KindAssistant, Text: e.Text})
+			}
+		}
+		return out, nil
+	}
 	path := s.recordPath(item)
 	if path == "" {
 		return transcript.Page{}, transcript.ErrNoRecord

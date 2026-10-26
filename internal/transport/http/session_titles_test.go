@@ -474,3 +474,17 @@ func TestDuplicateConversationTitleRowsKeepTheNewest(t *testing.T) {
 		t.Fatalf("rows = %+v", got)
 	}
 }
+
+func TestSmartTitleRefusesUnreadableHistoryBeforeSpending(t *testing.T) {
+	item := session.Session{ID: "%49", Backend: session.BackendTmux, Assistant: session.AssistantCodex, ConversationID: "conversation-49", State: session.StateIdle}
+	s := paneServer(t, &pane{s: item})
+	s.firstSessionRequest = func(session.Session) (string, error) { return "", errors.New("history unavailable") }
+	s.nameSession = func(context.Context, string, string) (string, error) {
+		t.Fatal("unreadable history spent a naming turn")
+		return "", nil
+	}
+	rec := act(t, s, "smart-title", item.ID, "unreadable-title", `{}`)
+	if rec.Code != http.StatusConflict || codeOf(t, rec) != "conversation_unreadable" {
+		t.Fatalf("unreadable: %d %s", rec.Code, rec.Body)
+	}
+}

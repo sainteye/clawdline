@@ -533,3 +533,33 @@ func TestMetadataLeaseRefusesAClosedConversationAndProtectsItsClient(t *testing.
 		t.Fatal("closed metadata admission succeeded")
 	}
 }
+
+func TestFirstRequestSurvivesViewEvictionAndReopen(t *testing.T) {
+	h, row, opts := persistentFixture(t)
+	c, _ := h.lookup(row)
+	c.mu.Lock()
+	c.append(contract.TranscriptEntry{Role: "assistant", Text: "Not the request"})
+	c.append(contract.TranscriptEntry{Role: "user", Text: " \n\t"})
+	c.append(contract.TranscriptEntry{Role: "user", Text: "Original objective"})
+	for i := 0; i < 90; i++ {
+		c.append(contract.TranscriptEntry{Role: "user", Text: strings.Repeat("x", 20000)})
+	}
+	if c.storeErr != nil {
+		t.Fatal(c.storeErr)
+	}
+	c.mu.Unlock()
+	stopHost(t, h)
+	h = reopenHost(t, opts)
+	got, err := h.FirstRequest(t.Context(), row)
+	if err != nil || got != "Original objective" {
+		t.Fatalf("first=%q err=%v", got, err)
+	}
+	changed := row
+	changed.ConversationID = "another-conversation"
+	if _, err := h.FirstRequest(t.Context(), changed); err == nil {
+		t.Fatal("read another identity")
+	}
+	if processes, _ := h.Stats(); processes != 0 {
+		t.Fatal("history read started a provider")
+	}
+}

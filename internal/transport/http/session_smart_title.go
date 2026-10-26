@@ -25,7 +25,7 @@ func (s *Server) smartSessionTitle(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 	first, err := s.firstRequest(item)
-	if errors.Is(err, transcript.ErrNoRecord) || errors.Is(err, transcript.ErrNotFound) || strings.TrimSpace(first) == "" {
+	if errors.Is(err, transcript.ErrNoRecord) || errors.Is(err, transcript.ErrNotFound) {
 		writeRefusal(w, http.StatusConflict, "conversation_empty",
 			"This session has no first request to name yet. Send its first message, then try again.")
 		return
@@ -104,6 +104,12 @@ func (s *Server) smartSessionTitle(w http.ResponseWriter, r *http.Request, id st
 func (s *Server) firstRequest(item session.Session) (string, error) {
 	if s.firstSessionRequest != nil {
 		return s.firstSessionRequest(item)
+	}
+	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
+		if h := s.antigravitySessions.Load(); h != nil {
+			return h.FirstRequest(context.Background(), item)
+		}
+		return "", errors.New("owned session history unavailable")
 	}
 	path := s.recordPath(item)
 	if path == "" {
