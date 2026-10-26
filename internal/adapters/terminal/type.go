@@ -14,6 +14,10 @@ import (
 // with `send-keys -l`, words longer than one read of the pty lost their head
 // to Claude Code's own paste detection just as a long notice did.
 func (t *Tmux) Type(ctx context.Context, s session.Session, text string) error {
+	t, s = t.sessionTarget(s)
+	if t == nil {
+		return Unsent{Why: "the Terminal pane has no configured server"}
+	}
 	if text == "" {
 		return nil
 	}

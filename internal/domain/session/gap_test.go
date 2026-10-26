@@ -8,6 +8,11 @@ func TestAnIDSaysWhichSourceWouldHaveListedIt(t *testing.T) {
 	for id, want := range map[string]string{
 		"%8":                                   "tmux",
 		"%0":                                   "tmux",
+		"terminal:%0":                          "tmux",
+		"terminal:%12":                         "tmux",
+		"terminal:%0;kill-server":              "",
+		"terminal:%":                           "",
+		"terminal:0":                           "",
 		"7A5C0000-0000-4000-8000-000000000009": "iterm",
 		"ttys015":                              "ps",
 		"pts/3":                                "ps",

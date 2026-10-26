@@ -48,6 +48,9 @@ func splitPaneFields(line string) []string {
 var sendConfirm = 6 * time.Second
 
 type Tmux struct {
+	// Terminal is this daemon's ordinary Terminal server, kept separate from the assistant server.
+	Terminal *Tmux
+
 	// Antigravity resolves pane identity from positive process proof. Merely
 	// seeing agy as pane_current_command does not classify the old IDE.
 	Antigravity func(context.Context, string, string) (ports.AntigravityProcess, error)
@@ -122,12 +125,12 @@ func (t *Tmux) Name() string { return "tmux" }
 // authoritative "there are no panes" — the one answer that lets the broker
 // call a live child's tab gone (docs/design-decisions.md D05 ③).
 func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
-	return t.inventory(ctx, false)
+	return t.sessionInventory(ctx, false)
 }
 
 // ManagedInventory retains bare presence for external panes, without reading their screens or records.
 func (t *Tmux) ManagedInventory(ctx context.Context) (session.Inventory, error) {
-	return t.inventory(ctx, true)
+	return t.sessionInventory(ctx, true)
 }
 
 var managedSessionName = regexp.MustCompile(`^clawdline-(session|task)-[0-9a-f]{8}$`)
@@ -261,6 +264,10 @@ func NoServer(said string) bool {
 // Capture returns what is currently drawn in a pane. It is read-only: nothing
 // is typed, and the pane is not brought forward.
 func (t *Tmux) Capture(ctx context.Context, s session.Session) (string, bool) {
+	t, s = t.sessionTarget(s)
+	if t == nil {
+		return "", false
+	}
 	if s.Backend != session.BackendTmux || s.ID == "" {
 		return "", false
 	}
@@ -287,6 +294,10 @@ func (t *Tmux) Capture(ctx context.Context, s session.Session) (string, bool) {
 // stream to the program, which reads it in pieces of at most 1022 bytes, and a
 // 1045-byte notice reached a Claude Code root as its last 23 bytes.
 func (t *Tmux) Send(ctx context.Context, s session.Session, text string) error {
+	t, s = t.sessionTarget(s)
+	if t == nil {
+		return Unsent{Why: "the Terminal pane has no configured server"}
+	}
 	if s.Assistant == session.AssistantAntigravity {
 		return Unsent{Why: ErrAntigravityInputUnavailable.Error()}
 	}
@@ -316,6 +327,10 @@ func (t *Tmux) Interrupt(ctx context.Context, s session.Session) error {
 // writing. So the assistant is sent its own quit word first, watched until it
 // has left, and the pane is taken after.
 func (t *Tmux) Close(ctx context.Context, s session.Session) error {
+	t, s = t.sessionTarget(s)
+	if t == nil {
+		return Unsent{Why: "the Terminal pane has no configured server"}
+	}
 	if s.ID == "" {
 		return Unsent{Why: "there is no tmux pane to close"}
 	}

@@ -8,6 +8,10 @@ import (
 // TypeAntigravityFirst admits no generic send and performs the supplied live
 // check again immediately before each separate tmux operation.
 func (t *Tmux) TypeAntigravityFirst(ctx context.Context, s session.Session, text string, check func(context.Context) error) error {
+	t, s = t.sessionTarget(s)
+	if t == nil {
+		return ErrAntigravityInputUnavailable
+	}
 	if s.Assistant != session.AssistantAntigravity || s.Backend != session.BackendTmux || check == nil {
 		return ErrAntigravityInputUnavailable
 	}
@@ -24,6 +28,10 @@ func (t *Tmux) TypeAntigravityFirst(ctx context.Context, s session.Session, text
 	return tmuxInput{call: call, target: s.ID}.paste(ctx, text)
 }
 func (t *Tmux) EnterAntigravityFirst(ctx context.Context, s session.Session, check func(context.Context) error) error {
+	t, s = t.sessionTarget(s)
+	if t == nil {
+		return ErrAntigravityInputUnavailable
+	}
 	if s.Assistant != session.AssistantAntigravity || s.Backend != session.BackendTmux || check == nil {
 		return ErrAntigravityInputUnavailable
 	}

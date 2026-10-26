@@ -73,6 +73,14 @@ func SourceFor(b Backend) string {
 // tmuxPane is a tmux pane id, which tmux alone issues: `%` and digits.
 var tmuxPane = regexp.MustCompile(`^%[0-9]+$`)
 
+// TerminalPanePrefix separates panes on the ordinary Terminal server from equally
+// numbered panes on the assistant server. It never accepts a caller-supplied socket.
+const TerminalPanePrefix = "terminal:"
+
+func IsTerminalPane(id string) bool {
+	return strings.HasPrefix(id, TerminalPanePrefix) && tmuxPane.MatchString(strings.TrimPrefix(id, TerminalPanePrefix))
+}
+
 // itermSession is an iTerm2 session id, which iTerm2 issues as an upper-case
 // UUID and nothing else on this machine does.
 var itermSession = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
@@ -89,7 +97,7 @@ func SourceForID(id string) string {
 	switch {
 	case strings.HasPrefix(id, "owned:acp:"):
 		return "owned"
-	case tmuxPane.MatchString(id):
+	case tmuxPane.MatchString(id), IsTerminalPane(id):
 		return "tmux"
 	case itermSession.MatchString(id):
 		return "iterm"

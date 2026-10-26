@@ -267,6 +267,15 @@ func (s *Screens) Channel(backend session.Backend) ScreenChannel {
 	return ScreenOnDemand
 }
 
+// Terminal already owns its pipe-pane subscription. Session views sample that
+// server without replacing Terminal's stream or sharing a pipe with another server.
+func (s *Screens) channel(item session.Session) ScreenChannel {
+	if session.IsTerminalPane(item.ID) {
+		return ScreenOnDemand
+	}
+	return s.Channel(item.Backend)
+}
+
 // Read is the current screen for a session, and the demand that reading it
 // declares.
 //
@@ -287,7 +296,7 @@ func (s *Screens) snapshot(item session.Session, until time.Time) ScreenReading 
 	out := ScreenReading{
 		SessionID:     item.ID,
 		Backend:       item.Backend,
-		Channel:       s.Channel(item.Backend),
+		Channel:       s.channel(item),
 		Revision:      ScreenUnreadable,
 		WatchingUntil: until,
 	}
@@ -324,7 +333,7 @@ func (s *Screens) demand(item session.Session, until, now time.Time) {
 	}
 	watch.session = item
 	watch.until = until
-	wantSignal := item.Backend == session.BackendTmux && s.signal != nil
+	wantSignal := s.channel(item) == ScreenSignalled
 	capture := s.shouldCaptureOnRead(watch, now)
 	if capture {
 		s.beginCaptureLocked(item.ID, now)
@@ -374,7 +383,7 @@ func (s *Screens) shouldCaptureOnRead(watch *screenWatch, now time.Time) bool {
 	if watch.capturing {
 		return false
 	}
-	if s.Channel(watch.session.Backend) == ScreenSignalled {
+	if s.channel(watch.session) == ScreenSignalled {
 		return watch.at.IsZero() && !s.coalescer.isScheduled(watch.session.ID)
 	}
 	if watch.at.IsZero() {

@@ -57,8 +57,8 @@ const BundledTmuxEnv = "CLAWDLINE_NEXT_TMUX"
 
 // SessionsSocketName is the bundled tmux's server for assistant sessions, in
 // `<CLAWDLINE_NEXT_DIR>/tmux/`. The owned terminals have `term.sock` beside it
-// (terminal/owned): a shell a person types into and an assistant the broker
-// dispatched are listed by different routes and must not share a server.
+// (terminal/owned): ordinary shells and dispatched assistants must not share
+// a server. Session discovery may join both, using qualified Terminal pane IDs.
 const SessionsSocketName = "sessions.sock"
 
 // TmuxChoice is the tmux every call runs, and the server it reaches.

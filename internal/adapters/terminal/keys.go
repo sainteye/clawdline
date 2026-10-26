@@ -17,6 +17,10 @@ import (
 // keeps a multi-byte sequence together where separate calls would leave room
 // for somebody else's input between them.
 func (t *Tmux) Keystroke(ctx context.Context, s session.Session, bytes []byte) error {
+	t, s = t.sessionTarget(s)
+	if t == nil {
+		return Unsent{Why: "the Terminal pane has no configured server"}
+	}
 	if len(bytes) == 0 {
 		return errors.New("there is no key to send")
 	}
@@ -37,7 +41,12 @@ var keyEscape = []byte{0x1b}
 // read its screen answers false, which callers treat as "unread", not "empty".
 type Screens struct{ hosts []ports.TerminalHost }
 
-func NewScreens() Screens { return Screens{hosts: Hosts()} }
+func NewScreens(hosts ...ports.TerminalHost) Screens {
+	if len(hosts) == 0 {
+		hosts = Hosts()
+	}
+	return Screens{hosts: hosts}
+}
 
 func (s Screens) Capture(ctx context.Context, sess session.Session) (string, bool) {
 	text, ok, _ := s.CaptureWithFailure(ctx, sess)

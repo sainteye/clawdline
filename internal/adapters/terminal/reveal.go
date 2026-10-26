@@ -34,6 +34,10 @@ import (
 // before the reply goes out, and it is answered from tmux's own client list
 // rather than guessed.
 func (t *Tmux) Reveal(ctx context.Context, s session.Session, activate bool) error {
+	t, s = t.sessionTarget(s)
+	if t == nil {
+		return Unsent{Why: "the Terminal pane has no configured server"}
+	}
 	if !IsPaneID(s.ID) {
 		return errUnsupported("show a session that is not a tmux pane")
 	}

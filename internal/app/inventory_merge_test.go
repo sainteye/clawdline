@@ -24,6 +24,24 @@ func TestMergeNamesAnITermTabByItsSessionID(t *testing.T) {
 	}
 }
 
+type terminalPaneIdentity struct{}
+
+func (terminalPaneIdentity) ForSession(context.Context, session.Session) (ports.Identity, bool) {
+	// Provider records know only the server-local TMUX_PANE, not its socket.
+	return ports.Identity{Pane: "%0", ConversationID: "terminal-conversation"}, true
+}
+
+func TestTerminalPaneKeepsItsServerWhenEnrichedFromAProviderRecord(t *testing.T) {
+	process := session.Session{ID: "ttys017", TTY: "ttys017", Backend: session.BackendITerm,
+		Assistant: session.AssistantCodex, PID: 7}
+	pane := session.Session{ID: "terminal:%0", TTY: process.TTY, Backend: session.BackendTmux}
+	in := Inventory{Identity: terminalPaneIdentity{}}
+	got := in.enrich(context.Background(), richer(process, pane))
+	if got.ID != pane.ID || got.PID != 7 || got.Assistant != session.AssistantCodex || got.ConversationID != "terminal-conversation" {
+		t.Fatalf("provider enrichment lost the Terminal server: %+v", got)
+	}
+}
+
 type titleJoinIdentity struct{ saw string }
 
 func (i *titleJoinIdentity) ForSession(_ context.Context, s session.Session) (ports.Identity, bool) {

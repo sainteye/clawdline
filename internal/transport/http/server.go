@@ -265,6 +265,7 @@ func New(cfg config.Config) (*Server, error) {
 	home, _ := os.UserHomeDir()
 	agents := subagents.New(home)
 	hosts := terminal.Hosts()
+	terminal.ConnectTerminalServer(hosts, cfg.Dir)
 	srv := &Server{
 		store:          st,
 		secretHandoffs: app.NewSecretHandoffs(),
@@ -282,10 +283,10 @@ func New(cfg config.Config) (*Server, error) {
 			Terminals: hosts,
 			Identity:  transcript.NewHost(),
 			Agents:    agents,
-			Screen:    terminal.NewScreens(),
+			Screen:    terminal.NewScreens(hosts...),
 			// The list's screens are held and refreshed behind the answer; the
 			// live reader above stays what a keystroke and the broker read.
-			Held: app.NewHeldScreens(terminal.NewScreens()),
+			Held: app.NewHeldScreens(terminal.NewScreens(hosts...)),
 			// And the bound on how many of its rows one reading may ask an
 			// activity time of.
 			Activity: app.NewActivityReads(),
