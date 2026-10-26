@@ -163,3 +163,12 @@ Session-shell route and Cloud capability with the current Session identity; they
 do not acknowledge completion. Logs use the registered callback tail bound and
 remain outside repository source. Closing the panel stops reads. An expired or
 unreadable log is reported instead of being treated as successful completion.
+
+## Synthetic native response boundaries
+
+A native assistant's transcript text can arrive before its prompt response ends. HTTP integration
+fixtures must keep these events distinct: hold the synthetic response boundary, verify that full
+info does not query quota while the sender is busy, then release the response and wait for the
+quota reading. The usage receipt still asserts exactly one provider request. This makes the
+Linux CI timing failure in `TestOwnedSessionUsesExistingStartInventorySendAndTranscript`
+reproducible without calling an external provider or adding retries to product code.

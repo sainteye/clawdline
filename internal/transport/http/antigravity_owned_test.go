@@ -133,6 +133,20 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			}
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "usage_update", "used": 12, "size": 100}}})
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic HTTP reply"}}}})
+			// Hold the response boundary after text is visible. Text alone
+			// does not prove the sender has released its metadata operation.
+			if gate := os.Getenv("CLW_HTTP_TURN_GATE"); gate != "" {
+				deadline := time.Now().Add(3 * time.Second)
+				for {
+					if _, err := os.Stat(gate); err == nil {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatal("turn gate was not released")
+					}
+					time.Sleep(time.Millisecond)
+				}
+			}
 			result = map[string]string{"stopReason": "end_turn"}
 		}
 		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
@@ -259,6 +273,7 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 		t.Fatal("absent configuration enabled runtime")
 	}
 	dir := t.TempDir()
+	t.Setenv("CLW_HTTP_TURN_GATE", filepath.Join(dir, "release-turn"))
 	if err := os.MkdirAll(filepath.Join(dir, "antigravity-acp"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -351,9 +366,38 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "usage")); !os.IsNotExist(err) {
 		t.Fatal("summary queried provider quota")
 	}
+	// The provider has emitted text, but its prompt response is still held.
+	// A full info read must preserve unknown quota without starting /usage.
+	busyResponse := httptest.NewRecorder()
+	s.sessionInfoRoute(busyResponse, httptest.NewRequest(http.MethodGet, "/v1/sessions/fixture/info", nil), answer.ID)
+	var busyInfo contract.SessionInfoReply
+	if busyResponse.Code != 200 || json.Unmarshal(busyResponse.Body.Bytes(), &busyInfo) != nil ||
+		busyInfo.Info.Limits == nil || len(busyInfo.Info.Limits.Windows) != 0 || busyInfo.Info.Limits.UnknownReason != contract.AssistantUnknownReasonNoReading {
+		t.Fatalf("busy quota=%d %s", busyResponse.Code, busyResponse.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "usage")); !os.IsNotExist(err) {
+		t.Fatal("busy info queried provider quota")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "release-turn"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Acceptance, transcript text, and the completed native response are
+	// distinct events. Read until the sender releases its in-flight operation;
+	// the fixture's usage receipt below still requires exactly one /usage.
 	infoResponse := httptest.NewRecorder()
-	s.sessionInfoRoute(infoResponse, httptest.NewRequest(http.MethodGet, "/v1/sessions/fixture/info", nil), answer.ID)
 	var info contract.SessionInfoReply
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		infoResponse = httptest.NewRecorder()
+		s.sessionInfoRoute(infoResponse, httptest.NewRequest(http.MethodGet, "/v1/sessions/fixture/info", nil), answer.ID)
+		if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil {
+			t.Fatalf("native info=%d %s", infoResponse.Code, infoResponse.Body.String())
+		}
+		if info.Info.Limits != nil && len(info.Info.Limits.Windows) == 1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
 	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-pro" || info.Info.Session.Effort != "medium" || !reflect.DeepEqual(info.Info.Efforts, []string{"medium", "high"}) || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-pro" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 1 || info.Info.Limits.Windows[0].UsedPercent != 38 {
 		t.Fatalf("native facts missing or billing invented: %d %s", infoResponse.Code, infoResponse.Body.String())
 	}
