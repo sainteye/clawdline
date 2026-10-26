@@ -12,10 +12,13 @@ function subtle() {
 }
 
 export function base64Bytes(text, field) {
-    if (typeof text !== "string" || text.length % 4 !== 0 ||
-        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(text)) {
+    if (typeof text !== "string" || text.length % 4 !== 0) {
         throw new TypeError((field || "value") + " is not canonical base64");
     }
+    // A repeated-group regexp exhausts the JS stack on valid multi-megabyte
+    // ciphertext (for example, one send containing six screenshots). Let the
+    // native decoder validate the alphabet and padding, then keep the exact
+    // canonical round trip below to reject whitespace and nonzero pad bits.
     var binary;
     try { binary = atob(text); } catch (e) {
         throw new TypeError((field || "value") + " is not canonical base64");
