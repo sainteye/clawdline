@@ -85,6 +85,15 @@ const ROWS = [
 let modelMenuScenario: { stage: "missing" | "models" | "gap" | "effort"; looks: number; keys: number; failed: boolean; readyAt: number } | null = null
 const picker = (question: string, labels: string[]) => ({ question,
   options: labels.map((label, i) => ({ n: i + 1, label, can: true, selected: i === 0 })) })
+const ACP = "owned:acp:fixture"
+let protocolMenuScenario: { waiting: boolean; requests: Record<string, unknown>[] } | null = null
+const protocolMenu = { revision: "native-offer-exact", question: "Inspect the attached image?", options: [
+  { n: 1, label: "Allow once", can: true, selected: false }, { n: 2, label: "Deny", can: true, selected: false },
+] }
+function protocolRow() {
+ return { ...row(ACP, "Gemini fixture", "owned", "native-fixture"), assistant: "antigravity", identity: "protocol", isClaude: false,
+  evidence: "structured", state: protocolMenuScenario?.waiting ? "waiting" : "idle", menu: protocolMenuScenario?.waiting ? protocolMenu : null }
+}
 let currentClaudeModel = "claude-opus-5-5"
 
 // ---- the stand-in daemon
@@ -180,7 +189,7 @@ function snapshot() {
       generation,
       provenance: "fixture",
     },
-    sessions: ROWS.map((row) => !modelMenuScenario || row.id !== TMUX ? row : {
+    sessions: protocolMenuScenario ? [protocolRow()] : ROWS.map((row) => !modelMenuScenario || row.id !== TMUX ? row : {
       ...row, assistant: "codex", isClaude: false,
       state: modelMenuScenario.stage === "gap" ? "idle" : "waiting",
       menu: modelMenuScenario.stage === "models" ? picker("Select Model and Effort", ["Model Alpha", "Model Beta"]) :
@@ -302,17 +311,26 @@ function daemon(): Server {
       modelMenuScenario.readyAt = Date.now() + 12_000
       return json(res, 200, { ok: true, id: TMUX, action: "keyed" })
     }
+
+    if (protocolMenuScenario && path === "/v1/sessions/" + encodeURIComponent(ACP) + "/key" && req.method === "POST") {
+      void requestJSON(req).then(body => {
+        protocolMenuScenario!.requests.push(body)
+        protocolMenuScenario!.waiting = false
+        json(res, 200, { ok: true, id: ACP, action: "keyed" })
+      })
+      return
+    }
     const info = /^\/v1\/sessions\/([^/]+)\/info$/.exec(path)
     if (info && req.method === "GET") {
       const id = decodeURIComponent(info[1])
-      const session = ROWS.find((candidate) => candidate.id === id)
+      const session = (protocolMenuScenario ? [protocolRow()] : ROWS).find((candidate) => candidate.id === id)
       if (!session) return json(res, 404, { error: { code: "not_found", message: id } })
       return json(res, 200, {
         info: {
           session: {
             id: session.id,
             title: session.label,
-            assistant: "claude",
+            assistant: id === ACP ? "antigravity" : "claude",
             namingAssistant,
             sessionId: session.sessionId,
             cwd: session.cwd,
@@ -2959,4 +2977,31 @@ test("workflow settings explain both switches and persist independent changes on
       })
     }
   }
+})
+
+
+for (const key of ["1", "2"]) test(`phone: owned Gemini permission option ${key} sends one answer without terminal readiness`, async () => {
+  protocolMenuScenario = { waiting: true, requests: [] }
+  try {
+    await inTab(PHONE, async tab => {
+      await tab.go("/#session=" + encodeURIComponent(ACP))
+      await tab.until("the owned Gemini Session opens", state => state.open === ACP)
+      const buttons = await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000
+        const check = () => {
+          const buttons = [...document.querySelectorAll('#waiting [data-key]')]
+          if (buttons.length === 2) return resolve(buttons.map(button => ({key: button.dataset.key, disabled: button.disabled})))
+          if (Date.now() > deadline) return reject(new Error('native permission options never arrived'))
+          setTimeout(check, 25)
+        }; check()
+      })`)
+      assert.deepEqual(buttons, [{key: "1", disabled: false}, {key: "2", disabled: false}])
+      await tab.run(`document.querySelector('#waiting [data-key="${key}"]').click()`)
+      await tab.run(`new Promise(resolve => setTimeout(resolve, 300))`)
+      assert.equal(protocolMenuScenario?.requests.length, 1)
+      assert.equal(protocolMenuScenario?.requests[0].key, key)
+      assert.match(String(protocolMenuScenario?.requests[0].expect), /^[a-f0-9]{64}$/)
+      await tab.shot("gemini-permission-" + key)
+    })
+  } finally { protocolMenuScenario = null }
 })
