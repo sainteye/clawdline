@@ -22,7 +22,7 @@ const active: AssistantFacts = { id: "antigravity", installed: true, authState: 
   capabilities: { start: true, resume: true, send: true, menus: true, transcript: true } }
 
 test("an exact current native permission menu admits the ordinary waiting buttons", () => {
-  const row = { id: "owned:acp:synthetic", backend: "owned", assistant: "antigravity", identity: "protocol",
+  const row = { id: "terminal-fixture", backend: "tmux", assistant: "antigravity", identity: "launch_hook",
     sessionId: "native-exact", execution_generation: "a".repeat(32), state: "waiting", line: "Run synthetic command?",
     source: { freshness: "current", observed_at: Date.now() / 1000 },
     menu: { revision: "offer-1", question: "Run synthetic command?", options: [{ n: 1, label: "Allow once", can: true }] } } as any
@@ -199,4 +199,16 @@ test("Gemini roles require the new daemon capability while original providers re
   assert.equal(assistantRolesAdmit("antigravity", { ...active, capabilities: { ...active.capabilities!, roles: false } }), false)
   assert.equal(assistantRolesAdmit("codex"), true)
   assert.equal(assistantRolesAdmit("claude"), true)
+})
+
+
+test("owned Gemini permission choices remain answerable without a terminal screen or account preflight", () => {
+  const row = { id: "owned:acp:fixture", backend: "owned", assistant: "antigravity", identity: "protocol", state: "waiting",
+    menu: { revision: "native-offer-exact", question: "Inspect the attached image?", options: [{ n: 1, label: "Allow once", can: true }, { n: 2, label: "Deny", can: true }] } } as any
+  assert.equal(assistantMenuAdmits(row), true)
+  assert.equal(assistantMenuAdmits({ ...row, identity: { machine: "fixture-machine", session: row.id }, sessionBinding: "protocol" }), true)
+  for (const patch of [{ state: "idle" }, { menu: undefined }, { menu: { ...row.menu, revision: "" } },
+    { menu: { ...row.menu, options: [] } }, { menu: { ...row.menu, source: "transcript" } }]) {
+    assert.equal(assistantMenuAdmits({ ...row, ...patch }), false)
+  }
 })

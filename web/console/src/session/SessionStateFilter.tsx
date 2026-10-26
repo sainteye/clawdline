@@ -40,7 +40,10 @@ export function SessionStateFilterControl({ value, onChange, counts, summary, in
       aria-label={active ? nextWord("sessionStateFilterActive", { state: stateFilterLabel(value) }) : nextWord("sessionStateFilterTitle")}
       onClick={() => setOpen(true)}>
       {active ? <><span className="session-state-selected">{stateFilterLabel(value)}</span>
-        <span className="session-state-count">{incomplete ? "" : counts[value]}</span></> : summary}
+        <span className="session-state-count">{incomplete ? "" : counts[value]}</span></> : !incomplete && counts.attention > 0
+        ? <span className="counts" id="counts" data-waiting="true"><span className="part waiting">
+          {stateFilterLabel("attention")} {counts.attention}
+        </span></span> : summary}
       <svg className="session-state-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
     </button>
     {open && createPortal(<dialog ref={dialog} id="session-state-filter" className="session-state-dialog"

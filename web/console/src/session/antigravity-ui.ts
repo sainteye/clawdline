@@ -56,9 +56,13 @@ export function assistantComposeAdmits(assistant: string | undefined, facts: Ass
   return facts?.id === assistant && assistantAdmits(facts, "send") && state === "idle" && !hasMenu
 }
 
-/** Screen identity and current observation must accompany a terminal menu revision. */
+/** Owned offers use native revisions; terminal menus also require a current screen identity. */
 export function assistantMenuAdmits(row: SessionRow | null, facts?: AssistantFacts): boolean {
   if (row?.assistant !== "antigravity") return true
+  // Owned ACP offers are checked by the server against their native revision.
+  // They have no terminal screen or separate account-readiness preflight.
+  if (assistantProtocolOwned(row)) return row.state === "waiting" && !!row.menu?.revision &&
+    !!row.menu?.options?.length && row.menu.source !== "transcript"
   return assistantStateCurrent(row) &&
     row.state === "waiting" && !!row.line && !!row.menu?.options?.length && row.menu.source !== "transcript" &&
     facts?.id === "antigravity" && assistantAdmits(facts, "menus")
