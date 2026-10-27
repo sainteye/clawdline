@@ -80,3 +80,10 @@ test("a decoder rejection and malformed media stop the transfer", async () => {
   const broken = await openVideoStream(locator, reader(Buffer.from("not an mp4"), []))
   await assert.rejects(broken.stream({}), { code: "video_format_unsupported" })
 })
+
+test("an automatic preview stops at its byte budget without affecting the full player", async () => {
+  const asks: number[] = []
+  const answer = await openVideoStream(locator, reader(movie(), asks), { byteBudget: VIDEO_CHUNK_BYTES })
+  await assert.rejects(answer.stream({ initialize: async () => {}, append: async () => {}, finish: async () => {} }), { code: "video_preview_unavailable" })
+  assert.deepEqual(asks, [0])
+})

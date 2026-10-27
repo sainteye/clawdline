@@ -4710,6 +4710,86 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.video_preview_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2097152,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVideoPreviewBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.video_preview_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 30000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVideoPreviewMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.video_preview_reads",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVideoPreviewReads"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.video_preview_side",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 640,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVideoPreviewSide"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "console.viewer_health_attempts",
     "Class": "buffer",
     "Unit": "rows",

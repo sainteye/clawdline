@@ -6,6 +6,7 @@ export function mountStreamingVideo(element, answer, errorText, events = {}) {
     video.setAttribute("aria-label", answer.path);
     video.controls = true; video.playsInline = true; video.preload = "auto";
     video.disableRemotePlayback = true;
+    if (events.poster) video.poster = events.poster;
     const error = doc.createElement("p");
     error.className = "document-video-error"; error.setAttribute("role", "alert"); error.hidden = true;
     const lifetime = new AbortController();
@@ -37,6 +38,11 @@ export function mountStreamingVideo(element, answer, errorText, events = {}) {
     video.addEventListener("loadedmetadata", () => {
         if (video.videoWidth && video.videoHeight) video.style.aspectRatio = video.videoWidth + " / " + video.videoHeight;
     }, { signal: lifetime.signal });
+    video.addEventListener("loadeddata", () => events.playable?.(video), { signal: lifetime.signal });
+    video.addEventListener("canplay", () => events.playable?.(video), { signal: lifetime.signal });
+    video.addEventListener("playing", () => events.playing?.(), { signal: lifetime.signal });
+    video.addEventListener("waiting", () => events.waiting?.(), { signal: lifetime.signal });
+    video.addEventListener("pause", () => events.paused?.(), { signal: lifetime.signal });
     element.replaceChildren(video, error);
     answer.stream({
         async initialize(tracks, duration) {

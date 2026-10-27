@@ -68,6 +68,7 @@ import { HistoryFill, historyAdvanced } from "./history-fill.js"
 import { recordSendDiagnostic } from "../cloud/install.js"
 import "./jump.css"
 import "./history.css"
+import { VideoCards } from "./VideoCards.js"
 import { AsyncQuestion } from "./AsyncQuestion.js"
 
 /*
@@ -1537,6 +1538,7 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
         onCopy={copyWithListNumbers}
         dangerouslySetInnerHTML={{ __html: body }}
       />
+      {role === "assistant" && <VideoCards markup={body} />}
     </div>
   )
 }
