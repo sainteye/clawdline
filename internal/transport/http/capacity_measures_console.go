@@ -8,6 +8,18 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"console.video_preview_reads": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser automatic video poster guard; daemon cannot measure another device's decoder"}
+		},
+		"console.video_preview_side": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser automatic video poster guard; daemon cannot measure another device's decoder"}
+		},
+		"console.video_preview_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser automatic video poster guard; daemon cannot measure another device's decoder"}
+		},
+		"console.video_preview_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser automatic video poster guard; daemon cannot measure another device's decoder"}
+		},
 		"console.next_messages": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser next-message cards; daemon cannot measure another device's queued inputs"}
 		},

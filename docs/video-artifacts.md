@@ -4,14 +4,41 @@ Published MP4 links open a dedicated video lightbox above the current conversati
 The conversation stays mounted at its original scroll position. The lightbox shows
 buffering progress and native playback, pause, seeking and full-screen controls.
 Playback can begin while later encrypted chunks are still arriving.
-Close, Escape, or browser Back dismisses it;
-Forward can reopen it. Closing aborts the transfer and destroys the player context.
+Close, Escape, or browser Back dismisses it. Forward can reopen a lightbox
+closed with Back. Close and Escape synchronously mark its history entry closed;
+immediate reopening reuses that entry rather than waiting for an asynchronous
+Back event. Closing aborts the transfer and destroys the player context.
 An existing canonical Cloud document link to an MP4 also opens the lightbox on a
 Session screen, rather than navigating to the Documents page. Markdown, text and
 HTML links keep their existing document reader. The Documents inventory still
 lists published videos. Playback requires a click; it never starts automatically.
 For the widest phone compatibility, export MP4 with H.264 video and AAC audio.
 Unsupported codecs or malformed content produce a visible playback error.
+
+## Conversation previews
+
+Assistant messages with complete same-origin MP4 publication links also show a
+thumbnail card with a play button. Only actual rendered links qualify; code
+examples, external links and incomplete locators never trigger thumbnail reads.
+A card starts reading when it enters the viewport, pauses when it leaves, and
+stops after the first decoded frame. It uses the same authenticated, encrypted,
+revision-pinned video chunks as playback. No thumbnail is uploaded or published.
+
+Each browser permits one thumbnail read at a time, reads at most 2 MiB of source
+bytes per attempt, waits at most 30 seconds and scales the longest thumbnail side
+to 640 pixels. These limits are registered as `console.video_preview_*`. Visible
+cards borrow a slot without an unbounded waiting queue; opening a lightbox pauses
+thumbnail work. A failed preview retains a usable play link and an explicit
+fallback label. A large index or late first frame may exhaust the preview budget
+while the full player remains usable. There is no automatic failure retry.
+
+A thumbnail belongs to its mounted conversation card and is revoked on unmount.
+The modal borrows a separate URL for that image, so closing the modal cannot
+invalidate the card. The lightbox reserves a 16:9 stage before its first response,
+shows the available poster with a play button and loading indicator, then replaces
+the cover with native video after a person presses Play. Different video aspect
+ratios fit inside this reserved stage. The status line retains its space after
+loading, keeping the player and Close button stationary.
 
 ## Publishing and identity
 
@@ -160,3 +187,15 @@ measurements are separate from authenticated production Cloud acceptance.
 `web/console/src/cloud/testdata/video-stream.mp4` is a generated 32-by-32 colour
 clip with a generated tone, used for parser and backpressure tests; it contains no
 Session artifact or conversation content.
+
+## Preview card acceptance
+
+The [preview card browser record](performance/video-preview-cards-browser.json)
+records installed Chrome acceptance in English and Taiwan Traditional Chinese.
+An offscreen card issued no read; its first visible attempt decoded a 640-pixel
+thumbnail after four sequential chunks (2 MiB), then stopped. The same thumbnail
+appeared immediately in the lightbox. Player geometry matched before and after
+loading at both measured widths, with no phone-width horizontal overflow.
+Card and text links reopened after Close; Back/Forward, draft, scroll and card
+focus also remained usable. This is local component evidence, separate from
+production Cloud and physical iPhone acceptance.

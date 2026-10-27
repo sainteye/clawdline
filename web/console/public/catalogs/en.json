@@ -9200,5 +9200,15 @@
   "transparency.card.gemini-acp-context.effect": "Resume keeps the original snapshot and never resends an interrupted message. An exact known flattened first replay is restored to the original user text; unknown formats are retained. Skill use needs its own receipt. This path does not install or bypass the separate native-hook policy.",
   "playbook.backToPlaybooks": "Back to Playbooks",
   "playbook.choosePlaybook": "Choose a Playbook to start",
-  "playbook.noSessionPlaybooks": "This Project has no Playbooks yet. Create one from the sidebar."
+  "playbook.noSessionPlaybooks": "This Project has no Playbooks yet. Create one from the sidebar.",
+  "capacityRow.console.video_preview_bytes.full": "If a frame needs more data, the card keeps its play button without a thumbnail.",
+  "capacityRow.console.video_preview_bytes.what": "A thumbnail reads only a small part of its authorized video.",
+  "capacityRow.console.video_preview_milliseconds.full": "A slow preview stops loading; you can still open the video directly.",
+  "capacityRow.console.video_preview_milliseconds.what": "Automatic video thumbnails have a limited time to produce a frame.",
+  "capacityRow.console.video_preview_reads.full": "Other visible thumbnails wait; opening a video pauses thumbnail reads.",
+  "capacityRow.console.video_preview_reads.what": "Visible video thumbnails share one background read at a time.",
+  "capacityRow.console.video_preview_side.full": "The longest edge is reduced to this size; the original video is unchanged.",
+  "capacityRow.console.video_preview_side.what": "Video thumbnails are scaled down before they are held in the conversation.",
+  "documents.videoPlay": "Play video",
+  "documents.videoPosterUnavailable": "Preview unavailable. Open the video to play."
 }

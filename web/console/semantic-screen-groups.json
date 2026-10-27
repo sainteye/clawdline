@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9200,
-  "riskKeys": 4108,
-  "nonRiskCount": 5092,
+  "englishContentKeys": 9210,
+  "riskKeys": 4112,
+  "nonRiskCount": 5098,
   "groups": [
     {
       "name": "admin / other",
@@ -340,7 +340,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 301,
+      "count": 306,
       "sources": [
         null
       ],
@@ -506,6 +506,11 @@
         "capacityRow.console.transcript_follow_later_seconds.what",
         "capacityRow.console.transcript_revision_restarts.full",
         "capacityRow.console.transcript_revision_restarts.what",
+        "capacityRow.console.video_preview_milliseconds.what",
+        "capacityRow.console.video_preview_reads.full",
+        "capacityRow.console.video_preview_reads.what",
+        "capacityRow.console.video_preview_side.full",
+        "capacityRow.console.video_preview_side.what",
         "capacityRow.console.viewer_health_attempts.what",
         "capacityRow.console.viewer_health_backoff_seconds.full",
         "capacityRow.console.viewer_health_backoff_seconds.what",
@@ -985,7 +990,7 @@
     },
     {
       "name": "documents / other",
-      "count": 31,
+      "count": 32,
       "sources": [
         "src/pages/documents/copy-adapter.ts and src/legacy/js/view/documents.js"
       ],
@@ -1019,6 +1024,7 @@
         "documents.title",
         "documents.videoClose",
         "documents.videoLoading",
+        "documents.videoPlay",
         "documents.videoPreview",
         "documents.videoTooLarge"
       ]
