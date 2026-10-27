@@ -24,6 +24,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/tmuxview"
 	personas "github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/squad"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // The hand-over routes (broker-design B8; the dispatch role contract in this
@@ -694,6 +695,8 @@ type RootAssignment struct {
 	Executor   *openedSession `json:"executor,omitempty"`
 	BriefPath  string         `json:"brief_path"`
 	Persona    string         `json:"persona,omitempty"`
+	// BriefLanguage preserves the launch preference through a startup dialog.
+	BriefLanguage string `json:"brief_language,omitempty"`
 	// BriefAttemptedAt is durable before the keystroke (O5).
 	BriefAttemptedAt int64  `json:"brief_attempted_at,omitempty"`
 	BriefedAt        int64  `json:"briefed_at,omitempty"`
@@ -816,21 +819,22 @@ func validateAssignment(req RootAssignmentRequest) error {
 // With a persona, a PERSONA section names it and the file its definition is
 // in: the session was launched with that file already in its system prompt,
 // and the section says so where the rest of its brief is.
-func AssignmentBrief(id string, a Assignment, persona, personaFile string) string {
+func AssignmentBrief(id string, a Assignment, persona, personaFile string, language ...string) string {
+	tag := "en"
+	if len(language) != 0 {
+		tag = language[0]
+	}
 	var sb strings.Builder
-	sb.WriteString("You are an independently owned Clawdline Feature Root for Root Assignment " + id + ".\n")
-	sb.WriteString("Own this feature through implementation, verification, integration, and landing.\n\n")
+	sb.WriteString(productcopy.BoardInstruction(tag, "root_intro", map[string]string{"id": id}))
 	for _, s := range []struct{ head, body string }{
 		{"OBJECTIVE", a.Objective}, {"SCOPE", a.Scope}, {"CONSTRAINTS", a.Constraints},
 		{"RELEVANT REFERENCES", a.RelevantReferences}, {"ACCEPTANCE", a.Acceptance},
 	} {
 		sb.WriteString(s.head + "\n" + strings.TrimSpace(s.body) + "\n\n")
 	}
-	sb.WriteString(AssignmentHowToWork + "\n\n")
+	sb.WriteString(productcopy.BoardInstruction(tag, "root_work", nil) + "\n\n")
 	if p, ok := personas.Known(persona); ok {
-		sb.WriteString("PERSONA\n" + p.Name.En + " (" + p.ID + "). Its definition is " + personaFile +
-			", which this session was launched with. It shapes how you work; it never overrides the " +
-			"project's instruction files, this assignment or the Clawdline protocol.\n\n")
+		sb.WriteString(productcopy.BoardInstruction(tag, "root_persona", map[string]string{"name": p.Name.En, "id": p.ID, "path": personaFile}))
 	}
 	return sb.String()
 }
@@ -841,26 +845,17 @@ func withHandoff(brief, section string) string {
 	return strings.Replace(brief, "\nOBJECTIVE\n", "\n"+section+"OBJECTIVE\n", 1)
 }
 
-// AssignmentHowToWork is the section every Feature Root's brief carries
-// after its ACCEPTANCE, whoever opened it.
-const AssignmentHowToWork = "HOW TO WORK\n" +
-	"Print `clawdline guide feature-root` first: it is your ordinary path from reading the item to done, " +
-	"and it names the part to print for anything rarer. By default, this Session investigates, implements, " +
-	"verifies and lands the Feature itself. Dispatch a child only for a concrete need such as independent " +
-	"parallel work, a different tool or permission, or required independent review; record why. " +
-	"If you dispatch, give the child verified facts with file:line or the command that showed them. " +
-	"An investigation or Explore child's brief also states its stop condition and a turn limit."
-
 // AssignmentLine is the one line typed into the Feature Root. The five
 // sections are in the file it names rather than typed: a multi-line paste is
 // the terminal write most likely to be split by a composer, and a Feature Root
 // briefed with half its acceptance is worse than one told where the whole of
 // it is.
-func AssignmentLine(id, path string) string {
-	return "You are an independently owned Clawdline Feature Root for Root Assignment " + id + ". " +
-		"Own this feature through implementation, verification, integration, and landing. " +
-		"Read " + path + " now, before anything else: it is your OBJECTIVE, SCOPE, CONSTRAINTS, " +
-		"RELEVANT REFERENCES and ACCEPTANCE."
+func AssignmentLine(id, path string, language ...string) string {
+	tag := "en"
+	if len(language) != 0 {
+		tag = language[0]
+	}
+	return productcopy.BoardInstruction(tag, "root_line", map[string]string{"id": id, "path": path})
 }
 
 // assignmentDigest is the request as its receipt keeps it: the canonical
@@ -923,13 +918,13 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 		ID: id, RequestID: req.RequestID, Assistant: req.Assistant, Model: req.Model,
 		ProjectDir: filepath.Clean(req.ProjectDir), Label: strings.TrimSpace(req.Label), State: AssignmentAccepted,
 		Assignment: req.Assignment, CreatedAt: now.Unix(), Ownership: "independent_root",
-		BriefPath: filepath.Join(dir, "ASSIGNMENT.md"), Persona: req.Persona,
+		BriefPath: filepath.Join(dir, "ASSIGNMENT.md"), Persona: req.Persona, BriefLanguage: b.DisplayLanguage(),
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		b.refundDispatch()
 		return RootAssignment{}, false, refuseRaw(http.StatusServiceUnavailable, "persistence_failed", err.Error())
 	}
-	brief := AssignmentBrief(id, req.Assignment, req.Persona, personas.Path(b.Dir, req.Persona))
+	brief := AssignmentBrief(id, req.Assignment, req.Persona, personas.Path(b.Dir, req.Persona), a.BriefLanguage)
 	if req.Handoff != nil {
 		// The pack failing never fails the assignment; the brief says it failed.
 		pack, err := b.writeHandoffPack(ctx, dir, *req.Handoff)
@@ -995,7 +990,7 @@ func (b *Broker) briefAssignment(ctx context.Context, a RootAssignment) (RootAss
 	}); err != nil {
 		return a, err
 	}
-	if err := b.typeLine(ctx, a.Executor.TerminalID, AssignmentLine(a.ID, a.BriefPath)); err != nil {
+	if err := b.typeLine(ctx, a.Executor.TerminalID, AssignmentLine(a.ID, a.BriefPath, a.BriefLanguage)); err != nil {
 		return a, err
 	}
 	out, _ := b.updateAssignment(ctx, a.ID, "root_assignment.briefed", func(x *RootAssignment) {

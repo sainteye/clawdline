@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
@@ -115,6 +116,10 @@ func workV2AssignmentServer(t *testing.T, state session.State) (*Server, *pane, 
 	p := &pane{s: session.Session{ID: "%4", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
 		CWD: cwd, ConversationID: "10000000-0000-4000-8000-000000000004", State: state}}
 	s := paneServer(t, p)
+	// Assignment fixtures use explicit English rather than this machine's locale.
+	if _, err := nextconfig.Open(s.broker.Dir).Set(map[string]any{"language": "en"}); err != nil {
+		t.Fatal(err)
+	}
 	s.icons = icon.NewRegistry()
 	// This helper predates the planning gate and exercises assignment mechanics.
 	// Gate-specific tests opt in with a WorkSystemV2 of their own.

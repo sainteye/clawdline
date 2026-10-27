@@ -9,6 +9,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 const (
@@ -101,7 +102,7 @@ func (s *Server) gatherNamingContext(ctx context.Context, item session.Session, 
 }
 
 var (
-	rootAssignmentID = regexp.MustCompile(`^You are an independently owned Clawdline Feature Root for Root Assignment ([0-9a-fA-F-]{36})`)
+	rootAssignmentID = regexp.MustCompile(`^[0-9a-fA-F-]{36}$`)
 	childTaskID      = regexp.MustCompile(`^You are a Clawdline CHILD agent for task ([0-9a-fA-F-]{36})`)
 	taskSecretWord   = regexp.MustCompile(`TASK_SECRET=\S+`)
 	machineTag       = regexp.MustCompile(`(?s)<(system-reminder|task-notification)>.*?</(system-reminder|task-notification)>`)
@@ -115,8 +116,8 @@ func (s *Server) resolveWrapper(ctx context.Context, first string) string {
 	if s.broker == nil {
 		return text
 	}
-	if m := rootAssignmentID.FindStringSubmatch(text); m != nil {
-		if a, err := s.broker.RootAssignmentByID(ctx, m[1]); err == nil {
+	if id := productcopy.RootAssignmentOpeningID(text); rootAssignmentID.MatchString(id) {
+		if a, err := s.broker.RootAssignmentByID(ctx, id); err == nil {
 			var sb strings.Builder
 			sb.WriteString("A feature assignment.")
 			if label := strings.TrimSpace(a.Label); label != "" {
