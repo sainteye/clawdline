@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9221,
+  "englishKeys": 9230,
   "counts": {
-    "negation": 2661,
-    "state": 1532,
+    "negation": 2662,
+    "state": 1533,
     "permission": 551,
     "deletion": 202,
     "uncertainty": 291
   },
-  "unionCount": 4114,
+  "unionCount": 4116,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2619,6 +2619,7 @@
       "work.assignSessionsIncomplete",
       "work.backlogLede",
       "work.boardLede",
+      "work.desktopEmptyLane",
       "work.digestNone",
       "work.digestQuiet",
       "work.failed",
@@ -4165,6 +4166,7 @@
       "work.cardEpicParentLabel",
       "work.closureClock",
       "work.decisionBlocking",
+      "work.desktopShowDone",
       "work.digestAwaiting",
       "work.digestCompleted",
       "work.digestDecisions",
@@ -9276,6 +9278,8 @@
     "work.cardEpicParentLabel",
     "work.closureClock",
     "work.decisionBlocking",
+    "work.desktopEmptyLane",
+    "work.desktopShowDone",
     "work.digestAwaiting",
     "work.digestClosureAsked",
     "work.digestCompleted",

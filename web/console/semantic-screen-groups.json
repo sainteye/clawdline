@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9221,
-  "riskKeys": 4114,
-  "nonRiskCount": 5107,
+  "englishContentKeys": 9230,
+  "riskKeys": 4116,
+  "nonRiskCount": 5114,
   "groups": [
     {
       "name": "admin / other",
@@ -5690,7 +5690,7 @@
     },
     {
       "name": "work / other",
-      "count": 66,
+      "count": 73,
       "sources": [
         "src/pages/work/words.ts"
       ],
@@ -5721,6 +5721,13 @@
         "work.decideLede",
         "work.decisionDefault",
         "work.decisionFrom",
+        "work.desktopAttention",
+        "work.desktopColumns",
+        "work.desktopScrollHint",
+        "work.desktopScrollLeft",
+        "work.desktopScrollRight",
+        "work.desktopShowPlans",
+        "work.desktopShowProposals",
         "work.handoverTo",
         "work.lastEvidence",
         "work.more",

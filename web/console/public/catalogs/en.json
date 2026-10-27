@@ -9221,5 +9221,14 @@
   "capacityRow.console.video_preview_side.full": "The longest edge is reduced to this size; the original video is unchanged.",
   "capacityRow.console.video_preview_side.what": "Video thumbnails are scaled down before they are held in the conversation.",
   "documents.videoPlay": "Play video",
-  "documents.videoPosterUnavailable": "Preview unavailable. Open the video to play."
+  "documents.videoPosterUnavailable": "Preview unavailable. Open the video to play.",
+  "work.desktopShowProposals": "Show Agent proposals",
+  "work.desktopShowDone": "Show completed",
+  "work.desktopAttention": "Needs attention",
+  "work.desktopEmptyLane": "No items in this column.",
+  "work.desktopColumns": "Work Board columns",
+  "work.desktopScrollHint": "Scroll within the Board to see more columns.",
+  "work.desktopScrollLeft": "Scroll Board left",
+  "work.desktopScrollRight": "Scroll Board right",
+  "work.desktopShowPlans": "Show Plans"
 }

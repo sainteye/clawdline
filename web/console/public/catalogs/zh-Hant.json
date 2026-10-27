@@ -9221,5 +9221,14 @@
   "capacityRow.console.video_preview_side.full": "最長邊會縮至此大小，原始影片不受影響。",
   "capacityRow.console.video_preview_side.what": "影片縮圖會先縮小，再保留於對話中。",
   "documents.videoPlay": "播放影片",
-  "documents.videoPosterUnavailable": "無法載入縮圖，仍可開啟影片播放。"
+  "documents.videoPosterUnavailable": "無法載入縮圖，仍可開啟影片播放。",
+  "work.desktopShowProposals": "顯示 Agent 提案",
+  "work.desktopShowDone": "顯示已完成",
+  "work.desktopAttention": "需要關注",
+  "work.desktopEmptyLane": "此欄目前沒有項目。",
+  "work.desktopColumns": "工作看板欄位",
+  "work.desktopScrollHint": "在看板內左右捲動，查看其他欄位。",
+  "work.desktopScrollLeft": "向左捲動看板",
+  "work.desktopScrollRight": "向右捲動看板",
+  "work.desktopShowPlans": "顯示計畫"
 }
