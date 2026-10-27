@@ -371,7 +371,7 @@ func openPath(p string) bool {
 
 // machineScoped is where the orchestrator credential is accepted in place of a
 // device: the orchestrator's own routes, the board, the token ledger, the
-// project-place list a schedule write names, and the worktree reads.
+// project-place list a schedule write names, reusable text, and worktree reads.
 // `/v1/next/coordinator` is the one `/v1/next/` name left that the
 // orchestrator's credential opens; the shadows of the board and the schedules
 // are gone (D07).
@@ -395,6 +395,11 @@ func machineScoped(p string) bool {
 	// Things waiting to be verified (verify.go): a session reads them and
 	// writes its notes on them through the CLI.
 	if p == "/v1/verifications" || strings.HasPrefix(p, "/v1/verifications/") {
+		return true
+	}
+	// The Playbook CLI lists and edits saved launch messages through the
+	// same receipt-backed snippet handlers as the console.
+	if p == "/v1/snippets" || strings.HasPrefix(p, "/v1/snippets/") {
 		return true
 	}
 	switch p {

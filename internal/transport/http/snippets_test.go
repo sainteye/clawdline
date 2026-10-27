@@ -13,6 +13,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/snippet"
@@ -441,4 +442,121 @@ func TestASessionOutsideAnyRepositoryIsInItsOwnDirectory(t *testing.T) {
 func quote(s string) string {
 	out, _ := json.Marshal(s)
 	return string(out)
+}
+
+// Exercise the public handler, including the credential gate: injecting an
+// access context into the snippet handler would miss a CLI rejected at entry.
+func TestPlaybookCLIUsesTheMachineCredentialThroughTheGate(t *testing.T) {
+	fixture := newSnippetHarness(t)
+	fixture.s.cfg = config.Config{Dir: t.TempDir(), Port: 7757}
+	t.Cleanup(func() { gates.Delete(fixture.s.cfg.Dir) })
+	g := fixture.s.gate()
+	machine, err := g.files.MachineToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, reader, err := g.auth.AddDeviceWithPermission("reader", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := fixture.s.Handler()
+	request := func(method, path, body, key string) *httptest.ResponseRecorder {
+		t.Helper()
+		return call{method: method, path: path, body: body, headers: map[string]string{
+			"X-Clawdline-Orchestrator": machine, "Content-Type": "application/json", "Idempotency-Key": key,
+		}}.do(handler)
+	}
+	list := func() snippetListWire {
+		t.Helper()
+		rec := request(http.MethodGet, "/v1/snippets", "", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list: %d %s", rec.Code, rec.Body)
+		}
+		var out snippetListWire
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	initial := list()
+	body := `{"title":"CLI checklist","body":"Review the change.","scope":"playbook"}`
+	created := request(http.MethodPost, "/v1/snippets", body, "create")
+	if created.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", created.Code, created.Body)
+	}
+	var made snippetWire
+	if err := json.Unmarshal(created.Body.Bytes(), &made); err != nil {
+		t.Fatal(err)
+	}
+	if made.ID == "" || made.Scope != "playbook" {
+		t.Fatalf("created: %+v", made)
+	}
+	replay := request(http.MethodPost, "/v1/snippets", body, "create")
+	if replay.Code != created.Code || replay.Body.String() != created.Body.String() {
+		t.Fatalf("retry did not replay the creation: %d %s", replay.Code, replay.Body)
+	}
+	if got := list(); len(got.Snippets) != len(initial.Snippets)+1 {
+		t.Fatalf("retry duplicated creation: %+v", got)
+	}
+	edited := request(http.MethodPatch, "/v1/snippets/"+made.ID, `{"title":"Updated checklist"}`, "edit")
+	if edited.Code != http.StatusOK {
+		t.Fatalf("edit: %d %s", edited.Code, edited.Body)
+	}
+	var saved snippetWire
+	if err := json.Unmarshal(edited.Body.Bytes(), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Title != "Updated checklist" || saved.Body != made.Body {
+		t.Fatalf("saved: %+v", saved)
+	}
+	order := []string{made.ID}
+	for _, item := range initial.Snippets {
+		if item.Scope == "playbook" && item.Project == "" {
+			order = append(order, item.ID)
+		}
+	}
+	raw, err := json.Marshal(map[string]any{"scope": "playbook", "order": order})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordered := request(http.MethodPost, "/v1/snippets/order", string(raw), "order")
+	if ordered.Code != http.StatusOK {
+		t.Fatalf("order: %d %s", ordered.Code, ordered.Body)
+	}
+	if got := list(); got.Snippets[0].ID != made.ID {
+		t.Fatalf("order not persisted: %+v", got)
+	}
+	deleted := request(http.MethodDelete, "/v1/snippets/"+made.ID, "", "delete")
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete: %d %s", deleted.Code, deleted.Body)
+	}
+	if got := list(); len(got.Snippets) != len(initial.Snippets) {
+		t.Fatalf("delete not persisted: %+v", got)
+	}
+
+	for _, tc := range []struct {
+		name, method, path, body string
+		headers                  map[string]string
+		want                     int
+	}{
+		{"missing credential", http.MethodGet, "/v1/snippets", "", nil, http.StatusUnauthorized},
+		{"invalid machine credential", http.MethodGet, "/v1/snippets", "", map[string]string{"X-Clawdline-Orchestrator": "invalid"}, http.StatusUnauthorized},
+		{"read-only device can read", http.MethodGet, "/v1/snippets", "", map[string]string{"Authorization": "Bearer " + reader}, http.StatusOK},
+		{"read-only device cannot create", http.MethodPost, "/v1/snippets", body, map[string]string{"Authorization": "Bearer " + reader, "Content-Type": "application/json", "Idempotency-Key": "reader-create"}, http.StatusForbidden},
+		{"read-only device cannot edit", http.MethodPatch, "/v1/snippets/" + snippet.DefaultZeroReviewID, `{"title":"Changed"}`, map[string]string{"Authorization": "Bearer " + reader, "Content-Type": "application/json", "Idempotency-Key": "reader-edit"}, http.StatusForbidden},
+		{"read-only device cannot delete", http.MethodDelete, "/v1/snippets/" + snippet.DefaultZeroReviewID, "", map[string]string{"Authorization": "Bearer " + reader, "Idempotency-Key": "reader-delete"}, http.StatusForbidden},
+		{"read-only device cannot reorder", http.MethodPost, "/v1/snippets/order", string(raw), map[string]string{"Authorization": "Bearer " + reader, "Content-Type": "application/json", "Idempotency-Key": "reader-order"}, http.StatusForbidden},
+		{"machine cannot open settings", http.MethodGet, "/v1/settings", "", map[string]string{"X-Clawdline-Orchestrator": machine}, http.StatusForbidden},
+		{"prefix boundary", http.MethodGet, "/v1/snippets-extra", "", map[string]string{"X-Clawdline-Orchestrator": machine}, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := call{method: tc.method, path: tc.path, body: tc.body, headers: tc.headers}.do(handler)
+			if rec.Code != tc.want {
+				t.Fatalf("status %d, want %d: %s", rec.Code, tc.want, rec.Body)
+			}
+		})
+	}
+	if got := list(); len(got.Snippets) != len(initial.Snippets) {
+		t.Fatalf("refused write changed the store: %+v", got)
+	}
 }

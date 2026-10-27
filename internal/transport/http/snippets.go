@@ -26,8 +26,8 @@ import (
 //	PATCH  /v1/snippets/:id          save one
 //	DELETE /v1/snippets/:id          take one away
 //
-// A read passes the ordinary paired-device door. All four writes pass the same
-// switch a schedule's write does — this machine's orchestrator token, or a
+// A read accepts a paired device or this machine's orchestrator token. All four
+// writes pass the same switch a schedule's write does — the orchestrator token or a
 // device that may send — and every one of them carries an Idempotency-Key,
 // because a snippet is a setting and a retry after a dropped connection must
 // not leave a second copy of it. The key is filed in the store's own receipt
