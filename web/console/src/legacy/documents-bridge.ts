@@ -253,11 +253,14 @@ export async function readPublishedDocument(value: unknown, options?: { signal?:
   path += locator.path.split("/").map(encodeURIComponent).join("/")
   if (hosted) path += "?machine=" + encodeURIComponent(locator.machine)
   if (isVideoPath(locator.path)) {
+    // One identity pin spans metadata, poster candidates and every playback chunk,
+    // including callers that do not need an external cancellation controller.
+    const signal = options?.signal ?? new AbortController().signal
     const reader = options?.poster ? (await import("./js/net/video-posters.js")).openVideoPosters : options?.stream ? (await import("./js/net/video-stream.js")).openVideoStream : loadVideo
     return reader(locator, async (offset: number, revision: string) => {
       const separator = path.includes("?") ? "&" : "?"
       const response = await fetch(path + separator + new URLSearchParams({ offset: String(offset), revision }),
-        { cache: "no-store", signal: options?.signal })
+        { cache: "no-store", signal })
       const body = await response.json()
       if (!response.ok) {
         const said = refusalOf(body, response)

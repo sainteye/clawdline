@@ -991,10 +991,13 @@ export interface RelayWriterOptions {
   requestID?: () => string
 }
 
+type SessionContentTarget = { machineID: string; sessionID: string; executionGeneration: string }
+
 export class RelayWriter {
   private readonly host: WriteHost
   private readonly now: () => number
   private readonly requestID: () => string
+  private readonly contentPins = new WeakMap<AbortSignal, Map<string, Promise<SessionContentTarget>>>()
 
   constructor(host: WriteHost, options: RelayWriterOptions = {}) {
     this.host = host
@@ -1394,8 +1397,9 @@ export class RelayWriter {
           throw failure("video_range_invalid", "The video chunk is outside the allowed range.", 400)
         }
         const fields = { request: this.requestID(), scope: route.scope, task: route.task, path: route.path, offset, revision }
-        const answer = this.fleetTarget(route.session)
-          ? await this.pinnedRead(client, route.session, "video", fields, init?.signal)
+        const target = await this.contentTarget(route.session, init?.signal)
+        const answer = target
+          ? await this.contentRead(client, target, "video", fields, init?.signal)
           : await client._read!({ machine: this.host.machine, session: route.session }, "video", fields,
               "read:" + fields.request, undefined, { signal: init?.signal ?? undefined })
         try { videoChunkAnswer({ machine: this.host.machine, session: route.session, scope: route.scope,
@@ -1410,7 +1414,8 @@ export class RelayWriter {
           throw failure("document_machine_mismatch", "The document link does not name this machine.", 400)
         }
         if (route.op === "documents") {
-          if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, "documents", {}, init?.signal)
+          const target = await this.contentTarget(route.session, init?.signal)
+          if (target) return this.contentRead(client, target, "documents", {}, init?.signal)
           // The listing keeps its legacy `documents` answer name on the
           // Session channel; it has no request-id answer on the machine one.
           if (typeof client._read !== "function") throw failure("cloud_not_carried", route.word, 501)
@@ -1421,8 +1426,9 @@ export class RelayWriter {
         if (typeof client._read !== "function") throw failure("cloud_not_carried", route.word, 501)
         const request = this.requestID()
         const fields = { request, scope: route.scope, task: route.task, path: route.path }
-        const answer = await (this.fleetTarget(route.session)
-          ? this.pinnedRead(client, route.session, "document", fields, init?.signal)
+        const target = await this.contentTarget(route.session, init?.signal)
+        const answer = await (target
+          ? this.contentRead(client, target, "document", fields, init?.signal)
           : client._read({ machine: this.host.machine, session: route.session }, "document",
             fields, "read:" + request)) as { media_type?: unknown; byte_count?: unknown; data?: unknown }
         if ((answer.media_type !== "text/markdown; charset=utf-8" && answer.media_type !== "text/plain; charset=utf-8" && answer.media_type !== "text/html; charset=utf-8") ||
@@ -2144,6 +2150,41 @@ export class RelayWriter {
       throw failure("execution_generation_changed", "The opened Session destination has changed.", 409)
     }
     return target
+  }
+
+  /** Published links name their own Session, independently of the open conversation.
+   * Keep that execution for the transfer's entire signal lifetime: subsequent chunks
+   * must fail on replacement instead of silently resolving another execution.
+   * Weak keys release pins with their callers; retries use a new signal.
+   */
+  private async contentTarget(session: string, signal?: AbortSignal | null): Promise<SessionContentTarget | null> {
+    if (signal?.aborted) throw failure("abandoned_read", "The content read was cancelled.", 499)
+    const held = signal ? this.contentPins.get(signal)?.get(session) : null
+    const opened = this.host.exactTarget?.()
+    if (!opened && !held) return null
+    const resolve = async (): Promise<SessionContentTarget> => {
+      const target = opened?.machineID === this.host.machine && opened.sessionID === session
+        ? opened : await this.host.resolveSession?.(this.host.machine, session)
+      if (!target || target.machineID !== this.host.machine || target.sessionID !== session ||
+        !/^[0-9a-f]{32}$/.test(target.executionGeneration)) {
+        throw failure("execution_generation_changed", "The linked Session execution cannot be verified.", 409)
+      }
+      return { ...target }
+    }
+    if (!signal) return resolve()
+    let pins = this.contentPins.get(signal)
+    if (!pins) { pins = new Map(); this.contentPins.set(signal, pins) }
+    let pin = held ?? pins.get(session)
+    if (!pin) { pin = resolve(); pins.set(session, pin) }
+    const target = await pin
+    if (signal.aborted) throw failure("abandoned_read", "The content read was cancelled.", 499)
+    return target
+  }
+
+  private contentRead(client: CloudWriteClient, target: SessionContentTarget, word: string,
+    fields: Record<string, unknown>, signal?: AbortSignal | null): Promise<unknown> {
+    if (!client.readForGeneration) throw failure("cloud_not_carried", "Pinned Session content reading is unavailable.", 501)
+    return client.readForGeneration(target, word, fields, signal ?? undefined)
   }
 
   private pinnedRead(client: CloudWriteClient, session: string, word: string,
