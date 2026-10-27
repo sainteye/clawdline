@@ -147,7 +147,8 @@ function HelpBody(p: BodyProps) {
   if (p.route.page === "editor") return <Editor {...p} />
   return <Worker {...p} />
 }
-function AskAside({go,href}:Pick<BodyProps,"go"|"href">) { return <aside><div className="help-card"><div className="help-eyebrow">{w("nav")}</div><h2>{w("noAnswer")}</h2><p>{w("askCopy")}</p><Link to={href("/help/ask")} go={go} primary>{w("ask")}</Link></div></aside> }
+function AskIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg> }
+function AskAside({go,href}:Pick<BodyProps,"go"|"href">) { return <aside><div className="help-card"><div className="help-eyebrow">{w("nav")}</div><h2>{w("noAnswer")}</h2><p>{w("askCopy")}</p><Link to={href("/help/ask")} go={go} primary><AskIcon/>{w("ask")}</Link></div></aside> }
 function FaqList(p:BodyProps) {
   const [search,setSearch]=useState(""),[query,setQuery]=useState(""),[topic,setTopic]=useState("all"),[after,setAfter]=useState<string|null>(null)
   const path="/v1/faq?locale="+p.locale+"&q="+encodeURIComponent(query)+(topic==="all"?"":"&topic="+topic)+(after?"&after="+encodeURIComponent(after):""), read=useRead<{items:Faq[];next_cursor:string|null}>(path,p.call)
@@ -183,7 +184,7 @@ function QuestionList(p:BodyProps) {
   useEffect(()=>{setExtra([]);setNext(null)},[path])
   useEffect(()=>{const refresh=()=>{if(!document.hidden)read.refresh()};window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);return()=>{window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh)}},[path])
   const more=async()=>{try{const a=await p.call<{questions:Question[];next_cursor:string|null}>(path+"&cursor="+encodeURIComponent(next??read.data?.next_cursor??""));read.replace(a);setExtra([]);setNext(null)}catch(e){setMoreError(e instanceof SupportFailure?e.code:"support_unavailable")}}
-  return <><div className="help-title"><h1>{w(admin?"inbox":"mine")}</h1>{!admin?<Link to={p.href("/help/ask")} go={p.go} primary>{w("ask")}</Link>:null}</div>
+  return <><div className="help-title"><h1>{w(admin?"inbox":"mine")}</h1>{!admin?<Link to={p.href("/help/ask")} go={p.go} primary><AskIcon/>{w("ask")}</Link>:null}</div>
     {admin?<div className="help-filters"><select aria-label={w("sourceLanguage")} value={locale} onChange={e=>setLocale(e.target.value)}><option value="">{w("allLanguages")}</option>{SUPPORT_LOCALES.map(l=><option key={l} value={l}>{LANGUAGE_NAMES[l]}</option>)}</select><select aria-label={w("allStates")} value={state} onChange={e=>setState(e.target.value)}><option value="">{w("allStates")}</option>{["queued","answering","needs_information","needs_human","answered","resolved"].map(s=><option key={s} value={s}>{w(s as SupportWord)}</option>)}</select></div>:null}
     <ErrorBox code={read.error??moreError} retry={read.refresh}/>{read.loading?<p role="status">{w("loading")}</p>:null}
     {read.data&&!read.data.questions.length?<p className="help-empty">{w(admin?"noneInbox":"noneMine")}</p>:null}
