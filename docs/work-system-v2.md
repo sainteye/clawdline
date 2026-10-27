@@ -802,8 +802,16 @@ distinct refusals, and terminal items or unassigned items cannot be reminded.
 
 ### 8.2 New Session
 
-The person chooses assistant and model. The assignment service reuses the existing reliable
-Root-Assignment mechanics below the API boundary:
+The person chooses an assistant and can optionally choose a model and role. Model and role
+choices start collapsed; each summary retains the selected model name or the role's icon and
+name. Model buttons wrap like Session info, and a long catalog scrolls within a bounded visual
+area. Models come from the machine's existing default-model catalog; an explicit choice is sent
+only for this launch, while **Use default** leaves the machine's configured default in charge.
+Switching assistant never sends the other assistant's selected model. The role picker retains
+its team selector and horizontally scrolling role chips, including **No role** and the explicit
+**AI suggestion** action. Reading these choices does not request AI work or change Settings.
+
+The assignment service reuses the existing reliable Root-Assignment mechanics below the API boundary:
 
 1. record intent and item relationship;
 2. open the terminal outside the store transaction;
