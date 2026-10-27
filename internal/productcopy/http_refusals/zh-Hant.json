@@ -1269,5 +1269,9 @@
   "http.ffd795cf51e7ebea": "place 必須是 board 或 backlog。",
   "http.ffed8239d8e297e0": "請提供預期版本及文字內容。",
   "http.0ae01c04ba06560a": "請先開啟對話，再選擇 Gemini 模型。",
-  "http.2d525070efc0024d": "續接對話會保留原始角色快照。"
+  "http.2d525070efc0024d": "續接對話會保留原始角色快照。",
+  "http.9c65a3b1a8ea6f55": "上傳摘要時必須設定 milestone: true；尚未開啟任何 Session。",
+  "http.c5591b61722a7c56": "上傳的里程碑摘要格式無效；尚未開啟任何 Session。",
+  "http.9eaae8deecfaf68c": "無法寫入交接套件；尚未開啟任何 Session。",
+  "http.722796e74317291d": "交接套件已包含不同的摘要；尚未開啟任何 Session。"
 }

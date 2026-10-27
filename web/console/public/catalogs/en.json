@@ -9233,5 +9233,9 @@
   "work.desktopShowPlans": "Show Plans",
   "capacityRow.console.video_preview_frames.what": "How many later video frames a browser may sample to choose a representative thumbnail.",
   "capacityRow.console.video_preview_frames.full": "After four candidates, the most detailed decoded frame is kept. Near-solid intros and fades rank below pictures with detail.",
-  "composerDraft.storageUnavailable": "This browser cannot save drafts. Unsent text and images are kept only until this page closes."
+  "composerDraft.storageUnavailable": "This browser cannot save drafts. Unsent text and images are kept only until this page closes.",
+  "http.9c65a3b1a8ea6f55": "An uploaded summary requires milestone: true; nothing was opened.",
+  "http.c5591b61722a7c56": "The uploaded milestone summary is invalid; nothing was opened.",
+  "http.9eaae8deecfaf68c": "The handoff package could not be written; nothing was opened.",
+  "http.722796e74317291d": "The handoff package already contains a different summary; nothing was opened."
 }

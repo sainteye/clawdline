@@ -223,3 +223,28 @@ func TestTheHandOverRoutesAreTheMachines(t *testing.T) {
 		t.Fatalf("a POST with no body: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// Upload is a machine-authenticated field of the closed handoff request.
+func TestHandoffRouteAcceptsUploadedSummaryAndRequiresMachineAuth(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := &Server{broker: &orchestrator.Broker{Store: st, Tasks: taskdir.New(dir), Dir: dir}, store: st}
+	for _, machine := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodPost, "/v1/orchestrator/handoffs", strings.NewReader(`{"handoff_id":"invalid","summary":"summary","milestone":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{machine: machine}))
+		rec := httptest.NewRecorder()
+		s.handoffsRoute(rec, req)
+		want := http.StatusForbidden
+		if machine {
+			want = http.StatusUnprocessableEntity
+		}
+		if rec.Code != want || (machine && strings.Contains(rec.Body.String(), "unknown_field")) {
+			t.Fatalf("machine=%v: %d %s", machine, rec.Code, rec.Body)
+		}
+	}
+}

@@ -799,7 +799,8 @@ export interface BrokerHandoffList {
 }
 
 /**
- * POST /v1/orchestrator/handoffs, a closed body. The package is written first at
+ * POST /v1/orchestrator/handoffs, a closed body. An optional milestone summary is
+ * uploaded for the daemon to write; otherwise the package is written first at
  * `<package_root>/<handoff_id>/handoff.md` (REFERENCES, VERIFICATION, OPEN
  * THREADS). `coordinator_plain_handoff` must be the JSON value true: the machine
  * role's holder hands over by succession instead.
@@ -830,6 +831,14 @@ export interface BrokerHandoffRequest {
   milestone?: boolean
   model?: string
   project_dir: string
+
+  /**
+   * Optional milestone summary text, at most 6 KiB and validated before writing.
+   * Requires milestone: true. The daemon writes handoff.md so sandboxed callers
+   * need no write access to package_root. An existing different file is refused; an
+   * opened handoff is replayed without rewriting.
+   */
+  summary?: string
 
   /**
    * At most 200 characters.

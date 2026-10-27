@@ -1,14 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -93,8 +91,8 @@ func readSummary(path string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(f, orchestrator.MilestoneSummaryLimit+1))
 }
 
-// openMilestoneHandoff checks the summary, writes it as the package's
-// handoff.md under the daemon's package root, and opens the handoff.
+// openMilestoneHandoff checks and uploads the summary. The daemon writes
+// the package so sandboxed callers need no access to its state directory.
 func openMilestoneHandoff(stdout, stderr io.Writer, b *broker, o handoffOptions,
 	getenv func(string) string, toplevel func() (string, error)) int {
 	data, err := readSummary(o.summary)
@@ -129,35 +127,11 @@ func openMilestoneHandoff(stdout, stderr io.Writer, b *broker, o handoffOptions,
 		return 2
 	}
 
-	list, err := b.request(http.MethodGet, "/v1/orchestrator/handoffs", nil, nil, "")
-	if err != nil {
-		fmt.Fprintln(stderr, cliCopy("workflow", "handoff.clawdline_handoff", "clawdline handoff:"), err)
-		return 1
-	}
-	if !list.ok() {
-		return report(stdout, stderr, "handoff", list)
-	}
-	var root struct {
-		PackageRoot string `json:"package_root"`
-	}
-	if json.Unmarshal(list.Body, &root) != nil || !filepath.IsAbs(root.PackageRoot) {
-		fmt.Fprintln(stderr, cliCopy("workflow", "handoff.clawdline_handoff_the_daemon_did_not_say_where", "clawdline handoff: the daemon did not say where handoff packages go"))
-		return 1
-	}
 	id := orchestrator.NewUUID()
-	dir := filepath.Join(root.PackageRoot, id)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		fmt.Fprintln(stderr, cliCopy("workflow", "handoff.clawdline_handoff", "clawdline handoff:"), err)
-		return 1
-	}
-	if err := os.WriteFile(filepath.Join(dir, "handoff.md"), data, 0o600); err != nil {
-		fmt.Fprintln(stderr, cliCopy("workflow", "handoff.clawdline_handoff", "clawdline handoff:"), err)
-		return 1
-	}
 	// Said before the wait, so a timeout still leaves the id to read.
 	fmt.Fprintf(stderr, cliCopy("workflow", "handoff.clawdline_handoff_opening_s_get_v1_orchestrator_handoffs", "clawdline handoff: opening %s (GET /v1/orchestrator/handoffs/%s reads it)\n"), id, id)
 	body := map[string]any{"handoff_id": id, "from_session": from, "coordinator_plain_handoff": true,
-		"milestone": true, "project_dir": project}
+		"milestone": true, "project_dir": project, "summary": string(data)}
 	for k, v := range map[string]string{"assistant": assistant, "model": o.model, "title": o.title} {
 		if v != "" {
 			body[k] = v

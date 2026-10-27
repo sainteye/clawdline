@@ -872,7 +872,7 @@
       "sources": [
         {
           "path": "internal/app/orchestrator/handoffs.go",
-          "line": 822
+          "line": 838
         },
         {
           "path": "internal/transport/http/work_v2_brief.go",
@@ -1860,7 +1860,7 @@
       "sources": [
         {
           "path": "internal/app/orchestrator/handoffs.go",
-          "line": 299
+          "line": 303
         },
         {
           "path": "internal/app/orchestrator/handoff_pack.go",
@@ -2430,7 +2430,7 @@
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
-    "internal/app/orchestrator/handoffs.go": "9010d9271501b6af1a1700e0d1ae779eed7b0423972b2118575454686b54d66f",
+    "internal/app/orchestrator/handoffs.go": "de93b2245179363178b34ef7660d4069806d40cc2d664acdaf54f4183b7a07b3",
     "internal/app/orchestrator/language.go": "ea219750d229ce7c35c245e5c653e1a323976f1b5bf2b3b9cf79f8e100d62e9e",
     "internal/app/orchestrator/notice.go": "986a076fd11eac9b8592813ca61f3b307796d8b1675c345a4186840125141cfd",
     "internal/app/orchestrator/policy.go": "f165e3bbc9b3c96b60a9a14de6b7cbd942eed6146771a4cd59ae2c7a4385624f",
