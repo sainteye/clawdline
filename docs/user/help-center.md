@@ -35,8 +35,8 @@ before becoming a published FAQ; the private conversation itself does not become
 
 ## When support staff need to take over
 
-The answering Agent uses approved, versioned public product documentation. It can ask for
-missing details or hand a question to support staff when documentation does not support an
+The answering Agent uses approved, versioned public product documentation and source code. It can ask for
+missing details or hand a question to support staff when those sources do not support an
 answer, or when the question concerns accounts, billing, security or uncertain behavior.
 **Needs support staff** means that handoff is pending, not that the Agent has replied.
 Do not submit credentials to speed up a handoff. Keep further non-secret information in the

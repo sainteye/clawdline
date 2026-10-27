@@ -36,7 +36,7 @@ never appear in the public projection or static export.
 3. A dedicated Clawdline support schedule uses the scoped worker client to atomically claim one
    pending question. A worker credential grants only support claims, heartbeats and replies. It
    grants neither member Session access nor FAQ publication, account changes or deployment.
-4. The Agent reads official documentation in a dedicated read-only workspace and answers in the
+4. The Agent reads official documentation and public product source code in a dedicated read-only workspace and answers in the
    requested language, retaining public source URLs and the version consulted. Account-topic
    questions go directly to human support. Other uncertain, security-sensitive or unsupported
    questions are escalated instead of receiving a fabricated answer.
@@ -101,14 +101,14 @@ The public daemon registers the help tab's request deadline, refresh interval an
 
 ## Restricted answering runtime
 
-An operator installs a dedicated documentation workspace and uses a trigger-only Codex schedule
+An operator installs a dedicated documentation and public source-code workspace and uses a trigger-only Codex schedule
 with task kind `support_answer`, no repository claims and no checkout isolation. Admission rejects
 ordinary dispatches, other providers and repository writes for this kind. Its launch always uses
 the restricted support permission profile, regardless of the machine's general dispatch ceiling.
 
-The workspace contains `docs/` (a pinned public documentation export with its source manifest),
+The workspace contains `docs/` (pinned public user guides and a `source/` product-code export with their source manifest),
 `support-worker.py` (the scoped client), `private/worker-token` (mode 0600), and `state/` (mode 0700).
-Only the client's state and the current task's own receipt directory are writable. Documentation,
+Only the client's state and the current task's own receipt directory are writable. Documentation, source code,
 client and credential are read-only. Other machine data, repositories, Sessions, tasks and Cloud
 deployment credentials are outside the filesystem grant. The network proxy allows only the
 support API and loopback task receipts. A separate `.codex-runtime` home contains the operator's
@@ -119,7 +119,7 @@ development checkout so it cannot inherit a project's tools or instructions.
 
 Keep automatic answering disabled until the exact installed CLI has passed positive and negative
 sandbox checks: official documentation and scoped state must work, while another task, a private
-Session, a source checkout, runtime authentication, writes to documentation and unrelated network
+Session, a live development checkout, runtime authentication, writes to documentation and unrelated network
 destinations must be denied. A prompt alone is not an isolation receipt. Then bind the webhook,
 install the freshly rotated scoped token privately, enable the binding, and verify a real browser
 submission through webhook delivery, local task execution, answer commit and member-visible reply.
@@ -165,7 +165,12 @@ instructions inside an image are untrusted member content, with the same restric
 
 The restricted Agent documentation export includes the [help-center user guide](user/help-center.md)
 and its Traditional Chinese counterpart. When a normal product question is escalated because the
-pinned export has no evidence, add and verify the public guide before updating that export. Keep
+pinned export has no evidence, check the approved public source snapshot as well as the guides.
+Update the pinned export when coverage is missing. The installer includes committed product code
+from `cmd`, `internal`, `web`, `api` and `shell`, plus public README, license and Go dependency files.
+It exports only regular UTF-8 source files, omits project instruction files and never follows Git
+symlinks or reads untracked development files. Source files are evidence to read, not programs to
+execute. Every exported file has its public GitHub URL, exact revision and SHA-256 in the manifest. Keep
 the dedicated schedule paused and its worker idle while replacing the read-only docs and manifest;
 retain its credential, state, tool limits and ChatGPT subscription authentication. Requeue the
 original question through the Admin action and verify the member-visible Agent answer. Do not
