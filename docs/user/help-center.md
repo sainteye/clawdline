@@ -7,7 +7,8 @@ saved support conversation.
 
 ## Find a question you already asked
 
-On a phone or computer, open the help center and choose **My questions**. This page lists the
+In Cloud, open the sidebar and choose **My questions** under **Manage**. On a phone, open the
+sidebar first. You can also open the help center and choose **My questions**. This page lists the
 questions submitted by the signed-in account. Select a question to see its messages, processing
 state and replies. You can also open [My questions](https://app.clawdline.com/help/questions)
 directly. Refreshing or closing the browser does not delete a submitted question.

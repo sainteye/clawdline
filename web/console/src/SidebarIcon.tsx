@@ -1,4 +1,4 @@
-export type SidebarIconName = "usage" | "sessions" | "devices" | "projects" | "playbook" | "plan" | "settings" | "notifications" | "work" | "verify" | "archive" | "squad" | "transfer" | "access"
+export type SidebarIconName = "usage" | "sessions" | "devices" | "projects" | "playbook" | "plan" | "settings" | "notifications" | "work" | "verify" | "archive" | "squad" | "transfer" | "access" | "questions"
 
 /**
  * One visual language for Console navigation and suggestions. The adjacent
@@ -16,6 +16,12 @@ export function SidebarIcon({ name }: { name: SidebarIconName }) {
       aria-hidden="true"
       focusable="false"
     >
+      {name === "questions" && (
+        <>
+          <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8l-5 3V6a2 2 0 0 1 2-2Z" />
+          <path d="M9.75 8a2.25 2.25 0 1 1 3.5 1.88c-.8.5-1.25.87-1.25 1.87M12 14h.01" />
+        </>
+      )}
       {name === "usage" && <path d="M4 3v17h17M8 15v-4m5 4V6m5 9V9" />}
       {name === "sessions" && (
         <>

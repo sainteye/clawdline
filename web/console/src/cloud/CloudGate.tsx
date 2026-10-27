@@ -2124,7 +2124,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             }} />
         </CloudAccountContext.Provider>
       )}
-      {words && screen.at !== "console" ? <a className="help-entry" href="/help">{supportWord("nav")}</a> : null}
+      {words && screen.at !== "console" ? <a className="help-entry" href="/help/questions">{supportWord("mine")}</a> : null}
       {words && (screen.at !== "console" || pairing) && (
         <GateCard
           screen={screen.at === "machines" && !managingMachines &&
