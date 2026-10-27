@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9200,
+  "englishKeys": 9211,
   "counts": {
-    "negation": 2658,
+    "negation": 2660,
     "state": 1530,
     "permission": 550,
     "deletion": 202,
     "uncertainty": 290
   },
-  "unionCount": 4108,
+  "unionCount": 4110,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2388,6 +2388,8 @@
       "next.transcriptEarlierStalled",
       "next.updateAutoFailed",
       "next.updateAutoSay",
+      "next.updateChangelogFailed",
+      "next.updateChangelogLater",
       "next.updateCheckFailed",
       "next.updateCopyFailed",
       "next.updateDevReleaseFailed",
@@ -8867,6 +8869,8 @@
     "next.transcriptEarlierStalled",
     "next.updateAutoFailed",
     "next.updateAutoSay",
+    "next.updateChangelogFailed",
+    "next.updateChangelogLater",
     "next.updateCheckFailed",
     "next.updateCopyFailed",
     "next.updateDevBack",

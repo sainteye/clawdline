@@ -1,0 +1,24 @@
+.update-changelog {
+  box-sizing: border-box;
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  overflow: auto;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: normal;
+}
+.update-changelog::backdrop { background: #0009; }
+.update-changelog h2 { margin: 0 0 16px; font-size: 20px; overflow-wrap: anywhere; }
+.update-changelog-body { max-height: 55dvh; overflow: auto; margin-bottom: 16px; overflow-wrap: anywhere; }
+.update-changelog-copy > :first-child { margin-top: 0; }
+.update-changelog-copy pre { overflow: auto; white-space: pre-wrap; }
+.update-changelog-copy img { max-width: 100%; }
+.update-changelog-copy table { display: block; overflow: auto; }
+.update-changelog a { color: var(--accent); }
+.update-changelog-notice { color: var(--dim); }
+.update-changelog-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 20px; }

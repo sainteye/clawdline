@@ -13,9 +13,9 @@ const { outputFiles } = await build({
   bundle: true, platform: "node", format: "cjs", packages: "external", write: false,
   jsx: "automatic", loader: { ".css": "empty" },
   plugins: [{ name: "update-banner-machine-fixture", setup(builder) {
-    builder.onResolve({ filter: /^(\.\/update\.js|\.\.\/client\.js|\.\/restart-app\.js)$/ }, ({ path }) => ({ path, namespace: "fixture" }))
+    builder.onResolve({ filter: /^(\.\/update\.js|\.\.\/client\.js|\.\/restart-app\.js|\.\.\/core\/util\.js)$/ }, ({ path }) => ({ path, namespace: "fixture" }))
     builder.onLoad({ filter: /.*/, namespace: "fixture" }, ({ path }) => ({ contents:
-      path.includes("client") ? "export const followsRelay = () => false"
+      path.includes("util") ? "export const toast = () => {}" : path.includes("client") ? "export const followsRelay = () => false"
         : path.includes("restart-app") ? "export const canRestartStagedApp = () => false; export const restartStagedApp = () => false"
           : `export const currentUpdateRead = () => globalThis.updateBannerFixture.read;
              export const subscribeUpdate = () => () => {};
@@ -51,7 +51,7 @@ test("a newer release replaces the previous completion with its install action",
   for (const dismissed of [null, "v2.1.2"]) {
     const html = render({ dismissed })
     assert.match(html, /Clawdline v2\.2\.0 is available/)
-    assert.match(html, />Update now<\/button>/)
+    assert.match(html, />Review update<\/button>/)
     assert.doesNotMatch(html, /v2\.1\.2 is ready/, "a completed older update must not obscure a newer release")
   }
 })
@@ -69,5 +69,5 @@ test("a current release keeps its completion until that result is dismissed", ()
 test("a moving update keeps its progress and hides a second install action", () => {
   const html = render({ apply: { state: "downloading", from: "v2.1.2", to: "v2.2.0" } })
   assert.match(html, /Downloading v2\.2\.0/)
-  assert.doesNotMatch(html, />Update now<\/button>/, "an update already moving cannot be started again")
+  assert.doesNotMatch(html, />Review update<\/button>/, "an update already moving cannot be started again")
 })

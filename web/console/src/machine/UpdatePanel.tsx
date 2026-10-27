@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { UpdateStatus } from "@clawdline/contract"
 import { catalogWordLanguage } from "../catalog.js"
 import * as L from "../legacy/bridge.js"
@@ -20,6 +20,7 @@ import {
   updatePanel,
   type UpdateDetails,
 } from "./update-model.js"
+import { UpdateChangelog } from "./UpdateChangelog.js"
 import "./update.css"
 
 /** An RFC3339 time as the reader's own clock and language print it. */
@@ -101,6 +102,8 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
   // machine now read; what was kept from before is not shown meanwhile.
   else if (read?.kind === "checking") last.current = null
   const [following, setFollowing] = useState(false)
+  const [review, setReview] = useState<UpdateStatus["latest"] | null>(null)
+  const closeReview = useCallback(() => setReview(null), [])
   const [sending, setSending] = useState(false)
   const [pressRefused, setPressRefused] = useState<{ code: string; detail: string } | null>(null)
   const [pressOlder, setPressOlder] = useState(false)
@@ -210,7 +213,7 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
     )
   }
 
-  if (view.kind === "nothing") return null
+  if (view.kind === "nothing" && !review) return null
   if (view.kind === "legacy") {
     return (
       <p className="say" id="settings-update-notice" role="status" tabIndex={-1}>
@@ -234,8 +237,8 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
     <>
       <div className="row">
         {view.press.shown ? (
-          <button className="chip update-now" id="settings-update-now" type="button" disabled={!view.press.enabled} onClick={press}>
-            {view.press.label}
+          <button className="chip update-now" id="settings-update-now" type="button" disabled={!view.press.enabled} onClick={() => { if (last.current) setReview(last.current.latest) }}>
+            {view.press.label === nextWord("updateNow") ? nextWord("updateReview") : view.press.label}
           </button>
         ) : null}
         {view.devRelease.shown ? (
@@ -249,6 +252,8 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
   ) : null
   const problem = view.problem
   return (
+    <>
+    {review && <UpdateChangelog latest={review} onClose={closeReview} onConfirm={press} />}
     <div className="block settings-update" id="settings-update" aria-busy={sending || view.restarting} lang={catalogWordLanguage("next", "updateTitle")}>
       <b id="settings-update-title" tabIndex={-1} lang={catalogWordLanguage("next", "updateTitle")}>{nextWord("updateTitle")}</b>
       {view.facts.length > 0 ? (
@@ -315,5 +320,6 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
       ) : null}
       {view.auto.note ? <p className="said" role="status">{view.auto.note}</p> : null}
     </div>
+    </>
   )
 }

@@ -265,7 +265,7 @@ clawdline dev install [--rev <commit>]     # inside a clawdline checkout
 - **The session list's line.** While a dev build runs, the top of the session list carries one
   30 px line that cannot be dismissed: `DEV`, the commit, its standing, and the same presses as
   words (`UpdateBanner.tsx`). A newer release on an ordinary install takes the same line, with
-  `NEW`, a press that installs it, the release notes and a close button; so does the Cloud list's
+  `NEW`, a press that opens its changelog, the release notes and a close button; so does the Cloud list's
   notice for each machine, except a dev build confirmed ahead of the release is hidden in
   **All machines**. A selected machine still shows that dev line. Installing a dev build is not
   announced as a finished update: the line already says what runs.
@@ -299,7 +299,15 @@ release is current, unknown, or otherwise no longer available, and when the read
 The panel shows the running and latest version (a short commit for a source build), a **Release notes** link to
 `latest.notes_url`, when the last check ran, and the channel.
 
-- On a release install with `update_available`, **Update now** posts `/v1/update/apply` (over Cloud,
+- On a release install with `update_available`, **Review update** first opens the release's
+  changelog in a modal, shared by the banner and Settings panel. It reads the exact tag's public
+  GitHub release body without credentials and renders it with the console's escaped Markdown
+  renderer. **Not now**, Escape, and switching machines cancel without installing. Loading errors
+  offer retry, the original GitHub release, and an explicit **Update anyway** choice; loading
+  itself cannot authorize an install. No automatic retry or background release-body polling runs.
+  **Confirm update** rechecks the signed source; a changed version or commit replaces the notes
+  and requires another confirmation. A withdrawn, superseded, moving, or unavailable reading
+  cannot start installation. Only a confirmed matching release posts `/v1/update/apply` (over Cloud,
   the word `update-apply`), then reads `/v1/update` every two seconds until `apply.state` settles.
   The seconds in which the daemon restarts and no read answers show as restarting, not as a
   failure; when the new daemon serves a different console, the page reloads itself.

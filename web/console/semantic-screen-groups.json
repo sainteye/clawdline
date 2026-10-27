@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9200,
-  "riskKeys": 4108,
-  "nonRiskCount": 5092,
+  "englishContentKeys": 9211,
+  "riskKeys": 4110,
+  "nonRiskCount": 5101,
   "groups": [
     {
       "name": "admin / other",
@@ -3366,7 +3366,7 @@
     },
     {
       "name": "next / other",
-      "count": 442,
+      "count": 451,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3738,6 +3738,14 @@
         "next.updateBannerDev",
         "next.updateBannerDismiss",
         "next.updateBannerGo",
+        "next.updateChangelogAnyway",
+        "next.updateChangelogChanged",
+        "next.updateChangelogChecking",
+        "next.updateChangelogConfirm",
+        "next.updateChangelogLoading",
+        "next.updateChangelogOriginal",
+        "next.updateChangelogRetry",
+        "next.updateChangelogTitle",
         "next.updateChannel",
         "next.updateChannelBeta",
         "next.updateChannelStable",
@@ -3768,6 +3776,7 @@
         "next.updateReloading",
         "next.updateRestartApp",
         "next.updateRetry",
+        "next.updateReview",
         "next.updateRunningDev",
         "next.updateSending",
         "next.updateStaged",

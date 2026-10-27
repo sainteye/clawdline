@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { UpdateStatus } from "@clawdline/contract"
 import { catalogWordLanguage } from "../catalog.js"
 import { nextWord } from "../next-strings.js"
 import { followsRelay } from "../client.js"
-import { applyUpdate, checkUpdateNow, currentUpdateRead, publishUpdateRead, refreshUpdate, requestDevRelease, subscribeUpdate } from "./update.js"
+import { applyUpdate, currentUpdateRead, publishUpdateRead, refreshUpdate, requestDevRelease, subscribeUpdate } from "./update.js"
 import { canRestartStagedApp, restartStagedApp } from "./restart-app.js"
-import { INSTALL_COMMAND, UPDATE_BANNER_DISMISSED_KEY, buildName, canStartUpdateAfterFresh, devReleaseSentence, devStrip, updateBannerVersion, updatePanel } from "./update-model.js"
+import { INSTALL_COMMAND, UPDATE_BANNER_DISMISSED_KEY, buildName, devReleaseSentence, devStrip, updateBannerVersion, updatePanel } from "./update-model.js"
+import { UpdateChangelog } from "./UpdateChangelog.js"
 import "./update.css"
 
 function dismissedVersion(): string | null {
@@ -20,17 +21,18 @@ function dismissedVersion(): string | null {
  * One line at the top of the session list: a newer release, with the press
  * that installs it, or — always, while a dev build runs — which commit this
  * is, how it stands against the release, and the ways on from it. It starts an
- * update directly and stays to say how it went; the words wrap only then.
+ * update after the person reviews its changelog and stays to say how it went.
  */
 export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) {
   const read = useSyncExternalStore(subscribeUpdate, currentUpdateRead, currentUpdateRead)
   const [dismissed, setDismissed] = useState(dismissedVersion)
+  const [review, setReview] = useState<UpdateStatus["latest"] | null>(null)
+  const closeReview = useCallback(() => setReview(null), [])
   const [target, setTarget] = useState("")
   const [sending, setSending] = useState(false)
   const [following, setFollowing] = useState(false)
   const [completed, setCompleted] = useState(false)
   const [dismissedResult, setDismissedResult] = useState(false)
-  const [checkFailed, setCheckFailed] = useState(false)
   const [pressRefused, setPressRefused] = useState<{ code: string; detail: string } | null>(null)
   const [pressOlder, setPressOlder] = useState(false)
   const [releasing, setReleasing] = useState(false)
@@ -78,24 +80,12 @@ export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) 
   const press = async () => {
     if (sending || following) return
     setSending(true)
-    setCheckFailed(false)
     setPressRefused(null)
     setPressOlder(false)
     setCompleted(false)
     setDismissedResult(false)
     setTarget(version || buildName(last.current?.latest))
 
-    // A banner may have been visible since before the release was withdrawn.
-    // Recheck its signed source immediately before sending the install command.
-    const checked = await checkUpdateNow()
-    if (!canStartUpdateAfterFresh(checked, currentUpdateRead())) {
-      setSending(false)
-      setTarget("")
-      if (checked.kind === "unreachable" || checked.kind === "refused") setCheckFailed(true)
-      return
-    }
-    if (checked.kind !== "status") return
-    setTarget(buildName(checked.status.latest))
     const answer = await applyUpdate()
     setSending(false)
     if (answer.kind === "started") {
@@ -116,9 +106,9 @@ export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) 
   const overCloud = followsRelay()
   const dev = devStrip(read?.kind === "status" ? read.status : last.current, overCloud, nextWord)
   const visible = Boolean(dev || version || sending || following || releaseSaid || (!dismissedResult && (
-    showCompleted || checkFailed || pressRefused || pressOlder || problem || view.progress || (done && dismissed !== finishedVersion)
+    showCompleted || pressRefused || pressOlder || problem || view.progress || (done && dismissed !== finishedVersion)
   )))
-  if (!visible) return null
+  if (!visible && !review) return null
   const dismiss = () => {
     // Remember the release actually shown, never an offer hidden by a result.
     const dismissedRelease = offer ? version : done ? finishedVersion : ""
@@ -128,7 +118,6 @@ export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) 
     }
     setCompleted(false)
     setDismissedResult(true)
-    setCheckFailed(false)
     setPressRefused(null)
     setPressOlder(false)
     setReleaseSaid("")
@@ -145,20 +134,21 @@ export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) 
   const canPress = read?.kind === "status" && (Boolean(version) || view.press.shown) && !sending && !following && !showCompleted
   const busy = Boolean(sending || following || view.progress || releasing)
   const restartVersion = view.staged ? last.current?.apply?.to || "" : ""
-  const message = checkFailed ? nextWord("updateIsUnknown")
-    : releaseSaid || (dismissedResult ? null : problem?.sentence || view.progress || (sending ? nextWord("updateVerifying", { to: target }) : null)
+  const message = releaseSaid || (dismissedResult ? null : problem?.sentence || view.progress || (sending ? nextWord("updateVerifying", { to: target }) : null)
       || (showCompleted ? done || nextWord("updateHealthy", { to: target }) : null)
       || (done && dismissed !== finishedVersion ? done : null))
   const offer = !message && !sending && !following && !showCompleted && !problem
   const notes = version && read?.kind === "status" ? read.status.latest.notes_url : undefined
   // After a failure or a rollback the press retries, beside the sentence that says what went wrong.
-  const pressLabel = problem ? view.press.label : dev?.back || (version ? nextWord("updateNow") : view.press.label)
-  const pressShown = canPress && !checkFailed && (!message || Boolean(problem)) &&
+  const pressLabel = problem ? view.press.label : dev?.back || (version ? nextWord("updateReview") : view.press.label)
+  const pressShown = canPress && (!message || Boolean(problem)) &&
     Boolean(problem ? view.press.shown : dev ? dev.back : version)
   // A dev build's line stays; a release's and a result's can be put away.
   const closable = !sending && !following && !releasing && (Boolean(message) || !dev)
 
   return (
+    <>
+    {review && <UpdateChangelog latest={review} onClose={closeReview} onConfirm={() => void press()} />}
     <div className={"update-strip" + (message ? " is-saying" : "") + (embedded ? " is-embedded" : "")} id={embedded ? undefined : "update-banner"} role="status"
       aria-busy={busy} data-version={version || target} data-dev={dev?.relation}>
       {dev ? (
@@ -186,7 +176,7 @@ export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) 
       ) : null}
       {pressShown ? (
         <button className={"update-strip-link" + (dev && dev.relation !== "behind" ? "" : " is-go")} type="button"
-          onClick={() => void press()}>{pressLabel}</button>
+          onClick={() => { if (last.current) setReview(last.current.latest) }}>{pressLabel}</button>
       ) : null}
       {notes && offer ? (
         <a className="update-strip-link" href={notes} target="_blank" rel="noreferrer">{nextWord("updateNotes")}</a>
@@ -200,5 +190,6 @@ export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) 
         <button className="update-strip-x" type="button" aria-label={nextWord("updateBannerDismiss")} title={nextWord("updateBannerDismiss")} onClick={dismiss}>×</button>
       ) : null}
     </div>
+    </>
   )
 }
