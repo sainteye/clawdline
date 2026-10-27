@@ -18,6 +18,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // The token ledger kept by the daemon (docs/token-ledger.md "Storage and
@@ -49,10 +50,7 @@ const (
 // Openings of a first message that name what a session is. They are the
 // broker's briefing (orchestrator/brief.go) and the Root Assignment's
 // (orchestrator/handoffs.go), and the reader's (transcript/ledger.go).
-const (
-	usageChildOpening          = "You are a Clawdline CHILD agent for task "
-	usageRootAssignmentOpening = "You are an independently owned Clawdline Feature Root for Root Assignment "
-)
+const usageChildOpening = "You are a Clawdline CHILD agent for task "
 
 // UsageLedger reads transcripts into the store and answers what a session, a
 // child task and a Board item spent.
@@ -443,13 +441,10 @@ func usageOpening(text string) (task, rootAssignment string) {
 		}
 		return strings.TrimRight(fields[0], ".,;:")
 	}
-	switch {
-	case strings.HasPrefix(text, usageChildOpening):
+	if strings.HasPrefix(text, usageChildOpening) {
 		return word(text[len(usageChildOpening):]), ""
-	case strings.HasPrefix(text, usageRootAssignmentOpening):
-		return "", word(text[len(usageRootAssignmentOpening):])
 	}
-	return "", ""
+	return "", productcopy.RootAssignmentOpeningID(text)
 }
 
 // sayAbout logs a transcript's trouble once per reason, and forgets it once

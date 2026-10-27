@@ -1206,6 +1206,26 @@
     "Note": true
   },
   {
+    "Name": "console.video_preview_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.video_preview_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.video_preview_reads",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.video_preview_side",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.viewer_health_attempts",
     "Known": true,
     "Note": true

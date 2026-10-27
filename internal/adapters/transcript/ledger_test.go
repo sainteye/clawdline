@@ -471,3 +471,13 @@ func TestAPromptSnapshotAfterTheFirstCallAddsItsTools(t *testing.T) {
 		t.Fatalf("the parts sum to %.1f, want the first call's %d", c.estimated(), c.Measured)
 	}
 }
+
+func TestLocalizedRootOpeningKeepsBoardTokenCategory(t *testing.T) {
+	var state LedgerState
+	if got := state.personCategory("你是 Clawdline Root Assignment ra-9 的獨立 Feature Root，請先讀取任務。"); got != CategoryBoard {
+		t.Fatalf("Chinese Root opening category = %s", got)
+	}
+	if got := state.personCategory("你是 Clawdline Root Assignment ra-9 的獨立 Feature Root，請先讀取任務。"); got != CategoryTalk {
+		t.Fatalf("later quoted opening category = %s", got)
+	}
+}

@@ -493,6 +493,7 @@ func TestTheFirstMessageNamesTheTaskOrRootAssignment(t *testing.T) {
 	cases := []struct{ text, task, ra string }{
 		{"You are a Clawdline CHILD agent for task 7c1e. Say this line first", "7c1e", ""},
 		{"You are an independently owned Clawdline Feature Root for Root Assignment ra-9.\nRead", "", "ra-9"},
+		{"你是 Clawdline Root Assignment ra-9 的獨立 Feature Root，請先讀取任務。", "", "ra-9"},
 		{"Please rename the helper.", "", ""},
 	}
 	for _, c := range cases {

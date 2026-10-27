@@ -11,6 +11,8 @@ import (
 	"os"
 	"path"
 	"strings"
+
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // The token ledger's reading layer (docs/token-ledger.md): a transcript read,
@@ -69,10 +71,7 @@ const (
 )
 
 // Openings of a first message that make the person's text not talk.
-const (
-	childOpening          = "You are a Clawdline CHILD agent for task"
-	rootAssignmentOpening = "You are an independently owned Clawdline Feature Root for Root Assignment"
-)
+const childOpening = "You are a Clawdline CHILD agent for task"
 
 // Tokens is one category's share of a session, by part. The numbers are
 // float64 because a measured count is divided pro rata; their sum over every
@@ -926,7 +925,7 @@ func (s *LedgerState) personCategory(text string) Category {
 	switch {
 	case first && strings.HasPrefix(trimmed, childOpening):
 		return CategoryProtocol
-	case first && strings.HasPrefix(trimmed, rootAssignmentOpening):
+	case first && productcopy.RootAssignmentOpeningID(trimmed) != "":
 		return CategoryBoard
 	}
 	return CategoryTalk
