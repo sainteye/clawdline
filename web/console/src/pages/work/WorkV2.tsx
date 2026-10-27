@@ -20,6 +20,8 @@ import { Mark } from "../../session/List.js"
 import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
 import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, switchTeam } from "../../personas.js"
 import { RoleRow } from "../../session/RoleRow.js"
+import { WorkModelChoice } from "./WorkModelChoice.js"
+import type { DefaultModelOption } from "../settings/api.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
@@ -848,6 +850,10 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
   const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? (id === "antigravity" ? undefined : { id })
   const [selectedAssistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
   const assistant = selectedAssistant === "antigravity" ? "claude" : selectedAssistant
+  const [modelChoice, setModelChoice] = useState<{ assistant: Assistant; option: DefaultModelOption } | null>(null)
+  const model = modelChoice?.assistant === assistant ? modelChoice.option : null
+  const [rolesOpen, setRolesOpen] = useState(false)
+  const roleTrigger = useRef<HTMLButtonElement>(null)
   // A new Session has no role until the person chooses one or asks AI.
   const personas = usePersonas()
   const [personaChoice, setPersonaChoice] = useState("")
@@ -1039,28 +1045,42 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
         </div>
-        {personas.length > 0 && <button className="chip work-persona-ai-button" type="button" disabled={!!busy || aiSuggestionBusy}
-          aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
-          onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? catalogWord("literal", "29e124139608") : catalogWord("literal", "2bbea1c41037")}</button>}
-        {aiSuggestion?.outcome === "recommend" && aiPersona && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
-          <strong>{catalogLabel("inline", "366cbb69bcce")}{personaName(aiPersona)}</strong>
-          <span>{aiSuggestionOverridden ? catalogWord("literal", "74a97b8b8227") : catalogWord("literal", "c1083b6ca5e0")}</span>
-        </p>}
-        {aiSuggestion?.outcome === "ambiguous" && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
-          <strong>{catalogWord("inline", "b4933eb2248e")}</strong><span>{catalogWord("inline", "56eb16ed4470")}</span>
-        </p>}
-        {aiSuggestionFailure && <p className="work-note" role="alert">{aiSuggestionFailure}</p>}
-        {personas.length > 0 && <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
-          team={team} disabled={!!busy || aiSuggestionBusy} press="radio" describedBy={aiSuggestion ? aiSuggestionID : undefined}
-          onPick={(id) => setPersonaChoice(id)}
-          onTeam={(next) => {
-            const switched = switchTeam(personas, persona?.id, next)
-            setTeam(next)
-            rememberTeam(next)
-            setPersonaChoice(switched.chosen)
-          }} />}
+        <WorkModelChoice id={`work-models-${item.id}`} assistant={assistant} choice={model} disabled={!!busy || aiSuggestionBusy}
+          onPick={(option) => setModelChoice(option ? { assistant, option } : null)} />
+        {personas.length > 0 && <div className="work-launch-option">
+          <button ref={roleTrigger} className="work-launch-toggle" type="button" disabled={!!busy || aiSuggestionBusy}
+            aria-expanded={rolesOpen} aria-controls={`work-roles-${item.id}`} onClick={() => setRolesOpen(!rolesOpen)}>
+            <span>{nextWord("personaPicker")}</span>
+            <span className={`work-launch-summary${persona ? " chosen" : ""}`} title={persona ? personaTitle(persona) : undefined}>
+              {persona && <PersonaBot persona={persona} cellPx={2} className="persona-tag-bot" />}
+              <span>{persona ? personaName(persona) : nextWord("personaNone")}</span><i aria-hidden="true" />
+            </span>
+          </button>
+          <div id={`work-roles-${item.id}`} className="work-launch-body" hidden={!rolesOpen}>
+            <button className="chip work-persona-ai-button" type="button" disabled={!!busy || aiSuggestionBusy}
+              aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
+              onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? catalogWord("literal", "29e124139608") : catalogWord("literal", "2bbea1c41037")}</button>
+            {aiSuggestion?.outcome === "recommend" && aiPersona && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
+              <strong>{catalogLabel("inline", "366cbb69bcce")}{personaName(aiPersona)}</strong>
+              <span>{aiSuggestionOverridden ? catalogWord("literal", "74a97b8b8227") : catalogWord("literal", "c1083b6ca5e0")}</span>
+            </p>}
+            {aiSuggestion?.outcome === "ambiguous" && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
+              <strong>{catalogWord("inline", "b4933eb2248e")}</strong><span>{catalogWord("inline", "56eb16ed4470")}</span>
+            </p>}
+            {aiSuggestionFailure && <p className="work-note" role="alert">{aiSuggestionFailure}</p>}
+            <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
+              team={team} disabled={!!busy || aiSuggestionBusy} press="radio" describedBy={aiSuggestion ? aiSuggestionID : undefined}
+              onPick={(id) => { setPersonaChoice(id); setRolesOpen(false); roleTrigger.current?.focus({ preventScroll: true }) }}
+              onTeam={(next) => {
+                const switched = switchTeam(personas, persona?.id, next)
+                setTeam(next)
+                rememberTeam(next)
+                setPersonaChoice(switched.chosen)
+              }} />
+          </div>
+        </div>}
         <button className="chip on work-assignment-action" type="button" disabled={!!busy || aiSuggestionBusy || !assistantAdmits(providerFacts(assistant), "start")} aria-busy={busy === item.id && assigningRoute === "new"}
-          onClick={() => { if (assistantAdmits(providerFacts(assistant), "start")) void assign("new", () => assignNewWorkV2(item, assistant, persona?.id)) }}>
+          onClick={() => { if (assistantAdmits(providerFacts(assistant), "start")) void assign("new", () => assignNewWorkV2(item, assistant, persona?.id, model?.value)) }}>
           {busy === item.id && assigningRoute === "new" && <span className="work-assignment-spinner" aria-hidden="true" />}
           {persona
             ? nextWord(busy === item.id && assigningRoute === "new" ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })

@@ -135,6 +135,8 @@ let machineSettings: Record<string, unknown> = {
 let workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true }
 let refuseWorkflowWrite = false
 let refuseDefaultModelWrite = false
+let refuseModelCatalog = false
+let assignmentBody: Record<string, unknown> | null = null
 let smartTitleRequestKey = ""
 let smartTitleRefusal = ""
 let namingAssistant = "claude"
@@ -289,7 +291,10 @@ function daemon(): Server {
       })
       return
     }
-    if (path === "/v1/settings/default-models" && req.method === "GET") return json(res, 200, machineSettings)
+    if (path === "/v1/settings/default-models" && req.method === "GET") {
+      if (refuseModelCatalog) return json(res, 503, { error: "catalog_unavailable", detail: "Model catalog is unavailable." })
+      return json(res, 200, machineSettings)
+    }
     if (path === "/v1/settings/default-models" && req.method === "POST") {
       void requestJSON(req).then((change) => {
         if (refuseDefaultModelWrite) {
@@ -506,7 +511,8 @@ function daemon(): Server {
       return
     }
     if (/^\/v1\/work\/v2\/items\/[^/]+\/assign$/.test(path) && req.method === "POST") {
-      void requestJSON(req).then(() => {
+      void requestJSON(req).then((body) => {
+        assignmentBody = body
         assignmentReply = () => json(res, 503, { error: "fixture_assignment_paused", detail: "assignment paused for loading verification" })
       }, () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
       return
@@ -2417,6 +2423,8 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
         const card = modal?.querySelector(".work-v2-card")
         if (card) {
           const roles = card.querySelector(".work-new-persona")
+          const toggle = card.querySelector('[aria-controls^="work-roles-"]')
+          if (toggle?.getAttribute("aria-expanded") === "false") { toggle.click(); return setTimeout(read, 25) }
           // RoleRow fills its native buttons in an effect after the card's
           // first paint. Measure only once that accessible row is complete.
           if (roles?.querySelectorAll(".chip").length !== ${PERSONAS.length + 1}) {
@@ -2529,11 +2537,11 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
     await tab.run(`document.querySelector(".work-created-modal .work-session-trigger").focus()`)
     assert.equal(await tab.run(`document.activeElement?.getAttribute("aria-label")`), "指派既有 Session")
     const keyboard: string[] = []
-    for (let index = 0; index < 4; index++) {
+    for (let index = 0; index < 6; index++) {
       await tab.press("Tab")
       keyboard.push(await tab.run(`document.activeElement?.getAttribute("aria-label") || document.activeElement?.textContent?.trim()`))
     }
-    assert.deepEqual(keyboard, ["Codex", "Claude Code", "AI 建議", "不指定"], "keyboard order")
+    assert.deepEqual(keyboard, ["Codex", "Claude Code", "模型使用預設", "角色不指定", "AI 建議", "不指定"], "keyboard order")
     assert.deepEqual(await tab.run(`(() => {
       const role = document.querySelector(".work-created-modal .work-new-persona .chip")
       return { active: document.activeElement === role, disabled: role.disabled, text: role.textContent }
@@ -2552,13 +2560,14 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
         actions: [...card.querySelectorAll(".work-assignment-action")].map((button) => button.textContent),
       }
     })()`), {
-      focused: "前端工程師",
+      focused: "角色前端工程師",
       chosenRole: "前端工程師",
       actions: ["開新 Codex Session（前端工程師）"],
     })
 
     // One explicit press sends one receipted request, selects the catalog id
     // AI returned, and still permits a manual override afterward.
+    await tab.run(`document.querySelector('.work-created-modal [aria-controls^="work-roles-"]').click()`)
     await tab.run(`document.querySelector(".work-created-modal .work-persona-ai-button").click()`)
     const ai = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
@@ -2648,6 +2657,113 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       assignmentReply = null
     }
   }))
+
+test("phone and desktop: new Board Sessions keep compact model and team-role choices and send only the chosen launch", async () => {
+  const originalSettings = machineSettings
+  const first = PERSONAS[0] as (typeof PERSONAS)[number] & { teams?: string[] }
+  const originalTeams = first.teams
+  const originalIcon = first.icon
+  first.icon = { accent: "#e07a5f", cells: ["...##...", "..####..", ".######.", ".#o##o#.", ".######.", "..####..", "..#..#..", ".##..##."].map(row =>
+    [...row].map(cell => cell === "#" ? "#e07a5f" : cell === "o" ? "#141416" : "")) }
+  const defaults = {
+    codex_default_model: "gpt-6-sol", claude_default_model: "opus",
+    models: {
+      codex: [{ value: "gpt-6-sol", label: "GPT-6 Sol" }, { value: "gpt-6-astra", label: "GPT-6 Astra" },
+        ...Array.from({ length: 22 }, (_, n) => ({ value: `fixture-model-${n}`, label: `Fixture model ${n}` }))],
+      claude: [{ value: "opus", label: "Opus 5.5" }],
+    },
+  }
+  machineSettings = defaults
+  first.teams = ["engineering", "design"]
+  try {
+    for (const size of [PHONE, DESK]) await inTab(size, async (tab) => {
+      await fetch(origin + "/v1/work/v2/items", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "feature", title: "模型與角色選擇驗證", description: "確認本次啟動的模型與角色。", deployment_policy: "agent_decides" }) })
+      await tab.go("/#page=work")
+      const wait = (expression: string) => tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000
+        const read = () => { const result = (${expression}); if (result) return resolve(true)
+          if (Date.now() > deadline) return reject(new Error('launch choices did not settle'))
+          setTimeout(read, 25) }; read()
+      })`)
+      await wait(`document.querySelector('.work-card-summary')`)
+      await tab.run(`document.querySelector('.work-card-summary').click()`)
+      await wait(`document.querySelector('.work-created-modal [aria-controls^="work-roles-"]')`)
+      assert.deepEqual(await tab.run(`(() => {
+        const modal = document.querySelector('.work-created-modal')
+        return [...modal.querySelectorAll('.work-launch-toggle')].map(button => ({
+          name: button.textContent, expanded: button.getAttribute('aria-expanded'),
+          hidden: document.getElementById(button.getAttribute('aria-controls')).hidden,
+        }))
+      })()`), [{ name: "模型使用預設", expanded: "false", hidden: true }, { name: "角色不指定", expanded: "false", hidden: true }])
+      await tab.shot(`launch-${size.width}-collapsed`)
+      // A missing catalog leaves the default available and can be retried.
+      refuseModelCatalog = true
+      await tab.run(`document.querySelector('.work-created-modal [aria-controls^="work-models-"]').click()`)
+      await wait(`document.querySelector('.work-created-modal .work-launch-body [role="alert"]')`)
+      assert.equal(await tab.run(`document.querySelector('.work-created-modal .work-launch-models [role="radio"]').disabled`), false)
+      refuseModelCatalog = false
+      await tab.run(`document.querySelector('.work-created-modal .work-launch-body [role="alert"] button').click()`)
+      await wait(`document.querySelectorAll('.work-created-modal .work-launch-models .m').length === 25`)
+      assert.deepEqual(await tab.run(`(() => {
+        const list = document.querySelector('.work-created-modal .work-launch-models')
+        const buttons = [...list.children]
+        return { scrolls: list.scrollHeight > list.clientHeight, bounded: list.clientHeight <= 160,
+          sharesRow: buttons[0].offsetTop === buttons[1].offsetTop,
+          fits: list.getBoundingClientRect().right <= innerWidth,
+          pageFits: document.documentElement.scrollWidth <= innerWidth }
+      })()`), { scrolls: true, bounded: true, sharesRow: true, fits: true, pageFits: true })
+      const beforeScroll = await tab.run(`document.querySelector('.work-created-modal .work-assignment-route:last-of-type .work-assignment-action').getBoundingClientRect().top`)
+      await tab.run(`document.querySelector('.work-created-modal .work-launch-models').scrollTop = 200`)
+      assert.equal(await tab.run(`document.querySelector('.work-created-modal .work-assignment-route:last-of-type .work-assignment-action').getBoundingClientRect().top`), beforeScroll)
+      await tab.run(`document.querySelector('.work-created-modal .work-launch-models').scrollTop = 0`)
+      await tab.shot(`launch-${size.width}-models`)
+      await tab.run(`Array.from(document.querySelectorAll('.work-created-modal .work-launch-models .m')).find(b => b.textContent === 'GPT-6 Astra').click()`)
+      assert.deepEqual(await tab.run(`(() => {
+        const trigger = document.querySelector('.work-created-modal [aria-controls^="work-models-"]')
+        return { name: trigger.textContent, expanded: trigger.getAttribute('aria-expanded'), focused: document.activeElement === trigger }
+      })()`), { name: "模型GPT-6 Astra", expanded: "false", focused: true })
+      // Changing provider cannot reuse a model selected for the other one.
+      await tab.run(`document.querySelector('.work-created-modal [aria-label="Claude Code"]').click()`)
+      assert.equal(await tab.run(`document.querySelector('.work-created-modal [aria-controls^="work-models-"]').textContent`), "模型使用預設")
+      await tab.run(`document.querySelector('.work-created-modal [aria-controls^="work-models-"]').click()`)
+      await wait(`document.querySelectorAll('.work-created-modal .work-launch-models .m').length === 2`)
+      assert.deepEqual(await tab.run(`Array.from(document.querySelectorAll('.work-created-modal .work-launch-models .m')).map(b=>b.textContent)`), ["使用預設", "Opus 5.5"])
+      await tab.run(`document.querySelector('.work-created-modal [aria-label="Codex"]').click()`)
+      await wait(`document.querySelectorAll('.work-created-modal .work-launch-models .m').length === 25`)
+      await tab.run(`Array.from(document.querySelectorAll('.work-created-modal .work-launch-models .m')).find(b => b.textContent === 'GPT-6 Astra').click()`)
+      await tab.run(`document.querySelector('.work-created-modal [aria-controls^="work-roles-"]').click()`)
+      await wait(`document.querySelector('.work-created-modal .role-team select')`)
+      await tab.run(`(() => { const team=document.querySelector('.work-created-modal .role-team select'); team.value='design'; team.dispatchEvent(new Event('change',{bubbles:true})) })()`)
+      await wait(`document.querySelectorAll('.work-created-modal .work-new-persona .chip').length === 2`)
+      await tab.shot(`launch-${size.width}-team`)
+      await tab.run(`document.querySelector('.work-created-modal [data-persona-id="architect"]').click()`)
+      assert.deepEqual(await tab.run(`(() => {
+        const trigger = document.querySelector('.work-created-modal [aria-controls^="work-roles-"]')
+        const icon = trigger.querySelector('canvas')
+        return { name: trigger.textContent, expanded: trigger.getAttribute('aria-expanded'),
+          iconDrawn: !!icon && icon.width > 0 && icon.height > 0, focused: document.activeElement === trigger }
+      })()`), { name: "角色架構師", expanded: "false", iconDrawn: true, focused: true })
+      await tab.shot(`launch-${size.width}-chosen`)
+      assignmentBody = null
+      await tab.run(`document.querySelector('.work-created-modal .work-assignment-route:last-of-type .work-assignment-action').click()`)
+      const deadline = Date.now() + 5000
+      while (!assignmentReply && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25))
+      assert.ok(assignmentReply, "launch reached the assignment endpoint")
+      assert.deepEqual(assignmentBody, { expected_version: 1, mode: "new_session", assistant: "codex", model: "gpt-6-astra", persona: "architect" })
+      assignmentReply()
+      assignmentReply = null
+      assert.deepEqual(machineSettings, defaults, "per-launch choices must not write the machine defaults")
+    })
+  } finally {
+    assignmentReply?.(); assignmentReply = null
+    refuseModelCatalog = false
+    machineSettings = originalSettings
+    first.teams = originalTeams
+    first.icon = originalIcon
+    createdWork = null
+  }
+})
 
 test("phone: Projects offers a folder picker that can be cancelled", () =>
   inTab(PHONE, async (tab) => {

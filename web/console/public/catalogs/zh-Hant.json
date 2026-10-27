@@ -9237,5 +9237,8 @@
   "http.9c65a3b1a8ea6f55": "上傳摘要時必須設定 milestone: true；尚未開啟任何 Session。",
   "http.c5591b61722a7c56": "上傳的里程碑摘要格式無效；尚未開啟任何 Session。",
   "http.9eaae8deecfaf68c": "無法寫入交接套件；尚未開啟任何 Session。",
-  "http.722796e74317291d": "交接套件已包含不同的摘要；尚未開啟任何 Session。"
+  "http.722796e74317291d": "交接套件已包含不同的摘要；尚未開啟任何 Session。",
+  "work.launchModelDefault": "使用預設",
+  "work.launchModelHint": "只套用到這次開啟的 Session。",
+  "work.launchModelsFailed": "無法讀取模型清單，仍可使用預設模型。"
 }

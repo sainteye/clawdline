@@ -283,6 +283,23 @@
 .work-assignment > .work-reassign-note { margin: 0; color: var(--dim); font-size: 12px; line-height: 1.5; }
 .work-assignment-route { display: grid; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 11px; }
 .work-assignment-route h4 { margin: 0; color: var(--text); font-size: 12px; font-weight: 700; }
+.work-launch-option { min-width: 0; border-top: 1px solid var(--line); }
+.work-launch-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 5px 0; border: 0; background: transparent; color: var(--dim); font: 12px var(--ui); text-align: left; }
+.work-launch-summary { display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px; min-width: 0; max-width: 75%; }
+.work-launch-summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-launch-summary.chosen { color: var(--accent); }
+.work-launch-summary i { flex: none; width: 6px; height: 6px; margin-right: 3px; border-right: 1px solid var(--faint); border-bottom: 1px solid var(--faint); transform: rotate(-45deg); }
+.work-launch-toggle[aria-expanded="true"] i { transform: rotate(45deg); }
+.work-launch-body { display: grid; gap: 10px; min-width: 0; padding-bottom: 12px; }
+.work-launch-body[hidden] { display: none; }
+.work-launch-body > .work-note { margin: 0; }
+.work-launch-body > .work-persona-ai-button { justify-self: start; }
+.work-launch-models { display: flex; flex-wrap: wrap; gap: 6px; max-height: min(9rem, 30dvh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 4px; margin: -4px; }
+/* Match Session info's compact, wrapping model buttons. The list scrolls,
+   rather than removing models or pushing the launch action down the page. */
+.work-launch-models .m { flex: 0 1 auto; min-width: 0; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; font: 12px var(--mono); color: var(--dim); background: var(--card); overflow-wrap: anywhere; }
+.work-launch-models .m:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.work-launch-models .m[aria-checked="true"] { border-color: var(--accent-ed); background: var(--accent-in); color: var(--accent); }
 .work-assignment-route > .work-new-session:not(.work-new-persona),
 .work-assignment-route > .work-persona-ai-button { justify-self: start; }
 .work-assignment-route > .work-note { margin: 0; }
