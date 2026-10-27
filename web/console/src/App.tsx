@@ -158,21 +158,20 @@ function leaveAddress(state: unknown): void {
  * what it looks like (`openSession`, `session/open.js`), and the step carries
  * the session's address.
  *
- * Within this document, opening another Session or taking Forward replaces
- * the established detail step. A marker restored from an older document does
- * not prove that its list entry survived (media return can rebuild a page).
- * Rebuild that list once before trusting detail markers in this document.
+ * Within this mounted Session view, opening another Session or taking
+ * Forward replaces the established detail step. A marker from an earlier
+ * view cannot prove its list entry survived a media-return opening gate,
+ * whether the document reloaded or only the console remounted.
  * An address that arrived asking for a session, typed
  * or tapped in a notification, had no list under it: the entry it arrived in
  * becomes the list and the detail is pushed over that, so Back from it is the
  * list rather than whatever came before the console.
  */
-let detailStepEstablished = false
-function stepIntoDetail(id: string, address: string, arrived: boolean): void {
+function stepIntoDetail(id: string, address: string, arrived: boolean, established: { current: boolean }): void {
   const detail = { view: "detail", id }
   try {
     const wasDetail = (history.state as { view?: unknown } | null)?.view === "detail"
-    if (wasDetail && detailStepEstablished) {
+    if (wasDetail && established.current) {
       history.replaceState(detail, "", address)
     } else if (arrived || wasDetail) {
       history.replaceState({ view: "list" }, "", listAddress())
@@ -180,7 +179,7 @@ function stepIntoDetail(id: string, address: string, arrived: boolean): void {
     } else {
       history.pushState(detail, "", address)
     }
-    detailStepEstablished = true
+    established.current = true
   } catch {
     /* the address stays as it was */
   }
@@ -336,6 +335,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const selectedRef = useRef(selected)
   const openRef = useRef(openId)
   const viewRef = useRef(view)
+  const detailStep = useRef(false)
   const paneRef = useRef(paneOpen)
   const filterRef = useRef(filter)
   const setSelected = (id: string | null) => {
@@ -558,7 +558,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       if (viewRef.current !== "detail" && !videoAddress) releaseKeyboardFocus()
       setView("detail")
       if (!videoAddress) stepIntoDetail(id, fleetList && fleetTarget ? listAddress() + destinationFragment(fleetTarget) :
-        listAddress() + sessionFragment(id), arrived)
+        listAddress() + sessionFragment(id), arrived, detailStep)
     } else {
       if (!paneRef.current) setPane(true)
       if (!videoAddress) writeHash(fleetList && fleetTarget ? destinationFragment(fleetTarget) : sessionFragment(id))
@@ -610,7 +610,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     go("sessions", { hash: false })
     if (phone()) {
       setView("detail")
-      stepIntoDetail(fleetTarget.sessionID, listAddress() + destinationFragment(fleetTarget), true)
+      stepIntoDetail(fleetTarget.sessionID, listAddress() + destinationFragment(fleetTarget), true, detailStep)
     } else if (!paneRef.current) setPane(true)
   }, [fleetList && fleetTarget ? destinationKey(fleetTarget) : null])
   useEffect(() => {
@@ -792,7 +792,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         // step. Narrowing the window turns it into a whole-screen detail,
         // which needs the same list underneath as a phone tap or deep link.
         if (pageRef.current === "sessions" && viewRef.current !== "detail")
-          stepIntoDetail(openRef.current, location.href, true)
+          stepIntoDetail(openRef.current, location.href, true, detailStep)
         setView("detail")
       }
     }
