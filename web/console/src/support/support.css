@@ -24,3 +24,5 @@
 
 @media(max-width:480px){.help-filters{grid-template-columns:minmax(0,1fr)}.help-root .help-filters select{font-size:16px}}
 @media(forced-colors:active){.help-root .help-filters select{appearance:auto;-webkit-appearance:auto;background-image:none}}
+
+.help-classification{display:grid;gap:12px;margin-bottom:28px}.help-classification label{display:grid;gap:8px}.help-classification button{justify-self:start}.help-thread-meta{flex-wrap:wrap;gap:12px}

@@ -1,5 +1,6 @@
 import { catalogWord, currentCatalogTag } from "../catalog.js"
 const en = {
+  requestType: "Request type", question: "Usage question", issue: "Report a problem", feature_request: "Feature request", classify: "Update request type", classificationSaved: "Request type updated.",
   reporter: "Reported by", reporterId: "Member ID", processingDetail: "Processing detail", reporterUnnamed: "No display name",
   notifyTitle: "New question notifications", notifyCopy: "Receive a notification on this device when a member submits a new question. Tap it to open the Admin question page.", notifyEnable: "Enable on this device", notifyDisable: "Turn off", notifyOn: "Enabled on this device", notifyTest: "Send a test notification", notifyTestSent: "The push service accepted the test. Tap the notification to open the Admin inbox.", notifyUnsupported: "On iPhone or iPad, open this website from the Home Screen to enable notifications. Other devices need a browser that supports Web Push.", notifyBlocked: "Allow notifications for this website in your browser settings, then try again.", notifyFailed: "Notifications could not be confirmed. Check the browser permission and try again.",
   attachImages: "Attach images", imageWorking: "Preparing images…", imageHint: "JPG, PNG or WebP · Up to 5 images · 10 MB each.", imageNumber: "Image {number}", removeImage: "Remove image {number}", imageLimit: "Attach up to 5 images at a time.", imageFailed: "This image could not be prepared or uploaded. Use a smaller JPG, PNG or WebP image and try again.", imageExpired: "This upload expired. Remove the preview and attach the image again.", imagePreview: "Image preview", closeImage: "Close image",
@@ -20,6 +21,7 @@ const en = {
 } as const
 type Word = keyof typeof en
 const zh: Record<Word, string> = {
+  requestType: "提問類型", question: "使用問題", issue: "回報問題", feature_request: "功能建議", classify: "更新提問類型", classificationSaved: "已更新提問類型。",
   reporter: "提問者", reporterId: "會員 ID", processingDetail: "處理資訊", reporterUnnamed: "尚未設定名稱",
   notifyTitle: "新提問通知", notifyCopy: "會員提出新問題時，在這台裝置收到通知。點一下即可開啟 Admin 問題頁。", notifyEnable: "在這台裝置啟用", notifyDisable: "停用", notifyOn: "這台裝置已啟用", notifyTest: "傳送測試通知", notifyTestSent: "推播服務已接受測試。點一下通知即可開啟 Admin 收件區。", notifyUnsupported: "iPhone 或 iPad 請從主畫面開啟這個網站，再啟用通知。其他裝置需使用支援 Web Push 的瀏覽器。", notifyBlocked: "請先在瀏覽器設定允許這個網站傳送通知，再試一次。", notifyFailed: "無法確認通知設定，請檢查瀏覽器權限後再試一次。",
   threadPrivacy:"你的問題與回覆不會公開。",

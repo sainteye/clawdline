@@ -1,4 +1,10 @@
 {
+  "support.requestType": "Request type",
+  "support.question": "Usage question",
+  "support.issue": "Report a problem",
+  "support.feature_request": "Feature request",
+  "support.classify": "Update request type",
+  "support.classificationSaved": "Request type updated.",
   "http.6576407019572a69": "support_answer requires a Codex schedule, no checkout isolation and no repository writes",
   "next.toolResultPrevious": "Previous",
   "next.toolResultNext": "Next",

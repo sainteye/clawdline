@@ -1,4 +1,10 @@
 {
+  "support.requestType": "提問類型",
+  "support.question": "使用問題",
+  "support.issue": "回報問題",
+  "support.feature_request": "功能建議",
+  "support.classify": "更新提問類型",
+  "support.classificationSaved": "已更新提問類型。",
   "http.6576407019572a69": "support_answer 僅限 Codex 排程，不可建立隔離 checkout，也不可寫入專案檔案",
   "next.toolResultPrevious": "上一張",
   "next.toolResultNext": "下一張",

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9459,
+  "englishContentKeys": 9465,
   "riskKeys": 4183,
-  "nonRiskCount": 5276,
+  "nonRiskCount": 5282,
   "groups": [
     {
       "name": "admin / other",
@@ -5221,7 +5221,7 @@
     },
     {
       "name": "support / other",
-      "count": 113,
+      "count": 119,
       "sources": [
         null
       ],
@@ -5244,6 +5244,8 @@
         "support.attempts",
         "support.busy",
         "support.cancel",
+        "support.classificationSaved",
+        "support.classify",
         "support.closeImage",
         "support.contentLanguage",
         "support.copyingCredential",
@@ -5259,6 +5261,7 @@
         "support.faq",
         "support.faqBody",
         "support.faqTitle",
+        "support.feature_request",
         "support.finishReview",
         "support.fixture",
         "support.followup",
@@ -5272,6 +5275,7 @@
         "support.inbox",
         "support.intro",
         "support.invalid",
+        "support.issue",
         "support.languageScope",
         "support.leaveDraft",
         "support.limited",
@@ -5300,6 +5304,7 @@
         "support.publish",
         "support.publishSnapshot",
         "support.published",
+        "support.question",
         "support.questionBody",
         "support.questionTitle",
         "support.readEnglish",
@@ -5308,6 +5313,7 @@
         "support.replyLanguage",
         "support.reporter",
         "support.reporterId",
+        "support.requestType",
         "support.resolve",
         "support.resolved",
         "support.retry",

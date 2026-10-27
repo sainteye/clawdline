@@ -179,3 +179,15 @@ insert an operator answer and call it an AI reply.
 Admin list/detail/mutation responses include the reporter's current display name and stable member
 ID. Only the authenticated Admin projection obtains these fields. Member and answering-worker
 responses, FAQ snapshots and push payloads remain free of reporter identity fields.
+
+## Evidence routing and request types
+
+Support submissions distinguish usage questions, issue reports and feature requests independently
+from product topic. Existing records default to usage questions. Classification does not grant
+implementation authority, create a Board item or mean a feature has shipped. Admins can correct a
+classification with revision and idempotency checks.
+
+The answering Agent reads the [product evidence map](product-evidence.md) before choosing which UI
+source to inspect. A missing control on the general Session start sheet does not establish that
+the Board assignment flow lacks it. Verify the actual entry point, relevant request path and
+pinned revision before claiming absence; distinguish role recommendation from model selection.

@@ -54,3 +54,7 @@ On iPhone or iPad, add the website to the Home Screen and open that installed we
 Enable notifications on that device, grant the browser permission, and send a test notification.
 A new-question notification contains a generic notice; tapping it opens that question's Admin
 page, subject to sign-in and Admin permission. It does not open the member's private Session.
+
+## Questions, issues and feature requests
+
+Choose **Request type** when submitting: **Usage question**, **Report a problem** or **Feature request**. Topic remains a separate product category. A feature request records a suggestion; an answer does not mean the feature has been implemented. Admins can correct the type on its detail page. For choosing a model when assigning a Board ticket, see [Board assignment](board.md#assign-it-to-a-session).

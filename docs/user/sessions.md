@@ -154,6 +154,8 @@ deadline; retries happen only when requested.
 session shows up in the list. With several machines on a Cloud account, **Machine** chooses
 where it runs.
 
+For a Board ticket, use the card’s new-Session assignment controls: choose Claude or Codex, expand **Model**, select a model, then confirm with **Start a new … Session**. That per-ticket flow is distinct from this general start sheet; see [Board assignment](board.md#assign-it-to-a-session).
+
 You can also press the microphone in the header (**Say what to start**) and describe the
 task; Clawdline drafts the project, assistant, model and first message, and nothing starts until you
 press **Start**.
