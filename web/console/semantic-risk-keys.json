@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9444,
+  "englishKeys": 9447,
   "counts": {
-    "negation": 2695,
+    "negation": 2696,
     "state": 1551,
     "permission": 565,
     "deletion": 208,
     "uncertainty": 295
   },
-  "unionCount": 4180,
+  "unionCount": 4181,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2079,6 +2079,7 @@
       "next.cloudTerminalPermissionConnectionFailed",
       "next.cloudTerminalPermissionDeviceMissing",
       "next.codexAsyncAnswerHint",
+      "next.compressedReadFailed",
       "next.defaultAntigravityCatalogUnknown",
       "next.defaultModelInvalid",
       "next.defaultModelsFailed",
@@ -8437,6 +8438,7 @@
     "next.cloudTerminalPermissionTitle",
     "next.codexAsyncAnswerHint",
     "next.codexAsyncChoiceHint",
+    "next.compressedReadFailed",
     "next.defaultAntigravityCatalogUnknown",
     "next.defaultModelInvalid",
     "next.defaultModelsFailed",

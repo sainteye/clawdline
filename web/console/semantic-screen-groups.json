@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9444,
-  "riskKeys": 4180,
-  "nonRiskCount": 5264,
+  "englishContentKeys": 9447,
+  "riskKeys": 4181,
+  "nonRiskCount": 5266,
   "groups": [
     {
       "name": "admin / other",
@@ -3397,7 +3397,7 @@
     },
     {
       "name": "next / other",
-      "count": 464,
+      "count": 466,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3407,6 +3407,8 @@
         "next.archiving",
         "next.brokerWork",
         "next.commandNoPlanner",
+        "next.compressedReadTooLarge",
+        "next.compressedReadUnsupported",
         "next.devicesLedeAccount",
         "next.devicesRosterLoading",
         "next.devicesRosterReady",

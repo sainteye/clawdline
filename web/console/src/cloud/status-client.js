@@ -49,7 +49,14 @@ function pinnedReplyKey(machine, session, read) {
   return machine + "\u0000" + session + "\u0000" + read
 }
 
+const COMPRESSED_READ_WORDS = new Set(["work.v2.cards", "work.v2.items", "work.v2.item", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.human-interventions", "personas", "projects", "project-folders", "schedules", "snippets", "provider-quotas", "capacity", "skills", "info", "sessions.list"])
+const READ_COMPRESSION_SUFFIX = ".encoding.gzip-v1"
 function pinnedReadName(type, body) {
+ const name = basePinnedReadName(type,body)
+ return name && body?.accept_encoding === "gzip-v1" ? name + READ_COMPRESSION_SUFFIX : name
+}
+
+function basePinnedReadName(type, body) {
   if (type === "sessions.list" && typeof body?.request === "string" && body.request) return "read:" + body.request
   if (type === "info" && body?.parts === "full") return "info.full"
   if (type === "skills") return "skills"
@@ -860,8 +867,27 @@ export class StatusCloudClient extends CatalogCloudClient {
     }
   }
 
-  /** The copied reader's local write flag predates the read-only r/ channel. */
+  /** Only explicitly capable peers and bounded decoders negotiate a new representation. */
   _read(value, type, extra, answer, timeoutMs, readOptions) {
+    let identity
+    try { identity = this._sessionIdentity(value) } catch (error) { return Promise.reject(error) }
+    if (typeof DecompressionStream !== "function" || typeof answer !== "string" || !COMPRESSED_READ_WORDS.has(type) || extra?.accept_encoding !== undefined ||
+      this.machineLacks?.get(identity.machine)?.has("read-compression-v1") ||
+      this.machineDescriptor?.(identity.machine)?.machine?.read_compression_v1 !== true) {
+      return this._readRepresentation(value,type,extra,answer,timeoutMs,readOptions)
+    }
+    return this._readRepresentation(value,type,{...extra,accept_encoding:"gzip-v1"},answer+READ_COMPRESSION_SUFFIX,timeoutMs,readOptions).catch(error=>{
+      if (readOptions?.signal?.aborted || !["malformed_read","unknown_command","cloud_read_timeout","read_compression_unavailable","read_payload_corrupt","read_encoding_unsupported"].includes(error?.code)) throw error
+      this.machineLacks ??= new Map()
+      const lacks = this.machineLacks.get(identity.machine) ?? new Set()
+      lacks.add("read-compression-v1")
+      this.machineLacks.set(identity.machine,lacks)
+      return this._readRepresentation(value,type,extra,answer,timeoutMs,readOptions)
+    })
+  }
+
+  /** The copied reader's local write flag predates the read-only r/ channel. */
+  _readRepresentation(value, type, extra, answer, timeoutMs, readOptions) {
     if (!pinnedRead(type, extra)) return super._read(value, type, extra, answer, timeoutMs, readOptions)
     const machineList = type === "sessions.list" && value.session === "__clawdline_machine__"
     if ((!machineList && !GENERATION.test(extra.expected_generation)) ||

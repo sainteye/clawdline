@@ -9444,5 +9444,8 @@
   "support.notifyTestSent": "推播服務已接受測試。點一下通知即可開啟 Admin 收件區。",
   "support.notifyUnsupported": "iPhone 或 iPad 請從主畫面開啟這個網站，再啟用通知。其他裝置需使用支援 Web Push 的瀏覽器。",
   "support.notifyBlocked": "請先在瀏覽器設定允許這個網站傳送通知，再試一次。",
-  "support.notifyFailed": "無法確認通知設定，請檢查瀏覽器權限後再試一次。"
+  "support.notifyFailed": "無法確認通知設定，請檢查瀏覽器權限後再試一次。",
+  "next.compressedReadFailed": "無法開啟這份回覆，請重新讀取。",
+  "next.compressedReadUnsupported": "這份回覆的格式尚未支援，請重新整理頁面後再試。",
+  "next.compressedReadTooLarge": "回覆超過可讀取的大小上限。"
 }

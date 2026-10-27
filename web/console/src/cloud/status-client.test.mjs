@@ -685,6 +685,7 @@ test("pinned detail refuses to join an unpinned read waiter", async () => {
 
 test("read_transcript-only pinned reads pass the old local write guard", async () => {
   const client = Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor=()=>null
   client.allowWrites = false
   client.retired = false
   client.readWaiters = new Map()
@@ -1533,4 +1534,56 @@ test("rolling windows and provider expansions preserve all retained and repeated
  const expanded={...rolling,entryCount:201,delta:[rolling.delta[1]]}
  assert.deepEqual(applyTranscriptDelta(held,expanded,"s").entries,rows)
  assert.throws(()=>applyTranscriptDelta(held,{...rolling,delta:[rolling.delta[1],rolling.delta[0]]},"s"),error=>error.code==="transcript_cursor_stale")
+})
+
+test("generic JSON compression is negotiated only for capable read peers",async()=>{
+ for(const capable of [false,true]) {
+  const client=Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor=()=>({machine:{read_compression_v1:capable}})
+  const calls=[]
+  client._readRepresentation=async(...args)=>{calls.push(args);return {items:[]}}
+  const signal=new AbortController().signal,identity={machine:"m",session:"__clawdline_machine__"}
+  await client._read(identity,"work.v2.cards",{request:"fixture"},"read:fixture",123,{signal})
+  assert.equal(calls[0][2].accept_encoding,capable?"gzip-v1":undefined)
+  assert.equal(calls[0][3],capable?"read:fixture.encoding.gzip-v1":"read:fixture")
+  assert.equal(calls[0][5].signal,signal)
+  await client._read(identity,"work.v2.edit",{request:"write"},"action:write")
+  await client._read(identity,"image",{id:"picture"},"image.picture")
+  assert.equal(calls[1][2].accept_encoding,undefined)
+  assert.equal(calls[2][2].accept_encoding,undefined)
+ }
+})
+
+test("a stale compression capability falls back once and disables repeat failures",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.machineDescriptor=()=>({machine:{read_compression_v1:true}})
+ const calls=[],identity={machine:"m",session:"s"},fields={machine_id:"m",expected_generation:genA}
+ client._readRepresentation=async(...args)=>{
+  calls.push(args)
+  if(args[2].accept_encoding) throw Object.assign(new Error("old peer"),{code:"malformed_read"})
+  return {skills:[]}
+ }
+ await client._read(identity,"skills",fields,"skills")
+ await client._read(identity,"skills",fields,"skills")
+ assert.equal(calls.length,3)
+ assert.equal(calls[1][3],"skills")
+ assert.equal(calls[1][2].expected_generation,genA)
+ assert.equal(calls[2][2].accept_encoding,undefined)
+ client.machineLacks.clear();calls.length=0
+ client._readRepresentation=async(...args)=>{calls.push(args);throw Object.assign(new Error("denied"),{code:"forbidden"})}
+ await assert.rejects(client._read(identity,"skills",fields,"skills"),error=>error.code==="forbidden")
+ assert.equal(calls.length,1,"authorization failures must not trigger another read")
+})
+
+test("negotiated pinned reads preserve the reply proof and abort without fallback",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.machineDescriptor=()=>({machine:{read_compression_v1:true}})
+ Object.assign(client,{allowWrites:false,retired:false,readWaiters:new Map(),pinnedReadProofs:new Map(),_unsupportedRefusal:()=>null,
+  _offlineRefusal:()=>Object.assign(new Error("offline"),{code:"sentinel"})})
+ await assert.rejects(client._read({machine:"m",session:"s"},"skills",{machine_id:"m",expected_generation:genA},"skills"),error=>error.code==="sentinel")
+ assert.equal(client.allowWrites,false)
+ const controller=new AbortController();let calls=0
+ client._readRepresentation=async()=>{calls++;controller.abort();throw Object.assign(new Error("cancelled"),{code:"cloud_read_timeout"})}
+ await assert.rejects(client._read({machine:"m",session:"s"},"skills",{},"skills",123,{signal:controller.signal}),error=>error.code==="cloud_read_timeout")
+ assert.equal(calls,1)
 })

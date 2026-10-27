@@ -169,3 +169,28 @@ work is bounded to 1,000 entries on each side; larger provider expansions
 return a full page. Each entry is encoded once. Native records may expand into
 more entries than the requested page size, so the reply states the exact
 resulting entry count instead of assuming the request limit is that count.
+
+## Other structured Cloud reads
+
+Machines advertising `read_compression_v1` accept `accept_encoding: "gzip-v1"`
+for a fixed set of JSON reads: Board cards and details, to-dos and interventions,
+roles, projects, schedules, snippets, quotas, capacity, skills, Session info and
+the pinned Session list. The representation field is removed before the existing
+operation decoder runs. Unknown fields, unsupported representations, permissions,
+execution admission, request receipts and read-only operation checks retain their
+normal behavior. Mutations, pictures, videos and document bytes are excluded.
+
+Negotiated answers use a distinct `.encoding.gzip-v1` read-name suffix, including
+small plaintext replies and ingress/egress refusals. The request and exact pinned
+reply proof therefore cannot be confused with a legacy waiter. Existing operation
+words, encrypted channel names and relay routing remain unchanged. Replies retain
+JSON when gzip plus its four-byte framing is not smaller; encoding occurs before
+content encryption and signing. The existing 8 MiB input/output budgets are reused.
+
+Readers verify and decrypt the envelope before bounded decompression. Unsupported
+framing, corrupt gzip and excessive expanded output have separate error codes;
+a failed frame does not alter the decoder used by the next frame. English and
+Traditional Chinese failure copy preserves the technical code. A stale capability
+gets one legacy read with the same destination, pin and cancellation signal, then
+uses the client's existing learned capability state until a new machine descriptor
+resets it. Authentication and authorization errors do not trigger that retry.

@@ -540,8 +540,14 @@ func itoa(v int64) string { return strconv.FormatInt(v, 10) }
 // reason Busy is: what may be published, and where, is a question about the
 // request's own identity fields, and an answer that could not be sent is not
 // evidence about them.
-func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
+func (b Bridge) Undeliverable(cmd Command, limit int) (answer Answer) {
 	parsed, parseErr := decodeBody(cmd.Plaintext)
+	parsed, compressed := negotiateReadCompression(parsed)
+	defer func() {
+		if compressed {
+			answer = compressedReadAnswer(answer)
+		}
+	}()
 	word, _ := parsed.str("type")
 	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) &&
 		cmd.Channel != "r/"+ChannelSegment(b.MachineID) {
@@ -575,8 +581,14 @@ func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
 	return b.refuse(cmd, parsed, word, full)
 }
 
-func (b Bridge) Busy(cmd Command, limit int) Answer {
+func (b Bridge) Busy(cmd Command, limit int) (answer Answer) {
 	parsed, parseErr := decodeBody(cmd.Plaintext)
+	parsed, compressed := negotiateReadCompression(parsed)
+	defer func() {
+		if compressed {
+			answer = compressedReadAnswer(answer)
+		}
+	}()
 	word, _ := parsed.str("type")
 	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) &&
 		cmd.Channel != "r/"+ChannelSegment(b.MachineID) {

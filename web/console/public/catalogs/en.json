@@ -9444,5 +9444,8 @@
   "support.notifyTestSent": "The push service accepted the test. Tap the notification to open the Admin inbox.",
   "support.notifyUnsupported": "On iPhone or iPad, open this website from the Home Screen to enable notifications. Other devices need a browser that supports Web Push.",
   "support.notifyBlocked": "Allow notifications for this website in your browser settings, then try again.",
-  "support.notifyFailed": "Notifications could not be confirmed. Check the browser permission and try again."
+  "support.notifyFailed": "Notifications could not be confirmed. Check the browser permission and try again.",
+  "next.compressedReadFailed": "This reply could not be opened. Try reading it again.",
+  "next.compressedReadUnsupported": "This reply uses an unsupported format. Refresh this page and try again.",
+  "next.compressedReadTooLarge": "This reply exceeds the reading limit."
 }

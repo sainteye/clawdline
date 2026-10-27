@@ -13,6 +13,9 @@ import { catalogWord } from "./catalog.ts"
 
 const words = {
   en: {
+    compressedReadFailed: "This reply could not be opened. Try reading it again.",
+    compressedReadUnsupported: "This reply uses an unsupported format. Refresh this page and try again.",
+    compressedReadTooLarge: "This reply exceeds the reading limit.",
     toolResultImageNotRetained: "This record does not retain a complete image. Retrying cannot restore the original.",
     toolResultErrorDetails: "Technical details",
     toolResultPrevious: "Previous",
@@ -2090,6 +2093,9 @@ const words = {
     setupPhoneAndroidOpen: "In Chrome, open {site}, then choose ⋮ → Add to Home screen",
   },
   "zh-Hant": {
+    compressedReadFailed: "無法開啟這份回覆，請重新讀取。",
+    compressedReadUnsupported: "這份回覆的格式尚未支援，請重新整理頁面後再試。",
+    compressedReadTooLarge: "回覆超過可讀取的大小上限。",
     toolResultImageNotRetained: "這份紀錄沒有保留完整圖片，無法讀取原圖；重試也無法補回。",
     toolResultErrorDetails: "技術資訊",
     toolResultPrevious: "上一張",
