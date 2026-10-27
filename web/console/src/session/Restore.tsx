@@ -99,34 +99,65 @@ function cardTitle(n: number): string {
   return n === 1 ? nextWord("restoreCardTitleOne") : nextWord("restoreCardTitle", { n })
 }
 
-/**
- * The offer in the empty list's place. It stands inside `#list-empty` so the
- * home hero's picture and type are its own; the words the list says when there
- * is nothing to offer are not touched.
- */
-export function RestoreHero({ offer, onOpen }: { offer: RestorableSessions; onOpen: () => void }) {
+/** Both list presentations expose the persistent dismissal beside the restore action. */
+function RestoreActions({ onOpen, onChanged }: { onOpen: () => void; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [said, setSaid] = useState("")
+  const pending = useRef(false)
+  const dismiss = async () => {
+    if (pending.current) return
+    pending.current = true
+    setBusy(true)
+    setSaid("")
+    try {
+      await sendDismissAll(fetchNow, uuid())
+    } catch (error) {
+      setSaid(error instanceof RestoreRefusal && error.code === "offline"
+        ? nextWord("restoreDismissUnknown")
+        : nextWord("restoreRefused", { why: failureSentence(error) }))
+    } finally {
+      pending.current = false
+      setBusy(false)
+      onChanged()
+    }
+  }
+  return (
+    <div className="restore-card-controls">
+      <div className="restore-card-actions">
+        <button className="chip restore-open" type="button" disabled={busy} onClick={onOpen}>
+          {nextWord("restoreCardOpen")}
+        </button>
+        <button className="chip restore-card-dismiss" type="button" disabled={busy} onClick={dismiss}>
+          {busy ? nextWord("restoreDismissing") : nextWord("restoreCardDismiss")}
+        </button>
+      </div>
+      {said && <p className="restore-card-error" role="status">{said}</p>}
+    </div>
+  )
+}
+
+type OfferProps = { offer: RestorableSessions; onOpen: () => void; onChanged: () => void }
+
+/** The offer in the empty list's place, with the home hero's picture and type. */
+export function RestoreHero({ offer, onOpen, onChanged }: OfferProps) {
   return (
     <div className="restore-hero" data-restore="hero">
       <b>{cardTitle(offer.sessions.length)}</b>
       <span className="restore-hint">{nextWord("restoreCardHint")}</span>
-      <button className="chip restore-open" type="button" onClick={onOpen}>
-        {nextWord("restoreCardOpen")}
-      </button>
+      <RestoreActions onOpen={onOpen} onChanged={onChanged} />
     </div>
   )
 }
 
 /** The offer above rows the person already has. */
-export function RestoreCard({ offer, onOpen }: { offer: RestorableSessions; onOpen: () => void }) {
+export function RestoreCard({ offer, onOpen, onChanged }: OfferProps) {
   return (
     <div className="restore-card" data-restore="compact" role="region" aria-label={cardTitle(offer.sessions.length)}>
       <div className="restore-card-copy">
         <b>{cardTitle(offer.sessions.length)}</b>
         <span className="restore-hint">{nextWord("restoreCardHint")}</span>
       </div>
-      <button className="chip restore-open" type="button" onClick={onOpen}>
-        {nextWord("restoreCardOpen")}
-      </button>
+      <RestoreActions onOpen={onOpen} onChanged={onChanged} />
     </div>
   )
 }

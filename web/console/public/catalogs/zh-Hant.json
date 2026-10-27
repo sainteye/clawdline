@@ -7120,6 +7120,8 @@
   "next.restoreCancel": "稍後再說",
   "next.restoreCardHint": "重新開機或當機把它們關掉了，可以接著原本的對話重新打開。",
   "next.restoreCardOpen": "查看並恢復",
+  "next.restoreCardDismiss": "不再提醒",
+  "next.restoreDismissUnknown": "未收到回覆，還無法確認是否已略過，正在重新讀取提示。",
   "next.restoreCardTitle": "上次重新開機前開著 {n} 個 session",
   "next.restoreCardTitleOne": "上次重新開機前開著 1 個 session",
   "next.restoreDismissAll": "不要恢復，也不再問",

@@ -340,7 +340,7 @@ export function SessionsPage({
             <div className="ptr" id="ptr" ref={ptrRef}>
               <span id="ptr-label">{ptrWord === "release" ? T.webPullRelease : ptrWord === "busy" ? T.webPullBusy : T.webPull}</span>
             </div>
-            {offerAt === "compact" && restore.offer && <RestoreCard offer={restore.offer} onOpen={openRestore} />}
+            {offerAt === "compact" && restore.offer && <RestoreCard offer={restore.offer} onOpen={openRestore} onChanged={restore.refresh} />}
             <ul className="rows" id="rows" role="listbox" aria-label={T.webListLabel} tabIndex={0} ref={listRef}>
               {!skeleton && arriving && <StartingRow place={arriving} />}
               {drawn.map((r) => (
@@ -363,7 +363,7 @@ export function SessionsPage({
               ) : said.current === "skel" ? (
                 <ListSkeleton />
               ) : offerAt === "hero" && restore.offer ? (
-                <RestoreHero offer={restore.offer} onOpen={openRestore} />
+                <RestoreHero offer={restore.offer} onOpen={openRestore} onChanged={restore.refresh} />
               ) : said.current ? (
                 <>
                   <b>{said.current[0]}</b>

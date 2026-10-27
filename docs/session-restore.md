@@ -93,6 +93,19 @@ right now, and of what remains only the rows that were open at that boot's end:
 A row that went earlier than that was closed by the person well before the reboot and is not
 offered. A daemon restart inside the same boot offers nothing.
 
+## Dismissing the offer
+
+Both the empty-list offer and the compact card above open Sessions show **Dismiss** beside
+**Review and restore**. Dismiss calls the existing machine-side dismissal route for every
+conversation currently on offer. It does not open or delete conversations. The machine persists
+the answer, so reloading or opening another paired device does not bring the same offer back;
+future boots can still offer their own conversations.
+
+While dismissal is pending, both actions are disabled. The card is re-read after the result,
+rather than hidden only in the browser. A refusal or an unanswered request leaves the offer
+visible if the machine still offers it and displays the failure with a retryable Dismiss button.
+The review sheet retains its own **Don't restore, don't ask again** action.
+
 ## The routes
 
 Contract: `api/v1/restore.schema.json`.
