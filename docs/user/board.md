@@ -52,8 +52,8 @@ Claude or Codex and press **Start a new … Session** to open a new one. **Go to
 From then on the session moves the item itself, and each move needs evidence:
 
 In the console's **Settings → Planning and verification gates** block, planning is on by default and independent
-verification is off. The macOS app also shows the same pair in **Clawdline Next → Settings… →
-Dispatch work to other sessions**.
+verification is off. Open these controls in website Settings; the standalone macOS
+settings window has been removed.
 The two values are captured on the item's first successful assignment in each cycle; changing the
 switches later affects future cycles. With planning on, Feature and Epic need observable acceptance
 criteria before implementation. An Epic needs a plan and independent review; a Feature needs those

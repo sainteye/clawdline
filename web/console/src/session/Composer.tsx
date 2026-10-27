@@ -855,7 +855,7 @@ export function Composer({
                     setVoiceInstall({ ...voiceInstall, help: true })
                     return
                   }
-                  window.open("/settings.html", "_blank", "noopener")
+                  window.open("/#page=settings", "_blank", "noopener")
                   setVoiceInstall(null)
                 }}>
                   {nextWord("voiceInstallPromptSetUp")}

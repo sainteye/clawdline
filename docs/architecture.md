@@ -359,6 +359,7 @@ panes share one mounted `SettingsWindow` with a controlled stable pane name; swi
 machine panes retains the window-level settings state and in-flight writes. Leaving the machine settings
 unmounts the window so background reads and listeners stop. Its embedded mode still uses the browser
 settings API and excludes privileged Cloud sign-in and pairing controls.
-Cloud browsers expose only browser, work and status. The standalone `settings.html`
-window retains its own navigation and machine-authorized controls. Update deep links
-continue to open the status pane.
+Cloud browsers expose browser, work, status and workflow settings. The standalone
+`settings.html` document and macOS settings window have been removed; the local
+browser console embeds the machine-authorized controls in its Settings tabs.
+Update deep links continue to open the status pane.

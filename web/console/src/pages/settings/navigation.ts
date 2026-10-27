@@ -1,4 +1,4 @@
-/** Stable machine pane names are independent of the standalone window's tab indices. */
+/** Stable pane names for machine controls embedded in website Settings. */
 export const MACHINE_PANES = ["general", "voice", "remote", "orchestrator", "dispatch-policy"] as const
 export type SettingsPane = typeof MACHINE_PANES[number]
 
