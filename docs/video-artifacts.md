@@ -88,8 +88,14 @@ with explicit `offset` and `revision` queries. Scope, task, path, MIME, offset,
 revision, total length, chunk length and canonical base64 must match before the
 browser retains bytes. Every chunk passes through the existing pairing and
 revocation gates, including the check after reading. Generation-pinned content
-reads also retain their execution proof. Legacy Session reads preserve their
-existing authorization semantics.
+reads also retain their execution proof. A link in one conversation may name
+another Session on the same paired machine. The linked Session's current execution
+is resolved from the verified machine projection, independently of the open
+conversation. One transfer signal pins it across metadata, poster candidates and
+playback chunks. A source execution replacement refuses later chunks; only a new
+attempt may resolve a new execution. This does not change action destinations or
+permit another machine, unverified Session, or revoked device. Legacy Session
+reads preserve their existing authorization semantics.
 
 The first chunk starts at zero with an empty requested revision. Following chunks
 repeat its size/mtime revision at exact 512 KiB boundaries. Ordinary file changes

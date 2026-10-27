@@ -2653,3 +2653,97 @@ test("MP4 reads cross Cloud as bounded JSON on the named Session and propagate c
   client.videoReply = { ...client.videoReply, path: "secret.mp4" }
   assert.equal((await reader.fetch(address)).status, 502)
 })
+
+function linkedContentSeam() {
+  const machine = "mac-a", opened = "terminal:%17", linked = "terminal:%0"
+  let generation = "b".repeat(32), resolves = 0
+  const client = new FakeClient()
+  client.videoReply = { scope: "project", path: "clip.mp4", media_type: "video/mp4", total_bytes: 3,
+    offset: 0, revision: "rev-1", byte_count: 3, data: "YWJj" }
+  class PinnedClient extends FakeClient {
+    async readForGeneration(target: { machineID: string; sessionID: string; executionGeneration: string },
+      word: string, fields: Record<string, unknown>, signal?: AbortSignal) {
+      this.calls.push(["readForGeneration", target, word, fields, signal])
+      if (this.fail.readForGeneration) throw this.fail.readForGeneration
+      if (target.executionGeneration !== generation) throw refusal("execution_generation_changed", { status: 409 })
+      return word === "video" ? client.videoReply : { scope: "project", path: "demo.md",
+        media_type: "text/markdown; charset=utf-8", byte_count: 7, data: "IyBEZW1vCg==" }
+    }
+  }
+  const pinned = new PinnedClient()
+  const reader = new RelayReader(machine, {
+    fleetTarget: () => ({ machineID: machine, sessionID: opened, executionGeneration: EXECUTION }),
+    resolveSession: async (namedMachine, session) => {
+      resolves++
+      return namedMachine === machine && session === linked
+        ? { machineID: machine, sessionID: linked, executionGeneration: generation } : null
+    },
+  })
+  const writer = new RelayWriter(reader.writeHost, { requestID: () => "linked-read" })
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(pinned)
+  return { reader, client: pinned, opened, linked, machine, resolves: () => resolves,
+    replace: () => { generation = "c".repeat(32) },
+    video: `/v1/sessions/${encodeURIComponent(linked)}/documents/project/clip.mp4?machine=${machine}&offset=0&revision=` }
+}
+
+test("a conversation reads another Session's linked video and document without selecting it", async () => {
+  const f = linkedContentSeam(), controller = new AbortController()
+  for (const address of [f.video, f.video + "rev-1"]) {
+    assert.equal((await f.reader.fetch(address, { signal: controller.signal })).status, 200)
+  }
+  assert.equal(f.resolves(), 1, "all chunks share the linked execution pin")
+  const calls = f.client.calls.filter(([name]) => name === "readForGeneration")
+  assert.equal(calls.length, 2)
+  for (const call of calls) {
+    assert.deepEqual(call[1], { machineID: f.machine, sessionID: f.linked, executionGeneration: "b".repeat(32) })
+    assert.equal(call[4], controller.signal)
+  }
+  const doc = `/v1/sessions/${encodeURIComponent(f.linked)}/documents/project/demo.md?machine=${f.machine}`
+  assert.equal(await (await f.reader.fetch(doc)).text(), "# Demo\n")
+  assert.equal((await f.reader.fetch(f.video.replace("mac-a", "mac-b"))).status, 400)
+  assert.equal((await f.reader.fetch(f.video.replace(encodeURIComponent(f.linked), "terminal%3A%25999"))).status, 409)
+})
+
+test("linked video pins survive source replacement and propagate revocation and cancellation", async () => {
+  const f = linkedContentSeam(), controller = new AbortController()
+  assert.equal((await f.reader.fetch(f.video, { signal: controller.signal })).status, 200)
+  f.replace()
+  const changed = await f.reader.fetch(f.video + "rev-1", { signal: controller.signal })
+  assert.equal(changed.status, 409)
+  assert.equal((await json(changed)).error, "execution_generation_changed")
+  assert.equal(f.resolves(), 1, "a transfer must not rebind to a replacement execution")
+  const retry = new AbortController()
+  assert.equal((await f.reader.fetch(f.video, { signal: retry.signal })).status, 200, "explicit retry gets a new pin")
+  f.client.fail.readForGeneration = refusal("permission_revoked", { status: 403 })
+  const revoked = await f.reader.fetch(f.video, { signal: retry.signal })
+  assert.equal(revoked.status, 403)
+  assert.equal((await json(revoked)).error, "permission_revoked")
+  const before = f.client.calls.length
+  retry.abort()
+  assert.equal((await f.reader.fetch(f.video, { signal: retry.signal })).status >= 400, true)
+  assert.equal(f.client.calls.length, before, "cancelled transfers send no additional content reads")
+})
+
+test("linked content refuses mismatched source proof and cancellation during resolution", async () => {
+  for (const invalid of [null,
+    { machineID: "other-machine", sessionID: "terminal:%0", executionGeneration: EXECUTION },
+    { machineID: "mac-a", sessionID: "%0", executionGeneration: EXECUTION },
+    { machineID: "mac-a", sessionID: "terminal:%0", executionGeneration: "" }]) {
+    const f = linkedContentSeam()
+    const writer = new RelayWriter({ ...f.reader.writeHost, resolveSession: async () => invalid })
+    const url = new URL(f.video, "https://app.example")
+    const response = await writer.answer(writeRoute("GET", url.pathname)!, "GET", url)
+    assert.equal(response.status, 409)
+    assert.equal(f.client.calls.length, 0, "unverified destinations never reach the wire")
+  }
+  const f = linkedContentSeam(), controller = new AbortController()
+  const writer = new RelayWriter({ ...f.reader.writeHost, resolveSession: async () => {
+    controller.abort()
+    return { machineID: f.machine, sessionID: f.linked, executionGeneration: EXECUTION }
+  } })
+  const url = new URL(f.video, "https://app.example")
+  const response = await writer.answer(writeRoute("GET", url.pathname)!, "GET", url, { signal: controller.signal })
+  assert.equal(response.status >= 400, true)
+  assert.equal(f.client.calls.length, 0)
+})
