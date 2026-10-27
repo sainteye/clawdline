@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from "react"
 import type { TranscriptToolResult } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
-import { failureSentence } from "../refusals/refusal-text.js"
+import { failureParts, failureSentence } from "../refusals/refusal-text.js"
 import { ActionProgress, ActionSpinner } from "../ui/ActionProgress.js"
 import { nextWord } from "../next-strings.js"
 
 interface Detail { text: string; truncated: boolean; sourceTruncated: boolean }
+
+/** Stored-byte refusals are terminal; transport failures can still be retried. */
+export function storedImageFailure(error: unknown) {
+  const unavailable = error instanceof RefusalError && error.code === "tool_image_unavailable" && (error.status === 404 || error.status === 422)
+  const detail = failureParts(error, { sentence: nextWord("toolResultImageUnavailable") })
+  return { ...detail, text: unavailable ? nextWord("toolResultImageNotRetained") : detail.text, unavailable }
+}
 
 function StoredResult({ sessionID, result, representation }: {
   sessionID: string; result: TranscriptToolResult; representation: "text" | "raw"
@@ -42,13 +49,13 @@ function StoredImage({ sessionID, result }: { sessionID: string; result: Transcr
   const [index, setIndex] = useState(0)
   const [picture, setPicture] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState("")
+  const [failed, setFailed] = useState<{ text: string; tag: string; unavailable: boolean } | null>(null)
   const flight = useRef<AbortController | null>(null)
   useEffect(() => () => flight.current?.abort(), [])
   const read = async () => {
     if (flight.current) return
     const controller = new AbortController()
-    flight.current = controller; setBusy(true); setFailed("")
+    flight.current = controller; setBusy(true); setFailed(null)
     try {
       const representation = `image-${index}-original`
       const view = `tool-v1:${result.reference}:${representation}`
@@ -61,20 +68,27 @@ function StoredImage({ sessionID, result }: { sessionID: string; result: Transcr
       decoded.src = body.dataURL
       await decoded.decode()
       if (!controller.signal.aborted) setPicture(body.dataURL)
-    } catch (error) { if (!controller.signal.aborted) setFailed(failureSentence(error, {sentence:nextWord("toolResultImageUnavailable")})) }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setFailed(storedImageFailure(error))
+      }
+    }
     finally { if (!controller.signal.aborted) setBusy(false); if (flight.current === controller) flight.current = null }
   }
-  const move = (delta: number) => { if (busy) return; setIndex(index + delta); setPicture(null); setFailed("") }
+  const move = (delta: number) => { if (busy) return; setIndex(index + delta); setPicture(null); setFailed(null) }
   return <div className="tool-result-image" aria-busy={busy}>
     {result.images > 1 && <div className="tool-result-image-nav">
       <button type="button" disabled={busy || index === 0} onClick={() => move(-1)}>{nextWord("toolResultPrevious")}</button>
       <span>{index + 1} / {result.images}</span>
       <button type="button" disabled={busy || index + 1 >= result.images} onClick={() => move(1)}>{nextWord("toolResultNext")}</button>
     </div>}
-    {!picture && <button className="tool-result-read" type="button" disabled={busy} onClick={() => void read()}>
+    {!picture && !failed?.unavailable && <button className="tool-result-read" type="button" disabled={busy} onClick={() => void read()}>
       <ActionProgress busy={busy} label={<span role="status">{nextWord("toolResultLoading")}</span>}>{nextWord(failed ? "toolResultRetry" : "toolResultOriginal")}</ActionProgress>
     </button>}
-    {failed && <p role="alert">{failed}</p>}
+    {failed && <div className="tool-result-image-error" role={failed.unavailable ? "status" : "alert"}>
+      <p>{failed.text}</p>
+      <details className="tool-result-details"><summary>{nextWord("toolResultErrorDetails")}</summary><p>{failed.tag}</p></details>
+    </div>}
     {picture && <img src={picture} alt={nextWord("toolResultImageAlt")} />}
   </div>
 }

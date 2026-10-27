@@ -6,7 +6,7 @@ import { build } from "esbuild"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
-const { outputFiles } = await build({entryPoints:[fileURLToPath(new URL("./ToolResult.tsx",import.meta.url))],bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const { outputFiles } = await build({stdin:{contents:'export { ToolResult, storedImageFailure } from "./ToolResult.tsx"; export { RefusalError } from "../../../core/src/refusal.ts"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled = {exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
 const {ToolResult} = compiled.exports
@@ -29,4 +29,18 @@ test("long and mixed results expose stored detail and source truncation without 
  assert.doesNotMatch(html,/Load thumbnail/)
  assert.match(html,/already shortened/)
  assert.doesNotMatch(html,/passed|<img|open=""/)
+})
+
+test("missing stored image bytes cannot be repaired by retrying, while transport failures can",()=>{
+ const {RefusalError} = compiled.exports
+ const failure = (status,code) => compiled.exports.storedImageFailure(new RefusalError(status,{error:code,detail:"fixture"},"/v1/transcript"))
+ for (const status of [404,422]) {
+  const failed = failure(status,"tool_image_unavailable")
+  assert.equal(failed.unavailable,true)
+  assert.match(failed.text,/does not retain a complete image/)
+  assert.match(failed.tag,/tool_image_unavailable/)
+ }
+ for (const [status,code] of [[503,"tool_image_unavailable"],[503,"cloud_read_busy"],[409,"stale_cursor"],[403,"forbidden"]]) {
+  assert.equal(failure(status,code).unavailable,false)
+ }
 })

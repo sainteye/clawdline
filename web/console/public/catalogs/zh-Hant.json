@@ -14,6 +14,8 @@
   "next.toolResultSourceClipped": "供應商已截短這份紀錄，原始輸出可能不完整。",
   "next.toolResultImages": "所存回傳含 {count} 張圖片・未預載",
   "next.toolResultOther": "另有 {count} 個內容區塊・可查看所存回傳",
+  "next.toolResultImageNotRetained": "這份紀錄沒有保留完整圖片，無法讀取原圖；重試也無法補回。",
+  "next.toolResultErrorDetails": "技術資訊",
   "capacityRow.session.tool_preview_bytes.what": "工具卡片先傳送有大小上限的 UTF-8 預覽。",
   "capacityRow.session.tool_preview_bytes.full": "較長文字保留於 Session 紀錄，展開時才讀取。",
   "capacityRow.cloud.read_plaintext_bytes.what": "協商壓縮的回覆限制解壓後大小。",

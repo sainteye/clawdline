@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9389,
+  "englishKeys": 9391,
   "counts": {
-    "negation": 2686,
-    "state": 1539,
+    "negation": 2687,
+    "state": 1540,
     "permission": 556,
-    "deletion": 203,
+    "deletion": 204,
     "uncertainty": 295
   },
-  "unionCount": 4154,
+  "unionCount": 4155,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2393,6 +2393,7 @@
       "next.terminalUnavailableWindows",
       "next.todosReadFailed",
       "next.toolResultFailed",
+      "next.toolResultImageNotRetained",
       "next.toolResultImages",
       "next.transcriptEarlierFailed",
       "next.transcriptEarlierStalled",
@@ -4043,6 +4044,7 @@
       "next.terminalUnavailableUnknown",
       "next.todosRefreshFailed",
       "next.todosRetryTip",
+      "next.toolResultImageNotRetained",
       "next.updateAutoFailed",
       "next.updateDevBack",
       "next.updateDevReleaseFailed",
@@ -4963,6 +4965,7 @@
       "next.scheduleMoveDeleteFailed",
       "next.terminalDefaultLocalHelp",
       "next.terminalKeyHintDeleteLine",
+      "next.toolResultImageNotRetained",
       "next.worktreeRemoveBusy",
       "next.worktreeRemoveButton",
       "next.worktreeRemoveConfirm",
@@ -8924,6 +8927,7 @@
     "next.todosRefreshFailed",
     "next.todosRetryTip",
     "next.toolResultFailed",
+    "next.toolResultImageNotRetained",
     "next.toolResultImageUnavailable",
     "next.toolResultImages",
     "next.toolResultSourceClipped",

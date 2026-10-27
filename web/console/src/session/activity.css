@@ -20,3 +20,5 @@
 .tool-result-image img { display: block; max-width: 100%; max-height: 70vh; object-fit: contain; margin: 8px 0; }
 .tool-result-image-nav { display: flex; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 8px; }
 .tool-result-image button { font-size: 12px; }
+
+.tool-result-image-error { overflow-wrap: anywhere; font-size: 12px; color: var(--dim); }

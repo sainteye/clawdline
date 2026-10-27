@@ -13,6 +13,8 @@ import { catalogWord } from "./catalog.ts"
 
 const words = {
   en: {
+    toolResultImageNotRetained: "This record does not retain a complete image. Retrying cannot restore the original.",
+    toolResultErrorDetails: "Technical details",
     toolResultPrevious: "Previous",
     toolResultNext: "Next",
     toolResultPreviewImage: "Load thumbnail",
@@ -2088,6 +2090,8 @@ const words = {
     setupPhoneAndroidOpen: "In Chrome, open {site}, then choose ⋮ → Add to Home screen",
   },
   "zh-Hant": {
+    toolResultImageNotRetained: "這份紀錄沒有保留完整圖片，無法讀取原圖；重試也無法補回。",
+    toolResultErrorDetails: "技術資訊",
     toolResultPrevious: "上一張",
     toolResultNext: "下一張",
     toolResultPreviewImage: "讀取縮圖",

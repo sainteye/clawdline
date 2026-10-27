@@ -14,6 +14,8 @@
   "next.toolResultSourceClipped": "The provider already shortened this record. The original output may be incomplete.",
   "next.toolResultImages": "{count} image(s) in stored output · not preloaded",
   "next.toolResultOther": "{count} other content block(s) · available in stored output",
+  "next.toolResultImageNotRetained": "This record does not retain a complete image. Retrying cannot restore the original.",
+  "next.toolResultErrorDetails": "Technical details",
   "capacityRow.session.tool_preview_bytes.what": "Tool cards send a bounded UTF-8 preview before reading stored detail.",
   "capacityRow.session.tool_preview_bytes.full": "Longer text stays in the Session record and is read when expanded.",
   "capacityRow.cloud.read_plaintext_bytes.what": "Negotiated compressed reads have a maximum decompressed size.",

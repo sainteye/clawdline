@@ -30,8 +30,11 @@ Images load only when requested, one selected image at a time. The console reads
 the original directly on that click, without an intermediate thumbnail request.
 The existing thumbnail representation remains available to compatible clients.
 An animated progress indicator stays visible through transfer and image decoding;
-failed reads can be retried explicitly. Text and native-output expansion also
-show progress. Metadata and controls share the card header's horizontal inset.
+transient failures can be retried explicitly. A missing or incomplete stored
+image has an explanatory terminal state without a retry action. Technical refusal
+details stay available behind a disclosure. Cards retain their identity when
+older rows arrive or the live transcript window shifts. Text and native-output
+expansion also show progress. Metadata and controls share the card header's horizontal inset.
 Only complete, strictly decoded embedded raster images within the
 existing pixel and byte policies are eligible. A middle-truncated Base64 value
 is refused. There is no reconstruction, remote fetch, or rerun of a tool.

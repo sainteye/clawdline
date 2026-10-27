@@ -760,6 +760,7 @@ export function TranscriptEntries({ entries, assistant, working = false, picture
     return next
   })
   const view: View = {
+    sessionID,
     who: { user: T.webWhoYou, assistant: assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant), error: assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant),
       agent: T.webAgents, peer: "Claude ↔", message: "Clawdline ↔", notice: "Clawdline", tool: T.webWhoTool },
     expanded, toggle, assistant, agents: [], onAgent: undefined, icons, slots: new Map(),
@@ -1773,7 +1774,7 @@ function activityCardHTML(v: View, e: Entry, at: number) {
   const meta = [status, durationText(activity.durationMs)].filter((value) => !!value)
   const actions = kind === "explored" ? activityActionsHTML(activity.actions || []) : ""
   return (
-    <div className="entry activity" data-role={kind} key={"act:" + at}>
+    <div className="entry activity" data-role={kind} key={activity.toolResult ? "act:" + (v.sessionID ?? "") + ":" + activity.toolResult.reference : "act:" + at}>
       <div className="who">{v.who.tool}</div>
       <div className="body"><section className={"activity-card" + (activity.toolResult ? " activity-readable" : "")}>
         <header><span className="activity-kind">{catalogWord("antigravity", kind === "called" ? "toolCalled" : "toolExplored")}</span>
