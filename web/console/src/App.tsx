@@ -1115,7 +1115,6 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         }}
       >
         <div className="sidebar-panel" id="sidebar-panel">
-          {surveyAccount ? <a className="sidebar-item" href="/help"><SidebarIcon name="verify" />{supportWord("nav")}</a> : null}
           <section className="sidebar-group" aria-label={nextWord("sidebarMain")}>
             <h2>{nextWord("sidebarMain")}</h2>
             {sidebarPages.filter((p) => p.id === "sessions" || p.id === "projects" || p.id === "usage").map(sidebarPage)}
@@ -1193,6 +1192,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
               <SidebarIcon name="access" />{nextWord("cloudPeerAccessNav")}
             </button>}
             {sidebarPages.filter((p) => p.id === "notifications").map(sidebarPage)}
+            {surveyAccount ? <a className="sidebar-item" id="nav-my-questions" href="/help/questions"><SidebarIcon name="questions" />{supportWord("mine")}</a> : null}
             {sidebarPages.filter((p) => p.id === "plan").map(sidebarPage)}
             {sidebarPages.filter((p) => p.id === "settings").map(sidebarPage)}
           </section>
