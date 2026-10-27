@@ -9447,5 +9447,7 @@
   "support.notifyFailed": "Notifications could not be confirmed. Check the browser permission and try again.",
   "next.compressedReadFailed": "This reply could not be opened. Try reading it again.",
   "next.compressedReadUnsupported": "This reply uses an unsupported format. Refresh this page and try again.",
-  "next.compressedReadTooLarge": "This reply exceeds the reading limit."
+  "next.compressedReadTooLarge": "This reply exceeds the reading limit.",
+  "next.moduleLoadTitle": "Part of this page could not load",
+  "next.moduleLoadRecovery": "Reload the page to continue."
 }

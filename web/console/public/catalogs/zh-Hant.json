@@ -9447,5 +9447,7 @@
   "support.notifyFailed": "無法確認通知設定，請檢查瀏覽器權限後再試一次。",
   "next.compressedReadFailed": "無法開啟這份回覆，請重新讀取。",
   "next.compressedReadUnsupported": "這份回覆的格式尚未支援，請重新整理頁面後再試。",
-  "next.compressedReadTooLarge": "回覆超過可讀取的大小上限。"
+  "next.compressedReadTooLarge": "回覆超過可讀取的大小上限。",
+  "next.moduleLoadTitle": "部分頁面未能載入",
+  "next.moduleLoadRecovery": "請重新載入頁面後繼續。"
 }
