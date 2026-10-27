@@ -35,6 +35,19 @@
   min-height: 18px;
 }
 
+/* A provider can need the person's answer while the terminal remains idle.
+ * Give that question the existing waiting style, whose copied selector only
+ * covers a terminal that is itself waiting. */
+.row:not([data-state="waiting"]) .state > .wants {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  animation: nudge 2.2s var(--ease) infinite;
+}
+
 .row .state > .session-live-line {
   flex: 1 1 12ch;
   min-width: 0;
