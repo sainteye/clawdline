@@ -1126,7 +1126,7 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 
 **要在對話中請使用者選擇之前**，先建立一張 `answer` 便條，寫清楚實際問題、決策所需的取捨，以及二至四個完整的建議回覆。點一下按鈕就會把回覆當成對話訊息送出，所以每個 `draft` 單獨閱讀也要清楚。建立後，在對話中簡短提示即可。建立便條或便條被標記為已處理，都不是使用者的答覆；收到對話訊息（點選送出的回覆或使用者自己打的）後，才能執行依賴該決定的動作。建立失敗時，說明失敗並直接在對話中提問。只有需要人判斷的決定才用便條；Agent 能自行決定的例行選擇不用。**非阻塞問題要保留便條：**使用 Codex 的 `request_user_input_async` 時，也建立一張 `answer` 便條，放入相同問題和完整的建議回覆。使用者可以從對話中的選項回答，或稍後回到便條紙回答。建議選項或預先選取的選項都不是答覆；必須等使用者送出訊息。Claude Code 的 `AskUserQuestion` 和 Codex 的阻塞提問畫面會停下來等答覆，不需重複建立便條。
 
-把便條內容寫成 JSON 檔。沒有 `--target` 時，CLI 透過 `whoami` 找到本存活 Root 的 terminal id。若目標是另一個 Session，才用通訊錄中的存活目標 **terminal id**（`clawdline guide zh-Hant send`）指定 `--target`。`--from` 預設由環境取得本存活 Root 的 conversation id。CLI 自行讀取機器憑證並補上來源、目標身分，不會把憑證放進命令列；成功時印出持久便條 id。結果不確定而需重試時，沿用印出的 `--key`。
+Root 與仍在執行的 Clawdline child 都能建立、列出及撤回自己建立的便條。child 仍透過任務結果回報完成；便條不授予 Board 或待辦的擁有權。把便條內容寫成 JSON 檔。沒有 `--target` 時，CLI 透過 `whoami` 找到本存活 Session 的 terminal id。若目標是另一個 Session，才用通訊錄中的存活目標 **terminal id**（`clawdline guide zh-Hant send`）指定 `--target`。`--from` 預設由環境取得本存活 Session 的 conversation id。CLI 自行讀取機器憑證並補上來源、目標身分，不會把憑證放進命令列；成功時印出持久便條 id。結果不確定而需重試時，沿用印出的 `--key`。
 
 ```json
 {"kind":"answer","title":"Choose a date","summary":"One release date needs your choice.","action":"Choose a date when you have a moment.","reason":"Only you can choose it.","options":[{"label":"Tuesday","draft":"Tuesday works for me."},{"label":"Wednesday","draft":"Wednesday works for me."}]}
@@ -1145,11 +1145,11 @@ clawdline note create --requested-by-person --body-file note.json
 
 **撤回不再需要關注的便條**
 
-執行 `clawdline note list`，列出歸屬於自己存活 Root 的便條、ID、版本與目前狀態。自己留下的待處理便條已經不再需要關注時，執行：
+執行 `clawdline note list`，列出歸屬於自己存活 Session 的便條、ID、版本與目前狀態。自己留下的待處理便條已經不再需要關注時，執行：
 
 `clawdline note withdraw --id <便條ID> --version <版本> --reason "前置問題已解決，不再需要選擇。"`
 
-撤回原因必填。只有環境無法識別自己時才加 `--from <存活Root對話ID>`。結果不確定時，沿用 CLI 印出的冪等鍵加上 `--key` 重試。版本過期回傳 `version_conflict`，先重新讀取再判斷；其他來源的便條回傳 `intervention_not_found`；已結束的便條回傳 `intervention_already_closed`，保留原本結果。撤回會移除關注紅點，便條以灰色移到最近紀錄，顯示 Agent 已撤回與原因；這不代表使用者回答或批准。使用者可重新開啟。不要撤回其他 Root 的便條；機器憑證仍為共用，來源欄位不是密碼學上的 Session 隔離。
+撤回原因必填。只有環境無法識別自己時才加 `--from <存活Session對話ID>`。結果不確定時，沿用 CLI 印出的冪等鍵加上 `--key` 重試。版本過期回傳 `version_conflict`，先重新讀取再判斷；其他來源的便條回傳 `intervention_not_found`；已結束的便條回傳 `intervention_already_closed`，保留原本結果。撤回會移除關注紅點，便條以灰色移到最近紀錄，顯示 Agent 已撤回與原因；這不代表使用者回答或批准。使用者可重新開啟。不要撤回其他 Session 的便條；機器憑證仍為共用，來源欄位不是密碼學上的 Session 隔離。
 
 ## 10. 看板
 

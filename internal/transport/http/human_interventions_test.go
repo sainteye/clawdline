@@ -10,9 +10,136 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
+
+func TestChildCanManageItsNotesThroughTheCredentialGate(t *testing.T) {
+	for _, ownTarget := range []bool{true, false} {
+		t.Run(fmt.Sprintf("own-target=%t", ownTarget), func(t *testing.T) {
+			s, root, target := humanInterventionTestServer(t)
+			child, terminal, label := root, "pane-source", "Manager"
+			if ownTarget {
+				child, terminal, label = target, "pane-target", "Delivery"
+			}
+			task := orchestrator.Record{ID: "7a5c0000-0000-4000-8000-000000000001", Kind: "custom", Title: "child",
+				Assistant: "codex", State: orchestrator.StateBriefed, CreatedAt: time.Now(), ChildTerminalID: terminal}
+			raw, _ := json.Marshal(task)
+			if _, err := s.store.CreateBrokerTask(context.Background(), store.BrokerRow{ID: task.ID, Project: "/p",
+				Assistant: task.Assistant, State: string(task.State), CreatedAt: task.CreatedAt, SecretHash: "h", Record: raw}, nil); err != nil {
+				t.Fatal(err)
+			}
+			s.cfg = config.Config{Dir: t.TempDir(), Port: 7757}
+			t.Cleanup(func() { gates.Delete(s.cfg.Dir) })
+			machine, err := s.gate().files.MachineToken()
+			if err != nil {
+				t.Fatal(err)
+			}
+			handler := s.Handler()
+			request := func(method, path, body, key string) *httptest.ResponseRecorder {
+				return call{method: method, path: path, body: body, headers: map[string]string{
+					"X-Clawdline-Orchestrator": machine, "Content-Type": "application/json", "Idempotency-Key": key,
+				}}.do(handler)
+			}
+			base := "/v1/work/v2/agent/human-interventions"
+			body := humanInterventionBody(child)
+			created := request(http.MethodPost, base, body, "child-note")
+			var answer struct {
+				Note humanInterventionWire `json:"note"`
+			}
+			if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &answer) != nil {
+				t.Fatalf("child create: %d %s", created.Code, created.Body)
+			}
+			if answer.Note.SourceConversation != child || answer.Note.SourceLabel != label || answer.Note.TargetConversation != target {
+				t.Fatalf("child provenance: %+v", answer.Note)
+			}
+			replay := request(http.MethodPost, base, body, "child-note")
+			if replay.Code != created.Code || replay.Body.String() != created.Body.String() {
+				t.Fatalf("child retry: %d %s", replay.Code, replay.Body)
+			}
+			listed := request(http.MethodGet, base+"?source_conversation="+child, "", "")
+			var page struct {
+				Rows []humanInterventionWire `json:"rows"`
+			}
+			if listed.Code != http.StatusOK || json.Unmarshal(listed.Body.Bytes(), &page) != nil || len(page.Rows) != 1 || page.Rows[0].ID != answer.Note.ID {
+				t.Fatalf("child list: %d %s", listed.Code, listed.Body)
+			}
+			withdrawPath := base + "/" + answer.Note.ID + "/withdraw"
+			withdraw := func(from string) string {
+				b, _ := json.Marshal(map[string]any{"source_conversation": from, "expected_version": answer.Note.Version, "reason": "The prerequisite is satisfied."})
+				return string(b)
+			}
+			other := root
+			if other == child {
+				other = target
+			}
+			foreign := request(http.MethodPost, withdrawPath, withdraw(other), "foreign-child-note")
+			if foreign.Code != http.StatusNotFound || codeOf(t, foreign) != "intervention_not_found" {
+				t.Fatalf("foreign withdrawal: %d %s", foreign.Code, foreign.Body)
+			}
+			withdrawn := request(http.MethodPost, withdrawPath, withdraw(child), "withdraw-child-note")
+			if withdrawn.Code != http.StatusOK || json.Unmarshal(withdrawn.Body.Bytes(), &answer) != nil || !answer.Note.Withdrawn || answer.Note.ReadAt != nil {
+				t.Fatalf("child withdrawal: %d %s", withdrawn.Code, withdrawn.Body)
+			}
+			denied := request(http.MethodPost, "/v1/work/v2/agent/session-todos/"+child, todoBatch("child work"), "child-todos")
+			if denied.Code != http.StatusConflict || codeOf(t, denied) != "child_session" {
+				t.Fatalf("child gained Root privileges: %d %s", denied.Code, denied.Body)
+			}
+			for _, headers := range []map[string]string{nil, {"X-Clawdline-Orchestrator": "invalid"}} {
+				denied := call{method: http.MethodPost, path: base, body: body, headers: headers}.do(handler)
+				if denied.Code != http.StatusUnauthorized {
+					t.Fatalf("credential gate: %d %s", denied.Code, denied.Body)
+				}
+			}
+			denied = request(http.MethodGet, "/v1/work/v2/human-interventions/conversation:"+target, "", "")
+			if denied.Code != http.StatusForbidden {
+				t.Fatalf("machine read person route: %d %s", denied.Code, denied.Body)
+			}
+		})
+	}
+}
+
+func TestNoteOperationsRequireOneLiveAssistantSource(t *testing.T) {
+	for _, scenario := range []string{"malformed", "missing", "ambiguous", "unavailable"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, source, _ := humanInterventionTestServer(t)
+			status, code := http.StatusNotFound, "session_not_found"
+			switch scenario {
+			case "malformed":
+				source, status, code = "not-a-conversation", http.StatusBadRequest, "conversation_id_malformed"
+			case "missing":
+				source = "10000000-0000-4000-8000-000000000099"
+			case "ambiguous":
+				live := s.broker.Live(context.Background())
+				live = append(live, live[0])
+				s.broker.Live = func(context.Context) []session.Session { return live }
+				status, code = http.StatusConflict, "conversation_ambiguous"
+			case "unavailable":
+				s.broker.Live = nil
+				status, code = http.StatusConflict, "registry_stale"
+			}
+			base := "/v1/work/v2/agent/human-interventions"
+			withdraw, _ := json.Marshal(map[string]any{"source_conversation": source, "expected_version": 1, "reason": "Obsolete"})
+			for _, operation := range []struct{ method, path, body string }{
+				{http.MethodPost, base, humanInterventionBody(source)},
+				{http.MethodGet, base + "?source_conversation=" + source, ""},
+				{http.MethodPost, base + "/10000000-0000-4000-8000-000000000009/withdraw", string(withdraw)},
+			} {
+				rec := httptest.NewRecorder()
+				s.workV2Route(rec, agentWorkV2Request(operation.method, operation.path, operation.body, "invalid-source"))
+				if rec.Code != status || codeOf(t, rec) != code {
+					t.Fatalf("%s %s: %d %s", operation.method, operation.path, rec.Code, rec.Body)
+				}
+			}
+			rows, _, err := s.humanInterventions().List(context.Background(), "10000000-0000-4000-8000-000000000002")
+			if err != nil || len(rows) != 0 {
+				t.Fatalf("invalid source wrote a note: %v %v", rows, err)
+			}
+		})
+	}
+}
 
 func humanInterventionTestServer(t *testing.T) (*Server, string, string) {
 	t.Helper()

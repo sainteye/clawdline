@@ -157,7 +157,7 @@ func (s *Server) agentCreateHumanIntervention(w http.ResponseWriter, r *http.Req
 		writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved", "The live Session registry is unavailable.")
 		return
 	}
-	source, err := s.broker.LiveRootSession(r.Context(), body.SourceConversation)
+	source, err := s.broker.LiveSession(r.Context(), body.SourceConversation)
 	if err != nil {
 		release()
 		s.writeHumanInterventionIdentityError(w, err)
@@ -229,7 +229,7 @@ func (s *Server) writeHumanInterventionIdentityError(w http.ResponseWriter, err 
 	writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved", "The source Session could not be verified.")
 }
 
-// Agents can inspect and withdraw only notes attributed to their live Root.
+// Agents can inspect and withdraw only notes attributed to their live Session.
 func (s *Server) agentManageHumanInterventions(w http.ResponseWriter, r *http.Request, id string) {
 	var body struct {
 		SourceConversation string `json:"source_conversation"`
@@ -250,7 +250,7 @@ func (s *Server) agentManageHumanInterventions(w http.ResponseWriter, r *http.Re
 		writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved", "The live Session registry is unavailable.")
 		return
 	}
-	if _, err := s.broker.LiveRootSession(r.Context(), body.SourceConversation); err != nil {
+	if _, err := s.broker.LiveSession(r.Context(), body.SourceConversation); err != nil {
 		s.writeHumanInterventionIdentityError(w, err)
 		return
 	}

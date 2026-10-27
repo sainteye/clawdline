@@ -336,14 +336,9 @@ func (b *Broker) WhoAmI(ctx context.Context, conversationID string) (Identity, e
 	}, nil
 }
 
-// LiveRootSession resolves the Session that is writing on its person's word:
-// its own to-dos, or a Board item it creates from their message. It asks the
-// same live registry whoami does, and refuses rather than guesses: a
-// malformed id, no live Session, more than one, or a registry it cannot read
-// all write nothing. A live Clawdline child is refused as well — it reports
-// through its task result, and neither its to-do list nor the Board is where
-// its work is kept.
-func (b *Broker) LiveRootSession(ctx context.Context, conversationID string) (session.Session, error) {
+// LiveSession resolves one live assistant conversation, including a Clawdline
+// child. Notes need this identity without granting Root work ownership.
+func (b *Broker) LiveSession(ctx context.Context, conversationID string) (session.Session, error) {
 	if !isLowercaseUUID(conversationID) {
 		return session.Session{}, refuse(http.StatusBadRequest, "conversation_id_malformed",
 			"The conversation id must be one lowercase UUID.")
@@ -355,6 +350,16 @@ func (b *Broker) LiveRootSession(ctx context.Context, conversationID string) (se
 			return session.Session{}, refuse(http.StatusNotFound, "session_not_found",
 				"No live Session is bound to that conversation id; nothing was written.")
 		}
+		return session.Session{}, err
+	}
+	return s, nil
+}
+
+// LiveRootSession additionally requires Root work ownership for to-dos and
+// Board items. A child still reports completion through its task result.
+func (b *Broker) LiveRootSession(ctx context.Context, conversationID string) (session.Session, error) {
+	s, err := b.LiveSession(ctx, conversationID)
+	if err != nil {
 		return session.Session{}, err
 	}
 	// Only a task still running can make this terminal a child's.

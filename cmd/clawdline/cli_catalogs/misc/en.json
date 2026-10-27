@@ -266,5 +266,7 @@
   "playbook.invalid_field": "Field %q is not writable here; use title, body or source.\n",
   "playbook.unreadable": "The saved Playbook list could not be read; nothing was changed.",
   "playbook.not_found": "That id is not a saved Playbook; nothing was changed.",
-  "playbook.retry": "The result is uncertain. Retry with the same --key, action, id and JSON content; do not create a new key."
+  "playbook.retry": "The result is uncertain. Retry with the same --key, action, id and JSON content; do not create a new key.",
+  "note.live_session_create_required": "clawdline note create: name a live Session conversation. Nothing was changed.",
+  "note.live_session_required": "Name a live Session conversation with --from."
 }

@@ -25,7 +25,7 @@ func noteCommand(args []string) {
 	fs := flag.NewFlagSet("note create", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	target := fs.String("target", "", "the target Session terminal id")
-	from := fs.String("from", "", "the live Root conversation id (default: from the environment)")
+	from := fs.String("from", "", "the live Session conversation id (default: from the environment)")
 	file := fs.String("body-file", "", "JSON note body, or - for stdin")
 	key := fs.String("key", "", "the Idempotency-Key; reuse after an uncertain result")
 	port := fs.Int("port", 0, "the daemon's port")
@@ -74,7 +74,7 @@ func createNote(stdout, stderr io.Writer, b *broker, target, from string, raw []
 		}
 	}
 	if from == "" {
-		fmt.Fprintln(stderr, cliCopy("misc", "note.clawdline_note_create_name_a_live_r.52f2fea7", "clawdline note create: name a live Root conversation. Nothing was changed."))
+		fmt.Fprintln(stderr, cliCopy("misc", "note.live_session_create_required", "clawdline note create: name a live Session conversation. Nothing was changed."))
 		return 2
 	}
 	var body map[string]json.RawMessage
@@ -129,7 +129,7 @@ func createNote(stdout, stderr io.Writer, b *broker, target, from string, raw []
 
 func manageNoteCommand(args []string) {
 	fs := flag.NewFlagSet("note "+args[0], flag.ContinueOnError)
-	from := fs.String("from", "", "the live Root conversation id")
+	from := fs.String("from", "", "the live Session conversation id")
 	port := fs.Int("port", 0, "the daemon port")
 	id := fs.String("id", "", "the note id")
 	version := fs.Int64("version", 0, "the version returned by note list")
@@ -146,7 +146,7 @@ func manageNoteCommand(args []string) {
 		}
 	}
 	if *from == "" {
-		fail(fmt.Errorf("%s", cliCopy("misc", "note.live_root_required", "Name a live Root conversation with --from.")))
+		fail(fmt.Errorf("%s", cliCopy("misc", "note.live_session_required", "Name a live Session conversation with --from.")))
 	}
 	b, err := openBroker(*port)
 	if err != nil {
