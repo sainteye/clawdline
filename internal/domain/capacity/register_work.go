@@ -3,6 +3,9 @@ package capacity
 // workBounds is every registered row named work.*.
 func workBounds() []Entry {
 	return []Entry{
+		{Name: WorkCardDescriptionRunes, Class: Observation, Unit: Characters,
+			Limit: 200, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.workV2CardDescriptionRunesLimit"}},
 		{
 			// Open work items (design-decisions T3): on the board and not
 			// closed, or planned in the Backlog. Each is a person's plan or

@@ -2361,3 +2361,18 @@ test("both Cloud list paths reuse provider counts without opening rich rows or i
     assert.equal(client.reads.length, 0, "the list never requests per-Session provider work")
   }
 })
+
+test("board summaries use the versioned word only when the machine advertises it", async () => {
+  for (const capability of ["yes", "unknown", "no"]) {
+    const client = new FakeClient()
+    ;(client as unknown as { _machineImplements(machine: string, word: string): string })._machineImplements =
+      (_machine, word) => word === "work.v2.cards" ? capability : "unknown"
+    const r = reader(client, { t: 10_000 })
+    const response = await r.fetch("/v1/work/v2/items?view=cards-v1&project=cloud-p1&status=all&q=needle&cursor=page-2")
+    assert.equal(response.status, 200)
+    assert.deepEqual(client.reads.at(-1), {
+      machine: "mac-a", word: capability === "yes" ? "work.v2.cards" : "work.v2.search",
+      body: { project: "p1", status: "all", query: "needle", cursor: "page-2" },
+    })
+  }
+})

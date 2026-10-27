@@ -140,6 +140,7 @@ var generatedDecoders = map[string]genDecoder{
 	"work.proposals":                     genDecodeWorkProposals,
 	"work.v2.assign":                     genDecodeWorkV2Assign,
 	"work.v2.cancel":                     genDecodeWorkV2Cancel,
+	"work.v2.cards":                      genDecodeWorkV2Cards,
 	"work.v2.complete":                   genDecodeWorkV2Complete,
 	"work.v2.convert":                    genDecodeWorkV2Convert,
 	"work.v2.create":                     genDecodeWorkV2Create,
@@ -3150,6 +3151,36 @@ func genDecodeWorkV2Cancel(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genObject("item")
+	return p, req, true
+}
+
+// genDecodeWorkV2Cards is the `work.v2.cards` row's decode.
+func genDecodeWorkV2Cards(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "query", "request", "session", "status"},
+		[]string{"type", "cursor", "project", "query", "request", "session", "status"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("cursor", genRule{kind: "string", maxBytes: 1024}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", maxBytes: 256}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("query", genRule{kind: "string", maxBytes: 1024}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("status", genRule{kind: "string", enum: []string{"open", "done", "all"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/work/v2/items"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"cursor": genValue{from: "cursor", omitEmpty: true}, "project": genValue{from: "project", omitEmpty: true}, "q": genValue{from: "query", omitEmpty: true}, "status": genValue{from: "status", omitEmpty: true}, "view": genValue{constant: "cards-v1"}})
 	return p, req, true
 }
 

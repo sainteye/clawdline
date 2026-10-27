@@ -24,6 +24,7 @@ func init() {
 		op{name: "work.v2.gate-export", read: true},
 
 		op{name: "work.v2.items", read: true},
+		op{name: "work.v2.cards", read: true},
 
 		op{name: "work.v2.search", read: true},
 

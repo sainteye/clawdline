@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9419,
+  "englishKeys": 9421,
   "counts": {
-    "negation": 2689,
-    "state": 1543,
+    "negation": 2690,
+    "state": 1545,
     "permission": 563,
     "deletion": 207,
     "uncertainty": 295
   },
-  "unionCount": 4168,
+  "unionCount": 4170,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -575,6 +575,7 @@
       "capacityRow.waits.open.full",
       "capacityRow.waits.open.what",
       "capacityRow.work.assignments.what",
+      "capacityRow.work.card_description_runes.full",
       "capacityRow.work.completion_reason_bytes.full",
       "capacityRow.work.completion_reason_bytes.what",
       "capacityRow.work.digests.full",
@@ -3158,6 +3159,8 @@
       "capacityRow.waits.open.what",
       "capacityRow.work.assignments.full",
       "capacityRow.work.assignments.what",
+      "capacityRow.work.card_description_runes.full",
+      "capacityRow.work.card_description_runes.what",
       "capacityRow.work.completion_reason_bytes.full",
       "capacityRow.work.completion_reason_bytes.what",
       "capacityRow.work.documents_per_item.full",
@@ -6148,6 +6151,8 @@
     "capacityRow.waits.open.what",
     "capacityRow.work.assignments.full",
     "capacityRow.work.assignments.what",
+    "capacityRow.work.card_description_runes.full",
+    "capacityRow.work.card_description_runes.what",
     "capacityRow.work.completion_reason_bytes.full",
     "capacityRow.work.completion_reason_bytes.what",
     "capacityRow.work.digests.full",

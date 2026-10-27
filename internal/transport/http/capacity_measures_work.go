@@ -73,6 +73,9 @@ func (s *Server) workCapacityMeasures() map[string]func() capacity.Reading {
 			}
 			return capacity.Reading{Known: true, Used: n}
 		},
+		capacity.WorkCardDescriptionRunes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-card description preview; complete text remains on the one-item read"}
+		},
 		capacity.WorkListPageRows: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-answer Board page; later rows remain behind next_cursor"}
 		},

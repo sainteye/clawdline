@@ -1265,6 +1265,15 @@ type WorkV2CardProgress struct {
 }
 
 func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Relations, error) {
+	return s.workV2Relations(ctx, workIDs, true)
+}
+
+// WorkV2CardRelations withholds detail tables until a card is opened.
+func (s *Store) WorkV2CardRelations(ctx context.Context, workIDs []string) (WorkV2Relations, error) {
+	return s.workV2Relations(ctx, workIDs, false)
+}
+
+func (s *Store) workV2Relations(ctx context.Context, workIDs []string, details bool) (WorkV2Relations, error) {
 	out := WorkV2Relations{
 		Documents: map[string][]work.DocumentV2{}, Images: map[string][]work.ImageV2{},
 		Steps: map[string][]work.StepV2{}, Claims: map[string]*work.CreatedViaV2{},
@@ -1287,78 +1296,81 @@ func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Re
 	}
 	out.Progress = progress
 
-	documents, err := s.rd.QueryContext(ctx, `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
+	if details {
+		documents, err := s.rd.QueryContext(ctx, `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
     FROM work_v2_documents WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
-	if err != nil {
-		return out, err
-	}
-	for documents.Next() {
-		var d work.DocumentV2
-		var created, updated int64
-		if err := documents.Scan(&d.ID, &d.WorkID, &d.Role, &d.Title, &d.Body, &d.Reference, &d.Position,
-			&d.Version, &created, &updated); err != nil {
+		if err != nil {
+			return out, err
+		}
+		for documents.Next() {
+			var d work.DocumentV2
+			var created, updated int64
+			if err := documents.Scan(&d.ID, &d.WorkID, &d.Role, &d.Title, &d.Body, &d.Reference, &d.Position,
+				&d.Version, &created, &updated); err != nil {
+				documents.Close()
+				return out, err
+			}
+			d.CreatedAt, d.UpdatedAt = time.Unix(created, 0), time.Unix(updated, 0)
+			out.Documents[d.WorkID] = append(out.Documents[d.WorkID], d)
+		}
+		if err := documents.Err(); err != nil {
 			documents.Close()
 			return out, err
 		}
-		d.CreatedAt, d.UpdatedAt = time.Unix(created, 0), time.Unix(updated, 0)
-		out.Documents[d.WorkID] = append(out.Documents[d.WorkID], d)
-	}
-	if err := documents.Err(); err != nil {
-		documents.Close()
-		return out, err
-	}
-	if err := documents.Close(); err != nil {
-		return out, err
-	}
+		if err := documents.Close(); err != nil {
+			return out, err
+		}
 
-	images, err := s.rd.QueryContext(ctx, `SELECT `+workV2ImageColumns+`
+		images, err := s.rd.QueryContext(ctx, `SELECT `+workV2ImageColumns+`
     FROM work_v2_images WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
-	if err != nil {
-		return out, err
-	}
-	for images.Next() {
-		i, err := scanWorkV2Image(images)
 		if err != nil {
+			return out, err
+		}
+		for images.Next() {
+			i, err := scanWorkV2Image(images)
+			if err != nil {
+				images.Close()
+				return out, err
+			}
+			out.Images[i.WorkID] = append(out.Images[i.WorkID], i)
+		}
+		if err := images.Err(); err != nil {
 			images.Close()
 			return out, err
 		}
-		out.Images[i.WorkID] = append(out.Images[i.WorkID], i)
-	}
-	if err := images.Err(); err != nil {
-		images.Close()
-		return out, err
-	}
-	if err := images.Close(); err != nil {
-		return out, err
-	}
+		if err := images.Close(); err != nil {
+			return out, err
+		}
 
-	steps, err := s.rd.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
+		steps, err := s.rd.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
     FROM work_v2_steps WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
-	if err != nil {
-		return out, err
-	}
-	for steps.Next() {
-		var st work.StepV2
-		var done bool
-		var created int64
-		var completed sql.NullInt64
-		if err := steps.Scan(&st.ID, &st.WorkID, &st.Title, &done, &st.Position, &st.CreatedBy,
-			&st.CompletedBy, &created, &completed, &st.Version); err != nil {
+		if err != nil {
+			return out, err
+		}
+		for steps.Next() {
+			var st work.StepV2
+			var done bool
+			var created int64
+			var completed sql.NullInt64
+			if err := steps.Scan(&st.ID, &st.WorkID, &st.Title, &done, &st.Position, &st.CreatedBy,
+				&st.CompletedBy, &created, &completed, &st.Version); err != nil {
+				steps.Close()
+				return out, err
+			}
+			st.Done, st.CreatedAt = done, time.Unix(created, 0)
+			if completed.Valid {
+				st.CompletedAt = time.Unix(completed.Int64, 0)
+			}
+			out.Steps[st.WorkID] = append(out.Steps[st.WorkID], st)
+		}
+		if err := steps.Err(); err != nil {
 			steps.Close()
 			return out, err
 		}
-		st.Done, st.CreatedAt = done, time.Unix(created, 0)
-		if completed.Valid {
-			st.CompletedAt = time.Unix(completed.Int64, 0)
+		if err := steps.Close(); err != nil {
+			return out, err
 		}
-		out.Steps[st.WorkID] = append(out.Steps[st.WorkID], st)
-	}
-	if err := steps.Err(); err != nil {
-		steps.Close()
-		return out, err
-	}
-	if err := steps.Close(); err != nil {
-		return out, err
+
 	}
 
 	claims, err := s.rd.QueryContext(ctx, `SELECT `+assignmentV2Columns+`

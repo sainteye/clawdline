@@ -1,3 +1,4 @@
+import { BoardCardDetail } from "./BoardCardDetail.js"
 import { ActionProgress } from "../../ui/ActionProgress.js"
 import { useAssistantFacts } from "../../session/assistant-facts.js"
 import { assistantAdmits, assistantUnavailable } from "../../session/antigravity-ui.js"
@@ -65,7 +66,8 @@ import {
   readProjectPlaces,
   readSessionWorkV2,
   readSessionsForWorkV2,
-  readWorkV2,
+  readWorkV2Cards as readWorkV2,
+  workItemIsFull,
   readWorkV2Item,
   readWorkV2Proposals,
   remindWorkV2,
@@ -77,7 +79,8 @@ import {
   type WorkV2ExecutableKind,
   type WorkV2Kind,
   type WorkV2Proposal,
-  type WorkV2Page,
+  type WorkV2CardPage,
+  type WorkV2Card,
   type WorkV2Status,
   type SessionWorkV2,
 } from "./api.js"
@@ -115,7 +118,7 @@ const KIND_META: Record<WorkV2Kind, { icon: string; label: string; description: 
 }
 
 export function WorkV2Page({ shown }: { shown: boolean }) {
-  const [items, setItems] = useState<WorkV2Item[]>([])
+  const [items, setItems] = useState<WorkV2Card[]>([])
   const [places, setPlaces] = useState<ProjectPlace[]>([])
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [failure, setFailure] = useState("")
@@ -141,7 +144,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
   const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const [family, setFamily] = useState<{ rows: WorkV2Item[]; truncated: boolean }>({ rows: [], truncated: false })
+  const [family, setFamily] = useState<{ rows: WorkV2Card[]; truncated: boolean }>({ rows: [], truncated: false })
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -149,7 +152,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [creating, setCreating] = useState(false)
   const [createDraft, setCreateDraft] = useState<NewWorkItemDraft>({})
   const [createdItem, setCreatedItem] = useState<WorkV2Item | null>(null)
-  const [openedItem, setOpenedItem] = useState<WorkV2Item | null>(null)
+  const [openedItem, setOpenedItem] = useState<WorkV2Card | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState("")
   const [busy, setBusy] = useState("")
@@ -210,11 +213,9 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       }).catch((error: unknown) => {
         if (generation === loadGeneration.current) setFailure(failureWords(error))
       })
-      setCreatedItem((current) => current ? [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, work.rows.find((item) => item.id === current.id) ?? current) : null)
       setOpenedItem((current) => {
         if (!current) return null
-        const listed = work.rows.find((item) => item.id === current.id)
-        return [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, listed && listed.version !== current.version ? listed : current)
+        return [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, current)
       })
     } catch (e) {
       if (generation === loadGeneration.current) { setLoaded(true); setLoading(false); setFailure(failureWords(e)) }
@@ -282,30 +283,48 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     setCreateDraft(draft)
     setCreating(true)
   }), [])
+  const detailRequest = useRef(0)
   const refreshDetail = useCallback((id: string) => {
+    const request = ++detailRequest.current
     setDetailLoading(true); setDetailError("")
     void readWorkV2Item(id).then((answer) => {
-      setOpenedItem((current) => current?.id === id
+      if (request !== detailRequest.current) return
+      setOpenedItem((current) => current?.id === id && answer.item.version >= current.version
         ? [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, answer.item) : current)
-      setItems((current) => current.flatMap((listed) => {
+      setItems((current) => current.flatMap<WorkV2Card>((listed) => {
         if (listed.id !== id || listed.version >= answer.item.version) return [listed]
         if (status === "open" && answer.item.closed_at) return []
         if (status === "done" && answer.item.phase !== "done") return []
         return [answer.item]
       }))
     })
-      .catch((error: unknown) => setDetailError(failureWords(error)))
-      .finally(() => setDetailLoading(false))
+      .catch((error: unknown) => { if (request === detailRequest.current) setDetailError(failureWords(error)) })
+      .finally(() => { if (request === detailRequest.current) setDetailLoading(false) })
   }, [status])
   // Every request to open an item takes a ticket; a read that answers after a
   // later one was made is dropped rather than replacing what is now open.
   const openTicket = useRef(0)
-  const openItem = useCallback((item: WorkV2Item) => {
+  const openItem = useCallback((item: WorkV2Card) => {
     openTicket.current++
+    detailRequest.current++
     setFailure("")
     setOpenedItem([...answeredDecisionIDs.current].reduce(withoutAnsweredWait, item))
-    refreshDetail(item.id)
+    setDetailError("")
+    if (workItemIsFull(item)) refreshDetail(item.id)
   }, [refreshDetail])
+  const createdListedVersion = items.find((item) => item.id === createdItem?.id)?.version ?? 0
+  useEffect(() => {
+    if (!createdItem || createdListedVersion <= createdItem.version) return
+    let active = true
+    void readWorkV2Item(createdItem.id).then(({ item }) => {
+      if (active) setCreatedItem((current) => current?.id === item.id && current.version <= item.version ? item : current)
+    }).catch((error: unknown) => { if (active) setFailure(failureWords(error)) })
+    return () => { active = false }
+  }, [createdItem?.id, createdItem?.version, createdListedVersion])
+  const listedVersion = items.find((item) => item.id === openedItem?.id)?.version ?? 0
+  useEffect(() => {
+    if (openedItem && (!workItemIsFull(openedItem) || listedVersion > openedItem.version)) refreshDetail(openedItem.id)
+  }, [openedItem?.id, openedItem?.version, openedItem?.summary, listedVersion, refreshDetail])
   useEffect(() => onOpenWorkItem(openItem), [openItem])
   // Opening an item that reached deploying or done is the person's receipt for
   // it: its Session card stops saying 待驗收 on every device. The receipt rides
@@ -316,7 +335,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     if (!openedItem?.id || !seenPhase) return
     void markWorkV2Seen(openedItem.id, seenPhase).catch(() => undefined)
   }, [openedItem?.id, seenPhase])
-  const listedRows = useRef<WorkV2Item[]>([])
+  const listedRows = useRef<WorkV2Card[]>([])
   listedRows.current = items.concat(family.rows)
   /**
    * Opens an item's detail by id: from the Board or family row when one is
@@ -536,9 +555,9 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
  * and the family drawn from what is on screen.
  */
 async function readEpicFamily(project: string, status: WorkV2Status, search: string,
-  work: WorkV2Page): Promise<{ rows: WorkV2Item[]; truncated: boolean }> {
+  work: WorkV2CardPage): Promise<{ rows: WorkV2Card[]; truncated: boolean }> {
   if (!needsFamilyList(work.rows)) return { rows: [], truncated: false }
-  let family: { rows: WorkV2Item[]; truncated: boolean }
+  let family: { rows: WorkV2Card[]; truncated: boolean }
   if (status === "all" && !search) family = work
   else {
     try {
@@ -572,7 +591,7 @@ function BoardSkeleton() {
 }
 
 interface EpicFamilyView {
-  rows: WorkV2Item[]
+  rows: WorkV2Card[]
   truncated: boolean
   /** Opens another item's detail by id; answers the failure words, or "" once it opened. */
   open: (id: string) => Promise<string>
@@ -617,7 +636,7 @@ function EpicChildren({ item, sessions }: { item: WorkV2Item; sessions: SessionR
 }
 
 /** On a child: the Epic it was created under. */
-function EpicParentLine({ item }: { item: WorkV2Item }) {
+function EpicParentLine({ item }: { item: WorkV2Card }) {
   const family = useContext(EpicFamilyContext)
   const [failure, setFailure] = useState("")
   const parent = epicParent(item, family.rows)
@@ -671,7 +690,7 @@ function AgentGlyph() {
 function ProposalQueue({ proposals, items, places, busy, run, column = false }: {
   column?: boolean
   proposals: WorkV2Proposal[]
-  items: WorkV2Item[]
+  items: WorkV2Card[]
   places: ProjectPlace[]
   busy: string
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
@@ -750,11 +769,11 @@ function WorkItemDecisions({ decisions, decisionAnswers, waitingOn, busy, answer
 
 function BoardRegion({ title, items, sessions, nowSeconds, decisions, onOpen }: {
   title: string
-  items: WorkV2Item[]
+  items: WorkV2Card[]
   sessions: SessionRow[]
   nowSeconds: number
   decisions: Decision[]
-  onOpen: (item: WorkV2Item) => void
+  onOpen: (item: WorkV2Card) => void
 }) {
   if (!items.length) return null
   return <section className="work-section"><div className="work-section-head"><h2>{title}</h2><span className="work-count">{items.length}</span></div>
@@ -769,7 +788,7 @@ function BoardRegion({ title, items, sessions, nowSeconds, decisions, onOpen }: 
  * keyboard and screen-reader user the same route into the shared detail modal.
  */
 function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
-  item: WorkV2Item
+  item: WorkV2Card
   sessions: SessionRow[]
   nowSeconds: number
   decisions: Decision[]
@@ -1363,7 +1382,7 @@ function SessionWorkList({ title, empty, rows }: {
 }
 
 function CreatedWorkModal({ item, created = true, back, sessions, sessionList, retrySessions, decisions, decisionAnswers, busy, failure, clearFailure, run, answerWorkDecision, detailLoading, detailError, retryDetail, onClose }: {
-  item: WorkV2Item
+  item: WorkV2Card
   created?: boolean
   /** Shared by successive dialogs opened from one another, so focus returns to the first opener. */
   back?: ModalReturn
@@ -1395,8 +1414,11 @@ function CreatedWorkModal({ item, created = true, back, sessions, sessionList, r
         <h2 id={`work-created-title-${item.id}`}>{created ? catalogWord("literal", "935ee1ab45ca") : catalogWord("literal", "79a3cb6e5cdb")}</h2></div>
         <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <WorkCard item={item} sessions={sessions} decisions={decisions} decisionAnswers={decisionAnswers} busy={busy} failure={failure} clearFailure={clearFailure} run={run} answerWorkDecision={answerWorkDecision}
-        sessionList={sessionList} retrySessions={retrySessions} detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />
+      <BoardCardDetail card={item} error={detailError} retry={retryDetail} loadingLabel={L.strings.webLoading} retryLabel={catalogWord("inline", "7e59d0f16293")}>
+        {(item) => <WorkCard item={item} sessions={sessions} decisions={decisions} decisionAnswers={decisionAnswers} busy={busy} failure={failure} clearFailure={clearFailure} run={run} answerWorkDecision={answerWorkDecision}
+          sessionList={sessionList} retrySessions={retrySessions} detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />}
+      </BoardCardDetail>
+
     </div>
   </div>, document.body)
 }

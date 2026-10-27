@@ -1085,6 +1085,26 @@ membership, never stored placement.
 No other page keeps a machine-wide summary of work (the Now page was retired on 2026-09-26). Project pages link
 to the authoritative Board already filtered to that Project.
 
+### Board summary reads
+
+The console opts into `GET /v1/work/v2/items?view=cards-v1`. This is a separate,
+allowlisted projection with a `summary: true` marker, identity, placement, version,
+ownership, compact gate state, and a 200-rune description preview. Documents, images,
+steps, acceptance text, assignments, events, and landings stay on the existing one-item
+read. The store skips document, image, and step relation reads for summary pages. Search
+still matches the complete source content before projection, and paging and counts retain
+the full list's semantics.
+
+Opening a summary shows the existing accessible loading skeleton, then mounts the complete
+item and its mutation controls only after the one-item read succeeds. A failed read offers
+retry. A later list refresh cannot replace an open full item with a summary. Item versions
+trigger detail refreshes; late answers cannot replace a newer open request.
+
+Cloud carries this through the separately advertised `work.v2.cards` word, leaving older
+exact-key decoders unchanged. A missing or unknown capability uses the original list/search
+word. A new local console gets one legacy-list fallback when an older daemon rejects the
+new view. Legacy lists, Session ownership reads, and one-item reads retain their full shapes.
+
 ## 13. Capacity and concurrency
 
 Every new bound is registered in `internal/domain/capacity` before implementation. At minimum the

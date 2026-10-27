@@ -225,6 +225,18 @@ export interface WorkV2Item {
   steps?: WorkV2Step[]
 }
 
+/** A list row cannot be used as an editable, fully loaded item. */
+export type WorkV2Card = Omit<WorkV2Item, "acceptance_criteria" | "documents" | "steps" | "images"> & {
+  summary?: true
+  acceptance_present?: boolean
+}
+
+export function workItemIsFull(item: WorkV2Card): item is WorkV2Item {
+  return item.summary !== true
+}
+
+export type WorkV2CardPage = Omit<WorkV2Page, "rows"> & { rows: WorkV2Card[] }
+
 export interface WorkV2Document {
   id: string
   role: "spec" | "design" | "test" | "deploy" | "completion_report" | "plan" | "plan_review" | "other"
@@ -350,6 +362,16 @@ export const readWorkV2 = (projectID?: string, status: WorkV2Status = "open", se
   call<WorkV2Page>(
     "/v1/work/v2/items" + query({ project: projectID, status, q: search || undefined, cursor: cursor || undefined }),
   )
+/** New Cloud readers select an advertised cards word; old local daemons get one bounded fallback. */
+export const readWorkV2Cards = async (projectID?: string, status: WorkV2Status = "open", search = "", cursor = ""): Promise<WorkV2CardPage> => {
+  try {
+    return await call<WorkV2CardPage>("/v1/work/v2/items" + query({ view: "cards-v1", project: projectID, status, q: search || undefined, cursor: cursor || undefined }))
+  } catch (error) {
+    if (!(error instanceof RefusalError) || !["bad_request", "unknown_command", "cloud_machine_unsupported", "cloud_feature_unavailable"].includes(error.code)) throw error
+    return readWorkV2(projectID, status, search, cursor)
+  }
+}
+
 export const readWorkV2Item = (id: string) =>
   call<{ ok: boolean; item: WorkV2Item }>(`/v1/work/v2/items/${id}`)
 /** The person opened this item while it showed `phase`; a Session card stops showing it as awaiting acceptance. */

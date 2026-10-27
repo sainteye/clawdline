@@ -9387,6 +9387,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "work.card_description_runes",
+    "Class": "observation",
+    "Unit": "characters",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.workV2CardDescriptionRunesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "work.completion_reason_bytes",
     "Class": "evidence",
     "Unit": "bytes",

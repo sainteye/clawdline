@@ -880,7 +880,7 @@
         },
         {
           "path": "internal/transport/http/work_v2.go",
-          "line": 1188
+          "line": 1200
         },
         {
           "path": "internal/productcopy/board.go",
@@ -2459,14 +2459,14 @@
     "internal/transport/http/coordinator.go": "5f139556883583d34320783d063ee1e6a4a1124a726f69510cc4a9324a6cb3df",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/start.go": "4abc872edbe0e2f367da9a11bf2e32abac419fde2ccc999a0542718b2f9f6888",
-    "internal/transport/http/work_v2.go": "3596811d3c47c0797a3d7216ff4926aa0646f9f76a088b2a683944177e6962d9",
+    "internal/transport/http/work_v2.go": "c44cf18604b6cc07780779d51bc54194a9677bfca43ed04e02959536069b746f",
     "internal/transport/http/work_v2_brief.go": "212fde2dc04a2694060c3a40de8dccd98889dd40d43d85589a54f1b09ca7aa39",
     "skills/clawdline/SKILL.md": "6648251619176575f6b5e93793c7efd9b7fc569d45ed04977352560206cea1ee",
     "skills/clawdline/guide.md": "bc322b1d70c3ddd55391bebd25541aa2913c1443ee801f5ab79b7c1acda61f5f",
     "skills/clawdline/guide.zh-TW.md": "c7d451df8df947e43b1e910e6ce5b85d4d6e814e6f874079d59a982638c899e5",
     "skills/sections.go": "ba3de38ebe0e26817f337bd4ae93e19d07ba07af8971b4fba397e6fe9082b903",
     "skills/skills.go": "146b2605f5e82e4093f731222da229df949be007b19005a428b538686feed330",
-    "web/console/src/session/Start.tsx": "f62d01bf5f071af86a104e45899f3152ea74b6042b720cc17e4d12ebd4290085"
+    "web/console/src/session/Start.tsx": "5b64e4088fd1db8bb3411454efbcc53de0624ca91deb85148ff8baf843095af7"
   },
   "copyChecks": {
     "en": "a658a8102dd55299a3abcc90b8cc21b23f8916fd4909f3559bb6312dcc8451bd",

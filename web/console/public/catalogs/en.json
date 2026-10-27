@@ -1532,6 +1532,8 @@
   "capacityRow.work.item_title_bytes.what": "How long a Board item's title may be; the same ceiling applies to a step's title and a reference image's title. Titles appear in lists, cards and phone notifications, so they need to fit on a line or two.",
   "capacityRow.work.item_user_action_bytes.full": "This is a ceiling on one note. Saving a longer one is refused and it must be shortened; nothing already on the item changes.",
   "capacityRow.work.item_user_action_bytes.what": "How long the note on a Board item telling you what you need to do may be. It is meant to be one clear request you can act on, not a report.",
+  "capacityRow.work.card_description_runes.what": "The description preview sent with a Board card. Its character limit keeps full descriptions out of list reads.",
+  "capacityRow.work.card_description_runes.full": "The complete description stays saved. Open the card to read and edit it; the preview never replaces the saved text.",
   "capacityRow.work.list_page_rows.full": "This is a ceiling on one page, not on your items. The rest stay saved and load on the next page. Nothing for you to do.",
   "capacityRow.work.list_page_rows.what": "How many Board items load on the first page, so the Board appears quickly instead of waiting for every item and its documents and images.",
   "capacityRow.work.open.full": "Creating a new item is refused. Close or drop items you no longer need in the Board or Backlog to make room.",

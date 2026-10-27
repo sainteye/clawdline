@@ -558,6 +558,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-work-v2-items",
 		method: "GET", path: "/v1/work/v2/items", query: map[string]string{"project": "p1", "cursor": "page-2"},
 	}, {
+		word: "work.v2.cards",
+		body: map[string]any{"type": "work.v2.cards", "session": machine,
+			"request": "req-work-v2-cards", "project": "p1", "status": "done", "query": "needle", "cursor": "page-3"},
+		session: machine, name: "read:req-work-v2-cards",
+		method: "GET", path: "/v1/work/v2/items",
+		query: map[string]string{"project": "p1", "status": "done", "q": "needle", "cursor": "page-3", "view": "cards-v1"},
+	}, {
 		word: "work.v2.search",
 		body: map[string]any{"type": "work.v2.search", "session": machine,
 			"request": "req-work-v2-search", "project": "p1", "status": "done", "query": "needle", "cursor": "page-3"},
