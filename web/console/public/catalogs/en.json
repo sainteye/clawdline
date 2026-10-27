@@ -9373,7 +9373,7 @@
   "support.busy": "Working…",
   "support.pendingReply": "Your question was received. It stays saved while support is offline.",
   "support.finishReview": "Save the draft, check privacy and sources, then publish the selected language.",
-  "support.languageScope": "Search and articles stay in the selected content language.",
+  "support.languageScope": "FAQ content and new replies follow your interface language.",
   "support.liveNotice": "Private support data is separate from encrypted machine Sessions.",
   "support.references": "Sources are shown with the version used to answer.",
   "support.titleRequired": "Add a title and describe your question.",

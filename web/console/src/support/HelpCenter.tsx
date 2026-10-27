@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react"
-import { bootCatalog, currentCatalogTag, type CatalogTag } from "../catalog.js"
+import { currentCatalogTag } from "../catalog.js"
 import { chooseTransport, cloudViewerDeviceMetadata, newCloudSession, readCloudConfig, type CloudConfig } from "../cloud/copied.js"
 import { bootAdminCatalog } from "../cloud/admin/words.js"
-import { BrowserLanguageControl } from "../ui-language/BrowserLanguageControl.js"
 import { BRAND_MARK } from "../brand-mark.js"
 import { DeviceLimitPanel } from "../cloud/DeviceLimitPanel.js"
 import { supportCall, SupportFailure, requestKey, SUPPORT_UI_LIMITS } from "./api.js"
 import { supportWord as w, supportError, type SupportWord } from "./words.js"
-import { LANGUAGE_NAMES, SUPPORT_LOCALES, TOPICS, helpRoute, localeFromURL, translationState,
+import { LANGUAGE_NAMES, SUPPORT_LOCALES, TOPICS, helpRoute, translationState,
   type SupportLocale, type Question, type Faq, type Article, type Sources, type HelpRoute } from "./model.js"
 import "./support.css"
 
@@ -59,9 +58,6 @@ function ErrorBox({ code, retry }: { code: string | null; retry?: () => void }) 
   return code ? <div className="help-error" role="alert"><p>{supportError(code)}</p>{retry ? <button className="help-btn" onClick={retry}>{w("retry")}</button> : null}</div> : null
 }
 function State({ value }: { value: string }) { return <span className={`help-badge help-state-${value}`}>{w(["queued", "answering", "needs_information", "needs_human", "answered", "resolved"].includes(value) ? value as SupportWord : "unavailable")}</span> }
-function Language({ value, onChange, label = w("contentLanguage"), disabled = false }: { value: SupportLocale; onChange: (v: SupportLocale) => void; label?: string; disabled?: boolean }) {
-  return <label className="help-language"><span>{label}</span><select aria-label={label} value={value} disabled={disabled} onChange={e => onChange(e.target.value as SupportLocale)}>{SUPPORT_LOCALES.map(l => <option key={l} value={l}>{LANGUAGE_NAMES[l]}</option>)}</select></label>
-}
 function SourceList({ sources }: { sources: Sources }) { return sources.length ? <div className="help-sources"><small>{w("sources")}</small>{sources.map(s => <a key={s.url + s.revision} href={s.url} target="_blank" rel="noopener noreferrer">↗ {s.revision}</a>)}</div> : null }
 function Link({ to, go, children, primary = false }: { to: string; go: Navigation; children: ReactNode; primary?: boolean }) {
   return <a className={`help-btn ${primary ? "help-primary" : ""}`} href={to} onClick={(e: MouseEvent) => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) { e.preventDefault(); go(to) } }}>{children}</a>
@@ -111,16 +107,15 @@ export function HelpCenter({ declared }: { declared: string }) {
     if (root) root.scrollTop = 0
     main?.focus({ preventScroll: true })
   }, [address, catalogReady])
-  const route = helpRoute(address.split("?")[0]!), locale = localeFromURL(address.includes("?") ? address.slice(address.indexOf("?")) : "", currentCatalogTag())
-  const setLocale = (v: SupportLocale) => { const url = new URL(address, location.origin); url.searchParams.set("locale", v); go(url.pathname + url.search) }
+  const route = helpRoute(address.split("?")[0]!), locale = currentCatalogTag()
   const call = useCallback<Call>((path, method, body, key) => supportCall(config?.apiOrigin ?? "", path, method, body, key), [config])
   const signInUrl = config ? config.apiOrigin + "/v1/auth/oauth/start?return_to=" + encodeURIComponent(config.appOrigin + address) : "#"
-  const href = (path: string) => path + (path.includes("?") ? "&" : "?") + "locale=" + locale
+  const href = (path: string) => path
   const protectedPage = !["faq", "article"].includes(route.page)
   if (!catalogReady) return null
   if (!config) return <main className="help-root"><ErrorBox code="support_unavailable" /></main>
   return <div className="help-root">
-    <header className="help-header"><a className="help-brand" href="/"><svg viewBox="0 0 8 4" width="25" height="20" aria-hidden="true">{BRAND_MARK.cells.flatMap((row,y)=>row.map((fill,x)=><rect key={x+":"+y} x={x} y={y} width="1" height="1" fill={fill??"transparent"}/>))}</svg>clawdline <small>cloud</small></a><nav><a href="/">{w("workspace")}</a><BrowserLanguageControl id="support-ui-language" compact /><Language value={locale} onChange={setLocale} /></nav></header>
+    <header className="help-header"><a className="help-brand" href="/"><svg viewBox="0 0 8 4" width="25" height="20" aria-hidden="true">{BRAND_MARK.cells.flatMap((row,y)=>row.map((fill,x)=><rect key={x+":"+y} x={x} y={y} width="1" height="1" fill={fill??"transparent"}/>))}</svg>clawdline <small>cloud</small></a><nav><a href="/">{w("workspace")}</a></nav></header>
     <main className="help-wrap" tabIndex={-1} onChangeCapture={e => { if ((e.target as Element).closest("form")) dirty.current = true }}>{import.meta.env.DEV && import.meta.env.VITE_SUPPORT_FIXTURE_API ? <div className="help-notice">{w("fixture")}</div> : null}<div className="help-crumb">Clawdline Cloud / {w("nav")}</div>
       <nav className="help-tabs" aria-label={w("nav")}>
         <Link to={href("/help")} go={go}>{w("faq")}</Link><Link to={href("/help/questions")} go={go}>{w("mine")}</Link>
@@ -128,12 +123,12 @@ export function HelpCenter({ declared }: { declared: string }) {
       </nav>
       {sessionError ? <div className="help-notice">{w("sessionFailed")} <span>{supportError(sessionError)}</span> <button onClick={start}>{w("retry")}</button></div> : null}
       {protectedPage && sessionState === "checking" ? <p role="status">{w("loading")}</p> : protectedPage && sessionState === "unavailable" ? null : protectedPage && !account ? sessionState === "limit" ? <><p>{w("deviceLimit")}</p><DeviceLimitPanel session={session} tier={limit.tier} limit={limit.limit} onContinue={start} signInLabel={w("signIn")} /></> : <SignIn url={signInUrl} /> :
-        <HelpBody key={route.page + ":" + (route.id ?? "") + ":" + locale} route={route} locale={locale} setLocale={setLocale} go={go} href={href} call={call} account={account} onSaved={() => { dirty.current = false }} />}
+        <HelpBody key={route.page + ":" + (route.id ?? "") + ":" + locale} route={route} locale={locale} go={go} href={href} call={call} account={account} onSaved={() => { dirty.current = false }} />}
       <footer className="help-footer">{w("liveNotice")}<span>{w("languageScope")}</span></footer>
     </main>
   </div>
 }
-type BodyProps = {route:HelpRoute; locale:SupportLocale; setLocale:(v:SupportLocale)=>void; go:Navigation; href:(p:string)=>string; call:Call; account:{id:string;operations:boolean}|null;onSaved:()=>void}
+type BodyProps = {route:HelpRoute; locale:SupportLocale; go:Navigation; href:(p:string)=>string; call:Call; account:{id:string;operations:boolean}|null;onSaved:()=>void}
 function HelpBody(p: BodyProps) {
   if (p.route.page === "faq") return <FaqList {...p} />
   if (p.route.page === "article") return <FaqDetail {...p} />
@@ -153,26 +148,25 @@ function FaqList(p:BodyProps) {
     <form className="help-search" onSubmit={e=>{e.preventDefault();setQuery(search);setAfter(null);if(search===query&&!after)read.refresh()}}><input aria-label={w("search")} placeholder={w("search")} value={search} onChange={e=>setSearch(e.target.value)} /><button type="submit">{w("searchGo")}</button></form>
     <div className="help-chips">{["all",...TOPICS].map(t=><button className={topic===t?"selected":""} key={t} onClick={()=>{setTopic(t);setAfter(null)}}>{w(t==="all"?"allTopics":t as SupportWord)}</button>)}</div>
     {read.loading?<p role="status">{w("loading")}</p>:null}<ErrorBox code={read.error} retry={read.refresh}/>
-    {read.data&&!items.length?<div className="help-empty"><p>{query?w("noSearch"):w("emptyFaq")}</p>{p.locale!=="en"?<button className="help-btn" onClick={()=>p.setLocale("en")}>{w("readEnglish")}</button>:null}</div>:null}
+    {read.data&&!items.length?<div className="help-empty"><p>{query?w("noSearch"):w("emptyFaq")}</p></div>:null}
     {items.map(r=><a className="help-question-row" key={r.id} href={p.href("/help/faq/"+r.id)} onClick={e=>{e.preventDefault();p.go(p.href("/help/faq/"+r.id))}}><div><h3>{r.title}</h3><small>{w(TOPICS.includes(r.topic as typeof TOPICS[number])?r.topic as SupportWord:"other")} · {new Date(r.updated_at).toLocaleDateString()}</small></div><span>›</span></a>)}
     {read.data?.next_cursor?<button className="help-btn" disabled={read.loading} onClick={()=>setAfter(read.data?.next_cursor??null)}>{w("more")}</button>:null}
   </section><AskAside {...p}/></div></>
 }
 function FaqDetail(p:BodyProps) {
   const read=useRead<{article:Faq}>("/v1/faq/"+p.route.id+"?locale="+p.locale,p.call),a=read.data?.article
-  return <><Link to={p.href("/help")} go={p.go}>{w("cancel")}</Link><ErrorBox code={read.error} retry={read.refresh}/>{read.loading?<p>{w("loading")}</p>:null}{a?<div className="help-columns"><article className="help-article"><div className="help-eyebrow">{LANGUAGE_NAMES[a.locale]} · {w("faq")}</div><h1>{a.title}</h1><small>{w("updated")} {new Date(a.updated_at).toLocaleDateString()}</small><p className="help-prose">{a.body}</p><SourceList sources={a.sources}/></article><AskAside {...p}/></div>:read.error==="support_translation_unavailable"&&p.locale!=="en"?<button className="help-btn" onClick={()=>p.setLocale("en")}>{w("readEnglish")}</button>:null}</>
+  return <><Link to={p.href("/help")} go={p.go}>{w("cancel")}</Link><ErrorBox code={read.error} retry={read.refresh}/>{read.loading?<p>{w("loading")}</p>:null}{a?<div className="help-columns"><article className="help-article"><div className="help-eyebrow">{LANGUAGE_NAMES[a.locale]} · {w("faq")}</div><h1>{a.title}</h1><small>{w("updated")} {new Date(a.updated_at).toLocaleDateString()}</small><p className="help-prose">{a.body}</p><SourceList sources={a.sources}/></article><AskAside {...p}/></div>:null}</>
 }
 function Ask(p:BodyProps) {
   const draftKey="clawdline-support-draft:"+p.account!.id
-  const [draft]=useState(()=>{try{return JSON.parse(sessionStorage.getItem(draftKey)??sessionStorage.getItem("clawdline-support-draft:anonymous")??"null") as {title:string;body:string;topic:string;locale:SupportLocale;source?:SupportLocale}|null}catch{return null}})
-  const [title,setTitle]=useState(draft?.title??""),[body,setBody]=useState(draft?.body??""),[topic,setTopic]=useState(draft?.topic??"cloud"),[locale,setLocale]=useState(draft?.locale??p.locale)
-  const [source,setSource]=useState<SupportLocale>(draft?.source??p.locale)
+  const [draft]=useState(()=>{try{return JSON.parse(sessionStorage.getItem(draftKey)??sessionStorage.getItem("clawdline-support-draft:anonymous")??"null") as {title:string;body:string;topic:string}|null}catch{return null}})
+  const [title,setTitle]=useState(draft?.title??""),[body,setBody]=useState(draft?.body??""),[topic,setTopic]=useState(draft?.topic??"cloud")
   const mutation=useMutation(p.call, (p.account?.id ?? "anonymous") + ":" + p.route.page + ":" + (p.route.id ?? "") + ":" + p.locale)
-  useEffect(()=>{try{sessionStorage.setItem(draftKey,JSON.stringify({title,body,topic,locale,source}))}catch{/* Storage denial does not block submission. */}},[draftKey,title,body,topic,locale,source])
-  const submit=(e:FormEvent)=>{e.preventDefault();void mutation.run<{question:Question}>("/v1/support/questions",{title,body,topic,source_language:source,reply_locale:locale},a=>{try{sessionStorage.removeItem(draftKey);sessionStorage.removeItem("clawdline-support-draft:anonymous")}catch{}p.go(p.href("/help/questions/"+a.question.id))})}
+  useEffect(()=>{try{sessionStorage.setItem(draftKey,JSON.stringify({title,body,topic}))}catch{/* Storage denial does not block submission. */}},[draftKey,title,body,topic])
+  const submit=(e:FormEvent)=>{e.preventDefault();void mutation.run<{question:Question}>("/v1/support/questions",{title,body,topic,source_language:p.locale,reply_locale:p.locale},a=>{try{sessionStorage.removeItem(draftKey);sessionStorage.removeItem("clawdline-support-draft:anonymous")}catch{}p.go(p.href("/help/questions/"+a.question.id))})}
   return <><div className="help-title"><h1>{w("newQuestion")}</h1><span className="help-badge">{w("private")}</span></div><div className="help-columns"><form className="help-card" onSubmit={submit}><fieldset disabled={mutation.locked}>
     <label>{w("questionTitle")}<input required maxLength={SUPPORT_UI_LIMITS.titleChars} value={title} onChange={e=>setTitle(e.target.value)}/></label><label>{w("questionBody")}<textarea required rows={7} value={body} onChange={e=>setBody(e.target.value)}/></label>
-    <div className="help-form-pair"><Language value={source} onChange={setSource} label={w("sourceLanguage")}/><Language value={locale} onChange={setLocale} label={w("replyLanguage")}/></div><div className="help-form-pair"><label>{w("topic")}<select value={topic} onChange={e=>setTopic(e.target.value)}>{TOPICS.map(t=><option key={t} value={t}>{w(t)}</option>)}</select></label></div>
+    <div className="help-form-pair"><label>{w("topic")}<select value={topic} onChange={e=>setTopic(e.target.value)}>{TOPICS.map(t=><option key={t} value={t}>{w(t)}</option>)}</select></label></div>
     <p className="help-hint">{w("privacy")}<br/>{w("storage")}</p></fieldset><ErrorBox code={mutation.error}/><div className="help-actions"><Link to={p.href("/help")} go={p.go}>{w("cancel")}</Link><button className="help-btn help-primary" disabled={mutation.busy||(!mutation.uncertain&&(!title.trim()||!body.trim()))} type="submit">{mutation.busy?w("busy"):mutation.uncertain?w("retry"):w("send")}</button></div></form><aside className="help-hint"><h2>{w("references")}</h2><p>{w("storage")}</p><p>{w("pendingReply")}</p></aside></div></>
 }
 function QuestionList(p:BodyProps) {
@@ -193,7 +187,7 @@ function Thread(p:BodyProps) {
   const [body,setBody]=useState(""),[url,setUrl]=useState(""),[version,setVersion]=useState(""),mutation=useMutation(p.call, (p.account?.id ?? "anonymous") + ":" + p.route.page + ":" + (p.route.id ?? "") + ":" + p.locale)
   useEffect(()=>{const refresh=()=>{if(!document.hidden&&!mutation.locked)read.refresh()};const timer=setInterval(refresh,SUPPORT_UI_LIMITS.refreshMs);window.addEventListener("focus",refresh);return()=>{clearInterval(timer);window.removeEventListener("focus",refresh)}},[mutation.locked])
   useEffect(()=>{if(!admin&&q?.unread&&q.messages?.length){let active=true;void p.call<{question:Question}>(path+"/read","POST",{message_id:q.messages.at(-1)!.id},requestKey()).then(a=>{if(active)read.replace(a)},()=>{});return()=>{active=false}}},[q?.messages?.at(-1)?.id,admin])
-  const submit=(e:FormEvent)=>{e.preventDefault();if(!q)return;void mutation.run<{question:Question}>(admin?path:path+"/messages",admin?{action:"reply",expected_revision:q.revision,body,locale:q.reply_locale,sources:[{url,revision:version}]}:{expected_revision:q.revision,body,source_language:q.reply_locale,reply_locale:q.reply_locale},a=>{p.onSaved();read.replace(a);setBody("")})}
+  const submit=(e:FormEvent)=>{e.preventDefault();if(!q)return;void mutation.run<{question:Question}>(admin?path:path+"/messages",admin?{action:"reply",expected_revision:q.revision,body,locale:q.reply_locale,sources:[{url,revision:version}]}:{expected_revision:q.revision,body,source_language:p.locale,reply_locale:p.locale},a=>{p.onSaved();read.replace(a);setBody("")})}
   const action=(type:"retry"|"resolve")=>{if(!q)return;void mutation.run<{question:Question}>(type==="retry"?path:path+"/resolve",{expected_revision:q.revision,...type==="retry"?{action:"retry"}:{}},read.replace)}
   return <><Link to={p.href(admin?"/help/admin":"/help/questions")} go={p.go}>{w("cancel")}</Link><ErrorBox code={read.error} retry={read.refresh}/>{read.loading&&!q?<p>{w("loading")}</p>:null}{q?<><div className="help-title"><div><div className="help-eyebrow">{w("private")} · {LANGUAGE_NAMES[q.reply_locale]}</div><h1>{q.title}</h1></div><State value={q.state}/></div><div className="help-columns"><section>{q.messages?.map(m=><article className={"help-message "+(m.kind==="member"?"help-card":"")} key={m.id}><div className="help-message-meta"><strong>{w(m.kind==="member"?"you":m.kind==="agent"?"agent":"operator")}</strong><small>{new Date(m.at).toLocaleString()}</small></div><p className="help-prose" lang={m.original_language}>{m.body}</p><SourceList sources={m.sources}/></article>)}
       <form className="help-reply" onSubmit={submit}><fieldset disabled={mutation.locked}><label>{w(admin?"operatorReply":"followup")}<textarea required rows={4} value={body} onChange={e=>setBody(e.target.value)}/></label>{admin?<SourceFields url={url} version={version} setUrl={setUrl} setVersion={setVersion}/>:null}</fieldset><ErrorBox code={mutation.error}/><div className="help-actions"><button className="help-btn" type="button" disabled={mutation.locked} onClick={()=>action(admin?"retry":"resolve")}>{w(admin?"retryJob":"resolve")}</button><button className="help-btn help-primary" disabled={mutation.busy||(!mutation.uncertain&&!body.trim())}>{mutation.busy?w("busy"):mutation.uncertain?w("retry"):w(admin?"operatorReply":"sendFollowup")}</button></div></form></section><aside className="help-card"><h2>{w("private")}</h2><p>{w("publicNote")}</p><p className="help-hint">{w("replyLanguage")}: {LANGUAGE_NAMES[q.reply_locale]}<br/>{w("sourceLanguage")}: {q.source_language}</p>{q.state==="queued"?<p className="help-hint">{w("pendingReply")}</p>:null}<button className="help-btn" onClick={read.refresh}>{w("refresh")}</button>{admin?<><dl><dt>{w("delivery")}</dt><dd>{q.delivery?.state??"—"} · {q.delivery?.attempts??"—"}</dd><dt>{w("workState")}</dt><dd>{q.work?.state??"—"} · {q.work?.attempts??"—"}</dd><dt>{w("updated")}</dt><dd>{q.delivery?.error??q.work?.error??"—"}</dd></dl><Link to={p.href("/help/admin/faq/new?source="+q.id)} go={p.go}>{w("createFaq")}</Link></>:null}</aside></div></>:null}</>

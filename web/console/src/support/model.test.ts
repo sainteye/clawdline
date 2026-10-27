@@ -1,13 +1,11 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's test runner loads TypeScript source.
-import { helpRoute,localeFromURL,translationState,type Article } from "./model.ts"
+import { helpRoute,translationState,type Article } from "./model.ts"
 test("help routes remain independent of a machine or pairing",()=>{
  assert.deepEqual(helpRoute("/help/questions/sq_one"),{page:"thread",id:"sq_one"})
  assert.deepEqual(helpRoute("/help/admin/faq/new"),{page:"editor",id:"new"})
  assert.equal(helpRoute("/help/admin/worker").page,"worker")
- assert.equal(localeFromURL("?locale=zh-Hant","en"),"zh-Hant")
- assert.equal(localeFromURL("?locale=invalid","en"),"en")
 })
 test("a published older translation is stale when the source changes",()=>{
  const text={title:"FAQ",body:"Answer",slug:"faq",revision:1,source_revision:1,sources:[],updated_at:"2026-01-01T00:00:00Z"}

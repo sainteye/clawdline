@@ -25,10 +25,6 @@ export function helpRoute(path: string): HelpRoute {
   }
   return { page: "faq", id: null }
 }
-export function localeFromURL(search: string, fallback: SupportLocale): SupportLocale {
-  const value = new URLSearchParams(search).get("locale")
-  return SUPPORT_LOCALES.includes(value as SupportLocale) ? value as SupportLocale : fallback
-}
 export function translationState(article: Article, locale: SupportLocale): "missing" | "stale" | "draft" | "published" {
   const row = article.translations[locale]
   if (!row) return "missing"

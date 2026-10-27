@@ -56,14 +56,19 @@ credential fences future claims and completions.
 
 ## Language is part of the record
 
-Interface language, original message language and requested reply language are independent. Keep
-valid BCP 47 original tags, including regional subtags. Content lookup normalizes Traditional and
-Simplified Chinese separately. The supported reply/content locales match the product's nine
-locales; the initial maintained interface copy is English and Taiwan Traditional Chinese.
+The existing interface language is the single user preference for FAQ content, new questions and
+member follow-ups. Help adds no language control, and a legacy `?locale=` parameter cannot override
+the interface. Operators edit and publish the FAQ version matching their interface language.
+Stored original message tags, requested reply locales and per-language FAQ revisions remain
+separate data fields; changing the interface does not translate or relabel earlier messages.
+Operator replies honor the member's recorded reply locale. Keep valid BCP 47 original tags, including
+regional subtags. Traditional and Simplified Chinese remain distinct. The supported content locales
+match the product's nine locales; the maintained interface copy is English and Taiwan Traditional Chinese.
 
 A FAQ has one stable article identity and separate language drafts and published revisions.
 Search and article reads remain in the requested locale. Missing translations have an explicit
-unavailable state and an English alternative, never an automatic cross-language substitution.
+unavailable state, never an automatic cross-language substitution. People use the existing
+interface language setting to read another language, including English.
 Updating the source revision makes older translations stale and removes them from the current
 public projection until reviewed again. A stale draft cannot be published. Every publication
 requires privacy and evidence review against a specific revision.
