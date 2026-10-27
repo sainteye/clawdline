@@ -146,17 +146,16 @@ function HelpBody(p: BodyProps) {
 }
 function AskAside({go,href}:Pick<BodyProps,"go"|"href">) { return <aside><div className="help-card"><div className="help-eyebrow">{w("nav")}</div><h2>{w("noAnswer")}</h2><p>{w("askCopy")}</p><Link to={href("/help/ask")} go={go} primary>{w("ask")}</Link><small>{w("private")}</small></div><p className="help-hint">{w("languageScope")}</p></aside> }
 function FaqList(p:BodyProps) {
-  const [moreError,setMoreError]=useState<string|null>(null);const [search,setSearch]=useState(""),[query,setQuery]=useState(""),[topic,setTopic]=useState("all"),[extra,setExtra]=useState<Faq[]>([]),[next,setNext]=useState<string|null>(null),[moreBusy,setMoreBusy]=useState(false)
-  const path="/v1/faq?locale="+p.locale+"&q="+encodeURIComponent(query), read=useRead<{items:Faq[];next_cursor:string|null}>(path,p.call)
-  const items=[...(read.data?.items??[]),...extra].filter(r=>topic==="all"||r.topic===topic)
-  const more=async()=>{setMoreBusy(true);try{const a=await p.call<{items:Faq[];next_cursor:string|null}>(path+"&after="+encodeURIComponent(next??read.data?.next_cursor??""));read.replace(a);setExtra([]);setNext(null)}catch(e){setMoreError(e instanceof SupportFailure?e.code:"support_unavailable")}finally{setMoreBusy(false)}}
+  const [search,setSearch]=useState(""),[query,setQuery]=useState(""),[topic,setTopic]=useState("all"),[after,setAfter]=useState<string|null>(null)
+  const path="/v1/faq?locale="+p.locale+"&q="+encodeURIComponent(query)+(topic==="all"?"":"&topic="+topic)+(after?"&after="+encodeURIComponent(after):""), read=useRead<{items:Faq[];next_cursor:string|null}>(path,p.call)
+  const items=read.data?.items??[]
   return <><div className="help-hero"><div><div className="help-eyebrow">{w("eyebrow")}</div><h1>{w("title")}</h1><p>{w("intro")}</p></div><div className="help-bubble" aria-hidden="true">···</div></div><div className="help-columns"><section>
-    <form className="help-search" onSubmit={e=>{e.preventDefault();setQuery(search);setExtra([]);setNext(null)}}><input aria-label={w("search")} placeholder={w("search")} value={search} onChange={e=>setSearch(e.target.value)} /><button type="submit">{w("searchGo")}</button></form>
-    <div className="help-chips">{["all",...TOPICS].map(t=><button className={topic===t?"selected":""} key={t} onClick={()=>setTopic(t)}>{w(t==="all"?"allTopics":t as SupportWord)}</button>)}</div>
-    {read.loading?<p role="status">{w("loading")}</p>:null}<ErrorBox code={read.error??moreError} retry={read.refresh}/>
+    <form className="help-search" onSubmit={e=>{e.preventDefault();setQuery(search);setAfter(null);if(search===query&&!after)read.refresh()}}><input aria-label={w("search")} placeholder={w("search")} value={search} onChange={e=>setSearch(e.target.value)} /><button type="submit">{w("searchGo")}</button></form>
+    <div className="help-chips">{["all",...TOPICS].map(t=><button className={topic===t?"selected":""} key={t} onClick={()=>{setTopic(t);setAfter(null)}}>{w(t==="all"?"allTopics":t as SupportWord)}</button>)}</div>
+    {read.loading?<p role="status">{w("loading")}</p>:null}<ErrorBox code={read.error} retry={read.refresh}/>
     {read.data&&!items.length?<div className="help-empty"><p>{query?w("noSearch"):w("emptyFaq")}</p>{p.locale!=="en"?<button className="help-btn" onClick={()=>p.setLocale("en")}>{w("readEnglish")}</button>:null}</div>:null}
     {items.map(r=><a className="help-question-row" key={r.id} href={p.href("/help/faq/"+r.id)} onClick={e=>{e.preventDefault();p.go(p.href("/help/faq/"+r.id))}}><div><h3>{r.title}</h3><small>{w(TOPICS.includes(r.topic as typeof TOPICS[number])?r.topic as SupportWord:"other")} · {new Date(r.updated_at).toLocaleDateString()}</small></div><span>›</span></a>)}
-    {(next??(extra.length?null:read.data?.next_cursor))?<button className="help-btn" disabled={moreBusy} onClick={()=>void more()}>{w("more")}</button>:null}
+    {read.data?.next_cursor?<button className="help-btn" disabled={read.loading} onClick={()=>setAfter(read.data?.next_cursor??null)}>{w("more")}</button>:null}
   </section><AskAside {...p}/></div></>
 }
 function FaqDetail(p:BodyProps) {
