@@ -25,6 +25,11 @@ export function helpRoute(path: string): HelpRoute {
   }
   return { page: "faq", id: null }
 }
+export function helpAccess(route: HelpRoute): "public" | "member" | "admin" {
+  if (route.page === "faq" || route.page === "article") return "public"
+  if (route.page === "ask" || route.page === "mine" || route.page === "thread") return "member"
+  return "admin"
+}
 export function translationState(article: Article, locale: SupportLocale): "missing" | "stale" | "draft" | "published" {
   const row = article.translations[locale]
   if (!row) return "missing"

@@ -3,7 +3,9 @@
 The hosted console's `/help` is an account service, independent of machine pairing and the Session
 relay. Public readers can search published FAQs; signed-in members can submit questions and read
 only their own threads. `/help/admin` is the operator inbox, `/help/admin/faq` is the editorial queue,
-and `/help/admin/worker` binds the answering service. The private Cloud API rechecks account or
+and `/help/admin/worker` binds the answering service. These screens, including direct links,
+require operations access; ordinary members receive an access-denied view without mounting
+editorial or worker controls. The private Cloud API rechecks account or
 superuser authority for every request; hiding a navigation link grants no authority.
 
 ## The content boundary
@@ -38,7 +40,8 @@ never appear in the public projection or static export.
    answered. Webhook admission, delivery and an Agent's process exit never substitute for it.
 6. The member reads the same thread, can ask a follow-up and mark it resolved. A visible thread
    refreshes on focus and on a bounded interval. A read cursor acknowledges only the message the
-   browser actually saw, never a newer reply that arrived during that acknowledgement.
+   browser actually saw, never a newer reply that arrived during that acknowledgement. Question
+lists refresh when the browser regains focus or becomes visible, without a page refresh button.
 
 The internal storage revision changes for leases and delivery metadata. The member-facing
 conversation revision changes for content and explicit conversation actions; background delivery

@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's test runner loads TypeScript source.
-import { helpRoute,translationState,type Article } from "./model.ts"
+import { helpRoute,helpAccess,translationState,type Article } from "./model.ts"
 test("help routes remain independent of a machine or pairing",()=>{
  assert.deepEqual(helpRoute("/help/questions/sq_one"),{page:"thread",id:"sq_one"})
  assert.deepEqual(helpRoute("/help/admin/faq/new"),{page:"editor",id:"new"})
@@ -13,4 +13,10 @@ test("a published older translation is stale when the source changes",()=>{
  assert.equal(translationState(article,"zh-Hant"),"published");assert.equal(translationState(article,"ja"),"missing")
  article.source_revision=2;assert.equal(translationState(article,"zh-Hant"),"stale")
  article.translations["zh-Hant"]!.draft={...text,source_revision:2,revision:2};assert.equal(translationState(article,"zh-Hant"),"draft")
+})
+
+test("management deep links require an administrator while members keep their own threads",()=>{
+ for (const path of ["/help/admin", "/help/admin/questions/sq_example", "/help/admin/faq", "/help/admin/faq/new", "/help/admin/worker"]) assert.equal(helpAccess(helpRoute(path)),"admin",path)
+ for (const path of ["/help/ask", "/help/questions", "/help/questions/sq_example"]) assert.equal(helpAccess(helpRoute(path)),"member",path)
+ for (const path of ["/help", "/help/faq/faq_example"]) assert.equal(helpAccess(helpRoute(path)),"public",path)
 })

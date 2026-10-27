@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9384,
+  "englishKeys": 9386,
   "counts": {
     "negation": 2682,
     "state": 1538,
-    "permission": 557,
+    "permission": 556,
     "deletion": 203,
     "uncertainty": 295
   },
-  "unionCount": 4151,
+  "unionCount": 4150,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -4768,7 +4768,6 @@
       "shell.pairLinkRetry",
       "support.cloud",
       "support.credentialOnce",
-      "support.search",
       "support.signIn",
       "support.signInNeeded",
       "support.workerNote",
@@ -9174,7 +9173,6 @@
     "support.questionLimit",
     "support.queued",
     "support.saved",
-    "support.search",
     "support.sessionFailed",
     "support.setupNeeded",
     "support.signIn",

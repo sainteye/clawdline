@@ -5,7 +5,6 @@
   "next.toolResultImageUnavailable": "This stored image is incomplete or unavailable.",
   "next.toolResultImageAlt": "Stored tool screenshot",
   "next.toolResultOriginal": "Load original image",
-
   "next.toolResultRaw": "Stored native output",
   "next.toolResultExpand": "Read full text",
   "next.toolResultLoading": "Reading stored result…",
@@ -19,7 +18,6 @@
   "capacityRow.session.tool_preview_bytes.full": "Longer text stays in the Session record and is read when expanded.",
   "capacityRow.cloud.read_plaintext_bytes.what": "Negotiated compressed reads have a maximum decompressed size.",
   "capacityRow.cloud.read_plaintext_bytes.full": "The viewer refuses oversized compressed output rather than allocating without a bound.",
-
   "next.sessionModelCapacity": "Model at capacity · choose another model or retry",
   "capacityRow.schedule.history_page_rows.what": "How many scheduled runs the history sheet reveals at a time, keeping long histories easy to browse.",
   "capacityRow.schedule.history_page_rows.full": "Load more items reveals the next batch. This display limit does not delete stored history; the schedule detail currently includes at most the newest 200 runs.",
@@ -9274,7 +9272,7 @@
   "support.eyebrow": "HELP, THAT KEEPS GROWING",
   "support.title": "Every question. A way forward.",
   "support.intro": "Find an answer, or leave a private question with us. Your questions and replies stay together in your own space.",
-  "support.search": "Search setup, pairing, Sessions…",
+  "support.search": "Search FAQs",
   "support.searchGo": "Search",
   "support.allTopics": "All topics",
   "support.getting_started": "Getting started",
@@ -9286,7 +9284,7 @@
   "support.askCopy": "Tell us what happened. We’ll reply right here.",
   "support.privacy": "Only you and Clawdline support can read this question.",
   "support.storage": "Your question is stored in the Cloud support database for our support team and answering Agent. Leave out passwords, API keys and private Session conversations.",
-  "support.emptyFaq": "There are no published answers in this language yet.",
+  "support.emptyFaq": "There are no FAQs yet.",
   "support.noSearch": "No answers match this search.",
   "support.readEnglish": "Read English answers",
   "support.contentLanguage": "Content language",
@@ -9384,7 +9382,9 @@
   "capacityRow.console.support_request_seconds.what": "How long a help-center request waits before its result is treated as unconfirmed.",
   "capacityRow.console.support_request_seconds.full": "Your text and request key remain available so you can retry the same request safely.",
   "capacityRow.console.support_refresh_seconds.what": "How often an open question checks for a reply while this tab is visible.",
-  "capacityRow.console.support_refresh_seconds.full": "New replies appear on the next check; Refresh checks immediately.",
+  "capacityRow.console.support_refresh_seconds.full": "New replies appear on the next check or when you return to this tab.",
   "capacityRow.console.support_title_characters.what": "The maximum number of Unicode characters in a question or FAQ title.",
-  "capacityRow.console.support_title_characters.full": "Shorten the title before saving; the full description stays available in the message field."
+  "capacityRow.console.support_title_characters.full": "Shorten the title before saving; the full description stays available in the message field.",
+  "support.searchHint": "Enter a keyword",
+  "support.adminOnly": "Only administrators can use this page."
 }

@@ -5,7 +5,6 @@
   "next.toolResultImageUnavailable": "這張所存圖片不完整或無法讀取。",
   "next.toolResultImageAlt": "工具紀錄所存截圖",
   "next.toolResultOriginal": "讀取原圖",
-
   "next.toolResultRaw": "查看原生紀錄所存回傳",
   "next.toolResultExpand": "讀取完整文字",
   "next.toolResultLoading": "正在讀取所存結果…",
@@ -19,7 +18,6 @@
   "capacityRow.session.tool_preview_bytes.full": "較長文字保留於 Session 紀錄，展開時才讀取。",
   "capacityRow.cloud.read_plaintext_bytes.what": "協商壓縮的回覆限制解壓後大小。",
   "capacityRow.cloud.read_plaintext_bytes.full": "超過上限時瀏覽器拒絕解壓，避免無限制配置記憶體。",
-
   "next.sessionModelCapacity": "模型容量不足 · 請換模型或重試",
   "capacityRow.schedule.history_page_rows.what": "排程歷史每次展開的執行紀錄筆數，讓較長的歷史也方便瀏覽。",
   "capacityRow.schedule.history_page_rows.full": "按「載入更多項目」展開下一批。這項顯示限制不會刪除已儲存的歷史；排程詳細資料目前最多包含最新 200 筆執行紀錄。",
@@ -9274,7 +9272,7 @@
   "support.eyebrow": "讓答案持續累積",
   "support.title": "讓每個問題，都有下一步。",
   "support.intro": "先找一個答案，或把你的問題交給我們。你的提問與回覆，會留在自己的問答紀錄裡。",
-  "support.search": "搜尋設定、配對、Session…",
+  "support.search": "搜尋常見問題",
   "support.searchGo": "搜尋",
   "support.allTopics": "全部分類",
   "support.getting_started": "開始使用",
@@ -9286,7 +9284,7 @@
   "support.askCopy": "描述你遇到的情況，我們會在這裡回覆你。",
   "support.privacy": "只有你和 Clawdline 支援團隊能讀取這則提問。",
   "support.storage": "提問將儲存在 Cloud 支援資料庫，供支援團隊與回答 Agent 處理。請勿貼上密碼、API Key 或私人 Session 對話。",
-  "support.emptyFaq": "這個語言還沒有已發布的常見問題。",
+  "support.emptyFaq": "目前還沒有常見問題。",
   "support.noSearch": "沒有符合搜尋條件的答案。",
   "support.readEnglish": "閱讀英文答案",
   "support.contentLanguage": "內容語言",
@@ -9384,7 +9382,9 @@
   "capacityRow.console.support_request_seconds.what": "問答中心等待單次請求的時間，超過後會將結果標示為尚未確認。",
   "capacityRow.console.support_request_seconds.full": "輸入文字與請求識別仍保留，讓你安全重試同一個請求。",
   "capacityRow.console.support_refresh_seconds.what": "提問頁面在可見時，定期檢查新回覆的間隔。",
-  "capacityRow.console.support_refresh_seconds.full": "新回覆會在下次檢查時出現，也可按重新整理立即檢查。",
+  "capacityRow.console.support_refresh_seconds.full": "新回覆會在下次檢查或返回分頁時自動更新。",
   "capacityRow.console.support_title_characters.what": "提問或 FAQ 標題可使用的 Unicode 字元數量上限。",
-  "capacityRow.console.support_title_characters.full": "請縮短標題後再儲存；完整說明仍可放在內容欄位。"
+  "capacityRow.console.support_title_characters.full": "請縮短標題後再儲存；完整說明仍可放在內容欄位。",
+  "support.searchHint": "輸入關鍵字",
+  "support.adminOnly": "此頁面僅供管理員使用。"
 }

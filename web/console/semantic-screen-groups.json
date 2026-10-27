@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9384,
-  "riskKeys": 4151,
-  "nonRiskCount": 5233,
+  "englishContentKeys": 9386,
+  "riskKeys": 4150,
+  "nonRiskCount": 5236,
   "groups": [
     {
       "name": "admin / other",
@@ -5196,12 +5196,13 @@
     },
     {
       "name": "support / other",
-      "count": 95,
+      "count": 98,
       "sources": [
         null
       ],
       "keys": [
         "support.account",
+        "support.adminOnly",
         "support.agent",
         "support.agents",
         "support.allDrafts",
@@ -5273,7 +5274,9 @@
         "support.retryJob",
         "support.revisionMoved",
         "support.save",
+        "support.search",
         "support.searchGo",
+        "support.searchHint",
         "support.send",
         "support.sendFollowup",
         "support.slug",
