@@ -327,7 +327,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["project-antigravity-consent-change"], "POST /v1/projects/{project}/antigravity-consent")
   assert.ok(!("project-antigravity-consent-status" in DEFERRED))
   assert.ok(!("project-antigravity-consent-change" in DEFERRED))
-  assert.equal(Object.keys(CARRIED).length, 168)
+  assert.equal(Object.keys(CARRIED).length, 169)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

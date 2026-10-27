@@ -413,12 +413,16 @@ func (w *WorkSystemV2) Item(ctx context.Context, id string) (WorkV2View, error) 
 		Gate: &gate}, nil
 }
 
-func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, includeClaims bool) ([]WorkV2View, error) {
+func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, includeClaims, details bool) ([]WorkV2View, error) {
 	ids := make([]string, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)
 	}
-	relations, err := w.Store.WorkV2Relations(ctx, ids)
+	readRelations := w.Store.WorkV2Relations
+	if !details {
+		readRelations = w.Store.WorkV2CardRelations
+	}
+	relations, err := readRelations(ctx, ids)
 	if err != nil {
 		return nil, mapWorkV2Error(err)
 	}
@@ -450,7 +454,7 @@ func (w *WorkSystemV2) List(ctx context.Context, project, owner, status, search 
 	if err != nil {
 		return nil, false, mapWorkV2Error(err)
 	}
-	out, err := w.pageViews(ctx, items, true)
+	out, err := w.pageViews(ctx, items, true, true)
 	if err != nil {
 		return nil, false, err
 	}
@@ -491,6 +495,15 @@ func decodeWorkV2ListCursor(raw string) (workV2ListCursor, error) {
 // the complete 100-row projection used by Session ownership and internal
 // reconciliation; paging the person's screen must not silently page those.
 func (w *WorkSystemV2) ListPage(ctx context.Context, project, status, search, rawCursor string) (WorkV2ListPage, error) {
+	return w.listPage(ctx, project, status, search, rawCursor, true)
+}
+
+// ListCardsPage shares paging and full-source search with ListPage, without detail relations.
+func (w *WorkSystemV2) ListCardsPage(ctx context.Context, project, status, search, rawCursor string) (WorkV2ListPage, error) {
+	return w.listPage(ctx, project, status, search, rawCursor, false)
+}
+
+func (w *WorkSystemV2) listPage(ctx context.Context, project, status, search, rawCursor string, details bool) (WorkV2ListPage, error) {
 	if status != "open" && status != "done" && status != "all" {
 		return WorkV2ListPage{}, workV2Error(http.StatusBadRequest, "invalid_status", "Status is open, done or all.")
 	}
@@ -503,7 +516,7 @@ func (w *WorkSystemV2) ListPage(ctx context.Context, project, status, search, ra
 	if err != nil {
 		return WorkV2ListPage{}, mapWorkV2Error(err)
 	}
-	rows, err := w.pageViews(ctx, items, true)
+	rows, err := w.pageViews(ctx, items, true, details)
 	if err != nil {
 		return WorkV2ListPage{}, err
 	}
@@ -519,7 +532,7 @@ func (w *WorkSystemV2) RecentlyCompleted(ctx context.Context, session string) ([
 	if err != nil {
 		return nil, false, mapWorkV2Error(err)
 	}
-	out, err := w.pageViews(ctx, items, false)
+	out, err := w.pageViews(ctx, items, false, true)
 	if err != nil {
 		return nil, false, err
 	}

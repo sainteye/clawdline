@@ -2340,6 +2340,11 @@
     "Known": true
   },
   {
+    "Name": "work.card_description_runes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "work.completion_reason_bytes",
     "Known": true,
     "Note": true

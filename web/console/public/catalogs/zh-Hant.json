@@ -1532,6 +1532,8 @@
   "capacityRow.work.item_title_bytes.what": "Board 項目的標題最多多長；項目裡步驟和參考圖片的標題也一樣。標題會出現在清單、卡片和手機通知裡，要能在一兩行內放得下。",
   "capacityRow.work.item_user_action_bytes.full": "這是單段說明的上限。太長的會在儲存時被拒絕，需要改短；項目上原有的內容不會變。",
   "capacityRow.work.item_user_action_bytes.what": "Board 項目上「需要你做什麼」那段說明最多多長。它應該是一個你看了就能動手的明確請求，而不是一份報告。",
+  "capacityRow.work.card_description_runes.what": "看板卡片傳送的描述預覽字數。限制預覽長度，避免載入列表時傳送完整描述。",
+  "capacityRow.work.card_description_runes.full": "完整描述仍會保留。點開卡片即可讀取與編輯；預覽不會取代已儲存的文字。",
   "capacityRow.work.list_page_rows.full": "這是單頁的上限，不是項目數的上限。其餘的都還在，會在下一頁載入。你不用做任何事。",
   "capacityRow.work.list_page_rows.what": "Board 第一頁先載入幾個項目，讓 Board 很快出現，不用等所有項目和它們的文件、圖片都讀完。",
   "capacityRow.work.open.full": "新增項目會被拒絕。到 Board 或 Backlog 把不再需要的項目關掉或捨棄，就能空出名額。",

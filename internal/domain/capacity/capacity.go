@@ -219,6 +219,7 @@ const (
 	// T3: the board and the Backlog.
 	WorkOpen                  = "work.open"
 	WorkListPageRows          = "work.list_page_rows"
+	WorkCardDescriptionRunes  = "work.card_description_runes"
 	WorkPlanning              = "work.planning"
 	WorkAssignments           = "work.assignments"
 	WorkDocumentsPerItem      = "work.documents_per_item"

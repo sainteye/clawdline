@@ -2285,6 +2285,21 @@
       "decode": {"reply": "action", "fields": {"id": {"type": "string", "non_empty": true, "max_bytes": 256}, "item": {"type": "object", "max_bytes": 98304, "copies": {"max_bytes": "workV2CloudBodyLimit"}}}, "route": {"path": "/v1/work/v2/items/{id}/cancel", "body": {"object": "item"}}}
     },
     {
+      "op": "work.v2.cards",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/work/v2/items?view=cards-v1&project=&status=&q=&cursor=",
+      "console_seam": "reader",
+      "local": {"method": "GET"},
+      "example": {"cursor": "page-2", "project": "p1", "query": "needle", "request": "req-work-v2-cards", "session": "__clawdline_machine__", "status": "open"},
+      "shapes": [
+        {"body": ["project", "query", "request", "session", "status"], "path": "/v1/work/v2/items", "query": ["project", "q", "status", "view"]},
+        {"body": ["cursor", "project", "query", "request", "session", "status"], "path": "/v1/work/v2/items", "query": ["cursor", "project", "q", "status", "view"]}
+      ],
+      "decode": {"reply": "machine", "fields": {"project": {"type": "string", "max_bytes": 256}, "status": {"type": "string", "enum": ["open", "done", "all"]}, "query": {"type": "string", "max_bytes": 1024}, "cursor": {"type": "string", "max_bytes": 1024}}, "route": {"path": "/v1/work/v2/items", "query": {"view": {"const": "cards-v1"}, "project": {"from": "project", "omit_empty": true}, "status": {"from": "status", "omit_empty": true}, "q": {"from": "query", "omit_empty": true}, "cursor": {"from": "cursor", "omit_empty": true}}}}
+    },
+    {
       "op": "work.v2.complete",
       "kind": "command",
       "write_gate": true,

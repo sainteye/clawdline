@@ -751,8 +751,12 @@ func (s *Server) workV2ResolveProposal(w http.ResponseWriter, r *http.Request, i
 }
 
 func (s *Server) workV2List(w http.ResponseWriter, r *http.Request) {
-	q, ok := workQuery(w, r, "project", "owner", "terminal", "status", "q", "cursor")
+	q, ok := workQuery(w, r, "project", "owner", "terminal", "status", "q", "cursor", "view")
 	if !ok {
+		return
+	}
+	if q["view"] != "" && q["view"] != "cards-v1" {
+		writeRawRefusal(w, http.StatusBadRequest, "bad_request", "Unknown or repeated query field "+"view"+".")
 		return
 	}
 	status := q["status"]
@@ -768,19 +772,23 @@ func (s *Server) workV2List(w http.ResponseWriter, r *http.Request) {
 		s.workV2ListProjection(w, r, q, status)
 		return
 	}
-	page, err := s.workV2().ListPage(r.Context(), q["project"], status, q["q"], q["cursor"])
+	readPage := s.workV2().ListPage
+	if q["view"] == "cards-v1" {
+		readPage = s.workV2().ListCardsPage
+	}
+	page, err := readPage(r.Context(), q["project"], status, q["q"], q["cursor"])
 	if err != nil {
 		s.writeWorkV2Error(w, err)
 		return
 	}
 	out := struct {
-		OK        bool             `json:"ok"`
-		Rows      []workV2ItemWire `json:"rows"`
-		Counts    map[string]int   `json:"counts"`
-		Next      *string          `json:"next_cursor"`
-		PageSize  int              `json:"page_size"`
-		Truncated bool             `json:"truncated"`
-	}{OK: true, Rows: []workV2ItemWire{}, Counts: map[string]int{}, Next: optionalString(page.Next),
+		OK        bool           `json:"ok"`
+		Rows      []any          `json:"rows"`
+		Counts    map[string]int `json:"counts"`
+		Next      *string        `json:"next_cursor"`
+		PageSize  int            `json:"page_size"`
+		Truncated bool           `json:"truncated"`
+	}{OK: true, Rows: []any{}, Counts: map[string]int{}, Next: optionalString(page.Next),
 		PageSize: app.WorkV2ListPageLimit, Truncated: page.Next != ""}
 	var itemOf func(app.WorkV2View) workV2ItemWire
 	if len(page.Rows) > 0 {
@@ -788,7 +796,11 @@ func (s *Server) workV2List(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, row := range page.Rows {
 		wire := itemOf(row)
-		out.Rows = append(out.Rows, wire)
+		if q["view"] == "cards-v1" {
+			out.Rows = append(out.Rows, workV2CardOf(wire))
+		} else {
+			out.Rows = append(out.Rows, wire)
+		}
 		out.Counts[wire.Area]++
 	}
 	writeJSON(w, out)

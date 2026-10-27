@@ -1338,7 +1338,8 @@ export class RelayReader {
           return await this.machineRead(init?.signal, method, path, "work.digests", { kind: q.kind ?? "" })
         }
         case "/v1/work/v2/items": {
-          const q = this.only(url, path, "project", "status", "q", "cursor")
+          const q = this.only(url, path, "project", "status", "q", "cursor", "view")
+          if (q.view && q.view !== "cards-v1") return this.refuse(method, path, 400, "bad_request", "Unknown board query field.")
           let project = q.project ?? ""
           if (project) {
             const client = this.connected()
@@ -1354,6 +1355,13 @@ export class RelayReader {
               })
             }
             project = place.id
+          }
+          // A new word keeps the old exact-key decoders untouched. Unknown
+          // capability uses the legacy read; a later live descriptor can opt in.
+          if (q.view === "cards-v1" && this.machineImplements("work.v2.cards")) {
+            return await this.machineRead(init?.signal, method, path, "work.v2.cards", {
+              project, status: q.status ?? "open", query: q.q ?? "", ...(q.cursor ? { cursor: q.cursor } : {}),
+            })
           }
           // Keep the first page's older body exact: daemons from before Board
           // pagination reject an extra empty cursor instead of ignoring it.

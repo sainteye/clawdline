@@ -484,6 +484,7 @@
 | `voice.model_download_bytes` | 574041195 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `waits.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `work.assignments` | 4000 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `work.card_description_runes` | 200 | `characters` | `evict_oldest` | `diagnostics, sender` | — |
 | `work.completion_reason_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
 | `work.digests` | 800 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `work.documents_per_item` | 32 | `rows` | `refuse` | `diagnostics, sender, health` | — |

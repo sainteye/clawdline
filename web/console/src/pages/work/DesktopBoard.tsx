@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
 import { catalogWord } from "../../catalog.js"
-import type { Decision, WorkV2Item } from "./api.js"
+import type { Decision, WorkV2Card } from "./api.js"
 import { desktopBoardItems } from "./desktop-board.js"
 import { WorkIcon } from "./WorkIcon.js"
 import "./desktop-board.css"
@@ -42,12 +42,12 @@ export function DesktopBoardSwitches({ value, onChange }: {
 }
 
 export function DesktopBoard({ items, decisions, visibility, proposalCount, proposals, renderCard, loading, loadingLabel }: {
-  items: WorkV2Item[]
+  items: WorkV2Card[]
   decisions: Decision[]
   visibility: DesktopBoardVisibility
   proposalCount: number
   proposals: ReactNode
-  renderCard: (item: WorkV2Item) => ReactNode
+  renderCard: (item: WorkV2Card) => ReactNode
   loading: boolean
   loadingLabel: string
 }) {

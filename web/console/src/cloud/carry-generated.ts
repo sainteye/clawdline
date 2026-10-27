@@ -210,6 +210,7 @@ export const CARRIED = {
   "work.proposals": "GET /v1/work/proposals[?project=]",
   "work.v2.assign": "POST /v1/work/v2/items/{id}/assign",
   "work.v2.cancel": "POST /v1/work/v2/items/{id}/cancel",
+  "work.v2.cards": "GET /v1/work/v2/items?view=cards-v1&project=&status=&q=&cursor=",
   "work.v2.complete": "POST /v1/work/v2/items/{id}/complete",
   "work.v2.convert": "POST /v1/work/v2/items/{id}/convert",
   "work.v2.create": "POST /v1/work/v2/items",
