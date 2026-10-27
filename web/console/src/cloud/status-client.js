@@ -72,6 +72,30 @@ function pinnedReadName(type, body) {
   return null
 }
 
+/** Apply one authenticated update to its exact held page before publishing any rows. */
+export function applyTranscriptDelta(held, answer, session) {
+  const changes = answer?.delta, page = answer?.page
+  const stale = () => refused("transcript_cursor_stale", "The transcript update does not match its held page")
+  if (!held || !Array.isArray(held.entries) || held.id !== session || answer?.baseVersion !== held.version ||
+    !page || page.id !== session || !/^[0-9a-f]{64}$/u.test(page.version) ||
+    typeof page.signature !== "string" || !["transcript", "structured"].includes(page.evidence) ||
+    !Array.isArray(page.entries) || page.entries.length !== 0 || !Array.isArray(changes) ||
+    !Number.isSafeInteger(answer.entryCount) || answer.entryCount < 0) throw stale()
+  const entries = []
+  let cursor = 0
+  for (const change of changes) {
+    if (!change || !Number.isSafeInteger(change.start) || change.start < cursor || change.start > held.entries.length ||
+      !Number.isSafeInteger(change.deleteCount) || change.deleteCount < 0 || change.deleteCount > held.entries.length-change.start ||
+      !Array.isArray(change.entries) || change.entries.some(row => !row || typeof row.role !== "string" || typeof row.text !== "string") ||
+      entries.length+change.start-cursor+change.entries.length > answer.entryCount) throw stale()
+    entries.push(...held.entries.slice(cursor,change.start),...change.entries)
+    cursor = change.start+change.deleteCount
+  }
+  if (entries.length+held.entries.length-cursor !== answer.entryCount) throw stale()
+  entries.push(...held.entries.slice(cursor))
+  return { ...page, entries }
+}
+
 /** A retained or delayed t/ row must name the exact request before it can settle a pinned read. */
 export function pinnedReplyMatches(payload, expected) {
   return !!payload && typeof payload === "object" && !Array.isArray(payload) &&
@@ -1431,8 +1455,10 @@ export class StatusCloudClient extends CatalogCloudClient {
         throw refused("cloud_read_busy", "an unpinned Session transcript read is already in flight")
       }
       const version = this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v2 === true ? "tools-v2" : "tools-v1"
-      const view = (version + (typeof DecompressionStream === "function" ? "z" : "")) +
-        (held?.version && /^[0-9a-f]{64}$/u.test(held.version) ? ":" + held.version : "")
+      const known = held?.id === sessionID && /^[0-9a-f]{64}$/u.test(held?.version) ? held.version : ""
+      const delta = version === "tools-v2" && !!known && this.machineDescriptor?.(machineID)?.machine?.transcript_delta_v1 === true
+      const fullView = version + (typeof DecompressionStream === "function" ? "z" : "")
+      const view = (delta ? "delta-v1" + (typeof DecompressionStream === "function" ? "z" : "") : fullView) + (known ? ":" + known : "")
       const fields = { limit: 200, priority: "foreground", machine_id: machineID, expected_generation: executionGeneration }
       if (this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v1 !== true) {
         return this._read({ machine: machineID, session: sessionID }, "transcript", fields, "transcript", undefined, { signal })
@@ -1441,11 +1467,15 @@ export class StatusCloudClient extends CatalogCloudClient {
         const page = await this._read({ machine: machineID, session: sessionID }, "transcript",
           { ...fields, view }, "transcript.view." + view, undefined, { signal })
         if (page?.unchanged === true) {
-          if (!held || page.version !== held.version) throw refused("transcript_cursor_stale", "The held page no longer matches")
+          if (!known || page.version !== known) throw refused("transcript_cursor_stale", "The held page no longer matches")
           return held
         }
-        return page
+        return page?.delta !== undefined || page?.baseVersion !== undefined
+          ? applyTranscriptDelta(held, page, sessionID) : page
       } catch (error) {
+        if (delta && ["transcript_cursor_stale", "invalid_transcript_view", "bad_payload"].includes(error?.code)) {
+          return this._read({ machine: machineID, session: sessionID }, "transcript", { ...fields, view: fullView }, "transcript.view." + fullView, undefined, { signal })
+        }
         if (version === "tools-v2" && error?.code === "invalid_transcript_view") {
           const fallback = "tools-v1" + (typeof DecompressionStream === "function" ? "z" : "")
           return this._read({ machine: machineID, session: sessionID }, "transcript", { ...fields, view: fallback }, "transcript.view." + fallback, undefined, { signal })

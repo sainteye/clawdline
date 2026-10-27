@@ -3,6 +3,8 @@ package capacity
 // cacheBounds is every registered row named cache.*.
 func cacheBounds() []Entry {
 	return []Entry{
+		{Name: "cache.transcript_delta_pages", Class: Cache, Unit: Rows, Limit: 32, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaPagesLimit"}},
+		{Name: "cache.transcript_delta_bytes", Class: Cache, Unit: Bytes, Limit: 8 << 20, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaBytesLimit"}},
 		{Name: "cache.provider_quota", Class: Cache, Unit: Rows, Limit: 4, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/providerquota.CacheLimit"}},

@@ -19,7 +19,7 @@ func TestPinnedTranscriptCompressesOnlyAnExplicitNewView(t *testing.T) {
 		return LocalResponse{Status: 200, ContentType: "application/json", Body: body}, nil
 	}))
 	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority { return contentReadAuthority(true) }
-	for _, view := range []string{"", "tools-v1", "tools-v1z", "tools-v2z", "entry-v1z:0:" + strings.Repeat("a", 64), "tool-v1z:0:" + strings.Repeat("a", 64) + ":text"} {
+	for _, view := range []string{"", "tools-v1", "tools-v1z", "tools-v2z", "delta-v1z:" + strings.Repeat("a", 64), "entry-v1z:0:" + strings.Repeat("a", 64), "tool-v1z:0:" + strings.Repeat("a", 64) + ":text"} {
 		body := map[string]any{"type": "transcript", "session": pane, "limit": 200, "expected_generation": pinnedGeneration}
 		if view != "" {
 			body["view"] = view

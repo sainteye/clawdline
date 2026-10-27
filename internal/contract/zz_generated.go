@@ -7739,6 +7739,20 @@ type TranscriptChangeStats struct {
 	LineCount int64 `json:"lineCount"`
 }
 
+// Opt-in delta-v1 reply. Apply only to baseVersion of the exact pinned Session;
+// replace metadata with page and apply ordered, non-overlapping splices in
+// original base coordinates atomically. A cache miss or a larger delta returns
+// a full TranscriptPage. Unchanged remains the existing version receipt.
+type TranscriptDelta struct {
+	BaseVersion string             `json:"baseVersion"`
+	Delta       []TranscriptSplice `json:"delta"`
+
+	// Exact resulting row count, including provider rows that expand into multiple
+	// entries.
+	EntryCount int64          `json:"entryCount"`
+	Page       TranscriptPage `json:"page"`
+}
+
 // One thing in a conversation, in the shape the Swift app's `transcriptRows`
 // writes it. A tool call and what the tool returned both carry `role: tool`;
 // only the call names its tool. A call's `text` is the one line describing what
@@ -7918,6 +7932,14 @@ type TranscriptPlanStep struct {
 	// rollout's in_progress.
 	Status string `json:"status"`
 	Step   string `json:"step"`
+}
+
+// One replacement in the exact held page. Equal prefix and suffix entries are
+// retained, including distinct repeated entries.
+type TranscriptSplice struct {
+	DeleteCount int64             `json:"deleteCount"`
+	Entries     []TranscriptEntry `json:"entries"`
+	Start       int64             `json:"start"`
 }
 
 type TranscriptToolResult struct {

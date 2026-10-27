@@ -137,3 +137,35 @@ no private fixture data.
 Reply-byte savings do not establish daily traffic or phone-bill savings. Opening
 full results or original images adds requests and content. UI folding by itself
 saves no network bytes.
+
+## Incremental Cloud updates
+
+A machine advertising `transcript_delta_v1` accepts `delta-v1[z]:<version>` for
+its newest compact page. The first request remains `tools-v2[z]`. An unchanged
+page returns the existing version receipt. Otherwise the machine recomputes the
+same full projection, compares entries with a retained exact version, and sends
+ordered replacement splices plus current page metadata. This covers insertions,
+removals, tool completion, history rewrites and attachment updates; it does not
+assume the provider only appends. Repeated identical entries retain their count.
+
+The browser applies splices atomically only to its named base version and pinned
+Session. Request receipts already bind machine, execution, sequence and read name;
+late replies cannot settle another request. Reads for the same execution share
+one flight, and a changed execution waits for that flight before reading anew.
+Invalid updates trigger one full compact read. The presentation cache continues
+to use full merged pages and does not expose native append cursors over Cloud.
+
+The per-daemon cache retains at most 32 immutable serialized baselines and 8 MiB
+of JSON, evicting the least recently used baseline first. It is not durable
+history. A cache miss, restart, different scope or limit, or an update at least as
+large as the full page returns that full page. Older machines retain conditional
+compact reads or their existing legacy fallback. No new relay operation or Cloud
+API deployment is required; compression still occurs before content encryption.
+
+Ordered splices use original baseline coordinates. A longest common subsequence
+preserves matching rows at shifted positions, so a full newest window can drop
+its first row and append its last without retransmitting the middle. Comparison
+work is bounded to 1,000 entries on each side; larger provider expansions
+return a full page. Each entry is encoded once. Native records may expand into
+more entries than the requested page size, so the reply states the exact
+resulting entry count instead of assuming the request limit is that count.

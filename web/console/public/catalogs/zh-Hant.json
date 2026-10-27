@@ -9428,5 +9428,11 @@
   "capacityRow.console.support_image_edge.full": "圖片會保持長寬比例，縮小至可上傳的範圍。",
   "capacityRow.console.support_image_upload_seconds.what": "單張私有圖片上傳可等待的時間。",
   "capacityRow.console.support_image_upload_seconds.full": "上傳逾時後會沿用相同請求身分重試，避免重複建立圖片。",
-  "support.threadPrivacy": "你的問題與回覆不會公開。"
+  "support.threadPrivacy": "你的問題與回覆不會公開。",
+  "capacityRow.cache.transcript_delta_pages.what": "保留已讀對話頁的版本，讓後續更新只傳變動的列。版本數與序列化資料量都有上限。",
+  "capacityRow.cache.transcript_delta_pages.full": "最久沒用的版本會被移除，下次更新改傳目前的完整頁。對話紀錄不會遺失。",
+  "capacityRow.cache.transcript_delta_bytes.what": "保留已讀對話頁的版本，讓後續更新只傳變動的列。版本數與序列化資料量都有上限。",
+  "capacityRow.cache.transcript_delta_bytes.full": "最久沒用的版本會被移除，下次更新改傳目前的完整頁。對話紀錄不會遺失。",
+  "capacityRow.session.transcript_delta_rows.what": "單次對話增量比較的列數上限，包含一筆原生紀錄展開為多列的情況。",
+  "capacityRow.session.transcript_delta_rows.full": "超過時改傳完整頁，不會因為比較上限而刪除對話內容。"
 }

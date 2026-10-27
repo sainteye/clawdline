@@ -4,6 +4,54 @@
   "title": "What a session said",
   "description": "GET /v1/transcript reads the assistant's own record and carries evidence rather than presenting content with no source. The initial request reads the newest page; before=nextBefore reads the next older page at a JSONL row boundary; after=nextAfter reads only the rows appended since, oldest first, and is refused 409 transcript_cursor_stale when the cursor no longer meets the record or the appended rows exceed one page (or, for Claude, hold a peer message), so the reader reads the newest page whole. Native Antigravity cursors require revision=signature from the exact held cursor page. A before read requires the current full snapshot revision; an after read verifies that the held revision is still the unchanged file prefix. Missing, replaced, truncated or edited revisions are refused as transcript_cursor_stale. Cloud carries before and revision but deliberately omits nextAfter and refuses after. Each page remains bounded by its row, byte and read-window limits.",
   "$defs": {
+    "TranscriptSplice": {
+      "description": "One replacement in the exact held page. Equal prefix and suffix entries are retained, including distinct repeated entries.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "deleteCount",
+        "entries"
+      ],
+      "properties": {
+        "start": {
+          "type": "integer"
+        },
+        "deleteCount": {
+          "type": "integer"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TranscriptEntry"
+          }
+        }
+      }
+    },
+    "TranscriptDelta": {
+      "description": "Opt-in delta-v1 reply. Apply only to baseVersion of the exact pinned Session; replace metadata with page and apply ordered, non-overlapping splices in original base coordinates atomically. A cache miss or a larger delta returns a full TranscriptPage. Unchanged remains the existing version receipt.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseVersion",
+        "entryCount",
+        "delta",
+        "page"
+      ],
+      "properties": {
+        "baseVersion": {
+          "type": "string"
+        },
+        "entryCount": { "type": "integer", "description": "Exact resulting row count, including provider rows that expand into multiple entries." },
+        "delta": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TranscriptSplice" }
+        },
+        "page": {
+          "$ref": "#/$defs/TranscriptPage"
+        }
+      }
+    },
     "TranscriptEntry": {
       "description": "One thing in a conversation, in the shape the Swift app's `transcriptRows` writes it. A tool call and what the tool returned both carry `role: tool`; only the call names its tool. A call's `text` is the one line describing what it was asked to do — a command, a path, a query — which is what a folded row shows as its subject. An `AskUserQuestion` call carries its questions instead, after the U+0001 `ask` U+0001 marker.",
       "type": "object",

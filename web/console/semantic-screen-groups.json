@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9428,
-  "riskKeys": 4174,
-  "nonRiskCount": 5254,
+  "englishContentKeys": 9434,
+  "riskKeys": 4175,
+  "nonRiskCount": 5259,
   "groups": [
     {
       "name": "admin / other",
@@ -340,7 +340,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 326,
+      "count": 331,
       "sources": [
         null
       ],
@@ -383,6 +383,10 @@
         "capacityRow.cache.provider_quota_request_seconds.what",
         "capacityRow.cache.session_activity.what",
         "capacityRow.cache.session_skills.what",
+        "capacityRow.cache.transcript_delta_bytes.full",
+        "capacityRow.cache.transcript_delta_bytes.what",
+        "capacityRow.cache.transcript_delta_pages.full",
+        "capacityRow.cache.transcript_delta_pages.what",
         "capacityRow.callback.per_machine.what",
         "capacityRow.cloud.content_key_epoch_record_bytes.what",
         "capacityRow.cloud.envelope_key_id.what",
@@ -625,6 +629,7 @@
         "capacityRow.session.tool_preview_bytes.full",
         "capacityRow.session.tool_preview_bytes.what",
         "capacityRow.session.tool_preview_runes.full",
+        "capacityRow.session.transcript_delta_rows.what",
         "capacityRow.sessions.archive_rows.full",
         "capacityRow.sessions.archive_rows.what",
         "capacityRow.sessions.restore_rows.full",

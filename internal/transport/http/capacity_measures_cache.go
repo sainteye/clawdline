@@ -14,7 +14,9 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) cacheCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
-		"cache.provider_quota": func() capacity.Reading { return s.providerQuotaReader().Reading() },
+		"cache.transcript_delta_pages": func() capacity.Reading { return s.transcriptBaselines.reading(true) },
+		"cache.transcript_delta_bytes": func() capacity.Reading { return s.transcriptBaselines.reading(false) },
+		"cache.provider_quota":         func() capacity.Reading { return s.providerQuotaReader().Reading() },
 		"cache.provider_quota_response_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-read ceiling on credential and provider response bytes; oversized data is refused"}
 		},

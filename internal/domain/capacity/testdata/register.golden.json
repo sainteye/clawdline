@@ -1134,6 +1134,44 @@
   },
   {
     "Register": "daemon",
+    "Name": "cache.transcript_delta_bytes",
+    "Class": "cache",
+    "Unit": "bytes",
+    "Limit": 8388608,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.transcriptDeltaBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cache.transcript_delta_pages",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.transcriptDeltaPagesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cache.transcript_titles",
     "Class": "cache",
     "Unit": "rows",
@@ -8001,6 +8039,25 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/transport/http.transcriptToolPreviewRunesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.transcript_delta_rows",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.transcriptDeltaRowsLimit"
     ]
   },
   {

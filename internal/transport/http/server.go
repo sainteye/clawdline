@@ -55,6 +55,7 @@ import (
 )
 
 type Server struct {
+	transcriptBaselines       transcriptBaselines
 	antigravityProjectMu      sync.Mutex
 	antigravityProjectOwner   atomic.Pointer[antigravityproject.Manager]
 	antigravityPolicyInputs   atomic.Pointer[antigravityPolicyInputs]

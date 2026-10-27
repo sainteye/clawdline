@@ -9428,5 +9428,11 @@
   "capacityRow.console.support_image_edge.full": "Images are resized to fit while keeping their aspect ratio.",
   "capacityRow.console.support_image_upload_seconds.what": "The time allowed for one private image upload.",
   "capacityRow.console.support_image_upload_seconds.full": "A timed-out upload keeps the same request identity for a safe retry.",
-  "support.threadPrivacy": "Your question and replies are not public."
+  "support.threadPrivacy": "Your question and replies are not public.",
+  "capacityRow.cache.transcript_delta_pages.what": "Versions of read transcript pages retained so subsequent updates can carry only changed entries. Both version count and serialized bytes are bounded.",
+  "capacityRow.cache.transcript_delta_pages.full": "The least recently used version is evicted. The next update sends a full current page; conversation history is preserved.",
+  "capacityRow.cache.transcript_delta_bytes.what": "Versions of read transcript pages retained so subsequent updates can carry only changed entries. Both version count and serialized bytes are bounded.",
+  "capacityRow.cache.transcript_delta_bytes.full": "The least recently used version is evicted. The next update sends a full current page; conversation history is preserved.",
+  "capacityRow.session.transcript_delta_rows.what": "Maximum entries compared for one incremental transcript update, including providers that expand one record into several entries.",
+  "capacityRow.session.transcript_delta_rows.full": "Larger pages are sent whole. No conversation entries are removed by this comparison limit."
 }

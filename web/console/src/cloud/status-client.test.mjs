@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { StatusCloudClient, pinnedReplyMatches, statusChannel } from "./status-client.js"
+import { StatusCloudClient, applyTranscriptDelta, pinnedReplyMatches, statusChannel } from "./status-client.js"
 import { base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
 
 const zero = (length) => Buffer.alloc(length).toString("base64")
@@ -1434,4 +1434,103 @@ test("a stale v2 descriptor retries one v1 read with the same execution and hist
  }
  assert.equal(asks[3].fields.before,200)
  assert.equal(asks[3].fields.revision,"revision")
+})
+
+test("transcript deltas replace revisions and preserve repeated entries atomically",()=>{
+ const row=text=>({role:"tool",text})
+ const held={id:"s",version:"a".repeat(64),signature:"old",evidence:"transcript",nextBefore:10,entries:[row("same"),row("pending"),row("same")]}
+ const reply={baseVersion:held.version,entryCount:4,page:{id:"s",version:"b".repeat(64),signature:"new",evidence:"transcript",entries:[]},delta:[{start:1,deleteCount:1,entries:[row("complete"),row("same")]}]}
+ const result=applyTranscriptDelta(held,reply,"s",200)
+ assert.deepEqual(result.entries.map(x=>x.text),["same","complete","same","same"])
+ assert.equal(result.signature,"new")
+ assert.equal(result.nextBefore,undefined,"current metadata replaces stale metadata")
+ assert.equal(held.entries[1].text,"pending","the held page is immutable until the update passes")
+})
+
+test("malformed or foreign transcript deltas never change the held page",()=>{
+ const held={id:"s",version:"a".repeat(64),entries:[{role:"assistant",text:"kept"}]}
+ const good={baseVersion:held.version,entryCount:2,page:{id:"s",version:"b".repeat(64),signature:"new",evidence:"transcript",entries:[]},delta:[{start:1,deleteCount:0,entries:[{role:"assistant",text:"new"}]}]}
+ const bad=[{...good,baseVersion:"c".repeat(64)}, {...good,page:{...good.page,id:"other"}},
+  {...good,delta:[{...good.delta[0],start:-1}]}, {...good,delta:[{...good.delta[0],start:2}]},
+  {...good,delta:[{...good.delta[0],deleteCount:1}]}, {...good,delta:[{...good.delta[0],entries:null}]},
+  {...good,delta:[{...good.delta[0],entries:[{role:"tool"}]}]}, {...good,page:{...good.page,entries:[{role:"tool",text:"ambiguous"}]}}]
+ for(const reply of bad) assert.throws(()=>applyTranscriptDelta(held,reply,"s",200),error=>error.code==="transcript_cursor_stale")
+ assert.throws(()=>applyTranscriptDelta(held,{...good,entryCount:1},"s"),error=>error.code==="transcript_cursor_stale")
+ assert.deepEqual(held.entries,[{role:"assistant",text:"kept"}])
+})
+
+test("incremental transcript reads require a negotiated capability and merge before publishing",async()=>{
+ for(const supported of [false,true]) {
+  const client=Object.create(StatusCloudClient.prototype)
+  client.pinnedTranscriptFlights=new Map()
+  client.machineDescriptor=()=>({machine:{transcript_tools_v1:true,transcript_tools_v2:true,transcript_delta_v1:supported}})
+  const held={id:"s",version:"a".repeat(64),entries:[{role:"assistant",text:"kept"}]}
+  const full={id:"s",version:"b".repeat(64),signature:"next",evidence:"transcript",entries:[...held.entries,{role:"assistant",text:"new"}]}
+  const asks=[]
+  client._read=async(_identity,_type,fields,read,_x,options)=>{
+   asks.push({fields,read,signal:options.signal})
+   return fields.view.startsWith("delta-")?{baseVersion:held.version,entryCount:full.entries.length,page:{...full,entries:[]},delta:[{start:1,deleteCount:0,entries:[full.entries[1]]}]}:full
+  }
+  const controller=new AbortController(),target={machineID:"m",sessionID:"s",executionGeneration:genA}
+  assert.deepEqual(await client.transcriptForGeneration(target,controller.signal,held),full)
+  assert.match(asks[0].fields.view,supported?/^delta-v1z?:a{64}$/:/^tools-v2z?:a{64}$/)
+  assert.equal(asks[0].read,"transcript.view."+asks[0].fields.view)
+  assert.equal(asks[0].fields.machine_id,"m")
+  assert.equal(asks[0].fields.expected_generation,genA)
+  assert.equal(asks[0].signal,controller.signal)
+  await client.transcriptForGeneration(target)
+  assert.match(asks[1].fields.view,/^tools-v2z?$/,"the first page is always full")
+ }
+})
+
+test("a stale delta recovers once with a full compact read and keeps cancellation and scope",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.pinnedTranscriptFlights=new Map()
+ client.machineDescriptor=()=>({machine:{transcript_tools_v1:true,transcript_tools_v2:true,transcript_delta_v1:true}})
+ const held={id:"s",version:"a".repeat(64),entries:[]},full={id:"s",entries:[{role:"assistant",text:"recovered"}]}
+ const asks=[],controller=new AbortController(),target={machineID:"m",sessionID:"s",executionGeneration:genA}
+ client._read=async(_identity,_type,fields,_read,_x,options)=>{
+  asks.push({fields,signal:options.signal})
+  return fields.view.startsWith("delta-")?{baseVersion:"wrong",delta:{}}:full
+ }
+ assert.equal(await client.transcriptForGeneration(target,controller.signal,held),full)
+ assert.equal(asks.length,2)
+ assert.match(asks[1].fields.view,/^tools-v2z?$/)
+ assert.equal(asks[1].fields.expected_generation,genA)
+ assert.equal(asks[1].signal,controller.signal)
+ asks.length=0
+ client._read=async(_identity,_type,fields)=>{asks.push(fields);throw Object.assign(new Error("stale"),{code:"transcript_cursor_stale"})}
+ await assert.rejects(client.transcriptForGeneration(target,undefined,held),error=>error.code==="transcript_cursor_stale")
+ assert.equal(asks.length,2,"recovery cannot amplify into an unbounded retry")
+})
+
+test("an execution switch waits out an old delta and cannot publish it as the new answer",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.pinnedTranscriptFlights=new Map()
+ client.machineDescriptor=()=>({machine:{transcript_tools_v1:true,transcript_tools_v2:true,transcript_delta_v1:true}})
+ const held={id:"s",version:"a".repeat(64),entries:[]},asks=[]
+ let release
+ client._read=async(_identity,_type,fields)=>{
+  asks.push(fields)
+  if(fields.expected_generation===genA) return new Promise(resolve=>release=resolve)
+  return {id:"s",entries:[{role:"assistant",text:"new execution"}]}
+ }
+ const old=client.transcriptForGeneration({machineID:"m",sessionID:"s",executionGeneration:genA},undefined,held)
+ const next=client.transcriptForGeneration({machineID:"m",sessionID:"s",executionGeneration:genB},undefined,held)
+ assert.equal(asks.length,1)
+ release({unchanged:true,version:held.version})
+ assert.equal(await old,held)
+ assert.equal((await next).entries[0].text,"new execution")
+ assert.equal(asks[1].expected_generation,genB)
+})
+
+test("rolling windows and provider expansions preserve all retained and repeated rows",()=>{
+ const rows=Array.from({length:201},(_,i)=>({role:"tool",text:"row-"+i}))
+ const held={id:"s",version:"a".repeat(64),entries:rows.slice(0,200)}
+ const page={id:"s",version:"b".repeat(64),signature:"new",evidence:"transcript",entries:[]}
+ const rolling={baseVersion:held.version,entryCount:200,page,delta:[{start:0,deleteCount:1,entries:[]},{start:200,deleteCount:0,entries:[rows[200]]}]}
+ assert.deepEqual(applyTranscriptDelta(held,rolling,"s").entries,rows.slice(1))
+ const expanded={...rolling,entryCount:201,delta:[rolling.delta[1]]}
+ assert.deepEqual(applyTranscriptDelta(held,expanded,"s").entries,rows)
+ assert.throws(()=>applyTranscriptDelta(held,{...rolling,delta:[rolling.delta[1],rolling.delta[0]]},"s"),error=>error.code==="transcript_cursor_stale")
 })

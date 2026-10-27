@@ -4,6 +4,7 @@ package capacity
 // and snippets.*.
 func sessionBounds() []Entry {
 	return []Entry{
+		{Name: "session.transcript_delta_rows", Class: Observation, Unit: Rows, Limit: 1000, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaRowsLimit"}},
 		{Name: "session.inline_tool_bytes", Class: Observation, Unit: Bytes, Limit: 1200, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptInlineToolBytesLimit"}},
 		{Name: "session.tool_preview_runes", Class: Observation, Unit: Characters, Limit: 240, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptToolPreviewRunesLimit"}},
 		{Name: "session.patch_detail_lines", Class: Observation, Unit: Rows, Limit: 18, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptPatchDetailLinesLimit"}},

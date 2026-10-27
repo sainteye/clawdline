@@ -60,6 +60,8 @@
 | `cache.session_skills` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.source_answer` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.terminal_screens` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
+| `cache.transcript_delta_bytes` | 8388608 | `bytes` | `evict_oldest` | `diagnostics` | — |
+| `cache.transcript_delta_pages` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.transcript_titles` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `callback.args` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `callback.command_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -419,6 +421,7 @@
 | `session.todo_batch_rows` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `session.tool_preview_bytes` | 1024 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `session.tool_preview_runes` | 240 | `characters` | `evict_oldest` | `diagnostics, sender` | — |
+| `session.transcript_delta_rows` | 1000 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `session.waiting_for` | 8 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.activity_reads` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `sessions.agent_rows` | 6 | `rows` | `evict_oldest` | `diagnostics` | — |

@@ -139,8 +139,13 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 		s.transcriptEntryDetail(w, r, id, item, view)
 		return
 	}
+	delta := strings.HasPrefix(view, "delta-v1")
+	if delta && (before != 0 || after >= 0) {
+		writeRefusal(w, 400, "invalid_transcript_view", "incremental views require the newest full page")
+		return
+	}
 	projection := compact
-	lazy := strings.HasPrefix(view, "tools-v2") && (item.Assistant == session.AssistantCodex || item.Assistant == session.AssistantClaude)
+	lazy := (delta || strings.HasPrefix(view, "tools-v2")) && (item.Assistant == session.AssistantCodex || item.Assistant == session.AssistantClaude)
 	var page contract.TranscriptPage
 	if after >= 0 {
 		var stale bool
@@ -166,6 +171,14 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, map[string]any{"unchanged": true, "version": known})
 			return
 		}
+	}
+	if (delta || strings.HasPrefix(view, "tools-v2")) && before == 0 && after < 0 && toolResultScope(id, item) != "" {
+		held := ""
+		if delta {
+			held = known
+		}
+		writeJSON(w, s.transcriptDeltaAnswer(page, held, s.executionMachine()+"\x00"+toolResultScope(id, item), limit))
+		return
 	}
 	writeJSON(w, page)
 }

@@ -266,6 +266,16 @@
     "Note": true
   },
   {
+    "Name": "cache.transcript_delta_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cache.transcript_delta_pages",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cache.transcript_titles",
     "Known": true
   },
@@ -2029,6 +2039,11 @@
   },
   {
     "Name": "session.tool_preview_runes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.transcript_delta_rows",
     "Known": true,
     "Note": true
   },

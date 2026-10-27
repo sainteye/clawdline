@@ -9360,6 +9360,24 @@ export interface TranscriptChangeStats {
 }
 
 /**
+ * Opt-in delta-v1 reply. Apply only to baseVersion of the exact pinned Session;
+ * replace metadata with page and apply ordered, non-overlapping splices in original
+ * base coordinates atomically. A cache miss or a larger delta returns a full
+ * TranscriptPage. Unchanged remains the existing version receipt.
+ */
+export interface TranscriptDelta {
+  baseVersion: string
+  delta: TranscriptSplice[]
+
+  /**
+   * Exact resulting row count, including provider rows that expand into multiple
+   * entries.
+   */
+  entryCount: number
+  page: TranscriptPage
+}
+
+/**
  * One thing in a conversation, in the shape the Swift app's `transcriptRows` writes
  * it. A tool call and what the tool returned both carry `role: tool`; only the call
  * names its tool. A call's `text` is the one line describing what it was asked to
@@ -9595,6 +9613,16 @@ export interface TranscriptPlanStep {
    */
   status: string
   step: string
+}
+
+/**
+ * One replacement in the exact held page. Equal prefix and suffix entries are
+ * retained, including distinct repeated entries.
+ */
+export interface TranscriptSplice {
+  deleteCount: number
+  entries: TranscriptEntry[]
+  start: number
 }
 
 export interface TranscriptToolResult {

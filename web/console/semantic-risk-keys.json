@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9428,
+  "englishKeys": 9434,
   "counts": {
-    "negation": 2693,
-    "state": 1547,
+    "negation": 2694,
+    "state": 1548,
     "permission": 563,
-    "deletion": 207,
+    "deletion": 208,
     "uncertainty": 295
   },
-  "unionCount": 4174,
+  "unionCount": 4175,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -494,6 +494,7 @@
       "capacityRow.session.title_request_bytes.full",
       "capacityRow.session.todo_batch_rows.full",
       "capacityRow.session.tool_preview_runes.what",
+      "capacityRow.session.transcript_delta_rows.full",
       "capacityRow.session.waiting_for.full",
       "capacityRow.sessions.activity_reads.full",
       "capacityRow.sessions.activity_reads.what",
@@ -3084,6 +3085,7 @@
       "capacityRow.session.title_request_bytes.full",
       "capacityRow.session.todo_batch_rows.full",
       "capacityRow.session.tool_preview_runes.what",
+      "capacityRow.session.transcript_delta_rows.full",
       "capacityRow.session.waiting_for.full",
       "capacityRow.session.waiting_for.what",
       "capacityRow.sessions.agent_rows.full",
@@ -4857,6 +4859,7 @@
       "capacityRow.session.direct_todos.full",
       "capacityRow.session.human_interventions_total.full",
       "capacityRow.session.report_open_todo_rows.full",
+      "capacityRow.session.transcript_delta_rows.full",
       "capacityRow.sessions.archive_restore_batch.full",
       "capacityRow.sessions.archive_restore_batch.what",
       "capacityRow.sessions.restore_batch.full",
@@ -6045,6 +6048,7 @@
     "capacityRow.session.todo_batch_rows.full",
     "capacityRow.session.todo_batch_rows.what",
     "capacityRow.session.tool_preview_runes.what",
+    "capacityRow.session.transcript_delta_rows.full",
     "capacityRow.session.waiting_for.full",
     "capacityRow.session.waiting_for.what",
     "capacityRow.sessions.activity_reads.full",
