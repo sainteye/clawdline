@@ -41,6 +41,8 @@ API, which is defined once, as JSON Schema, before any code is written against i
 The design notes linked from this page are written in Traditional Chinese. This page is the
 English map into them. [docs/README.md](README.md) lists them all.
 
+The separate [Cloud help and FAQ account service](cloud-support.md) stores questions that members explicitly submit to support. This service-owned support lane neither stores machine Session plaintext nor obtains content keys.
+
 ## What does not move
 
 The product has ten rules that any change must keep ([plan.md](plan.md) §1):

@@ -13,6 +13,9 @@ One continuous recording of the real console with sample data:
 
 [Herdr](https://github.com/herdrdev/herdr/blob/master/docs/versions/0.9.1/website/src/content/docs/connecting-machines.mdx) also lists agents across SSH machines in one TUI; [T3 Code](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md) connects to multiple environments. Clawdline Cloud groups them in a phone browser list and opens their conversations, to-dos, and images there.
 
+
+Cloud help and multilingual FAQ are implemented in the development source: public answers and private member threads are separate from encrypted machine Sessions. See [the support architecture and release boundary](docs/cloud-support.md).
+
 ## What you can do
 
 - **Follow Sessions:** See what is working or waiting, read the conversation, view pictures from Agents, and reply with text, voice, or a marked-up picture. [Sessions](docs/user/sessions.md)

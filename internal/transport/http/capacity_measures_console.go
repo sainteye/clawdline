@@ -8,6 +8,15 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"console.support_request_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser help request deadline; no machine Session read"}
+		},
+		"console.support_refresh_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser visible help thread refresh interval"}
+		},
+		"console.support_title_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support title input guard; Cloud independently validates titles"}
+		},
 		"console.video_preview_frames": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser representative video frame sampling; daemon cannot measure another device's decoder"}
 		},

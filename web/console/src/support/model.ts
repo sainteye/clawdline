@@ -1,0 +1,38 @@
+export const SUPPORT_LOCALES = ["en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"] as const
+export type SupportLocale = typeof SUPPORT_LOCALES[number]
+export const LANGUAGE_NAMES: Record<SupportLocale, string> = { en: "English", "zh-Hant": "繁體中文", ja: "日本語", "zh-Hans": "简体中文", ko: "한국어", es: "Español", "pt-BR": "Português", fr: "Français", de: "Deutsch" }
+export const TOPICS = ["getting_started", "cloud", "agents", "account", "other"] as const
+export type Sources = { url: string; revision: string }[]
+export interface Message { id: string; kind: "member" | "agent" | "operator"; body: string; locale: SupportLocale; original_language: string; at: string; sources: Sources }
+export interface Question { id: string; title: string; topic: string; source_language: string; reply_locale: SupportLocale; state: string; revision: number; input_revision: number;
+  created_at: string; updated_at: string; unread: boolean; messages?: Message[];
+  work?: { state: string; attempts: number; lease_until: string | null; error: string | null };
+  delivery?: { state: string; attempts: number; delivery_id: string | null; error: string | null } }
+export interface Faq { id: string; title: string; body: string; topic: string; slug: string; revision: number; locale: SupportLocale; sources: Sources; updated_at: string; available_locales: SupportLocale[] }
+export interface FaqText { title: string; body: string; slug: string; revision: number; source_revision: number; sources: Sources; updated_at: string }
+export interface Article { _id: string; revision: number; source_locale: SupportLocale; source_revision: number; topic: string; source_question_id: string | null;
+  translations: Partial<Record<SupportLocale, { draft: FaqText; published: FaqText | null }>> }
+export type HelpRoute = { page: "faq" | "ask" | "mine" | "thread" | "article" | "inbox" | "operator" | "editor" | "drafts" | "worker"; id: string | null }
+export function helpRoute(path: string): HelpRoute {
+  const parts = path.split("/").filter(Boolean)
+  if (parts[1] === "ask") return { page: "ask", id: null }
+  if (parts[1] === "questions") return { page: parts[2] ? "thread" : "mine", id: parts[2] ?? null }
+  if (parts[1] === "faq" && parts[2]) return { page: "article", id: parts[2] }
+  if (parts[1] === "admin") {
+    if (parts[2] === "worker") return { page: "worker", id: null }
+    if (parts[2] === "faq") return { page: parts[3] ? "editor" : "drafts", id: parts[3] ?? null }
+    return { page: parts[2] === "questions" && parts[3] ? "operator" : "inbox", id: parts[3] ?? null }
+  }
+  return { page: "faq", id: null }
+}
+export function localeFromURL(search: string, fallback: SupportLocale): SupportLocale {
+  const value = new URLSearchParams(search).get("locale")
+  return SUPPORT_LOCALES.includes(value as SupportLocale) ? value as SupportLocale : fallback
+}
+export function translationState(article: Article, locale: SupportLocale): "missing" | "stale" | "draft" | "published" {
+  const row = article.translations[locale]
+  if (!row) return "missing"
+  if (row.draft.source_revision !== article.source_revision) return "stale"
+  if (row.published?.source_revision === article.source_revision && row.published.revision === row.draft.revision) return "published"
+  return "draft"
+}

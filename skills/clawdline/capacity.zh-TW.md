@@ -241,6 +241,9 @@
 | `console.status_gap_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_recovery_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_retry_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.support_refresh_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
+| `console.support_request_seconds` | 15 | `seconds` | `expire` | `diagnostics` | — |
+| `console.support_title_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
 | `console.transcript_backoff_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_fill_pages` | 32 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.transcript_follow_fast_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
