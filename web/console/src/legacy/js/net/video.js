@@ -1,3 +1,4 @@
+import { mountStreamingVideo } from "./video-stream-player.js";
 import { base64Bytes } from "./cloud-crypto.js";
 import { normalizeDocumentLocator, isVideoPath, VIDEO_MAX_BYTES, VIDEO_CHUNK_BYTES } from "./document-links.js";
 
@@ -55,8 +56,9 @@ export async function loadVideo(wanted, readChunk, options = {}) {
     }
 }
 
-/** A trusted player in an opaque-origin frame; media cannot reach the app DOM. */
-export function mountVideo(element, answer, errorText, dismiss) {
+/** Blob previews retain their opaque frame; streams use trusted native console controls. */
+export function mountVideo(element, answer, errorText, dismiss, events = {}) {
+    if (typeof answer.stream === "function") return mountStreamingVideo(element, answer, errorText, events);
     const doc = element.ownerDocument;
     const win = doc.defaultView;
     const frame = doc.createElement("iframe");

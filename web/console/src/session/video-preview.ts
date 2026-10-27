@@ -6,7 +6,7 @@ import type { DocumentLocator } from "../legacy/documents-bridge.js"
 import { videoLocatorFromHash, videoLocatorFromLink } from "./video-preview-links.js"
 
 type ReadVideo = (locator: DocumentLocator, options: {
-  signal: AbortSignal; progress(percent: number): void
+  signal: AbortSignal; stream: boolean; progress(percent: number): void
 }) => Promise<unknown>
 
 /** One modal, one bounded transfer. Closing destroys the decoder and cancels pending reads. */
@@ -67,16 +67,27 @@ export function bindVideoPreview(doc: Document, read: ReadVideo): () => void {
     status.textContent = catalogFormat("documents", "videoLoading", [0])
     status.dataset.state = "loading"
     try {
-      const answer = await read(locator, { signal: controller.signal, progress(percent) {
+      const answer = await read(locator, { signal: controller.signal, stream: true, progress(percent) {
         if (pending === controller && !controller.signal.aborted)
           status.textContent = catalogFormat("documents", "videoLoading", [percent])
-      } }) as { media_type: string; blob: Blob; path: string }
+      } }) as { media_type: string; blob?: Blob; stream?: unknown; path: string }
       if (pending !== controller || controller.signal.aborted || !dialog.open) return
-      if (answer.media_type !== "video/mp4" || !(answer.blob instanceof Blob))
+      if (answer.media_type !== "video/mp4" || (!(answer.blob instanceof Blob) && typeof answer.stream !== "function"))
         throw Object.assign(new Error("Invalid video answer"), { code: "video_answer_invalid" })
-      status.textContent = ""
-      status.dataset.state = "ready"
-      dispose = mountVideo(body, answer, catalogWord("documents", "videoError"), dismiss)
+      const failed = (caught: unknown) => {
+        if (pending !== controller || controller.signal.aborted || !dialog.open) return
+        controller.abort()
+        status.dataset.state = "error"
+        status.textContent = failureSentence(caught, catalogWord("documents", "videoReadFailed"))
+        retry.hidden = false
+      }
+      const ready = () => {
+        if (pending !== controller || controller.signal.aborted || !dialog.open) return
+        status.textContent = ""
+        status.dataset.state = "ready"
+      }
+      if (!answer.stream) ready()
+      dispose = mountVideo(body, answer, catalogWord("documents", "videoError"), dismiss, { error: failed, ready })
     } catch (error) {
       if (pending !== controller || controller.signal.aborted || !dialog.open) return
       status.dataset.state = "error"
