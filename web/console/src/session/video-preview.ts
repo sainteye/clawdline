@@ -29,6 +29,7 @@ export function bindVideoPreview(doc: Document, read: ReadVideo): () => void {
   let dispose: (() => void) | null = null
   let locator: DocumentLocator | null = null
   let opener: HTMLElement | null = null
+  let openerHref = ""
   let overflow = ""
   let closingPop = false
   let lastHash = ""
@@ -39,12 +40,18 @@ export function bindVideoPreview(doc: Document, read: ReadVideo): () => void {
     dispose?.(); dispose = null
     body.replaceChildren()
   }
+  const restoreFocus = () => {
+    const target = opener?.isConnected ? opener : openerHref
+      ? [...doc.querySelectorAll<HTMLAnchorElement>("a[href]")].find(link => link.href === openerHref)
+      : doc.getElementById("detail-info")
+    target?.focus({ preventScroll: true })
+  }
   const shut = () => {
     stop()
     if (!dialog.open) return
     dialog.close()
     doc.body.style.overflow = overflow
-    if (opener?.isConnected) opener.focus({ preventScroll: true })
+    restoreFocus()
   }
   const dismiss = () => {
     if (!dialog.open) return
@@ -79,7 +86,8 @@ export function bindVideoPreview(doc: Document, read: ReadVideo): () => void {
   }
   const open = (value: DocumentLocator, trigger: HTMLElement | null, push = true) => {
     locator = value
-    opener = trigger
+    opener = trigger === doc.body ? null : trigger
+    openerHref = trigger?.matches("a[href]") ? (trigger as HTMLAnchorElement).href : ""
     title.textContent = catalogWord("documents", "videoPreview")
     title.title = value.path
     close.textContent = catalogWord("documents", "videoClose")
@@ -114,6 +122,7 @@ export function bindVideoPreview(doc: Document, read: ReadVideo): () => void {
       closingPop = false
       lastHash = win.location.hash
       shut()
+      restoreFocus()
       event.stopImmediatePropagation()
     } else if (ownsStep() && locator && !dialog.open) {
       open(locator, opener, false)
