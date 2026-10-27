@@ -6,6 +6,9 @@
 .activity-readable .activity-title { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
 .activity-readable .activity-meta { margin-left: auto; }
 .tool-result { min-width: 0; }
+.tool-result-body { padding: 4px 11px 11px; }
+.tool-result-loading { display: flex; align-items: center; gap: 6px; color: var(--dim); }
+.tool-result-read { min-height: 32px; }
 .tool-result-preview { max-height: 12em; }
 .tool-result-note { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--dim); font-size: 11px; margin: 8px 0; }
 .tool-result-details { margin-top: 8px; font-size: 12px; }

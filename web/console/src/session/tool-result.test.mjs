@@ -6,7 +6,7 @@ import { build } from "esbuild"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
-const { outputFiles } = await build({entryPoints:[fileURLToPath(new URL("./ToolResult.tsx",import.meta.url))],bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic"})
+const { outputFiles } = await build({entryPoints:[fileURLToPath(new URL("./ToolResult.tsx",import.meta.url))],bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled = {exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
 const {ToolResult} = compiled.exports
@@ -25,6 +25,8 @@ test("long and mixed results expose stored detail and source truncation without 
  const html=renderToStaticMarkup(React.createElement(ToolResult,{sessionID:"s",result:{...result,textBytes:2000,images:2,unknownBlocks:1,sourceTruncated:true}}))
  assert.match(html,/Read full text/)
  assert.match(html,/not preloaded/)
+ assert.match(html,/Load original image/)
+ assert.doesNotMatch(html,/Load thumbnail/)
  assert.match(html,/already shortened/)
  assert.doesNotMatch(html,/passed|<img|open=""/)
 })

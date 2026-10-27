@@ -26,9 +26,13 @@ window. No client-supplied filesystem path or remote image URL is accepted.
 Cloud additionally requires the existing exact machine and execution pin and
 rechecks transcript authority through the content-read bridge.
 
-Images load only when requested, one selected image at a time. A thumbnail uses
-the existing 480-pixel image projection; requesting original bytes is a separate
-action. Only complete, strictly decoded embedded raster images within the
+Images load only when requested, one selected image at a time. The console reads
+the original directly on that click, without an intermediate thumbnail request.
+The existing thumbnail representation remains available to compatible clients.
+An animated progress indicator stays visible through transfer and image decoding;
+failed reads can be retried explicitly. Text and native-output expansion also
+show progress. Metadata and controls share the card header's horizontal inset.
+Only complete, strictly decoded embedded raster images within the
 existing pixel and byte policies are eligible. A middle-truncated Base64 value
 is refused. There is no reconstruction, remote fetch, or rerun of a tool.
 
