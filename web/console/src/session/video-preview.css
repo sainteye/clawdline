@@ -1,0 +1,19 @@
+.video-lightbox {
+  position: fixed; inset: 0; width: 100%; max-width: none; height: 100%; max-height: none;
+  margin: 0; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  border: 0; background: transparent; color: var(--ink, #eee); box-sizing: border-box;
+}
+.video-lightbox[open] { display: grid; place-items: center; }
+.video-lightbox:focus { outline: none; }
+.video-lightbox::backdrop { background: rgba(0, 0, 0, .9); }
+.video-lightbox-frame { width: min(1100px, 100%); max-height: 100%; overflow: auto; }
+.video-lightbox header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.video-lightbox h2 { margin: 0; font-size: 16px; font-weight: 500; }
+.video-lightbox button { min-height: 44px; padding: 0 16px; border: 1px solid #555; border-radius: 24px; background: #202024; color: #fff; font: inherit; cursor: pointer; }
+.video-lightbox button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.video-lightbox-body { width: 100%; }
+.video-lightbox .document-video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; max-height: calc(100dvh - 150px); border: 0; background: #000; }
+.video-lightbox-status { margin: 16px 0; color: #ddd; overflow-wrap: anywhere; }
+.video-lightbox-status:empty { display: none; }
+.video-lightbox-status[data-state="loading"] { min-height: 140px; display: grid; place-items: center; }
+.video-lightbox-status[data-state="error"], .video-lightbox .document-video-error { color: #f0aea0; }

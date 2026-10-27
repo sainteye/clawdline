@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9196,
+  "englishContentKeys": 9198,
   "riskKeys": 4109,
-  "nonRiskCount": 5087,
+  "nonRiskCount": 5089,
   "groups": [
     {
       "name": "admin / other",
@@ -985,7 +985,7 @@
     },
     {
       "name": "documents / other",
-      "count": 29,
+      "count": 31,
       "sources": [
         "src/pages/documents/copy-adapter.ts and src/legacy/js/view/documents.js"
       ],
@@ -1017,7 +1017,9 @@
         "documents.taskMetaOne",
         "documents.taskSize",
         "documents.title",
+        "documents.videoClose",
         "documents.videoLoading",
+        "documents.videoPreview",
         "documents.videoTooLarge"
       ]
     },

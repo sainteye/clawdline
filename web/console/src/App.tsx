@@ -35,7 +35,10 @@ import { namesSession, sessionFragment, sessionsInFragment } from "./session/add
 import { destinationFragment, destinationFromFragment, destinationKey, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
   type FleetDetailProblem, type ProjectedSession, type SessionDestination } from "./cloud/all-machine-sessions.js"
 import { notificationAddress } from "./push/navigation.js"
-import { hasDocumentIntent } from "./legacy/documents-bridge.js"
+import { hasDocumentIntent, hasDocumentPageIntent, readPublishedDocument } from "./legacy/documents-bridge.js"
+import { bindVideoPreview } from "./session/video-preview.js"
+import { videoLocatorFromHash } from "./session/video-preview-links.js"
+import "./session/video-preview.css"
 import { NewBuild } from "./NewBuild.js"
 import { MachineDashboard, type DashboardSource } from "./machine/MachineDashboard.js"
 import { Start } from "./session/Start.js"
@@ -277,7 +280,8 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const tooOldTitle = (id: string) => tooOld(id) ? nextWord("machineNeedsUpdate") : undefined
   const tooOldMark = (id: string) => tooOld(id) ? <small className="sidebar-needs-update"> · {nextWord("machineNeedsUpdateShort")}</small> : null
   const [page, setPage] = useState<Page>(() => location.pathname === "/billing/done"
-    ? "plan" : hasDocumentIntent(location.hash) ? "documents" : "sessions")
+    ? "plan" : hasDocumentPageIntent(location.hash) ? "documents" : "sessions")
+  useLayoutEffect(() => bindVideoPreview(document, readPublishedDocument), [])
   useEffect(() => {
     const worker = navigator.serviceWorker
     if (!worker) return
@@ -438,7 +442,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const openAskedRef = useRef<() => Asked>(() => "none")
   useEffect(() => {
     const routeTo = () => {
-      const documentLink = hasDocumentIntent(location.hash)
+      const documentLink = hasDocumentPageIntent(location.hash)
       const target = documentLink ? "documents" :
         fleetList && destinationFromFragment(location.hash) ? "sessions" : pageFromHash(location.hash, knowsHere)
       const from = pageRef.current
@@ -543,16 +547,19 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     go("sessions")
     setSelected(id)
     setOpen(id)
+    // A cold video link opens this Session underneath its modal. Do not
+    // replace the modal's address/history step or blur its keyboard landing.
+    const videoAddress = arrived && !!videoLocatorFromHash(location.hash)
     if (phone()) {
-      if (viewRef.current !== "detail") releaseKeyboardFocus()
+      if (viewRef.current !== "detail" && !videoAddress) releaseKeyboardFocus()
       setView("detail")
-      stepIntoDetail(id, fleetList && fleetTarget ? listAddress() + destinationFragment(fleetTarget) :
+      if (!videoAddress) stepIntoDetail(id, fleetList && fleetTarget ? listAddress() + destinationFragment(fleetTarget) :
         listAddress() + sessionFragment(id), arrived)
     } else {
       if (!paneRef.current) setPane(true)
-      writeHash(fleetList && fleetTarget ? destinationFragment(fleetTarget) : sessionFragment(id))
+      if (!videoAddress) writeHash(fleetList && fleetTarget ? destinationFragment(fleetTarget) : sessionFragment(id))
     }
-    if (!keepFocus && !phone()) rowNode(id)?.focus({ preventScroll: true })
+    if (!keepFocus && !phone() && !videoAddress) rowNode(id)?.focus({ preventScroll: true })
   }
 
   const openStarted = (answer: StartAnswer, place: StartPlaceRow | null, finish: () => boolean): boolean => {

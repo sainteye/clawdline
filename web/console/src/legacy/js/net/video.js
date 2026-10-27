@@ -56,7 +56,7 @@ export async function loadVideo(wanted, readChunk, options = {}) {
 }
 
 /** A trusted player in an opaque-origin frame; media cannot reach the app DOM. */
-export function mountVideo(element, answer, errorText) {
+export function mountVideo(element, answer, errorText, dismiss) {
     const doc = element.ownerDocument;
     const win = doc.defaultView;
     const frame = doc.createElement("iframe");
@@ -78,6 +78,7 @@ export function mountVideo(element, answer, errorText) {
         'const send=(kind,extra={})=>parent.postMessage({token:' + JSON.stringify(token) + ',kind,...extra},"*");' +
         'video.addEventListener("error",()=>send("error"));' +
         'video.addEventListener("loadedmetadata",()=>send("metadata",{width:video.videoWidth,height:video.videoHeight}));' +
+        'addEventListener("keydown",event=>{if(event.key==="Escape"&&!document.fullscreenElement&&!video.webkitDisplayingFullscreen){event.preventDefault();send("dismiss")}});' +
         'let url=null;const clear=()=>{video.pause();video.removeAttribute("src");video.load();if(url)URL.revokeObjectURL(url);url=null};' +
         'addEventListener("pagehide",clear);' +
         'addEventListener("message",event=>{if(event.source!==parent||event.data?.token!==' + JSON.stringify(token) + ')return;' +
@@ -85,6 +86,7 @@ export function mountVideo(element, answer, errorText) {
         'clear();url=URL.createObjectURL(event.data.blob);video.src=url});';
     const receive = (event) => {
         if (event.source !== frame.contentWindow || event.data?.token !== token) return;
+        if (event.data.kind === "dismiss") dismiss?.();
         if (event.data.kind === "error") { error.textContent = errorText; error.hidden = false; }
         if (event.data.kind === "metadata" && Number.isSafeInteger(event.data.width) && event.data.width > 0 &&
             Number.isSafeInteger(event.data.height) && event.data.height > 0)

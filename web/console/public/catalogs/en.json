@@ -1617,6 +1617,8 @@
   "documents.taskSize": "Task · {arg0} · {arg1}",
   "documents.videoChanged": "The video changed. Open it again.",
   "documents.videoError": "This browser cannot play this video. Use an MP4 with H.264/AAC encoding.",
+  "documents.videoPreview": "Video preview",
+  "documents.videoClose": "Close preview",
   "documents.videoLoading": "Loading video… {arg0}%",
   "documents.videoNotFound": "This published video could not be found.",
   "documents.videoReadFailed": "The video could not be read. Try again.",
