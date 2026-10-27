@@ -24,7 +24,7 @@ func transcriptView(view string) (compact bool, known string, valid bool) {
 		return false, "", true
 	}
 	parts := strings.Split(view, ":")
-	if parts[0] != "tools-v1" && parts[0] != "tools-v1z" {
+	if parts[0] != "tools-v1" && parts[0] != "tools-v1z" && parts[0] != "tools-v2" && parts[0] != "tools-v2z" {
 		return false, "", false
 	}
 	if len(parts) == 1 {

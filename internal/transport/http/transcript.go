@@ -90,7 +90,7 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	view := r.URL.Query().Get("view")
 	compact, known, valid := transcriptView(view)
-	if !valid && !strings.HasPrefix(view, "tool-v1:") && !strings.HasPrefix(view, "tool-v1z:") {
+	if !valid && !strings.HasPrefix(view, "tool-v1:") && !strings.HasPrefix(view, "tool-v1z:") && !strings.HasPrefix(view, "entry-v1:") && !strings.HasPrefix(view, "entry-v1z:") {
 		writeRefusal(w, 400, "invalid_transcript_view", "unknown transcript view")
 		return
 	}
@@ -135,17 +135,23 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 		s.transcriptToolRead(w, r, id, item, view)
 		return
 	}
+	if strings.HasPrefix(view, "entry-v1:") || strings.HasPrefix(view, "entry-v1z:") {
+		s.transcriptEntryDetail(w, r, id, item, view)
+		return
+	}
+	projection := compact
+	lazy := strings.HasPrefix(view, "tools-v2") && (item.Assistant == session.AssistantCodex || item.Assistant == session.AssistantClaude)
 	var page contract.TranscriptPage
 	if after >= 0 {
 		var stale bool
-		page, stale = s.transcriptPageAfterView(id, item, limit, after, compact, r.URL.Query().Get("revision"))
+		page, stale = s.transcriptPageAfterProjection(id, item, limit, after, projection, lazy, r.URL.Query().Get("revision"))
 		if stale {
 			writeRefusal(w, http.StatusConflict, "transcript_cursor_stale",
 				"the transcript changed in a way this cursor cannot follow; read the newest page")
 			return
 		}
 	} else {
-		page = s.transcriptPageBeforeView(id, item, limit, before, compact, r.URL.Query().Get("revision"))
+		page = s.transcriptPageBeforeProjection(id, item, limit, before, projection, lazy, r.URL.Query().Get("revision"))
 		if item.Assistant == session.AssistantAntigravity && page.Note == recordNote(transcript.ErrCursorStale) {
 			writeRefusal(w, http.StatusConflict, "transcript_cursor_stale", "the transcript changed in a way this cursor cannot follow; read the newest page")
 			return
@@ -174,6 +180,10 @@ func (s *Server) transcriptPageBefore(id string, item session.Session, limit int
 }
 
 func (s *Server) transcriptPageBeforeView(id string, item session.Session, limit int, before int64, compact bool, revision ...string) contract.TranscriptPage {
+	return s.transcriptPageBeforeProjection(id, item, limit, before, compact, false, revision...)
+}
+
+func (s *Server) transcriptPageBeforeProjection(id string, item session.Session, limit int, before int64, compact, lazy bool, revision ...string) contract.TranscriptPage {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
 		if h := s.antigravitySessions.Load(); h != nil {
@@ -239,6 +249,9 @@ func (s *Server) transcriptPageBeforeView(id string, item session.Session, limit
 		if compact {
 			row = compactToolEntry(row, e, scope)
 		}
+		if lazy {
+			row = compactEntryDetails(row, e, s.entryDetailScope(id, item))
+		}
 		row.Artifacts = s.pictures.wireArtifacts(e, now)
 		entries = append(entries, row)
 	}
@@ -283,6 +296,10 @@ func (s *Server) transcriptPageAfter(id string, item session.Session, limit int,
 }
 
 func (s *Server) transcriptPageAfterView(id string, item session.Session, limit int, after int64, compact bool, revision ...string) (contract.TranscriptPage, bool) {
+	return s.transcriptPageAfterProjection(id, item, limit, after, compact, false, revision...)
+}
+
+func (s *Server) transcriptPageAfterProjection(id string, item session.Session, limit int, after int64, compact, lazy bool, revision ...string) (contract.TranscriptPage, bool) {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	path := s.recordPath(item)
 	if path == "" {
@@ -316,6 +333,9 @@ func (s *Server) transcriptPageAfterView(id string, item session.Session, limit 
 		row := transcriptEntry(e)
 		if compact {
 			row = compactToolEntry(row, e, scope)
+		}
+		if lazy {
+			row = compactEntryDetails(row, e, s.entryDetailScope(id, item))
 		}
 		row.Artifacts = s.pictures.wireArtifacts(e, now)
 		entries = append(entries, row)

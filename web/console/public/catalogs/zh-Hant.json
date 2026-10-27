@@ -9401,5 +9401,11 @@
   "support.copyCredential": "複製憑證",
   "support.copyingCredential": "複製中…",
   "support.credentialCopied": "已複製憑證。",
-  "support.credentialCopyFailed": "複製失敗。請顯示憑證，選取後手動複製。"
+  "support.credentialCopyFailed": "複製失敗。請顯示憑證，選取後手動複製。",
+  "capacityRow.session.inline_tool_bytes.what": "對話初次載入時可直接傳送的工具文字或差異本文大小。較大的正文在展開後才讀取。",
+  "capacityRow.session.inline_tool_bytes.full": "完整輸出仍保留在原生紀錄。展開工具或差異即可讀取；預覽不會取代已儲存的內容。",
+  "capacityRow.session.tool_preview_runes.what": "長工具輸出收合時傳送的預覽字數。讓工具列有可讀的主旨，同時避免傳送完整正文。",
+  "capacityRow.session.tool_preview_runes.full": "只有預覽會縮短。展開工具列即可讀取保留的輸出。",
+  "capacityRow.session.patch_detail_lines.what": "對話初次載入時可直接展開的差異行數。更長的差異先收合，保留檔名與增刪行數。",
+  "capacityRow.session.patch_detail_lines.full": "差異仍會保留。展開後即可載入各行內容。"
 }

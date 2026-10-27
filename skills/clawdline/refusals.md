@@ -63,7 +63,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `event_conflict` | `internal/transport/http/squad_events.go` |
 | `execution_check_unavailable` | `internal/transport/http/sessions.go` |
 | `execution_generation_changed` | `internal/transport/http/cloud_peer.go` |
-| `execution_source_unknown` | `internal/transport/http/transcript_tools.go` |
+| `execution_source_unknown` | `internal/transport/http/transcript_details.go`, `internal/transport/http/transcript_tools.go` |
 | `execution_target_required` | `internal/transport/http/images.go` |
 | `expired` | `internal/transport/http/auth.go` |
 | `file_permission` | `internal/transport/http/project_files.go`, `internal/transport/http/project_memory.go`, `internal/transport/http/project_unify.go` |
@@ -104,7 +104,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `invalid_state` | `internal/transport/http/proposals.go` |
 | `invalid_summary` | `internal/transport/http/work_v2_session_todos.go` |
 | `invalid_title` | `internal/transport/http/work_v2_session_name.go` |
-| `invalid_tool_result` | `internal/transport/http/transcript_tools.go` |
+| `invalid_tool_result` | `internal/transport/http/transcript_details.go`, `internal/transport/http/transcript_tools.go` |
 | `invalid_track` | `internal/transport/http/tracks.go` |
 | `invalid_transcript_view` | `internal/transport/http/transcript.go` |
 | `invalid_transition` | `internal/domain/work/v2.go` |
@@ -242,7 +242,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `title_required` | `internal/domain/work/v2.go` |
 | `too_large` | `internal/transport/http/actions.go`, `internal/transport/http/voice.go` |
 | `tool_image_unavailable` | `internal/transport/http/transcript_tools.go` |
-| `tool_result_stale` | `internal/transport/http/transcript_tools.go` |
+| `tool_result_stale` | `internal/transport/http/transcript_details.go`, `internal/transport/http/transcript_tools.go` |
 | `transcript_cursor_stale` | `internal/transport/http/transcript.go` |
 | `unauthorized` | `internal/transport/http/auth.go`, `internal/transport/http/gate.go`, `internal/transport/http/proposals.go`, `internal/transport/http/push.go`, `internal/transport/http/skill_install.go`, `internal/transport/http/terminals.go` |
 | `unknown_definition` | `internal/transport/http/squad.go` |

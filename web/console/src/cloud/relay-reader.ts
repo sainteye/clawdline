@@ -1216,7 +1216,7 @@ export class RelayReader {
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
           const view = url.searchParams.get("view")
-          if (view?.startsWith("tool-v1:") || view?.startsWith("tool-v1z:")) {
+          if (view?.startsWith("tool-v1:") || view?.startsWith("tool-v1z:") || view?.startsWith("entry-v1:") || view?.startsWith("entry-v1z:")) {
             const body = await this.connected().readForGeneration!(await this.coherentSession(session, init?.signal),
               "transcript", { limit: CLOUD_TRANSCRIPT_LIMIT, view }, init?.signal ?? undefined)
             this.note(method, path, "relay", undefined, { word: "transcript" })

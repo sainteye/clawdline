@@ -74,6 +74,45 @@ cursor and revision semantics. Any source change returns a full current page.
 Cloud append-delta reads remain unsupported: the existing local append protocol
 and its stale-cursor recovery are unchanged.
 
+## Folded tool rows and patches
+
+`tools-v2` preserves the v1 MCP projection and additionally withholds long ordinary
+tool text and large patches in main Claude/Codex Session pages. Tool text up to
+1,200 bytes stays inline; longer text carries a 240-code-point preview and an
+execution-bound `detail` reference. A patch stays inline only up to 18 displayed
+lines and 1,200 body bytes. Larger patches retain path, kind, move destination,
+line count, additions and deletions, without diff or file-content bodies.
+Questions, plans, activities, formal attachments, provider subagent pages and
+unsupported record formats retain their existing readers. No encoding prefix
+is used to suppress opaque output.
+
+Opening a row reads `entry-v1:<offset>:<digest>` (or the explicitly compressed
+`entry-v1z` form). The reference hashes the complete existing projected entry,
+projection version, machine, Session, conversation and kernel execution. The
+reader opens only the Session's current native record, checks the row boundary,
+parses that bounded row, and selects the candidate with the exact digest. This
+also handles several entries from one native row. Appends preserve old references;
+content changes and other executions do not. There is no client-supplied path,
+background tool rerun, or additional persistent cache.
+
+The full **projected entry** is returned on expansion; provider-side truncation
+and existing parser summaries are not reconstructed. In particular, Claude's
+legacy first-line tool-result projection remains unchanged. Native records remain
+intact. The existing record and Cloud body budgets still apply. Folding does not
+discard data; a transport refusal remains a named failure with an explicit retry.
+
+The component reads only after expansion, shows animated progress, cancels an
+unfinished read when folded or unmounted, and retains a successful body while
+mounted. A changed reference remounts it, so identical preview text cannot reuse
+a different stored body. Patch headers use summary counts until their lines arrive.
+
+A supporting machine advertises `transcript_tools_v2`; Cloud viewers choose v2
+only with that explicit descriptor. Older machines keep v1. A stale v2 descriptor
+or an older local daemon refusing the view gets one v1 fallback with the same
+execution and history cursor. Permission failures do not add fallback requests.
+`tools-v2z` and `entry-v1z` use the existing authenticated, bounded gzip rail.
+Cloud append reads remain a separate change.
+
 ## Verification
 
 Synthetic behavior tests cover hidden automatic screenshots, complete explicit
@@ -86,6 +125,11 @@ limits and old-machine requests. The optional `TestReplayToolResultTraffic`
 reads an explicitly named private export and runs the real projection, Cloud
 bridge, compression and encrypted envelope serializer. It prints aggregate byte
 counts only; private Session content is never a repository fixture.
+
+The optional `TestReplayLongToolBodyTraffic` accepts `CLAWDLINE_TOOL_BODY_REPLAY_DIR`,
+reads only numbered `transcript-N.json` pages in that explicitly named export,
+and prints aggregate JSON sizes for the actual folded-body projection. It contains
+no private fixture data.
 
 Reply-byte savings do not establish daily traffic or phone-bill savings. Opening
 full results or original images adds requests and content. UI folding by itself

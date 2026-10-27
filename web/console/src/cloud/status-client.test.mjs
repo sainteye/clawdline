@@ -1393,3 +1393,45 @@ test("a stale capability falls back once without dropping the execution pin", as
   assert.equal(asks[1].view,undefined)
   assert.equal(asks[1].expected_generation,genA)
 })
+
+test("long tool bodies opt into v2 only on a supporting machine, including older pages",async()=>{
+ for(const supported of [false,true]) {
+  const client=Object.create(StatusCloudClient.prototype)
+  client.pinnedTranscriptFlights=new Map()
+  client.machineDescriptor=()=>({machine:{transcript_tools_v1:true,transcript_tools_v2:supported}})
+  const asks=[]
+  client._read=async(_identity,_type,fields,answer)=>{asks.push({fields,answer});return {entries:[]}}
+  const target={machineID:"m",sessionID:"s",executionGeneration:genA}
+  await client.transcriptForGeneration(target)
+  await client.transcriptPageForGeneration(target,200,undefined,"held-revision")
+  assert.equal(asks.length,2)
+  for(const ask of asks) {
+   assert.match(ask.fields.view,supported?/^tools-v2z?$/:/^tools-v1z?$/)
+   assert.equal(ask.fields.expected_generation,genA)
+   assert.ok(ask.answer.endsWith(".view."+ask.fields.view))
+  }
+  assert.equal(asks[1].fields.revision,"held-revision")
+ }
+})
+
+test("a stale v2 descriptor retries one v1 read with the same execution and history cursor",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.pinnedTranscriptFlights=new Map()
+ client.machineDescriptor=()=>({machine:{transcript_tools_v1:true,transcript_tools_v2:true}})
+ const asks=[]
+ client._read=async(_identity,_type,fields,answer)=>{
+  asks.push({fields,answer})
+  if(fields.view.startsWith("tools-v2")) throw Object.assign(new Error("downgraded"),{code:"invalid_transcript_view"})
+  return {entries:[]}
+ }
+ const target={machineID:"m",sessionID:"s",executionGeneration:genA}
+ await client.transcriptForGeneration(target)
+ await client.transcriptPageForGeneration(target,200,undefined,"revision")
+ assert.equal(asks.length,4)
+ for(const index of [1,3]) {
+  assert.match(asks[index].fields.view,/^tools-v1z?$/)
+  assert.equal(asks[index].fields.expected_generation,genA)
+ }
+ assert.equal(asks[3].fields.before,200)
+ assert.equal(asks[3].fields.revision,"revision")
+})

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9401,
-  "riskKeys": 4164,
-  "nonRiskCount": 5237,
+  "englishContentKeys": 9407,
+  "riskKeys": 4167,
+  "nonRiskCount": 5240,
   "groups": [
     {
       "name": "admin / other",
@@ -340,7 +340,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 316,
+      "count": 319,
       "sources": [
         null
       ],
@@ -607,6 +607,8 @@
         "capacityRow.screens.capture_slots.what",
         "capacityRow.session.human_intervention_text_bytes.what",
         "capacityRow.session.human_intervention_title_bytes.what",
+        "capacityRow.session.patch_detail_lines.full",
+        "capacityRow.session.patch_detail_lines.what",
         "capacityRow.session.report_open_todo_characters.full",
         "capacityRow.session.report_open_todo_characters.what",
         "capacityRow.session.title_characters.what",
@@ -615,6 +617,7 @@
         "capacityRow.session.title_rows.what",
         "capacityRow.session.tool_preview_bytes.full",
         "capacityRow.session.tool_preview_bytes.what",
+        "capacityRow.session.tool_preview_runes.full",
         "capacityRow.sessions.archive_rows.full",
         "capacityRow.sessions.archive_rows.what",
         "capacityRow.sessions.restore_rows.full",

@@ -7608,6 +7608,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "session.inline_tool_bytes",
+    "Class": "observation",
+    "Unit": "bytes",
+    "Limit": 1200,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.transcriptInlineToolBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "session.no_movement_seconds",
     "Class": "cache",
     "Unit": "seconds",
@@ -7624,6 +7644,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/transport/cloud.SessionNoMovementSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.patch_detail_lines",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 18,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.transcriptPatchDetailLinesLimit"
     ]
   },
   {
@@ -7856,6 +7896,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/transcript.ToolPreviewBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.tool_preview_runes",
+    "Class": "observation",
+    "Unit": "characters",
+    "Limit": 240,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.transcriptToolPreviewRunesLimit"
     ]
   },
   {

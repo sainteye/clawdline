@@ -78,7 +78,7 @@ export class ClawdlineClient {
     return this.get(routes.coordinator)
   }
   transcript(id: string, limit = 40, before?: number, revision?: string): Promise<TranscriptPage> {
-    return this.get(`${routes.transcript}?view=tools-v1&session=${encodeURIComponent(id)}&limit=${limit}${before ? `&before=${before}` : ""}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`)
+    return this.transcriptRead(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}${before ? `&before=${before}` : ""}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`)
   }
 
   /**
@@ -87,7 +87,15 @@ export class ClawdlineClient {
    * (`transcript_cursor_stale`), and the newest page is then read whole.
    */
   transcriptAfter(id: string, limit: number, after: number, revision?: string): Promise<TranscriptPage> {
-    return this.get(`${routes.transcript}?view=tools-v1&session=${encodeURIComponent(id)}&limit=${limit}&after=${after}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`)
+    return this.transcriptRead(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}&after=${after}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`)
+  }
+
+  private async transcriptRead(path: string): Promise<TranscriptPage> {
+    try { return await this.get<TranscriptPage>(path + "&view=tools-v2") }
+    catch (error) {
+      if (!(error instanceof RefusalError) || error.code !== "invalid_transcript_view") throw error
+      return this.get<TranscriptPage>(path + "&view=tools-v1")
+    }
   }
 
   agentTranscript(id: string, agent: string, limit = 40, before?: number): Promise<TranscriptPage> {

@@ -1930,7 +1930,17 @@
     "Known": true
   },
   {
+    "Name": "session.inline_tool_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "session.no_movement_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.patch_detail_lines",
     "Known": true,
     "Note": true
   },
@@ -1989,6 +1999,11 @@
   },
   {
     "Name": "session.tool_preview_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.tool_preview_runes",
     "Known": true,
     "Note": true
   },

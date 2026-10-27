@@ -1430,7 +1430,8 @@ export class StatusCloudClient extends CatalogCloudClient {
       if (this.readWaiters?.has(machineID + "\u0000" + sessionID + "\u0000transcript")) {
         throw refused("cloud_read_busy", "an unpinned Session transcript read is already in flight")
       }
-      const view = (typeof DecompressionStream === "function" ? "tools-v1z" : "tools-v1") +
+      const version = this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v2 === true ? "tools-v2" : "tools-v1"
+      const view = (version + (typeof DecompressionStream === "function" ? "z" : "")) +
         (held?.version && /^[0-9a-f]{64}$/u.test(held.version) ? ":" + held.version : "")
       const fields = { limit: 200, priority: "foreground", machine_id: machineID, expected_generation: executionGeneration }
       if (this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v1 !== true) {
@@ -1445,6 +1446,10 @@ export class StatusCloudClient extends CatalogCloudClient {
         }
         return page
       } catch (error) {
+        if (version === "tools-v2" && error?.code === "invalid_transcript_view") {
+          const fallback = "tools-v1" + (typeof DecompressionStream === "function" ? "z" : "")
+          return this._read({ machine: machineID, session: sessionID }, "transcript", { ...fields, view: fallback }, "transcript.view." + fallback, undefined, { signal })
+        }
         if (!["malformed_read", "cloud_read_timeout"].includes(error?.code)) throw error
         return this._read({ machine: machineID, session: sessionID }, "transcript", fields, "transcript", undefined, { signal })
       }
@@ -1470,9 +1475,14 @@ export class StatusCloudClient extends CatalogCloudClient {
     if (this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v1 !== true) {
       return this._read({ machine: machineID, session: sessionID }, "transcript", fields, answer, undefined, { signal })
     }
-    const view = typeof DecompressionStream === "function" ? "tools-v1z" : "tools-v1"
+    const version = this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v2 === true ? "tools-v2" : "tools-v1"
+    const view = version + (typeof DecompressionStream === "function" ? "z" : "")
     return this._read({ machine: machineID, session: sessionID }, "transcript", { ...fields, view },
       answer + ".view." + view, undefined, { signal }).catch(error => {
+        if (version === "tools-v2" && error?.code === "invalid_transcript_view") {
+          const fallback = "tools-v1" + (typeof DecompressionStream === "function" ? "z" : "")
+          return this._read({ machine: machineID, session: sessionID }, "transcript", { ...fields, view: fallback }, answer + ".view." + fallback, undefined, { signal })
+        }
         if (!["malformed_read", "cloud_read_timeout"].includes(error?.code)) throw error
         return this._read({ machine: machineID, session: sessionID }, "transcript", fields, answer, undefined, { signal })
       })

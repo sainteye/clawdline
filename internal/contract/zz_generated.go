@@ -7733,6 +7733,12 @@ type TranscriptActivity struct {
 	ToolResult *TranscriptToolResult `json:"toolResult,omitempty"`
 }
 
+type TranscriptChangeStats struct {
+	Additions int64 `json:"additions"`
+	Deletions int64 `json:"deletions"`
+	LineCount int64 `json:"lineCount"`
+}
+
 // One thing in a conversation, in the shape the Swift app's `transcriptRows`
 // writes it. A tool call and what the tool returned both carry `role: tool`;
 // only the call names its tool. A call's `text` is the one line describing what
@@ -7748,7 +7754,8 @@ type TranscriptEntry struct {
 	Artifacts []ImageArtifact `json:"artifacts,omitempty"`
 
 	// Unix seconds. Absent when the record carried no timestamp this reader accepts.
-	At int64 `json:"at,omitempty"`
+	At     int64                  `json:"at,omitempty"`
+	Detail *TranscriptEntryDetail `json:"detail,omitempty"`
 
 	// Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent
 	// on every other entry.
@@ -7786,16 +7793,26 @@ type TranscriptEntry struct {
 	Tool string `json:"tool,omitempty"`
 }
 
+// An opt-in stored tool body. The reference binds a native row, its full
+// projected content, machine and Session execution. Body fields arrive only
+// after expansion.
+type TranscriptEntryDetail struct {
+	LineCount int64  `json:"lineCount"`
+	Reference string `json:"reference"`
+	TextBytes int64  `json:"textBytes"`
+}
+
 type TranscriptFileChange struct {
 	// The whole file, for an addition, a deletion or a Claude `Write`.
 	Content string `json:"content,omitempty"`
 
 	// add, delete, update or write, as the record spelled it; `change` when it did
 	// not.
-	Kind        string `json:"kind"`
-	MovePath    string `json:"movePath,omitempty"`
-	Path        string `json:"path"`
-	UnifiedDiff string `json:"unifiedDiff,omitempty"`
+	Kind        string                 `json:"kind"`
+	MovePath    string                 `json:"movePath,omitempty"`
+	Path        string                 `json:"path"`
+	Stats       *TranscriptChangeStats `json:"stats,omitempty"`
+	UnifiedDiff string                 `json:"unifiedDiff,omitempty"`
 }
 
 // A decoded Clawdline notice without its protocol, version and body — the

@@ -464,7 +464,7 @@ func (b Bridge) contentReadAnswer(cmd Command, p plan, answer Answer) Answer {
 		return Answer{Status: 502, Code: "read_failed", Subject: p.target}
 	}
 	answer.Payload = encoded
-	if view := p.local.Query["view"]; strings.HasPrefix(view, "tools-v1z") || strings.HasPrefix(view, "tool-v1z:") {
+	if view := p.local.Query["view"]; strings.HasPrefix(view, "tools-v1z") || strings.HasPrefix(view, "tool-v1z:") || strings.HasPrefix(view, "tools-v2z") || strings.HasPrefix(view, "entry-v1z:") {
 		answer.Payload = gzipReadPayload(encoded)
 	}
 	return answer

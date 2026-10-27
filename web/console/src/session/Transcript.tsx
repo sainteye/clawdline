@@ -1,3 +1,4 @@
+import { LazyEntryBody } from "./LazyEntryBody.js"
 import { catalogWord } from "../catalog.js"
 import { assistantLabel, assistantProtocolOwned } from "./antigravity-ui.js"
 import {
@@ -1206,7 +1207,9 @@ function toolRowHTML(v: View, e: Entry, live: boolean, n: number) {
           {e.tool ? <span className="toolname">{e.tool}</span> : <span className="caret">{open ? "⏷" : "⏵"}</span>}
           <span className="subject">{firstLine(e.text)}</span>
         </button>
-        {open ? (
+        {e.detail ? <LazyEntryBody key={(v.sessionID ?? "") + e.detail.reference} sessionID={v.sessionID} detail={e.detail} open={open}>
+          {(full) => <div className="toolbody" onClick={copyFrom} dangerouslySetInnerHTML={{ __html: L.richTextHTML(full.text) }} />}
+        </LazyEntryBody> : open ? (
           <div className="toolbody" onClick={copyFrom} dangerouslySetInnerHTML={{ __html: L.richTextHTML(e.text) }} />
         ) : null}
       </div>
@@ -1323,6 +1326,7 @@ function foldKey(run: Entry[]): string {
   for (const e of run) {
     let text = (e.tool || "") + "\u0001" + (e.text || "")
     if (Array.isArray(e.fileChanges)) text += "\u0001" + JSON.stringify(e.fileChanges)
+    if (e.detail) text += "\u0001" + e.detail.reference
     if (e.activity && typeof e.activity === "object") text += "\u0001" + JSON.stringify(e.activity)
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193)
   }
@@ -1886,8 +1890,8 @@ const PATCH_DETAIL_LINE_LIMIT = 18
 
 function fileChangeHTML(change: TranscriptFileChange, lines: DiffLine[], showLines: boolean): string {
   const esc = L.escapeHTML
-  const additions = lines.filter((l) => l.kind === "add").length
-  const deletions = lines.filter((l) => l.kind === "del").length
+  const additions = change.stats?.additions ?? lines.filter((l) => l.kind === "add").length
+  const deletions = change.stats?.deletions ?? lines.filter((l) => l.kind === "del").length
   const moved = change.movePath ? '<span class="diff-move">→ ' + esc(patchPath(change.movePath)) + "</span>" : ""
   const stats =
     (additions ? '<span class="add">+' + additions + "</span>" : "") +
@@ -1915,8 +1919,8 @@ function fileChangeHTML(change: TranscriptFileChange, lines: DiffLine[], showLin
 function patchHTML(v: View, e: Entry, at: number) {
   const views = (fileChangesOf(e) || []).map((change) => ({ change, lines: linesOfChange(change) }))
   const key = "p" + foldKey([e])
-  const lineCount = views.reduce((total, x) => total + x.lines.length, 0)
-  const defaultOpen = lineCount <= PATCH_DETAIL_LINE_LIMIT
+  const lineCount = e.detail?.lineCount ?? views.reduce((total, x) => total + x.lines.length, 0)
+  const defaultOpen = !e.detail && lineCount <= PATCH_DETAIL_LINE_LIMIT
   const open = defaultOpen ? v.expanded[key] !== false : !!v.expanded[key]
   return (
     <div className="entry patch" data-role="patch" data-detail={open ? "open" : "collapsed"} key={"p:" + at}>
@@ -1934,10 +1938,13 @@ function patchHTML(v: View, e: Entry, at: number) {
           <span className="toolname">{e.tool}</span>
           <span className="subject">{e.text || ""}</span>
         </button>
-        <div
+        {e.detail ? <LazyEntryBody key={(v.sessionID ?? "") + e.detail.reference} sessionID={v.sessionID} detail={e.detail} open={open}
+          preview={<div className="patch-body" dangerouslySetInnerHTML={{ __html: views.map((x) => fileChangeHTML(x.change, [], false)).join("") }} />}>
+          {(full) => <div className="patch-body" dangerouslySetInnerHTML={{ __html: (full.fileChanges ?? []).map((change) => fileChangeHTML(change, linesOfChange(change), true)).join("") }} />}
+        </LazyEntryBody> : <div
           className="patch-body"
           dangerouslySetInnerHTML={{ __html: views.map((x) => fileChangeHTML(x.change, x.lines, open)).join("") }}
-        />
+        />}
       </div>
     </div>
   )

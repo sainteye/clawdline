@@ -890,6 +890,7 @@ func (p *Publisher) publishDescriptor(ctx context.Context) {
 		machine["read_content_v1"] = true
 		machine["image_thumbnails_v1"] = true
 		machine["transcript_tools_v1"] = true
+		machine["transcript_tools_v2"] = true
 	}
 	if p.SessionCarrierV1 {
 		machine["session_carrier_v1"] = true

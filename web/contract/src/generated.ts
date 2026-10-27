@@ -9353,6 +9353,12 @@ export interface TranscriptActivity {
   toolResult?: TranscriptToolResult
 }
 
+export interface TranscriptChangeStats {
+  additions: number
+  deletions: number
+  lineCount: number
+}
+
 /**
  * One thing in a conversation, in the shape the Swift app's `transcriptRows` writes
  * it. A tool call and what the tool returned both carry `role: tool`; only the call
@@ -9375,6 +9381,7 @@ export interface TranscriptEntry {
    * Unix seconds. Absent when the record carried no timestamp this reader accepts.
    */
   at?: number
+  detail?: TranscriptEntryDetail
 
   /**
    * Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent
@@ -9430,6 +9437,16 @@ export interface TranscriptEntry {
   tool?: string
 }
 
+/**
+ * An opt-in stored tool body. The reference binds a native row, its full projected
+ * content, machine and Session execution. Body fields arrive only after expansion.
+ */
+export interface TranscriptEntryDetail {
+  lineCount: number
+  reference: string
+  textBytes: number
+}
+
 export interface TranscriptFileChange {
   /**
    * The whole file, for an addition, a deletion or a Claude `Write`.
@@ -9443,6 +9460,7 @@ export interface TranscriptFileChange {
   kind: string
   movePath?: string
   path: string
+  stats?: TranscriptChangeStats
   unifiedDiff?: string
 }
 

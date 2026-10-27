@@ -398,7 +398,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `session.human_interventions_open` | 8 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `session.human_interventions_recent` | 5 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `session.human_interventions_total` | 2000 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
+| `session.inline_tool_bytes` | 1200 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `session.no_movement_seconds` | 1800 | `seconds` | `expire` | `diagnostics, sender` | — |
+| `session.patch_detail_lines` | 18 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
 | `session.report_open_todo_characters` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `session.report_open_todo_rows` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `session.secret_handoff_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -411,6 +413,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `session.title_rows` | 200 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `session.todo_batch_rows` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `session.tool_preview_bytes` | 1024 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `session.tool_preview_runes` | 240 | `characters` | `evict_oldest` | `diagnostics, sender` | — |
 | `session.waiting_for` | 8 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.activity_reads` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `sessions.agent_rows` | 6 | `rows` | `evict_oldest` | `diagnostics` | — |

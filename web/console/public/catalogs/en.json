@@ -9401,5 +9401,11 @@
   "support.copyCredential": "Copy credential",
   "support.copyingCredential": "Copying…",
   "support.credentialCopied": "Credential copied.",
-  "support.credentialCopyFailed": "Copy failed. Show the credential and select it to copy manually."
+  "support.credentialCopyFailed": "Copy failed. Show the credential and select it to copy manually.",
+  "capacityRow.session.inline_tool_bytes.what": "Tool text or patch bytes that can be sent in full with the initial conversation page. Larger bodies are read when expanded.",
+  "capacityRow.session.inline_tool_bytes.full": "The full output remains in its native record. Expand the tool or change to read it; the preview never replaces stored content.",
+  "capacityRow.session.tool_preview_runes.what": "The character preview sent for a long folded tool output. It gives the row a readable subject without transferring the full body.",
+  "capacityRow.session.tool_preview_runes.full": "Only the preview is shortened. Expand the row to read the stored output.",
+  "capacityRow.session.patch_detail_lines.what": "Changed-file lines that can appear expanded on the first conversation page. Longer patches start folded with file names and change counts.",
+  "capacityRow.session.patch_detail_lines.full": "The patch is still stored. Expand the change to load its lines."
 }

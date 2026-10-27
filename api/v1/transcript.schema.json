@@ -13,6 +13,7 @@
         "activity": { "$ref": "#/$defs/TranscriptActivity" },
         "artifacts": { "description": "Pictures an assistant turn showed with a `<clawdline-image>` marker, or a Clawdline session message carried. Resolved against this daemon's store and then, read-only, the Swift app's.", "type": "array", "items": { "$ref": "images.schema.json#/$defs/ImageArtifact" } },
         "at": { "description": "Unix seconds. Absent when the record carried no timestamp this reader accepts.", "type": "integer" },
+        "detail": { "$ref": "#/$defs/TranscriptEntryDetail" },
         "fileChanges": { "description": "Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent on every other entry.", "type": "array", "items": { "$ref": "#/$defs/TranscriptFileChange" } },
         "imageCount": { "description": "Images attached to a user turn. Absent when there were none: the Swift app writes an explicit 0 on user rows, and a reader treats absence as that 0.", "type": "integer" },
         "id": { "description": "Stable entry identity when the provider has a durable projection. Owned ACP uses acp2:generation:ordinal, preserving distinct repeated turns and replacing streamed content in place. Absent for providers without entry identities.", "type": "string" },
@@ -26,6 +27,25 @@
         "tool": { "description": "The tool a call used. Absent on a tool's result and on prose.", "type": "string" }
       }
     },
+    "TranscriptEntryDetail": {
+      "description": "An opt-in stored tool body. The reference binds a native row, its full projected content, machine and Session execution. Body fields arrive only after expansion.",
+      "type": "object", "additionalProperties": false,
+      "required": ["reference", "textBytes", "lineCount"],
+      "properties": {
+        "reference": { "type": "string" },
+        "textBytes": { "type": "integer" },
+        "lineCount": { "type": "integer" }
+      }
+    },
+    "TranscriptChangeStats": {
+      "type": "object", "additionalProperties": false,
+      "required": ["additions", "deletions", "lineCount"],
+      "properties": {
+        "additions": { "type": "integer" },
+        "deletions": { "type": "integer" },
+        "lineCount": { "type": "integer" }
+      }
+    },
     "TranscriptFileChange": {
       "type": "object",
       "additionalProperties": false,
@@ -35,7 +55,8 @@
         "kind": { "description": "add, delete, update or write, as the record spelled it; `change` when it did not.", "type": "string" },
         "movePath": { "type": "string" },
         "path": { "type": "string" },
-        "unifiedDiff": { "type": "string" }
+        "unifiedDiff": { "type": "string" },
+        "stats": { "$ref": "#/$defs/TranscriptChangeStats" }
       }
     },
     "TranscriptPlanStep": {
