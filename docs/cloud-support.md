@@ -71,8 +71,10 @@ requires privacy and evidence review against a specific revision.
 ## DB first, static pages when ready
 
 Initially the public website FAQ and Cloud help page read only published FAQ DB projections.
-English and Traditional Chinese website entries follow existing site routing: `/faq/` and
-`/zh-TW/faq/`; their content locales are `en` and `zh-Hant`. They use the same published records.
+The website uses the canonical `/faq/` entry and its existing language preference. The
+Traditional Chinese document is a noindex `/_page-locales/zh-TW/faq/` resource; legacy
+`/zh-TW/faq/` links redirect to the canonical entry. The content locales are `en` and `zh-Hant`.
+Both render the same published records in the selected language.
 
 An editor can publish a locale snapshot once the collection is ready. Snapshot generation uses a
 publication fence and promotes one complete manifest atomically. Failure leaves the previous
