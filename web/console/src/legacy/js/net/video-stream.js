@@ -64,7 +64,7 @@ export async function openVideoStream(wanted, readChunk, options = {}) {
                     if (!Number.isSafeInteger(at) || at <= offset || at >= first.total) throw failure();
                     offset = at;
                 }
-                const tracks = info.tracks.filter(track => track.type === "video" || track.type === "audio");
+                const tracks = info.tracks.filter(track => track.type === "video" || (!options.videoOnly && track.type === "audio"));
                 const duration = info.duration / info.timescale;
                 if (!tracks.some(track => track.type === "video") || !Number.isFinite(duration) || duration <= 0) throw failure();
                 // Reject impossible sample extents before the remuxer allocates data.
@@ -87,9 +87,10 @@ export async function openVideoStream(wanted, readChunk, options = {}) {
                 for (const track of tracks) file.setSegmentOptions(track.id, null, { nbSamples: 1, rapAlignement: false });
                 const initial = file.initializeSegmentation("per-track");
                 await sink.initialize(initial.map(part => ({ id: part.id, buffer: part.buffer,
-                    mime: `${tracks.find(track => track.id === part.id).type}/mp4; codecs="${tracks.find(track => track.id === part.id).codec}"` })), duration);
+                    mime: `${tracks.find(track => track.id === part.id).type}/mp4; codecs="${tracks.find(track => track.id === part.id).codec}"` })), duration, duration * (options.startFraction ?? 0));
                 active(options.signal);
-                file.seek(0, true);
+                const start = file.seek(duration * (options.startFraction ?? 0), true);
+                if (!Number.isSafeInteger(start.offset) || start.offset < 0 || start.offset >= first.total) throw failure();
                 file.start();
                 const drain = async () => {
                     if (!batch.length) return;
@@ -109,7 +110,7 @@ export async function openVideoStream(wanted, readChunk, options = {}) {
                     await sink.append(parts);
                     active(options.signal);
                 };
-                for (offset = 0; offset < first.total; offset += VIDEO_CHUNK_BYTES) {
+                for (offset = Math.floor(start.offset / VIDEO_CHUNK_BYTES) * VIDEO_CHUNK_BYTES; offset < first.total; offset += VIDEO_CHUNK_BYTES) {
                     const bytes = await get(offset);
                     held.delete(offset);
                     append(bytes, offset);

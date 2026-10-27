@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-27",
+  "surface": "Installed Chrome, isolated local component fixture",
+  "samples": [
+    {
+      "source_bytes": 2163818,
+      "duration_seconds": 40,
+      "poster": [
+        640,
+        360
+      ],
+      "read_requests": 4,
+      "read_bytes": 2097152,
+      "maximum_concurrent_requests": 1,
+      "visual_result": "Character, interface and captions instead of a solid intro"
+    },
+    {
+      "source_bytes": 6789125,
+      "duration_seconds": 40,
+      "poster": [
+        640,
+        360
+      ],
+      "read_requests": 8,
+      "read_bytes": 4194304,
+      "maximum_concurrent_requests": 1,
+      "visual_result": "Character, interface and captions; retained the best completed candidate when the budget ended"
+    }
+  ],
+  "regression_fixture": {
+    "keyframe_score": 0,
+    "selected_frame_score": 161.7292187454466,
+    "poster": [
+      96,
+      54
+    ],
+    "read_requests": 1,
+    "read_bytes": 17910,
+    "maximum_concurrent_requests": 1,
+    "description": "Every keyframe is black; detail only appears between keyframes. The selected frame contains the test pattern."
+  },
+  "modal_borrows_selected_poster": true,
+  "native_playback": {
+    "paused": false,
+    "current_time": 0.177783,
+    "decoded_width": 1920
+  },
+  "limitations": [
+    "Phone Safari and physical iPhone acceptance remain separate.",
+    "Contrast and detail are visual heuristics, not semantic scene understanding.",
+    "Production Cloud acceptance is separate from this local fixture."
+  ]
+}

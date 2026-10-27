@@ -4713,7 +4713,7 @@
     "Name": "console.video_preview_bytes",
     "Class": "buffer",
     "Unit": "bytes",
-    "Limit": 2097152,
+    "Limit": 4194304,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
@@ -4726,6 +4726,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumVideoPreviewBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.video_preview_frames",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumVideoPreviewFrames"
     ]
   },
   {

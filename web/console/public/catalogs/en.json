@@ -9212,14 +9212,16 @@
   "playbook.backToPlaybooks": "Back to Playbooks",
   "playbook.choosePlaybook": "Choose a Playbook to start",
   "playbook.noSessionPlaybooks": "This Project has no Playbooks yet. Create one from the sidebar.",
-  "capacityRow.console.video_preview_bytes.full": "If a frame needs more data, the card keeps its play button without a thumbnail.",
-  "capacityRow.console.video_preview_bytes.what": "A thumbnail reads only a small part of its authorized video.",
-  "capacityRow.console.video_preview_milliseconds.full": "A slow preview stops loading; you can still open the video directly.",
+  "capacityRow.console.video_preview_bytes.full": "After 4 MiB, sampling stops and keeps the best frame already decoded. If none was decoded, the play link remains usable.",
+  "capacityRow.console.video_preview_bytes.what": "The total authenticated source bytes one representative video thumbnail attempt may read, shared by all sampled frames and the movie index.",
+  "capacityRow.console.video_preview_milliseconds.full": "After 30 seconds, sampling stops and keeps the best frame already decoded. If none was decoded, the play link remains usable.",
   "capacityRow.console.video_preview_milliseconds.what": "Automatic video thumbnails have a limited time to produce a frame.",
   "capacityRow.console.video_preview_reads.full": "Other visible thumbnails wait; opening a video pauses thumbnail reads.",
   "capacityRow.console.video_preview_reads.what": "Visible video thumbnails share one background read at a time.",
   "capacityRow.console.video_preview_side.full": "The longest edge is reduced to this size; the original video is unchanged.",
   "capacityRow.console.video_preview_side.what": "Video thumbnails are scaled down before they are held in the conversation.",
   "documents.videoPlay": "Play video",
-  "documents.videoPosterUnavailable": "Preview unavailable. Open the video to play."
+  "documents.videoPosterUnavailable": "Preview unavailable. Open the video to play.",
+  "capacityRow.console.video_preview_frames.what": "How many later video frames a browser may sample to choose a representative thumbnail.",
+  "capacityRow.console.video_preview_frames.full": "After four candidates, the most detailed decoded frame is kept. Near-solid intros and fades rank below pictures with detail."
 }

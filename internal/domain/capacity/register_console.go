@@ -4,6 +4,12 @@ package capacity
 func consoleBounds() []Entry {
 	return append(append(append(connectionHealthUIBounds(), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
 		{
+			Name: "console.video_preview_frames", Class: Buffer, Unit: Rows,
+			Limit: MaximumVideoPreviewFrames, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVideoPreviewFrames"},
+		},
+		{
 			Name: "console.video_preview_reads", Class: Buffer, Unit: Rows,
 			Limit: MaximumVideoPreviewReads, AtLimit: Refuse,
 			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,

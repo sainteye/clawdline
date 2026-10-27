@@ -249,7 +249,8 @@
 | `console.transcript_merged_rows` | 1000 | `rows` | `expire` | `diagnostics` | — |
 | `console.transcript_revision_restarts` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.transcript_safety_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
-| `console.video_preview_bytes` | 2097152 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.video_preview_bytes` | 4194304 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.video_preview_frames` | 4 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.video_preview_milliseconds` | 30000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `console.video_preview_reads` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.video_preview_side` | 640 | `rows` | `refuse` | `sender, diagnostics` | — |

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9221,
+  "englishKeys": 9223,
   "counts": {
-    "negation": 2661,
-    "state": 1532,
-    "permission": 551,
+    "negation": 2662,
+    "state": 1531,
+    "permission": 550,
     "deletion": 202,
     "uncertainty": 291
   },
-  "unionCount": 4114,
+  "unionCount": 4113,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -341,6 +341,7 @@
       "capacityRow.console.transcript_safety_seconds.full",
       "capacityRow.console.transcript_safety_seconds.what",
       "capacityRow.console.video_preview_bytes.full",
+      "capacityRow.console.video_preview_milliseconds.full",
       "capacityRow.console.viewer_health_body_bytes.full",
       "capacityRow.console.viewer_health_hourly_bytes.full",
       "capacityRow.console.viewer_health_hourly_requests.full",
@@ -2920,7 +2921,6 @@
       "capacityRow.console.transcript_merged_rows.what",
       "capacityRow.console.transcript_safety_seconds.full",
       "capacityRow.console.transcript_safety_seconds.what",
-      "capacityRow.console.video_preview_milliseconds.full",
       "capacityRow.console.viewer_health_attempts.full",
       "capacityRow.console.viewer_health_body_bytes.full",
       "capacityRow.console.viewer_health_buffer_rows.full",
@@ -4287,7 +4287,6 @@
       "capacityRow.console.health_live_seconds.full",
       "capacityRow.console.native_pairing_save_seconds.full",
       "capacityRow.console.native_pairing_save_seconds.what",
-      "capacityRow.console.video_preview_bytes.what",
       "capacityRow.devices.list.full",
       "capacityRow.devices.list.what",
       "capacityRow.handoff.patch_bytes.what",
@@ -5757,7 +5756,6 @@
     "capacityRow.console.transcript_safety_seconds.full",
     "capacityRow.console.transcript_safety_seconds.what",
     "capacityRow.console.video_preview_bytes.full",
-    "capacityRow.console.video_preview_bytes.what",
     "capacityRow.console.video_preview_milliseconds.full",
     "capacityRow.console.viewer_health_attempts.full",
     "capacityRow.console.viewer_health_body_bytes.full",
