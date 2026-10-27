@@ -244,7 +244,7 @@ export function cutWords(header: string): string {
 }
 
 /** `net/live.js`'s `document(value)`: bytes, and the same validator the Cloud answer gets. */
-export async function readPublishedDocument(value: unknown, options?: { signal?: AbortSignal; progress?: (percent: number) => void; stream?: boolean; byteBudget?: number }): Promise<unknown> {
+export async function readPublishedDocument(value: unknown, options?: { signal?: AbortSignal; progress?: (percent: number) => void; stream?: boolean; poster?: boolean; byteBudget?: number }): Promise<unknown> {
   const locator = (normalizeDocumentLocator as (v: unknown) => DocumentLocator)(value)
   if (!hosted && locator.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
   if (hosted && locator.machine === LOCAL_SESSION_MACHINE) throw wrongMachine()
@@ -253,7 +253,7 @@ export async function readPublishedDocument(value: unknown, options?: { signal?:
   path += locator.path.split("/").map(encodeURIComponent).join("/")
   if (hosted) path += "?machine=" + encodeURIComponent(locator.machine)
   if (isVideoPath(locator.path)) {
-    const reader = options?.stream ? (await import("./js/net/video-stream.js")).openVideoStream : loadVideo
+    const reader = options?.poster ? (await import("./js/net/video-posters.js")).openVideoPosters : options?.stream ? (await import("./js/net/video-stream.js")).openVideoStream : loadVideo
     return reader(locator, async (offset: number, revision: string) => {
       const separator = path.includes("?") ? "&" : "?"
       const response = await fetch(path + separator + new URLSearchParams({ offset: String(offset), revision }),

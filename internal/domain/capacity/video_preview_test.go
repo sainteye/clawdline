@@ -13,10 +13,16 @@ func TestVideoPreviewBudgetsMatchTheBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	posterReader, err := os.ReadFile(filepath.Join(moduleRoot(t), "web/console/src/legacy/js/net/video-posters.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, posterReader...)
 	for _, row := range []struct {
 		symbol, name string
 		value        int64
 	}{
+		{"FRAMES", "frames", MaximumVideoPreviewFrames},
 		{"READS", "reads", MaximumVideoPreviewReads},
 		{"SIDE", "side", MaximumVideoPreviewSide},
 		{"BYTES", "bytes", MaximumVideoPreviewBytes},

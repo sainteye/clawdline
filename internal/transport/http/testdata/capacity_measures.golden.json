@@ -1211,6 +1211,11 @@
     "Note": true
   },
   {
+    "Name": "console.video_preview_frames",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.video_preview_milliseconds",
     "Known": true,
     "Note": true

@@ -21,16 +21,32 @@ Assistant messages with complete same-origin MP4 publication links also show a
 thumbnail card with a play button. Only actual rendered links qualify; code
 examples, external links and incomplete locators never trigger thumbnail reads.
 A card starts reading when it enters the viewport, pauses when it leaves, and
-stops after the first decoded frame. It uses the same authenticated, encrypted,
+samples random-access frames from later parts of the movie. It uses the same authenticated, encrypted,
 revision-pinned video chunks as playback. No thumbnail is uploaded or published.
 
-Each browser permits one thumbnail read at a time, reads at most 2 MiB of source
+Each browser permits one thumbnail read at a time, reads at most 4 MiB of source
 bytes per attempt, waits at most 30 seconds and scales the longest thumbnail side
 to 640 pixels. These limits are registered as `console.video_preview_*`. Visible
 cards borrow a slot without an unbounded waiting queue; opening a lightbox pauses
 thumbnail work. A failed preview retains a usable play link and an explicit
-fallback label. A large index or late first frame may exhaust the preview budget
+fallback label. A large index or large keyframe may exhaust the preview budget
 while the full player remains usable. There is no automatic failure retry.
+
+The candidates start near 35%, 60%, 12% and 82% of the duration, decoding from the nearest
+preceding random-access frame through the requested time. Keyframes often land
+on transitions, so the keyframe itself is not the thumbnail. Four candidates share one revision-pinned chunk
+cache and byte budget, including metadata; repeated chunks are reused. Only the
+video track is remuxed for sampling. The native decoder seeks to the requested buffered
+time and stops before another candidate is opened. This requires no external
+service, installed media utility or new daemon read operation.
+
+Decoded pixels are ranked by luminance contrast, edge detail and colour diversity
+inside the central image. Near-solid black, white, coloured intros and fades rank
+below frames with visible detail. This is a visual heuristic, not semantic scene
+understanding. The highest-ranked completed frame wins; budget exhaustion or the
+sampling deadline preserves an already decoded candidate. External cancellation
+discards it, and authorization refusals are propagated. Unsupported media retains
+the usable play link.
 
 A thumbnail belongs to its mounted conversation card and is revoked on unmount.
 The modal borrows a separate URL for that image, so closing the modal cannot
@@ -199,3 +215,20 @@ loading at both measured widths, with no phone-width horizontal overflow.
 Card and text links reopened after Close; Back/Forward, draft, scroll and card
 focus also remained usable. This is local component evidence, separate from
 production Cloud and physical iPhone acceptance.
+
+The representative-thumbnail fixture `web/console/src/cloud/testdata/video-poster.mp4`
+is a generated 96-by-54 test pattern with regular keyframes. Every keyframe is
+black and the following frames contain detail, so capturing the keyframe instead
+of decoding through the requested time is a visible near-miss. Tests verify later
+sample times, multiple distinct positions, shared chunk reuse, cancellation,
+read limits, partial-result preservation and authorization refusal propagation.
+Pixel tests cover black, white, coloured and near-uniform fades versus visible
+subjects. The earlier first-frame acceptance above records the superseded policy.
+
+The [representative poster browser record](performance/video-representative-posters-browser.json)
+records two 40-second samples in installed Chrome. Both selected visible subjects,
+interfaces and captions instead of their solid opening frames. The black-keyframe
+regression clip selected a detailed non-keyframe; ordinary playback and the modal
+poster remained usable. The larger sample reached its 4 MiB budget and retained
+an already decoded candidate. These are local component observations, separate
+from production Cloud and physical phone acceptance.

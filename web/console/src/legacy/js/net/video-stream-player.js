@@ -10,7 +10,7 @@ export function mountStreamingVideo(element, answer, errorText, events = {}) {
     const error = doc.createElement("p");
     error.className = "document-video-error"; error.setAttribute("role", "alert"); error.hidden = true;
     const lifetime = new AbortController();
-    let source, url, closed = false, failed = false;
+    let source, url, closed = false, failed = false, positioned = false, seekAt = 0;
     const buffers = new Map();
     const refusal = () => Object.assign(new Error(errorText), { code: "video_format_unsupported" });
     const fail = caught => {
@@ -38,14 +38,19 @@ export function mountStreamingVideo(element, answer, errorText, events = {}) {
     video.addEventListener("loadedmetadata", () => {
         if (video.videoWidth && video.videoHeight) video.style.aspectRatio = video.videoWidth + " / " + video.videoHeight;
     }, { signal: lifetime.signal });
-    video.addEventListener("loadeddata", () => events.playable?.(video), { signal: lifetime.signal });
-    video.addEventListener("canplay", () => events.playable?.(video), { signal: lifetime.signal });
+    const playable = () => {
+        if (events.seekToPosterTime && (!positioned || video.seeking)) return;
+        events.playable?.(video);
+    };
+    video.addEventListener("loadeddata", playable, { signal: lifetime.signal });
+    video.addEventListener("canplay", playable, { signal: lifetime.signal });
     video.addEventListener("playing", () => events.playing?.(), { signal: lifetime.signal });
     video.addEventListener("waiting", () => events.waiting?.(), { signal: lifetime.signal });
     video.addEventListener("pause", () => events.paused?.(), { signal: lifetime.signal });
     element.replaceChildren(video, error);
     answer.stream({
-        async initialize(tracks, duration) {
+        async initialize(tracks, duration, startAt = 0) {
+            seekAt = startAt;
             const Media = win.ManagedMediaSource || win.MediaSource;
             if (!Media || tracks.some(track => !Media.isTypeSupported(track.mime))) throw refusal();
             source = new Media();
@@ -62,6 +67,16 @@ export function mountStreamingVideo(element, answer, errorText, events = {}) {
                 const buffer = buffers.get(part.id);
                 await until(buffer, "updateend", () => buffer.appendBuffer(part.buffer));
             }
+            // A poster starts at a later random-access frame. Decode that
+            // buffered time before requesting more source bytes.
+            if (events.seekToPosterTime && !positioned && video.buffered.length &&
+                video.buffered.start(0) <= seekAt && video.buffered.end(0) > seekAt) {
+                // Keyframes can coincide with scene transitions. Decode through
+                // the requested time instead of capturing the preceding keyframe.
+                await until(video, "seeked", () => { positioned = true; video.currentTime = seekAt; });
+                playable();
+            }
+            if (lifetime.signal.aborted) throw new DOMException("Aborted", "AbortError");
         },
         async finish() { source.endOfStream(); },
     }).then(() => { if (!closed && !failed) events.ready?.(); }).catch(caught => fail(caught));

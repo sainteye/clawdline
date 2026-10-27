@@ -8,6 +8,9 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"console.video_preview_frames": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser representative video frame sampling; daemon cannot measure another device's decoder"}
+		},
 		"console.video_preview_reads": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser automatic video poster guard; daemon cannot measure another device's decoder"}
 		},
