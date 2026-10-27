@@ -1,0 +1,20 @@
+.module-recovery {
+  width: min(34rem, calc(100% - 3rem));
+  margin: 3rem auto;
+  color: var(--ink);
+}
+.module-recovery[hidden] { display: none; }
+.module-recovery h1 { font-size: 1.2rem; font-weight: 600; line-height: 1.4; }
+.module-recovery p { color: var(--dim); line-height: 1.6; margin: .75rem 0 1.25rem; }
+.module-recovery .go {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  padding: 8px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+.module-recovery .go:disabled { cursor: wait; opacity: .6; }
+.module-recovery-startup { margin-top: 15vh; }

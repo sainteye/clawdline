@@ -227,6 +227,38 @@ and `fanout=0` on every ack say no viewer is subscribed — the relay had nobody
 publishes to. That pair separates "the Mac is down" from "the console cannot connect", and on
 2026-09-20 it is what showed the Mac was innocent.
 
+## Missing modules after a deployment
+
+An already-open page can still name the preceding deployment's hashed modules.
+If a newly opened lazy page requests a removed asset, Pages can answer with its
+HTML SPA fallback and HTTP 200. The browser rejects that module even while the
+index, API and new deployment's startup assets remain healthy. A live browser
+test on 2026-10-27 reproduced this when opening Usage overview from an older
+page: its missing JavaScript request returned `text/html`, and the uncaught
+React lazy import removed the entire interface.
+
+Registered pages now have individual module-load boundaries. A failed lazy page
+shows a localized reload action while the shell and neighbouring Session stay
+mounted. Startup gate imports have the same recovery UI, including removing the
+initial boot cover if the gate could not load. Vite preload events identify the
+original rejected error; they are not cancelled, so consumers still receive the
+real rejection. Ordinary API, cancellation and application errors keep their
+existing error paths.
+
+Recovery is manual, like the existing new-build notice: it never automatically
+reloads a live editor or enters a refresh loop. The reload keeps the current URL
+and uses the existing composer draft persistence at page-exit boundaries. A
+page loaded before this protection was deployed needs one ordinary reload to
+receive it. A missing initial entry script cannot be handled by JavaScript that
+has not itself loaded.
+
+Acceptance keeps an older protected page open while changing the served build,
+then opens a previously unvisited lazy page. Verify the recovery action, that
+the shell and draft remain available, and that using Reload restores the same
+destination and draft. Also exercise a persistent module failure to prove that
+no automatic reload loop occurs. A healthy API, a matching build stamp, or a
+same-version redeploy alone does not verify this path.
+
 ## Startup session checks
 
 Startup session checks distinguish authentication from transport failures. Only the session API's
