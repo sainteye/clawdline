@@ -7,7 +7,8 @@ The product name **Playbook** stays in English in the Taiwan Traditional Chinese
 interface, including tabs, dialogs, actions, and explanatory copy. Surrounding
 copy remains localized; saved Playbook names and messages remain authored data.
 Protocol names, JSON fields, error codes, and machine-readable CLI output stay
-stable. The retired Swift archive stays read-only, and the console stylesheets
+stable across localization. The Playbook naming upgrade is a deliberate protocol
+change with a one-way store migration; see [Playbooks](playbooks.md#upgrading-saved-definitions). The retired Swift archive stays read-only, and the console stylesheets
 copied from it stay pinned byte for byte (`web/console/src/legacy/README.md`).
 
 The first frozen catalog baseline must be complete in all nine languages.
@@ -107,10 +108,10 @@ unfulfilled preference.
 
 The standalone Cloud operations page uses the same browser preference and
 validated catalog as the console. It keeps its boot cover until the selected
-catalog is active, including when no machine is paired. Operations, Workflow,
+catalog is active, including when no machine is paired. Operations, Playbook,
 notifications, dispatch rules, and transcript plan headings use catalog keys;
 their English and Traditional Chinese source tables are checked against the
-public catalogs. User-edited Workflow messages and dispatch rules remain data.
+public catalogs. User-edited Playbook messages and dispatch rules remain data.
 
 `GET /v1/strings` without `lang` returns English. With a supported tag it
 returns that catalog, which may omit new keys after the initial complete

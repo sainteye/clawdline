@@ -36,8 +36,8 @@ import { SessionUsage } from "../pages/work/TokenBill.js"
 import { retainCreatedTodos, showCreatedTodo } from "./todo-created.js"
 import "../pages/work/work.css"
 import "./todos.css"
-import { workflowRunOf } from "./workflow-run.js"
-import { workflowWord as W } from "../workflow-words.js"
+import { playbookRunOf } from "./playbook-run.js"
+import { playbookWord as W } from "../playbook-words.js"
 
 /** The authoritative projection of unfinished assigned items plus direct user to-dos. */
 export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null; onReplySent?: () => void; onCompose?: (text: string) => void }) {
@@ -136,22 +136,22 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
 
   useEffect(() => {
     const started = () => { void refresh(true) }
-    document.addEventListener("clawdline:workflow-started", started)
-    return () => document.removeEventListener("clawdline:workflow-started", started)
+    document.addEventListener("clawdline:playbook-started", started)
+    return () => document.removeEventListener("clawdline:playbook-started", started)
   }, [refresh])
 
   if (!row) return null
   const openTodos = page?.direct_todos.filter((todo) => !todo.completed_at) ?? []
   const completedTodos = page?.direct_todos.filter((todo) => !!todo.completed_at) ?? []
-  const openWorkflows = openTodos.filter((todo) => workflowRunOf(todo.text))
-  const completedWorkflows = completedTodos.filter((todo) => workflowRunOf(todo.text))
-  const openDirect = openTodos.filter((todo) => !workflowRunOf(todo.text))
-  const completedDirect = completedTodos.filter((todo) => !workflowRunOf(todo.text))
+  const openPlaybooks = openTodos.filter((todo) => playbookRunOf(todo.text))
+  const completedPlaybooks = completedTodos.filter((todo) => playbookRunOf(todo.text))
+  const openDirect = openTodos.filter((todo) => !playbookRunOf(todo.text))
+  const completedDirect = completedTodos.filter((todo) => !playbookRunOf(todo.text))
   const hasAssigned = !!page?.assigned_items.length
   const hasRecent = !!page?.recent_items.length
   const hasDirect = !!openDirect.length
   const hasCompletedDirect = !!completedDirect.length
-  const empty = page !== null && !hasAssigned && !hasRecent && !hasDirect && !hasCompletedDirect && !openWorkflows.length && !completedWorkflows.length
+  const empty = page !== null && !hasAssigned && !hasRecent && !hasDirect && !hasCompletedDirect && !openPlaybooks.length && !completedPlaybooks.length
   const run = async (key: string, task: () => Promise<unknown>) => {
     if (actionPending.current) return false
     actionPending.current = true
@@ -206,12 +206,12 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
             <p>{catalogWord("inline", "4e221e79f8d1")}</p>
             {page.recent_items.map((item) => <SessionOwnedItem item={item} completed key={item.id} onOpen={() => openWorkItem(item)} />)}
           </section>}
-          {!!openWorkflows.length && <section className="session-todos-list session-workflows" aria-label={W("running")}>
-            {openWorkflows.map((todo) => <WorkflowTodo key={todo.id} todo={todo} busy={busy === todo.id}
+          {!!openPlaybooks.length && <section className="session-todos-list session-playbooks" aria-label={W("running")}>
+            {openPlaybooks.map((todo) => <PlaybookTodo key={todo.id} todo={todo} busy={busy === todo.id}
               onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />)}
           </section>}
-          {!!completedWorkflows.length && <section className="session-todos-list session-workflows session-recent-work" aria-label={W("done")}>
-            {completedWorkflows.map((todo) => <WorkflowTodo key={todo.id} todo={todo} busy={busy === todo.id}
+          {!!completedPlaybooks.length && <section className="session-todos-list session-playbooks session-recent-work" aria-label={W("done")}>
+            {completedPlaybooks.map((todo) => <PlaybookTodo key={todo.id} todo={todo} busy={busy === todo.id}
               onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />)}
           </section>}
           {page && hasDirect && <section className="session-todos-list" aria-label={catalogWord("inline", "fc3806d4036b")}>
@@ -389,18 +389,18 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
   </article>
 }
 
-function WorkflowTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolean; onAction: (action: "send" | "complete" | "reopen") => void }) {
+function PlaybookTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolean; onAction: (action: "send" | "complete" | "reopen") => void }) {
   const [pendingAction, setPendingAction] = useState("")
   const act = (action: "send" | "complete" | "reopen") => { if (!busy) { setPendingAction(action); onAction(action) } }
-  const run = workflowRunOf(todo.text)
+  const run = playbookRunOf(todo.text)
   if (!run) return null
   const state = todo.completed_at ? "done" : todo.read_at ? "running" : todo.sent_at ? "sent" : "queued"
   const status = state === "done" ? W("finished") : state === "running" ? W("inProgress") : state === "sent" ? W("sent") : W("queued")
-  return <article className="session-workflow-row" data-state={todo.completed_at ? "done" : "active"}>
-    <details><summary><small className="session-workflow-kind">{W("workflow")}</small>
-      <span className="session-workflow-heading"><strong>{run.title}</strong><span className="session-workflow-status" data-state={state}>
+  return <article className="session-playbook-row" data-state={todo.completed_at ? "done" : "active"}>
+    <details><summary><small className="session-playbook-kind">{W("playbook")}</small>
+      <span className="session-playbook-heading"><strong>{run.title}</strong><span className="session-playbook-status" data-state={state}>
         {state === "done" && <WorkIcon name="check" />}
-        {state === "running" && <span className="session-workflow-spinner" aria-hidden="true" />}
+        {state === "running" && <span className="session-playbook-spinner" aria-hidden="true" />}
         {status}</span></span></summary>
       <p>{run.message}</p>
       <div className="work-actions">

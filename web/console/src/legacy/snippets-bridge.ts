@@ -35,19 +35,19 @@ export interface Snippet {
   id: string
   title: string
   body: string
-  scope: "global" | "project" | "workflow" | "clawdfather"
+  scope: "global" | "project" | "playbook" | "clawdfather"
   /** Absent on a global snippet — never null; see `snippetCreateBody`. */
   project?: string
-  /** Origin of an imported Workflow. The launch message remains independent. */
-  source?: WorkflowSource
-  /** Present while the shipped starter Workflow has not been edited. */
+  /** Origin of an imported Playbook. The launch message remains independent. */
+  source?: PlaybookSource
+  /** Present while the shipped starter Playbook has not been edited. */
   builtin?: "zero_review"
   position: number
   created_at: number
   updated_at: number
 }
 
-export interface WorkflowSource {
+export interface PlaybookSource {
   kind: "skill" | "command"
   file_id: string
   place_id: string

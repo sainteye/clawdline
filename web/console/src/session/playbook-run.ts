@@ -1,12 +1,12 @@
 /** Metadata follows the complete launch message in the durable Session to-do. */
-const MARKER = "\n\n[Clawdline-Workflow "
+const MARKER = "\n\n[Clawdline-Playbook "
 const END = "]"
 
-export function workflowTodoText(id: string, title: string, message: string): string {
+export function playbookTodoText(id: string, title: string, message: string): string {
   return message + MARKER + id + " " + encodeURIComponent(title) + END
 }
 
-export function workflowRunOf(text: string): { id: string; title: string; message: string } | null {
+export function playbookRunOf(text: string): { id: string; title: string; message: string } | null {
   const at = text.lastIndexOf(MARKER)
   if (at < 0 || !text.endsWith(END)) return null
   const data = text.slice(at + MARKER.length, -END.length)

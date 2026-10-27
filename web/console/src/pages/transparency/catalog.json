@@ -2052,7 +2052,7 @@
       ]
     },
     {
-      "id": "workflow",
+      "id": "playbook",
       "scope": "conditional",
       "agents": [
         "claude",
@@ -2062,11 +2062,11 @@
         "turn"
       ],
       "scenes": [
-        "workflow"
+        "playbook"
       ],
       "sources": [
         {
-          "path": "internal/domain/snippet/default_workflow.go",
+          "path": "internal/domain/snippet/default_playbook.go",
           "line": 9
         }
       ],
@@ -2074,7 +2074,7 @@
         "Run a zero-based review of this Project. Create an Epic to track it, then assign independent reviews from the relevant roles: product, UX, architecture, code quality, efficiency, documentation, and evidence.\n",
         "Require evidence for every finding. Compare the current design with mature expert practice, and distinguish deliberate trade-offs from accumulated complexity.\n",
         "Find confusing behavior, redundant steps or reads and writes, and missing capabilities.\n",
-        "Synthesize a report and a target workflow. Turn improvements into role-owned child items, and list decisions that need my input separately.\n",
+        "Synthesize a report and a target process. Turn improvements into role-owned child items, and list decisions that need my input separately.\n",
         "Collect shared facts once and include them in each review brief so reviewers do not repeat the same reading."
       ],
       "locations": []
@@ -2134,7 +2134,7 @@
         "role",
         "memory",
         "board",
-        "workflow"
+        "playbook"
       ],
       "sources": [
         {
@@ -2263,7 +2263,7 @@
         "memory",
         "skill",
         "board",
-        "workflow"
+        "playbook"
       ],
       "sources": [
         {
@@ -2372,11 +2372,11 @@
     "internal/app/owned_context.go": "983e6bdca8b89d4b1851a33a32e292a8c14335eb60fff7132cf48779f46194a0",
     "internal/app/squad_launch.go": "1ec83ebede904f62d9ad82471743702829e85a66f87ad575e9ee03408ee8065d",
     "internal/app/start.go": "6372d443897d6c8eeba4bc9f6eafefee239ee54b2d0ce5f21bfa21ca1be37492",
-    "internal/app/work_v2_todos.go": "fb992a3c595450d28507e6b8de14fe0c4be72e0cb84e398445f8c2622e0e171a",
+    "internal/app/work_v2_todos.go": "2cd59124ffeb0adeae7d91e90484dd168930f406d5c7e3d5fc2a672d1e55060d",
     "internal/config/config.go": "25f547d482792bb8bc1cfef1ad6b9d8355d289104bf1f0842efe5002c7f6ab6c",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
-    "internal/domain/snippet/default_workflow.go": "3a4d21963243a0b6dd2af553b4cd67b0d1bfaeabedfc2d43d629ba8b02e0bf08",
+    "internal/domain/snippet/default_playbook.go": "a72c51ba8318f25d1070276a3dd45c118bc08c5e2ac79c673af5dad01898b37a",
     "internal/transport/http/agent_session_close.go": "4cfb1d376e50119026dc079346a7253e826472305263e66ade6982b8e8b958f3",
     "internal/transport/http/antigravity_history.go": "b6a8dd8a7f132ba70d76bcb759044d14c8c83a9f3244d766c8da0fedb1ddebf1",
     "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
@@ -2390,14 +2390,14 @@
     "internal/transport/http/start.go": "4abc872edbe0e2f367da9a11bf2e32abac419fde2ccc999a0542718b2f9f6888",
     "internal/transport/http/work_v2_brief.go": "444e7aa2297733c71a1ed4b64c9ee9f616fa934bf1061824072aa7dd36e9eaf9",
     "skills/clawdline/SKILL.md": "6648251619176575f6b5e93793c7efd9b7fc569d45ed04977352560206cea1ee",
-    "skills/clawdline/guide.md": "ffe4aac8006509f98af10711aff5861f605a330c375dd387ba719ea623036bab",
-    "skills/clawdline/guide.zh-TW.md": "3c056eab1250270e6a799a896a1c1e3d1ef417041b59a8b34a7ff017926d8b6b",
+    "skills/clawdline/guide.md": "041d070fadb1ff52eaa068c76c13cc0efb607de9225f8ed0d1354362178a9a11",
+    "skills/clawdline/guide.zh-TW.md": "198c6293ef53005d27d8281da0c308ed153942f116dd14971a99e60c7b22b8da",
     "skills/sections.go": "ba3de38ebe0e26817f337bd4ae93e19d07ba07af8971b4fba397e6fe9082b903",
     "skills/skills.go": "146b2605f5e82e4093f731222da229df949be007b19005a428b538686feed330",
     "web/console/src/session/Start.tsx": "f62d01bf5f071af86a104e45899f3152ea74b6042b720cc17e4d12ebd4290085"
   },
   "copyChecks": {
-    "en": "ee58dafa3361d5e466d51159194a715c6dbd575dd7b52373eb537f642cc5f5ef",
-    "zh-Hant": "7b732fcae89291864681217ea6fcb46686e7e4ee0bfd04e01f850c848c999fbc"
+    "en": "a8fa593e2292edb160919793e19b841bdbdbcf13ef7388dcf09471977472fa6c",
+    "zh-Hant": "2ca89e7627a82a41f900abdae251edcb5e880b24f319144747840b5382ca55e6"
   }
 }

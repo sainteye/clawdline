@@ -80,7 +80,7 @@ The **⋯** menu (**Session actions**) holds the rest:
   [How a picture finds its reply](../messages.md#pictures-a-session-shows-the-person).
 - **Snippets** are text you send often. Create them with **New snippet**, for this project
   or every project. Pressing one only fills the box; you still send it.
-- **Playbooks** (called Workflows before 2026-10-23) hold a complete launch message. Open the
+- **Playbooks** hold a complete launch message. Open the
   Playbook tab, select one, then press **Start Playbook**. The shipped **Zero-Based Review** example reviews the current
   Project and is available in every Project. Its unedited text follows the interface language;
   you can edit or delete it like another Playbook. A deleted example stays deleted after restart.

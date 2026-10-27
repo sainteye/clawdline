@@ -361,7 +361,7 @@ export async function serveReview(options) {
         if (path === '/v1/squad/skill-sources') return json(response, 200, { skills: [] })
         if (path.startsWith('/v1/work/v2/session-todos/')) return json(response, 200, { ok: true, assigned_items: [], recent_items: [], direct_todos: [], open_decisions: [], truncated: false })
         if (path.startsWith('/v1/work/v2/human-interventions/')) return json(response, 200, { ok: true, rows: [], pruned_resolved: 0 })
-        if (path === '/v1/snippets') return json(response, 200, { snippets: state === 'empty' ? [] : [{ id: 'review-workflow', title: 'Authored sample workflow', body: 'Read the sample project and describe the next step.', scope: 'workflow', position: 0, created_at: 1, updated_at: 1 }] })
+        if (path === '/v1/snippets') return json(response, 200, { snippets: state === 'empty' ? [] : [{ id: 'review-playbook', title: 'Authored sample playbook', body: 'Read the sample project and describe the next step.', scope: 'playbook', position: 0, created_at: 1, updated_at: 1 }] })
         if (path === `/v1/sessions/${REVIEW_SESSION}/documents`) return json(response, 200, { documents: [{ scope: 'project', path: 'README.md', bytes: 64, modified: 1 }] })
         if (path === `/v1/sessions/${REVIEW_SESSION}/documents/project/README.md`) {
           response.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8' })
@@ -414,7 +414,7 @@ export async function serveReview(options) {
     syntheticMutations: ['POST /v1/auth/session', 'DELETE /v1/auth/recovery/devices/<known-synthetic-id>; actor-scoped, at most 256 contexts'],
     states: REVIEW_STATES, locales: REVIEW_LOCALES, createdAt: new Date().toISOString(), catalogHashes: {},
     urls: { sessions: appOrigin + '/', detail: appOrigin + '/#session=review-session', settings: appOrigin + '/#page=settings',
-      machineSettings: appOrigin + '/settings.html', workflow: appOrigin + '/#page=workflow', board: appOrigin + '/#page=work',
+      machineSettings: appOrigin + '/settings.html', playbook: appOrigin + '/#page=playbook', board: appOrigin + '/#page=work',
       projects: appOrigin + '/#page=projects', notifications: appOrigin + '/#page=notifications', plan: appOrigin + '/#page=plan', usageOverview: appOrigin + '/#page=usage',
       squad: appOrigin + '/#page=squad',
       document: appOrigin + '/#document=1&machine=this-mac&session=review-session&scope=project&path=README.md',

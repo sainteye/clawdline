@@ -36,14 +36,14 @@ func aSnippet(title, body string) map[string]any {
 func TestACloudViewerReadsAndWritesTheSnippetsOnThisMac(t *testing.T) {
 	s := cloudStandIn(t)
 
-	// A fresh machine answers with its shipped example Workflow.
+	// A fresh machine answers with its shipped example Playbook.
 	answer, payload := s.ask(t, 1, map[string]any{"type": "snippets",
 		"session": cloudops.MachineReplySession, "request": "req-list-0"})
 	if !answer.OK() {
 		t.Fatalf("the list was refused: %d/%q %s", answer.Status, answer.Code, answer.Payload)
 	}
 	if rows, ok := bodyOf(t, payload)["snippets"].([]any); !ok || len(rows) != 1 {
-		t.Fatalf("a fresh machine did not answer its default Workflow: %v", payload)
+		t.Fatalf("a fresh machine did not answer its default Playbook: %v", payload)
 	}
 
 	made, payload := s.ask(t, 2, map[string]any{"type": "snippet-create",

@@ -303,7 +303,7 @@ func TestWorkflowCanBeTheFirstInstruction(t *testing.T) {
 	if ownrecords.ProcessStart(p.s.PID).IsZero() {
 		t.Skip("kernel process identity is unavailable")
 	}
-	body := `{"text":"Review this project.\n\n[Clawdline-Workflow 00000000-0000-4000-8000-000000000041 Review]"}`
+	body := `{"text":"Review this project.\n\n[Clawdline-Playbook 00000000-0000-4000-8000-000000000041 Review]"}`
 	path := "/v1/work/v2/session-todos/pane-4"
 	post := func(path, body, key string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -333,7 +333,7 @@ func TestWorkflowCanBeTheFirstInstruction(t *testing.T) {
 		t.Fatalf("send replay: %d %s", replay.Code, replay.Body)
 	}
 	second := post(path, body, "first-workflow-again")
-	if second.Code != http.StatusConflict || !strings.Contains(second.Body.String(), "workflow_running") {
+	if second.Code != http.StatusConflict || !strings.Contains(second.Body.String(), "playbook_running") {
 		t.Fatalf("second Workflow: %d %s", second.Code, second.Body)
 	}
 	if len(p.acts) != 1 || !strings.Contains(p.acts[0], "Review this project.") {

@@ -4,7 +4,7 @@ import type { Snippet } from "../legacy/snippets-bridge.js"
 import "./clawdfather-suggestions.css"
 
 /**
- * Clawdfather's tab in the Snippet / Workflow sheet.
+ * Clawdfather's tab in the Snippet / Playbook sheet.
  *
  * The shipped actions come first and stay: they are the console's, so they
  * carry no menu and cannot be removed. The person's own actions follow them,
@@ -49,7 +49,7 @@ export function ClawdfatherActions({ customs, onPick, onCoordination, onEdit, ma
           {customs.map((custom) => (
             <div className="clawdfather-custom" key={custom.id}>
               <button type="button" className="clawdfather-custom-pick" onClick={() => onPick(custom.body)}>
-                <SidebarIcon name="workflow" />
+                <SidebarIcon name="playbook" />
                 <span>{custom.title}</span>
               </button>
               {mayEdit ? <button type="button" className="snippet-more clawdfather-custom-more"

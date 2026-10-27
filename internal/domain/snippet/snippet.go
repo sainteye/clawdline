@@ -27,7 +27,7 @@ type Scope string
 const (
 	Global   Scope = "global"
 	Project  Scope = "project"
-	Workflow Scope = "workflow"
+	Playbook Scope = "playbook"
 	// Clawdfather is an action the person added to Clawdfather's own menu,
 	// beside the ones the console ships. Clawdfather stands in no project, so
 	// it is machine-wide and refuses a project path the way Global does.
@@ -36,7 +36,7 @@ const (
 
 // KnownScope reports whether s is a reusable text scope.
 func KnownScope(s Scope) bool {
-	return s == Global || s == Project || s == Workflow || s == Clawdfather
+	return s == Global || s == Project || s == Playbook || s == Clawdfather
 }
 
 // The bounds, **counted in UTF-8 bytes**.
@@ -90,7 +90,7 @@ type Record struct {
 	UpdatedAt int64
 }
 
-// SourceRef records where a Workflow was imported from. It is attribution,
+// SourceRef records where a Playbook was imported from. It is attribution,
 // never an instruction to execute or a copy of the source file.
 type SourceRef struct {
 	Kind    string `json:"kind"`
@@ -170,12 +170,12 @@ func ParseFields(body map[string]any) (Fields, *Refusal) {
 			}
 			fields, ok := value.(map[string]any)
 			if !ok || len(fields) != 6 {
-				return f, refuse(400, CodeMalformed, "A Workflow source is invalid.", nil)
+				return f, refuse(400, CodeMalformed, "A Playbook source is invalid.", nil)
 			}
 			read := func(name string) string { value, _ := fields[name].(string); return value }
 			source := &SourceRef{Kind: read("kind"), FileID: read("file_id"), PlaceID: read("place_id"), Scope: read("scope"), Name: read("name"), Version: read("version")}
 			if !validSource(source) {
-				return f, refuse(400, CodeMalformed, "A Workflow source is invalid.", nil)
+				return f, refuse(400, CodeMalformed, "A Playbook source is invalid.", nil)
 			}
 			f.Source = source
 			continue
@@ -241,7 +241,7 @@ func ScopeAgrees(f Fields) bool {
 	if f.Scope == Project {
 		return f.HasProject && f.Project != ""
 	}
-	if f.Scope == Workflow {
+	if f.Scope == Playbook {
 		return !f.HasProject || f.Project != ""
 	}
 	return !f.HasProject
@@ -293,7 +293,7 @@ func Patch(current Record, f Fields, now int64) (Record, *Refusal) {
 	}
 	// A scope that stays `project` keeps the project it was already filed
 	// under, so a save that only changes the title need not repeat the path.
-	if !f.HasProject && (merged.Scope == Project || merged.Scope == Workflow) && current.Project != "" {
+	if !f.HasProject && (merged.Scope == Project || merged.Scope == Playbook) && current.Project != "" {
 		merged.Project, merged.HasProject = current.Project, true
 	}
 	if !f.HasSource {
@@ -317,14 +317,14 @@ func build(id string, f Fields, position, createdAt, updatedAt int64) (Record, *
 	}
 	if !KnownScope(f.Scope) {
 		return Record{}, refuse(400, CodeMalformed,
-			"A reusable text's scope is `global`, `project`, `workflow`, or `clawdfather`.", nil)
+			"A reusable text's scope is `global`, `project`, `playbook`, or `clawdfather`.", nil)
 	}
-	if f.Source != nil && f.Scope != Workflow {
-		return Record{}, refuse(400, CodeMalformed, "Only a Workflow can link to a source.", nil)
+	if f.Source != nil && f.Scope != Playbook {
+		return Record{}, refuse(400, CodeMalformed, "Only a Playbook can link to a source.", nil)
 	}
 	if !ScopeAgrees(f) {
 		return Record{}, refuse(400, CodeScopeMismatch,
-			"Project snippets need one project path; workflows may be global or project-specific.", nil)
+			"Project snippets need one project path; playbooks may be global or project-specific.", nil)
 	}
 	if len(title) > MaxTitleBytes || len(body) > MaxBodyBytes || len(f.Project) > MaxProjectBytes {
 		return Record{}, refuse(400, CodeTooLong,
@@ -336,7 +336,7 @@ func build(id string, f Fields, position, createdAt, updatedAt int64) (Record, *
 			})
 	}
 	project := ""
-	if f.Scope == Project || (f.Scope == Workflow && f.HasProject) {
+	if f.Scope == Project || (f.Scope == Playbook && f.HasProject) {
 		project = f.Project
 	}
 	return Record{
@@ -411,9 +411,9 @@ func InScope(records []Record, projectKey string) []Record {
 		switch {
 		case r.Scope == Project && projectKey != "" && r.Project == projectKey:
 			mine = append(mine, r)
-		case r.Scope == Workflow && projectKey != "" && r.Project == projectKey:
+		case r.Scope == Playbook && projectKey != "" && r.Project == projectKey:
 			mine = append(mine, r)
-		case r.Scope == Workflow && r.Project == "":
+		case r.Scope == Playbook && r.Project == "":
 			global = append(global, r)
 		case r.Scope == Global, r.Scope == Clawdfather:
 			global = append(global, r)

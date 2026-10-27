@@ -22,7 +22,7 @@ for (const file of [
   "internal/transport/http/start.go", "internal/transport/http/coordinator.go",
   "internal/transport/http/work_v2_brief.go", "internal/transport/http/project_memory.go",
   "internal/adapters/memory/memory.go", "internal/adapters/skillfile/skillfile.go",
-  "internal/domain/snippet/default_workflow.go", "internal/config/config.go",
+  "internal/domain/snippet/default_playbook.go", "internal/config/config.go",
   "skills/clawdline/SKILL.md", "skills/clawdline/guide.md", "skills/clawdline/guide.zh-TW.md",
   "skills/sections.go", "skills/skills.go", "cmd/clawdline/session.go",
 ]) sources.add(file)

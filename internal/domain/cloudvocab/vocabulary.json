@@ -1308,7 +1308,7 @@
       "kind": "read",
       "write_gate": false,
       "console": "carried",
-      "console_route": "GET /v1/workflow-project?session={id}",
+      "console_route": "GET /v1/playbook-project?session={id}",
       "console_seam": "reader",
       "local": {"method": "GET"},
       "example": {"request": "req-session-snippets", "row": "session-one", "session": "__clawdline_machine__"},

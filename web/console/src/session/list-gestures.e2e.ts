@@ -73,12 +73,12 @@ let callbackDone = false
 const callbackReason = "Go tests for a long command whose complete name cannot fit on a phone"
 let inlineDecisionFixture = false
 let inlineDecisionAnswers = 0
-const workflowID = "00000000-0000-4000-8000-000000000041"
-let workflowRecords: Row[] = []
-let workflowNoPlaces = false
-let workflowFilesUnavailable = false
-let workflowTodo: Row | null = null
-let workflowSends = 0
+const playbookID = "00000000-0000-4000-8000-000000000041"
+let playbookRecords: Row[] = []
+let playbookNoPlaces = false
+let playbookFilesUnavailable = false
+let playbookTodo: Row | null = null
+let playbookSends = 0
 let sessionGap = false
 let sessionGapComplete = false
 
@@ -429,11 +429,11 @@ function daemon(): Server {
       }], others: [],
     })
     if (path === "/v1/places") return json(res, 200, {
-      places: workflowNoPlaces ? [] : [{ id: "project-fixture", label: "Clawdline", path: "/tmp/fixture",
+      places: playbookNoPlaces ? [] : [{ id: "project-fixture", label: "Clawdline", path: "/tmp/fixture",
         icon: { accent: "#e07a5f", cells: [["#e07a5f", "#e07a5f"], ["#e07a5f", "#141416"]] } }],
       assistants: [{ id: "codex", label: "Codex" }],
     })
-    if (path === "/v1/projects/project-fixture/files" && req.method === "GET" && workflowFilesUnavailable) return json(res, 503, { error: "unavailable" })
+    if (path === "/v1/projects/project-fixture/files" && req.method === "GET" && playbookFilesUnavailable) return json(res, 503, { error: "unavailable" })
     if (path === "/v1/projects/project-fixture/files" && req.method === "GET") return json(res, 200, {
       files: [{ id: "global-skill-fixture", name: "SKILL.md", title: "Global Review", description: "Review the work with evidence.", location: "skills/global-review/SKILL.md",
         source: "global", assistant: "codex", kind: "skill", status: "ready", editable: true },
@@ -453,49 +453,49 @@ function daemon(): Server {
     })
     if (path === "/v1/snippets" && req.method === "GET") return json(res, 200, {
       project: url.searchParams.has("session") ? { key: "/tmp/fixture", label: "Clawdline" } : undefined,
-      snippets: workflowRecords,
+      snippets: playbookRecords,
     })
     if (path === "/v1/snippets" && req.method === "POST") {
       let body = ""
       req.on("data", (part) => { body += part })
       req.on("end", () => {
         const record = JSON.parse(body)
-        workflowRecords = [{ id: workflowID, ...record, position: 100, created_at: 1, updated_at: 1 }]
-        json(res, 200, workflowRecords[0])
+        playbookRecords = [{ id: playbookID, ...record, position: 100, created_at: 1, updated_at: 1 }]
+        json(res, 200, playbookRecords[0])
       })
       return
     }
-    if (path === "/v1/snippets/" + workflowID && req.method === "PATCH") {
+    if (path === "/v1/snippets/" + playbookID && req.method === "PATCH") {
       let body = ""
       req.on("data", (part) => { body += part })
       req.on("end", () => {
-        workflowRecords = workflowRecords.map((row) => row.id === workflowID ? { ...row, ...JSON.parse(body) } : row)
-        json(res, 200, workflowRecords.find((row) => row.id === workflowID))
+        playbookRecords = playbookRecords.map((row) => row.id === playbookID ? { ...row, ...JSON.parse(body) } : row)
+        json(res, 200, playbookRecords.find((row) => row.id === playbookID))
       })
       return
     }
-    if (path === "/v1/snippets/" + workflowID && req.method === "DELETE") {
-      workflowRecords = workflowRecords.filter((row) => row.id !== workflowID)
-      return json(res, 200, { ok: true, deleted: workflowID })
+    if (path === "/v1/snippets/" + playbookID && req.method === "DELETE") {
+      playbookRecords = playbookRecords.filter((row) => row.id !== playbookID)
+      return json(res, 200, { ok: true, deleted: playbookID })
     }
     if (path === "/v1/work/v2/session-todos/" + encodeURIComponent(SAFE) && req.method === "POST") {
       let body = ""
       req.on("data", (part) => { body += part })
       req.on("end", () => {
-        workflowTodo = { id: "workflow-todo-fixture", text: JSON.parse(body).text, created_at: 5,
+        playbookTodo = { id: "playbook-todo-fixture", text: JSON.parse(body).text, created_at: 5,
           sent_at: null, read_at: null, completed_at: null, version: 1 }
-        json(res, 200, { todo: workflowTodo })
+        json(res, 200, { todo: playbookTodo })
       })
       return
     }
-    if (path === "/v1/work/v2/session-todos/" + encodeURIComponent(SAFE) + "/workflow-todo-fixture/send" && req.method === "POST") {
-      workflowSends++
-      workflowTodo = { ...workflowTodo, sent_at: 6, version: 2 }
-      return json(res, 200, { todo: workflowTodo })
+    if (path === "/v1/work/v2/session-todos/" + encodeURIComponent(SAFE) + "/playbook-todo-fixture/send" && req.method === "POST") {
+      playbookSends++
+      playbookTodo = { ...playbookTodo, sent_at: 6, version: 2 }
+      return json(res, 200, { todo: playbookTodo })
     }
-    if (path === "/v1/work/v2/session-todos/" + encodeURIComponent(SAFE) + "/workflow-todo-fixture/complete" && req.method === "POST") {
-      workflowTodo = { ...workflowTodo, completed_at: 7, version: 3 }
-      return json(res, 200, { todo: workflowTodo })
+    if (path === "/v1/work/v2/session-todos/" + encodeURIComponent(SAFE) + "/playbook-todo-fixture/complete" && req.method === "POST") {
+      playbookTodo = { ...playbookTodo, completed_at: 7, version: 3 }
+      return json(res, 200, { todo: playbookTodo })
     }
     if (path === "/v1/places/%40machine/start/codex" && req.method === "POST") {
       machineStarts.push({ path, key: String(req.headers["idempotency-key"] ?? "") })
@@ -714,7 +714,7 @@ function daemon(): Server {
               version: 1,
             }]
         : []
-      const direct = ownsSafe && workflowTodo ? [workflowTodo]
+      const direct = ownsSafe && playbookTodo ? [playbookTodo]
         : sessionID === BLOCKED
         ? [{ id: "todo-fixture", text: "Review the release note", created_at: 1, sent_at: 2, read_at: 3, completed_at: null, version: 3,
             images: [{ id: "todo-image-fixture", title: "release-evidence.png", media_type: "image/png", byte_count: 68,
@@ -1845,11 +1845,11 @@ test("machine registration remains visible after a fresh Session read and clears
     }
   }))
 
-test("Clawdfather's icon opens the Snippet / Workflow sheet on its own tab, and the person can add actions", () =>
+test("Clawdfather's icon opens the Snippet / Playbook sheet on its own tab, and the person can add actions", () =>
   inTab(async (tab) => {
     try {
       readingScenario = "machine-bound"
-      workflowRecords = []
+      playbookRecords = []
       await tab.go("/")
       await tab.until("the machine Session arrives", (s) => s.order.join() === RETAINED)
       await tab.press("#machine-dashboard-open")
@@ -1893,8 +1893,8 @@ test("Clawdfather's icon opens the Snippet / Workflow sheet on its own tab, and 
           : Date.now() > deadline ? reject(new Error('the added action never appeared')) : setTimeout(look, 50)
         look()
       })`)
-      assert.equal(workflowRecords[0]?.scope, "clawdfather")
-      assert.equal(workflowRecords[0]?.project, undefined)
+      assert.equal(playbookRecords[0]?.scope, "clawdfather")
+      assert.equal(playbookRecords[0]?.project, undefined)
       assert.equal(await tab.run(`document.querySelector('.clawdfather-custom-group .snippet-group-title')?.textContent`), "自己加的")
       assert.equal(await tab.run(`document.querySelectorAll('#clawdfather-actions .snippet-more').length`), 1)
       await tab.shot("clawdfather-sheet-with-custom-phone")
@@ -1940,14 +1940,14 @@ test("Clawdfather's icon opens the Snippet / Workflow sheet on its own tab, and 
       await tab.press("#snippet-tab")
       assert.equal(await tab.run(`document.getElementById('snippets-title')?.textContent`), "常用句")
       assert.doesNotMatch(await tab.run(`document.getElementById('snippet-list')?.textContent`), /Nightly sweep/)
-      await tab.press("#workflow-tab")
-      assert.doesNotMatch(await tab.run(`document.getElementById('workflow-picker')?.textContent`), /Nightly sweep/)
-      await tab.shot("clawdfather-sheet-workflow-tab")
+      await tab.press("#playbook-tab")
+      assert.doesNotMatch(await tab.run(`document.getElementById('playbook-picker')?.textContent`), /Nightly sweep/)
+      await tab.shot("clawdfather-sheet-playbook-tab")
       await tab.key("Escape")
       assert.equal(await tab.run(`document.getElementById('snippets')?.hidden`), true)
     } finally {
       readingScenario = "normal"
-      workflowRecords = []
+      playbookRecords = []
     }
   }))
 
@@ -1963,96 +1963,96 @@ test("an ordinary Session keeps the Snippets icon", () =>
 
 test("a phone links a command with fixed text and replaces that text when linking a Skill", () =>
   inTab(async (tab) => {
-    workflowRecords = []
-    await tab.go("/#page=workflow")
+    playbookRecords = []
+    await tab.go("/#page=playbook")
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-skill-picker button:not(:disabled)')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('Workflow sources did not arrive'))
+        if (document.querySelector('.playbook-skill-picker button:not(:disabled)')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('Playbook sources did not arrive'))
         setTimeout(look, 25)
       }; look()
     })`)
-    await tab.press('.workflow-skill-picker button')
-    const command = await tab.run(`[...document.querySelectorAll('.workflow-skill-options button')].find(button => button.textContent.includes('Release Now'))?.textContent`)
+    await tab.press('.playbook-skill-picker button')
+    const command = await tab.run(`[...document.querySelectorAll('.playbook-skill-options button')].find(button => button.textContent.includes('Release Now'))?.textContent`)
     assert.match(command, /Claude 指令|Claude command/)
     assert.match(command, /Publish and verify a release/)
     assert.doesNotMatch(command, /\.claude\/commands|release-now\.md/)
-    await tab.press('.workflow-skill-options button:last-child')
+    await tab.press('.playbook-skill-options button:last-child')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-skill-content pre')) return resolve(true)
+        if (document.querySelector('.playbook-skill-content pre')) return resolve(true)
         if (Date.now() > deadline) return reject(new Error('Command preview did not load'))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.match(await tab.run(`document.querySelector('.workflow-skill-content pre')?.textContent`), /Run the publish and verification steps/)
-    await tab.press('.workflow-skill-dialog footer .workflow-primary')
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor input')?.value`), "Release Now")
-    assert.match(await tab.run(`document.querySelector('.workflow-editor textarea')?.value`), /release-now/)
-    assert.doesNotMatch(await tab.run(`document.querySelector('.workflow-editor textarea')?.value`), /Run the publish and verification steps/)
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor input')?.readOnly`), false)
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor textarea')?.readOnly`), true)
-    assert.match(await tab.run(`document.querySelector('.workflow-message-locked small')?.textContent`), /無法|cannot/)
-    assert.match(await tab.run(`document.querySelector('.workflow-source-link')?.textContent`), /Release Now/)
+    assert.match(await tab.run(`document.querySelector('.playbook-skill-content pre')?.textContent`), /Run the publish and verification steps/)
+    await tab.press('.playbook-skill-dialog footer .playbook-primary')
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor input')?.value`), "Release Now")
+    assert.match(await tab.run(`document.querySelector('.playbook-editor textarea')?.value`), /release-now/)
+    assert.doesNotMatch(await tab.run(`document.querySelector('.playbook-editor textarea')?.value`), /Run the publish and verification steps/)
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor input')?.readOnly`), false)
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor textarea')?.readOnly`), true)
+    assert.match(await tab.run(`document.querySelector('.playbook-message-locked small')?.textContent`), /無法|cannot/)
+    assert.match(await tab.run(`document.querySelector('.playbook-source-link')?.textContent`), /Release Now/)
     await tab.run(`(() => {
-      const field = document.querySelector('.workflow-editor input')
+      const field = document.querySelector('.playbook-editor input')
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Custom Release')
       field.dispatchEvent(new Event('input', { bubbles: true }))
     })()`)
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor input')?.value`), "Custom Release")
-    await tab.press('.workflow-source-row button:last-child')
-    await tab.press('.workflow-skill-options button:first-child')
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor input')?.value`), "Custom Release")
+    await tab.press('.playbook-source-row button:last-child')
+    await tab.press('.playbook-skill-options button:first-child')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-skill-content pre')) return resolve(true)
+        if (document.querySelector('.playbook-skill-content pre')) return resolve(true)
         if (Date.now() > deadline) return reject(new Error('replacement Skill preview did not load'))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.match(await tab.run(`document.querySelector('.workflow-skill-dialog footer .workflow-primary')?.textContent`), /替換|replace/)
-    await tab.press('.workflow-skill-dialog footer .workflow-primary')
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor input')?.value`), "Global Review")
-    assert.match(await tab.run(`document.querySelector('.workflow-editor textarea')?.value`), /Global Review/)
-    assert.doesNotMatch(await tab.run(`document.querySelector('.workflow-editor textarea')?.value`), /release-now/)
-    assert.match(await tab.run(`document.querySelector('.workflow-source-link')?.textContent`), /Global Review/)
-    assert.equal(await tab.run(`document.querySelector('.workflow-source-row [title="從來源更新"]') === null`), true)
-    assert.equal(await tab.run(`document.querySelector('.workflow-source-unlink')?.getAttribute('aria-label')`), '移除連結')
-    await tab.press('.workflow-source-unlink')
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor input')?.readOnly || document.querySelector('.workflow-editor textarea')?.readOnly`), false)
+    assert.match(await tab.run(`document.querySelector('.playbook-skill-dialog footer .playbook-primary')?.textContent`), /替換|replace/)
+    await tab.press('.playbook-skill-dialog footer .playbook-primary')
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor input')?.value`), "Global Review")
+    assert.match(await tab.run(`document.querySelector('.playbook-editor textarea')?.value`), /Global Review/)
+    assert.doesNotMatch(await tab.run(`document.querySelector('.playbook-editor textarea')?.value`), /release-now/)
+    assert.match(await tab.run(`document.querySelector('.playbook-source-link')?.textContent`), /Global Review/)
+    assert.equal(await tab.run(`document.querySelector('.playbook-source-row [title="從來源更新"]') === null`), true)
+    assert.equal(await tab.run(`document.querySelector('.playbook-source-unlink')?.getAttribute('aria-label')`), '移除連結')
+    await tab.press('.playbook-source-unlink')
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor input')?.readOnly || document.querySelector('.playbook-editor textarea')?.readOnly`), false)
   }))
 
-test("a linked Workflow uses the current source without a manual update", () =>
+test("a linked Playbook uses the current source without a manual update", () =>
   inTab(async (tab) => {
-    workflowTodo = null
-    workflowRecords = [{ id: "00000000-0000-4000-8000-000000000102", title: "Sprint", body: "Run /sprint", scope: "workflow",
+    playbookTodo = null
+    playbookRecords = [{ id: "00000000-0000-4000-8000-000000000102", title: "Sprint", body: "Run /sprint", scope: "playbook",
       project: "/tmp/fixture", position: 100, created_at: 1, updated_at: 1,
       source: { kind: "skill", file_id: "global-skill-fixture", place_id: "project-fixture", scope: "global", name: "Global Review", version: "fixture" } }]
-    await tab.go("/#page=workflow")
+    await tab.go("/#page=playbook")
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-list-main')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('linked Workflow did not load'))
+        if (document.querySelector('.playbook-list-main')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('linked Playbook did not load'))
         setTimeout(look, 25)
       }; look()
     })`)
-    await tab.press('.workflow-list-main')
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor input')?.value`), "Sprint")
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor input')?.readOnly`), false)
+    await tab.press('.playbook-list-main')
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor input')?.value`), "Sprint")
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor input')?.readOnly`), false)
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-editor textarea')?.value.includes('Global Review')) return resolve(true)
+        if (document.querySelector('.playbook-editor textarea')?.value.includes('Global Review')) return resolve(true)
         if (Date.now() > deadline) return reject(new Error('current source text was not shown'))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor input')?.value`), 'Sprint')
-    assert.match(await tab.run(`document.querySelector('.workflow-editor textarea')?.value`), /Global Review/)
-    assert.equal(await tab.run(`document.querySelector('.workflow-source-mismatch') === null`), true)
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor input')?.value`), 'Sprint')
+    assert.match(await tab.run(`document.querySelector('.playbook-editor textarea')?.value`), /Global Review/)
+    assert.equal(await tab.run(`document.querySelector('.playbook-source-mismatch') === null`), true)
     await tab.run(`location.hash = ${JSON.stringify("session=" + encodeURIComponent(SAFE))}`)
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
@@ -2067,110 +2067,110 @@ test("a linked Workflow uses the current source without a manual update", () =>
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-picker-row')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('linked Workflow was not offered'))
+        if (document.querySelector('.playbook-picker-row')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('linked Playbook was not offered'))
         setTimeout(look, 25)
       }; look()
     })`)
-    await tab.press('.workflow-picker-row')
+    await tab.press('.playbook-picker-row')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (!document.querySelector('.workflow-start')?.disabled) return resolve(true)
+        if (!document.querySelector('.playbook-start')?.disabled) return resolve(true)
         if (Date.now() > deadline) return reject(new Error('current source was not accepted'))
         setTimeout(look, 25)
       }; look()
     })`)
-    await tab.press('.workflow-start')
+    await tab.press('.playbook-start')
     await new Promise<void>((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (workflowTodo) return resolve()
-        if (Date.now() > deadline) return reject(new Error('Workflow did not start'))
+        if (playbookTodo) return resolve()
+        if (Date.now() > deadline) return reject(new Error('Playbook did not start'))
         setTimeout(look, 25)
       }; look()
     })
-    assert.match(String((workflowTodo as Row | null)?.text), /Global Review/)
-    assert.doesNotMatch(String((workflowTodo as Row | null)?.text), /Run \/sprint/)
+    assert.match(String((playbookTodo as Row | null)?.text), /Global Review/)
+    assert.doesNotMatch(String((playbookTodo as Row | null)?.text), /Run \/sprint/)
   }))
 
 test("a phone imports a linked global Skill, starts it, and sees its durable progress", () =>
   inTab(async (tab) => {
-    workflowRecords = []; workflowTodo = null; workflowSends = 0
-    await tab.go("/#page=workflow")
+    playbookRecords = []; playbookTodo = null; playbookSends = 0
+    await tab.go("/#page=playbook")
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-skill-picker button:not(:disabled)')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('Workflow Skill option did not arrive'))
+        if (document.querySelector('.playbook-skill-picker button:not(:disabled)')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('Playbook Skill option did not arrive'))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.equal(await tab.run(`document.querySelector('.workflow-skill-picker button')?.disabled`), false)
-    const point = await tab.run(`(() => { const el = document.querySelector('.workflow-skill-picker button'); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`)
+    assert.equal(await tab.run(`document.querySelector('.playbook-skill-picker button')?.disabled`), false)
+    const point = await tab.run(`(() => { const el = document.querySelector('.playbook-skill-picker button'); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`)
     await tab.tap(point.x, point.y)
-    assert.match(await tab.run(`document.querySelector('.workflow-skill-options')?.textContent`), /Global Review/)
-    assert.match(await tab.run(`document.querySelector('.workflow-skill-options')?.textContent`), /Review the work with evidence/)
-    assert.doesNotMatch(await tab.run(`document.querySelector('.workflow-skill-options')?.textContent`), /SKILL\.md/)
-    await tab.press('.workflow-skill-options button')
+    assert.match(await tab.run(`document.querySelector('.playbook-skill-options')?.textContent`), /Global Review/)
+    assert.match(await tab.run(`document.querySelector('.playbook-skill-options')?.textContent`), /Review the work with evidence/)
+    assert.doesNotMatch(await tab.run(`document.querySelector('.playbook-skill-options')?.textContent`), /SKILL\.md/)
+    await tab.press('.playbook-skill-options button')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-skill-content pre')) return resolve(true)
+        if (document.querySelector('.playbook-skill-content pre')) return resolve(true)
         if (Date.now() > deadline) return reject(new Error('Skill preview did not load'))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.match(await tab.run(`document.querySelector('.workflow-skill-content pre')?.textContent`), /Check the evidence/)
-    await tab.press('.workflow-skill-dialog footer .workflow-primary')
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor input')?.value`), "Global Review")
-    assert.match(await tab.run(`document.querySelector('.workflow-editor textarea')?.value`), /Global Review/)
+    assert.match(await tab.run(`document.querySelector('.playbook-skill-content pre')?.textContent`), /Check the evidence/)
+    await tab.press('.playbook-skill-dialog footer .playbook-primary')
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor input')?.value`), "Global Review")
+    assert.match(await tab.run(`document.querySelector('.playbook-editor textarea')?.value`), /Global Review/)
     await tab.run(`(() => {
-      const field = document.querySelector('.workflow-editor input')
+      const field = document.querySelector('.playbook-editor input')
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'My Review')
       field.dispatchEvent(new Event('input', { bubbles: true }))
     })()`)
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor input')?.value`), "My Review")
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor textarea')?.readOnly`), true)
-    await tab.press('.workflow-editor button[type="submit"]')
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor input')?.value`), "My Review")
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor textarea')?.readOnly`), true)
+    await tab.press('.playbook-editor button[type="submit"]')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-list button')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('saved Workflow did not appear'))
+        if (document.querySelector('.playbook-list button')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('saved Playbook did not appear'))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.equal(workflowRecords.length, 1)
-    assert.equal(workflowRecords[0].scope, "workflow")
-    assert.equal(workflowRecords[0].title, "My Review")
-    assert.deepEqual(workflowRecords[0].source, { kind: "skill", file_id: "global-skill-fixture",
+    assert.equal(playbookRecords.length, 1)
+    assert.equal(playbookRecords[0].scope, "playbook")
+    assert.equal(playbookRecords[0].title, "My Review")
+    assert.deepEqual(playbookRecords[0].source, { kind: "skill", file_id: "global-skill-fixture",
       place_id: "project-fixture", scope: "global", name: "Global Review", version: "fixture" })
-    assert.match(await tab.run(`document.querySelector('.workflow-list-source')?.textContent`), /Global Review/)
-    await tab.press('.workflow-list-source')
+    assert.match(await tab.run(`document.querySelector('.playbook-list-source')?.textContent`), /Global Review/)
+    await tab.press('.playbook-list-source')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-skill-overlay pre')) return resolve(true)
+        if (document.querySelector('.playbook-skill-overlay pre')) return resolve(true)
         if (Date.now() > deadline) return reject(new Error('list source detail did not load'))
         setTimeout(look, 25)
       }; look()
     })`)
-    await tab.press('.workflow-skill-overlay header button')
-    await tab.press('.workflow-list-main')
-    await tab.press('.workflow-source-row button:first-of-type')
+    await tab.press('.playbook-skill-overlay header button')
+    await tab.press('.playbook-list-main')
+    await tab.press('.playbook-source-row button:first-of-type')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelectorAll('.workflow-skill-overlay .workflow-skill-content pre').length) return resolve(true)
+        if (document.querySelectorAll('.playbook-skill-overlay .playbook-skill-content pre').length) return resolve(true)
         if (Date.now() > deadline) return reject(new Error('linked Skill detail did not load'))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.match(await tab.run(`document.querySelector('.workflow-skill-overlay pre')?.textContent`), /Check the evidence/)
-    await tab.press('.workflow-skill-overlay header button')
-    await tab.press('.workflow-editor .workflow-actions button:nth-child(2)')
-    await tab.shot("workflow-project-page")
+    assert.match(await tab.run(`document.querySelector('.playbook-skill-overlay pre')?.textContent`), /Check the evidence/)
+    await tab.press('.playbook-skill-overlay header button')
+    await tab.press('.playbook-editor .playbook-actions button:nth-child(2)')
+    await tab.shot("playbook-project-page")
     await tab.run(`location.hash = ${JSON.stringify("session=" + encodeURIComponent(SAFE))}`)
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
@@ -2185,147 +2185,155 @@ test("a phone imports a linked global Skill, starts it, and sees its durable pro
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-picker-row')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('Session Workflow did not appear'))
+        if (document.querySelector('.playbook-picker-row')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('Session Playbook did not appear'))
         setTimeout(look, 25)
       }; look()
     })`)
-    await tab.press('.workflow-picker-row')
-    await tab.shot("workflow-session-launch")
+    await tab.press('.playbook-picker-row')
+    await tab.shot("playbook-session-launch")
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (!document.querySelector('.workflow-start')?.disabled) return resolve(true)
+        if (!document.querySelector('.playbook-start')?.disabled) return resolve(true)
         if (Date.now() > deadline) return reject(new Error('linked source did not validate before launch'))
         setTimeout(look, 25)
       }; look()
     })`)
-    await tab.press('.workflow-start')
+    await tab.press('.playbook-start')
     await new Promise<void>((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (workflowTodo && workflowSends === 1) return resolve()
-        if (Date.now() > deadline) return reject(new Error('Workflow did not create a to-do'))
+        if (playbookTodo && playbookSends === 1) return resolve()
+        if (Date.now() > deadline) return reject(new Error('Playbook did not create a to-do'))
         setTimeout(look, 25)
       }; look()
     })
-    assert.ok(workflowTodo, "Workflow launch created a durable to-do")
-    assert.equal(workflowSends, 1)
+    assert.ok(playbookTodo, "Playbook launch created a durable to-do")
+    assert.equal(playbookSends, 1)
     await tab.press('#session-todos > summary')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.session-workflow-row')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('Workflow progress did not appear: ' + document.querySelector('#session-todos')?.outerHTML.slice(0, 3000)))
+        if (document.querySelector('.session-playbook-row')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('Playbook progress did not appear: ' + document.querySelector('#session-todos')?.outerHTML.slice(0, 3000)))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.equal(workflowSends, 1)
-    assert.match(String((workflowTodo as Row | null)?.text), /Clawdline-Workflow/)
-    assert.match(await tab.run(`document.querySelector('.session-workflow-row')?.textContent`), /My Review/)
-    await tab.shot("workflow-session-progress")
-    await tab.press('.session-workflow-row summary')
-    await tab.press('.session-workflow-row button')
+    assert.equal(playbookSends, 1)
+    assert.match(String((playbookTodo as Row | null)?.text), /Clawdline-Playbook/)
+    assert.match(await tab.run(`document.querySelector('.session-playbook-row')?.textContent`), /My Review/)
+    await tab.shot("playbook-session-progress")
+    await tab.press('.session-playbook-row summary')
+    await tab.press('.session-playbook-row button')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.session-workflow-row[data-state="done"]')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('completed Workflow did not appear'))
+        if (document.querySelector('.session-playbook-row[data-state="done"]')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('completed Playbook did not appear'))
         setTimeout(look, 25)
       }; look()
     })`)
-    await tab.shot("workflow-session-done")
+    await tab.shot("playbook-session-done")
     await tab.press('#session-todos > summary')
     await tab.press('#detail-snippets')
     await tab.press('.snippets-tabs button:last-child')
-    await tab.press('.workflow-picker-row')
-    workflowRecords = []
+    await tab.press('.playbook-picker-row')
+    playbookRecords = []
     await tab.press('#snippets-close')
     await tab.press('#detail-snippets')
     await tab.press('.snippets-tabs button:last-child')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (!document.querySelector('.workflow-picker-row') && (!document.querySelector('.workflow-start') || document.querySelector('.workflow-start').disabled)) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('a removed Workflow stayed launchable after reload'))
+        if (!document.querySelector('.playbook-picker-row') && (!document.querySelector('.playbook-start') || document.querySelector('.playbook-start').disabled)) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('a removed Playbook stayed launchable after reload'))
         setTimeout(look, 25)
       }; look()
     })`)
   }))
 
-test("a phone creates a global Workflow and offers it in a Session", () =>
+test("a phone creates a global Playbook and offers it in a Session", () =>
   inTab(async (tab) => {
-    workflowRecords = []
-    await tab.go("/#page=workflow")
+    playbookRecords = []
+    await tab.go("/#page=playbook")
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-empty .workflow-primary')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('Workflow empty state did not appear'))
+        if (document.querySelector('.playbook-empty .playbook-primary')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('Playbook empty state did not appear'))
         setTimeout(look, 25)
       }; look()
     })`)
-    await tab.shot("workflow-empty-mobile")
-    await tab.press('.workflow-project-trigger')
-    assert.equal(await tab.run(`document.querySelectorAll('.workflow-project-menu button .mark').length`), 1)
-    assert.equal(await tab.run(`document.querySelector('.workflow-project-menu button .mark')?.classList.contains('none')`), false)
-    assert.match(await tab.run(`document.querySelector('.workflow-project-trigger')?.getAttribute('aria-label')`), /Clawdline/)
-    await tab.press('.workflow-project-menu button:last-child')
-    await tab.press('.workflow-empty .workflow-primary')
-    assert.equal(await tab.run(`document.activeElement?.matches('.workflow-editor input')`), false)
+    await tab.shot("playbook-empty-mobile")
+    await tab.press('.playbook-project-trigger')
+    assert.equal(await tab.run(`document.querySelectorAll('.playbook-project-menu button .mark').length`), 1)
+    assert.equal(await tab.run(`document.querySelector('.playbook-project-menu button .mark')?.classList.contains('none')`), false)
+    assert.match(await tab.run(`document.querySelector('.playbook-project-trigger')?.getAttribute('aria-label')`), /Clawdline/)
+    await tab.press('.playbook-project-menu button:last-child')
+    await tab.press('.playbook-empty .playbook-primary')
+    assert.equal(await tab.run(`document.activeElement?.matches('.playbook-editor input')`), false)
     assert.equal(await tab.run(`(() => {
-      const overlay = document.querySelector('.workflow-editor').getBoundingClientRect()
-      const form = document.querySelector('.workflow-editor form').getBoundingClientRect()
+      const overlay = document.querySelector('.playbook-editor').getBoundingClientRect()
+      const form = document.querySelector('.playbook-editor form').getBoundingClientRect()
       return form.top > 0 && Math.abs((form.top - overlay.top) - (overlay.bottom - form.bottom)) <= 2
     })()`), true)
-    await tab.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))`)
-    assert.equal(await tab.run(`document.activeElement?.matches('.workflow-editor .workflow-actions button:last-child')`), true)
-    assert.match(await tab.run(`document.querySelector('.workflow-scope-hint')?.textContent`), /Clawdline|clawdline/)
-    await tab.run(`document.querySelector('.workflow-editor').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`)
-    assert.equal(await tab.run(`document.querySelector('.workflow-editor')`), null)
-    await tab.press('.workflow-project-trigger')
-    await tab.press('.workflow-project-menu button:first-child')
-    assert.match(await tab.run(`document.querySelector('.workflow-project-trigger')?.textContent`), /全域|Global/)
-    await tab.press('.workflow-skill-picker button')
-    assert.equal(await tab.run(`document.querySelectorAll('.workflow-skill-options button').length`), 1)
-    assert.match(await tab.run(`document.querySelector('.workflow-skill-options')?.textContent`), /Global Review/)
-    await tab.press('.workflow-skill-dialog footer button')
-    await tab.press('.workflow-empty .workflow-primary')
+    await tab.run(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))`)
+    assert.equal(await tab.run(`document.activeElement?.matches('.playbook-editor .playbook-actions button:last-child')`), true)
+    assert.match(await tab.run(`document.querySelector('.playbook-scope-hint')?.textContent`), /Clawdline|clawdline/)
+    await tab.run(`document.querySelector('.playbook-editor').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`)
+    assert.equal(await tab.run(`document.querySelector('.playbook-editor')`), null)
+    await tab.press('.playbook-project-trigger')
+    await tab.press('.playbook-project-menu button:first-child')
+    assert.match(await tab.run(`document.querySelector('.playbook-project-trigger')?.textContent`), /全域|Global/)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const look = () => {
+        if (document.querySelector('.playbook-skill-picker button:not(:disabled)')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('Global Playbook sources did not load'))
+        setTimeout(look, 25)
+      }; look()
+    })`)
+    await tab.press('.playbook-skill-picker button')
+    assert.equal(await tab.run(`document.querySelectorAll('.playbook-skill-options button').length`), 1)
+    assert.match(await tab.run(`document.querySelector('.playbook-skill-options')?.textContent`), /Global Review/)
+    await tab.press('.playbook-skill-dialog footer button')
+    await tab.press('.playbook-empty .playbook-primary')
     await tab.run(`(() => {
-      const fields = document.querySelectorAll('.workflow-editor input, .workflow-editor textarea')
+      const fields = document.querySelectorAll('.playbook-editor input, .playbook-editor textarea')
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(fields[0], 'Daily release')
       fields[0].dispatchEvent(new Event('input', { bubbles: true }))
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(fields[1], 'Run the release checklist.')
       fields[1].dispatchEvent(new Event('input', { bubbles: true }))
     })()`)
-    await tab.press('.workflow-editor button[type="submit"]')
+    await tab.press('.playbook-editor button[type="submit"]')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-list button')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('global Workflow did not appear'))
+        if (document.querySelector('.playbook-list button')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('global Playbook did not appear'))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.equal(workflowRecords[0].scope, 'workflow')
-    assert.equal(workflowRecords[0].project, undefined)
-    await tab.press('.workflow-project-trigger')
-    await tab.press('.workflow-project-menu button:last-child')
+    assert.equal(playbookRecords[0].scope, 'playbook')
+    assert.equal(playbookRecords[0].project, undefined)
+    await tab.press('.playbook-project-trigger')
+    await tab.press('.playbook-project-menu button:last-child')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-empty') && !document.querySelector('.workflow-list-card')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('global Workflow leaked into Project list'))
+        if (document.querySelector('.playbook-empty') && !document.querySelector('.playbook-list-card')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('global Playbook leaked into Project list'))
         setTimeout(look, 25)
       }; look()
     })`)
-    await tab.press('.workflow-project-trigger')
-    await tab.press('.workflow-project-menu button:first-child')
+    await tab.press('.playbook-project-trigger')
+    await tab.press('.playbook-project-menu button:first-child')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-list-card')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('global Workflow did not return in Global list'))
+        if (document.querySelector('.playbook-list-card')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('global Playbook did not return in Global list'))
         setTimeout(look, 25)
       }; look()
     })`)
@@ -2340,36 +2348,36 @@ test("a phone creates a global Workflow and offers it in a Session", () =>
     })`)
     await tab.press('#detail-snippets')
     await tab.press('.snippets-tabs button:last-child')
-    assert.equal(await tab.run(`document.querySelector('.workflow-picker-toolbar, .workflow-reload')`), null)
-    assert.match(await tab.run(`document.querySelector('.workflow-picker-row')?.textContent`), /Daily release/)
-    assert.match(await tab.run(`document.querySelector('.workflow-picker-group .snippet-group-title')?.textContent`), /全域|Global/)
+    assert.equal(await tab.run(`document.querySelector('.playbook-picker-toolbar, .playbook-reload')`), null)
+    assert.match(await tab.run(`document.querySelector('.playbook-picker-row')?.textContent`), /Daily release/)
+    assert.match(await tab.run(`document.querySelector('.playbook-picker-group .snippet-group-title')?.textContent`), /全域|Global/)
     await tab.press('#snippets-new')
-    assert.equal(await tab.run(`document.querySelector('#workflow-quick-editor [role="dialog"]') !== null`), true)
-    assert.equal(await tab.run(`document.activeElement?.id === 'workflow-quick-name'`), false)
+    assert.equal(await tab.run(`document.querySelector('#playbook-quick-editor [role="dialog"]') !== null`), true)
+    assert.equal(await tab.run(`document.activeElement?.id === 'playbook-quick-name'`), false)
     await tab.run(`(() => {
-      const name = document.querySelector('#workflow-quick-name')
-      const message = document.querySelector('#workflow-quick-message')
+      const name = document.querySelector('#playbook-quick-name')
+      const message = document.querySelector('#playbook-quick-message')
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(name, 'Session checklist')
       name.dispatchEvent(new Event('input', { bubbles: true }))
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(message, 'Check this Project.')
       message.dispatchEvent(new Event('input', { bubbles: true }))
     })()`)
-    await tab.press('#workflow-quick-editor .confirm-go')
+    await tab.press('#playbook-quick-editor .confirm-go')
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (!document.querySelector('#workflow-quick-editor') && document.querySelector('.workflow-picker')?.textContent?.includes('Session checklist')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('new Workflow did not appear in its Session'))
+        if (!document.querySelector('#playbook-quick-editor') && document.querySelector('.playbook-picker')?.textContent?.includes('Session checklist')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('new Playbook did not appear in its Session'))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.equal(workflowRecords.find((record) => record.title === 'Session checklist')?.scope, 'workflow')
-    assert.equal(workflowRecords.find((record) => record.title === 'Session checklist')?.project, '/tmp/fixture')
+    assert.equal(playbookRecords.find((record) => record.title === 'Session checklist')?.scope, 'playbook')
+    assert.equal(playbookRecords.find((record) => record.title === 'Session checklist')?.project, '/tmp/fixture')
   }))
 
-test("a phone can edit and delete a Workflow from its launch review", () =>
+test("a phone can edit and delete a Playbook from its launch review", () =>
   inTab(async (tab) => {
-    workflowRecords = [{ id: workflowID, title: "Daily check", body: "Check status.", scope: "workflow",
+    playbookRecords = [{ id: playbookID, title: "Daily check", body: "Check status.", scope: "playbook",
       project: "/tmp/fixture", position: 100, created_at: 1, updated_at: 1 }]
     await tab.go("/#session=" + encodeURIComponent(SAFE))
     await tab.run(`new Promise((resolve, reject) => {
@@ -2384,110 +2392,118 @@ test("a phone can edit and delete a Workflow from its launch review", () =>
     await tab.press("#detail-snippets")
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
-      const look = () => document.querySelector('#workflow-tab') ? resolve(true)
-        : Date.now() > deadline ? reject(new Error('Workflow tab did not open')) : setTimeout(look, 25)
+      const look = () => document.querySelector('#playbook-tab') ? resolve(true)
+        : Date.now() > deadline ? reject(new Error('Playbook tab did not open')) : setTimeout(look, 25)
       look()
     })`)
-    await tab.press("#workflow-tab")
+    await tab.press("#playbook-tab")
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
-      const look = () => document.querySelector('.workflow-picker-row') ? resolve(true)
-        : Date.now() > deadline ? reject(new Error('Workflow did not load')) : setTimeout(look, 25)
+      const look = () => document.querySelector('.playbook-picker-row') ? resolve(true)
+        : Date.now() > deadline ? reject(new Error('Playbook did not load')) : setTimeout(look, 25)
       look()
     })`)
-    await tab.press(".workflow-picker-row")
-    await tab.shot("workflow-review-actions-phone")
-    assert.deepEqual(await tab.run(`[...document.querySelectorAll('.workflow-detail-actions button')].map((button) => ({
+    await tab.press(".playbook-picker-row")
+    await tab.shot("playbook-review-actions-phone")
+    assert.deepEqual(await tab.run(`[...document.querySelectorAll('.playbook-detail-actions button')].map((button) => ({
       name: button.getAttribute('aria-label'), icon: button.querySelector('.work-icon') !== null,
       text: button.textContent.trim()
     }))`), [
       { name: "編輯", icon: true, text: "" }, { name: "刪除", icon: true, text: "" },
     ])
-    await tab.press(".workflow-detail-actions button:first-child")
-    await tab.shot("workflow-editor-voice-phone")
-    assert.equal(await tab.run(`document.querySelector('#workflow-quick-name')?.value`), "Daily check")
-    assert.equal(await tab.run(`document.querySelector('#workflow-quick-message')?.value`), "Check status.")
-    assert.equal(await tab.run(`document.querySelector('.workflow-quick-message .work-voice-box .work-voice-mic')?.getAttribute('aria-label')`), "用說的寫一則訊息")
-    assert.equal(await tab.run(`document.querySelector('.workflow-quick-message .work-voice-row')?.hidden`), true)
-    assert.equal(await tab.run(`document.querySelector('#workflow-quick-editor .block .row') === null`), true)
+    await tab.press(".playbook-detail-actions button:first-child")
+    await tab.shot("playbook-editor-voice-phone")
+    assert.equal(await tab.run(`document.querySelector('#playbook-quick-name')?.value`), "Daily check")
+    assert.equal(await tab.run(`document.querySelector('#playbook-quick-message')?.value`), "Check status.")
+    assert.equal(await tab.run(`document.querySelector('.playbook-quick-message .work-voice-box .work-voice-mic')?.getAttribute('aria-label')`), "用說的寫一則訊息")
+    assert.equal(await tab.run(`document.querySelector('.playbook-quick-message .work-voice-row')?.hidden`), true)
+    assert.equal(await tab.run(`document.querySelector('#playbook-quick-editor .block .row') === null`), true)
     await tab.run(`(() => {
-      const field = document.querySelector('#workflow-quick-message')
+      const field = document.querySelector('#playbook-quick-message')
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, 'Check every status.')
       field.dispatchEvent(new Event('input', { bubbles: true }))
     })()`)
-    await tab.press("#workflow-quick-editor .confirm-go")
+    await tab.press("#playbook-quick-editor .confirm-go")
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
-      const look = () => !document.querySelector('#workflow-quick-editor') ? resolve(true)
-        : Date.now() > deadline ? reject(new Error('Workflow editor stayed open')) : setTimeout(look, 25)
+      const look = () => !document.querySelector('#playbook-quick-editor') ? resolve(true)
+        : Date.now() > deadline ? reject(new Error('Playbook editor stayed open')) : setTimeout(look, 25)
       look()
     })`)
-    assert.equal(workflowRecords[0]?.body, "Check every status.")
-    assert.match(await tab.run(`document.querySelector('.workflow-launch p')?.textContent`), /Check every status/)
+    assert.equal(playbookRecords[0]?.body, "Check every status.")
+    assert.match(await tab.run(`document.querySelector('.playbook-launch p')?.textContent`), /Check every status/)
     await tab.run(`window.confirm = () => true`)
-    await tab.press(".workflow-detail-actions .workflow-delete")
+    await tab.press(".playbook-detail-actions .playbook-delete")
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
-      const look = () => !document.querySelector('.workflow-detail-actions') ? resolve(true)
-        : Date.now() > deadline ? reject(new Error('Workflow review stayed open')) : setTimeout(look, 25)
+      const look = () => !document.querySelector('.playbook-detail-actions') ? resolve(true)
+        : Date.now() > deadline ? reject(new Error('Playbook review stayed open')) : setTimeout(look, 25)
       look()
     })`)
-    assert.equal(workflowRecords.length, 0)
+    assert.equal(playbookRecords.length, 0)
   }))
 
-test("the Global Workflow list survives unavailable Project files and an empty Project inventory", () =>
+test("the Global Playbook list survives unavailable Project files and an empty Project inventory", () =>
   inTab(async (tab) => {
-    workflowFilesUnavailable = true
-    workflowRecords = [{ id: workflowID, title: "Shared review", body: "Review all work.", scope: "workflow",
+    playbookFilesUnavailable = true
+    playbookRecords = [{ id: playbookID, title: "Shared review", body: "Review all work.", scope: "playbook",
       position: 100, created_at: 1, updated_at: 1 }]
     try {
-      await tab.go("/#page=workflow")
-      await tab.press('.workflow-project-trigger')
-      await tab.press('.workflow-project-menu button:first-child')
+      await tab.go("/#page=playbook")
       await tab.run(`new Promise((resolve, reject) => {
         const deadline = Date.now() + 8000
         const look = () => {
-          if (document.querySelector('.workflow-list-main')?.textContent.includes('Shared review')) return resolve(true)
-          if (Date.now() > deadline) return reject(new Error('Global Workflow was hidden by unavailable Project files'))
+          if (document.querySelector('.playbook-project-trigger')) return resolve(true)
+          if (Date.now() > deadline) return reject(new Error('Playbook Project selector did not appear'))
           setTimeout(look, 25)
         }; look()
       })`)
-    } finally { workflowFilesUnavailable = false }
-  }))
-
-test("a phone can create a Global Workflow before it has any Projects", () =>
-  inTab(async (tab) => {
-    workflowNoPlaces = true
-    workflowRecords = []
-    try {
-      await tab.go("/#page=workflow")
+      await tab.press('.playbook-project-trigger')
+      await tab.press('.playbook-project-menu button:first-child')
       await tab.run(`new Promise((resolve, reject) => {
         const deadline = Date.now() + 8000
         const look = () => {
-          if (document.querySelector('.workflow-empty .workflow-primary')) return resolve(true)
+          if (document.querySelector('.playbook-list-main')?.textContent.includes('Shared review')) return resolve(true)
+          if (Date.now() > deadline) return reject(new Error('Global Playbook was hidden by unavailable Project files'))
+          setTimeout(look, 25)
+        }; look()
+      })`)
+    } finally { playbookFilesUnavailable = false }
+  }))
+
+test("a phone can create a Global Playbook before it has any Projects", () =>
+  inTab(async (tab) => {
+    playbookNoPlaces = true
+    playbookRecords = []
+    try {
+      await tab.go("/#page=playbook")
+      await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 8000
+        const look = () => {
+          if (document.querySelector('.playbook-empty .playbook-primary')) return resolve(true)
           if (Date.now() > deadline) return reject(new Error('Global empty state did not appear without Projects'))
           setTimeout(look, 25)
         }; look()
       })`)
-      assert.match(await tab.run(`document.querySelector('.workflow-project-trigger')?.textContent`), /全域|Global/)
-      await tab.press('.workflow-empty .workflow-primary')
+      assert.match(await tab.run(`document.querySelector('.playbook-project-trigger')?.textContent`), /全域|Global/)
+      await tab.press('.playbook-empty .playbook-primary')
       await tab.run(`(() => {
-        const fields = document.querySelectorAll('.workflow-editor input, .workflow-editor textarea')
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(fields[0], 'First Workflow')
+        const fields = document.querySelectorAll('.playbook-editor input, .playbook-editor textarea')
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(fields[0], 'First Playbook')
         fields[0].dispatchEvent(new Event('input', { bubbles: true }))
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(fields[1], 'Run the first workflow.')
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(fields[1], 'Run the first playbook.')
         fields[1].dispatchEvent(new Event('input', { bubbles: true }))
       })()`)
-      await tab.press('.workflow-editor button[type="submit"]')
-      assert.equal(workflowRecords[0]?.project, undefined)
-    } finally { workflowNoPlaces = false }
+      await tab.press('.playbook-editor button[type="submit"]')
+      assert.equal(playbookRecords[0]?.project, undefined)
+    } finally { playbookNoPlaces = false }
   }))
 
-test("a phone starts the shipped global Workflow in its interface language", () =>
+test("a phone starts the shipped global Playbook in its interface language", () =>
   inTab(async (tab) => {
-    workflowTodo = null; workflowSends = 0
-    workflowRecords = [{ id: "00000000-0000-4000-8000-000000000101", title: "Zero-Based Review",
-      body: "Run a zero-based review of this Project.", scope: "workflow", builtin: "zero_review",
+    playbookTodo = null; playbookSends = 0
+    playbookRecords = [{ id: "00000000-0000-4000-8000-000000000101", title: "Zero-Based Review",
+      body: "Run a zero-based review of this Project.", scope: "playbook", builtin: "zero_review",
       position: 100, created_at: 1, updated_at: 1 }]
     await tab.go("/#session=" + encodeURIComponent(SAFE))
     await tab.run(`document.documentElement.lang = "zh-Hant-TW"`)
@@ -2505,7 +2521,7 @@ test("a phone starts the shipped global Workflow in its interface language", () 
       const deadline = Date.now() + 8000
       const look = () => {
         if (document.querySelector('#snippets-sheet .snippets-tabs')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('Workflow sheet did not open'))
+        if (Date.now() > deadline) return reject(new Error('Playbook sheet did not open'))
         setTimeout(look, 25)
       }; look()
     })`)
@@ -2513,24 +2529,24 @@ test("a phone starts the shipped global Workflow in its interface language", () 
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (document.querySelector('.workflow-picker-row')) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error('default Workflow did not appear'))
+        if (document.querySelector('.playbook-picker-row')) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error('default Playbook did not appear'))
         setTimeout(look, 25)
       }; look()
     })`)
-    assert.match(await tab.run(`document.querySelector('.workflow-picker-row')?.textContent`), /歸零審查/)
-    assert.equal(await tab.run(`document.querySelector('.workflow-picker-toolbar, .workflow-reload')`), null)
-    await tab.press(".workflow-picker-row")
-    await tab.press(".workflow-start")
+    assert.match(await tab.run(`document.querySelector('.playbook-picker-row')?.textContent`), /歸零審查/)
+    assert.equal(await tab.run(`document.querySelector('.playbook-picker-toolbar, .playbook-reload')`), null)
+    await tab.press(".playbook-picker-row")
+    await tab.press(".playbook-start")
     await new Promise<void>((resolve, reject) => {
       const deadline = Date.now() + 8000
       const look = () => {
-        if (workflowTodo && workflowSends === 1) return resolve()
-        if (Date.now() > deadline) return reject(new Error('default Workflow was not sent'))
+        if (playbookTodo && playbookSends === 1) return resolve()
+        if (Date.now() > deadline) return reject(new Error('default Playbook was not sent'))
         setTimeout(look, 25)
       }; look()
     })
-    assert.match(String((workflowTodo as Row | null)?.text), /每項結論都要附上證據/)
+    assert.match(String((playbookTodo as Row | null)?.text), /每項結論都要附上證據/)
   }))
 
 test("Clawdfather stays first above a waiting Session on phone and desktop", () =>

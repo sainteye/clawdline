@@ -1,5 +1,5 @@
-import type { Snippet, SnippetAnswer, SnippetControls, WorkflowSource } from "../legacy/snippets-bridge.js"
-import { localizedWorkflow } from "../workflow-words.js"
+import type { Snippet, SnippetAnswer, SnippetControls, PlaybookSource } from "../legacy/snippets-bridge.js"
+import { localizedPlaybook } from "../playbook-words.js"
 
 /**
  * The five snippet routes as this sheet reads and writes them
@@ -108,14 +108,14 @@ function writing(method: string, body?: unknown): RequestInit {
 
 /** One session's two groups, and the project the machine resolved for it. */
 const localizeAnswer = (answer: SnippetAnswer): SnippetAnswer =>
-  ({ ...answer, snippets: answer.snippets.map(localizedWorkflow) })
+  ({ ...answer, snippets: answer.snippets.map(localizedPlaybook) })
 
 export const readSnippets = (sessionRowID: string): Promise<SnippetAnswer> =>
   call<SnippetAnswer>("/v1/snippets?session=" + encodeURIComponent(sessionRowID)).then(localizeAnswer)
 
 /** Cloud asks the machine to resolve this Session's Project, including worktrees. */
-export const readWorkflowProject = (sessionRowID: string): Promise<SnippetAnswer> =>
-  call<SnippetAnswer>("/v1/workflow-project?session=" + encodeURIComponent(sessionRowID))
+export const readPlaybookProject = (sessionRowID: string): Promise<SnippetAnswer> =>
+  call<SnippetAnswer>("/v1/playbook-project?session=" + encodeURIComponent(sessionRowID))
 
 /** `?session=<row>`, which every one of these carries; see the note above. */
 const on = (sessionRowID: string) => "?session=" + encodeURIComponent(sessionRowID)
@@ -134,19 +134,19 @@ export const orderSnippets = (
   body: { scope: string; project?: string; order: string[] },
 ): Promise<{ ok: boolean }> => call<{ ok: boolean }>("/v1/snippets/order" + on(sessionRowID), writing("POST", body))
 
-/** Project Workflows share the durable reusable-text store, addressed by machine. */
+/** Project Playbooks share the durable reusable-text store, addressed by machine. */
 const onMachine = (machine: string) => "?machine=" + encodeURIComponent(machine)
 
 export const readReusableTextForMachine = (machine: string): Promise<SnippetAnswer> =>
   call<SnippetAnswer>("/v1/snippets" + onMachine(machine)).then(localizeAnswer)
 
-export const createWorkflow = (machine: string, project: string, title: string, body: string, source?: WorkflowSource): Promise<Snippet> =>
-  call<Snippet>("/v1/snippets" + onMachine(machine), writing("POST", { title, body, scope: "workflow", ...(project ? { project } : {}), ...(source ? { source } : {}) }))
+export const createPlaybook = (machine: string, project: string, title: string, body: string, source?: PlaybookSource): Promise<Snippet> =>
+  call<Snippet>("/v1/snippets" + onMachine(machine), writing("POST", { title, body, scope: "playbook", ...(project ? { project } : {}), ...(source ? { source } : {}) }))
 
-export const updateWorkflow = (machine: string, id: string, title: string, body: string, source?: WorkflowSource | null): Promise<Snippet> =>
+export const updatePlaybook = (machine: string, id: string, title: string, body: string, source?: PlaybookSource | null): Promise<Snippet> =>
   call<Snippet>("/v1/snippets/" + encodeURIComponent(id) + onMachine(machine), writing("PATCH", { title, body, ...(source !== undefined ? { source } : {}) }))
 
-export const deleteWorkflow = (machine: string, id: string): Promise<{ ok: boolean; deleted: string }> =>
+export const deletePlaybook = (machine: string, id: string): Promise<{ ok: boolean; deleted: string }> =>
   call<{ ok: boolean; deleted: string }>("/v1/snippets/" + encodeURIComponent(id) + onMachine(machine), writing("DELETE"))
 
 /**

@@ -80,7 +80,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "usage" | "sessions" | "devices" | "projects" | "workflow" | "plan" | "settings" | "notifications" | "work" | "verify" | "archive" | "squad" | "documents" | "peer-access" | "transparency"
+type Page = "usage" | "sessions" | "devices" | "projects" | "playbook" | "plan" | "settings" | "notifications" | "work" | "verify" | "archive" | "squad" | "documents" | "peer-access" | "transparency"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -94,7 +94,7 @@ const PAGES: { id: Page; nav: string; icon: SidebarIconName; key?: string; text?
   { id: "sessions", nav: "nav-sessions", icon: "sessions", key: "webSessions", ready: true },
   { id: "projects", nav: "nav-projects", icon: "projects", key: "webProjects", ready: false },
   { id: "usage", nav: "nav-usage", icon: "usage", ready: false },
-  { id: "workflow", nav: "nav-workflow", icon: "workflow", ready: false },
+  { id: "playbook", nav: "nav-playbook", icon: "playbook", ready: false },
   { id: "plan", nav: "nav-plan", icon: "plan", key: "webPlan", ready: false },
   { id: "devices", nav: "nav-devices", icon: "devices", key: "webDevices", ready: false },
   { id: "notifications", nav: "nav-notifications", icon: "notifications", ready: false },
@@ -1022,7 +1022,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       aria-keyshortcuts={p.id === "sessions" ? shortcutAria("sessions") : undefined}
     >
       <SidebarIcon name={p.icon} />
-      {p.id === "usage" ? nextWord("usageOverview") : p.id === "notifications" ? nextWord("notificationNav") : p.id === "workflow" ? catalogWord("workflow", "workflow") : p.key ? T[p.key] : p.text}
+      {p.id === "usage" ? nextWord("usageOverview") : p.id === "notifications" ? nextWord("notificationNav") : p.id === "playbook" ? catalogWord("playbook", "playbook") : p.key ? T[p.key] : p.text}
       {tooOldMark(p.id)}
       {p.id === "sessions" && <kbd className="sidebar-shortcut" aria-hidden="true">{shortcutLabel("sessions")}</kbd>}
     </button>
@@ -1138,7 +1138,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
               {tooOldMark("work")}
               <kbd className="sidebar-shortcut" aria-hidden="true">{shortcutLabel("board")}</kbd>
             </button>
-            {sidebarPages.filter((p) => p.id === "workflow").map(sidebarPage)}
+            {sidebarPages.filter((p) => p.id === "playbook").map(sidebarPage)}
             <button
               className="sidebar-item"
               id="nav-squad"

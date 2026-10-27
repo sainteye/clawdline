@@ -121,7 +121,7 @@ export const CARRIED = {
   screen: "GET /v1/sessions/{id}/screen",
   send: "POST /v1/sessions/{id}/send",
   "session-receipt": "GET /v1/sessions/{id}/cloud-receipts/{request}?action=&execution_generation=",
-  "session-snippets": "GET /v1/workflow-project?session={id}",
+  "session-snippets": "GET /v1/playbook-project?session={id}",
   "sessions.list": "GET /v1/sessions?parts=list (one machine-level display read)",
   // An opened waiting Session whose question has not come asks for its one row
   // (`relay-reader.ts` askForOpenedQuestion), when the machine advertises it.

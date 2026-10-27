@@ -481,12 +481,11 @@ that value with `--key <value>` and the same action, id and JSON content. Do not
 a new create key after a dropped connection. Success prints saved JSON; exit 1 means a
 request failed or was refused, exit 2 means invalid CLI input. Reread the list to verify.
 
-**HTTP clients and older CLIs.** Playbooks use `scope: "workflow"` on `/v1/snippets`, not
-a separate Playbook endpoint. This is unrelated to the retired Session workflow
-reporting route. GET returns `{project?, snippets}`; filter `scope == "workflow"`.
+**HTTP clients.** Playbooks use `scope: "playbook"` on `/v1/snippets`.
+GET returns `{project?, snippets}`; filter `scope == "playbook"`.
 POST creates (`title`, `body`, `scope`, optional `project` and `source`); PATCH
 `/v1/snippets/<id>` changes supplied fields; DELETE removes that id. POST
-`/v1/snippets/order` accepts `{"scope":"workflow","project":"<key>","order":["<id>","<id>"]}`
+`/v1/snippets/order` accepts `{"scope":"playbook","project":"<key>","order":["<id>","<id>"]}`
 with every member of the group exactly once. Omit `project` for global definitions.
 Use this machine's `X-Clawdline-Orchestrator` credential (§2), JSON content type and a
 stable `Idempotency-Key` on every write, including DELETE and reorder. Never print the

@@ -16,7 +16,7 @@ const namedSources = {
   promo: "src/pages/plan/promo.ts",
   planSimulation: "src/legacy/js/net/billing.js",
   builtinPersona: "src/builtin-display-source.json", builtinSkill: "src/builtin-display-source.json",
-  admin: "src/cloud/admin/words.ts", workflow: "src/workflow-words.ts",
+  admin: "src/cloud/admin/words.ts", playbook: "src/playbook-words.ts",
   notifications: "src/pages/notifications.tsx", dispatchPolicy: "src/pages/settings/window/DispatchPolicyPane.tsx",
   transcript: "src/session/Transcript.tsx",
   bar: "src/bar/words.ts", legacy: "src/legacy/js/core/i18n.js", next: "src/next-strings.ts",

@@ -79,7 +79,7 @@ func runPlaybook(args []string, stdin io.Reader, stdout, stderr io.Writer, open 
 			}
 		}
 		if op == "create" {
-			body["scope"] = json.RawMessage(`"workflow"`)
+			body["scope"] = json.RawMessage(`"playbook"`)
 			if *project != "" {
 				body["project"], _ = json.Marshal(*project)
 			}
@@ -120,7 +120,7 @@ func runPlaybook(args []string, stdin io.Reader, stdout, stderr io.Writer, open 
 			if json.Unmarshal(raw, &row) != nil {
 				return 1
 			}
-			if row.Scope == "workflow" {
+			if row.Scope == "playbook" {
 				filtered = append(filtered, raw)
 				found = found || row.ID == fs.Arg(0)
 			}

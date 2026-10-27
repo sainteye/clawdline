@@ -2,15 +2,6 @@
 
 # Project Playbooks
 
-Playbooks were called Workflows until 2026-10-23. The name changed because
-Claude Code ships an unrelated Workflow tool that orchestrates many subagents,
-and the shared word made a person's "start the workflow" ambiguous to an
-assistant. A Playbook is not that tool: it is one saved message sent to one
-existing Session. Stored and exchanged values keep the old word so older
-machines, consoles and saved rows keep working: the `workflow` reusable-text
-scope, the `[Clawdline-Workflow …]` to-do marker the daemon parses, the
-`workflow_running` refusal, and the `workflow.*` catalog keys.
-
 A Playbook is a Project-scoped name and complete launch message. It may start
 with a Skill invocation, but its launch message remains editable and a Playbook
 made from an empty draft is equally valid. Imports also save a source reference
@@ -44,7 +35,7 @@ Playbook tab names the update requirement.
 
 ## Storage and execution
 
-Playbooks use the reusable-text store's `workflow` scope, with the same title,
+Playbooks use the reusable-text store's `playbook` scope, with the same title,
 body, Project key, ordering, write receipts and capacity limits as snippets.
 The Snippet tab filters that scope out. This shares the existing encrypted
 Cloud read and command transport without giving Cloud the text in cleartext.
@@ -70,7 +61,7 @@ in another Project; the source reference is historical attribution only.
 
 Agents can create, edit, delete and reorder Playbook definitions through the
 machine's existing `/v1/snippets` routes or `clawdline playbook` commands. A Playbook
-is a record with `scope: "workflow"`; there is no separate `/v1/workflows` route.
+is a record with `scope: "playbook"`.
 The CLI supports list/create/edit/delete; reorder uses the API. Saving a definition
 does not start a Session or send its message. See [the agent connection guide](../skills/clawdline/guide.md#2-reaching-the-daemon)
 for credential handling and `clawdline guide routes` for the installed build's
@@ -99,12 +90,12 @@ Older installed CLIs can use the existing API below with their version's guide.
 
 | Method and path | Request / result |
 |---|---|
-| `GET /v1/snippets` | Returns `{ "snippets": [...] }`, including other reusable-text scopes. Filter records by `scope == "workflow"`. |
+| `GET /v1/snippets` | Returns `{ "snippets": [...] }`, including other reusable-text scopes. Filter records by `scope == "playbook"`. |
 | `GET /v1/snippets?session=<URL-encoded terminal ID>` | Returns the resolved `project: {key, label}` and visible `snippets`, including global Playbooks. Use the returned Project key rather than a worktree path. |
-| `POST /v1/snippets` | Create with `title`, `body`, `scope: "workflow"`, optional `project` and `source`. Returns the saved record. |
+| `POST /v1/snippets` | Create with `title`, `body`, `scope: "playbook"`, optional `project` and `source`. Returns the saved record. |
 | `PATCH /v1/snippets/<id>` | Change only the supplied writable fields; omitted fields retain their values. Returns the saved record. |
 | `DELETE /v1/snippets/<id>` | Returns `{ "ok": true, "deleted": "<id>" }`. |
-| `POST /v1/snippets/order` | Send `{ "scope": "workflow", "project": "<key>", "order": ["<id>", ...] }` with every member of that group exactly once. Omit `project` for the global group. Returns `ok`, `scope`, optional `project`, and the ordered `snippets`. |
+| `POST /v1/snippets/order` | Send `{ "scope": "playbook", "project": "<key>", "order": ["<id>", ...] }` with every member of that group exactly once. Omit `project` for the global group. Returns `ok`, `scope`, optional `project`, and the ordered `snippets`. |
 
 Reads require a valid machine or paired-device credential. Writes require the
 machine's `X-Clawdline-Orchestrator` token or a paired device allowed to send.
@@ -117,34 +108,34 @@ the shell and pass it through a header file descriptor so it does not appear
 in process arguments. Do not enable shell tracing or print the token:
 
 ```sh
-WORKFLOW_STATE="${CLAWDLINE_NEXT_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/clawdline-next}"
-WORKFLOW_URL="http://127.0.0.1:${CLAWDLINE_NEXT_PORT:-7727}"
-workflow_auth() { printf 'X-Clawdline-Orchestrator: %s\n' "$(cat "$WORKFLOW_STATE/orchestrator-token")"; }
+PLAYBOOK_STATE="${CLAWDLINE_NEXT_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/clawdline-next}"
+PLAYBOOK_URL="http://127.0.0.1:${CLAWDLINE_NEXT_PORT:-7727}"
+playbook_auth() { printf 'X-Clawdline-Orchestrator: %s\n' "$(cat "$PLAYBOOK_STATE/orchestrator-token")"; }
 
 # Discover this Session's canonical Project key; encode terminal IDs such as %47.
-curl --fail-with-body -sS -H @<(workflow_auth) --get \
-  --data-urlencode 'session=<terminal-id>' "$WORKFLOW_URL/v1/snippets"
+curl --fail-with-body -sS -H @<(playbook_auth) --get \
+  --data-urlencode 'session=<terminal-id>' "$PLAYBOOK_URL/v1/snippets"
 
 # Save create.json using the Project key returned above.
 cat > create.json <<'JSON'
-{"title":"Review changes","body":"Review the current changes and report findings.","scope":"workflow","project":"<resolved-project-key>"}
+{"title":"Review changes","body":"Review the current changes and report findings.","scope":"playbook","project":"<resolved-project-key>"}
 JSON
-WORKFLOW_CREATE_KEY="$(uuidgen)"
-curl --fail-with-body -sS -H @<(workflow_auth) \
-  -H 'Content-Type: application/json' -H "Idempotency-Key: $WORKFLOW_CREATE_KEY" \
-  --data-binary @create.json "$WORKFLOW_URL/v1/snippets"
+PLAYBOOK_CREATE_KEY="$(uuidgen)"
+curl --fail-with-body -sS -H @<(playbook_auth) \
+  -H 'Content-Type: application/json' -H "Idempotency-Key: $PLAYBOOK_CREATE_KEY" \
+  --data-binary @create.json "$PLAYBOOK_URL/v1/snippets"
 
 # Use the returned id. Each new logical operation gets its own key.
-WORKFLOW_EDIT_KEY="$(uuidgen)"
-curl --fail-with-body -sS -X PATCH -H @<(workflow_auth) \
-  -H 'Content-Type: application/json' -H "Idempotency-Key: $WORKFLOW_EDIT_KEY" \
+PLAYBOOK_EDIT_KEY="$(uuidgen)"
+curl --fail-with-body -sS -X PATCH -H @<(playbook_auth) \
+  -H 'Content-Type: application/json' -H "Idempotency-Key: $PLAYBOOK_EDIT_KEY" \
   --data-binary '{"body":"Review the changes, prioritizing correctness and regressions."}' \
-  "$WORKFLOW_URL/v1/snippets/<returned-id>"
+  "$PLAYBOOK_URL/v1/snippets/<returned-id>"
 
-WORKFLOW_DELETE_KEY="$(uuidgen)"
-curl --fail-with-body -sS -X DELETE -H @<(workflow_auth) \
-  -H "Idempotency-Key: $WORKFLOW_DELETE_KEY" \
-  "$WORKFLOW_URL/v1/snippets/<returned-id>"
+PLAYBOOK_DELETE_KEY="$(uuidgen)"
+curl --fail-with-body -sS -X DELETE -H @<(playbook_auth) \
+  -H "Idempotency-Key: $PLAYBOOK_DELETE_KEY" \
+  "$PLAYBOOK_URL/v1/snippets/<returned-id>"
 ```
 
 Replace placeholders before running. To create a global Playbook, omit the
@@ -186,6 +177,18 @@ Validation refusals use `{ "error": "<code>", "detail": "...", "counts": {...} }
 
 Implementation references: `internal/transport/http/snippets.go`,
 `internal/domain/snippet/snippet.go`, and `internal/transport/http/receipts.go`.
+
+## Upgrading saved definitions
+
+The store upgrades existing definitions and source attribution to the `playbook` scope
+and `playbook_sources` table in one transaction. It preserves record IDs, Project keys,
+ordering, authored messages and timestamps. Existing Session to-do metadata is converted
+to `[Clawdline-Playbook …]` only when it is a valid trailing run marker; ordinary message
+content is left intact. Send, read, completion and version receipts are unchanged. A second
+open is a no-op. Current writes accept only `playbook`; the retired scope is not an alias.
+Legacy definition-write receipts become expired tombstones: retry keys and digests
+remain, so an old response cannot revive the retired scope or create a duplicate.
+The console page is `#page=playbook`, and the running refusal is `playbook_running`.
 
 ## Acceptance
 

@@ -1,0 +1,64 @@
+.snippets-tabs { display: flex; gap: .25rem; padding: .5rem 1rem; border-bottom: 1px solid var(--line); }
+.snippets-tabs button { flex: 1; padding: .55rem; border-radius: .5rem; }
+.snippets-tabs button[aria-selected="true"] { background: var(--card-hi); color: var(--ink); font-weight: 700; }
+.playbook-picker { display: block; }
+.playbook-detail-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .5rem 1rem; border-bottom: 1px solid var(--line); }
+.playbook-detail-nav button { padding: .55rem .4rem; color: var(--accent); font: inherit; cursor: pointer; }
+.playbook-detail-actions { display: flex; gap: .25rem; white-space: nowrap; }
+.playbook-detail-actions button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 8px; color: var(--dim); }
+.playbook-detail-actions button:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.playbook-detail-actions .playbook-delete:hover:not(:disabled) { color: var(--danger, #d84a4a); }
+.playbook-detail-actions .work-icon { width: 18px; height: 18px; }
+.playbook-detail-actions button:disabled { opacity: .5; cursor: default; }
+.playbook-quick-message .work-voice-labelled > span { display: block; margin-bottom: 6px; color: var(--faint); font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.playbook-quick-message .work-voice-field { margin: 0; }
+.playbook-quick-message .work-voice-box textarea { display: block; margin: 0; padding-bottom: 48px; }
+.playbook-detail-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.playbook-detail-scroll .playbook-launch { border-top: 0; background: transparent; }
+.playbook-detail-scroll .playbook-launch p { max-height: none; overflow: visible; }
+.playbook-picker-error { padding: .8rem .75rem; color: var(--danger, #d84a4a); }
+.playbook-picker-error p { margin: 0 0 .5rem; }
+.playbook-picker-error button { color: var(--ink); font: inherit; }
+.playbook-picker-notice { margin: .5rem .75rem; color: var(--dim); font-size: .84rem; line-height: 1.45; }
+.playbook-picker-group { margin-top: .7rem; }
+.playbook-picker-row { display: grid; gap: .25rem; width: 100%; min-height: 3.4rem; text-align: left; padding: .65rem .75rem; border: 1px solid transparent; border-radius: .65rem; background: none; color: var(--ink); font: inherit; cursor: pointer; }
+.playbook-picker-row + .playbook-picker-row { margin-top: .12rem; }
+.playbook-picker-row:hover, .playbook-picker-row:focus-visible { background: var(--card-hi); }
+.playbook-picker-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.playbook-picker-row[aria-pressed="true"] { background: var(--card-hi); border-color: var(--accent); }
+.playbook-picker-row strong { color: var(--accent); font-size: .9rem; font-weight: 650; overflow-wrap: anywhere; }
+.playbook-picker-row small { width: fit-content; padding: .15rem .45rem; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: .35rem; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); font-size: .72rem; font-weight: 650; }
+.playbook-picker-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font-size: .84rem; line-height: 1.45; }
+.playbook-launch { flex: 0 1 auto; min-height: 0; padding: 1rem 1.25rem; border-top: 1px solid var(--line); background: var(--card-hi); }
+.playbook-launch-label { color: var(--faint); font-size: .75rem; font-weight: 650; letter-spacing: .04em; }
+.playbook-launch h3 { margin: .45rem 0 .4rem; font-size: 1.05rem; }
+.playbook-launch p { margin: 0; color: var(--dim); line-height: 1.55; white-space: pre-wrap; max-height: min(10rem, 24dvh); overflow: auto; }
+.playbook-launch .playbook-launch-source { width: fit-content; margin-top: .65rem; padding: .2rem .5rem; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: .4rem; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); font-size: .8rem; font-weight: 650; }
+.playbook-launch [role="status"] { margin-top: .65rem; color: var(--accent); font-size: .83rem; }
+.playbook-launch [role="alert"] { margin: .6rem 0 0; color: var(--danger, #d84a4a); }
+.snippets-sheet .buttons .playbook-start { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.75rem; padding: .65rem 1rem; border: 1px solid var(--accent); border-radius: .6rem; background: var(--accent); color: #17191d; font: inherit; font-weight: 650; cursor: pointer; }
+.snippets-sheet .buttons .playbook-start:disabled { opacity: .5; cursor: default; }
+.playbook-start-spinner { display: inline-block; box-sizing: border-box; flex: none; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: playbook-start-spin .8s linear infinite; }
+@keyframes playbook-start-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .playbook-start-spinner { animation: none; } }
+@media (max-width: 899px) {
+  .snippets-playbook-sheet { height: min(680px, calc(var(--vvh, 100dvh) - 48px)); }
+}
+
+.snippet-skeleton { display: grid; gap: 2px; width: 100%; }
+.snippet-skeleton-row { display: grid; gap: 7px; padding: 10px 12px; min-height: 58px; }
+.snippet-skeleton-row span {
+  display: block; height: 11px; border-radius: 5px;
+  /* Use the end-work sheet's visible bones instead of dimming a hover surface. */
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--faint) 34%, var(--card)) 0%,
+    color-mix(in srgb, var(--faint) 56%, var(--card)) 50%,
+    color-mix(in srgb, var(--faint) 34%, var(--card)) 100%) 0 0 / 200% 100%;
+  animation: snippet-skeleton-sweep 1.4s ease-in-out infinite;
+}
+.snippet-skeleton-title { width: 38%; }
+.snippet-skeleton-body { width: 76%; }
+.snippet-skeleton-row:nth-child(2) .snippet-skeleton-title { width: 55%; }
+.snippet-skeleton-row:nth-child(2) .snippet-skeleton-body { width: 61%; }
+@keyframes snippet-skeleton-sweep { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .snippet-skeleton-row span { animation: none; } }

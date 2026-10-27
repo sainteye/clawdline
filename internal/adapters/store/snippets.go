@@ -16,7 +16,7 @@ import (
 // snippet under its own state root and is still running beside this daemon on
 // some machines; two writers on one directory, each with its own idea of what
 // a valid file is, is the shape this rewrite exists to stop. User rows start
-// empty, alongside one editable global starter Workflow. The old files are
+// empty, alongside one editable global starter Playbook. The old files are
 // left exactly where they are, and docs say how to carry them over on purpose.
 //
 // Everything a write decides — the position a new snippet lands at, whether one
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS snippets (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS snippets_by_place ON snippets(scope, project, position);
-CREATE TABLE IF NOT EXISTS workflow_sources (
+CREATE TABLE IF NOT EXISTS playbook_sources (
   snippet_id TEXT PRIMARY KEY,
   source_json TEXT NOT NULL
 );
@@ -51,15 +51,26 @@ CREATE TABLE IF NOT EXISTS snippet_seeds (
 `
 
 func openSnippets(db *sql.DB) error {
-	if _, err := db.Exec(snippetSchema); err != nil {
+	tx, err := db.Begin()
+	if err != nil {
 		return err
 	}
-	return seedDefaultWorkflow(db)
+	defer tx.Rollback()
+	if _, err := tx.Exec(snippetSchema); err != nil {
+		return err
+	}
+	if err := migratePlaybookDefinitions(tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return seedDefaultPlaybook(db)
 }
 
 // Plant the starter once, including on upgrades. The ledger survives deletion,
 // while a full existing collection can make room and receive it on a later open.
-func seedDefaultWorkflow(db *sql.DB) error {
+func seedDefaultPlaybook(db *sql.DB) error {
 	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
 		return err
@@ -77,26 +88,26 @@ func seedDefaultWorkflow(db *sql.DB) error {
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM snippets`).Scan(&total); err != nil {
 		return err
 	}
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM snippets WHERE scope = ? AND project = ''`, snippet.Workflow).Scan(&global); err != nil {
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM snippets WHERE scope = ? AND project = ''`, snippet.Playbook).Scan(&global); err != nil {
 		return err
 	}
 	if total >= SnippetTotalLimit || global >= SnippetScopeLimit {
 		return nil
 	}
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM snippets WHERE scope = ? AND project = '' AND title IN (?, ?)`,
-		snippet.Workflow, snippet.DefaultZeroReviewTitle, "歸零審查").Scan(&existing); err != nil {
+		snippet.Playbook, snippet.DefaultZeroReviewTitle, "歸零審查").Scan(&existing); err != nil {
 		return err
 	}
 	now := time.Now().Unix()
 	if existing == 0 {
 		var highest int64
 		if err := tx.QueryRow(`SELECT COALESCE(MAX(position), 0) FROM snippets WHERE scope = ? AND project = ''`,
-			snippet.Workflow).Scan(&highest); err != nil {
+			snippet.Playbook).Scan(&highest); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO snippets (id, title, body, scope, project, position, created_at, updated_at)
 			VALUES (?, ?, ?, ?, '', ?, ?, ?)`, snippet.DefaultZeroReviewID,
-			snippet.DefaultZeroReviewTitle, snippet.DefaultZeroReviewBody, snippet.Workflow,
+			snippet.DefaultZeroReviewTitle, snippet.DefaultZeroReviewBody, snippet.Playbook,
 			snippet.NextPosition(highest), now, now); err != nil {
 			return err
 		}
@@ -142,7 +153,7 @@ func (s *Store) Snippets(ctx context.Context) ([]snippet.Record, error) {
 	}
 	rows, err := s.rd.QueryContext(ctx,
 		`SELECT s.id, s.title, s.body, s.scope, s.project, s.position, s.created_at, s.updated_at,
-		 COALESCE(w.source_json, '') FROM snippets s LEFT JOIN workflow_sources w ON w.snippet_id = s.id`)
+		 COALESCE(w.source_json, '') FROM snippets s LEFT JOIN playbook_sources w ON w.snippet_id = s.id`)
 	if err != nil {
 		return nil, classify(err)
 	}
@@ -155,7 +166,7 @@ func (s *Store) Snippets(ctx context.Context) ([]snippet.Record, error) {
 			rows.Close()
 			return nil, err
 		}
-		if err := decodeWorkflowSource(source, &r); err != nil {
+		if err := decodePlaybookSource(source, &r); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -243,7 +254,7 @@ func (s *Store) CreateSnippet(ctx context.Context, id string, f snippet.Fields,
 			candidate.Project, candidate.Position, candidate.CreatedAt, candidate.UpdatedAt); err != nil {
 			return 0, err
 		}
-		if err := writeWorkflowSource(ctx, tx, candidate); err != nil {
+		if err := writePlaybookSource(ctx, tx, candidate); err != nil {
 			return 0, err
 		}
 		made = candidate
@@ -304,7 +315,7 @@ func (s *Store) UpdateSnippet(ctx context.Context, id string, f snippet.Fields,
 			next.Position, next.UpdatedAt, next.ID); err != nil {
 			return 0, err
 		}
-		if err := writeWorkflowSource(ctx, tx, next); err != nil {
+		if err := writePlaybookSource(ctx, tx, next); err != nil {
 			return 0, err
 		}
 		saved = next
@@ -333,7 +344,7 @@ func (s *Store) DeleteSnippet(ctx context.Context, id string, now time.Time) (*s
 		if _, err := tx.ExecContext(ctx, `DELETE FROM snippets WHERE id = ?`, id); err != nil {
 			return 0, err
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM workflow_sources WHERE snippet_id = ?`, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM playbook_sources WHERE snippet_id = ?`, id); err != nil {
 			return 0, err
 		}
 		return 1, nil
@@ -381,7 +392,7 @@ func oneSnippet(ctx context.Context, tx *sql.Tx, id string) (snippet.Record, boo
 	var scope, project, source string
 	err := tx.QueryRowContext(ctx,
 		`SELECT s.id, s.title, s.body, s.scope, s.project, s.position, s.created_at, s.updated_at,
-		 COALESCE(w.source_json, '') FROM snippets s LEFT JOIN workflow_sources w ON w.snippet_id = s.id
+		 COALESCE(w.source_json, '') FROM snippets s LEFT JOIN playbook_sources w ON w.snippet_id = s.id
 		 WHERE s.id = ?`, id).
 		Scan(&r.ID, &r.Title, &r.Body, &scope, &project, &r.Position, &r.CreatedAt, &r.UpdatedAt, &source)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -391,13 +402,13 @@ func oneSnippet(ctx context.Context, tx *sql.Tx, id string) (snippet.Record, boo
 		return snippet.Record{}, false, err
 	}
 	r.Scope, r.Project = snippet.Scope(scope), project
-	if err := decodeWorkflowSource(source, &r); err != nil {
+	if err := decodePlaybookSource(source, &r); err != nil {
 		return snippet.Record{}, false, err
 	}
 	return r, true, nil
 }
 
-func decodeWorkflowSource(raw string, r *snippet.Record) error {
+func decodePlaybookSource(raw string, r *snippet.Record) error {
 	if raw == "" {
 		return nil
 	}
@@ -409,16 +420,16 @@ func decodeWorkflowSource(raw string, r *snippet.Record) error {
 	return nil
 }
 
-func writeWorkflowSource(ctx context.Context, tx *sql.Tx, r snippet.Record) error {
+func writePlaybookSource(ctx context.Context, tx *sql.Tx, r snippet.Record) error {
 	if r.Source == nil {
-		_, err := tx.ExecContext(ctx, `DELETE FROM workflow_sources WHERE snippet_id = ?`, r.ID)
+		_, err := tx.ExecContext(ctx, `DELETE FROM playbook_sources WHERE snippet_id = ?`, r.ID)
 		return err
 	}
 	raw, err := json.Marshal(r.Source)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO workflow_sources (snippet_id, source_json) VALUES (?, ?)
+	_, err = tx.ExecContext(ctx, `INSERT INTO playbook_sources (snippet_id, source_json) VALUES (?, ?)
 		ON CONFLICT(snippet_id) DO UPDATE SET source_json = excluded.source_json`, r.ID, string(raw))
 	return err
 }
@@ -426,7 +437,7 @@ func writeWorkflowSource(ctx context.Context, tx *sql.Tx, r snippet.Record) erro
 func groupSnippets(ctx context.Context, tx *sql.Tx, scope snippet.Scope, project string) ([]snippet.Record, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT s.id, s.title, s.body, s.scope, s.project, s.position, s.created_at, s.updated_at,
-		 COALESCE(w.source_json, '') FROM snippets s LEFT JOIN workflow_sources w ON w.snippet_id = s.id
+		 COALESCE(w.source_json, '') FROM snippets s LEFT JOIN playbook_sources w ON w.snippet_id = s.id
 		 WHERE s.scope = ? AND s.project = ?`, string(scope), project)
 	if err != nil {
 		return nil, err
@@ -440,7 +451,7 @@ func groupSnippets(ctx context.Context, tx *sql.Tx, scope snippet.Scope, project
 			rows.Close()
 			return nil, err
 		}
-		if err := decodeWorkflowSource(source, &r); err != nil {
+		if err := decodePlaybookSource(source, &r); err != nil {
 			rows.Close()
 			return nil, err
 		}

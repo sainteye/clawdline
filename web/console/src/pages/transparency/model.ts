@@ -12,7 +12,7 @@ export const facets: Record<Facet, readonly string[]> = {
   scope: ["default", "automatic", "conditional", "common"],
   agents: ["claude", "codex", "antigravity"],
   stages: ["start", "turn", "finish"],
-  scenes: ["general", "memory", "role", "skill", "board", "todo", "task", "handoff", "machine", "workflow"],
+  scenes: ["general", "memory", "role", "skill", "board", "todo", "task", "handoff", "machine", "playbook"],
 }
 export function filtersFromHash(hash: string): Filters {
   const params = new URLSearchParams(hash.replace(/^#/, ""))

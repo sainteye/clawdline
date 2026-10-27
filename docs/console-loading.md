@@ -39,7 +39,7 @@ Person-triggered asynchronous writes and submissions have a separate [action wai
 | SK-27 | Background command output panel | 背景命令輸出面板 | Conditional | P2 | `web/console/src/session/ShellPanel.tsx:160` |
 | SK-28 | My messages list | 我的訊息清單 | Conditional | P3 | `web/console/src/session/UserMessages.tsx:151`; `web/console/src/session/UserMessages.tsx:227` |
 | SK-29 | Resource coordination panel | 資源協調面板 | Conditional | P3 | `web/console/src/session/ResourceCoordination.tsx:70` |
-| SK-30 | Playbook skill detail and source | 常用流程的技能詳情與來源 | Implemented | P2 | `web/console/src/pages/workflow.tsx:342`; `web/console/src/pages/workflow.tsx:361` |
+| SK-30 | Playbook skill detail and source | 常用流程的技能詳情與來源 | Implemented | P2 | `web/console/src/pages/playbook.tsx:342`; `web/console/src/pages/playbook.tsx:361` |
 | SK-31 | Squad skill import sources | 角色小隊的匯入技能來源 | Implemented | P2 | `web/console/src/pages/Squad.tsx:853`; `web/console/src/pages/Squad.tsx:859` |
 | SK-32 | Settings capacity monitoring | 設定的容量監測區塊 | Conditional | P3 | `web/console/src/pages/settings/CapacityBlock.tsx:103` |
 | SK-33 | Admin campaign list | 管理後台的活動清單 | Conditional | P3 | `web/console/src/cloud/admin/PromoManagement.tsx:269` |
@@ -82,6 +82,6 @@ For future candidates, retain existing rows during refresh when they are still v
 
 The 19 approved screens share decorative row, card, detail and text geometry through `LoadingSkeleton.tsx` and `loading-skeleton.js`. Each loading region carries its stable `data-loading-id`. The shapes use existing neutral theme tokens, hide decorative content from assistive technology, keep the existing translated loading label, delay their appearance to avoid flashing on quick reads, and stop the sheen for reduced motion. Narrow panels shrink without horizontal overflow.
 
-Fleet Sessions keep each machine heading and its offline or refusal explanation. Device cards, verification rows and details, schedules and their history, document lists, project readiness, explorer directories and file contents, instruction files, worktrees, terminal lists, token bills, assignment choices and their task details, Session tasks, Git files and diffs, Workflow sources and squad import sources now have an initial-reading footprint. File lists and instruction content use independent regions; loaded directory context stays visible while a selected file is read.
+Fleet Sessions keep each machine heading and its offline or refusal explanation. Device cards, verification rows and details, schedules and their history, document lists, project readiness, explorer directories and file contents, instruction files, worktrees, terminal lists, token bills, assignment choices and their task details, Session tasks, Git files and diffs, Playbook sources and squad import sources now have an initial-reading footprint. File lists and instruction content use independent regions; loaded directory context stays visible while a selected file is read.
 
 Existing retained rows remain authoritative during refresh where the screen already supports retention. Send, save, delete, assignment, terminal creation, retry errors, permission checks and other meaningful progress retain their current presentation. Skeletons contain no invented numbers, diff signs, active controls or real data. No read transport, retry policy, cache or request budget changes.

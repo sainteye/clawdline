@@ -30,13 +30,13 @@ export const REVIEW_SURFACES: Surface[] = [
   { id: 'navigation', origin: 'app', path: '/', state: 'ready', ready: '#brand', action: 'navigation' },
   { id: 'session-detail-composer', origin: 'app', path: '/#session=review-session', state: 'ready', ready: '#composer' },
   { id: 'session-plan-card', origin: 'app', path: '/#session=review-session', state: 'ready', ready: '.plan-card' },
-  ...['settings', 'workflow', 'notifications', 'work', 'projects', 'plan', 'documents'].map(id => ({ id, origin: 'app' as const, path: '/#page=' + id, state: 'ready' as const, ready: `[data-page-view="${id}"]:not([hidden])` })),
+  ...['settings', 'playbook', 'notifications', 'work', 'projects', 'plan', 'documents'].map(id => ({ id, origin: 'app' as const, path: '/#page=' + id, state: 'ready' as const, ready: `[data-page-view="${id}"]:not([hidden])` })),
   { id: 'machine-language-menu', origin: 'app', path: '/settings.html', state: 'ready', ready: '[role="tablist"]', action: 'machine-language-menu' },
   { id: 'machine-voice', origin: 'app', path: '/settings.html', state: 'ready', ready: '[role="tablist"]', action: 'machine-voice' },
   { id: 'cloud-pairing-open', origin: 'cloud', path: '/', state: 'pairing', ready: '#cloud-pair-start', action: 'cloud-pairing-open' },
   { id: 'send-unknown', origin: 'app', path: '/#session=review-session', state: 'ready', ready: '#composer', action: 'send-unknown' },
   { id: 'machine-settings', origin: 'app', path: '/settings.html', state: 'ready', ready: '[role="tablist"]' },
-  { id: 'workflow-editor', origin: 'app', path: '/#page=workflow', state: 'ready', ready: '.workflow-primary', action: 'workflow-editor' },
+  { id: 'playbook-editor', origin: 'app', path: '/#page=playbook', state: 'ready', ready: '.playbook-primary', action: 'playbook-editor' },
   { id: 'board-modal', origin: 'app', path: '/#page=work', state: 'ready', ready: '#work .work-head-tools button', action: 'board-modal' },
   { id: 'project-files', origin: 'app', path: '/#page=projects', state: 'ready', ready: '.project-row-settings', action: 'project-files' },
   { id: 'document-detail', origin: 'app', path: '/#document=1&machine=this-mac&session=review-session&scope=project&path=README.md', state: 'ready', ready: '#document-body' },
@@ -204,7 +204,7 @@ test('candidate localization browser review', { timeout: 3_000_000 }, async () =
             await page.goto(result.url as string)
             await page.locator(surface.ready).first().waitFor({ state: 'visible' })
             await page.waitForFunction(() => !document.documentElement.classList.contains('booting'))
-            if (surface.id === 'workflow') await page.locator('.workflow-list-card,.workflow-empty').first().waitFor({ state: 'visible' })
+            if (surface.id === 'playbook') await page.locator('.playbook-list-card,.playbook-empty').first().waitFor({ state: 'visible' })
             if (surface.id === 'work') await page.locator('#work .work-empty,#work .work-card').first().waitFor({ state: 'visible' })
             if (surface.action === 'usage-controls') {
               assert.equal(await page.locator('#usage .usage-chart-control').count(), 2, 'Both daily charts loaded real data')
@@ -340,9 +340,9 @@ test('candidate localization browser review', { timeout: 3_000_000 }, async () =
               await page.locator('.adm-shell button[aria-busy]:visible').click()
               await page.locator('.adm-stale').waitFor({ state: 'visible' })
             }
-            if (surface.action === 'workflow-editor') {
-              await page.locator('.workflow-primary').first().click()
-              await page.locator('.workflow-editor[role="dialog"]').waitFor({ state: 'visible' })
+            if (surface.action === 'playbook-editor') {
+              await page.locator('.playbook-primary').first().click()
+              await page.locator('.playbook-editor[role="dialog"]').waitFor({ state: 'visible' })
             }
             if (surface.action === 'board-modal') {
               await page.locator('#work .work-head-tools button').first().click()

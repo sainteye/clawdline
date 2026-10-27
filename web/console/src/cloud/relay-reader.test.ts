@@ -1864,12 +1864,12 @@ test("the snippet list is asked of the machine the session is on, and is that ma
   assert.equal(last.word, "snippets")
 })
 
-test("a Cloud Session asks its machine to resolve the Project before offering Workflows", async () => {
+test("a Cloud Session asks its machine to resolve the Project before offering Playbooks", async () => {
   const client = new FakeClient()
   client.readAnswer = async (word) => word === "session-snippets"
     ? { project: { key: "/repo/project", label: "Project" }, snippets: [] }
     : { read: word }
-  const response = await reader(client, { t: 1000 }).fetch("/v1/workflow-project?session=s1")
+  const response = await reader(client, { t: 1000 }).fetch("/v1/playbook-project?session=s1")
   assert.equal(response.status, 200)
   assert.deepEqual(await response.json(), { project: { key: "/repo/project", label: "Project" }, snippets: [] })
   assert.deepEqual(client.reads.at(-1), { machine: "mac-a", word: "session-snippets", body: { row: "s1" } })

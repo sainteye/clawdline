@@ -24,7 +24,7 @@ func openSnippetStore(t *testing.T) (*Store, context.Context) {
 	return st, context.Background()
 }
 
-func TestFreshMachineGetsEditableGlobalWorkflowAndDeletedSeedStaysDeleted(t *testing.T) {
+func TestFreshMachineGetsEditableGlobalPlaybookAndDeletedSeedStaysDeleted(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(dir)
 	if err != nil {
@@ -35,7 +35,7 @@ func TestFreshMachineGetsEditableGlobalWorkflowAndDeletedSeedStaysDeleted(t *tes
 	if err != nil || len(rows) != 1 || !snippet.IsDefaultZeroReview(rows[0]) {
 		t.Fatalf("new machine starter: %#v, %v", rows, err)
 	}
-	if rows[0].Project != "" || rows[0].Scope != snippet.Workflow {
+	if rows[0].Project != "" || rows[0].Scope != snippet.Playbook {
 		t.Fatalf("starter is not global: %#v", rows[0])
 	}
 	if ref, err := st.DeleteSnippet(ctx, snippet.DefaultZeroReviewID, time.Now()); err != nil || ref != nil {
@@ -55,7 +55,7 @@ func TestFreshMachineGetsEditableGlobalWorkflowAndDeletedSeedStaysDeleted(t *tes
 	}
 }
 
-func TestWorkflowSourceSurvivesReadsEditsAndRestart(t *testing.T) {
+func TestPlaybookSourceSurvivesReadsEditsAndRestart(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(dir)
 	if err != nil {
@@ -63,7 +63,7 @@ func TestWorkflowSourceSurvivesReadsEditsAndRestart(t *testing.T) {
 	}
 	ctx := context.Background()
 	source := &snippet.SourceRef{Kind: "command", FileID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", PlaceID: "place-one", Scope: "project", Name: "Release now", Version: "version-one"}
-	fields := snippet.Fields{Title: "Release", HasTitle: true, Body: "Start release.", HasBody: true, Scope: snippet.Workflow, HasScope: true, Project: "/one", HasProject: true, Source: source, HasSource: true}
+	fields := snippet.Fields{Title: "Release", HasTitle: true, Body: "Start release.", HasBody: true, Scope: snippet.Playbook, HasScope: true, Project: "/one", HasProject: true, Source: source, HasSource: true}
 	if _, ref, err := st.CreateSnippet(ctx, "linked", fields, roomy, time.Unix(1, 0)); err != nil || ref != nil {
 		t.Fatal(ref, err)
 	}

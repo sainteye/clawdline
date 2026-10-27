@@ -432,12 +432,11 @@ clawdline playbook delete <returned-id>
 id 與 JSON 內容重試。不要因為連線中斷就產生新的建立 key。成功會印出儲存結果的 JSON；
 exit 1 表示請求失敗或遭拒，exit 2 表示 CLI 輸入無效。重新讀取清單核對結果。
 
-**HTTP 用戶端與舊版 CLI。** Playbook 使用 `/v1/snippets` 與 `scope: "workflow"`，
-不是 獨立的 Playbook endpoint，也與已退役的 Session workflow 回報路由無關。
-GET 回傳 `{project?, snippets}`，篩選 `scope == "workflow"`。
+**HTTP 用戶端。** Playbook 使用 `/v1/snippets` 與 `scope: "playbook"`。
+GET 回傳 `{project?, snippets}`，篩選 `scope == "playbook"`。
 POST 建立（`title`、`body`、`scope`、選填 `project` 與 `source`）；PATCH
 `/v1/snippets/<id>` 修改傳入的欄位；DELETE 移除該 id。POST
-`/v1/snippets/order` 接受 `{"scope":"workflow","project":"<key>","order":["<id>","<id>"]}`，
+`/v1/snippets/order` 接受 `{"scope":"playbook","project":"<key>","order":["<id>","<id>"]}`，
 同組所有成員各列一次。全域定義省略 `project`。
 使用本機 `X-Clawdline-Orchestrator` 憑證（§2）、JSON content type；每次寫入（含 DELETE 與排序）
 都帶穩定的 `Idempotency-Key`。不要印出 token 或放入 argv，也不要送出回傳紀錄中的唯讀欄位。

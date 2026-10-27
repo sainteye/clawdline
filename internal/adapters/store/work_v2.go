@@ -365,6 +365,9 @@ func openWorkV2(db *sql.DB) error {
     WHERE parent_id <> ''`); err != nil {
 		return err
 	}
+	if err := migratePlaybookRuns(db); err != nil {
+		return err
+	}
 	if err := migrateWorkV2DocumentRoles(db); err != nil {
 		return err
 	}

@@ -7,7 +7,7 @@ import english from "../../../public/catalogs/en.json" with { type: "json" }
 // @ts-expect-error -- Node runs this source test directly.
 import { resetCatalogForTest, type CatalogTag } from "../../catalog.ts"
 // @ts-expect-error -- Node runs this source test directly.
-import { localizedWorkflow, workflowWord, workflowWordFor } from "../../workflow-words.ts"
+import { localizedPlaybook, playbookWord, playbookWordFor } from "../../playbook-words.ts"
 // @ts-expect-error -- Node runs this source test directly.
 import { dictationStatus } from "../../pages/settings/window/copy.ts"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
@@ -178,9 +178,9 @@ test("standalone operations honors all nine saved languages without a paired mac
       assert.equal(say("title"), catalog["admin.title"] ?? english["admin.title"])
       assert.equal(say("campaignsCapped", { shown: 50, total: 51 }),
         (catalog["admin.campaignsCapped"] ?? english["admin.campaignsCapped"]).replace("{shown}", "50").replace("{total}", "51"))
-      assert.equal(workflowWord("zeroReviewTitle"), catalog["workflow.zeroReviewTitle"] ?? english["workflow.zeroReviewTitle"])
-      assert.equal(workflowWord("skillPrompt", { name: "My Skill / 自訂" }),
-        (catalog["workflow.skillPrompt"] ?? english["workflow.skillPrompt"]).replace("{name}", "My Skill / 自訂"))
+      assert.equal(playbookWord("zeroReviewTitle"), catalog["playbook.zeroReviewTitle"] ?? english["playbook.zeroReviewTitle"])
+      assert.equal(playbookWord("skillPrompt", { name: "My Skill / 自訂" }),
+        (catalog["playbook.skillPrompt"] ?? english["playbook.skillPrompt"]).replace("{name}", "My Skill / 自訂"))
       assert.equal(dictationStatus({ kind: "noModel" }), catalog["settings.dictationNoModel"] ?? english["settings.dictationNoModel"])
       assert.equal(dictationStatus({ kind: "unavailable" }), catalog["settings.dictationNoWhisper"] ?? english["settings.dictationNoWhisper"])
       assert.equal(dictationStatus({ kind: "ready", model: "my-model" }), catalog["template.7646119625b7"].replace("{arg0}", "my-model"))
@@ -221,11 +221,11 @@ test("operations waits for catalog validation and a broken translation falls bac
   }
 })
 
-test("pure Workflow source formatting stays compatible while edited messages remain data", () => {
-  assert.equal(workflowWordFor("zh-Hant", "skillPrompt", { name: "ctx" }), "請執行「ctx」Skill，依照其中流程完成工作並回報結果。")
-  assert.equal(workflowWordFor("fr", "workflow"), "Playbook")
-  const edited = { id: "review", title: "My review", body: "Keep my words.", scope: "workflow" as const, position: 1, created_at: 1, updated_at: 1 }
-  assert.equal(localizedWorkflow(edited), edited)
+test("pure Playbook source formatting stays compatible while edited messages remain data", () => {
+  assert.equal(playbookWordFor("zh-Hant", "skillPrompt", { name: "ctx" }), "請執行「ctx」Skill，依照其中流程完成工作並回報結果。")
+  assert.equal(playbookWordFor("fr", "playbook"), "Playbook")
+  const edited = { id: "review", title: "My review", body: "Keep my words.", scope: "playbook" as const, position: 1, created_at: 1, updated_at: 1 }
+  assert.equal(localizedPlaybook(edited), edited)
 })
 
 test("each page has its own address, and an address names one page or none", () => {

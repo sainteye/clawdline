@@ -100,12 +100,12 @@ func snippetRefusalOf(t *testing.T, rec *httptest.ResponseRecorder) snippetRefus
 }
 
 // A fresh machine offers the editable, global example without a project.
-func TestAFreshMachineAnswersTheDefaultGlobalWorkflow(t *testing.T) {
+func TestAFreshMachineAnswersTheDefaultGlobalPlaybook(t *testing.T) {
 	h := newSnippetHarness(t)
 	got := h.list("/v1/snippets")
 	if len(got.Snippets) != 1 || got.Project != nil ||
 		got.Snippets[0].ID != snippet.DefaultZeroReviewID || got.Snippets[0].Builtin != "zero_review" ||
-		got.Snippets[0].Scope != "workflow" || got.Snippets[0].Project != "" {
+		got.Snippets[0].Scope != "playbook" || got.Snippets[0].Project != "" {
 		t.Fatalf("%+v", got)
 	}
 	changed := h.write(http.MethodPatch, "/v1/snippets/"+snippet.DefaultZeroReviewID,
@@ -119,12 +119,12 @@ func TestAFreshMachineAnswersTheDefaultGlobalWorkflow(t *testing.T) {
 	}
 }
 
-func TestGlobalWorkflowIsListedForEverySessionProject(t *testing.T) {
+func TestGlobalPlaybookIsListedForEverySessionProject(t *testing.T) {
 	first, second := t.TempDir(), t.TempDir()
 	h := newSnippetHarness(t,
 		session.Session{ID: "%1", TTY: "ttys001", Assistant: "claude", CWD: first},
 		session.Session{ID: "%2", TTY: "ttys002", Assistant: "claude", CWD: second})
-	created := h.write(http.MethodPost, "/v1/snippets", `{"title":"Daily release","body":"Run the checklist.","scope":"workflow"}`)
+	created := h.write(http.MethodPost, "/v1/snippets", `{"title":"Daily release","body":"Run the checklist.","scope":"playbook"}`)
 	if created.Code != http.StatusOK {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
 	}

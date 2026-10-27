@@ -35,29 +35,29 @@ import {
 import {
   SNIPPET_CONTROLS,
   createSnippet,
-  createWorkflow,
-  deleteWorkflow,
+  createPlaybook,
+  deletePlaybook,
   deleteSnippet,
   orderSnippets,
   readSnippets,
-  readWorkflowProject,
+  readPlaybookProject,
   SnippetFailure,
   updateSnippet,
-  updateWorkflow,
+  updatePlaybook,
 } from "./snippets-api.js"
 import { VoiceTextarea } from "../pages/work/VoiceTextarea.js"
 import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { RefusalError } from "@clawdline/core"
 import { createDirectTodoV2, directTodoActionV2 } from "../pages/work/api.js"
-import { workflowTodoText } from "./workflow-run.js"
-import { workflowWord as W } from "../workflow-words.js"
+import { playbookTodoText } from "./playbook-run.js"
+import { playbookWord as W } from "../playbook-words.js"
 import { readProjectFile } from "../pages/projects/project-files-api.js"
-import { workflowSourceMatches, workflowSourceText, workflowSourceTitle } from "../workflow-source.js"
+import { playbookSourceMatches, playbookSourceText, playbookSourceTitle } from "../playbook-source.js"
 import { ClawdfatherActions, clawdfatherWord } from "./ClawdfatherActions.js"
 import { ResourceCoordination } from "./ResourceCoordination.js"
 import { catalogWord } from "../catalog.js"
 import "../pages/work/work.css"
-import "./workflow.css"
+import "./playbook.css"
 
 /**
  * Snippets — the sheet, and the editor.
@@ -129,7 +129,7 @@ function snippetSentence(failure: unknown, fallback: string): string {
 /**
  * `steward` is Clawdfather's own session. Its sheet gains a first tab of
  * Clawdfather actions and opens on it; Clawdfather stands in no project, so its
- * Snippet and Workflow tabs show the machine-wide groups only.
+ * Snippet and Playbook tabs show the machine-wide groups only.
  */
 export function Snippets({ row, steward = false }: { row: SessionRow | null; steward?: boolean }) {
   const [open, setOpen] = useState(false)
@@ -171,25 +171,25 @@ const answered: Record<string, SnippetAnswer> = {}
 /** Same stretch the transcript pane reads, so "my last message" is the same turn. */
 const TRANSCRIPT_LIMIT = 200
 
-type SheetTab = "clawdfather" | "snippet" | "workflow"
+type SheetTab = "clawdfather" | "snippet" | "playbook"
 
 function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; onClose: () => void }) {
   const T = L.strings
-  const tabs: SheetTab[] = steward ? ["clawdfather", "snippet", "workflow"] : ["snippet", "workflow"]
+  const tabs: SheetTab[] = steward ? ["clawdfather", "snippet", "playbook"] : ["snippet", "playbook"]
   const [tab, setTab] = useState<SheetTab>(tabs[0])
   const [coordination, setCoordination] = useState(false)
   const [clawdfatherDraft, setClawdfatherDraft] = useState<{ id: string; title: string; body: string } | null>(null)
   const [clawdfatherSaid, setClawdfatherSaid] = useState("")
   const [clawdfatherArmed, setClawdfatherArmed] = useState(false)
-  const [selectedWorkflow, setSelectedWorkflow] = useState<Snippet | null>(null)
-  const [startingWorkflow, setStartingWorkflow] = useState(false)
-  const [workflowError, setWorkflowError] = useState("")
-  const [workflowDraft, setWorkflowDraft] = useState<{ id?: string; title: string; body: string; global: boolean; source?: Snippet["source"] } | null>(null)
-  const [workflowSaveError, setWorkflowSaveError] = useState("")
-  const [workflowSaving, setWorkflowSaving] = useState(false)
-  const [workflowDeleting, setWorkflowDeleting] = useState(false)
-  const [workflowSourceStatus, setWorkflowSourceStatus] = useState<"checking" | "ready" | "unavailable" | "scope">("checking")
-  const [workflowPreview, setWorkflowPreview] = useState<{ id: string; body: string; name: string; version: string } | null>(null)
+  const [selectedPlaybook, setSelectedPlaybook] = useState<Snippet | null>(null)
+  const [startingPlaybook, setStartingPlaybook] = useState(false)
+  const [playbookError, setPlaybookError] = useState("")
+  const [playbookDraft, setPlaybookDraft] = useState<{ id?: string; title: string; body: string; global: boolean; source?: Snippet["source"] } | null>(null)
+  const [playbookSaveError, setPlaybookSaveError] = useState("")
+  const [playbookSaving, setPlaybookSaving] = useState(false)
+  const [playbookDeleting, setPlaybookDeleting] = useState(false)
+  const [playbookSourceStatus, setPlaybookSourceStatus] = useState<"checking" | "ready" | "unavailable" | "scope">("checking")
+  const [playbookPreview, setPlaybookPreview] = useState<{ id: string; body: string; name: string; version: string } | null>(null)
   const [projectUnresolved, setProjectUnresolved] = useState(false)
   const [answer, setAnswer] = useState<SnippetAnswer | null>(answered[row.id] ?? null)
   const [loading, setLoading] = useState(!answered[row.id])
@@ -231,72 +231,72 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
   const whose = machine ? L.machineFor(row).label : ""
   const shown = snippetOrder(model)
   const projectKey = model.project ? model.project.key : ""
-  const workflows = (error ? [] : answer?.snippets ?? []).filter((item) => item.scope === "workflow" &&
+  const playbooks = (error ? [] : answer?.snippets ?? []).filter((item) => item.scope === "playbook" &&
     (!item.project || (!projectUnresolved && item.project === projectKey)) &&
     (!projectUnresolved || item.builtin !== "zero_review"))
   const customs = (error ? [] : answer?.snippets ?? []).filter((item) => item.scope === "clawdfather")
     .sort((a, b) => a.position - b.position || a.created_at - b.created_at)
-  const currentWorkflow = workflows.find((item) => item.id === selectedWorkflow?.id) ?? null
+  const currentPlaybook = playbooks.find((item) => item.id === selectedPlaybook?.id) ?? null
   useEffect(() => {
-    if (selectedWorkflow && !currentWorkflow) setSelectedWorkflow(null)
-  }, [selectedWorkflow, currentWorkflow])
+    if (selectedPlaybook && !currentPlaybook) setSelectedPlaybook(null)
+  }, [selectedPlaybook, currentPlaybook])
 
   useEffect(() => {
-    const source = currentWorkflow?.source
-    setWorkflowPreview(null)
-    if (!currentWorkflow || !source) { setWorkflowSourceStatus("ready"); return }
-    if (!currentWorkflow.project && source.scope === "project") { setWorkflowSourceStatus("scope"); return }
+    const source = currentPlaybook?.source
+    setPlaybookPreview(null)
+    if (!currentPlaybook || !source) { setPlaybookSourceStatus("ready"); return }
+    if (!currentPlaybook.project && source.scope === "project") { setPlaybookSourceStatus("scope"); return }
     let live = true
-    setWorkflowSourceStatus("checking")
+    setPlaybookSourceStatus("checking")
     readProjectFile(source.place_id, source.file_id).then((answer) => {
       if (!live) return
-      if (!workflowSourceMatches({ source }, answer.file)) { setWorkflowSourceStatus("unavailable"); return }
-      setWorkflowPreview({ id: currentWorkflow.id, name: workflowSourceTitle(answer.file), version: answer.version,
-        body: workflowSourceText(answer.file).body })
-      setWorkflowSourceStatus("ready")
-    }).catch(() => { if (live) setWorkflowSourceStatus("unavailable") })
+      if (!playbookSourceMatches({ source }, answer.file)) { setPlaybookSourceStatus("unavailable"); return }
+      setPlaybookPreview({ id: currentPlaybook.id, name: playbookSourceTitle(answer.file), version: answer.version,
+        body: playbookSourceText(answer.file).body })
+      setPlaybookSourceStatus("ready")
+    }).catch(() => { if (live) setPlaybookSourceStatus("unavailable") })
     return () => { live = false }
-  }, [currentWorkflow])
+  }, [currentPlaybook])
 
-  const startWorkflow = async () => {
-    if (error || !currentWorkflow || (projectUnresolved && (!!currentWorkflow.project || currentWorkflow.builtin === "zero_review")) || launching.current) return
+  const startPlaybook = async () => {
+    if (error || !currentPlaybook || (projectUnresolved && (!!currentPlaybook.project || currentPlaybook.builtin === "zero_review")) || launching.current) return
     launching.current = true
-    setStartingWorkflow(true); setWorkflowError("")
-    let launchBody = currentWorkflow.body
-    if (currentWorkflow.source) {
-      if (!currentWorkflow.project && currentWorkflow.source.scope === "project") {
-        setWorkflowError(W("sourceScopeConflict")); launching.current = false; setStartingWorkflow(false); return
+    setStartingPlaybook(true); setPlaybookError("")
+    let launchBody = currentPlaybook.body
+    if (currentPlaybook.source) {
+      if (!currentPlaybook.project && currentPlaybook.source.scope === "project") {
+        setPlaybookError(W("sourceScopeConflict")); launching.current = false; setStartingPlaybook(false); return
       }
       try {
-        const source = currentWorkflow.source
+        const source = currentPlaybook.source
         const answer = await readProjectFile(source.place_id, source.file_id)
-        if (!workflowSourceMatches({ source }, answer.file)) {
-          setWorkflowError(W("sourceStartUnavailable")); launching.current = false; setStartingWorkflow(false); return
+        if (!playbookSourceMatches({ source }, answer.file)) {
+          setPlaybookError(W("sourceStartUnavailable")); launching.current = false; setStartingPlaybook(false); return
         }
-        launchBody = workflowSourceText(answer.file).body
-        if (!workflowPreview || workflowPreview.id !== currentWorkflow.id || workflowPreview.body !== launchBody ||
-            workflowPreview.name !== workflowSourceTitle(answer.file) || workflowPreview.version !== answer.version) {
-          setWorkflowPreview({ id: currentWorkflow.id, name: workflowSourceTitle(answer.file), version: answer.version, body: launchBody })
-          setWorkflowError(W("sourceChangedReview")); launching.current = false; setStartingWorkflow(false); return
+        launchBody = playbookSourceText(answer.file).body
+        if (!playbookPreview || playbookPreview.id !== currentPlaybook.id || playbookPreview.body !== launchBody ||
+            playbookPreview.name !== playbookSourceTitle(answer.file) || playbookPreview.version !== answer.version) {
+          setPlaybookPreview({ id: currentPlaybook.id, name: playbookSourceTitle(answer.file), version: answer.version, body: launchBody })
+          setPlaybookError(W("sourceChangedReview")); launching.current = false; setStartingPlaybook(false); return
         }
-      } catch { setWorkflowError(W("sourceStartUnavailable")); launching.current = false; setStartingWorkflow(false); return }
+      } catch { setPlaybookError(W("sourceStartUnavailable")); launching.current = false; setStartingPlaybook(false); return }
     }
     try {
-      const text = workflowTodoText(currentWorkflow.id, currentWorkflow.title, launchBody)
+      const text = playbookTodoText(currentPlaybook.id, currentPlaybook.title, launchBody)
       const created = await createDirectTodoV2(row.id, text)
       await directTodoActionV2(row.id, created.todo.id, "send")
-      document.dispatchEvent(new CustomEvent("clawdline:workflow-started"))
+      document.dispatchEvent(new CustomEvent("clawdline:playbook-started"))
       onClose()
     } catch (e) {
-      // The machine keeps one Workflow running per Session; nothing was written.
-      if (e instanceof RefusalError && e.code === "workflow_running") { setWorkflowError(W("alreadyRunning")); return }
+      // The machine keeps one Playbook running per Session; nothing was written.
+      if (e instanceof RefusalError && e.code === "playbook_running") { setPlaybookError(W("alreadyRunning")); return }
       // A created row is durable even when the send was refused or its answer
       // was lost. The to-do fold shows it and offers Send without recreating it.
-      document.dispatchEvent(new CustomEvent("clawdline:workflow-started"))
-      setWorkflowError(W("startUnknown"))
-    } finally { launching.current = false; setStartingWorkflow(false) }
+      document.dispatchEvent(new CustomEvent("clawdline:playbook-started"))
+      setPlaybookError(W("startUnknown"))
+    } finally { launching.current = false; setStartingPlaybook(false) }
   }
-  const editorOpen = !!draft || !!workflowDraft || !!clawdfatherDraft
+  const editorOpen = !!draft || !!playbookDraft || !!clawdfatherDraft
 
   const refresh = (options: { keepScroll?: boolean } = {}) => {
     const ticket = ++reading.current
@@ -309,15 +309,15 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
           return next
         }
         try {
-          const resolved = await readWorkflowProject(row.id)
+          const resolved = await readPlaybookProject(row.id)
           if (!resolved.project) throw new Error("missing Project identity")
-          if (alive.current && ticket === reading.current) { setProjectUnresolved(false); setWorkflowError("") }
+          if (alive.current && ticket === reading.current) { setProjectUnresolved(false); setPlaybookError("") }
           return { ...next, project: resolved.project }
         } catch {
           // An older machine still serves the Snippet tab. It cannot promise
-          // which Project's Workflow belongs in this Session.
+          // which Project's Playbook belongs in this Session.
           if (alive.current && ticket === reading.current) {
-            setWorkflowError(W("projectResolveUnavailable"))
+            setPlaybookError(W("projectResolveUnavailable"))
             setProjectUnresolved(true)
           }
           return next
@@ -362,8 +362,8 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
       if (event.key !== "Escape") return
       event.preventDefault()
       event.stopPropagation()
-      if (busy.current || workflowSaving || workflowDeleting || startingWorkflow) return
-      if (workflowDraft) closeWorkflowEditor()
+      if (busy.current || playbookSaving || playbookDeleting || startingPlaybook) return
+      if (playbookDraft) closePlaybookEditor()
       else if (clawdfatherDraft) closeClawdfatherEditor()
       else if (editorOpen) closeEditor()
       else if (coordination) setCoordination(false)
@@ -583,41 +583,41 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
     void clawdfatherWrite(() => deleteSnippet(row.id, id), "delete")
   }
 
-  const saveWorkflow = async () => {
-    if (!workflowDraft || workflowSaving) return
-    const title = workflowDraft.title.trim()
-    const body = workflowDraft.body.trim()
-    if (!title || !body) { setWorkflowSaveError(W("needsText")); return }
+  const savePlaybook = async () => {
+    if (!playbookDraft || playbookSaving) return
+    const title = playbookDraft.title.trim()
+    const body = playbookDraft.body.trim()
+    if (!title || !body) { setPlaybookSaveError(W("needsText")); return }
     if (new TextEncoder().encode(title).length > 200 || new TextEncoder().encode(body).length > 4000) {
-      setWorkflowSaveError(W("tooLong")); return
+      setPlaybookSaveError(W("tooLong")); return
     }
-    if (!workflowDraft.id && !workflowDraft.global && (!projectKey || projectUnresolved)) { setWorkflowSaveError(W("projectResolveUnavailable")); return }
-    setWorkflowSaving(true); setWorkflowSaveError("")
+    if (!playbookDraft.id && !playbookDraft.global && (!projectKey || projectUnresolved)) { setPlaybookSaveError(W("projectResolveUnavailable")); return }
+    setPlaybookSaving(true); setPlaybookSaveError("")
     try {
-      if (workflowDraft.id) await updateWorkflow(machine ?? "", workflowDraft.id, title, body, workflowDraft.source ?? null)
-      else await createWorkflow(machine ?? "", workflowDraft.global ? "" : projectKey, title, body)
-      if (await refresh({ keepScroll: true })) closeWorkflowEditor()
+      if (playbookDraft.id) await updatePlaybook(machine ?? "", playbookDraft.id, title, body, playbookDraft.source ?? null)
+      else await createPlaybook(machine ?? "", playbookDraft.global ? "" : projectKey, title, body)
+      if (await refresh({ keepScroll: true })) closePlaybookEditor()
     } catch (cause) {
-      setWorkflowSaveError(cause instanceof SnippetFailure && cause.code === "snippet_limit_reached" ? W("limitReached")
+      setPlaybookSaveError(cause instanceof SnippetFailure && cause.code === "snippet_limit_reached" ? W("limitReached")
         : cause instanceof SnippetFailure && cause.status !== null && cause.status < 500 ? W("saveRefused") : W("saveUnknown"))
-    } finally { setWorkflowSaving(false) }
+    } finally { setPlaybookSaving(false) }
   }
 
-  const closeWorkflowEditor = () => {
-    setWorkflowDraft(null)
-    setWorkflowSaveError("")
+  const closePlaybookEditor = () => {
+    setPlaybookDraft(null)
+    setPlaybookSaveError("")
   }
 
-  const removeWorkflow = async () => {
-    if (!currentWorkflow || workflowDeleting || startingWorkflow) return
-    if (!window.confirm(W("confirmDelete", { name: currentWorkflow.title }))) return
-    setWorkflowDeleting(true); setWorkflowError("")
+  const removePlaybook = async () => {
+    if (!currentPlaybook || playbookDeleting || startingPlaybook) return
+    if (!window.confirm(W("confirmDelete", { name: currentPlaybook.title }))) return
+    setPlaybookDeleting(true); setPlaybookError("")
     try {
-      await deleteWorkflow(machine ?? "", currentWorkflow.id)
-      if (await refresh()) setSelectedWorkflow(null)
+      await deletePlaybook(machine ?? "", currentPlaybook.id)
+      if (await refresh()) setSelectedPlaybook(null)
     } catch (cause) {
-      setWorkflowError(cause instanceof SnippetFailure && cause.status !== null && cause.status < 500 ? W("deleteRefused") : W("deleteUnknown"))
-    } finally { setWorkflowDeleting(false) }
+      setPlaybookError(cause instanceof SnippetFailure && cause.status !== null && cause.status < 500 ? W("deleteRefused") : W("deleteUnknown"))
+    } finally { setPlaybookDeleting(false) }
   }
 
   const save = () => {
@@ -717,7 +717,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
   return (
     <>
       <div
-        className={`sheet snippets-sheet${tab === "workflow" ? " snippets-workflow-sheet" : ""}`}
+        className={`sheet snippets-sheet${tab === "playbook" ? " snippets-playbook-sheet" : ""}`}
         ref={sheet}
         id="snippets-sheet"
         role="dialog"
@@ -728,7 +728,7 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
         <div className="snippets-head">
           <div className="snippets-heading">
             <h2 id="snippets-title">{tab === "clawdfather" ? (coordination ? catalogWord("resourceCoordination", "title") : catalogWord("literal", "56aed5587136"))
-              : tab === "snippet" ? T.webSnippets : W("workflow")}</h2>
+              : tab === "snippet" ? T.webSnippets : W("playbook")}</h2>
             <span className="snippets-where" id="snippets-where">
               {[whose, model.project ? model.project.label : ""].filter(Boolean).join(" · ")}
             </span>
@@ -741,22 +741,22 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
             id="snippets-new"
             type="button" disabled={!!writing}
             ref={newButton}
-            hidden={!may.create || loading || !!error || (tab === "workflow" && !!currentWorkflow) || (tab === "clawdfather" && coordination)}
-            aria-label={tab === "workflow" ? W("new") : tab === "clawdfather" ? clawdfatherWord("new") : T.webSnippetNew}
-            title={tab === "workflow" ? W("new") : tab === "clawdfather" ? clawdfatherWord("new") : T.webSnippetNew}
-            onClick={() => tab === "workflow" ? (setWorkflowSaveError(""), setWorkflowDraft({ title: "", body: "", global: !projectKey || projectUnresolved }))
+            hidden={!may.create || loading || !!error || (tab === "playbook" && !!currentPlaybook) || (tab === "clawdfather" && coordination)}
+            aria-label={tab === "playbook" ? W("new") : tab === "clawdfather" ? clawdfatherWord("new") : T.webSnippetNew}
+            title={tab === "playbook" ? W("new") : tab === "clawdfather" ? clawdfatherWord("new") : T.webSnippetNew}
+            onClick={() => tab === "playbook" ? (setPlaybookSaveError(""), setPlaybookDraft({ title: "", body: "", global: !projectKey || projectUnresolved }))
               : tab === "clawdfather" ? openClawdfatherEditor(null) : openEditor(null)}
           >
             ＋
           </button>
         </div>
-        {tab === "clawdfather" && coordination ? null : tab === "workflow" && currentWorkflow ? <div className="workflow-detail-nav">
-          <button type="button" onClick={() => setSelectedWorkflow(null)}>← {W("backToWorkflows")}</button>
-          <span className="workflow-detail-actions">
-            <button type="button" aria-label={W("editAction")} title={W("editAction")} disabled={workflowDeleting || startingWorkflow}
-              onClick={() => { setWorkflowSaveError(""); setWorkflowDraft({ id: currentWorkflow.id, title: currentWorkflow.title, body: currentWorkflow.body, global: !currentWorkflow.project, source: currentWorkflow.source }) }}><WorkIcon name="edit" /></button>
-            <button type="button" className="workflow-delete" aria-label={workflowDeleting ? catalogWord("literal", "a5df1fce3ed1") : W("delete")} title={workflowDeleting ? catalogWord("literal", "a5df1fce3ed1") : W("delete")} disabled={workflowDeleting || startingWorkflow}
-              aria-busy={workflowDeleting} onClick={() => void removeWorkflow()}>{workflowDeleting ? <ActionSpinner /> : <WorkIcon name="delete" />}</button>
+        {tab === "clawdfather" && coordination ? null : tab === "playbook" && currentPlaybook ? <div className="playbook-detail-nav">
+          <button type="button" onClick={() => setSelectedPlaybook(null)}>← {W("backToPlaybooks")}</button>
+          <span className="playbook-detail-actions">
+            <button type="button" aria-label={W("editAction")} title={W("editAction")} disabled={playbookDeleting || startingPlaybook}
+              onClick={() => { setPlaybookSaveError(""); setPlaybookDraft({ id: currentPlaybook.id, title: currentPlaybook.title, body: currentPlaybook.body, global: !currentPlaybook.project, source: currentPlaybook.source }) }}><WorkIcon name="edit" /></button>
+            <button type="button" className="playbook-delete" aria-label={playbookDeleting ? catalogWord("literal", "a5df1fce3ed1") : W("delete")} title={playbookDeleting ? catalogWord("literal", "a5df1fce3ed1") : W("delete")} disabled={playbookDeleting || startingPlaybook}
+              aria-busy={playbookDeleting} onClick={() => void removePlaybook()}>{playbookDeleting ? <ActionSpinner /> : <WorkIcon name="delete" />}</button>
           </span>
         </div> : <div className="snippets-tabs" role="tablist" aria-label={tabs.map(tabLabel).join(" / ")}
           onKeyDown={(event) => {
@@ -782,24 +782,24 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
           ref={list}
           inert={!!writing} aria-busy={!!writing}
           onClick={pressed}
-        >{loading ? <SnippetSkeleton label={T.webReading} /> : <div dangerouslySetInnerHTML={{ __html: listHTML }} />}</div> : currentWorkflow ? <div className="workflow-detail-scroll"><div className="workflow-launch">
-          <span className="workflow-launch-label">{W("reviewLaunch")}</span><h3>{currentWorkflow.title}</h3><p>{currentWorkflow.source ? workflowPreview?.id === currentWorkflow.id ? workflowPreview.body : W("sourceChecking") : currentWorkflow.body}</p>
-          {currentWorkflow.source && <p className="workflow-launch-source">{currentWorkflow.source.kind === "command" ? W("claudeCommand") : "Skill"} · {workflowPreview?.id === currentWorkflow.id ? workflowPreview.name : currentWorkflow.source.name}</p>}
-          {currentWorkflow.source && workflowSourceStatus !== "ready" && <p role="status">{W(workflowSourceStatus === "checking" ? "sourceChecking" : workflowSourceStatus === "scope" ? "sourceScopeConflict" : "sourceStartUnavailable")}</p>}
-          {workflowError && <p role="alert">{workflowError}</p>}
-        </div></div> : <div className="snippet-list workflow-picker" id="workflow-picker" role="tabpanel" aria-labelledby="workflow-tab">
+        >{loading ? <SnippetSkeleton label={T.webReading} /> : <div dangerouslySetInnerHTML={{ __html: listHTML }} />}</div> : currentPlaybook ? <div className="playbook-detail-scroll"><div className="playbook-launch">
+          <span className="playbook-launch-label">{W("reviewLaunch")}</span><h3>{currentPlaybook.title}</h3><p>{currentPlaybook.source ? playbookPreview?.id === currentPlaybook.id ? playbookPreview.body : W("sourceChecking") : currentPlaybook.body}</p>
+          {currentPlaybook.source && <p className="playbook-launch-source">{currentPlaybook.source.kind === "command" ? W("claudeCommand") : "Skill"} · {playbookPreview?.id === currentPlaybook.id ? playbookPreview.name : currentPlaybook.source.name}</p>}
+          {currentPlaybook.source && playbookSourceStatus !== "ready" && <p role="status">{W(playbookSourceStatus === "checking" ? "sourceChecking" : playbookSourceStatus === "scope" ? "sourceScopeConflict" : "sourceStartUnavailable")}</p>}
+          {playbookError && <p role="alert">{playbookError}</p>}
+        </div></div> : <div className="snippet-list playbook-picker" id="playbook-picker" role="tabpanel" aria-labelledby="playbook-tab">
           {loading && <SnippetSkeleton label={W("loading")} />}
-          {error && <div className="workflow-picker-error" role="alert"><p>{error}</p>
+          {error && <div className="playbook-picker-error" role="alert"><p>{error}</p>
             <button type="button" onClick={() => { void refresh() }}>{W("reload")}</button></div>}
-          {projectUnresolved && !error && <p className="workflow-picker-notice" role="status">{W("projectResolveUnavailable")}</p>}
-          {!loading && !error && !projectUnresolved && workflows.length === 0 && <p className="snippets-note">{W("noSessionWorkflows")}</p>}
+          {projectUnresolved && !error && <p className="playbook-picker-notice" role="status">{W("projectResolveUnavailable")}</p>}
+          {!loading && !error && !projectUnresolved && playbooks.length === 0 && <p className="snippets-note">{W("noSessionPlaybooks")}</p>}
           {([true, false] as const).map((global) => {
-            const group = workflows.filter((item) => !item.project === global)
+            const group = playbooks.filter((item) => !item.project === global)
             if (!group.length) return null
-            return <div className="snippet-group workflow-picker-group" key={String(global)}>
+            return <div className="snippet-group playbook-picker-group" key={String(global)}>
               <h3 className="snippet-group-title">{global ? W("global") : W("projectOnly")}</h3>
-              {group.map((item) => <button type="button" key={item.id} className="workflow-picker-row"
-                onClick={() => { setSelectedWorkflow(item); setWorkflowError("") }}>
+              {group.map((item) => <button type="button" key={item.id} className="playbook-picker-row"
+                onClick={() => { setSelectedPlaybook(item); setPlaybookError("") }}>
                 <strong>{item.title}</strong>{item.source && <small>{item.source.kind === "command" ? W("claudeCommand") : "Skill"} · {item.source.name}</small>}<span>{item.source ? W("linkedPickerHint") : item.body}</span>
               </button>)}
             </div>
@@ -809,9 +809,9 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
           {writing && !draft && !clawdfatherDraft ? <ActionProgress busy label={catalogWord("literal", writing === "delete" ? "a5df1fce3ed1" : "21aa64dd7446")}>{said}</ActionProgress> : said}
         </p>
         <div className="buttons">
-          {tab === "workflow" && <button className="workflow-start" type="button" aria-busy={startingWorkflow} disabled={!currentWorkflow || startingWorkflow || !!currentWorkflow.source && workflowSourceStatus !== "ready"} onClick={() => void startWorkflow()}>
-            {startingWorkflow && <span className="workflow-start-spinner" aria-hidden="true" />}
-            {startingWorkflow ? W("starting") : W("start")}
+          {tab === "playbook" && <button className="playbook-start" type="button" aria-busy={startingPlaybook} disabled={!currentPlaybook || startingPlaybook || !!currentPlaybook.source && playbookSourceStatus !== "ready"} onClick={() => void startPlaybook()}>
+            {startingPlaybook && <span className="playbook-start-spinner" aria-hidden="true" />}
+            {startingPlaybook ? W("starting") : W("start")}
           </button>}
           <button className="chip" id="snippets-close" type="button" disabled={!!writing} ref={closeButton} onClick={onClose}>
             {T.webClose}
@@ -974,34 +974,34 @@ function Sheet({ row, steward, onClose }: { row: SessionRow; steward: boolean; o
           </div>
         </div>
       </div>}
-      {workflowDraft && <div className="overlay" id="workflow-quick-editor" onClick={() => { if (!workflowSaving) closeWorkflowEditor() }}>
-        <div className="sheet snippet-editor-sheet" role="dialog" aria-modal="true" aria-labelledby="workflow-quick-title" onClick={(event) => event.stopPropagation()}>
-          <h2 id="workflow-quick-title">{W(workflowDraft.id ? "edit" : "new")}</h2>
-          <div className="block"><label className="field-label" htmlFor="workflow-quick-name">{W("name")}</label>
-            <input className="find" id="workflow-quick-name" type="text" maxLength={200} value={workflowDraft.title}
-              onChange={(event) => setWorkflowDraft({ ...workflowDraft, title: event.target.value })} /></div>
-          {workflowDraft.source ? <div className="block"><label className="field-label" htmlFor="workflow-quick-message">{W("message")}</label>
-            <textarea className="find" id="workflow-quick-message" rows={6} maxLength={4000} readOnly value={workflowDraft.body} /></div>
-            : <div className="block workflow-quick-message"><VoiceTextarea label={W("message")} id="workflow-quick-message" className="find" rows={6} maxLength={4000}
-              value={workflowDraft.body} onValue={(body) => setWorkflowDraft((draft) => draft ? { ...draft, body } : draft)} /></div>}
-          {workflowDraft.source && <p className="workflow-linked-hint">{W("linkedMessageHint")}</p>}
-          {!workflowDraft.id && <div className="block"><span className="field-label">{W("availability")}</span><div className="row">
-            {!!projectKey && !projectUnresolved && <button type="button" className={"chip" + (!workflowDraft.global ? " on" : "")}
-              aria-pressed={!workflowDraft.global} onClick={() => setWorkflowDraft({ ...workflowDraft, global: false })}>{W("projectOnly")}</button>}
-            <button type="button" className={"chip" + (workflowDraft.global ? " on" : "")}
-              aria-pressed={workflowDraft.global} onClick={() => setWorkflowDraft({ ...workflowDraft, global: true })}>{W("global")}</button>
+      {playbookDraft && <div className="overlay" id="playbook-quick-editor" onClick={() => { if (!playbookSaving) closePlaybookEditor() }}>
+        <div className="sheet snippet-editor-sheet" role="dialog" aria-modal="true" aria-labelledby="playbook-quick-title" onClick={(event) => event.stopPropagation()}>
+          <h2 id="playbook-quick-title">{W(playbookDraft.id ? "edit" : "new")}</h2>
+          <div className="block"><label className="field-label" htmlFor="playbook-quick-name">{W("name")}</label>
+            <input className="find" id="playbook-quick-name" type="text" maxLength={200} value={playbookDraft.title}
+              onChange={(event) => setPlaybookDraft({ ...playbookDraft, title: event.target.value })} /></div>
+          {playbookDraft.source ? <div className="block"><label className="field-label" htmlFor="playbook-quick-message">{W("message")}</label>
+            <textarea className="find" id="playbook-quick-message" rows={6} maxLength={4000} readOnly value={playbookDraft.body} /></div>
+            : <div className="block playbook-quick-message"><VoiceTextarea label={W("message")} id="playbook-quick-message" className="find" rows={6} maxLength={4000}
+              value={playbookDraft.body} onValue={(body) => setPlaybookDraft((draft) => draft ? { ...draft, body } : draft)} /></div>}
+          {playbookDraft.source && <p className="playbook-linked-hint">{W("linkedMessageHint")}</p>}
+          {!playbookDraft.id && <div className="block"><span className="field-label">{W("availability")}</span><div className="row">
+            {!!projectKey && !projectUnresolved && <button type="button" className={"chip" + (!playbookDraft.global ? " on" : "")}
+              aria-pressed={!playbookDraft.global} onClick={() => setPlaybookDraft({ ...playbookDraft, global: false })}>{W("projectOnly")}</button>}
+            <button type="button" className={"chip" + (playbookDraft.global ? " on" : "")}
+              aria-pressed={playbookDraft.global} onClick={() => setPlaybookDraft({ ...playbookDraft, global: true })}>{W("global")}</button>
           </div></div>}
-          {workflowSaveError && <p className="said" role="alert">{workflowSaveError}</p>}
-          <div className="buttons"><button className="chip" type="button" disabled={workflowSaving} onClick={closeWorkflowEditor}>{W("cancel")}</button>
-            <button className="chip confirm-go" type="button" disabled={workflowSaving} aria-busy={workflowSaving} onClick={() => void saveWorkflow()}><ActionProgress busy={workflowSaving} label={catalogWord("literal", "21aa64dd7446")}>{W("save")}</ActionProgress></button></div>
+          {playbookSaveError && <p className="said" role="alert">{playbookSaveError}</p>}
+          <div className="buttons"><button className="chip" type="button" disabled={playbookSaving} onClick={closePlaybookEditor}>{W("cancel")}</button>
+            <button className="chip confirm-go" type="button" disabled={playbookSaving} aria-busy={playbookSaving} onClick={() => void savePlaybook()}><ActionProgress busy={playbookSaving} label={catalogWord("literal", "21aa64dd7446")}>{W("save")}</ActionProgress></button></div>
         </div>
       </div>}
     </>
   )
 }
 
-const tabPanel: Record<SheetTab, string> = { clawdfather: "clawdfather-actions", snippet: "snippet-list", workflow: "workflow-picker" }
-const tabLabel = (tab: SheetTab) => tab === "clawdfather" ? "Clawdfather" : tab === "snippet" ? "Snippet" : W("workflow")
+const tabPanel: Record<SheetTab, string> = { clawdfather: "clawdfather-actions", snippet: "snippet-list", playbook: "playbook-picker" }
+const tabLabel = (tab: SheetTab) => tab === "clawdfather" ? "Clawdfather" : tab === "snippet" ? "Snippet" : W("playbook")
 
 function SnippetSkeleton({ label }: { label: string }) {
   return <div className="snippet-skeleton" role="status" aria-label={label}>

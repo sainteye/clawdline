@@ -21,7 +21,7 @@ func TestPlaybookCommandsUseExistingTransport(t *testing.T) {
 			if r.URL.RawQuery != "" && r.URL.Query().Get("session") != "%47" {
 				t.Errorf("session was not URL encoded: %s", r.URL)
 			}
-			io.WriteString(w, `{"project":{"key":"/canonical/project","label":"Project"},"snippets":[{"id":"pb","scope":"workflow","title":"Saved","body":"Message","source":{"name":"Skill"}},{"id":"ordinary","scope":"project"}]}`)
+			io.WriteString(w, `{"project":{"key":"/canonical/project","label":"Project"},"snippets":[{"id":"pb","scope":"playbook","title":"Saved","body":"Message","source":{"name":"Skill"}},{"id":"ordinary","scope":"project"}]}`)
 			return
 		}
 		if r.Header.Get("Idempotency-Key") != "same-operation" {
@@ -32,7 +32,7 @@ func TestPlaybookCommandsUseExistingTransport(t *testing.T) {
 		if r.Method != "DELETE" && r.Header.Get("Content-Type") != "application/json" {
 			t.Error("JSON content type missing")
 		}
-		io.WriteString(w, `{"id":"pb","scope":"workflow"}`)
+		io.WriteString(w, `{"id":"pb","scope":"playbook"}`)
 	}))
 	defer server.Close()
 	open := func(int) (*broker, error) {
@@ -63,8 +63,8 @@ func TestPlaybookCommandsUseExistingTransport(t *testing.T) {
 		t.Fatalf("retry changed request: %v", writes)
 	}
 	for i, want := range []string{
-		`POST /v1/snippets {"body":"Review changes","project":"/canonical/project","scope":"workflow","title":"Review"}`,
-		`POST /v1/snippets {"body":"Review changes","scope":"workflow","title":"Global"}`,
+		`POST /v1/snippets {"body":"Review changes","project":"/canonical/project","scope":"playbook","title":"Review"}`,
+		`POST /v1/snippets {"body":"Review changes","scope":"playbook","title":"Global"}`,
 		`PATCH /v1/snippets/pb {"body":"Updated"}`,
 		`PATCH /v1/snippets/pb {"body":"Updated"}`,
 		`DELETE /v1/snippets/pb `,

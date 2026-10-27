@@ -20,18 +20,18 @@
 .session-owned-options button:disabled:not([aria-busy="true"]) { opacity: .55; cursor: wait; }
 .session-owned-decision-note { margin: 8px 0 0 27px; color: var(--accent); overflow-wrap: anywhere; }
 .session-owned-decision .session-owned-decision-receipt { color: var(--ok); }
-.session-workflow-row { border: 1px solid var(--line); border-radius: .5rem; margin: .4rem 0; }
-.session-workflow-row[data-state="active"] { border-color: var(--accent-ed); }
-.session-workflow-row summary { display: grid; gap: .35rem; padding: .7rem; cursor: pointer; }
-.session-workflow-kind { color: var(--faint); font-size: 11px; line-height: 1.6; }
-.session-workflow-heading { display: flex; justify-content: space-between; align-items: baseline; gap: .7rem; }
-.session-workflow-heading strong { min-width: 0; overflow-wrap: anywhere; }
-.session-workflow-status { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; color: var(--dim); }
-.session-workflow-status[data-state="done"] { color: var(--ok); }
-.session-workflow-status[data-state="done"] .work-icon { width: 15px; height: 15px; }
-.session-workflow-status[data-state="running"] { color: var(--accent); }
-.session-workflow-spinner { width: 14px; height: 14px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: session-workflow-spin 800ms linear infinite; }
-@keyframes session-workflow-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .session-workflow-spinner { animation: none; } }
-.session-workflow-row p { white-space: pre-wrap; padding: 0 .7rem; max-height: 12rem; overflow: auto; }
-.session-workflow-row .work-actions { padding: .5rem .7rem .7rem; }
+.session-playbook-row { border: 1px solid var(--line); border-radius: .5rem; margin: .4rem 0; }
+.session-playbook-row[data-state="active"] { border-color: var(--accent-ed); }
+.session-playbook-row summary { display: grid; gap: .35rem; padding: .7rem; cursor: pointer; }
+.session-playbook-kind { color: var(--faint); font-size: 11px; line-height: 1.6; }
+.session-playbook-heading { display: flex; justify-content: space-between; align-items: baseline; gap: .7rem; }
+.session-playbook-heading strong { min-width: 0; overflow-wrap: anywhere; }
+.session-playbook-status { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; color: var(--dim); }
+.session-playbook-status[data-state="done"] { color: var(--ok); }
+.session-playbook-status[data-state="done"] .work-icon { width: 15px; height: 15px; }
+.session-playbook-status[data-state="running"] { color: var(--accent); }
+.session-playbook-spinner { width: 14px; height: 14px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: session-playbook-spin 800ms linear infinite; }
+@keyframes session-playbook-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .session-playbook-spinner { animation: none; } }
+.session-playbook-row p { white-space: pre-wrap; padding: 0 .7rem; max-height: 12rem; overflow: auto; }
+.session-playbook-row .work-actions { padding: .5rem .7rem .7rem; }
