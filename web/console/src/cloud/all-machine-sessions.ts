@@ -99,7 +99,8 @@ export function presentationPass(reading: Extract<MachineSessionProjection, { ki
 export function displayedPresentationStatus(row: ProjectedSession,
   presentation: SessionListPresentation | undefined): Partial<SessionRow> | undefined {
   const status = presentation?.status
-  return row.freshness === "current" && status?.state && status.state !== row.state &&
+  return row.freshness === "current" && status?.state &&
+    (status.state !== row.state || status.provider_block !== row.providerBlock) &&
     (!Number.isFinite(presentation?.observedAt) || presentation!.observedAt! < row.observedAt) ? undefined : status
 }
 
@@ -124,6 +125,7 @@ export interface ProjectedSession {
   state: string
   freshness: "current" | "stale" | "unknown"
   needsAttention?: boolean
+  providerBlock?: "model_capacity"
   waitingForReply?: true
   observedAt: number
   lastMovementAt?: number

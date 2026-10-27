@@ -73,6 +73,9 @@ const (
 
 // Activity is that answer for one session.
 type Activity struct {
+	// ProviderBlock is a current provider refusal, independent of terminal activity.
+	// It is cleared by the next native turn boundary, never by viewing the row.
+	ProviderBlock ProviderBlock
 	// At is when the record last grew. Meaningful only when Known.
 	At time.Time
 	// Reason is empty when there is a time, and otherwise which kind of

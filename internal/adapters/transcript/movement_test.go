@@ -34,6 +34,45 @@ func claudeSession(cwd, id string) session.Session {
 	return session.Session{ID: "t1", Assistant: session.AssistantClaude, CWD: cwd, ConversationID: id}
 }
 
+func TestCodexCapacityFailureNeedsAttentionUntilANewTurn(t *testing.T) {
+	h, home := claudeHost(t)
+	id := "c6000004-0000-4000-8000-000000000004"
+	path := filepath.Join(home, ".codex", "sessions", "rollout-"+id+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	failure := `{"timestamp":"2026-10-05T07:43:58.922Z","type":"event_msg","payload":{"type":"task_complete","last_agent_message":null,"error":{"message":"Selected model is at capacity. Please try a different model.","codex_error_info":"server_overloaded"}}}` + "\n"
+	metadata := `{"timestamp":"2026-10-05T07:43:59.922Z","type":"event_msg","payload":{"type":"token_count","info":null}}` + "\n"
+	row := session.Session{Assistant: session.AssistantCodex, ConversationID: id}
+	for _, tc := range []struct {
+		name, after string
+		want        session.ProviderBlock
+	}{
+		{"failure", "", session.ProviderBlockModelCapacity},
+		{"metadata does not clear", metadata, session.ProviderBlockModelCapacity},
+		{"partial last record", metadata + `{"type":"event_msg","payload":`, session.ProviderBlockModelCapacity},
+		{"typed code", `{"type":"event_msg","payload":{"type":"task_complete","error":{"codex_error_info":"server_overloaded","message":"Temporarily unavailable"}}}` + "\n", session.ProviderBlockModelCapacity},
+		{"message fallback", `{"type":"event_msg","payload":{"type":"task_complete","error":{"message":"Selected model is at capacity. Please try a different model."}}}` + "\n", session.ProviderBlockModelCapacity},
+		{"different failure", `{"type":"event_msg","payload":{"type":"task_complete","error":{"codex_error_info":"unauthorized","message":"Sign in again"}}}` + "\n", ""},
+		{"next turn", `{"type":"event_msg","payload":{"type":"task_started"}}` + "\n", ""},
+		{"success", `{"type":"event_msg","payload":{"type":"task_complete","error":null}}` + "\n", ""},
+		{"interrupted", `{"type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}` + "\n", ""},
+		{"quoted error", `{"type":"event_msg","payload":{"type":"task_complete","error":null}}` + "\n" + `{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"text":"Selected model is at capacity. Please try a different model."}]}}` + "\n", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(path, []byte(failure+tc.after), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 { // The cached result must preserve the same failure.
+				got := h.LastActivity(context.Background(), row)
+				if got.ProviderBlock != tc.want {
+					t.Fatalf("block = %q, want %q", got.ProviderBlock, tc.want)
+				}
+			}
+		})
+	}
+}
+
 // The reason this reads the record and not the file: something on this machine
 // touches transcripts without appending a turn, and three sessions nobody had
 // spoken to since the previous day all carried the same afternoon mtime.

@@ -349,7 +349,7 @@ function statusHTML(s: Row | null): string {
       '<span class="session-work-copy" data-work-state="working">' + esc(s.line || T.webStateWorking) + "</span>" + owedBadgeHTML(s)
   } else if (work.state === "waiting_you") {
     workSaid =
-      '<span class="session-work-copy" data-work-state="waiting_you">' + statusGlyphHTML("🙋", T.sessionWaiting) + "</span>" + owedBadgeHTML(s)
+      '<span class="session-work-copy" data-work-state="waiting_you">' + statusGlyphHTML("🙋", s.provider_block === "model_capacity" ? nextWord("sessionModelCapacity") : T.sessionWaiting) + "</span>" + owedBadgeHTML(s)
   } else if (work.state === "waiting_session") {
     const waits = ((s.coordination || {}).waitingOn || []).map((wait: Record<string, string>) =>
       [wait.ownerLabel || wait.ownerSessionId, wait.releaseCondition].filter(Boolean).join(" · "),

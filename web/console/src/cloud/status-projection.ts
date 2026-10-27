@@ -97,6 +97,7 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
       freshness: stale || rowStale ? "stale" : source!.freshness === "current" ? "current" :
         source!.freshness === "unverified" ? "stale" : "unknown",
       needsAttention: typeof data.attention_required === "boolean" ? data.attention_required : undefined,
+      providerBlock: data.provider_block === "model_capacity" ? "model_capacity" : undefined,
       waitingForReply: data.waiting_for_reply === true ? true : undefined,
       observedAt: Number(source!.observed_at) * 1000,
       lastMovementAt: Number.isFinite(data.last_movement_at) ? Number(data.last_movement_at) * 1000 : undefined,

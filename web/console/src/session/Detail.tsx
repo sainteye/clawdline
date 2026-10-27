@@ -446,7 +446,8 @@ function detailSub(row: SessionRow | null, projectedCoordinatorBound = false): s
   const sub: string[] = [L.path(row.cwd)]
   if (row.machine_scope && !sessionCoordinatorBound(row) && !projectedCoordinatorBound) sub.push(nextWord("machineSessionPendingShort"))
   if (row.tty) sub.push(row.tty)
-  if (row.state === "waiting") sub.push(T.sessionWaiting)
+  if (row.provider_block === "model_capacity") sub.push(nextWord("sessionModelCapacity"))
+  else if (row.state === "waiting") sub.push(T.sessionWaiting)
   else if (row.state === "working") sub.push(T.webStateWorking)
   else if (conversationNotStarted(row)) sub.push(nextWord(/^(tty|pts\/)/.test(row.id) ? "processOnlyShort" : "sessionNotStartedShort"))
   else if (row.state === "unknown") sub.push(nextWord("sessionStateUnrecognizedDetail"))

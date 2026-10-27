@@ -7116,6 +7116,13 @@ export interface SessionRow {
    * not absolute.
    */
   project_key?: string
+
+  /**
+   * Current actionable provider refusal read from the native turn record.
+   * Independent of terminal activity; cleared by a later native turn boundary. Not
+   * a permission menu.
+   */
+  provider_block?: string
   root_assignment?: RootAssignmentRecord
 
   /**
@@ -7175,8 +7182,8 @@ export interface SessionRow {
   work_note?: string
 
   /**
-   * Whether that mover is a person. Absent unless the declaration decided the
-   * state; present and false is a real answer.
+   * Whether that mover is a person. Also true for a current actionable provider
+   * block; present and false is a real answer.
    */
   work_person_needed?: boolean
   work_provenance?: WorkProvenance

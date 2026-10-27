@@ -9,6 +9,26 @@ import (
 	"time"
 )
 
+func TestCapacityStatusNeedsAttentionWithoutAskingForAMenuReply(t *testing.T) {
+	row := map[string]any{"state": "idle", "provider_block": "model_capacity",
+		"source": map[string]any{"freshness": "current"}}
+	got := ProjectSessionStatus("machine_a", "%19", row, true, 100)
+	if !got.AttentionRequired || got.WaitingForReply || got.ProviderBlock != "model_capacity" {
+		t.Fatalf("capacity status = %+v", got)
+	}
+	row["provider_block"] = "private arbitrary error text"
+	got = ProjectSessionStatus("machine_a", "%19", row, true, 100)
+	if got.ProviderBlock != "" || got.AttentionRequired {
+		t.Fatalf("unrecognized block admitted: %+v", got)
+	}
+	row["provider_block"] = "model_capacity"
+	row["source"] = map[string]any{"freshness": "unverified"}
+	got = ProjectSessionStatus("machine_a", "%19", row, false, 101)
+	if got.ProviderBlock != "" || got.AttentionRequired {
+		t.Fatalf("stale refusal remained actionable: %+v", got)
+	}
+}
+
 func TestStatusProjectionCannotCarryContentAndWithholdsUnverifiedTarget(t *testing.T) {
 	row := map[string]any{
 		"id": "%19", "state": "waiting", "assistant": "claude", "backend": "tmux",

@@ -13,6 +13,7 @@ import { catalogWord } from "./catalog.ts"
 
 const words = {
   en: {
+    sessionModelCapacity: "Model at capacity · choose another model or retry",
     shortcutTitle: "Keyboard shortcuts",
     shortcutNavigation: "Navigation",
     shortcutActions: "Common actions",
@@ -2070,6 +2071,7 @@ const words = {
     setupPhoneAndroidOpen: "In Chrome, open {site}, then choose ⋮ → Add to Home screen",
   },
   "zh-Hant": {
+    sessionModelCapacity: "模型容量不足 · 請換模型或重試",
     shortcutTitle: "快速鍵速查表",
     shortcutNavigation: "導覽",
     shortcutActions: "常用操作",
