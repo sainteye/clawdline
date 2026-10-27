@@ -1,9 +1,14 @@
 # MP4 playback in Clawdline
 
-The Documents page also lists published MP4 videos. Open a Session's menu, choose
-**Documents**, then select a video, or follow its canonical Cloud document link.
-The reader shows transfer progress and then native playback, pause, seeking and
-full-screen controls. Playback requires a click; it never starts automatically.
+Published MP4 links open a dedicated video lightbox above the current conversation.
+The conversation stays mounted at its original scroll position. The lightbox shows
+transfer progress and native playback, pause, seeking and full-screen controls.
+Close, Escape (including from the isolated player), or browser Back dismisses it;
+Forward can reopen it. Closing aborts the transfer and destroys the player context.
+An existing canonical Cloud document link to an MP4 also opens the lightbox on a
+Session screen, rather than navigating to the Documents page. Markdown, text and
+HTML links keep their existing document reader. The Documents inventory still
+lists published videos. Playback requires a click; it never starts automatically.
 For the widest phone compatibility, export MP4 with H.264 video and AAC audio.
 Unsupported codecs or malformed content produce a visible playback error.
 
@@ -102,3 +107,11 @@ received eight parent-origin control requests and zero injected image, media or
 fetch requests from the player. Injected script did not run. A separate malformed
 Blob produced the native error, shown in both English and Taiwan Traditional Chinese. The record
 observes browsing-context removal, not a browser heap-reclamation measurement.
+
+The [lightbox browser record](performance/video-lightbox-browser.json) adds eight
+local Chrome/WebKit cases in English and Taiwan Traditional Chinese at 390 and
+1280 CSS pixels. They verify playing and seeking the same sample, unchanged
+conversation address, draft and scroll position, focus restoration, Escape from
+inside the isolated player, Back/Forward, cancellation despite a late answer,
+explicit retry after refusal, and a cold MP4 link. These component cases are
+separate from production Cloud acceptance and actual phone testing.

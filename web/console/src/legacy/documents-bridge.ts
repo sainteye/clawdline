@@ -155,6 +155,12 @@ export function hasDocumentIntent(hash: string): boolean {
   return /(?:^|[#&])document=/.test(String(hash || ""))
 }
 
+/** Videos keep their publication address but open above the Session. */
+export function hasDocumentPageIntent(hash: string): boolean {
+  const locator = documentLocatorFromHash(hash)
+  return hasDocumentIntent(hash) && !(locator && isVideoPath(locator.path))
+}
+
 /** `net/live.js`'s refusal for a document that belongs to another Mac. */
 function wrongMachine(): Error & { code?: string } {
   const wrong: Error & { code?: string } = new Error("This document belongs to another machine.")
@@ -238,7 +244,7 @@ export function cutWords(header: string): string {
 }
 
 /** `net/live.js`'s `document(value)`: bytes, and the same validator the Cloud answer gets. */
-async function read(value: unknown, options?: { signal?: AbortSignal; progress?: (percent: number) => void }): Promise<unknown> {
+export async function readPublishedDocument(value: unknown, options?: { signal?: AbortSignal; progress?: (percent: number) => void }): Promise<unknown> {
   const locator = (normalizeDocumentLocator as (v: unknown) => DocumentLocator)(value)
   if (!hosted && locator.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
   if (hosted && locator.machine === LOCAL_SESSION_MACHINE) throw wrongMachine()
@@ -388,7 +394,7 @@ export function bindDocuments(doc: Document, navigate: (page: string) => void): 
     read: async (locator: unknown, options?: { signal?: AbortSignal; progress?: (percent: number) => void }) => {
       error = null; answer = null
       try {
-        const result = await read(locator, options) as AnswerMetadata
+        const result = await readPublishedDocument(locator, options) as AnswerMetadata
         answer = { scope: result.scope, path: result.path, byte_count: result.byte_count }
         return result
       } catch (caught) { error = caught; throw caught }
