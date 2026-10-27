@@ -11,10 +11,17 @@
 .video-lightbox h2 { margin: 0; font-size: 16px; font-weight: 500; }
 .video-lightbox button { min-height: 44px; padding: 0 16px; border: 1px solid #555; border-radius: 24px; background: #202024; color: #fff; font: inherit; cursor: pointer; }
 .video-lightbox button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-.video-lightbox-body { width: 100%; }
-.video-lightbox .document-video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; max-height: calc(100dvh - 150px); border: 0; background: #000; }
-.video-lightbox-status { margin: 16px 0; color: #ddd; overflow-wrap: anywhere; }
-.video-lightbox-status:empty { display: none; }
-.video-lightbox-status[data-state="loading"] { min-height: 140px; display: grid; place-items: center; }
-.video-lightbox-body:not(:empty) + .video-lightbox-status[data-state="loading"] { min-height: 0; display: block; }
+.video-lightbox-body { position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: calc(100dvh - 180px); background: #000 center / contain no-repeat; overflow: hidden; }
+.video-lightbox-player, .video-lightbox-cover { position: absolute; inset: 0; }
+.video-lightbox .document-video { display: block; width: 100%; height: 100%; border: 0; object-fit: contain; background: transparent; }
+.video-lightbox-cover { display: grid; place-items: center; pointer-events: none; }
+.video-lightbox-cover[hidden] { display: none; }
+.video-lightbox .video-lightbox-play { pointer-events: auto; width: 64px; height: 64px; padding: 0; border-radius: 50%; font-size: 26px; background: rgba(20,20,24,.82); }
+.video-lightbox-play:disabled { opacity: .45; }
+.video-lightbox-spinner { position: absolute; width: 80px; height: 80px; border: 2px solid #aaa; border-top-color: transparent; border-radius: 50%; animation: video-preview-spin 1s linear infinite; }
+.video-lightbox-cover:not([data-state="loading"]) .video-lightbox-spinner { display: none; }
+.video-lightbox-status { min-height: 1.5em; margin: 12px 0; color: #ddd; overflow-wrap: anywhere; }
+.video-lightbox-status:empty { visibility: hidden; }
 .video-lightbox-status[data-state="error"], .video-lightbox .document-video-error { color: #f0aea0; }
+@keyframes video-preview-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .video-lightbox-spinner { animation: none; } }

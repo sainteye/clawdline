@@ -27,13 +27,18 @@ export async function openVideoStream(wanted, readChunk, options = {}) {
             // authenticated chunks when feeding media, rather than downloading twice.
             const held = new Map([[0, first.bytes]]);
             const seen = new Set([0]);
+            let received = first.bytes.length;
             let info, parseError, batch = [], batchBytes = 0;
             const get = async (offset) => {
                 active(options.signal);
                 if (held.has(offset)) return held.get(offset);
+                const count = Math.min(VIDEO_CHUNK_BYTES, first.total - offset);
+                if (received + count > (options.byteBudget ?? VIDEO_MAX_BYTES))
+                    throw Object.assign(new Error("Video preview read budget exhausted"), { code: "video_preview_unavailable" });
                 const answer = videoChunkAnswer(locator, offset, first.revision, await readChunk(offset, first.revision));
                 active(options.signal);
                 if (answer.total !== first.total) throw failure();
+                received += answer.bytes.length;
                 seen.add(offset);
                 const loaded = [...seen].reduce((n, at) => n + Math.min(VIDEO_CHUNK_BYTES, first.total - at), 0);
                 options.progress?.(Math.floor(loaded * 100 / first.total));

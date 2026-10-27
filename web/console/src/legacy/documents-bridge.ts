@@ -244,7 +244,7 @@ export function cutWords(header: string): string {
 }
 
 /** `net/live.js`'s `document(value)`: bytes, and the same validator the Cloud answer gets. */
-export async function readPublishedDocument(value: unknown, options?: { signal?: AbortSignal; progress?: (percent: number) => void; stream?: boolean }): Promise<unknown> {
+export async function readPublishedDocument(value: unknown, options?: { signal?: AbortSignal; progress?: (percent: number) => void; stream?: boolean; byteBudget?: number }): Promise<unknown> {
   const locator = (normalizeDocumentLocator as (v: unknown) => DocumentLocator)(value)
   if (!hosted && locator.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
   if (hosted && locator.machine === LOCAL_SESSION_MACHINE) throw wrongMachine()

@@ -9200,5 +9200,15 @@
   "transparency.card.gemini-acp-context.effect": "續接保留原始快照，不重送中斷的訊息。只有第一個重播回合完全符合已知展開格式時才還原原文，未知格式會保留。技能使用仍需另有收據；此路徑不安裝或繞過另一套原生 hook 政策。",
   "playbook.backToPlaybooks": "返回 Playbook 列表",
   "playbook.choosePlaybook": "選擇要啟動的 Playbook",
-  "playbook.noSessionPlaybooks": "這個 Project 還沒有 Playbook。請從側邊欄建立。"
+  "playbook.noSessionPlaybooks": "這個 Project 還沒有 Playbook。請從側邊欄建立。",
+  "capacityRow.console.video_preview_bytes.full": "需要更多資料才能取到畫面時，預覽卡仍保留播放按鈕。",
+  "capacityRow.console.video_preview_bytes.what": "縮圖只讀取已授權影片的一小部分資料。",
+  "capacityRow.console.video_preview_milliseconds.full": "載入過慢時會停止縮圖讀取，你仍可直接開啟影片。",
+  "capacityRow.console.video_preview_milliseconds.what": "影片縮圖的自動載入有時間限制。",
+  "capacityRow.console.video_preview_reads.full": "其他可見縮圖會等待；開啟影片時暫停縮圖讀取。",
+  "capacityRow.console.video_preview_reads.what": "畫面中的影片縮圖共用一次一筆的背景讀取。",
+  "capacityRow.console.video_preview_side.full": "最長邊會縮至此大小，原始影片不受影響。",
+  "capacityRow.console.video_preview_side.what": "影片縮圖會先縮小，再保留於對話中。",
+  "documents.videoPlay": "播放影片",
+  "documents.videoPosterUnavailable": "無法載入縮圖，仍可開啟影片播放。"
 }

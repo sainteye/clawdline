@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-27",
+  "surface": "Installed Chrome, local isolated component fixture",
+  "source": {
+    "bytes": 14689551,
+    "width": 1920,
+    "height": 1080,
+    "duration_seconds": 18
+  },
+  "thumbnail": {
+    "state": "ready",
+    "width": 640,
+    "source_requests": 4,
+    "source_bytes": 2097152,
+    "max_concurrent_requests": 1,
+    "offscreen_initial_requests": 0
+  },
+  "english": {
+    "stage_before": [
+      494.1903381347656,
+      277.975830078125
+    ],
+    "stage_after": [
+      494.1903381347656,
+      277.975830078125
+    ],
+    "modal_borrows_poster": true,
+    "native_play_button": true,
+    "decoded_width": 1920,
+    "close_then_card_reopen": true,
+    "close_then_text_link_reopen": true,
+    "conversation_address_unchanged": true
+  },
+  "taiwan_traditional_chinese": {
+    "measured_viewport_width_css": 354,
+    "stage_before": [
+      11.99573802947998,
+      294.67327880859375,
+      330.553955078125,
+      185.93038940429688
+    ],
+    "stage_after": [
+      11.99573802947998,
+      294.67327880859375,
+      330.553955078125,
+      185.93038940429688
+    ],
+    "horizontal_overflow": false,
+    "draft_preserved": true,
+    "scroll_before": 376.8181762695313,
+    "scroll_after": 376.8181762695313,
+    "focus_restored_to_card": true,
+    "back_closes": true,
+    "forward_reopens": true
+  },
+  "limits": [
+    "Local fixture acceptance is separate from authenticated production Cloud verification.",
+    "Desktop Chrome at phone width is not physical iPhone acceptance.",
+    "Network accounting for the thumbnail is from the initial isolated attempt; subsequent playback requests are separate."
+  ]
+}

@@ -4,6 +4,30 @@ package capacity
 func consoleBounds() []Entry {
 	return append(append(append(connectionHealthUIBounds(), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
 		{
+			Name: "console.video_preview_reads", Class: Buffer, Unit: Rows,
+			Limit: MaximumVideoPreviewReads, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVideoPreviewReads"},
+		},
+		{
+			Name: "console.video_preview_side", Class: Buffer, Unit: Rows,
+			Limit: MaximumVideoPreviewSide, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVideoPreviewSide"},
+		},
+		{
+			Name: "console.video_preview_bytes", Class: Buffer, Unit: Bytes,
+			Limit: MaximumVideoPreviewBytes, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVideoPreviewBytes"},
+		},
+		{
+			Name: "console.video_preview_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: MaximumVideoPreviewMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumVideoPreviewMilliseconds"},
+		},
+		{
 			// NextMessages.add shares KEPT_CARDS from session/persist.ts.
 			Name: "console.next_messages", Class: Buffer, Unit: Rows,
 			Limit: 20, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
