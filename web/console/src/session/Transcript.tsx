@@ -1194,7 +1194,7 @@ function toolRowHTML(v: View, e: Entry, live: boolean, n: number) {
   const key = "e" + foldKey([e])
   const open = !!v.expanded[key]
   return (
-    <div className="entry toolrow" data-role="tool" data-live={live ? "1" : undefined} key={key + ":" + n}>
+    <div className="entry toolrow" data-role="tool" data-live={live ? "1" : undefined} key={e.detail ? "tool:" + (v.sessionID ?? "") + e.detail.reference : key + ":" + n}>
       <div className="who">{v.who.tool}</div>
       <div className="body">
         <button
@@ -1923,7 +1923,7 @@ function patchHTML(v: View, e: Entry, at: number) {
   const defaultOpen = !e.detail && lineCount <= PATCH_DETAIL_LINE_LIMIT
   const open = defaultOpen ? v.expanded[key] !== false : !!v.expanded[key]
   return (
-    <div className="entry patch" data-role="patch" data-detail={open ? "open" : "collapsed"} key={"p:" + at}>
+    <div className="entry patch" data-role="patch" data-detail={open ? "open" : "collapsed"} key={e.detail ? "patch:" + (v.sessionID ?? "") + e.detail.reference : "p:" + at}>
       <div className="who">{v.who.tool}</div>
       <div className="body">
         <button

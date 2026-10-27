@@ -96,6 +96,7 @@ func readBefore(path string, limit int, before int64, parse func([]byte) []Entry
 			entries := parse(line)
 			for i := len(entries) - 1; i >= 0; i-- {
 				entries[i].Before = lineStart
+				entries[i].RowOrdinal = i
 				if a := entries[i].Activity; a != nil && a.ToolResult != nil {
 					a.ToolResult.Reference = toolReference(lineStart, a.ToolResult.raw)
 				}

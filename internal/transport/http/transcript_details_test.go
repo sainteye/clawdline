@@ -192,3 +192,39 @@ func TestTinyFoldedPatchesKeepTheirBodyWhenAReferenceWouldCostMore(t *testing.T)
 		t.Fatal("a large single-line patch was sent before expansion")
 	}
 }
+
+func TestRepeatedToolBodiesHaveDistinctStableReferencesAcrossBothPageDirections(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	item := session.Session{ID: "%8", Assistant: session.AssistantClaude, PID: os.Getpid(), ConversationID: "repeated-claude", CWD: "/fixture"}
+	path := transcript.ClaudePath(home, item.CWD, item.ConversationID)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Repeat("same long output", 150)
+	raw, _ := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": []any{
+		map[string]any{"type": "tool_result", "content": text}, map[string]any{"type": "tool_result", "content": text},
+	}}})
+	if err := os.WriteFile(path, append(raw, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{executionMachineID: "machine-fixture"}
+	full := s.transcriptPageBeforeProjection(item.ID, item, 20, 0, true, true)
+	after, stale := s.transcriptPageAfterProjection(item.ID, item, 20, 0, true, true)
+	if stale || len(full.Entries) != 2 || len(after.Entries) != 2 {
+		t.Fatal("repeated entries were lost")
+	}
+	if full.Entries[0].Detail.Reference == full.Entries[1].Detail.Reference {
+		t.Fatal("identical entries shared a body identity")
+	}
+	for index, entry := range full.Entries {
+		if entry.Detail.Reference != after.Entries[index].Detail.Reference {
+			t.Fatal("page direction changed stored identity")
+		}
+		w := httptest.NewRecorder()
+		s.transcriptEntryDetail(w, httptest.NewRequest("GET", "/v1/transcript", nil), item.ID, item, "entry-v1:"+entry.Detail.Reference)
+		if w.Code != 200 {
+			t.Fatalf("repeated body could not be read: %d", w.Code)
+		}
+	}
+}

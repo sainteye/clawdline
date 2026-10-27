@@ -88,8 +88,9 @@ unsupported record formats retain their existing readers. No encoding prefix
 is used to suppress opaque output.
 
 Opening a row reads `entry-v1:<offset>:<digest>` (or the explicitly compressed
-`entry-v1z` form). The reference hashes the complete existing projected entry,
-projection version, machine, Session, conversation and kernel execution. The
+`entry-v1z` form). The reference hashes the complete existing projected entry, its ordinal within
+the native row, projection version, machine, Session, conversation and kernel
+execution. Identical bodies in one native row remain distinct. The
 reader opens only the Session's current native record, checks the row boundary,
 parses that bounded row, and selects the candidate with the exact digest. This
 also handles several entries from one native row. Appends preserve old references;
@@ -104,7 +105,8 @@ discard data; a transport refusal remains a named failure with an explicit retry
 
 The component reads only after expansion, shows animated progress, cancels an
 unfinished read when folded or unmounted, and retains a successful body while
-mounted. A changed reference remounts it, so identical preview text cannot reuse
+mounted. Row keys use that reference, so loading older messages does not remount
+already expanded bodies merely because their display positions shifted. A changed reference remounts it, so identical preview text cannot reuse
 a different stored body. Patch headers use summary counts until their lines arrive.
 
 A supporting machine advertises `transcript_tools_v2`; Cloud viewers choose v2

@@ -48,6 +48,7 @@ func ReadRowEntries(path, assistant string, offset int64) ([]Entry, error) {
 	}
 	for i := range entries {
 		entries[i].Before = offset
+		entries[i].RowOrdinal = i
 	}
 	return entries, nil
 }

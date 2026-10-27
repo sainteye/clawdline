@@ -28,10 +28,10 @@ func (s *Server) entryDetailScope(id string, item session.Session) string {
 	return s.executionMachine() + "\x00" + scope
 }
 
-func entryDetailReference(row contract.TranscriptEntry, offset int64, scope string) string {
+func entryDetailReference(row contract.TranscriptEntry, source transcript.Entry, scope string) string {
 	raw, _ := json.Marshal(row)
-	digest := sha256.Sum256(append([]byte("entry-body-v1\x00"+scope+"\x00"), raw...))
-	return strconv.FormatInt(offset, 10) + ":" + hex.EncodeToString(digest[:])
+	digest := sha256.Sum256(append([]byte("entry-body-v1\x00"+scope+"\x00"+strconv.Itoa(source.RowOrdinal)+"\x00"), raw...))
+	return strconv.FormatInt(source.Before, 10) + ":" + hex.EncodeToString(digest[:])
 }
 
 func changeStats(change contract.TranscriptFileChange) *contract.TranscriptChangeStats {
@@ -97,7 +97,7 @@ func compactEntryDetails(row contract.TranscriptEntry, e transcript.Entry, scope
 	if patch {
 		original.FileChanges = append([]contract.TranscriptFileChange(nil), row.FileChanges...)
 	}
-	row.Detail = &contract.TranscriptEntryDetail{Reference: entryDetailReference(row, e.Before, scope), TextBytes: int64(len(row.Text)), LineCount: total}
+	row.Detail = &contract.TranscriptEntryDetail{Reference: entryDetailReference(row, e, scope), TextBytes: int64(len(row.Text)), LineCount: total}
 	if patch {
 		for i := range row.FileChanges {
 			row.FileChanges[i].UnifiedDiff = ""
@@ -145,7 +145,7 @@ func (s *Server) transcriptEntryDetail(w http.ResponseWriter, r *http.Request, i
 	if err == nil {
 		for _, entry := range candidates {
 			row := transcriptEntry(entry)
-			if row.Role == "tool" && entryDetailReference(row, offset, scope) == parts[1]+":"+parts[2] {
+			if row.Role == "tool" && entryDetailReference(row, entry, scope) == parts[1]+":"+parts[2] {
 				if !s.admitPinnedTarget(w, r, id) {
 					return
 				}

@@ -63,6 +63,8 @@ type Entry struct {
 	// Before is the start of the JSONL row this entry came from. It is used
 	// only by the paged reader to preserve whole rows at page boundaries.
 	Before int64
+	// RowOrdinal distinguishes identical entries from the same native JSONL row.
+	RowOrdinal int
 	// Tool names the tool on a call. A result carries none.
 	Tool string
 	// At is Unix seconds, or 0 when the record carried no timestamp.

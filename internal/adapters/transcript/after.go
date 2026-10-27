@@ -74,11 +74,12 @@ func readAfter(path string, limit int, after int64, parse func([]byte) []Entry, 
 		n := bytes.IndexByte(buf, '\n')
 		line := buf[:n]
 		if len(line) > 0 {
-			for _, e := range parse(line) {
+			for ordinal, e := range parse(line) {
 				if claude && e.Kind == KindPeer {
 					return Page{}, ErrCursorStale
 				}
 				e.Before = pos
+				e.RowOrdinal = ordinal
 				if a := e.Activity; a != nil && a.ToolResult != nil {
 					a.ToolResult.Reference = toolReference(pos, a.ToolResult.raw)
 				}
