@@ -1852,6 +1852,39 @@ test("phone: a Session opened in a wide window gets a Back step when the window 
     await tab.until("Forward reopens the same Session", (s) => s.view === "detail" && s.open === TMUX)
   }))
 
+test("phone: a restored detail marker without its old list gets a new Back destination", () =>
+  inTab(PHONE, async (tab) => {
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    // Reconstruct the surviving entry after the browser discarded the old
+    // page/history context while another media surface was in front.
+    await tab.run(`history.replaceState({ view: "detail", id: ${JSON.stringify(TMUX)} }, "", ${JSON.stringify(FRAGMENT[TMUX])})`)
+    await tab.reload()
+    await tab.until("the restored Session opens", (s) => s.view === "detail" && s.open === TMUX)
+    const steps = await tab.run("history.length")
+    await tab.run("history.back()")
+    await tab.until("one Back reaches the list inside the console", (s) => s.console && s.view === "list" && s.open === null)
+    await tab.run("history.forward()")
+    await tab.until("Forward reopens the restored Session", (s) => s.view === "detail" && s.open === TMUX)
+    assert.equal(await tab.run("history.length"), steps, "Forward reuses the new document's established step")
+  }))
+
+test("phone: reloading after a closed video preview leaves one Back to the list", () =>
+  inTab(PHONE, async (tab) => {
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    await tab.tap(TMUX)
+    await tab.until("the Session opens", (s) => s.view === "detail" && s.open === TMUX)
+    const video = "#document=1&machine=this-mac&session=" + escapedPane(801) + "&scope=project&path=fixture.mp4"
+    await tab.run(`(() => { const link = document.createElement("a"); link.href = ${JSON.stringify(video)};
+      document.body.append(link); link.click(); document.querySelector(".video-lightbox-close").click(); link.remove() })()`)
+    assert.ok(await tab.run("history.state?.videoPreviewClosed"), "the real modal leaves its reusable closed entry")
+    await tab.reload()
+    await tab.until("the Session survives reload", (s) => s.view === "detail" && s.open === TMUX)
+    await tab.run("history.back()")
+    await tab.until("the closed media entry cannot swallow Back", (s) => s.console && s.view === "list" && s.open === null)
+  }))
+
 test("phone: after a reload of a detail, the back gesture still returns to the list", () =>
   inTab(PHONE, async (tab) => {
     await tab.go("/")

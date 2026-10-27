@@ -48,3 +48,13 @@ Code blocks, images and other controls keep their own gestures.
 `session/address.e2e.ts` checks the real browser history and computed styles,
 including Back/Forward after a width change. These checks do not reproduce a
 physical iPhone's edge gesture; that remains a device acceptance check.
+
+A restored `history.state.view === "detail"` belongs to an earlier document and
+cannot prove a usable list still exists below it. A newly loaded document
+rebuilds its list/detail pair once, then reuses its own detail step for Session
+switches and Forward. This also puts a list immediately under a Session after
+reloading a reusable, closed video-preview entry. A reload may leave an older
+list entry further back; it must never require traversing a second detail to
+reach the list. The regression fixture reconstructs a lone restored detail and
+opens/closes the actual video modal before reloading. Physical media-return
+reload behavior remains a separate iPhone acceptance case.

@@ -158,25 +158,29 @@ function leaveAddress(state: unknown): void {
  * what it looks like (`openSession`, `session/open.js`), and the step carries
  * the session's address.
  *
- * There is only ever the one step. Opening a session from a detail — a forward
- * gesture, a reload of a detail, a link to another session — replaces the step
- * that is there; one pushed over it would leave Back going to a session that
- * is no longer on screen. An address that arrived asking for a session, typed
+ * Within this document, opening another Session or taking Forward replaces
+ * the established detail step. A marker restored from an older document does
+ * not prove that its list entry survived (media return can rebuild a page).
+ * Rebuild that list once before trusting detail markers in this document.
+ * An address that arrived asking for a session, typed
  * or tapped in a notification, had no list under it: the entry it arrived in
  * becomes the list and the detail is pushed over that, so Back from it is the
  * list rather than whatever came before the console.
  */
+let detailStepEstablished = false
 function stepIntoDetail(id: string, address: string, arrived: boolean): void {
   const detail = { view: "detail", id }
   try {
-    if ((history.state as { view?: unknown } | null)?.view === "detail") {
+    const wasDetail = (history.state as { view?: unknown } | null)?.view === "detail"
+    if (wasDetail && detailStepEstablished) {
       history.replaceState(detail, "", address)
-    } else if (arrived) {
+    } else if (arrived || wasDetail) {
       history.replaceState({ view: "list" }, "", listAddress())
       history.pushState(detail, "", address)
     } else {
       history.pushState(detail, "", address)
     }
+    detailStepEstablished = true
   } catch {
     /* the address stays as it was */
   }
