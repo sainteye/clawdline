@@ -418,3 +418,16 @@ PWA 外殼實測（7731）：
   不是對真的服務。
 - 加到主畫面之後的樣子：manifest 與二十個 startup image 的路由都回 200 了，但**沒有真的在
   iPhone 上加過一次**。上面那個 59 點死區的實測是舊版 index.html 的註解記的，不是這一波量的。
+
+
+## Admin support notifications
+
+Cloud's Admin help inbox has a separate, explicit per-device opt-in for new member questions.
+It registers `/support-sw.js` under `/help/admin/`, with a distinct support VAPID identity and
+browser subscription. Only this dedicated support subscription gives Cloud its p256dh/auth keys;
+root-scope machine Session subscriptions retain their existing endpoint-only Cloud boundary.
+Do not copy Session push keys into the support flow. Admin notifications contain generic text
+and a fixed authenticated question URL, never member content. Clicking opens the Admin detail
+even if a different member or Session view is already open. An iOS/iPadOS device enables this
+from the installed Home Screen web app. Push provider acceptance is distinct from the person
+observing and opening the notification.

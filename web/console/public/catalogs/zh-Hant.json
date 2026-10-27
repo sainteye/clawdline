@@ -9434,5 +9434,15 @@
   "capacityRow.cache.transcript_delta_bytes.what": "保留已讀對話頁的版本，讓後續更新只傳變動的列。版本數與序列化資料量都有上限。",
   "capacityRow.cache.transcript_delta_bytes.full": "最久沒用的版本會被移除，下次更新改傳目前的完整頁。對話紀錄不會遺失。",
   "capacityRow.session.transcript_delta_rows.what": "單次對話增量比較的列數上限，包含一筆原生紀錄展開為多列的情況。",
-  "capacityRow.session.transcript_delta_rows.full": "超過時改傳完整頁，不會因為比較上限而刪除對話內容。"
+  "capacityRow.session.transcript_delta_rows.full": "超過時改傳完整頁，不會因為比較上限而刪除對話內容。",
+  "support.notifyTitle": "新提問通知",
+  "support.notifyCopy": "會員提出新問題時，在這台裝置收到通知。點一下即可開啟 Admin 問題頁。",
+  "support.notifyEnable": "在這台裝置啟用",
+  "support.notifyDisable": "停用",
+  "support.notifyOn": "這台裝置已啟用",
+  "support.notifyTest": "傳送測試通知",
+  "support.notifyTestSent": "推播服務已接受測試。點一下通知即可開啟 Admin 收件區。",
+  "support.notifyUnsupported": "iPhone 或 iPad 請從主畫面開啟這個網站，再啟用通知。其他裝置需使用支援 Web Push 的瀏覽器。",
+  "support.notifyBlocked": "請先在瀏覽器設定允許這個網站傳送通知，再試一次。",
+  "support.notifyFailed": "無法確認通知設定，請檢查瀏覽器權限後再試一次。"
 }

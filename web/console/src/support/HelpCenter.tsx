@@ -1,3 +1,4 @@
+import { SupportNotifications } from "./notifications.js"
 import { useSupportImages, SupportImagePicker, SupportImageGallery } from "./images.js"
 import { richText } from "../legacy/js/view/markdown.js"
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react"
@@ -196,6 +197,7 @@ function QuestionList(p:BodyProps) {
   useEffect(()=>{const refresh=()=>{if(!document.hidden)read.refresh()};window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);return()=>{window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh)}},[path])
   const more=async()=>{try{const a=await p.call<{questions:Question[];next_cursor:string|null}>(path+"&cursor="+encodeURIComponent(next??read.data?.next_cursor??""));read.replace(a);setExtra([]);setNext(null)}catch(e){setMoreError(e instanceof SupportFailure?e.code:"support_unavailable")}}
   return <><div className="help-title"><h1>{w(admin?"inbox":"mine")}</h1>{!admin?<Link to={p.href("/help/ask")} go={p.go} primary><AskIcon/>{w("ask")}</Link>:null}</div>
+    {admin?<SupportNotifications call={p.call} locale={p.locale}/>:null}
     {admin?<div className="help-filters"><select aria-label={w("sourceLanguage")} value={locale} onChange={e=>setLocale(e.target.value)}><option value="">{w("allLanguages")}</option>{SUPPORT_LOCALES.map(l=><option key={l} value={l}>{LANGUAGE_NAMES[l]}</option>)}</select><select aria-label={w("allStates")} value={state} onChange={e=>setState(e.target.value)}><option value="">{w("allStates")}</option>{["queued","answering","needs_information","needs_human","answered","resolved"].map(s=><option key={s} value={s}>{w(s as SupportWord)}</option>)}</select></div>:null}
     <ErrorBox code={read.error??moreError} retry={read.refresh}/>{read.loading?<p role="status">{w("loading")}</p>:null}
     {read.data&&!read.data.questions.length?<p className="help-empty">{w(admin?"noneInbox":"noneMine")}</p>:null}
