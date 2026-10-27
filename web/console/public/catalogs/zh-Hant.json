@@ -1617,7 +1617,7 @@
   "documents.taskSize": "任務 · {arg0} · {arg1}",
   "documents.videoChanged": "影片已變更，請重新開啟。",
   "documents.videoError": "這個瀏覽器無法播放此影片。請使用 H.264／AAC 編碼的 MP4。",
-  "documents.videoLoading": "正在讀取影片… {0}%",
+  "documents.videoLoading": "正在讀取影片… {arg0}%",
   "documents.videoNotFound": "找不到這支已發布的影片。",
   "documents.videoReadFailed": "影片讀取失敗，請再讀一次。",
   "documents.videoTooLarge": "影片超過 32 MiB，請匯出較小的 MP4。",
