@@ -243,9 +243,15 @@ func TestFailedUnreadScreenInBackoffDoesNotHoldOtherCaptures(t *testing.T) {
 		t.Fatal("capture did not finish")
 	}
 	for round := 0; round < 3; round++ {
+		// Keep this pass's slot occupied until every row has asked. Without
+		// the barrier, a fast goroutine can finish "second" in the first
+		// pass, so the next clock advance expires its five-second backoff.
+		hold := make(chan struct{})
+		host.hold = hold
 		for _, row := range rows {
 			h.Capture(context.Background(), row)
 		}
+		close(hold)
 		settle()
 		if round == 0 {
 			now = now.Add(ScreenHeldOnDemand + time.Second)
