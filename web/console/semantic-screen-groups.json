@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9454,
-  "riskKeys": 4183,
-  "nonRiskCount": 5271,
+  "englishContentKeys": 9456,
+  "riskKeys": 4184,
+  "nonRiskCount": 5272,
   "groups": [
     {
       "name": "admin / other",
@@ -3399,7 +3399,7 @@
     },
     {
       "name": "next / other",
-      "count": 466,
+      "count": 467,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3491,6 +3491,7 @@
         "next.menuReread",
         "next.menuRereadAsked",
         "next.menuRereading",
+        "next.moduleLoadRecovery",
         "next.msCancel",
         "next.msChipDirect",
         "next.msChipFailing",

@@ -41,6 +41,7 @@ import { bindVideoPreview } from "./session/video-preview.js"
 import { videoLocatorFromHash } from "./session/video-preview-links.js"
 import "./session/video-preview.css"
 import { NewBuild } from "./NewBuild.js"
+import { ModuleLoadBoundary } from "./ModuleRecovery.js"
 import { MachineDashboard, type DashboardSource } from "./machine/MachineDashboard.js"
 import { Start } from "./session/Start.js"
 import { startedRow } from "./session/started-row.js"
@@ -1257,7 +1258,9 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       {Object.values(PAGE_MODULES).map(({ id, Component }) => (
         // Mounted once opened and kept, as the original keeps its sections in
         // the document and only hides them.
-        <Component key={id} shown={page === id && knowsHere(id)} />
+        <ModuleLoadBoundary key={id} shown={page === id && knowsHere(id)}>
+          <Component shown={page === id && knowsHere(id)} />
+        </ModuleLoadBoundary>
       ))}
       {!surveyAccount ? <SurveyCoordinator /> : null}
       <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine} key={fleetReaderMachine ?? "local"} machineName={quotaMachineName} offline={!!cloudMachineOffline} />

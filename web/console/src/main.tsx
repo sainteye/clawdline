@@ -1,9 +1,11 @@
 import "./loading-skeleton.css"
-import { StrictMode } from "react"
+import { StrictMode, type ReactNode } from "react"
 import { createRoot } from "react-dom/client"
 import { DoorGate } from "./door/Door.js"
 import { keepSamePageLinksHere } from "./same-page-links.js"
 import { capturePromoLink } from "./pages/plan/promo.js"
+import { ModuleLoadBoundary, ModuleRecovery } from "./ModuleRecovery.js"
+import { isModuleLoadError, observeModulePreloadErrors } from "./module-load-error.js"
 
 // The original stylesheet, all of it, in the order index.html links it. These
 // are byte-for-byte copies (see legacy/README.md). The first cut copied only the
@@ -55,6 +57,13 @@ capturePromoLink(window)
 
 const host = document.getElementById("root")
 if (!host) throw new Error("no #root in the document")
+observeModulePreloadErrors(window)
+const root = createRoot(host)
+const render = (children: ReactNode) => root.render(<ModuleLoadBoundary startup>{children}</ModuleLoadBoundary>)
+const startupFailure = (error: unknown) => {
+  if (!isModuleLoadError(error)) throw error
+  root.render(<ModuleRecovery startup />)
+}
 
 // Both consoles can be a Home Screen app, and in one a link to the console
 // itself must not leave for a browser that holds none of its keys
@@ -84,24 +93,24 @@ const declared = import.meta.env.VITE_HOSTED_CONSOLE as string | undefined
 const operations = location.pathname === "/admin" || location.pathname.startsWith("/admin/")
 if (declared && (location.pathname === "/help" || location.pathname.startsWith("/help/"))) {
   void import("./support/HelpCenter.js").then(({ HelpCenter }) =>
-    createRoot(host).render(<HelpCenter declared={declared} />),
-  )
+    render(<HelpCenter declared={declared} />),
+  ).catch(startupFailure)
 } else if (declared && operations) {
   void import("./cloud/admin/AdminGate.js").then(({ AdminGate }) =>
     // Session establishment registers a revocable viewer device. React's
     // development-only StrictMode effect replay must not register it twice.
-    createRoot(host).render(<AdminGate declared={declared} />),
-  )
+    render(<AdminGate declared={declared} />),
+  ).catch(startupFailure)
 } else if (declared) {
   void import("./cloud/CloudGate.js").then(({ CloudGate }) =>
-    createRoot(host).render(
+    render(
       <StrictMode>
         <CloudGate declared={declared} />
       </StrictMode>,
     ),
-  )
+  ).catch(startupFailure)
 } else {
-  createRoot(host).render(
+  render(
     <StrictMode>
       <DoorGate />
     </StrictMode>,

@@ -1169,6 +1169,8 @@ const words = {
     menuRereadAsked: "The machine has read its screen again.",
     newBuild: "The interface has been updated. Reload to use the latest version.",
     newBuildReload: "Reload",
+    moduleLoadTitle: "Part of this page could not load",
+    moduleLoadRecovery: "Reload the page to continue.",
     // A feature this machine's Clawdline is too old for (machine/NeedsUpdate.tsx).
     machineNeedsUpdate: "This machine's Clawdline is older and does not have this feature. Update it to use this.",
     machineNeedsUpdateVersion: "Current version: {version}",
@@ -3141,6 +3143,8 @@ const words = {
     menuRereadAsked: "那台機器已經重讀過畫面。",
     newBuild: "介面已更新，重新載入即可使用。",
     newBuildReload: "重新載入",
+    moduleLoadTitle: "部分頁面未能載入",
+    moduleLoadRecovery: "請重新載入頁面後繼續。",
     machineNeedsUpdate: "這台機器的 Clawdline 版本較舊，沒有這個功能。更新後就能使用。",
     machineNeedsUpdateVersion: "目前版本：{version}",
     machineNeedsUpdateLink: "前往設定更新",
