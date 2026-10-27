@@ -1166,6 +1166,21 @@
     "Note": true
   },
   {
+    "Name": "console.support_refresh_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.support_request_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.support_title_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.transcript_backoff_seconds",
     "Known": true,
     "Note": true

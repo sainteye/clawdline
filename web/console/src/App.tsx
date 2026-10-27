@@ -1,3 +1,4 @@
+import { supportWord } from "./support/words.js"
 import { macKeyboard, matchShortcut, shortcutAria, shortcutLabel } from "./shortcuts.js"
 import { openNewWorkItem } from "./pages/work/new-item.js"
 import { QuotaBar } from "./provider-quota/QuotaBar.js"
@@ -1113,6 +1114,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         }}
       >
         <div className="sidebar-panel" id="sidebar-panel">
+          {surveyAccount ? <a className="sidebar-item" href="/help"><SidebarIcon name="verify" />{supportWord("nav")}</a> : null}
           <section className="sidebar-group" aria-label={nextWord("sidebarMain")}>
             <h2>{nextWord("sidebarMain")}</h2>
             {sidebarPages.filter((p) => p.id === "sessions" || p.id === "projects" || p.id === "usage").map(sidebarPage)}

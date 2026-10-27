@@ -4,6 +4,8 @@ Clawdline Cloud is an optional way to read and act on a machine from the hosted 
 
 This page describes the **public repository's machine and browser code**. The account control plane, relay deployment, billing, retention and production operations belong to a private service repository and cannot be verified from this checkout. Its private `PROTOCOL.md` is the service-side contract; [cloud-wire.md](cloud-wire.md) specifies the public-side wire format; [the dated implementation record](records/cloud-wire-implementation-2026-09.md) holds test evidence. Local tests are not proof of current production behavior.
 
+For the separate account-service support content boundary and multilingual FAQ, see [Cloud help and private questions](cloud-support.md). Support questions are explicitly submitted service content; they do not enter the encrypted machine Session relay.
+
 ## Components and trust boundary
 
 | Component | Responsibility in this repository |

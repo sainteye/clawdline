@@ -82,7 +82,11 @@ const declared = import.meta.env.VITE_HOSTED_CONSOLE as string | undefined
 // page itself decides which of its pages an address names, so a deep link and
 // Back and Forward all land on it (`adminRoute` in cloud/admin/words.ts).
 const operations = location.pathname === "/admin" || location.pathname.startsWith("/admin/")
-if (declared && operations) {
+if (declared && (location.pathname === "/help" || location.pathname.startsWith("/help/"))) {
+  void import("./support/HelpCenter.js").then(({ HelpCenter }) =>
+    createRoot(host).render(<HelpCenter declared={declared} />),
+  )
+} else if (declared && operations) {
   void import("./cloud/admin/AdminGate.js").then(({ AdminGate }) =>
     // Session establishment registers a revocable viewer device. React's
     // development-only StrictMode effect replay must not register it twice.
