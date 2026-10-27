@@ -428,6 +428,23 @@ output, and the reclaim sweep removes a finished callback's files after 7 days
 hosted console serves `<sha>` or later and then runs the CloudGate check
 (`docs/hosted-console.md`).
 
+## Milestone handoffs from sandboxed Sessions
+
+`clawdline handoff --summary <file>` uploads the checked summary in the machine-authenticated
+`POST /v1/orchestrator/handoffs` body as `summary`, with `milestone: true`. The daemon validates
+it with the existing 6 KiB milestone rules, then publishes `handoff.md` and writes
+`obligations.md` before opening the receiver. A scheduled Codex task's `full` permission mode
+still confines filesystem writes to its workspace and task directory; it does not make the
+sibling `handoffs` directory writable. Uploading avoids that filesystem dependency without
+expanding the Session's permissions.
+
+Callers that omit `summary` retain the prewritten-package protocol. An identical uploaded
+summary may reuse an unpublished package after a retry; different contents are refused as
+`handoff_package_conflict`. Storage failures return `handoff_package_unwritable` and open no
+Session. Once the handoff has a durable record, its id replays that record without rewriting
+files or opening or typing into a second receiver. `delivered` continues to mean that the first
+line was typed, not that the receiver read or completed the work.
+
 ## 還沒做（這一波刻意不做，或做不到）
 
 - `detached-tasks`、`handoffs`、`root-assignments`、`respawn`、`landing-queue`、`graphs`、`waits`、`coordinator/*`。

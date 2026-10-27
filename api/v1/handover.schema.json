@@ -22,7 +22,7 @@
       }
     },
     "BrokerHandoffRequest": {
-      "description": "POST /v1/orchestrator/handoffs, a closed body. The package is written first at `<package_root>/<handoff_id>/handoff.md` (REFERENCES, VERIFICATION, OPEN THREADS). `coordinator_plain_handoff` must be the JSON value true: the machine role's holder hands over by succession instead.",
+      "description": "POST /v1/orchestrator/handoffs, a closed body. An optional milestone summary is uploaded for the daemon to write; otherwise the package is written first at `<package_root>/<handoff_id>/handoff.md` (REFERENCES, VERIFICATION, OPEN THREADS). `coordinator_plain_handoff` must be the JSON value true: the machine role's holder hands over by succession instead.",
       "type": "object",
       "additionalProperties": false,
       "required": ["handoff_id", "project_dir", "from_session", "coordinator_plain_handoff"],
@@ -34,6 +34,7 @@
         "title": { "description": "At most 200 characters.", "type": "string" },
         "from_session": { "description": "The sender's conversation id; it must be one live session on this machine.", "type": "string" },
         "coordinator_plain_handoff": { "type": "boolean" },
+        "summary": { "description": "Optional milestone summary text, at most 6 KiB and validated before writing. Requires milestone: true. The daemon writes handoff.md so sandboxed callers need no write access to package_root. An existing different file is refused; an opened handoff is replayed without rewriting.", "type": "string" },
         "milestone": { "description": "handoff.md is a milestone summary: sections Goal, Verified decisions, Blockers, Evidence and Next step, at most 6 KiB, evidence as links, no credential or conversation text. It is checked before anything opens (`bad_milestone_summary` lists each problem), and the daemon writes obligations.md beside it.", "type": "boolean" }
       }
     },

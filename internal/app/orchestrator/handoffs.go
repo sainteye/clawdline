@@ -244,6 +244,9 @@ type HandoffRequest struct {
 	// Milestone says handoff.md is a milestone summary (milestone.go): it is
 	// checked before anything opens, and the daemon writes obligations.md.
 	Milestone *bool `json:"milestone,omitempty"`
+	// Summary lets sandboxed callers upload a milestone instead of writing
+	// outside their workspace. Nil retains the prewritten-package protocol.
+	Summary *string `json:"summary,omitempty"`
 }
 
 // Handoff is one handoff as this broker keeps it.
@@ -408,6 +411,19 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 	}
 	dir := filepath.Join(b.HandoffRoot(), req.ID)
 	pkg := filepath.Join(dir, "handoff.md")
+	if req.Summary != nil {
+		if req.Milestone == nil || !*req.Milestone {
+			return Handoff{}, false, refuse(http.StatusUnprocessableEntity, "bad_milestone_summary",
+				"An uploaded summary requires milestone: true; nothing was opened.")
+		}
+		if problems := CheckMilestoneSummary([]byte(*req.Summary)); len(problems) > 0 {
+			return Handoff{}, false, refuseWith(http.StatusUnprocessableEntity, "bad_milestone_summary",
+				"The uploaded milestone summary is invalid; nothing was opened.", map[string]any{"problems": problems})
+		}
+		if err := b.writeHandoffSummary(req.ID, []byte(*req.Summary)); err != nil {
+			return Handoff{}, false, err
+		}
+	}
 	if info, err := os.Lstat(pkg); err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
 		return Handoff{}, false, refuseRawWith(http.StatusUnprocessableEntity, "bad_task",
 			"Write the handoff package first: "+pkg+

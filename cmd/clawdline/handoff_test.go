@@ -68,11 +68,14 @@ func TestHandoffRefusesABadSummaryBeforeAskingTheDaemon(t *testing.T) {
 	}
 }
 
-// A good summary is written as the package's handoff.md under the daemon's
-// package root, and the handoff is opened as a milestone one from this
-// conversation and project.
-func TestHandoffWritesThePackageAndOpensAMilestoneHandoff(t *testing.T) {
-	packages := t.TempDir()
+// A sandboxed caller sends its summary to the daemon without writing the
+// daemon-owned package directory.
+func TestHandoffUploadsTheSummaryWithoutWritingThePackage(t *testing.T) {
+	// A regular file blocks directory creation even when the test runs as root.
+	packages := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(packages, []byte("blocked"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	var posted map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -98,8 +101,7 @@ func TestHandoffWritesThePackageAndOpensAMilestoneHandoff(t *testing.T) {
 		posted["assistant"] != "claude" || posted["title"] != "Export pages" || id == "" {
 		t.Fatalf("posted %+v", posted)
 	}
-	data, err := os.ReadFile(filepath.Join(packages, id, "handoff.md"))
-	if err != nil || string(data) != handoffSummary {
-		t.Fatalf("package handoff.md = %q, %v", data, err)
+	if posted["summary"] != handoffSummary {
+		t.Fatalf("uploaded summary = %q", posted["summary"])
 	}
 }

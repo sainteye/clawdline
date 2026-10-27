@@ -1269,5 +1269,9 @@
   "http.ffd795cf51e7ebea": "place is board or backlog.",
   "http.ffed8239d8e297e0": "Supply the expected version and text content.",
   "http.0ae01c04ba06560a": "Select the Gemini model after opening the conversation.",
-  "http.2d525070efc0024d": "A resumed conversation keeps its original role snapshot."
+  "http.2d525070efc0024d": "A resumed conversation keeps its original role snapshot.",
+  "http.9c65a3b1a8ea6f55": "An uploaded summary requires milestone: true; nothing was opened.",
+  "http.c5591b61722a7c56": "The uploaded milestone summary is invalid; nothing was opened.",
+  "http.9eaae8deecfaf68c": "The handoff package could not be written; nothing was opened.",
+  "http.722796e74317291d": "The handoff package already contains a different summary; nothing was opened."
 }

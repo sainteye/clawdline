@@ -34,8 +34,14 @@ func TestHTTPRefusalTextRequiresExactWireDetailAndKnownKey(t *testing.T) {
 			t.Errorf("%+v rendered %q", test, got)
 		}
 	}
-	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1271 || total != 1271 {
+	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1275 || total != 1275 {
 		t.Fatalf("Traditional Chinese coverage = %d/%d", translated, total)
+	}
+	const handoffDetail = "The handoff package could not be written; nothing was opened."
+	handoffKey := HTTPRefusalKey(handoffDetail)
+	if handoffKey == "" || HTTPRefusalText("zh-Hant", handoffKey, handoffDetail) == handoffDetail ||
+		HTTPRefusalText("ja", handoffKey, handoffDetail) != handoffDetail {
+		t.Fatal("handoff storage refusal must translate in Traditional Chinese and fall back in Japanese")
 	}
 	const updateDetail = "force needs the version it installs"
 	updateKey := HTTPRefusalKey(updateDetail)

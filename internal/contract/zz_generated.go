@@ -708,7 +708,8 @@ type BrokerHandoffList struct {
 	PackageRoot string `json:"package_root"`
 }
 
-// POST /v1/orchestrator/handoffs, a closed body. The package is written first
+// POST /v1/orchestrator/handoffs, a closed body. An optional milestone summary
+// is uploaded for the daemon to write; otherwise the package is written first
 // at `<package_root>/<handoff_id>/handoff.md` (REFERENCES, VERIFICATION, OPEN
 // THREADS). `coordinator_plain_handoff` must be the JSON value true: the
 // machine role's holder hands over by succession instead.
@@ -730,6 +731,12 @@ type BrokerHandoffRequest struct {
 	Milestone  bool   `json:"milestone,omitempty"`
 	Model      string `json:"model,omitempty"`
 	ProjectDir string `json:"project_dir"`
+
+	// Optional milestone summary text, at most 6 KiB and validated before writing.
+	// Requires milestone: true. The daemon writes handoff.md so sandboxed callers need
+	// no write access to package_root. An existing different file is refused; an
+	// opened handoff is replayed without rewriting.
+	Summary string `json:"summary,omitempty"`
 
 	// At most 200 characters.
 	Title string `json:"title,omitempty"`
