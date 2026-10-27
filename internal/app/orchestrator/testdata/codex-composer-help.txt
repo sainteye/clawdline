@@ -1,0 +1,22 @@
+
+  >_ OpenAI Codex (v0.162.1)
+     ~/support/answering
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  GPT-6.1-Sol default · ~/support/answering
+  ? for shortcuts

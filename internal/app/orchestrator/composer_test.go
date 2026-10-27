@@ -60,6 +60,8 @@ func TestTheTwoCLIsDrawTheirOwnComposer(t *testing.T) {
 			"the workspace-trust dialog, whose highlighted answer is \"No, exit\""},
 		{"codex-composer", session.AssistantCodex, true, false,
 			"the composer of a fresh Codex session, which is every Codex child's first screen"},
+		{"codex-composer-help", session.AssistantCodex, true, false,
+			"a fresh restricted Codex home with its shortcut hint below the status bar"},
 		{"codex-composer-narrow", session.AssistantCodex, true, false,
 			"the same composer in the eighty columns tmux gives a new session, its status bar cut after one field"},
 		{"codex-working", session.AssistantCodex, true, false,
@@ -307,5 +309,18 @@ func TestACodexRootsComposerIsReadFromItsStatusBar(t *testing.T) {
 func TestADraftAboveTheListOfSubagentsIsADraft(t *testing.T) {
 	if got := ReadComposer(screen(t, "claude-subagents"), session.AssistantClaude); got != ComposerDraft {
 		t.Errorf("ReadComposer = %v, want ComposerDraft", got)
+	}
+}
+
+func TestCodexShortcutHintDoesNotMakeADialogReady(t *testing.T) {
+	for _, name := range []string{"codex-picker", "codex-trust"} {
+		s := strings.TrimSpace(screen(t, name)) + "\n  ? for shortcuts\n"
+		if ComposerReady(s, session.AssistantCodex) || !Choosing(s, session.AssistantCodex) {
+			t.Errorf("%s with a shortcut hint must remain a dialog", name)
+		}
+	}
+	unknown := strings.Replace(screen(t, "codex-composer-help"), "? for shortcuts", "Confirm the selection", 1)
+	if ComposerReady(unknown, session.AssistantCodex) {
+		t.Fatal("an unknown footer must not authorize typing")
 	}
 }
