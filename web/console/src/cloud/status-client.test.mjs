@@ -655,6 +655,7 @@ test("original detail panels retain their read names on the exact r/ target", as
     ["agent", { agent: "a", limit: 100, before: 17 }, "agent:a.before.17"],
     ["shell", { shell: "sh", bytes: 4096 }, "shell:sh"], ["documents", {}, "documents"],
     ["document", { request: "doc-1", scope: "project", task: "", path: "README.md" }, "read:doc-1"],
+    ["video", { request: "video-1", scope: "project", task: "", path: "clip.mp4", offset: 0, revision: "" }, "read:video-1"],
   ]) {
     await client.readForGeneration(target, word, fields)
     const sent = calls.at(-1)
@@ -663,7 +664,7 @@ test("original detail panels retain their read names on the exact r/ target", as
     assert.deepEqual(sent[2], { ...fields, machine_id: "m", expected_generation: genA })
     assert.equal(sent[3], answer)
   }
-  assert.equal(calls.length, 8)
+  assert.equal(calls.length, 9)
   await assert.rejects(() => client.readForGeneration(target, "send", { request: "write-1" }),
     { code: "read_only_channel" })
   await assert.rejects(() => client.readForGeneration({ ...target, executionGeneration: "" }, "git"),

@@ -1,0 +1,291 @@
+{
+  "date": "2026-10-27",
+  "scope": "Local component acceptance, not authenticated production Cloud or an actual iPhone",
+  "collector": {
+    "control_requests": 8,
+    "forbidden_requests": 0
+  },
+  "cases": [
+    {
+      "engine": "chromium",
+      "width": 390,
+      "media": {
+        "duration": 18,
+        "paused": true,
+        "controls": true,
+        "inline": true,
+        "width": 1920,
+        "height": 1080,
+        "parentReadable": false,
+        "blobOwnOrigin": true
+      },
+      "shell": {
+        "chunks": 29,
+        "urls": 0,
+        "overflow": false
+      },
+      "policy": {
+        "scriptRan": false
+      },
+      "after": {
+        "urls": 0,
+        "player": false,
+        "body": ""
+      },
+      "cancellation": {
+        "before": 1,
+        "after": 1,
+        "urls": 0,
+        "player": false
+      },
+      "language": "en"
+    },
+    {
+      "engine": "chromium",
+      "width": 1280,
+      "media": {
+        "duration": 18,
+        "paused": true,
+        "controls": true,
+        "inline": true,
+        "width": 1920,
+        "height": 1080,
+        "parentReadable": false,
+        "blobOwnOrigin": true
+      },
+      "shell": {
+        "chunks": 29,
+        "urls": 0,
+        "overflow": false
+      },
+      "policy": {
+        "scriptRan": false
+      },
+      "after": {
+        "urls": 0,
+        "player": false,
+        "body": ""
+      },
+      "cancellation": {
+        "before": 1,
+        "after": 1,
+        "urls": 0,
+        "player": false
+      },
+      "language": "en"
+    },
+    {
+      "engine": "webkit",
+      "width": 390,
+      "media": {
+        "duration": 18,
+        "paused": true,
+        "controls": true,
+        "inline": true,
+        "width": 1920,
+        "height": 1080,
+        "parentReadable": false,
+        "blobOwnOrigin": true
+      },
+      "shell": {
+        "chunks": 29,
+        "urls": 0,
+        "overflow": false
+      },
+      "policy": {
+        "scriptRan": false
+      },
+      "after": {
+        "urls": 0,
+        "player": false,
+        "body": ""
+      },
+      "cancellation": {
+        "before": 2,
+        "after": 2,
+        "urls": 0,
+        "player": false
+      },
+      "language": "en"
+    },
+    {
+      "engine": "webkit",
+      "width": 1280,
+      "media": {
+        "duration": 18,
+        "paused": true,
+        "controls": true,
+        "inline": true,
+        "width": 1920,
+        "height": 1080,
+        "parentReadable": false,
+        "blobOwnOrigin": true
+      },
+      "shell": {
+        "chunks": 29,
+        "urls": 0,
+        "overflow": false
+      },
+      "policy": {
+        "scriptRan": false
+      },
+      "after": {
+        "urls": 0,
+        "player": false,
+        "body": ""
+      },
+      "cancellation": {
+        "before": 1,
+        "after": 1,
+        "urls": 0,
+        "player": false
+      },
+      "language": "en"
+    },
+    {
+      "engine": "chromium",
+      "width": 390,
+      "media": {
+        "duration": 18,
+        "paused": true,
+        "controls": true,
+        "inline": true,
+        "width": 1920,
+        "height": 1080,
+        "parentReadable": false,
+        "blobOwnOrigin": true
+      },
+      "shell": {
+        "chunks": 29,
+        "urls": 0,
+        "overflow": false
+      },
+      "policy": {
+        "scriptRan": false
+      },
+      "after": {
+        "urls": 0,
+        "player": false,
+        "body": ""
+      },
+      "cancellation": {
+        "before": 1,
+        "after": 1,
+        "urls": 0,
+        "player": false
+      },
+      "language": "zh-Hant"
+    },
+    {
+      "engine": "chromium",
+      "width": 1280,
+      "media": {
+        "duration": 18,
+        "paused": true,
+        "controls": true,
+        "inline": true,
+        "width": 1920,
+        "height": 1080,
+        "parentReadable": false,
+        "blobOwnOrigin": true
+      },
+      "shell": {
+        "chunks": 29,
+        "urls": 0,
+        "overflow": false
+      },
+      "policy": {
+        "scriptRan": false
+      },
+      "after": {
+        "urls": 0,
+        "player": false,
+        "body": ""
+      },
+      "cancellation": {
+        "before": 1,
+        "after": 1,
+        "urls": 0,
+        "player": false
+      },
+      "language": "zh-Hant"
+    },
+    {
+      "engine": "webkit",
+      "width": 390,
+      "media": {
+        "duration": 18,
+        "paused": true,
+        "controls": true,
+        "inline": true,
+        "width": 1920,
+        "height": 1080,
+        "parentReadable": false,
+        "blobOwnOrigin": true
+      },
+      "shell": {
+        "chunks": 29,
+        "urls": 0,
+        "overflow": false
+      },
+      "policy": {
+        "scriptRan": false
+      },
+      "after": {
+        "urls": 0,
+        "player": false,
+        "body": ""
+      },
+      "cancellation": {
+        "before": 1,
+        "after": 1,
+        "urls": 0,
+        "player": false
+      },
+      "language": "zh-Hant"
+    },
+    {
+      "engine": "webkit",
+      "width": 1280,
+      "media": {
+        "duration": 18,
+        "paused": true,
+        "controls": true,
+        "inline": true,
+        "width": 1920,
+        "height": 1080,
+        "parentReadable": false,
+        "blobOwnOrigin": true
+      },
+      "shell": {
+        "chunks": 29,
+        "urls": 0,
+        "overflow": false
+      },
+      "policy": {
+        "scriptRan": false
+      },
+      "after": {
+        "urls": 0,
+        "player": false,
+        "body": ""
+      },
+      "cancellation": {
+        "before": 1,
+        "after": 1,
+        "urls": 0,
+        "player": false
+      },
+      "language": "zh-Hant"
+    }
+  ],
+  "sample": {
+    "bytes": 14689551,
+    "seconds": 18,
+    "width": 1920,
+    "height": 1080,
+    "video_codec": "h264",
+    "audio_codec": "aac"
+  },
+  "default_project_language": "en"
+}

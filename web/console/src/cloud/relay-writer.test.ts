@@ -55,6 +55,7 @@ class FakeClient implements CloudWriteClient {
   voiceFor?: CloudWriteClient["voiceFor"]
   /** What `_machineRequestAs` settles with, as the copied client resolves a payload's `body`. */
   machineAnswer: unknown = undefined
+  videoReply: Record<string, unknown> | null = null
   documentReply: Record<string, unknown> | null = null
   events(_listener: (event: CloudEvent) => void) {
     return () => {}
@@ -85,6 +86,7 @@ class FakeClient implements CloudWriteClient {
   _read(identity: CloudIdentity, type: string, extra: Record<string, unknown>, answer: string, timeoutMs?: number, options?: unknown) {
     return this.act("_read", [identity, type, extra, answer, timeoutMs, options], type === "document"
       ? this.documentReply ?? { scope: "project", path: "demo.md", media_type: "text/markdown; charset=utf-8", byte_count: 7, data: "IyBEZW1vCg==" }
+      : type === "video" ? this.videoReply
       : type === "documents" ? { documents: [{ scope: "project", path: "demo.md", bytes: 7, modified: 1 }] }
       : { ok: true, id: identity.session, action: "keyed" })
   }
@@ -2487,6 +2489,7 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/sessions/s1/screen", "screen"],
     ["/v1/sessions/s1/documents", "documents"],
     ["/v1/sessions/s1/documents/project/demo.md", "document"],
+    ["/v1/sessions/s1/documents/project/clip.mp4", "video"],
     ["/v1/sessions/s1/cloud-receipts/press-1", "session-receipt"],
     // The Session page's skills picker on another machine (e13a02e6).
     ["/v1/sessions/s1/skills", "skills"],
@@ -2626,4 +2629,27 @@ test("provider quota metadata crosses Cloud as a machine read without credential
   assert.equal((await reader.fetch("/v1/provider-quotas")).status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "provider-quotas", {}, "read"])
   assert.equal((await reader.fetch("/v1/provider-quotas?account=other")).status, 501)
+})
+
+
+test("MP4 reads cross Cloud as bounded JSON on the named Session and propagate cancellation", async () => {
+  const client = new FakeClient()
+  client.videoReply = { scope: "project", path: "clip.mp4", media_type: "video/mp4", total_bytes: 3,
+    offset: 0, revision: "rev-1", byte_count: 3, data: "YWJj" }
+  const { reader } = seam(client)
+  const signal = new AbortController().signal
+  const address = "/v1/sessions/s1/documents/project/clip.mp4?machine=mac-a&offset=0&revision="
+  const response = await reader.fetch(address, { signal })
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), client.videoReply)
+  const call = client.calls.find((c) => c[0] === "_read" && c[2] === "video")!
+  assert.deepEqual(call[1], { machine: "mac-a", session: "s1" })
+  assert.equal((call[3] as { offset: number }).offset, 0)
+  assert.equal((call[6] as { signal: AbortSignal }).signal, signal)
+  const before = client.calls.length
+  assert.equal((await reader.fetch(address.replace("mac-a", "other"))).status, 400)
+  assert.equal((await reader.fetch(address + "&offset=0")).status, 400)
+  assert.equal(client.calls.length, before)
+  client.videoReply = { ...client.videoReply, path: "secret.mp4" }
+  assert.equal((await reader.fetch(address)).status, 502)
 })

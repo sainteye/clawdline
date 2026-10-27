@@ -5,7 +5,10 @@ export const CANONICAL_DOCUMENT_ORIGIN = "https://app.clawdline.com";
 const DOCUMENT_MAX_PATH = 512;
 const DOCUMENT_MAX_DEPTH = 6;
 const DOCUMENT_MAX_LIST = 200;
-const DOCUMENT_EXTENSIONS = new Set(["md", "markdown", "txt", "html"]);
+const DOCUMENT_EXTENSIONS = new Set(["md", "markdown", "txt", "html", "mp4"]);
+export const VIDEO_MAX_BYTES = 33554432;
+export const VIDEO_CHUNK_BYTES = 524288;
+export function isVideoPath(path) { return typeof path === "string" && /\.mp4$/i.test(path); }
 const TASK_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const utf8 = new TextEncoder();
 
@@ -194,7 +197,7 @@ function listingRow(row, identity) {
     if (keys.length !== allowed.length || keys.some(function (key) { return allowed.indexOf(key) < 0; })) {
         throw new TypeError("document listing metadata carries an unknown field");
     }
-    if (!Number.isSafeInteger(row.bytes) || row.bytes < 0 || row.bytes > DOCUMENT_MAX_BYTES ||
+    if (!Number.isSafeInteger(row.bytes) || row.bytes < 0 || row.bytes > (isVideoPath(row.path) ? VIDEO_MAX_BYTES : DOCUMENT_MAX_BYTES) ||
         typeof row.modified !== "number" || !Number.isFinite(row.modified)) {
         throw new TypeError("document listing metadata has invalid bounds");
     }

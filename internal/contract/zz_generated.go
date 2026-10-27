@@ -2788,7 +2788,8 @@ type DocumentList struct {
 // page checks that they agree; `url` is this daemon's own address for the bytes
 // and is dropped by the page, which builds its own from the locator.
 type DocumentRow struct {
-	// The file's size when it was checked, never above the two-megabyte cap.
+	// The file's size when it was checked, at most 2 MiB for text/HTML or 32 MiB for
+	// MP4.
 	Bytes int64  `json:"bytes"`
 	Label string `json:"label"`
 
@@ -8995,6 +8996,23 @@ var VerificationStatusValues = []VerificationStatus{VerificationStatusOpen, Veri
 type VerificationTaskNote struct {
 	Text         string `json:"text"`
 	Verification string `json:"verification"`
+}
+
+// One sequential MP4 chunk. Each read rechecks authorization. Offset zero
+// starts with an empty requested revision; later offsets repeat the returned
+// size/mtime revision. This is a version marker, not a content hash.
+type VideoChunk struct {
+	ByteCount int64 `json:"byte_count"`
+
+	// Canonical base64 of exactly byte_count bytes.
+	Data       string         `json:"data"`
+	MediaType  string         `json:"media_type"`
+	Offset     int64          `json:"offset"`
+	Path       string         `json:"path"`
+	Revision   string         `json:"revision"`
+	Scope      DocumentSource `json:"scope"`
+	Task       string         `json:"task,omitempty"`
+	TotalBytes int64          `json:"total_bytes"`
 }
 
 // GET /v1/voice/language: what the next recording will be read as, and who said

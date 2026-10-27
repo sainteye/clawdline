@@ -660,6 +660,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "artifacts.video_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 33554432,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/documents.MaximumVideoBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "artifacts.video_chunk_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 524288,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/documents.MaximumVideoChunkBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "audit.security",
     "Class": "security_audit",
     "Unit": "bytes",

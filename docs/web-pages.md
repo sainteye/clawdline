@@ -130,6 +130,9 @@ transcript underneath a page that is still on screen.
 
 ### Document links
 
+Published MP4 files use the same locator and a dedicated bounded media read; see
+[MP4 playback](video-artifacts.md). Inert document rules remain unchanged.
+
 A document uses the whole strict fragment
 `#document=1&machine=<machine>&session=<session>&scope=<project|task>&[task=<uuid>&]path=<relative>`.
 It is not `#page=documents` plus more fields: `#page=` is the complete address of ordinary

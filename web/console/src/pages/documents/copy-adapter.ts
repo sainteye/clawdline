@@ -85,25 +85,34 @@ export function adaptDocumentsCopy(page: HTMLElement, source: {
         "Loading documents…": "loading",
         "Waiting for the encrypted connection…": "connecting",
         "This session has no readable Markdown, text or HTML documents.": "empty",
+        "This session has no readable documents or MP4 videos.": "empty",
         "Link copied.": "copied",
         "Share sheet opened.": "shared",
       }
       const key = ordinary[original]
-      if (key) set(status, text(key), key)
+      const videoProgress = /^Loading video… (\d+)%$/u.exec(original)
+      if (videoProgress) set(status, format("videoLoading", [videoProgress[1]]), "videoLoading")
+      else if (key) set(status, text(key), key)
       else if (status.dataset.state === "error" && original) {
         const code = /^([^:]+): /u.exec(original)?.[1] || "document_read_failed"
         const error = source.error() as { code?: string } | null
         const sourceError = error?.code === code ? error : { code }
         const explicit = error?.code === code ? catalogRefusalDetail(error) : null
-        const special = code === "malformed_document_locator" ? "invalidLinkError"
+        const videoKey = ({ video_too_large: "videoTooLarge", video_changed: "videoChanged",
+          video_not_found: "videoNotFound", video_format_unsupported: "videoError",
+          video_range_invalid: "videoReadFailed", video_answer_invalid: "videoReadFailed" } as Record<string, string>)[code]
+        const special = videoKey ?? (code === "malformed_document_locator" ? "invalidLinkError"
           : code === "document_copy_unavailable" ? "copyUnavailableError"
-            : code === "document_share_unavailable" ? "shareUnavailableError" : null
+            : code === "document_share_unavailable" ? "shareUnavailableError" : null)
         if (special) renderError(status, sourceError, text(special), catalogWordLanguage("documents", special))
         else if (explicit) renderError(status, sourceError, explicit.text, explicit.lang)
         else renderError(status, sourceError, undefined, catalogWordLanguage("documents", "readFailed"))
       } else if (!original) set(status, "")
       paintedStatus = status.textContent || ""
     }
+
+    const videoError = page.querySelector<HTMLElement>(".document-video-error")
+    if (videoError?.textContent) set(videoError, text("videoError"), "videoError")
 
     const rows = source.rows()
     const buttons = page.querySelectorAll<HTMLButtonElement>("#documents-rows button.document-row")

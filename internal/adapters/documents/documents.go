@@ -233,6 +233,11 @@ func root(directory, enclosure string) string {
 // allowlist are all refused *before* the filesystem is asked anything, and the
 // containment test is made against resolved paths afterwards.
 func File(root, name string) (Located, error) {
+	return file(root, name, false)
+}
+
+// file keeps video publication separate from inert text reads.
+func file(root, name string, video bool) (Located, error) {
 	if root == "" {
 		return Located{}, NotFound
 	}
@@ -258,7 +263,7 @@ func File(root, name string) (Located, error) {
 		}
 	}
 	relative := strings.Join(segments, "/")
-	if !readableExtensions[extensionOf(relative)] {
+	if (!video && !readableExtensions[extensionOf(relative)]) || (video && extensionOf(relative) != "mp4") {
 		return Located{}, NotFound
 	}
 	candidate := root
@@ -274,7 +279,7 @@ func File(root, name string) (Located, error) {
 	if err != nil || !info.Mode().IsRegular() {
 		return Located{}, NotFound
 	}
-	if info.Size() > MaximumBytes {
+	if (!video && info.Size() > MaximumBytes) || (video && info.Size() > MaximumVideoBytes) {
 		return Located{}, TooLarge
 	}
 	return Located{
@@ -390,7 +395,8 @@ func Walk(ctx context.Context, root string) ([]Document, Cut) {
 		if !strings.HasPrefix(resolved, prefix) {
 			return nil
 		}
-		located, refusal := File(root, filepath.ToSlash(strings.TrimPrefix(resolved, prefix)))
+		name := filepath.ToSlash(strings.TrimPrefix(resolved, prefix))
+		located, refusal := file(root, name, extensionOf(name) == "mp4")
 		if refusal != nil {
 			return nil
 		}

@@ -163,3 +163,14 @@
     .documents-page .is-fullscreen .document-heading,
     .documents-page .is-fullscreen.chrome-folded .document-heading { transition: none; transform: none; }
 }
+
+.document-video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  max-height: 75dvh;
+  border: 0;
+  background: #000;
+}
+.document-video-error { color: var(--text); }

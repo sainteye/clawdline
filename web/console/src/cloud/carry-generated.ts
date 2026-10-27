@@ -199,6 +199,7 @@ export const CARRIED = {
   "verification.get": "GET /v1/verifications/{id}",
   "verification.list": "GET /v1/verifications",
   "verification.note": "POST /v1/verifications/{id}/notes",
+  video: "GET /v1/sessions/{id}/documents/{scope}/{path}.mp4?offset=&revision=",
   voice: "POST /v1/voice",
   "work-gate-settings": "GET /v1/settings/work-gates",
   "work-gate-settings-update": "POST /v1/settings/work-gates",
