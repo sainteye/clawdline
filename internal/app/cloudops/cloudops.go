@@ -330,9 +330,15 @@ func Knows(name string) bool { _, ok := catalog[name]; return ok }
 // machine say. A step that refuses names its own code; none of them is silent.
 func (b Bridge) Handle(ctx context.Context, cmd Command) (answer Answer) {
 	parsed, parseErr := decodeBody(cmd.Plaintext)
+	parsed, compressed := negotiateReadCompression(parsed)
 	word, _ := parsed.str("type")
 	mutating := false
-	defer func() { answer.Operation, answer.Mutating = word, mutating }()
+	defer func() {
+		if compressed {
+			answer = compressedReadAnswer(answer)
+		}
+		answer.Operation, answer.Mutating = word, mutating
+	}()
 
 	// Before anything about the request: is it even ours. The viewer listens
 	// on the channel it addressed, which is not one this machine publishes, so

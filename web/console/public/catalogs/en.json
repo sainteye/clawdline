@@ -9434,5 +9434,8 @@
   "capacityRow.cache.transcript_delta_bytes.what": "Versions of read transcript pages retained so subsequent updates can carry only changed entries. Both version count and serialized bytes are bounded.",
   "capacityRow.cache.transcript_delta_bytes.full": "The least recently used version is evicted. The next update sends a full current page; conversation history is preserved.",
   "capacityRow.session.transcript_delta_rows.what": "Maximum entries compared for one incremental transcript update, including providers that expand one record into several entries.",
-  "capacityRow.session.transcript_delta_rows.full": "Larger pages are sent whole. No conversation entries are removed by this comparison limit."
+  "capacityRow.session.transcript_delta_rows.full": "Larger pages are sent whole. No conversation entries are removed by this comparison limit.",
+  "next.compressedReadFailed": "This reply could not be opened. Try reading it again.",
+  "next.compressedReadUnsupported": "This reply uses an unsupported format. Refresh this page and try again.",
+  "next.compressedReadTooLarge": "This reply exceeds the reading limit."
 }

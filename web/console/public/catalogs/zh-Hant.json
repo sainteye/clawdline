@@ -9434,5 +9434,8 @@
   "capacityRow.cache.transcript_delta_bytes.what": "保留已讀對話頁的版本，讓後續更新只傳變動的列。版本數與序列化資料量都有上限。",
   "capacityRow.cache.transcript_delta_bytes.full": "最久沒用的版本會被移除，下次更新改傳目前的完整頁。對話紀錄不會遺失。",
   "capacityRow.session.transcript_delta_rows.what": "單次對話增量比較的列數上限，包含一筆原生紀錄展開為多列的情況。",
-  "capacityRow.session.transcript_delta_rows.full": "超過時改傳完整頁，不會因為比較上限而刪除對話內容。"
+  "capacityRow.session.transcript_delta_rows.full": "超過時改傳完整頁，不會因為比較上限而刪除對話內容。",
+  "next.compressedReadFailed": "無法開啟這份回覆，請重新讀取。",
+  "next.compressedReadUnsupported": "這份回覆的格式尚未支援，請重新整理頁面後再試。",
+  "next.compressedReadTooLarge": "回覆超過可讀取的大小上限。"
 }
