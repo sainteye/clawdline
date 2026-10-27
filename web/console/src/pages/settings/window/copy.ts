@@ -36,9 +36,9 @@ const ownWords = {
       "{combo} could not be registered (the operating system returned {status}). The ✳ in Clawdline's menu still opens the input box; press the button above to choose another combination.",
     webCloudStatusReadFailed: "Could not read this machine's status.",
     webRemoteMachineOnly:
-      "This browser cannot manage Cloud; only this machine's own sign-in can. Use the Clawdline app's settings on this machine, or run clawdline cloud login in a terminal on this machine.",
+      "This browser cannot manage this machine's Cloud sign-in. Use the setup guide on this machine, or run clawdline cloud login in a terminal on this machine.",
     webCloudManagedElsewhere:
-      "Clawdline Cloud, which lets your phone and other machines reach this one, is not managed from a browser. On a Mac with the app, open Settings from the Clawdline menu bar icon and choose Remote. Anywhere else, run clawdline cloud login and then clawdline cloud on in a terminal on this machine; clawdline cloud pair shows a pairing link and QR code.",
+      "Open Clawdline's setup guide on this machine to connect your Cloud account and pair a browser or phone. You can also run clawdline cloud login, clawdline cloud on, and clawdline cloud pair in a terminal on this machine.",
     webCloudStatusToken: "Machine credential expires: {at}",
     webCloudStatusKey: "Machine key: {key}",
     webCloudStatusMachine: "Machine {machine}",
@@ -136,9 +136,9 @@ const ownWords = {
       "{combo} 註冊不起來（作業系統回 {status}）。Clawdline 選單裡的 ✳ 一樣打得開輸入框；要換一組就按上面的按鈕。",
     webCloudStatusReadFailed: "讀不到這台機器的狀態。",
     webRemoteMachineOnly:
-      "這個瀏覽器不能管理 Cloud，只有這台機器本身的登入可以。請改用這台機器上 Clawdline App 的設定，或在這台機器的終端機執行 clawdline cloud login。",
+      "這個瀏覽器不能管理這台機器的 Cloud 登入。請在這台機器開啟設定精靈，或在這台機器的終端機執行 clawdline cloud login。",
     webCloudManagedElsewhere:
-      "Clawdline Cloud（讓手機與其他機器連到這台）不在瀏覽器裡管理。有 App 的 Mac：從選單列的 Clawdline 圖示打開「設定」，選「遠端」。其他機器：在這台機器的終端機執行 clawdline cloud login，再執行 clawdline cloud on；clawdline cloud pair 會顯示配對連結與 QR 碼。",
+      "請在這台機器開啟 Clawdline 設定精靈，連接 Cloud 帳號並配對瀏覽器或手機。也可以在這台機器的終端機依序執行 clawdline cloud login、clawdline cloud on 與 clawdline cloud pair。",
     webCloudStatusToken: "機器憑證到期：{at}",
     webCloudStatusKey: "機器金鑰：{key}",
     webCloudStatusMachine: "機器 {machine}",
