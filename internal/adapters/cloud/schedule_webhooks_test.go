@@ -173,3 +173,28 @@ func TestOnlyAnInvestigationActivationCarriesThePurpose(t *testing.T) {
 		t.Fatalf("an ordinary activation on an old Cloud: %v", err)
 	}
 }
+
+func TestWebhookCreationUsesOnlyThisMachineAndNeverRecoversAReplaySecret(t *testing.T) {
+	for _, duplicate := range []bool{false, true} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v1/schedule-webhooks" || r.Method != "POST" || r.Header.Get("Authorization") != "Bearer machine-secret" || r.Header.Get("Idempotency-Key") != "same-key" {
+				t.Errorf("invalid creation request")
+			}
+			var body map[string]string
+			if json.NewDecoder(r.Body).Decode(&body) != nil || len(body) != 1 || body["machine_id"] != "mac_self" {
+				t.Errorf("unexpected creation body")
+			}
+			secret := "https://api.example.test/v1/schedule-webhook-trigger/secret"
+			if duplicate {
+				secret = ""
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"schema": "clawdline.schedule_webhook.management.v1", "hook": map[string]any{"hook_id": "swh_self", "machine_id": "mac_self", "state": "pending_binding"}, "public_url": secret, "secret_available": !duplicate, "duplicate": duplicate})
+		}))
+		client := NewScheduleWebhookClient(server.URL, "machine-secret")
+		made, err := client.Create(context.Background(), "mac_self", "same-key")
+		server.Close()
+		if err != nil || made.Duplicate != duplicate || made.SecretAvailable == duplicate || (duplicate && made.PublicURL != "") {
+			t.Fatalf("creation replay contract failed: %v", err)
+		}
+	}
+}

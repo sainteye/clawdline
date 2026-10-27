@@ -268,5 +268,9 @@
   "playbook.not_found": "此 id 不是已儲存的 Playbook；未做任何變更。",
   "playbook.retry": "結果無法確認。請沿用相同的 --key、操作、id 與 JSON 內容重試；不要產生新的 key。",
   "note.live_session_create_required": "clawdline note create：請指定仍在運作的 Session 對話。未變更任何內容。",
-  "note.live_session_required": "請用 --from 指定存活的 Session 對話。"
+  "note.live_session_required": "請用 --from 指定存活的 Session 對話。",
+  "webhook_create.usage": "用法：clawdline webhook create --url-file <新的私密路徑> --key <key> --session <conversation> --run <run> [--port n]",
+  "webhook_create.file": "無法以專用方式建立 URL 檔案；尚未送出請求。",
+  "webhook_create.connection": "無法連線至 daemon；尚未送出請求。",
+  "webhook_create.uncertain": "尚未確認建立結果。請以相同 key 重試；不要另建第二個 webhook。"
 }

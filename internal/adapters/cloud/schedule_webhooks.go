@@ -14,8 +14,8 @@ import (
 )
 
 // ScheduleWebhookClient is the machine-credential side of the public webhook
-// protocol. It deliberately carries no trigger URL: that one-time secret is a
-// browser concern and must never enter this daemon's store or logs.
+// protocol. Creation returns a one-time trigger URL directly to its caller;
+// the secret must never enter this daemon's store or logs.
 type ScheduleWebhookClient struct {
 	Client     *AccountClient
 	Credential string
@@ -28,6 +28,19 @@ func NewScheduleWebhookClient(baseURL, credential string) ScheduleWebhookClient 
 	client := NewAccountClient(baseURL)
 	client.HTTP = &http.Client{Timeout: 35 * time.Second}
 	return ScheduleWebhookClient{Client: client, Credential: credential}
+}
+
+// Create returns a credential only on the first response; replay is public-safe.
+func (c ScheduleWebhookClient) Create(ctx context.Context, machineID, key string) (schedulewebhook.Created, error) {
+	var out schedulewebhook.Created
+	if err := c.Client.postWithHeaders(ctx, "/v1/schedule-webhooks", c.Credential,
+		map[string]any{"machine_id": machineID}, map[string]string{"Idempotency-Key": key}, &out); err != nil {
+		return out, err
+	}
+	if out.Schema != "clawdline.schedule_webhook.management.v1" || out.Hook.ID == "" || out.Hook.MachineID != machineID {
+		return schedulewebhook.Created{}, fmt.Errorf("%w: invalid webhook creation response", ErrIncompatible)
+	}
+	return out, nil
 }
 
 // InvestigationBindingPurpose is the one purpose a machine may declare when it

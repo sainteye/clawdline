@@ -103,6 +103,9 @@ func webhookClient() *http.Client {
 }
 
 func webhookCommand(args []string) {
+	if len(args) > 0 && args[0] == "create" {
+		os.Exit(runWebhookCreate(os.Stdout, os.Stderr, args[1:], openBroker))
+	}
 	if len(args) < 1 || args[0] != "fire" {
 		webhookFireUsage(os.Stderr)
 		os.Exit(webhookExitUsage)
