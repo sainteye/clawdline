@@ -83,7 +83,9 @@ func refusedScheduleRaw(status int, code, message string) ScheduleReply {
 // the Swift app's `Orchestrator` schedule half and `ScheduleService`, over this
 // daemon's own store rather than `~/.config/clawdline/schedules`.
 type ScheduleBook struct {
-	Store *store.Store
+	// CreateWebhook forwards creation without retaining its one-time secret.
+	CreateWebhook func(context.Context, string) (schedulewebhook.Created, error)
+	Store         *store.Store
 	// Broker is the one way a run is started: the broker's own dispatch
 	// path, so a scheduled run is arbitrated against, briefed, timed and
 	// collected exactly as a dispatched task is (docs/design-decisions.md D07).

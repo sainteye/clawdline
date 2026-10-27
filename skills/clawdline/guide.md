@@ -1095,6 +1095,18 @@ A schedule may have no time: send `"trigger_only": true` instead of `at`, `days`
 clock never runs it; it runs only by `…/run` or by its webhook, and only while `enabled`. It is a
 standing instruction like a repeating one and needs the same proof.
 
+**Create a task webhook as an agent.** On the target machine, after the person explicitly requests the webhook, read the recent run as above. Create the trigger-only schedule and read it back. Then run:
+
+```sh
+clawdline webhook create --url-file <new-private-file> --key <stable-key> --session <conversation-id> --run <run-id>
+```
+
+This calls `POST /v1/orchestrator/schedule-webhooks/create` with exactly `{"session_id":"…","via":{"run":"…"}}` and an `Idempotency-Key`. It requires the orchestrator token and a valid recent run; the enrolled Cloud machine may create only for itself, on a plan allowing webhooks. No schedule content goes to Cloud. The CLI creates a new file with mode 0600, refuses an existing file or symlink before requesting creation, and prints only `hook_id`, `state` and `revision`. Keep the file outside the repository; never print it. The URL is a credential. Creation alone leaves the hook `pending_binding`, so it cannot trigger work yet.
+
+Bind the returned hook using `POST /v1/orchestrator/schedule-webhooks/bind` with `{"request_id":"<fresh UUID>","hook_id":"<returned hook>","schedule_id":"<schedule>","replace_hook_id":null}`. Reuse the same request_id after an uncertain bind. Read the schedule back and confirm the binding/activation response before calling it ready. Do not fire a webhook merely to test creation: that starts the person's task.
+
+Creation replay never returns the URL again and is not cached in the daemon's receipt store. After an uncertain creation, reuse the same key and proof; do not request a new hook with a new key. `secret_unavailable hook_id=…` means the hook exists but its one-time URL cannot be recovered by replay: bind that hook, then have the person rotate its URL through the Cloud console and save the replacement privately. `secret_save_failed` has the same recovery. A creation refusal is not a successful binding or delivery. A Cloud that refuses machine creation needs its API updated; do not borrow a browser cookie or another machine's credential.
+
 **Start a task on another machine and learn how it ended.** There is no machine-to-machine channel.
 Make the task a trigger-only schedule on the target machine, bind a Cloud webhook to it, and store
 the URL where the caller can read it (it is a credential: a file readable only by you, or

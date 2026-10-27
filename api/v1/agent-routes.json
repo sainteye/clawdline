@@ -349,6 +349,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/orchestrator/schedule-webhooks/create",
+      "guide": "schedule"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/orchestrator/schedules",
       "guide": "schedule"
     },

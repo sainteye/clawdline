@@ -961,6 +961,18 @@ body）與 `DELETE /v1/orchestrator/schedules/<id>`（以 JSON body 送出兩個
 排程可以不設時間：用 `"trigger_only": true` 取代 `at`、`days` 與 `on`。時鐘永遠不會執行它；它只由
 `…/run` 或它的 webhook 啟動，而且只在 `enabled` 時。它和重複排程一樣是長期指示，需要同一份證據。
 
+Agent 建立 Task Webhook：先依上文取得使用者本次明確指令的 run，建立並讀回 `trigger_only` 排程，再執行：
+
+```sh
+clawdline webhook create --url-file <new-private-file> --key <stable-key> --session <conversation-id> --run <run-id>
+```
+
+此命令呼叫 `POST /v1/orchestrator/schedule-webhooks/create`，只送 `{"session_id":"…","via":{"run":"…"}}`，並附 `Idempotency-Key`。需本機 orchestrator token、有效的使用者 run，以及允許 Webhook 的 Cloud 方案；機器只能替自己建立，不會傳送排程內容。CLI 以 0600 建立新檔，遇到既有檔案或符號連結會在送出請求前拒絕，僅印出 hook_id、state、revision。URL 是密鑰，請存於 repository 外，不要印出。新 hook 處於 `pending_binding`，尚不能觸發工作。
+
+接著呼叫 `POST /v1/orchestrator/schedule-webhooks/bind`，送出 `{"request_id":"<新的 UUID>","hook_id":"<剛建立的 hook>","schedule_id":"<排程>","replace_hook_id":null}`。綁定結果不確定時沿用同一 request_id；讀回排程並確認綁定與啟用回應後才可說已就緒。不要為了測試建立而觸發真正的工作。
+
+建立結果不確定時，沿用相同 key 與授權證明重試，不要換 key 另建 hook。重播不會再次回傳 URL，daemon 也不把密鑰存入 receipt。`secret_unavailable hook_id=…` 或 `secret_save_failed` 表示應綁定該 hook，再請使用者於 Cloud console 輪替 URL 並私密保存。Cloud 若拒絕機器建立，需先更新 API；不要借用瀏覽器 cookie 或另一台機器的憑證。建立、綁定與送達是不同狀態。
+
 **在另一台機器啟動任務，並知道它怎麼結束。** 機器之間沒有直接的通道。把任務做成目標機器上的
 trigger-only 排程，替它綁一個 Cloud webhook，把網址存在呼叫端讀得到的地方（它是憑證：只有你能讀的
 檔案，或 `CLAWDLINE_WEBHOOK_URL`；絕不放在命令列參數）。然後在呼叫端的機器上：

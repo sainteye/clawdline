@@ -118,6 +118,14 @@ type investigationActivator interface {
 func (s *Server) StartScheduleWebhooks(ctx context.Context, identity schedulewebhook.Identity, cloud schedulewebhook.Cloud, build string) <-chan struct{} {
 	book := s.scheduleBook()
 	book.Activate = cloud.Activate
+	book.CreateWebhook = nil
+	if creator, ok := cloud.(interface {
+		Create(context.Context, string, string) (schedulewebhook.Created, error)
+	}); ok {
+		book.CreateWebhook = func(ctx context.Context, key string) (schedulewebhook.Created, error) {
+			return creator.Create(ctx, identity.MachineID, key)
+		}
+	}
 	book.ActivateInvestigation = nil
 	if investigation, ok := cloud.(investigationActivator); ok {
 		book.ActivateInvestigation = investigation.ActivateInvestigation

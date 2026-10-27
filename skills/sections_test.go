@@ -38,8 +38,8 @@ func TestGuideCodeExamplesStayInSync(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := guideFence.FindAll(english, -1)
-	if len(want) != 43 {
-		t.Fatalf("English guide has %d code examples, expected 43", len(want))
+	if len(want) != 44 {
+		t.Fatalf("English guide has %d code examples, expected 44", len(want))
 	}
 	for _, lang := range Topics() {
 		guide, err := Guide(lang)
