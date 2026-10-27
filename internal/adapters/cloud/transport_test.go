@@ -158,6 +158,8 @@ func (l *testLine) run(t *testing.T) context.CancelFunc {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	// Subscribe before starting: promotion closes and replaces this channel.
+	ready := l.transport.Ready()
 	go func() {
 		defer close(done)
 		_ = l.transport.Run(ctx)
@@ -168,7 +170,7 @@ func (l *testLine) run(t *testing.T) context.CancelFunc {
 		<-done
 	})
 	select {
-	case <-l.transport.Ready():
+	case <-ready:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the handshake did not complete")
 	}
@@ -234,15 +236,10 @@ func TestADroppedSocketIsRedialled(t *testing.T) {
 	line := newTestLine(t)
 	line.run(t)
 
-	before := line.transport.Ready()
+	ready := line.transport.Ready()
 	line.relay.DropLive()
 	select {
-	case <-before:
-		t.Fatal("the pre-drop ready channel closed again")
-	default:
-	}
-	select {
-	case <-line.transport.Ready():
+	case <-ready:
 	case <-time.After(10 * time.Second):
 		t.Fatal("the line did not come back")
 	}
@@ -288,9 +285,10 @@ func TestAnUnansweredEnvelopeIsResentByteForByte(t *testing.T) {
 	}
 	waitFor(t, 5*time.Second, func() bool { return len(line.relay.Published()) == 1 })
 
+	ready := line.transport.Ready()
 	line.relay.DropLive()
 	select {
-	case <-line.transport.Ready():
+	case <-ready:
 	case <-time.After(10 * time.Second):
 		t.Fatal("the line did not come back")
 	}

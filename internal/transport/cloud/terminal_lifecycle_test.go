@@ -306,7 +306,8 @@ func TestRekeyReceiptStartsInheritedWatchAfterDelivery(t *testing.T) {
 	l.terminalReceiptSettled("termr/machine/viewer/"+c.id, c.rekeyReceiptSeq, adaptercloud.SettleDelivered)
 	deadline := time.After(time.Second)
 	for {
-		if row, ok := spool.Row(1); ok {
+		// A reservation exists before sealing; only Ready publishes the envelope.
+		if row, ok := spool.Row(1); ok && row.State == adaptercloud.SpoolReady {
 			env, err := domaincloud.DecodeEnvelope(row.Sealed)
 			if err != nil {
 				t.Fatal(err)
