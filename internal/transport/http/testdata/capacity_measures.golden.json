@@ -157,6 +157,16 @@
     "Note": true
   },
   {
+    "Name": "artifacts.video_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "artifacts.video_chunk_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "audit.security",
     "Known": true
   },

@@ -251,6 +251,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `verification_gate_on` | `internal/domain/work/v2.go` |
 | `version_conflict` | `internal/transport/http/work_v2_persona_suggestion.go` |
 | `via_is_for_sessions` | `internal/transport/http/work.go` |
+| `video_range_invalid` | `internal/transport/http/videos.go` |
 | `viewer_not_pinned` | `internal/transport/http/cloud.go` |
 | `viewer_scope_applied_cleanup_failed` | `internal/transport/http/cloud.go` |
 | `voice_model_abandoned` | `internal/transport/http/voice_setup.go` |

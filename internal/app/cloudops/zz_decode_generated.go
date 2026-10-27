@@ -189,6 +189,7 @@ var handDecoded = map[string]string{
 	"resume":                   "the path spells a default assistant only when a persona needs one, and orders its segments by what was named",
 	"schedule-webhook-bind-v1": "its request_id is the answer's request and a UUID, with no session field, and replace_hook_id is sent as null",
 	"start":                    "the path spells a default assistant only when a later segment needs one, and orders its segments by what was named",
+	"video":                    "A bounded MP4 chunk has an exact offset and revision; the existing document root and pinned execution gate authorize each read.",
 }
 
 // genDecodeAgent is the `agent` row's decode.

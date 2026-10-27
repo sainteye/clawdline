@@ -1,6 +1,6 @@
 import { loadingSkeletonHTML } from "../../../loading-skeleton.js"
 import {
-    documentShareURL, normalizeDocumentIdentity, normalizeDocumentLocator, shareDocument
+    documentShareURL, normalizeDocumentIdentity, normalizeDocumentLocator, shareDocument, isVideoPath
 } from "../net/document-links.js";
 import { renderDocumentBody } from "./document-render.js";
 import { failureSentence } from "../core/failure-text.js";
@@ -9,18 +9,22 @@ function words(language) {
     var zh = /^zh(?:-|$)/i.test(language || "");
     return zh ? {
         title: "文件", menu: "文件", back: "‹ 工作階段", loading: "正在讀取文件…",
-        connecting: "正在等待加密連線…", empty: "這個工作階段沒有可讀的 Markdown、文字或 HTML 文件。",
+        connecting: "正在等待加密連線…", empty: "這個工作階段沒有可讀的文件或 MP4 影片。",
         project: "專案", task: "任務", share: "分享", copied: "連結已複製。",
         shared: "已開啟分享選單。", list: "回到文件", bytes: "位元組",
         fullscreen: "全螢幕", exitFullscreen: "離開全螢幕", reveal: "顯示控制列",
+        videoTooLarge: "影片超過 32 MiB，請匯出較小的 MP4。", videoChanged: "影片已變更，請重新開啟。", videoNotFound: "找不到這支已發布的影片。", videoReadFailed: "影片讀取失敗，請再讀一次。",
+        videoLoading: "正在讀取影片… {percent}%", videoError: "這個瀏覽器無法播放此影片。請使用 H.264／AAC 編碼的 MP4。",
         retry: "再讀一次", others: "看其他文件", connectingDetail: "連上之後會自動打開，不用重新整理。"
     } : {
         title: "Documents", menu: "Documents", back: "‹ Sessions", loading: "Loading documents…",
         connecting: "Waiting for the encrypted connection…",
-        empty: "This session has no readable Markdown, text or HTML documents.",
+        empty: "This session has no readable documents or MP4 videos.",
         project: "Project", task: "Task", share: "Share", copied: "Link copied.",
         shared: "Share sheet opened.", list: "Back to documents", bytes: "bytes",
         fullscreen: "Full screen", exitFullscreen: "Exit full screen", reveal: "Show controls",
+        videoTooLarge: "The video exceeds 32 MiB. Export a smaller MP4.", videoChanged: "The video changed. Open it again.", videoNotFound: "This published video could not be found.", videoReadFailed: "The video could not be read. Try again.",
+        videoLoading: "Loading video… {percent}%", videoError: "This browser cannot play this video. Use an MP4 with H.264/AAC encoding.",
         retry: "Read again", others: "Other documents",
         connectingDetail: "It opens by itself once connected; there is no need to reload."
     };
@@ -53,6 +57,22 @@ export function bindDocumentsPage(elements, services) {
     var listRead = false;
     var viewing = "idle";
     var noticeTimer = null;
+    var readAbort = null;
+    var disposeBody = null;
+    function releaseBody() {
+        if (readAbort) readAbort.abort();
+        readAbort = null;
+        if (disposeBody) disposeBody();
+        disposeBody = null;
+        elements.body.textContent = "";
+    }
+
+    function displayError(error) {
+        var key = { video_too_large: "videoTooLarge", video_changed: "videoChanged",
+            video_not_found: "videoNotFound", video_format_unsupported: "videoError",
+            video_range_invalid: "videoReadFailed", video_answer_invalid: "videoReadFailed" }[error && error.code];
+        return key ? error.code + ": " + w[key] : typedError(error);
+    }
 
     function paintWords() {
         w = words(services.language ? services.language() : "en");
@@ -149,7 +169,7 @@ export function bindDocumentsPage(elements, services) {
         shareURL = null;
         elements.documentTitle.textContent = "";
         elements.meta.textContent = "";
-        elements.body.textContent = "";
+        releaseBody();
         ready(false);
         elements.share.title = "";
         view("idle");
@@ -207,7 +227,7 @@ export function bindDocumentsPage(elements, services) {
         elements.documentTitle.textContent = displayTitle || titleFor(value);
         elements.meta.textContent = (value.scope === "task" ? w.task : w.project) + " · " +
             value.path + " · " + value.byte_count.toLocaleString() + " " + w.bytes;
-        renderDocumentBody(elements.body, value);
+        disposeBody = renderDocumentBody(elements.body, value, { videoError: w.videoError });
         shareURL = null;
         var shareFailure = null;
         try {
@@ -215,7 +235,7 @@ export function bindDocumentsPage(elements, services) {
                 locatorOnly(value));
         } catch (error) { shareFailure = error; }
         ready(true);
-        elements.share.title = shareFailure ? typedError(shareFailure) : "";
+        elements.share.title = shareFailure ? displayError(shareFailure) : "";
         view("ready");
         say("", false);
     }
@@ -228,7 +248,7 @@ export function bindDocumentsPage(elements, services) {
     function openDocument(value) {
         var previous = locator;
         try { locator = normalizeDocumentLocator(locatorOnly(value)); }
-        catch (error) { clearDocument(); say(typedError(error), true); return Promise.resolve(false); }
+        catch (error) { clearDocument(); say(displayError(error), true); return Promise.resolve(false); }
         if (!previous || previous.machine !== locator.machine ||
             previous.session !== locator.session || previous.scope !== locator.scope ||
             previous.task !== locator.task || previous.path !== locator.path) {
@@ -240,20 +260,25 @@ export function bindDocumentsPage(elements, services) {
         show(true);
         elements.documentTitle.textContent = locator.path;
         elements.meta.textContent = "";
-        elements.body.textContent = "";
+        releaseBody();
         ready(false);
         view("loading");
-        say(w.loading, false);
+        say(isVideoPath(locator.path) ? w.videoLoading.replace("{percent}", "0") : w.loading, false);
+        readAbort = new AbortController();
+        var signal = readAbort.signal;
         var mine = ++ticket;
-        return Promise.resolve().then(function () { return services.read(locator); }).then(function (value) {
+        var wanted = locator;
+        return Promise.resolve().then(function () { return services.read(wanted, { signal: signal, progress: function (percent) {
+            if (mine === ticket) say(w.videoLoading.replace("{percent}", String(percent)), false);
+        } }); }).then(function (value) {
             if (mine !== ticket) return false;
             renderDocument(value);
             return true;
         }).catch(function (error) {
             if (mine !== ticket) return false;
-            held = retryable(error);
+            held = !isVideoPath(locator.path) && retryable(error);
             view(held ? "connecting" : "error");
-            say(held ? w.connecting : typedError(error), !held);
+            say(held ? w.connecting : displayError(error), !held);
             if (held) scheduleRetry();
             return false;
         });
@@ -277,7 +302,7 @@ export function bindDocumentsPage(elements, services) {
             if (mine !== ticket) return false;
             if (!listRead) elements.rows.replaceChildren();
             held = retryable(error);
-            say(held ? w.connecting : typedError(error), !held);
+            say(held ? w.connecting : displayError(error), !held);
             if (held) scheduleRetry();
             return false;
         });
@@ -301,7 +326,7 @@ export function bindDocumentsPage(elements, services) {
             });
         }).then(function (result) {
             notice(result === "copied" ? w.copied : w.shared);
-        }).catch(function (error) { say(typedError(error), true); });
+        }).catch(function (error) { say(displayError(error), true); });
     });
     if (elements.retry) elements.retry.addEventListener("click", function () {
         if (locator) openDocument(locator);
@@ -334,7 +359,7 @@ export function bindDocumentsPage(elements, services) {
             paintWords();
             reset(false);
             services.navigate("documents", { hash: false });
-            say(typedError(error), true);
+            say(displayError(error), true);
             return false;
         },
         openDirect: function (value, error) {
@@ -342,7 +367,7 @@ export function bindDocumentsPage(elements, services) {
             if (error || !value) {
                 reset(false);
                 services.navigate("documents", { hash: false });
-                say(typedError({ code: "malformed_document_locator" }).replace(
+                say(displayError({ code: "malformed_document_locator" }).replace(
                     "The document could not be read.", "Invalid document link."), true);
                 return false;
             }

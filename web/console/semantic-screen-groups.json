@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9186,
-  "riskKeys": 4102,
-  "nonRiskCount": 5084,
+  "englishContentKeys": 9196,
+  "riskKeys": 4109,
+  "nonRiskCount": 5087,
   "groups": [
     {
       "name": "admin / other",
@@ -340,7 +340,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 300,
+      "count": 301,
       "sources": [
         null
       ],
@@ -376,6 +376,7 @@
         "capacityRow.artifacts.report_image_side.full",
         "capacityRow.artifacts.report_image_side.what",
         "capacityRow.artifacts.report_total_image_pixels.full",
+        "capacityRow.artifacts.video_chunk_bytes.what",
         "capacityRow.cache.provider_quota.what",
         "capacityRow.cache.provider_quota_refresh_seconds.full",
         "capacityRow.cache.provider_quota_refresh_seconds.what",
@@ -984,7 +985,7 @@
     },
     {
       "name": "documents / other",
-      "count": 27,
+      "count": 29,
       "sources": [
         "src/pages/documents/copy-adapter.ts and src/legacy/js/view/documents.js"
       ],
@@ -1015,7 +1016,9 @@
         "documents.taskMeta",
         "documents.taskMetaOne",
         "documents.taskSize",
-        "documents.title"
+        "documents.title",
+        "documents.videoLoading",
+        "documents.videoTooLarge"
       ]
     },
     {

@@ -445,13 +445,13 @@ func shapeDocuments(_ plan, res LocalResponse) (json.RawMessage, Refusal) {
 	rows := make([]map[string]any, 0, len(source))
 	for _, row := range source {
 		scope, _ := row["source"].(string)
-		path, pathOK := documentPath(row["path"])
+		path, pathOK := publicationPath(row["path"])
 		label, _ := row["label"].(string)
 		bytes, bytesOK := jsonInt(row["bytes"])
 		modified, modifiedOK := row["modified"].(float64)
 		url, urlOK := row["url"].(string)
 		_ = url
-		if !pathOK || label != path || !bytesOK || bytes < 0 || bytes > documentMaximumBytes ||
+		if !pathOK || label != path || !bytesOK || bytes < 0 || bytes > publicationMaximumBytes(path) ||
 			!modifiedOK || !urlOK {
 			return nil, invalid("The machine returned invalid document metadata.")
 		}

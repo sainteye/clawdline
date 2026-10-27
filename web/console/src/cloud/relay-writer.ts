@@ -31,6 +31,8 @@
 //
 // Nothing is imported at run time, so `node --test` loads it as it is.
 import type { CarriedWord } from "./carry.js"
+import { videoChunkAnswer } from "../legacy/js/net/video.js"
+import { VIDEO_MAX_BYTES, VIDEO_CHUNK_BYTES } from "../legacy/js/net/document-links.js"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
 import { usageOverviewQuery } from "./carry.ts"
 import type { CloudIdentity, CloudReadClient, CloudRow, SeamRow } from "./relay-reader.js"
@@ -210,7 +212,7 @@ export interface CloudWriteClient extends CloudReadClient {
     extra: Record<string, unknown>,
     answer: string,
     timeoutMs?: number,
-    options?: { retireUncertain?: boolean },
+    options?: { retireUncertain?: boolean; signal?: AbortSignal },
   ): Promise<unknown>
 }
 
@@ -265,6 +267,7 @@ export type WriteRoute =
   | { op: "git-diff"; word: Carried<"git-diff">; session: string }
   | { op: "screen"; word: Carried<"screen">; session: string }
   | { op: "documents"; word: Carried<"documents">; session: string }
+  | { op: "video"; word: Carried<"video">; session: string; scope: "project" | "task"; task: string; path: string }
   | { op: "document"; word: Carried<"document">; session: string; scope: "project" | "task"; task: string; path: string }
   | { op: "answer"; word: Carried<"answer">; session: string }
   | { op: "end"; word: Carried<"end">; session: string }
@@ -491,6 +494,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "screen",
   "documents",
   "document",
+  "video",
   "session-receipt",
 ])
 
@@ -612,10 +616,12 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "sessions" && a && b === "documents") {
       if (segments.length === 3) return { op: "documents", word: "documents", session: a }
       if (c === "project" && segments.length >= 5 && segments.slice(4).every(Boolean)) {
-        return { op: "document", word: "document", session: a, scope: "project", task: "", path: segments.slice(4).join("/") }
+        const path = segments.slice(4).join("/")
+        return /\.mp4$/i.test(path) ? { op: "video", word: "video", session: a, scope: "project", task: "", path } : { op: "document", word: "document", session: a, scope: "project", task: "", path }
       }
       if (c === "task" && d && segments.length >= 6 && segments.slice(5).every(Boolean)) {
-        return { op: "document", word: "document", session: a, scope: "task", task: d, path: segments.slice(5).join("/") }
+        const path = segments.slice(5).join("/")
+        return /\.mp4$/i.test(path) ? { op: "video", word: "video", session: a, scope: "task", task: d, path } : { op: "document", word: "document", session: a, scope: "task", task: d, path }
       }
     }
     return null
@@ -882,6 +888,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "git":
     case "git-diff":
     case "screen":
+    case "video":
     case "document":
     case "documents":
     case "uncarried":
@@ -1370,6 +1377,31 @@ export class RelayWriter {
         }
         return client.image(await this.identity(client, session), route.artifact,
           url.searchParams.get("size") === "thumb" ? "thumb" : undefined)
+      }
+      case "video": {
+        if (typeof client._read !== "function") throw failure("cloud_not_carried", route.word, 501)
+        const allowed = ["machine", "offset", "revision"]
+        if (allowed.some((key) => url.searchParams.getAll(key).length !== 1) ||
+            Array.from(url.searchParams.keys()).some((key) => !allowed.includes(key)) ||
+            url.searchParams.get("machine") !== this.host.machine) {
+          throw failure("malformed_read", "The video read needs its exact machine, offset and revision.", 400)
+        }
+        const offset = Number(url.searchParams.get("offset"))
+        const revision = url.searchParams.get("revision")!
+        if (!/^(0|[1-9][0-9]*)$/.test(url.searchParams.get("offset")!) ||
+            !Number.isSafeInteger(offset) || offset < 0 || offset >= VIDEO_MAX_BYTES || offset % VIDEO_CHUNK_BYTES !== 0 ||
+            revision.length > 128 || (offset > 0 && !revision)) {
+          throw failure("video_range_invalid", "The video chunk is outside the allowed range.", 400)
+        }
+        const fields = { request: this.requestID(), scope: route.scope, task: route.task, path: route.path, offset, revision }
+        const answer = this.fleetTarget(route.session)
+          ? await this.pinnedRead(client, route.session, "video", fields, init?.signal)
+          : await client._read!({ machine: this.host.machine, session: route.session }, "video", fields,
+              "read:" + fields.request, undefined, { signal: init?.signal ?? undefined })
+        try { videoChunkAnswer({ machine: this.host.machine, session: route.session, scope: route.scope,
+          ...(route.scope === "task" ? { task: route.task } : {}), path: route.path }, offset, revision, answer) }
+        catch { throw failure("video_answer_invalid", "The video chunk did not match the requested file.", 502) }
+        return answer
       }
       case "documents":
       case "document": {

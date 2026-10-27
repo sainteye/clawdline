@@ -117,7 +117,7 @@ func (s *Server) documentsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	switch decoded[0] {
 	case "project":
-		s.serveDocument(w, documents.ProjectRoot(cwd, s.containsProjectRoot()), strings.Join(decoded[1:], "/"))
+		s.servePublishedFile(w, r, documents.ProjectRoot(cwd, s.containsProjectRoot()), "project", "", strings.Join(decoded[1:], "/"))
 	case "task":
 		if len(decoded) < 3 {
 			documentRefusal(w, documents.NotFound)
@@ -128,7 +128,7 @@ func (s *Server) documentsRoute(w http.ResponseWriter, r *http.Request) {
 			documentRefusal(w, documents.NotFound)
 			return
 		}
-		s.serveDocument(w, documents.TaskRoot(directory), strings.Join(decoded[2:], "/"))
+		s.servePublishedFile(w, r, documents.TaskRoot(directory), "task", decoded[1], strings.Join(decoded[2:], "/"))
 	default:
 		documentRefusal(w, documents.NotFound)
 	}

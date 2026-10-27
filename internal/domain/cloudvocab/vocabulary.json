@@ -2070,6 +2070,69 @@
       "decode": {"reply": "action", "fields": {"id": {"type": "string", "checks": ["verification_id"]}, "verification": {"type": "object", "max_bytes": 65536, "copies": {"max_bytes": "verificationCloudBodyLimit"}}}, "route": {"path": "/v1/verifications/{id}/notes", "body": {"object": "verification"}}}
     },
     {
+      "op": "video",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/sessions/{id}/documents/{scope}/{path}.mp4?offset=&revision=",
+      "console_seam": "reader",
+      "local": {
+        "method": "GET"
+      },
+      "special": [
+        "content_read",
+        "shaped_answer"
+      ],
+      "example": {
+        "expected_generation": "0123456789abcdef0123456789abcdef",
+        "path": "clip.mp4",
+        "request": "req",
+        "scope": "task",
+        "session": "%19",
+        "task": "7a000000-0000-4000-8000-000000000001",
+        "offset": 0,
+        "revision": ""
+      },
+      "shapes": [
+        {
+          "body": [
+            "offset",
+            "path",
+            "request",
+            "revision",
+            "scope",
+            "session",
+            "task"
+          ],
+          "path": "/v1/sessions/{session}/documents/{scope}/{task}/{path}",
+          "query": [
+            "offset",
+            "revision"
+          ]
+        },
+        {
+          "body": [
+            "expected_generation",
+            "offset",
+            "path",
+            "request",
+            "revision",
+            "scope",
+            "session",
+            "task"
+          ],
+          "path": "/v1/sessions/{session}/documents/{scope}/{task}/{path}",
+          "query": [
+            "offset",
+            "revision"
+          ]
+        }
+      ],
+      "decode": {
+        "hand": "A bounded MP4 chunk has an exact offset and revision; the existing document root and pinned execution gate authorize each read."
+      }
+    },
+    {
       "op": "voice",
       "kind": "command",
       "write_gate": true,

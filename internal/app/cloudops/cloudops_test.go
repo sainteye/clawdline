@@ -182,6 +182,9 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		query:   map[string]string{"session": pane},
 		answers: &router{body: "\x89PNG", media: "image/png"},
 	}, {
+		word: "video", body: map[string]any{"type": "video", "session": pane, "request": "video-1", "scope": "project", "task": "", "path": "clip.mp4", "offset": 0, "revision": ""},
+		session: pane, name: "read:video-1", method: "GET", path: "/v1/sessions/%2519/documents/project/clip.mp4", query: map[string]string{"offset": "0", "revision": ""}, answers: &router{body: videoReply(), media: "application/json"},
+	}, {
 		word:    "documents",
 		body:    map[string]any{"type": "documents", "session": pane},
 		session: pane, name: "documents",

@@ -3234,7 +3234,8 @@ export interface DocumentList {
  */
 export interface DocumentRow {
   /**
-   * The file's size when it was checked, never above the two-megabyte cap.
+   * The file's size when it was checked, at most 2 MiB for text/HTML or 32 MiB for
+   * MP4.
    */
   bytes: number
   label: string
@@ -10798,6 +10799,27 @@ export const VerificationStatusValues: readonly VerificationStatus[] = ["open", 
 export interface VerificationTaskNote {
   text: string
   verification: string
+}
+
+/**
+ * One sequential MP4 chunk. Each read rechecks authorization. Offset zero starts
+ * with an empty requested revision; later offsets repeat the returned size/mtime
+ * revision. This is a version marker, not a content hash.
+ */
+export interface VideoChunk {
+  byte_count: number
+
+  /**
+   * Canonical base64 of exactly byte_count bytes.
+   */
+  data: string
+  media_type: string
+  offset: number
+  path: string
+  revision: string
+  scope: DocumentSource
+  task?: string
+  total_bytes: number
 }
 
 /**

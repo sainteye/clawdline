@@ -4,6 +4,10 @@ package capacity
 // screens.* and voice.*: pictures, icons, screen captures and voice models.
 func artifactsBounds() []Entry {
 	return []Entry{
+		{Name: "artifacts.video_bytes", Class: Buffer, Unit: Bytes, Limit: 32 * 1024 * 1024, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/documents.MaximumVideoBytes"}},
+		{Name: "artifacts.video_chunk_bytes", Class: Buffer, Unit: Bytes, Limit: 512 * 1024, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/documents.MaximumVideoChunkBytes"}},
 		{
 			Name: "artifacts.report_total_image_pixels", Class: Buffer, Unit: Rows,
 			Limit: 64 * 1024 * 1024, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,

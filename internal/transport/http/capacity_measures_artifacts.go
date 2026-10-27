@@ -10,6 +10,12 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"artifacts.video_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-file guard; browser Blob released on navigation"}
+		},
+		"artifacts.video_chunk_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read guard; one sequential chunk per viewer"}
+		},
 		"artifacts.report_total_image_pixels": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-report cumulative decoded pixel guard; later images beyond the budget are omitted"}
 		},

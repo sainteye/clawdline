@@ -215,6 +215,8 @@ type plan struct {
 	// parts, a menu answer's key, its question and whether it names typed
 	// words, a viewer event batch.
 	id, scope, task, path         string
+	videoOffset                   int64
+	videoRevision                 string
 	place, past, assistant, model string
 	parts, key                    string
 	// expect is a menu answer's question, session.MenuFingerprint's hex.

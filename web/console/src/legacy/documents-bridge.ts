@@ -1,3 +1,5 @@
+import { loadVideo } from "./js/net/video.js"
+import { isVideoPath } from "./js/net/document-links.js"
 // The Documents page's way into its copied modules.
 //
 // `js/view/documents.js`, `js/view/document-render.js`, `js/net/document-links.js`
@@ -236,7 +238,7 @@ export function cutWords(header: string): string {
 }
 
 /** `net/live.js`'s `document(value)`: bytes, and the same validator the Cloud answer gets. */
-async function read(value: unknown): Promise<unknown> {
+async function read(value: unknown, options?: { signal?: AbortSignal; progress?: (percent: number) => void }): Promise<unknown> {
   const locator = (normalizeDocumentLocator as (v: unknown) => DocumentLocator)(value)
   if (!hosted && locator.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
   if (hosted && locator.machine === LOCAL_SESSION_MACHINE) throw wrongMachine()
@@ -244,9 +246,22 @@ async function read(value: unknown): Promise<unknown> {
   if (locator.scope === "task") path += encodeURIComponent(String(locator.task)) + "/"
   path += locator.path.split("/").map(encodeURIComponent).join("/")
   if (hosted) path += "?machine=" + encodeURIComponent(locator.machine)
+  if (isVideoPath(locator.path)) {
+    return loadVideo(locator, async (offset: number, revision: string) => {
+      const separator = path.includes("?") ? "&" : "?"
+      const response = await fetch(path + separator + new URLSearchParams({ offset: String(offset), revision }),
+        { cache: "no-store", signal: options?.signal })
+      const body = await response.json()
+      if (!response.ok) {
+        const said = refusalOf(body, response)
+        throw typed(said.message, said.code)
+      }
+      return body
+    }, options)
+  }
   let response: Response
   try {
-    response = await fetch(path, { cache: "no-store" })
+    response = await fetch(path, { cache: "no-store", signal: options?.signal })
   } catch {
     throw typed(words().webOffline, "offline")
   }
@@ -343,7 +358,8 @@ export function bindDocuments(doc: Document, navigate: (page: string) => void): 
   // Do not let the copied page overwrite that button with its two-language table.
   table.menu = null
   let rows: { scope: "project" | "task"; path: string; title?: string; task?: string; bytes: number }[] = []
-  let answer: { scope: "project" | "task"; path: string; byte_count: number } | null = null
+  type AnswerMetadata = { scope: "project" | "task"; path: string; byte_count: number }
+  let answer: AnswerMetadata | null = null
   let error: unknown = null
   const listView = table.listView
   if (listView && !cutNote) {
@@ -369,11 +385,11 @@ export function bindDocuments(doc: Document, navigate: (page: string) => void): 
         return result
       } catch (caught) { error = caught; throw caught }
     },
-    read: async (locator: unknown) => {
+    read: async (locator: unknown, options?: { signal?: AbortSignal; progress?: (percent: number) => void }) => {
       error = null; answer = null
       try {
-        const result = await read(locator) as NonNullable<typeof answer>
-        answer = result
+        const result = await read(locator, options) as AnswerMetadata
+        answer = { scope: result.scope, path: result.path, byte_count: result.byte_count }
         return result
       } catch (caught) { error = caught; throw caught }
     },
