@@ -8,6 +8,21 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"console.support_image_count": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
+		},
+		"console.support_image_source_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
+		},
+		"console.support_image_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
+		},
+		"console.support_image_edge": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
+		},
+		"console.support_image_upload_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
+		},
 		"console.support_request_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser help request deadline; no machine Session read"}
 		},

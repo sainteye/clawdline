@@ -81,7 +81,8 @@ tool text and large patches in main Claude/Codex Session pages. Tool text up to
 1,200 bytes stays inline; longer text carries a 240-code-point preview and an
 execution-bound `detail` reference. A patch stays inline only up to 18 displayed
 lines and 1,200 body bytes. Larger patches retain path, kind, move destination,
-line count, additions and deletions, without diff or file-content bodies.
+line count, additions and deletions, without diff or file-content bodies. A tiny
+folded patch keeps its body when reference metadata would make its JSON larger.
 Questions, plans, activities, formal attachments, provider subagent pages and
 unsupported record formats retain their existing readers. No encoding prefix
 is used to suppress opaque output.

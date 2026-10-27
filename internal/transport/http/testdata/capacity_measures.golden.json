@@ -1171,6 +1171,31 @@
     "Note": true
   },
   {
+    "Name": "console.support_image_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.support_image_count",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.support_image_edge",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.support_image_source_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.support_image_upload_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.support_refresh_seconds",
     "Known": true,
     "Note": true

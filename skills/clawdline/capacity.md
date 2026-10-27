@@ -242,6 +242,11 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.status_gap_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_recovery_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_retry_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.support_image_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
+| `console.support_image_count` | 5 | `rows` | `refuse` | `diagnostics` | — |
+| `console.support_image_edge` | 2048 | `rows` | `refuse` | `diagnostics` | — |
+| `console.support_image_source_bytes` | 10485760 | `bytes` | `refuse` | `diagnostics` | — |
+| `console.support_image_upload_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.support_refresh_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `console.support_request_seconds` | 15 | `seconds` | `expire` | `diagnostics` | — |
 | `console.support_title_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |

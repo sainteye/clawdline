@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9407,
-  "riskKeys": 4167,
-  "nonRiskCount": 5240,
+  "englishContentKeys": 9427,
+  "riskKeys": 4173,
+  "nonRiskCount": 5254,
   "groups": [
     {
       "name": "admin / other",
@@ -340,7 +340,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 319,
+      "count": 326,
       "sources": [
         null
       ],
@@ -501,6 +501,13 @@
         "capacityRow.console.persona_retry_seconds.full",
         "capacityRow.console.relay_transcript_expect_reask_seconds.what",
         "capacityRow.console.status_marker_recovery_wait_seconds.what",
+        "capacityRow.console.support_image_bytes.what",
+        "capacityRow.console.support_image_count.what",
+        "capacityRow.console.support_image_edge.full",
+        "capacityRow.console.support_image_edge.what",
+        "capacityRow.console.support_image_source_bytes.full",
+        "capacityRow.console.support_image_source_bytes.what",
+        "capacityRow.console.support_image_upload_seconds.full",
         "capacityRow.console.support_refresh_seconds.full",
         "capacityRow.console.support_request_seconds.full",
         "capacityRow.console.support_title_characters.full",
@@ -5200,7 +5207,7 @@
     },
     {
       "name": "support / other",
-      "count": 98,
+      "count": 105,
       "sources": [
         null
       ],
@@ -5219,9 +5226,11 @@
         "support.answering",
         "support.ask",
         "support.askCopy",
+        "support.attachImages",
         "support.attempts",
         "support.busy",
         "support.cancel",
+        "support.closeImage",
         "support.contentLanguage",
         "support.copyingCredential",
         "support.createFaq",
@@ -5241,6 +5250,11 @@
         "support.followup",
         "support.getting_started",
         "support.hook",
+        "support.imageHint",
+        "support.imageLimit",
+        "support.imageNumber",
+        "support.imagePreview",
+        "support.imageWorking",
         "support.inbox",
         "support.intro",
         "support.invalid",

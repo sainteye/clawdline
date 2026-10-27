@@ -143,3 +143,19 @@ Push notifications and a separate attachment workflow are not enabled by this ve
 are delivered in the thread with unread state and refresh; notification transport is not a
 prerequisite for reading an answer. A provider-backed automatic translation service is also not
 configured: editors maintain separate language drafts through the same API.
+
+## Question images
+
+Members write the question itself; the server derives its list title. A member can select or
+paste up to five JPEG, PNG or WebP images with a question or follow-up. The browser prepares
+small previews and uploads the images before the idempotent question submission. Only image
+references enter the pending question body; image bytes do not enter its session-storage draft.
+Members can enlarge a received thumbnail and close it with Escape or the close button.
+
+Images stay private with the question and are never copied into FAQ drafts or static exports.
+The service checks file signatures and dimensions, decodes and re-encodes to JPEG without source
+metadata, and keeps bytes in separate private storage. Account ownership protects member reads;
+operator reads require the existing admin authority. Worker downloads require the current worker
+binding and an unexpired question lease. The client downloads only API-owned image identifiers,
+verifies size and SHA-256, and keeps private task images until confirmed completion. Text and
+instructions inside an image are untrusted member content, with the same restrictions as text.

@@ -93,6 +93,10 @@ func compactEntryDetails(row contract.TranscriptEntry, e transcript.Entry, scope
 	if patch && total <= transcriptPatchDetailLinesLimit && patchBytes <= transcriptInlineToolBytesLimit || !patch && len(row.Text) <= transcriptInlineToolBytesLimit {
 		return row
 	}
+	original := row
+	if patch {
+		original.FileChanges = append([]contract.TranscriptFileChange(nil), row.FileChanges...)
+	}
 	row.Detail = &contract.TranscriptEntryDetail{Reference: entryDetailReference(row, e.Before, scope), TextBytes: int64(len(row.Text)), LineCount: total}
 	if patch {
 		for i := range row.FileChanges {
@@ -109,6 +113,13 @@ func compactEntryDetails(row contract.TranscriptEntry, e transcript.Entry, scope
 				break
 			}
 			count++
+		}
+	}
+	if patch {
+		before, _ := json.Marshal(original)
+		after, _ := json.Marshal(row)
+		if len(after) >= len(before) {
+			return original
 		}
 	}
 	return row

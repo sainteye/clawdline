@@ -52,3 +52,18 @@ test("a patch expansion cannot silently accept an answer with no patch body",asy
  try{await assert.rejects(readStoredEntry("s",reference,new AbortController().signal,true),error=>error.code==="bad_payload")}
  finally{globalThis.fetch=saved}
 })
+
+test("cancelling an unfinished expansion stops that request without retrying",async()=>{
+ const saved=globalThis.fetch,controller=new AbortController()
+ let requests=0
+ globalThis.fetch=async(_path,{signal})=>{
+  requests++
+  return new Promise((_resolve,reject)=>signal.addEventListener("abort",()=>reject(new DOMException("closed","AbortError")),{once:true}))
+ }
+ try {
+  const reading=readStoredEntry("s",reference,controller.signal)
+  controller.abort()
+  await assert.rejects(reading,error=>error.name==="AbortError")
+  assert.equal(requests,1)
+ }finally{globalThis.fetch=saved}
+})

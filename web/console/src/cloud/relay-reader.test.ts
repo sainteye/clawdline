@@ -2376,3 +2376,22 @@ test("board summaries use the versioned word only when the machine advertises it
     })
   }
 })
+
+test("expanding a stored tool body carries its exact machine and execution pin", async () => {
+  const client = new FakeClient()
+  const target = { machineID: "mac-a", sessionID: "s1", executionGeneration: "a".repeat(32) }
+  const signal = new AbortController().signal
+  const view = "entry-v1z:0:" + "b".repeat(64)
+  const requests: unknown[] = []
+  Object.assign(client, { readForGeneration: async (...args: unknown[]) => {
+    requests.push(args)
+    return { reference: "0:" + "b".repeat(64), entry: { role: "tool", text: "complete stored output" } }
+  } })
+  const r = new RelayReader("mac-a", { classicStatus: true, now: () => 1000,
+    resolveSession: async () => target })
+  r.attach(client)
+  const answer = await r.fetch("/v1/transcript?session=s1&view=" + view, { signal })
+  assert.equal(answer.status, 200)
+  assert.deepEqual(requests, [[target, "transcript", { limit: 200, view }, signal]])
+  assert.equal(client.asks, 0, "expansion must not be replaced by a cached full-page read")
+})

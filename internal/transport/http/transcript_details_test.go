@@ -134,7 +134,7 @@ func TestToolDetailsKeepShortContentQuestionsAndExactDiffThreshold(t *testing.T)
 
 func TestSmallDiffStaysInlineAndLargeContentIsNotRemovedByEncodingPrefix(t *testing.T) {
 	for _, lines := range []int{18, 19} {
-		row := contract.TranscriptEntry{Role: "tool", FileChanges: []contract.TranscriptFileChange{{Path: "file", Kind: "add", Content: strings.Repeat("line\n", lines)}}}
+		row := contract.TranscriptEntry{Role: "tool", FileChanges: []contract.TranscriptFileChange{{Path: "file", Kind: "add", Content: strings.Repeat("a meaningful change line\n", lines)}}}
 		got := compactEntryDetails(row, transcript.Entry{}, "scope")
 		if (got.Detail != nil) != (lines > 18) {
 			t.Fatalf("wrong folding threshold at %d", lines)
@@ -176,5 +176,19 @@ func TestClaudeStoredToolOutputKeepsEveryEntryOfItsNativeRow(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &body)
 	if w.Code != 200 || body.Entry.Text != strings.TrimSpace(text) {
 		t.Fatalf("Claude detail: %d", w.Code)
+	}
+}
+
+func TestTinyFoldedPatchesKeepTheirBodyWhenAReferenceWouldCostMore(t *testing.T) {
+	row := contract.TranscriptEntry{Role: "tool", FileChanges: []contract.TranscriptFileChange{{Path: "file", Kind: "add", Content: strings.Repeat("x\n", 19)}}}
+	before, _ := json.Marshal(row)
+	got := compactEntryDetails(row, transcript.Entry{}, "scope")
+	after, _ := json.Marshal(got)
+	if got.Detail != nil || string(before) != string(after) {
+		t.Fatal("a tiny folded patch spent extra bytes on metadata")
+	}
+	row = contract.TranscriptEntry{Role: "tool", FileChanges: []contract.TranscriptFileChange{{Path: "file", Kind: "add", Content: strings.Repeat("x", 2000)}}}
+	if compactEntryDetails(row, transcript.Entry{}, "scope").Detail == nil {
+		t.Fatal("a large single-line patch was sent before expansion")
 	}
 }
