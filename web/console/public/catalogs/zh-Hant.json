@@ -9320,7 +9320,7 @@
   "support.answered": "已回覆",
   "support.resolved": "已解決",
   "support.unread": "有新回覆",
-  "support.resolve": "問題已解決",
+  "support.resolve": "標示已解決",
   "support.followup": "繼續追問",
   "support.sendFollowup": "送出追問",
   "support.you": "你",
@@ -9410,7 +9410,7 @@
   "capacityRow.session.patch_detail_lines.full": "差異仍會保留。展開後即可載入各行內容。",
   "support.attachImages": "附上圖片",
   "support.imageWorking": "正在處理圖片…",
-  "support.imageHint": "最多 5 張，每張 10 MB。支援 JPG、PNG、WebP，也可以直接貼上截圖。",
+  "support.imageHint": "JPG、PNG、WebP · 最多 5 張 · 每張 10 MB。",
   "support.imageNumber": "圖片 {number}",
   "support.removeImage": "移除圖片 {number}",
   "support.imageLimit": "一次最多附上 5 張圖片。",
@@ -9427,5 +9427,6 @@
   "capacityRow.console.support_image_edge.what": "處理後支援圖片最長邊的像素數。",
   "capacityRow.console.support_image_edge.full": "圖片會保持長寬比例，縮小至可上傳的範圍。",
   "capacityRow.console.support_image_upload_seconds.what": "單張私有圖片上傳可等待的時間。",
-  "capacityRow.console.support_image_upload_seconds.full": "上傳逾時後會沿用相同請求身分重試，避免重複建立圖片。"
+  "capacityRow.console.support_image_upload_seconds.full": "上傳逾時後會沿用相同請求身分重試，避免重複建立圖片。",
+  "support.threadPrivacy": "你的問題與回覆不會公開。"
 }

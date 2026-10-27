@@ -9410,7 +9410,7 @@
   "capacityRow.session.patch_detail_lines.full": "The patch is still stored. Expand the change to load its lines.",
   "support.attachImages": "Attach images",
   "support.imageWorking": "Preparing images…",
-  "support.imageHint": "Up to 5 images, 10 MB each. Use JPG, PNG or WebP, or paste a screenshot.",
+  "support.imageHint": "JPG, PNG or WebP · Up to 5 images · 10 MB each.",
   "support.imageNumber": "Image {number}",
   "support.removeImage": "Remove image {number}",
   "support.imageLimit": "Attach up to 5 images at a time.",
@@ -9427,5 +9427,6 @@
   "capacityRow.console.support_image_edge.what": "The longest edge of a prepared support image, in pixels.",
   "capacityRow.console.support_image_edge.full": "Images are resized to fit while keeping their aspect ratio.",
   "capacityRow.console.support_image_upload_seconds.what": "The time allowed for one private image upload.",
-  "capacityRow.console.support_image_upload_seconds.full": "A timed-out upload keeps the same request identity for a safe retry."
+  "capacityRow.console.support_image_upload_seconds.full": "A timed-out upload keeps the same request identity for a safe retry.",
+  "support.threadPrivacy": "Your question and replies are not public."
 }
