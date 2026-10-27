@@ -1,4 +1,4 @@
-export const SUPPORT_UI_LIMITS = { requestMs: 15_000, refreshMs: 30_000, titleChars: 160 } as const
+export const SUPPORT_UI_LIMITS = { requestMs: 15_000, refreshMs: 30_000, titleChars: 160, imageCount: 5, imageRawBytes: 10_485_760, imageBytes: 1_048_576, imageEdge: 2048, imageRequestMs: 60_000 } as const
 export class SupportFailure extends Error {
   readonly code: string
   readonly definite: boolean
@@ -7,7 +7,7 @@ export class SupportFailure extends Error {
 export function requestKey(): string { return crypto.randomUUID() }
 /** One request per action. An ambiguous outcome keeps the caller's key and body intact. */
 export async function supportCall<T>(origin: string, path: string, method = "GET", body?: unknown, key?: string, get: typeof fetch = fetch): Promise<T> {
-  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), SUPPORT_UI_LIMITS.requestMs)
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), path === "/v1/support/images" ? SUPPORT_UI_LIMITS.imageRequestMs : SUPPORT_UI_LIMITS.requestMs)
   try {
     const r = await get(origin + path, { method, credentials: "include", cache: "no-store", signal: controller.signal,
       headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(key ? { "Idempotency-Key": key } : {}) },

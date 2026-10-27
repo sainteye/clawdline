@@ -22,6 +22,11 @@ func TestSupportUIBoundsAreRegistered(t *testing.T) {
 		{"requestMs", "console.support_request_seconds", 1000},
 		{"refreshMs", "console.support_refresh_seconds", 1000},
 		{"titleChars", "console.support_title_characters", 1},
+		{"imageCount", "console.support_image_count", 1},
+		{"imageRawBytes", "console.support_image_source_bytes", 1},
+		{"imageBytes", "console.support_image_bytes", 1},
+		{"imageEdge", "console.support_image_edge", 1},
+		{"imageRequestMs", "console.support_image_upload_seconds", 1000},
 	}
 	entries := map[string]Entry{}
 	for _, row := range Register() {

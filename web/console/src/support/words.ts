@@ -1,5 +1,6 @@
 import { catalogWord, currentCatalogTag } from "../catalog.js"
 const en = {
+  attachImages: "Attach images", imageWorking: "Preparing images…", imageHint: "Up to 5 images, 10 MB each. Use JPG, PNG or WebP, or paste a screenshot.", imageNumber: "Image {number}", removeImage: "Remove image {number}", imageLimit: "Attach up to 5 images at a time.", imageFailed: "This image could not be prepared or uploaded. Use a smaller JPG, PNG or WebP image and try again.", imageExpired: "This upload expired. Remove the preview and attach the image again.", imagePreview: "Image preview", closeImage: "Close image",
   credentialLabel: "Worker credential", showCredential: "Show credential", hideCredential: "Hide credential", copyCredential: "Copy credential", copyingCredential: "Copying…", credentialCopied: "Credential copied.", credentialCopyFailed: "Copy failed. Show the credential and select it to copy manually.",
   leaveDraft: "You have unsaved changes. Leave this page?",
   fixture: "Local integration fixture · isolated test data",
@@ -16,6 +17,7 @@ const en = {
 } as const
 type Word = keyof typeof en
 const zh: Record<Word, string> = {
+  attachImages: "附上圖片", imageWorking: "正在處理圖片…", imageHint: "最多 5 張，每張 10 MB。支援 JPG、PNG、WebP，也可以直接貼上截圖。", imageNumber: "圖片 {number}", removeImage: "移除圖片 {number}", imageLimit: "一次最多附上 5 張圖片。", imageFailed: "圖片無法處理或上傳。請改用較小的 JPG、PNG 或 WebP，再試一次。", imageExpired: "這次上傳已過期，請移除預覽後重新附上圖片。", imagePreview: "圖片預覽", closeImage: "關閉圖片",
   credentialLabel: "工作憑證", showCredential: "顯示憑證", hideCredential: "隱藏憑證", copyCredential: "複製憑證", copyingCredential: "複製中…", credentialCopied: "已複製憑證。", credentialCopyFailed: "複製失敗。請顯示憑證，選取後手動複製。",
   leaveDraft:"你有尚未儲存的內容。確定離開這個頁面？",
   fixture:"本機整合驗證・隔離測試資料",
@@ -30,12 +32,15 @@ const zh: Record<Word, string> = {
   unavailable:"暫時無法使用問答服務，你輸入的文字仍保留。",unknown:"尚未確認送出結果。請先重試同一個請求，再修改或送出其他內容。",revisionMoved:"這則提問已更新，請重新整理後再試；輸入的文字仍保留。",limited:"請稍候再送出問題。",questionLimit:"請先解決一個進行中的問題，再建立新提問。",noTranslation:"這個答案尚未發布所選語言的版本。",denied:"這個帳號無法使用此頁面。",invalid:"請檢查語言、標題、內容與來源欄位。",needsEvidence:"請提供至少一份官方文件的網址與版本。",sourceUrl:"官方文件網址",sourceRevision:"文件版本或 commit",save:"儲存草稿",saved:"已儲存",publish:"發布這個語言",publishSnapshot:"發布官網內容快照",snapshotDone:"這個語言的快照已可供官網匯出。",
   allDrafts:"所有 FAQ 草稿",createFaq:"整理成匿名 FAQ 草稿",editFaq:"編輯 FAQ",faqTitle:"公開問題",faqBody:"公開答案",slug:"網址代稱",privacyReview:"我已移除所有個人與帳號資訊。",evidenceReview:"我已核對目前文件與答案。",version:"各語言版本",missing:"尚未建立",stale:"原文已更新・待重譯",draft:"草稿・待審核",published:"已發布",sourceChanged:"儲存原文後，較舊的翻譯會標記為待更新，重新審核後才能公開。",snapshotNote:"先發布 DB 中已審核的版本；內容成形後，再發布各語言快照供官網產生靜態頁面。發布失敗時保留前一次成功的快照。",noDrafts:"還沒有 FAQ 草稿，可以從已回覆的問題整理。",operatorReply:"以支援人員身分回覆",retryJob:"重新放回回答佇列",delivery:"Webhook 送達狀態",attempts:"嘗試次數",workState:"取件狀態",hook:"支援排程 Webhook",enabled:"啟用自動支援工作",workerSave:"儲存綁定並換發工作憑證",credentialOnce:"請立即將工作憑證存入私人憑證儲存區；它只顯示這一次。再次儲存會撤銷前一個憑證。",workerNote:"請綁定自己機器上專用且限權的支援排程，先設定工作憑證再啟用。此操作不會建立排程，也不代表核准付費 API。",noHook:"請選擇自己機器上啟用中的 Webhook。",busy:"處理中…",pendingReply:"問題已收到。支援離線時仍會保留，等待接手。",finishReview:"先儲存草稿，確認個資與來源，再發布所選語言。",languageScope:"FAQ 與新回覆會跟隨你的介面語言。",liveNotice:"私人支援資料與加密的機器 Session 分開儲存。",references:"參考來源保留回答時使用的文件版本。",titleRequired:"請填寫標題並描述問題。",setupNeeded:"回答服務尚未設定；問題會安全保留在佇列。",memberLanguage:"請使用會員指定的回覆語言。",
 }
-export function supportWord(key: Word): string {
+export function supportWord(key: Word, values: Record<string,string> = {}): string {
   const fallback = currentCatalogTag() === "zh-Hant" ? zh[key] : en[key]
   const translated = catalogWord("support", key)
-  return translated === "support." + key ? fallback : translated
+  return (translated === "support." + key ? fallback : translated).replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole)
 }
 export function supportError(code: string): string {
+  if (code === "support_image_expired") return supportWord("imageExpired")
+  if (code === "support_image_limit") return supportWord("imageLimit")
+  if (code.startsWith("support_image")) return supportWord("imageFailed")
   if (code === "support_admin_required") return supportWord("adminOnly")
   if (["no_session","support_worker_unauthorized"].includes(code)) return supportWord("signInNeeded")
   if (["not_found","support_question_not_found"].includes(code)) return supportWord("denied")
