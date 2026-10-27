@@ -41,16 +41,8 @@ export default defineConfig({
       },
     },
   },
-  // Three documents, not one. `index.html` is the console; `bar.html` is the
-  // input bar, which the native shell loads into a borderless window of its
-  // own; `settings.html` is the settings window, which was native in the Swift
-  // app and is a page here so the Linux and Windows shells can open the same
-  // one (src/bar/, src/pages/settings/window/, docs/shell-bridge.md). They are
-  // separate entries rather than pages inside the console because the
-  // console's own chrome — the header, the drawer, twenty-nine stylesheets —
-  // is exactly what a card floating over somebody's terminal must not have,
-  // and because a panel summoned by a key should not be waiting on the session
-  // list's bundle.
+  // The console owns Settings. Only the input bar has a separate document,
+  // because its floating native window must load without console navigation.
   build: {
     outDir: "dist",
     emptyOutDir: true,
@@ -58,7 +50,6 @@ export default defineConfig({
       input: {
         main: resolve(here, "index.html"),
         bar: resolve(here, "bar.html"),
-        settings: resolve(here, "settings.html"),
       },
     },
   },

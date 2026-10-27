@@ -2,7 +2,7 @@
   "version": 1,
   "englishKeys": 9237,
   "counts": {
-    "negation": 2668,
+    "negation": 2667,
     "state": 1533,
     "permission": 550,
     "deletion": 202,
@@ -2510,7 +2510,6 @@
       "settings.voiceLanguageNobody",
       "settings.voiceNoBinary",
       "settings.voiceWhyCatalog",
-      "settings.webCloudManagedElsewhere",
       "settings.webCloudPairCodeHint",
       "settings.webCloudPairFailed",
       "settings.webCloudPairGaveUp",

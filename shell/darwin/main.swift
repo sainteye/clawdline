@@ -306,19 +306,6 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
                 self?.inputBar.appBecameFrontmost(app?.bundleIdentifier)
             }
         }
-        // The Swift app opened again, or put away. Carbon refuses neither app
-        // the shared combination, so nothing here fails; the log and the
-        // settings window say that one press now opens two bars (HotKey.swift).
-        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
-            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { note in
-                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                guard app?.bundleIdentifier == HotKey.legacyBundleID else { return }
-                let launched = name == NSWorkspace.didLaunchApplicationNotification
-                shellLog("legacy app \(launched ? "launched" : "quit");"
-                         + " same hotkey: \(launched && HotKey.legacyHolds(NextConfig.shared.hotKey))")
-                SettingsWindowController.shared.refresh()
-            }
-        }
         applyConfiguredHotKey(alertOnFailure: true)
 
         termination = quitOnSIGTERM { [weak self] in
@@ -768,13 +755,6 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         appMenu.addItem(homeItem)
         appMenu.addItem(.separator())
 
-        // The native settings window, in its own window — SettingsWindow.swift.
-        let settings = NSMenuItem(title: L.t.menuEditConfig, action: #selector(openSettings),
-                                  keyEquivalent: ",")
-        settings.target = self
-        appMenu.addItem(settings)
-        appMenu.addItem(.separator())
-
         let services = NSMenuItem(title: L.t.menuServices, action: nil, keyEquivalent: "")
         let servicesMenu = NSMenu()
         services.submenu = servicesMenu
@@ -879,7 +859,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             : L.t.statusWaiting(waiting)
     }
 
-    private func applyShellLanguage(_ tag: String, fromSettings: Bool) {
+    private func applyShellLanguage(_ tag: String) {
         guard ShellLanguage.select(tag) else { return }
         installMainMenu()
         statusItem?.menu = buildMenu()
@@ -888,11 +868,6 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         refreshBrowserBar()
         NotchIsland.shared.languageChanged()
         AgentSetupWindowController.shared.languageChanged()
-        SettingsWindowController.shared.languageChanged(reloadPage: !fromSettings)
-        // The other local WebView has the same browser preference but does
-        // not observe this window's reload. Its next bridge message selects
-        // the same tag and stops here.
-        if fromSettings, let page = web.url, isConsole(page) { web.reload() }
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -902,7 +877,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
                   let current = web.url, isConsole(current),
                   let body = message.body as? [String: String],
                   let tag = body["tag"] else { return }
-            applyShellLanguage(tag, fromSettings: false)
+            applyShellLanguage(tag)
             return
         }
         if message.name == "shellRestartApp" {
@@ -1008,10 +983,6 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         login.tag = Self.loginTag
         menu.addItem(login)
 
-        let edit = NSMenuItem(title: L.t.menuEditConfig, action: #selector(openSettings), keyEquivalent: "")
-        edit.target = self
-        menu.addItem(edit)
-
         let reloadItem = NSMenuItem(title: L.t.menuReload, action: #selector(reloadConfig), keyEquivalent: "")
         reloadItem.target = self
         menu.addItem(reloadItem)
@@ -1058,8 +1029,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     // MARK: - Actions
 
     // "打開輸入框" opens the input bar, which is what it says and what it opens
-    // in the Swift app. The rows under it — "主頁／設定中心", "設定⋯" — are still
-    // the console window's (Bar.swift).
+    // in the Swift app. The Home row below it opens the console (Bar.swift).
     @objc private func openPanel() {
         guard inputBarEnabled else { return }
         inputBar.toggle()
@@ -1306,21 +1276,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
 // MARK: - Settings
 
-/// "Settings…", and the settings page's half of the conversation.
-///
-/// The Swift app's settings window writes the config file, then posts
-/// `clawdlineConfigChanged`, and the app re-applies the hotkey and the rest in
-/// one place. Here the page writes the file through the daemon and then says
-/// `changed`; the shell reads the file again and re-applies it the same way,
-/// then tells the page what it actually registered. A hand edit still takes
-/// "Reload config", as there — nothing watches the file.
+/// The website console's bridge for applying configuration and recording a hotkey.
+/// Writes go through the daemon; the shell then reapplies its native settings.
 extension Shell {
-    @objc func openSettings() {
-        // The settings window is its own window now (SettingsWindow.swift),
-        // the way the Swift app's is, rather than a page in the console.
-        SettingsWindowController.shared.show(host: self)
-    }
-
     /// Ask the console for a page the way its own address does. Before the
     /// console has loaded, the request waits for it.
     func goToPage(_ name: String) {
@@ -1464,25 +1422,6 @@ extension Shell {
               let array = String(data: data, encoding: .utf8) else { return "\"\"" }
         return String(array.dropFirst().dropLast())
     }
-}
-
-/// The settings window's two hooks into the app (SettingsWindow.swift).
-///
-/// Here rather than there because both touch members this file keeps private,
-/// and because they are the whole of what that window may reach: it draws
-/// nothing of this app's state and changes nothing but the file.
-extension Shell: SettingsWindowHost {
-    func settingsLanguageSelected(_ tag: String) {
-        applyShellLanguage(tag, fromSettings: true)
-    }
-    func settingsSuspendHotKey() {
-        stopRecording(restore: false)
-        hotKey.unregister()
-        hotKeyActive = false
-        hotKeySuspended = true
-    }
-
-    func settingsApplyConfig() { configChanged() }
 }
 
 extension Shell: NSMenuDelegate {
