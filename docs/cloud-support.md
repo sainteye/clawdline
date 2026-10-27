@@ -99,6 +99,31 @@ The private service owns `SUPPORT_LIMITS`, migrations, deployment and the scoped
 The public daemon registers the help tab's request deadline, refresh interval and title bound in
 `internal/domain/capacity`; its diagnostics explain that these limits are enforced by the browser.
 
+## Restricted answering runtime
+
+An operator installs a dedicated documentation workspace and uses a trigger-only Codex schedule
+with task kind `support_answer`, no repository claims and no checkout isolation. Admission rejects
+ordinary dispatches, other providers and repository writes for this kind. Its launch always uses
+the restricted support permission profile, regardless of the machine's general dispatch ceiling.
+
+The workspace contains `docs/` (a pinned public documentation export with its source manifest),
+`support-worker.py` (the scoped client), `private/worker-token` (mode 0600), and `state/` (mode 0700).
+Only the client's state and the current task's own receipt directory are writable. Documentation,
+client and credential are read-only. Other machine data, repositories, Sessions, tasks and Cloud
+deployment credentials are outside the filesystem grant. The network proxy allows only the
+support API and loopback task receipts. A separate `.codex-runtime` home contains the operator's
+ChatGPT login; model-generated commands cannot read that directory. API-key login, apps, plugins,
+web search and further agents are disabled. The operator installs an empty runtime configuration
+and no MCP servers, hooks or project configuration. Keep the answering workspace outside a
+development checkout so it cannot inherit a project's tools or instructions.
+
+Keep automatic answering disabled until the exact installed CLI has passed positive and negative
+sandbox checks: official documentation and scoped state must work, while another task, a private
+Session, a source checkout, runtime authentication, writes to documentation and unrelated network
+destinations must be denied. A prompt alone is not an isolation receipt. Then bind the webhook,
+install the freshly rotated scoped token privately, enable the binding, and verify a real browser
+submission through webhook delivery, local task execution, answer commit and member-visible reply.
+
 ## Verification and release boundary
 
 The feature is implemented across the public console and private Cloud/marketing repositories.

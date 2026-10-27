@@ -876,7 +876,7 @@ func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 
 func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, taskExecutable string, launchEnv ...string) string {
 	args := append([]string{}, l.Arguments...)
-	if r.Gate == nil && l.Assistant != projects.AssistantAntigravity {
+	if r.Gate == nil && r.Kind != TaskKindSupportAnswer && l.Assistant != projects.AssistantAntigravity {
 		args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
 	}
 	args = append(args, permissionArgs(r, taskRoot, cwd, taskExecutable)...)
@@ -886,6 +886,9 @@ func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, task
 	// has one, and the assistant is checked here again because this line is
 	// the gate between a record and what a machine executes.
 	var set []string
+	if r.Kind == TaskKindSupportAnswer {
+		set = append(set, "CODEX_HOME="+projects.ShellQuoted(filepath.Join(cwd, ".codex-runtime")))
+	}
 	if l.Assistant == projects.AssistantClaude {
 		set = autoCompactEnv(r.AutoCompactWindow)
 	}
@@ -914,6 +917,9 @@ func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, task
 // permissionArgs is the ceiling the dispatcher asked for, spelled the way each
 // CLI spells it.
 func permissionArgs(r Record, taskRoot, cwd, taskExecutable string) []string {
+	if r.Kind == TaskKindSupportAnswer {
+		return supportPermissionArgs(r, cwd, taskExecutable)
+	}
 	if r.Gate != nil {
 		if r.Assistant == "codex" {
 			return gatePermissionArgs(r, cwd, taskExecutable)

@@ -1,4 +1,5 @@
 {
+  "http.6576407019572a69": "support_answer requires a Codex schedule, no checkout isolation and no repository writes",
   "next.toolResultPrevious": "Previous",
   "next.toolResultNext": "Next",
   "next.toolResultPreviewImage": "Load thumbnail",

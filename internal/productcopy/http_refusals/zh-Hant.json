@@ -487,6 +487,7 @@
   "http.64d648d0cfbf9917": "請選取範圍較小的 Board 項目；回應超過位元組上限。",
   "http.6515a1035c9a9ca4": "secret 必須是 64 個十六進位字元。",
   "http.6539655efd7b1d44": "沒有這個 Board 路由。",
+  "http.6576407019572a69": "support_answer 僅限 Codex 排程，不可建立隔離 checkout，也不可寫入專案檔案",
   "http.657cb0415a2de3e1": "dir 必須是絕對路徑。",
   "http.65a145e650c6abc9": "這個 Board 沒有該 Project。",
   "http.65ce6f37efdf65fc": "其中一張解碼後的圖片超過像素數量或尺寸上限。",

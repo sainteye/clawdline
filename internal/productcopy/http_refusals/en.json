@@ -487,6 +487,7 @@
   "http.64d648d0cfbf9917": "Select a narrower board item; the response exceeds its byte budget.",
   "http.6515a1035c9a9ca4": "secret must be 64 hex characters.",
   "http.6539655efd7b1d44": "No such board route.",
+  "http.6576407019572a69": "support_answer requires a Codex schedule, no checkout isolation and no repository writes",
   "http.657cb0415a2de3e1": "dir must be an absolute path.",
   "http.65a145e650c6abc9": "This board has no such project.",
   "http.65ce6f37efdf65fc": "One decoded image exceeds the pixel or dimension limit.",
