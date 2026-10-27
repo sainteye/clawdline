@@ -1152,7 +1152,7 @@ class Tab {
   async key(key: "ArrowDown" | "Enter" | "Escape" | "Tab", shift = false): Promise<void> {
     const code = key === "ArrowDown" ? 40 : key === "Enter" ? 13 : key === "Tab" ? 9 : 27
     const modifiers = shift ? 8 : 0
-    await this.b.send("Input.dispatchKeyEvent", { type: "keyDown", key, code: key, windowsVirtualKeyCode: code, modifiers }, this.session)
+    await this.b.send("Input.dispatchKeyEvent", { type: "keyDown", key, code: key, windowsVirtualKeyCode: code, modifiers, ...(key === "Enter" ? { text: "\r" } : {}) }, this.session)
     await this.b.send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: code, modifiers }, this.session)
   }
 
@@ -1476,6 +1476,36 @@ test("navigation shortcuts switch pages and the cheat sheet owns focus on both l
       await tab.run(`document.getElementById('nav-shortcuts').click()`)
       await shortcutUntil(tab, `!document.getElementById("keys").hidden && document.getElementById("sidebar").hidden`)
       await tab.key("Escape")
+    }
+  }))
+
+test("the cheat sheet closes by touch, click and Enter without closing on its content", () =>
+  inTab(async (tab) => {
+    for (const size of ["phone", "desktop"] as const) {
+      if (size === "desktop") await tab.desktop()
+      await list(tab)
+      await tab.run(`Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' }); document.getElementById('brand').focus()`)
+      const open = async () => {
+        await tab.shortcut("/", 4)
+        await shortcutUntil(tab, `document.getElementById("keys")?.hidden === false && getComputedStyle(document.getElementById("keys")).opacity === "1"`)
+      }
+      await open()
+      await tab.press("#keys-title")
+      assert.equal(await tab.run(`document.getElementById("keys").hidden`), false, "reading the sheet keeps it open")
+      if (size === "phone") {
+        const point = await tab.run(`(() => { const r = document.getElementById("keys-close").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`)
+        await tab.tap(point.x, point.y)
+      } else {
+        await tab.press("#keys-close")
+      }
+      await shortcutUntil(tab, `document.getElementById("keys").hidden === true`)
+      assert.equal((await tab.seen()).focused, "brand", "closing returns focus to the opener")
+      await open()
+      await tab.key("Enter")
+      await shortcutUntil(tab, `document.getElementById("keys").hidden === true`)
+      await open()
+      await tab.press("#keys")
+      await shortcutUntil(tab, `document.getElementById("keys").hidden === true`)
     }
   }))
 

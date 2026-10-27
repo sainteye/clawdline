@@ -74,7 +74,7 @@ export function Overlays() {
         <div className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-labelledby="keys-title">
           <div className="shortcuts-head">
             <h2 id="keys-title">{nextWord("shortcutTitle")}</h2>
-            <button className="chip" type="button" id="keys-close" onClick={closeKeys}>{T.webClose}</button>
+            <button className="chip" type="button" id="keys-close">{T.webClose}</button>
           </div>
           <div className="shortcuts-groups">
             {groups.map(({ title, rows }) => <section key={title} className="shortcuts-group">
@@ -179,6 +179,9 @@ function bindKeys(): () => void {
   const keys = document.getElementById("keys")
   const sheet = keys?.querySelector(".sheet")
   if (!keys || !sheet) return () => {}
+  // The sheet stops native bubbling before React's delegated click handler.
+  // Bind its close button here too, so touch, mouse and keyboard activation agree.
+  const close = document.getElementById("keys-close")
   const onOverlay = () => closeKeys()
   const onSheet = (ev: Event) => ev.stopPropagation()
   const onKey = (event: KeyboardEvent) => {
@@ -193,10 +196,12 @@ function bindKeys(): () => void {
       closeKeys()
     }
   }
+  close?.addEventListener("click", closeKeys)
   keys.addEventListener("click", onOverlay)
   sheet.addEventListener("click", onSheet)
   document.addEventListener("keydown", onKey, true)
   return () => {
+    close?.removeEventListener("click", closeKeys)
     keys.removeEventListener("click", onOverlay)
     sheet.removeEventListener("click", onSheet)
     document.removeEventListener("keydown", onKey, true)
