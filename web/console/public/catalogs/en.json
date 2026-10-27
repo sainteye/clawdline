@@ -9437,5 +9437,8 @@
   "capacityRow.session.transcript_delta_rows.full": "Larger pages are sent whole. No conversation entries are removed by this comparison limit.",
   "next.compressedReadFailed": "This reply could not be opened. Try reading it again.",
   "next.compressedReadUnsupported": "This reply uses an unsupported format. Refresh this page and try again.",
-  "next.compressedReadTooLarge": "This reply exceeds the reading limit."
+  "next.compressedReadTooLarge": "This reply exceeds the reading limit.",
+  "capacityRow.cloud.persona_display_cache.what": "One display-only role catalog per browser tab can survive a reload after the machine validates its exact version. Full role instructions and provenance are excluded.",
+  "capacityRow.cloud.persona_display_cache.full": "A different account, viewer or machine replaces the single slot. Disabled storage falls back to a fresh read; an unverified catalog is never displayed.",
+  "http.f5873bd0885dfca2": "Use display-v1 and a SHA-256 catalog version."
 }

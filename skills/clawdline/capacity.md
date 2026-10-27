@@ -141,6 +141,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.peer_ingress` | 16 | `rows` | `refuse` | `diagnostics, log, sender` | — |
 | `cloud.peer_outbox` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `cloud.peer_pairs` | 128 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `cloud.persona_display_cache` | 1 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cloud.read_plaintext_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.read_queue` | 64 | `rows` | `refuse` | `diagnostics, log, sender` | — |
 | `cloud.rekey_body` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |

@@ -54,6 +54,7 @@ import { machinePaired } from "./pairing-completion.js"
 import { setProjectSyncSeam, syncSeamFor, type SyncClient } from "./project-sync.js"
 import { machinePresentation } from "../legacy/js/session/selection.js"
 import { forgetPersonas } from "../personas.js"
+import { clearPersonaDisplayCache } from "./persona-cache.js"
 import { accountMachineForConfirmation, accountMachineRoster, devicesPageRows, machineIdentityFacts, sessionsFact, withAccountNames, withAccountRegistrations, type AccountName } from "./unpaired-rows.js"
 import { machineSeenWord } from "./machine-seen.js"
 import { MachinePlatformIcon } from "./MachinePlatformIcon.js"
@@ -1280,6 +1281,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           return
         }
         case "sign_in":
+          forgetPersonas()
+          clearPersonaDisplayCache()
           setOperationsAccess(false)
           handover.stop()
           setHandoverAccount(null)
@@ -1314,6 +1317,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           setScreen({ at: "failed", code: update.error?.code ?? update.reason ?? "terminal_error" })
           return
         case "revoked": {
+          forgetPersonas()
+          clearPersonaDisplayCache()
           reader.current?.lost()
           setTerminalHost(null)
           // A revoked device keeps no diagnostics authority: the handover in flight stops, opened

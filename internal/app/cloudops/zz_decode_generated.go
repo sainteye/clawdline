@@ -1038,7 +1038,15 @@ func genDecodePeerOutbox(b body) (plan, LocalRequest, bool) {
 func genDecodePersonas(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "request", "session"},
+		[]string{"type", "request", "session", "view"},
+		[]string{"type", "request", "session", "version", "view"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("version", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("view", genRule{kind: "string", enum: []string{"display-v1"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := machinePlan(b)
@@ -1047,6 +1055,7 @@ func genDecodePersonas(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/personas"
 	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"version": genValue{from: "version", omitEmpty: true}, "view": genValue{from: "view", omitEmpty: true}})
 	return p, req, true
 }
 

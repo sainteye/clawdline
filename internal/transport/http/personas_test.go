@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +16,39 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
+
+// Opt-in private replay input stays outside this public repository. Only
+// aggregate sizes are printed; no catalog content becomes a fixture.
+func TestReplayPersonaDisplayCatalog(t *testing.T) {
+	directory := os.Getenv("CLAWDLINE_PERSONA_REPLAY_DIR")
+	if directory == "" {
+		t.Skip("no private replay directory requested")
+	}
+	raw, err := os.ReadFile(filepath.Join(directory, "personas.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog contract.PersonaCatalog
+	if err := json.Unmarshal(raw, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	first := personaDisplay(catalog, "")
+	for _, sample := range []struct {
+		name  string
+		reply contract.PersonaDisplayReply
+	}{
+		{"persona-display.json", first}, {"persona-unchanged.json", personaDisplay(catalog, first.Version)},
+	} {
+		body, err := json.Marshal(sample.reply)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, sample.name), body, 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("sample=%s bytes=%d roles=%d", sample.name, len(body), len(catalog.Personas))
+	}
+}
 
 // The catalog route lists every persona in the picker's order, with its bot,
 // and never the text a session is launched with.
@@ -52,6 +87,61 @@ func TestThePersonaCatalogIsListedWithoutItsTexts(t *testing.T) {
 	status, _ = f.ask(http.MethodPost, "/v1/personas", f.reader, "{}", "")
 	if status != http.StatusMethodNotAllowed {
 		t.Fatalf("POST: %d", status)
+	}
+}
+
+func TestPersonaDisplayRevalidatesTheWholeProjection(t *testing.T) {
+	f := newSquadFixture(t)
+	status, raw := f.ask(http.MethodGet, "/v1/personas?view=display-v1", f.reader, "", "")
+	if status != http.StatusOK {
+		t.Fatalf("display: %d %s", status, raw)
+	}
+	var first contract.PersonaDisplayReply
+	if err := json.Unmarshal([]byte(raw), &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.View != "display-v1" || !personaCatalogVersion(first.Version) || first.Unchanged {
+		t.Fatalf("bad receipt: %+v", first)
+	}
+	if first.Catalog == nil {
+		t.Fatal("missing display catalog")
+	}
+	display := *first.Catalog
+	full := personaCatalog()
+	if len(display.Personas) != len(full.Personas) || display.License != "" {
+		t.Fatal("display lost roles or retained provenance")
+	}
+	for i, p := range display.Personas {
+		if p.ID != full.Personas[i].ID || p.Name != full.Personas[i].Name || p.Summary != full.Personas[i].Summary || len(p.Icon.Cells) != 7 || len(p.Teams) == 0 || p.Source != "" {
+			t.Fatalf("lost display metadata at %d", i)
+		}
+	}
+	status, raw = f.ask(http.MethodGet, "/v1/personas?view=display-v1&version="+first.Version, f.reader, "", "")
+	var receipt contract.PersonaDisplayReply
+	_ = json.Unmarshal([]byte(raw), &receipt)
+	if status != 200 || !receipt.Unchanged || receipt.Version != first.Version || receipt.Catalog != nil {
+		t.Fatalf("unchanged: %d %s", status, raw)
+	}
+	for _, path := range []string{"/v1/personas?view=unknown", "/v1/personas?version=" + first.Version, "/v1/personas?view=display-v1&version=wrong"} {
+		status, _ = f.ask(http.MethodGet, path, f.reader, "", "")
+		if status != http.StatusBadRequest {
+			t.Fatalf("%s: %d", path, status)
+		}
+	}
+	// A private role addition, rename, icon update or removal changes the
+	// projection version even when built-in roles did not change.
+	full.Personas = append(full.Personas, contract.Persona{ID: "private-role", Name: contract.PersonaNames{En: "Private role"}})
+	added := personaDisplay(full, first.Version)
+	if added.Unchanged || added.Version == first.Version {
+		t.Fatal("addition reused the old version")
+	}
+	full.Personas[len(full.Personas)-1].Name.En = "Renamed role"
+	if personaDisplay(full, added.Version).Unchanged {
+		t.Fatal("rename reused the old version")
+	}
+	full.Personas = full.Personas[:len(full.Personas)-1]
+	if personaDisplay(full, added.Version).Unchanged {
+		t.Fatal("removal reused the old version")
 	}
 }
 
@@ -143,5 +233,12 @@ func TestARestoredPersonaIsOneThisBuildHas(t *testing.T) {
 		if got := restorablePersona(in); got != want {
 			t.Errorf("%q → %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestPersonaDisplayVersionMatchesEscapedUnicode(t *testing.T) {
+	catalog := contract.PersonaCatalog{Personas: []contract.Persona{{ID: "example", Name: contract.PersonaNames{En: "A<&>\u2028\u2029 \"quoted\"\n", ZhHant: "角色"}}}}
+	if got := personaDisplay(catalog, "").Version; got != "9b9953cf5eeb72ef57532b2acd4bd71d080352606c9234f9def774c48b86bf88" {
+		t.Fatalf("cross-viewer digest: %s", got)
 	}
 }

@@ -3775,6 +3775,16 @@ type PersonaCatalog struct {
 	Personas []Persona `json:"personas"`
 }
 
+// An opt-in display-v1 reading. version is the SHA-256 of the catalog with
+// sorted object keys and Go JSON string escaping. An unchanged receipt requires
+// a fresh authorized machine read.
+type PersonaDisplayReply struct {
+	Catalog   *PersonaCatalog `json:"catalog,omitempty"`
+	Unchanged bool            `json:"unchanged,omitempty"`
+	Version   string          `json:"version"`
+	View      string          `json:"view"`
+}
+
 // A name or a one-sentence summary in the two languages the console speaks.
 type PersonaNames struct {
 	En     string `json:"en"`

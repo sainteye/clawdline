@@ -617,13 +617,15 @@
       "console": "carried",
       "console_route": "GET /v1/personas",
       "console_seam": "reader",
-      "console_note": "The built-in personas a start may name (docs/personas.md): a machine read with no parameter. A machine that does not list it is refused by the copied client before anything leaves (`_unsupportedRefusal`).",
+      "console_note": "The built-in personas a start may name (docs/personas.md): a machine read; display-v1 omits provenance and conditionally returns a version receipt. A machine that does not list it is refused by the copied client before anything leaves (`_unsupportedRefusal`).",
       "local": {"method": "GET"},
-      "example": {"request": "req", "session": "__clawdline_machine__"},
+      "example": {"request": "req", "session": "__clawdline_machine__", "view": "display-v1", "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
       "shapes": [
-        {"body": ["request", "session"], "path": "/v1/personas"}
+        {"body": ["request", "session"], "path": "/v1/personas"},
+        {"body": ["request", "session", "view"], "path": "/v1/personas", "query": ["view"]},
+        {"body": ["request", "session", "version", "view"], "path": "/v1/personas", "query": ["version", "view"]}
       ],
-      "decode": {"reply": "machine", "route": {"path": "/v1/personas"}}
+      "decode": {"reply": "machine", "fields": {"view": {"type": "string", "enum": ["display-v1"]}, "version": {"type": "string"}}, "route": {"path": "/v1/personas", "query": {"view": {"from": "view", "omit_empty": true}, "version": {"from": "version", "omit_empty": true}}}}
     },
     {
       "op": "places",

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9437,
-  "riskKeys": 4176,
-  "nonRiskCount": 5261,
+  "englishContentKeys": 9440,
+  "riskKeys": 4177,
+  "nonRiskCount": 5263,
   "groups": [
     {
       "name": "admin / other",
@@ -340,7 +340,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 331,
+      "count": 332,
       "sources": [
         null
       ],
@@ -450,6 +450,7 @@
         "capacityRow.cloud.peer_frame_bytes.what",
         "capacityRow.cloud.peer_inbox.what",
         "capacityRow.cloud.peer_inbox_page.what",
+        "capacityRow.cloud.persona_display_cache.what",
         "capacityRow.cloud.read_plaintext_bytes.what",
         "capacityRow.cloud.rekey_body.what",
         "capacityRow.cloud.rekey_interval.what",
@@ -1749,7 +1750,7 @@
     },
     {
       "name": "http / other",
-      "count": 571,
+      "count": 572,
       "sources": [
         "internal/productcopy/http_refusals/en.json"
       ],
@@ -2295,6 +2296,7 @@
         "http.f3ac149ea0d4b3f5",
         "http.f436d626d3bddc28",
         "http.f43d721e4b127ce3",
+        "http.f5873bd0885dfca2",
         "http.f5a9245c869465d1",
         "http.f5b9f9444ae33085",
         "http.f624e423d221bf78",

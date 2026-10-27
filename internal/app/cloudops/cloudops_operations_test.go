@@ -1849,6 +1849,28 @@ func TestThePersonasReadCrossesWithNothingButItsName(t *testing.T) {
 			t.Fatalf("took %v: %+v, asked %v", body, answer, r.seen)
 		}
 	}
+	for _, version := range []string{"", strings.Repeat("a", 64)} {
+		r := &router{}
+		body := map[string]any{"type": "personas", "session": MachineReplySession, "request": "display", "view": "display-v1"}
+		if version != "" {
+			body["version"] = version
+		}
+		result := open(r).Handle(context.Background(), request(t, ClassCtl, body))
+		if !result.OK() || len(r.seen) != 1 || r.last().Query["view"] != "display-v1" || r.last().Query["version"] != version {
+			t.Fatalf("display did not cross exactly: %+v %+v", result, r.seen)
+		}
+	}
+	for _, body := range []map[string]any{
+		{"type": "personas", "session": MachineReplySession, "request": "display", "version": strings.Repeat("a", 64)},
+		{"type": "personas", "session": MachineReplySession, "request": "display", "view": "display-v2"},
+		{"type": "personas", "session": MachineReplySession, "request": "display", "view": "display-v1", "private": true},
+	} {
+		r := &router{}
+		if result := open(r).Handle(context.Background(), request(t, ClassCtl, body)); result.Code != "malformed_read" || len(r.seen) != 0 {
+			t.Fatalf("unexpected display shape crossed: %+v", result)
+		}
+	}
+
 }
 
 // TestAStartOrAResumeMayNameAPersona: `persona` is an optional seventh key on

@@ -95,6 +95,7 @@
 | `invalid_landing_evidence` | `internal/domain/work/v2.go` |
 | `invalid_notification_rule` | `internal/transport/http/notification_rules.go` |
 | `invalid_page_size` | `internal/transport/http/squad_events.go` |
+| `invalid_persona_view` | `internal/transport/http/personas.go` |
 | `invalid_phase` | `internal/transport/http/work_v2.go` |
 | `invalid_project` | `internal/transport/http/project_sync.go` |
 | `invalid_project_path` | `internal/transport/http/project_folders.go` |

@@ -24,6 +24,8 @@
 // without a page (`relay-reader.test.ts`).
 import type { CarriedWord, CarryTable } from "./carry.js"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
+import { readPersonaDisplay } from "./persona-cache.ts"
+// @ts-expect-error -- Node loads the source extension in focused behavior tests.
 import { usageOverviewQuery } from "./carry.ts"
 import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
@@ -131,6 +133,8 @@ export interface CloudEvent {
  * are `CloudWriteClient`, reached only through `relay-writer.ts`.
  */
 export interface CloudReadClient {
+  readonly account?: string | null
+  readonly deviceID?: string | null
   sendDiagnostic?(machine: string, data: Record<string, unknown>): Promise<unknown>
   readonly ready?: boolean
   readonly allowWrites?: boolean
@@ -1402,8 +1406,29 @@ export class RelayReader {
           // machine other than the one this page reads: the roles offered have
           // to be the roles the machine that will run it knows. It is the same
           // naming `/v1/places` takes for that sheet's Projects.
-          const q = this.only(url, path, "machine")
-          return await this.machineRead(init?.signal, method, path, "personas", {}, q.machine || undefined)
+          const q = this.only(url, path, "machine", "view")
+          const machine = q.machine || this.machine
+          if (q.view && q.view !== "display-v1") return this.refuse(method, path, 400, "invalid_persona_view", "Use display-v1 and a SHA-256 catalog version.", "http.f5873bd0885dfca2")
+          const client = await this.connectedFor(init?.signal)
+          const descriptor = descriptorObject(descriptorObject(client?.orchestratorSnapshots?.get(machine))?.machine)
+          if (q.view !== "display-v1" || descriptor?.persona_display_v1 !== true) {
+            return await this.machineRead(init?.signal, method, path, "personas", {}, machine)
+          }
+          const scope = client?.account && client.deviceID ? JSON.stringify([client.account, client.deviceID, machine]) : null
+          const ask = (fields: Record<string, unknown>) => this.machineRead(init?.signal, method, path, "personas", fields, machine)
+          let response: Response
+          try { response = await readPersonaDisplay(ask, scope, init?.signal) }
+          catch (error) {
+            if (!init?.signal?.aborted && ["malformed_read", "unknown_command"].includes(failureCode(error)))
+              return await this.machineRead(init?.signal, method, path, "personas", {}, machine)
+            throw error
+          }
+          if (!response.ok && !init?.signal?.aborted) {
+            const body = await response.clone().json().catch(() => null) as { error?: string; code?: string } | null
+            if (["malformed_read", "unknown_command"].includes(body?.error ?? body?.code ?? ""))
+              return await this.machineRead(init?.signal, method, path, "personas", {}, machine)
+          }
+          return response
         }
         // Project settings sync (docs/project-sync.md): this machine's offer,
         // one offered project in full, and what this machine mirrors.

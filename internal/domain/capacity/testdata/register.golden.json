@@ -2706,6 +2706,23 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.persona_display_cache",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "cloud.read_plaintext_bytes",
     "Class": "buffer",
     "Unit": "bytes",

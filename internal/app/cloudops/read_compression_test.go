@@ -206,7 +206,13 @@ func TestReplayStructuredReadCompression(t *testing.T) {
 		}
 		return len(raw)
 	}
-	for _, sample := range []struct{ file, word string }{{"cards.json", "work.v2.cards"}, {"personas.json", "personas"}, {"projects.json", "projects"}, {"schedules.json", "schedules"}, {"quotas.json", "provider-quotas"}} {
+	samples := []struct{ file, word string }{{"cards.json", "work.v2.cards"}, {"personas.json", "personas"}, {"projects.json", "projects"}, {"schedules.json", "schedules"}, {"quotas.json", "provider-quotas"}}
+	for _, name := range []string{"persona-display.json", "persona-unchanged.json"} {
+		if _, err := os.Stat(filepath.Join(directory, name)); err == nil {
+			samples = append(samples, struct{ file, word string }{name, "personas"})
+		}
+	}
+	for _, sample := range samples {
 		raw, err := os.ReadFile(filepath.Join(directory, sample.file))
 		if err != nil {
 			t.Fatal(err)
@@ -219,6 +225,9 @@ func TestReplayStructuredReadCompression(t *testing.T) {
 			fields["project"] = ""
 			fields["query"] = ""
 			fields["status"] = "open"
+		}
+		if strings.HasPrefix(sample.file, "persona-") {
+			fields["view"] = "display-v1"
 		}
 		plain := b.Handle(context.Background(), request(t, ClassCtl, fields))
 		fields["accept_encoding"] = "gzip-v1"
@@ -233,6 +242,6 @@ func TestReplayStructuredReadCompression(t *testing.T) {
 		if !bytes.Equal(a, z) {
 			t.Fatal("read content changed")
 		}
-		fmt.Printf("kind=%s http_json=%d legacy_payload=%d negotiated_payload=%d legacy_sealed=%d negotiated_sealed=%d\n", sample.word, len(raw), len(plain.Payload), len(encoded.Payload), sealedSize(plain.Payload), sealedSize(encoded.Payload))
+		fmt.Printf("sample=%s kind=%s http_json=%d legacy_payload=%d negotiated_payload=%d legacy_sealed=%d negotiated_sealed=%d\n", sample.file, sample.word, len(raw), len(plain.Payload), len(encoded.Payload), sealedSize(plain.Payload), sealedSize(encoded.Payload))
 	}
 }

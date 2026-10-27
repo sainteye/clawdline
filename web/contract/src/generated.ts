@@ -4414,6 +4414,18 @@ export interface PersonaCatalog {
 }
 
 /**
+ * An opt-in display-v1 reading. version is the SHA-256 of the catalog with sorted
+ * object keys and Go JSON string escaping. An unchanged receipt requires a fresh
+ * authorized machine read.
+ */
+export interface PersonaDisplayReply {
+  catalog?: PersonaCatalog
+  unchanged?: boolean
+  version: string
+  view: string
+}
+
+/**
  * A name or a one-sentence summary in the two languages the console speaks.
  */
 export interface PersonaNames {

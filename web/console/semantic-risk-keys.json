@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9437,
+  "englishKeys": 9440,
   "counts": {
-    "negation": 2695,
+    "negation": 2696,
     "state": 1548,
     "permission": 563,
     "deletion": 208,
     "uncertainty": 295
   },
-  "unionCount": 4176,
+  "unionCount": 4177,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -219,6 +219,7 @@
       "capacityRow.cloud.peer_outbox.full",
       "capacityRow.cloud.peer_pairs.full",
       "capacityRow.cloud.peer_pairs.what",
+      "capacityRow.cloud.persona_display_cache.full",
       "capacityRow.cloud.read_plaintext_bytes.full",
       "capacityRow.cloud.read_queue.what",
       "capacityRow.cloud.rekey_body.full",
@@ -5668,6 +5669,7 @@
     "capacityRow.cloud.peer_outbox.what",
     "capacityRow.cloud.peer_pairs.full",
     "capacityRow.cloud.peer_pairs.what",
+    "capacityRow.cloud.persona_display_cache.full",
     "capacityRow.cloud.read_plaintext_bytes.full",
     "capacityRow.cloud.read_queue.full",
     "capacityRow.cloud.read_queue.what",

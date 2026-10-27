@@ -61,9 +61,10 @@ export const CARRIED = {
   "peer-inbox": "GET /v1/cloud/peer/inbox?machine_id=&session_id=&execution_generation=&before=",
   "peer-outbox": "GET /v1/cloud/peer/outbox/{request}",
   "peer-send": "POST /v1/cloud/peer/send",
-  // The built-in personas a start may name (docs/personas.md): a machine read
-  // with no parameter. A machine that does not list it is refused by the copied
-  // client before anything leaves (`_unsupportedRefusal`).
+  // The built-in personas a start may name (docs/personas.md): a machine read;
+  // display-v1 omits provenance and conditionally returns a version receipt. A
+  // machine that does not list it is refused by the copied client before
+  // anything leaves (`_unsupportedRefusal`).
   personas: "GET /v1/personas",
   places: "GET /v1/places",
   "project-add": "POST /v1/places?machine=",

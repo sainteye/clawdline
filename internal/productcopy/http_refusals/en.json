@@ -1228,6 +1228,7 @@
   "http.f43d721e4b127ce3": "Deployment policy is required, not_required, or agent_decides.",
   "http.f4a2c2e826b8c2f8": "The board could not be read or written; nothing was done.",
   "http.f4f23f319cb20ccc": "The active assignment does not match the Session's Root Assignment.",
+  "http.f5873bd0885dfca2": "Use display-v1 and a SHA-256 catalog version.",
   "http.f5a9245c869465d1": "auto_compact_window must be null, or a whole number of tokens from 50000 to 1000000",
   "http.f5b9f9444ae33085": "This obligation is already settled with a different target. A landing aimed somewhere else is another claim rather than a correction of this one; record it against its own task.",
   "http.f60f0970ce218cea": "A dispatch on its own is not worth asking a person about: on a machine where sending a child is how work is done, every dispatch would be a question. The rules propose a line only once it has outlived a day of nobody following it, or has an effect outside this machine. Its root may still propose it.",

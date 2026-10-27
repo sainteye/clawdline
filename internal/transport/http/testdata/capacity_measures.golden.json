@@ -666,6 +666,11 @@
     "Known": true
   },
   {
+    "Name": "cloud.persona_display_cache",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cloud.read_plaintext_bytes",
     "Known": true,
     "Note": true

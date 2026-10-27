@@ -1228,6 +1228,7 @@
   "http.f43d721e4b127ce3": "Deployment policy 必須是 required、not_required 或 agent_decides。",
   "http.f4a2c2e826b8c2f8": "無法讀取或寫入 Board；未執行任何操作。",
   "http.f4f23f319cb20ccc": "目前的指派與 Session 的 Root Assignment 不符。",
+  "http.f5873bd0885dfca2": "請使用 display-v1 與 SHA-256 目錄版本。",
   "http.f5a9245c869465d1": "auto_compact_window 必須是 null，或 50000 至 1000000 之間的整數 token 數。",
   "http.f5b9f9444ae33085": "此義務已使用不同目標確認完成。落地到其他位置屬於另一項主張，而非修正這一項；請記錄在其自己的任務下。",
   "http.f60f0970ce218cea": "單獨派出任務還不值得詢問當事人：在以派出子任務作為工作方式的機器上，每次派出都會變成一個問題。規則只會在工作線超過一天無人追蹤，或產生機器外部效果時提出提案。其根 Session 仍可提出提案。",
