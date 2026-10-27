@@ -238,9 +238,14 @@ page: its missing JavaScript request returned `text/html`, and the uncaught
 React lazy import removed the entire interface.
 
 Registered pages now have individual module-load boundaries. A failed lazy page
-shows a localized reload action while the shell and neighbouring Session stay
-mounted. Startup gate imports have the same recovery UI, including removing the
-initial boot cover if the gate could not load. Vite preload events identify the
+shows a quiet localized recovery card while the shell and neighbouring Session stay
+mounted. Its primary action reloads the current destination. Back to Sessions uses
+the existing in-page navigation, keeping the Session mounted and avoiding a full
+reload. The secondary action and its explanatory sentence are absent when startup
+has failed before a Session shell exists. The card states that reloading is manual;
+it does not claim that unsaved data is durable or that retrying must succeed.
+Startup gate imports have the same recovery UI, including removing the initial
+boot cover if the gate could not load. Vite preload events identify the
 original rejected error; they are not cancelled, so consumers still receive the
 real rejection. Ordinary API, cancellation and application errors keep their
 existing error paths.

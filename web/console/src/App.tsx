@@ -1258,7 +1258,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       {Object.values(PAGE_MODULES).map(({ id, Component }) => (
         // Mounted once opened and kept, as the original keeps its sections in
         // the document and only hides them.
-        <ModuleLoadBoundary key={id} shown={page === id && knowsHere(id)}>
+        <ModuleLoadBoundary key={id} shown={page === id && knowsHere(id)} onSessions={() => { go("sessions") }}>
           <Component shown={page === id && knowsHere(id)} />
         </ModuleLoadBoundary>
       ))}

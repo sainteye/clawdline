@@ -9451,10 +9451,13 @@
   "capacityRow.cloud.persona_display_cache.what": "One display-only role catalog per browser tab can survive a reload after the machine validates its exact version. Full role instructions and provenance are excluded.",
   "capacityRow.cloud.persona_display_cache.full": "A different account, viewer or machine replaces the single slot. Disabled storage falls back to a fresh read; an unverified catalog is never displayed.",
   "http.f5873bd0885dfca2": "Use display-v1 and a SHA-256 catalog version.",
-  "next.moduleLoadTitle": "Part of this page could not load",
-  "next.moduleLoadRecovery": "Reload the page to continue.",
+  "next.moduleLoadTitle": "This page couldn’t load just now",
+  "next.moduleLoadRecovery": "Reload the page to try again.",
   "support.processingDetail": "Processing detail",
   "support.reporter": "Reported by",
   "support.reporterUnnamed": "No display name",
-  "support.reporterId": "Member ID"
+  "support.reporterId": "Member ID",
+  "next.moduleLoadReturn": "Or return to Sessions and continue your work.",
+  "next.moduleLoadBack": "Back to Sessions",
+  "next.moduleLoadManual": "The page won’t reload automatically."
 }
