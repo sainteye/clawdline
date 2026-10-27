@@ -121,18 +121,26 @@ export function bindVideoPreview(doc: Document, read: ReadVideo): () => void {
     }
   }
   const cancel = (event: Event) => { event.preventDefault(); dismiss() }
+  const key = (event: KeyboardEvent) => {
+    if (!dialog.open || event.key !== "Escape" || doc.fullscreenElement) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    dismiss()
+  }
   const backdrop = (event: MouseEvent) => { if (event.target === dialog) dismiss() }
   close.addEventListener("click", dismiss)
   retry.addEventListener("click", load)
   dialog.addEventListener("cancel", cancel)
   dialog.addEventListener("click", backdrop)
   doc.addEventListener("click", click, true)
+  doc.addEventListener("keydown", key, true)
   win.addEventListener("popstate", pop, true)
   win.addEventListener("hashchange", followHash)
   followHash()
   return () => {
     shut()
     doc.removeEventListener("click", click, true)
+    doc.removeEventListener("keydown", key, true)
     win.removeEventListener("popstate", pop, true)
     win.removeEventListener("hashchange", followHash)
     dialog.remove()
