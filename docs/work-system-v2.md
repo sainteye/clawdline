@@ -218,6 +218,31 @@ its evidence; a periodic reconciliation loop does not write cosmetic history.
 
 ## 6. Lifecycle
 
+### Desktop Board presentation
+
+The desktop console (900 CSS pixels and wider) groups open executable items into
+**Unassigned**, **In progress**, and **Needs attention**. Assignment in progress and
+the assigned, implementing, verifying, merging and deploying phases share **In progress**;
+the card still names its exact phase. A condition, pending decision or requested person action
+places the item in **Needs attention**, retaining that phase. Plans remain separate from
+executable work. Cancelled items are not presented as successful completion.
+
+**Show Agent proposals**, **Show Plans**, and **Show completed** are independent,
+initially off switches for this visit. When enabled, proposals and Plans appear to the left
+of the three work columns; completed items appear on the right. Hidden columns take no
+space. The completed switch includes closed items in the existing cursor-bounded Board
+read; it does not complete work or record acceptance.
+
+Each desktop column is 280 CSS pixels wide. Only the column region scrolls horizontally;
+the page heading, Project selector, switches and search stay in place. Cards keep their
+existing detail modal and proposal actions, without drag operations. Empty work columns
+remain visible, and phase-only changes keep a card in its current presentation group.
+These are read-model groups, not lifecycle transitions or new persisted states.
+
+The phone console (below 900 CSS pixels) retains its existing status filter, Plan switch,
+proposal inbox, vertical phase sections and recently completed fold. Desktop visibility
+and status choices do not change those phone controls or their defaults.
+
 Executable items follow this main path:
 
 ```text

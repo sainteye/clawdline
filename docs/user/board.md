@@ -19,6 +19,19 @@ Labels below follow the English interface; the console also supports other langu
 **＋ Create item**. Turning it
 off again keeps the history.
 
+## Follow work on a desktop
+
+The desktop Board places **Unassigned**, **In progress**, and **Needs attention**
+beside each other. Implementation, verification, merge and deployment appear on the
+card, so short phase changes do not move it between columns. A question or blocker
+keeps its phase visible in **Needs attention**. Press a card to open its details.
+
+Turn on **Show Agent proposals** or **Show Plans** to reveal their columns on the
+left. **Show completed** reveals completed items on the right. All three start off;
+a hidden column leaves no empty space. Each column keeps a fixed width, and the
+Board scrolls horizontally inside its own region. The heading and filters stay in place.
+The phone Board keeps its existing layout and controls.
+
 ## Put work on the Board
 
 1. Open **Board** and press **＋ Create item**.

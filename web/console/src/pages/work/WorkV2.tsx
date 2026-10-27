@@ -39,6 +39,8 @@ import { VoiceTextarea } from "./VoiceTextarea.js"
 import { ItemUsageCard } from "./TokenBill.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
+import { DesktopBoard, DesktopBoardSwitches, useDesktopBoard, type DesktopBoardVisibility } from "./DesktopBoard.js"
+import { boardReadStatus } from "./desktop-board.js"
 import { CompleteWorkDialog } from "./CompleteWorkDialog.js"
 import { phaseName } from "./phase-name.js"
 import { confirmDecisionAnswer, decisionsForWorkItem, matchingDecisionAnswer, proposalsForProject, withoutAnsweredDecision, withoutAnsweredWait, type DecisionAnswerStatus } from "./board-attention.js"
@@ -129,7 +131,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [decisions, setDecisions] = useState<Decision[]>([])
   const [project, setProject] = useState("")
   const [routeProject, setRouteProject] = useState(() => typeof location === "undefined" ? "" : workRouteFromHash(location.hash).project)
-  const [status, setStatus] = useState<WorkV2Status>("open")
+  const [phoneStatus, setStatus] = useState<WorkV2Status>("open")
+  const desktop = useDesktopBoard()
+  const [desktopVisibility, setDesktopVisibility] = useState<DesktopBoardVisibility>({ proposals: false, plans: false, done: false })
+  const status = boardReadStatus(desktop, desktopVisibility.done, phoneStatus)
   const [showPlans, setShowPlans] = useState(false)
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
@@ -157,7 +162,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   // filter changes, or Refresh is pressed; see `board-order.ts`.
   const arrangement = useRef<{ view: string; places: Map<string, number> } | null>(null)
   const rearrange = useRef(true)
-  useBoardMotion(board)
+  useBoardMotion(board, desktop ? "columns" : "stacked")
 
   const load = useCallback(async (announce = false) => {
     const generation = ++loadGeneration.current
@@ -410,7 +415,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     [family, openWorkItemById])
 
   return <EpicFamilyContext.Provider value={familyView}>
-  <section ref={board} id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title"
+  <section ref={board} id="work" className="page board-page work-page" data-page-view="work" data-board-layout={desktop ? "columns" : "stacked"} hidden={!shown} aria-labelledby="work-v2-title"
     aria-busy={loading || refreshing || paging ? "true" : undefined}>
     <header className="board-head">
       <div><h1 id="work-v2-title">{catalogWord("inline", "0072da457a09")}</h1></div>
@@ -427,12 +432,14 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       <div className="work-filter-bar">
         <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} onOpen={refreshPlaces} allowAll />
         <div className="work-filter-controls">
+          {desktop ? <DesktopBoardSwitches value={desktopVisibility} onChange={setDesktopVisibility} /> : <>
           <div className="work-status-filter" role="group" aria-label={catalogWord("inline", "ce34a838f587")}>
             {([['open', catalogWord("literal", "8f643bcd5a10")], ['done', catalogWord("literal", "20df2a7775cd")], ['all', catalogWord("literal", "aa44a36dc811")]] as [WorkV2Status, string][]).map(([value, label]) =>
               <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</button>)}
           </div>
           <button className="work-plan-toggle" type="button" aria-pressed={showPlans}
             onClick={() => setShowPlans((current) => !current)}>{catalogWord("inline", "187097a69436")}</button>
+          </>}
         </div>
         <label className="work-search">
           <WorkIcon name="search" />
@@ -443,7 +450,11 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       </div>
       <TerminalEntry key={project} project={project} label={places.find((place) => place.id === project)?.label ?? ""} />
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      {loading ? <BoardSkeleton /> : <>
+      {desktop ? <DesktopBoard items={items} decisions={decisions} visibility={desktopVisibility}
+        loading={loading} loadingLabel={L.strings.webLoading} proposalCount={visibleProposals.length}
+        proposals={<ProposalQueue column proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
+        renderCard={(item) => <CompactWorkCard key={item.id} item={item} sessions={sessions} nowSeconds={nowSeconds}
+          decisions={decisionsForWorkItem(decisions, item.id)} onOpen={() => openItem(item)} />} /> : loading ? <BoardSkeleton /> : <>
       {visibleProposals.length > 0 && <ProposalQueue proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
       <BoardRegion title={catalogWord("inline", "944fa4126f45")} items={planning} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />
       <BoardRegion title={catalogWord("inline", "109be039b4c0")} items={unassigned} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />
@@ -474,6 +485,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
           onClick={() => void loadMore()}>{paging ? catalogWord("literal", "223a19c135b4") : catalogWord("literal", "70ee17f5b118")}</button>
       </div>}
       </>}
+      {desktop && nextCursor && <div className="work-pagination">
+        <button className="board-button work-more" type="button" disabled={paging} aria-busy={paging ? "true" : undefined}
+          onClick={() => void loadMore()}>{paging ? catalogWord("literal", "223a19c135b4") : catalogWord("literal", "70ee17f5b118")}</button>
+      </div>}
     </div>
   </section>
     {creating && <NewWorkModal places={places} initialProject={project} initialDraft={createDraft} busy={!!busy} failure={failure}
@@ -648,21 +663,18 @@ function AgentGlyph() {
 }
 
 /**
- * Proposals are an inbox, not another Board column. The row says the proposed
- * outcome and why it matters; the longer scope and acceptance stay one
- * disclosure away instead of making every suggestion as tall as a work card.
+ * Share proposal actions and disclosure between the phone inbox and the
+ * optional desktop lane. Neither view creates an item before acceptance.
  */
-function ProposalQueue({ proposals, items, places, busy, run }: {
+function ProposalQueue({ proposals, items, places, busy, run, column = false }: {
+  column?: boolean
   proposals: WorkV2Proposal[]
   items: WorkV2Item[]
   places: ProjectPlace[]
   busy: string
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
 }) {
-  return <details className="work-fold work-proposal-fold" open>
-    <summary><strong>{catalogWord("inline", "90b290a48f82")}</strong><span className="work-count">{proposals.length}</span>
-      <span className="work-fold-hint" lang={catalogWordLanguage("inline", "2be2b494050d")}>{catalogWord("inline", "2be2b494050d")}</span></summary>
-    <div className="work-fold-body"><ul className="work-proposals">{proposals.map((proposal) => {
+  const list = <ul className="work-proposals">{proposals.map((proposal) => {
       const project = places.find((place) => place.id === proposal.project_id)
       const source = proposal.source_work_id ? items.find((item) => item.id === proposal.source_work_id) : undefined
       const sourceLine = source ? catalogFormat("template", "d03a9f051a31", [source.title])
@@ -687,7 +699,12 @@ function ProposalQueue({ proposals, items, places, busy, run }: {
             onClick={() => void run(proposal.id + ":reject", () => resolveWorkV2Proposal(proposal.id, "reject"))}><ActionProgress busy={busy === proposal.id + ":reject"}>{catalogWord("inline", "0f7e826a2f9f")}</ActionProgress></button>
         </div>
       </li>
-    })}</ul></div>
+    })}</ul>
+  if (column) return proposals.length ? list : <p className="work-desktop-empty">{catalogWord("work", "desktopEmptyLane")}</p>
+  return <details className="work-fold work-proposal-fold" open>
+    <summary><strong>{catalogWord("inline", "90b290a48f82")}</strong><span className="work-count">{proposals.length}</span>
+      <span className="work-fold-hint" lang={catalogWordLanguage("inline", "2be2b494050d")}>{catalogWord("inline", "2be2b494050d")}</span></summary>
+    <div className="work-fold-body">{list}</div>
   </details>
 }
 

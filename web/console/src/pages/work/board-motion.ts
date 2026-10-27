@@ -14,13 +14,22 @@ const EASE = "cubic-bezier(.2, .7, .2, 1)"
  * feeds into the next move. An unchanged order records its layout and leaves
  * everything alone.
  */
-export function useBoardMotion(rootRef: RefObject<HTMLElement | null>): void {
+export function useBoardMotion(rootRef: RefObject<HTMLElement | null>, layout = ""): void {
   const previous = useRef<{ order: string[]; places: Map<string, { x: number; y: number }> } | null>(null)
   const animations = useRef(new Map<string, Animation>())
+  const previousLayout = useRef(layout)
 
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
+    // A responsive layout change is not a work-item move. Do not fly cards
+    // between the phone's vertical sections and the desktop's columns.
+    if (previousLayout.current !== layout) {
+      for (const animation of animations.current.values()) animation.cancel()
+      animations.current.clear()
+      previous.current = null
+      previousLayout.current = layout
+    }
     const nodes = [...root.querySelectorAll<HTMLElement>(".work-v2-card[data-work-id]")].filter((node) => node.offsetParent !== null)
     const order = nodes.map((node) => node.dataset.workId ?? "")
     const places = new Map(nodes.map((node) => [node.dataset.workId ?? "", layoutPlace(node, root)]))
