@@ -123,6 +123,7 @@ type Activity struct {
 	// DurationMs is nil when the record did not say how long it took.
 	DurationMs *int64
 	Result     *string
+	ToolResult *ToolResult
 	Actions    []Action
 }
 
@@ -1341,6 +1342,14 @@ func codexItemEntries(item object, at int64) []Entry {
 			}
 			activity := &Activity{Kind: "called", Title: &title, Status: status,
 				DurationMs: durationMs(item["duration"]), Actions: []Action{}}
+			activity.ToolResult = projectToolResult(result)
+			if projected := activity.ToolResult; projected != nil {
+				projected.ToolID, _ = item.str("id")
+				if projected.Failed {
+					failed := "failed"
+					activity.Status = &failed
+				}
+			}
 			if detail := mcpResultDetail(result); detail != "" {
 				activity.Result = &detail
 			}

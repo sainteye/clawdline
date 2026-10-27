@@ -2514,6 +2514,18 @@ func genDecodeTranscript(b body) (plan, LocalRequest, bool) {
 		[]string{"type", "before", "expected_generation", "limit", "revision", "session"},
 		[]string{"type", "before", "limit", "priority", "revision", "session"},
 		[]string{"type", "before", "expected_generation", "limit", "priority", "revision", "session"},
+		[]string{"type", "limit", "session", "view"},
+		[]string{"type", "before", "limit", "session", "view"},
+		[]string{"type", "expected_generation", "limit", "session", "view"},
+		[]string{"type", "limit", "priority", "session", "view"},
+		[]string{"type", "before", "expected_generation", "limit", "session", "view"},
+		[]string{"type", "before", "limit", "priority", "session", "view"},
+		[]string{"type", "expected_generation", "limit", "priority", "session", "view"},
+		[]string{"type", "before", "expected_generation", "limit", "priority", "session", "view"},
+		[]string{"type", "before", "limit", "revision", "session", "view"},
+		[]string{"type", "before", "expected_generation", "limit", "revision", "session", "view"},
+		[]string{"type", "before", "limit", "priority", "revision", "session", "view"},
+		[]string{"type", "before", "expected_generation", "limit", "priority", "revision", "session", "view"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -2532,6 +2544,9 @@ func genDecodeTranscript(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("revision", genRule{kind: "string", checks: []func(string) bool{genSessionName}}) {
 		return plan{}, LocalRequest{}, false
 	}
+	if !b.genValid("view", genRule{kind: "string", checks: []func(string) bool{genSessionName}}) {
+		return plan{}, LocalRequest{}, false
+	}
 	p, ok := sessionPlan(b, "transcript")
 	if !ok {
 		return plan{}, LocalRequest{}, false
@@ -2542,12 +2557,15 @@ func genDecodeTranscript(b body) (plan, LocalRequest, bool) {
 	if _, named := b["revision"]; named {
 		p.name += ".revision." + genText(b["revision"])
 	}
+	if _, named := b["view"]; named {
+		p.name += ".view." + genText(b["view"])
+	}
 	if v, named := b["expected_generation"]; named {
 		p.executionGeneration = genText(v)
 	}
 	path := "/v1/transcript"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"before": genValue{from: "before"}, "expected_generation": genValue{from: "expected_generation"}, "limit": genValue{from: "limit"}, "revision": genValue{from: "revision"}, "session": genValue{from: "session"}})
+	req.Query = b.genQuery(map[string]genValue{"before": genValue{from: "before"}, "expected_generation": genValue{from: "expected_generation"}, "limit": genValue{from: "limit"}, "revision": genValue{from: "revision"}, "session": genValue{from: "session"}, "view": genValue{from: "view"}})
 	return p, req, true
 }
 

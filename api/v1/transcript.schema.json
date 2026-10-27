@@ -58,7 +58,49 @@
         "kind": { "type": "string" },
         "result": { "description": "A called tool's result text, cut at 4,000 characters.", "type": "string" },
         "status": { "description": "inProgress, pending, completed or failed.", "type": "string" },
-        "title": { "type": "string" }
+        "title": { "type": "string" },
+        "toolResult": { "$ref": "#/$defs/TranscriptToolResult" }
+      }
+    },
+    "TranscriptToolResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference",
+        "preview",
+        "textBytes",
+        "rawBytes",
+        "images",
+        "unknownBlocks",
+        "sourceTruncated"
+      ],
+      "properties": {
+        "reference": {
+          "type": "string",
+          "description": "Opaque stored row offset and content digest; only readable in the same Session execution."
+        },
+        "preview": {
+          "type": "string"
+        },
+        "textBytes": {
+          "type": "integer"
+        },
+        "rawBytes": {
+          "type": "integer"
+        },
+        "images": {
+          "type": "integer"
+        },
+        "unknownBlocks": {
+          "type": "integer"
+        },
+        "sourceTruncated": {
+          "type": "boolean"
+        },
+        "toolID": {
+          "type": "string",
+          "description": "Native tool call identity when the provider recorded one."
+        }
       }
     },
     "TranscriptAction": {
@@ -160,6 +202,7 @@
         "readBefore": { "description": "Optional exclusive opaque cursor for rereading this exact durable ACP page with its signature, including after its entries leave the newest window.", "type": "integer" },
         "nextAfter": { "description": "The byte offset just past the last complete row read: pass it as after= to read only what was appended since. Absent when nothing complete was read (no record yet, or an unreadable one), and from a daemon that does not take after=; a reader without it keeps reading the newest page whole.", "type": "integer" },
         "path": { "description": "Which file this was read from. A reading that cannot name its source is not evidence.", "type": "string" },
+        "version": { "description": "Digest of this exact compact page, scoped to machine and Session execution.", "type": "string" },
         "signature": { "description": "Opaque record revision, empty when nothing was read. Claude/Codex use size and modification time; native Antigravity uses agy1:file-generation:prefix-bytes:sha256; durable owned ACP uses acp2:generation:revision, where only a native history replacement changes generation. Return this exact held page signature as revision with its before/after cursor; never substitute another page's signature.", "type": "string" },
         "truncation": { "$ref": "#/$defs/TranscriptTruncation" },
         "unread": { "$ref": "#/$defs/TranscriptUnread" }

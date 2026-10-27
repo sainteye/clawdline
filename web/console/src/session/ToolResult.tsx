@@ -1,0 +1,92 @@
+import { useEffect, useRef, useState } from "react"
+import type { TranscriptToolResult } from "@clawdline/contract"
+import { RefusalError } from "@clawdline/core"
+import { failureSentence } from "../refusals/refusal-text.js"
+import { nextWord } from "../next-strings.js"
+
+interface Detail { text: string; truncated: boolean; sourceTruncated: boolean }
+
+function StoredResult({ sessionID, result, representation }: {
+  sessionID: string; result: TranscriptToolResult; representation: "text" | "raw"
+}) {
+  const [detail, setDetail] = useState<Detail | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const flight = useRef<AbortController | null>(null)
+  useEffect(() => () => flight.current?.abort(), [])
+  const read = async () => {
+    if (flight.current || detail) return
+    const controller = new AbortController()
+    flight.current = controller
+    setBusy(true); setError("")
+    try {
+      const view = `${typeof DecompressionStream === "function" ? "tool-v1z" : "tool-v1"}:${result.reference}:${representation}`
+      const response = await fetch(`/v1/transcript?session=${encodeURIComponent(sessionID)}&view=${encodeURIComponent(view)}`, { signal: controller.signal, cache: "no-store" })
+      const body = await response.json()
+      if (!response.ok) throw new RefusalError(response.status, body, "/v1/transcript")
+      if (body.reference !== result.reference || body.representation !== representation || typeof body.text !== "string") throw Object.assign(new Error("tool_result_unavailable"), {code:"bad_payload"})
+      if (!controller.signal.aborted) setDetail(body)
+    } catch (error) { if (!controller.signal.aborted) setError(failureSentence(error, {sentence:nextWord("toolResultFailed")})) }
+    finally { if (!controller.signal.aborted) setBusy(false); if (flight.current === controller) flight.current = null }
+  }
+  return <details className="tool-result-details" onToggle={event => { if (event.currentTarget.open) void read() }}>
+    <summary>{nextWord(representation === "raw" ? "toolResultRaw" : "toolResultExpand")}</summary>
+    {busy && <p role="status">{nextWord("toolResultLoading")}</p>}
+    {error && <p role="alert">{error} <button type="button" onClick={() => void read()}>{nextWord("toolResultRetry")}</button></p>}
+    {detail && <>{(detail.truncated || detail.sourceTruncated) && <p className="tool-result-note">{nextWord(detail.truncated ? "toolResultBudget" : "toolResultSourceClipped")}</p>}<pre className="activity-result">{detail.text}</pre></>}
+  </details>
+}
+
+function StoredImage({ sessionID, result }: { sessionID: string; result: TranscriptToolResult }) {
+  const [index, setIndex] = useState(0)
+  const [picture, setPicture] = useState<string | null>(null)
+  const [original, setOriginal] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState("")
+  const flight = useRef<AbortController | null>(null)
+  useEffect(() => () => flight.current?.abort(), [])
+  const read = async (full: boolean) => {
+    if (flight.current) return
+    const controller = new AbortController()
+    flight.current = controller; setBusy(true); setFailed("")
+    try {
+      const representation = `image-${index}-${full ? "original" : "thumb"}`
+      const view = `tool-v1:${result.reference}:${representation}`
+      const response = await fetch(`/v1/transcript?session=${encodeURIComponent(sessionID)}&view=${encodeURIComponent(view)}`, { signal: controller.signal, cache: "no-store" })
+      const body = await response.json()
+      if (!response.ok) throw new RefusalError(response.status, body, "/v1/transcript")
+      if (body.reference !== result.reference || body.representation !== representation ||
+        typeof body.dataURL !== "string" || !/^data:image\/(jpeg|png|gif);base64,/u.test(body.dataURL)) throw Object.assign(new Error("tool_image_unavailable"), {code:"bad_payload"})
+      if (!controller.signal.aborted) { setPicture(body.dataURL); setOriginal(full) }
+    } catch (error) { if (!controller.signal.aborted) setFailed(failureSentence(error, {sentence:nextWord("toolResultImageUnavailable")})) }
+    finally { if (!controller.signal.aborted) setBusy(false); if (flight.current === controller) flight.current = null }
+  }
+  const move = (delta: number) => { if (busy) return; setIndex(index + delta); setPicture(null); setOriginal(false); setFailed("") }
+  return <div className="tool-result-image">
+    {result.images > 1 && <div className="tool-result-image-nav">
+      <button type="button" disabled={busy || index === 0} onClick={() => move(-1)}>{nextWord("toolResultPrevious")}</button>
+      <span>{index + 1} / {result.images}</span>
+      <button type="button" disabled={busy || index + 1 >= result.images} onClick={() => move(1)}>{nextWord("toolResultNext")}</button>
+    </div>}
+    {!picture && <button type="button" disabled={busy} onClick={() => void read(false)}>{nextWord("toolResultPreviewImage")}</button>}
+    {busy && <p role="status">{nextWord("toolResultLoading")}</p>}
+    {failed && <p role="alert">{failed}</p>}
+    {picture && <><img src={picture} alt={nextWord("toolResultImageAlt")} />{!original && <button type="button" disabled={busy} onClick={() => void read(true)}>{nextWord("toolResultOriginal")}</button>}</>}
+  </div>
+}
+
+/** Short output stays inline; only deliberate expansion reads stored detail. */
+export function ToolResult({ sessionID, result }: { sessionID?: string; result: TranscriptToolResult }) {
+  const long = result.textBytes > new TextEncoder().encode(result.preview).length
+  return <div className="tool-result">
+    {result.preview && <pre className="activity-result tool-result-preview">{result.preview}{long ? "…" : ""}</pre>}
+    {(result.images > 0 || result.unknownBlocks > 0) && <p className="tool-result-note">
+      {result.images > 0 && <span>{nextWord("toolResultImages", { count: result.images })}</span>}
+      {result.unknownBlocks > 0 && <span>{nextWord("toolResultOther", { count: result.unknownBlocks })}</span>}
+    </p>}
+    {result.sourceTruncated && <p className="tool-result-note">{nextWord("toolResultSourceClipped")}</p>}
+    {sessionID && result.images > 0 && <StoredImage sessionID={sessionID} result={result} />}
+    {sessionID && long && <StoredResult sessionID={sessionID} result={result} representation="text" />}
+    {sessionID && <StoredResult sessionID={sessionID} result={result} representation="raw" />}
+  </div>
+}

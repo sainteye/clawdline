@@ -64,9 +64,9 @@ function pinnedReadName(type, body) {
   if (type === "shell" && typeof body?.shell === "string" && body.shell) return "shell:" + body.shell
   if (type === "image" && typeof body?.id === "string" && body.id) return "image." + body.id + (body.size === "thumb" ? ".thumb" : "")
   if (type === "transcript") {
-    if (body?.before === undefined) return "transcript"
+    if (body?.before === undefined) return "transcript" + (body.view ? ".view." + body.view : "")
     return Number.isSafeInteger(body.before) && body.before > 0
-      ? "transcript.before." + body.before + (body.revision ? ".revision." + body.revision : "") : null
+      ? "transcript.before." + body.before + (body.revision ? ".revision." + body.revision : "") + (body.view ? ".view." + body.view : "") : null
   }
   if (type === "peer-inbox" && typeof body?.request === "string" && body.request) return "read:" + body.request
   return null
@@ -1416,7 +1416,7 @@ export class StatusCloudClient extends CatalogCloudClient {
   }
 
   /** Keep distinct generations from joining the copied client's per-session read waiter. */
-  transcriptForGeneration(destination, signal) {
+  transcriptForGeneration(destination, signal, held) {
     const { machineID, sessionID, executionGeneration } = destination
     if (!machineID || !sessionID || !/^[0-9a-f]{32}$/u.test(executionGeneration)) {
       return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
@@ -1430,10 +1430,24 @@ export class StatusCloudClient extends CatalogCloudClient {
       if (this.readWaiters?.has(machineID + "\u0000" + sessionID + "\u0000transcript")) {
         throw refused("cloud_read_busy", "an unpinned Session transcript read is already in flight")
       }
-      return this._read({ machine: machineID, session: sessionID }, "transcript", {
-        limit: 200, priority: "foreground", machine_id: machineID,
-        expected_generation: executionGeneration,
-      }, "transcript", undefined, { signal })
+      const view = (typeof DecompressionStream === "function" ? "tools-v1z" : "tools-v1") +
+        (held?.version && /^[0-9a-f]{64}$/u.test(held.version) ? ":" + held.version : "")
+      const fields = { limit: 200, priority: "foreground", machine_id: machineID, expected_generation: executionGeneration }
+      if (this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v1 !== true) {
+        return this._read({ machine: machineID, session: sessionID }, "transcript", fields, "transcript", undefined, { signal })
+      }
+      try {
+        const page = await this._read({ machine: machineID, session: sessionID }, "transcript",
+          { ...fields, view }, "transcript.view." + view, undefined, { signal })
+        if (page?.unchanged === true) {
+          if (!held || page.version !== held.version) throw refused("transcript_cursor_stale", "The held page no longer matches")
+          return held
+        }
+        return page
+      } catch (error) {
+        if (!["malformed_read", "cloud_read_timeout"].includes(error?.code)) throw error
+        return this._read({ machine: machineID, session: sessionID }, "transcript", fields, "transcript", undefined, { signal })
+      }
     }
     const promise = run().finally(() => {
       if (this.pinnedTranscriptFlights.get(key)?.promise === promise) this.pinnedTranscriptFlights.delete(key)
@@ -1451,9 +1465,16 @@ export class StatusCloudClient extends CatalogCloudClient {
     }
     if (signal?.aborted) return Promise.reject(refused("read_aborted", "the Session detail was closed"))
     const answer = "transcript.before." + before + (revision ? ".revision." + revision : "")
-    return this._read({ machine: machineID, session: sessionID }, "transcript", {
-      limit: 200, before, ...(revision ? { revision } : {}), priority: "foreground", machine_id: machineID,
-      expected_generation: executionGeneration,
-    }, answer, undefined, { signal })
+    const fields = { limit: 200, before, ...(revision ? { revision } : {}), priority: "foreground", machine_id: machineID,
+      expected_generation: executionGeneration }
+    if (this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v1 !== true) {
+      return this._read({ machine: machineID, session: sessionID }, "transcript", fields, answer, undefined, { signal })
+    }
+    const view = typeof DecompressionStream === "function" ? "tools-v1z" : "tools-v1"
+    return this._read({ machine: machineID, session: sessionID }, "transcript", { ...fields, view },
+      answer + ".view." + view, undefined, { signal }).catch(error => {
+        if (!["malformed_read", "cloud_read_timeout"].includes(error?.code)) throw error
+        return this._read({ machine: machineID, session: sessionID }, "transcript", fields, answer, undefined, { signal })
+      })
   }
 }

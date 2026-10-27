@@ -5,6 +5,7 @@ package capacity
 // cloud.health_store_* rows in register_healthjournal.go.
 func cloudBounds() []Entry {
 	return append(append(append(append(connectionHealthBounds(), healthJournalBounds()...), healthUploadBounds()...), healthSealedBounds()...), append(healthInvestigationBounds(), []Entry{
+		{Name: "cloud.read_plaintext_bytes", Class: Buffer, Unit: Bytes, Limit: 8 << 20, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/app/cloudops.ReadPlaintextBytesLimit"}},
 		{
 			Name: "cloud.viewer_rekey_pending", Class: Buffer, Unit: Rows,
 			Limit: 1, AtLimit: Refuse,

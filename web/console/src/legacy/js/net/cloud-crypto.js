@@ -1,3 +1,4 @@
+import { unpackReadPayload } from "./read-compression.js";
 const ENVELOPE_FIELDS = Object.freeze([
     "v", "ch", "seq", "ts", "class", "key_id", "nonce", "ct", "sender", "sig"
 ]);
@@ -173,7 +174,7 @@ export async function openEnvelope(envelope, masterKey, keyOrResolver, probe) {
     mark("decrypt");
     var clear = await subtle().decrypt({ name: "AES-GCM", iv: base64Bytes(envelope.nonce, "nonce"),
         tagLength: 128 }, key, base64Bytes(envelope.ct, "ct"));
-    return new Uint8Array(clear);
+    return unpackReadPayload(new Uint8Array(clear));
 }
 
 export async function sealEnvelope(fields, plaintext, masterKey, signingKey) {

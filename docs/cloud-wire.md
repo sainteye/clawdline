@@ -961,3 +961,6 @@ a revoked browser stays revoked until the post-handover pin. Grant writes
 are atomic and failed writes restore the prior live state. A successful local
 downgrade persists before lease revalidation; read streams remain open. Account
 revocation freshness and future content-key rotation remain separate contracts.
+
+For negotiated compact tool output, lazy stored results, authenticated gzip
+framing and exact-page conditional reuse, see [Reading stored tool output](transcript-tool-results.md).

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9365,
-  "riskKeys": 4146,
-  "nonRiskCount": 5219,
+  "englishContentKeys": 9384,
+  "riskKeys": 4151,
+  "nonRiskCount": 5233,
   "groups": [
     {
       "name": "admin / other",
@@ -340,7 +340,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 313,
+      "count": 316,
       "sources": [
         null
       ],
@@ -446,6 +446,7 @@
         "capacityRow.cloud.peer_frame_bytes.what",
         "capacityRow.cloud.peer_inbox.what",
         "capacityRow.cloud.peer_inbox_page.what",
+        "capacityRow.cloud.read_plaintext_bytes.what",
         "capacityRow.cloud.rekey_body.what",
         "capacityRow.cloud.rekey_interval.what",
         "capacityRow.cloud.relay_queue.full",
@@ -612,6 +613,8 @@
         "capacityRow.session.title_request_bytes.what",
         "capacityRow.session.title_rows.full",
         "capacityRow.session.title_rows.what",
+        "capacityRow.session.tool_preview_bytes.full",
+        "capacityRow.session.tool_preview_bytes.what",
         "capacityRow.sessions.archive_rows.full",
         "capacityRow.sessions.archive_rows.what",
         "capacityRow.sessions.restore_rows.full",
@@ -3379,7 +3382,7 @@
     },
     {
       "name": "next / other",
-      "count": 452,
+      "count": 463,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3733,6 +3736,17 @@
         "next.swipeCloseAction",
         "next.swipeEndLabel",
         "next.todosRetrying",
+        "next.toolResultBudget",
+        "next.toolResultExpand",
+        "next.toolResultImageAlt",
+        "next.toolResultLoading",
+        "next.toolResultNext",
+        "next.toolResultOriginal",
+        "next.toolResultOther",
+        "next.toolResultPreviewImage",
+        "next.toolResultPrevious",
+        "next.toolResultRaw",
+        "next.toolResultRetry",
         "next.transcriptJumpLatest",
         "next.transcriptJumpNew",
         "next.transcriptLoadEarlier",

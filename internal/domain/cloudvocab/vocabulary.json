@@ -1784,7 +1784,7 @@
       "console_seam": "reader",
       "local": {"method": "GET"},
       "special": ["content_read", "divergence"],
-      "example": {"revision": "agy1:synthetic:12345:abc", "before": 12345, "expected_generation": "0123456789abcdef0123456789abcdef", "limit": 200, "priority": "foreground", "session": "%19"},
+      "example": {"view": "tools-v1", "revision": "agy1:synthetic:12345:abc", "before": 12345, "expected_generation": "0123456789abcdef0123456789abcdef", "limit": 200, "priority": "foreground", "session": "%19"},
       "shapes": [
         {"body": ["limit", "session"], "path": "/v1/transcript", "query": ["limit", "session"]},
         {"body": ["before", "limit", "session"], "path": "/v1/transcript", "query": ["before", "limit", "session"]},
@@ -1797,9 +1797,21 @@
         {"body": ["before", "limit", "revision", "session"], "path": "/v1/transcript", "query": ["before", "limit", "revision", "session"]},
         {"body": ["before", "expected_generation", "limit", "revision", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session"]},
         {"body": ["before", "limit", "priority", "revision", "session"], "path": "/v1/transcript", "query": ["before", "limit", "revision", "session"]},
-        {"body": ["before", "expected_generation", "limit", "priority", "revision", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session"]}
+        {"body": ["before", "expected_generation", "limit", "priority", "revision", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session"]},
+        {"body": ["limit", "session", "view"], "path": "/v1/transcript", "query": ["limit", "session", "view"]},
+        {"body": ["before", "limit", "session", "view"], "path": "/v1/transcript", "query": ["before", "limit", "session", "view"]},
+        {"body": ["expected_generation", "limit", "session", "view"], "path": "/v1/transcript", "query": ["expected_generation", "limit", "session", "view"]},
+        {"body": ["limit", "priority", "session", "view"], "path": "/v1/transcript", "query": ["limit", "session", "view"]},
+        {"body": ["before", "expected_generation", "limit", "session", "view"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "session", "view"]},
+        {"body": ["before", "limit", "priority", "session", "view"], "path": "/v1/transcript", "query": ["before", "limit", "session", "view"]},
+        {"body": ["expected_generation", "limit", "priority", "session", "view"], "path": "/v1/transcript", "query": ["expected_generation", "limit", "session", "view"]},
+        {"body": ["before", "expected_generation", "limit", "priority", "session", "view"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "session", "view"]},
+        {"body": ["before", "limit", "revision", "session", "view"], "path": "/v1/transcript", "query": ["before", "limit", "revision", "session", "view"]},
+        {"body": ["before", "expected_generation", "limit", "revision", "session", "view"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session", "view"]},
+        {"body": ["before", "limit", "priority", "revision", "session", "view"], "path": "/v1/transcript", "query": ["before", "limit", "revision", "session", "view"]},
+        {"body": ["before", "expected_generation", "limit", "priority", "revision", "session", "view"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session", "view"]}
       ],
-      "decode": {"reply": "session", "name": "transcript", "name_suffix": {"field": "before", "text": ".before.{before}"}, "fields": {"limit": {"type": "integer", "min": 1, "max": 1000}, "before": {"type": "integer", "min": 1}, "priority": {"type": "string", "enum": ["foreground", "background"]}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}, "revision": {"type": "string", "checks": ["session_name"]}}, "route": {"path": "/v1/transcript", "query": {"session": {"from": "session"}, "limit": {"from": "limit"}, "before": {"from": "before"}, "expected_generation": {"from": "expected_generation"}, "revision": {"from": "revision"}}}, "name_suffixes": [{"field": "revision", "text": ".revision.{revision}"}]}
+      "decode": {"reply": "session", "name": "transcript", "name_suffix": {"field": "before", "text": ".before.{before}"}, "fields": {"limit": {"type": "integer", "min": 1, "max": 1000}, "before": {"type": "integer", "min": 1}, "priority": {"type": "string", "enum": ["foreground", "background"]}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}, "revision": {"type": "string", "checks": ["session_name"]}, "view": {"type": "string", "checks": ["session_name"]}}, "route": {"path": "/v1/transcript", "query": {"session": {"from": "session"}, "limit": {"from": "limit"}, "before": {"from": "before"}, "expected_generation": {"from": "expected_generation"}, "revision": {"from": "revision"}, "view": {"from": "view"}}}, "name_suffixes": [{"field": "revision", "text": ".revision.{revision}"}, {"field": "view", "text": ".view.{view}"}]}
     },
     {
       "op": "update",

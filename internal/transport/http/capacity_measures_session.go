@@ -11,6 +11,9 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) sessionCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"session.tool_preview_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read byte guard; no retained buffer"}
+		},
 		"schedule.history_page_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-console reveal batch; older returned runs remain available"}
 		},

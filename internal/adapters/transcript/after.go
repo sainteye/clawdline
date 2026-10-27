@@ -79,6 +79,9 @@ func readAfter(path string, limit int, after int64, parse func([]byte) []Entry, 
 					return Page{}, ErrCursorStale
 				}
 				e.Before = pos
+				if a := e.Activity; a != nil && a.ToolResult != nil {
+					a.ToolResult.Reference = toolReference(pos, a.ToolResult.raw)
+				}
 				entries = append(entries, e)
 			}
 			if len(entries) > limit {

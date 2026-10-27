@@ -88,6 +88,12 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 	if !s.admitPinnedTarget(w, r, id) {
 		return
 	}
+	view := r.URL.Query().Get("view")
+	compact, known, valid := transcriptView(view)
+	if !valid && !strings.HasPrefix(view, "tool-v1:") && !strings.HasPrefix(view, "tool-v1z:") {
+		writeRefusal(w, 400, "invalid_transcript_view", "unknown transcript view")
+		return
+	}
 	// The Swift app's bounds: 200 unless asked, never fewer than 1 or more
 	// than 1,000.
 	limit := 200
@@ -125,17 +131,21 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 		writeActionRefusal(w, err)
 		return
 	}
+	if strings.HasPrefix(view, "tool-v1:") || strings.HasPrefix(view, "tool-v1z:") {
+		s.transcriptToolRead(w, r, id, item, view)
+		return
+	}
 	var page contract.TranscriptPage
 	if after >= 0 {
 		var stale bool
-		page, stale = s.transcriptPageAfter(id, item, limit, after, r.URL.Query().Get("revision"))
+		page, stale = s.transcriptPageAfterView(id, item, limit, after, compact, r.URL.Query().Get("revision"))
 		if stale {
 			writeRefusal(w, http.StatusConflict, "transcript_cursor_stale",
 				"the transcript changed in a way this cursor cannot follow; read the newest page")
 			return
 		}
 	} else {
-		page = s.transcriptPageBefore(id, item, limit, before, r.URL.Query().Get("revision"))
+		page = s.transcriptPageBeforeView(id, item, limit, before, compact, r.URL.Query().Get("revision"))
 		if item.Assistant == session.AssistantAntigravity && page.Note == recordNote(transcript.ErrCursorStale) {
 			writeRefusal(w, http.StatusConflict, "transcript_cursor_stale", "the transcript changed in a way this cursor cannot follow; read the newest page")
 			return
@@ -143,6 +153,13 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.admitPinnedTarget(w, r, id) {
 		return
+	}
+	if compact {
+		page.Version = transcriptVersion(page, s.executionMachine()+"\x00"+id+"\x00"+toolResultScope(id, item))
+		if known == page.Version {
+			writeJSON(w, map[string]any{"unchanged": true, "version": known})
+			return
+		}
 	}
 	writeJSON(w, page)
 }
@@ -153,6 +170,10 @@ func (s *Server) transcriptPage(id string, item session.Session, limit int) cont
 }
 
 func (s *Server) transcriptPageBefore(id string, item session.Session, limit int, before int64, revision ...string) contract.TranscriptPage {
+	return s.transcriptPageBeforeView(id, item, limit, before, false, revision...)
+}
+
+func (s *Server) transcriptPageBeforeView(id string, item session.Session, limit int, before int64, compact bool, revision ...string) contract.TranscriptPage {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
 		if h := s.antigravitySessions.Load(); h != nil {
@@ -209,8 +230,15 @@ func (s *Server) transcriptPageBefore(id string, item session.Session, limit int
 	page.Signature = read.Signature
 	entries := make([]contract.TranscriptEntry, 0, len(read.Entries))
 	now := time.Now()
+	scope := ""
+	if compact {
+		scope = toolResultScope(id, item)
+	}
 	for _, e := range read.Entries {
 		row := transcriptEntry(e)
+		if compact {
+			row = compactToolEntry(row, e, scope)
+		}
 		row.Artifacts = s.pictures.wireArtifacts(e, now)
 		entries = append(entries, row)
 	}
@@ -251,6 +279,10 @@ func (s *Server) transcriptPageBefore(id string, item session.Session, limit int
 // cut, or a record that could not be read at all. NextBefore is left out: the
 // page keeps the one its whole read gave it.
 func (s *Server) transcriptPageAfter(id string, item session.Session, limit int, after int64, revision ...string) (contract.TranscriptPage, bool) {
+	return s.transcriptPageAfterView(id, item, limit, after, false, revision...)
+}
+
+func (s *Server) transcriptPageAfterView(id string, item session.Session, limit int, after int64, compact bool, revision ...string) (contract.TranscriptPage, bool) {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	path := s.recordPath(item)
 	if path == "" {
@@ -276,8 +308,15 @@ func (s *Server) transcriptPageAfter(id string, item session.Session, limit int,
 	page.Signature = read.Signature
 	entries := make([]contract.TranscriptEntry, 0, len(read.Entries))
 	now := time.Now()
+	scope := ""
+	if compact {
+		scope = toolResultScope(id, item)
+	}
 	for _, e := range read.Entries {
 		row := transcriptEntry(e)
+		if compact {
+			row = compactToolEntry(row, e, scope)
+		}
 		row.Artifacts = s.pictures.wireArtifacts(e, now)
 		entries = append(entries, row)
 	}

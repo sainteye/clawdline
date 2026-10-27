@@ -9350,6 +9350,7 @@ export interface TranscriptActivity {
    */
   status?: string
   title?: string
+  toolResult?: TranscriptToolResult
 }
 
 /**
@@ -9562,6 +9563,11 @@ export interface TranscriptPage {
   signature: string
   truncation?: TranscriptTruncation
   unread?: TranscriptUnread
+
+  /**
+   * Digest of this exact compact page, scoped to machine and Session execution.
+   */
+  version?: string
 }
 
 export interface TranscriptPlanStep {
@@ -9571,6 +9577,26 @@ export interface TranscriptPlanStep {
    */
   status: string
   step: string
+}
+
+export interface TranscriptToolResult {
+  images: number
+  preview: string
+  rawBytes: number
+
+  /**
+   * Opaque stored row offset and content digest; only readable in the same Session
+   * execution.
+   */
+  reference: string
+  sourceTruncated: boolean
+  textBytes: number
+
+  /**
+   * Native tool call identity when the provider recorded one.
+   */
+  toolID?: string
+  unknownBlocks: number
 }
 
 /**

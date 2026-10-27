@@ -4,6 +4,7 @@ package capacity
 // and snippets.*.
 func sessionBounds() []Entry {
 	return []Entry{
+		{Name: "session.tool_preview_bytes", Class: Observation, Unit: Bytes, Limit: 1024, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/transcript.ToolPreviewBytesLimit"}},
 		{
 			// The sheet reveals retained runs in batches; older rows remain available.
 			// TestScheduleHistoryPageIsRegistered checks the console's matching bound.

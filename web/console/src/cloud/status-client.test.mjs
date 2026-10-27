@@ -511,6 +511,7 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
 
 test("pinned transcript sends exact generation and never coalesces another generation", async () => {
   const client = Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor = () => null
   client.pinnedTranscriptFlights = new Map()
   const calls = []
   let settle
@@ -538,6 +539,7 @@ test("pinned transcript sends exact generation and never coalesces another gener
 
 test("an older transcript page names its cursor in the read waiter and preserves its pin", async () => {
   const client = Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor = () => null
   const calls = []
   client._read = (...args) => { calls.push(args); return Promise.resolve({ entries: [], nextBefore: 40 }) }
   const destination = { machineID: "m", sessionID: "s", executionGeneration: genA }
@@ -553,6 +555,7 @@ test("an older transcript page names its cursor in the read waiter and preserves
 
 test("same-offset native pages on different revisions own separate read names", async () => {
   const client = Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor = () => null
   const calls = []
   client._read = (...args) => { calls.push(args); return Promise.resolve({ entries: [] }) }
   const destination = { machineID: "m", sessionID: "s", executionGeneration: genA }
@@ -1350,4 +1353,43 @@ test("an older carrier's pin requirement falls back only its reads and stops new
   assert.equal(c.carrierReads.has("two"), true)
   assert.equal(c._carrierFor("m"), null)
   assert.deepEqual(settled, [])
+})
+
+test("versioned tool views require an authenticated machine capability and reuse only matching pages", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.pinnedTranscriptFlights = new Map()
+  let supported = false
+  client.machineDescriptor = () => ({machine:{transcript_tools_v1:supported}})
+  const asks = []
+  const held = {id:"s",version:"a".repeat(64),entries:[{role:"assistant",text:"held"}]}
+  client._read = async (_identity,_type,fields,answer) => {
+    asks.push({fields,answer})
+    return fields.view?.includes(held.version) ? {unchanged:true,version:held.version} : held
+  }
+  const target = {machineID:"m",sessionID:"s",executionGeneration:genA}
+  assert.equal(await client.transcriptForGeneration(target,undefined,held),held)
+  assert.equal(asks[0].fields.view,undefined)
+  supported = true
+  assert.equal(await client.transcriptForGeneration(target,undefined,held),held)
+  assert.match(asks[1].fields.view,/^tools-v1z?:a{64}$/)
+  assert.equal(asks[1].answer,"transcript.view."+asks[1].fields.view)
+  assert.equal(asks[1].fields.expected_generation,genA)
+  client._read = async () => ({unchanged:true,version:"b".repeat(64)})
+  await assert.rejects(client.transcriptForGeneration(target,undefined,held),error=>error.code==="transcript_cursor_stale")
+})
+
+test("a stale capability falls back once without dropping the execution pin", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.pinnedTranscriptFlights = new Map()
+  client.machineDescriptor = () => ({machine:{transcript_tools_v1:true}})
+  const asks = []
+  client._read = async (_identity,_type,fields) => {
+    asks.push(fields)
+    if(fields.view) throw Object.assign(new Error("old machine"),{code:"cloud_read_timeout"})
+    return {entries:[]}
+  }
+  await client.transcriptForGeneration({machineID:"m",sessionID:"s",executionGeneration:genA})
+  assert.equal(asks.length,2)
+  assert.equal(asks[1].view,undefined)
+  assert.equal(asks[1].expected_generation,genA)
 })

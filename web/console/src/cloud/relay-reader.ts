@@ -247,7 +247,7 @@ export interface CloudReadClient {
    */
   snippets?(identity?: CloudIdentity, options?: { fresh?: boolean }): Promise<CloudSnippets>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
-  transcriptForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
+  transcriptForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal, held?: TranscriptPage): Promise<unknown>
   transcriptPageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, before: number, signal?: AbortSignal, revision?: string): Promise<unknown>
   readForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string },
     word: string, fields: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
@@ -1215,6 +1215,13 @@ export class RelayReader {
         case "/v1/transcript": {
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
+          const view = url.searchParams.get("view")
+          if (view?.startsWith("tool-v1:") || view?.startsWith("tool-v1z:")) {
+            const body = await this.connected().readForGeneration!(await this.coherentSession(session, init?.signal),
+              "transcript", { limit: CLOUD_TRANSCRIPT_LIMIT, view }, init?.signal ?? undefined)
+            this.note(method, path, "relay", undefined, { word: "transcript" })
+            return json(200, body)
+          }
           // An appended read (`after=`) is the daemon's own: this seam answers
           // from its held page, which is not "only what was appended", so it
           // says no and the page reads whole. Pages from here never carry
@@ -2086,7 +2093,7 @@ export class RelayReader {
           const target = await this.coherentSession(session)
           pinMs = Date.now() - pinStarted
           const wireStarted = Date.now()
-          body = await client.transcriptForGeneration!(target)
+          body = await client.transcriptForGeneration!(target, undefined, held?.answer ?? undefined)
           wireMs = Date.now() - wireStarted
         } else {
           const wireStarted = Date.now()

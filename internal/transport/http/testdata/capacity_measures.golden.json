@@ -656,6 +656,11 @@
     "Known": true
   },
   {
+    "Name": "cloud.read_plaintext_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cloud.read_queue",
     "Known": true,
     "Note": true
@@ -1979,6 +1984,11 @@
   },
   {
     "Name": "session.todo_batch_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.tool_preview_bytes",
     "Known": true,
     "Note": true
   },

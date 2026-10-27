@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9365,
+  "englishKeys": 9384,
   "counts": {
-    "negation": 2679,
+    "negation": 2682,
     "state": 1538,
     "permission": 557,
     "deletion": 203,
-    "uncertainty": 293
+    "uncertainty": 295
   },
-  "unionCount": 4146,
+  "unionCount": 4151,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -219,6 +219,7 @@
       "capacityRow.cloud.peer_outbox.full",
       "capacityRow.cloud.peer_pairs.full",
       "capacityRow.cloud.peer_pairs.what",
+      "capacityRow.cloud.read_plaintext_bytes.full",
       "capacityRow.cloud.read_queue.what",
       "capacityRow.cloud.rekey_body.full",
       "capacityRow.cloud.rekey_lifetime.what",
@@ -2391,6 +2392,8 @@
       "next.terminalUnavailableUnknown",
       "next.terminalUnavailableWindows",
       "next.todosReadFailed",
+      "next.toolResultFailed",
+      "next.toolResultImages",
       "next.transcriptEarlierFailed",
       "next.transcriptEarlierStalled",
       "next.updateAutoFailed",
@@ -5257,6 +5260,8 @@
       "next.sidebarVersionUnknown",
       "next.stacksTruncated",
       "next.terminalKeysNotSentUnknown",
+      "next.toolResultImageUnavailable",
+      "next.toolResultSourceClipped",
       "next.updateUnknownVersion",
       "next.usageNoValue",
       "notifications.push_on_schedule_failureHint",
@@ -5629,6 +5634,7 @@
     "capacityRow.cloud.peer_outbox.what",
     "capacityRow.cloud.peer_pairs.full",
     "capacityRow.cloud.peer_pairs.what",
+    "capacityRow.cloud.read_plaintext_bytes.full",
     "capacityRow.cloud.read_queue.full",
     "capacityRow.cloud.read_queue.what",
     "capacityRow.cloud.rekey_body.full",
@@ -8913,6 +8919,10 @@
     "next.todosReadFailed",
     "next.todosRefreshFailed",
     "next.todosRetryTip",
+    "next.toolResultFailed",
+    "next.toolResultImageUnavailable",
+    "next.toolResultImages",
+    "next.toolResultSourceClipped",
     "next.transcriptEarlierFailed",
     "next.transcriptEarlierStalled",
     "next.updateAutoFailed",

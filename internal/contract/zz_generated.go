@@ -7728,8 +7728,9 @@ type TranscriptActivity struct {
 	Result string `json:"result,omitempty"`
 
 	// inProgress, pending, completed or failed.
-	Status string `json:"status,omitempty"`
-	Title  string `json:"title,omitempty"`
+	Status     string                `json:"status,omitempty"`
+	Title      string                `json:"title,omitempty"`
+	ToolResult *TranscriptToolResult `json:"toolResult,omitempty"`
 }
 
 // One thing in a conversation, in the shape the Swift app's `transcriptRows`
@@ -7890,6 +7891,9 @@ type TranscriptPage struct {
 	Signature  string                `json:"signature"`
 	Truncation *TranscriptTruncation `json:"truncation,omitempty"`
 	Unread     *TranscriptUnread     `json:"unread,omitempty"`
+
+	// Digest of this exact compact page, scoped to machine and Session execution.
+	Version string `json:"version,omitempty"`
 }
 
 type TranscriptPlanStep struct {
@@ -7897,6 +7901,22 @@ type TranscriptPlanStep struct {
 	// rollout's in_progress.
 	Status string `json:"status"`
 	Step   string `json:"step"`
+}
+
+type TranscriptToolResult struct {
+	Images   int64  `json:"images"`
+	Preview  string `json:"preview"`
+	RawBytes int64  `json:"rawBytes"`
+
+	// Opaque stored row offset and content digest; only readable in the same Session
+	// execution.
+	Reference       string `json:"reference"`
+	SourceTruncated bool   `json:"sourceTruncated"`
+	TextBytes       int64  `json:"textBytes"`
+
+	// Native tool call identity when the provider recorded one.
+	ToolID        string `json:"toolID,omitempty"`
+	UnknownBlocks int64  `json:"unknownBlocks"`
 }
 
 // The newest entries were kept and older ones left out, because the whole page

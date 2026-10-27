@@ -13,6 +13,23 @@ import { catalogWord } from "./catalog.ts"
 
 const words = {
   en: {
+    toolResultPrevious: "Previous",
+    toolResultNext: "Next",
+    toolResultPreviewImage: "Load thumbnail",
+    toolResultImageUnavailable: "This stored image is incomplete or unavailable.",
+    toolResultImageAlt: "Stored tool screenshot",
+    toolResultOriginal: "Load original image",
+
+    toolResultRaw: "Stored native output",
+    toolResultExpand: "Read full text",
+    toolResultLoading: "Reading stored result…",
+    toolResultFailed: "This result could not be read. Refresh the conversation if its source changed.",
+    toolResultRetry: "Retry",
+    toolResultBudget: "Only the first 150 KB of this stored result is shown.",
+    toolResultSourceClipped: "The provider already shortened this record. The original output may be incomplete.",
+    toolResultImages: "{count} image(s) in stored output · not preloaded",
+    toolResultOther: "{count} other content block(s) · available in stored output",
+
     sessionModelCapacity: "Model at capacity · choose another model or retry",
     shortcutTitle: "Keyboard shortcuts",
     shortcutNavigation: "Navigation",
@@ -2071,6 +2088,23 @@ const words = {
     setupPhoneAndroidOpen: "In Chrome, open {site}, then choose ⋮ → Add to Home screen",
   },
   "zh-Hant": {
+    toolResultPrevious: "上一張",
+    toolResultNext: "下一張",
+    toolResultPreviewImage: "讀取縮圖",
+    toolResultImageUnavailable: "這張所存圖片不完整或無法讀取。",
+    toolResultImageAlt: "工具紀錄所存截圖",
+    toolResultOriginal: "讀取原圖",
+
+    toolResultRaw: "查看原生紀錄所存回傳",
+    toolResultExpand: "讀取完整文字",
+    toolResultLoading: "正在讀取所存結果…",
+    toolResultFailed: "無法讀取這筆結果。若來源已變更，請重新整理對話。",
+    toolResultRetry: "重試",
+    toolResultBudget: "目前顯示這筆所存結果的前 150 KB。",
+    toolResultSourceClipped: "供應商已截短這份紀錄，原始輸出可能不完整。",
+    toolResultImages: "所存回傳含 {count} 張圖片・未預載",
+    toolResultOther: "另有 {count} 個內容區塊・可查看所存回傳",
+
     sessionModelCapacity: "模型容量不足 · 請換模型或重試",
     shortcutTitle: "快速鍵速查表",
     shortcutNavigation: "導覽",

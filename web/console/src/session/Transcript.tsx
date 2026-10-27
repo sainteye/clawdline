@@ -69,6 +69,7 @@ import { recordSendDiagnostic } from "../cloud/install.js"
 import "./jump.css"
 import "./history.css"
 import { VideoCards } from "./VideoCards.js"
+import { ToolResult } from "./ToolResult.js"
 import { AsyncQuestion } from "./AsyncQuestion.js"
 
 /*
@@ -1764,7 +1765,6 @@ function activityActionsHTML(actions: TranscriptAction[]): string {
 
 /** `activityCardHTML`. */
 function activityCardHTML(v: View, e: Entry, at: number) {
-  const esc = L.escapeHTML
   const activity = activityOf(e) || ({} as Partial<TranscriptActivity>)
   const kind = activity.kind === "explored" ? "explored" : "called"
   const title = kind === "called" ? String(activity.title || e.text || e.tool || "") : ""
@@ -1772,25 +1772,18 @@ function activityCardHTML(v: View, e: Entry, at: number) {
   const status = activity.status && statusKeys[activity.status] ? catalogWord("antigravity", statusKeys[activity.status]) : activity.status
   const meta = [status, durationText(activity.durationMs)].filter((value) => !!value)
   const actions = kind === "explored" ? activityActionsHTML(activity.actions || []) : ""
-  const result =
-    kind === "called" && typeof activity.result === "string" && activity.result.length
-      ? '<pre class="activity-result">' + esc(activity.result) + "</pre>"
-      : ""
-  const card =
-    '<section class="activity-card"><header><span class="activity-kind">' +
-    esc(catalogWord("antigravity", kind === "called" ? "toolCalled" : "toolExplored")) +
-    "</span>" +
-    (title ? '<span class="activity-title">' + esc(title) + "</span>" : "") +
-    '<span class="activity-meta">' +
-    esc(meta.join(" · ")) +
-    "</span></header>" +
-    (actions ? "<ul>" + actions + "</ul>" : "") +
-    result +
-    "</section>"
   return (
     <div className="entry activity" data-role={kind} key={"act:" + at}>
       <div className="who">{v.who.tool}</div>
-      <div className="body" dangerouslySetInnerHTML={{ __html: card }} />
+      <div className="body"><section className={"activity-card" + (activity.toolResult ? " activity-readable" : "")}>
+        <header><span className="activity-kind">{catalogWord("antigravity", kind === "called" ? "toolCalled" : "toolExplored")}</span>
+          {title && <span className="activity-title">{title}</span>}
+          <span className="activity-meta">{meta.join(" · ")}</span></header>
+        {actions && <ul dangerouslySetInnerHTML={{ __html: actions }} />}
+        {kind === "called" && (activity.toolResult
+          ? <ToolResult key={(v.sessionID || "") + activity.toolResult.reference} sessionID={v.sessionID} result={activity.toolResult} />
+          : activity.result ? <pre className="activity-result">{activity.result}</pre> : null)}
+      </section></div>
     </div>
   )
 }

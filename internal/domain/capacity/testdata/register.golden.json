@@ -2668,6 +2668,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.read_plaintext_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 8388608,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/cloudops.ReadPlaintextBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cloud.read_queue",
     "Class": "buffer",
     "Unit": "rows",
@@ -7816,6 +7836,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/app.sessionTodoBatchLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.tool_preview_bytes",
+    "Class": "observation",
+    "Unit": "bytes",
+    "Limit": 1024,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/transcript.ToolPreviewBytesLimit"
     ]
   },
   {

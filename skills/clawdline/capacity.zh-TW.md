@@ -139,6 +139,7 @@
 | `cloud.peer_ingress` | 16 | `rows` | `refuse` | `diagnostics, log, sender` | — |
 | `cloud.peer_outbox` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `cloud.peer_pairs` | 128 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `cloud.read_plaintext_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.read_queue` | 64 | `rows` | `refuse` | `diagnostics, log, sender` | — |
 | `cloud.rekey_body` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.rekey_interval` | 2 | `seconds` | `refuse` | `diagnostics, sender` | — |
@@ -409,6 +410,7 @@
 | `session.title_request_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `session.title_rows` | 200 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `session.todo_batch_rows` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `session.tool_preview_bytes` | 1024 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `session.waiting_for` | 8 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.activity_reads` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `sessions.agent_rows` | 6 | `rows` | `evict_oldest` | `diagnostics` | — |
