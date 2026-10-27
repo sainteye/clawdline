@@ -117,7 +117,7 @@ func TestReplayToolResultTraffic(t *testing.T) {
 					value = result.Raw()
 				}
 				clipped := transcript.ClipUTF8(value, transcriptBudget)
-				output.Details[ref+":"+representation] = map[string]any{"reference": ref, "representation": representation, "text": clipped, "bytes": len(value), "truncated": len(clipped) < len(value), "sourceTruncated": result.SourceTruncated}
+				output.Details[ref+":"+representation] = map[string]any{"reference": ref, "representation": representation, "text": clipped, "bytes": len(value), "truncated": len(clipped) < len(value), "sourceTruncated": result.SourceTruncatedFor(representation)}
 			}
 			if len(result.Text()) > len(result.Preview) {
 				long++

@@ -81,7 +81,7 @@ func (s *Server) transcriptToolRead(w http.ResponseWriter, r *http.Request, id s
 	if !s.admitPinnedTarget(w, r, id) {
 		return
 	}
-	writeJSON(w, map[string]any{"reference": result.Reference, "representation": parts[3], "text": clipped, "bytes": len(value), "truncated": len(clipped) < len(value), "sourceTruncated": result.SourceTruncated})
+	writeJSON(w, map[string]any{"reference": result.Reference, "representation": parts[3], "text": clipped, "bytes": len(value), "truncated": len(clipped) < len(value), "sourceTruncated": result.SourceTruncatedFor(parts[3])})
 }
 
 func toolResultScope(id string, item session.Session) string {

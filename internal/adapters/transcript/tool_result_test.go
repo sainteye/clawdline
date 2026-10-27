@@ -1,9 +1,14 @@
 package transcript
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -23,7 +28,7 @@ func TestToolResultUnwrapsBeforePreviewAndKeepsMixedContent(t *testing.T) {
 	}
 	a := page.Entries[0].Activity
 	r := a.ToolResult
-	if r == nil || r.Images != 2 || r.UnknownBlocks != 1 || !r.SourceTruncated || !strings.HasPrefix(r.Preview, "first\nsecond\n\n") || !strings.HasSuffix(r.Preview, "\n\nlast") {
+	if r == nil || r.Images != 0 || r.UnknownBlocks != 1 || r.SourceTruncated || !strings.HasPrefix(r.Preview, "first\nsecond\n\n") || !strings.HasSuffix(r.Preview, "\n\nlast") {
 		t.Fatalf("projection: %+v", r)
 	}
 	if strings.Contains(r.Preview, "private-image") || !strings.Contains(r.Raw(), "private-image") {
@@ -83,5 +88,73 @@ func TestToolResultReadsOldRowsOutsideTheTailWithoutAcceptingPartialRows(t *test
 	}
 	if _, err := ReadToolResult(path, "1:"+strings.Repeat("0", 64), "scope"); !errors.Is(err, ErrCursorStale) {
 		t.Fatalf("nonboundary: %v", err)
+	}
+}
+
+func toolImageFixture(t *testing.T) string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 1))); err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
+func TestAutomaticScreenshotsDoNotBecomeReadableImagesOrTextWarnings(t *testing.T) {
+	for _, data := range []string{toolImageFixture(t), "partial…100 chars truncated…"} {
+		raw, _ := json.Marshal(m{"content": []m{{"type": "text", "text": "Readable result"}}, "_meta": m{"codex/toolSurface": m{"screenshot": m{"url": "data:image/png;base64," + data}}}})
+		obj, _ := rawObject(raw)
+		result := projectToolResult(obj)
+		if result.Images != 0 || result.SourceTruncated || result.Text() != "Readable result" {
+			t.Fatalf("automatic metadata reached visible content: %+v", result)
+		}
+		if !strings.Contains(result.Raw(), data) {
+			t.Fatal("stored native metadata was lost")
+		}
+		if _, ok := result.ImageURL(0); ok {
+			t.Fatal("automatic screenshot is still readable through image route")
+		}
+	}
+}
+
+func TestOnlyCompleteExplicitToolImagesAreOffered(t *testing.T) {
+	good := toolImageFixture(t)
+	broken := good[:len(good)/2] + "…100 chars truncated…" + good[len(good)/2:]
+	raw, _ := json.Marshal(m{"content": []m{{"type": "image", "mimeType": "image/png", "data": broken}, {"type": "image", "mimeType": "image/png", "data": good}, {"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString([]byte("not a raster"))}, {"type": "image", "mimeType": "image/svg+xml", "data": base64.StdEncoding.EncodeToString([]byte("<svg/>"))}}, "_meta": m{"codex/toolSurface": m{"screenshot": m{"url": "data:image/png;base64," + good}}}})
+	obj, _ := rawObject(raw)
+	result := projectToolResult(obj)
+	if result.Images != 1 || result.SourceTruncated {
+		t.Fatalf("incomplete images were advertised: %+v", result)
+	}
+	if url, ok := result.ImageURL(0); !ok || url != "data:image/png;base64,"+good {
+		t.Fatal("complete explicit output was lost")
+	}
+	if !strings.Contains(result.Raw(), broken) {
+		t.Fatal("unavailable explicit output was removed from native record")
+	}
+}
+
+func TestLegacyImageIndexesCannotSelectAReprojectedResult(t *testing.T) {
+	path := writeRecord(t, toolRow(m{"content": []m{{"type": "image", "mimeType": "image/png", "data": toolImageFixture(t)}}}))
+	page, _ := ReadCodexBefore(path, 1, 0)
+	result := page.Entries[0].Activity.ToolResult
+	offset, _ := strconv.ParseInt(strings.Split(result.Reference, ":")[0], 10, 64)
+	old := toolReference(offset, "scope"+"\x00"+result.ToolID+"\x00"+result.Raw())
+	if _, err := ReadToolResult(path, old, "scope"); !errors.Is(err, ErrCursorStale) {
+		t.Fatalf("old projection reference accepted: %v", err)
+	}
+}
+
+func TestVisibleTextAndRawSourceClippingAreIndependent(t *testing.T) {
+	for _, text := range []string{"complete text", "first…100 chars truncated…last"} {
+		raw, _ := json.Marshal(m{"content": []m{{"type": "text", "text": text}}, "_meta": m{"codex/toolSurface": m{"screenshot": m{"url": "data:image/png;base64,partial…100 chars truncated…"}}}})
+		obj, _ := rawObject(raw)
+		result := projectToolResult(obj)
+		if result.SourceTruncatedFor("text") != strings.Contains(text, " chars truncated") {
+			t.Fatal("text warning follows hidden metadata")
+		}
+		if !result.SourceTruncatedFor("raw") {
+			t.Fatal("raw source warning was lost")
+		}
 	}
 }

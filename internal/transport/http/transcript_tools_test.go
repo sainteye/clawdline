@@ -25,7 +25,7 @@ func TestCompactToolPageReadsTheSameStoredResultAndRejectsOtherExecutions(t *tes
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	inner := `{"content":[{"type":"text","text":"first\nsecond"}],"_meta":{"codex/toolSurface":{"screenshot":{"url":"data:image/jpeg;base64,opaque"}}}}`
+	inner := `{"content":[{"type":"text","text":"first\nsecond"}],"_meta":{"codex/toolSurface":{"screenshot":{"url":"data:image/jpeg;base64,partial…100 chars truncated…"}}}}`
 	row := map[string]any{"type": "event_msg", "payload": map[string]any{"type": "item_completed", "item": map[string]any{"type": "McpToolCall", "arguments": map[string]any{"title": "Inspect"}, "status": "completed", "result": map[string]any{"content": []map[string]any{{"type": "text", "text": inner}}}}}}
 	raw, _ := json.Marshal(row)
 	if err := os.WriteFile(path, append(raw, '\n'), 0600); err != nil {
@@ -38,7 +38,7 @@ func TestCompactToolPageReadsTheSameStoredResultAndRejectsOtherExecutions(t *tes
 		t.Fatalf("compact page: %+v", compact)
 	}
 	result := compact.Entries[0].Activity.ToolResult
-	if result.Preview != "first\nsecond" || result.Images != 1 || compact.Entries[0].Activity.Result != "" || old.Entries[0].Activity.Result != inner {
+	if result.Preview != "first\nsecond" || result.Images != 0 || compact.Entries[0].Activity.Result != "" || old.Entries[0].Activity.Result != inner {
 		t.Fatal("projection lost text or leaked envelope")
 	}
 	ref := result.Reference
@@ -51,6 +51,16 @@ func TestCompactToolPageReadsTheSameStoredResultAndRejectsOtherExecutions(t *tes
 	}
 	if w.Code != 200 || detail["text"] != "first\nsecond" || detail["reference"] != ref {
 		t.Fatalf("detail: %d %v", w.Code, detail)
+	}
+	if detail["sourceTruncated"] != false {
+		t.Fatal("metadata-only clipping warned on text")
+	}
+	w = httptest.NewRecorder()
+	s.transcriptToolRead(w, r, item.ID, item, "tool-v1:"+ref+":raw")
+	var rawDetail map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &rawDetail)
+	if rawDetail["sourceTruncated"] != true {
+		t.Fatal("native view lost its clipping warning")
 	}
 	for _, other := range []session.Session{{ID: "%8", Assistant: item.Assistant, PID: item.PID, ConversationID: item.ConversationID}, {ID: item.ID, Assistant: item.Assistant, PID: 0, ConversationID: item.ConversationID}, {ID: item.ID, Assistant: item.Assistant, PID: item.PID, ConversationID: "replacement"}} {
 		w = httptest.NewRecorder()
@@ -107,7 +117,7 @@ func TestStoredToolImagesAreLazyAndNeverRepairTruncatedBase64(t *testing.T) {
 	url := "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngData.Bytes())
 	path := filepath.Join(t.TempDir(), "record.jsonl")
 	for _, stored := range []string{url, url[:len(url)/2] + "…100 chars truncated…" + url[len(url)/2:]} {
-		inner := map[string]any{"content": []any{}, "_meta": map[string]any{"codex/toolSurface": map[string]any{"screenshot": map[string]any{"url": stored}}}}
+		inner := map[string]any{"content": []any{map[string]any{"type": "image", "mimeType": "image/png", "data": strings.TrimPrefix(stored, "data:image/png;base64,")}}}
 		innerRaw, _ := json.Marshal(inner)
 		row := map[string]any{"type": "event_msg", "payload": map[string]any{"type": "item_completed", "item": map[string]any{"type": "McpToolCall", "arguments": map[string]any{"title": "Screenshot"}, "result": map[string]any{"content": []map[string]any{{"type": "text", "text": string(innerRaw)}}}}}}
 		raw, _ := json.Marshal(row)
@@ -123,14 +133,18 @@ func TestStoredToolImagesAreLazyAndNeverRepairTruncatedBase64(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result.Images != 1 || strings.Contains(result.Preview, "base64") {
+		expectedImages := 1
+		if stored != url {
+			expectedImages = 0
+		}
+		if result.Images != expectedImages || strings.Contains(result.Preview, "base64") {
 			t.Fatal("image in first paint")
 		}
 		for _, variant := range []string{"image-0-thumb", "image-0-original"} {
 			w := httptest.NewRecorder()
 			(&Server{}).transcriptToolImage(w, httptest.NewRequest("GET", "/", nil), "s", result, variant)
 			if stored != url {
-				if w.Code != 422 {
+				if w.Code != 404 {
 					t.Fatalf("clipped image accepted: %d", w.Code)
 				}
 				continue

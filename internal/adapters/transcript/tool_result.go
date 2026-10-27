@@ -4,35 +4,42 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 const ToolPreviewBytesLimit = 1024
 
+// Image indexes changed when automatic metadata stopped being visible output.
+const toolProjectionIdentity = "explicit-images-v1"
+
 // ToolResult is a projection of stored output, never an assertion that the
 // provider retained the original unabridged response.
 type ToolResult struct {
-	Reference       string
-	ToolID          string
-	Failed          bool
-	Preview         string
-	TextBytes       int
-	RawBytes        int
-	Images          int
-	UnknownBlocks   int
-	SourceTruncated bool
-	text            string
-	raw             string
-	imageURLs       []string
+	Reference          string
+	ToolID             string
+	Failed             bool
+	Preview            string
+	TextBytes          int
+	RawBytes           int
+	Images             int
+	UnknownBlocks      int
+	SourceTruncated    bool
+	text               string
+	raw                string
+	imageURLs          []string
+	rawSourceTruncated bool
 }
 
 func projectToolResult(result object) *ToolResult {
@@ -70,17 +77,18 @@ func projectToolResult(result object) *ToolResult {
 								out.Failed = true
 							}
 							visit(inner["content"], false)
-							countScreenshot(inner, out)
 							continue
 						}
 					}
 				}
 				texts = append(texts, value)
 			case "image":
-				out.Images++
 				data, _ := block.str("data")
 				mime, _ := block.str("mimeType")
-				out.imageURLs = append(out.imageURLs, "data:"+mime+";base64,"+data)
+				if url, ok := completeToolImage(data, mime); ok {
+					out.Images++
+					out.imageURLs = append(out.imageURLs, url)
+				}
 			default:
 				out.UnknownBlocks++
 				texts = append(texts, mustJSON(block))
@@ -88,23 +96,47 @@ func projectToolResult(result object) *ToolResult {
 		}
 	}
 	visit(result["content"], true)
-	countScreenshot(result, out)
 	out.text = strings.TrimSpace(strings.Join(texts, "\n\n"))
 	out.TextBytes = len(out.text)
 	out.Preview = ClipUTF8(out.text, int(capacity.Default("session.tool_preview_bytes")))
 	// Codex can truncate the native record before this reader sees it.
-	out.SourceTruncated = strings.Contains(out.raw, " chars truncated") || strings.Contains(out.raw, " tokens truncated")
+	out.SourceTruncated = storedContentTruncated(out.text)
+	out.rawSourceTruncated = storedContentTruncated(out.raw)
 	return out
 }
 func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
-func countScreenshot(v object, out *ToolResult) {
-	meta, _ := v.object("_meta")
-	surface, _ := meta.object("codex/toolSurface")
-	shot, _ := surface.object("screenshot")
-	if url, ok := shot.str("url"); ok && url != "" {
-		out.Images++
-		out.imageURLs = append(out.imageURLs, url)
+
+// Automatic toolSurface screenshots stay in raw output only. Explicit image
+// content is offered only when the stored raster can actually be decoded.
+func completeToolImage(encoded, mime string) (string, bool) {
+	if mime != "image/png" && mime != "image/jpeg" && mime != "image/gif" {
+		return "", false
 	}
+	data, err := base64.StdEncoding.Strict().DecodeString(encoded)
+	if err != nil || len(data) > ReadBudget {
+		return "", false
+	}
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	p := artifacts.ProductionPolicy
+	if err != nil || "image/"+format != mime || cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > p.MaxDimension || cfg.Height > p.MaxDimension || cfg.Width > p.MaxPixels/cfg.Height {
+		return "", false
+	}
+	if _, _, err = image.Decode(bytes.NewReader(data)); err != nil {
+		return "", false
+	}
+	return "data:" + mime + ";base64," + encoded, true
+}
+
+func storedContentTruncated(value string) bool {
+	return strings.Contains(value, " chars truncated") || strings.Contains(value, " tokens truncated")
+}
+
+// SourceTruncatedFor scopes the warning to the representation being read.
+func (t *ToolResult) SourceTruncatedFor(representation string) bool {
+	if representation == "raw" {
+		return t.rawSourceTruncated
+	}
+	return t.SourceTruncated
 }
 
 // ClipUTF8 keeps a byte budget without splitting a code point.
@@ -163,7 +195,7 @@ func ReadToolResult(path, reference, scope string) (*ToolResult, error) {
 	for _, entry := range entries {
 		if a := entry.Activity; a != nil && a.ToolResult != nil {
 			result := a.ToolResult
-			if toolReference(offset, scope+"\x00"+result.ToolID+"\x00"+result.raw) != reference {
+			if toolReference(offset, toolProjectionIdentity+"\x00"+scope+"\x00"+result.ToolID+"\x00"+result.raw) != reference {
 				return nil, ErrCursorStale
 			}
 			result.Reference = reference
@@ -178,7 +210,7 @@ func (t *ToolResult) Raw() string  { return t.raw }
 
 func (t *ToolResult) ReferenceFor(scope string) string {
 	offset, _ := strconv.ParseInt(strings.Split(t.Reference, ":")[0], 10, 64)
-	return toolReference(offset, scope+"\x00"+t.ToolID+"\x00"+t.raw)
+	return toolReference(offset, toolProjectionIdentity+"\x00"+scope+"\x00"+t.ToolID+"\x00"+t.raw)
 }
 
 func (t *ToolResult) ImageURL(index int) (string, bool) {

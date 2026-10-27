@@ -15,18 +15,29 @@ Short text stays inline. Longer text and the stored native JSON are read on
 expansion, with a 150 KiB detail budget and explicit truncation flags. The native
 JSON is a serialization of the stored result object, not a byte-for-byte copy of
 the provider's original response. Codex may already have shortened that object,
-including the middle of an embedded image; the UI says so rather than promising
-recovery of missing content.
+including the middle of an embedded image. Truncation warnings follow the
+representation being read: hidden image metadata does not warn on complete
+visible text, while the stored native view still reports its own truncation.
 
 A result reference names a JSONL row and a digest scoped to the Session,
-conversation, kernel-pinned execution and native tool identity. Reads resolve
+conversation, kernel-pinned execution, native tool identity and image projection.
+Changing image eligibility invalidates older references so an old image index
+cannot silently select different content after an update. Reads resolve
 only the Session's own record, check the row boundary and digest, and refuse a
 replaced or missing source. Each read is bounded by the existing transcript read
 window. No client-supplied filesystem path or remote image URL is accepted.
 Cloud additionally requires the existing exact machine and execution pin and
 rechecks transcript authority through the content-read bridge.
 
-Images load only when requested, one selected image at a time. The console reads
+Automatic operation screenshots in `codex/toolSurface` metadata stay out of
+normal tool cards: there is no count, image action, retry or metadata-only warning.
+Their original stored representation remains available in native output. Explicit
+image content is offered only after strict Base64, raster decoding and existing
+byte/pixel policy checks succeed. Incomplete explicit image bytes remain in stored
+native output without an image action. Uploaded and deliberately delivered
+Clawdline image attachments keep their existing presentation.
+
+Eligible explicit images load only when requested, one selected image at a time. The console reads
 the original directly on that click, without an intermediate thumbnail request.
 The existing thumbnail representation remains available to compatible clients.
 An animated progress indicator stays visible through transfer and image decoding;
@@ -65,7 +76,9 @@ and its stale-cursor recovery are unchanged.
 
 ## Verification
 
-Synthetic behavior tests cover mixed and unknown blocks, UTF-8 boundaries,
+Synthetic behavior tests cover hidden automatic screenshots, complete explicit
+images, independent text/native clipping warnings, old-index rejection, mixed and
+unknown blocks, UTF-8 boundaries,
 legacy output, stored-source truncation, wrong targets, edited rows, historical
 rows outside the tail, conditional page reuse, thumbnail/original separation,
 image corruption, negotiated compression, envelope authentication, decompression
