@@ -40,13 +40,14 @@ const personas = {
     ["code-reviewer", "Code Reviewer", "程式碼審查", "#e0a23b"],
     ["technical-writer", "Technical Writer", "技術寫作", "#c86bd8"],
   ].map(([id, en, zh, accent]) => ({
-    id, name: { en, "zh-Hant": zh }, summary: { en: en + ".", "zh-Hant": zh + "。" }, suggested_kinds: [], icon: bot(accent),
+    id, name: { en, "zh-Hant": zh }, summary: { en: en + ".", "zh-Hant": zh + "。" }, suggested_kinds: [], icon: bot(accent), teams: ["engineering"],
   })),
 }
 
 let offer: Record<string, unknown> = { available: false, reason: "boot_unknown", sessions: [], at: 0 }
 /** Every resume that arrived, by its path. */
 let resumes: string[] = []
+let placeReads = 0
 
 function snapshot() {
   return {
@@ -91,8 +92,9 @@ function daemon(): Server {
     if (path === "/v1/personas") return json(res, 200, personas)
     if (path === "/v1/sessions/restorable") return json(res, 200, offer)
     if (path === "/v1/places") {
+      placeReads++
       return json(res, 200, {
-        places: [{ id: "place-api", label: "api", path: "/work/api", at: now() - 300 },
+        places: [{ id: "place-api", label: "api " + placeReads, path: "/work/api", at: now() - 300 },
           { id: "place-console", label: "console", path: "/work/web/console", at: now() - 900 }],
         assistants: [{ id: "claude", label: "Claude" }, { id: "codex", label: "Codex" }],
       })
@@ -271,7 +273,13 @@ class Tab {
   }
 
   click(selector: string): Promise<void> {
-    return this.run(`document.querySelector(${JSON.stringify(selector)}).click()`)
+    return this.run(`(async () => {
+      const selector = ${JSON.stringify(selector)}
+      for (let i = 0; i < 100 && !document.querySelector(selector); i++) await new Promise((r) => setTimeout(r, 50))
+      const button = document.querySelector(selector)
+      if (!button) throw new Error('missing control: ' + selector)
+      button.click()
+    })()`)
   }
 
   /** The chip in a row whose text is exactly these words. */
@@ -362,6 +370,53 @@ test("each new start begins with no role, including after an earlier choice", as
 })
 
 for (const [label, width, height, mobile] of [["phone", 390, 844, true], ["desktop", 1280, 800, false]] as const) {
+  test(`${label}: project refreshes preserve the focused native team picker and its options`, async () => {
+    personas.personas[0].teams = ["engineering", "marketing"]
+    const tab = await Tab.open(browser, width, height, mobile)
+    try {
+      await tab.go("/")
+      await tab.click("#start-go")
+      await tab.until("the team picker is drawn", (s) => s.roleShown && s.places === 2)
+      await tab.run(`(() => {
+        const picker = document.querySelector('#start-persona select')
+        if (!picker) throw new Error('missing team picker')
+        window.savedPicker = picker
+        window.savedOptions = [...picker.options]
+        picker.focus()
+      })()`)
+      // Wait for two real three-second background refreshes, with changing
+      // Project labels, rather than calling the renderer directly.
+      const initial = placeReads
+      const deadline = Date.now() + 10_000
+      while (placeReads < initial + 2 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50))
+      assert.ok(placeReads >= initial + 2, "the background Project reads ran")
+      await tab.run(`(async () => {
+        for (let i = 0; i < 100 && !document.querySelector('#start-list').textContent.includes(${JSON.stringify("api ")} + ${placeReads}); i++)
+          await new Promise((r) => setTimeout(r, 50))
+      })()`)
+      assert.deepEqual(await tab.run(`(() => {
+        const picker = document.querySelector('#start-persona select')
+        return {
+          connected: window.savedPicker.isConnected,
+          same: picker === window.savedPicker,
+          focused: document.activeElement === window.savedPicker,
+          options: [...picker.options].every((option, i) => option === window.savedOptions[i]),
+          refreshed: document.querySelector('#start-list').textContent.includes('api ' + ${placeReads}),
+        }
+      })()`), { connected: true, same: true, focused: true, options: true, refreshed: true })
+      await tab.run(`(() => {
+        window.savedPicker.value = 'marketing'
+        window.savedPicker.dispatchEvent(new Event('change', { bubbles: true }))
+      })()`)
+      assert.deepEqual((await tab.until("the refreshed picker still switches teams", (s) => s.roles.length === 2)).roles, ["不指定", "架構師"])
+      await tab.pressChip("#start-persona", "架構師")
+      assert.deepEqual((await tab.until("the new team's role can be chosen", (s) => s.chosen[0] === "架構師")).chosen, ["架構師"])
+    } finally {
+      personas.personas[0].teams = ["engineering"]
+      await tab.close()
+    }
+  })
+
   test(`${label}: the resume step offers the roles with none chosen, and a pick reaches the route`, async () => {
     const tab = await Tab.open(browser, width, height, mobile)
     try {

@@ -380,7 +380,10 @@ paired machine without sending role names.
   is read as it was: a single `team` string is a list of one, and a catalog with neither field
   (or a Cloud machine not yet updated) is all engineering; with one team the label stays the
   plain "Role" it was. The decisions are pure functions in `personas.ts` (`personaTeams`,
-  `shownTeam`, `switchTeam`, `teamsOffered`, `personasOfTeam`).
+  `shownTeam`, `switchTeam`, `teamsOffered`, `personasOfTeam`). Background Project refreshes keep
+  the native select and its unchanged options attached so an open phone picker retains focus.
+  `session/resume-role.e2e.ts` checks two actual three-second refreshes with changing Project
+  labels on phone and desktop, then switches teams and chooses a role through the retained picker.
 - **Session list.** A row whose `persona` the catalog names starts its third line, before the
   state words, with the bot at two pixels a cell and the role's full name in the console's
   language (11.5 px, as the words beside it), with name and summary as its title. Both local and

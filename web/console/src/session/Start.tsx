@@ -371,12 +371,14 @@ function chosenPersona(): string {
 function drawPersona(): void {
   const row = el("start-persona")
   const catalog = personasNow(onMachine?.id ?? null) ?? []
-  // Every draw rebuilds the chips; the sideways scroll is kept across it, so a
-  // press on a chip the person scrolled to does not throw the row back.
+  // The shared renderer keeps the native team picker attached across refreshes;
+  // keep the chips' sideways scroll as well.
   const scrolled = row.scrollLeft
   row.hidden = !assistantRolesAdmit(with_, assistants.find((a) => a.id === with_)) || !catalog.length || (!at && resume && resumable())
-  row.innerHTML = ""
-  if (row.hidden) return
+  if (row.hidden) {
+    row.innerHTML = ""
+    return
+  }
   const choose = (id: string) => {
     if (at) {
       resumeAs = id
