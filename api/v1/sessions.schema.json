@@ -107,6 +107,7 @@
       "properties": {
         "persona": { "description": "The built-in persona (GET /v1/personas) this session was launched as, read back from its process command line; absent for none, and absent on a row with no process reading.", "type": "string" },
         "activity": { "$ref": "#/$defs/SessionActivity" },
+        "provider_block": { "type": "string", "enum": ["model_capacity"], "description": "Current actionable provider refusal read from the native turn record. Independent of terminal activity; cleared by a later native turn boundary. Not a permission menu." },
         "acceptance": { "$ref": "#/$defs/SessionAcceptance" },
 		"attention_count": { "description": "Unresolved attention notes for this conversation. Zero is a successful empty reading; absent means the count or current unique session identity could not be established.", "type": "integer", "minimum": 0 },
 		"agents": { "description": "Provider-native background threads, newest running work first. Broker children stay in the task list and are joined with these in the console, so their durable state is not flattened into a file inference.", "type": "array", "items": { "$ref": "#/$defs/SessionAgent" } },
@@ -152,7 +153,7 @@
         "working_since": { "description": "When the turn a working session's `line` reports began, in unix seconds: when the line was read, less the assistant's own clock in it. Present only beside a `line` that carries that clock. A page that has it draws the clock itself from this instant, so `line` is republished only when something other than the clock moved; a page without it draws `line` as sent.", "type": "integer" },
         "work_moved_by": { "description": "Who the declaring session said will move it — a session id, or a person.", "type": "string" },
         "work_note": { "description": "The session's own words for its state, present only when its declaration decided `work_state` (then `work_provenance` is `self`).", "type": "string" },
-        "work_person_needed": { "type": "boolean", "description": "Whether that mover is a person. Absent unless the declaration decided the state; present and false is a real answer." },
+        "work_person_needed": { "type": "boolean", "description": "Whether that mover is a person. Also true for a current actionable provider block; present and false is a real answer." },
         "work_provenance": { "$ref": "#/$defs/WorkProvenance" },
         "work_since": { "description": "Unix seconds: when that declaration was made.", "type": "integer" },
         "work_state": { "$ref": "#/$defs/WorkState" }

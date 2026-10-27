@@ -25,6 +25,12 @@ const (
 // told us nothing, which is different from a terminal that answered "nothing".
 type State string
 
+// ProviderBlock names an actionable provider failure without inventing a menu
+// or flattening the terminal's own activity into an error state.
+type ProviderBlock string
+
+const ProviderBlockModelCapacity ProviderBlock = "model_capacity"
+
 const (
 	StateWorking State = "working"
 	StateWaiting State = "waiting"

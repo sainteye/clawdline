@@ -35,6 +35,7 @@ export function sessionStatusGlyphHTML(icon, copy) {
  */
 export function projectSessionWorkState(s) {
     s = s || {};
+    if (s.provider_block === "model_capacity") return { state: "waiting_you", failedClosed: false };
     if (s.state === "waiting") return { state: "waiting_you", failedClosed: false };
     // The terminal is the direct observation that an agent is moving. Coordination is an
     // independent, quiet overlay: it may explain what this turn is waiting to release, but it

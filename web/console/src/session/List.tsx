@@ -253,7 +253,8 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
 
   let html: string
   if (work.state === "waiting_you") {
-    html = `<span class="wants">${L.glyphHTML("🙋", T.sessionWaiting)}</span>` + callbackSaid + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
+    const waitingCopy = row.provider_block === "model_capacity" ? nextWord("sessionModelCapacity") : T.sessionWaiting
+    html = `<span class="wants">${L.glyphHTML("🙋", waitingCopy)}</span>` + callbackSaid + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   } else if (work.state === "working") {
     const line = row.line
       ? `<span class="line session-live-line" title="${L.escapeHTML(row.line)}">${L.escapeHTML(row.line)}</span>`

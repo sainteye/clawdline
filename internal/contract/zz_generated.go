@@ -5996,7 +5996,12 @@ type SessionRow struct {
 	// worktree followed to the repository it belongs to and symlinks resolved. A Board
 	// item's `project.path` is compared with it. Absent when `cwd` is absent or not
 	// absolute.
-	ProjectKey     string                `json:"project_key,omitempty"`
+	ProjectKey string `json:"project_key,omitempty"`
+
+	// Current actionable provider refusal read from the native turn record.
+	// Independent of terminal activity; cleared by a later native turn boundary. Not a
+	// permission menu.
+	ProviderBlock  string                `json:"provider_block,omitempty"`
 	RootAssignment *RootAssignmentRecord `json:"root_assignment,omitempty"`
 
 	// Exact provider subagent count from the current Cloud status projection,
@@ -6039,8 +6044,8 @@ type SessionRow struct {
 	// `work_state` (then `work_provenance` is `self`).
 	WorkNote string `json:"work_note,omitempty"`
 
-	// Whether that mover is a person. Absent unless the declaration decided the state;
-	// present and false is a real answer.
+	// Whether that mover is a person. Also true for a current actionable provider
+	// block; present and false is a real answer.
 	WorkPersonNeeded bool           `json:"work_person_needed,omitempty"`
 	WorkProvenance   WorkProvenance `json:"work_provenance,omitempty"`
 

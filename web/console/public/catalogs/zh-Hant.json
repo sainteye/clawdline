@@ -1,4 +1,5 @@
 {
+  "next.sessionModelCapacity": "模型容量不足 · 請換模型或重試",
   "capacityRow.schedule.history_page_rows.what": "排程歷史每次展開的執行紀錄筆數，讓較長的歷史也方便瀏覽。",
   "capacityRow.schedule.history_page_rows.full": "按「載入更多項目」展開下一批。這項顯示限制不會刪除已儲存的歷史；排程詳細資料目前最多包含最新 200 筆執行紀錄。",
   "http.adfb122018780903": "個人 ACP 試用目前使用原生預設模型，且不套用角色。",

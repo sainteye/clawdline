@@ -7,6 +7,21 @@ const INVENTORY = "__clawdline_inventory_v1__"
 const execution = "0123456789abcdef0123456789abcdef"
 const passOne = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const passTwo = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+test("capacity refusal crosses the status projection without inventing a menu", () => {
+  const source = fleet("a", ["same"])
+  const entry = source.statusSnapshots.get(JSON.stringify(["a", "same"])) as { payload: Record<string, unknown> }
+  Object.assign(entry.payload, { state: "idle", provider_block: "model_capacity", waiting_for_reply: false })
+  const reading = statusProjection(source, "a", 2000)
+  assert.equal(reading.kind, "ready")
+  if (reading.kind !== "ready") return
+  assert.equal(reading.rows[0].providerBlock, "model_capacity")
+  assert.equal(reading.rows[0].needsAttention, true)
+  assert.equal(reading.rows[0].waitingForReply, undefined)
+  delete entry.payload.provider_block
+  const recovered = statusProjection(source, "a", 2000)
+  assert.equal(recovered.rows?.[0].providerBlock, undefined)
+})
 function fleet(machine: string, sessions: string[], generation = passOne, missing = "") {
   const statusSnapshots = new Map<string, unknown>()
   const hold = (session: string, payload: unknown, sequence: number) => statusSnapshots.set(JSON.stringify([machine, session]), {

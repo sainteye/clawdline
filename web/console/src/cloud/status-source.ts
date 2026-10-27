@@ -161,6 +161,7 @@ function directList(client: StatusClient, machineID: string, reply: unknown, now
       coordinatorBound: status.coordinator_bound === true || before?.coordinatorBound === true,
       needsAttention: status.work_person_needed === true ||
         typeof status.attention_count === "number" && status.attention_count > 0,
+      providerBlock: status.provider_block === "model_capacity" ? "model_capacity" as const : undefined,
       waitingForReply: replyProven ? true as const : undefined,
       freshness: "current" as const, observedAt: nowMs, snapshotGeneration }
     }) } }

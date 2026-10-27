@@ -108,6 +108,22 @@ evidence: what its screen shows and what its own records say. With no evidence, 
 `unknown`. Transcripts are read from the assistant's own files under `~/.claude` and `~/.codex`.
 Nothing is written there.
 
+Codex model-capacity refusals are a separate `provider_block: model_capacity` fact, read from
+the latest native turn lifecycle event (`task_complete.error.codex_error_info` equal to
+`server_overloaded`, or the exact capacity refusal message). Messages and tool output cannot
+create this fact. The existing activity read budget, tail bound and stat cache own this reading;
+an unchanged record is not reopened. Later metadata keeps the refusal, while `task_started`, a
+successful completion, an interruption or a different terminal failure clears it.
+
+The block projects `work_state: waiting_you` and `work_person_needed: true`, independently of
+terminal activity. The console says **Model at capacity · choose another model or retry**. It
+does not invent a permission menu or a new terminal state: the action is already covered by
+the existing attention vocabulary, and the typed reason distinguishes the remedy. Single-machine
+and fleet lists carry the same fact; the content-free Cloud status allowlists only its reason
+code and attention signal, never the provider's error prose. This does not change closeability
+or automatically retry a provider request. Missing or out-of-tail records cannot establish a
+current block, and the existing retained-source freshness rules still apply.
+
 Managed Codex versions may keep the rollout on a no-tty `codex app-server` descendant instead of
 on the foreground TUI. The same process-table snapshot supplies the parent chain and native
 subcommand; only those scoped writers join the existing batched open-file read. Other terminals,

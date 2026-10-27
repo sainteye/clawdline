@@ -79,8 +79,9 @@ type movementReading struct {
 	identity string
 	// at is the newest record's own timestamp, and read whether that was
 	// found.
-	at   time.Time
-	read bool
+	at    time.Time
+	read  bool
+	block session.ProviderBlock
 }
 
 // NewMovements is an empty cache at the register row's default limit.
@@ -193,10 +194,15 @@ func (h *Host) LastActivity(ctx context.Context, s session.Session) session.Acti
 	key := s.ConversationID
 	prev, had := h.movements.get(key)
 	if had && prev.read && prev.size == st.Size() && prev.mod.Equal(st.ModTime()) {
-		return session.Activity{At: prev.at, Evidence: session.EvidenceTranscript}
+		return session.Activity{At: prev.at, Evidence: session.EvidenceTranscript, ProviderBlock: prev.block}
 	}
 
-	at, ok := lastTurnAt(path)
+	data, _, _ := tailData(path, activityTail)
+	at, ok := lastTurnAt(data)
+	prev.block = ""
+	if s.Assistant == session.AssistantCodex {
+		prev.block = codexProviderBlock(data)
+	}
 	prev.size, prev.mod, prev.at, prev.read = st.Size(), st.ModTime(), at, ok
 	h.movements.put(key, prev)
 	if !ok {
@@ -210,7 +216,45 @@ func (h *Host) LastActivity(ctx context.Context, s session.Session) session.Acti
 			Detail: "no turn this reading could read carried a time of its own",
 		}
 	}
-	return session.Activity{At: at, Evidence: session.EvidenceTranscript}
+	return session.Activity{At: at, Evidence: session.EvidenceTranscript, ProviderBlock: prev.block}
+}
+
+// Only native turn lifecycle events decide this reading. Error prose quoted
+// in messages or tool results is inert; metadata after a failed turn does not
+// erase it. The existing activity tail and cache bound the read and retention.
+func codexProviderBlock(data []byte) session.ProviderBlock {
+	lines := bytes.Split(data, []byte{'\n'})
+	for i := len(lines) - 1; i >= 0; i-- {
+		row, ok := decodeObject(lines[i])
+		if !ok {
+			continue
+		}
+		kind, _ := row.str("type")
+		if kind != "event_msg" {
+			continue
+		}
+		payload, ok := row.object("payload")
+		if !ok {
+			continue
+		}
+		kind, _ = payload.str("type")
+		switch kind {
+		case "task_started", "turn_aborted":
+			return ""
+		case "task_complete":
+			failure, ok := payload.object("error")
+			if !ok {
+				return ""
+			}
+			code, _ := failure.str("codex_error_info")
+			message, _ := failure.str("message")
+			if code == "server_overloaded" || message == "Selected model is at capacity. Please try a different model." {
+				return session.ProviderBlockModelCapacity
+			}
+			return ""
+		}
+	}
+	return ""
 }
 
 // timestampKey is how both assistants write a record's own time.
@@ -222,11 +266,7 @@ var timestampKey = []byte(`"timestamp":"`)
 // line can be a whole tool result and the last one may be half written as this
 // reads. An occurrence that does not parse is stepped over: a truncated value
 // is not an answer, and the one before it is.
-func lastTurnAt(path string) (time.Time, bool) {
-	data, _, err := tailData(path, activityTail)
-	if err != nil {
-		return time.Time{}, false
-	}
+func lastTurnAt(data []byte) (time.Time, bool) {
 	for end := len(data); end > 0; {
 		at := bytes.LastIndex(data[:end], timestampKey)
 		if at < 0 {

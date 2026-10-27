@@ -209,6 +209,14 @@ test("a new pass retains the same execution's work line until fresh status contr
     { ...presentation, observedAt: 1001 }), undefined)
 })
 
+test("a newer capacity reading invalidates old work copy even when terminal activity is unchanged", () => {
+  const current = { ...row("one", "s", "1"), state: "idle", observedAt: 1002 }
+  const old = { title: "Example", observedAt: 1001,
+    status: { state: "idle" as const, provider_block: "model_capacity" as const } }
+  assert.equal(displayedPresentationStatus(current, old), undefined)
+  assert.equal(displayedPresentationStatus({ ...current, providerBlock: "model_capacity" }, old), old.status)
+})
+
 test("retained observations remain readable but cannot authorize content", () => {
   const old = row("one", "same", "7")
   const retained: MachineSessionProjection = { kind: "unavailable", reason: "stale", complete: true,
