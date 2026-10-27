@@ -39,34 +39,6 @@ export interface Shot {
   name: string
 }
 
-let list: Shot[] = []
-let seq = 0
-let busy = 0
-let version = 0
-const listeners = new Set<() => void>()
-
-/** `draw()`: the composer is told, and renders `shotsHTML` and its buttons again. */
-function draw(): void {
-  version += 1
-  for (const listener of listeners) listener()
-}
-
-export function subscribeShots(listener: () => void): () => void {
-  listeners.add(listener)
-  return () => {
-    listeners.delete(listener)
-  }
-}
-
-/** A number that changes whenever the list or its busy count does. */
-export function shotsVersion(): number {
-  return version
-}
-
-function total(): number {
-  return list.reduce((sum, shot) => sum + shot.url.length, 0)
-}
-
 /** A bitmap from a file, however this browser is willing to give one. */
 function decode(file: File): Promise<ImageBitmap | HTMLImageElement> {
   if (typeof window.createImageBitmap === "function") {
@@ -132,120 +104,159 @@ export async function prepareReferencePicture(file: File): Promise<{ url: string
   return { ...picture, name: file.name || "reference image" }
 }
 
-/** The markup `draw()` writes into `#shots`. */
-export function shotsHTML(): string {
-  return list
-    .map(
-      (shot) =>
-        '<div class="shot"><button type="button" class="preview" data-preview-shot="' +
-        shot.id +
-        '" aria-label="' +
-        esc(T.webImagePreview) +
-        '"><img src="' +
-        esc(shot.url) +
-        '" alt="' +
-        esc(shot.name) +
-        '"></button>' +
-        '<button type="button" class="drop" data-shot="' +
-        shot.id +
-        '" aria-label="' +
-        esc(fill(T.webRemoveShot, { name: shot.name })) +
-        '">×</button></div>',
-    )
-    .join("")
-}
-
 export type Say = (text: string, bad: boolean) => void
 
-export const Shots = {
-  count: (): number => list.length,
-  busy: (): boolean => busy > 0,
-  urls: (): string[] => list.map((shot) => shot.url),
-  shot(id: string): Shot | null {
-    return list.find((shot) => String(shot.id) === id) ?? null
-  },
-  clear(): void {
-    if (!list.length) return
-    list = []
-    draw()
-  },
-  /** Return a rejected remote send's already-shrunk pictures to its composer. */
-  restore(urls: readonly string[]): boolean {
-    if (urls.length > MAX_COUNT || urls.some((url) => !url.startsWith("data:image/") || url.length > MAX_EACH) ||
-      urls.reduce((sum, url) => sum + url.length, 0) > MAX_TOTAL) return false
-    list = urls.map((url) => ({ id: ++seq, url, name: "picture" }))
-    draw()
-    return true
-  },
-  /** The `#shots` click handler's half: the picture with this `data-shot` goes. */
-  remove(id: string): void {
-    list = list.filter((shot) => String(shot.id) !== id)
-    draw()
-  },
+/** Each editor owns its images, including image work that finishes after it closes. */
+export function createShots(onPictures: (urls: string[]) => void = () => {}) {
+  let list: Shot[] = []
+  let seq = 0
+  let busy = 0
+  let version = 0
+  const listeners = new Set<() => void>()
 
-  /**
-   * Burn a composer's red marks into this picture. PNG keeps screenshots
-   * crisp; a photograph whose PNG crosses the wire limit falls back to the
-   * same JPEG quality `shrink` uses. The old bytes stay until the replacement
-   * has passed both limits, so a failed save loses nothing.
-   */
-  replace(id: string, canvas: HTMLCanvasElement, toast: Say): boolean {
-    const at = list.findIndex((shot) => String(shot.id) === id)
-    if (at < 0) return false
-    const without = total() - list[at].url.length
-    let url = canvas.toDataURL("image/png")
-    if (url.length > MAX_EACH || without + url.length > MAX_TOTAL) url = canvas.toDataURL("image/jpeg", QUALITY)
-    if (url.length > MAX_EACH) {
-      toast(T.webShotTooBig, true)
-      return false
-    }
-    if (without + url.length > MAX_TOTAL) {
-      toast(T.webShotsTooBig, true)
-      return false
-    }
-    list = list.map((shot, i) => (i === at ? { ...shot, url } : shot))
-    draw()
-    return true
-  },
+  /** `draw()`: the composer is told, and renders `shotsHTML` and its buttons again. */
+  function draw(): void {
+    version += 1
+    for (const listener of listeners) listener()
+  }
 
-  add(files: ArrayLike<File> | null | undefined, toast: Say): void {
-    let wanted = Array.prototype.filter.call(files || [], isPicture) as File[]
-    if (!wanted.length) {
-      toast(T.webShotsOnlyPictures, true)
-      return
+  function subscribeShots(listener: () => void): () => void {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
     }
-    if (list.length + wanted.length > MAX_COUNT) {
-      toast(fill(T.webShotsTooMany, { n: MAX_COUNT }), true)
-      wanted = wanted.slice(0, Math.max(0, MAX_COUNT - list.length))
-      if (!wanted.length) return
-    }
-    busy += wanted.length
+  }
+
+  /** A number that changes whenever the list or its busy count does. */
+  function shotsVersion(): number {
+    return version
+  }
+
+  function total(): number {
+    return list.reduce((sum, shot) => sum + shot.url.length, 0)
+  }
+
+  function picturesChanged(): void {
+    onPictures(list.map(shot => shot.url))
     draw()
-    for (const file of wanted) {
-      shrink(file)
-        .then((shot) => {
-          if (shot.url.length > MAX_EACH) {
-            toast(T.webShotTooBig, true)
-            return
-          }
-          if (total() + shot.url.length > MAX_TOTAL) {
-            toast(T.webShotsTooBig, true)
-            return
-          }
-          list.push({ id: ++seq, url: shot.url, name: file.name || "picture" })
-        })
-        .catch((failure: unknown) => {
-          // A picture that would not read used to say one sentence whatever
-          // refused it; a `too_large` from this daemon and a decoder that gave
-          // up are not the same afternoon.
-          toast(failureSentence(failure, T.webShotUnreadable), true)
-        })
-        .then(() => {
-          busy -= 1
-          draw()
-        })
-    }
-  },
+  }
+
+  /** The markup `draw()` writes into `#shots`. */
+  function shotsHTML(): string {
+    return list
+      .map(
+        (shot) =>
+          '<div class="shot"><button type="button" class="preview" data-preview-shot="' +
+          shot.id +
+          '" aria-label="' +
+          esc(T.webImagePreview) +
+          '"><img src="' +
+          esc(shot.url) +
+          '" alt="' +
+          esc(shot.name) +
+          '"></button>' +
+          '<button type="button" class="drop" data-shot="' +
+          shot.id +
+          '" aria-label="' +
+          esc(fill(T.webRemoveShot, { name: shot.name })) +
+          '">×</button></div>',
+      )
+      .join("")
+  }
+
+  const Shots = {
+    count: (): number => list.length,
+    busy: (): boolean => busy > 0,
+    urls: (): string[] => list.map((shot) => shot.url),
+    shot(id: string): Shot | null {
+      return list.find((shot) => String(shot.id) === id) ?? null
+    },
+    clear(): void {
+      if (!list.length) return
+      list = []
+      picturesChanged()
+    },
+    /** Return a rejected remote send's already-shrunk pictures to its composer. */
+    restore(urls: readonly string[], notify = true): boolean {
+      if (urls.length > MAX_COUNT || urls.some((url) => !url.startsWith("data:image/") || url.length > MAX_EACH) ||
+        urls.reduce((sum, url) => sum + url.length, 0) > MAX_TOTAL) return false
+      list = urls.map((url) => ({ id: ++seq, url, name: "picture" }))
+      if (notify) picturesChanged()
+      else draw()
+      return true
+    },
+    /** The `#shots` click handler's half: the picture with this `data-shot` goes. */
+    remove(id: string): void {
+      list = list.filter((shot) => String(shot.id) !== id)
+      picturesChanged()
+    },
+
+    /**
+     * Burn a composer's red marks into this picture. PNG keeps screenshots
+     * crisp; a photograph whose PNG crosses the wire limit falls back to the
+     * same JPEG quality `shrink` uses. The old bytes stay until the replacement
+     * has passed both limits, so a failed save loses nothing.
+     */
+    replace(id: string, canvas: HTMLCanvasElement, toast: Say): boolean {
+      const at = list.findIndex((shot) => String(shot.id) === id)
+      if (at < 0) return false
+      const without = total() - list[at].url.length
+      let url = canvas.toDataURL("image/png")
+      if (url.length > MAX_EACH || without + url.length > MAX_TOTAL) url = canvas.toDataURL("image/jpeg", QUALITY)
+      if (url.length > MAX_EACH) {
+        toast(T.webShotTooBig, true)
+        return false
+      }
+      if (without + url.length > MAX_TOTAL) {
+        toast(T.webShotsTooBig, true)
+        return false
+      }
+      list = list.map((shot, i) => (i === at ? { ...shot, url } : shot))
+      picturesChanged()
+      return true
+    },
+
+    add(files: ArrayLike<File> | null | undefined, toast: Say): void {
+      let wanted = Array.prototype.filter.call(files || [], isPicture) as File[]
+      if (!wanted.length) {
+        toast(T.webShotsOnlyPictures, true)
+        return
+      }
+      if (list.length + wanted.length > MAX_COUNT) {
+        toast(fill(T.webShotsTooMany, { n: MAX_COUNT }), true)
+        wanted = wanted.slice(0, Math.max(0, MAX_COUNT - list.length))
+        if (!wanted.length) return
+      }
+      busy += wanted.length
+      draw()
+      for (const file of wanted) {
+        shrink(file)
+          .then((shot) => {
+            if (shot.url.length > MAX_EACH) {
+              toast(T.webShotTooBig, true)
+              return
+            }
+            if (total() + shot.url.length > MAX_TOTAL) {
+              toast(T.webShotsTooBig, true)
+              return
+            }
+            list.push({ id: ++seq, url: shot.url, name: file.name || "picture" })
+          })
+          .catch((failure: unknown) => {
+            // A picture that would not read used to say one sentence whatever
+            // refused it; a `too_large` from this daemon and a decoder that gave
+            // up are not the same afternoon.
+            toast(failureSentence(failure, T.webShotUnreadable), true)
+          })
+          .then(() => {
+            busy -= 1
+            picturesChanged()
+          })
+      }
+    },
+  }
+
+  return { Shots, shotsHTML, shotsVersion, subscribeShots }
 }
 
 /**

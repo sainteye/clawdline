@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9232,
+  "englishKeys": 9233,
   "counts": {
-    "negation": 2663,
-    "state": 1532,
+    "negation": 2664,
+    "state": 1533,
     "permission": 550,
     "deletion": 202,
     "uncertainty": 291
   },
-  "unionCount": 4115,
+  "unionCount": 4116,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -604,6 +604,7 @@
       "capacityRow.work_gate_round_details_per_item.full",
       "capacityRow.work_gate_round_details_per_item.what",
       "capacityRow.work_gate_round_details_per_store.full",
+      "composerDraft.storageUnavailable",
       "count.skillFoldersSkipped",
       "count.unsyncedProjects",
       "dispatchPolicy.failed",
@@ -3166,6 +3167,7 @@
       "capacityRow.work_gate_round_details_per_item.full",
       "capacityRow.work_gate_round_details_per_store.full",
       "capacityRow.work_gate_tasks_per_round.full",
+      "composerDraft.storageUnavailable",
       "count.pendingInterventions",
       "dispatchPolicy.saved",
       "documents.connecting",
@@ -6132,6 +6134,7 @@
     "capacityRow.work_gate_round_details_per_store.full",
     "capacityRow.work_gate_tasks_per_round.full",
     "clawdfatherMenu.limitReached",
+    "composerDraft.storageUnavailable",
     "count.pendingInterventions",
     "count.skillFoldersSkipped",
     "count.unsyncedProjects",

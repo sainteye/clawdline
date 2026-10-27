@@ -9232,5 +9232,6 @@
   "work.desktopScrollRight": "向右捲動看板",
   "work.desktopShowPlans": "顯示計畫",
   "capacityRow.console.video_preview_frames.what": "瀏覽器為挑選有代表性的縮圖，最多取樣的影片中後段畫面數。",
-  "capacityRow.console.video_preview_frames.full": "取得四個候選畫面後，保留細節最多的一張。近乎單色的片頭與淡入淡出會排在有內容的畫面之後。"
+  "capacityRow.console.video_preview_frames.full": "取得四個候選畫面後，保留細節最多的一張。近乎單色的片頭與淡入淡出會排在有內容的畫面之後。",
+  "composerDraft.storageUnavailable": "此瀏覽器無法儲存草稿。未送出的文字與圖片只會保留到此頁面關閉。"
 }
