@@ -50,26 +50,41 @@ export interface RoleRowChoice {
  * older than teams, it is the plain label it always was.
  */
 export function drawRoleRow(row: HTMLElement, c: RoleRowChoice): void {
-  row.innerHTML = ""
   const offered = teamsOffered(c.personas)
   const chosen = personaById(c.personas, c.chosen) ? c.chosen : ""
   const team = shownTeam(c.personas, chosen, c.team)
+  // Removing a native select dismisses its open phone picker. Background
+  // Project refreshes redraw this row every three seconds: keep the select
+  // and unchanged options attached, even while the role chips change.
+  const existing = row.querySelector<HTMLSelectElement>(".role-team select")
+  const kept = offered.length > 1 ? existing?.parentElement : null
+  for (const child of Array.from(row.childNodes)) {
+    if (child !== kept) child.remove()
+  }
   if (offered.length > 1) {
-    const wrap = document.createElement("span")
+    const wrap = kept ?? document.createElement("span")
     wrap.className = "with-label role-team"
-    const select = document.createElement("select")
-    select.setAttribute("aria-label", nextWord("personaTeamPicker"))
-    select.disabled = c.disabled
-    offered.forEach((t) => {
-      const option = document.createElement("option")
-      option.value = t
-      option.textContent = nextWord(TEAM_WORDS[t])
-      option.selected = t === team
-      select.appendChild(option)
+    const select = kept && existing ? existing : document.createElement("select")
+    const label = nextWord("personaTeamPicker")
+    if (select.getAttribute("aria-label") !== label) select.setAttribute("aria-label", label)
+    if (select.disabled !== c.disabled) select.disabled = c.disabled
+    if (select.options.length !== offered.length || offered.some((t, i) => select.options[i].value !== t)) {
+      select.replaceChildren(...offered.map((t) => {
+        const option = document.createElement("option")
+        option.value = t
+        return option
+      }))
+    }
+    offered.forEach((t, i) => {
+      const words = nextWord(TEAM_WORDS[t])
+      if (select.options[i].textContent !== words) select.options[i].textContent = words
     })
+    if (select.value !== team) select.value = team
     select.onchange = () => c.onTeam(select.value as PersonaTeam)
-    wrap.appendChild(select)
-    row.appendChild(wrap)
+    if (!kept) {
+      wrap.appendChild(select)
+      row.appendChild(wrap)
+    }
   } else {
     const label = document.createElement("span")
     label.className = "with-label"
