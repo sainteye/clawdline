@@ -1,0 +1,489 @@
+{
+  "date": "2026-10-27",
+  "scope": "Local component browser acceptance; not production Cloud or physical iPhone acceptance",
+  "sourceBytes": 14689551,
+  "chunkBytes": 524288,
+  "totalChunks": 29,
+  "cases": [
+    {
+      "browser": "Chrome",
+      "language": "en",
+      "width": 390,
+      "media": {
+        "duration": 17.999999,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.192135,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 13,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "head"
+    },
+    {
+      "browser": "Chrome",
+      "language": "zh-Hant",
+      "width": 390,
+      "media": {
+        "duration": 17.999999,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.193173,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 13,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "head"
+    },
+    {
+      "browser": "Chrome",
+      "language": "en",
+      "width": 1280,
+      "media": {
+        "duration": 17.999999,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.19882,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 13,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "head"
+    },
+    {
+      "browser": "Chrome",
+      "language": "zh-Hant",
+      "width": 1280,
+      "media": {
+        "duration": 17.999999,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.20271,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 13,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "head"
+    },
+    {
+      "browser": "WebKit",
+      "language": "en",
+      "width": 390,
+      "media": {
+        "duration": 18,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.121207750053145,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 13,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "head"
+    },
+    {
+      "browser": "WebKit",
+      "language": "zh-Hant",
+      "width": 390,
+      "media": {
+        "duration": 18,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.151977625035215,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 13,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "head"
+    },
+    {
+      "browser": "WebKit",
+      "language": "en",
+      "width": 1280,
+      "media": {
+        "duration": 18,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.124713291646913,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 13,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "head"
+    },
+    {
+      "browser": "WebKit",
+      "language": "zh-Hant",
+      "width": 1280,
+      "media": {
+        "duration": 18,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.123280166648328,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 13,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "head"
+    },
+    {
+      "browser": "Chrome",
+      "language": "en",
+      "width": 390,
+      "media": {
+        "duration": 17.999999,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.207425,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 15,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "tail"
+    },
+    {
+      "browser": "Chrome",
+      "language": "zh-Hant",
+      "width": 390,
+      "media": {
+        "duration": 17.999999,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.199468,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 15,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "tail"
+    },
+    {
+      "browser": "Chrome",
+      "language": "en",
+      "width": 1280,
+      "media": {
+        "duration": 17.999999,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.20416,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 15,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "tail"
+    },
+    {
+      "browser": "Chrome",
+      "language": "zh-Hant",
+      "width": 1280,
+      "media": {
+        "duration": 17.999999,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.20251,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 15,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "tail"
+    },
+    {
+      "browser": "WebKit",
+      "language": "en",
+      "width": 390,
+      "media": {
+        "duration": 18,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.124134416633751,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 15,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "tail"
+    },
+    {
+      "browser": "WebKit",
+      "language": "zh-Hant",
+      "width": 390,
+      "media": {
+        "duration": 18,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.127905375033151,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 15,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "tail"
+    },
+    {
+      "browser": "WebKit",
+      "language": "en",
+      "width": 1280,
+      "media": {
+        "duration": 18,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.126896541682072,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 15,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "tail"
+    },
+    {
+      "browser": "WebKit",
+      "language": "zh-Hant",
+      "width": 1280,
+      "media": {
+        "duration": 18,
+        "width": 1920,
+        "height": 1080,
+        "time": 9.127371000009589,
+        "error": null,
+        "controls": true,
+        "autoplay": false
+      },
+      "earlyPlayback": {
+        "chunks": 15,
+        "state": "loading"
+      },
+      "conversationPreserved": true,
+      "focusRestored": true,
+      "escapeFromPlayer": true,
+      "backForward": true,
+      "cancelledTransfer": true,
+      "explicitRetry": true,
+      "coldVideoAddress": true,
+      "routes": [
+        "sessions",
+        "documents"
+      ],
+      "indexLocation": "tail"
+    }
+  ]
+}

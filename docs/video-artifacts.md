@@ -2,8 +2,9 @@
 
 Published MP4 links open a dedicated video lightbox above the current conversation.
 The conversation stays mounted at its original scroll position. The lightbox shows
-transfer progress and native playback, pause, seeking and full-screen controls.
-Close, Escape (including from the isolated player), or browser Back dismisses it;
+buffering progress and native playback, pause, seeking and full-screen controls.
+Playback can begin while later encrypted chunks are still arriving.
+Close, Escape, or browser Back dismisses it;
 Forward can reopen it. Closing aborts the transfer and destroys the player context.
 An existing canonical Cloud document link to an MP4 also opens the lightbox on a
 Session screen, rather than navigating to the Documents page. Markdown, text and
@@ -53,20 +54,48 @@ stop a transfer with `video_changed`; this marker is not a cryptographic content
 hash. The open descriptor is checked before and after each chunk. No chunk can
 request an arbitrary amount of disk data or an arbitrary external URL.
 
-The browser reads sequentially, without prefetch or automatic chunk retries, then
-assembles one bounded Blob for native playback and local seeking. A trusted
-iframe contains the native player and a nonce-authorized event adapter. Its
-sandbox gives it an opaque origin with no same-origin privilege. Its CSP permits
-Blob media, inline styling and that one trusted script only; it denies external
-resources, connections, other scripts, forms and base URLs. The parent transfers
-the verified Blob to the player, which creates its URL in its own origin. The
-parent accepts error and dimension messages only from the exact player window with its random
-per-player token. Author bytes and filenames never become frame HTML. This first
-version downloads the complete video before playback; it is not streaming or an
-unlimited media library. Navigation aborts pending reads, prevents another chunk
-from starting, requests native player cleanup and removes the player browsing
-context, which also releases that document's Blob URLs. Temporary browser copies and decoder memory are bounded by the file size and browser behavior;
-the file cap is not a claim that total heap use equals that exact size.
+The lightbox validates the first chunk before mounting native video controls. It
+uses the pinned BSD-3-Clause [MP4Box.js](https://github.com/gpac/mp4box.js) library
+(its [license notice](../web/console/public/licenses/mp4box-BSD-3-Clause.txt) ships with the console)
+to parse the MP4 index and remux complete samples into Media Source Extensions
+fragments locally. This changes the container, without re-encoding or an external
+transcoding service. A tail `moov` index is discovered by jumping over media data;
+its authenticated chunks are reused when the media pass returns to the start.
+Files with unusually large indexes still need those indexes before playback.
+
+The media pass reads sequentially, with one authorized chunk request in flight.
+It waits for the decoder's append acknowledgement before fetching another chunk.
+Validated sample extents must fit the published file, and each pending fragment
+batch shares the existing 32 MiB video-byte ceiling. Parsed sample data is released
+after fragmentation. A browser can play the buffered prefix while later chunks
+arrive; seeking beyond the buffered prefix waits for those later chunks. There is
+no automatic read retry. The progress label describes transferred source bytes,
+not elapsed playback or an exact decoder-memory measurement.
+
+Streaming uses a native `<video>` element in the trusted console lightbox. Both
+tracks are declared before either initialization segment reaches the decoder.
+MediaSource is used in supporting browsers; WebKit's ManagedMediaSource is used
+when available, with remote playback explicitly disabled as required for iPhone.
+AirPlay is therefore unavailable for this streaming player. Playback still needs
+a click and never starts automatically. A current browser with MSE or managed MSE
+and compatible codecs is required. Physical iPhone acceptance is separate from
+desktop WebKit testing.
+
+The streaming player is trusted UI, rather than an author document: its DOM is
+created by the console and its only source is a console-created MediaSource URL.
+No file name, metadata or author bytes become HTML, script, CSS or a network URL.
+An opaque-origin MSE Blob is refused by WebKit, so the streaming controls do not
+use the earlier opaque iframe. This is an explicit change of rendering boundary;
+it preserves encrypted chunk authorization but does not claim opaque-origin
+isolation for the streaming media element. Sanitized HTML retains its separate
+sandbox. The legacy complete-Blob document preview retains its nonce-authorized
+opaque player, where the Blob URL is created in the player's own origin.
+
+Closing or navigating aborts pending reads and decoder acknowledgements, pauses
+and resets the native player, revokes its MediaSource URL and releases fragment
+queues. Native decoder failures and late read refusals stop further requests and
+leave an explicit **Read again** action. Browser decoder memory and remux metadata
+are additional to source bytes; the file cap is not an exact browser heap bound.
 
 Revocation prevents subsequent reads. It cannot erase content a device has
 already decrypted, downloaded or copied. A failed or disconnected transfer needs
@@ -80,7 +109,8 @@ MP4 listing, so reload it after updating.
 
 Behavior tests cover chunk boundaries and version changes, traversal and symlink
 escape, fake MP4 bytes, oversize rejection, strict answer identity and byte counts,
-revocation before and during Cloud reads, sequential assembly and cancellation.
+revocation before and during Cloud reads, sequential assembly and cancellation. Streaming tests additionally exercise tail-index
+discovery, decoder backpressure, late revocation and decoder refusal.
 Capacity registration is checked against daemon measurements and both snapshots.
 Native browser playback acceptance is separate from wire and authorization tests;
 a desktop WebKit test is not an actual iPhone acceptance receipt.
@@ -115,3 +145,18 @@ conversation address, draft and scroll position, focus restoration, Escape from
 inside the isolated player, Back/Forward, cancellation despite a late answer,
 explicit retry after refusal, and a cold MP4 link. These component cases are
 separate from production Cloud acceptance and actual phone testing.
+
+## Streaming acceptance
+
+The [streaming browser record](performance/video-streaming-browser.json) covers
+local Chrome and desktop WebKit in English and Taiwan Traditional Chinese at
+390 and 1280 CSS pixels. The media transfer is deliberately held before its final
+chunks; native playback must advance before that gate is released. The same cases
+cover seeking after completion, conversation address/draft/scroll preservation,
+Escape, focus restoration, history, cancellation, retry and cold links. A second
+run uses a remuxed MP4 whose index is at the end. These controlled component
+measurements are separate from authenticated production Cloud acceptance.
+
+`web/console/src/cloud/testdata/video-stream.mp4` is a generated 32-by-32 colour
+clip with a generated tone, used for parser and backpressure tests; it contains no
+Session artifact or conversation content.

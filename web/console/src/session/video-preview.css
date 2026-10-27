@@ -16,4 +16,5 @@
 .video-lightbox-status { margin: 16px 0; color: #ddd; overflow-wrap: anywhere; }
 .video-lightbox-status:empty { display: none; }
 .video-lightbox-status[data-state="loading"] { min-height: 140px; display: grid; place-items: center; }
+.video-lightbox-body:not(:empty) + .video-lightbox-status[data-state="loading"] { min-height: 0; display: block; }
 .video-lightbox-status[data-state="error"], .video-lightbox .document-video-error { color: #f0aea0; }
