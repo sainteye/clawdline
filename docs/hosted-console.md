@@ -36,29 +36,28 @@ test ! -e "$hosted"
 git worktree add -f "$hosted" "$stamp"
 cd "$hosted/web"
 test ! -e console/dist          # use a new worktree; never reuse an old build's BUILD.json
-../tools/heavy.sh env VITE_HOSTED_CONSOLE='{"v":1,"app_origin":"https://app.clawdline.com","api_origin":"https://api.clawdline.com","relay_url":"wss://relay.clawdline.com/v1/connect"}' \
-  npm run build
+npm run build:cloud
 ```
 
-Wait for the build to finish before writing `BUILD.json`; if `heavy.sh` queues it and exits 76,
-read its callback result first. `npm run build` prepares this worktree's web dependencies. Keep
-`VITE_HOSTED_CONSOLE` inside the heavy command so a queued build receives it. Keep the
-`hosted` path for the deploy callback below.
+`npm run build:cloud` owns the production declaration and ignores an inherited value for
+`VITE_HOSTED_CONSOLE`. It requires a clean committed worktree, builds directly (frontend builds
+need no native compilation slot), checks the compiled declaration, and writes `BUILD.json` from
+that exact commit only after success. Keep the `hosted` path for the deploy callback below.
+Do not hand-assemble the JSON or substitute a boolean such as `VITE_HOSTED_CONSOLE=1`.
 
-The three endpoints are the production ones in `internal/adapters/cloud/settings.go`. Write a
-`BUILD.json` into `console/dist` carrying the commit sha as `stamp` and its committer time as
-`committed_at`, so a deploy can be identified afterwards and every daemon can tell whether it trails
-this build ([updates.md](updates.md)) — but see below for what it does and does not prove.
+The declaration remains necessary because the same console source serves both a local daemon
+and Cloud. It specifies the app origin, API origin, relay address and protocol version; the browser
+checks the app origin before connecting. This is deployment configuration, not a user preference.
+The production command fixes the endpoints in `web/console/tools/hosted-declaration.mjs`. The runtime parser
+is also used by Vite: a present malformed or incomplete declaration fails the build instead of
+shipping an error page. An unset declaration continues to produce the local console.
 
-```sh
-stamp=$(git rev-parse HEAD)
-committed_at=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ "$stamp")
-printf '{"stamp":"%s","committed_at":"%s"}\n' "$stamp" "$committed_at" >console/dist/BUILD.json
-rg -l CloudGate console/dist/assets/main-*.js
-```
-
-The last command must name the locally built main bundle. If it does not, the hosted build did
-not take the Cloud branch; stop before deployment.
+On 2026-10-27 a deployment passed the old CloudGate text check with the declaration `1`; the
+browser then reported an empty Cloud declaration. Production was restored to the previous Pages
+deployment. The regression test first reproduced the missing build rejection, then proved the
+same Vite configuration rejects that input. The served-bundle checker also rejects a bundle that
+contains `CloudGate` but lacks the complete production declaration. Checks remain independent:
+source stamp, served bundle, usable declaration, catalogs, then actual browser startup.
 
 ## PWA launch images
 
@@ -154,7 +153,8 @@ exact target. A failed ancestry check stops the callback before deployment.
 
 `tools/wait-hosted-console.sh <sha> [--deadline 15m] [--strict-catalogs]` polls `BUILD.json` until its stamp is
 `<sha>` or descends from it. Then it runs the three steps below and exits 0 only when the served
-bundle has `CloudGate`. Builds that ship product catalogs also read every advertised language's
+bundle has `CloudGate` and its compiled declaration names the exact production app, API and
+relay endpoints. It parses JavaScript syntax without executing downloaded code. Builds that ship product catalogs also read every advertised language's
 hosted JSON through `tools/check-hosted-catalogs.py`, which runs the same catalog
 validator used during Console development. The first multilingual release
 requires all nine catalogs to cover the frozen initial baseline and English
@@ -172,13 +172,15 @@ printf '%s\n' "$bundle"                                                   # 2
 curl -fsS "https://app.clawdline.com/$bundle" | grep -c CloudGate     # 3 — must be > 0
 ```
 
-**Three is the one that matters.** One says a file changed, not that the right file went up — a
-`BUILD.json` left behind by an earlier build reported the previous stamp after a deploy that
-replaced everything else. Two only names the bundle. Three asks whether the bundle that is now
-being served took the Cloud branch, which is the question the failure turns on.
+These checks establish the source and branch, but `CloudGate` text alone does not establish a
+usable configuration. `tools/wait-hosted-console.sh` additionally pipes the served bundle through
+`web/console/tools/check-hosted-build.mjs`, which verifies the compiled production declaration.
+A stamp can be stale, and a malformed hosted build can still contain the CloudGate import.
 
-Grepping the bundle for a string you added is not this check. It answers whether your change
-shipped, which was true in the broken deploy as well.
+After the static checks, reload the production console in the existing browser tab and verify
+that the actual Session list appears. Also verify the changed route. Preserve existing sign-in
+and pairing; do not create a duplicate viewer tab. Do not report a deployment as accepted before
+browser startup succeeds. If it fails, restore the recorded preceding deployment immediately.
 
 ## Verifying a preview deployment is not possible
 

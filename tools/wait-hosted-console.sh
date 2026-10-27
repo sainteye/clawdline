@@ -71,6 +71,10 @@ if [ "${gates:-0}" -eq 0 ]; then
 fi
 echo "the served $bundle takes the Cloud branch (CloudGate x$gates)"
 
+# The same word also exists in the error page produced by a truthy, invalid
+# declaration. Validate the compiled configuration, not only the branch name.
+curl -fsS --max-time 20 "$origin/$bundle" | node web/console/tools/check-hosted-build.mjs || exit 1
+
 # The source directory marks builds that advertise the new catalogs. Older
 # released builds have no such directory, so their existing CloudGate check
 # remains sufficient. Once a build ships catalogs, all of them must be served.

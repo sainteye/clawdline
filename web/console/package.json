@@ -8,6 +8,8 @@
     "dev": "vite",
     "prebuild": "node ../../tools/ensure-web-deps.mjs",
     "build": "vite build",
+    "prebuild:cloud": "node ../../tools/ensure-web-deps.mjs",
+    "build:cloud": "node tools/build-cloud.mjs",
     "prepreview": "node ../../tools/ensure-web-deps.mjs",
     "preview": "vite preview"
   },
