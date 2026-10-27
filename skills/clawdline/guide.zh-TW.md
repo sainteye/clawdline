@@ -67,6 +67,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline session close [--dry-run] [--terminal id]` | 稽核並關閉已完成的 Session，絕不強制（§2a） |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 派出一個 owned child（§4） |
 | `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-Hant feature-root`、§10） |
+| `clawdline playbook list\|create\|edit\|delete` | 管理儲存的啟動訊息（`clawdline guide project`） |
 | `clawdline todo add\|list\|done` | 這個 Session 自己的待辦，只在使用者要求時（§10） |
 | `clawdline heavy [--handoff] -- <command…>` | 應用程式與原生編譯才排隊；一般指令直接執行；`--handoff` 會把排隊等待交給 callback（§11） |
 | `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
@@ -404,6 +405,52 @@ Project）。type 是 `user`、`feedback`、`project`、`reference` 其中之一
 `MEMORY.md` 直接連到的項目是常駐項目；它連到的子索引變成一個 group，說明取自子索引的 description，
 子索引連到的每筆項目都歸入該 group；索引檔本身從不匯入成項目；哪裡都沒連到的項目以常駐項目匯入，
 並在計畫裡列出名稱。
+
+
+**Playbook（儲存的啟動訊息）。** 任何 Project 的 Agent 都可使用
+`clawdline playbook list|create|edit|delete` 管理定義。指令只儲存文字，不會啟動 Session 或送出訊息。
+先用 `list --session <terminal-id>` 取得正式的 `project.key`；在子目錄或 worktree 也適用。
+透過 `GET /v1/orchestrator/whoami?conversation_id=<your-conversation-id>`（§2）取得自己的 terminal ID。
+不帶旗標的 `list` 會列出這台機器的所有 Playbook（包含全域），並排除其他快捷文字類型。
+務必使用所選機器回傳的 Project key，不要猜路徑。
+
+```sh
+clawdline playbook list --session <terminal-id>
+clawdline playbook create --project <returned-project-key> --body-file create.json
+clawdline playbook create --global --body-file create.json
+clawdline playbook edit --body-file edit.json <returned-id>
+clawdline playbook delete <returned-id>
+```
+
+`create.json` 是 `{"title":"Review changes","body":"Review the current changes and report findings."}`。
+`edit.json` 可只放 `{"body":"Review correctness and regressions."}`：省略的欄位與來源連結都保留。
+`source: null` 清除來源歸屬；選填的結構化 `source` 使用 `docs/playbooks.md` 說明的六個欄位。
+旗標放在 id 前面。建立必須擇一指定 `--project <key>` 或 `--global`；編輯會保留範圍與 Project。
+所有操作接受 `--port`；`--body-file -` 讀取 stdin。
+
+寫入前會先在 stderr 印出 `Idempotency-Key`。結果不明時，用 `--key <value>` 沿用該值、相同操作、
+id 與 JSON 內容重試。不要因為連線中斷就產生新的建立 key。成功會印出儲存結果的 JSON；
+exit 1 表示請求失敗或遭拒，exit 2 表示 CLI 輸入無效。重新讀取清單核對結果。
+
+**HTTP 用戶端與舊版 CLI。** Playbook 使用 `/v1/snippets` 與 `scope: "workflow"`，
+不是 獨立的 Playbook endpoint，也與已退役的 Session workflow 回報路由無關。
+GET 回傳 `{project?, snippets}`，篩選 `scope == "workflow"`。
+POST 建立（`title`、`body`、`scope`、選填 `project` 與 `source`）；PATCH
+`/v1/snippets/<id>` 修改傳入的欄位；DELETE 移除該 id。POST
+`/v1/snippets/order` 接受 `{"scope":"workflow","project":"<key>","order":["<id>","<id>"]}`，
+同組所有成員各列一次。全域定義省略 `project`。
+使用本機 `X-Clawdline-Orchestrator` 憑證（§2）、JSON content type；每次寫入（含 DELETE 與排序）
+都帶穩定的 `Idempotency-Key`。不要印出 token 或放入 argv，也不要送出回傳紀錄中的唯讀欄位。
+
+標題與內文不可空白，上限分別為 200 與 4,000 UTF-8 bytes；Project key 上限 1,024 bytes，
+寫入 body 上限 64 KiB。拒絕碼包含 `malformed_snippet`、`snippet_too_long`、
+`snippet_scope_mismatch`、`snippet_not_found`、`snippet_limit_reached`、
+`idempotency_key_required`、`idempotency_key_reused`、`receipt_expired`、`receipts_full`、
+`rate_limited`、`busy` 與 `write_failed`。驗證拒絕用字串 `error` 與 `detail`；
+驗證身分或收據錯誤可能用巢狀 `error.code`。HTTP 重試沿用完全相同的請求 bytes；
+已完成收據會以 `Idempotent-Replayed: true` 重播。內容不同的 409 須先核對狀態，不是換新 key。
+遇到 429／5xx，先核對儲存狀態再決定是否重試，不要循環呼叫。來源欄位與完整 API 契約見
+`docs/playbooks.md`。
 
 ## 2a. Feature Root 的一般流程
 

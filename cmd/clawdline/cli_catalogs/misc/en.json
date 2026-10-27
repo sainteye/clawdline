@@ -259,5 +259,12 @@
   "image.check": "Stored is not seen: GET /v1/transcript?session=%s lists them in that reply's artifacts once it is written.\n",
   "note.live_root_required": "Name a live Root conversation with --from.",
   "note.withdraw_usage": "usage: clawdline note withdraw --id <note id> --version <n> --reason <reason> [--from <conversation id>] [--key k] [--port n]",
-  "note.manage_usage": "  clawdline note list [--from <conversation id>] | clawdline note withdraw --id <note id> --version <n> --reason <reason>"
+  "note.manage_usage": "  clawdline note list [--from <conversation id>] | clawdline note withdraw --id <note id> --version <n> --reason <reason>",
+  "playbook.usage": "usage: clawdline playbook list [--session <terminal>] | create (--project <key> | --global) --body-file <JSON path|-> | edit --body-file <JSON path|-> <id> | delete <id>",
+  "playbook.help": "Put flags before the id. All actions accept --port; writes accept --key for an exact retry. JSON fields: title, body, optional source. See clawdline guide project.",
+  "playbook.invalid_body": "Provide one nonempty JSON object within the CLI input limit.",
+  "playbook.invalid_field": "Field %q is not writable here; use title, body or source.\n",
+  "playbook.unreadable": "The saved Playbook list could not be read; nothing was changed.",
+  "playbook.not_found": "That id is not a saved Playbook; nothing was changed.",
+  "playbook.retry": "The result is uncertain. Retry with the same --key, action, id and JSON content; do not create a new key."
 }

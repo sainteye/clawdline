@@ -69,12 +69,33 @@ in another Project; the source reference is historical attribution only.
 ## Agent API
 
 Agents can create, edit, delete and reorder Playbook definitions through the
-machine's existing `/v1/snippets` routes. A Playbook is a record with
-`scope: "workflow"`; there is no separate `/v1/workflows` route or dedicated
-Playbook CLI command. Saving a definition does not start a Session or send its
-message. See [the agent connection guide](../skills/clawdline/guide.md#2-reaching-the-daemon)
+machine's existing `/v1/snippets` routes or `clawdline playbook` commands. A Playbook
+is a record with `scope: "workflow"`; there is no separate `/v1/workflows` route.
+The CLI supports list/create/edit/delete; reorder uses the API. Saving a definition
+does not start a Session or send its message. See [the agent connection guide](../skills/clawdline/guide.md#2-reaching-the-daemon)
 for credential handling and `clawdline guide routes` for the installed build's
 route inventory.
+
+Use `clawdline guide project` for the installed build's agent instructions. The CLI
+reads credentials inside its own process and prints JSON. Flags go before the id:
+
+```sh
+clawdline playbook list --session <terminal-id>
+clawdline playbook create --project <returned-project-key> --body-file create.json
+clawdline playbook create --global --body-file create.json
+clawdline playbook edit --body-file edit.json <returned-id>
+clawdline playbook delete <returned-id>
+```
+
+The create file contains `title`, `body`, and optional `source`; the edit file contains
+only the fields to change. A body-only edit preserves title, Project and source.
+Create requires exactly one of `--project` or `--global`; use the key returned by
+`list --session`, including when your checkout is a worktree. List without a Session
+returns all machine Playbooks. Edit/delete refuse an ID that is not a Playbook.
+All actions accept `--port`; writes accept `--key`, and `--body-file -` reads stdin.
+The CLI prints the write key before sending; preserve it with the same operation,
+id and JSON content after an uncertain result. Saving never starts a Playbook.
+Older installed CLIs can use the existing API below with their version's guide.
 
 | Method and path | Request / result |
 |---|---|

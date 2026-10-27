@@ -259,5 +259,12 @@
   "image.check": "存好不等於看到：那則回覆寫出後，GET /v1/transcript?session=%s 會在它的 artifacts 裡列出這些圖。\n",
   "note.live_root_required": "請用 --from 指定存活的 Root 對話。",
   "note.withdraw_usage": "用法：clawdline note withdraw --id <便條 ID> --version <版本> --reason <撤回原因> [--from <對話 ID>] [--key k] [--port n]",
-  "note.manage_usage": "  clawdline note list [--from <對話 ID>] | clawdline note withdraw --id <便條 ID> --version <版本> --reason <撤回原因>"
+  "note.manage_usage": "  clawdline note list [--from <對話 ID>] | clawdline note withdraw --id <便條 ID> --version <版本> --reason <撤回原因>",
+  "playbook.usage": "用法：clawdline playbook list [--session <terminal>] | create (--project <key> | --global) --body-file <JSON path|-> | edit --body-file <JSON path|-> <id> | delete <id>",
+  "playbook.help": "旗標放在 id 前面。所有操作接受 --port；寫入接受 --key，供相同操作重試。JSON 欄位：title、body、選填 source。請讀 clawdline guide project。",
+  "playbook.invalid_body": "請提供一個非空的 JSON 物件，且不要超過 CLI 輸入上限。",
+  "playbook.invalid_field": "欄位 %q 不能在此寫入；請使用 title、body 或 source。\n",
+  "playbook.unreadable": "無法讀取儲存的 Playbook 清單；未做任何變更。",
+  "playbook.not_found": "此 id 不是已儲存的 Playbook；未做任何變更。",
+  "playbook.retry": "結果無法確認。請沿用相同的 --key、操作、id 與 JSON 內容重試；不要產生新的 key。"
 }

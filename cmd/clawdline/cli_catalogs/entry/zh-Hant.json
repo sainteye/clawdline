@@ -54,7 +54,7 @@
   "main_usage_clawdline_s_session_id_text": "用法：clawdline %s <session-id> [text]\n",
   "main_usage_clawdline_serve_doctor_guide_skill": "用法：clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|cloud|board|project|task|webhook|update|version>",
   "main_usage_session_c_task_id_item": "  usage [--session c | --task id | --item id] [--json]   按類別查看花費；預設顯示此工作階段自身的花費",
-  "main_usage_with_memory": "用法：clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|cloud|board|project|squad|memory|task|webhook|setup|update|version>",
+  "main_usage_with_memory": "用法：clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|playbook|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|cloud|board|project|squad|memory|task|webhook|setup|update|version>",
   "main_usage_with_setup_update": "用法：clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|cloud|board|project|task|webhook|setup|update|version>",
   "main_version_s": "版本      %s\n",
   "main_webhook_fire_url_file_p_deliver": "  webhook fire [--url-file p] [--deliver-within 60s] [--timeout 60m] [--no-wait]   透過排程的 webhook URL（取自 --url-file 或 CLAWDLINE_WEBHOOK_URL）啟動排程並等待結果；不需要 daemon",
@@ -141,5 +141,6 @@
   "usage_what_a_session_a_child_task": "  按類別查看工作階段、子任務或 Board 項目的花費；預設顯示此工作階段自身的花費",
   "usage_write_the_raw_per_unit_samples": "  將此範圍每單位的原始樣本寫入儲存庫外的檔案",
   "main_tmux_args_which": "  tmux <args…> | tmux which    此 daemon 執行的 tmux，連到它自己的伺服器：這台機器的，或此版本內附的",
-  "main_squad_help": "  squad <catalog|definition|scopes|settings|save|bind|icon>   私人角色、技能與像素機器人；guide squad 提供完整範例"
+  "main_squad_help": "  squad <catalog|definition|scopes|settings|save|bind|icon>   私人角色、技能與像素機器人；guide squad 提供完整範例",
+  "main_playbook": "  playbook <list|create|edit|delete>   管理儲存的啟動訊息；guide project 有完整範例"
 }

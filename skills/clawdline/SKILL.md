@@ -7,10 +7,11 @@ description: |
   picture instead of pasting a local path; to put a question and
   suggested replies in a Note before asking the person to choose, or to gather what needs the
   person's decision or attention into Notes when they ask; to tell the person something
-  through a notification; to pair or revoke a Clawdline Cloud browser; or to record this
+  through a notification; to create, edit, list or delete saved Playbooks; to pair or revoke a Clawdline Cloud browser; or to record this
   session's own finished turn as a delivery receipt — the check that says "delivered, awaiting
   approval" on Clawdline's screen, in any repository Clawdline watches. Triggers include
   "dispatch a task", "open a child session", "hand this off", "ask the person to choose",
+  "edit a Playbook", "create a Playbook", 「編輯 Playbook」「建立 Playbook」,
   "Clawdline Notes", "make Notes", "put this in a Note", 「便條紙」「整理成便條紙」「留便條給我」,
   "pair this browser", `clawdline
   cloud pair`, `/clawdline unify`, "share rules and skills between Claude and Codex", "report my milestone", "record this turn as delivered", "show the user this
@@ -58,6 +59,12 @@ app's routes are not this daemon's.
 If the path you chose exists and fails, report its exact error and stop. Do not fall through to the
 next path: another binary may be a different build from the daemon that will answer you. If none
 of the paths exists, Clawdline Next is not installed here; say so rather than inventing routes.
+
+## Manage Playbooks
+
+When asked to create, edit, list or delete a saved Playbook, print `BIN guide project`.
+It describes the CLI and the existing reusable-text API, including Project resolution
+and safe retries. Saving a definition does not start it or send its message.
 
 ## Unify a Project's rules and skills
 

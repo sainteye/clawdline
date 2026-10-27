@@ -107,8 +107,8 @@
 | `*` | `/v1/settings/workflow` | 26 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/skill` | 16 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/skill/install` | 16 | `clawdline guide connect` | `docs/user/first-session.md` |
-| `*` | `/v1/snippets` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
-| `*` | `/v1/snippets/` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/snippets` | 1 | `clawdline guide project` | `docs/user/projects.md` |
+| `*` | `/v1/snippets/` | 1 | `clawdline guide project` | `docs/user/projects.md` |
 | `*` | `/v1/squad-packages/` | 1 | `clawdline guide dispatch` | `docs/user/clawdfather-and-dispatch.md` |
 | `*` | `/v1/squad/` | 1 | `clawdline guide squad` | `docs/personas.md` |
 | `*` | `/v1/squad/events` | 1 | `clawdline guide squad` | `docs/personas.md` |

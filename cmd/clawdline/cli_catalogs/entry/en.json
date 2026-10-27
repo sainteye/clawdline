@@ -54,7 +54,7 @@
   "main_usage_clawdline_s_session_id_text": "usage: clawdline %s <session-id> [text]\n",
   "main_usage_clawdline_serve_doctor_guide_skill": "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|cloud|board|project|task|webhook|update|version>",
   "main_usage_session_c_task_id_item": "  usage [--session c | --task id | --item id] [--json]   what it spent, by category; this session's own by default",
-  "main_usage_with_memory": "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|cloud|board|project|squad|memory|task|webhook|setup|update|version>",
+  "main_usage_with_memory": "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|playbook|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|cloud|board|project|squad|memory|task|webhook|setup|update|version>",
   "main_usage_with_setup_update": "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|cloud|board|project|task|webhook|setup|update|version>",
   "main_version_s": "version   %s\n",
   "main_webhook_fire_url_file_p_deliver": "  webhook fire [--url-file p] [--deliver-within 60s] [--timeout 60m] [--no-wait]   start a schedule through its webhook URL (from --url-file or CLAWDLINE_WEBHOOK_URL) and wait for its outcome; no daemon needed",
@@ -141,5 +141,6 @@
   "usage_what_a_session_a_child_task": "  what a session, a child task or a Board item spent, by category; this session's own by default",
   "usage_write_the_raw_per_unit_samples": "  write the raw per-unit samples of the range to a file outside any repository",
   "main_tmux_args_which": "  tmux <args…> | tmux which    the tmux this daemon runs, on its own server: this machine's, or the one this release carries",
-  "main_squad_help": "  squad <catalog|definition|scopes|settings|save|bind|icon>   private roles, skills and pixel robots; guide squad has a complete example"
+  "main_squad_help": "  squad <catalog|definition|scopes|settings|save|bind|icon>   private roles, skills and pixel robots; guide squad has a complete example",
+  "main_playbook": "  playbook <list|create|edit|delete>   manage saved launch messages; guide project has examples"
 }

@@ -73,6 +73,7 @@ the command instead.
 | `clawdline session close [--dry-run] [--terminal id]` | Audits and closes a finished Session, never by force (§2a) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |
 | `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Reads and advances a Board item you own (`clawdline guide feature-root`, §10) |
+| `clawdline playbook list\|create\|edit\|delete` | Manage saved launch messages (`clawdline guide project`) |
 | `clawdline todo add\|list\|done` | This Session's own to-dos, only when the person asks (§10) |
 | `clawdline heavy [--handoff] -- <command…>` | Queues application/native compilation; ordinary commands run directly; `--handoff` gives a queued wait to a callback (§11) |
 | `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
@@ -450,6 +451,56 @@ and `PUT /v1/projects/{place}/memory-groups/{slug}`. The import only reads Claud
 directory's `MEMORY.md`: an entry it links is resident, a sub-index it links becomes a group with
 the sub-index's description and every entry the sub-index links, an index is never imported as an
 entry, and an entry linked from nowhere is imported as resident and named in the plan.
+
+
+**Playbooks (saved launch messages).** Agents in any Project can manage definitions with
+`clawdline playbook list|create|edit|delete`. This command saves text; it never starts a
+Session or sends the message. Use `list --session <terminal-id>` to discover the canonical
+`project.key`, including from a subdirectory or worktree. Obtain your terminal ID through
+`GET /v1/orchestrator/whoami?conversation_id=<your-conversation-id>` (§2). A bare `list`
+returns all Playbooks on this machine, including global definitions; it filters other
+reusable-text scopes out. Always use the selected machine's Project key, not a guessed path.
+
+```sh
+clawdline playbook list --session <terminal-id>
+clawdline playbook create --project <returned-project-key> --body-file create.json
+clawdline playbook create --global --body-file create.json
+clawdline playbook edit --body-file edit.json <returned-id>
+clawdline playbook delete <returned-id>
+```
+
+`create.json` is `{"title":"Review changes","body":"Review the current changes and report findings."}`.
+`edit.json` can be `{"body":"Review correctness and regressions."}`: omitted fields,
+including the source link, stay unchanged. `source: null` clears attribution; an optional
+structured `source` uses the six fields described in `docs/playbooks.md`. Put flags before
+the id. Create requires exactly one of `--project <key>` and `--global`; editing preserves
+scope and Project. All actions accept `--port`; `--body-file -` reads stdin.
+
+Writes print `Idempotency-Key` to stderr before sending. After an uncertain result, reuse
+that value with `--key <value>` and the same action, id and JSON content. Do not generate
+a new create key after a dropped connection. Success prints saved JSON; exit 1 means a
+request failed or was refused, exit 2 means invalid CLI input. Reread the list to verify.
+
+**HTTP clients and older CLIs.** Playbooks use `scope: "workflow"` on `/v1/snippets`, not
+a separate Playbook endpoint. This is unrelated to the retired Session workflow
+reporting route. GET returns `{project?, snippets}`; filter `scope == "workflow"`.
+POST creates (`title`, `body`, `scope`, optional `project` and `source`); PATCH
+`/v1/snippets/<id>` changes supplied fields; DELETE removes that id. POST
+`/v1/snippets/order` accepts `{"scope":"workflow","project":"<key>","order":["<id>","<id>"]}`
+with every member of the group exactly once. Omit `project` for global definitions.
+Use this machine's `X-Clawdline-Orchestrator` credential (§2), JSON content type and a
+stable `Idempotency-Key` on every write, including DELETE and reorder. Never print the
+token or put it in argv. Do not send read-only fields from a returned record.
+
+Titles and bodies must be nonblank: at most 200 and 4,000 UTF-8 bytes; Project keys
+at most 1,024 bytes, write bodies 64 KiB. Refusals include `malformed_snippet`,
+`snippet_too_long`, `snippet_scope_mismatch`, `snippet_not_found`, `snippet_limit_reached`,
+`idempotency_key_required`, `idempotency_key_reused`, `receipt_expired`, `receipts_full`,
+`rate_limited`, `busy`, and `write_failed`. Validation uses a string `error` and `detail`;
+authentication/receipt errors may use nested `error.code`. Reuse exact request bytes for
+HTTP retries; a completed receipt replays with `Idempotent-Replayed: true`. A 409 for
+changed content needs reconciliation, not a new key. On 429/5xx, inspect saved state before
+retrying; do not loop. See `docs/playbooks.md` for source fields and the full API contract.
 
 ## 2a. A Feature Root's ordinary path
 

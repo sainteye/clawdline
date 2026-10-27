@@ -156,6 +156,8 @@ func main() {
 		verifyCommand(os.Args[2:])
 	case "setting":
 		settingCommand(os.Args[2:])
+	case "playbook":
+		playbookCommand(os.Args[2:])
 	case "todo":
 		todoCommand(os.Args[2:])
 	case "note":
@@ -578,7 +580,7 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_usage_with_memory", "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|cloud|board|project|squad|memory|task|webhook|setup|update|version>"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_usage_with_memory", "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|playbook|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|cloud|board|project|squad|memory|task|webhook|setup|update|version>"))
 	fmt.Fprintln(os.Stderr, "  "+cliCopy("core", "language_option", cliLanguageOptionEnglish))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_squad_help", "  squad <catalog|definition|scopes|settings|save|bind|icon>   private roles, skills and pixel robots; guide squad has a complete example"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_guide_topic_guide_list_the_agent", "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed"))
@@ -597,6 +599,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_callback_title_t_command_run_a", "  callback --title <t> -- <command…>   run a command under the daemon and end the turn; its exit wakes this session"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_handoff_summary_file_check_hand_this", "  handoff --summary <file> [--check]   hand this Session's work to a fresh Session at a milestone, with a bounded summary"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_todo_add_list_done_this_session", "  todo <add|list|done>          this session's own to-dos, added only when the person asks"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_playbook", "  playbook <list|create|edit|delete>   manage saved launch messages; guide project has examples"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_note_create_post_a_human_intervention", "  note create                   post a human intervention to one Session"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_secret_run", "  secret run <note-id> -- <command> [args...]   feed a one-time Secret Handoff to a tool"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_item_add_claim_name_child_assign", "  item <add|claim|name|child|assign|show|steps|step-add|step-done|doc|phase>   Board items, a Root's own name, steps, documents and phase"))

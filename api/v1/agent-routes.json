@@ -515,12 +515,12 @@
     {
       "method": "*",
       "pattern": "/v1/snippets",
-      "guide": "connect"
+      "guide": "project"
     },
     {
       "method": "*",
       "pattern": "/v1/snippets/",
-      "guide": "connect"
+      "guide": "project"
     },
     {
       "method": "*",
