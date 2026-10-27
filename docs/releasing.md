@@ -343,6 +343,8 @@ compilation if the selected identity is not Developer ID Application.
 
 ## Recent acceptance records
 
+- [v2.5.0 publication, video playback and installed release evidence](records/release-v2.5.0-acceptance.md).
+
 - [v2.4.1 publication, notification timing and installed release evidence](records/release-v2.4.1-acceptance.md).
 
 - [v2.4.0 installation and publication evidence](records/release-v2.4.0-acceptance.md).
