@@ -385,12 +385,12 @@ export const assignWorkV2 = (item: WorkV2Item, terminalID: string) =>
   })
 
 /** `persona` is sent only when one was chosen: a new Session with none is the Session it always was. */
-export const assignNewWorkV2 = (item: WorkV2Item, assistant: Assistant, persona?: string) =>
+export const assignNewWorkV2 = (item: WorkV2Item, assistant: Assistant, persona?: string, model = "default") =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/assign`, {
     expected_version: item.version,
     mode: "new_session",
     assistant,
-    model: "default",
+    model,
     ...(persona ? { persona } : {}),
   })
 

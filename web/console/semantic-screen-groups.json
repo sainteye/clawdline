@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9237,
-  "riskKeys": 4120,
-  "nonRiskCount": 5117,
+  "englishContentKeys": 9240,
+  "riskKeys": 4121,
+  "nonRiskCount": 5119,
   "groups": [
     {
       "name": "admin / other",
@@ -5693,7 +5693,7 @@
     },
     {
       "name": "work / other",
-      "count": 73,
+      "count": 75,
       "sources": [
         "src/pages/work/words.ts"
       ],
@@ -5733,6 +5733,8 @@
         "work.desktopShowProposals",
         "work.handoverTo",
         "work.lastEvidence",
+        "work.launchModelDefault",
+        "work.launchModelHint",
         "work.more",
         "work.nav",
         "work.newItem",
