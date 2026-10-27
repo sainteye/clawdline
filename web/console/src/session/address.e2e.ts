@@ -1815,6 +1815,37 @@ test("phone: a tap puts the session in the address, and the back gesture returns
     await tab.until("forward is the detail again", (s) => s.view === "detail" && s.open === TMUX)
   }))
 
+test("phone: the Session reading surface allows horizontal browser navigation and contains vertical overscroll", () =>
+  inTab(PHONE, async (tab) => {
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    await tab.tap(TMUX)
+    await tab.until("the detail opens", (s) => s.view === "detail" && s.open === TMUX)
+    const styles = await tab.run(`(() => {
+      const body = getComputedStyle(document.body)
+      const transcript = getComputedStyle(document.getElementById("tx-scroll"))
+      return { bodyX: body.overscrollBehaviorX, bodyY: body.overscrollBehaviorY,
+        transcriptX: transcript.overscrollBehaviorX, transcriptY: transcript.overscrollBehaviorY,
+        touch: transcript.touchAction }
+    })()`)
+    assert.deepEqual(styles, { bodyX: "auto", bodyY: "none", transcriptX: "auto", transcriptY: "contain", touch: "auto" })
+    await tab.run("history.back()")
+    await tab.until("the browser returns to the list", (s) => s.view === "list" && s.open === null)
+  }))
+
+test("phone: a Session opened in a wide window gets a Back step when the window narrows", () =>
+  inTab(DESK, async (tab) => {
+    await tab.go("/")
+    await tab.until("the wide detail opens", (s) => s.open === TMUX)
+    await tab.view(PHONE, "dark")
+    await tab.until("the narrow detail opens", (s) => s.view === "detail" && s.open === TMUX)
+    assert.equal(await tab.run("history.state?.view"), "detail", "the visible phone detail owns a history step")
+    await tab.run("history.back()")
+    await tab.until("Back stays in the console and returns to the list", (s) => s.console && s.view === "list" && s.open === null)
+    await tab.run("history.forward()")
+    await tab.until("Forward reopens the same Session", (s) => s.view === "detail" && s.open === TMUX)
+  }))
+
 test("phone: after a reload of a detail, the back gesture still returns to the list", () =>
   inTab(PHONE, async (tab) => {
     await tab.go("/")

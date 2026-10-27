@@ -35,3 +35,16 @@ The all-machines view is the reference for execution identity: a fleet target al
 6. A partial inventory never removes an unobserved Session. An authoritative complete inventory may remove it in either scope.
 
 The status projection and rich presentation remain separate because Cloud can distribute the former without Session content. Their join and action policy are shared; copying the full Session list into the fleet status channel would change that privacy boundary.
+
+## Phone browser navigation
+
+The Session detail uses the browser's Back/Forward history in both list scopes.
+Opening a phone detail keeps one list entry underneath it, including arrival by
+link, reload, and a desktop selection becoming a phone detail after resizing.
+The phone body and detail scrollers allow horizontal overscroll navigation;
+vertical containment remains in place for transcript reading and refresh.
+Code blocks, images and other controls keep their own gestures.
+
+`session/address.e2e.ts` checks the real browser history and computed styles,
+including Back/Forward after a width change. These checks do not reproduce a
+physical iPhone's edge gesture; that remains a device acceptance check.

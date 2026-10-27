@@ -125,3 +125,13 @@ a.sidebar-item { text-decoration: none; }
   .shortcuts-groups { grid-template-columns: minmax(0, 1fr); gap: 22px; }
   .shortcuts-sheet { padding: 18px; }
 }
+
+/* Keep the phone's native horizontal Back/Forward gesture available. The
+   copied reset and scroller rules contain both axes; only vertical containment
+   is needed to keep reading and pull-to-refresh inside the console. */
+@media (max-width: 899px) {
+  body,
+  #app[data-view="detail"] .scroller {
+    overscroll-behavior-x: auto;
+  }
+}

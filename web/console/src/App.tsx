@@ -783,7 +783,14 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     }
     const onResize = () => {
       if (!phone()) setView("list")
-      else if (openRef.current) setView("detail")
+      else if (openRef.current) {
+        // A desktop selection replaces its address without adding a Back
+        // step. Narrowing the window turns it into a whole-screen detail,
+        // which needs the same list underneath as a phone tap or deep link.
+        if (pageRef.current === "sessions" && viewRef.current !== "detail")
+          stepIntoDetail(openRef.current, location.href, true)
+        setView("detail")
+      }
     }
     window.addEventListener("popstate", onPop)
     window.addEventListener("resize", onResize)
