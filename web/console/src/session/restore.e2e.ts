@@ -30,7 +30,17 @@ const pane = (n: number) => "%" + n
 
 // ---- what the stand-in daemon says
 
-type Scenario = { rows: Record<string, unknown>[]; offer: Record<string, unknown> }
+type Scenario = {
+  rows: Record<string, unknown>[]
+  offer: Record<string, unknown>
+  dismiss?: "hold" | "refuse" | "offline"
+}
+const heldDismiss: { release?: () => void } = {}
+function releaseDismiss() {
+  const release = heldDismiss.release
+  assert.ok(release)
+  release()
+}
 let scenario: Scenario
 /** Every restore and dismissal that arrived, with its key. */
 let presses: { path: string; key: string; body: unknown }[] = []
@@ -93,8 +103,10 @@ function daemon(): Server {
   return createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
+    if (path === "/v1/strings") return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/health") return json(res, 200, { ok: true })
+    if (path === "/v1/orchestrator/schedules") return json(res, 200, { at: now(), schedules: [] })
     if (path === "/v1/orchestrator/tasks") return json(res, 200, { at: Date.now(), tasks: [] })
     if (path === "/v1/sessions/restorable" && req.method === "GET") return json(res, 200, scenario.offer)
     if ((path === "/v1/sessions/restorable/restore" || path === "/v1/sessions/restorable/dismiss") && req.method === "POST") {
@@ -104,8 +116,16 @@ function daemon(): Server {
         const body = JSON.parse(raw || "{}") as { conversations?: string[] }
         presses.push({ path, key: String(req.headers["idempotency-key"] ?? ""), body })
         if (path.endsWith("/dismiss")) {
-          scenario.offer = { ...scenario.offer, sessions: [] }
-          return json(res, 200, { ok: true, dismissed: 3, at: now() })
+          if (scenario.dismiss === "refuse") return json(res, 403, { error: { code: "forbidden", message: "Not allowed" } })
+          if (scenario.dismiss === "offline") return res.destroy()
+          const finish = () => {
+            const dismissed = (scenario.offer.sessions as unknown[]).length
+            scenario.offer = { ...scenario.offer, sessions: [] }
+            json(res, 200, { ok: true, dismissed, at: now() })
+          }
+          if (scenario.dismiss === "hold") heldDismiss.release = finish
+          else finish()
+          return
         }
         // The first opens, the second's conversation is gone, the rest open.
         const results = (body.conversations ?? []).map((id) =>
@@ -253,6 +273,7 @@ class Tab {
     const { sessionId } = await b.send("Target.attachToTarget", { targetId, flatten: true })
     await b.send("Page.enable", {}, sessionId)
     await b.send("Runtime.enable", {}, sessionId)
+    await b.send("Page.addScriptToEvaluateOnNewDocument", { source: 'localStorage.setItem("ui_language", "zh-Hant")' }, sessionId)
     await b.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, mobile: true, deviceScaleFactor: 2 }, sessionId)
     await b.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 }, sessionId)
     return new Tab(b, sessionId, targetId)
@@ -337,7 +358,10 @@ before(async () => {
 })
 
 after(async () => {
-  browser?.close()
+  if (browser) {
+    await browser.send("Browser.close").catch(() => undefined)
+    browser.close()
+  }
   if (browserProcess && browserProcess.exitCode === null) {
     const gone = new Promise((ok) => browserProcess.once("exit", ok))
     browserProcess.kill()
@@ -361,13 +385,13 @@ test("with nothing to offer, the empty list says what it always said", () =>
   inTab(async (tab) => {
     scenario = { rows: [], offer: { available: false, reason: "boot_unknown", sessions: [], at: now() } }
     await tab.go("/")
-    const seen = await tab.until("the empty list settles", (s) => s.emptyShown && s.emptyText.length > 0)
+    const seen = await tab.until("the empty list settles", (s) => s.emptyShown && s.emptyText.includes("目前沒有 Session"))
     assert.equal(seen.hero, null)
     assert.equal(seen.card, null)
     const said = seen.emptyText
     scenario.offer = { available: true, sessions: [], at: now() }
     await tab.go("/")
-    const again = await tab.until("the empty list settles", (s) => s.emptyShown && s.emptyText.length > 0)
+    const again = await tab.until("the empty list settles", (s) => s.emptyShown && s.emptyText.includes("目前沒有 Session"))
     assert.equal(again.hero, null, "an empty offer draws nothing")
     assert.equal(again.emptyText, said)
   }))
@@ -427,3 +451,56 @@ test("with rows already open, the offer is a card above them", () =>
     assert.ok(seen.wide <= 390, "nothing runs off the side of the phone: " + seen.wide)
     await tab.shot("restore-list-with-card")
   }))
+
+for (const presentation of ["hero", "compact"] as const) {
+  test(`${presentation} dismisses directly, waits for the machine and stays dismissed after reload`, () =>
+    inTab(async (tab) => {
+      presses = []
+      delete heldDismiss.release
+      const rows = presentation === "compact" ? [row(pane(701), "Already open")] : []
+      scenario = { rows, offer: { available: true, sessions: offered(2), at: now() }, dismiss: "hold" }
+      await tab.go("/")
+      await tab.until("dismiss is beside restore", (s) => (s.hero ?? s.card ?? "").includes("不再提醒"))
+      await tab.shot(`restore-${presentation}-dismiss-before`)
+      const selector = `[data-restore="${presentation}"] .restore-card-dismiss`
+      await tab.run(`document.querySelector('${selector}').click(); document.querySelector('${selector}').click()`)
+      await tab.until("the card waits without opening the review sheet", (s) =>
+        s.sheet === null && (s.hero ?? s.card ?? "").includes("略過中") && !!heldDismiss.release)
+      assert.equal(await tab.run(`document.querySelector('${selector}').disabled`), true)
+      assert.equal(await tab.run('document.querySelector(".restore-open").disabled'), true)
+      assert.equal(presses.length, 1, "repeated presses send only one dismissal")
+      assert.equal(presses[0].path, "/v1/sessions/restorable/dismiss")
+      assert.deepEqual(presses[0].body, {})
+      assert.ok(presses[0].key)
+      releaseDismiss()
+      await tab.until("the confirmed dismissal removes the offer", (s) => s.hero === null && s.card === null)
+      await tab.go("/")
+      await tab.until("reload keeps the existing list or ordinary empty state", (s) =>
+        s.hero === null && s.card === null && (presentation === "compact" ? s.rows === 1 : s.emptyText.length > 0))
+      assert.equal(presses.length, 1, "reload sends no restore or dismissal")
+      await tab.shot(`restore-${presentation}-dismiss-after`)
+    }))
+}
+
+for (const failure of ["refuse", "offline"] as const) {
+  test(`a ${failure} dismissal keeps the offer and allows an explicit retry`, () =>
+    inTab(async (tab) => {
+      presses = []
+      scenario = { rows: [row(pane(701), "Already open")], offer: { available: true, sessions: offered(2), at: now() }, dismiss: failure }
+      await tab.go("/")
+      await tab.until("the offer is ready", (s) => s.card !== null)
+      await tab.click(".restore-card-dismiss")
+      const seen = await tab.until("the failure remains visible on the card", (s) =>
+        (s.card ?? "").includes(failure === "offline" ? "還無法確認是否已略過" : "機器沒有接受"))
+      assert.equal(seen.sheet, null)
+      assert.equal(seen.rows, 1)
+      assert.equal(await tab.run('document.querySelector(".restore-card-dismiss").disabled'), false)
+      assert.ok(seen.wide <= 390)
+      if (failure === "refuse") await tab.shot("restore-dismiss-refused")
+      scenario.dismiss = undefined
+      await tab.click(".restore-card-dismiss")
+      await tab.until("the explicit retry dismisses the offer", (s) => s.card === null && s.rows === 1)
+      assert.equal(new Set(presses.map((p) => p.key)).size, 2, "transport retries keep the same press key")
+      assert.ok(presses.every((p) => p.path.endsWith("/dismiss")), "neither press restores a conversation")
+    }))
+}

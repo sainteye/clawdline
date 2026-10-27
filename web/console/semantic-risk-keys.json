@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9198,
+  "englishKeys": 9200,
   "counts": {
-    "negation": 2657,
+    "negation": 2658,
     "state": 1532,
     "permission": 550,
     "deletion": 202,
-    "uncertainty": 289
+    "uncertainty": 290
   },
-  "unionCount": 4109,
+  "unionCount": 4110,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2209,6 +2209,7 @@
       "next.quotaSaveFailed",
       "next.quotaSettingHint",
       "next.quotaUnavailable",
+      "next.restoreDismissUnknown",
       "next.restoreFailedNotFound",
       "next.restoreFailedNotRestorable",
       "next.restoreFailedOpen",
@@ -5209,6 +5210,7 @@
       "next.personaSkillUnavailable",
       "next.processOnlyShort",
       "next.projectsActivityHelpTitle",
+      "next.restoreDismissUnknown",
       "next.scheduleAntigravityUnavailable",
       "next.scheduleMachineUnread",
       "next.scheduleProjectUnavailable",
@@ -8563,6 +8565,7 @@
     "next.restoreCardTitle",
     "next.restoreCardTitleOne",
     "next.restoreDismissAll",
+    "next.restoreDismissUnknown",
     "next.restoreDone",
     "next.restoreFailedNotFound",
     "next.restoreFailedNotRestorable",

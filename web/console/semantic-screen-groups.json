@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9198,
-  "riskKeys": 4109,
-  "nonRiskCount": 5089,
+  "englishContentKeys": 9200,
+  "riskKeys": 4110,
+  "nonRiskCount": 5090,
   "groups": [
     {
       "name": "admin / other",
@@ -3869,12 +3869,13 @@
     },
     {
       "name": "next / restore",
-      "count": 8,
+      "count": 9,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
         "next.restoreCancel",
+        "next.restoreCardDismiss",
         "next.restoreDismissing",
         "next.restoreFailedBusy",
         "next.restoreGoing",

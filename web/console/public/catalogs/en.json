@@ -7120,6 +7120,8 @@
   "next.restoreCancel": "Later",
   "next.restoreCardHint": "A restart or crash closed them. You can reopen them and carry on with the same conversations.",
   "next.restoreCardOpen": "Review and restore",
+  "next.restoreCardDismiss": "Dismiss",
+  "next.restoreDismissUnknown": "No answer came back, so dismissal is unconfirmed. The offer is checked again.",
   "next.restoreCardTitle": "{n} sessions were open before the last restart",
   "next.restoreCardTitleOne": "1 session was open before the last restart",
   "next.restoreDismissAll": "Don't restore, don't ask again",
