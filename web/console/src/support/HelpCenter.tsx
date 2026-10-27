@@ -59,8 +59,8 @@ function ErrorBox({ code, retry }: { code: string | null; retry?: () => void }) 
 }
 function State({ value }: { value: string }) { return <span className={`help-badge help-state-${value}`}>{w(["queued", "answering", "needs_information", "needs_human", "answered", "resolved"].includes(value) ? value as SupportWord : "unavailable")}</span> }
 function SourceList({ sources }: { sources: Sources }) { return sources.length ? <div className="help-sources"><small>{w("sources")}</small>{sources.map(s => <a key={s.url + s.revision} href={s.url} target="_blank" rel="noopener noreferrer">↗ {s.revision}</a>)}</div> : null }
-function Link({ to, go, children, primary = false }: { to: string; go: Navigation; children: ReactNode; primary?: boolean }) {
-  return <a className={`help-btn ${primary ? "help-primary" : ""}`} href={to} onClick={(e: MouseEvent) => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) { e.preventDefault(); go(to) } }}>{children}</a>
+function Link({ to, go, children, primary = false, current = false }: { to: string; go: Navigation; children: ReactNode; primary?: boolean; current?: boolean }) {
+  return <a className={`help-btn ${primary ? "help-primary" : ""}`} href={to} aria-current={current ? "page" : undefined} onClick={(e: MouseEvent) => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) { e.preventDefault(); go(to) } }}>{children}</a>
 }
 function SignIn({ url }: { url: string }) { return <div className="help-card"><h2>{w("signInNeeded")}</h2><a className="help-btn help-primary" href={url}>{w("signIn")}</a></div> }
 export function HelpCenter({ declared }: { declared: string }) {
@@ -114,16 +114,25 @@ export function HelpCenter({ declared }: { declared: string }) {
   const access = helpAccess(route), protectedPage = access !== "public"
   if (!catalogReady) return null
   if (!config) return <main className="help-root"><ErrorBox code="support_unavailable" /></main>
+  const content = protectedPage && sessionState === "checking" ? <p role="status">{w("loading")}</p> : protectedPage && sessionState === "unavailable" ? null : protectedPage && !account ? sessionState === "limit" ? <><p>{w("deviceLimit")}</p><DeviceLimitPanel session={session} tier={limit.tier} limit={limit.limit} onContinue={start} signInLabel={w("signIn")} /></> : <SignIn url={signInUrl} /> : access === "admin" && !account?.operations ? <ErrorBox code="support_admin_required" /> :
+        <HelpBody key={route.page + ":" + (route.id ?? "") + ":" + locale} route={route} locale={locale} go={go} href={href} call={call} account={account} onSaved={() => { dirty.current = false }} />
   return <div className="help-root">
     <header className="help-header"><a className="help-brand" href="/"><svg viewBox="0 0 8 4" width="25" height="20" aria-hidden="true">{BRAND_MARK.cells.flatMap((row,y)=>row.map((fill,x)=><rect key={x+":"+y} x={x} y={y} width="1" height="1" fill={fill??"transparent"}/>))}</svg>clawdline <small>cloud</small></a><nav><a href="/">{w("workspace")}</a></nav></header>
     <main className="help-wrap" tabIndex={-1} onChangeCapture={e => { if ((e.target as Element).closest("form")) dirty.current = true }}>{import.meta.env.DEV && import.meta.env.VITE_SUPPORT_FIXTURE_API ? <div className="help-notice">{w("fixture")}</div> : null}<div className="help-crumb">Clawdline Cloud / {w("nav")}</div>
       <nav className="help-tabs" aria-label={w("nav")}>
-        <Link to={href("/help")} go={go}>{w("faq")}</Link><Link to={href("/help/questions")} go={go}>{w("mine")}</Link>
-        {account?.operations ? <><Link to={href("/help/admin")} go={go}>{w("inbox")}</Link><Link to={href("/help/admin/faq")} go={go}>{w("drafts")}</Link><Link to={href("/help/admin/worker")} go={go}>{w("worker")}</Link></> : null}
+        <Link to={href("/help")} go={go} current={route.page === "faq" || route.page === "article"}>{w("faq")}</Link><Link to={href("/help/questions")} go={go} current={["mine", "ask", "thread"].includes(route.page)}>{w("mine")}</Link>
       </nav>
       {sessionError ? <div className="help-notice">{w("sessionFailed")} <span>{supportError(sessionError)}</span> <button onClick={start}>{w("retry")}</button></div> : null}
-      {protectedPage && sessionState === "checking" ? <p role="status">{w("loading")}</p> : protectedPage && sessionState === "unavailable" ? null : protectedPage && !account ? sessionState === "limit" ? <><p>{w("deviceLimit")}</p><DeviceLimitPanel session={session} tier={limit.tier} limit={limit.limit} onContinue={start} signInLabel={w("signIn")} /></> : <SignIn url={signInUrl} /> : access === "admin" && !account?.operations ? <ErrorBox code="support_admin_required" /> :
-        <HelpBody key={route.page + ":" + (route.id ?? "") + ":" + locale} route={route} locale={locale} go={go} href={href} call={call} account={account} onSaved={() => { dirty.current = false }} />}
+      {account?.operations && access === "admin" ? <section className="help-admin-panel" aria-labelledby="help-admin-label">
+        <div className="help-admin-caption" id="help-admin-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>{w("adminArea")}</div>
+        <nav className="help-admin-tabs" aria-label={w("adminNavigation")}>
+          <Link to={href("/help/admin")} go={go} current={route.page === "inbox" || route.page === "operator"}>{w("inbox")}</Link>
+          <Link to={href("/help/admin/faq")} go={go} current={route.page === "drafts" || route.page === "editor"}>{w("drafts")}</Link>
+          <Link to={href("/help/admin/worker")} go={go} current={route.page === "worker"}>{w("worker")}</Link>
+        </nav>
+        {content}
+      </section> : <>{account?.operations ? <div className="help-admin-entry"><Link to={href("/help/admin")} go={go}>{w("adminArea")} <span aria-hidden="true">→</span></Link></div> : null}{content}</>}
+
     </main>
   </div>
 }
@@ -163,10 +172,10 @@ function Ask(p:BodyProps) {
   const mutation=useMutation(p.call, (p.account?.id ?? "anonymous") + ":" + p.route.page + ":" + (p.route.id ?? "") + ":" + p.locale)
   useEffect(()=>{try{sessionStorage.setItem(draftKey,JSON.stringify({title,body,topic}))}catch{/* Storage denial does not block submission. */}},[draftKey,title,body,topic])
   const submit=(e:FormEvent)=>{e.preventDefault();void mutation.run<{question:Question}>("/v1/support/questions",{title,body,topic,source_language:p.locale,reply_locale:p.locale},a=>{try{sessionStorage.removeItem(draftKey);sessionStorage.removeItem("clawdline-support-draft:anonymous")}catch{}p.go(p.href("/help/questions/"+a.question.id))})}
-  return <><div className="help-title"><h1>{w("newQuestion")}</h1><span className="help-badge">{w("private")}</span></div><div className="help-columns"><form className="help-card" onSubmit={submit}><fieldset disabled={mutation.locked}>
+  return <><div className="help-title"><h1>{w("newQuestion")}</h1></div><p className="help-question-note"><strong>{w("privacy")}</strong></p><div className="help-composer"><form className="help-card" onSubmit={submit}><fieldset disabled={mutation.locked}>
     <label>{w("questionTitle")}<input required maxLength={SUPPORT_UI_LIMITS.titleChars} value={title} onChange={e=>setTitle(e.target.value)}/></label><label>{w("questionBody")}<textarea required rows={7} value={body} onChange={e=>setBody(e.target.value)}/></label>
     <div className="help-form-pair"><label>{w("topic")}<select value={topic} onChange={e=>setTopic(e.target.value)}>{TOPICS.map(t=><option key={t} value={t}>{w(t)}</option>)}</select></label></div>
-    <p className="help-hint">{w("privacy")}<br/>{w("storage")}</p></fieldset><ErrorBox code={mutation.error}/><div className="help-actions"><Link to={p.href("/help")} go={p.go}>{w("cancel")}</Link><button className="help-btn help-primary" disabled={mutation.busy||(!mutation.uncertain&&(!title.trim()||!body.trim()))} type="submit">{mutation.busy?w("busy"):mutation.uncertain?w("retry"):w("send")}</button></div></form><aside className="help-hint"><h2>{w("references")}</h2><p>{w("storage")}</p><p>{w("pendingReply")}</p></aside></div></>
+    <div className="help-submission-note"><p><strong>{w("sensitiveContent")}</strong></p></div></fieldset><ErrorBox code={mutation.error}/><div className="help-actions"><Link to={p.href("/help")} go={p.go}>{w("cancel")}</Link><button className="help-btn help-primary" disabled={mutation.busy||(!mutation.uncertain&&(!title.trim()||!body.trim()))} type="submit">{mutation.busy?w("busy"):mutation.uncertain?w("retry"):w("send")}</button></div></form></div></>
 }
 function QuestionList(p:BodyProps) {
   const admin=p.route.page==="inbox",[locale,setLocale]=useState(""),[state,setState]=useState(""),[extra,setExtra]=useState<Question[]>([]),[next,setNext]=useState<string|null>(null),[moreError,setMoreError]=useState<string|null>(null)
@@ -174,7 +183,7 @@ function QuestionList(p:BodyProps) {
   useEffect(()=>{setExtra([]);setNext(null)},[path])
   useEffect(()=>{const refresh=()=>{if(!document.hidden)read.refresh()};window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);return()=>{window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh)}},[path])
   const more=async()=>{try{const a=await p.call<{questions:Question[];next_cursor:string|null}>(path+"&cursor="+encodeURIComponent(next??read.data?.next_cursor??""));read.replace(a);setExtra([]);setNext(null)}catch(e){setMoreError(e instanceof SupportFailure?e.code:"support_unavailable")}}
-  return <><div className="help-title"><h1>{w(admin?"inbox":"mine")}</h1><Link to={p.href(admin?"/help/admin/faq":"/help/ask")} go={p.go} primary>{w(admin?"drafts":"ask")}</Link></div>
+  return <><div className="help-title"><h1>{w(admin?"inbox":"mine")}</h1>{!admin?<Link to={p.href("/help/ask")} go={p.go} primary>{w("ask")}</Link>:null}</div>
     {admin?<div className="help-filters"><select aria-label={w("sourceLanguage")} value={locale} onChange={e=>setLocale(e.target.value)}><option value="">{w("allLanguages")}</option>{SUPPORT_LOCALES.map(l=><option key={l} value={l}>{LANGUAGE_NAMES[l]}</option>)}</select><select aria-label={w("allStates")} value={state} onChange={e=>setState(e.target.value)}><option value="">{w("allStates")}</option>{["queued","answering","needs_information","needs_human","answered","resolved"].map(s=><option key={s} value={s}>{w(s as SupportWord)}</option>)}</select></div>:null}
     <ErrorBox code={read.error??moreError} retry={read.refresh}/>{read.loading?<p role="status">{w("loading")}</p>:null}
     {read.data&&!read.data.questions.length?<p className="help-empty">{w(admin?"noneInbox":"noneMine")}</p>:null}

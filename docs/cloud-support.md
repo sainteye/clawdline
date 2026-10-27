@@ -5,13 +5,17 @@ relay. Public readers can search published FAQs; signed-in members can submit qu
 only their own threads. `/help/admin` is the operator inbox, `/help/admin/faq` is the editorial queue,
 and `/help/admin/worker` binds the answering service. These screens, including direct links,
 require operations access; ordinary members receive an access-denied view without mounting
-editorial or worker controls. The private Cloud API rechecks account or
+editorial or worker controls. Member navigation contains only FAQ and personal questions.
+Operators enter a separate, labeled Admin area; its inbox, editorial and worker navigation and
+content share a visually bounded administration panel. The private Cloud API rechecks account or
 superuser authority for every request; hiding a navigation link grants no authority.
 
 ## The content boundary
 
 Support questions are deliberately submitted **server-readable support content**. The composer
-states where they are saved and asks people not to include passwords, API keys or private Session
+states above the form that questions and replies are not public and are visible only to the member
+and Clawdline support, including the answering Agent, and that Cloud saves the submitted text.
+A separate warning before submission asks people not to include passwords, API keys or private Session
 conversations. The support API and the configured support worker can read those questions. This
 new account-service lane does not upload machine Sessions, obtain content keys, change relay
 cryptography, or grant a support worker access to a member's machine. Support data belongs to its

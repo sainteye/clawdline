@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9386,
-  "riskKeys": 4150,
-  "nonRiskCount": 5236,
+  "englishContentKeys": 9389,
+  "riskKeys": 4154,
+  "nonRiskCount": 5235,
   "groups": [
     {
       "name": "admin / other",
@@ -5196,12 +5196,14 @@
     },
     {
       "name": "support / other",
-      "count": 98,
+      "count": 97,
       "sources": [
         null
       ],
       "keys": [
         "support.account",
+        "support.adminArea",
+        "support.adminNavigation",
         "support.adminOnly",
         "support.agent",
         "support.agents",
@@ -5256,9 +5258,6 @@
         "support.operator",
         "support.operatorReply",
         "support.other",
-        "support.privacy",
-        "support.private",
-        "support.publicNote",
         "support.publish",
         "support.publishSnapshot",
         "support.published",
