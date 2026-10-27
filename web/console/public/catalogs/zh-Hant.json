@@ -9352,7 +9352,7 @@
   "support.busy": "處理中…",
   "support.pendingReply": "問題已收到。支援離線時仍會保留，等待接手。",
   "support.finishReview": "先儲存草稿，確認個資與來源，再發布所選語言。",
-  "support.languageScope": "搜尋與文章只顯示所選內容語言。",
+  "support.languageScope": "FAQ 與新回覆會跟隨你的介面語言。",
   "support.liveNotice": "私人支援資料與加密的機器 Session 分開儲存。",
   "support.references": "參考來源保留回答時使用的文件版本。",
   "support.titleRequired": "請填寫標題並描述問題。",
