@@ -61,9 +61,27 @@ separate language list; a voice language does not imply an interface translation
 | Preference | Stored where | Default | Changes |
 | --- | --- | --- | --- |
 | `ui_language` | This browser origin | `auto` | This browser's fixed console copy and document language; in the macOS App's local console, its native menus, status and alerts too |
-| `language` | Daemon settings | Existing behavior | New agent response and Board authoring instruction; voice `auto` fallback |
+| `language` | Daemon settings | Existing behavior | Board assignment/reminder prose and task language preference; new agent response and Board authoring instruction; voice `auto` fallback |
 | `voice_language` | Daemon settings | Existing behavior | Dictation language |
 | `product_language` | Daemon settings | `en` | Daemon notifications and human-readable CLI output |
+
+Board assignment, reassignment, reminder and release messages use the daemon's
+Agent `language` preference, with the existing machine/catalog fallback when it
+is automatic. English and Taiwan Traditional Chinese have matching instruction
+templates; other locales currently use English task prose while retaining the
+requested BCP 47 task language. Authored titles, acceptance criteria and other
+item data are substituted verbatim. CLI examples and API identifiers remain
+unchanged. Assignment and reminder messages state the task language preference
+for Board authoring and person-facing updates, including when sent to an
+existing Session; explicit Project/conversation requirements and provider-native
+language choices still apply. Busy Sessions retain the existing non-interrupting
+assignment behavior. A later explicit reminder reads the current preference.
+A new Root's brief and first visible message capture the launch preference;
+answering a startup dialog later does not change that first message's language.
+Protocol section headings and handoff evidence keep their stable spelling.
+Smart naming and usage attribution recognize translated Root openings through
+the same authored templates, and still read the historical English opening.
+Existing conversation history and saved Board content are not translated.
 
 The browser preference is local to its origin. A choice at the hosted Cloud
 origin does not silently change a local console, another browser, an agent, or

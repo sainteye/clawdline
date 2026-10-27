@@ -1174,7 +1174,7 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 		return
 	}
 	if action == "convert" && convertingOwner.ID != "" {
-		s.tellFormerOwner(r.Context(), convertingOwner, fmt.Sprintf("Clawdline converted Board item %s to another kind and removed its assignment from this Session. It is no longer yours: stop work on it and do not change its phase, steps or documents.", id))
+		s.tellFormerOwner(r.Context(), convertingOwner, productcopy.BoardInstruction(s.workV2AgentLanguage(), "converted", map[string]string{"id": id}))
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(answer)
@@ -1214,7 +1214,7 @@ func (s *Server) remindWorkV2(ctx context.Context, id string, expected int64) (a
 	if sess.ConversationID != active.SessionID {
 		return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "assignment_session_changed", Message: "The assigned terminal now belongs to another Session; reassign the item before reminding it."}
 	}
-	brief := fmt.Sprintf("Clawdline reminder for Board item %s: %s. This item is still assigned to this Session. Read its latest description, reference images, documents, and steps, then continue it through implementation, verification, Merge, and its deployment policy.", item.Item.ID, item.Item.Title)
+	brief := workV2ReminderBrief(item.Item, s.workV2AgentLanguage())
 	if _, sendErr := s.actions().Send(ctx, active.TerminalID, brief); sendErr != nil {
 		return app.WorkV2View{}, workV2ReminderError(sendErr)
 	}
@@ -1292,6 +1292,7 @@ func (s *Server) assignWorkV2Via(ctx context.Context, id, actor, epicOwner strin
 	if err := checkWorkV2Persona(mode, personaID); err != nil {
 		return app.WorkV2View{}, err
 	}
+	language := s.workV2AgentLanguage()
 	if mode == "existing_session" {
 		sess, err := s.actions().Find(ctx, terminalID)
 		if err != nil {
@@ -1331,13 +1332,13 @@ func (s *Server) assignWorkV2Via(ctx context.Context, id, actor, epicOwner strin
 		// Session's assigned-item projection immediately. Typing is only a
 		// courtesy when a fresh reading still says idle. Working, waiting and
 		// unknown rows pull their to-do list after their present turn.
-		brief := workV2AssignmentBriefForItem(assigned.Item)
+		brief := workV2AssignmentBriefForItem(assigned.Item, language)
 		if previous.ID != "" {
-			brief = workV2ReassignmentBriefForItem(assigned.Item)
+			brief = workV2ReassignmentBriefForItem(assigned.Item, language)
 			s.tellReleasedOwner(ctx, previous, id, item.Item.Title)
 		}
 		if parent, ok := s.workV2ParentOf(ctx, item.Item); ok {
-			brief += " " + workV2ParentNote(parent)
+			brief += " " + workV2ParentNote(parent, language)
 		}
 		if _, sendErr := s.actions().SendIfIdle(ctx, sess.ID, brief); sendErr != nil {
 			refusal, deferred := sendErr.(app.Refusal)
@@ -1406,11 +1407,11 @@ func (s *Server) assignWorkV2Via(ctx context.Context, id, actor, epicOwner strin
 	}
 	scope := item.Item.Description
 	if previous.ID != "" {
-		scope = workV2TakeoverNote(item.Item.Phase) + "\n\n" + scope
+		scope = workV2TakeoverNote(item.Item.Phase, language) + "\n\n" + scope
 	}
 	references := "Board item: " + item.Item.ID
 	if parent, ok := s.workV2ParentOf(ctx, item.Item); ok {
-		scope = workV2ParentNote(parent) + "\n\n" + scope
+		scope = workV2ParentNote(parent, language) + "\n\n" + scope
 		references += "; parent Epic: " + parent.ID
 	}
 	if len(scope) > orchestrator.AssignmentFieldLimit() {
@@ -1433,9 +1434,9 @@ func (s *Server) assignWorkV2Via(ctx context.Context, id, actor, epicOwner strin
 	ra, _, openErr := s.broker.OpenRootAssignment(ctx, requestID, orchestrator.RootAssignmentRequest{
 		RequestID: requestID, Assistant: assistant, Model: model, Persona: personaID, ProjectDir: item.Item.ProjectPath,
 		Label: item.Item.Title, Assignment: orchestrator.Assignment{Objective: item.Item.Title,
-			Scope: scope, Constraints: workV2RootConstraints(item.Item.ID, item.Item.Kind),
+			Scope: scope, Constraints: workV2RootConstraints(item.Item.ID, item.Item.Kind, language),
 			RelevantReferences: references,
-			Acceptance:         workV2RootAssignmentAcceptanceForItem(briefItem)},
+			Acceptance:         workV2RootAssignmentAcceptanceForItem(briefItem, language)},
 		Handoff: s.workV2HandoffInput(ctx, item, previous)})
 	// Its first screen was a question only the person may answer: the
 	// assignment stays pending and the item asks them to answer it, and the

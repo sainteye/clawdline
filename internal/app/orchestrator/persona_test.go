@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -89,6 +90,10 @@ func TestAChildIsLaunchedAsItsPersona(t *testing.T) {
 // request its receipt compares.
 func TestARootAssignmentMayNameAPersona(t *testing.T) {
 	b, ctx := newTestBroker(t)
+	// The English persona assertion must not inherit this machine's language.
+	if _, err := nextconfig.Open(b.Dir).Set(map[string]any{"language": "en"}); err != nil {
+		t.Fatal(err)
+	}
 	keys := &typedKeys{}
 	b.Type = keys.Type
 	launcher := &recordingLauncher{pane: "%65"}

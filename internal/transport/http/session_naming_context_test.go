@@ -44,15 +44,18 @@ func TestNamingReadsTheAssignmentNotItsLaunchLine(t *testing.T) {
 	}
 	s := &Server{store: st, broker: &orchestrator.Broker{Store: st, Dir: dir}}
 
-	line := orchestrator.AssignmentLine(id, filepath.Join(dir, "root-assignments", id, "ASSIGNMENT.md"))
-	got := s.resolveWrapper(ctx, line)
-	for _, want := range []string{"Board label", "Smart naming does not work", "The error in the picture"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("resolved %q, missing %q", got, want)
+	for _, language := range []string{"en", "zh-Hant", "ja"} {
+		line := orchestrator.AssignmentLine(id, filepath.Join(dir, "root-assignments", id, "ASSIGNMENT.md"), language)
+		got := s.resolveWrapper(ctx, line)
+		for _, want := range []string{"Board label", "Smart naming does not work", "The error in the picture"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("resolved %q, missing %q", got, want)
+			}
 		}
-	}
-	if strings.Contains(got, "ASSIGNMENT.md") || strings.Contains(got, "Land and deploy") {
-		t.Fatalf("resolved %q still carries the launch line or the acceptance", got)
+		if strings.Contains(got, "ASSIGNMENT.md") || strings.Contains(got, "Land and deploy") {
+			t.Fatalf("resolved %q still carries the launch line or the acceptance", got)
+		}
+
 	}
 
 	unknown := orchestrator.AssignmentLine("10000000-0000-4000-8000-00000000a002", "/nowhere/ASSIGNMENT.md")
