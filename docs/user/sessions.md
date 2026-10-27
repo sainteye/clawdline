@@ -61,6 +61,28 @@ The **⋯** menu (**Session actions**) holds the rest:
   push ask first).
 - **Stop current work (Esc)** and **Close session**, below.
 
+## Unsent drafts
+
+Each machine and Session conversation has its own draft in this browser. Text is kept in memory while typing and saved synchronously when leaving the Session or hiding
+the page. Prepared pictures are saved when they change. Returning from the list, another Session, a subagent or
+another page restores that draft; reloading the page also restores it. An execution refresh of
+the same conversation keeps the draft. A different conversation in a reused terminal starts empty.
+
+Sending moves the message into the existing pending-message flow and clears only that draft.
+A failed or uncertain send stays on its pending card for review rather than returning to the
+editor and risking a duplicate send. Deleting all text and removing all pictures also removes
+the draft. Drafts never send themselves.
+
+Drafts use this browser's local site storage, including on Cloud; they are not synchronized
+between devices or browser profiles. Clearing site data removes them. If storage is unavailable
+or full, the console warns that drafts can survive Session switches only until the page closes.
+Avoid placing credentials in ordinary drafts; use [Secret Handoff](secret-handoff.md).
+
+Text uses localStorage at exit/background boundaries; pictures use IndexedDB when changed.
+Typing performs no persistent storage writes. Loading completes
+before the editor accepts input. Image preparation belongs to its original editor, so switching
+Sessions while a picture is shrinking cannot attach it to the newly opened Session.
+
 ## Answer and send
 
 - **When the session asks a question**, a card above the message box lists its options. Tap one:

@@ -9,14 +9,8 @@ import { RefusalError } from "@clawdline/core"
 import { client, followsRelay } from "../client.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
 import * as L from "../legacy/bridge.js"
-import {
-  Shots,
-  carriesFiles,
-  carriesPicture,
-  shotsHTML,
-  shotsVersion,
-  subscribeShots,
-} from "../legacy/shots-bridge.js"
+import { createShots, carriesFiles, carriesPicture } from "../legacy/shots-bridge.js"
+import { composerDraftKey, composerDrafts } from "./composer-drafts.js"
 import * as V from "../legacy/voice-bridge.js"
 import { COMPOSE_APPEND } from "../legacy/snippets-bridge.js"
 import { interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
@@ -86,30 +80,24 @@ import "./drop-target.css"
  * `useKeyboardBar` below is still a local rendering of `input/edges.js`, which
  * is not among the copied modules.
  */
-export type ComposerDraftHandoff = { current: { text: string; images: string[] } | null }
-
 export function Composer({
   row,
   onDid,
   onSent,
   onScreen,
-  restoredDraft,
   suggestedDraft,
   remote,
-  draftHandoff,
   assistantFacts,
   assistantReadiness,
 }: {
   /** Fresh readiness for the selected machine's provider, supplied by the Session host. */
   assistantFacts?: AssistantFacts
   assistantReadiness?: AssistantFactsReading["kind"]
-  draftHandoff?: ComposerDraftHandoff
   row: SessionRow | null
   onDid: () => void
   /** After a delivered send; nothing when left out (`Detail`'s `onSent`). */
   onSent?: () => void
   onScreen?: () => void
-  restoredDraft?: { target: InterventionTarget; text: string } | null
   suggestedDraft?: { target: InterventionTarget; text: string; id: number } | null
   /** A fixed remote destination uses this same editor and picture path. */
   remote?: { key: string; machineID: string; assistant?: string; canSend: boolean; allowPictures: boolean;
@@ -123,6 +111,63 @@ export function Composer({
   const msg = useRef<HTMLDivElement>(null)
   const send = useRef<HTMLButtonElement>(null)
   const [text, setText] = useState("")
+  const draftKey = remote ? JSON.stringify([remote.machineID, remote.key]) : composerDraftKey(row)
+  const [draftReady, setDraftReady] = useState(false)
+  const alive = useRef(false)
+  const draftWarningShown = useRef(false)
+  const warnDraft = () => {
+    if (draftWarningShown.current) return
+    draftWarningShown.current = true
+    toast(catalogWord("composerDraft", "storageUnavailable"), true)
+  }
+  const [{ Shots, shotsHTML, subscribeShots, shotsVersion }] = useState(() => createShots(urls => {
+    if (draftKey) void composerDrafts.images(draftKey, urls).catch(warnDraft)
+  }))
+  useLayoutEffect(() => {
+    alive.current = true
+    let current = true
+    void composerDrafts.read(draftKey).then(draft => {
+      if (!current || !msg.current) return
+      if (!draft.durable) warnDraft()
+      msg.current.textContent = draft.text
+      setText(draft.text)
+      Shots.restore(draft.images, false)
+      setDraftReady(true)
+    }).catch(() => {
+      if (current) { setDraftReady(true); warnDraft() }
+    })
+    const flush = () => { if (draftKey) void composerDrafts.flushText(draftKey).catch(warnDraft) }
+    const hidden = () => { if (document.visibilityState === "hidden") flush() }
+    window.addEventListener("pagehide", flush)
+    document.addEventListener("visibilitychange", hidden)
+    return () => {
+      current = false
+      alive.current = false
+      flush()
+      window.removeEventListener("pagehide", flush)
+      document.removeEventListener("visibilitychange", hidden)
+    }
+  }, [draftKey, Shots])
+  useEffect(() => {
+    const unsubscribe = composerDrafts.subscribeImages(draftKey, urls => {
+      const current = Shots.urls()
+      if (urls.length !== current.length || urls.some((url, index) => url !== current[index])) Shots.restore(urls, false)
+    })
+    return () => {
+      if (!Shots.busy()) { unsubscribe(); return }
+      // A pending decoder still owns this list. Keep it in step with edits made
+      // after reopening, so its eventual append cannot resurrect a removed image.
+      const finished = subscribeShots(() => {
+        if (!Shots.busy()) { unsubscribe(); finished() }
+      })
+    }
+  }, [draftKey, Shots, subscribeShots])
+  const saveText = (value: string) => {
+    composerDrafts.stageText(draftKey, value)
+    // Clearing must delete the durable copy immediately, including a submitted draft.
+    if (!value && draftKey) void composerDrafts.flushText(draftKey).catch(warnDraft)
+  }
+
   // True from the moment a send starts until its answer comes back. A ref as
   // well as state, because Return does not go through the disabled button and a
   // second Return inside the same render would otherwise send a second request.
@@ -176,7 +221,7 @@ export function Composer({
   const protocolOwned = !remote && assistantProtocolOwned(row)
   const providerOn = assistantComposeAdmits(remote?.assistant ?? row?.assistant, remote?.assistantFacts ?? assistantFacts,
     remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu, protocolOwned)
-  const on = (remote ? remote.canSend : write && !!row) && providerOn
+  const on = draftReady && (remote ? remote.canSend : write && !!row) && providerOn
   const cardsVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   useEffect(() => {
     if (!protocolOwned || !row) return
@@ -193,44 +238,16 @@ export function Composer({
   const open = useRef({ on })
   open.current = { on: on && (!remote || remote.allowPictures) }
 
-  // A picture picked for one session is not a picture for the next one
-  // (`session/open.js` clears them on every open and close).
-  const openId = remote?.key ?? row?.id ?? null
-  useEffect(() => {
-    Shots.clear()
-    setEditingShot(null)
-    // The menu was about the session that was open; `session/open.js` closes it.
-    skillPicture.current = { shown: false, matches: [], selected: 0 }
-    setSkills({ shown: false, matches: [], selected: 0 })
-  }, [openId])
-
-  // The detail is remounted for a new execution to discard old questions
-  // and confirmations. Only its unsent editor contents cross that boundary.
-  useLayoutEffect(() => {
-    if (!draftHandoff) return
-    const editor = msg.current
-    return () => {
-      draftHandoff.current = { text: editor?.innerText ?? "", images: Shots.urls().slice() }
-    }
-  }, [draftHandoff])
-  useEffect(() => {
-    const draft = draftHandoff?.current
-    if (!draft || !msg.current) return
-    msg.current.textContent = draft.text
-    setText(draft.text)
-    Shots.restore(draft.images)
-    draftHandoff.current = null
-  }, [draftHandoff])
-
   useEffect(() => {
     const draft = remote?.restoreDraft
-    if (!draft || !msg.current) return
+    if (!draftReady || !draft || !msg.current) return
     msg.current.textContent = draft.text
     setText(draft.text)
+    saveText(draft.text)
     Shots.restore(draft.images)
     msg.current.focus({ preventScroll: true })
     caretToEnd()
-  }, [remote?.restoreDraft?.id])
+  }, [remote?.restoreDraft?.id, draftReady])
 
   useEffect(() => watchMachinePaired((pairedMachine) => {
     setBlocked((was) => was?.machine === pairedMachine ? null : was)
@@ -321,6 +338,7 @@ export function Composer({
   const rawText = () => String(msg.current?.innerText || "").replace(/\u00A0/g, " ")
   const changed = () => {
     setText(rawText())
+    saveText(rawText())
     setFailure("")
     skillsChanged()
   }
@@ -376,6 +394,7 @@ export function Composer({
     if (!skill || !el) return false
     el.textContent = skillPrefix(remote?.assistant ?? row?.assistant) + skill.name + " "
     setText(rawText())
+    saveText(rawText())
     setFailure("")
     setSkills({ shown: false, matches: [], selected: 0 })
     caretToEnd()
@@ -469,18 +488,10 @@ export function Composer({
   }, [])
 
   useEffect(() => {
-    if (!restoredDraft || !sameInterventionTarget(restoredDraft.target, interventionDestination.current) || !msg.current) return
-    msg.current.textContent = restoredDraft.text
-    changed()
-  // Restoration is needed when this composer is remounted after viewing a subagent.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restoredDraft])
-
-  useEffect(() => {
-    if (!suggestedDraft || !sameInterventionTarget(suggestedDraft.target, interventionDestination.current) || !msg.current) return
+    if (!draftReady || !suggestedDraft || !sameInterventionTarget(suggestedDraft.target, interventionDestination.current) || !msg.current) return
     sink.current(suggestedDraft.text)
     msg.current.focus({ preventScroll: true })
-  }, [suggestedDraft])
+  }, [suggestedDraft, draftReady])
 
   // The microphone, attached once. `Voice` is a module rather than a hook for
   // the reason the original is one object: there is one recorder on the page,
@@ -493,7 +504,7 @@ export function Composer({
     const job: V.VoiceJob = {
       host,
       composer: form.current,
-      sink: (said) => sink.current(said),
+      sink: (said) => { if (alive.current) sink.current(said) },
       transcribe: remote?.transcribe,
       source: voiceSource,
       missingWhisper: (failure) => setVoiceInstall({ reason: failure.reason, help: false }),
@@ -533,6 +544,7 @@ export function Composer({
       }
       if (msg.current) msg.current.textContent = ""
       setText("")
+      saveText("")
       setFailure("")
       Shots.clear()
       onSent?.()
@@ -551,6 +563,7 @@ export function Composer({
     if (msg.current) msg.current.textContent = ""
     if (document.activeElement === msg.current) caretToEnd()
     setText("")
+    saveText("")
     setFailure("")
     Shots.clear()
     inFlight.current = true

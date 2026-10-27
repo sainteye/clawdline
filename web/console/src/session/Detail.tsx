@@ -22,7 +22,8 @@ import { askFocus, askInterrupt } from "../legacy/screen-bridge.js"
 import type { FleetDetailProblem } from "../cloud/all-machine-sessions.js"
 import { Transcript } from "./Transcript.js"
 import { GitPanel } from "./GitPanel.js"
-import { Composer, type ComposerDraftHandoff } from "./Composer.js"
+import { Composer } from "./Composer.js"
+import { composerDraftKey } from "./composer-drafts.js"
 import { ScreenPanel } from "./ScreenPanel.js"
 import { ShellPanel } from "./ShellPanel.js"
 import { BackgroundStrip } from "./BackgroundStrip.js"
@@ -101,9 +102,7 @@ export function Detail({
   projectedCoordinatorBound = false,
   emptyProblem,
   scanSources,
-  draftHandoff,
 }: {
-  draftHandoff?: ComposerDraftHandoff
   row: SessionRow | null
   tasks: TaskRow[] | null
   onOpenSession: (id: string) => void
@@ -125,18 +124,10 @@ export function Detail({
   const readiness = useAssistantFacts(assistantFactsMachine(row), row?.execution_generation, row?.source?.observed_at, row?.assistant === "antigravity" && !assistantProtocolOwned(row) && assistantStateCurrent(row))
   const assistantFacts = readiness.assistants.find(facts => facts.id === row?.assistant)
   const [agentId, setAgentId] = useState<string | null>(null)
-  const [savedComposerDraft, setSavedComposerDraft] = useState<{ target: InterventionTarget; text: string } | null>(null)
   const [suggestedDraft, setSuggestedDraft] = useState<{ target: InterventionTarget; text: string; id: number } | null>(null)
   const suggestedDraftSerial = useRef(0)
-  useEffect(() => { setAgentId(null); setSavedComposerDraft(null); setSuggestedDraft(null) }, [row?.id])
-  const chooseAgent = (id: string | null) => {
-    if (id && !agentId) {
-      const target = interventionTarget(row)
-      const text = document.getElementById("msg")?.innerText ?? ""
-      if (target) setSavedComposerDraft({ target, text })
-    }
-    setAgentId(id)
-  }
+  useEffect(() => { setAgentId(null); setSuggestedDraft(null) }, [row?.id])
+  const chooseAgent = (id: string | null) => { setSuggestedDraft(null); setAgentId(id) }
   const selectedAgent = row?.agents?.find((agent) => agent.id === agentId) ?? null
   // Which session is being closed, as `closingSelectionKey()` is there: the
   // header is "ending" only while the session it shows is the one going away.
@@ -365,7 +356,7 @@ export function Detail({
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
-      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer assistantReadiness={readiness.kind} assistantFacts={assistantFacts} draftHandoff={draftHandoff} row={row} onDid={onDid} onSent={onSent} onScreen={() => setScreenOpen(true)} restoredDraft={savedComposerDraft} suggestedDraft={suggestedDraft} />}
+      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} row={row} onDid={onDid} onSent={onSent} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} />}
       {selectedAgent || !row ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens
