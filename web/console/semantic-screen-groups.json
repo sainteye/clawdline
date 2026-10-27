@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9392,
-  "riskKeys": 4156,
-  "nonRiskCount": 5236,
+  "englishContentKeys": 9399,
+  "riskKeys": 4162,
+  "nonRiskCount": 5237,
   "groups": [
     {
       "name": "admin / other",
@@ -5197,7 +5197,7 @@
     },
     {
       "name": "support / other",
-      "count": 97,
+      "count": 98,
       "sources": [
         null
       ],
@@ -5220,6 +5220,7 @@
         "support.busy",
         "support.cancel",
         "support.contentLanguage",
+        "support.copyingCredential",
         "support.createFaq",
         "support.delivery",
         "support.deviceLimit",

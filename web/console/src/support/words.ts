@@ -1,5 +1,6 @@
 import { catalogWord, currentCatalogTag } from "../catalog.js"
 const en = {
+  credentialLabel: "Worker credential", showCredential: "Show credential", hideCredential: "Hide credential", copyCredential: "Copy credential", copyingCredential: "Copying…", credentialCopied: "Credential copied.", credentialCopyFailed: "Copy failed. Show the credential and select it to copy manually.",
   leaveDraft: "You have unsaved changes. Leave this page?",
   fixture: "Local integration fixture · isolated test data",
   adminArea: "Admin area", adminNavigation: "Admin navigation",
@@ -15,6 +16,7 @@ const en = {
 } as const
 type Word = keyof typeof en
 const zh: Record<Word, string> = {
+  credentialLabel: "工作憑證", showCredential: "顯示憑證", hideCredential: "隱藏憑證", copyCredential: "複製憑證", copyingCredential: "複製中…", credentialCopied: "已複製憑證。", credentialCopyFailed: "複製失敗。請顯示憑證，選取後手動複製。",
   leaveDraft:"你有尚未儲存的內容。確定離開這個頁面？",
   fixture:"本機整合驗證・隔離測試資料",
   adminArea:"Admin 專區",adminNavigation:"Admin 導覽",

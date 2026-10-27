@@ -6,3 +6,5 @@
 .help-root .help-question-note{font-size:13px;line-height:1.9;margin:-8px 0 24px;color:var(--dim)}
 
 .help-composer{max-width:760px}.help-root .help-question-note strong,.help-submission-note strong{font-weight:600;color:var(--ink,#eeebe7)}.help-submission-note{margin-top:8px}.help-root .help-submission-note p{font-size:12px;line-height:1.9;margin:8px 0}
+
+.help-secret label{margin-bottom:8px}.help-credential-actions{display:flex;flex-wrap:wrap;gap:10px}

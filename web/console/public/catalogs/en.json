@@ -9392,5 +9392,12 @@
   "support.adminOnly": "Only administrators can use this page.",
   "support.adminArea": "Admin area",
   "support.adminNavigation": "Admin navigation",
-  "support.sensitiveContent": "Do not include passwords, API keys or private Session conversations."
+  "support.sensitiveContent": "Do not include passwords, API keys or private Session conversations.",
+  "support.credentialLabel": "Worker credential",
+  "support.showCredential": "Show credential",
+  "support.hideCredential": "Hide credential",
+  "support.copyCredential": "Copy credential",
+  "support.copyingCredential": "Copying…",
+  "support.credentialCopied": "Credential copied.",
+  "support.credentialCopyFailed": "Copy failed. Show the credential and select it to copy manually."
 }

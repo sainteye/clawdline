@@ -9392,5 +9392,12 @@
   "support.adminOnly": "此頁面僅供管理員使用。",
   "support.adminArea": "Admin 專區",
   "support.adminNavigation": "Admin 導覽",
-  "support.sensitiveContent": "請勿貼上密碼、API Key 或私人 Session 對話。"
+  "support.sensitiveContent": "請勿貼上密碼、API Key 或私人 Session 對話。",
+  "support.credentialLabel": "工作憑證",
+  "support.showCredential": "顯示憑證",
+  "support.hideCredential": "隱藏憑證",
+  "support.copyCredential": "複製憑證",
+  "support.copyingCredential": "複製中…",
+  "support.credentialCopied": "已複製憑證。",
+  "support.credentialCopyFailed": "複製失敗。請顯示憑證，選取後手動複製。"
 }
