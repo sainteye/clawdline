@@ -5,7 +5,7 @@ export const TOPICS = ["getting_started", "cloud", "agents", "account", "other"]
 export type Sources = { url: string; revision: string }[]
 export interface SupportImage { id:string; mime:"image/jpeg"; bytes:number; width:number; height:number; sha256:string }
 export interface Message { id: string; kind: "member" | "agent" | "operator"; body: string; locale: SupportLocale; original_language: string; at: string; sources: Sources; images?: SupportImage[] }
-export interface Question { id: string; title: string; topic: string; source_language: string; reply_locale: SupportLocale; state: string; revision: number; input_revision: number;
+export interface Question { reporter?: {id:string;name:string|null}; id: string; title: string; topic: string; source_language: string; reply_locale: SupportLocale; state: string; revision: number; input_revision: number;
   created_at: string; updated_at: string; unread: boolean; messages?: Message[];
   work?: { state: string; attempts: number; lease_until: string | null; error: string | null };
   delivery?: { state: string; attempts: number; delivery_id: string | null; error: string | null } }

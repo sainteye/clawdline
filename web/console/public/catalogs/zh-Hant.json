@@ -9450,5 +9450,9 @@
   "next.compressedReadTooLarge": "回覆超過可讀取的大小上限。",
   "capacityRow.cloud.persona_display_cache.what": "每個瀏覽器分頁只保留一份角色顯示目錄；重新載入後須先由機器核對版本才能使用，不包含完整角色指令與來源。",
   "capacityRow.cloud.persona_display_cache.full": "切換帳號、瀏覽器身分或機器會取代這一格。無法儲存時重新讀取；未經驗證的目錄不會顯示。",
-  "http.f5873bd0885dfca2": "請使用 display-v1 與 SHA-256 目錄版本。"
+  "http.f5873bd0885dfca2": "請使用 display-v1 與 SHA-256 目錄版本。",
+  "support.reporter": "提問者",
+  "support.reporterId": "會員 ID",
+  "support.reporterUnnamed": "尚未設定名稱",
+  "support.processingDetail": "處理資訊"
 }

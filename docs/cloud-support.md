@@ -139,9 +139,9 @@ these collections. Keep automatic work disabled until the restricted schedule an
 have been installed and validated. No paid model or translation API is provisioned or invoked by
 this implementation; recurring usage-priced calls require separate approval and a cap.
 
-Push notifications and a separate attachment workflow are not enabled by this version. Replies
-are delivered in the thread with unread state and refresh; notification transport is not a
-prerequisite for reading an answer. A provider-backed automatic translation service is also not
+Admin new-question notifications and private image attachments are supported through separate
+service paths. Replies remain in the member thread with unread state and refresh; notification
+transport is not a prerequisite for reading an answer. A provider-backed automatic translation service is also not
 configured: editors maintain separate language drafts through the same API.
 
 ## Question images
@@ -159,3 +159,18 @@ operator reads require the existing admin authority. Worker downloads require th
 binding and an unexpired question lease. The client downloads only API-owned image identifiers,
 verifies size and SHA-256, and keeps private task images until confirmed completion. Text and
 instructions inside an image are untrusted member content, with the same restrictions as text.
+
+
+## Documentation coverage and reporter identity
+
+The restricted Agent documentation export includes the [help-center user guide](user/help-center.md)
+and its Traditional Chinese counterpart. When a normal product question is escalated because the
+pinned export has no evidence, add and verify the public guide before updating that export. Keep
+the dedicated schedule paused and its worker idle while replacing the read-only docs and manifest;
+retain its credential, state, tool limits and ChatGPT subscription authentication. Requeue the
+original question through the Admin action and verify the member-visible Agent answer. Do not
+insert an operator answer and call it an AI reply.
+
+Admin list/detail/mutation responses include the reporter's current display name and stable member
+ID. Only the authenticated Admin projection obtains these fields. Member and answering-worker
+responses, FAQ snapshots and push payloads remain free of reporter identity fields.

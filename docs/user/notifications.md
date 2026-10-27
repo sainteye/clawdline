@@ -107,3 +107,9 @@ answer, stale idle observations, unknown states, incomplete absence and a
 restarted broker before allowing one fresh idle observation to release the
 notification. Recovery of an attempted push and concurrent recovery cannot
 send it twice.
+
+
+## Admin new-question notifications
+
+The Cloud help center has a separate per-device notification for Admins when a member submits a
+new question. It does not use a machine Session notification rule. See [Questions and replies](help-center.md#admin-inbox-and-new-question-notifications) for setup and the authenticated question destination.

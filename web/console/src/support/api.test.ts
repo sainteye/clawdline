@@ -23,3 +23,10 @@ test("a FAQ response cannot substitute another language or malformed answer rows
  const bad:typeof fetch=async()=>new Response(JSON.stringify({questions:null}))
  await assert.rejects(supportCall("https://api.test","/v1/support/questions","GET",undefined,undefined,bad))
 })
+
+test("Admin reporter identity accepts a missing display name and refuses malformed profiles",async()=>{
+ const question={id:"sq_test",title:"Question",state:"queued",revision:1,reply_locale:"en"}
+ const read=(reporter:unknown)=>supportCall<{question:{reporter:{id:string;name:string|null}}}>("https://api.test","/su/v1/support/questions/sq_test","GET",undefined,undefined,async()=>new Response(JSON.stringify({question:{...question,reporter}})))
+ assert.equal((await read({id:"member-test",name:null})).question.reporter.name,null)
+ await assert.rejects(read({id:"member-test",name:{text:"not a name"}}),e=>e instanceof SupportFailure&&e.code==="support_response_unreadable")
+})

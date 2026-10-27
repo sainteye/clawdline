@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9450,
+  "englishKeys": 9454,
   "counts": {
-    "negation": 2697,
+    "negation": 2698,
     "state": 1551,
     "permission": 565,
     "deletion": 208,
     "uncertainty": 295
   },
-  "unionCount": 4182,
+  "unionCount": 4183,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2546,6 +2546,7 @@
       "support.privacy",
       "support.private",
       "support.publicNote",
+      "support.reporterUnnamed",
       "support.sensitiveContent",
       "support.sessionFailed",
       "support.setupNeeded",
@@ -9243,6 +9244,7 @@
     "support.questionLimit",
     "support.queued",
     "support.removeImage",
+    "support.reporterUnnamed",
     "support.saved",
     "support.sensitiveContent",
     "support.sessionFailed",

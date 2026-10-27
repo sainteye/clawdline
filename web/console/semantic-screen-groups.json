@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9450,
-  "riskKeys": 4182,
-  "nonRiskCount": 5268,
+  "englishContentKeys": 9454,
+  "riskKeys": 4183,
+  "nonRiskCount": 5271,
   "groups": [
     {
       "name": "admin / other",
@@ -5216,7 +5216,7 @@
     },
     {
       "name": "support / other",
-      "count": 110,
+      "count": 113,
       "sources": [
         null
       ],
@@ -5291,6 +5291,7 @@
         "support.operator",
         "support.operatorReply",
         "support.other",
+        "support.processingDetail",
         "support.publish",
         "support.publishSnapshot",
         "support.published",
@@ -5300,6 +5301,8 @@
         "support.references",
         "support.refresh",
         "support.replyLanguage",
+        "support.reporter",
+        "support.reporterId",
         "support.resolve",
         "support.resolved",
         "support.retry",

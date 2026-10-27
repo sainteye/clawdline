@@ -24,6 +24,7 @@ export async function supportCall<T>(origin: string, path: string, method = "GET
       if (!q || typeof q !== "object") return false
       const r = q as Record<string, unknown>
       return typeof r.id === "string" && typeof r.title === "string" && typeof r.state === "string" && Number.isSafeInteger(r.revision) && typeof r.reply_locale === "string" &&
+        (r.reporter === undefined || !!r.reporter && typeof r.reporter === "object" && typeof (r.reporter as {id?:unknown}).id === "string" && ((r.reporter as {name?:unknown}).name === null || typeof (r.reporter as {name?:unknown}).name === "string")) &&
         (r.messages === undefined || Array.isArray(r.messages) && r.messages.every(m => m && typeof m.body === "string" && Array.isArray(m.sources)))
     }
     if (("question" in row && !question(row.question)) || ("questions" in row && (!Array.isArray(row.questions) || !row.questions.every(question))) ||
