@@ -28,6 +28,9 @@ var (
 type RegisteredPlace struct {
 	Path    string `json:"path"`
 	AddedAt int64  `json:"added_at"`
+	// ProjectKey is observed when Add explicitly selects this path. Listings
+	// can reuse that identity after a restart without reopening the directory.
+	ProjectKey string `json:"project_key,omitempty"`
 }
 
 type placeRegistryDocument struct {
@@ -101,9 +104,16 @@ func (r *PlaceRegistry) Add(paths []string, at time.Time) ([]RegisteredPlace, er
 	}
 	for _, path := range canonical {
 		doc.Hidden = withoutPath(doc.Hidden, path)
+		key, _ := CanonicalProjectKey(path)
 		if !seen[path] {
-			current = append(current, RegisteredPlace{Path: path, AddedAt: at.Unix()})
+			current = append(current, RegisteredPlace{Path: path, AddedAt: at.Unix(), ProjectKey: key})
 			seen[path] = true
+		} else {
+			for i := range current {
+				if current[i].Path == path {
+					current[i].ProjectKey = key
+				}
+			}
 		}
 	}
 	if r.limit > 0 && int64(len(current)+len(doc.Hidden)) > r.limit {
@@ -173,7 +183,7 @@ func (r *PlaceRegistry) readUnlocked() (placeRegistryDocument, error) {
 	}
 	seen := map[string]bool{}
 	for _, row := range doc.Places {
-		if !usable(row.Path) || row.AddedAt <= 0 || seen[row.Path] {
+		if !usable(row.Path) || row.AddedAt <= 0 || seen[row.Path] || row.ProjectKey != "" && !usable(row.ProjectKey) {
 			return placeRegistryDocument{}, errors.New("the place registry contains an invalid row")
 		}
 		seen[row.Path] = true

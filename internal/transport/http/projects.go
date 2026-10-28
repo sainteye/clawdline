@@ -78,6 +78,9 @@ func (s *Server) projectReaders() *projectReaders {
 			dirs := projects.RegistryPaths()
 			for _, place := range places.List(s.liveDirectories(context.Background()), 40) {
 				dirs = append(dirs, place.Path)
+				if place.ProjectKey != "" {
+					dirs = append(dirs, place.ProjectKey)
+				}
 			}
 			return append(dirs, s.taskProjectDirs()...)
 		},
@@ -175,7 +178,13 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	readers := s.projectReaders()
 	list := readers.places.List(s.liveDirectories(r.Context()), 40)
-	repos := readers.repos.Resolve(list)
+	var inspectable []projects.Place
+	for _, p := range list {
+		if projects.MayInspectInBackground(p.Path) {
+			inspectable = append(inspectable, p)
+		}
+	}
+	repos := readers.repos.Resolve(inspectable)
 	keys := make([]setupLookupKey, 0, len(list))
 	icons := make(map[string]icon.Grid, len(list))
 	sources := make(map[string]icon.Source, len(list))
@@ -183,7 +192,9 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 		grid, source := s.icons.Resolve(p.Path)
 		icons[p.Path] = grid
 		sources[p.Path] = source
-		keys = append(keys, setupLookupKey{path: p.Path, repo: repos[p.Path], icon: source})
+		if projects.MayInspectInBackground(p.Path) {
+			keys = append(keys, setupLookupKey{path: p.Path, repo: repos[p.Path], icon: source})
+		}
 	}
 	setups := readers.setups.Resolve(keys)
 	out := contract.StartPlaceList{At: time.Now().Unix(), Assistants: s.availableAssistants(),
@@ -194,8 +205,13 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 		repo := repos[p.Path]
 		grid := icons[p.Path]
 		var projectID string
-		if canonical, ok := projects.CanonicalProjectKey(p.Path); ok {
-			projectID = projects.ProjectID(canonical)
+		if p.ProjectKey != "" {
+			projectID = projects.ProjectID(p.ProjectKey)
+		}
+		if projects.MayInspectInBackground(p.Path) {
+			if canonical, ok := projects.CanonicalProjectKey(p.Path); ok {
+				projectID = projects.ProjectID(canonical)
+			}
 		}
 		out.Places = append(out.Places, contract.StartPlace{ID: p.ID, Label: p.Label, Path: p.Path,
 			At: p.At.Unix(), Icon: wireIcon(grid), Repo: repo, ProjectID: projectID,

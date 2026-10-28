@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 )
 
 // Filename is what a project calls the file.
@@ -278,7 +280,7 @@ func Discover(known, live []string, home string) Discovery {
 	var out Discovery
 	walked := 0
 	visit := func(dir string, fromLive bool) {
-		if dir == "" || !filepath.IsAbs(dir) {
+		if dir == "" || !filepath.IsAbs(dir) || !projects.MayInspectInBackground(dir) {
 			return
 		}
 		if walked == maxCandidates {

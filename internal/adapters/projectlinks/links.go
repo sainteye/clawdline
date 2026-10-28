@@ -316,8 +316,11 @@ func (r *Reader) servers(ctx context.Context, cwd string) []Link {
 	if home == "" {
 		home, _ = os.UserHomeDir()
 	}
-	found := devstack.Discover(nil, []string{cwd}, home)
-	if len(found.Specs) == 0 {
+	// This reader belongs to one selected Session's info/Links request.
+	// Inspect that Project, including a protected location the person chose;
+	// the global server list uses guarded discovery over unrelated paths.
+	spec, state := devstack.Inspect(cwd, home)
+	if state != devstack.InspectionReady {
 		return nil
 	}
 	probe := r.Probe
@@ -325,7 +328,7 @@ func (r *Reader) servers(ctx context.Context, cwd string) []Link {
 		probe = devstack.Listening
 	}
 	var out []Link
-	for _, stack := range devstack.Read(ctx, found.Specs, probe) {
+	for _, stack := range devstack.Read(ctx, []devstack.Spec{spec}, probe) {
 		for _, p := range stack.Processes {
 			url := p.URL
 			if url == "" && p.Port > 0 {

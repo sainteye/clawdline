@@ -22,6 +22,10 @@ recorded the daemon's Automation grant by its resolved release path. The
 service now runs from one real path, and routine service updates retain the
 existing native App when its shell inputs are unchanged.
 
+The [2026-10-28 permission audit](macos-permission-audit.md) records remaining
+background discovery gaps, their corrections, permission-capable opt-in surfaces,
+and the boundary between source tests and fresh-user macOS acceptance.
+
 ## The retired Swift checkout (before 2026-09-22)
 
 > As `AGENTS.md` read until 2026-09-22, when the Swift checkout was archived and this repository

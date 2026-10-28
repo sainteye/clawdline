@@ -332,6 +332,11 @@ func (l *Lifecycle) Resolve(id string) (Identity, error) {
 			continue
 		}
 		seen[d] = true
+		// A request for one Project must not resolve unrelated protected
+		// directories just because they precede it in a saved catalog.
+		if !MayInspectInBackground(d) && ProjectID(filepath.Clean(d)) != id {
+			continue
+		}
 		if identity, ok := IdentityFor(d); ok && identity.ID == id {
 			return identity, nil
 		}

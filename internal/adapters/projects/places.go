@@ -18,6 +18,8 @@ type Place struct {
 	Path  string
 	Label string
 	At    time.Time
+	// ProjectKey is a saved explicit-registration observation, not a new read.
+	ProjectKey string
 }
 
 // Labeler is the project registry's name for a directory, or "" when it has
@@ -116,21 +118,32 @@ func (p *Places) List(live []string, limit int) []Place {
 		return out
 	}
 	// Recorded folders are found, not chosen; recorded and codexRecorded
-	// leave out the ones under ~/Library (library.go).
+	// leave out unchosen personal-data folders (library.go).
 	all := p.recorded(60, 240)
 	all = append(all, p.codexRecorded(60, 40)...)
 	registered := map[string]bool{}
+	var deferred []Place
+	lexicalDurable := durableJudgeWithResolver(p.Managed, filepath.Clean)
 	if p.Registered != nil {
 		if rows, err := p.Registered(); err == nil {
 			for _, row := range rows {
-				registered[comparablePath(row.Path)] = true
-				all = append(all, Place{ID: PlaceID(row.Path), Path: row.Path,
-					Label: p.label(row.Path), At: time.Unix(row.AddedAt, 0)})
+				registered[storedPathKey(row.Path)] = true
+				place := Place{ID: PlaceID(row.Path), Path: row.Path,
+					Label: p.label(row.Path), At: time.Unix(row.AddedAt, 0), ProjectKey: row.ProjectKey}
+				if !MayInspectInBackground(row.Path) {
+					// Keep the saved choice visible without resolving or statting
+					// it. Start and the selected Project routes validate it on use.
+					if usable(row.Path) && lexicalDurable(row.Path) {
+						deferred = append(deferred, place)
+					}
+					continue
+				}
+				all = append(all, place)
 			}
 		}
 	}
 	for _, cwd := range live {
-		if cwd == "" {
+		if cwd == "" || !MayInspectInBackground(cwd) {
 			continue
 		}
 		all = append(all, Place{ID: PlaceID(cwd), Path: cwd, Label: p.label(cwd), At: now})
@@ -139,7 +152,7 @@ func (p *Places) List(live []string, limit int) []Place {
 	if p.Hidden != nil {
 		if paths, err := p.Hidden(); err == nil {
 			for _, path := range paths {
-				hidden[comparablePath(path)] = true
+				hidden[storedPathKey(path)] = true
 			}
 		} else {
 			// A broken preference file must not silently restore removed Projects.
@@ -153,12 +166,18 @@ func (p *Places) List(live []string, limit int) []Place {
 	// add used to succeed and then vanish from every list.
 	homeDir := resolvedPath(home())
 	chosenHome := func(path string) bool {
-		return registered[comparablePath(path)] && resolvedPath(path) == homeDir
+		return registered[storedPathKey(path)] && resolvedPath(path) == homeDir
 	}
-	return tidy(all, limit, isDirectory, func(path string) bool {
-		return !hidden[comparablePath(path)] && !IsMachineWorkspace(p.MachineStateDir, path) &&
+	ready := tidy(all, limit, isDirectory, func(path string) bool {
+		return !hidden[storedPathKey(path)] && !IsMachineWorkspace(p.MachineStateDir, path) &&
 			(durable(path) || chosenHome(path))
 	})
+	for _, place := range deferred {
+		if !hidden[storedPathKey(place.Path)] {
+			ready = append(ready, place)
+		}
+	}
+	return tidy(ready, limit, func(string) bool { return true }, func(string) bool { return true })
 }
 
 func isDirectory(path string) bool {
@@ -246,6 +265,10 @@ func durableJudgeWithResolver(managed []string, resolve func(string) string) fun
 		if root == protected[0] || root == protected[1] {
 			continue
 		}
+		if !MayInspectInBackground(root) {
+			roots = append(roots, filepath.Clean(root))
+			continue
+		}
 		roots = append(roots, resolve(root))
 	}
 	return func(path string) bool {
@@ -298,6 +321,10 @@ func Slug(path string) string {
 // without the managed roots here those folders would be scanned as plausible
 // projects and use up the folder budget before the person's own were reached.
 func scratchMarks(managed []string) []string {
+	return scratchMarksWithResolver(managed, resolvedPath)
+}
+
+func scratchMarksWithResolver(managed []string, resolve func(string) string) []string {
 	h := home()
 	marks := map[string]bool{}
 	for _, root := range scratchRoots(h, os.TempDir(), managed) {
@@ -305,7 +332,11 @@ func scratchMarks(managed []string) []string {
 			continue
 		}
 		clean := standardized(root)
-		for _, spelling := range []string{clean, resolvedPath(clean)} {
+		spellings := []string{clean}
+		if MayInspectInBackground(clean) {
+			spellings = append(spellings, resolve(clean))
+		}
+		for _, spelling := range spellings {
 			marks[Slug(spelling)] = true
 			if strings.HasPrefix(spelling, "/private/") {
 				marks[Slug(strings.TrimPrefix(spelling, "/private"))] = true
@@ -411,7 +442,7 @@ func (p *Places) recorded(folders, scan int) []Place {
 		if !ok {
 			continue
 		}
-		if InUserLibrary(path) {
+		if !MayInspectInBackground(path) {
 			// Found, not chosen, and never read in the background (library.go);
 			// p.label would read the folder for its icon.
 			continue
@@ -672,7 +703,7 @@ func (p *Places) codexRecorded(days, limit int) []Place {
 	}
 	out := make([]Place, 0, len(list))
 	for _, w := range list {
-		if InUserLibrary(w.path) {
+		if !MayInspectInBackground(w.path) {
 			continue
 		}
 		out = append(out, Place{ID: PlaceID(w.path), Path: w.path, Label: p.label(w.path), At: w.at})

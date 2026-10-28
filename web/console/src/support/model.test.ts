@@ -1,11 +1,16 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's test runner loads TypeScript source.
-import { helpRoute,helpAccess,translationState,conversationView,type Message,type Article } from "./model.ts"
+import { helpRoute,helpAccess,translationState,conversationView,githubAvatarSource,type Message,type Article } from "./model.ts"
 test("help routes remain independent of a machine or pairing",()=>{
  assert.deepEqual(helpRoute("/help/questions/sq_one"),{page:"thread",id:"sq_one"})
  assert.deepEqual(helpRoute("/help/admin/faq/new"),{page:"editor",id:"new"})
  assert.equal(helpRoute("/help/admin/worker").page,"worker")
+})
+test("only a canonical GitHub avatar can cause an external image request",()=>{
+ const safe="https://avatars.githubusercontent.com/u/583231?s=80"
+ assert.equal(githubAvatarSource(safe),safe)
+ for(const value of [undefined,null,{},"javascript:alert(1)","//avatars.githubusercontent.com/u/1?s=80","http://avatars.githubusercontent.com/u/1?s=80","https://avatars.githubusercontent.com.evil.test/u/1?s=80","https://"+["fixture-user","avatars.githubusercontent.com/u/1?s=80"].join("@"),"https://avatars.githubusercontent.com/u/1?s=80&tracking=private",safe+"\n","https://avatars.githubusercontent.com/u/0?s=80","https://avatars.githubusercontent.com/u/99999999999999999999?s=80"]) assert.equal(githubAvatarSource(value),null)
 })
 test("a published older translation is stale when the source changes",()=>{
  const text={title:"FAQ",body:"Answer",slug:"faq",revision:1,source_revision:1,sources:[],updated_at:"2026-01-01T00:00:00Z"}

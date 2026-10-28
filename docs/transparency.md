@@ -90,3 +90,11 @@ resource, original text, role identity, snapshot and permission choices remain
 unchanged. Both English and Taiwan Traditional Chinese context-card explanations
 remain accurate; only their original code excerpt, source line and receipt change.
 The website snapshot must follow this reviewed product source when published.
+
+
+The macOS permission-timing correction defers protected Project catalog reads
+until a Project is selected. Review of the Board entry in English and Taiwan
+Traditional Chinese found no change to assignment text, language, injection
+triggers or reminder delivery; those explanations remain accurate. The Board
+source link and review receipt follow the changed catalog/resolution code in
+`work_v2.go`. No instruction excerpt is added to the Console bundle.

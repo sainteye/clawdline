@@ -93,14 +93,13 @@ func (s *Server) readDevStanding(dev, latest string) {
 }
 
 // placeDirectories is the directory of every Place a dev build's commit is
-// looked for in, leaving out ~/Library: cloud-storage folders live there (a
-// Dropbox folder listed as a Place answered no git command for twenty seconds
-// on 2026-10-15), and a git process the daemon starts there can make a macOS
-// privacy prompt name Clawdline. A clawdline checkout is not kept there.
+// looked for in, leaving out personal folders and unchosen aliases. A Dropbox
+// folder listed as a Place answered no git command for twenty seconds on
+// 2026-10-15; a git process started there can make a macOS prompt name Clawdline.
 func (s *Server) placeDirectories(ctx context.Context) []string {
 	var dirs []string
 	for _, place := range s.squadListedPlaces(ctx) {
-		if projects.InUserLibrary(place.Path) {
+		if !projects.MayInspectInBackground(place.Path) {
 			continue
 		}
 		dirs = append(dirs, place.Path)
