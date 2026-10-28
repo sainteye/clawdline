@@ -21,7 +21,8 @@ function useRead<T>(path: string | null, call: Call) {
   useEffect(() => {
     if (!path) return
     let active = true
-    setState({ key: path, data: null, error: null, loading: true })
+    // A refresh must retain mounted forms and their unsaved selections. A new path clears data.
+    setState(previous => previous.key === path ? { ...previous, error: null, loading: true } : { key: path, data: null, error: null, loading: true })
     void call<T>(path).then(data => { if (active) setState({ key: path, data, error: null, loading: false }) }, e => {
       if (active) setState({ key: path, data: null, error: e instanceof SupportFailure ? e.code : "support_unavailable", loading: false })
     })
