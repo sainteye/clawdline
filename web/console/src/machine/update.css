@@ -63,7 +63,7 @@
     font-size: 12px; line-height: 1.45; color: var(--dim); white-space: nowrap;
 }
 .update-strip.is-embedded { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; }
-.update-strip.is-saying { white-space: normal; align-items: flex-start; padding-top: 6px; padding-bottom: 6px; }
+.update-strip.is-saying { white-space: normal; padding-top: 6px; padding-bottom: 6px; }
 .update-strip-tag {
     flex: none; padding: 2px 5px; border: 1px solid var(--accent-ed); border-radius: 4px;
     color: var(--accent); font: 600 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em;
