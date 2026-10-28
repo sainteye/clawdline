@@ -287,6 +287,19 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `decisions.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `deploy.health_seconds` | 30 | `seconds` | `refuse` | `diagnostics` | — |
 | `devices.list` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `diagnostics.api_active` | 512 | `rows` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_catchup` | 2 | `seconds` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_hours` | 169 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `diagnostics.api_minutes` | 61 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `diagnostics.api_query_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_query_seconds` | 2 | `seconds` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_queue` | 1024 | `rows` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_readers` | 2 | `rows` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_retention` | 608400 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `diagnostics.api_route_bytes` | 256 | `bytes` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_routes` | 128 | `rows` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_snapshot` | 33554432 | `bytes` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_store` | 67108864 | `bytes` | `refuse` | `diagnostics` | — |
 | `diagnostics.route_latency_samples` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `diagnostics.route_stat_keys` | 512 | `rows` | `coalesce` | `diagnostics` | — |
 | `dispatch.also_work_ids` | 7 | `rows` | `refuse` | `diagnostics, sender` | — |

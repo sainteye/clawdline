@@ -268,6 +268,9 @@ func machineAuthed(r *http.Request) bool { return accessOf(r).machine }
 
 func (g *gate) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/api-performance" {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		// Before anything else, and before authentication: these are about
 		// who is allowed to be asking at all, not about who they are.
 		if msg := g.crossOriginRefusal(r); msg != "" {

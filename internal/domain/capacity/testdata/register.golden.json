@@ -5395,6 +5395,255 @@
   },
   {
     "Register": "daemon",
+    "Name": "diagnostics.api_active",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxActive"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_catchup",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxCatchupSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_hours",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 169,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxHours"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_minutes",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 61,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxMinutes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_query_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2097152,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxQueryBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_query_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxQuerySeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_queue",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1024,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxQueue",
+      "internal/domain/apiperformance.New:chan(queue)"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_readers",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxReaders",
+      "internal/domain/apiperformance.New:chan(readers)"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_retention",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 608400,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxRetentionSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_route_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxRouteBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_routes",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxRoutes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_snapshot",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 33554432,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxSnapshotBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.api_store",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 67108864,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/apiperformance.MaxStoreBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "diagnostics.route_latency_samples",
     "Class": "observation",
     "Unit": "rows",
