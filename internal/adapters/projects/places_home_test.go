@@ -1,7 +1,11 @@
 package projects
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 // The home directory is not offered just because a session started there, but
@@ -28,5 +32,33 @@ func TestAnAddedHomeDirectoryIsListed(t *testing.T) {
 	}
 	if !listed(p) {
 		t.Fatal("the home directory the person added is not listed")
+	}
+}
+
+func TestCodexProjectDiscoveryKeepsUserIDEThreads(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".codex", "sessions", time.Now().Format("2006/01/02"))
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for i, tc := range []struct{ source, thread string }{
+		{"cli", "user"}, {"vscode", "user"}, {"exec", "user"}, {"vscode", "guardian"},
+	} {
+		body := fmt.Sprintf(`{"type":"session_meta","payload":{"cwd":"/project-%d","source":"%s","thread_source":"%s"}}`, i, tc.source, tc.thread)
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("rollout-%d.jsonl", i)), []byte(body+"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := NewPlaces(nil, nil)
+	for pass := 0; pass < 2; pass++ {
+		rows := p.codexRecorded(60, 40)
+		got := map[string]bool{}
+		for _, row := range rows {
+			got[row.Path] = true
+		}
+		if len(got) != 2 || !got["/project-0"] || !got["/project-1"] {
+			t.Fatalf("discovery pass %d: %v", pass, rows)
+		}
 	}
 }

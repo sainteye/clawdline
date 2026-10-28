@@ -142,6 +142,11 @@ the tunnel's HTTPS address, or the hosted console.
 3. Choose **Claude Code** or **Codex** under **Start with**, or resume a past
    conversation under **Pick up an earlier one**.
 
+Codex history includes interactive conversations from both the CLI and the VS Code extension.
+The selected folder must match the conversation's working directory exactly; background exec
+threads, provider subagents, temporary threads and dispatched children are excluded. Resuming
+keeps the original conversation ID.
+
 Codex history loads twenty provider records at a time. Choose **Load older sessions** to
 continue; a page containing only excluded background conversations still offers the next page.
 If a read fails, **Retry** keeps the sessions already loaded and retries the same page. A read
