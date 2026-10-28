@@ -26,7 +26,7 @@ func Recorded(place Place, assistant, id string) bool {
 	}
 	switch assistant {
 	case "", AssistantClaude:
-		st, err := os.Stat(filepath.Join(h, ".claude", "projects", Slug(place.Path), id+".jsonl"))
+		st, err := os.Stat(filepath.Join(transcript.ClaudeConfigDir(h), "projects", Slug(place.Path), id+".jsonl"))
 		return err == nil && st.Mode().IsRegular()
 	case AssistantCodex:
 		return transcript.CodexPath(h, id) != ""

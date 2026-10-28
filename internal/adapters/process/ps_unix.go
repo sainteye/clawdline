@@ -19,6 +19,9 @@ import (
 )
 
 type PS struct {
+	// RemoteControl binds a native headless worker to its kernel generation and bridge.
+	// Nil leaves external SDK workers undiscovered, as before.
+	RemoteControl func(context.Context, int, string) (session.Session, bool)
 	// table is a single process-table observation; nil uses the kernel reader.
 	table func(context.Context) ([]byte, error)
 	// Antigravity must validate the executable fingerprint and kernel birth.
@@ -85,7 +88,30 @@ func (p *PS) scan(ctx context.Context, ttys map[string]bool) (session.Inventory,
 		command := strings.Join(fields[5:], " ")
 
 		assistant := classify(command)
+		if assistant == "" && nativeClaudeRemoteExecutable(fields[5]) && claudeRemoteWorker(fields[6:]) {
+			assistant = session.AssistantClaude
+		}
 		pid, _ := strconv.Atoi(pidText)
+		if assistant == session.AssistantClaude {
+			args := fields[6:]
+			// The server is a launcher, not one of the conversations it serves.
+			if len(args) > 0 && (args[0] == "remote-control" || args[0] == "rc") {
+				continue
+			}
+			if claudeRemoteWorker(args) {
+				// A worker can inherit its launcher's tty and tmux environment.
+				// Never merge its conversation into that launcher's terminal.
+				if ttys == nil && p.RemoteControl != nil {
+					if row, ok := p.RemoteControl(ctx, pid, RemoteControlID(args)); ok {
+						inv.Sessions = append(inv.Sessions, row)
+					} else {
+						inv.Complete = false
+						inv.Notes = append(inv.Notes, "claude_remote_identity_unavailable")
+					}
+				}
+				continue
+			}
+		}
 		var antigravity ports.AntigravityProcess
 		if assistant == "" && path.Base(fields[5]) == "agy" {
 			fact, ok, complete := p.antigravityProcessStatus(ctx, pid, tty)

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9788,
-  "riskKeys": 4335,
-  "nonRiskCount": 5453,
+  "englishContentKeys": 9805,
+  "riskKeys": 4349,
+  "nonRiskCount": 5456,
   "groups": [
     {
       "name": "admin / other",
@@ -342,7 +342,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 356,
+      "count": 358,
       "sources": [
         null
       ],
@@ -659,6 +659,8 @@
         "capacityRow.session.transcript_delta_rows.what",
         "capacityRow.sessions.archive_rows.full",
         "capacityRow.sessions.archive_rows.what",
+        "capacityRow.sessions.claude_remote_request_seconds.what",
+        "capacityRow.sessions.rc_close_poll_ms.what",
         "capacityRow.sessions.restore_rows.full",
         "capacityRow.snippets.scope.what",
         "capacityRow.squad.body_bytes.what",
@@ -3480,7 +3482,7 @@
     },
     {
       "name": "next / other",
-      "count": 496,
+      "count": 497,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3512,6 +3514,7 @@
         "next.archivedAt",
         "next.archiving",
         "next.brokerWork",
+        "next.claudeRemoteShort",
         "next.commandNoPlanner",
         "next.compressedReadTooLarge",
         "next.compressedReadUnsupported",

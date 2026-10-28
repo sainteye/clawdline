@@ -99,6 +99,12 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 		return ports.Identity{ConversationID: b.ConversationID, Pane: b.Process.TerminalID, Binding: session.BindingLaunchHook}, true
 	case session.AssistantClaude:
 		r, ok := h.claudeFor(s.PID)
+		if s.Backend == session.BackendClaudeRemote && s.RemoteSessionID != "" && !ok {
+			return ports.Identity{CWD: s.CWD, Binding: s.Binding}, true
+		}
+		if s.Backend == session.BackendClaudeRemote && (r.SessionID != s.ConversationID || r.PID != s.PID) {
+			return ports.Identity{Binding: session.BindingNoRecord}, false
+		}
 		if !ok {
 			// Claude Code writes this file itself, so its absence is the
 			// session not having written it — not a reading that failed.
@@ -217,6 +223,9 @@ func (h *Host) claudeTranscript(s session.Session) (string, bool) {
 	}
 	cwd := s.CWD
 	if r, ok := h.claudeFor(s.PID); ok && r.CWD != "" {
+		if s.Backend == session.BackendClaudeRemote && r.SessionID != s.ConversationID {
+			return "", false
+		}
 		cwd = r.CWD
 	}
 	if cwd == "" {

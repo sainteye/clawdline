@@ -1,0 +1,4 @@
+.rc-permissions { padding: 6px 10px; font-size: 12px; color: var(--dim); }
+.rc-permissions > button, .rc-permission-offer button { min-height: 32px; padding: 4px 10px; margin-right: 6px; }
+.rc-permissions p { margin: 6px 0; }
+.rc-permission-offer pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 35vh; overflow: auto; font-size: 12px; }

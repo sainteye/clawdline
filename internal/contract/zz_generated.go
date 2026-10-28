@@ -15,7 +15,9 @@ package contract
 // tty and, for a digit, that a Return followed only if the screen showed the
 // digit landed. `typed` is the strongest thing a send can claim: the bytes
 // reached the tty. Whether the assistant took the turn is a separate fact, read
-// from the fleet list, and this never asserts it.
+// from the fleet list, and this never asserts it. Remote Control `accepted`
+// means the controller event was accepted by the service, not necessarily
+// consumed or executed.
 type ActionResult struct {
 	Action string `json:"action"`
 
@@ -333,13 +335,14 @@ type AuthRefusal struct {
 type Backend string
 
 const (
-	BackendIterm Backend = "iterm"
-	BackendTmux  Backend = "tmux"
-	BackendOwned Backend = "owned"
+	BackendIterm        Backend = "iterm"
+	BackendTmux         Backend = "tmux"
+	BackendOwned        Backend = "owned"
+	BackendClaudeRemote Backend = "claude_remote"
 )
 
 // BackendValues is every value the contract allows, in contract order.
-var BackendValues = []Backend{BackendIterm, BackendTmux, BackendOwned}
+var BackendValues = []Backend{BackendIterm, BackendTmux, BackendOwned, BackendClaudeRemote}
 
 type BearingsLanding struct {
 	AgeSeconds int64  `json:"age_seconds"`
@@ -5657,8 +5660,17 @@ type SessionInfo struct {
 	// When the walk behind `links` was taken, in seconds since 1970. A held reading is
 	// served however old it is, so a card that wants to say how old it is has the
 	// number.
-	LinksObservedAt float64        `json:"linksObservedAt,omitempty"`
-	Models          []SessionModel `json:"models"`
+	LinksObservedAt  float64        `json:"linksObservedAt,omitempty"`
+	Models           []SessionModel `json:"models"`
+	RemotePermission *SessionMenu   `json:"remotePermission,omitempty"`
+
+	// Fingerprint of the exact RC tool permission, including request ID, complete tool
+	// input, bridge and kernel generation.
+	RemotePermissionExpect string `json:"remotePermissionExpect,omitempty"`
+
+	// The live RC worker answered the permission query. Without this, an absent menu
+	// does not establish that no request is pending.
+	RemotePermissionKnown bool `json:"remotePermissionKnown,omitempty"`
 
 	// What the one git read behind `links` found. Present whenever the session has a
 	// working directory, including when it produced no row: `could not read` and

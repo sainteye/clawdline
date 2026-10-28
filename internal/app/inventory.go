@@ -220,6 +220,21 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 		merged.Sessions = append(merged.Sessions, row)
 	}
 	in.Activity.spent(read, unread)
+	// The terminal remains the controllable representation when someone resumes
+	// the same local conversation while its old remote worker is still alive.
+	terminalConversations := map[string]bool{}
+	for _, row := range merged.Sessions {
+		if row.Backend != session.BackendClaudeRemote && row.Assistant == session.AssistantClaude && row.ConversationID != "" {
+			terminalConversations[row.ConversationID] = true
+		}
+	}
+	rows := merged.Sessions[:0]
+	for _, row := range merged.Sessions {
+		if row.Backend != session.BackendClaudeRemote || !terminalConversations[row.ConversationID] {
+			rows = append(rows, row)
+		}
+	}
+	merged.Sessions = rows
 	return merged
 }
 
@@ -306,7 +321,7 @@ func (in Inventory) enrich(ctx context.Context, s session.Session) session.Sessi
 	if s.CWD == "" && id.CWD != "" {
 		s.CWD = id.CWD
 	}
-	if id.Pane != "" && !session.IsTerminalPane(s.ID) {
+	if id.Pane != "" && !session.IsTerminalPane(s.ID) && s.Backend != session.BackendClaudeRemote {
 		s.ID = id.Pane
 		s.Backend = session.BackendTmux
 	}

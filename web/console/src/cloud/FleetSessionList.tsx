@@ -468,7 +468,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                   const title = fleetRowTitle(row, presentation, nextWord("cloudAllUnknown"),
                     confirmedTitles?.get(destinationKey(row.destination)))
                   const actions = sessionSwipeActions(row.freshness,
-                    displayedPresentationStatus(row, presentation)?.sessionId)
+                    displayedPresentationStatus(row, presentation)?.sessionId, row.backend)
                   return <ProjectedRow key={destinationKey(row.destination)}
                     title={title} icon={presentation?.icon} cwd={presentation?.cwd}
                     machineScope={row.machineScope === true} coordinatorBound={row.coordinatorBound === true}

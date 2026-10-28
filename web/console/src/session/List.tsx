@@ -290,7 +290,8 @@ function StateLine({ row, role, suffix = "", runningAgents = listRunningAgents(r
   const ref = useRef<HTMLDivElement>(null)
   const { html, shape } = stateLine(row)
   const agentWord = runningAgentsWord(runningAgents)
-  const statusHTML = html + (agentWord ? '<span class="session-agent-count">' + L.escapeHTML(agentWord) + '</span>' : "") + (suffix ? '<span class="session-activity">' + L.escapeHTML(suffix) + "</span>" : "")
+  const remoteControl = row.backend === "claude_remote" ? '<span class="session-activity">' + L.escapeHTML(nextWord("claudeRemoteShort")) + '</span>' : ""
+  const statusHTML = html + remoteControl + (agentWord ? '<span class="session-agent-count">' + L.escapeHTML(agentWord) + '</span>' : "") + (suffix ? '<span class="session-activity">' + L.escapeHTML(suffix) + "</span>" : "")
   const roleHTML = role
     ? '<span class="persona-state" title="' + L.escapeHTML(role.title) + '">' +
       '<canvas class="persona-state-bot" width="0" height="0" aria-hidden="true"></canvas>' +
@@ -478,7 +479,7 @@ export function Row({
       <RowIdentity title={name} icon={icon} assistant={row.assistant} crown={!!row.machine_scope || bound} bound={bound} />
       <div className="meta">
         <span className="path">{L.path(row.cwd)}</span>
-        <span className="tty">{row.tty || row.backend || ""}</span>
+        <span className="tty">{row.backend === "claude_remote" ? "" : row.tty || row.backend || ""}</span>
         <RowActivity at={row.activity?.known ? row.activity.at : undefined} />
         {bound && (
           <span className="coordinator-chip" title={coordinator?.label ?? "Clawdfather"} aria-hidden="true">

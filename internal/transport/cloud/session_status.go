@@ -68,7 +68,7 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 	if v, _ := row["assistant"].(string); v == "claude" || v == "codex" || v == "antigravity" {
 		out.Assistant = v
 	}
-	if v, _ := row["backend"].(string); v == "tmux" || v == "iterm" || v == "ps" || v == "owned" {
+	if v, _ := row["backend"].(string); v == "tmux" || v == "iterm" || v == "ps" || v == "owned" || v == "claude_remote" {
 		out.Backend = v
 	}
 	out.MachineScope, _ = row["machine_scope"].(bool)

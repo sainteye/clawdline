@@ -80,6 +80,34 @@ func closeActions(h *closeHost) Actions {
 	}
 }
 
+func TestRemoteControlCannotUseTerminalOrProcessActions(t *testing.T) {
+	row := session.Session{ID: "claude-remote:42:fixture", Backend: session.BackendClaudeRemote, PID: 42}
+	// Even a holder that claims this ID and an available process closer must
+	// not make a worker with no RC controller writable or closeable.
+	h := &ttyHolder{holds: map[string]bool{row.ID: true}}
+	procs := &processCloser{}
+	a := closeActions(&h.closeHost)
+	a.Inventory = Inventory{Process: stubProcess{inv: session.Inventory{
+		Sessions: []session.Session{row}, Complete: true, Provenance: "ps"}}}
+	a.Terminals, a.Processes = []ports.TerminalHost{h}, procs
+	ctx := context.Background()
+	for name, act := range map[string]func() (session.Session, error){
+		"send":      func() (session.Session, error) { return a.Send(ctx, row.ID, "fixture message") },
+		"interrupt": func() (session.Session, error) { return a.Interrupt(ctx, row.ID) },
+		"focus":     func() (session.Session, error) { return a.Focus(ctx, row.ID) },
+		"close":     func() (session.Session, error) { return a.Close(ctx, row.ID, true) },
+	} {
+		_, err := act()
+		var refusal Refusal
+		if !errors.As(err, &refusal) || refusal.Code != "backend_unsupported" {
+			t.Fatalf("%s = %v, want an unsupported backend refusal", name, err)
+		}
+	}
+	if len(h.done) != 0 || len(procs.closed) != 0 {
+		t.Fatalf("unsupported actions reached a writer: terminal=%v process=%v", h.done, procs.closed)
+	}
+}
+
 // A close types into the session now — the assistant's own quit word — so it
 // takes the terminal's lane like every other write. Without it a close and a
 // message would be two writers on one terminal.

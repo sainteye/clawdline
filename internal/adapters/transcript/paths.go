@@ -11,7 +11,16 @@ import (
 // The directory name is the working directory as ProjectSlug spells it. That
 // is Claude's scheme, not ours, so it is reproduced as given.
 func ClaudePath(home, cwd, conversationID string) string {
-	return filepath.Join(home, ".claude", "projects", ProjectSlug(cwd), conversationID+".jsonl")
+	return filepath.Join(ClaudeConfigDir(home), "projects", ProjectSlug(cwd), conversationID+".jsonl")
+}
+
+// ClaudeConfigDir is the Claude configuration visible to this daemon. A
+// different user's or process's unconfigured directory is never searched.
+func ClaudeConfigDir(home string) string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); filepath.IsAbs(dir) {
+		return dir
+	}
+	return filepath.Join(home, ".claude")
 }
 
 // CodexPath finds the rollout file for a thread.

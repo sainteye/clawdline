@@ -13,6 +13,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -137,6 +138,24 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(view, "entry-v1:") || strings.HasPrefix(view, "entry-v1z:") {
 		s.transcriptEntryDetail(w, r, id, item, view)
+		return
+	}
+	if item.Backend == session.BackendClaudeRemote && item.RemoteSessionID != "" && s.claudeRemote != nil {
+		// Native quota errors can leave neither registry nor JSONL. The persisted
+		// controller log remains the authoritative read for these headless workers.
+		page, err := s.claudeRemote.Page(ctx, item, limit, before, after, r.URL.Query().Get("revision"))
+		if err != nil {
+			if errors.Is(err, transcript.ErrCursorStale) {
+				writeRefusal(w, 409, "transcript_cursor_stale", "the transcript changed in a way this cursor cannot follow; read the newest page")
+				return
+			}
+			writeRawRefusal(w, 502, "claude_remote_read_failed", err.Error())
+			return
+		}
+		if !s.admitPinnedTarget(w, r, id) {
+			return
+		}
+		writeJSON(w, page)
 		return
 	}
 	delta := strings.HasPrefix(view, "delta-v1")
@@ -550,6 +569,29 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 			CWD:       item.CWD,
 		},
 		Models: []contract.SessionModel{},
+	}
+	if item.Backend == session.BackendClaudeRemote {
+		if controls, ok := s.claudeRemote.(ports.ClaudeRemoteControls); ok && r.URL.Query().Get("parts") == "remote-permission" {
+			if menu, err := controls.InspectRemote(ctx, item); err == nil {
+				info.RemotePermissionKnown = true
+				if menu != nil {
+					row := item
+					row.State = session.StateWaiting
+					row.Menu = menu
+					raw, _ := json.Marshal(wireMenu(row))
+					var wire contract.SessionMenu
+					if json.Unmarshal(raw, &wire) == nil {
+						info.RemotePermission = &wire
+						info.RemotePermissionExpect = session.MenuFingerprint(*menu)
+					}
+				}
+			}
+		}
+		if !s.admitPinnedTarget(w, r, id) {
+			return
+		}
+		writeJSON(w, contract.SessionInfoReply{Info: info})
+		return
 	}
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
 		if h := s.antigravitySessions.Load(); h != nil {

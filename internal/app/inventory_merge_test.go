@@ -42,6 +42,28 @@ func TestTerminalPaneKeepsItsServerWhenEnrichedFromAProviderRecord(t *testing.T)
 	}
 }
 
+func TestRemoteControlWorkerDoesNotBorrowItsLaunchersPane(t *testing.T) {
+	in := Inventory{Identity: terminalPaneIdentity{}}
+	row := session.Session{ID: "claude-remote:42:fixture", Backend: session.BackendClaudeRemote,
+		Assistant: session.AssistantClaude, PID: 42, ConversationID: "fixture"}
+	got := in.enrich(context.Background(), row)
+	if got.ID != row.ID || got.Backend != session.BackendClaudeRemote {
+		t.Fatalf("worker became its launcher: %+v", got)
+	}
+}
+
+func TestRemoteControlAndInteractiveResumeAreOneConversation(t *testing.T) {
+	remote := session.Session{ID: "claude-remote:42:fixture", Backend: session.BackendClaudeRemote,
+		Assistant: session.AssistantClaude, PID: 42, ConversationID: "fixture"}
+	terminal := session.Session{ID: "%2", TTY: "ttys002", Backend: session.BackendTmux,
+		Assistant: session.AssistantClaude, PID: 43, ConversationID: "fixture"}
+	in := Inventory{Process: stubProcess{inv: session.Inventory{Sessions: []session.Session{remote, terminal}, Complete: true, Provenance: "ps"}}}
+	got := in.Read(context.Background())
+	if len(got.Sessions) != 1 || got.Sessions[0].ID != terminal.ID {
+		t.Fatalf("same conversation was listed twice: %+v", got.Sessions)
+	}
+}
+
 type titleJoinIdentity struct{ saw string }
 
 func (i *titleJoinIdentity) ForSession(_ context.Context, s session.Session) (ports.Identity, bool) {

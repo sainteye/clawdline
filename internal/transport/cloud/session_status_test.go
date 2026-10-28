@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+func TestRemoteControlBackendSurvivesTheContentFreeStatus(t *testing.T) {
+	row := map[string]any{"state": "idle", "assistant": "claude", "backend": "claude_remote",
+		"source": map[string]any{"freshness": "current", "provenance": "ps"}}
+	got := ProjectSessionStatus("machine_a", "claude-remote:42:fixture", row, true, 100)
+	if got.Backend != "claude_remote" || got.Source.Provenance != "ps" {
+		t.Fatalf("remote identity lost: %+v", got)
+	}
+}
+
 func TestCapacityStatusNeedsAttentionWithoutAskingForAMenuReply(t *testing.T) {
 	row := map[string]any{"state": "idle", "provider_block": "model_capacity",
 		"source": map[string]any{"freshness": "current"}}

@@ -66,6 +66,8 @@ func SourceFor(b Backend) string {
 		return "iterm"
 	case BackendTmux:
 		return "tmux"
+	case BackendClaudeRemote:
+		return ProcessSource
 	}
 	return ""
 }
@@ -97,6 +99,8 @@ func SourceForID(id string) string {
 	switch {
 	case strings.HasPrefix(id, "owned:acp:"):
 		return "owned"
+	case strings.HasPrefix(id, "claude-remote:"):
+		return ProcessSource
 	case tmuxPane.MatchString(id), IsTerminalPane(id):
 		return "tmux"
 	case itermSession.MatchString(id):

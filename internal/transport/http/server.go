@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/antigravityproject"
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline/internal/adapters/clauderemote"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
 	"github.com/sainteye/clawdline/internal/adapters/logs"
@@ -55,6 +56,10 @@ import (
 )
 
 type Server struct {
+	claudeRemote interface {
+		SendRemote(context.Context, session.Session, string, func() error) error
+		Page(context.Context, session.Session, int, int64, int64, string) (contract.TranscriptPage, error)
+	}
 	transcriptBaselines       transcriptBaselines
 	antigravityProjectMu      sync.Mutex
 	antigravityProjectOwner   atomic.Pointer[antigravityproject.Manager]
@@ -267,8 +272,12 @@ func New(cfg config.Config) (*Server, error) {
 	agents := subagents.New(home)
 	hosts := terminal.Hosts()
 	terminal.ConnectTerminalServer(hosts, cfg.Dir)
+	identity := transcript.NewHost()
+	processes := process.New()
+	processes.RemoteControl = identity.RemoteControlSession
 	srv := &Server{
 		store:          st,
+		claudeRemote:   clauderemote.New(),
 		secretHandoffs: app.NewSecretHandoffs(),
 		cfg:            cfg,
 		terminals:      hosts,
@@ -280,9 +289,9 @@ func New(cfg config.Config) (*Server, error) {
 		links:          projectlinks.NewCache(),
 		agents:         agents,
 		inventory: app.Inventory{
-			Process:   process.New(),
+			Process:   processes,
 			Terminals: hosts,
-			Identity:  transcript.NewHost(),
+			Identity:  identity,
 			Agents:    agents,
 			Screen:    terminal.NewScreens(hosts...),
 			// The list's screens are held and refreshed behind the answer; the

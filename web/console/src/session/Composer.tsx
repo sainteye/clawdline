@@ -36,6 +36,7 @@ import { ComposerBox } from "./ComposerBox.js"
 import { voiceSource } from "./voice-source.js"
 import "./voice-source.css"
 import "./drop-target.css"
+import { RemotePermissions } from "./RemotePermissions.js"
 
 /**
  * The composer, as the original's `form#composer` is built.
@@ -200,11 +201,12 @@ export function Composer({
 
   const machine = remote?.machineID ?? (row ? L.machineFor(row).id : "")
   const blockedCode = !remote && blocked?.machine === machine ? blocked.code : ""
+  const remoteControl = row?.backend === "claude_remote"
   const write = remote ? remote.canSend : !blockedCode
   const protocolOwned = !remote && assistantProtocolOwned(row)
   const providerOn = assistantComposeAdmits(remote?.assistant ?? row?.assistant, remote?.assistantFacts ?? assistantFacts,
     remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu, protocolOwned)
-  const on = draftReady && (remote ? remote.canSend : write && !!row) && providerOn
+  const on = draftReady && write && (remote ? remote.canSend : !!row) && providerOn
   const cardsVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   useEffect(() => {
     if (!protocolOwned || !row) return
@@ -594,7 +596,7 @@ export function Composer({
     : catalogWord("antigravity", "sendUnavailable")
   const why: ReactNode = failure || (!providerOn ? providerWords : "") || (!remote && blockedCode
     ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)
-    : "")
+    : "") || (remoteControl ? nextWord("claudeRemoteReadOnly") : "")
   const pinned = sending && sendWidth.current.px ? { minWidth: `${sendWidth.current.px}px` } : undefined
 
   return (
@@ -611,6 +613,7 @@ export function Composer({
         void submit()
       }}
     >
+      {remoteControl && row && <RemotePermissions row={row} write={!!write} />}
       {!remote && <Waiting row={row} assistantFacts={assistantFacts} write={write} onScreen={onScreen} />}
       <div
         className="shots"

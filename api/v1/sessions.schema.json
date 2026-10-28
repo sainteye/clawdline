@@ -429,6 +429,9 @@
       "additionalProperties": false,
       "required": ["models", "session"],
       "properties": {
+        "remotePermission": { "$ref": "#/$defs/SessionMenu" },
+        "remotePermissionKnown": { "type": "boolean", "description": "The live RC worker answered the permission query. Without this, an absent menu does not establish that no request is pending." },
+        "remotePermissionExpect": { "type": "string", "description": "Fingerprint of the exact RC tool permission, including request ID, complete tool input, bridge and kernel generation." },
         "context": { "$ref": "#/$defs/SessionInfoContext" },
         "efforts": { "description": "Native offered thinking_level option values for this owned ACP session. May change with model selection. Absent when structured options are unavailable; no inferred effort control.", "type": "array", "items": { "type": "string" } },
         "limits": { "$ref": "#/$defs/SessionLimits" },

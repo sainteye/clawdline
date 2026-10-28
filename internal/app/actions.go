@@ -35,8 +35,11 @@ type Actions struct {
 	// one. Find asks it for a reading taken now, because what Find answers
 	// refuses a person's action by saying their session is not there; nil
 	// scans through Inventory directly, which is what a test wants.
-	Reading   *InventoryReading
-	Terminals []ports.TerminalHost
+	Reading       *InventoryReading
+	Terminals     []ports.TerminalHost
+	RemoteControl interface {
+		SendRemote(context.Context, session.Session, string, func() error) error
+	}
 	// Antigravity verifies the live native conversation before every terminal effect.
 	Antigravity           ports.AntigravityBindings
 	AntigravityFirstInput ports.AntigravityFirstInputs
@@ -103,6 +106,14 @@ func (a Actions) lanes() *lane.Lanes {
 		return a.Lanes
 	}
 	return terminalLanes
+}
+
+type remoteControlUserKey struct{}
+
+// WithRemoteControlUserSubmission is set by an authenticated person-send
+// transport. Broker and peer-agent messages must not acquire human origin.
+func WithRemoteControlUserSubmission(ctx context.Context) context.Context {
+	return context.WithValue(ctx, remoteControlUserKey{}, true)
 }
 
 type operationCheckKey struct{}
@@ -246,6 +257,9 @@ func (a Actions) read(ctx context.Context) session.Inventory {
 // asking costs no Apple Event. A tty no backend holds — another terminal
 // application — is refused as before.
 func (a Actions) host(ctx context.Context, s session.Session) (ports.TerminalHost, error) {
+	if s.Backend == session.BackendClaudeRemote {
+		return nil, Refusal{Code: "backend_unsupported", Detail: "Use Claude to answer requests, interrupt or close this Remote Control session"}
+	}
 	if session.SourceForID(s.ID) == "ps" {
 		tty := s.TTY
 		if tty == "" {
@@ -319,6 +333,23 @@ func (a Actions) send(ctx context.Context, s session.Session, text string) (sess
 		return s, err
 	}
 	ctx = ports.Asked(ctx)
+	if s.Backend == session.BackendClaudeRemote {
+		if allowed, _ := ctx.Value(remoteControlUserKey{}).(bool); !allowed {
+			return s, beforeTheFirstByte(Refusal{Code: "backend_unsupported", Detail: "Remote Control text submission requires a person's send request"})
+		}
+		if a.RemoteControl == nil {
+			return s, beforeTheFirstByte(Refusal{Code: "backend_unsupported", Detail: "Remote Control sending is unavailable on this daemon"})
+		}
+		release, err := a.turn(ctx, s)
+		if err != nil {
+			return s, err
+		}
+		defer release()
+		if err := a.RemoteControl.SendRemote(ctx, s, text, func() error { return checkOperation(ctx) }); err != nil {
+			return s, sendRefusal(s, err)
+		}
+		return s, nil
+	}
 	h, err := a.host(ctx, s)
 	if err != nil {
 		return session.Session{}, beforeTheFirstByte(err)
@@ -526,6 +557,26 @@ func (a Actions) SendWithPictures(ctx context.Context, id, text string, images [
 	if len(images) > policy.MaxImagesPerMessage {
 		return session.Session{}, Refusal{Code: "bad_request",
 			Detail: fmt.Sprintf("one message carries at most %d pictures", policy.MaxImagesPerMessage)}
+	}
+	// RC images use native content blocks and never touch the pasteboard.
+	if remote, err := a.Find(ctx, id); err == nil && remote.Backend == session.BackendClaudeRemote {
+		controls, ok := a.RemoteControl.(ports.ClaudeRemoteControls)
+		person, _ := ctx.Value(remoteControlUserKey{}).(bool)
+		if !ok || !person {
+			return remote, beforeTheFirstByte(Refusal{Code: "backend_unsupported", Detail: "Remote Control image submission is unavailable"})
+		}
+		if err := a.checkTodoProcess(remote); err != nil {
+			return remote, err
+		}
+		release, err := a.turn(ctx, remote)
+		if err != nil {
+			return remote, err
+		}
+		defer release()
+		if err := controls.SendRemoteImages(ctx, remote, text, images, func() error { return checkOperation(ctx) }); err != nil {
+			return remote, sendRefusal(remote, err)
+		}
+		return remote, nil
 	}
 	if a.Pictures.Drops == nil {
 		return session.Session{}, Refusal{Code: "pictures_unavailable",
@@ -742,6 +793,22 @@ func (a Actions) Interrupt(ctx context.Context, id string) (session.Session, err
 	if err != nil {
 		return session.Session{}, err
 	}
+	if s.Backend == session.BackendClaudeRemote {
+		controls, ok := a.RemoteControl.(ports.ClaudeRemoteControls)
+		person, _ := ctx.Value(remoteControlUserKey{}).(bool)
+		if !ok || !person {
+			return s, beforeTheFirstByte(Refusal{Code: "backend_unsupported", Detail: "Remote Control interruption requires a person's request"})
+		}
+		release, err := a.turn(ctx, s)
+		if err != nil {
+			return s, err
+		}
+		defer release()
+		if err := controls.InterruptRemote(ctx, s, func() error { return checkOperation(ctx) }); err != nil {
+			return s, Refusal{Code: "interrupt_failed", RawDetail: true, Detail: err.Error(), Cause: err}
+		}
+		return s, nil
+	}
 	h, err := a.host(ctx, s)
 	if err != nil {
 		return session.Session{}, err
@@ -867,6 +934,16 @@ func (a Actions) ClosePinned(ctx context.Context, id string, force bool, pid int
 // both times, and stayed on the list. The process is what there is, so the
 // process is what is asked to leave.
 func (a Actions) closer(ctx context.Context, s session.Session) (func(context.Context, session.Session) error, error) {
+	if s.Backend == session.BackendClaudeRemote {
+		controls, ok := a.RemoteControl.(ports.ClaudeRemoteControls)
+		person, _ := ctx.Value(remoteControlUserKey{}).(bool)
+		if !ok || !person {
+			return nil, beforeTheFirstByte(Refusal{Code: "backend_unsupported", Detail: "Remote Control closing requires a person's request"})
+		}
+		return func(ctx context.Context, s session.Session) error {
+			return controls.CloseRemote(ctx, s, func() error { return checkOperation(ctx) })
+		}, nil
+	}
 	if session.SourceForID(s.ID) == "ps" {
 		if a.Processes == nil {
 			return nil, Refusal{
