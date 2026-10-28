@@ -2945,6 +2945,7 @@
   "health.pf_notifyDelivery": "Acceptance is a push-provider receipt, not proof the person saw it. A crash between send and receipt may repeat the same notification tag.",
   "health.pf_alertLoss": "Alert transitions discarded since monitor initialization:",
   "health.pf_runtimeImage": "Running container image",
+  "health.pf_elapsedNote": "Full HTTP response time includes intentional long-poll waits; it is not CPU execution time. Response-time alerts use this same elapsed duration.",
   "http.002261325d82f433": "This task has no root session to propose to; its work is nobody's line to follow.",
   "http.0035887da2a2da5a": "A new Clawdfather binding must come from the machine workspace, not a Project Session.",
   "http.009d6e05d9395474": "A pairing hand-off names the machine and carries the offer.",

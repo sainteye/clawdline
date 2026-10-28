@@ -2945,6 +2945,7 @@
   "health.pf_notifyDelivery": "接受僅代表推播服務收件，不代表使用者已讀；派送與記帳間若當機，可能以相同標記重送。",
   "health.pf_alertLoss": "監測初始化後捨棄的告警轉換數：",
   "health.pf_runtimeImage": "執行中的容器映像",
+  "health.pf_elapsedNote": "完整 HTTP 回應時間包含長輪詢的預期等待，並非 CPU 執行時間；回應時間告警也採用這個經過時間。",
   "http.002261325d82f433": "這項任務沒有可供提案的根 Session；其工作沒有任何人的工作線可接續。",
   "http.0035887da2a2da5a": "新的 Clawdfather 綁定必須來自機器工作區，而非 Project Session。",
   "http.009d6e05d9395474": "配對交接須指出機器，並附上提議內容。",

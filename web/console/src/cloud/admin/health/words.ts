@@ -6,6 +6,7 @@
 import { catalogWord } from "../../../catalog.ts"
 
 const en = {
+  pf_elapsedNote: "Full HTTP response time includes intentional long-poll waits; it is not CPU execution time. Response-time alerts use this same elapsed duration.",
   pf_runtimeImage: "Running container image",
   pf_alertLoss: "Alert transitions discarded since monitor initialization:",
   pf_asof: "Historical observations · selected time",
@@ -1251,6 +1252,7 @@ const en = {
 export type HealthWord = keyof typeof en
 
 const zhTW: Record<HealthWord, string> = {
+  pf_elapsedNote: "完整 HTTP 回應時間包含長輪詢的預期等待，並非 CPU 執行時間；回應時間告警也採用這個經過時間。",
   pf_runtimeImage: "執行中的容器映像",
   pf_alertLoss: "監測初始化後捨棄的告警轉換數：",
   pf_asof: "歷史觀測 · 所選時間",

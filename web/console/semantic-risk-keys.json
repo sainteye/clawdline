@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9782,
+  "englishKeys": 9783,
   "counts": {
-    "negation": 2765,
+    "negation": 2766,
     "state": 1604,
     "permission": 570,
     "deletion": 213,
     "uncertainty": 370
   },
-  "unionCount": 4333,
+  "unionCount": 4334,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -816,6 +816,7 @@
       "health.offlineNote",
       "health.outcome_no_requests",
       "health.pf_alertNote",
+      "health.pf_elapsedNote",
       "health.pf_failed",
       "health.pf_groupNote",
       "health.pf_histogram",
@@ -6770,6 +6771,7 @@
     "health.pf_complete",
     "health.pf_count",
     "health.pf_dropped",
+    "health.pf_elapsedNote",
     "health.pf_failed",
     "health.pf_failedDeploy",
     "health.pf_groupNote",

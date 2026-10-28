@@ -76,6 +76,7 @@ export function PerformanceScreen({ route, go, apiOrigin, get, fixture, onRefuse
         <Card label={say("pf_latency")} glyph="◷" value={ms(data.current.p95_ms)} note={`P95 · ${number(data.current.count)} ${say("pf_count")}`} stale={state.failed || !data.api_fresh || data.current.coverage_seconds < 299} say={say} />
         <Card label={say("pf_errors")} glyph="△" value={number(data.current.error_pct, "%")} note={`${number(data.current.errors)} / ${number(data.current.count)} · 5xx`} stale={state.failed || !data.api_fresh || data.current.coverage_seconds < 299} say={say} />
       </div>
+      <p className="adm-fine">{say("pf_elapsedNote")}</p>
       <section className="adm-panel"><h2>{say("pf_compare")}</h2><p className="adm-fine">{at(data.current.from_ms)} – {at(data.current.to_ms)}</p>
         <div className="pf-comparison">{([
           [say("pf_latency") + " · P95", ms(data.current.p95_ms), ms(data.previous.p95_ms)],

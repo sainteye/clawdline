@@ -21,6 +21,8 @@ queries. The API producer reports route templates, complete response-hook wall d
 histograms, 5xx, client cancellation/499, counts, active work, boot and deployed source commit.
 It never records request bodies, actual URLs, query values, addresses, headers or account identity.
 API admission through response completion is measured; edge queue time and client receipt are not.
+Intentional long-poll waits are part of that elapsed duration, including the response-time alert
+threshold. A slow-route observation is not by itself evidence of slow CPU execution.
 
 VM resources use CPU-counter differences, `MemAvailable`, core count, load and fixed managed
 container cgroups. The first CPU sample is unknown. The cgroup identity is checked against the
