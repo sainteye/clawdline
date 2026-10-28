@@ -245,6 +245,7 @@ const usagePickerOptions = [
   { id: "unattributed", name: "unattributed" },
 ]
 let usagePickerQueries: URLSearchParams[] = []
+const draftSendBodies: Record<string, unknown>[] = []
 
 function daemon(): Server {
   return createServer((req, res) => {
@@ -571,6 +572,13 @@ function daemon(): Server {
     if (path === "/v1/sessions/" + encodeURIComponent(TMUX) + "/documents/project/security.md") {
       res.writeHead(200, { "content-type": "text/markdown; charset=utf-8" })
       return res.end(untrustedContent)
+    }
+    if (req.method === "POST" && /^\/v1\/sessions\/[^/]+\/send$/.test(path)) {
+      void requestJSON(req).then(body => {
+        draftSendBodies.push(body)
+        json(res, 200, { ok: true })
+      })
+      return
     }
     if (path.startsWith("/v1/")) return json(res, 404, { error: { code: "not_found", message: path } })
     if (path === "/") {
@@ -3186,7 +3194,7 @@ for (const key of ["1", "2"]) test(`phone: owned Gemini permission option ${key}
   } finally { protocolMenuScenario = null }
 })
 
-for (const size of [PHONE, DESK]) test(`composer drafts: ${size.width}px restores, isolates and clears text and images`, () =>
+for (const size of [PHONE, DESK]) test(`composer drafts: ${size.width}px keeps text without IndexedDB and leaves images in the current editor`, () =>
   inTab(size, async tab => {
     const wait = async (expression: string) => {
       const deadline = Date.now() + 5_000
@@ -3206,95 +3214,75 @@ for (const size of [PHONE, DESK]) test(`composer drafts: ${size.width}px restore
     }
     const text = () => tab.run(`document.getElementById("msg")?.innerText`)
     const pictures = () => tab.run(`document.querySelectorAll("#shots .shot").length`)
+    const addPicture = async () => {
+      await tab.run(`(() => {
+        const canvas = document.createElement("canvas"); canvas.width = 2; canvas.height = 2;
+        return new Promise(resolve => canvas.toBlob(blob => {
+          const transfer = new DataTransfer(); transfer.items.add(new File([blob], "draft.png", { type: "image/png" }));
+          const pick = document.getElementById("pick"); pick.files = transfer.files;
+          pick.dispatchEvent(new Event("change", { bubbles: true })); resolve(true);
+        }));
+      })()`)
+      await wait(`document.querySelectorAll("#shots .shot").length === 1 && !document.getElementById("send").disabled`)
+    }
+    draftSendBodies.length = 0
     await tab.go("/v1/health")
-    await tab.run(`new Promise((resolve, reject) => {
-      const request = indexedDB.deleteDatabase("clawdline-composer-drafts");
-      request.onsuccess = () => resolve(true); request.onerror = () => reject(request.error);
-    })`)
+    await tab.run(`Object.keys(localStorage).filter(key => key.startsWith("clawdline.composer-draft:")).forEach(key => localStorage.removeItem(key))`)
     await tab.go("/?ui=en")
     await tab.until("the fixture Session list arrives", s => s.rows === ROWS.length)
-    await open(TTY)
-    assert.equal(await text(), "")
     await tab.run(`(() => {
-      window.draftTextWrites = 0; window.draftImageWrites = 0;
-      const set = Storage.prototype.setItem; const put = IDBObjectStore.prototype.put;
+      window.draftDatabaseCalls = 0; window.draftTextWrites = 0;
+      IDBFactory.prototype.open = function() {
+        window.draftDatabaseCalls++; throw new DOMException("Injected storage failure", "UnknownError");
+      };
+      const set = Storage.prototype.setItem;
       Storage.prototype.setItem = function(key, value) {
         if (key.startsWith("clawdline.composer-draft:")) window.draftTextWrites++;
         return set.call(this, key, value);
       };
-      IDBObjectStore.prototype.put = function(...args) {
-        if (this.name === "fields") window.draftImageWrites++;
-        return put.apply(this, args);
-      };
+    })()`)
+    await open(TTY)
+    assert.equal(await text(), "")
+    await tab.run(`(() => {
       const box = document.getElementById("msg");
       for (let i = 1; i <= 1000; i++) {
         box.textContent = "x".repeat(i);
         box.dispatchEvent(new InputEvent("input", { bubbles: true }));
       }
     })()`)
-    assert.deepEqual(await tab.run(`[window.draftTextWrites, window.draftImageWrites]`), [0, 0], "one thousand real editor inputs make no storage writes")
+    assert.equal(await tab.run(`window.draftTextWrites`), 0, "one thousand real editor inputs make no storage writes")
     await type("Unfinished first line\n草稿第二行")
-    await tab.run(`(() => {
-      const canvas = document.createElement("canvas"); canvas.width = 2; canvas.height = 2;
-      return new Promise(resolve => canvas.toBlob(blob => {
-        const transfer = new DataTransfer(); transfer.items.add(new File([blob], "draft.png", { type: "image/png" }));
-        const pick = document.getElementById("pick"); pick.files = transfer.files;
-        pick.dispatchEvent(new Event("change", { bubbles: true })); resolve(true);
-      }));
-    })()`)
-    await wait(`document.querySelectorAll("#shots .shot").length === 1 && !document.getElementById("send").disabled`)
-    await tab.run(`(() => {
-      const decode = window.createImageBitmap.bind(window);
-      const gate = new Promise(resolve => { window.finishDraftImage = resolve });
-      window.createImageBitmap = async (...args) => { await gate; return decode(...args) };
-      const canvas = document.createElement("canvas"); canvas.width = 3; canvas.height = 3;
-      return new Promise(resolve => canvas.toBlob(blob => {
-        const transfer = new DataTransfer(); transfer.items.add(new File([blob], "late.png", { type: "image/png" }));
-        const pick = document.getElementById("pick"); pick.files = transfer.files;
-        pick.dispatchEvent(new Event("change", { bubbles: true })); resolve(true);
-      }));
-    })()`)
+    await addPicture()
     await open(TMUX)
-    assert.equal(await text(), "", "another Session starts with its own empty editor")
+    assert.equal(await text(), "", "another Session has its own text")
     assert.equal(await pictures(), 0)
-    assert.equal(await tab.run(`window.draftTextWrites`), 1, "leaving saves the final text exactly once")
+    assert.equal(await tab.run(`window.draftTextWrites`), 1, "leaving saves the final text once")
     await type("Other Session's unfinished message")
     await open(TTY)
-    await tab.run(`document.querySelector("#shots [data-shot]").click()`)
-    await wait(`document.querySelectorAll("#shots .shot").length === 0`)
-    await tab.run(`window.finishDraftImage()`)
-    await wait(`new Promise(resolve => {
-      const request = indexedDB.open("clawdline-composer-drafts", 1);
-      request.onsuccess = () => {
-        const db = request.result;
-        const read = db.transaction("fields").objectStore("fields").get([${JSON.stringify(JSON.stringify(['this-mac',TTY,'10000000-0000-4000-8000-000000000002']))}, "images"]);
-        read.onsuccess = () => { resolve(read.result?.length === 1); db.close() };
-      };
-    })`)
-    await wait(`document.querySelectorAll("#shots .shot").length === 1`)
-    await open(TMUX)
-    assert.equal(await pictures(), 0, "a late image stays with its original Session")
-    await open(TTY)
     assert.equal(await text(), "Unfinished first line\n草稿第二行")
-    assert.equal(await pictures(), 1)
-    await tab.run(`document.getElementById("back").click()`)
-    await tab.until("leaving the detail returns to the list", s => !s.open)
-    await open(TTY)
-    assert.equal(await text(), "Unfinished first line\n草稿第二行")
-    await tab.reload()
-    await wait(`document.getElementById("msg")?.isContentEditable`)
-    assert.equal(await text(), "Unfinished first line\n草稿第二行", "a browser reload restores the draft")
-    assert.equal(await pictures(), 1)
+    assert.equal(await pictures(), 0, "leaving an editor discards its unsent pictures")
+    await addPicture()
     await tab.run(`document.getElementById("send").click()`)
     await wait(`document.getElementById("msg")?.innerText === "" && document.querySelectorAll("#shots .shot").length === 0`)
+    const sentBy = Date.now() + 5_000
+    while (!draftSendBodies.length && Date.now() < sentBy) await new Promise(resolve => setTimeout(resolve, 30))
+    assert.equal(draftSendBodies.length, 1, "one send reaches the fixture")
+    assert.equal(draftSendBodies[0].text, "Unfinished first line\n草稿第二行")
+    assert.equal((draftSendBodies[0].images as string[]).length, 1, "ordinary image sending still carries the selected image")
+    assert.match((draftSendBodies[0].images as string[])[0], /^data:image\//)
     await open(TMUX)
-    assert.equal(await text(), "Other Session's unfinished message", "sending clears only its own draft")
+    assert.equal(await text(), "Other Session's unfinished message", "sending clears only its own text")
     await open(TTY)
     assert.equal(await text(), "", "a sent draft does not return")
-    assert.equal(await pictures(), 0)
-    await open(TMUX)
+    await type("Text survives reopening")
+    await addPicture()
+    assert.equal(await tab.run(`window.draftDatabaseCalls`), 0, "entering, editing, switching and sending use no IndexedDB")
+    await tab.reload()
+    await wait(`document.getElementById("msg")?.isContentEditable`)
+    assert.equal(await text(), "Text survives reopening")
+    assert.equal(await pictures(), 0, "a page reload never restores a picture draft")
     await type("")
     await tab.reload()
     await wait(`document.getElementById("msg")?.isContentEditable`)
-    assert.equal(await text(), "", "manually clearing text also deletes the saved draft")
+    assert.equal(await text(), "", "clearing text deletes the saved draft")
   }))
