@@ -110,9 +110,43 @@ item. Neither action silently removes retained evidence.
 
 The dated [diagnostics payload example](records/limits-2026-09-18.md) is kept with the source inventory.
 
+### Routine occupancy and capacity pressure
+
+A reusable cache at its eviction boundary is working normally. So are automatic
+log/segment rotation, a journal reaching its retention horizon, a retained idle
+SQLite connection, and a bounded list of recent successful upload receipts.
+These readings keep their real usage, ratios and eviction counters but stay `ok`
+while within their bound. Cache freshness windows remain warnings unless their
+registration explicitly identifies ordinary expiry, as the negative Git cache
+does. A reading above its bound still alerts. A known failed write or failed
+maintenance action is `full` even when usage is low; unavailable readings remain
+`unknown`. User images, evidence, active queues and journal byte/count pressure
+retain capacity warnings. Early deletion and queue refusals are not normal cache
+recycling.
+
+The negative Git cache removes expired answers before measuring either age or
+row count. SQLite pool diagnostics include open/in-use connections and cumulative
+wait count/time; an allocated idle connection does not establish contention.
+Health-store diagnostics expose largest segment size, live lost-range count, and
+entries examined during the opening scan. The latter is explicitly not a current
+directory enumeration; truncated recovery remains a failure.
+
+Reply images retain up to 256 pictures under the existing 64 MiB and 24-hour
+budgets. Incremental transcript baselines retain up to 128 versions under the
+existing 8 MiB byte budget. Project memory retains up to 1,024 entries; the launch
+index remains capped at 8 KiB, and the per-entry 64 KiB limit is unchanged. These
+are bounded headroom choices, not measured universal optima. Original image
+expiry, finite disk budgets, typed refusals, protocol limits and concurrency
+backpressure remain in force. Private machine observations are not repository
+fixtures or public documentation.
+
+The capacity drill expects the pressure-state climb and one notice only for
+pressure rows. For routine recycling it expects `ok`, no notice, and exactly
+one real at-limit action. Both variants fail on a failed maintenance action.
+
 ### 4.6 水位與預測
 
-- `ok` < 80% ≤ `warn` < 95% ≤ `critical` < 100% ≤ `full`；**另外有 `unknown`**（量不到），它不是 `ok`。
+- For pressure rows, `ok` < 80% ≤ `warn` < 95% ≤ `critical` < 100% ≤ `full`；**另外有 `unknown`**（量不到），它不是 `ok`。
 - **遲滯**：往下要比門檻低 5 個百分點才回去，不然在 95% 附近會一直通知。
 - **預測**：用最近 7 天的成長算 `projected_full_at`。**距離到頂不到 14 天，就算比例還低也升到 `warn`**——撞牆前兩週說，
   而不是撞牆那一刻說。[§2.4](records/limits-2026-09-18.md) 那張表就是這條規則今天會產出的東西。
@@ -123,7 +157,7 @@ The dated [diagnostics payload example](records/limits-2026-09-18.md) is kept wi
 
 **要能故意把某個東西塞滿，然後看到警報。**分四層，前兩層每次都跑，後兩層驗收時跑一次：
 
-1. **domain 表格測試（純函式）**：每個類別注入 `limit = 20`，依序寫到第 16（80%）、19（95%）、20（100%）、21 筆，斷言：
+1. **domain 表格測試（純函式）**：pressure rows 注入 `limit = 20`，依序寫到第 16（80%）、19（95%）、20（100%）、21 筆，斷言：
    狀態 `ok → warn → critical → full`、第 21 筆觸發該類別的到頂行為（拒絕／過期／輪替／覆蓋）且計數器加一、
    **每次往上跨越只產出一個通知意圖**、在第 18／19 筆之間來回不會再通知（遲滯）。
 2. **登記表守衛**：§4.1 的兩道；第二道要附一個會紅的樣本（未登記的常數），證明它不是擺設。

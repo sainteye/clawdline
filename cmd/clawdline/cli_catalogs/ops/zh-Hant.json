@@ -5,7 +5,7 @@
   "capacity.dir_not_empty": "%s 不為空；演練只會填入專為此用途建立的目錄",
   "capacity.drill_subscription_not_accepted": "演練用的推播訂閱未被 FromBrowser 接受",
   "capacity.error": "錯誤      %v\n",
-  "capacity.failed": "結果      失敗：項目未依序達到 ok → warn → critical → full、動作（%s）未恰好執行一次，或未恰好產生一則通知\n",
+  "capacity.failed": "結果      失敗：項目未遵循其告警規則、動作（%s）未恰好執行一次，或通知數量不符預期\n",
   "capacity.flag.dir": "一次性狀態目錄，須為空或尚不存在（預設：新建暫存目錄）",
   "capacity.flag.drill": "刻意填滿的項目： ",
   "capacity.flag.keep": "保留目錄供檢查",

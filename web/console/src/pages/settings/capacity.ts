@@ -102,6 +102,9 @@ export function reading(row: CapacityEntry): string {
 
 /** Who lets go of what when the row is full: the person, or the daemon by its rule. */
 export function evicts(row: CapacityEntry): string {
+  if (row.name === "antigravity.history_connections") {
+    return catalogWord("capacityRow", "antigravity.history_connections.full")
+  }
   if (row.evicted_by === "person") {
     switch (row.at_limit) {
       case "rotate":

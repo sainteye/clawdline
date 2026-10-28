@@ -169,7 +169,10 @@ All registered in `internal/domain/capacity/register_healthjournal.go` and measu
 open store's `Status` (`internal/transport/http/capacity_measures_connection_health.go`; a known
 zero while it is opening or monitoring is off, unmeasured with its code when it failed to open): `cloud.health_store_bytes` 100 MiB, `_seconds` 604,800, `_segment_bytes` 8 MiB,
 `_segments` 256, `_queue_rows` 1,024, `_queue_bytes` 2 MiB, `_frame_bytes` 4,096, `_readers` 4,
-`_dir_entries` 4,096, `_lost_ranges` 64. Cadences, not held state: fsync every 5 s, retention every
+`_dir_entries` 4,096, `_lost_ranges` 64. Segment occupancy is the largest retained
+segment; lost ranges are counted live. Directory occupancy is the number of
+entries examined during the opening scan, not a fresh directory enumeration;
+truncated recovery remains a failure. Cadences, not held state: fsync every 5 s, retention every
 minute, stall after 5 s, worker tick 1 s, write retry backoff 1 s → 60 s.
 
 ## 10. Not done here

@@ -33,7 +33,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `artifacts.drops` | 268435456 | `bytes` | `evict_oldest` | `diagnostics, log` | — |
 | `artifacts.drops_young` | 1 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
 | `artifacts.image_bytes` | 67108864 | `bytes` | `evict_oldest` | `diagnostics, notice, log` | — |
-| `artifacts.images` | 64 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
+| `artifacts.images` | 256 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
 | `artifacts.report_image_pixels` | 16777216 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `artifacts.report_image_side` | 8192 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `artifacts.report_total_image_pixels` | 67108864 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -61,7 +61,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cache.source_answer` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.terminal_screens` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.transcript_delta_bytes` | 8388608 | `bytes` | `evict_oldest` | `diagnostics` | — |
-| `cache.transcript_delta_pages` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `cache.transcript_delta_pages` | 128 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.transcript_titles` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `callback.args` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `callback.command_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -311,7 +311,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `leases.queue` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `log.daemon` | 10485760 | `bytes` | `rotate` | `diagnostics, notice` | — |
 | `memory.description_bytes` | 512 | `bytes` | `refuse` | `diagnostics, sender` | — |
-| `memory.entries` | 512 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `memory.entries` | 1024 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `memory.entry_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `memory.group_description_bytes` | 256 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `memory.groups` | 16 | `rows` | `refuse` | `diagnostics, sender, health` | — |

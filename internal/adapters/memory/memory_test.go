@@ -342,3 +342,19 @@ func TestLaunchTextIsTheInstructionAndTheIndexOrNothing(t *testing.T) {
 		t.Fatalf("a full index (%d bytes) is past what a launch carries (%d)", LaunchTextLimit, projects.MemoryLaunchLimit)
 	}
 }
+
+func TestGroupedMemoryCanGrowPastTheOldEntryCeiling(t *testing.T) {
+	s := New(t.TempDir())
+	entries := make([]Entry, 0, 512)
+	for i := 0; i < 512; i++ {
+		entries = append(entries, invented(fmt.Sprintf("lesson-%03d", i), TypeProject))
+	}
+	seed(t, s, entries...)
+	if _, err := s.Add(testKey, invented("another-lesson", TypeProject)); err != nil {
+		t.Fatal(err)
+	}
+	index, n, _, err := s.Index(testKey)
+	if err != nil || n != 513 || len(index) > IndexByteLimit {
+		t.Fatalf("index budget changed: %d %d %v", n, len(index), err)
+	}
+}

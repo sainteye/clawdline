@@ -3,7 +3,7 @@ package capacity
 // cacheBounds is every registered row named cache.*.
 func cacheBounds() []Entry {
 	return []Entry{
-		{Name: "cache.transcript_delta_pages", Class: Cache, Unit: Rows, Limit: 32, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaPagesLimit"}},
+		{Name: "cache.transcript_delta_pages", Class: Cache, Unit: Rows, Limit: 128, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaPagesLimit"}},
 		{Name: "cache.transcript_delta_bytes", Class: Cache, Unit: Bytes, Limit: 8 << 20, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaBytesLimit"}},
 		{Name: "cache.provider_quota", Class: Cache, Unit: Rows, Limit: 4, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
@@ -143,7 +143,7 @@ func cacheBounds() []Entry {
 			// A directory git answered "not a repository" for is answered
 			// that way for a minute without running git again
 			// (internal/adapters/git/notrepo.go). Only that answer is kept.
-			Name: CacheGitNotRepo, Class: Cache, Unit: Seconds,
+			Name: CacheGitNotRepo, Routine: true, Class: Cache, Unit: Seconds,
 			Limit: 60, AtLimit: Expire,
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,

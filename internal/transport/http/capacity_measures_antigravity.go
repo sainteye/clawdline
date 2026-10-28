@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -77,11 +78,11 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 	}
 	return map[string]func() capacity.Reading{
 		"antigravity.history_connections": func() capacity.Reading {
-			var n int
 			if h := s.antigravitySessions.Load(); h != nil {
-				n = h.HistoryConnections()
+				open, inUse, waits, waited := h.HistoryConnectionStats()
+				return capacity.Reading{Known: true, Used: int64(open), Note: fmt.Sprintf("%d open, %d in use; %d waits totaling %s since this process started", open, inUse, waits, waited)}
 			}
-			return capacity.Reading{Known: true, Used: int64(n)}
+			return capacity.Reading{Known: true, Note: "history connection pool is inactive"}
 		},
 		"antigravity.acp_sessions": func() capacity.Reading {
 			var n int

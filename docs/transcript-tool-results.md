@@ -155,7 +155,7 @@ one flight, and a changed execution waits for that flight before reading anew.
 Invalid updates trigger one full compact read. The presentation cache continues
 to use full merged pages and does not expose native append cursors over Cloud.
 
-The per-daemon cache retains at most 32 immutable serialized baselines and 8 MiB
+The per-daemon cache retains at most 128 immutable serialized baselines and 8 MiB
 of JSON, evicting the least recently used baseline first. It is not durable
 history. A cache miss, restart, different scope or limit, or an update at least as
 large as the full page returns that full page. Older machines retain conditional

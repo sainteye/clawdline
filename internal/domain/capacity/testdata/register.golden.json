@@ -194,6 +194,7 @@
     "EvictedBy": "daemon",
     "Projects": false,
     "QuietRecovery": false,
+    "Routine": true,
     "Sources": [
       "internal/adapters/antigravitysession.MaxHistoryConnections"
     ]
@@ -584,7 +585,7 @@
     "Name": "artifacts.images",
     "Class": "user_input",
     "Unit": "rows",
-    "Limit": 64,
+    "Limit": 256,
     "WarnAt": 0,
     "AtLimit": "evict_oldest",
     "Deviation": "",
@@ -828,6 +829,7 @@
     "EvictedBy": "daemon",
     "Projects": false,
     "QuietRecovery": false,
+    "Routine": true,
     "Sources": [
       "internal/adapters/git.NotRepoAgeLimit"
     ]
@@ -1156,7 +1158,7 @@
     "Name": "cache.transcript_delta_pages",
     "Class": "cache",
     "Unit": "rows",
-    "Limit": 32,
+    "Limit": 128,
     "WarnAt": 0,
     "AtLimit": "evict_oldest",
     "Deviation": "",
@@ -2332,6 +2334,7 @@
     "EvictedBy": "daemon",
     "Projects": false,
     "QuietRecovery": false,
+    "Routine": true,
     "Sources": [
       "internal/adapters/healthupload.MaxReceipts"
     ]
@@ -5881,7 +5884,7 @@
     "Name": "memory.entries",
     "Class": "evidence",
     "Unit": "rows",
-    "Limit": 512,
+    "Limit": 1024,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",

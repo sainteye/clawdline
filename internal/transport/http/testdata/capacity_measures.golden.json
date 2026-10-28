@@ -40,7 +40,8 @@
   },
   {
     "Name": "antigravity.history_connections",
-    "Known": true
+    "Known": true,
+    "Note": true
   },
   {
     "Name": "antigravity.hook_config_bytes",

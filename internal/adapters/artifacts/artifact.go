@@ -40,9 +40,8 @@ const (
 	AbsenceUnknown Absence = "unknown"
 )
 
-// Policy is every bound the store keeps. The production values are the Swift
-// app's `SessionImageArtifactStore.productionPolicy`, so a picture one app
-// accepts the other accepts too.
+// Policy is every bound the store keeps. Reply images retain a separate count,
+// byte and time budget; raising the small-image count does not raise disk bytes.
 type Policy struct {
 	TTLSeconds          int64
 	MaxCount            int
@@ -58,7 +57,7 @@ type Policy struct {
 
 var ProductionPolicy = Policy{
 	TTLSeconds:          24 * 60 * 60,
-	MaxCount:            64,
+	MaxCount:            256,
 	MaxTotalBytes:       64 << 20,
 	MaxInputBytes:       12 << 20,
 	MaxEncodedBytes:     12 << 20,

@@ -615,6 +615,9 @@ type Entry struct {
 	// already happened has nothing to say when a day passes without it, and
 	// an announcement would spend the day's notice the next time it does.
 	QuietRecovery bool
+	// Routine marks a shared pool or rolling receipt history whose occupancy
+	// alone is not pressure. Failures and readings above the bound still alert.
+	Routine bool `json:",omitempty"`
 	// Sources are the declarations in this repository that bound this row, as
 	// the register guard spells them (guard_test.go). A bounded declaration
 	// that is neither a row's source nor on the guard's baseline is a failing
@@ -628,6 +631,18 @@ func (e Entry) Warn() float64 {
 		return e.WarnAt
 	}
 	return 0.8
+}
+
+// RoutineOccupancy distinguishes reusable space and normal retention from a
+// limit that refuses work or removes still-needed content. Byte/count caps on
+// journals remain pressure: they can shorten the promised retention window.
+func (e Entry) RoutineOccupancy() bool {
+	if e.EvictedBy != Daemon {
+		return false
+	}
+	return e.Routine || (e.Class == Cache && e.AtLimit == EvictOldest) ||
+		(e.AtLimit == Rotate && (e.Class == DiagnosticLog || e.Class == Journal)) ||
+		(e.Class == Journal && e.Unit == Seconds && e.AtLimit == EvictOldest)
 }
 
 // namePattern is `area.thing`, lower case. The work-gate plan deliberately
