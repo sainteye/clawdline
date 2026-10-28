@@ -2,7 +2,7 @@ import { catalogWord, currentCatalogTag } from "../catalog.js"
 const en = {
   communityViewPublic: "View public discussion",
   communityPublishExisting: "Publish this discussion and its images",
-  communityAuthorConsent: "The author agreed to make this content and its images public.",
+  communityAuthorConsent: "The authors agreed to publish these posts, replies, images, display names and avatars.",
 
   communityOfficialReply: "Post staff reply",
   communityNav: "Community",
@@ -37,7 +37,7 @@ const en = {
   communityNeed: "What need would this solve?",
   communityContext: "When would you use it? (optional)",
   communityBodyHint: "Describe what you want to do. You can attach a screenshot.",
-  communityPublicWarning: "Your text and images will be public. Do not include passwords, API keys or private conversations.",
+  communityPublicWarning: "Your posts, replies, images, public display name and avatar are public. Do not include passwords, API keys or private conversations.",
   communityPublish: "Publish discussion",
   communityJoin: "Join the discussion",
   communityReplyHint: "Share context, additional details or a possible solution…",
@@ -100,7 +100,7 @@ type Word = keyof typeof en
 const zh: Record<Word, string> = {
   communityViewPublic: "查看公開討論",
   communityPublishExisting: "公開此討論與圖片",
-  communityAuthorConsent: "作者已同意公開這些內容與圖片。",
+  communityAuthorConsent: "作者已同意公開這些貼文、回覆、圖片、公開名稱與頭像。",
 
   communityOfficialReply: "發布支援人員回覆",
   communityNav: "社群討論",
@@ -135,7 +135,7 @@ const zh: Record<Word, string> = {
   communityNeed: "你想解決什麼需求？",
   communityContext: "什麼情境會用到？（選填）",
   communityBodyHint: "描述你想完成的操作，也可以附上截圖。",
-  communityPublicWarning: "內容與圖片將公開。請勿包含密碼、金鑰或私人對話。",
+  communityPublicWarning: "貼文、回覆、圖片、公開名稱與頭像都會公開。請勿包含密碼、金鑰或私人對話。",
   communityPublish: "公開送出討論",
   communityJoin: "加入討論",
   communityReplyHint: "分享使用情境、補充資訊或解法…",

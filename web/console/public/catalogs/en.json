@@ -9499,7 +9499,7 @@
   "support.communityNeed": "What need would this solve?",
   "support.communityContext": "When would you use it? (optional)",
   "support.communityBodyHint": "Describe what you want to do. You can attach a screenshot.",
-  "support.communityPublicWarning": "Your text and images will be public. Do not include passwords, API keys or private conversations.",
+  "support.communityPublicWarning": "Your posts, replies, images, public display name and avatar are public. Do not include passwords, API keys or private conversations.",
   "support.communityPublish": "Publish discussion",
   "support.communityJoin": "Join the discussion",
   "support.communityReplyHint": "Share context, additional details or a possible solution…",
@@ -9539,7 +9539,7 @@
   "support.communityPending": "The outcome is not confirmed. Retry the same request before editing or posting again.",
   "support.communityViewPublic": "View public discussion",
   "support.communityPublishExisting": "Publish this discussion and its images",
-  "support.communityAuthorConsent": "The author agreed to make this content and its images public.",
+  "support.communityAuthorConsent": "The authors agreed to publish these posts, replies, images, display names and avatars.",
   "support.communityOfficialReply": "Post staff reply",
   "support.communityEvidenceHint": "Verify the live release first. Use a release version with its official GitHub tag, or a full Cloud commit with https://app.clawdline.com/BUILD.json. Saving checks the evidence format; it does not verify deployment."
 }
