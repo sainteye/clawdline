@@ -116,8 +116,8 @@ answers with the version you installed.
 The quick installation above follows a moving official entry point and the latest stable
 release. For a fixed installation, the reviewed verifier commit and release version below
 are separate identities: installer commit `773e04fc70bdb88d864dc2d4e125946e9f0e29a5` can verify
-release `v2.7.0`, whose signed manifest identifies program source commit
-`dba22ff4bdd83c5fa34c374f31186166a7163bf5`. Reading the installer does not amount to auditing
+release `v2.8.0`, whose signed manifest identifies program source commit
+`73ff7732feb2672ca906015828b12387e3a65861`. Reading the installer does not amount to auditing
 the release's program source or proving the binary reproducible.
 
 To select a reviewed release, use a reviewed installer with pre-execution verification and pass
