@@ -17,6 +17,10 @@ configuration. Every Admin request rechecks operations access on the server. Pub
 do not grant authority. A staff reply is an explicit operator action; a member comment is never
 presented as an official reply merely because its author has Admin access.
 
+Community navigation shares the warm outlined cards and speech-bubble, alert-circle and lightbulb
+icons from its share preview. Icons remain visible on narrow screens; the active destination has a
+warmer fill and border, an explicit `aria-current`, and a separate keyboard focus outline.
+
 ## The content boundary
 
 New discussions, replies and attached images are public. The composer explains this once before

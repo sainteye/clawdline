@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9547,
+  "englishContentKeys": 9548,
   "riskKeys": 4201,
-  "nonRiskCount": 5346,
+  "nonRiskCount": 5347,
   "groups": [
     {
       "name": "admin / other",
@@ -5226,7 +5226,7 @@
     },
     {
       "name": "support / other",
-      "count": 178,
+      "count": 179,
       "sources": [
         null
       ],
@@ -5286,6 +5286,7 @@
         "support.communityQuestionChoice",
         "support.communityQuestionIntro",
         "support.communityQuestions",
+        "support.communityQuestionsTab",
         "support.communityReleaseUrl",
         "support.communityReleaseVersion",
         "support.communityReplies",

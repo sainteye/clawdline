@@ -7,7 +7,14 @@ import { SupportImageGallery } from "../support/images.js"
 import type { RequestType } from "../support/model.js"
 import { type CommunityTopic, type ProgressStage, type PublicMessage, topicClosed } from "./model.js"
 export function CommunityIcon({type}:{type:RequestType}) {
-  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{type==="issue"?<><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></>:type==="feature_request"?<><path d="M9 18h6m-5 3h4M8.5 14.5a6 6 0 1 1 7 0c-.8.6-1.5 1.5-1.5 3.5h-4c0-2-.7-2.9-1.5-3.5Z"/></>:<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2Z"/>}</svg>
+  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    {type==="issue"?<>
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M12 6.5v6.2m0 3.8v.5"/>
+    </>:type==="feature_request"?<>
+      <path d="M8 16c0-3.5-3.5-4-3.5-8a7.5 7.5 0 0 1 15 0c0 4-3.5 4.5-3.5 8ZM8 19h8m-6.5 3h5"/>
+    </>:<path d="M3 4h18v13H10.3L3 22Z"/>}
+  </svg>
 }
 export const typeWord=(type:RequestType):SupportWord=>type==="issue"?"communityIssues":type==="feature_request"?"communityIdeas":"communityQuestions"
 export const actionWord=(type:RequestType):SupportWord=>type==="issue"?"communityReport":type==="feature_request"?"communitySuggest":"ask"
