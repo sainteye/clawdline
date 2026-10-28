@@ -21,9 +21,10 @@ export function githubAvatarSource(value: unknown): string | null {
 export interface FaqText { title: string; body: string; slug: string; revision: number; source_revision: number; sources: Sources; updated_at: string }
 export interface Article { _id: string; revision: number; source_locale: SupportLocale; source_revision: number; topic: string; source_question_id: string | null;
   translations: Partial<Record<SupportLocale, { draft: FaqText; published: FaqText | null }>> }
-export type HelpRoute = { page: "faq" | "ask" | "mine" | "thread" | "article" | "inbox" | "operator" | "editor" | "drafts" | "worker"; id: string | null }
+export type HelpRoute = { page: "doctor" | "faq" | "ask" | "mine" | "thread" | "article" | "inbox" | "operator" | "editor" | "drafts" | "worker"; id: string | null }
 export function helpRoute(path: string): HelpRoute {
   const parts = path.split("/").filter(Boolean)
+  if (parts[1] === "doctor") return { page: "doctor", id: null }
   if (parts[1] === "ask") return { page: "ask", id: null }
   if (parts[1] === "questions") return { page: parts[2] ? "thread" : "mine", id: parts[2] ?? null }
   if (parts[1] === "faq" && parts[2]) return { page: "article", id: parts[2] }
@@ -36,7 +37,7 @@ export function helpRoute(path: string): HelpRoute {
 }
 export function helpAccess(route: HelpRoute): "public" | "member" | "admin" {
   if (route.page === "faq" || route.page === "article") return "public"
-  if (route.page === "ask" || route.page === "mine" || route.page === "thread") return "member"
+  if (route.page === "doctor" || route.page === "ask" || route.page === "mine" || route.page === "thread") return "member"
   return "admin"
 }
 export function translationState(article: Article, locale: SupportLocale): "missing" | "stale" | "draft" | "published" {

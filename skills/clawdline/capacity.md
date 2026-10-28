@@ -340,6 +340,14 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `diagnostics.api_routes` | 128 | `rows` | `refuse` | `diagnostics` | — |
 | `diagnostics.api_snapshot` | 33554432 | `bytes` | `refuse` | `diagnostics` | — |
 | `diagnostics.api_store` | 67108864 | `bytes` | `refuse` | `diagnostics` | — |
+| `diagnostics.doctor_checks` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `diagnostics.doctor_description_characters` | 500 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `diagnostics.doctor_history_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `diagnostics.doctor_history_rows` | 24 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
+| `diagnostics.doctor_history_seconds` | 259200 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
+| `diagnostics.doctor_report_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `diagnostics.doctor_version_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `diagnostics.doctor_version_seconds` | 3 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `diagnostics.route_latency_samples` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `diagnostics.route_stat_keys` | 512 | `rows` | `coalesce` | `diagnostics` | — |
 | `dispatch.also_work_ids` | 7 | `rows` | `refuse` | `diagnostics, sender` | — |

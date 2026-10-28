@@ -98,3 +98,10 @@ Traditional Chinese found no change to assignment text, language, injection
 triggers or reminder delivery; those explanations remain accurate. The Board
 source link and review receipt follow the changed catalog/resolution code in
 `work_v2.go`. No instruction excerpt is added to the Console bundle.
+
+
+Doctor adds a fixed local CLI version probe and a sanitized support report read.
+It does not prepare provider context, run a model prompt or change instruction
+injection. The new guide paragraph documents that explicit diagnostic read only.
+Review of the entry-point changes and both guide languages leaves the existing
+English and Taiwan Traditional Chinese injection explanations applicable.

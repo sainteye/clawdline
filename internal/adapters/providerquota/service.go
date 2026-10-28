@@ -79,7 +79,12 @@ func readSmall(path string) ([]byte, error) {
 func baseRow(id, label, source string) Row {
 	return Row{ID: id, Label: label, Source: source, Windows: []Window{}}
 }
-func (s *Service) Snapshot(now time.Time) Snapshot {
+func (s *Service) Snapshot(now time.Time) Snapshot { return s.snapshot(now, true) }
+
+// Inspect reads existing evidence without credential access or provider requests.
+func (s *Service) Inspect(now time.Time) Snapshot { return s.snapshot(now, false) }
+
+func (s *Service) snapshot(now time.Time, refresh bool) Snapshot {
 	out := Snapshot{At: now.Unix(), Providers: []Row{}}
 	if s.local != nil {
 		for _, p := range []struct{ id, label, source string }{{"claude", "Claude Code", "claude_statusline"}, {"codex", "Codex", "codex_rollout"}} {
@@ -99,13 +104,17 @@ func (s *Service) Snapshot(now time.Time) Snapshot {
 		}
 	}
 	for i, p := range []struct{ id, label string }{{"gemini", "Gemini"}, {"grok", "Grok"}} {
-		cred, problem := s.credentials(p.id, now)
+		var cred credential
+		var problem string
+		if refresh {
+			cred, problem = s.credentials(p.id, now)
+		}
 		s.mu.Lock()
 		v := &s.slots[i]
 		if v.row.ID == "" {
 			v.row = baseRow(p.id, p.label, "provider_api")
 		}
-		if cred.identity != v.identity && !(cred.identity == "" && problem == "unreadable") {
+		if refresh && cred.identity != v.identity && !(cred.identity == "" && problem == "unreadable") {
 			v.generation++
 			v.row = baseRow(p.id, p.label, "provider_api")
 			v.identity = cred.identity
@@ -114,7 +123,7 @@ func (s *Service) Snapshot(now time.Time) Snapshot {
 		if problem != "" {
 			v.row.Problem = problem
 			v.row.Stale = len(v.row.Windows) > 0
-		} else if !v.busy && !now.Before(v.next) {
+		} else if refresh && !v.busy && !now.Before(v.next) {
 			v.busy = true
 			v.next = now.Add(RefreshSecondsLimit * time.Second)
 			generation := v.generation

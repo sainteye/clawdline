@@ -1278,5 +1278,8 @@
   "http.ff821b6116dd9e4a": "An item's phase is not edited; it moves through the item's own actions.",
   "http.ff9859775a615fc4": "This closure records why no delivery named this item — say what was done and where it landed. Without that it is a state change nobody can check later.",
   "http.ffd795cf51e7ebea": "place is board or backlog.",
-  "http.ffed8239d8e297e0": "Supply the expected version and text content."
+  "http.ffed8239d8e297e0": "Supply the expected version and text content.",
+  "http.18858b51e589e747": "Doctor reports are read with GET.",
+  "http.6f0feac1947e8a32": "A Doctor check is already running. Wait for it to finish.",
+  "http.b3efd688ebb68c49": "The Doctor report exceeded its safe export limit."
 }

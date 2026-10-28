@@ -21,6 +21,7 @@ var generatedDecoders = map[string]genDecoder{
 	"diagnostics.report":                 genDecodeDiagnosticsReport,
 	"direct-local-network-enable":        genDecodeDirectLocalNetworkEnable,
 	"dismiss-restorable":                 genDecodeDismissRestorable,
+	"doctor":                             genDecodeDoctor,
 	"documents":                          genDecodeDocuments,
 	"end":                                genDecodeEnd,
 	"focus":                              genDecodeFocus,
@@ -556,6 +557,22 @@ func genDecodeDismissRestorable(b body) (plan, LocalRequest, bool) {
 	path := "/v1/sessions/restorable/dismiss"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Body = b.genFields(map[string]genValue{"conversations": genValue{from: "conversations"}})
+	return p, req, true
+}
+
+// genDecodeDoctor is the `doctor` row's decode.
+func genDecodeDoctor(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/doctor"
+	req := LocalRequest{Method: "GET", Path: path}
 	return p, req, true
 }
 

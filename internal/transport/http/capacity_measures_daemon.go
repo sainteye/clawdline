@@ -16,6 +16,35 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) daemonCapacityMeasures() map[string]func() capacity.Reading {
 	out := map[string]func() capacity.Reading{
+		"diagnostics.doctor_checks": func() capacity.Reading {
+			var used int64
+			if s.doctorBusy.Load() {
+				used = 1
+			}
+			return capacity.Reading{Known: true, Used: used, Note: "active Doctor check"}
+		},
+		"diagnostics.doctor_history_rows": func() capacity.Reading {
+			return s.doctorHistory().Reading(false)
+		},
+		"diagnostics.doctor_history_bytes": func() capacity.Reading {
+			return s.doctorHistory().Reading(true)
+		},
+		"diagnostics.doctor_history_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, WindowSeconds: 259200, Note: "expired transitions are pruned on the next quota observation or report"}
+		},
+		"diagnostics.doctor_version_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-machine Doctor bound; exported reports state evidence coverage"}
+		},
+		"diagnostics.doctor_version_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-machine Doctor bound; exported reports state evidence coverage"}
+		},
+		"diagnostics.doctor_report_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-machine Doctor bound; exported reports state evidence coverage"}
+		},
+		"diagnostics.doctor_description_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-machine Doctor bound; exported reports state evidence coverage"}
+		},
+
 		capacity.DeployHealthSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-deploy health guard; no retained wait"}
 		},

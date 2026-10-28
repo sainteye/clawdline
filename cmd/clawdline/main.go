@@ -110,6 +110,10 @@ func main() {
 			capacityCommand(os.Args[3:])
 			return
 		}
+		if len(os.Args) == 3 && os.Args[2] == "--json" {
+			doctorJSON()
+			return
+		}
 		doctor()
 	case "dispatch":
 		// The broker's own dispatch, guide §4 in one command. The older

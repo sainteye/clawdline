@@ -3234,6 +3234,49 @@ export interface DispatchResult {
   task_id: string
 }
 
+export interface DoctorCoverage {
+  dropped: number
+  from?: number
+  lost_unknown: boolean
+  state: string
+  through?: number
+}
+
+export interface DoctorEvent {
+  at: number
+  provider: DoctorProvider
+}
+
+export interface DoctorProvider {
+  id: string
+  observed_at: number | null
+  problem?: string
+  source: string
+  stale: boolean
+  state: string
+  used_percent: number | null
+}
+
+export interface DoctorReport {
+  arch: string
+  at: number
+  coverage: DoctorCoverage
+  gaps: string[]
+  history: DoctorEvent[]
+  os: string
+  providers: DoctorProvider[]
+  schema: string
+  tools: DoctorTool[]
+  version: string
+  web_version?: string
+}
+
+export interface DoctorTool {
+  id: string
+  state: string
+  version?: string
+}
+
 export interface DocumentList {
   documents: DocumentRow[]
 }

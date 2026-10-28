@@ -406,7 +406,7 @@ func machineScoped(p string) bool {
 		return true
 	}
 	switch p {
-	case "/v1/board", "/v1/next/coordinator", "/v1/places":
+	case "/v1/doctor", "/v1/board", "/v1/next/coordinator", "/v1/places":
 		return true
 	case "/v1/artifacts/images":
 		// Storing a session's pictures is the orchestrator's (images.go); the

@@ -22,5 +22,7 @@ func (s *Server) providerQuotas(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Provider quotas are read with GET.")
 		return
 	}
-	writeJSON(w, s.providerQuotaReader().Snapshot(time.Now()))
+	snapshot := s.providerQuotaReader().Snapshot(time.Now())
+	s.doctorHistory().Record(snapshot)
+	writeJSON(w, snapshot)
 }

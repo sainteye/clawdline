@@ -79,6 +79,12 @@ An update that does not come up healthy rolls back by itself; the console's Sett
 | `mirror_source_mismatch` | Another machine already owns that project's settings here | Choose that machine as the source, or run `project import --replace-source` to hand it over |
 | `clone_failed` | The receiving machine could not reach the remote with its own credentials | Clone it by hand into the named directory, then sync again |
 
+## Doctor report
+
+For missing quota readings or version-dependent behavior, use
+[Doctor checks and private reports](doctor.md). Preview the report before submission;
+you do not need to paste terminal logs or share sign-in tokens.
+
 ## Still stuck
 
 - `/v1/diagnostics` (this machine's own token) carries the console state and each platform

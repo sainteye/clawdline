@@ -37,6 +37,7 @@
       "guide": "board"
     },
     {"method": "*", "pattern": "/v1/provider-quotas", "guide": "connect"},
+    {"method": "*", "pattern": "/v1/doctor", "guide": "connect"},
     {
       "method": "*",
       "pattern": "/v1/capacity",

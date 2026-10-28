@@ -37,8 +37,9 @@ part of that projection. Uploaded images use separate public attachment routes a
 
 Legacy `/v1/support` threads retain their original private boundary. An Admin must explicitly publish
 a consenting thread before it appears in community reads; this also moves its images to the public
-read projection. Unpublished threads never appear as a public fallback. The current composer offers
-no private-support option. Community publication and anonymous FAQ editing are separate actions.
+read projection. Unpublished threads never appear as a public fallback. The community composer offers
+no private-support option. [Doctor](doctor.md) has a separate, explicit private report
+submission through the existing support API. Community publication and anonymous FAQ editing are separate actions.
 
 Submitted content is server-readable Cloud account data. This lane does not upload machine Sessions,
 obtain content keys, change relay encryption or grant access to a member's machine. Its collections

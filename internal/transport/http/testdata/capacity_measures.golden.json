@@ -1659,6 +1659,47 @@
     "Note": true
   },
   {
+    "Name": "diagnostics.doctor_checks",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.doctor_description_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.doctor_history_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.doctor_history_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.doctor_history_seconds",
+    "Known": true,
+    "Note": true,
+    "WindowSeconds": true
+  },
+  {
+    "Name": "diagnostics.doctor_report_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.doctor_version_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.doctor_version_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "diagnostics.route_latency_samples",
     "Known": true,
     "Note": true
