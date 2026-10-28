@@ -60,7 +60,13 @@ function useMutation(call: Call, scope: string) {
 function ErrorBox({ code, retry }: { code: string | null; retry?: () => void }) {
   return code ? <div className="help-error" role="alert"><p>{supportError(code)}</p>{retry ? <button className="help-btn" onClick={retry}>{w("retry")}</button> : null}</div> : null
 }
-function State({ value, quiet = false }: { value: string; quiet?: boolean }) { return <span className={quiet ? "help-thread-state" : `help-badge help-state-${value}`} data-state={value} role={quiet ? "status" : undefined}>{w(["queued", "answering", "needs_information", "needs_human", "answered", "resolved"].includes(value) ? value as SupportWord : "unavailable")}</span> }
+function AnswerCheck({resolved}:{resolved:boolean}) {
+  return <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={resolved?"1.6":"1.8"} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{resolved?<><circle cx="10" cy="10" r="7.3"/><path d="m6.5 10 2.3 2.3 4.8-4.8"/></>:<path d="m4.5 10 3.5 3.5 7.5-7.5"/>}</svg>
+}
+function State({ value, quiet = false }: { value: string; quiet?: boolean }) {
+  const checked=!quiet&&(value==="answered"||value==="resolved")
+  return <span className={quiet?"help-thread-state":checked?"help-list-state":`help-badge help-state-${value}`} data-state={value} role={quiet||checked?"status":undefined}>{checked?<AnswerCheck resolved={value==="resolved"}/>:null}{w(["queued", "answering", "needs_information", "needs_human", "answered", "resolved"].includes(value)?value as SupportWord:"unavailable")}</span>
+}
 function SourceList({ sources }: { sources: Sources }) { return sources.length ? <div className="help-sources"><small>{w("sources")}</small>{sources.map(s => <a key={s.url + s.revision} href={s.url} target="_blank" rel="noopener noreferrer">↗ {s.revision}</a>)}</div> : null }
 function Link({ to, go, children, primary = false, current = false }: { to: string; go: Navigation; children: ReactNode; primary?: boolean; current?: boolean }) {
   return <a className={`help-btn ${primary ? "help-primary" : ""}`} href={to} aria-current={current ? "page" : undefined} onClick={(e: MouseEvent) => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) { e.preventDefault(); go(to) } }}>{children}</a>
