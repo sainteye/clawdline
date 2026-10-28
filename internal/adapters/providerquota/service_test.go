@@ -228,3 +228,17 @@ func TestExpiredCredentialsDoNotRefreshOrWriteLogin(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestDoctorInspectionDoesNotReadCredentialsOrStartRefresh(t *testing.T) {
+	s := New(t.TempDir(), nil)
+	s.readFile = func(string) ([]byte, error) { t.Fatal("Doctor read credential files"); return nil, nil }
+	got := s.Inspect(time.Now())
+	if got.Updating || len(got.Providers) != 2 {
+		t.Fatalf("%+v", got)
+	}
+	for _, row := range got.Providers {
+		if row.Problem != "" || len(row.Windows) != 0 {
+			t.Fatalf("inspection invented a login outcome: %+v", row)
+		}
+	}
+}

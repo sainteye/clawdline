@@ -114,6 +114,7 @@ func init() {
 		// nothing.
 		op{name: "capacity", read: true},
 		op{name: "provider-quotas", read: true},
+		op{name: "doctor", read: true},
 
 		// The machine-wide launch defaults shown on Settings. This is deliberately
 		// narrower than /v1/settings: a paired phone receives and changes only

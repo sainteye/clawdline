@@ -50,6 +50,12 @@ not zero. Grok's omitted scalar zero is inferred only with an explicitly weekly 
 valid billing dates; a computable monthly budget stays monthly. Quota percentages that have passed
 their reset time remain marked outdated until the next usable observation.
 
+## Doctor evidence
+
+[Doctor](doctor.md) records bounded local quota transitions and exports a sanitized
+report on explicit request. It does not change these sources or refresh policies.
+Missing numeric providers remain hidden in the footer, but remain visible in Doctor.
+
 ## Verification
 
 Synthetic transport tests cover both metadata sequences, single-flight requests, cooldowns,

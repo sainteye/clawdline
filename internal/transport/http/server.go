@@ -25,6 +25,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/clauderemote"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/doctor"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
 	"github.com/sainteye/clawdline/internal/adapters/logs"
 	"github.com/sainteye/clawdline/internal/adapters/machineusage"
@@ -187,6 +188,9 @@ type Server struct {
 	// the dashboard's shares are measured between two (machine_usage.go).
 	usageOnce sync.Once
 	// Quota metadata readers are shared by every paired browser on this daemon.
+	doctorOnce           sync.Once
+	doctorRecorder       *doctor.Recorder
+	doctorBusy           atomic.Bool
 	providerQuotaOnce    sync.Once
 	providerQuotaService *providerquota.Service
 	// update is the update check behind GET /v1/update (update.go), made on
@@ -655,6 +659,7 @@ func (s *Server) routeTable() []route {
 		// keep (orchestrator.go).
 		{Route{"*", "/v1/orchestrator/assistants"}, s.brokerAssistants},
 		{Route{"*", "/v1/provider-quotas"}, s.providerQuotas},
+		{Route{"*", "/v1/doctor"}, s.doctorReport},
 		{Route{"*", "/v1/orchestrator/landings"}, s.brokerLandings},
 		{Route{"*", "/v1/orchestrator/notify"}, s.brokerMachineNotify},
 		// The coordination plane (W5): the machine role, file waits, leases (the

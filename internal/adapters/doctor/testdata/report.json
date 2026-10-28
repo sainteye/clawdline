@@ -1,0 +1,79 @@
+{
+  "schema": "clawdline.doctor/1",
+  "at": 1793200000,
+  "version": "dev-fixture",
+  "os": "darwin",
+  "arch": "arm64",
+  "tools": [
+    {
+      "id": "claude",
+      "state": "ok",
+      "version": "2.1.34"
+    },
+    {
+      "id": "codex",
+      "state": "ok",
+      "version": "0.157.0"
+    }
+  ],
+  "providers": [
+    {
+      "id": "claude",
+      "source": "claude_statusline",
+      "state": "ok",
+      "stale": false,
+      "used_percent": 0,
+      "observed_at": 1793200000
+    },
+    {
+      "id": "codex",
+      "source": "codex_rollout",
+      "state": "unknown",
+      "stale": false,
+      "used_percent": null,
+      "observed_at": null
+    },
+    {
+      "id": "gemini",
+      "source": "provider_api",
+      "state": "unknown",
+      "stale": false,
+      "used_percent": null,
+      "observed_at": null
+    },
+    {
+      "id": "grok",
+      "source": "provider_api",
+      "state": "unknown",
+      "stale": false,
+      "used_percent": null,
+      "observed_at": null
+    }
+  ],
+  "history": [
+    {
+      "at": 1793200000,
+      "provider": {
+        "id": "claude",
+        "source": "claude_statusline",
+        "state": "ok",
+        "stale": false,
+        "used_percent": 0,
+        "observed_at": 1793200000
+      }
+    }
+  ],
+  "coverage": {
+    "state": "ok",
+    "dropped": 0,
+    "lost_unknown": false,
+    "from": 1793200000,
+    "through": 1793200000
+  },
+  "gaps": [
+    "claude_auth_not_inspected",
+    "upstream_claude_usage_not_observed",
+    "history_only_when_quota_is_read",
+    "browser_render_not_observed"
+  ]
+}

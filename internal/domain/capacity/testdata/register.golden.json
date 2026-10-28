@@ -6324,6 +6324,162 @@
   },
   {
     "Register": "daemon",
+    "Name": "diagnostics.doctor_checks",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.doctor_description_characters",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 500,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.doctor_history_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 32768,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/doctor.HistoryBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.doctor_history_rows",
+    "Class": "journal",
+    "Unit": "rows",
+    "Limit": 24,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/doctor.HistoryRowsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.doctor_history_seconds",
+    "Class": "journal",
+    "Unit": "seconds",
+    "Limit": 259200,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/doctor.HistorySecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.doctor_report_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 8192,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/doctor.ReportBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.doctor_version_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/doctor.VersionBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "diagnostics.doctor_version_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/doctor.VersionSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "diagnostics.route_latency_samples",
     "Class": "observation",
     "Unit": "rows",

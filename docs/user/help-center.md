@@ -59,5 +59,5 @@ not itself an authorization to change or deploy the product.
 Older support threads do not become public automatically. An Admin can publish a specified thread
 and its images after its authors have agreed. Public responses expose content and public identity,
 not account IDs, email, webhook delivery records or worker credentials. Published old links lead
-to the public thread. The new interface offers public discussion rather than a private support
-submission option.
+to the public thread. The community composer offers public discussion. Use the separate [Doctor](doctor.md)
+entry to submit diagnostic reports privately.

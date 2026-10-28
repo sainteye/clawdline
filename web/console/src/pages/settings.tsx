@@ -23,6 +23,7 @@ import "./settings/window/window.css"
 import "./settings/page.css"
 import { WorkflowSettingsBlock } from "./settings/WorkflowSettingsBlock.js"
 import { BoardBlock } from "./settings/BoardBlock.js"
+import { DoctorBlock } from "../doctor/DoctorBlock.js"
 import { CapacityBlock } from "./settings/CapacityBlock.js"
 import { UpdatePanel } from "../machine/UpdatePanel.js"
 import { asksForUpdatePanel } from "../machine/update-model.js"
@@ -467,6 +468,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
           <div className="settings-grid">
             <div className="settings-column">
         <UpdatePanel shown={shown && tab === 2} />
+        {shown && tab === 2 && <DoctorBlock />}
             </div>
             <div className="settings-column">
         <CapacityBlock shown={shown} />

@@ -170,6 +170,9 @@ token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原�
 使用 `curl --fail-with-body`；帶 JSON body 的 POST 還要加
 `-H 'Content-Type: application/json'`（否則回 `415 unsupported_media_type`）。
 
+`clawdline doctor --json` 透過 `GET /v1/doctor` 讀取正在執行的服務程式所產生的安全 Doctor 報告（API 等級 32；Cloud 指令字 `doctor`）。只執行固定的 CLI 版本檢查並讀取既有額度證據，不查詢供應商、不讀登入憑證，也不自動上傳。可從「設定 → 狀態 → Doctor」預覽、下載或明確提交私人回報。`doctor_busy` 表示另一個檢查正在執行；`doctor_report_too_large` 表示報告超過匯出上限。缺少證據仍為未知。
+
+
 ### 配對一個 Cloud 瀏覽器
 
 配對會改變誰能讀這台機器。配對過的瀏覽器立刻就能讀；Cloud 的 `commands` 開啟時，它還能操作這台

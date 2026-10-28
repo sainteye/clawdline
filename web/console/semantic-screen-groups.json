@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9807,
-  "riskKeys": 4349,
-  "nonRiskCount": 5458,
+  "englishContentKeys": 9865,
+  "riskKeys": 4382,
+  "nonRiskCount": 5483,
   "groups": [
     {
       "name": "admin / other",
@@ -342,7 +342,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 358,
+      "count": 366,
       "sources": [
         null
       ],
@@ -579,6 +579,14 @@
         "capacityRow.diagnostics.api_query_seconds.what",
         "capacityRow.diagnostics.api_readers.what",
         "capacityRow.diagnostics.api_routes.what",
+        "capacityRow.diagnostics.doctor_checks.what",
+        "capacityRow.diagnostics.doctor_description_characters.full",
+        "capacityRow.diagnostics.doctor_description_characters.what",
+        "capacityRow.diagnostics.doctor_history_rows.what",
+        "capacityRow.diagnostics.doctor_history_seconds.what",
+        "capacityRow.diagnostics.doctor_report_bytes.what",
+        "capacityRow.diagnostics.doctor_version_bytes.full",
+        "capacityRow.diagnostics.doctor_version_seconds.what",
         "capacityRow.diagnostics.route_latency_samples.what",
         "capacityRow.diagnostics.route_stat_keys.what",
         "capacityRow.dispatch.also_work_ids.what",
@@ -1040,6 +1048,32 @@
         "dispatchPolicy.reload",
         "dispatchPolicy.save",
         "dispatchPolicy.title"
+      ]
+    },
+    {
+      "name": "doctor / other",
+      "count": 17,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "doctor.check",
+        "doctor.coverage",
+        "doctor.download",
+        "doctor.import",
+        "doctor.incomplete",
+        "doctor.invalid_response",
+        "doctor.ok",
+        "doctor.preview",
+        "doctor.rate_limited",
+        "doctor.reports",
+        "doctor.retry",
+        "doctor.stale",
+        "doctor.submit",
+        "doctor.timeout",
+        "doctor.title",
+        "doctor.update",
+        "doctor.working"
       ]
     },
     {

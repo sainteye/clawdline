@@ -1,3 +1,4 @@
+import { DoctorBlock } from "../doctor/DoctorBlock.js"
 import { SourceList } from "./sources.js"
 import { applyShareMetadata, shareMetadata } from "../community/share-metadata.js"
 import { CommunityPublication } from "../community/Publication.js"
@@ -8,7 +9,7 @@ import { SupportNotifications } from "./notifications.js"
 import { useSupportImages, SupportImagePicker, SupportImageGallery } from "./images.js"
 import { richText } from "../legacy/js/view/markdown.js"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react"
-import { currentCatalogTag } from "../catalog.js"
+import { catalogWord, currentCatalogTag } from "../catalog.js"
 import { chooseTransport, cloudViewerDeviceMetadata, newCloudSession, readCloudConfig, type CloudConfig } from "../cloud/copied.js"
 import { bootAdminCatalog } from "../cloud/admin/words.js"
 import { BRAND_MARK } from "../brand-mark.js"
@@ -164,6 +165,7 @@ function HelpBody(p: BodyProps) {
   if (p.route.page === "ask") return <Ask {...p} />
   if (p.route.page === "mine" || p.route.page === "inbox") return <QuestionList {...p} />
   if (p.route.page === "thread" || p.route.page === "operator") return <Thread {...p} />
+  if (p.route.page === "doctor") return <><DoctorBlock collect={false} apiOrigin={p.apiOrigin} /><QuestionList {...p} /></>
   if (p.route.page === "drafts") return <DraftList {...p} />
   if (p.route.page === "editor") return <Editor {...p} />
   return <Worker {...p} />
@@ -211,17 +213,19 @@ function Ask(p:BodyProps) {
     <div className="help-submission-note"><p><strong>{w("sensitiveContent")}</strong></p></div></fieldset><ErrorBox code={mutation.error}/><div className="help-actions"><Link to={p.href("/help")} go={p.go}>{w("cancel")}</Link><button className="help-btn help-primary" disabled={mutation.busy||images.busy||(!mutation.uncertain&&!body.trim()&&!images.items.length)} type="submit">{mutation.busy?w("busy"):images.busy?w("imageWorking"):mutation.uncertain?w("retry"):w("send")}</button></div></form></div></>
 }
 function QuestionList(p:BodyProps) {
+  const doctor=p.route.page==="doctor"
   const admin=p.route.page==="inbox",[locale,setLocale]=useState(""),[state,setState]=useState(""),[extra,setExtra]=useState<Question[]>([]),[next,setNext]=useState<string|null>(null),[moreError,setMoreError]=useState<string|null>(null)
   const path=(admin?"/su":"")+"/v1/support/questions?"+new URLSearchParams({...locale?{locale}:{},...state?{state}:{}}).toString(),read=useRead<{questions:Question[];next_cursor:string|null}>(path,p.call)
   useEffect(()=>{setExtra([]);setNext(null)},[path])
   useEffect(()=>{const refresh=()=>{if(!document.hidden)read.refresh()};window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);return()=>{window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh)}},[path])
   const more=async()=>{try{const a=await p.call<{questions:Question[];next_cursor:string|null}>(path+"&cursor="+encodeURIComponent(next??read.data?.next_cursor??""));read.replace(a);setExtra([]);setNext(null)}catch(e){setMoreError(e instanceof SupportFailure?e.code:"support_unavailable")}}
-  return <><div className="help-title"><h1>{w(admin?"inbox":"mine")}</h1>{!admin?<Link to={p.href("/community/new?request_type=question")} go={p.go} primary><AskIcon/>{w("ask")}</Link>:null}</div>
+  const questions=[...(read.data?.questions??[]),...extra].filter(q=>!doctor||(!q.community_published&&q.title==="Clawdline Doctor"))
+  return <><div className="help-title"><h1>{doctor?catalogWord("doctor","reports"):w(admin?"inbox":"mine")}</h1>{!admin&&!doctor?<Link to={p.href("/community/new?request_type=question")} go={p.go} primary><AskIcon/>{w("ask")}</Link>:null}</div>
     {admin?<SupportNotifications call={p.call} locale={p.locale}/>:null}
     {admin?<div className="help-filters"><select aria-label={w("sourceLanguage")} value={locale} onChange={e=>setLocale(e.target.value)}><option value="">{w("allLanguages")}</option>{SUPPORT_LOCALES.map(l=><option key={l} value={l}>{LANGUAGE_NAMES[l]}</option>)}</select><select aria-label={w("allStates")} value={state} onChange={e=>setState(e.target.value)}><option value="">{w("allStates")}</option>{["queued","answering","needs_information","needs_human","answered","resolved"].map(s=><option key={s} value={s}>{w(s as SupportWord)}</option>)}</select></div>:null}
     <ErrorBox code={read.error??moreError} retry={read.refresh}/>{read.loading?<p role="status">{w("loading")}</p>:null}
-    {read.data&&!read.data.questions.length?<p className="help-empty">{w(admin?"noneInbox":"noneMine")}</p>:null}
-    {[...(read.data?.questions??[]),...extra].map(q=><a className="help-question-row" key={q.id} href={p.href((admin?"/help/admin/questions/":"/help/questions/")+q.id)} onClick={e=>{e.preventDefault();p.go(p.href((admin?"/help/admin/questions/":"/help/questions/")+q.id))}}>{admin?<ConversationAvatar kind="member" avatar={q.reporter?.avatar_url}/>:null}<div><h3>{q.title} {q.unread?<span className="help-unread" aria-label={w("unread")}>●</span>:null}</h3><small>{q.request_type&&q.request_type!=="question"?<>{w(q.request_type)} · </>:null}{admin?<>{q.reporter?.name??w("reporter")} · {q.source_language} · </>:null}{new Date(q.updated_at).toLocaleString()}</small></div><State value={q.state}/></a>)}
+    {read.data&&!questions.length?<p className="help-empty">{doctor?catalogWord("doctor","noReports"):w(admin?"noneInbox":"noneMine")}</p>:null}
+    {questions.map(q=><a className="help-question-row" key={q.id} href={p.href((admin?"/help/admin/questions/":"/help/questions/")+q.id)} onClick={e=>{e.preventDefault();p.go(p.href((admin?"/help/admin/questions/":"/help/questions/")+q.id))}}>{admin?<ConversationAvatar kind="member" avatar={q.reporter?.avatar_url}/>:null}<div><h3>{q.title} {q.unread?<span className="help-unread" aria-label={w("unread")}>●</span>:null}</h3><small>{q.request_type&&q.request_type!=="question"?<>{w(q.request_type)} · </>:null}{admin?<>{q.reporter?.name??w("reporter")} · {q.source_language} · </>:null}{new Date(q.updated_at).toLocaleString()}</small></div><State value={q.state}/></a>)}
     {(next??(extra.length?null:read.data?.next_cursor))?<button className="help-btn" onClick={()=>void more()}>{w("more")}</button>:null}
   </>
 }

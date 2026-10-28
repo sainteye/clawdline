@@ -2790,6 +2790,49 @@ type DispatchResult struct {
 	TaskID   string `json:"task_id"`
 }
 
+type DoctorCoverage struct {
+	Dropped     int64  `json:"dropped"`
+	From        int64  `json:"from,omitempty"`
+	LostUnknown bool   `json:"lost_unknown"`
+	State       string `json:"state"`
+	Through     int64  `json:"through,omitempty"`
+}
+
+type DoctorEvent struct {
+	At       int64          `json:"at"`
+	Provider DoctorProvider `json:"provider"`
+}
+
+type DoctorProvider struct {
+	ID          string   `json:"id"`
+	ObservedAt  *int64   `json:"observed_at"`
+	Problem     string   `json:"problem,omitempty"`
+	Source      string   `json:"source"`
+	Stale       bool     `json:"stale"`
+	State       string   `json:"state"`
+	UsedPercent *float64 `json:"used_percent"`
+}
+
+type DoctorReport struct {
+	Arch       string           `json:"arch"`
+	At         int64            `json:"at"`
+	Coverage   DoctorCoverage   `json:"coverage"`
+	Gaps       []string         `json:"gaps"`
+	History    []DoctorEvent    `json:"history"`
+	Os         string           `json:"os"`
+	Providers  []DoctorProvider `json:"providers"`
+	Schema     string           `json:"schema"`
+	Tools      []DoctorTool     `json:"tools"`
+	Version    string           `json:"version"`
+	WebVersion string           `json:"web_version,omitempty"`
+}
+
+type DoctorTool struct {
+	ID      string `json:"id"`
+	State   string `json:"state"`
+	Version string `json:"version,omitempty"`
+}
+
 type DocumentList struct {
 	Documents []DocumentRow `json:"documents"`
 }

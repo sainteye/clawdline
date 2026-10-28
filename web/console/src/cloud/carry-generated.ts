@@ -39,6 +39,9 @@ export const CARRIED = {
   "diagnostics.events": "cloud-client.js _deliverViewerEvents (after a recorded failure)",
   "direct-local-network-enable": "cloud-client.js enableSameNetwork",
   "dismiss-restorable": "POST /v1/sessions/restorable/dismiss",
+  // Account quota snapshots for the global footer. Credentials remain on the
+  // machine.
+  doctor: "GET /v1/doctor",
   document: "GET /v1/sessions/{id}/documents/{scope}/{path}",
   documents: "GET /v1/sessions/{id}/documents",
   end: "POST /v1/sessions/{id}/close",

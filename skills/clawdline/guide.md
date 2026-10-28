@@ -189,6 +189,9 @@ command. With `--handoff`, a queued wait starts a callback and exits 76; Ordinar
 Use `curl --fail-with-body`; every POST with a JSON body also needs
 `-H 'Content-Type: application/json'` (otherwise `415 unsupported_media_type`).
 
+`clawdline doctor --json` reads the running daemon’s sanitized Doctor report from `GET /v1/doctor` (API level 32; Cloud word `doctor`). It checks only fixed CLI version commands and existing quota evidence, without provider requests, credential reads or automatic uploads. Preview/download or explicitly submit a private report from Settings → Status → Doctor. `doctor_busy` means another check is running; `doctor_report_too_large` refuses an oversized export. Missing evidence remains unknown.
+
+
 ### Pair a Cloud browser
 
 Pairing changes who may read this machine. A paired browser may read it immediately and, when
