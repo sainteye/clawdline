@@ -118,7 +118,7 @@ export interface ProjectedSession {
    */
   title?: undefined
   assistant?: "claude" | "codex" | "antigravity"
-  backend?: "tmux" | "iterm" | "ps"
+  backend?: "tmux" | "iterm" | "ps" | "claude_remote"
   parentSessionID?: string
   machineScope?: boolean
   coordinatorBound?: boolean

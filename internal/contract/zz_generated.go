@@ -333,13 +333,14 @@ type AuthRefusal struct {
 type Backend string
 
 const (
-	BackendIterm Backend = "iterm"
-	BackendTmux  Backend = "tmux"
-	BackendOwned Backend = "owned"
+	BackendIterm        Backend = "iterm"
+	BackendTmux         Backend = "tmux"
+	BackendOwned        Backend = "owned"
+	BackendClaudeRemote Backend = "claude_remote"
 )
 
 // BackendValues is every value the contract allows, in contract order.
-var BackendValues = []Backend{BackendIterm, BackendTmux, BackendOwned}
+var BackendValues = []Backend{BackendIterm, BackendTmux, BackendOwned, BackendClaudeRemote}
 
 type BearingsLanding struct {
 	AgeSeconds int64  `json:"age_seconds"`

@@ -267,6 +267,9 @@ func New(cfg config.Config) (*Server, error) {
 	agents := subagents.New(home)
 	hosts := terminal.Hosts()
 	terminal.ConnectTerminalServer(hosts, cfg.Dir)
+	identity := transcript.NewHost()
+	processes := process.New()
+	processes.RemoteControl = identity.RemoteControlSession
 	srv := &Server{
 		store:          st,
 		secretHandoffs: app.NewSecretHandoffs(),
@@ -280,9 +283,9 @@ func New(cfg config.Config) (*Server, error) {
 		links:          projectlinks.NewCache(),
 		agents:         agents,
 		inventory: app.Inventory{
-			Process:   process.New(),
+			Process:   processes,
 			Terminals: hosts,
-			Identity:  transcript.NewHost(),
+			Identity:  identity,
 			Agents:    agents,
 			Screen:    terminal.NewScreens(hosts...),
 			// The list's screens are held and refreshed behind the answer; the

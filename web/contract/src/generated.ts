@@ -373,8 +373,9 @@ export type Backend =
     "iterm"
   | "tmux"
   | "owned"
+  | "claude_remote"
 
-export const BackendValues: readonly Backend[] = ["iterm", "tmux", "owned"] as const
+export const BackendValues: readonly Backend[] = ["iterm", "tmux", "owned", "claude_remote"] as const
 
 export interface BearingsLanding {
   age_seconds: number

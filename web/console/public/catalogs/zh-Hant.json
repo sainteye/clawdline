@@ -64,6 +64,8 @@
   "next.apiPerformanceRefresh": "重新整理",
   "next.apiPerformanceUnavailableStore": "持久化無法使用，重新啟動可能遺失觀測。",
   "next.machineMonitoringNav": "機器監控",
+  "next.claudeRemoteShort": "Remote Control · 唯讀",
+  "next.claudeRemoteReadOnly": "可在這裡閱讀 Remote Control 對話。請使用 Claude 傳送訊息、回覆請求或關閉 Session。",
   "capacityRow.session.tool_preview_bytes.what": "工具卡片先傳送有大小上限的 UTF-8 預覽。",
   "capacityRow.session.tool_preview_bytes.full": "較長文字保留於 Session 紀錄，展開時才讀取。",
   "capacityRow.cloud.read_plaintext_bytes.what": "協商壓縮的回覆限制解壓後大小。",

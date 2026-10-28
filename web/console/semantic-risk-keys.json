@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9788,
+  "englishKeys": 9790,
   "counts": {
     "negation": 2765,
     "state": 1605,
-    "permission": 571,
+    "permission": 572,
     "deletion": 213,
     "uncertainty": 370
   },
-  "unionCount": 4335,
+  "unionCount": 4336,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -4635,6 +4635,7 @@
       "next.apiPerformanceDirect",
       "next.apiPerformanceLocal",
       "next.apiPerformanceRefused",
+      "next.claudeRemoteShort",
       "next.cloudAccessCommandsOff",
       "next.cloudAccessCommandsUnknown",
       "next.cloudAccessNotPaired",
@@ -8457,6 +8458,7 @@
     "next.bgSuccess",
     "next.bgUnavailable",
     "next.brokerTasksUnknown",
+    "next.claudeRemoteShort",
     "next.closeReasonBoard",
     "next.closeReasonBoardUnstarted",
     "next.closeReasonDispatchTodo",

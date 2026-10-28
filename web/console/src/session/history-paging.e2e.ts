@@ -17,6 +17,8 @@ const NOW = Math.floor(Date.now() / 1000)
 // The label the screenshot that asked for this carried: long enough, with the
 // branch and two plan windows beside it, to run the chip over the windows.
 const LABEL = "deploy·marketing"
+let remoteControl = false
+let remoteWrites = 0
 
 let firstAttempts = 0
 let olderAttempts = 0
@@ -44,7 +46,7 @@ function snapshot() {
     at: Date.now(),
     scan: { complete: true, completed: { complete: true, sequence: 1 }, emptyAuthoritative: true, epoch: 1,
       generation: 1, provenance: "fixture" },
-    sessions: [ROW],
+    sessions: [{ ...ROW, ...(remoteControl ? { backend: "claude_remote", label: "Remote conversation" } : {}) }],
   }
 }
 
@@ -67,6 +69,7 @@ function document(): string {
 function daemon(): Server {
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
+    if (remoteControl && req.method === "POST" && path.startsWith("/v1/sessions/")) remoteWrites++
     if (path === "/v1/places") return json(res, 200, { places: [{ id: "project", label: "Fixture project", path: "/tmp/fixture" }], assistants: [{ id: "codex", label: "Codex" }] })
     if (path === "/v1/places/project/sessions/codex") {
       const cursor = new URL(req.url ?? "/", "http://fixture").searchParams.get("cursor")
@@ -80,7 +83,7 @@ function daemon(): Server {
       res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n")
       return
     }
-    if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "process", id: ID, signature: "fixture" })
+    if (path === "/v1/transcript") return json(res, 200, { entries: remoteControl ? [{ role: "user", text: "Remote history fixture", timestamp: NOW }] : [], evidence: "transcript", id: ID, signature: "fixture" })
     if (path.startsWith("/v1/")) return json(res, 404, { error: { code: "not_found", message: path } })
     if (path === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
@@ -235,4 +238,43 @@ test("history retries preserve the current page and append older sessions once",
   assert.equal(olderAttempts,2,"retry should repeat only the failed page")
   if(shots){const {data}=await browser.send("Page.captureScreenshot",{format:"png"},s);writeFileSync(join(shots,"history-paging.png"),Buffer.from(data,"base64"))}
  }finally{await browser.send("Target.closeTarget",{targetId}).catch(()=>undefined)}
+})
+
+test("Remote Control detail is readable with terminal writes disabled on desktop and phone", async () => {
+ remoteControl=true
+ try {
+  for(const width of [1200,390]){
+   const {targetId}=await browser.send("Target.createTarget",{url:"about:blank"})
+   const {sessionId:s}=await browser.send("Target.attachToTarget",{targetId,flatten:true})
+   const run=async(expression:string)=>{
+    const {result,exceptionDetails}=await browser.send("Runtime.evaluate",{expression,returnByValue:true,awaitPromise:true},s)
+    if(exceptionDetails)throw new Error(exceptionDetails.exception?.description??exceptionDetails.text)
+    return result.value
+   }
+   try{
+    await browser.send("Page.enable",{},s)
+    await browser.send("Runtime.enable",{},s)
+    await browser.send("Emulation.setDeviceMetricsOverride",{width,height:850,deviceScaleFactor:1,mobile:width<600},s)
+    const mark=browser.loadCount
+    await browser.send("Page.navigate",{url:origin+"/#session="+ID},s)
+    await browser.loaded(s,mark)
+    const deadline=Date.now()+10000
+    while(Date.now()<deadline && !await run(`document.querySelector("#why")?.textContent.includes("Remote Control") && document.body.innerText.includes("Remote history fixture")`))await new Promise(r=>setTimeout(r,50))
+    assert.match(await run(`document.querySelector("#why")?.textContent??document.body.innerText`),/Remote Control/)
+    assert.match(await run(`document.body.innerText`),/Remote history fixture/)
+    assert.equal(await run(`document.querySelector("#msg")?.getAttribute("contenteditable")`),"false")
+    assert.equal(await run(`document.querySelector("#send")?.disabled`),true)
+    await run(`document.querySelector("#detail-actions-trigger").click()`)
+    for(const id of ["session-focus","session-interrupt","session-screen"]){
+     assert.equal(await run(`document.getElementById(${JSON.stringify(id)})?.hidden`),true)
+     assert.equal(await run(`document.getElementById(${JSON.stringify(id)})?.getClientRects().length`),0,"unsupported control must actually be hidden")
+    }
+    assert.equal(await run(`document.querySelector("#session-end")?.disabled`),true)
+    assert.equal(await run(`document.documentElement.scrollWidth <= innerWidth`),true)
+    await run(`document.querySelector("#detail-actions-trigger").click()`)
+    if(shots){const {data}=await browser.send("Page.captureScreenshot",{format:"png"},s);writeFileSync(join(shots,"remote-control-"+width+".png"),Buffer.from(data,"base64"))}
+   }finally{await browser.send("Target.closeTarget",{targetId}).catch(()=>undefined)}
+  }
+  assert.equal(remoteWrites,0,"opening read-only Remote Control must not send a terminal command")
+ }finally{remoteControl=false}
 })

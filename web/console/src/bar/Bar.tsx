@@ -460,6 +460,10 @@ export default function Bar() {
       say(words.nothingToSend, true)
       return
     }
+    if (target.backend === "claude_remote") {
+      say(nextWord("claudeRemoteReadOnly"), true)
+      return
+    }
     if (antigravitySlashDraft(target.assistant, body)) {
       say(catalogWord("antigravity", "slashDraft"), true)
       return
@@ -711,6 +715,7 @@ export default function Bar() {
           ref={boxRef}
           rows={1}
           value={text}
+          disabled={current?.backend === "claude_remote"}
           placeholder={placeholder}
           aria-label={placeholder}
           spellCheck={false}

@@ -22,6 +22,9 @@ test("single-machine and fleet actions use the same current-row rule", () => {
   assert.deepEqual(richSessionSwipeActions({ source: { freshness: "missing" }, sessionId: "conversation" }),
     sessionSwipeActions("unknown", "conversation"))
   assert.deepEqual(sessionSwipeActions("current", ""), { close: true, archive: false })
+  assert.deepEqual(sessionSwipeActions("current", "conversation", "claude_remote"), { close: false, archive: false })
+  assert.deepEqual(richSessionSwipeActions({ backend: "claude_remote", source: { freshness: "current" }, sessionId: "conversation" }),
+    { close: false, archive: false })
 })
 
 test("a row only moves the way there is something to uncover", () => {

@@ -246,6 +246,9 @@ func (a Actions) read(ctx context.Context) session.Inventory {
 // asking costs no Apple Event. A tty no backend holds — another terminal
 // application — is refused as before.
 func (a Actions) host(ctx context.Context, s session.Session) (ports.TerminalHost, error) {
+	if s.Backend == session.BackendClaudeRemote {
+		return nil, Refusal{Code: "backend_unsupported", Detail: "Remote Control sessions are read-only in Clawdline; use Claude to operate this session"}
+	}
 	if session.SourceForID(s.ID) == "ps" {
 		tty := s.TTY
 		if tty == "" {
@@ -867,6 +870,9 @@ func (a Actions) ClosePinned(ctx context.Context, id string, force bool, pid int
 // both times, and stayed on the list. The process is what there is, so the
 // process is what is asked to leave.
 func (a Actions) closer(ctx context.Context, s session.Session) (func(context.Context, session.Session) error, error) {
+	if s.Backend == session.BackendClaudeRemote {
+		return nil, Refusal{Code: "backend_unsupported", Detail: "Remote Control sessions are read-only in Clawdline; use Claude to close this session"}
+	}
 	if session.SourceForID(s.ID) == "ps" {
 		if a.Processes == nil {
 			return nil, Refusal{

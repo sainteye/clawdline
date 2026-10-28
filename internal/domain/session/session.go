@@ -10,6 +10,8 @@ const (
 	BackendITerm Backend = "iterm"
 	BackendTmux  Backend = "tmux"
 	BackendOwned Backend = "owned" // a terminal or protocol process this daemon owns
+	// BackendClaudeRemote is an external Remote Control worker, observed read-only.
+	BackendClaudeRemote Backend = "claude_remote"
 )
 
 type Assistant string

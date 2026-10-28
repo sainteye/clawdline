@@ -79,6 +79,27 @@ func TestOneSessionHasOneRecord(t *testing.T) {
 	}
 }
 
+func TestRemoteControlUsesTheSameTranscriptAndLiveHistoryIdentity(t *testing.T) {
+	host, item, record, _ := movedClaudeSession(t)
+	item.ID, item.Backend = "claude-remote:4242:fixture", session.BackendClaudeRemote
+	s := &Server{inventory: app.Inventory{Identity: host}}
+	row := rowJSON(t, s.sessionRow(rowInput{item: item}))
+	if row["backend"] != "claude_remote" || row["sessionId"] != item.ConversationID {
+		t.Fatalf("remote row lost its local identity: %+v", row)
+	}
+	page := s.transcriptPage(item.ID, item, 10)
+	if page.Note != "" || len(page.Entries) != 1 || page.Entries[0].Text != "hello" {
+		t.Fatalf("remote history was not readable: %+v", page)
+	}
+	reading := s.startReadingFrom(session.Inventory{Sessions: []session.Session{item}})
+	if resolved, err := filepath.EvalSymlinks(record); err == nil {
+		record = resolved
+	}
+	if !reading.openClaude[record] {
+		t.Fatal("the native history picker could resume an already running remote conversation")
+	}
+}
+
 // Without a registry entry the scan's directory is the answer, as before;
 // and a daemon whose identity port is not the host still finds records there.
 func TestARecordFallsBackToTheScannedDirectory(t *testing.T) {

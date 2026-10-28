@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9788,
-  "riskKeys": 4335,
-  "nonRiskCount": 5453,
+  "englishContentKeys": 9790,
+  "riskKeys": 4336,
+  "nonRiskCount": 5454,
   "groups": [
     {
       "name": "admin / other",
@@ -3480,7 +3480,7 @@
     },
     {
       "name": "next / other",
-      "count": 496,
+      "count": 497,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3512,6 +3512,7 @@
         "next.archivedAt",
         "next.archiving",
         "next.brokerWork",
+        "next.claudeRemoteReadOnly",
         "next.commandNoPlanner",
         "next.compressedReadTooLarge",
         "next.compressedReadUnsupported",

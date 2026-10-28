@@ -65,6 +65,16 @@ test("a complete ss pass with the same Session id on two machines stays scoped",
   assert.equal(a.snapshotGeneration, passOne)
 })
 
+test("Remote Control stays read-only in the fleet projection", () => {
+  const source = fleet("a", ["remote"])
+  const held = source.statusSnapshots.get(JSON.stringify(["a", "remote"])) as { payload: Record<string, unknown> }
+  held.payload.backend = "claude_remote"
+  held.payload.assistant = "claude"
+  const projected = statusProjection(source, "a", 2000)
+  assert.equal(projected.kind, "ready")
+  if (projected.kind === "ready") assert.equal(projected.rows[0].backend, "claude_remote")
+})
+
 test("a current machine task descriptor places a child when ss lacks its parent", () => {
   const source = fleet("a", ["root", "child"])
   const child = source.statusSnapshots.get(JSON.stringify(["a", "child"])) as { payload: Record<string, unknown> }

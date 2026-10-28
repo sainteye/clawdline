@@ -64,6 +64,8 @@
   "next.apiPerformanceRefresh": "Refresh",
   "next.apiPerformanceUnavailableStore": "Persistence is unavailable; observations may be lost on restart.",
   "next.machineMonitoringNav": "Machine monitoring",
+  "next.claudeRemoteShort": "Remote Control · read only",
+  "next.claudeRemoteReadOnly": "Read this Remote Control conversation here. Use Claude to send messages, answer requests, or close the session.",
   "capacityRow.session.tool_preview_bytes.what": "Tool cards send a bounded UTF-8 preview before reading stored detail.",
   "capacityRow.session.tool_preview_bytes.full": "Longer text stays in the Session record and is read when expanded.",
   "capacityRow.cloud.read_plaintext_bytes.what": "Negotiated compressed reads have a maximum decompressed size.",

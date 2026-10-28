@@ -11,7 +11,8 @@ import (
 )
 
 type PS struct {
-	Antigravity ports.AntigravityProcessVerifier
+	RemoteControl func(context.Context, int) (session.Session, bool)
+	Antigravity   ports.AntigravityProcessVerifier
 }
 
 func New() *PS { return &PS{} }

@@ -200,11 +200,12 @@ export function Composer({
 
   const machine = remote?.machineID ?? (row ? L.machineFor(row).id : "")
   const blockedCode = !remote && blocked?.machine === machine ? blocked.code : ""
-  const write = remote ? remote.canSend : !blockedCode
+  const remoteControl = row?.backend === "claude_remote"
+  const write = !remoteControl && (remote ? remote.canSend : !blockedCode)
   const protocolOwned = !remote && assistantProtocolOwned(row)
   const providerOn = assistantComposeAdmits(remote?.assistant ?? row?.assistant, remote?.assistantFacts ?? assistantFacts,
     remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu, protocolOwned)
-  const on = draftReady && (remote ? remote.canSend : write && !!row) && providerOn
+  const on = draftReady && write && (remote ? remote.canSend : !!row) && providerOn
   const cardsVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   useEffect(() => {
     if (!protocolOwned || !row) return
@@ -592,7 +593,7 @@ export function Composer({
     : assistantUnavailable(remote?.assistantFacts ?? assistantFacts, "send")
   const providerWords = protocolOwned || providerReason === "loading" ? "" : providerReason ? catalogWord("antigravity", providerReason).replace("{assistant}", assistantLabel(remote?.assistant ?? row?.assistant))
     : catalogWord("antigravity", "sendUnavailable")
-  const why: ReactNode = failure || (!providerOn ? providerWords : "") || (!remote && blockedCode
+  const why: ReactNode = remoteControl ? nextWord("claudeRemoteReadOnly") : failure || (!providerOn ? providerWords : "") || (!remote && blockedCode
     ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)
     : "")
   const pinned = sending && sendWidth.current.px ? { minWidth: `${sendWidth.current.px}px` } : undefined

@@ -402,6 +402,29 @@ not. That last number is the one thing looking cannot fix, and it is what the op
 
 ## Reading a session back
 
+Claude Code Remote Control conversations can also appear in the Session list on macOS and Linux
+when external Session discovery is enabled. An interactive `claude --remote-control` or
+`/remote-control` session keeps its existing terminal controls. A server-spawned worker is listed
+as **Remote Control · read only**: Clawdline reads its local conversation and status, while messages,
+permission answers, interruption and closing remain in Claude. The Remote Control launcher itself
+is not a conversation and is not listed as one.
+
+Worker discovery requires the native SDK bridge command and a live Claude registry entry whose
+PID, process start, local conversation UUID and remote bridge identity are present. Workers retain
+their own identity even when they inherit the launcher's tty or tmux environment. If an interactive
+terminal resumes the same local conversation, the terminal is the displayed representation.
+An unreadable worker identity keeps the process inventory incomplete rather than proving absence.
+
+Project history includes SDK-origin conversations with a `bridge-session` record or a bridge ID on
+the user record, within the existing bounded opening scan. Unrelated SDK jobs and Clawdline child
+briefings remain excluded. Discovery and reading use the daemon's `CLAUDE_CONFIG_DIR` when it is an
+absolute path, otherwise the default `~/.claude`; separate process-specific stores are not searched.
+Local transcript IDs and remote bridge IDs are different identities, and a saved transcript does
+not establish that a worker is still running. Custom project-directory names are not resolved here.
+
+See [Claude's Remote Control documentation](https://code.claude.com/docs/en/remote-control) and
+[session storage documentation](https://code.claude.com/docs/en/sessions#where-transcripts-are-stored).
+
 <kbd>⌘</kbd><kbd>J</kbd> opens a pane below the input showing what that session currently says,
 refreshed about once a second and following <kbd>Tab</kbd> as you switch. The rest of the screen
 blurs behind it, because reading a transcript is a different mode from firing off one line. The
