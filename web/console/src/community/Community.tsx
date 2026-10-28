@@ -1,3 +1,4 @@
+import { applyShareMetadata, shareMetadata } from "./share-metadata.js"
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { communityCall } from "./api.js"
 import { useCommunityMutation, useCommunityRead, type CommunityCall } from "./hooks.js"
@@ -55,6 +56,7 @@ function Discussion(p:Props) {
   const mutation=useCommunityMutation(p.call,(p.account?.id??"anonymous")+":"+p.route.id+":reply"),resolve=useCommunityMutation(p.call,(p.account?.id??"anonymous")+":"+p.route.id+":resolve")
   const images=useSupportImages(p.call,p.apiOrigin,(p.account?.id??"anonymous")+":community:"+p.route.id,true)
   const submit=async(e:FormEvent)=>{e.preventDefault();if(!topic)return;try{const image_ids=mutation.uncertain?[]:await images.upload();await mutation.run<{topic:CommunityTopic}>(path+"/messages",{expected_revision:topic.revision,body,image_ids,source_language:p.locale,reply_locale:p.locale,request_agent:agent},a=>{read.replace(a);setBody("");setAgent(false);images.clear();p.onSaved()})}catch{/* Upload failures retain the draft. */}}
+  useEffect(()=>{if(topic)applyShareMetadata(shareMetadata("/community/topics/"+topic.id,p.locale,{title:topic.title,body:topic.messages?.[0]?.body??"",locale:topic.source_language}))},[topic,p.locale])
   const conversation=publicConversation(topic?.messages)
   return <><CommunityError code={read.error} retry={read.refresh}/>{!topic&&read.loading?<p role="status">{w("loading")}</p>:null}{topic?<><header className="help-thread-heading"><div className="help-thread-meta"><span className={"help-request-type help-request-"+topic.request_type}><CommunityIcon type={topic.request_type}/>{w(typeWord(topic.request_type))}</span><CommunityStatus topic={topic}/><span className="community-public-label">{w("communityPublic")}</span></div><h1>{topic.title}</h1></header>
     {conversation.original?<CommunityMessage message={conversation.original} origin={p.apiOrigin} id={topic.id} original/>:null}

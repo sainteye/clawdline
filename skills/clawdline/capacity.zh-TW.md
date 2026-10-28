@@ -205,6 +205,9 @@
 | `console.assistant_facts_read_milliseconds` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `console.carrier_receive_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `console.carrier_receive_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `console.community_share_fetch_seconds` | 3 | `seconds` | `expire` | `diagnostics` | — |
+| `console.community_share_response_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
+| `console.community_share_text_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
 | `console.direct_history_hours` | 24 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.direct_history_machines` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.execution_recovery_attempts` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |

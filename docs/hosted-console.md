@@ -304,3 +304,20 @@ events keep their existing bounded outbox and automatic retry policy.
 On the machine, inspect `cloud: viewer reported: event=cloud.send.diagnostic_requested`
 and the batch's `cloud: viewer events delivered:` summary in the daemon log.
 A relay acknowledgement alone does not establish that the machine logged the row.
+
+## Community sharing metadata
+
+The Cloud build emits `_worker.js` and a restricted `_routes.json` for `/community` and `/help`.
+Assets, the workspace, API and relay traffic remain outside that worker. The worker obtains the
+SPA asset through `ASSETS.fetch` and rewrites its head with the same metadata model used by the
+client. Its only upstream is the fixed anonymous public API, with no credentials, redirect
+following, query forwarding or persistent preview cache. Private/Admin routes never fetch content.
+The default static Cloud entry has generic metadata; daemon builds retain their existing entry.
+
+A production acceptance checks the raw GET HTML using an ordinary user agent and representative
+share crawlers, not only the browser DOM. Verify distinct list titles, a real public topic title
+and original-post excerpt, noindex for private/missing content, one canonical URL without tracking,
+one set of OG/Twitter tags, a reachable image/png response with exact 1200×630 dimensions, and SPA
+navigation updating both title and metadata. Also open the existing signed-in console and verify
+that changing the HTML response has not affected startup, navigation or pairing. No API or relay
+redeployment is required for this rendering layer.

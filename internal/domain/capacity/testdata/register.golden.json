@@ -3967,6 +3967,57 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.community_share_fetch_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.community_share_response_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.community_share_text_characters",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 160,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.direct_history_hours",
     "Class": "observation",
     "Unit": "rows",

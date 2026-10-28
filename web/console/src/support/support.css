@@ -49,3 +49,5 @@
 @media(max-width:700px){.help-root .help-classification select{font-size:16px}.help-message-stamp{width:100%;justify-content:flex-start;margin-left:42px}.help-message-stamp small{white-space:normal}.help-request-type{font-size:11px}}
 
 .help-avatar img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+
+.help-source-link{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px}.help-source-file{display:flex;flex-direction:column;min-width:0;gap:2px;overflow-wrap:anywhere}.help-source-file small{font-size:10px}.help-source-link code{font-size:10px;color:var(--dim);white-space:nowrap;padding-top:2px}
