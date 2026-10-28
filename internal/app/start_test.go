@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -134,5 +136,33 @@ func TestResumeVerifiesTheSelectionWithoutRelistingHistory(t *testing.T) {
 	}
 	if !strings.Contains(term.command, "codex resume "+id) {
 		t.Fatalf("wrong command %q", term.command)
+	}
+}
+
+func TestSelectedPersonalProjectStillStartsAndValidatesAtUse(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := filepath.Join(home, "Documents", "selected-project")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	place := projects.Place{ID: projects.PlaceID(path), Path: path}
+	terminal := &personaTerminal{}
+	starter := Starter{Places: func(context.Context) []projects.Place { return []projects.Place{place} }, Terminal: func() projects.TerminalChoice { return projects.TerminalTmux }, Launcher: terminal}
+	chosen, ok := starter.Place(context.Background(), place.ID)
+	if !ok {
+		t.Fatal("selected choice was unavailable")
+	}
+	if _, err := starter.Start(context.Background(), chosen, "claude", "", "", ""); err != nil {
+		t.Fatalf("explicit Start was blocked: %v", err)
+	}
+	if terminal.command == "" {
+		t.Fatal("selected Project never reached launcher")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := starter.Start(context.Background(), chosen, "claude", "", "", ""); err == nil {
+		t.Fatal("selected missing path was not validated at use")
 	}
 }

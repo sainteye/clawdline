@@ -160,3 +160,34 @@ func TestMacOSBackgroundPolicyRejectsCaseAliasesAndMountedVolumes(t *testing.T) 
 		}
 	}
 }
+
+// Listing a saved choice must not test a protected directory on disk. Its
+// existence is checked when that one choice is actually used by Start.
+func TestSavedPersonalPlaceIsListedWithoutProbingItsExistence(t *testing.T) {
+	home, _ := managedHome(t)
+	path := filepath.Join(home, "Music", "saved-project")
+	p := NewPlaces(nil, nil)
+	p.Registered = func() ([]RegisteredPlace, error) { return []RegisteredPlace{{Path: path, AddedAt: 1}}, nil }
+	if got := p.List(nil, 40); len(got) != 1 || got[0].Path != path {
+		t.Fatalf("saved personal place was probed or dropped: %v", got)
+	}
+}
+
+func TestLifecycleResolvesOnlyTheSelectedPersonalProject(t *testing.T) {
+	home := t.TempDir()
+	var err error
+	home, err = filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	selected := filepath.Join(home, "Documents", "selected")
+	other := filepath.Join(home, "Music", "unrelated")
+	mkdirs(t, selected, other)
+	l := NewLifecycle(Ports{ProjectDirectories: func() []string { return []string{other, selected} }})
+	id := ProjectID(selected)
+	got, err := l.Resolve(id)
+	if err != nil || got.CanonicalPath != canonicalFilesystemPath(selected) {
+		t.Fatalf("selected identity: %+v %v", got, err)
+	}
+}

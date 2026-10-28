@@ -18,6 +18,8 @@ type Place struct {
 	Path  string
 	Label string
 	At    time.Time
+	// ProjectKey is a saved explicit-registration observation, not a new read.
+	ProjectKey string
 }
 
 // Labeler is the project registry's name for a directory, or "" when it has
@@ -120,17 +122,28 @@ func (p *Places) List(live []string, limit int) []Place {
 	all := p.recorded(60, 240)
 	all = append(all, p.codexRecorded(60, 40)...)
 	registered := map[string]bool{}
+	var deferred []Place
+	lexicalDurable := durableJudgeWithResolver(p.Managed, filepath.Clean)
 	if p.Registered != nil {
 		if rows, err := p.Registered(); err == nil {
 			for _, row := range rows {
-				registered[comparablePath(row.Path)] = true
-				all = append(all, Place{ID: PlaceID(row.Path), Path: row.Path,
-					Label: p.label(row.Path), At: time.Unix(row.AddedAt, 0)})
+				registered[storedPathKey(row.Path)] = true
+				place := Place{ID: PlaceID(row.Path), Path: row.Path,
+					Label: p.label(row.Path), At: time.Unix(row.AddedAt, 0), ProjectKey: row.ProjectKey}
+				if !MayInspectInBackground(row.Path) {
+					// Keep the saved choice visible without resolving or statting
+					// it. Start and the selected Project routes validate it on use.
+					if usable(row.Path) && lexicalDurable(row.Path) {
+						deferred = append(deferred, place)
+					}
+					continue
+				}
+				all = append(all, place)
 			}
 		}
 	}
 	for _, cwd := range live {
-		if cwd == "" || !registered[filepath.Clean(cwd)] && !MayInspectInBackground(cwd) {
+		if cwd == "" || !MayInspectInBackground(cwd) {
 			continue
 		}
 		all = append(all, Place{ID: PlaceID(cwd), Path: cwd, Label: p.label(cwd), At: now})
@@ -139,7 +152,7 @@ func (p *Places) List(live []string, limit int) []Place {
 	if p.Hidden != nil {
 		if paths, err := p.Hidden(); err == nil {
 			for _, path := range paths {
-				hidden[filepath.Clean(path)] = true
+				hidden[storedPathKey(path)] = true
 			}
 		} else {
 			// A broken preference file must not silently restore removed Projects.
@@ -153,12 +166,18 @@ func (p *Places) List(live []string, limit int) []Place {
 	// add used to succeed and then vanish from every list.
 	homeDir := resolvedPath(home())
 	chosenHome := func(path string) bool {
-		return registered[comparablePath(path)] && resolvedPath(path) == homeDir
+		return registered[storedPathKey(path)] && resolvedPath(path) == homeDir
 	}
-	return tidy(all, limit, isDirectory, func(path string) bool {
-		return !hidden[filepath.Clean(path)] && !IsMachineWorkspace(p.MachineStateDir, path) &&
+	ready := tidy(all, limit, isDirectory, func(path string) bool {
+		return !hidden[storedPathKey(path)] && !IsMachineWorkspace(p.MachineStateDir, path) &&
 			(durable(path) || chosenHome(path))
 	})
+	for _, place := range deferred {
+		if !hidden[storedPathKey(place.Path)] {
+			ready = append(ready, place)
+		}
+	}
+	return tidy(ready, limit, func(string) bool { return true }, func(string) bool { return true })
 }
 
 func isDirectory(path string) bool {

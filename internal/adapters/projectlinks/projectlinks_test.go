@@ -606,3 +606,22 @@ func TestPublicWebsiteDoesNotRequireALocalPort(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectedPersonalProjectStillReadsItsDeclaredServers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cwd := filepath.Join(home, "Documents", "selected-project")
+	if err := os.MkdirAll(cwd, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, ".devstack.json"), []byte(`{"processes":[{"name":"web","port":41234}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := reader(t, remote{url: fixtureRemote}, 1000)
+	r.Home = home
+	r.Probe = func(context.Context, int) bool { return true }
+	row := find(r.Read(context.Background(), cwd).Links, "server")
+	if row == nil || row.State != "ok" {
+		t.Fatalf("explicitly selected project lost its server: %+v", row)
+	}
+}

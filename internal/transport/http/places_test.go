@@ -14,6 +14,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/icon"
 )
@@ -270,5 +271,63 @@ func TestPlacesNameTheRepositoryTheyClone(t *testing.T) {
 	}
 	if got, present := repos[plain]; !present || got != "" {
 		t.Errorf("the plain folder answered repo %v (listed: %v)", got, present)
+	}
+}
+
+func TestSavedPersonalProjectListDefersMetadataUntilSelected(t *testing.T) {
+	home := placesHome(t)
+	state := filepath.Join(home, ".config", "clawdline-next")
+	path := filepath.Join(home, "Documents", "selected-project")
+	admin := filepath.Join(path, ".git")
+	if err := os.MkdirAll(admin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(admin, "config"), []byte("[remote \"origin\"]\nurl = https://github.com/example/selected-project.git\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	registry := projects.OpenPlaceRegistry(state)
+	rows, err := registry.Add([]string{path}, time.Unix(1790000000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path = rows[0].Path
+	s := &Server{cfg: config.Config{Dir: state}, icons: &icon.Registry{}}
+	readers := s.projectReaders()
+	readers.repos = projects.NewRepoLookup(func(string) string { t.Error("list started a repository lookup"); return "" })
+	readers.setups = newSetupLookup(func(string, string, icon.Source) *contract.ProjectSetup {
+		t.Error("list started a setup lookup")
+		return nil
+	})
+	rec := httptest.NewRecorder()
+	s.placesRoute(rec, httptest.NewRequest(http.MethodGet, "/v1/places", nil))
+	var reply contract.StartPlaceList
+	if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil || rec.Code != 200 {
+		t.Fatalf("list: %d %s: %v", rec.Code, rec.Body, err)
+	}
+	if len(reply.Places) != 1 || reply.Places[0].Path != path || reply.Places[0].Setup != nil || reply.Places[0].Repo != "" || reply.Places[0].ProjectID != projects.ProjectID(path) {
+		t.Fatalf("saved row was lost or enriched eagerly: %+v", reply)
+	}
+	if entries, _ := readers.repos.Counts(); entries != 0 {
+		t.Fatalf("repository work was queued: %d", entries)
+	}
+	if entries, _ := readers.setups.Counts(); entries != 0 {
+		t.Fatalf("setup work was queued: %d", entries)
+	}
+	identity, err := readers.lifecycle.Resolve(projects.ProjectID(path))
+	if err != nil || identity.CanonicalPath != path {
+		t.Fatalf("explicit worktree identity blocked: %+v %v", identity, err)
+	}
+	// The Project catalog also keeps a saved selection visible without walking
+	// every saved cwd. Resolving that exact choice is a separate explicit read.
+	catalog := s.workV2Projects(context.Background())
+	if row, ok := catalog[projects.PlaceID(path)]; !ok || row.Path != path {
+		t.Fatalf("catalog lost saved choice: %v", catalog)
+	}
+	selected, ok := s.workV2Project(context.Background(), projects.PlaceID(path))
+	if !ok || selected.Path != path {
+		t.Fatalf("selected Project could not be resolved: %+v", selected)
+	}
+	if got := projects.OriginRepo(selected.Path); got != "github.com/example/selected-project" {
+		t.Fatalf("explicit repository read blocked: %q", got)
 	}
 }

@@ -341,9 +341,16 @@ type workV2ProjectCatalog map[string]workV2ProjectWire
 func (s *Server) workV2Projects(ctx context.Context) workV2ProjectCatalog {
 	out := workV2ProjectCatalog{}
 	for _, p := range s.projectReaders().places.List(s.liveDirectories(ctx), 40) {
-		canonical, ok := projects.CanonicalProjectKey(p.Path)
-		if !ok {
-			continue
+		canonical := filepath.Clean(p.Path)
+		if p.ProjectKey != "" {
+			canonical = p.ProjectKey
+		}
+		if projects.MayInspectInBackground(p.Path) {
+			var ok bool
+			canonical, ok = projects.CanonicalProjectKey(p.Path)
+			if !ok {
+				continue
+			}
 		}
 		label := p.Label
 		if label == "" {
@@ -361,6 +368,11 @@ func (s *Server) workV2Projects(ctx context.Context) workV2ProjectCatalog {
 
 func (s *Server) workV2Project(ctx context.Context, id string) (workV2ProjectWire, bool) {
 	p, ok := s.workV2Projects(ctx)[id]
+	if ok && !projects.MayInspectInBackground(p.Path) {
+		// This route names one selected Project. Resolve it now, while the
+		// catalog above remains safe to build for every saved Project.
+		p.Path, ok = projects.CanonicalProjectKey(p.Path)
+	}
 	return p, ok
 }
 
