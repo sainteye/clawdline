@@ -9,7 +9,7 @@ import "./performance.css"
 const number = (v: number | null | undefined, unit = "") => v == null ? "—" : `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })}${unit}`
 const at = (v: number | null | undefined) => v == null ? "—" : new Date(v).toLocaleString(undefined, { hour12: false })
 const ms = (v: number | null | undefined) => number(v == null ? null : v / 1000, " s")
-type Held = { key: string; body: PerformanceBody | null; failed: boolean; loading: boolean }
+type Held = { reader: typeof fetch; key: string; body: PerformanceBody | null; failed: boolean; loading: boolean }
 
 export function PerformanceScreen({ route, go, apiOrigin, get, fixture, onRefused, locale }: ConnectionHealthProps) {
   const say = useMemo(() => healthWords(locale), [locale])
@@ -17,7 +17,7 @@ export function PerformanceScreen({ route, go, apiOrigin, get, fixture, onRefuse
   const until = route.scope.until
   // No account selector is sent. A different route/get/origin owns a fresh state and abort fence.
   const key = `${apiOrigin}|${hours}|${until ?? "live"}`
-  const [held, setHeld] = useState<Held>({ key, body: null, failed: false, loading: true })
+  const [held, setHeld] = useState<Held>({ reader: get, key, body: null, failed: false, loading: true })
   const [revision, setRevision] = useState(0)
   const ctl = useRef<AbortController | null>(null)
   const refresh = useCallback(() => setRevision(v => v + 1), [])
@@ -27,30 +27,30 @@ export function PerformanceScreen({ route, go, apiOrigin, get, fixture, onRefuse
       if (typeof document !== "undefined" && document.hidden || ctl.current) return
       const current = new AbortController()
       ctl.current = current
-      setHeld(v => ({ key, body: v.key === key ? v.body : null, failed: v.key === key && v.failed, loading: true }))
+      setHeld(v => ({ reader: get, key, body: v.reader === get && v.key === key ? v.body : null, failed: v.reader === get && v.key === key && v.failed, loading: true }))
       void readPerformance(get, apiOrigin, hours, until, current.signal).then(body => {
-        if (alive && !current.signal.aborted) setHeld({ key, body, failed: false, loading: false })
+        if (alive && !current.signal.aborted) setHeld({ reader: get, key, body, failed: false, loading: false })
       }).catch(error => {
         if (!alive || current.signal.aborted) return
         if (error instanceof Error && error.message === "monitor_refused") {
-          setHeld({ key, body: null, failed: true, loading: false })
+          setHeld({ reader: get, key, body: null, failed: true, loading: false })
           onRefused("forbidden")
-        } else setHeld(v => ({ key, body: v.key === key ? v.body : null, failed: true, loading: false }))
+        } else setHeld(v => ({ reader: get, key, body: v.reader === get && v.key === key ? v.body : null, failed: true, loading: false }))
       }).finally(() => { if (ctl.current === current) ctl.current = null })
     }
     const visibility = () => {
-      if (document.hidden) { ctl.current?.abort(); ctl.current = null; setHeld({ key, body: null, failed: false, loading: true }) }
+      if (document.hidden) { ctl.current?.abort(); ctl.current = null; setHeld({ reader: get, key, body: null, failed: false, loading: true }) }
       else run()
     }
     run()
     const timer = until === null ? setInterval(run, PERFORMANCE_LIMITS.refreshMs) : null
-    const revalidate = () => { ctl.current?.abort(); ctl.current = null; setHeld({ key, body: null, failed: false, loading: true }); run() }
+    const revalidate = () => { ctl.current?.abort(); ctl.current = null; setHeld({ reader: get, key, body: null, failed: false, loading: true }); run() }
     document.addEventListener("visibilitychange", visibility)
     window.addEventListener("focus", revalidate)
     window.addEventListener("storage", revalidate)
     return () => { alive = false; ctl.current?.abort(); ctl.current = null; if (timer) clearInterval(timer); document.removeEventListener("visibilitychange", visibility); window.removeEventListener("focus", revalidate); window.removeEventListener("storage", revalidate) }
   }, [get, apiOrigin, hours, until, key, revision, onRefused])
-  const state = held.key === key ? held : { key, body: null, failed: false, loading: true }
+  const state = held.reader === get && held.key === key ? held : { reader: get, key, body: null, failed: false, loading: true }
   const data = state.body
   const move = (h: 1 | 6 | 24 | 168, end: string | null) => go(healthHref({ screen: "M03", performance: true, hours: h }, { ...route.scope, account: null, until: end }))
   return <div className="adh pf">

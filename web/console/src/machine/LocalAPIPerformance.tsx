@@ -23,9 +23,11 @@ export function LocalAPIPerformance() {
       }).finally(()=>{if(ctl===mine)ctl=null})
     }
     const visible=()=>{if(document.hidden){ctl?.abort();ctl=null;setHeld({key,data:null,error:null,loading:true})}else run()}
+    const revalidate=()=>{ctl?.abort();ctl=null;setHeld({key,data:null,error:null,loading:true});run()}
     run();const timer=until===null?setInterval(run,LOCAL_PERFORMANCE_LIMITS.refreshMs):null
     document.addEventListener("visibilitychange",visible)
-    return()=>{alive=false;ctl?.abort();if(timer)clearInterval(timer);document.removeEventListener("visibilitychange",visible)}
+    window.addEventListener("focus",revalidate);window.addEventListener("storage",revalidate)
+    return()=>{alive=false;ctl?.abort();if(timer)clearInterval(timer);document.removeEventListener("visibilitychange",visible);window.removeEventListener("focus",revalidate);window.removeEventListener("storage",revalidate)}
   },[key,hours,until,refresh,remote])
   if(remote)return <p className="machine-note" role="status">{nextWord("apiPerformanceDirect")}</p>
   const state=held.key===key?held:{key,data:null,error:null,loading:true},data=state.data
