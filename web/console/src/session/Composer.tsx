@@ -120,9 +120,7 @@ export function Composer({
     draftWarningShown.current = true
     toast(catalogWord("composerDraft", "storageUnavailable"), true)
   }
-  const [{ Shots, shotsHTML, subscribeShots, shotsVersion }] = useState(() => createShots(urls => {
-    if (draftKey) void composerDrafts.images(draftKey, urls).catch(warnDraft)
-  }))
+  const [{ Shots, shotsHTML, subscribeShots, shotsVersion }] = useState(() => createShots())
   useLayoutEffect(() => {
     alive.current = true
     let current = true
@@ -131,7 +129,6 @@ export function Composer({
       if (!draft.durable) warnDraft()
       msg.current.textContent = draft.text
       setText(draft.text)
-      Shots.restore(draft.images, false)
       setDraftReady(true)
     }).catch(() => {
       if (current) { setDraftReady(true); warnDraft() }
@@ -148,20 +145,6 @@ export function Composer({
       document.removeEventListener("visibilitychange", hidden)
     }
   }, [draftKey, Shots])
-  useEffect(() => {
-    const unsubscribe = composerDrafts.subscribeImages(draftKey, urls => {
-      const current = Shots.urls()
-      if (urls.length !== current.length || urls.some((url, index) => url !== current[index])) Shots.restore(urls, false)
-    })
-    return () => {
-      if (!Shots.busy()) { unsubscribe(); return }
-      // A pending decoder still owns this list. Keep it in step with edits made
-      // after reopening, so its eventual append cannot resurrect a removed image.
-      const finished = subscribeShots(() => {
-        if (!Shots.busy()) { unsubscribe(); finished() }
-      })
-    }
-  }, [draftKey, Shots, subscribeShots])
   const saveText = (value: string) => {
     composerDrafts.stageText(draftKey, value)
     // Clearing must delete the durable copy immediately, including a submitted draft.
