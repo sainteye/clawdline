@@ -7,7 +7,7 @@ export class SupportFailure extends Error {
 export function requestKey(): string { return crypto.randomUUID() }
 /** One request per action. An ambiguous outcome keeps the caller's key and body intact. */
 export async function supportCall<T>(origin: string, path: string, method = "GET", body?: unknown, key?: string, get: typeof fetch = fetch): Promise<T> {
-  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), path === "/v1/support/images" ? SUPPORT_UI_LIMITS.imageRequestMs : SUPPORT_UI_LIMITS.requestMs)
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), (path === "/v1/support/images" || path === "/v1/community/images") ? SUPPORT_UI_LIMITS.imageRequestMs : SUPPORT_UI_LIMITS.requestMs)
   try {
     const r = await get(origin + path, { method, credentials: "include", cache: "no-store", signal: controller.signal,
       headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(key ? { "Idempotency-Key": key } : {}) },

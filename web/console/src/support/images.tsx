@@ -5,12 +5,13 @@ import type { SupportImage } from "./model.js"
 
 type Call = <T>(path: string, method?: string, body?: unknown, key?: string) => Promise<T>
 type Item = { key: string; preview: string; blob?: Blob; image?: SupportImage }
-export function useSupportImages(call: Call, origin: string, scope: string) {
-  const storageKey = "clawdline-support-image-draft:" + scope
+export function useSupportImages(call: Call, origin: string, scope: string, publicDiscussion = false) {
+  const base = publicDiscussion ? "/v1/community/images" : "/v1/support/images"
+  const storageKey = "clawdline-support-image-draft:" + (publicDiscussion ? "public:" : "") + scope
   const [items,setItems] = useState<Item[]>(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "[]") as {key:string;image:SupportImage}[]
-      return saved.filter(v => typeof v.key === "string" && /^si_[a-f0-9]{40}$/.test(v.image?.id)).slice(0,L.imageCount).map(v=>({...v,preview:origin+"/v1/support/images/"+v.image.id}))
+      return saved.filter(v => typeof v.key === "string" && /^si_[a-f0-9]{40}$/.test(v.image?.id)).slice(0,L.imageCount).map(v=>({...v,preview:origin+base+"/"+v.image.id}))
     } catch { return [] }
   })
   const [busy,setBusy] = useState(false),[error,setError] = useState<string|null>(null)
@@ -58,7 +59,7 @@ export function useSupportImages(call: Call, origin: string, scope: string) {
       for(const item of items){
         if(item.image){images.push(item.image);continue}
         const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(",")[1]!);r.onerror=()=>reject(new Error("file"));r.readAsDataURL(item.blob!)})
-        const result=await call<{image:SupportImage}>("/v1/support/images","POST",{mime:"image/jpeg",data},item.key)
+        const result=await call<{image:SupportImage}>(base,"POST",{mime:"image/jpeg",data,...publicDiscussion?{public_consent:true}:{}},item.key)
         if(!/^si_[a-f0-9]{40}$/.test(result.image?.id))throw new SupportFailure("support_response_unreadable",false)
         images.push(result.image);setItems(values=>values.map(v=>v.key===item.key?{...v,image:result.image}:v))
       }
@@ -69,7 +70,7 @@ export function useSupportImages(call: Call, origin: string, scope: string) {
   const remove=(key:string)=>{
     if(busyRef.current)return
     const item=items.find(v=>v.key===key);if(!item)return
-    if(item.image)void call("/v1/support/images/"+item.image.id,"DELETE").catch(()=>{})
+    if(item.image)void call(base+"/"+item.image.id,"DELETE").catch(()=>{})
     if(urls.current.delete(item.preview))URL.revokeObjectURL(item.preview)
     setItems(values=>values.filter(v=>v.key!==key));setError(null)
   }
@@ -80,9 +81,9 @@ export function useSupportImages(call: Call, origin: string, scope: string) {
 export function SupportImagePicker({images,disabled}:{images:ReturnType<typeof useSupportImages>;disabled:boolean}){
   return <div className="help-image-picker"><label className="help-image-pick" aria-disabled={disabled||images.busy}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true" focusable="false"><path d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9"/></svg>{w(images.busy?"imageWorking":"attachImages")}<input aria-label={w("attachImages")} type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={disabled||images.busy} onChange={(e:ChangeEvent<HTMLInputElement>)=>{void images.add(Array.from(e.target.files??[]));e.target.value=""}}/></label><small>{w("imageHint")}</small>{images.items.length?<ul className="help-image-previews">{images.items.map((item,index)=><li key={item.key}><img src={item.preview} alt={w("imageNumber",{number:String(index+1)})}/><button className="help-btn" type="button" disabled={disabled||images.busy} aria-label={w("removeImage",{number:String(index+1)})} onClick={()=>images.remove(item.key)}>×</button></li>)}</ul>:null}{images.error?<p role="alert">{w(images.error==="support_image_limit"?"imageLimit":images.error==="support_image_expired"?"imageExpired":"imageFailed")}</p>:null}</div>
 }
-export function SupportImageGallery({images,origin,question,admin}:{images:SupportImage[];origin:string;question:string;admin:boolean}){
+export function SupportImageGallery({images,origin,question,admin,community=false}:{images:SupportImage[];origin:string;question:string;admin:boolean;community?:boolean}){
   const [open,setOpen]=useState<string|null>(null),dialog=useRef<HTMLDialogElement>(null)
   useEffect(()=>{const node=dialog.current;if(open&&node){node.showModal();return()=>node.close()}},[open])
   if(!images.length)return null
-  return <><div className="help-message-images">{images.map((image,index)=>{const src=origin+(admin?"/su":"")+"/v1/support/questions/"+encodeURIComponent(question)+"/images/"+encodeURIComponent(image.id);return <a key={image.id} href={src} target="_blank" rel="noopener noreferrer" onClick={e=>{e.preventDefault();setOpen(src)}}><img src={src} alt={w("imageNumber",{number:String(index+1)})} loading="lazy"/></a>})}</div>{open?<dialog ref={dialog} className="help-image-overlay" aria-label={w("imagePreview")} onCancel={e=>{e.preventDefault();setOpen(null)}} onClick={e=>{if(e.target===e.currentTarget)setOpen(null)}}><button autoFocus className="help-btn" type="button" onClick={()=>setOpen(null)}>{w("closeImage")}</button><img src={open} alt={w("imagePreview")}/></dialog>:null}</>
+  return <><div className="help-message-images">{images.map((image,index)=>{const src=origin+(community?"/v1/community/topics/":(admin?"/su":"")+"/v1/support/questions/")+encodeURIComponent(question)+"/images/"+encodeURIComponent(image.id);return <a key={image.id} href={src} target="_blank" rel="noopener noreferrer" onClick={e=>{e.preventDefault();setOpen(src)}}><img src={src} alt={w("imageNumber",{number:String(index+1)})} loading="lazy"/></a>})}</div>{open?<dialog ref={dialog} className="help-image-overlay" aria-label={w("imagePreview")} onCancel={e=>{e.preventDefault();setOpen(null)}} onClick={e=>{if(e.target===e.currentTarget)setOpen(null)}}><button autoFocus className="help-btn" type="button" onClick={()=>setOpen(null)}>{w("closeImage")}</button><img src={open} alt={w("imagePreview")}/></dialog>:null}</>
 }

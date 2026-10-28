@@ -1192,7 +1192,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
               <SidebarIcon name="access" />{nextWord("cloudPeerAccessNav")}
             </button>}
             {sidebarPages.filter((p) => p.id === "notifications").map(sidebarPage)}
-            {surveyAccount ? <a className="sidebar-item" id="nav-my-questions" href="/help/questions"><SidebarIcon name="questions" />{supportWord("mine")}</a> : null}
+            {surveyAccount ? <a className="sidebar-item" id="nav-my-questions" href="/community/mine"><SidebarIcon name="questions" />{supportWord("communityMine")}</a> : null}
             {sidebarPages.filter((p) => p.id === "plan").map(sidebarPage)}
             {sidebarPages.filter((p) => p.id === "settings").map(sidebarPage)}
           </section>

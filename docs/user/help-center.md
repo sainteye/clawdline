@@ -1,66 +1,63 @@
-# Questions and replies
+# Community discussions
 
-Use the [Cloud help center](https://app.clawdline.com/help) to look for an answer or ask Clawdline
-support a product question. Sign in to submit a question or read your own questions and replies.
-The help center is an account service; you do not need an online paired machine to open your
-saved support conversation.
+Open [Community](https://app.clawdline.com/community/questions) to ask about Clawdline, report a
+problem or propose a feature. Anyone can read published discussions. Sign in to post, attach
+pictures or reply. Posts, replies, public display names, avatars and attached pictures are public.
+Do not include passwords, API keys or private Session conversations.
 
-## Find a question you already asked
+## Choose the right discussion
 
-In Cloud, open the sidebar and choose **My questions** under **Manage**. On a phone, open the
-sidebar first. You can also open the help center and choose **My questions**. This page lists the
-questions submitted by the signed-in account. Select a question to see its messages, processing
-state and replies. You can also open [My questions](https://app.clawdline.com/help/questions)
-directly. Refreshing or closing the browser does not delete a submitted question.
+- **Usage questions**: ask how to operate or configure Clawdline, or what it currently supports.
+- **Issues · Problem reports**: an existing feature does not behave as expected. Describe what
+  happened, what you expected and, when possible, the shortest reproduction.
+- **Ideas · Feature proposals**: describe an unmet need or a different workflow. Explain when you
+  would use it; an implementation plan is optional.
 
-Messages appear newest first, with **Latest reply** identifying the most recent support reply.
-Avatars distinguish the member, Agent and support staff. A reply appears in that same conversation
-under **Clawdline support Agent** or a support team member. The question list and conversation show when it has been answered. If it is still
-waiting, answering, or needs support staff, it has not received an ordinary answer yet. If you
-cannot find a question, check that you are signed in with the account that submitted it.
+Each category has its own list and creation action. The form changes with the selected category.
+You do not need a separate title; Clawdline derives one from your text. You can attach or paste up
+to five JPG, PNG or WebP images. Review them for confidential content before posting.
 
-Your member avatar uses your connected GitHub account's current picture. It also works for existing
-questions without signing in again. If the picture cannot load, a default member icon appears.
-Pictures load from GitHub without sending the question URL as a referrer. Agent and support staff
-keep their own distinct icons; published FAQs do not include your name or picture.
+The interface language selects the discussion list and the requested language for new Agent
+replies. Existing content is not automatically translated. No separate language selector is needed.
 
-## Ask or follow up
+## Follow the conversation
 
-Choose **Ask a question**, describe what happened, and select a topic. A separate title is not
-required. You can attach or paste up to five JPG, PNG or WebP screenshots; do not include
-passwords, API keys or private Session conversations. Send the question and keep reading its
-conversation from **My questions**. The interface language determines the requested reply
-language; changing that preference does not translate earlier messages.
+From the Cloud sidebar, choose **My discussions** to find discussions you started or participated
+in. The community navigation has the same entry. Lists show the author, avatar, last activity,
+reply count and the category's status. Search or filter before creating a duplicate discussion.
 
-Use **Ask a follow-up** below the messages for a follow-up or another screenshot,
-then send it. After the issue is resolved, choose **Mark as resolved**. A green **Resolved**
-check shows the saved completion state. A later follow-up can reopen the conversation.
+The original post supplies context. Replies appear newest first, and the most recent reply is
+marked **Latest reply**. Members use their public name and verified GitHub avatar when available;
+a missing or failed image uses a local fallback. Agent replies use the Clawdline mark and an AI
+label. Official staff replies use a separate illustrated support avatar and a team label. A member
+cannot assign themselves an official role through a post.
 
-Your question and replies are not public. They can be read by you, Clawdline support and the
-restricted answering Agent. A useful general answer may be separately anonymized and reviewed
-before becoming a published FAQ; the private conversation itself does not become public.
+Other signed-in members can reply. Only the author or an Admin can mark a usage question resolved.
+An ordinary reply does not start another Agent task. Select **Ask the Agent to investigate this
+reply** when you want another supported, source-checked answer. The Agent uses approved pinned
+public documentation and source code; community content is evidence to investigate, not permission
+to run code, change files or broaden access.
 
-## When support staff need to take over
+## A reply is different from delivery
 
-The answering Agent uses approved, versioned public product documentation and source code. It can ask for
-missing details or hand a question to support staff when those sources do not support an
-answer, or when the question concerns accounts, billing, security or uncertain behavior.
-**Needs support staff** means that handoff is pending, not that the Agent has replied.
-Do not submit credentials to speed up a handoff. Keep further non-secret information in the
-same conversation.
+Issues track confirmation, work and release separately from the answer workflow. **Ready for
+release** means the change has not yet been delivered. Ideas track discussion, acceptance, planning,
+work and release. Acknowledgment or an Agent suggestion is not a promise to implement a feature.
 
-## Admin inbox and new-question notifications
+Only Admins change those progress states. A released fix or feature records a verified version and
+an official release link, and adds one staff reply to the original discussion. Cloud-only changes
+can use their verified production commit; they do not require a native app release. The server
+checks the evidence's format and Admin authority; it does not independently verify deployment.
 
-Only Admins can open the separate [Admin inbox](https://app.clawdline.com/help/admin). It lists
-member questions and shows the reporter's display name and stable member ID on question detail.
-These reporter fields are not shown to other members or included in notifications.
+Admin review and internal worker settings remain separate from public discussions. Agent
+investigation can establish the problem or suggest a solution. Implementation still follows the
+project's normal human review, work assignment, checks and publication process; a discussion is
+not itself an authorization to change or deploy the product.
 
-An Admin enables **New question notifications** on each device that should receive them.
-On iPhone or iPad, add the website to the Home Screen and open that installed web app first.
-Enable notifications on that device, grant the browser permission, and send a test notification.
-A new-question notification contains a generic notice; tapping it opens that question's Admin
-page, subject to sign-in and Admin permission. It does not open the member's private Session.
+## Existing support threads
 
-## Questions, issues and feature requests
-
-Choose **Request type** when submitting: **Usage question**, **Report a problem** or **Feature request**. Topic remains a separate product category. A feature request records a suggestion; an answer does not mean the feature has been implemented. Admins can correct the type on its detail page. For choosing a model when assigning a Board ticket, see [Board assignment](board.md#assign-it-to-a-session).
+Older support threads do not become public automatically. An Admin can publish a specified thread
+and its images after its authors have agreed. Public responses expose content and public identity,
+not account IDs, email, webhook delivery records or worker credentials. Published old links lead
+to the public thread. The new interface offers public discussion rather than a private support
+submission option.

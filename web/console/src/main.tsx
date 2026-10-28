@@ -91,7 +91,7 @@ const declared = import.meta.env.VITE_HOSTED_CONSOLE as string | undefined
 // page itself decides which of its pages an address names, so a deep link and
 // Back and Forward all land on it (`adminRoute` in cloud/admin/words.ts).
 const operations = location.pathname === "/admin" || location.pathname.startsWith("/admin/")
-if (declared && (location.pathname === "/help" || location.pathname.startsWith("/help/"))) {
+if (declared && (location.pathname === "/help" || location.pathname.startsWith("/help/") || location.pathname === "/community" || location.pathname.startsWith("/community/"))) {
   void import("./support/HelpCenter.js").then(({ HelpCenter }) =>
     render(<HelpCenter declared={declared} />),
   ).catch(startupFailure)

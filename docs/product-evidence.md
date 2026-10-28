@@ -17,8 +17,10 @@ behavior at that revision; it does not alone prove what is deployed on every mem
   says nothing about Board assignment.
 - **Machine defaults:** `docs/source/web/console/src/pages/settings/DefaultModelsBlock.tsx`
   and the settings `api.ts`. Defaults are different from a per-launch override.
-- **My questions / FAQ / support:** `docs/user/help-center.md`,
-  `docs/source/web/console/src/support/HelpCenter.tsx` and `model.ts` in that directory.
+- **Community / Issues / Ideas / FAQ:** `docs/user/help-center.md`,
+  `docs/source/web/console/src/community/Community.tsx` and `model.ts` in that directory;
+  `docs/source/web/console/src/support/HelpCenter.tsx` owns legacy Admin and FAQ entry points.
+  A discussion reply does not establish an Issue or Idea as delivered.
 
 Before saying a feature is missing, search the relevant UI directory and its request path; trace
 both the control and the value sent to the server. Do not infer global absence from one page or

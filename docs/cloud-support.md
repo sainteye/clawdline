@@ -1,29 +1,38 @@
-# Cloud help, private questions and multilingual FAQ
+# Cloud community, answering service and multilingual FAQ
 
-The hosted console's `/help` is an account service, independent of machine pairing and the Session
-relay. Public readers can search published FAQs; signed-in members can submit questions and read
-only their own threads. `/help/admin` is the operator inbox, `/help/admin/faq` is the editorial queue,
-and `/help/admin/worker` binds the answering service. These screens, including direct links,
-require operations access; ordinary members receive an access-denied view without mounting
-editorial or worker controls. Member navigation contains only FAQ and personal questions.
-Operators enter a separate, labeled Admin area; its inbox, editorial and worker navigation and
-content share a visually bounded administration panel. The private Cloud API rechecks account or
-superuser authority for every request; hiding a navigation link grants no authority.
+The hosted console's `/community/questions`, `/community/issues` and `/community/ideas` are public
+account-service discussions, independent of machine pairing and the Session relay. Anyone can read;
+a signed-in member can post and reply. `/community/mine` lists the current member's started or
+participated discussions, including for an Admin. It never becomes an all-members inbox.
+See the [member guide](user/help-center.md) for the interface and classification rules.
+
+Questions seek usage guidance. Issues report a defect with actual and expected behavior. Ideas
+propose a need or improvement. An answer is distinct from delivery: Issues and Ideas retain an
+independent Admin-controlled progress record. A released update includes official release evidence
+and a staff message in the same thread. The API validates evidence format and official origin;
+operators still verify the deployment. Discussion alone never authorizes source changes or deployment.
+
+The labeled `/help/admin` area remains the operator inbox, FAQ editorial queue and answering-service
+configuration. Every Admin request rechecks operations access on the server. Public moderation links
+do not grant authority. A staff reply is an explicit operator action; a member comment is never
+presented as an official reply merely because its author has Admin access.
 
 ## The content boundary
 
-Support questions are deliberately submitted **server-readable support content**. The composer
-states above the form that questions and replies are not public and are visible only to the member
-and Clawdline support, including the answering Agent, and that Cloud saves the submitted text.
-A separate warning before submission asks people not to include passwords, API keys or private Session
-conversations. The support API and the configured support worker can read those questions. This
-new account-service lane does not upload machine Sessions, obtain content keys, change relay
-cryptography, or grant a support worker access to a member's machine. Support data belongs to its
-own Cloud collections, separately from the machine's SQLite store and encrypted Session traffic.
+New discussions, replies and attached images are public. The composer explains this once before
+submission and warns against passwords, API keys and private Session content. The API requires
+explicit public consent for new discussions and staged images. Public authors expose only a display
+name and a verified GitHub avatar URL; account UUIDs, email, credentials and worker metadata are not
+part of that projection. Uploaded images use separate public attachment routes and ownership checks.
 
-No attachment upload is included. FAQ publication creates separately authored, anonymous public
-knowledge: private questions, account identifiers, job leases and editorial source associations
-never appear in the public projection or static export.
+Legacy `/v1/support` threads retain their original private boundary. An Admin must explicitly publish
+a consenting thread before it appears in community reads; this also moves its images to the public
+read projection. Unpublished threads never appear as a public fallback. The current composer offers
+no private-support option. Community publication and anonymous FAQ editing are separate actions.
+
+Submitted content is server-readable Cloud account data. This lane does not upload machine Sessions,
+obtain content keys, change relay encryption or grant access to a member's machine. Its collections
+are separate from local SQLite and encrypted Session traffic.
 
 ## From a question to a reply
 
@@ -42,14 +51,17 @@ never appear in the public projection or static export.
    questions are escalated instead of receiving a fabricated answer.
 5. Cloud commits the answer and job completion together. Only this commit changes a thread to
    answered. Webhook admission, delivery and an Agent's process exit never substitute for it.
-6. The member reads the same thread, can ask a follow-up and mark it resolved. A visible thread
+6. The member reads the same thread. Public discussion accepts replies from other signed-in members;
+   only the question author or an Admin can mark a usage question resolved. An explicit Agent request
+   schedules a new answer; ordinary community comments do not create new Agent jobs. Legacy private
+   follow-ups retain their original rescheduling behavior. A visible thread
    refreshes on focus and on a bounded interval. A read cursor acknowledges only the message the
    browser actually saw, never a newer reply that arrived during that acknowledgement. Question
 lists refresh when the browser regains focus or becomes visible, without a page refresh button.
 
 The internal storage revision changes for leases and delivery metadata. The member-facing
 conversation revision changes for content and explicit conversation actions; background delivery
-updates do not invalidate a person's draft. Each follow-up advances the input revision and fences
+updates do not invalidate a person's draft. Each explicit public Agent request, or legacy private follow-up, advances the input revision and fences
 an older answer. A live claim binds the question, input revision, fencing token and lease. There
 is one active support claim, a short renewable lease and a fixed maximum run deadline. A late or
 superseded completion is refused. Repeating a completion with its original key returns its result

@@ -14,7 +14,7 @@
 [Herdr](https://github.com/herdrdev/herdr/blob/master/docs/versions/0.9.1/website/src/content/docs/connecting-machines.mdx) 也能在 SSH 的 TUI 視窗列出多台機器的 Agent；[T3 Code](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md) 可連接多個環境。Clawdline Cloud 則在手機瀏覽器將 Session 依機器列在同一頁，並直接開啟對話、待辦與圖片。
 
 
-開發版原始碼已加入 Cloud 問答與多語言 FAQ：公開答案與會員私人問答串，和加密的機器 Session 分開。詳見[支援架構與發布邊界](docs/cloud-support.md)。
+Cloud 社群將使用問答、Issues 問題回報與 Ideas 功能提案分開。任何人都能閱讀，登入會員可以參與；回覆狀態與實際交付進度分開呈現。詳見[社群指南](docs/user/help-center.zh-TW.md)與[架構及公開邊界](docs/cloud-support.md)。
 
 ## 你可以做什麼
 
