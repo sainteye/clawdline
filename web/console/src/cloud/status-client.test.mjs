@@ -567,6 +567,61 @@ test("same-offset native pages on different revisions own separate read names", 
     "transcript.before.123.revision.agy1:2:123:def"])
 })
 
+test("native older pages keep their negotiated view through relay and carrier publication", async (t) => {
+  const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"])
+  const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
+  for (const transport of ["relay", "carrier"]) {
+    for (const view of [null, "tools-v1", "tools-v2"]) {
+      await t.test(`${transport}: ${view || "original"}`, async () => {
+        let sequence = 10
+        const client = new StatusCloudClient({ relayURL: "wss://relay.example.test", deviceToken: "fixture",
+          deviceID: "viewer", devicePrivateKey: keys.privateKey, nextSequence: async () => sequence++ })
+        client.ready = true
+        client.machineDescriptor = () => ({ machine: { transcript_tools_v1: !!view, transcript_tools_v2: view === "tools-v2" } })
+        client._unsupportedRefusal = () => null
+        client._offlineRefusal = () => null
+        client._outboundMachinePairing = async () => ({ keyID: "key", masterKey })
+        client._subscriptionRoom = () => null
+        client.subscribe = () => {}
+        client._releaseSubscription = () => {}
+        let published
+        const publication = new Promise(resolve => { published = resolve })
+        client._send = frame => published(frame.envelope)
+        client._carrierFor = () => transport === "carrier" ? { open: true, send: published } : null
+        const revision = "native1:123:fixture"
+        const read = "transcript.before.123.revision." + revision +
+          (view ? ".view." + view + (typeof DecompressionStream === "function" ? "z" : "") : "")
+        const key = "m\u0000s\u0000" + read
+        const controller = new AbortController()
+        const result = client.transcriptPageForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA },
+          123, controller.signal, revision)
+        try {
+          const envelope = await Promise.race([publication, result.then(() => assert.fail("read settled before publication"))])
+          const fields = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: base64Bytes(envelope.nonce, "nonce") }, masterKey, base64Bytes(envelope.ct, "ct"))))
+          assert.equal(envelope.ch, "r/m")
+          assert.equal(fields.revision, revision)
+          assert.equal(fields.view ?? null, view ? view + (typeof DecompressionStream === "function" ? "z" : "") : null)
+          assert.equal(client.readWaiters.size, 1)
+          assert.ok(client.readWaiters.has(key))
+          const body = { entries: [{ role: "assistant", text: "An older message" }], nextBefore: 40 }
+          client._applySnapshot({ kind: "transcript", machine: "m", session: "s" }, {
+            read, machine_id: "m", session_id: "s", expected_generation: genA, seq: envelope.seq, body,
+          }, { seq: 50, ts: Date.now() }, false)
+          assert.deepEqual(await result, body)
+          assert.equal(client.readWaiters.size, 0)
+          assert.equal(client.pinnedReadProofs.size, 0)
+          assert.equal(client.pendingBySequence.size, 0)
+          assert.equal(client.transcriptSnapshots.size, 0)
+        } finally {
+          controller.abort()
+          await result.catch(() => {})
+        }
+      })
+    }
+  }
+})
+
 test("pinned info asks for full detail with the exact machine and generation", async () => {
   const client = Object.create(StatusCloudClient.prototype)
   client.pinnedInfoFlights = new Map()
