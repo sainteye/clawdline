@@ -481,7 +481,11 @@ func theRoutineRow(t *testing.T, e Entry) {
 		t.Fatalf("routine limit stopped acting: %+v", f.counters)
 	}
 	st, _ := tr.Observe(res, Reading{Known: true, Used: limit + 1}, t0.Add(time.Hour))
-	if st.State != Full {
-		t.Fatal("a breached bound was hidden", st)
+	want := Full
+	if e.AtLimit == Rotate {
+		want = OK
+	}
+	if st.State != want {
+		t.Fatal("rotation threshold and hard bound were confused", st)
 	}
 }

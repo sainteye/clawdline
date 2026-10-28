@@ -118,7 +118,9 @@ SQLite connection, and a bounded list of recent successful upload receipts.
 These readings keep their real usage, ratios and eviction counters but stay `ok`
 while within their bound. Cache freshness windows remain warnings unless their
 registration explicitly identifies ordinary expiry, as the negative Git cache
-does. A reading above its bound still alerts. A known failed write or failed
+does. A reading above a hard bound still alerts. A rotating log can exceed its
+rotation threshold by the one complete write that crossed it; rotation on the
+next write is normal. A known failed write or failed
 maintenance action is `full` even when usage is low; unavailable readings remain
 `unknown`. User images, evidence, active queues and journal byte/count pressure
 retain capacity warnings. Early deletion and queue refusals are not normal cache
