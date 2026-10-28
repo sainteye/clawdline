@@ -165,3 +165,18 @@ func TestListeningAsksTheRealPort(t *testing.T) {
 		t.Error("a port out of range was asked")
 	}
 }
+
+func TestDiscoveryDoesNotInspectPersonalDirectoriesFromRegistryOrLiveCWD(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	code := filepath.Join(home, "code", "project")
+	music := filepath.Join(home, "Music", "project")
+	write(t, filepath.Join(code, Filename), `{"name":"code"}`)
+	write(t, filepath.Join(music, Filename), `{"name":"personal"}`)
+	for _, sources := range [][2][]string{{{code, music}, nil}, {nil, {code, music}}} {
+		got := Discover(sources[0], sources[1], home)
+		if len(got.Specs) != 1 || got.Specs[0].Root != code {
+			t.Fatalf("discovery read personal data: %+v", got)
+		}
+	}
+}

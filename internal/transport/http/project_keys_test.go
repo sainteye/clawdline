@@ -122,3 +122,17 @@ func TestProjectKeysAreHeldForAWhileAndBounded(t *testing.T) {
 		t.Fatal("the answer read longest ago was kept past the limit")
 	}
 }
+
+func TestSessionKeyCacheDoesNotInspectPersonalDirectories(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	var cache projectKeyCache
+	for _, name := range []string{"Desktop", "Documents", "Downloads", "Pictures", "Music", "Movies", "Library"} {
+		if key, ok := cache.key(filepath.Join(home, name, "project")); ok || key != "" {
+			t.Errorf("personal directory acquired a background key: %q", key)
+		}
+	}
+	if len(cache.entries) != 0 {
+		t.Fatal("personal directories reached the repository lookup cache")
+	}
+}

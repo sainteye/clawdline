@@ -46,7 +46,9 @@ func sessionProjectKey(cwd string) (string, bool) {
 
 // key is sessionProjectKey(cwd), remembered for projectKeyFresh.
 func (c *projectKeyCache) key(cwd string) (string, bool) {
-	if cwd == "" {
+	// This optional list decoration must not inspect an unrelated process's
+	// personal directory just because that process is visible in inventory.
+	if cwd == "" || !projects.MayInspectInBackground(cwd) {
 		return "", false
 	}
 	c.mu.Lock()

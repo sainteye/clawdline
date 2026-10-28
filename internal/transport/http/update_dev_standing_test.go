@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -174,5 +175,22 @@ func TestPlacesUnderLibraryAreNotLookedIn(t *testing.T) {
 	want := []string{beside, filepath.Join(home, "code", "app")}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("placeDirectories = %v, want %v", got, want)
+	}
+}
+
+func TestDevStandingDoesNotProbePersonalProjectDirectories(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	code := filepath.Join(home, "code", "project")
+	if err := os.MkdirAll(code, 0700); err != nil {
+		t.Fatal(err)
+	}
+	rows := []projects.Place{{Path: code}}
+	for _, name := range []string{"Desktop", "Documents", "Downloads", "Pictures", "Music", "Movies", "Library"} {
+		rows = append(rows, projects.Place{Path: filepath.Join(home, name, "project")})
+	}
+	s := &Server{squadPlaces: func(context.Context) []projects.Place { return rows }}
+	if got := s.placeDirectories(context.Background()); len(got) != 1 || got[0] != code {
+		t.Fatalf("dev ancestry probes: %v", got)
 	}
 }
