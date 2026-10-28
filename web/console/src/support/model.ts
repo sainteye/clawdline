@@ -40,3 +40,9 @@ export function translationState(article: Article, locale: SupportLocale): "miss
   if (row.published?.source_revision === article.source_revision && row.published.revision === row.draft.revision) return "published"
   return "draft"
 }
+
+/** The API retains chronological order for read receipts; only the view is reversed. */
+export function conversationView(messages: readonly Message[] = []): { messages: Message[]; latestReplyID: string | null } {
+  const newestFirst = [...messages].reverse()
+  return { messages: newestFirst, latestReplyID: newestFirst.find(message => message.kind !== "member")?.id ?? null }
+}

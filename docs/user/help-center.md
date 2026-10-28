@@ -13,8 +13,9 @@ questions submitted by the signed-in account. Select a question to see its messa
 state and replies. You can also open [My questions](https://app.clawdline.com/help/questions)
 directly. Refreshing or closing the browser does not delete a submitted question.
 
-A reply appears in that same conversation under **Clawdline support Agent** or a support team
-member. The question list and conversation show when it has been answered. If it is still
+Messages appear newest first, with **Latest reply** identifying the most recent support reply.
+Avatars distinguish the member, Agent and support staff. A reply appears in that same conversation
+under **Clawdline support Agent** or a support team member. The question list and conversation show when it has been answered. If it is still
 waiting, answering, or needs support staff, it has not received an ordinary answer yet. If you
 cannot find a question, check that you are signed in with the account that submitted it.
 
