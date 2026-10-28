@@ -339,6 +339,19 @@ follow-up; ordinary unread questions stop following when the Session resumes.
 The [static HTML report reader](html-artifacts.md) describes the document format, isolation, compatibility and measurement boundary for self-contained artifacts.
 
 
+### Composer draft storage and the deferred resilience proposal
+
+Session composers persist text drafts in localStorage at exit/background
+boundaries. Pictures stay only in the current editor and must be selected again
+after leaving it or reloading the page. Composer draft reads no longer wait on
+IndexedDB image storage; ordinary image sending is unchanged.
+
+[Cloud storage resilience and protocol compatibility](cloud-storage-resilience.md)
+records the optional image-storage dependency pitfall and the proposed IndexedDB failure recovery, connection-scoped replay state,
+mixed-version operation, rollback, costs and legacy-protocol retirement gates.
+The architecture recommendation is deferred; the compatibility paths and
+temporary pairing it describes have not been implemented by this change.
+
 ### Recovering a browser that can sign in but cannot read
 
 An account session and a machine's cryptographic pairing are separate. A cached

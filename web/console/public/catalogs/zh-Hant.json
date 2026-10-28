@@ -9264,7 +9264,7 @@
   "work.desktopShowPlans": "顯示計畫",
   "capacityRow.console.video_preview_frames.what": "瀏覽器為挑選有代表性的縮圖，最多取樣的影片中後段畫面數。",
   "capacityRow.console.video_preview_frames.full": "取得四個候選畫面後，保留細節最多的一張。近乎單色的片頭與淡入淡出會排在有內容的畫面之後。",
-  "composerDraft.storageUnavailable": "此瀏覽器無法儲存草稿。未送出的文字與圖片只會保留到此頁面關閉。",
+  "composerDraft.storageUnavailable": "此瀏覽器無法儲存文字草稿。未送出的文字只會保留到此頁面關閉。",
   "http.9c65a3b1a8ea6f55": "上傳摘要時必須設定 milestone: true；尚未開啟任何 Session。",
   "http.c5591b61722a7c56": "上傳的里程碑摘要格式無效；尚未開啟任何 Session。",
   "http.9eaae8deecfaf68c": "無法寫入交接套件；尚未開啟任何 Session。",

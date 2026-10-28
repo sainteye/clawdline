@@ -252,7 +252,9 @@ existing error paths.
 
 Recovery is manual, like the existing new-build notice: it never automatically
 reloads a live editor or enters a refresh loop. The reload keeps the current URL
-and uses the existing composer draft persistence at page-exit boundaries. A
+and uses the existing text-draft persistence at page-exit boundaries. Unsent
+pictures belong only to the current editor and must be selected again after
+reload; see [the storage decision](cloud-storage-resilience.md). A
 page loaded before this protection was deployed needs one ordinary reload to
 receive it. A missing initial entry script cannot be handled by JavaScript that
 has not itself loaded.
