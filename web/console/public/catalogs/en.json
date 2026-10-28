@@ -9541,5 +9541,11 @@
   "support.communityPublishExisting": "Publish this discussion and its images",
   "support.communityAuthorConsent": "The authors agreed to publish these posts, replies, images, display names and avatars.",
   "support.communityOfficialReply": "Post staff reply",
-  "support.communityEvidenceHint": "Verify the live release first. Use a release version with its official GitHub tag, or a full Cloud commit with https://app.clawdline.com/BUILD.json. Saving checks the evidence format; it does not verify deployment."
+  "support.communityEvidenceHint": "Verify the live release first. Use a release version with its official GitHub tag, or a full Cloud commit with https://app.clawdline.com/BUILD.json. Saving checks the evidence format; it does not verify deployment.",
+  "capacityRow.console.community_share_fetch_seconds.full": "A slow response falls back to the general community preview; opening the page still works.",
+  "capacityRow.console.community_share_fetch_seconds.what": "Time allowed for the public sharing preview to read a discussion.",
+  "capacityRow.console.community_share_response_bytes.full": "An oversized response uses a general preview instead of reading more content.",
+  "capacityRow.console.community_share_response_bytes.what": "Maximum public response read while preparing a sharing preview.",
+  "capacityRow.console.community_share_text_characters.full": "Longer public text is shortened for the preview; the discussion itself is unchanged.",
+  "capacityRow.console.community_share_text_characters.what": "Maximum characters in a sharing title or description."
 }

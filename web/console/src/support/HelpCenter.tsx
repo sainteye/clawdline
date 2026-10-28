@@ -1,3 +1,5 @@
+import { SourceList } from "./sources.js"
+import { applyShareMetadata, shareMetadata } from "../community/share-metadata.js"
 import { CommunityPublication } from "../community/Publication.js"
 import { Community } from "../community/Community.js"
 import { communityEntry, communityRoute } from "../community/model.js"
@@ -5,7 +7,7 @@ import { ConversationAvatar } from "./avatars.js"
 import { SupportNotifications } from "./notifications.js"
 import { useSupportImages, SupportImagePicker, SupportImageGallery } from "./images.js"
 import { richText } from "../legacy/js/view/markdown.js"
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react"
 import { currentCatalogTag } from "../catalog.js"
 import { chooseTransport, cloudViewerDeviceMetadata, newCloudSession, readCloudConfig, type CloudConfig } from "../cloud/copied.js"
 import { bootAdminCatalog } from "../cloud/admin/words.js"
@@ -75,7 +77,6 @@ function State({ value, quiet = false }: { value: string; quiet?: boolean }) {
 function RequestTypeBadge({type}:{type:RequestType}) {
   return <span className={"help-request-type help-request-"+type}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{type==="feature_request"?<><path d="M9 18h6m-5 3h4M8.5 14.5a6 6 0 1 1 7 0c-.8.6-1.5 1.5-1.5 3.5h-4c0-2-.7-2.9-1.5-3.5Z"/></>:type==="issue"?<><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3h.01"/></>:<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2Z"/>}</svg>{w(type)}</span>
 }
-function SourceList({ sources }: { sources: Sources }) { return sources.length ? <div className="help-sources"><small>{w("sources")}</small>{sources.map(s => <a key={s.url + s.revision} href={s.url} target="_blank" rel="noopener noreferrer">↗ {s.revision}</a>)}</div> : null }
 function Link({ to, go, children, primary = false, current = false }: { to: string; go: Navigation; children: ReactNode; primary?: boolean; current?: boolean }) {
   return <a className={`help-btn ${primary ? "help-primary" : ""}`} href={to} aria-current={current ? "page" : undefined} onClick={(e: MouseEvent) => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) { e.preventDefault(); go(to) } }}>{children}</a>
 }
@@ -131,6 +132,7 @@ export function HelpCenter({ declared }: { declared: string }) {
   const entry=communityEntry(address),communityPage=entry!==null,communityAddress=entry??address
   useEffect(()=>{if(communityPage&&communityAddress!==address){history.replaceState(null,"",communityAddress);setAddress(communityAddress)}},[communityPage,communityAddress,address])
   const access = helpAccess(route), protectedPage = access !== "public"
+  useLayoutEffect(()=>{applyShareMetadata(shareMetadata(address,locale))},[address,locale])
   if (!catalogReady) return null
   if (!config) return <main className="help-root"><ErrorBox code="support_unavailable" /></main>
   const content = communityPage ? <Community address={communityAddress} locale={locale} apiOrigin={config.apiOrigin} go={go} account={account} checking={sessionState==="checking"} signInUrl={signInUrl} onSaved={()=>{dirty.current=false}}/> : protectedPage && sessionState === "checking" ? <p role="status">{w("loading")}</p> : protectedPage && sessionState === "unavailable" ? null : protectedPage && !account ? sessionState === "limit" ? <><p>{w("deviceLimit")}</p><DeviceLimitPanel session={session} tier={limit.tier} limit={limit.limit} onContinue={start} signInLabel={w("signIn")} /></> : <SignIn url={signInUrl} /> : access === "admin" && !account?.operations ? <ErrorBox code="support_admin_required" /> :
@@ -184,6 +186,7 @@ function FaqList(p:BodyProps) {
 }
 function FaqDetail(p:BodyProps) {
   const read=useRead<{article:Faq}>("/v1/faq/"+p.route.id+"?locale="+p.locale,p.call),a=read.data?.article
+  useEffect(()=>{if(a)applyShareMetadata(shareMetadata("/help/faq/"+p.route.id,p.locale,{title:a.title,body:a.body,locale:a.locale}))},[a,p.route.id,p.locale])
   return <><Link to={p.href("/help")} go={p.go}>{w("cancel")}</Link><ErrorBox code={read.error} retry={read.refresh}/>{read.loading?<p>{w("loading")}</p>:null}{a?<div className="help-columns"><article className="help-article"><div className="help-eyebrow">{LANGUAGE_NAMES[a.locale]} · {w("faq")}</div><h1>{a.title}</h1><small>{w("updated")} {new Date(a.updated_at).toLocaleDateString()}</small><p className="help-prose">{a.body}</p><SourceList sources={a.sources}/></article><AskAside {...p}/></div>:null}</>
 }
 function Ask(p:BodyProps) {

@@ -1,3 +1,4 @@
+import { SourceList } from "../support/sources.js"
 import type { ReactNode } from "react"
 import { ConversationAvatar } from "../support/avatars.js"
 import { supportWord as w, supportError, type SupportWord } from "../support/words.js"
@@ -30,6 +31,6 @@ export function CommunityMessage({message,origin,id,latest=false,original=false}
     <div className="help-message-meta"><div className="help-message-author"><ConversationAvatar kind={message.kind} avatar={message.author.avatar_url}/><strong>{name}</strong>{message.kind!=="member"?<span className="community-role">{message.kind==="agent"?"AI":w("communityStaff")}</span>:null}</div><div className="help-message-stamp">{latest?<span className="help-latest-reply">{w("latestReply")}</span>:null}<small>{original?w("communityOriginal")+" · ":null}{new Date(message.at).toLocaleString()}</small></div></div>
     <div className="help-prose help-markdown" lang={message.original_language??message.locale} dangerouslySetInnerHTML={{__html:richText(message.body,{codeCopy:false})}}/>
     <SupportImageGallery images={message.images} origin={origin} question={id} admin={false} community/>
-    {message.sources.length?<div className="help-sources"><small>{w("sources")}</small>{message.sources.map(s=><a key={s.url+s.revision} href={s.url} target="_blank" rel="noopener noreferrer">↗ {s.revision}</a>)}</div>:null}
+    <SourceList sources={message.sources}/>
   </article>
 }

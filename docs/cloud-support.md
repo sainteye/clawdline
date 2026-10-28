@@ -212,3 +212,27 @@ The answering Agent reads the [product evidence map](product-evidence.md) before
 source to inspect. A missing control on the general Session start sheet does not establish that
 the Board assignment flow lacks it. Verify the actual entry point, relevant request path and
 pinned revision before claiming absence; distinguish role recommendation from model selection.
+
+## Page metadata and source links
+
+Hosted community and public FAQ URLs include a title, plain-text description, canonical URL,
+Open Graph fields and a large-image Twitter card in the initial HTML. The Cloud-only Pages
+worker reads only the anonymous public API, never forwards browser cookies or authorization,
+and uses the original post for a discussion excerpt. It does not preview member uploads.
+The fixed 1200×630 PNG is derived from the committed SVG with local resvg 2.6.2; it uses the
+existing brand palette. Daemon builds do not contain the edge worker.
+
+List descriptions are available in English and Taiwan Traditional Chinese; the initial response
+uses Accept-Language, while client navigation follows the existing interface locale. A topic
+keeps its original title and language. Tracking queries and fragments are absent from canonical
+URLs. My discussions, composition, Admin and legacy private pages use generic metadata and
+noindex/nofollow. Unknown or unavailable topic previews remain generic and noindex. A timeout,
+oversized response or upstream failure must not block the console. HTML is not cached by this
+worker, so an API visibility change is respected on the next request; third-party platforms may
+retain their own previous previews.
+
+Responses are bounded by the registered three-second fetch timeout, one-MiB response cap and
+160-character preview text cap. Test ordinary and crawler requests, HTML escaping, no-cookie
+fetches, failures, private routes and actual rendered navigation; updating document.title alone
+cannot verify a social crawler preview. Source links display a filename, its repository-relative
+path and a short commit, retaining the exact permalink and full revision in the link details.

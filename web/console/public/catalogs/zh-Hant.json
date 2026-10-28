@@ -9541,5 +9541,11 @@
   "support.communityPublishExisting": "公開此討論與圖片",
   "support.communityAuthorConsent": "作者已同意公開這些貼文、回覆、圖片、公開名稱與頭像。",
   "support.communityOfficialReply": "發布支援人員回覆",
-  "support.communityEvidenceHint": "請先確認正式環境已交付。填寫版本與官方 GitHub 發布網址，或完整 Cloud commit 與 https://app.clawdline.com/BUILD.json。儲存只檢查證據格式，不代表已驗證部署。"
+  "support.communityEvidenceHint": "請先確認正式環境已交付。填寫版本與官方 GitHub 發布網址，或完整 Cloud commit 與 https://app.clawdline.com/BUILD.json。儲存只檢查證據格式，不代表已驗證部署。",
+  "capacityRow.console.community_share_fetch_seconds.full": "回應太慢會改用社群通用預覽，仍可正常開啟頁面。",
+  "capacityRow.console.community_share_fetch_seconds.what": "公開分享預覽讀取討論內容時允許等待的時間。",
+  "capacityRow.console.community_share_response_bytes.full": "回應過大時改用通用預覽，不再讀取更多內容。",
+  "capacityRow.console.community_share_response_bytes.what": "準備分享預覽時可讀取的公開回應大小上限。",
+  "capacityRow.console.community_share_text_characters.full": "過長的公開文字會縮短為預覽，討論原文不受影響。",
+  "capacityRow.console.community_share_text_characters.what": "分享標題或描述的文字長度上限。"
 }

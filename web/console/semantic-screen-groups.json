@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9541,
-  "riskKeys": 4200,
-  "nonRiskCount": 5341,
+  "englishContentKeys": 9547,
+  "riskKeys": 4201,
+  "nonRiskCount": 5346,
   "groups": [
     {
       "name": "admin / other",
@@ -340,7 +340,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 332,
+      "count": 337,
       "sources": [
         null
       ],
@@ -476,6 +476,11 @@
         "capacityRow.cloud.terminal_viewer_connections.what",
         "capacityRow.cloud.viewer_events_batch_bytes.what",
         "capacityRow.console.assistant_facts_read_milliseconds.what",
+        "capacityRow.console.community_share_fetch_seconds.full",
+        "capacityRow.console.community_share_response_bytes.full",
+        "capacityRow.console.community_share_response_bytes.what",
+        "capacityRow.console.community_share_text_characters.full",
+        "capacityRow.console.community_share_text_characters.what",
         "capacityRow.console.direct_history_machines.what",
         "capacityRow.console.health_ui_body_bytes.what",
         "capacityRow.console.health_ui_budget_seconds.what",
