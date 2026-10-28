@@ -125,9 +125,8 @@ func (s *Server) connectionHealthCapacityMeasures() map[string]func() capacity.R
 // durable store's Status (atomics and a copy of its segment list). Before the
 // store is open, and with monitoring off, it holds nothing: a known zero
 // that says which. A store that failed to open leaves what is on disk
-// unknown, so its rows are unmeasured with the failure code. A per-item
-// bound (a frame, a segment, the lost-range memory) that Status does not
-// expose is unmeasured, not zero.
+// unknown, so its rows are unmeasured with the failure code. Segment sizes
+// and lost ranges are live; the directory bound describes the opening scan.
 func (s *Server) connectionHealthStoreMeasures(monitoring bool) map[string]func() capacity.Reading {
 	names := []string{
 		"cloud.health_store_bytes", "cloud.health_store_seconds", "cloud.health_store_segment_bytes",
@@ -169,6 +168,14 @@ func storeReading(name string, st healthjournal.Status, now time.Time) capacity.
 		}
 		r.Used = int64(now.Sub(*st.Floor) / time.Second)
 		r.OldestAt = *st.Floor
+	case "cloud.health_store_segment_bytes":
+		r.Used = st.LargestSegmentBytes
+	case "cloud.health_store_lost_ranges":
+		r.Used = int64(st.LostRanges)
+	case "cloud.health_store_dir_entries":
+		r.Used = int64(st.Recovery.EntriesExamined)
+		r.Failing = r.Failing || st.Recovery.ListingTruncated
+		r.Note = "entries examined when this store opened; not a live directory scan"
 	case "cloud.health_store_segments":
 		r.Used = int64(st.Segments)
 	case "cloud.health_store_queue_rows":

@@ -73,6 +73,10 @@ func kinds(events []Event) string {
 // keystroke, and it is small on purpose.
 func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 	for _, e := range Register() {
+		if e.RoutineOccupancy() {
+			t.Run(e.Name, func(t *testing.T) { theRoutineRow(t, e) })
+			continue
+		}
 		if e.Limit <= 20 {
 			t.Run(e.Name, func(t *testing.T) { theSmallRow(t, e) })
 			continue
@@ -422,5 +426,66 @@ func TestOverridesOnlyLower(t *testing.T) {
 	res, _ = Resolve(entries, "board.receipts=4096")
 	if res[2].Overridden {
 		t.Errorf("an override equal to the default is not an override")
+	}
+}
+
+func TestRoutineOccupancyKeepsRealFailuresVisible(t *testing.T) {
+	for _, name := range []string{"cache.transcript_delta_pages", CacheGitNotRepo, LogDaemon,
+		ITermStallDiagnoses, "cloud.health_store_seconds", "cloud.health_store_segment_bytes",
+		"cloud.health_upload_receipts", "antigravity.history_connections"} {
+		t.Run(name, func(t *testing.T) {
+			e := entryNamed(t, name)
+			res := Resolved{Entry: e, Limit: e.Limit}
+			tr := NewTracker()
+			st, ev := tr.Observe(res, Reading{Known: true, Used: e.Limit}, t0)
+			if st.State != OK || st.Ratio != 1 || strings.Contains(kinds(ev), EventNotify) {
+				t.Fatalf("healthy routine occupancy became an alert: %+v %v", st, ev)
+			}
+			st, _ = tr.Observe(res, Reading{Known: true, Failing: true}, t0.Add(time.Minute))
+			if st.State != Full {
+				t.Fatal("failed automatic management was hidden", st)
+			}
+			st, _ = tr.Observe(res, Unmeasured("unreadable"), t0.Add(2*time.Minute))
+			if st.State != Unknown {
+				t.Fatal("unreadable resource became healthy", st)
+			}
+		})
+	}
+	for _, name := range []string{ArtifactsImages, MemoryEntries, CloudRelayQueue,
+		"cloud.health_store_bytes", "cloud.health_store_lost_ranges", StoreReceipts} {
+		e := entryNamed(t, name)
+		st, _ := NewTracker().Observe(Resolved{Entry: e, Limit: e.Limit}, Reading{Known: true, Used: e.Limit}, t0)
+		if st.State != Full {
+			t.Fatalf("%s lost its real capacity warning: %+v", name, st)
+		}
+	}
+}
+
+func theRoutineRow(t *testing.T, e Entry) {
+	t.Helper()
+	limit := min(e.Limit, 20)
+	res := Resolved{Entry: e, Limit: limit}
+	tr := NewTracker()
+	f := &fill{e: e, limit: limit}
+	for i := int64(0); i <= limit+1; i++ {
+		if i > 0 {
+			f.write()
+		}
+		st, events := tr.Observe(res, f.reading(), t0.Add(time.Duration(i)*time.Minute))
+		if st.State != OK || strings.Contains(kinds(events), EventNotify) {
+			t.Fatal("routine rotation or expiry alerted", st, events)
+		}
+	}
+	acted := f.counters.Rotated + f.counters.Evicted + f.counters.Expired + f.counters.Refused
+	if acted != 1 {
+		t.Fatalf("routine limit stopped acting: %+v", f.counters)
+	}
+	st, _ := tr.Observe(res, Reading{Known: true, Used: limit + 1}, t0.Add(time.Hour))
+	want := Full
+	if e.AtLimit == Rotate {
+		want = OK
+	}
+	if st.State != want {
+		t.Fatal("rotation threshold and hard bound were confused", st)
 	}
 }

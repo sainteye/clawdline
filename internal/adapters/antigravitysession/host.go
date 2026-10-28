@@ -687,6 +687,14 @@ func (h *Host) Stats() (sessions int, viewBytes int) {
 	return
 }
 
+func (h *Host) HistoryConnectionStats() (open, inUse int, waits int64, waited time.Duration) {
+	if h.store == nil {
+		return
+	}
+	st := h.store.db.Stats()
+	return st.OpenConnections, st.InUse, st.WaitCount, st.WaitDuration
+}
+
 func (h *Host) HistoryConnections() int {
 	if h.store == nil {
 		return 0

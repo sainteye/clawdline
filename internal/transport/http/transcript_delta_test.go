@@ -207,3 +207,17 @@ func TestRollingAndExpandedProviderRowsStayIncremental(t *testing.T) {
 		t.Fatal("oversized comparison was retained")
 	}
 }
+
+func TestTranscriptBaselinesRetainManySmallVersionsWithinTheByteBudget(t *testing.T) {
+	var c transcriptBaselines
+	for i := 0; i < 128; i++ {
+		c.put(fmt.Sprint(i), []byte("small page"))
+	}
+	if c.get("0") == nil {
+		t.Fatal("small baseline evicted with ample byte budget")
+	}
+	c.put("new", []byte("small page"))
+	if c.get("1") != nil || c.get("0") == nil {
+		t.Fatal("the least recently used version was not evicted")
+	}
+}

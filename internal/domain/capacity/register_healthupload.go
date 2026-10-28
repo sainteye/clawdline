@@ -84,7 +84,7 @@ func healthUploadBounds() []Entry {
 			Sources: []string{"internal/adapters/healthupload.MaxStateBytes"},
 		},
 		{
-			Name: "cloud.health_upload_receipts", Class: Observation, Unit: Rows,
+			Name: "cloud.health_upload_receipts", Routine: true, Class: Observation, Unit: Rows,
 			Limit: 16, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/healthupload.MaxReceipts"},

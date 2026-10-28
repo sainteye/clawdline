@@ -52,7 +52,7 @@ Project is given its index at launch, whichever assistant it runs.
   one lock per daemon, so concurrent adds from several Sessions neither interleave nor lose an
   entry. The same add twice answers `unchanged`; a different entry under a name already taken is
   refused, not overwritten.
-- **Bounds.** 512 entries per Project (one more is refused with `memory_full`; only a person or a
+- **Bounds.** 1,024 entries per Project (one more is refused with `memory_full`; only a person or a
   Session they asked forgets one), 64 KiB per body, 512 bytes per description, 64 bytes per name
   or group slug, 16 groups per Project (one more is `memory_full`), 256 bytes per group
   description. Sixteen groups at their longest take about 6 KiB of the index, so resident entries

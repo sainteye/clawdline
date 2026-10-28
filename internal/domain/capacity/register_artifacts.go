@@ -31,7 +31,7 @@ func artifactsBounds() []Entry {
 			// oldest is let go; a picture let go is counted, logged, and its
 			// tombstone says why to whoever asks for it.
 			Name: ArtifactsImages, Class: UserInput, Unit: Rows,
-			Limit: 64, AtLimit: EvictOldest,
+			Limit: 256, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice, Log},
 			EvictedBy: Daemon,
 		},

@@ -63,3 +63,30 @@ func TestNotReposForgetsAfterItsAgeAndPastItsRows(t *testing.T) {
 		t.Fatal("a forgotten directory was still known")
 	}
 }
+
+func TestCapacityReadingsForgetExpiredIdleAnswers(t *testing.T) {
+	clock := time.Unix(1000, 0)
+	n := NewNotRepos(time.Minute, 256)
+	n.now = func() time.Time { return clock }
+	n.Remember("/expired")
+	clock = clock.Add(2529 * time.Second)
+	if r := n.AgeReading(); r.Used != 0 || r.Counters.Expired != 1 || !r.OldestAt.IsZero() {
+		t.Fatalf("expired idle answer reported as occupied: %+v", r)
+	}
+	if r := n.RowsReading(); r.Used != 0 {
+		t.Fatal(r)
+	}
+	n.Remember("/older")
+	clock = clock.Add(30 * time.Second)
+	n.Remember("/fresh")
+	clock = clock.Add(30 * time.Second)
+	if r := n.RowsReading(); r.Used != 1 {
+		t.Fatal("row reading retained expired answers", r)
+	}
+	if r := n.AgeReading(); r.Used != 30 {
+		t.Fatal("fresh answer age", r)
+	}
+	if n.Known("/older") || !n.Known("/fresh") {
+		t.Fatal("validity differs from capacity readings")
+	}
+}

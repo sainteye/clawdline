@@ -9,7 +9,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
-const transcriptDeltaPagesLimit = 32
+const transcriptDeltaPagesLimit = 128
 const transcriptDeltaBytesLimit = 8 << 20
 const transcriptDeltaRowsLimit = 1000
 
