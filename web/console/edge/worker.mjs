@@ -26,7 +26,7 @@ export async function resolveMetadata(request, get = fetch) {
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),SHARE_LIMITS.fetchMs)
     try {
       // Never forward cookies, authorization, query parameters, or member/Admin endpoints.
-      const response=await get(resource.url,{method:"GET",headers:{Accept:"application/json"},credentials:"omit",redirect:"error",cache:"no-store",signal:controller.signal})
+      const response=await get(resource.url,{method:"GET",headers:{Accept:"application/json"},credentials:"omit",redirect:"manual",cache:"no-store",signal:controller.signal})
       const data=await readPublic(response),row=data?.[resource.key]
       if (row && row.id===resource.id && typeof row.title==="string") {
         const body=resource.key==="topic"?row.messages?.[0]?.body:row.body

@@ -31,7 +31,7 @@ test("private and loading destinations never present a topic or personal identit
 test("edge lookup fetches only anonymous public content and drops caller credentials and queries",async()=>{
  const req=new Request("https://app.clawdline.com"+path+"?token=private",{headers:{Cookie:"private",Authorization:"secret","Accept-Language":"en;q=0.3,zh-TW;q=1"}})
  let calls=0
- const m=await resolveMetadata(req,async(url:RequestInfo|URL,init?:RequestInit)=>{calls++;assert.equal(url,"https://api.clawdline.com/v1/community/topics/"+id);assert.deepEqual(init!.headers,{Accept:"application/json"});assert.equal(init!.credentials,"omit");assert.equal(init!.redirect,"error");return json({topic:{id,title:"操作入口",source_language:"zh-Hant",messages:[{body:"從側邊欄開啟。"},{body:"不得選最新回覆作為原文"}],reporter:{email:"must-not-leak"}}})})
+ const m=await resolveMetadata(req,async(url:RequestInfo|URL,init?:RequestInit)=>{calls++;assert.equal(url,"https://api.clawdline.com/v1/community/topics/"+id);assert.deepEqual(init!.headers,{Accept:"application/json"});assert.equal(init!.credentials,"omit");assert.equal(init!.redirect,"manual");return json({topic:{id,title:"操作入口",source_language:"zh-Hant",messages:[{body:"從側邊欄開啟。"},{body:"不得選最新回覆作為原文"}],reporter:{email:"must-not-leak"}}})})
  assert.equal(calls,1);assert.equal(m.title,"操作入口 | Clawdline");assert.equal(m.description,"從側邊欄開啟。");assert.ok(!metadataHTML(m).includes("must-not-leak"))
  let privateCalls=0
  for(const p of ["/community/mine","/help/admin/worker"])await resolveMetadata(new Request("https://app.clawdline.com"+p),async()=>{privateCalls++;throw new Error("must not fetch")})
@@ -40,7 +40,7 @@ test("edge lookup fetches only anonymous public content and drops caller credent
 })
 test("deleted, private, malformed, oversized and failed upstream replies use safe uncached fallback",async()=>{
  const request=new Request("https://app.clawdline.com"+path)
- for(const answer of [()=>json({error:"private content"},404),()=>json({topic:{id:"wrong",title:"secret",messages:[{body:"secret"}]}}),()=>new Response("not json",{headers:{"Content-Type":"text/html"}}),()=>new Response(" ".repeat(1_048_577),{headers:{"Content-Type":"application/json"}}),()=>{throw new Error("offline")}]) {
+ for(const answer of [()=>json({error:"private content"},404),()=>new Response(null,{status:302,headers:{Location:"https://untrusted.invalid"}}),()=>json({topic:{id:"wrong",title:"secret",messages:[{body:"secret"}]}}),()=>new Response("not json",{headers:{"Content-Type":"text/html"}}),()=>new Response(" ".repeat(1_048_577),{headers:{"Content-Type":"application/json"}}),()=>{throw new Error("offline")}]) {
   const m=await resolveMetadata(request,async()=>answer());assert.equal(m.robots,"noindex, nofollow");assert.ok(!metadataHTML(m).includes("secret"))
  }
 })
