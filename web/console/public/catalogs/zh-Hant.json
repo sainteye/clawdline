@@ -9465,5 +9465,6 @@
   "support.reporterId": "會員 ID",
   "next.moduleLoadReturn": "也可以先返回 Session，繼續其他工作。",
   "next.moduleLoadBack": "返回 Session",
-  "next.moduleLoadManual": "頁面不會自動重新載入。"
+  "next.moduleLoadManual": "頁面不會自動重新載入。",
+  "support.latestReply": "最新回覆"
 }

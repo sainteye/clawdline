@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9465,
+  "englishContentKeys": 9466,
   "riskKeys": 4183,
-  "nonRiskCount": 5282,
+  "nonRiskCount": 5283,
   "groups": [
     {
       "name": "admin / other",
@@ -5221,7 +5221,7 @@
     },
     {
       "name": "support / other",
-      "count": 119,
+      "count": 120,
       "sources": [
         null
       ],
@@ -5277,6 +5277,7 @@
         "support.invalid",
         "support.issue",
         "support.languageScope",
+        "support.latestReply",
         "support.leaveDraft",
         "support.limited",
         "support.liveNotice",

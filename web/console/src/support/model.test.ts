@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's test runner loads TypeScript source.
-import { helpRoute,helpAccess,translationState,type Article } from "./model.ts"
+import { helpRoute,helpAccess,translationState,conversationView,type Message,type Article } from "./model.ts"
 test("help routes remain independent of a machine or pairing",()=>{
  assert.deepEqual(helpRoute("/help/questions/sq_one"),{page:"thread",id:"sq_one"})
  assert.deepEqual(helpRoute("/help/admin/faq/new"),{page:"editor",id:"new"})
@@ -19,4 +19,16 @@ test("management deep links require an administrator while members keep their ow
  for (const path of ["/help/admin", "/help/admin/questions/sq_example", "/help/admin/faq", "/help/admin/faq/new", "/help/admin/worker"]) assert.equal(helpAccess(helpRoute(path)),"admin",path)
  for (const path of ["/help/ask", "/help/questions", "/help/questions/sq_example"]) assert.equal(helpAccess(helpRoute(path)),"member",path)
  for (const path of ["/help", "/help/faq/faq_example"]) assert.equal(helpAccess(helpRoute(path)),"public",path)
+})
+
+test("newest replies lead the conversation without changing chronological read receipts",()=>{
+ const message=(id:string,kind:Message["kind"]):Message=>({id,kind,body:id,locale:"en",original_language:"en",at:"2026-01-01T00:00:00Z",sources:[]})
+ const history=[message("question","member"),message("first","agent"),message("correction","operator"),message("followup","member")]
+ const view=conversationView(history)
+ assert.deepEqual(view.messages.map(m=>m.id),["followup","correction","first","question"])
+ assert.equal(view.latestReplyID,"correction")
+ assert.equal(history.at(-1)?.id,"followup")
+ assert.deepEqual(history.map(m=>m.id),["question","first","correction","followup"])
+ assert.equal(conversationView([message("question","member")]).latestReplyID,null)
+ assert.deepEqual(conversationView(),{messages:[],latestReplyID:null})
 })

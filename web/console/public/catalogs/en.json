@@ -9465,5 +9465,6 @@
   "support.reporterId": "Member ID",
   "next.moduleLoadReturn": "Or return to Sessions and continue your work.",
   "next.moduleLoadBack": "Back to Sessions",
-  "next.moduleLoadManual": "The page won’t reload automatically."
+  "next.moduleLoadManual": "The page won’t reload automatically.",
+  "support.latestReply": "Latest reply"
 }
