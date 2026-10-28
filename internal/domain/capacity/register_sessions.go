@@ -3,6 +3,8 @@ package capacity
 // sessionsBounds is every registered row named sessions.*.
 func sessionsBounds() []Entry {
 	return []Entry{
+		{Name: "sessions.rc_permission_bytes", Class: Buffer, Unit: Bytes, Limit: 16 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/clauderemote.PermissionBytesLimit"}},
+		{Name: "sessions.rc_close_poll_ms", Class: Observation, Unit: Milliseconds, Limit: 100, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/clauderemote.ClosePollMillisLimit"}},
 		{Name: "sessions.claude_remote_request_seconds", Class: Observation, Unit: Seconds, Limit: 10, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/clauderemote.RequestSecondsLimit"}},
 		{Name: "sessions.claude_remote_response_bytes", Class: Buffer, Unit: Bytes, Limit: 8 << 20, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/clauderemote.ResponseBytesLimit"}},
 		{

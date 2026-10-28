@@ -36,6 +36,7 @@ import { ComposerBox } from "./ComposerBox.js"
 import { voiceSource } from "./voice-source.js"
 import "./voice-source.css"
 import "./drop-target.css"
+import { RemotePermissions } from "./RemotePermissions.js"
 
 /**
  * The composer, as the original's `form#composer` is built.
@@ -220,7 +221,7 @@ export function Composer({
   }, [row, protocolOwned, on, machine, cardsVersion, onDid])
   // The picture listeners are bound once, and ask what is open when they fire.
   const open = useRef({ on })
-  open.current = { on: on && !remoteControl && (!remote || remote.allowPictures) }
+  open.current = { on: on && (!remote || remote.allowPictures) }
 
   useEffect(() => {
     const draft = remote?.restoreDraft
@@ -519,7 +520,7 @@ export function Composer({
       return
     }
     if ((!said && !pictures.length) || (!row && !remote) || !on ||
-      (remote && (!remote.canSend || pictures.length && !remote.allowPictures)) || (remoteControl && pictures.length > 0)) return
+      (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
     if (protocolOwned && row && ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
       pendingSends.of(row.id).some(card => card.state === "queued"))) {
       if (!nextMessages.add(row.id, said, pictures, Date.now())) {
@@ -612,6 +613,7 @@ export function Composer({
         void submit()
       }}
     >
+      {remoteControl && row && <RemotePermissions row={row} write={!!write} />}
       {!remote && <Waiting row={row} assistantFacts={assistantFacts} write={write} onScreen={onScreen} />}
       <div
         className="shots"
@@ -668,7 +670,7 @@ export function Composer({
           type="button"
           aria-label={T.webAttach}
           title={T.webAttach}
-          disabled={!on || sending || remoteControl || !!remote && !remote.allowPictures}
+          disabled={!on || sending || !!remote && !remote.allowPictures}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => pick.current?.click()}
         >

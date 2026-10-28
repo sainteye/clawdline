@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9794,
-  "riskKeys": 4339,
-  "nonRiskCount": 5455,
+  "englishContentKeys": 9805,
+  "riskKeys": 4349,
+  "nonRiskCount": 5456,
   "groups": [
     {
       "name": "admin / other",
@@ -342,7 +342,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 357,
+      "count": 358,
       "sources": [
         null
       ],
@@ -660,6 +660,7 @@
         "capacityRow.sessions.archive_rows.full",
         "capacityRow.sessions.archive_rows.what",
         "capacityRow.sessions.claude_remote_request_seconds.what",
+        "capacityRow.sessions.rc_close_poll_ms.what",
         "capacityRow.sessions.restore_rows.full",
         "capacityRow.snippets.scope.what",
         "capacityRow.squad.body_bytes.what",

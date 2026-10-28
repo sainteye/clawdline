@@ -405,8 +405,8 @@ not. That last number is the one thing looking cannot fix, and it is what the op
 Claude Code Remote Control conversations appear in the Session list on macOS and Linux when
 external Session discovery is enabled. An interactive `claude --remote-control` or `/remote-control`
 session keeps its existing terminal controls. A server-spawned worker has a **Remote Control** marker
-and supports text submission here. Attachments, permission answers, interruption and closing still
-use Claude. The launcher itself is not a conversation and is not listed as one.
+and supports text, images, one-time tool permission answers, interruption and closing here.
+General files and structured question answers still use Claude. The launcher itself is not a conversation and is not listed as one.
 
 Discovery requires the native print-mode SDK transport to `https://api.anthropic.com/v1/code/sessions/…`,
 a matching remote session argument, and a live kernel process generation. Standard versioned native
@@ -415,7 +415,7 @@ worker with a local conversation UUID and status, but is not required: native 2.
 have neither registry nor JSONL after a quota refusal. Workers never borrow the launcher's tty or
 tmux identity. An interactive terminal with the same proven local UUID remains the displayed row.
 
-Text sends use Anthropic's **undocumented controller API**, not peer messaging or a new resumed
+Text, image and control submissions use Anthropic's **undocumented controller API**, not peer messaging or a new resumed
 Claude process. The daemon rereads process birth and transport immediately before submission,
 keeps existing write authorization and per-Session/machine lanes, and sends one UUID-tagged event.
 The HTTP response says `accepted`, which proves server acceptance only. Worker receipt, execution,
@@ -423,6 +423,20 @@ and a quota failure are separate evidence. A lost or incompatible acknowledgemen
 the existing durable request-key receipt prevents another POST under the same key. Only the person
 can decide whether to submit again after checking the conversation. Unsupported device-attestation
 feedback fails closed and requires the native Claude client.
+
+Images use normalized native base64 image content blocks, without a pasteboard or terminal.
+Permission inspection is explicit: it asks the live worker to initialize, waits for its matching
+response, and offers the first pending tool request. Routine Session information reads do not
+post controls. An answer rereads the live request and matches a fingerprint of the bridge,
+process birth, request ID, tool name and complete input. Allow sends that same input once;
+deny refuses the request. Permanent approval, permission-mode changes, input editing and
+structured `AskUserQuestion` answers are not implemented. Structured questions offer deny only.
+A permission answer says `accepted`, not executed; refresh to learn whether the worker still asks.
+
+Interrupt waits for a matching worker success response. Close retains the existing obligation,
+fresh-process and explicit-force checks, archives only the selected bridge, and proves that the
+original worker exited before reporting success. It never signals the launcher or sibling workers.
+Controls share the existing write lanes and request-key receipts. Unknown outcomes are not retried.
 
 The daemon reads the current CLI OAuth credentials on demand, using the default macOS Keychain or
 its configured credential file and organization. It does not refresh or rewrite credentials, copy
@@ -447,7 +461,13 @@ The opt-in `TestNativeRemoteControl` acceptance test requires an exact worker PI
 A send additionally requires a one-use attempt marker and explicit authorization; it checks that
 extra usage is disabled before submitting. Ordinary tests never contact a real Claude account.
 The native October 28 verification on 2.1.312 observed two accepted test prompts and worker quota
-refusals, including one through `Actions.Send`; it did not verify a successful model answer.
+refusals, including one through `Actions.Send`. A separately authorized image test observed one
+image event through `Actions.SendWithPictures`, followed by the same worker's quota refusal
+(`total_cost_usd=0`, `duration_api_ms=0`); further model tests stopped. No successful image answer
+or real tool-permission round trip was verified. Protocol-only native tests confirmed initialize,
+idle interrupt, and archive followed by worker exit while the launcher remained alive. Fixture
+and browser tests cover permission approval, stale requests and duplicate clicks; active-turn
+interruption remains unverified until quota is available.
 
 The controller envelope is also described in the independent [claude-rc-api protocol reference](https://github.com/ThatCrispyToast/claude-rc-api/blob/main/API_REFERENCE.md).
 

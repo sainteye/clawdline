@@ -2,6 +2,8 @@
 package clauderemote
 
 const (
-	RequestSecondsLimit = 10
-	ResponseBytesLimit  = 8 << 20
+	RequestSecondsLimit  = 10
+	PermissionBytesLimit = 16 << 10
+	ClosePollMillisLimit = 100
+	ResponseBytesLimit   = 8 << 20
 )

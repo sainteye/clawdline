@@ -13,6 +13,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -568,6 +569,29 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 			CWD:       item.CWD,
 		},
 		Models: []contract.SessionModel{},
+	}
+	if item.Backend == session.BackendClaudeRemote {
+		if controls, ok := s.claudeRemote.(ports.ClaudeRemoteControls); ok && r.URL.Query().Get("parts") == "remote-permission" {
+			if menu, err := controls.InspectRemote(ctx, item); err == nil {
+				info.RemotePermissionKnown = true
+				if menu != nil {
+					row := item
+					row.State = session.StateWaiting
+					row.Menu = menu
+					raw, _ := json.Marshal(wireMenu(row))
+					var wire contract.SessionMenu
+					if json.Unmarshal(raw, &wire) == nil {
+						info.RemotePermission = &wire
+						info.RemotePermissionExpect = session.MenuFingerprint(*menu)
+					}
+				}
+			}
+		}
+		if !s.admitPinnedTarget(w, r, id) {
+			return
+		}
+		writeJSON(w, contract.SessionInfoReply{Info: info})
+		return
 	}
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
 		if h := s.antigravitySessions.Load(); h != nil {

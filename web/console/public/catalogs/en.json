@@ -65,7 +65,14 @@
   "next.apiPerformanceUnavailableStore": "Persistence is unavailable; observations may be lost on restart.",
   "next.machineMonitoringNav": "Machine monitoring",
   "next.claudeRemoteShort": "Remote Control",
-  "next.claudeRemoteReadOnly": "Send text to this Remote Control session here. Use Claude for attachments, permission requests, interruption, or closing.",
+  "next.claudeRemoteReadOnly": "Remote Control supports text and images here. Read a tool permission request to allow it once or deny it. Use Claude for other files and structured questions.",
+  "next.claudeRemotePermissionRead": "Read permission request",
+  "next.claudeRemotePermissionReading": "Reading permission request…",
+  "next.claudeRemotePermissionNone": "No pending tool permission was reported by the worker.",
+  "next.claudeRemotePermissionUnknown": "The current permission could not be verified. Read again or use Claude.",
+  "next.claudeRemotePermissionSubmitted": "Reply submitted. Read again to confirm the worker no longer asks this question.",
+  "next.claudeRemotePermissionAllow": "Allow once",
+  "next.claudeRemotePermissionDeny": "Deny",
   "capacityRow.session.tool_preview_bytes.what": "Tool cards send a bounded UTF-8 preview before reading stored detail.",
   "capacityRow.session.tool_preview_bytes.full": "Longer text stays in the Session record and is read when expanded.",
   "capacityRow.cloud.read_plaintext_bytes.what": "Negotiated compressed reads have a maximum decompressed size.",
@@ -9794,5 +9801,9 @@
   "capacityRow.sessions.claude_remote_request_seconds.what": "Bounds one Remote Control read or send request.",
   "capacityRow.sessions.claude_remote_request_seconds.full": "Stops after ten seconds. An ambiguous send is never retried automatically.",
   "capacityRow.sessions.claude_remote_response_bytes.what": "Bounds one Remote Control response or credential read.",
-  "capacityRow.sessions.claude_remote_response_bytes.full": "Oversized data is refused without logging credentials or private response bodies."
+  "capacityRow.sessions.claude_remote_response_bytes.full": "Oversized data is refused without logging credentials or private response bodies.",
+  "capacityRow.sessions.rc_permission_bytes.what": "Bounds the full tool input offered for Remote Control permission approval.",
+  "capacityRow.sessions.rc_permission_bytes.full": "Larger requests must be reviewed in Claude; the tool input is never truncated and then approved.",
+  "capacityRow.sessions.rc_close_poll_ms.what": "Interval for checking that the selected RC worker has exited.",
+  "capacityRow.sessions.rc_close_poll_ms.full": "Close reports completion only after the original process exits; another worker and the launcher are never signalled."
 }

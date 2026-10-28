@@ -28,12 +28,13 @@ type Client struct {
 	auth   func(context.Context) (credentials, error)
 	verify func(context.Context, session.Session) bool
 	origin string
+	gone   func(context.Context, session.Session) (bool, error)
 }
 
 func New() *Client {
 	home, _ := os.UserHomeDir()
 	return &Client{http: &http.Client{Timeout: RequestSecondsLimit * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
-		auth: func(ctx context.Context) (credentials, error) { return localCredentials(ctx, home) }, verify: process.VerifyRemoteControl, origin: "https://api.anthropic.com"}
+		auth: func(ctx context.Context) (credentials, error) { return localCredentials(ctx, home) }, verify: process.VerifyRemoteControl, origin: "https://api.anthropic.com", gone: process.RemoteControlGone}
 }
 func (c *Client) valid(ctx context.Context, s session.Session) bool {
 	return s.RemoteSessionID != "" && process.NormalizeRemoteID(s.RemoteSessionID) == s.RemoteSessionID && c.verify != nil && c.verify(ctx, s)
@@ -76,23 +77,42 @@ func (c *Client) SendRemote(ctx context.Context, s session.Session, text string,
 	if text == "" || !c.valid(ctx, s) {
 		return unsent("Remote Control worker identity changed or is unavailable")
 	}
+	return c.submit(ctx, s, map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": []any{map[string]string{"type": "text", "text": text}}}}, check)
+}
+
+// submit gives every controller event its own UUID; it never replays an uncertain write.
+type receipt struct {
+	id       string
+	sequence int64
+}
+
+func (c *Client) submit(ctx context.Context, s session.Session, payload map[string]any, check func() error) error {
+	_, err := c.submitAck(ctx, s, payload, check)
+	return err
+}
+func (c *Client) submitAck(ctx context.Context, s session.Session, payload map[string]any, check func() error) (receipt, error) {
+	unsent := func(why string) error { return terminal.Unsent{Why: why} }
+	if !c.valid(ctx, s) {
+		return receipt{}, unsent("Remote Control worker identity changed before submission")
+	}
 	a, err := c.auth(ctx)
 	if err != nil {
-		return unsent(err.Error())
+		return receipt{}, unsent(err.Error())
 	}
 	id := uuid.NewString()
-	body, _ := json.Marshal(map[string]any{"session_id": s.RemoteSessionID, "events": []any{map[string]any{"payload": map[string]any{"type": "user", "uuid": id, "message": map[string]any{"role": "user", "content": []any{map[string]string{"type": "text", "text": text}}}}}}})
+	payload["uuid"] = id
+	body, _ := json.Marshal(map[string]any{"session_id": s.RemoteSessionID, "events": []any{map[string]any{"payload": payload}}})
 	if check != nil {
 		if err := check(); err != nil {
-			return unsent("Remote Control send permission is no longer available")
+			return receipt{}, unsent("Remote Control send permission is no longer available")
 		}
 	}
 	if !c.valid(ctx, s) {
-		return unsent("Remote Control worker identity changed before submission")
+		return receipt{}, unsent("Remote Control worker identity changed before submission")
 	}
 	raw, err := c.request(ctx, http.MethodPost, "/v1/code/sessions/"+s.RemoteSessionID+"/events", body, a)
 	if err != nil {
-		return err
+		return receipt{}, err
 	}
 	var ack struct {
 		Results []struct {
@@ -102,13 +122,13 @@ func (c *Client) SendRemote(ctx context.Context, s session.Session, text string,
 		Attestation json.RawMessage `json:"attestation_feedback"`
 	}
 	if json.Unmarshal(raw, &ack) != nil || len(ack.Results) != 1 || ack.Results[0].EventID != id {
-		return errors.New("Remote Control acceptance could not be verified; check the conversation before sending again")
+		return receipt{}, errors.New("Remote Control acceptance could not be verified; check the conversation before sending again")
 	}
 	seq, e := strconv.ParseInt(ack.Results[0].Sequence, 10, 64)
 	if e != nil || seq <= 0 || len(ack.Attestation) > 0 && string(ack.Attestation) != "null" {
-		return errors.New("Remote Control acceptance needs verification in Claude; do not resend automatically")
+		return receipt{}, errors.New("Remote Control acceptance needs verification in Claude; do not resend automatically")
 	}
-	return nil
+	return receipt{id: id, sequence: seq}, nil
 }
 
 type event struct {

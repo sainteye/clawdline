@@ -4,9 +4,11 @@ package process
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -37,4 +39,23 @@ func VerifyRemoteControl(ctx context.Context, s session.Session) bool {
 		return false
 	}
 	return RemoteControlID(fields[1:]) == s.RemoteSessionID && ownrecords.ProcessStart(s.PID).Equal(s.ExpectedStart)
+}
+
+// RemoteControlGone proves the original process ended, including PID reuse.
+func RemoteControlGone(ctx context.Context, s session.Session) (bool, error) {
+	if s.PID <= 0 || s.ExpectedStart.IsZero() {
+		return false, errors.New("missing process generation")
+	}
+	err := syscall.Kill(s.PID, 0)
+	if err == syscall.ESRCH {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	start := ownrecords.ProcessStart(s.PID)
+	if start.IsZero() {
+		return false, errors.New("process generation unreadable")
+	}
+	return !start.Equal(s.ExpectedStart), nil
 }

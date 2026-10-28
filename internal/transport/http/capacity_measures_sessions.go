@@ -8,6 +8,12 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) sessionsCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"sessions.rc_permission_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "oversized native tool inputs are not offered for approval"}
+		},
+		"sessions.rc_close_poll_ms": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "sampling interval for proving the selected worker exited; no signals or retries"}
+		},
 		"sessions.claude_remote_request_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "deadline for one native Remote Control request; no retry or token refresh"}
 		},

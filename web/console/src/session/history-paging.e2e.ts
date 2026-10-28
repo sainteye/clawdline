@@ -20,6 +20,8 @@ const LABEL = "deploy·marketing"
 let remoteControl = false
 let remoteWrites = 0
 let remoteText = ""
+let remoteImages: string[] = []
+let remoteAnswers: {key:string;expect:string}[] = []
 
 let firstAttempts = 0
 let olderAttempts = 0
@@ -70,7 +72,7 @@ function document(): string {
 function daemon(): Server {
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
-    if (remoteControl && req.method === "POST" && path.startsWith("/v1/sessions/")) remoteWrites++
+
     if (path === "/v1/places") return json(res, 200, { places: [{ id: "project", label: "Fixture project", path: "/tmp/fixture" }], assistants: [{ id: "codex", label: "Codex" }] })
     if (path === "/v1/places/project/sessions/codex") {
       const cursor = new URL(req.url ?? "/", "http://fixture").searchParams.get("cursor")
@@ -85,9 +87,13 @@ function daemon(): Server {
       return
     }
     if (remoteControl && req.method === "POST" && path === "/v1/sessions/"+ID+"/send") {
-      let body="";req.on("data", chunk=>body+=chunk);req.on("end",()=>{remoteText=JSON.parse(body).text;json(res,200,{ok:true,id:ID,action:"accepted"})});return
+      let body="";req.on("data", chunk=>body+=chunk);req.on("end",()=>{const data=JSON.parse(body);remoteWrites++;remoteText=data.text;remoteImages=data.images??[];json(res,200,{ok:true,id:ID,action:"accepted"})});return
     }
-    if (path === "/v1/transcript") return json(res, 200, { entries: remoteControl ? [{ role: "user", text: "Remote history fixture", timestamp: NOW }, ...(remoteText ? [{role:"user",text:remoteText,timestamp:NOW},{role:"error",text:"Weekly quota exhausted",timestamp:NOW}] : [])] : [], evidence: "transcript", id: ID, signature: "fixture:"+remoteText })
+    if(remoteControl && path === "/v1/sessions/"+ID+"/info")return json(res,200,{info:{session:{id:ID},models:[],remotePermissionKnown:true,remotePermissionExpect:"a".repeat(64),remotePermission:{question:"Bash\n{\"command\":\"printf fixture\"}",options:[{n:1,label:"Allow once",can:true,selected:false},{n:2,label:"Deny",can:true,selected:false}]}}})
+    if(remoteControl && req.method === "POST" && path === "/v1/sessions/"+ID+"/key"){
+      let body="";req.on("data",chunk=>body+=chunk);req.on("end",()=>{remoteAnswers.push(JSON.parse(body));json(res,200,{ok:true,id:ID,action:"accepted"})});return
+    }
+    if (path === "/v1/transcript") return json(res, 200, { entries: remoteControl ? [{ role: "user", text: "Remote history fixture", timestamp: NOW }, ...(remoteText ? [{role:"user",text:remoteText,imageCount:remoteImages.length,timestamp:NOW},{role:"error",text:"Weekly quota exhausted",timestamp:NOW}] : [])] : [], evidence: "transcript", id: ID, signature: "fixture:"+remoteText })
     if (path.startsWith("/v1/")) return json(res, 404, { error: { code: "not_found", message: path } })
     if (path === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
@@ -244,7 +250,7 @@ test("history retries preserve the current page and append older sessions once",
  }finally{await browser.send("Target.closeTarget",{targetId}).catch(()=>undefined)}
 })
 
-test("Remote Control sends text and shows quota failure with terminal controls hidden on desktop and phone", async () => {
+test("Remote Control sends images and exact permission answers on desktop and phone", async () => {
  remoteControl=true
  try {
   for(const width of [1200,390]){
@@ -267,16 +273,33 @@ test("Remote Control sends text and shows quota failure with terminal controls h
     assert.match(await run(`document.querySelector("#why")?.textContent??document.body.innerText`),/Remote Control/)
     assert.match(await run(`document.body.innerText`),/Remote history fixture/)
     assert.equal(await run(`document.querySelector("#msg")?.isContentEditable`),true)
-    assert.equal(await run(`document.querySelector("#attach")?.disabled`),true)
+    assert.equal(await run(`document.querySelector("#attach")?.disabled`),false)
     assert.equal(await run(`document.querySelector("#send")?.disabled`),true)
     await run(`document.querySelector("#detail-actions-trigger").click()`)
-    for(const id of ["session-focus","session-interrupt","session-screen"]){
+    for(const id of ["session-focus","session-screen"]){
      assert.equal(await run(`document.getElementById(${JSON.stringify(id)})?.hidden`),true)
      assert.equal(await run(`document.getElementById(${JSON.stringify(id)})?.getClientRects().length`),0,"unsupported control must actually be hidden")
     }
-    assert.equal(await run(`document.querySelector("#session-end")?.disabled`),true)
+    assert.equal(await run(`document.querySelector("#session-end")?.disabled`),false)
+    assert.equal(await run(`document.querySelector("#session-interrupt")?.hidden`),false)
     assert.equal(await run(`document.documentElement.scrollWidth <= innerWidth`),true)
     await run(`document.querySelector("#detail-actions-trigger").click()`)
+    await run(`document.querySelector(".rc-permissions > button").click()`)
+    const permissionDeadline=Date.now()+3000
+    while(Date.now()<permissionDeadline && !await run(`Boolean(document.querySelector(".rc-permission-offer"))`))await new Promise(r=>setTimeout(r,30))
+    assert.match(await run(`document.querySelector(".rc-permission-offer")?.textContent??""`),/printf fixture/)
+    const answerCount=remoteAnswers.length
+    await run(`(()=>{const button=document.querySelector(".rc-permission-offer button");button.click();button.click()})()`)
+    const answerDeadline=Date.now()+3000
+    while(Date.now()<answerDeadline && remoteAnswers.length===answerCount)await new Promise(r=>setTimeout(r,30))
+    assert.equal(remoteAnswers.length,answerCount+1,"double click must submit only one permission answer")
+    assert.equal(remoteAnswers.at(-1)?.expect,"a".repeat(64))
+    assert.equal(remoteAnswers.at(-1)?.key,"1")
+    assert.equal(await run(`document.querySelector(".rc-permission-offer")===null`),true)
+    await run(`new Promise(resolve=>{const canvas=document.createElement("canvas");canvas.width=2;canvas.height=2;const ctx=canvas.getContext("2d");ctx.fillStyle="red";ctx.fillRect(0,0,2,2);canvas.toBlob(blob=>{const data=new DataTransfer();data.items.add(new File([blob],"fixture.png",{type:"image/png"}));document.querySelector("#msg").dispatchEvent(new ClipboardEvent("paste",{bubbles:true,clipboardData:data}));resolve(true);})})`)
+    const imageDeadline=Date.now()+5000
+    while(Date.now()<imageDeadline && !await run(`document.querySelectorAll("#shots .shot").length===1 && !document.querySelector("#send")?.disabled`))await new Promise(r=>setTimeout(r,30))
+    assert.equal(await run(`document.querySelectorAll("#shots .shot").length`),1,"pasted image must be ready before submitting")
     const prior=remoteWrites
     const text="RC UI fixture "+width
     await run(`(() => {const box=document.querySelector("#msg");box.textContent=${JSON.stringify(text)};box.dispatchEvent(new Event("input",{bubbles:true}));})()`)
@@ -288,10 +311,12 @@ test("Remote Control sends text and shows quota failure with terminal controls h
     while(Date.now()<delivered && (remoteWrites!==prior+1 || remoteText!==text || !await run(`document.body.innerText.includes("Weekly quota exhausted") && document.querySelectorAll(".entry.pending").length===0`)))await new Promise(r=>setTimeout(r,40))
     assert.equal(remoteWrites,prior+1,"one explicit submit must make exactly one write")
     assert.equal(remoteText,text)
+    assert.equal(remoteImages.length,1,"image must travel with the user submission")
+    assert.match(remoteImages[0],/^data:image\//)
     assert.equal(await run(`document.body.innerText.includes("Weekly quota exhausted") && document.querySelectorAll(".entry.pending").length===0`),true)
     if(shots){const {data}=await browser.send("Page.captureScreenshot",{format:"png"},s);writeFileSync(join(shots,"remote-control-"+width+".png"),Buffer.from(data,"base64"))}
    }finally{await browser.send("Target.closeTarget",{targetId}).catch(()=>undefined)}
   }
-  assert.equal(remoteWrites,2,"desktop and phone each submitted one text event")
+  assert.equal(remoteWrites,2,"desktop and phone each submitted one image event")
  }finally{remoteControl=false}
 })

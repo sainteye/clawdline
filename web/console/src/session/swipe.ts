@@ -63,8 +63,8 @@ export function archivable(conversation: string | null | undefined): boolean {
 /** A retained Session is display history, not a target for a destructive press. */
 export function sessionSwipeActions(freshness: "current" | "stale" | "unknown",
   conversation: string | null | undefined, backend?: string): { close: boolean; archive: boolean } {
-  const close = freshness === "current" && backend !== "claude_remote"
-  return { close, archive: close && archivable(conversation) }
+  const close = freshness === "current"
+  return { close, archive: close && backend !== "claude_remote" && archivable(conversation) }
 }
 
 /** Rich local/selected-machine rows use the same action rule as fleet rows. */

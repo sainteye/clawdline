@@ -772,7 +772,7 @@ function Tools({
             >
               <button
                 id="session-interrupt"
-                hidden={noTerminal}
+                hidden={protocolOwned}
                 type="button"
                 role="menuitem"
                 disabled={!row || ending}

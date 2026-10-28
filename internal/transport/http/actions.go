@@ -144,16 +144,25 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: action})
 		})
 	case "interrupt":
-		if _, err := s.actions().Interrupt(ctx, id); err != nil {
-			writeActionRefusal(w, err)
-			return
-		}
-		writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "interrupted"})
+		s.sessionWrite(w, r, keyBodyLimit, func(string, int64) string {
+			return "that body could not be read"
+		}, func(w http.ResponseWriter, raw []byte) {
+			var body map[string]any
+			if len(raw) > 0 && (json.Unmarshal(raw, &body) != nil || len(body) != 0) {
+				writeRefusal(w, http.StatusBadRequest, "bad_request", "that body could not be read")
+				return
+			}
+			if _, err := s.actions().Interrupt(app.WithRemoteControlUserSubmission(ctx), id); err != nil {
+				writeActionRefusal(w, err)
+				return
+			}
+			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "interrupted"})
+		})
 	case "key":
 		s.sessionWrite(w, r, keyBodyLimit, func(string, int64) string {
 			return "That is larger than one key. A key is \"1\"…\"9\", \"tab\", \"shift+tab\", \"submit\" or \"enter\"."
 		}, func(w http.ResponseWriter, raw []byte) {
-			s.sessionKey(ctx, w, id, raw)
+			s.sessionKey(app.WithRemoteControlUserSubmission(ctx), w, id, raw)
 		})
 	case "title":
 		s.sessionWrite(w, r, CapacityLimit(capacity.SessionTitleRequestBytes), func(size string, limit int64) string {
@@ -223,9 +232,9 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			// the wait for it to leave, then the terminal — and the ordinary
 			// fifteen seconds is shorter than the ladder's own worst case, so
 			// the route would have cut it off part way through.
-			ctx, more := context.WithTimeout(r.Context(), closeBudget)
+			ctx, more := context.WithTimeout(requestContext, closeBudget)
 			defer more()
-			closed, err := s.closeActions(r).ClosePinned(ctx, id, body.Force, pin.pid, pin.started)
+			closed, err := s.closeActions(r).ClosePinned(app.WithRemoteControlUserSubmission(ctx), id, body.Force, pin.pid, pin.started)
 			if err != nil {
 				writeActionRefusal(w, err)
 				return

@@ -12,7 +12,8 @@
  * and, for a digit, that a Return followed only if the screen showed the digit
  * landed. `typed` is the strongest thing a send can claim: the bytes reached the
  * tty. Whether the assistant took the turn is a separate fact, read from the fleet
- * list, and this never asserts it.
+ * list, and this never asserts it. Remote Control `accepted` means the controller
+ * event was accepted by the service, not necessarily consumed or executed.
  */
 export interface ActionResult {
   action: string
@@ -6665,6 +6666,19 @@ export interface SessionInfo {
    */
   linksObservedAt?: number
   models: SessionModel[]
+  remotePermission?: SessionMenu
+
+  /**
+   * Fingerprint of the exact RC tool permission, including request ID, complete
+   * tool input, bridge and kernel generation.
+   */
+  remotePermissionExpect?: string
+
+  /**
+   * The live RC worker answered the permission query. Without this, an absent menu
+   * does not establish that no request is pending.
+   */
+  remotePermissionKnown?: boolean
 
   /**
    * What the one git read behind `links` found. Present whenever the session has a

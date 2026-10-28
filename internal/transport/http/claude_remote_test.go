@@ -14,9 +14,14 @@ import (
 )
 
 type rcController struct {
-	sends int
-	fail  bool
-	reads int
+	sends      int
+	fail       bool
+	reads      int
+	images     int
+	interrupts int
+	selections int
+	expect     string
+	menu       *session.Menu
 }
 
 func (c *rcController) SendRemote(ctx context.Context, s session.Session, text string, check func() error) error {
@@ -90,5 +95,107 @@ func TestRemoteControlBrokerMessagesDoNotClaimHumanOrigin(t *testing.T) {
 	var refusal app.Refusal
 	if !errors.As(err, &refusal) || refusal.Code != "backend_unsupported" || c.sends != 0 {
 		t.Fatalf("err=%v sends=%d", err, c.sends)
+	}
+}
+
+func (c *rcController) SendRemoteImages(ctx context.Context, row session.Session, text string, images []string, check func() error) error {
+	c.images += len(images)
+	return c.SendRemote(ctx, row, text, check)
+}
+func (c *rcController) InspectRemote(context.Context, session.Session) (*session.Menu, error) {
+	c.reads++
+	if c.fail {
+		return nil, errors.New("unknown")
+	}
+	return c.menu, nil
+}
+func (c *rcController) SelectRemote(ctx context.Context, row session.Session, n int, expect string, check func() error) error {
+	if check != nil {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+	c.selections++
+	c.expect = expect
+	return nil
+}
+func (c *rcController) InterruptRemote(ctx context.Context, row session.Session, check func() error) error {
+	if check != nil {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+	c.interrupts++
+	return nil
+}
+func (c *rcController) CloseRemote(context.Context, session.Session, func() error) error {
+	return errors.New("not requested")
+}
+func TestRemoteControlHTTPImagesAndPermissionUseDurableReceipts(t *testing.T) {
+	c := &rcController{menu: &session.Menu{Question: "Bash\nfixture", Revision: "fixture-native-permission", Numbered: true, Options: []session.MenuOption{{Number: 1, Label: "Allow once"}, {Number: 2, Label: "Deny"}}}}
+	s, id := rcServer(t, c)
+	for i := 0; i < 2; i++ {
+		w := act(t, s, "send", id, "image-once", `{"text":"fixture","images":["fixture-image"]}`)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "accepted") {
+			t.Fatal(w.Body.String())
+		}
+	}
+	if c.images != 1 || c.sends != 1 {
+		t.Fatal("image was retried or required pasteboard")
+	}
+	read := func(query string) contract.SessionInfoReply {
+		w := httptest.NewRecorder()
+		s.sessionInfoRoute(w, httptest.NewRequest("GET", "/v1/sessions/"+id+"/info"+query, nil), id)
+		var reply contract.SessionInfoReply
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &reply) != nil {
+			t.Fatal(w.Body.String())
+		}
+		return reply
+	}
+	if read("").Info.RemotePermissionKnown || c.reads != 0 {
+		t.Fatal("routine info request posted a control event")
+	}
+	reply := read("?parts=remote-permission")
+	if !reply.Info.RemotePermissionKnown || reply.Info.RemotePermission == nil || reply.Info.RemotePermissionExpect == "" {
+		t.Fatal("permission offer missing")
+	}
+	body, _ := json.Marshal(contract.KeyRequest{Key: "1", Expect: reply.Info.RemotePermissionExpect})
+	for i := 0; i < 2; i++ {
+		w := act(t, s, "key", id, "permission-once", string(body))
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "accepted") {
+			t.Fatal(w.Body.String())
+		}
+	}
+	if c.selections != 1 || c.expect != session.MenuFingerprint(*c.menu) {
+		t.Fatal("answer lost fingerprint or was retried")
+	}
+	for i := 0; i < 2; i++ {
+		w := act(t, s, "interrupt", id, "interrupt-once", `{}`)
+		if w.Code != 200 {
+			t.Fatal(w.Body.String())
+		}
+	}
+	if c.interrupts != 1 {
+		t.Fatal("interrupt was retried")
+	}
+	c.fail = true
+	if read("?parts=remote-permission").Info.RemotePermissionKnown {
+		t.Fatal("unknown permission treated as no pending request")
+	}
+}
+func TestRemoteControlAutomationCannotApproveOrInterrupt(t *testing.T) {
+	c := &rcController{}
+	s, id := rcServer(t, c)
+	_, err := s.actions().Key(context.Background(), id, "1", strings.Repeat("a", 64))
+	if err == nil || c.selections != 0 {
+		t.Fatal("automatic approval claimed human consent")
+	}
+	_, err = s.actions().Interrupt(context.Background(), id)
+	if err == nil || c.interrupts != 0 {
+		t.Fatal("automatic interrupt claimed human origin")
+	}
+	_, err = s.actions().SendWithPictures(context.Background(), id, "", []string{"fixture"})
+	if err == nil || c.images != 0 {
+		t.Fatal("automatic image claimed human origin")
 	}
 }
