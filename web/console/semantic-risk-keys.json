@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9783,
+  "englishKeys": 9785,
   "counts": {
     "negation": 2766,
-    "state": 1604,
+    "state": 1605,
     "permission": 570,
     "deletion": 213,
     "uncertainty": 370
   },
-  "unionCount": 4334,
+  "unionCount": 4335,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2939,6 +2939,7 @@
       "capacityRow.cloud.rekey_pending.what",
       "capacityRow.cloud.reload_stop_seconds.full",
       "capacityRow.cloud.roster_short_read_attempts.full",
+      "capacityRow.cloud.service_monitor_history_points.full",
       "capacityRow.cloud.session_row_asks.what",
       "capacityRow.cloud.session_row_id_bytes.full",
       "capacityRow.cloud.spool.full",
@@ -5915,6 +5916,7 @@
     "capacityRow.cloud.service_monitor_deployment_rows.what",
     "capacityRow.cloud.service_monitor_fresh_seconds.full",
     "capacityRow.cloud.service_monitor_fresh_seconds.what",
+    "capacityRow.cloud.service_monitor_history_points.full",
     "capacityRow.cloud.service_monitor_host_command_seconds.full",
     "capacityRow.cloud.service_monitor_host_command_seconds.what",
     "capacityRow.cloud.service_monitor_minute_buckets.full",

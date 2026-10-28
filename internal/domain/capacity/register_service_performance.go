@@ -30,6 +30,7 @@ func cloudServiceMonitoringBounds() []Entry {
 		{Name: "cloud.service_monitor_batches_per_hour", Class: Buffer, Unit: Rows, Limit: 240, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
 		{Name: "cloud.service_monitor_query_seconds", Class: Cache, Unit: Seconds, Limit: 2, AtLimit: Expire, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
 		{Name: "cloud.service_monitor_query_bytes", Class: Buffer, Unit: Bytes, Limit: 1048576, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
+		{Name: "cloud.service_monitor_history_points", Class: Buffer, Unit: Rows, Limit: 289, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
 		{Name: "cloud.service_monitor_query_points", Class: Buffer, Unit: Rows, Limit: 288, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
 		{Name: "cloud.service_monitor_readers", Class: Buffer, Unit: Rows, Limit: 4, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
 		{Name: "cloud.service_monitor_delete_rows", Class: Buffer, Unit: Rows, Limit: 500, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},

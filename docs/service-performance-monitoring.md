@@ -73,7 +73,8 @@ daemon can observe remote occupancy. API requests do not wait on telemetry disk 
 The service store, including its side files, has separate disk and query limits; physical quota
 failure leaves evidence unavailable instead of replacing it with a healthy empty response.
 Minute summaries retain one day, hourly summaries seven days, and raw payloads are not retained.
-The actual oldest retained host observation is displayed; retention is not continuous coverage.
+Response histories admit at most 289 points including a clipped window edge; resource histories
+have an independent 288-sample bound. The actual oldest retained host observation is displayed; retention is not continuous coverage.
 
 The monitor uses existing infrastructure and no new paid telemetry API. Service installation,
 the API rollout, relay (when changed), hosted console, local dev installation and public Release

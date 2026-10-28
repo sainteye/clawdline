@@ -67,6 +67,9 @@ func performanceCapacityMeasures() map[string]func() capacity.Reading {
 		"cloud.service_monitor_query_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "this daemon holds no service-monitor state; remote occupancy is unavailable here; inspect Admin monitoring"}
 		},
+		"cloud.service_monitor_history_points": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "this daemon holds no service-monitor state; remote occupancy is unavailable here; inspect Admin monitoring"}
+		},
 		"cloud.service_monitor_query_points": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "this daemon holds no service-monitor state; remote occupancy is unavailable here; inspect Admin monitoring"}
 		},

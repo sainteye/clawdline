@@ -762,6 +762,11 @@
     "Note": true
   },
   {
+    "Name": "cloud.service_monitor_history_points",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cloud.service_monitor_host_command_seconds",
     "Known": true,
     "Note": true

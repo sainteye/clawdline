@@ -3066,6 +3066,23 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.service_monitor_history_points",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 289,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "cloud.service_monitor_host_command_seconds",
     "Class": "cache",
     "Unit": "seconds",

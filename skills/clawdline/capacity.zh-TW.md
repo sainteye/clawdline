@@ -160,6 +160,7 @@
 | `cloud.service_monitor_delete_rows` | 500 | `rows` | `refuse` | `diagnostics` | — |
 | `cloud.service_monitor_deployment_rows` | 100 | `rows` | `refuse` | `diagnostics` | — |
 | `cloud.service_monitor_fresh_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_history_points` | 289 | `rows` | `refuse` | `diagnostics` | — |
 | `cloud.service_monitor_host_command_seconds` | 1 | `seconds` | `expire` | `diagnostics` | — |
 | `cloud.service_monitor_minute_buckets` | 3 | `rows` | `refuse` | `diagnostics` | — |
 | `cloud.service_monitor_minute_retention_seconds` | 86400 | `seconds` | `expire` | `diagnostics` | — |

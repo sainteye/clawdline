@@ -9783,5 +9783,7 @@
   "capacityRow.cloud.service_monitor_wal_bytes.what": "遠端服務監測的 service monitor wal bytes 預算，由所屬採集器執行限制；這台 daemon 無法量到其佔用量。",
   "capacityRow.cloud.service_monitor_wal_bytes.full": "達到界限會限制採集或查詢，缺漏仍顯示未知；一般請求不等待監測。",
   "capacityRow.cloud.service_monitor_minute_retention_seconds.what": "以分鐘保留的服務摘要，供每日圖表與長時窗邊界精確讀取。",
-  "capacityRow.cloud.service_monitor_minute_retention_seconds.full": "較舊分鐘會分批清理，七天歷史繼續使用小時摘要。"
+  "capacityRow.cloud.service_monitor_minute_retention_seconds.full": "較舊分鐘會分批清理，七天歷史繼續使用小時摘要。",
+  "capacityRow.cloud.service_monitor_history_points.what": "雲端回應歷史每次最多保留 289 點，包含裁切時窗的邊界；資源取樣另有獨立上限。",
+  "capacityRow.cloud.service_monitor_history_points.full": "超過上限的回應歷史會被拒絕，業務 API 請求仍獨立運作。"
 }

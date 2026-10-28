@@ -25,5 +25,6 @@
   "runtime_memory_bytes": 134217728,
   "runtime_tasks": 32,
   "wal_bytes": 16777216,
-  "minute_retention_seconds": 86400
+  "minute_retention_seconds": 86400,
+  "history_points": 289
 }

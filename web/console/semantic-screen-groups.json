@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9783,
-  "riskKeys": 4334,
-  "nonRiskCount": 5449,
+  "englishContentKeys": 9785,
+  "riskKeys": 4335,
+  "nonRiskCount": 5450,
   "groups": [
     {
       "name": "admin / other",
@@ -340,7 +340,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 355,
+      "count": 356,
       "sources": [
         null
       ],
@@ -455,6 +455,7 @@
         "capacityRow.cloud.rekey_body.what",
         "capacityRow.cloud.rekey_interval.what",
         "capacityRow.cloud.relay_queue.full",
+        "capacityRow.cloud.service_monitor_history_points.what",
         "capacityRow.cloud.service_monitor_minute_retention_seconds.full",
         "capacityRow.cloud.service_monitor_minute_retention_seconds.what",
         "capacityRow.cloud.session_row_asks.full",

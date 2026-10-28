@@ -9783,5 +9783,7 @@
   "capacityRow.cloud.service_monitor_wal_bytes.what": "The service monitor wal bytes budget for remote service monitoring. The owning collector enforces this bound; local daemon occupancy is unknown.",
   "capacityRow.cloud.service_monitor_wal_bytes.full": "At the bound, collection or querying is limited and missing evidence remains unknown. Ordinary requests do not wait for monitoring.",
   "capacityRow.cloud.service_monitor_minute_retention_seconds.what": "Minute-resolution service aggregates retained for daily charts and the exact edges of longer queries.",
-  "capacityRow.cloud.service_monitor_minute_retention_seconds.full": "Older minutes are pruned in bounded passes; seven-day history continues from hourly summaries."
+  "capacityRow.cloud.service_monitor_minute_retention_seconds.full": "Older minutes are pruned in bounded passes; seven-day history continues from hourly summaries.",
+  "capacityRow.cloud.service_monitor_history_points.what": "Cloud response histories retain at most 289 points per read, including clipped window edges. Resource samples have a separate limit.",
+  "capacityRow.cloud.service_monitor_history_points.full": "A larger response history is refused. Business API requests continue independently of monitoring."
 }
