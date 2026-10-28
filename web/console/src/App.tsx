@@ -943,6 +943,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       }
       const active = document.activeElement
       if (filterEl && active === filterEl) {
+        ev.preventDefault()
         if (filterRef.current) {
           filterEl.value = ""
           setFilter("")
@@ -953,6 +954,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         return
       }
       if (typing(active)) {
+        ev.preventDefault()
         active.blur()
         return
       }

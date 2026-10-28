@@ -1234,6 +1234,7 @@ export function StartSheet() {
       if (document.getElementById("info")?.hidden === false) return
       const meta = ev.metaKey || ev.ctrlKey
       if (ev.key === "Escape") {
+        ev.preventDefault()
         close()
         ev.stopImmediatePropagation()
         return

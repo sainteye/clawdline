@@ -2466,7 +2466,7 @@
     "skills/clawdline/guide.zh-TW.md": "c7d451df8df947e43b1e910e6ce5b85d4d6e814e6f874079d59a982638c899e5",
     "skills/sections.go": "ba3de38ebe0e26817f337bd4ae93e19d07ba07af8971b4fba397e6fe9082b903",
     "skills/skills.go": "146b2605f5e82e4093f731222da229df949be007b19005a428b538686feed330",
-    "web/console/src/session/Start.tsx": "5b64e4088fd1db8bb3411454efbcc53de0624ca91deb85148ff8baf843095af7"
+    "web/console/src/session/Start.tsx": "41ce5fb0848d5f5c202a03fd13655a87bb9ad4189473dccf1d075d437feefeb7"
   },
   "copyChecks": {
     "en": "a658a8102dd55299a3abcc90b8cc21b23f8916fd4909f3559bb6312dcc8451bd",
