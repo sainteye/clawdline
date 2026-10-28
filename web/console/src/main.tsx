@@ -6,6 +6,7 @@ import { keepSamePageLinksHere } from "./same-page-links.js"
 import { capturePromoLink } from "./pages/plan/promo.js"
 import { ModuleLoadBoundary, ModuleRecovery } from "./ModuleRecovery.js"
 import { isModuleLoadError, observeModulePreloadErrors } from "./module-load-error.js"
+import { bindModalEscape } from "./modal-escape.js"
 
 // The original stylesheet, all of it, in the order index.html links it. These
 // are byte-for-byte copies (see legacy/README.md). The first cut copied only the
@@ -69,6 +70,7 @@ const startupFailure = (error: unknown) => {
 // itself must not leave for a browser that holds none of its keys
 // (same-page-links.ts). Installed before anything draws a link.
 keepSamePageLinksHere(window)
+bindModalEscape(window)
 
 // Which console this build is. Served by the daemon it is that daemon's, and
 // the door stands in front of it: until the daemon says the browser is let in,

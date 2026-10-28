@@ -2629,7 +2629,7 @@ function ensureOverlays(): void {
   // shortcuts are answered before the sheet check there and still go on.
   el("schedule-form").addEventListener("keydown", (ev) => {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return
-    if (ev.key === "Escape") Schedule.close()
+    if (ev.key === "Escape") { ev.preventDefault(); Schedule.close() }
     ev.stopPropagation()
   })
   el("schedule-delete").addEventListener("click", () => Schedule.askDelete())

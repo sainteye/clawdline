@@ -1298,7 +1298,7 @@ function SessionAssignmentPicker({ choices, onRetry, value, onChange, autoFocus 
       if (!root.current?.contains(event.target as Node)) setOpen(false)
     }
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false)
+      if (event.key === "Escape") { event.preventDefault(); setOpen(false) }
     }
     document.addEventListener("pointerdown", closeOutside)
     document.addEventListener("keydown", closeOnEscape)
@@ -1495,9 +1495,9 @@ function DeleteWorkModal({ item, busy, failure, onClose, onDelete }: {
 function useModalDismiss(busy: boolean, onClose: () => void) {
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || busy) return
+      if (event.key !== "Escape") return
       event.preventDefault()
-      onClose()
+      if (!busy) onClose()
     }
     document.addEventListener("keydown", close)
     return () => document.removeEventListener("keydown", close)

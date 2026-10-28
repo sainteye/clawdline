@@ -921,15 +921,18 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         return
       }
       if (Info.isOpen()) {
+        ev.preventDefault()
         Info.close()
         return
       }
       // The drawer is over whatever page is showing, so it goes before the page does.
       if (menuRef.current) {
+        ev.preventDefault()
         closeMenu()
         return
       }
       if (shown("keys")) {
+        ev.preventDefault()
         closeKeys()
         return
       }

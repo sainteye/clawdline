@@ -2859,16 +2859,15 @@ test("a Board summary opens the detail with focus and Escape returns to that sum
         summary.click()
         setTimeout(() => {
           const modal = document.querySelector('.work-item-detail-modal')
-          const close = modal?.querySelector('.work-modal-close')
-          const openedOnClose = document.activeElement === close
+          const openedOnContainer = document.activeElement === modal
           document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-          setTimeout(() => resolve({ openedOnClose, closed: !document.querySelector('.work-item-detail-modal'), returned: document.activeElement === summary,
+          setTimeout(() => resolve({ openedOnContainer, closed: !document.querySelector('.work-item-detail-modal'), returned: document.activeElement === summary,
             activeTag: document.activeElement?.tagName || '', activeClass: document.activeElement?.className || '', summaryConnected: summary.isConnected }), 25)
         }, 50)
       }
       open()
     })`)
-    assert.deepEqual(focus, { openedOnClose: true, closed: true, returned: true,
+    assert.deepEqual(focus, { openedOnContainer: true, closed: true, returned: true,
       activeTag: "BUTTON", activeClass: "work-card-summary", summaryConnected: true })
   }))
 

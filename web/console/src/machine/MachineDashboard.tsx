@@ -104,6 +104,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
     focusModalContainer(dialogRef.current)
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault()
         e.stopPropagation()
         onClose()
       }

@@ -168,7 +168,7 @@ function PlaybookPage({ shown }: { shown: boolean }) {
     const closeOutside = (event: PointerEvent) => {
       if (!projectPicker.current?.contains(event.target as Node)) setProjectOpen(false)
     }
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setProjectOpen(false) }
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); setProjectOpen(false) } }
     document.addEventListener("pointerdown", closeOutside)
     document.addEventListener("keydown", closeOnEscape)
     return () => { document.removeEventListener("pointerdown", closeOutside); document.removeEventListener("keydown", closeOnEscape) }
