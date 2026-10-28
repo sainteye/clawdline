@@ -8,6 +8,12 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) sessionsCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"sessions.claude_remote_request_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "deadline for one native Remote Control request; no retry or token refresh"}
+		},
+		"sessions.claude_remote_response_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read byte ceiling for native Remote Control responses and credentials; oversized data is refused"}
+		},
 		capacity.SessionsShellOutputBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-read window; no retained buffer"}
 		},

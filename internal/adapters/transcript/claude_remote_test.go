@@ -11,7 +11,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
-func TestRemoteControlRequiresALiveLocalConversation(t *testing.T) {
+func TestRemoteControlRegistryEnrichmentRequiresALiveLocalConversation(t *testing.T) {
 	started := time.Date(2026, 10, 1, 12, 0, 0, 0, time.Local)
 	r := ClaudeRegistry{PID: 42, SessionID: "11111111-1111-4111-8111-111111111111", CWD: "/work/project",
 		BridgeSessionID: "session_fixture", Entrypoint: "sdk-cli", PIDDomain: runtime.GOOS,

@@ -64,8 +64,8 @@
   "next.apiPerformanceRefresh": "重新整理",
   "next.apiPerformanceUnavailableStore": "持久化無法使用，重新啟動可能遺失觀測。",
   "next.machineMonitoringNav": "機器監控",
-  "next.claudeRemoteShort": "Remote Control · 唯讀",
-  "next.claudeRemoteReadOnly": "可在這裡閱讀 Remote Control 對話。請使用 Claude 傳送訊息、回覆請求或關閉 Session。",
+  "next.claudeRemoteShort": "Remote Control",
+  "next.claudeRemoteReadOnly": "可在這裡傳送文字至 Remote Control Session。附件、權限請求、中斷或關閉請使用 Claude。",
   "capacityRow.session.tool_preview_bytes.what": "工具卡片先傳送有大小上限的 UTF-8 預覽。",
   "capacityRow.session.tool_preview_bytes.full": "較長文字保留於 Session 紀錄，展開時才讀取。",
   "capacityRow.cloud.read_plaintext_bytes.what": "協商壓縮的回覆限制解壓後大小。",
@@ -9790,5 +9790,9 @@
   "capacityRow.cloud.service_monitor_minute_retention_seconds.what": "以分鐘保留的服務摘要，供每日圖表與長時窗邊界精確讀取。",
   "capacityRow.cloud.service_monitor_minute_retention_seconds.full": "較舊分鐘會分批清理，七天歷史繼續使用小時摘要。",
   "capacityRow.cloud.service_monitor_history_points.what": "雲端回應歷史每次最多保留 289 點，包含裁切時窗的邊界；資源取樣另有獨立上限。",
-  "capacityRow.cloud.service_monitor_history_points.full": "超過上限的回應歷史會被拒絕，業務 API 請求仍獨立運作。"
+  "capacityRow.cloud.service_monitor_history_points.full": "超過上限的回應歷史會被拒絕，業務 API 請求仍獨立運作。",
+  "capacityRow.sessions.claude_remote_request_seconds.what": "限制單次 Remote Control 讀取或傳送請求的時間。",
+  "capacityRow.sessions.claude_remote_request_seconds.full": "十秒後停止。傳送結果不明時不會自動重送。",
+  "capacityRow.sessions.claude_remote_response_bytes.what": "限制單次 Remote Control 回應或憑證的讀取大小。",
+  "capacityRow.sessions.claude_remote_response_bytes.full": "超過大小即拒絕，不記錄憑證或私人回應內容。"
 }

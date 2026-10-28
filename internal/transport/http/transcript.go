@@ -139,6 +139,24 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 		s.transcriptEntryDetail(w, r, id, item, view)
 		return
 	}
+	if item.Backend == session.BackendClaudeRemote && item.RemoteSessionID != "" && s.claudeRemote != nil {
+		// Native quota errors can leave neither registry nor JSONL. The persisted
+		// controller log remains the authoritative read for these headless workers.
+		page, err := s.claudeRemote.Page(ctx, item, limit, before, after, r.URL.Query().Get("revision"))
+		if err != nil {
+			if errors.Is(err, transcript.ErrCursorStale) {
+				writeRefusal(w, 409, "transcript_cursor_stale", "the transcript changed in a way this cursor cannot follow; read the newest page")
+				return
+			}
+			writeRawRefusal(w, 502, "claude_remote_read_failed", err.Error())
+			return
+		}
+		if !s.admitPinnedTarget(w, r, id) {
+			return
+		}
+		writeJSON(w, page)
+		return
+	}
 	delta := strings.HasPrefix(view, "delta-v1")
 	if delta && (before != 0 || after >= 0) {
 		writeRefusal(w, 400, "invalid_transcript_view", "incremental views require the newest full page")

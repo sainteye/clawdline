@@ -35,8 +35,11 @@ type Actions struct {
 	// one. Find asks it for a reading taken now, because what Find answers
 	// refuses a person's action by saying their session is not there; nil
 	// scans through Inventory directly, which is what a test wants.
-	Reading   *InventoryReading
-	Terminals []ports.TerminalHost
+	Reading       *InventoryReading
+	Terminals     []ports.TerminalHost
+	RemoteControl interface {
+		SendRemote(context.Context, session.Session, string, func() error) error
+	}
 	// Antigravity verifies the live native conversation before every terminal effect.
 	Antigravity           ports.AntigravityBindings
 	AntigravityFirstInput ports.AntigravityFirstInputs
@@ -103,6 +106,14 @@ func (a Actions) lanes() *lane.Lanes {
 		return a.Lanes
 	}
 	return terminalLanes
+}
+
+type remoteControlUserKey struct{}
+
+// WithRemoteControlUserSubmission is set by an authenticated person-send
+// transport. Broker and peer-agent messages must not acquire human origin.
+func WithRemoteControlUserSubmission(ctx context.Context) context.Context {
+	return context.WithValue(ctx, remoteControlUserKey{}, true)
 }
 
 type operationCheckKey struct{}
@@ -247,7 +258,7 @@ func (a Actions) read(ctx context.Context) session.Inventory {
 // application — is refused as before.
 func (a Actions) host(ctx context.Context, s session.Session) (ports.TerminalHost, error) {
 	if s.Backend == session.BackendClaudeRemote {
-		return nil, Refusal{Code: "backend_unsupported", Detail: "Remote Control sessions are read-only in Clawdline; use Claude to operate this session"}
+		return nil, Refusal{Code: "backend_unsupported", Detail: "Use Claude to answer requests, interrupt or close this Remote Control session"}
 	}
 	if session.SourceForID(s.ID) == "ps" {
 		tty := s.TTY
@@ -322,6 +333,23 @@ func (a Actions) send(ctx context.Context, s session.Session, text string) (sess
 		return s, err
 	}
 	ctx = ports.Asked(ctx)
+	if s.Backend == session.BackendClaudeRemote {
+		if allowed, _ := ctx.Value(remoteControlUserKey{}).(bool); !allowed {
+			return s, beforeTheFirstByte(Refusal{Code: "backend_unsupported", Detail: "Remote Control text submission requires a person's send request"})
+		}
+		if a.RemoteControl == nil {
+			return s, beforeTheFirstByte(Refusal{Code: "backend_unsupported", Detail: "Remote Control sending is unavailable on this daemon"})
+		}
+		release, err := a.turn(ctx, s)
+		if err != nil {
+			return s, err
+		}
+		defer release()
+		if err := a.RemoteControl.SendRemote(ctx, s, text, func() error { return checkOperation(ctx) }); err != nil {
+			return s, sendRefusal(s, err)
+		}
+		return s, nil
+	}
 	h, err := a.host(ctx, s)
 	if err != nil {
 		return session.Session{}, beforeTheFirstByte(err)

@@ -11,7 +11,7 @@ import (
 )
 
 type PS struct {
-	RemoteControl func(context.Context, int) (session.Session, bool)
+	RemoteControl func(context.Context, int, string) (session.Session, bool)
 	Antigravity   ports.AntigravityProcessVerifier
 }
 

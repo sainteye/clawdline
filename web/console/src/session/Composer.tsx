@@ -201,7 +201,7 @@ export function Composer({
   const machine = remote?.machineID ?? (row ? L.machineFor(row).id : "")
   const blockedCode = !remote && blocked?.machine === machine ? blocked.code : ""
   const remoteControl = row?.backend === "claude_remote"
-  const write = !remoteControl && (remote ? remote.canSend : !blockedCode)
+  const write = remote ? remote.canSend : !blockedCode
   const protocolOwned = !remote && assistantProtocolOwned(row)
   const providerOn = assistantComposeAdmits(remote?.assistant ?? row?.assistant, remote?.assistantFacts ?? assistantFacts,
     remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu, protocolOwned)
@@ -220,7 +220,7 @@ export function Composer({
   }, [row, protocolOwned, on, machine, cardsVersion, onDid])
   // The picture listeners are bound once, and ask what is open when they fire.
   const open = useRef({ on })
-  open.current = { on: on && (!remote || remote.allowPictures) }
+  open.current = { on: on && !remoteControl && (!remote || remote.allowPictures) }
 
   useEffect(() => {
     const draft = remote?.restoreDraft
@@ -519,7 +519,7 @@ export function Composer({
       return
     }
     if ((!said && !pictures.length) || (!row && !remote) || !on ||
-      (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
+      (remote && (!remote.canSend || pictures.length && !remote.allowPictures)) || (remoteControl && pictures.length > 0)) return
     if (protocolOwned && row && ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
       pendingSends.of(row.id).some(card => card.state === "queued"))) {
       if (!nextMessages.add(row.id, said, pictures, Date.now())) {
@@ -593,9 +593,9 @@ export function Composer({
     : assistantUnavailable(remote?.assistantFacts ?? assistantFacts, "send")
   const providerWords = protocolOwned || providerReason === "loading" ? "" : providerReason ? catalogWord("antigravity", providerReason).replace("{assistant}", assistantLabel(remote?.assistant ?? row?.assistant))
     : catalogWord("antigravity", "sendUnavailable")
-  const why: ReactNode = remoteControl ? nextWord("claudeRemoteReadOnly") : failure || (!providerOn ? providerWords : "") || (!remote && blockedCode
+  const why: ReactNode = failure || (!providerOn ? providerWords : "") || (!remote && blockedCode
     ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)
-    : "")
+    : "") || (remoteControl ? nextWord("claudeRemoteReadOnly") : "")
   const pinned = sending && sendWidth.current.px ? { minWidth: `${sendWidth.current.px}px` } : undefined
 
   return (
@@ -668,7 +668,7 @@ export function Composer({
           type="button"
           aria-label={T.webAttach}
           title={T.webAttach}
-          disabled={!on || sending || !!remote && !remote.allowPictures}
+          disabled={!on || sending || remoteControl || !!remote && !remote.allowPictures}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => pick.current?.click()}
         >

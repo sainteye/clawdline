@@ -83,7 +83,7 @@ func closeActions(h *closeHost) Actions {
 func TestRemoteControlCannotUseTerminalOrProcessActions(t *testing.T) {
 	row := session.Session{ID: "claude-remote:42:fixture", Backend: session.BackendClaudeRemote, PID: 42}
 	// Even a holder that claims this ID and an available process closer must
-	// not make the observed worker writable or closeable.
+	// not make a worker with no RC controller writable or closeable.
 	h := &ttyHolder{holds: map[string]bool{row.ID: true}}
 	procs := &processCloser{}
 	a := closeActions(&h.closeHost)
@@ -104,7 +104,7 @@ func TestRemoteControlCannotUseTerminalOrProcessActions(t *testing.T) {
 		}
 	}
 	if len(h.done) != 0 || len(procs.closed) != 0 {
-		t.Fatalf("read-only actions reached a writer: terminal=%v process=%v", h.done, procs.closed)
+		t.Fatalf("unsupported actions reached a writer: terminal=%v process=%v", h.done, procs.closed)
 	}
 }
 

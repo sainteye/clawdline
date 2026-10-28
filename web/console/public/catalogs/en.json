@@ -64,8 +64,8 @@
   "next.apiPerformanceRefresh": "Refresh",
   "next.apiPerformanceUnavailableStore": "Persistence is unavailable; observations may be lost on restart.",
   "next.machineMonitoringNav": "Machine monitoring",
-  "next.claudeRemoteShort": "Remote Control · read only",
-  "next.claudeRemoteReadOnly": "Read this Remote Control conversation here. Use Claude to send messages, answer requests, or close the session.",
+  "next.claudeRemoteShort": "Remote Control",
+  "next.claudeRemoteReadOnly": "Send text to this Remote Control session here. Use Claude for attachments, permission requests, interruption, or closing.",
   "capacityRow.session.tool_preview_bytes.what": "Tool cards send a bounded UTF-8 preview before reading stored detail.",
   "capacityRow.session.tool_preview_bytes.full": "Longer text stays in the Session record and is read when expanded.",
   "capacityRow.cloud.read_plaintext_bytes.what": "Negotiated compressed reads have a maximum decompressed size.",
@@ -9790,5 +9790,9 @@
   "capacityRow.cloud.service_monitor_minute_retention_seconds.what": "Minute-resolution service aggregates retained for daily charts and the exact edges of longer queries.",
   "capacityRow.cloud.service_monitor_minute_retention_seconds.full": "Older minutes are pruned in bounded passes; seven-day history continues from hourly summaries.",
   "capacityRow.cloud.service_monitor_history_points.what": "Cloud response histories retain at most 289 points per read, including clipped window edges. Resource samples have a separate limit.",
-  "capacityRow.cloud.service_monitor_history_points.full": "A larger response history is refused. Business API requests continue independently of monitoring."
+  "capacityRow.cloud.service_monitor_history_points.full": "A larger response history is refused. Business API requests continue independently of monitoring.",
+  "capacityRow.sessions.claude_remote_request_seconds.what": "Bounds one Remote Control read or send request.",
+  "capacityRow.sessions.claude_remote_request_seconds.full": "Stops after ten seconds. An ambiguous send is never retried automatically.",
+  "capacityRow.sessions.claude_remote_response_bytes.what": "Bounds one Remote Control response or credential read.",
+  "capacityRow.sessions.claude_remote_response_bytes.full": "Oversized data is refused without logging credentials or private response bodies."
 }

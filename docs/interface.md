@@ -402,25 +402,54 @@ not. That last number is the one thing looking cannot fix, and it is what the op
 
 ## Reading a session back
 
-Claude Code Remote Control conversations can also appear in the Session list on macOS and Linux
-when external Session discovery is enabled. An interactive `claude --remote-control` or
-`/remote-control` session keeps its existing terminal controls. A server-spawned worker is listed
-as **Remote Control · read only**: Clawdline reads its local conversation and status, while messages,
-permission answers, interruption and closing remain in Claude. The Remote Control launcher itself
-is not a conversation and is not listed as one.
+Claude Code Remote Control conversations appear in the Session list on macOS and Linux when
+external Session discovery is enabled. An interactive `claude --remote-control` or `/remote-control`
+session keeps its existing terminal controls. A server-spawned worker has a **Remote Control** marker
+and supports text submission here. Attachments, permission answers, interruption and closing still
+use Claude. The launcher itself is not a conversation and is not listed as one.
 
-Worker discovery requires the native SDK bridge command and a live Claude registry entry whose
-PID, process start, local conversation UUID and remote bridge identity are present. Workers retain
-their own identity even when they inherit the launcher's tty or tmux environment. If an interactive
-terminal resumes the same local conversation, the terminal is the displayed representation.
-An unreadable worker identity keeps the process inventory incomplete rather than proving absence.
+Discovery requires the native print-mode SDK transport to `https://api.anthropic.com/v1/code/sessions/…`,
+a matching remote session argument, and a live kernel process generation. Standard versioned native
+installations are recognized as well as executables named `claude`. A registry entry can enrich the
+worker with a local conversation UUID and status, but is not required: native 2.1.312 workers can
+have neither registry nor JSONL after a quota refusal. Workers never borrow the launcher's tty or
+tmux identity. An interactive terminal with the same proven local UUID remains the displayed row.
+
+Text sends use Anthropic's **undocumented controller API**, not peer messaging or a new resumed
+Claude process. The daemon rereads process birth and transport immediately before submission,
+keeps existing write authorization and per-Session/machine lanes, and sends one UUID-tagged event.
+The HTTP response says `accepted`, which proves server acceptance only. Worker receipt, execution,
+and a quota failure are separate evidence. A lost or incompatible acknowledgement is not retried;
+the existing durable request-key receipt prevents another POST under the same key. Only the person
+can decide whether to submit again after checking the conversation. Unsupported device-attestation
+feedback fails closed and requires the native Claude client.
+
+The daemon reads the current CLI OAuth credentials on demand, using the default macOS Keychain or
+its configured credential file and organization. It does not refresh or rewrite credentials, copy
+them to the browser, use API keys, or accept a caller-supplied API origin. Expired/unavailable sign-in
+requires signing in through Claude Code. Custom config roots use their own credential file; custom
+Keychain-service discovery is not implemented. The controller platform header follows the native
+human-controller envelope; this path is for a person's submitted message, not peer-agent approval.
+
+RC transcript reads use bounded persisted controller events, including quota errors when there is
+no local transcript. Reads make one request without polling, retries or an unbounded cache. Native
+sequence cursors are scoped to bridge identity and process generation; assistant events require a
+worker source, and private reasoning uses the same projection as local JSONL. A provider API change
+can make this integration unavailable; native Claude remains the fallback.
 
 Project history includes SDK-origin conversations with a `bridge-session` record or a bridge ID on
 the user record, within the existing bounded opening scan. Unrelated SDK jobs and Clawdline child
-briefings remain excluded. Discovery and reading use the daemon's `CLAUDE_CONFIG_DIR` when it is an
-absolute path, otherwise the default `~/.claude`; separate process-specific stores are not searched.
-Local transcript IDs and remote bridge IDs are different identities, and a saved transcript does
-not establish that a worker is still running. Custom project-directory names are not resolved here.
+briefings remain excluded. Local history uses the daemon's absolute `CLAUDE_CONFIG_DIR`, otherwise
+`~/.claude`; separate process-specific stores and custom project-directory names are not searched.
+Local UUIDs and remote bridge IDs remain distinct; a saved transcript does not prove a live worker.
+
+The opt-in `TestNativeRemoteControl` acceptance test requires an exact worker PID and bridge ID.
+A send additionally requires a one-use attempt marker and explicit authorization; it checks that
+extra usage is disabled before submitting. Ordinary tests never contact a real Claude account.
+The native October 28 verification on 2.1.312 observed two accepted test prompts and worker quota
+refusals, including one through `Actions.Send`; it did not verify a successful model answer.
+
+The controller envelope is also described in the independent [claude-rc-api protocol reference](https://github.com/ThatCrispyToast/claude-rc-api/blob/main/API_REFERENCE.md).
 
 See [Claude's Remote Control documentation](https://code.claude.com/docs/en/remote-control) and
 [session storage documentation](https://code.claude.com/docs/en/sessions#where-transcripts-are-stored).

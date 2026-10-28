@@ -33,6 +33,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `capacity_full` | `internal/transport/http/squad.go` |
 | `catalog_unreadable` | `internal/transport/http/tasks.go` |
 | `child_kind_not_allowed` | `internal/domain/work/v2.go` |
+| `claude_remote_read_failed` | `internal/transport/http/transcript.go` |
 | `clone_busy` | `internal/transport/http/project_sync.go` |
 | `clone_root_unavailable` | `internal/transport/http/project_sync.go` |
 | `clone_target_exists` | `internal/transport/http/project_sync.go` |

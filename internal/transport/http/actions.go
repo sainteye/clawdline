@@ -127,7 +127,7 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 				ctx, more = context.WithTimeout(requestContext, 45*time.Second)
 				defer more()
 			}
-			sent, err := s.actions().SendWithPictures(ctx, id, body.Text, body.Images)
+			sent, err := s.actions().SendWithPictures(app.WithRemoteControlUserSubmission(ctx), id, body.Text, body.Images)
 			if err != nil {
 				writeActionRefusal(w, err)
 				return
@@ -137,7 +137,11 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			// session relays their words under (runs.go, U4).
 			s.heardFrom(sent)
 			s.issueRun(ctx, r, sent, body.Text)
-			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "typed"})
+			action := "typed"
+			if sent.Backend == session.BackendClaudeRemote {
+				action = "accepted"
+			}
+			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: action})
 		})
 	case "interrupt":
 		if _, err := s.actions().Interrupt(ctx, id); err != nil {
@@ -508,6 +512,9 @@ func (s *Server) actions() app.Actions {
 		Owed: func(ctx context.Context) ([]task.Obligation, error) {
 			return s.owed(ctx, s.reading(ctx).Sessions)
 		}}
+	if s.claudeRemote != nil {
+		a.RemoteControl = s.claudeRemote
+	}
 	if bridge := s.antigravityBridge.Load(); bridge != nil {
 		a.Antigravity = bridge
 	}

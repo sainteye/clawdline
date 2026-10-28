@@ -9158,6 +9158,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "sessions.claude_remote_request_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 10,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/clauderemote.RequestSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "sessions.claude_remote_response_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 8388608,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/clauderemote.ResponseBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "sessions.restore_batch",
     "Class": "buffer",
     "Unit": "rows",

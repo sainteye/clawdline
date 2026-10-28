@@ -19,6 +19,7 @@ const NOW = Math.floor(Date.now() / 1000)
 const LABEL = "deploy·marketing"
 let remoteControl = false
 let remoteWrites = 0
+let remoteText = ""
 
 let firstAttempts = 0
 let olderAttempts = 0
@@ -83,7 +84,10 @@ function daemon(): Server {
       res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n")
       return
     }
-    if (path === "/v1/transcript") return json(res, 200, { entries: remoteControl ? [{ role: "user", text: "Remote history fixture", timestamp: NOW }] : [], evidence: "transcript", id: ID, signature: "fixture" })
+    if (remoteControl && req.method === "POST" && path === "/v1/sessions/"+ID+"/send") {
+      let body="";req.on("data", chunk=>body+=chunk);req.on("end",()=>{remoteText=JSON.parse(body).text;json(res,200,{ok:true,id:ID,action:"accepted"})});return
+    }
+    if (path === "/v1/transcript") return json(res, 200, { entries: remoteControl ? [{ role: "user", text: "Remote history fixture", timestamp: NOW }, ...(remoteText ? [{role:"user",text:remoteText,timestamp:NOW},{role:"error",text:"Weekly quota exhausted",timestamp:NOW}] : [])] : [], evidence: "transcript", id: ID, signature: "fixture:"+remoteText })
     if (path.startsWith("/v1/")) return json(res, 404, { error: { code: "not_found", message: path } })
     if (path === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
@@ -240,7 +244,7 @@ test("history retries preserve the current page and append older sessions once",
  }finally{await browser.send("Target.closeTarget",{targetId}).catch(()=>undefined)}
 })
 
-test("Remote Control detail is readable with terminal writes disabled on desktop and phone", async () => {
+test("Remote Control sends text and shows quota failure with terminal controls hidden on desktop and phone", async () => {
  remoteControl=true
  try {
   for(const width of [1200,390]){
@@ -262,7 +266,8 @@ test("Remote Control detail is readable with terminal writes disabled on desktop
     while(Date.now()<deadline && !await run(`document.querySelector("#why")?.textContent.includes("Remote Control") && document.body.innerText.includes("Remote history fixture")`))await new Promise(r=>setTimeout(r,50))
     assert.match(await run(`document.querySelector("#why")?.textContent??document.body.innerText`),/Remote Control/)
     assert.match(await run(`document.body.innerText`),/Remote history fixture/)
-    assert.equal(await run(`document.querySelector("#msg")?.getAttribute("contenteditable")`),"false")
+    assert.equal(await run(`document.querySelector("#msg")?.isContentEditable`),true)
+    assert.equal(await run(`document.querySelector("#attach")?.disabled`),true)
     assert.equal(await run(`document.querySelector("#send")?.disabled`),true)
     await run(`document.querySelector("#detail-actions-trigger").click()`)
     for(const id of ["session-focus","session-interrupt","session-screen"]){
@@ -272,9 +277,21 @@ test("Remote Control detail is readable with terminal writes disabled on desktop
     assert.equal(await run(`document.querySelector("#session-end")?.disabled`),true)
     assert.equal(await run(`document.documentElement.scrollWidth <= innerWidth`),true)
     await run(`document.querySelector("#detail-actions-trigger").click()`)
+    const prior=remoteWrites
+    const text="RC UI fixture "+width
+    await run(`(() => {const box=document.querySelector("#msg");box.textContent=${JSON.stringify(text)};box.dispatchEvent(new Event("input",{bubbles:true}));})()`)
+    const sendReady=Date.now()+3000
+    while(Date.now()<sendReady && await run(`document.querySelector("#send").disabled`))await new Promise(r=>setTimeout(r,30))
+    assert.equal(await run(`document.querySelector("#send").disabled`),false)
+    await run(`document.querySelector("#composer").requestSubmit()`)
+    const delivered=Date.now()+5000
+    while(Date.now()<delivered && (remoteWrites!==prior+1 || remoteText!==text || !await run(`document.body.innerText.includes("Weekly quota exhausted") && document.querySelectorAll(".entry.pending").length===0`)))await new Promise(r=>setTimeout(r,40))
+    assert.equal(remoteWrites,prior+1,"one explicit submit must make exactly one write")
+    assert.equal(remoteText,text)
+    assert.equal(await run(`document.body.innerText.includes("Weekly quota exhausted") && document.querySelectorAll(".entry.pending").length===0`),true)
     if(shots){const {data}=await browser.send("Page.captureScreenshot",{format:"png"},s);writeFileSync(join(shots,"remote-control-"+width+".png"),Buffer.from(data,"base64"))}
    }finally{await browser.send("Target.closeTarget",{targetId}).catch(()=>undefined)}
   }
-  assert.equal(remoteWrites,0,"opening read-only Remote Control must not send a terminal command")
+  assert.equal(remoteWrites,2,"desktop and phone each submitted one text event")
  }finally{remoteControl=false}
 })

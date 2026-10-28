@@ -210,7 +210,8 @@ func frontOfFile(path string, records, limit int) front {
 				BridgeSessionID string `json:"bridgeSessionId"`
 			}
 			if json.Unmarshal(line, &bridge) == nil && (bridge.Type == "bridge-session" || bridge.Type == "user") &&
-				strings.HasPrefix(bridge.BridgeSessionID, "session_") && len(bridge.BridgeSessionID) > len("session_") {
+				((strings.HasPrefix(bridge.BridgeSessionID, "session_") && len(bridge.BridgeSessionID) > len("session_")) ||
+					(strings.HasPrefix(bridge.BridgeSessionID, "cse_") && len(bridge.BridgeSessionID) > len("cse_"))) {
 				remoteControl = true
 			}
 			if first.opening == "" {

@@ -99,6 +99,9 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 		return ports.Identity{ConversationID: b.ConversationID, Pane: b.Process.TerminalID, Binding: session.BindingLaunchHook}, true
 	case session.AssistantClaude:
 		r, ok := h.claudeFor(s.PID)
+		if s.Backend == session.BackendClaudeRemote && s.RemoteSessionID != "" && !ok {
+			return ports.Identity{CWD: s.CWD, Binding: s.Binding}, true
+		}
 		if s.Backend == session.BackendClaudeRemote && (r.SessionID != s.ConversationID || r.PID != s.PID) {
 			return ports.Identity{Binding: session.BindingNoRecord}, false
 		}

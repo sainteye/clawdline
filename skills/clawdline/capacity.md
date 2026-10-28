@@ -484,6 +484,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `sessions.agent_rows` | 6 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.archive_restore_batch` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `sessions.archive_rows` | 500 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `sessions.claude_remote_request_seconds` | 10 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
+| `sessions.claude_remote_response_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `sessions.restore_batch` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `sessions.restore_boots` | 2 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.restore_grace` | 180 | `seconds` | `expire` | `diagnostics` | — |

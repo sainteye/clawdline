@@ -2357,6 +2357,16 @@
     "Note": true
   },
   {
+    "Name": "sessions.claude_remote_request_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "sessions.claude_remote_response_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "sessions.restore_batch",
     "Known": true,
     "Note": true

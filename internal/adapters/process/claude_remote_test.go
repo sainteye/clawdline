@@ -4,6 +4,8 @@ package process
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,18 +14,20 @@ import (
 
 func TestRemoteControlWorkersDoNotBecomeTheirLaunchersTerminal(t *testing.T) {
 	worker := "claude --print --sdk-url https://api.anthropic.com/v1/code/sessions/cse_fixture --session-id cse_fixture --input-format stream-json --output-format stream-json"
+	home, _ := os.UserHomeDir()
+	native := filepath.Join(home, ".local", "share", "claude", "versions", "2.1.312")
 	var asked []int
 	p := &PS{
 		table: func(context.Context) ([]byte, error) {
 			return []byte(strings.Join([]string{
 				"ttys001 10 10 10 1 claude remote-control --spawn same-dir",
-				"?? 11 10 -1 10 " + worker,
+				"?? 11 10 -1 10 " + strings.Replace(worker, "claude ", native+" ", 1),
 				"ttys001 12 10 10 10 " + worker,
 				"?? 13 10 -1 10 claude -p ordinary SDK prompt",
 				"ttys002 14 14 14 1 claude --remote-control",
 			}, "\n")), nil
 		},
-		RemoteControl: func(_ context.Context, pid int) (session.Session, bool) {
+		RemoteControl: func(_ context.Context, pid int, remote string) (session.Session, bool) {
 			asked = append(asked, pid)
 			return session.Session{ID: "remote-" + string(rune('a'+pid)), PID: pid, Backend: session.BackendClaudeRemote}, true
 		},
@@ -48,6 +52,9 @@ func TestRemoteControlWorkerRequiresTheNativeTransport(t *testing.T) {
 		want bool
 	}{
 		{"-p --sdk-url=https://api.anthropic.com/v1/code/sessions/cse_fixture --session-id=cse_fixture", true},
+		{"-p --sdk-url=https://api.anthropic.com/v1/code/sessions/cse_fixture?token=x --session-id=cse_fixture", false},
+		{"-p --sdk-url=https://api.anthropic.com/v1/code/sessions/cse_fixture#x --session-id=cse_fixture", false},
+		{"-p --sdk-url=https://api.anthropic.com/v1/code/sessions/../../escape --session-id=../../escape", false},
 		{"--sdk-url https://api.anthropic.com/v1/code/sessions/cse_fixture --session-id cse_fixture", false},
 		{"-p --sdk-url https://example.com/v1/code/sessions/cse_fixture --session-id cse_fixture", false},
 		{"-p --sdk-url https://api.anthropic.com/v1/code/sessions/other --session-id cse_fixture", false},

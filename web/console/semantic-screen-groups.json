@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9790,
-  "riskKeys": 4336,
-  "nonRiskCount": 5454,
+  "englishContentKeys": 9794,
+  "riskKeys": 4339,
+  "nonRiskCount": 5455,
   "groups": [
     {
       "name": "admin / other",
@@ -342,7 +342,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 356,
+      "count": 357,
       "sources": [
         null
       ],
@@ -659,6 +659,7 @@
         "capacityRow.session.transcript_delta_rows.what",
         "capacityRow.sessions.archive_rows.full",
         "capacityRow.sessions.archive_rows.what",
+        "capacityRow.sessions.claude_remote_request_seconds.what",
         "capacityRow.sessions.restore_rows.full",
         "capacityRow.snippets.scope.what",
         "capacityRow.squad.body_bytes.what",
@@ -3512,7 +3513,7 @@
         "next.archivedAt",
         "next.archiving",
         "next.brokerWork",
-        "next.claudeRemoteReadOnly",
+        "next.claudeRemoteShort",
         "next.commandNoPlanner",
         "next.compressedReadTooLarge",
         "next.compressedReadUnsupported",
