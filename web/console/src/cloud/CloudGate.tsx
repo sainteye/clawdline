@@ -2015,11 +2015,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       {chosen && who && transport.kind === "cloud" && screen.at === "console" && (
         <CloudAccountContext.Provider value={{ apiOrigin: transport.config.apiOrigin, deviceID: who.device }}>
           <App cloudOperationsAccess={operationsAccess} cloudOperationsAttention={operationsAttention} key={fleetScope ? "fleet" : reading ?? chosen.id} aside={aside} hideSessionCounts={fleetScope}
-            onChooseDashboardMachine={fleetScope ? () => {
+            onChooseDashboardMachine={() => {
+              if (!fleetScope) { setDashboardMachine(chosen); return }
               switchOpener.current = document.getElementById("machine-dashboard-open")
               setDashboardPicker(true)
               setSwitcherOpen(true)
-            } : undefined}
+            }}
             dashboardRequested={!!dashboardMachine}
             dashboardSource={dashboardMachine && readDashboardUsage ? {
               name: dashboardMachine.name || dashboardMachine.label || dashboardMachine.id,
