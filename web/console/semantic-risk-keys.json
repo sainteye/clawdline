@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "englishKeys": 9785,
+  "englishKeys": 9788,
   "counts": {
-    "negation": 2766,
+    "negation": 2765,
     "state": 1605,
-    "permission": 570,
+    "permission": 571,
     "deletion": 213,
     "uncertainty": 370
   },
@@ -1973,7 +1973,6 @@
       "next.agentsUnrecognized",
       "next.apiPerformanceDirect",
       "next.apiPerformanceEmpty",
-      "next.apiPerformanceLocal",
       "next.apiPerformanceMethod",
       "next.apiPerformanceNoTraffic",
       "next.apiPerformanceUnsupported",
@@ -4634,6 +4633,7 @@
       "literal.e7f7f95a735c",
       "literal.ec06934bf3cc",
       "next.apiPerformanceDirect",
+      "next.apiPerformanceLocal",
       "next.apiPerformanceRefused",
       "next.cloudAccessCommandsOff",
       "next.cloudAccessCommandsUnknown",

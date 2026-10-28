@@ -67,6 +67,24 @@ func TestAPIPerformanceOwnerGateAndCloudDenial(t *testing.T) {
 	}
 }
 
+func TestAPIPerformanceVerifiedRemoteViewerUsesTheSameReadGate(t *testing.T) {
+	_, f, h := apiPerformanceFixture(t)
+	for _, tc := range []struct {
+		name, token string
+		want        int
+	}{
+		{"paired read-only", f.read, 200}, {"local authorizer", f.local, 200}, {"unrelated", "unrelated", 401},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			router := cloud.Router{Handler: h, Authorize: cloud.LocalAuthorizer(tc.token, f.machine)}
+			res, err := router.Do(context.Background(), cloudops.LocalRequest{Method: "GET", Path: "/v1/api-performance", Query: map[string]string{"hours": "6"}, Viewer: "verified-paired-viewer"})
+			if err != nil || res.Status != tc.want {
+				t.Fatalf("remote read: %d %v", res.Status, err)
+			}
+		})
+	}
+}
+
 func TestAPIPerformanceBoundedQueryHeadAndUnavailable(t *testing.T) {
 	s, f, h := apiPerformanceFixture(t)
 	auth := map[string]string{"Authorization": "Bearer " + f.read}

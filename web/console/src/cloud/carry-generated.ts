@@ -14,6 +14,9 @@
 export const CARRIED = {
   agent: "GET /v1/sessions/{id}/agents/{agent}?limit=",
   answer: "POST /v1/sessions/{id}/key",
+  // Machine-owned API aggregates read by its paired owner, including a phone;
+  // no operator ingest or global machine selection.
+  "api-performance": "GET /v1/api-performance",
   // Archived Sessions (docs/session-archive.md): the swipe's 封存 on a row
   // (`session/List.tsx`) and the sidebar's Archive page (`pages/archive.tsx`).
   // The archive rides the Session's own channel, as `end` does; the list is a

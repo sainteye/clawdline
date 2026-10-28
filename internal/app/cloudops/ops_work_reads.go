@@ -145,6 +145,7 @@ func init() {
 		// memory and each session's share. Machine-wide and parameterless, as
 		// the local route is; a read, since the route writes nothing.
 		op{name: "machine-usage", read: true},
+		op{name: "api-performance", read: true},
 
 		// Whether this machine trails the cloud's latest build
 		// (docs/updates.md): machine-wide and parameterless, as the local

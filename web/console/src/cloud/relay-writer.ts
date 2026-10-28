@@ -303,6 +303,7 @@ export type WriteRoute =
   | { op: "notification-settings-update"; word: Carried<"notification-settings-update"> }
   | { op: "board-command"; word: Carried<"board-command"> }
   | { op: "machine-usage"; word: Carried<"machine-usage"> }
+  | { op: "api-performance"; word: Carried<"api-performance"> }
   | { op: "update"; word: Carried<"update"> }
   | { op: "update-fresh"; word: Carried<"update-fresh"> }
   | { op: "update-apply"; word: Carried<"update-apply"> }
@@ -481,6 +482,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "restorable",
   "archived",
   "machine-usage",
+  "api-performance",
   "update",
   "update-fresh",
   "verification-read",
@@ -566,6 +568,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     // The dashboard behind the session counts: the machine's CPU and memory
     // and each session's share, on the machine's one reply channel.
+    if (head === "api-performance" && segments.length === 1) return { op: "api-performance", word: "api-performance" }
     if (head === "machine" && a === "usage" && segments.length === 2) {
       return { op: "machine-usage", word: "machine-usage" }
     }
@@ -1073,7 +1076,9 @@ export class RelayWriter {
       // filtering it to a code. It is the local route's answer again: a 500
       // whose body says what ran, what failed and the plan read again.
       if (route.op === "project-unify-apply" && isStoppedUnify(body)) return json(500, cleanAnswer(body))
-      return json(200, cleanAnswer(body))
+      const response = json(200, cleanAnswer(body))
+      if (route.op === "api-performance") response.headers.set("Cache-Control", "no-store")
+      return response
     } catch (error) {
       return this.refuse(route, method, path, started, spelling, error as CloudFailureLike)
     }
@@ -1573,6 +1578,23 @@ export class RelayWriter {
           body.since = value
         }
         return client._machineRequest(this.host.machine, route.word, body, "read")
+      }
+      case "api-performance": {
+        const fields: Record<string, unknown> = { hours: "1" }
+        const seen = new Set<string>()
+        for (const [key, value] of url.searchParams) {
+          if (seen.has(key) || key !== "hours" && key !== "until") throw failure("invalid_query", "API history accepts one hours and one until value.", 400)
+          seen.add(key)
+          if (key === "hours") {
+            if (!["1", "6", "24", "168"].includes(value)) throw failure("invalid_query", "API history accepts hours=1, 6, 24 or 168.", 400)
+            fields.hours = value
+          } else {
+            if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) throw failure("invalid_query", "API history needs a Unix millisecond end.", 400)
+            fields.until = Number(value)
+          }
+        }
+        if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
+        return client._machineRequest(this.host.machine, route.word, fields, "read", undefined, { signal: init?.signal ?? undefined })
       }
       case "usage-overview": {
         const body = usageOverviewQuery(url.searchParams)
@@ -2299,7 +2321,9 @@ export class RelayWriter {
       spelling === "flat"
         ? { error: code, detail: message, route: path, ...fields }
         : { error: { code, message, ...fields } }
-    return json(status, body)
+    const response = json(status, body)
+    if (route.op === "api-performance") response.headers.set("Cache-Control", "no-store")
+    return response
   }
 }
 

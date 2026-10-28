@@ -1,24 +1,23 @@
 import { useEffect, useState } from "react"
-import { client, followsRelay } from "../client"
+import { client } from "../client"
 import { nextWord } from "../next-strings"
 import { LOCAL_PERFORMANCE_LIMITS, localQuantile, readLocalPerformance, type Histogram, type LocalPerformance, type LocalPoint } from "./api-performance"
 import "./api-performance.css"
 
 const fmt=(v:number|null|undefined)=>v==null?"—":v.toLocaleString(undefined,{maximumFractionDigits:1})
 const at=(v:number)=>new Date(v).toLocaleString(undefined,{hour12:false})
-export function LocalAPIPerformance() {
+export function LocalAPIPerformance({ get = globalThis.fetch }: { get?: typeof fetch }) {
   const [hours,setHours]=useState<1|6|24|168>(1),[until,setUntil]=useState<number|null>(null),[refresh,setRefresh]=useState(0)
   const [held,setHeld]=useState<{key:string;data:LocalPerformance|null;error:string|null;loading:boolean}>({key:"",data:null,error:null,loading:true})
-  const key=`${hours}|${until??"now"}`,remote=followsRelay()
+  const key=`${hours}|${until??"now"}`
   useEffect(()=>{
-    if(remote)return
     let alive=true,ctl:AbortController|null=null
     const run=()=>{
       if(document.hidden||ctl)return
       const mine=new AbortController();ctl=mine
       setHeld(v=>({key,data:v.key===key?v.data:null,error:v.key===key?v.error:null,loading:true}))
       const q=new URLSearchParams({hours:String(hours)});if(until!==null)q.set("until",String(until))
-      void readLocalPerformance(globalThis.fetch,client.url(`/v1/api-performance?${q}`),mine.signal).then(data=>{if(alive&&!mine.signal.aborted)setHeld({key,data,error:null,loading:false})}).catch(e=>{
+      void readLocalPerformance(get,client.url(`/v1/api-performance?${q}`),mine.signal).then(data=>{if(alive&&!mine.signal.aborted)setHeld({key,data,error:null,loading:false})}).catch(e=>{
         if(alive&&!mine.signal.aborted){const error=e instanceof Error?e.message:"api_performance_unavailable";setHeld(v=>({key,data:error==="api_performance_refused"?null:v.key===key?v.data:null,error,loading:false}))}
       }).finally(()=>{if(ctl===mine)ctl=null})
     }
@@ -28,8 +27,7 @@ export function LocalAPIPerformance() {
     document.addEventListener("visibilitychange",visible)
     window.addEventListener("focus",revalidate);window.addEventListener("storage",revalidate)
     return()=>{alive=false;ctl?.abort();if(timer)clearInterval(timer);document.removeEventListener("visibilitychange",visible);window.removeEventListener("focus",revalidate);window.removeEventListener("storage",revalidate)}
-  },[key,hours,until,refresh,remote])
-  if(remote)return <p className="machine-note" role="status">{nextWord("apiPerformanceDirect")}</p>
+  },[key,hours,until,refresh,get])
   const state=held.key===key?held:{key,data:null,error:null,loading:true},data=state.data
   const q=(h:Histogram,p=95)=>{if(!data)return"—";const value=localQuantile(h,data.histogram_upper_bounds_ms,p);return value===null?(h.count?">60000 ms":"—"):`${fmt(value)} ms`}
   const stateWord=(p:LocalPoint)=>p.state==="missing"?nextWord("apiPerformanceMissing"):p.state==="partial"?nextWord("apiPerformancePartial"):p.state==="no_traffic"?nextWord("apiPerformanceNoTraffic"):""

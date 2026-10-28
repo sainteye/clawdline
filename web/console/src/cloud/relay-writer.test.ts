@@ -2476,6 +2476,7 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/sessions/restorable", "restorable"],
     ["/v1/sessions/archived", "archived"],
     ["/v1/machine/usage", "machine-usage"],
+    ["/v1/api-performance", "api-performance"],
     ["/v1/update", "update"],
     ["/v1/update/fresh", "update-fresh"],
     ["/v1/verifications", "verification-read"],

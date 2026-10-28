@@ -1190,6 +1190,10 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
           </section>
           <section className="sidebar-group" aria-label={nextWord("sidebarManage")}>
             <h2>{nextWord("sidebarManage")}</h2>
+            <button className="sidebar-item" id="nav-machine-monitoring" type="button" aria-haspopup="dialog"
+              onClick={() => { closeMenu(); if (onChooseDashboardMachine) onChooseDashboardMachine(); else setMachine(true) }}>
+              <SidebarIcon name="usage" />{nextWord("machineMonitoringNav")}
+            </button>
             {sidebarPages.filter((p) => p.id === "devices").map(sidebarPage)}
             {cloudPeerAccess && <button className="sidebar-item" id="nav-peer-access" type="button"
               data-page-to="peer-access" aria-current={page === "peer-access" ? "page" : undefined}
@@ -1271,6 +1275,8 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine} key={fleetReaderMachine ?? "local"} machineName={quotaMachineName} offline={!!cloudMachineOffline} />
       <Overlays />
       {machine ? <MachineDashboard
+        key={dashboardSource?.ownerScope ?? "local"}
+        apiFetch={dashboardSource?.apiFetch}
         sessions={dashboardSource?.sessions ?? fleet.snapshot?.sessions ?? []}
         readUsage={dashboardSource?.readUsage}
         machineName={dashboardSource?.name}

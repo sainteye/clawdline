@@ -40,6 +40,22 @@
       "decode": {"reply": "session_action", "fields": {"answer": {"type": "string", "into": "key"}, "expect": {"type": "string", "checks": ["fingerprint"], "into": "expect"}, "typed": {"type": "string", "into": "typed"}}, "route": {"path": "/v1/sessions/{session}/key", "body": {"fields": {"key": {"from": "answer"}, "expect": {"from": "expect"}, "typed": {"from": "typed"}}}}}
     },
     {
+      "op": "api-performance",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/api-performance",
+      "console_seam": "writer",
+      "console_note": "Machine-owned API aggregates read by its paired owner, including a phone; no operator ingest or global machine selection.",
+      "local": {"method": "GET"},
+      "example": {"hours": "1", "request": "req-performance", "session": "__clawdline_machine__", "until": 1793179200000},
+      "shapes": [
+        {"body": ["hours", "request", "session"], "path": "/v1/api-performance", "query": ["hours"]},
+        {"body": ["hours", "request", "session", "until"], "path": "/v1/api-performance", "query": ["hours", "until"]}
+      ],
+      "decode": {"reply": "machine", "fields": {"hours": {"type": "string", "enum": ["1", "6", "24", "168"]}, "until": {"type": "integer", "min": 0}}, "route": {"path": "/v1/api-performance", "query": {"hours": {"from": "hours"}, "until": {"from": "until"}}}}
+    },
+    {
       "op": "archive-session",
       "kind": "command",
       "write_gate": true,

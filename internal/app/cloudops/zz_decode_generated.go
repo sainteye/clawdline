@@ -6,6 +6,7 @@ package cloudops
 var generatedDecoders = map[string]genDecoder{
 	"agent":                              genDecodeAgent,
 	"answer":                             genDecodeAnswer,
+	"api-performance":                    genDecodeApiPerformance,
 	"archive-session":                    genDecodeArchiveSession,
 	"archived-sessions":                  genDecodeArchivedSessions,
 	"board":                              genDecodeBoard,
@@ -266,6 +267,30 @@ func genDecodeAnswer(b body) (plan, LocalRequest, bool) {
 	path := "/v1/sessions/" + segment(genText(b["session"])) + "/key"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Body = b.genFields(map[string]genValue{"expect": genValue{from: "expect"}, "key": genValue{from: "answer"}, "typed": genValue{from: "typed"}})
+	return p, req, true
+}
+
+// genDecodeApiPerformance is the `api-performance` row's decode.
+func genDecodeApiPerformance(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "hours", "request", "session"},
+		[]string{"type", "hours", "request", "session", "until"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("hours", genRule{kind: "string", enum: []string{"1", "6", "24", "168"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("until", genRule{kind: "integer", min: genInt(0)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/api-performance"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"hours": genValue{from: "hours"}, "until": genValue{from: "until"}})
 	return p, req, true
 }
 

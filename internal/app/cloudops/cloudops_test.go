@@ -871,6 +871,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/settings/notifications",
 		body2: `{"push_on_waiting":false}`,
 	}, {
+		word:    "api-performance",
+		body:    map[string]any{"type": "api-performance", "session": machine, "request": "req-performance", "hours": "1"},
+		session: machine, name: "read:req-performance", code: "read_transcript_unavailable", status: 503,
+	}, {
 		// The dashboard behind the session counts: machine-wide and
 		// parameterless, as the local route is.
 		word:    "machine-usage",

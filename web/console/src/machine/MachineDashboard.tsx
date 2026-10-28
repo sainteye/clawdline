@@ -49,14 +49,18 @@ function chinese(): boolean {
  */
 export type DashboardSource = {
   name: string
+  machineID: string
+  ownerScope: string
+  apiFetch: typeof fetch
   sessions: readonly SessionRow[]
   readUsage: () => Promise<MachineUsage>
   onClawdfather: (id: string | null) => void
 }
 
-export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage = readMachineUsage, machineName }: {
+export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage = readMachineUsage, machineName, apiFetch }: {
   sessions: readonly SessionRow[]
   readUsage?: () => Promise<MachineUsage>
+  apiFetch?: typeof fetch
   machineName?: string
   onClose: () => void
   onClawdfather: (id: string | null) => void
@@ -147,7 +151,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
       >
         <div className="machine-head">
           <div className="machine-heading">
-            <h2 id="machine-title">{machineName ? <>{machineName} · </> : null}{catalogWord("literal", "0a0017caec11")}</h2>
+            <h2 id="machine-title">{machineName ? <>{machineName} · </> : null}{nextWord("machineMonitoringNav")}</h2>
             <span className="machine-sub">
               {usage ? (
                 <>
@@ -164,7 +168,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
         </div>
 
         <nav className="machine-tabs" aria-label={nextWord("apiPerformanceTab")}><button type="button" aria-pressed={pane === "resources"} onClick={() => setPane("resources")}>{nextWord("machineResourcesTab")}</button><button type="button" aria-pressed={pane === "api"} onClick={() => setPane("api")}>{nextWord("apiPerformanceTab")}</button></nav>
-        {pane === "api" ? <LocalAPIPerformance /> : <>
+        {pane === "api" ? <LocalAPIPerformance get={apiFetch} /> : <>
         {!usage && error ? (asMachineNeedsUpdate(error)
           ? <NeedsUpdate update={asMachineNeedsUpdate(error)} className="machine-verdict" />
           : <p className="machine-verdict" data-level="warn" lang={failureWordsLanguage(error)}>{failureWords(error, zh)}</p>) : null}

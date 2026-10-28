@@ -13,9 +13,10 @@ import { catalogWord } from "./catalog.ts"
 
 const words = {
   en: {
+    machineMonitoringNav: "Machine monitoring",
     apiPerformanceTab: "API performance",
     machineResourcesTab: "Resources",
-    apiPerformanceLocal: "This machine’s API only. Records stay here and are not uploaded to Cloud administrators.",
+    apiPerformanceLocal: "This machine’s API only. Records stay on the machine; paired devices can read them through the encrypted connection.",
     apiPerformanceDirect: "Connect directly to this machine to view its API history. Cloud operator access cannot read it.",
     apiPerformanceLoading: "Loading API history…",
     apiPerformanceUnavailable: "API history is unavailable. The current state is unknown.",
@@ -2139,9 +2140,10 @@ const words = {
     setupPhoneAndroidOpen: "In Chrome, open {site}, then choose ⋮ → Add to Home screen",
   },
   "zh-Hant": {
+    machineMonitoringNav: "機器監控",
     apiPerformanceTab: "API 效能",
     machineResourcesTab: "資源",
-    apiPerformanceLocal: "僅限這台機器的 API，紀錄留在本機，不上傳給 Cloud 管理者。",
+    apiPerformanceLocal: "僅限這台機器的 API。紀錄留在機器上，已配對裝置可透過加密連線讀取。",
     apiPerformanceDirect: "請直接連線至這台機器查看 API 歷史；Cloud 管理者權限不能讀取。",
     apiPerformanceLoading: "正在讀取 API 歷史…",
     apiPerformanceUnavailable: "無法讀取 API 歷史，目前狀態未知。",
