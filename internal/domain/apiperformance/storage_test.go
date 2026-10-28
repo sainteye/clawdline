@@ -3,6 +3,7 @@ package apiperformance
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,54 @@ func closeRuntime(t *testing.T, r *Runtime) {
 	defer cancel()
 	if err := r.Close(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExistingDatabaseUsesTheDeclaredPageFormat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "api-performance", "history.sqlite")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	seed, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{"PRAGMA page_size=512", "PRAGMA journal_mode=WAL", "CREATE TABLE sentinel(value TEXT)", "INSERT INTO sentinel VALUES ('preserved')"} {
+		if _, err := seed.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, _, _, err := openStorage(dir)
+	if db != nil {
+		_ = db.Close()
+	}
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("foreign page format must be unavailable without conversion: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("refusal changed existing database bytes: %v", err)
+	}
+	seed, err = sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer seed.Close()
+	var value string
+	var pages int64
+	if err := seed.QueryRow("SELECT value FROM sentinel").Scan(&value); err != nil || value != "preserved" {
+		t.Fatalf("existing bytes changed: %q %v", value, err)
+	}
+	if err := seed.QueryRow("PRAGMA page_size").Scan(&pages); err != nil || pages != 512 {
+		t.Fatalf("existing format changed: %d %v", pages, err)
 	}
 }
 

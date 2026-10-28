@@ -8,7 +8,7 @@ import "./performance.css"
 
 const number = (v: number | null | undefined, unit = "") => v == null ? "—" : `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })}${unit}`
 const at = (v: number | null | undefined) => v == null ? "—" : new Date(v).toLocaleString(undefined, { hour12: false })
-const ms = (v: number | null | undefined) => number(v == null ? null : v / 1000, " s")
+const ms = (v: number | null | undefined) => v == null ? "—" : v < 1000 ? number(v, " ms") : number(v / 1000, " s")
 type Held = { reader: typeof fetch; key: string; body: PerformanceBody | null; failed: boolean; loading: boolean }
 
 export function PerformanceScreen({ route, go, apiOrigin, get, fixture, onRefused, locale }: ConnectionHealthProps) {

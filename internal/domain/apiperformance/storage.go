@@ -3,6 +3,7 @@ package apiperformance
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,6 +51,21 @@ func openStorage(dir string, caps ...map[string]int64) (*sql.DB, history, int64,
 	if err != nil {
 		return nil, h, 0, err
 	}
+	info, statErr := f.Stat()
+	if statErr != nil {
+		_ = f.Close()
+		return nil, h, 0, statErr
+	}
+	if info.Size() > 0 {
+		// Inspect the fixed file header before opening SQLite: even opening
+		// a foreign WAL database can checkpoint it on the last close.
+		var header [18]byte
+		_, readErr := f.ReadAt(header[:], 0)
+		if readErr != nil || string(header[:16]) != "SQLite format 3\x00" || binary.BigEndian.Uint16(header[16:]) != 4096 {
+			_ = f.Close()
+			return nil, h, 0, ErrUnavailable
+		}
+	}
 	_ = f.Close()
 	if err = os.Chmod(path, 0600); err != nil {
 		return nil, h, 0, err
@@ -70,8 +86,11 @@ func openStorage(dir string, caps ...map[string]int64) (*sql.DB, history, int64,
 			return fail(err)
 		}
 	}
+	// Existing files keep their page format despite PRAGMA page_size. Refuse
+	// another format rather than weakening the declared journal budget or
+	// rewriting an existing database during background collection.
 	var pageSize int64
-	if err = db.QueryRowContext(ctx, "PRAGMA page_size").Scan(&pageSize); err != nil || pageSize <= 0 || limits["store"] < pageSize {
+	if err = db.QueryRowContext(ctx, "PRAGMA page_size").Scan(&pageSize); err != nil || pageSize != 4096 || limits["store"] < pageSize {
 		return fail(ErrUnavailable)
 	}
 	for _, stmt := range []string{fmt.Sprintf("PRAGMA max_page_count=%d", limits["store"]/pageSize), "CREATE TABLE IF NOT EXISTS snapshot (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, payload BLOB NOT NULL)", "INSERT OR IGNORE INTO snapshot VALUES (1,0,'')"} {

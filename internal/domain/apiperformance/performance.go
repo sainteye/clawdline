@@ -463,8 +463,10 @@ func (r *Runtime) offer(e event) {
 }
 
 func (r *Runtime) noteDrop(at time.Time) {
-	r.dropped.Add(1)
+	// Publish provenance before the count: a snapshot that observes this
+	// increment must also observe its preceding loss marker.
 	r.markLossHour(floor(at.UnixMilli(), 3600000))
+	r.dropped.Add(1)
 }
 
 func (r *Runtime) markLossHour(hour int64) {

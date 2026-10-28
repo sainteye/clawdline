@@ -251,7 +251,10 @@ capacity override can lower each default; it cannot raise one.
 
 DELETE rollback journaling needs an additional database-sized journal plus
 per-page/header overhead: peak store-owned disk is below 129 MiB for the
-64 MiB database cap, rather than a claimed 64 MiB total. There are no segment
+64 MiB database cap, rather than a claimed 64 MiB total. Only the producer's
+4096-byte SQLite page format is accepted. Another existing format is left
+untouched and persistence is unavailable; background collection never converts it.
+There are no segment
 scans or file-deletion retries. Each pruning pass examines at most 61 minute
 and 169 hour buckets; checkpoint replacement reuses database pages. Query
 work is at most 168 hourly points, 128 retained route shapes plus overflow,
