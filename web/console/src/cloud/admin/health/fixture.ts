@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node strip-types tests import the fixture source.
+import { performanceFixture } from "./performance-fixture.ts"
 /* Task-owned example answers for the connection-health fixture harness and the
  * module tests. Every id starts with `fixture`, nothing here came from Cloud or
  * describes a real machine, and it is reachable from the page only in a
@@ -350,6 +352,8 @@ export async function fixtureAnswer(scenario: FixtureScenario, url: string, now:
   if (path === "investigation-destinations") return destinationsAnswer()
   const q = u.searchParams
   const empty = scenario === "empty"
+  if (path === "performance") return json(200, performanceFixture(now, Number(q.get("hours") ?? 1), scenario, Number(q.get("until") ?? now)))
+  if (path === "performance/notifications") return json(200, { available: false, enabled: false })
   if (path === "aggregates") return aggregatesAnswer(scenario, q, now)
   if (path === "probes") return probesAnswer(scenario, now)
   if (path === "overview") {

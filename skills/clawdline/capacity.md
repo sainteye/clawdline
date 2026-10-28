@@ -151,6 +151,33 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.relay_queue` | 64 | `rows` | `refuse` | `diagnostics, notice, cloud_status, log, sender` | — |
 | `cloud.reload_stop_seconds` | 15 | `seconds` | `refuse` | `diagnostics, sender, log` | — |
 | `cloud.roster_short_read_attempts` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `cloud.service_monitor_active_requests` | 512 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_alert_attempts` | 6 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_alert_lease_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_alert_targets` | 32 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_batch_bytes` | 32768 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_batches_per_hour` | 240 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_delete_rows` | 500 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_deployment_rows` | 100 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_fresh_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_host_command_seconds` | 1 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_minute_buckets` | 3 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_minute_retention_seconds` | 86400 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_outbox_rows` | 256 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_query_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_query_points` | 288 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_query_seconds` | 2 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_readers` | 4 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_retention_seconds` | 604800 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_routes` | 32 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_runtime_memory_bytes` | 134217728 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_runtime_tasks` | 32 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_sample_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_source_bytes` | 65536 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_store_bytes` | 100663296 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_upload_attempts` | 3 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_upload_deadline_ms` | 2500 | `milliseconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_wal_bytes` | 16777216 | `bytes` | `refuse` | `diagnostics` | — |
 | `cloud.session_row_asks` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `cloud.session_row_id_bytes` | 256 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.session_row_volatile_seconds` | 15 | `seconds` | `expire` | `diagnostics` | — |
@@ -233,6 +260,11 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.health_ui_request_seconds` | 6 | `seconds` | `expire` | `diagnostics` | — |
 | `console.health_ui_trend_lanes` | 12 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_trend_signals` | 20 | `rows` | `refuse` | `diagnostics` | — |
+| `console.local_performance_body_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics` | — |
+| `console.local_performance_points` | 168 | `rows` | `refuse` | `diagnostics` | — |
+| `console.local_performance_refresh_ms` | 30000 | `milliseconds` | `expire` | `diagnostics` | — |
+| `console.local_performance_routes` | 129 | `rows` | `refuse` | `diagnostics` | — |
+| `console.local_performance_timeout_ms` | 6000 | `milliseconds` | `expire` | `diagnostics` | — |
 | `console.machine_list_poll_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.native_pairing_save_seconds` | 15 | `seconds` | `expire` | `sender, diagnostics` | — |
 | `console.next_messages` | 20 | `rows` | `refuse` | `sender, diagnostics` | — |
@@ -244,6 +276,13 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.pinned_list_read_timeout_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_feature_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
+| `console.service_performance_alerts` | 30 | `rows` | `refuse` | `diagnostics` | — |
+| `console.service_performance_body_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
+| `console.service_performance_deployments` | 100 | `rows` | `refuse` | `diagnostics` | — |
+| `console.service_performance_points` | 1440 | `rows` | `refuse` | `diagnostics` | — |
+| `console.service_performance_refresh_ms` | 30000 | `milliseconds` | `expire` | `diagnostics` | — |
+| `console.service_performance_routes` | 32 | `rows` | `refuse` | `diagnostics` | — |
+| `console.service_performance_timeout_ms` | 6000 | `milliseconds` | `expire` | `diagnostics` | — |
 | `console.session_notes_safety_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_gap_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_recovery_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |

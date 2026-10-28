@@ -2,12 +2,13 @@ package http
 
 import (
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"strings"
 )
 
 // consoleCapacityMeasures measures every row of the register's "console" area
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
-	return map[string]func() capacity.Reading{
+	out := map[string]func() capacity.Reading{
 		"console.community_share_fetch_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "Cloud edge preview deadline; this daemon does not observe hosted requests"}
 		},
@@ -255,4 +256,10 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
 		},
 	}
+	for name, measure := range performanceCapacityMeasures() {
+		if strings.HasPrefix(name, "console.") {
+			out[name] = measure
+		}
+	}
+	return out
 }

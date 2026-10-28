@@ -30,3 +30,12 @@ test("an already open exact Admin detail is focused without opening a duplicate"
  const w=worker([{url,focus:async()=>{focused++}}]);await w.fire("notificationclick",{notification:{data:{url},close(){}}})
  assert.equal(focused,1);assert.equal(w.opened.length,0)
 })
+test("monitoring notifications retain only the exact same-origin performance destination",async()=>{
+ const url="https://app.clawdline.com/admin/health/services?view=performance",w=worker()
+ await w.fire("push",{data:{json:()=>({notification:{navigate:url}})}})
+ assert.equal(w.shown[0].data.url,url)
+ for(const denied of [url+"&token=secret",url+"#private","https://evil.test/admin/health/services?view=performance"]){
+  const other=worker();await other.fire("push",{data:{json:()=>({notification:{navigate:denied}})}})
+  assert.equal(other.shown[0].data.url,"https://app.clawdline.com/help/admin")
+ }
+})

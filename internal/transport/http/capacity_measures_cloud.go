@@ -2,6 +2,7 @@ package http
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
@@ -251,5 +252,11 @@ func (s *Server) cloudCapacityMeasures() map[string]func() capacity.Reading {
 	for name, m := range s.connectionHealthCapacityMeasures() {
 		out[name] = m
 	}
+	for name, measure := range performanceCapacityMeasures() {
+		if strings.HasPrefix(name, "cloud.") {
+			out[name] = measure
+		}
+	}
+
 	return out
 }

@@ -1,0 +1,21 @@
+.machine-tabs,.lap-controls { display:flex;flex-wrap:wrap;gap:8px;margin:12px 0; }
+.machine-tabs button,.lap button { min-height:44px;padding:8px 14px;border:1px solid var(--line,#37373e);border-radius:7px;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:12px; }
+.machine-tabs button[aria-pressed=true],.lap button[aria-pressed=true] { color:var(--accent,#db9b6f);background:color-mix(in srgb,var(--accent,#db9b6f) 10%,transparent); }
+.lap button:disabled { opacity:.4;cursor:default; }
+.lap { min-width:0; }
+.lap h3 { font-size:14px;margin:24px 0 12px; }
+.lap-cards { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px; }
+.lap-cards > div { border:1px solid var(--line,#37373e);border-radius:8px;padding:16px;min-width:0; }
+.lap-cards span { display:block;font-size:12px;color:var(--muted,#aaa);line-height:1.6; }
+.lap-cards strong { display:block;font-size:22px;margin-top:12px; }
+.lap-routes { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+.lap-routes article { border:1px solid var(--line,#37373e);border-radius:7px;padding:14px;min-width:0; }
+.lap code { overflow-wrap:anywhere;white-space:normal;font-size:12px; }
+.lap dl { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;font-size:12px; }
+.lap dd { margin:0;text-align:right;overflow-wrap:anywhere; }
+.lap dt { color:var(--muted,#aaa); }
+.lap-warning { color:#d5a16d;font-size:13px;line-height:1.7; }
+.lap details { margin-top:18px; }.lap summary { min-height:44px;display:flex;align-items:center;cursor:pointer;font-size:13px; }.lap summary::before { content:'▸';margin-right:8px; }.lap details[open]>summary::before {content:'▾';}
+.lap-values { list-style:none;padding:0;max-height:340px;overflow:auto; }.lap-values li { display:flex;flex-wrap:wrap;gap:8px 18px;padding:12px 0;border-bottom:1px solid var(--line,#37373e);font-size:12px; }.lap-values small { width:100%;color:var(--muted,#aaa); }
+.lap-chart svg { width:100%;display:block;margin:24px 0;height:auto; }.lap-chart text { fill:currentColor;font-size:15px;opacity:.6; }
+@media(max-width:700px){.lap-cards{grid-template-columns:repeat(2,minmax(0,1fr));}.lap-routes{grid-template-columns:1fr;}.lap-chart text{font-size:24px;}}

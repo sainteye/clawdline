@@ -1,3 +1,4 @@
+import { LocalAPIPerformance } from "./LocalAPIPerformance.js"
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
 import { focusModalContainer } from "../modal-focus.js"
@@ -61,6 +62,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
   onClawdfather: (id: string | null) => void
 }) {
   const zh = chinese()
+  const [pane, setPane] = useState<"resources" | "api">("resources")
   const [usage, setUsage] = useState<MachineUsage | null>(null)
   const [error, setError] = useState<unknown>(null)
   const [sort, setSort] = useState<Sort>("memory")
@@ -71,6 +73,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
   const dialogRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (pane !== "resources") return
     let alive = true
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = async () => {
@@ -98,7 +101,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
       alive = false
       if (timer) clearTimeout(timer)
     }
-  }, [readUsage])
+  }, [readUsage, pane])
 
   useEffect(() => {
     focusModalContainer(dialogRef.current)
@@ -160,6 +163,8 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
           </button>
         </div>
 
+        <nav className="machine-tabs" aria-label={nextWord("apiPerformanceTab")}><button type="button" aria-pressed={pane === "resources"} onClick={() => setPane("resources")}>{nextWord("machineResourcesTab")}</button><button type="button" aria-pressed={pane === "api"} onClick={() => setPane("api")}>{nextWord("apiPerformanceTab")}</button></nav>
+        {pane === "api" ? <LocalAPIPerformance /> : <>
         {!usage && error ? (asMachineNeedsUpdate(error)
           ? <NeedsUpdate update={asMachineNeedsUpdate(error)} className="machine-verdict" />
           : <p className="machine-verdict" data-level="warn" lang={failureWordsLanguage(error)}>{failureWords(error, zh)}</p>) : null}
@@ -331,6 +336,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
             </p>
           </>
         ) : null}
+        </>}
       </div>
     </div>
   )

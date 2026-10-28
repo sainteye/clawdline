@@ -392,3 +392,5 @@ execution. No additional timer, provider request, transcript subscription, or pe
 read is introduced. Count changes update the existing status row without changing the display
 presentation generation or rereading titles. Tests cover running-to-finished, zero, partial,
 unknown, stale and older-machine readings.
+
+For operator-only service resources and owner-local API counts/latency, see [service performance monitoring](service-performance-monitoring.md). The two records and permissions are separate.

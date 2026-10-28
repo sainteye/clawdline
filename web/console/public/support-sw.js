@@ -4,6 +4,8 @@ self.addEventListener("activate", function (event) { event.waitUntil(self.client
 function supportDestination(raw) {
     try {
         var url = new URL(raw, self.location.origin);
+        if (url.origin === self.location.origin && !url.username && !url.password && !url.hash &&
+            url.pathname === "/admin/health/services" && url.search === "?view=performance") return url.href;
         if (url.origin === self.location.origin && !url.username && !url.password && !url.search && !url.hash &&
             (/^\/help\/admin\/questions\/sq_[a-f0-9]{40}$/.test(url.pathname) || url.pathname === "/help/admin")) return url.href;
     } catch (e) {}

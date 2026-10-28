@@ -34,7 +34,7 @@ export type HealthScreen =
   | ({ screen: "M01" } & TrendView)
   | { screen: "M02"; machine: string | null }
   /** The Cloud-side events filter; absent is every source. */
-  | ({ screen: "M03"; source?: SourceFilter | null; sourceId?: string | null } & TrendView)
+  | ({ screen: "M03"; source?: SourceFilter | null; sourceId?: string | null; performance?: boolean; hours?: 1 | 6 | 24 | 168 } & TrendView)
   | { screen: "M04"; trace: string }
   /** `revision` absent or null is the latest; a number is that immutable revision. */
   | { screen: "M05"; incident: string | null; revision?: number | null }
@@ -105,6 +105,10 @@ function screenQuery(screen: HealthScreen, search: string): HealthScreen {
     return out
   }
   if (screen.screen === "M03") {
+    if (q.get("view") === "performance") {
+      const hours = Number(q.get("hours"))
+      return { screen: "M03", performance: true, hours: ([1,6,24,168].includes(hours) ? hours : 1) as 1 | 6 | 24 | 168 }
+    }
     const source = q.get("source")
     const sourceId = q.get("source_id")
     const out: HealthScreen = { screen: "M03" }
@@ -151,6 +155,7 @@ export function healthHref(screen: HealthScreen, scope: HealthScope): string {
     case "evidence": path = screen.trace === null ? `${HEALTH_BASE}/evidence` : `${HEALTH_BASE}/evidence/${e(screen.trace)}`; break
   }
   const q = new URLSearchParams()
+  if (screen.screen === "M03" && screen.performance) { q.set("view", "performance"); q.set("hours", String(screen.hours ?? 1)) }
   if (isProbeView(screen)) {
     // The Cloud's probe read honours no window, pin or account; only the pause is kept.
     q.set("view", "probes")
@@ -182,7 +187,7 @@ export function routeKey(r: HealthRoute): string {
   const trend = r.screen === "M01" || r.screen === "M03" || r.screen === "M06" ? `${r.trend ?? ""}/${r.trend ? (r.trendMachine ?? "") : ""}` : ""
   const id = r.screen === "M06" && r.probes ? "probes" : r.screen === "M01" || r.screen === "M06" ? trend
     : r.screen === "M02" ? r.machine
-    : r.screen === "M03" ? `${r.source ?? ""}/${r.sourceId ?? ""}/${trend}`
+    : r.screen === "M03" ? `${r.performance ? "performance" : ""}/${r.source ?? ""}/${r.sourceId ?? ""}/${trend}`
     : r.screen === "M04" ? r.trace
     : r.screen === "M05" ? `${r.incident ?? ""}/${r.revision ?? ""}`
     : r.screen === "evidence" ? r.trace : null

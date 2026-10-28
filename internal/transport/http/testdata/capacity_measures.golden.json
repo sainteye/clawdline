@@ -717,6 +717,141 @@
     "Note": true
   },
   {
+    "Name": "cloud.service_monitor_active_requests",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_alert_attempts",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_alert_lease_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_alert_targets",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_batch_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_batches_per_hour",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_delete_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_deployment_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_fresh_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_host_command_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_minute_buckets",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_minute_retention_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_outbox_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_query_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_query_points",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_query_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_readers",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_retention_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_routes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_runtime_memory_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_runtime_tasks",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_sample_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_source_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_store_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_upload_attempts",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_upload_deadline_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.service_monitor_wal_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cloud.session_row_asks",
     "Known": true,
     "Note": true
@@ -1127,6 +1262,31 @@
     "Note": true
   },
   {
+    "Name": "console.local_performance_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.local_performance_points",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.local_performance_refresh_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.local_performance_routes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.local_performance_timeout_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.machine_list_poll_seconds",
     "Known": true,
     "Note": true
@@ -1178,6 +1338,41 @@
   },
   {
     "Name": "console.relay_transcript_expect_reask_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.service_performance_alerts",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.service_performance_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.service_performance_deployments",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.service_performance_points",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.service_performance_refresh_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.service_performance_routes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.service_performance_timeout_ms",
     "Known": true,
     "Note": true
   },

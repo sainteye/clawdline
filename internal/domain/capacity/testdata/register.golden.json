@@ -2913,6 +2913,465 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.service_monitor_active_requests",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_alert_attempts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 6,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_alert_lease_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 30,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_alert_targets",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_batch_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 32768,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_batches_per_hour",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 240,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_delete_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 500,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_deployment_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 100,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_fresh_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 90,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_host_command_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_minute_buckets",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_minute_retention_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_outbox_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_query_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_query_points",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 288,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_query_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_readers",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_retention_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 604800,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_routes",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_runtime_memory_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 134217728,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_runtime_tasks",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_sample_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 30,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_source_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_store_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 100663296,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_upload_attempts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_upload_deadline_ms",
+    "Class": "cache",
+    "Unit": "milliseconds",
+    "Limit": 2500,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.service_monitor_wal_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16777216,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "cloud.session_row_asks",
     "Class": "buffer",
     "Unit": "rows",
@@ -4444,6 +4903,91 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.local_performance_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2097152,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.local_performance_points",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 168,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.local_performance_refresh_ms",
+    "Class": "cache",
+    "Unit": "milliseconds",
+    "Limit": 30000,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.local_performance_routes",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 129,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.local_performance_timeout_ms",
+    "Class": "cache",
+    "Unit": "milliseconds",
+    "Limit": 6000,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.machine_list_poll_seconds",
     "Class": "cache",
     "Unit": "seconds",
@@ -4620,6 +5164,125 @@
     "Class": "cache",
     "Unit": "seconds",
     "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.service_performance_alerts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 30,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.service_performance_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.service_performance_deployments",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 100,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.service_performance_points",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1440,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.service_performance_refresh_ms",
+    "Class": "cache",
+    "Unit": "milliseconds",
+    "Limit": 30000,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.service_performance_routes",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.service_performance_timeout_ms",
+    "Class": "cache",
+    "Unit": "milliseconds",
+    "Limit": 6000,
     "WarnAt": 0,
     "AtLimit": "expire",
     "Deviation": "",

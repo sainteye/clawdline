@@ -4,7 +4,7 @@ package capacity
 // rows are declared in register_connection_health.go, and the
 // cloud.health_store_* rows in register_healthjournal.go.
 func cloudBounds() []Entry {
-	return append(append(append(append(connectionHealthBounds(), healthJournalBounds()...), healthUploadBounds()...), healthSealedBounds()...), append(healthInvestigationBounds(), []Entry{
+	return append(append(append(append(append(connectionHealthBounds(), cloudServiceMonitoringBounds()...), healthJournalBounds()...), healthUploadBounds()...), healthSealedBounds()...), append(healthInvestigationBounds(), []Entry{
 		{Name: "cloud.persona_display_cache", Class: Cache, Unit: Rows, Limit: 1, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
 		{Name: "cloud.read_plaintext_bytes", Class: Buffer, Unit: Bytes, Limit: 8 << 20, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/app/cloudops.ReadPlaintextBytesLimit"}},
 		{
