@@ -9,7 +9,7 @@ import { DemoPromotions } from "./DemoPromotions.js"
 import { demoOverview } from "./demo.js"
 import { mayLeaveCode } from "./navigation-guard.js"
 import { loadOverview, type Overview } from "./api.js"
-import { ADMIN_ROUTES, adminPath, adminRoute, adminWords, bootAdminCatalog, type AdminRoute, type Say } from "./words.js"
+import { ADMIN_NAV_ROUTES, adminNavPath, adminPath, adminRoute, adminWords, bootAdminCatalog, type AdminNavRoute, type AdminRoute, type Say } from "./words.js"
 // Loaded on first visit, so the other operations pages do not carry its screens and copy.
 const ConnectionHealth = lazy(() => import("./health/ConnectionHealth.js").then((m) => ({ default: m.ConnectionHealth })))
 import { healthRoute } from "./health/route.js"
@@ -190,7 +190,8 @@ export function AdminGate({ declared }: { declared: string }) {
     else void start()
   }, [start])
   const healthFetch = useMemo<typeof fetch>(() => (url, init) => fetch(url, init), [])
-  const pageTitle = say(`nav_${route}`)
+  const navigationRoute = health?.screen === "M03" && health.performance ? "monitoring" : route
+  const pageTitle = say(`nav_${navigationRoute}`)
 
   useEffect(() => {
     document.title = navigable ? say("docTitlePage", { page: pageTitle }) : say("docTitle")
@@ -219,7 +220,7 @@ export function AdminGate({ declared }: { declared: string }) {
 
   if (route === "health") {
     return (
-      <Shell route={route} go={go} say={say} consoleHref={consoleHref} stampText={null} refreshing={false} onRefresh={null}>
+      <Shell route={navigationRoute} go={go} say={say} consoleHref={consoleHref} stampText={null} refreshing={false} onRefresh={null}>
         <Suspense fallback={<Skeleton label={say("loading")} />}>
         {health === null ? (
           <Notice title={say("failedTitle")} body={say("healthUnknownAddress")}>
@@ -357,7 +358,7 @@ function PageHead({ route, say, moved }: { route: AdminRoute; say: Say; moved: n
 }
 
 function Shell({ route, go, say, consoleHref, stampText, refreshing, onRefresh, children }: {
-  route: AdminRoute
+  route: AdminNavRoute
   go: Go
   say: Say
   consoleHref: string
@@ -453,10 +454,10 @@ function Shell({ route, go, say, consoleHref, stampText, refreshing, onRefresh, 
         </div>
         <nav className="adm-nav" aria-label={say("navLabel")}>
           <ul>
-            {ADMIN_ROUTES.map((r) => (
+            {ADMIN_NAV_ROUTES.map((r) => (
               <li key={r}>
-                <RouteLink href={adminPath(r)} go={follow} className={r === route ? "adm-nav-link adm-nav-on" : "adm-nav-link"} current={r === route}>
-                  <span className={"adm-nav-icon adm-nav-icon-" + r} aria-hidden="true" />
+                <RouteLink href={adminNavPath(r)} go={follow} className={r === route ? "adm-nav-link adm-nav-on" : "adm-nav-link"} current={r === route}>
+                  <span className={"adm-nav-icon adm-nav-icon-" + (r === "monitoring" ? "usage" : r)} aria-hidden="true" />
                   <span className="adm-nav-text">
                     <span className="adm-nav-label">{say(`nav_${r}`)}</span>
                     <span className="adm-nav-hint">{say(`hint_${r}`)}</span>

@@ -3,10 +3,17 @@
 Two separate records serve two separate permissions. The operator view at
 `/admin/health/services?view=performance` reads stored Cloud service aggregates through
 `GET /su/v1/health/performance`. The machine dashboard's **API performance** tab reads
-`GET /v1/api-performance` from the directly paired daemon. Owner records stay on that machine;
+`GET /v1/api-performance` from the selected paired daemon, locally or through its encrypted owner channel. Owner records stay on that machine;
 they never enter the service monitor, connection-health upload or operator administration.
 See [the local producer and storage contract](local-api-performance.md) for its permission and
-histogram details. Cloud-carried local reads are currently unsupported and say so.
+histogram details. In the general console, **Manage → Machine monitoring** opens
+machine selection followed by **Resources / API performance**. The selected
+machine and paired account/device scope own the panel; changing them unmounts
+its held observations. A machine without the read declares it unsupported.
+
+The Admin sidebar has a separate **Service monitoring** destination, opening
+the service performance view directly. It is distinct from **Connection health**
+and does not grant access to owner machine records.
 
 The existing M01–M06 stage, incident, trend and monitoring views remain available. The service
 performance subview does not replace the connection-health lifecycle or owner-sealed evidence.

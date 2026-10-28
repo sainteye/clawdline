@@ -16,6 +16,12 @@ export function bootAdminCatalog(config: StringsConfig | null, baseURI: string, 
 /** The operations pages, in the order the navigation lists them. */
 export const ADMIN_ROUTES = ["overview", "accounts", "promotions", "usage", "survey", "health"] as const
 export type AdminRoute = (typeof ADMIN_ROUTES)[number]
+export const ADMIN_NAV_ROUTES = ["overview", "accounts", "promotions", "usage", "survey", "monitoring", "health"] as const
+export type AdminNavRoute = (typeof ADMIN_NAV_ROUTES)[number]
+
+export function adminNavPath(route: AdminNavRoute): string {
+  return route === "monitoring" ? "/admin/health/services?view=performance" : adminPath(route)
+}
 
 const BASE = "/admin"
 
@@ -39,6 +45,8 @@ export function adminRoute(pathname: string): AdminRoute | null {
 }
 
 const en = {
+  nav_monitoring: "Service monitoring",
+  hint_monitoring: "Host resources and API latency",
   nav_health: "Connection health",
   hint_health: "Stored evidence from Cloud",
   lead_health: "What Cloud has stored about connections, and how much of it can be seen.",
@@ -377,6 +385,8 @@ const en = {
 export type AdminWord = keyof typeof en
 
 const zhTW: Record<AdminWord, string> = {
+  nav_monitoring: "服務監控",
+  hint_monitoring: "主機資源與 API 延遲",
   nav_health: "連線健康",
   hint_health: "Cloud 已保存的證據",
   lead_health: "Cloud 保存了哪些連線證據，以及看得到多少。",

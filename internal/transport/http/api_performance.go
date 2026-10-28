@@ -48,8 +48,8 @@ func (s *Server) apiPerformanceRefusal(w http.ResponseWriter, status int, code, 
 
 func (s *Server) apiPerformanceRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	if cloud.ViaCloud(r.Context()) {
-		s.apiPerformanceRefusal(w, 403, "api_performance_owner_local", "API performance is available through a direct paired connection to this machine only.", "API 效能資料僅供直接連線至這台機器的配對裝置讀取。")
+	if cloud.ViaCloud(r.Context()) && cloud.CloudViewerOf(r.Context()) == "" {
+		s.apiPerformanceRefusal(w, 403, "api_performance_owner_local", "API performance requires a paired reader of this machine.", "API 效能資料僅供這台機器已配對且可讀取的裝置查看。")
 		return
 	}
 	a := accessOf(r)

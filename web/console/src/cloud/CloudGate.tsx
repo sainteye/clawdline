@@ -465,11 +465,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const [dashboardMachine, setDashboardMachine] = useState<CloudMachine | null>(null)
   const switchOpener = useRef<HTMLElement | null>(null)
   const dashboardClosed = useCallback(() => setDashboardMachine(null), [])
-  const readDashboardUsage = useMemo(() => {
-    if (!dashboardMachine) return undefined
-    const fetchUsage = dashboardFetch(dashboardMachine.id, () => client.current)
-    return () => readMachineUsage(fetchUsage)
-  }, [dashboardMachine?.id])
+  const dashboardRead = useMemo(() => dashboardMachine
+    ? dashboardFetch(dashboardMachine.id, () => client.current) : undefined, [dashboardMachine?.id])
+  const readDashboardUsage = useMemo(() => dashboardRead
+    ? () => readMachineUsage(dashboardRead) : undefined, [dashboardRead])
   const switcherRef = useRef<HTMLDivElement>(null)
   const switchButtonRef = useRef<HTMLButtonElement>(null)
   const closeSwitcher = useCallback(() => {
@@ -2025,6 +2024,9 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             dashboardSource={dashboardMachine && readDashboardUsage ? {
               name: dashboardMachine.name || dashboardMachine.label || dashboardMachine.id,
               readUsage: readDashboardUsage,
+              machineID: dashboardMachine.id,
+              ownerScope: `${who.account}|${who.device}|${dashboardMachine.id}`,
+              apiFetch: dashboardRead!,
               sessions: [...fleetPresentations.current.values()].filter((row) =>
                 row.destination.machineID === dashboardMachine.id && row.projection?.freshness === "current")
                 .map((row) => ({ ...row.status, id: row.destination.sessionID, label: row.title,

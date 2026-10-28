@@ -510,6 +510,18 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 		return b.publish(cmd, plan, Refusal{Status: 400, Code: "unknown_command",
 			Message: "This machine does not know that Cloud command.", fixedCopy: true}, nil)
 	}
+	if o.name == "api-performance" {
+		// Machine history stays on the machine and crosses only to its verified
+		// paired reader. Recheck key, capability and revocation after the read.
+		if refusal, denied := b.authorizeTranscript(ctx, cmd.Sender, cmd.VerifiedKey); denied {
+			return b.publish(cmd, plan, refusal, nil)
+		}
+		answer := b.route(ctx, cmd, plan, o)
+		if refusal, denied := b.authorizeTranscript(ctx, cmd.Sender, cmd.VerifiedKey); denied {
+			return b.publish(cmd, plan, refusal, nil)
+		}
+		return answer
+	}
 	return b.route(ctx, cmd, plan, o)
 }
 

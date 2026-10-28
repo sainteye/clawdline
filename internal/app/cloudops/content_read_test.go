@@ -420,3 +420,57 @@ func TestTheRetiredListInfoReadIsMalformed(t *testing.T) {
 		t.Fatalf("a list info read: answer=%+v routes=%+v", a, r.seen)
 	}
 }
+
+func TestMachinePerformanceReadKeepsPairedAuthorityAndWindow(t *testing.T) {
+	var route LocalRequest
+	b := open(localRouterFunc(func(_ context.Context, r LocalRequest) (LocalResponse, error) {
+		route = r
+		return LocalResponse{Status: 200, ContentType: "application/json", Body: []byte(`{"source":"owner_local"}`)}, nil
+	}))
+	b.AllowCommands = func() bool { return false }
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority { return contentReadAuthority(true) }
+	cmd := request(t, ClassCtl, map[string]any{"type": "api-performance", "session": MachineReplySession, "request": "req-performance", "hours": "24", "until": 1793179200000})
+	got := b.Handle(context.Background(), cmd)
+	if !got.OK() || route.Path != "/v1/api-performance" || route.Method != "GET" || route.Query["hours"] != "24" || route.Query["until"] != "1793179200000" || route.Viewer == "" {
+		t.Fatalf("answer=%+v route=%+v", got, route)
+	}
+	for _, body := range []map[string]any{
+		{"type": "api-performance", "session": pane, "request": "req", "hours": "1"},
+		{"type": "api-performance", "session": MachineReplySession, "request": "req", "hours": "2"},
+		{"type": "api-performance", "session": MachineReplySession, "request": "req", "hours": "1", "account": "other"},
+		{"type": "api-performance", "session": MachineReplySession, "request": "req", "hours": "1", "until": -1},
+	} {
+		answer := b.Handle(context.Background(), request(t, ClassCtl, body))
+		if answer.Code != "malformed_read" {
+			t.Fatalf("accepted malformed owner read: %v %+v", body, answer)
+		}
+	}
+}
+
+func TestMachinePerformanceReadRefusesMissingAndRevokedPairing(t *testing.T) {
+	for _, phase := range []string{"missing", "before", "during"} {
+		t.Run(phase, func(t *testing.T) {
+			routed := false
+			b := open(localRouterFunc(func(context.Context, LocalRequest) (LocalResponse, error) {
+				routed = true
+				return LocalResponse{Status: 200, ContentType: "application/json", Body: []byte(`{"private_metric":77}`)}, nil
+			}))
+			if phase != "missing" {
+				b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+					a := contentReadAuthority(true)
+					if phase == "before" || routed {
+						a.RosterAllowsSender = false
+					}
+					return a
+				}
+			}
+			answer := b.Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "api-performance", "session": MachineReplySession, "request": "req", "hours": "1"}))
+			if answer.OK() || strings.Contains(string(answer.Payload), "private_metric") {
+				t.Fatalf("pairing loss leaked history: %+v", answer)
+			}
+			if phase != "during" && routed {
+				t.Fatal("unpaired request reached local history")
+			}
+		})
+	}
+}

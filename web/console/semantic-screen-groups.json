@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "englishContentKeys": 9785,
+  "englishContentKeys": 9788,
   "riskKeys": 4335,
-  "nonRiskCount": 5450,
+  "nonRiskCount": 5453,
   "groups": [
     {
       "name": "admin / other",
-      "count": 223,
+      "count": 225,
       "sources": [
         "src/cloud/admin/words.ts"
       ],
@@ -110,6 +110,7 @@
         "admin.generated",
         "admin.hint_accounts",
         "admin.hint_health",
+        "admin.hint_monitoring",
         "admin.hint_overview",
         "admin.hint_promotions",
         "admin.hint_survey",
@@ -151,6 +152,7 @@
         "admin.navLabel",
         "admin.nav_accounts",
         "admin.nav_health",
+        "admin.nav_monitoring",
         "admin.nav_overview",
         "admin.nav_promotions",
         "admin.nav_survey",
@@ -3478,7 +3480,7 @@
     },
     {
       "name": "next / other",
-      "count": 495,
+      "count": 496,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3571,6 +3573,7 @@
         "next.infoReasoningEffort",
         "next.infoResetsInMinutes",
         "next.machineDiskFree",
+        "next.machineMonitoringNav",
         "next.machineNeedsUpdateLink",
         "next.machineNeedsUpdateShort",
         "next.machineNeedsUpdateVersion",

@@ -3,7 +3,8 @@
 API level 31 adds `GET /v1/api-performance`. It is a separate owner-local
 record from operator Cloud performance monitoring and from the existing
 cumulative `/v1/diagnostics.routes` table. It never enters connection-health
-upload, operator ingest, a notification, or a Cloud response.
+upload, operator ingest or a notification. Paired owners can read a bounded
+response through their existing end-to-end encrypted machine connection.
 
 The outer HTTP handler observes every request, including authentication
 refusals, redirects, unmatched routes and static resources. It reuses
@@ -15,17 +16,21 @@ An observation records completion wall time, not time to first header.
 ## Permission and request contract
 
 Use a direct connection to the selected daemon, authenticated with its local
-token or an ordinary locally paired device's `read` credential. Read-only
+token or an ordinary locally paired device's `read` credential. A paired phone
+can instead ask that selected machine for the `api-performance` read over its
+existing encrypted connection, including through the relay. Read-only
 devices do not need `send` or admin permission. Anonymous callers, unrelated
 credentials, orchestrator-only credentials and task secrets cannot read it.
 The existing diagnostics permission is unchanged.
 
-All `ViaCloud` requests are explicitly refused, including an owner request
-carried in process with the daemon's local token. Operator admin authority
-does not grant this permission. A Cloud UI must currently show the direct
-connection requirement instead of silently forwarding this request or reading
-raw diagnostics as a fallback. Encrypted remote owner routing is not enabled
-by this endpoint.
+An in-process Cloud request must name its verified paired viewer. The Cloud
+bridge checks the viewer's current key, roster, pairing and `read_transcript`
+capability before and after collecting the response. Read-only devices do not
+need the command switch. Revocation during a read replaces the answer with a
+refusal before sealing. A Cloud request without a verified viewer is refused,
+even when the router holds the daemon's local token. Operator admin authority
+alone cannot create a pairing or decrypt a machine response. Raw diagnostics
+are never used as a fallback.
 
 ```
 GET /v1/api-performance?hours=1|6|24|168&until=<Unix milliseconds>
@@ -59,7 +64,7 @@ no-store on unauthenticated refusals for this path. Reader admission, worker
 availability, query cancellation/deadline and response size failures return
 503 `api_performance_unavailable`; the caller may retry later. A stopped
 monitor is unavailable, not an empty healthy response. The outer gate uses
-its existing 401/403 authentication envelope. Owner-local Cloud denial is
+its existing 401/403 authentication envelope. Unattributed Cloud denial is
 403 `api_performance_owner_local`.
 
 ## JSON contract and interpretation
@@ -281,9 +286,8 @@ go run ./tools/contract-gen
 
 The route inventory also needs `api/v1/agent-routes.json`; contract-gen updates
 both route guides and both generated capacity guides. This is discoverability,
-not broader Agent authority. UI, encrypted remote owner routing, operator Cloud
-collectors, deployment, installation and release acceptance belong to the
-integrating feature, not this producer.
+not broader Agent authority. UI, operator Cloud collectors, deployment, installation and release acceptance
+belong to the integrating feature, not this producer.
 
 ## Integrating root measurements (2026-10-28)
 
