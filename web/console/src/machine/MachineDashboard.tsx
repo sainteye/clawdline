@@ -152,7 +152,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
         <div className="machine-head">
           <div className="machine-heading">
             <h2 id="machine-title">{machineName ? <>{machineName} · </> : null}{nextWord("machineMonitoringNav")}</h2>
-            <span className="machine-sub">
+            {pane === "resources" && <span className="machine-sub">
               {usage ? (
                 <>
                   {catalogFormat("template", "7e8b4dfff169", [usage.cores, bytes(usage.memory_total_bytes)])}
@@ -160,7 +160,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
                   {stale ? (catalogWord("literal", "7361fddb7d5f")) : catalogWord("literal", "371d49dd8b8f")}
                 </>
               ) : error ? null : catalogWord("literal", "f8533719e17a")}
-            </span>
+            </span>}
           </div>
           <button className="machine-close" type="button" ref={closeRef} onClick={onClose} aria-label={catalogWord("literal", "82860b805ea6")}>
             ×

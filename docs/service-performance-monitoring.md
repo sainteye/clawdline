@@ -87,5 +87,23 @@ The monitor uses existing infrastructure and no new paid telemetry API. Service 
 the API rollout, relay (when changed), hosted console, local dev installation and public Release
 have separate receipts. Source and local test success do not prove production enablement.
 
-Implementation/acceptance is in progress. The initial shared-screen preview is development
-fixture data; it does not establish deployment or production performance.
+## Acceptance and limits
+
+The service producer, monitor and Admin reader were deployed and exercised against
+production observations. Hosted acceptance checked the served source stamp,
+Cloud branch, production declaration and catalogs independently of the build.
+The separate owner reader was exercised from a paired production Cloud browser
+against updated macOS and Linux daemons, including machine selection, counts,
+latency, slow routes, older windows and missing startup coverage. Both updater
+receipts were healthy, existing Sessions remained present, and local anonymous
+history reads were refused. The phone layouts were checked at 320 and 430 CSS
+pixels and the desktop at 1440, with English and Taiwan Traditional Chinese.
+
+These are responsive-browser checks, not a claim to have operated a physical
+phone. The initial shared-screen preview used development fixtures; later
+production captures and runtime receipts supersede that preview. A newly
+started collector cannot establish seven days of continuous coverage, and
+observations around a deployment do not establish an optimization's effect.
+The owner read uses the existing encrypted connection; its relay authorization
+and revocation behavior also have failure-injection tests. No public release
+is implied by the hosted deployment or development installations.
