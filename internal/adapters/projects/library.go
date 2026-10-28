@@ -59,6 +59,9 @@ func backgroundPath(path, home string, lstat func(string) (os.FileInfo, error)) 
 	// rather than following arbitrary symlinks while checking path components.
 	physical := func(path string) string {
 		path = filepath.Clean(path)
+		if runtime.GOOS != "darwin" {
+			return path
+		}
 		for _, name := range []string{"var", "tmp", "etc"} {
 			root := string(filepath.Separator) + name
 			if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {

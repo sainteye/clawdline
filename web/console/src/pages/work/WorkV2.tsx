@@ -473,7 +473,8 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {desktop ? <DesktopBoard items={items} decisions={decisions} visibility={desktopVisibility}
         loading={loading} loadingLabel={L.strings.webLoading} proposalCount={visibleProposals.length}
-        proposals={<ProposalQueue column proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
+        proposals={<ProposalQueue column proposals={visibleProposals} items={items} places={places} busy={busy} run={run}
+          onAccepted={() => setDesktopVisibility((current) => ({ ...current, plans: true }))} />}
         renderCard={(item) => <CompactWorkCard key={item.id} item={item} sessions={sessions} nowSeconds={nowSeconds}
           decisions={decisionsForWorkItem(decisions, item.id)} onOpen={() => openItem(item)} />} /> : loading ? <BoardSkeleton /> : <>
       {visibleProposals.length > 0 && <ProposalQueue proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
@@ -687,13 +688,14 @@ function AgentGlyph() {
  * Share proposal actions and disclosure between the phone inbox and the
  * optional desktop lane. Neither view creates an item before acceptance.
  */
-function ProposalQueue({ proposals, items, places, busy, run, column = false }: {
+function ProposalQueue({ proposals, items, places, busy, run, onAccepted, column = false }: {
   column?: boolean
   proposals: WorkV2Proposal[]
   items: WorkV2Card[]
   places: ProjectPlace[]
   busy: string
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  onAccepted?: () => void
 }) {
   const list = <ul className="work-proposals">{proposals.map((proposal) => {
       const project = places.find((place) => place.id === proposal.project_id)
@@ -715,7 +717,11 @@ function ProposalQueue({ proposals, items, places, busy, run, column = false }: 
         </div>
         <div className="work-actions work-proposal-actions" aria-label={catalogFormat("template", "9e9521d6a3b6", [proposal.title])}>
           <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === proposal.id + ":accept"}
-            onClick={() => void run(proposal.id + ":accept", () => resolveWorkV2Proposal(proposal.id, "accept"))}><ActionProgress busy={busy === proposal.id + ":accept"}>{catalogWord("inline", "44ae4672eed2")}</ActionProgress></button>
+            onClick={() => void run(proposal.id + ":accept", async () => {
+              const answer = await resolveWorkV2Proposal(proposal.id, "accept")
+              onAccepted?.()
+              return answer
+            })}><ActionProgress busy={busy === proposal.id + ":accept"}>{catalogWord("inline", "44ae4672eed2")}</ActionProgress></button>
           <button className="chip danger" type="button" disabled={!!busy} aria-busy={busy === proposal.id + ":reject"}
             onClick={() => void run(proposal.id + ":reject", () => resolveWorkV2Proposal(proposal.id, "reject"))}><ActionProgress busy={busy === proposal.id + ":reject"}>{catalogWord("inline", "0f7e826a2f9f")}</ActionProgress></button>
         </div>
