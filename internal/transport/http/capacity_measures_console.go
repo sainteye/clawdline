@@ -8,6 +8,15 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"console.community_share_fetch_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-hosted edge sharing fetch deadline; daemon cannot measure edge requests"}
+		},
+		"console.community_share_response_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-hosted edge sharing response guard; daemon cannot measure edge response bodies"}
+		},
+		"console.community_share_text_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "shared browser and edge sharing text guard; daemon cannot measure another renderer's text"}
+		},
 		"console.support_image_count": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
 		},
