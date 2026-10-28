@@ -180,6 +180,15 @@ Admin list/detail/mutation responses include the reporter's current display name
 ID. Only the authenticated Admin projection obtains these fields. Member and answering-worker
 responses, FAQ snapshots and push payloads remain free of reporter identity fields.
 
+GitHub sign-in retains a validated avatar URL and refreshes it on later sign-ins. Existing accounts
+can resolve an avatar directly from their already verified numeric GitHub identity, without another
+OAuth grant, profile API request or rewrite of past questions. The account's authenticated session
+and Admin reporter projection expose the current avatar; member question and worker projections
+remain unchanged. Only the canonical HTTPS GitHub avatar CDN path is accepted. The browser omits
+credentials and referrers when loading it and falls back to the local member icon on failure.
+Agent replies retain the brand mark and operator replies retain the staff icon: a reporter's avatar
+does not establish which staff member wrote a reply. Public FAQ exports remain anonymous.
+
 ## Evidence routing and request types
 
 Support submissions distinguish usage questions, issue reports and feature requests independently

@@ -7,11 +7,17 @@ export type RequestType = typeof REQUEST_TYPES[number]
 export type Sources = { url: string; revision: string }[]
 export interface SupportImage { id:string; mime:"image/jpeg"; bytes:number; width:number; height:number; sha256:string }
 export interface Message { id: string; kind: "member" | "agent" | "operator"; body: string; locale: SupportLocale; original_language: string; at: string; sources: Sources; images?: SupportImage[] }
-export interface Question { request_type?: RequestType; reporter?: {id:string;name:string|null}; id: string; title: string; topic: string; source_language: string; reply_locale: SupportLocale; state: string; revision: number; input_revision: number;
+export interface Question { request_type?: RequestType; reporter?: {id:string;name:string|null;avatar_url?:string|null}; id: string; title: string; topic: string; source_language: string; reply_locale: SupportLocale; state: string; revision: number; input_revision: number;
   created_at: string; updated_at: string; unread: boolean; messages?: Message[];
   work?: { state: string; attempts: number; lease_until: string | null; error: string | null };
   delivery?: { state: string; attempts: number; delivery_id: string | null; error: string | null } }
 export interface Faq { id: string; title: string; body: string; topic: string; slug: string; revision: number; locale: SupportLocale; sources: Sources; updated_at: string; available_locales: SupportLocale[] }
+/** Only the canonical, account-bound GitHub CDN projection may become an image request. */
+export function githubAvatarSource(value: unknown): string | null {
+  if (typeof value !== "string" || value.trim() !== value) return null
+  const id = /^https:\/\/avatars\.githubusercontent\.com\/u\/([1-9][0-9]*)\?s=80$/.exec(value)?.[1]
+  return id && Number.isSafeInteger(Number(id)) ? value : null
+}
 export interface FaqText { title: string; body: string; slug: string; revision: number; source_revision: number; sources: Sources; updated_at: string }
 export interface Article { _id: string; revision: number; source_locale: SupportLocale; source_revision: number; topic: string; source_question_id: string | null;
   translations: Partial<Record<SupportLocale, { draft: FaqText; published: FaqText | null }>> }

@@ -19,6 +19,11 @@ under **Clawdline support Agent** or a support team member. The question list an
 waiting, answering, or needs support staff, it has not received an ordinary answer yet. If you
 cannot find a question, check that you are signed in with the account that submitted it.
 
+Your member avatar uses your connected GitHub account's current picture. It also works for existing
+questions without signing in again. If the picture cannot load, a default member icon appears.
+Pictures load from GitHub without sending the question URL as a referrer. Agent and support staff
+keep their own distinct icons; published FAQs do not include your name or picture.
+
 ## Ask or follow up
 
 Choose **Ask a question**, describe what happened, and select a topic. A separate title is not
