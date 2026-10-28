@@ -88,6 +88,12 @@ The paired cases verify that saved list rows cause no repository/setup work,
 while selected repository/worktree reads and Session starts still succeed; a
 deleted selected cwd is refused at actual use.
 
+The cross-platform alias regression exposed an OS-specific path assumption:
+the helper rewrote Linux `/tmp` as macOS `/private/tmp`, then accepted the
+nonexistent component before reaching the alias. The `/private` normalization
+is now limited to Darwin; Linux keeps its real path components. The alias
+regression remains enabled on both platforms.
+
 A read-only local TCC log examination covered a six-hour window. It showed
 Clawdline-attributed requests involving both the native shell and descendant
 programs, including computer-use helpers. Attribution/request/preflight records
