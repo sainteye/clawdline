@@ -1394,6 +1394,71 @@
     "Known": true
   },
   {
+    "Name": "diagnostics.api_active",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_catchup",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_hours",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_minutes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_query_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_query_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_queue",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_readers",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_retention",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_route_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_routes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_snapshot",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.api_store",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "diagnostics.route_latency_samples",
     "Known": true,
     "Note": true

@@ -7,9 +7,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/apiperformance"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
@@ -137,10 +139,11 @@ type routeStat struct {
 }
 
 type routeStats struct {
-	since    time.Time
-	mu       sync.Mutex
-	routes   map[string]*routeStat
-	overflow int64
+	performance atomic.Pointer[apiperformance.Runtime]
+	since       time.Time
+	mu          sync.Mutex
+	routes      map[string]*routeStat
+	overflow    int64
 }
 
 func newRouteStats(now time.Time) *routeStats {
@@ -296,10 +299,20 @@ func (t *routeStats) countRoutes(mux *http.ServeMux, next http.Handler) http.Han
 			slot.kind = callerCloud
 		}
 		r = r.WithContext(context.WithValue(r.Context(), callerSlotKey{}, slot))
-		cw := &countingWriter{ResponseWriter: w, stats: t, key: key}
+		op := t.performance.Load().Begin(key)
+		cw := &countingWriter{ResponseWriter: w, stats: t, key: key, operation: op}
 		start := time.Now()
 		defer func() {
+			panicValue := recover()
 			t.done(key, slot.kind, cw.statusOr(), time.Since(start), cw.stream)
+			status := cw.statusOr()
+			if panicValue != nil {
+				status = 500
+			}
+			op.Done(status, r.Context().Err() != nil || cw.writeFailed)
+			if panicValue != nil {
+				panic(panicValue)
+			}
 		}()
 		if f, ok := w.(http.Flusher); ok {
 			next.ServeHTTP(&flushingCountingWriter{countingWriter: cw, flusher: f}, r)
@@ -341,18 +354,25 @@ func callerKind(r *http.Request) string {
 // stream as open the moment its header goes out.
 type countingWriter struct {
 	http.ResponseWriter
-	stats  *routeStats
-	key    string
-	status int
-	stream bool
+	stats       *routeStats
+	key         string
+	status      int
+	stream      bool
+	operation   *apiperformance.Operation
+	writeFailed bool
 }
 
 func (c *countingWriter) WriteHeader(status int) {
+	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
+		c.ResponseWriter.WriteHeader(status)
+		return
+	}
 	if c.status == 0 {
 		c.status = status
-		if status < 300 && strings.HasPrefix(c.Header().Get("Content-Type"), "text/event-stream") {
+		if status == http.StatusSwitchingProtocols || (status < 300 && strings.HasPrefix(c.Header().Get("Content-Type"), "text/event-stream")) {
 			c.stream = true
 			c.stats.opened(c.key)
+			c.operation.OpenStream()
 		}
 	}
 	c.ResponseWriter.WriteHeader(status)
@@ -362,7 +382,11 @@ func (c *countingWriter) Write(b []byte) (int, error) {
 	if c.status == 0 {
 		c.WriteHeader(http.StatusOK)
 	}
-	return c.ResponseWriter.Write(b)
+	n, err := c.ResponseWriter.Write(b)
+	if err != nil {
+		c.writeFailed = true
+	}
+	return n, err
 }
 
 func (c *countingWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }

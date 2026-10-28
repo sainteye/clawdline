@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/logs"
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
@@ -14,7 +15,7 @@ import (
 // daemonCapacityMeasures measures every row of the register's "daemon" area
 // (capacity.AreaOf), one reading per row.
 func (s *Server) daemonCapacityMeasures() map[string]func() capacity.Reading {
-	return map[string]func() capacity.Reading{
+	out := map[string]func() capacity.Reading{
 		capacity.DeployHealthSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-deploy health guard; no retained wait"}
 		},
@@ -94,4 +95,26 @@ func (s *Server) daemonCapacityMeasures() map[string]func() capacity.Reading {
 			return s.screenBus.reading()
 		},
 	}
+	for _, e := range capacity.Register() {
+		if !strings.HasPrefix(e.Name, "diagnostics.api_") {
+			continue
+		}
+		name := strings.TrimPrefix(e.Name, "diagnostics.api_")
+		out[e.Name] = func() capacity.Reading {
+			rt := s.routeStatsTable().performance.Load()
+			if rt == nil {
+				_, err := os.Stat(filepath.Join(s.cfg.Dir, "api-performance", "history.sqlite"))
+				if errors.Is(err, os.ErrNotExist) {
+					return capacity.Reading{Known: true, Note: "monitoring has not started; no local history exists"}
+				}
+				return capacity.Unmeasured("owner-local API monitoring is not running")
+			}
+			n, known := rt.Usage(name)
+			if !known {
+				return capacity.Unmeasured("owner-local API storage is unavailable")
+			}
+			return capacity.Reading{Known: true, Used: n, Note: "owner-local operational aggregates; not uploaded"}
+		}
+	}
+	return out
 }

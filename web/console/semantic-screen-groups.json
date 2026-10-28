@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9548,
-  "riskKeys": 4201,
-  "nonRiskCount": 5347,
+  "englishContentKeys": 9574,
+  "riskKeys": 4223,
+  "nonRiskCount": 5351,
   "groups": [
     {
       "name": "admin / other",
@@ -340,7 +340,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 337,
+      "count": 341,
       "sources": [
         null
       ],
@@ -558,6 +558,10 @@
         "capacityRow.console.viewer_health_send_every_seconds.what",
         "capacityRow.coordinator.aliases.what",
         "capacityRow.deploy.health_seconds.full",
+        "capacityRow.diagnostics.api_active.what",
+        "capacityRow.diagnostics.api_query_seconds.what",
+        "capacityRow.diagnostics.api_readers.what",
+        "capacityRow.diagnostics.api_routes.what",
         "capacityRow.diagnostics.route_latency_samples.what",
         "capacityRow.diagnostics.route_stat_keys.what",
         "capacityRow.dispatch.also_work_ids.what",

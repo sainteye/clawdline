@@ -2231,7 +2231,7 @@
         },
         {
           "path": "cmd/clawdline/main.go",
-          "line": 300
+          "line": 302
         },
         {
           "path": "internal/adapters/projects/launch.go",
@@ -2407,7 +2407,7 @@
     }
   ],
   "sourceChecks": {
-    "cmd/clawdline/main.go": "2811c70048c77965abacbbc568dcd28be9a08dbed8c0dd5911d2427e4e2e36ae",
+    "cmd/clawdline/main.go": "0d29d6a29ddcf1119f963114085b0e00f8e31aa8f749e8e94f1debcaac9a00b4",
     "cmd/clawdline/session.go": "36c97435b123e283e9c8e99593eceead3adad058993b22ef93d22bbecc0770aa",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",

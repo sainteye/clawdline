@@ -290,6 +290,8 @@ func serve() {
 	// closed rather than abandoned mid-write.
 	cloudCtx, stopCloud := context.WithCancel(context.Background())
 	defer stopCloud()
+	stopAPIPerformance := srv.StartAPIPerformance(cloudCtx)
+	defer stopAPIPerformance()
 	// A device file that cannot be read stops the daemon here, rather than
 	// letting it listen and refuse everybody.
 	if err := srv.AuthReady(); err != nil {

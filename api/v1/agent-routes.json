@@ -3,6 +3,11 @@
   "routes": [
     {
       "method": "*",
+      "pattern": "/v1/api-performance",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/reports/",
       "guide": "report"
     },

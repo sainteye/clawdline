@@ -1,10 +1,11 @@
 # Agent routes in this build
 
-Generated from the registered routes and `api/v1/agent-routes.json`; API level: 30. Read `clawdline guide` first, then the part named below. A route here is discoverability, **not authorization or proof of completion**. For an action under a prefix, its input, permission, refusals, and receipt must be stated by that part and this build's schema. If the part does not specify that action, treat the route as unavailable to an Agent. Stop on a missing capability or version, mismatched identity, or unknown outcome; do not switch machines or use an older interface.
+Generated from the registered routes and `api/v1/agent-routes.json`; API level: 31. Read `clawdline guide` first, then the part named below. A route here is discoverability, **not authorization or proof of completion**. For an action under a prefix, its input, permission, refusals, and receipt must be stated by that part and this build's schema. If the part does not specify that action, treat the route as unavailable to an Agent. Stop on a missing capability or version, mismatched identity, or unknown outcome; do not switch machines or use an older interface.
 
 | Method | Registered route | Since API level | Agent guide | Human goal |
 | --- | --- | ---: | --- | --- |
 | `*` | `/reports/` | 1 | `clawdline guide report` | `docs/user/sessions.md` |
+| `*` | `/v1/api-performance` | 31 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/artifacts/images` | 1 | `clawdline guide send` | `docs/user/sessions.md` |
 | `*` | `/v1/artifacts/images/` | 1 | `clawdline guide send` | `docs/user/sessions.md` |
 | `*` | `/v1/auth/` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
