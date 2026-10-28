@@ -354,6 +354,12 @@ func CodexPast(ctx context.Context, place Place, open map[string]bool, titles Pa
 	return rows, nil
 }
 
+// codexUserSource admits interactive CLI and IDE conversations, never exec or
+// provider subagents. The same policy governs discovery, listing and resume.
+func codexUserSource(source string) bool {
+	return source == "cli" || source == "vscode"
+}
+
 // codexListed is CodexNaming.listedThreads(in:cwd:open:).
 func codexListed(response []byte, cwd string, open map[string]bool, titles PastTitles) []Past {
 	var answer struct {
@@ -364,6 +370,8 @@ func codexListed(response []byte, cwd string, open map[string]bool, titles PastT
 				UpdatedAt json.RawMessage `json:"updatedAt"`
 				Preview   string          `json:"preview"`
 				Name      *string         `json:"name"`
+				Source    json.RawMessage `json:"source"`
+				Ephemeral bool            `json:"ephemeral"`
 			} `json:"data"`
 		} `json:"result"`
 	}
@@ -372,8 +380,14 @@ func codexListed(response []byte, cwd string, open map[string]bool, titles PastT
 	}
 	out := []Past{}
 	for _, row := range answer.Result.Data {
-		if row.Cwd != cwd {
+		if row.Cwd != cwd || row.Ephemeral {
 			continue
+		}
+		if len(row.Source) > 0 {
+			var source string
+			if json.Unmarshal(row.Source, &source) != nil || !codexUserSource(source) {
+				continue
+			}
 		}
 		id, ok := SessionName(row.ID)
 		if !ok {
@@ -456,7 +470,7 @@ func codexExecutable() string {
 func codexThreadList(ctx context.Context, exe, cwd string, limit int) ([]byte, error) {
 	return codexRequest(ctx, exe, "thread/list", map[string]any{
 		"archived": false, "cwd": cwd, "limit": max(1, limit),
-		"sortDirection": "desc", "sortKey": "updated_at", "sourceKinds": []string{"cli"}})
+		"sortDirection": "desc", "sortKey": "updated_at", "sourceKinds": []string{"cli", "vscode"}})
 }
 
 func codexRequest(ctx context.Context, exe, method string, params map[string]any) ([]byte, error) {
@@ -581,7 +595,7 @@ func CodexPastPage(ctx context.Context, place Place, open map[string]bool, title
 
 func codexPastPage(ctx context.Context, exe string, place Place, open map[string]bool, titles PastTitles, cursor string) ([]Past, string, error) {
 	params := map[string]any{"archived": false, "cwd": place.Path, "limit": CodexPastPageLimit,
-		"sortDirection": "desc", "sortKey": "updated_at", "sourceKinds": []string{"cli"}}
+		"sortDirection": "desc", "sortKey": "updated_at", "sourceKinds": []string{"cli", "vscode"}}
 	if cursor != "" {
 		params["cursor"] = cursor
 	}
@@ -648,7 +662,8 @@ func codexConversation(ctx context.Context, exe string, place Place, id string) 
 	if json.Unmarshal(reply.Result.Thread, &thread) != nil || len(thread.Source) == 0 {
 		return false, ErrCodexUnavailable
 	}
-	if string(thread.Source) != `"cli"` || thread.Ephemeral {
+	var source string
+	if json.Unmarshal(thread.Source, &source) != nil || !codexUserSource(source) || thread.Ephemeral {
 		return false, nil
 	}
 	// Reuse the list's directory, UUID and child exclusions for the selected row.

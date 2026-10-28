@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9776,
-  "riskKeys": 4332,
-  "nonRiskCount": 5444,
+  "englishContentKeys": 9782,
+  "riskKeys": 4333,
+  "nonRiskCount": 5449,
   "groups": [
     {
       "name": "admin / other",
@@ -5323,7 +5323,7 @@
     },
     {
       "name": "support / other",
-      "count": 179,
+      "count": 184,
       "sources": [
         null
       ],
@@ -5361,6 +5361,9 @@
         "support.communityContext",
         "support.communityCreate",
         "support.communityExpected",
+        "support.communityFilterStatus",
+        "support.communityFilters",
+        "support.communityFiltersActive",
         "support.communityIdeaChoice",
         "support.communityIdeaIntro",
         "support.communityIdeas",
@@ -5391,8 +5394,10 @@
         "support.communityReplyHint",
         "support.communityReport",
         "support.communityRequestAgent",
+        "support.communityResetFilters",
         "support.communitySearch",
         "support.communitySearchHint",
+        "support.communitySortBy",
         "support.communityStaff",
         "support.communityStageConfirmed",
         "support.communityStageDiscussion",

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9776,
+  "englishKeys": 9782,
   "counts": {
     "negation": 2765,
     "state": 1604,
     "permission": 570,
-    "deletion": 212,
+    "deletion": 213,
     "uncertainty": 370
   },
-  "unionCount": 4332,
+  "unionCount": 4333,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -5151,6 +5151,7 @@
       "settings.settingsScopeHint",
       "settings.settingsScopeRemove",
       "shell.menuUndo",
+      "support.communityRemoveFilter",
       "support.imageExpired",
       "support.privacyReview",
       "support.removeImage",
@@ -9563,6 +9564,7 @@
     "support.communityPending",
     "support.communityPublicInfo",
     "support.communityPublicWarning",
+    "support.communityRemoveFilter",
     "support.communityReplySeparate",
     "support.communitySaved",
     "support.communitySignIn",

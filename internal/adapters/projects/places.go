@@ -560,10 +560,10 @@ func cwds(text string) []string {
 
 // codexHead is Codex.Head, only the parts StartPoints reads.
 type codexHead struct {
-	cwd              string
-	isUser           bool
-	isInteractiveCLI bool
-	ok               bool
+	cwd           string
+	isUser        bool
+	isInteractive bool
+	ok            bool
 }
 
 // stringAfter is Codex.string(after:in:).
@@ -598,8 +598,8 @@ func (p *Places) codexHeadOf(path string) codexHead {
 		thread, hasThread := stringAfter(`"thread_source":`, text)
 		source, hasSource := stringAfter(`"source":`, text)
 		found = codexHead{cwd: list[0], ok: true,
-			isUser:           !hasThread || thread == "user",
-			isInteractiveCLI: !hasSource || source == "cli"}
+			isUser:        !hasThread || thread == "user",
+			isInteractive: !hasSource || codexUserSource(source)}
 		p.mu.Lock()
 		p.heads[path] = found
 		p.mu.Unlock()
@@ -675,7 +675,7 @@ func (p *Places) codexRecorded(days, limit int) []Place {
 	best := map[string]time.Time{}
 	for _, f := range files {
 		h := p.codexHeadOf(f)
-		if !h.ok || !h.isUser || !h.isInteractiveCLI {
+		if !h.ok || !h.isUser || !h.isInteractive {
 			continue
 		}
 		at := modified(f)
