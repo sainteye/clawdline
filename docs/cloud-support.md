@@ -22,6 +22,11 @@ lightbulb icons from its share preview. Tabs have no filled surface or rounded o
 destination has a warm underline and brighter text, an explicit `aria-current`, and a separate
 keyboard focus outline. Icons remain visible on narrow screens.
 
+List search starts collapsed behind a magnifying-glass control. Status and sorting stay behind a
+separate filter control. Applied searches and non-default filters remain visible as removable chips
+when their panels are closed. Opening a panel does not change its applied values or fetch a new list;
+Escape closes it and returns keyboard focus to its control.
+
 ## The content boundary
 
 New discussions, replies and attached images are public. The composer explains this once before
