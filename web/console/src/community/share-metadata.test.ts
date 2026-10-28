@@ -1,14 +1,14 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node runs TypeScript source directly.
-import { shareMetadata, shareText, metadataHTML, metadataFields, SHARE_IMAGE } from "./share-metadata.ts"
+import { shareMetadata, shareText, metadataHTML, metadataFields, SHARE_IMAGE, SHARE_IMAGES } from "./share-metadata.ts"
 import { publicResource, requestLocale, resolveMetadata } from "../../edge/worker.mjs"
 const id="sq_"+"a".repeat(40),path="/community/topics/"+id
 const json=(v:unknown,status=200)=>new Response(JSON.stringify(v),{status,headers:{"Content-Type":"application/json"}})
 test("public list metadata has distinct titles, descriptions, fixed canonical and large image",()=>{
  for(const [path,title] of [["questions","使用問答"],["issues","Issues"],["ideas","Ideas"]]) {
   const m=shareMetadata("https://untrusted.invalid/community/"+path+"/?tracking=1#reply","zh-Hant")
-  assert.ok(m.title.startsWith(title));assert.ok(m.description);assert.equal(m.canonical,"https://app.clawdline.com/community/"+path);assert.equal(m.image,SHARE_IMAGE);assert.equal(m.robots,"index, follow")
+  assert.ok(m.title.startsWith(title));assert.ok(m.description);assert.equal(m.canonical,"https://app.clawdline.com/community/"+path);assert.equal(m.image,SHARE_IMAGES.zh);assert.equal(m.robots,"index, follow")
   assert.ok(metadataFields(m).some(([key,n,v])=>key==="name"&&n==="twitter:card"&&v==="summary_large_image"))
  }
  assert.equal(shareMetadata("/community/").canonical,"https://app.clawdline.com/community/issues")
@@ -16,7 +16,7 @@ test("public list metadata has distinct titles, descriptions, fixed canonical an
 })
 test("a public topic uses its original text, escaped markup and original language",()=>{
  const m=shareMetadata(path,"en",{title:'設定 <script>alert(1)</script> "A&B"',body:'## 操作\n**開啟** [文件](https://example.com) ![私密圖片標記](https://example.com/i.png)',locale:"zh-Hant"})
- assert.equal(m.type,"article");assert.equal(m.locale,"zh_TW");assert.equal(m.description,"操作 開啟 文件")
+ assert.equal(m.type,"article");assert.equal(m.locale,"zh_TW");assert.equal(m.image,SHARE_IMAGES.zh);assert.equal(m.description,"操作 開啟 文件")
  const html=metadataHTML(m);assert.ok(!html.includes("<script>"));assert.ok(html.includes("&quot;A&amp;B&quot;"));assert.equal((html.match(/<title>/g)??[]).length,1)
  assert.equal(shareText("😀".repeat(200)).length,320);assert.ok(!shareText("😀".repeat(200)).includes("�"))
 })
@@ -51,4 +51,11 @@ test("a bounded upstream timeout still lets the page open with generic metadata"
 test("FAQ previews use only the public article and requested supported locale",async()=>{
  const m=await resolveMetadata(new Request("https://app.clawdline.com/help/faq/faq-example",{headers:{"Accept-Language":"zh-TW"}}),async(url:RequestInfo|URL)=>{assert.equal(url,"https://api.clawdline.com/v1/faq/faq-example?locale=zh-Hant");return json({article:{id:"faq-example",title:"如何設定",body:"請先開啟主控台。",locale:"zh-Hant"}})})
  assert.equal(m.title,"如何設定 | Clawdline");assert.equal(m.robots,"index, follow")
+})
+
+test("preview images follow supported language and keep an English fallback",()=>{
+ assert.equal(shareMetadata("/community/questions","en").image,SHARE_IMAGE)
+ assert.equal(shareMetadata("/community/questions","zh-TW").image,SHARE_IMAGES.zh)
+ assert.equal(shareMetadata("/community/questions","ja").image,SHARE_IMAGES.en)
+ assert.equal(shareMetadata(path,"zh-Hant",{title:"English topic",body:"Original text",locale:"en"}).image,SHARE_IMAGES.en)
 })

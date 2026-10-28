@@ -115,3 +115,5 @@ Start with the [task-based user index](user/README.md). It leads to a first Sess
 [Records index](records/README.md) lists retired documents and dated measurements moved from specifications.
 
 - [Onboarding survey](onboarding-survey.md): optional bilingual questions, consent, persistence and aggregate reporting.
+
+[Sharing images](share-images.md) describes the bilingual repository, README and community preview assets.

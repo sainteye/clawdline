@@ -1,7 +1,8 @@
 /** Public sharing uses the same preview text in the edge response and SPA navigation. */
 export const SHARE_LIMITS = { fetchMs: 3_000, responseBytes: 1_048_576, textChars: 160 } as const
 export const SHARE_ORIGIN = "https://app.clawdline.com"
-export const SHARE_IMAGE = SHARE_ORIGIN + "/community-share-v1.png"
+export const SHARE_IMAGES = { en: SHARE_ORIGIN + "/community-share-v2-en.png", zh: SHARE_ORIGIN + "/community-share-v2-zh-Hant.png" } as const
+export const SHARE_IMAGE = SHARE_IMAGES.en
 export type ShareContent = { title: string; body: string; locale?: string }
 export type ShareMetadata = { title: string; description: string; canonical: string; image: string; imageAlt: string; locale: string; type: string; robots: string }
 const en = {
@@ -51,7 +52,7 @@ export function shareMetadata(address: string, locale = "en", content?: ShareCon
     const cleanTitle = shareText(content.title)
     if (cleanTitle) { title = cleanTitle; description = shareText(content.body) || description; publicPage = true }
   }
-  return { title: title === words.cloud ? title : title + " | Clawdline", description, canonical: SHARE_ORIGIN + canonical, image: SHARE_IMAGE, imageAlt: words.imageAlt,
+  return { title: title === words.cloud ? title : title + " | Clawdline", description, canonical: SHARE_ORIGIN + canonical, image: words === zh ? SHARE_IMAGES.zh : SHARE_IMAGES.en, imageAlt: words.imageAlt,
     locale: words === zh ? "zh_TW" : "en_US", type: content && publicPage ? "article" : "website", robots: publicPage ? "index, follow" : "noindex, nofollow" }
 }
 export function metadataFields(m: ShareMetadata): [string, string, string][] {

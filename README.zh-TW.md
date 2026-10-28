@@ -7,9 +7,7 @@
 
 **透過 Clawdline Cloud，在手機同一份清單查看多台機器的 Claude Code 和 Codex Session，點開就能回覆或留待辦。**
 
-使用示意資料錄製的真實主控台連續操作：
-
-<img src="docs/assets/cloud-sessions-demo-zh-Hant.gif" width="390" alt="真實手機主控台連續錄影：從多台機器的 Session 清單點開工作面板設計，查看 Codex 傳來的小張設計圖，展開待辦並送出「請把新增專案按鈕加大」，最後顯示已傳送。">
+![Clawdline 將 Claude Code 與 Codex Session 集中在同一處，讓你掌握進度、回覆並留待辦；本機瀏覽器在你的機器上使用，選用 Cloud 可從手機及多台機器接續工作。](docs/assets/readme-overview-zh-Hant.png)
 
 [Herdr](https://github.com/herdrdev/herdr/blob/master/docs/versions/0.9.1/website/src/content/docs/connecting-machines.mdx) 也能在 SSH 的 TUI 視窗列出多台機器的 Agent；[T3 Code](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md) 可連接多個環境。Clawdline Cloud 則在手機瀏覽器將 Session 依機器列在同一頁，並直接開啟對話、待辦與圖片。
 
