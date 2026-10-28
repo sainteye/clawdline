@@ -17,9 +17,10 @@ configuration. Every Admin request rechecks operations access on the server. Pub
 do not grant authority. A staff reply is an explicit operator action; a member comment is never
 presented as an official reply merely because its author has Admin access.
 
-Community navigation shares the warm outlined cards and speech-bubble, alert-circle and lightbulb
-icons from its share preview. Icons remain visible on narrow screens; the active destination has a
-warmer fill and border, an explicit `aria-current`, and a separate keyboard focus outline.
+Community navigation uses a single row of flat tabs with the speech-bubble, alert-circle and
+lightbulb icons from its share preview. Tabs have no filled surface or rounded outline; the active
+destination has a warm underline and brighter text, an explicit `aria-current`, and a separate
+keyboard focus outline. Icons remain visible on narrow screens.
 
 ## The content boundary
 
