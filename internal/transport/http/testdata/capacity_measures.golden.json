@@ -987,6 +987,21 @@
     "Note": true
   },
   {
+    "Name": "console.community_share_fetch_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.community_share_response_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.community_share_text_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.direct_history_hours",
     "Known": true,
     "Note": true
