@@ -2748,3 +2748,24 @@ test("linked content refuses mismatched source proof and cancellation during res
   assert.equal(response.status >= 400, true)
   assert.equal(f.client.calls.length, 0)
 })
+
+
+test("RC permission inspection keeps its intent separate from routine info on both Cloud paths", async () => {
+ for(const pinned of [false,true]){
+  const client=Object.assign(new FakeClient(),{
+   async readForGeneration(this: FakeClient,target:unknown,word:string,fields:Record<string,unknown>){
+    this.calls.push(["readForGeneration",target,word,fields]);return {info:{remotePermissionKnown:true}}
+   },
+  })
+  client.rows=[row("s1")]
+  client.descriptors.set("mac-a",{machine:{commands:[...GO_DAEMON.machine.commands,"info"]}})
+  const {reader}=seam(client,undefined,pinned)
+  const response=await reader.fetch("/v1/sessions/s1/info?parts=remote-permission")
+  assert.equal(response.status,200)
+  const call=client.calls.find(([name])=>name===(pinned?"readForGeneration":"_read"))
+  assert.ok(call,"permission inspection must not become ordinary full info")
+  assert.deepEqual(call[3],{parts:"remote-permission"})
+  if(pinned) assert.deepEqual(call[1],{machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION})
+  else assert.equal(call[4],"info.remote-permission")
+ }
+})

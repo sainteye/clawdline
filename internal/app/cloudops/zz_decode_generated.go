@@ -751,7 +751,7 @@ func genDecodeInfo(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("expected_generation", genRule{kind: "string", checks: []func(string) bool{executionGenerationValid}}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("parts", genRule{kind: "string", enum: []string{"full", "summary"}}) {
+	if !b.genValid("parts", genRule{kind: "string", enum: []string{"full", "summary", "remote-permission"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := sessionPlan(b, "info."+genText(b["parts"]))
@@ -766,7 +766,7 @@ func genDecodeInfo(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/sessions/" + segment(genText(b["session"])) + "/info"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"parts": genValue{from: "parts", only: "summary"}})
+	req.Query = b.genQuery(map[string]genValue{"parts": genValue{from: "parts"}})
 	return p, req, true
 }
 

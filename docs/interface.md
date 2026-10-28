@@ -406,7 +406,8 @@ Claude Code Remote Control conversations appear in the Session list on macOS and
 external Session discovery is enabled. An interactive `claude --remote-control` or `/remote-control`
 session keeps its existing terminal controls. A server-spawned worker has a **Remote Control** marker
 and supports text, images, one-time tool permission answers, interruption and closing here.
-General files and structured question answers still use Claude. The launcher itself is not a conversation and is not listed as one.
+General files and structured question answers still use Claude. The launcher itself is not a conversation and is not listed as one. Pinned list fallbacks
+retain the backend so a missing signed-status replay does not remove the worker controls.
 
 Discovery requires the native print-mode SDK transport to `https://api.anthropic.com/v1/code/sessions/…`,
 a matching remote session argument, and a live kernel process generation. Standard versioned native
@@ -427,7 +428,8 @@ feedback fails closed and requires the native Claude client.
 Images use normalized native base64 image content blocks, without a pasteboard or terminal.
 Permission inspection is explicit: it asks the live worker to initialize, waits for its matching
 response, and offers the first pending tool request. Routine Session information reads do not
-post controls. An answer rereads the live request and matches a fingerprint of the bridge,
+post controls. Cloud carries this explicit read as `info.remote-permission`, separately from
+`info.full` and `info.summary`, with the same pinned execution and read authority. An answer rereads the live request and matches a fingerprint of the bridge,
 process birth, request ID, tool name and complete input. Allow sends that same input once;
 deny refuses the request. Permanent approval, permission-mode changes, input editing and
 structured `AskUserQuestion` answers are not implemented. Structured questions offer deny only.

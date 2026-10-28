@@ -1056,3 +1056,18 @@ test("a Cloud presentation preserves a project's SVG and independent accent", as
   const presentations = await source.readMachinePresentations?.(machineID, signal)
   assert.deepEqual(presentations?.[0]?.icon, icon)
 })
+
+
+test("a cold direct list retains the RC backend while signed status is missing", async () => {
+ const {client}=clientFixture()
+ client.statusSnapshots.delete(JSON.stringify([machineID,sessionID]))
+ const list=client.listPresentationsForMachine
+ client.listPresentationsForMachine=async(machine)=>{
+  const reply=await list(machine)
+  return {...reply,sessions:reply.sessions.map(row=>({...row,backend:"claude_remote"}))}
+ }
+ const reading=await statusSource(()=>client as never).readMachine(machineID,new AbortController().signal)
+ assert.equal(reading.kind,"ready")
+ assert.equal(reading.rows?.[0]?.backend,"claude_remote","fallback must retain the worker's native controls")
+ assert.equal(reading.rows?.[0]?.destination.executionGeneration,executionGeneration)
+})

@@ -633,7 +633,7 @@ function Tools({
     const mine = row.id
     askInterrupt(mine).then(
       () => {
-        if (openNow.current?.id === mine) toast(nextWord("sessionStopSent"))
+        if (openNow.current?.id === mine) toast(nextWord(row.backend === "claude_remote" ? "claudeRemoteStopSent" : "sessionStopSent"))
       },
       (e) => {
         if (openNow.current?.id === mine) toastFailure(e, T.webRequestFailed)
@@ -781,7 +781,7 @@ function Tools({
                   stop()
                 }}
               >
-                {nextWord("sessionStop")}
+                {nextWord(row?.backend === "claude_remote" ? "claudeRemoteStop" : "sessionStop")}
               </button>
               <button
                 id="session-focus"

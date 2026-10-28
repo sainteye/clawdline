@@ -155,6 +155,7 @@ func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 		name string
 	}{
 		{map[string]any{"type": "info", "session": pane, "parts": "full", "expected_generation": pinnedGeneration}, "info.full"},
+		{map[string]any{"type": "info", "session": pane, "parts": "remote-permission", "expected_generation": pinnedGeneration}, "info.remote-permission"},
 		{map[string]any{"type": "skills", "session": pane, "expected_generation": pinnedGeneration}, "skills"},
 		{map[string]any{"type": "transcript", "session": pane, "limit": 100, "expected_generation": pinnedGeneration}, "transcript"},
 		{map[string]any{"type": "transcript", "session": pane, "limit": 100, "before": 12345,
@@ -173,6 +174,9 @@ func TestReadContentRailPinsTheSelectedExecution(t *testing.T) {
 		}
 		if got := r.last().Header; got["X-Clawdline-Target-Machine"] != "mac-01" || got["X-Clawdline-Execution-Generation"] != pinnedGeneration {
 			t.Fatalf("pinned target headers: %v", got)
+		}
+		if input.name == "info.remote-permission" && r.last().Query["parts"] != "remote-permission" {
+			t.Fatal("explicit permission inspection became routine info")
 		}
 		if input.name == "transcript.before.12345" && r.last().Query["before"] != "12345" {
 			t.Fatalf("pinned transcript cursor: %+v", r.last().Query)

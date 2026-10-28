@@ -106,6 +106,7 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 			WaitingForOmitted int64                        `json:"waiting_for_omitted,omitempty"`
 		}
 		type presentation struct {
+			Backend             contract.Backend   `json:"backend,omitempty"`
 			Assistant           contract.Assistant `json:"assistant,omitempty"`
 			ID                  string             `json:"id"`
 			Title               string             `json:"title"`
@@ -117,7 +118,7 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 		}
 		rows := make([]presentation, 0, len(snapshot.Sessions))
 		for _, row := range snapshot.Sessions {
-			rows = append(rows, presentation{Assistant: row.Assistant, ID: row.ID, Title: row.Label, CWD: row.CWD, ProjectKey: row.ProjectKey,
+			rows = append(rows, presentation{Backend: row.Backend, Assistant: row.Assistant, ID: row.ID, Title: row.Label, CWD: row.CWD, ProjectKey: row.ProjectKey,
 				Icon: row.Icon, ExecutionGeneration: row.ExecutionGeneration,
 				Status: status{SessionID: row.SessionID, EpicParent: row.EpicParent, Persona: row.Persona, State: row.State, WorkState: row.WorkState, WorkNote: row.WorkNote, ProviderBlock: string(row.ProviderBlock),
 					WorkProvenance: row.WorkProvenance, WorkMovedBy: row.WorkMovedBy,

@@ -1248,6 +1248,13 @@ export class RelayWriter {
         // both — its own divergence — and the page still asks for the half it
         // wants, so a machine that does tell them apart is asked correctly.
         const exact = this.fleetTarget(route.session)
+        if (url.searchParams.get("parts") === "remote-permission") {
+          const fields = { parts: "remote-permission" }
+          if (exact) return this.contentRead(client, exact, "info", fields, init?.signal)
+          if (!client._read) throw failure("cloud_not_carried", "Pinned Session info is unavailable.", 501)
+          return client._read(await this.identity(client, route.session), "info", fields, "info.remote-permission",
+            undefined, { signal: init?.signal ?? undefined })
+        }
         if (exact) {
           if (!client.infoForGeneration) throw failure("cloud_not_carried", "Pinned Session info is unavailable.", 501)
           return client.infoForGeneration(exact, init?.signal ?? undefined)

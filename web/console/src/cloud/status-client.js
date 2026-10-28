@@ -40,7 +40,7 @@ function refused(code, message) {
 
 function pinnedRead(type, body) {
   return (type === "sessions.list" && typeof body?.request === "string" ||
-    type === "info" && body?.parts === "full" ||
+    type === "info" && ["full", "remote-permission"].includes(body?.parts) ||
     ["transcript", "skills", "image", "git", "git-diff", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox"].includes(type)) &&
     (body?.expected_generation !== undefined || type === "sessions.list")
 }
@@ -58,7 +58,7 @@ function pinnedReadName(type, body) {
 
 function basePinnedReadName(type, body) {
   if (type === "sessions.list" && typeof body?.request === "string" && body.request) return "read:" + body.request
-  if (type === "info" && body?.parts === "full") return "info.full"
+  if (type === "info" && ["full", "remote-permission"].includes(body?.parts)) return "info." + body.parts
   if (type === "skills") return "skills"
   if (type === "git" || type === "screen" || type === "documents") return type
   if ((type === "git-diff" || type === "document" || type === "video" || type === "peer-inbox") &&

@@ -199,3 +199,27 @@ func TestRemoteControlAutomationCannotApproveOrInterrupt(t *testing.T) {
 		t.Fatal("automatic image claimed human origin")
 	}
 }
+
+func TestRemoteControlListPresentationRetainsBackend(t *testing.T) {
+	s, id := rcServer(t, &rcController{})
+	w := httptest.NewRecorder()
+	s.sessions(w, httptest.NewRequest("GET", "/v1/sessions?parts=list", nil))
+	var body struct {
+		Sessions []struct {
+			ID      string `json:"id"`
+			Backend string `json:"backend"`
+		}
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil {
+		t.Fatal(w.Body.String())
+	}
+	for _, row := range body.Sessions {
+		if row.ID == id {
+			if row.Backend != "claude_remote" {
+				t.Fatal("fallback lost Remote Control backend")
+			}
+			return
+		}
+	}
+	t.Fatal("RC worker missing from fallback list")
+}

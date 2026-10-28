@@ -47,7 +47,7 @@ export const CARRIED = {
   git: "GET /v1/sessions/{id}/git",
   "git-diff": "GET /v1/sessions/{id}/git/diff?path=",
   image: "GET /v1/artifacts/images/{id}?session={id}[&size=thumb]",
-  info: "GET /v1/sessions/{id}/info[?parts=summary]",
+  info: "GET /v1/sessions/{id}/info[?parts=summary|remote-permission]",
   intents: "POST /v1/intents",
   interrupt: "POST /v1/sessions/{id}/interrupt",
   // The dashboard behind the session counts (`machine/`): CPU, memory, disk

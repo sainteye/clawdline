@@ -397,7 +397,7 @@
       "kind": "read",
       "write_gate": false,
       "console": "carried",
-      "console_route": "GET /v1/sessions/{id}/info[?parts=summary]",
+      "console_route": "GET /v1/sessions/{id}/info[?parts=summary|remote-permission]",
       "console_seam": "writer",
       "local": {"method": "GET"},
       "special": ["content_read", "divergence"],
@@ -406,7 +406,7 @@
         {"body": ["parts", "session"], "path": "/v1/sessions/{session}/info", "query": ["parts"]},
         {"body": ["expected_generation", "parts", "session"], "path": "/v1/sessions/{session}/info", "query": ["parts"]}
       ],
-      "decode": {"reply": "session", "name": "info.{parts}", "fields": {"parts": {"type": "string", "enum": ["full", "summary"], "into": "parts"}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/sessions/{session}/info", "query": {"parts": {"from": "parts", "only": "summary"}}}}
+      "decode": {"reply": "session", "name": "info.{parts}", "fields": {"parts": {"type": "string", "enum": ["full", "summary", "remote-permission"], "into": "parts"}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/sessions/{session}/info", "query": {"parts": {"from": "parts"}}}}
     },
     {
       "op": "intents",

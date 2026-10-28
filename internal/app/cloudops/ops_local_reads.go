@@ -15,8 +15,8 @@ func init() {
 		},
 
 		op{name: "info", read: true,
-			divergence: "`parts` travels as a query and this daemon's info route answers the " +
-				"same body for both halves, so a summary is a full answer here",
+			divergence: "`parts` travels as a query; full and summary share metadata here, " +
+				"while remote-permission explicitly inspects the live RC worker",
 		},
 
 		op{name: "git", read: true},
