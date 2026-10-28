@@ -233,6 +233,10 @@ of the three work columns; completed items appear on the right. Hidden columns t
 space. The completed switch includes closed items in the existing cursor-bounded Board
 read; it does not complete work or record acceptance.
 
+Accepting an Agent proposal successfully turns on **Show Plans** before refreshing the desktop
+Board, so the created item is visible in the planning column. A failed acceptance or a rejection
+does not change the switches; the other visibility choices and fresh-visit defaults stay intact.
+
 Each desktop column is 280 CSS pixels wide. Only the column region scrolls horizontally;
 the page heading, Project selector, switches and search stay in place. Cards keep their
 existing detail modal and proposal actions, without drag operations. Empty work columns
