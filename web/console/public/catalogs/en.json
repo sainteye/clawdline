@@ -75,6 +75,7 @@
   "next.claudeRemotePermissionDeny": "Deny",
   "next.claudeRemoteStop": "Stop current work",
   "next.claudeRemoteStopSent": "The worker confirmed the interrupt request. Its status shows when the turn ends.",
+  "next.claudeRemoteCloseSay": "Archive this Remote Control Session and wait for its worker to exit.",
   "capacityRow.session.tool_preview_bytes.what": "Tool cards send a bounded UTF-8 preview before reading stored detail.",
   "capacityRow.session.tool_preview_bytes.full": "Longer text stays in the Session record and is read when expanded.",
   "capacityRow.cloud.read_plaintext_bytes.what": "Negotiated compressed reads have a maximum decompressed size.",

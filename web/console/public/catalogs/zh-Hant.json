@@ -75,6 +75,7 @@
   "next.claudeRemotePermissionDeny": "拒絕",
   "next.claudeRemoteStop": "停止目前的工作",
   "next.claudeRemoteStopSent": "Worker 已確認中斷請求。回合是否結束，以後續狀態為準。",
+  "next.claudeRemoteCloseSay": "封存這個 Remote Control Session，並等待它的 worker 結束。",
   "capacityRow.session.tool_preview_bytes.what": "工具卡片先傳送有大小上限的 UTF-8 預覽。",
   "capacityRow.session.tool_preview_bytes.full": "較長文字保留於 Session 紀錄，展開時才讀取。",
   "capacityRow.cloud.read_plaintext_bytes.what": "協商壓縮的回覆限制解壓後大小。",
