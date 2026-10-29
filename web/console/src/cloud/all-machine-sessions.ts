@@ -244,6 +244,13 @@ export function destinationFragment(value: SessionDestination): string {
   return `#machine=${encodeURIComponent(value.machineID)}&session=${encodeURIComponent(value.sessionID)}&generation=${encodeURIComponent(value.executionGeneration)}`
 }
 
+/** Canonicalizing a Session must not consume its exact file-preview destination. */
+export function destinationFragmentWithOutput(value: SessionDestination, hash: string): string {
+  const current = destinationFromFragment(hash)
+  const output = /&output=[0-9a-f]{64}$/.exec(hash)?.[0] ?? ""
+  return destinationFragment(value) + (current && destinationKey(current) === destinationKey(value) ? output : "")
+}
+
 export function destinationFromFragment(hash: string): SessionDestination | null {
   // Output links retain the complete pinned Session address, plus one opaque file ID.
   hash = hash.replace(/&output=[0-9a-f]{64}$/, "")

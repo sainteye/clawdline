@@ -91,9 +91,13 @@ export function OutputFiles({ row, open, onClose, trigger }: {
   useLayoutEffect(() => { if (open) close.current?.focus({ preventScroll: true }) }, [open])
   useEffect(() => {
     if (!open || !data) return
-    const id = new URLSearchParams(location.hash.slice(1)).get("output")
-    const match = data.files.find(file => file.id === id)
-    if (match) setSelected(match)
+    const follow = () => {
+      const id = new URLSearchParams(location.hash.slice(1)).get("output")
+      const match = data.files.find(file => file.id === id)
+      if (match) setSelected(match)
+    }
+    follow(); window.addEventListener("hashchange", follow)
+    return () => window.removeEventListener("hashchange", follow)
   }, [open, data])
   if (!open || !row) return null
   const files = data?.files ?? []

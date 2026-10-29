@@ -74,6 +74,8 @@ a paired-machine identity, so its share action is disabled.
 When system sharing is unavailable or refused, the same action copies the pinned
 link. A person's cancellation stays cancelled. If copying is also refused, the
 panel leaves the link as selectable text.
+Session navigation retains that file ID only while the full machine, Session
+and execution identity matches; selecting another destination drops the preview intent.
 
 Browser Blobs, thumbnail URLs and pending reads
 are released when the panel/preview leaves its Session.

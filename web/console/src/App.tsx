@@ -33,7 +33,7 @@ import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
 import { bootLocalCatalog } from "./catalog.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
-import { destinationFragment, destinationFromFragment, destinationKey, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
+import { destinationFragmentWithOutput, destinationFromFragment, destinationKey, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
   type FleetDetailProblem, type ProjectedSession, type SessionDestination } from "./cloud/all-machine-sessions.js"
 import { notificationAddress } from "./push/navigation.js"
 import { hasDocumentIntent, hasDocumentPageIntent, readPublishedDocument } from "./legacy/documents-bridge.js"
@@ -559,11 +559,11 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     if (phone()) {
       if (viewRef.current !== "detail" && !videoAddress) releaseKeyboardFocus()
       setView("detail")
-      if (!videoAddress) stepIntoDetail(id, fleetList && fleetTarget ? listAddress() + destinationFragment(fleetTarget) :
+      if (!videoAddress) stepIntoDetail(id, fleetList && fleetTarget ? listAddress() + destinationFragmentWithOutput(fleetTarget, location.hash) :
         listAddress() + sessionFragment(id), arrived, detailStep)
     } else {
       if (!paneRef.current) setPane(true)
-      if (!videoAddress) writeHash(fleetList && fleetTarget ? destinationFragment(fleetTarget) : sessionFragment(id))
+      if (!videoAddress) writeHash(fleetList && fleetTarget ? destinationFragmentWithOutput(fleetTarget, location.hash) : sessionFragment(id))
     }
     if (!keepFocus && !phone() && !videoAddress) rowNode(id)?.focus({ preventScroll: true })
   }
@@ -612,7 +612,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     go("sessions", { hash: false })
     if (phone()) {
       setView("detail")
-      stepIntoDetail(fleetTarget.sessionID, listAddress() + destinationFragment(fleetTarget), true, detailStep)
+      stepIntoDetail(fleetTarget.sessionID, listAddress() + destinationFragmentWithOutput(fleetTarget, location.hash), true, detailStep)
     } else if (!paneRef.current) setPane(true)
   }, [fleetList && fleetTarget ? destinationKey(fleetTarget) : null])
   useEffect(() => {

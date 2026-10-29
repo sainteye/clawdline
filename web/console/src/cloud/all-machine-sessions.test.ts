@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { SessionRow } from "@clawdline/contract"
 import {
-  afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment,
+  afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFragmentWithOutput, destinationFromFragment,
   displayedPresentationStatus, fleetRowTitle, mergeListPresentation, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
   destinationKey, prependOlderPage, projectionRefreshAt, settleProjection, SessionDetailCache, shownDestinationKeys,
   SessionExecutionRecovery, supersedingDestination,
@@ -400,4 +400,16 @@ test("output links keep the exact machine, Session and execution generation", ()
   assert.deepEqual(destinationFromFragment(destinationFragment(target) + "&output=" + "b".repeat(64)), target)
   assert.equal(destinationFromFragment(destinationFragment(target) + "&output=../../private"), null)
   assert.equal(destinationFromFragment(destinationFragment(target) + "&output=" + "b".repeat(64) + "&machine=another"), null)
+})
+
+test("opening a pinned Session retains its file destination without carrying it to another execution", () => {
+  const target = { machineID: "machine-a", sessionID: "%19", executionGeneration: "a".repeat(32) }
+  const address = destinationFragment(target) + "&output=" + "b".repeat(64)
+  assert.equal(destinationFragmentWithOutput(target, address), address)
+  assert.equal(destinationFragmentWithOutput(target, address.replace(/^#machine=([^&]+)&session=([^&]+)/, "#session=$2&machine=$1")), address)
+  for (const next of [{ ...target, machineID: "machine-b" }, { ...target, sessionID: "%20" }, { ...target, executionGeneration: "c".repeat(32) }]) {
+    assert.equal(destinationFragmentWithOutput(next, address), destinationFragment(next))
+  }
+  assert.equal(destinationFragmentWithOutput(target, address + "&output=" + "c".repeat(64)), destinationFragment(target))
+  assert.equal(destinationFragmentWithOutput(target, destinationFragment(target) + "&output=../../private"), destinationFragment(target))
 })
