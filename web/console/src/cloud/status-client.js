@@ -5,6 +5,7 @@ import { CatalogCloudClient } from "./refusal-client.js"
 import { SESSION_INVENTORY_ID, SESSION_INVENTORY_LIMIT, channelSegment, decodedChannelSegment } from "../legacy/js/net/client.js"
 import { base64Bytes, bytesBase64, envelopeSigningBytes, importMasterSecret, openEnvelope, sealEnvelope, validateEnvelope } from "../legacy/js/net/cloud-crypto.js"
 import { classifyViewerError, viewerHealthBegin, viewerHealthFailed } from "../legacy/js/net/viewer-health-hook.js"
+import { statusInventoryIDs } from "./status-projection.ts"
 
 const decoder = new TextDecoder()
 const STATUS = /^ss\/([^/]+)\/([^/]+)$/u
@@ -516,8 +517,14 @@ export class StatusCloudClient extends CatalogCloudClient {
 
   /** Retry backoff expiring permits another request; only live evidence restores presence. */
   _machineRows() {
-    return super._machineRows().map((row) => this.machineOffline?.has(row.id)
-      ? Object.freeze({ ...row, freshness: "stale", autoSelectable: false }) : row)
+    return super._machineRows().map((row) => {
+      // Rich s/ rows are opened detail, not the machine's Session inventory.
+      // The signed, fresh ss/ marker proves a count even before its rows replay.
+      // Missing or partial evidence remains unknown; only a complete empty set is zero.
+      const inventory = statusInventoryIDs(this, row.id)
+      return Object.freeze({ ...row, sessions: inventory?.length,
+        ...(this.machineOffline?.has(row.id) ? { freshness: "stale", autoSelectable: false } : {}) })
+    })
   }
 
   _machinesFor(type) {

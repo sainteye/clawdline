@@ -260,6 +260,13 @@ their meanings. An opened detail missing that reading asks a machine supporting
 `sessions.row` to restate just that row, sharing the question recovery's existing
 throttle. Unopened list rows initiate no additional reads.
 
+The machine picker and Devices use the same signed, complete, fresh `ss/` inventory
+to count Sessions, including child Sessions. They do not count opened rich `s/`
+details or wait for every status row to replay. A missing, partial, invalid or
+expired marker leaves the count unknown; only a complete empty inventory proves
+zero. A pinned `sessions.list` fallback can show the Session list while its signed
+inventory is still arriving, without inventing a machine count.
+
 The provider subagent view replaces the main Session's to-do fold with **Close**,
 which returns to the parent conversation without stopping the agent. Claude and
 Codex share this layout. With no composer or status line below it, the background

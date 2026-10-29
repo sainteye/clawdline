@@ -9,6 +9,99 @@ const envelope = (ch) => ({ v: 1, ch, seq: 1, ts: 1, class: "stream", key_id: "k
 const genA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const genB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
+function machineCountClient() {
+  const client = Object.create(StatusCloudClient.prototype)
+  client._knownMachines = () => ["mac", "linux"]
+  client.orchestratorSnapshots = new Map(["mac", "linux"].map(id => [id, {
+    at: Date.now() / 1000, machine: { platform: id === "mac" ? "darwin" : "linux" },
+  }]))
+  client.machineDescriptors = new Map()
+  client.machineObservedAt = new Map()
+  client.unpairedMachines = new Set()
+  client.viewerVerified = new Map([["mac", {}], ["linux", {}]])
+  client.pairingSeen = new Set()
+  client.sessionSnapshots = new Map()
+  client.statusSnapshots = new Map()
+  return client
+}
+
+function holdCountInventory(client, machine, sessions, overrides = {}) {
+  const identity = { machine, session: "__clawdline_inventory_v1__" }
+  const marker = { identity, observedAt: Date.now(), sequence: 1,
+    payload: { at: Date.now() / 1000, complete: true, snapshot_generation: genA,
+      inventory: { version: 1, sessions }, ...overrides } }
+  client.statusSnapshots.set(JSON.stringify([machine, identity.session]), marker)
+  return marker
+}
+
+test("machine counts follow the complete status inventory before any Session detail opens", async () => {
+  const client = machineCountClient()
+  holdCountInventory(client, "mac", ["root", "child", "idle"])
+  holdCountInventory(client, "linux", ["root"])
+  const counts = async () => (await client.machines()).machines.map(row => [row.id, row.sessions])
+  assert.deepEqual(await counts(), [["mac", 3], ["linux", 1]])
+  client.sessionSnapshots.set("mac\u0000root", { machine: "mac", session: "root" })
+  client.sessionSnapshots.set("mac\u0000removed", { machine: "mac", session: "removed" })
+  assert.deepEqual(await counts(), [["mac", 3], ["linux", 1]], "opened or obsolete details are not a census")
+  holdCountInventory(client, "mac", ["root"])
+  assert.deepEqual(await counts(), [["mac", 1], ["linux", 1]], "a newer complete set replaces the count")
+  holdCountInventory(client, "mac", [])
+  assert.deepEqual(await counts(), [["mac", 0], ["linux", 1]], "a complete empty set proves zero")
+})
+
+test("missing, partial, expired or malformed status inventories never invent a machine count", async () => {
+  const client = machineCountClient()
+  client.sessionSnapshots.set("mac\u0000opened", { machine: "mac", session: "opened" })
+  assert.equal((await client.machines()).machines[0].sessions, undefined)
+  for (const overrides of [
+    { complete: false }, { at: undefined }, { at: Date.now() / 1000 - 301 },
+    { at: Date.now() / 1000 + 301 }, { snapshot_generation: "invalid" },
+    { inventory: { version: 1, sessions: ["same", "same"] } },
+    { inventory: { version: 1, sessions: ["__clawdline_inventory_v1__"] } },
+    { inventory: { version: 2, sessions: [] } },
+  ]) {
+    holdCountInventory(client, "mac", [], overrides)
+    assert.equal((await client.machines()).machines[0].sessions, undefined, JSON.stringify(overrides))
+  }
+  const marker = holdCountInventory(client, "mac", [])
+  marker.identity = { machine: "linux", session: marker.identity.session }
+  assert.equal((await client.machines()).machines[0].sessions, undefined, "held identity must match its machine")
+})
+
+test("authenticated inventory replay updates the picker count without subscribing to rich detail", async () => {
+  const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])
+  const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])
+  const client = machineCountClient()
+  client.statusSequences = new Map()
+  client.sequenceBySender = new Map()
+  client.realignSequenceByChannel = new Map()
+  client._machinePairing = async () => ({ keyID: "key", senderID: "sender", senderKey: keys.publicKey, masterKey })
+  client._compareKeyID = () => {}
+  client._sawAuthenticatedEnvelope = () => {}
+  client._recordReceiveFailure = () => {}
+  const readings = []
+  client._emit = () => readings.push(client._machineRows()[0].sessions)
+  for (const [seq, sessions] of [[1, ["root", "child", "idle"]], [2, []]]) {
+    const nonce = crypto.getRandomValues(new Uint8Array(12))
+    const payload = { at: Date.now() / 1000, complete: true, snapshot_generation: genA,
+      inventory: { version: 1, sessions } }
+    const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, masterKey,
+      new TextEncoder().encode(JSON.stringify(payload)))
+    const signed = { ...envelope("ss/mac/__clawdline_inventory_v1__"), seq, ts: Date.now(),
+      nonce: Buffer.from(nonce).toString("base64"), ct: Buffer.from(ct).toString("base64") }
+    signed.sig = Buffer.from(await crypto.subtle.sign({ name: "Ed25519" }, keys.privateKey,
+      envelopeSigningBytes(signed))).toString("base64")
+    const signature = base64Bytes(signed.sig, "sig")
+    signature[0] ^= 1
+    await assert.rejects(client._receiveEnvelope({ ...signed, sig: Buffer.from(signature).toString("base64") }, true),
+      { code: "unreadable_envelope" })
+    await client._receiveEnvelope(signed, true)
+  }
+  assert.deepEqual(readings, [3, 0])
+  assert.equal(client.sessionSnapshots.size, 0)
+  assert.equal((await client.machines()).machines[1].sessions, undefined, "another machine remains unknown")
+})
+
 test("fleet diagnostics choose a paired Mac even when a Linux test machine sorts first", () => {
   const client = Object.create(StatusCloudClient.prototype)
   client.viewerVerified = new Map([
