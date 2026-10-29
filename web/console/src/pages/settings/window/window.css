@@ -63,21 +63,21 @@
   margin-right: -8px;
   flex: none;
   /* The project's own creature at three pixels a cell, the wordmark's literal
-     (`main.js`): ".######." / ".#o##o#." / "########" / ".##..##.". Drawn as a
+     (`brand-mark.ts`): ".######." / ".#o##o#." / "########" / ".######.". Drawn as a
      gradient grid rather than fetched, so the window needs no second request. */
   background-image: linear-gradient(var(--sw-accent), var(--sw-accent)), linear-gradient(#141416, #141416);
   background-repeat: no-repeat;
   background-size: 100% 100%, 0 0;
   -webkit-mask-image: url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'>\
-<path fill='black' d='M1 0h6v1H1zM1 1h1v1H1zM3 1h2v1H3zM6 1h1v1H6zM0 2h8v1H0zM1 3h2v1H1zM5 3h2v1H5z'/>\
+<path fill='black' d='M1 0h6v1H1zM1 1h1v1H1zM3 1h2v1H3zM6 1h1v1H6zM0 2h8v1H0zM1 3h6v1H1z'/>\
 </svg>");
   -webkit-mask-size: 22px 11px;
   -webkit-mask-position: center;
   -webkit-mask-repeat: no-repeat;
   mask-image: url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'>\
-<path fill='black' d='M1 0h6v1H1zM1 1h1v1H1zM3 1h2v1H3zM6 1h1v1H6zM0 2h8v1H0zM1 3h2v1H1zM5 3h2v1H5z'/>\
+<path fill='black' d='M1 0h6v1H1zM1 1h1v1H1zM3 1h2v1H3zM6 1h1v1H6zM0 2h8v1H0zM1 3h6v1H1z'/>\
 </svg>");
   mask-size: 22px 11px;
   mask-position: center;

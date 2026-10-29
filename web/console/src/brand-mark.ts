@@ -3,7 +3,7 @@ import type { Icon, SessionRow } from "@clawdline/contract"
 // The wordmark and every machine workspace Session share the same mark.
 export const BRAND_MARK: Icon = {
   accent: "#d97757",
-  cells: [".######.", ".#o##o#.", "########", ".##..##."].map((row) =>
+  cells: [".######.", ".#o##o#.", "########", ".######."].map((row) =>
     row.split("").map((ch) => (ch === "#" ? "#d97757" : ch === "o" ? "#141416" : "#33201a")),
   ),
 }
