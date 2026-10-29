@@ -68,6 +68,8 @@ Clawdline 的常駐服務與主控台在你的機器上執行，管理你已使�
 
 Clawdline 在你自己的機器上讀取 Claude Code 與 Codex 對話、終端與專案檔案。本機使用不需要帳號，Cloud 預設關閉，由你決定是否開啟。
 
+![機器與已配對瀏覽器負責加解密，Clawdline Cloud 轉送密文且不持有內容金鑰，仍可見帳號、裝置與流量中繼資料。](docs/assets/security-data-flow-zh-Hant.svg)
+
 開啟 Cloud 後，內容先在本機加密才送出。Cloud 只轉送密文，不持有解密金鑰；只有你的機器與你配對的瀏覽器能讀取。Cloud 仍看得到帳號、裝置與流量等中繼資料。
 
 配對的瀏覽器可以傳送指示、操作你的終端，請只配對你信任的裝置。Claude Code 與 Codex 仍會依各自 AI 供應商的政策傳送請求。

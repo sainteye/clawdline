@@ -68,6 +68,8 @@ The machine can turn direct connections off in Settings → Remote or with `claw
 
 Clawdline reads your Claude Code and Codex conversations, terminals and project files on your own machine. Local use needs no account, and Cloud stays off until you turn it on.
 
+![Your machine and paired browsers encrypt and decrypt content. Clawdline Cloud relays ciphertext without content keys and still sees account, device and traffic metadata.](docs/assets/security-data-flow-en.svg)
+
 With Cloud on, content is encrypted on your machine before it leaves. Cloud relays ciphertext without the keys to decrypt it; only your machine and the browsers you pair can read it. Cloud still sees account, device and traffic metadata.
 
 A paired browser can send instructions and use your terminal, so pair only devices you trust. Claude Code and Codex still send requests to their AI providers under those providers' policies.
