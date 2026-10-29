@@ -12,6 +12,8 @@
         "path"
       ],
       "properties": {
+        "workflow_skills_enabled": { "type": "boolean", "nullable": true },
+        "graphify_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "exists": {
           "description": "False before anything has been written. Every key then has the shell's default.",
@@ -280,6 +282,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "workflow_skills_enabled": { "type": "boolean", "nullable": true },
+        "graphify_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "hotkey": {
           "description": "A combination the shell can register (`cmd+shift+k`), or empty for none.",
@@ -554,6 +558,36 @@
         },
         "verify_gate": {
           "nullable": true,
+          "type": "boolean"
+        }
+      }
+    },
+    "IntegrationSettingsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workflow_skills_enabled",
+        "graphify_enabled"
+      ],
+      "properties": {
+        "workflow_skills_enabled": {
+          "type": "boolean",
+          "description": "Machine-wide explicit opt-in; absent settings remain disabled."
+        },
+        "graphify_enabled": {
+          "type": "boolean",
+          "description": "Machine-wide explicit opt-in; absent settings remain disabled."
+        }
+      }
+    },
+    "IntegrationSettingsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workflow_skills_enabled": {
+          "type": "boolean"
+        },
+        "graphify_enabled": {
           "type": "boolean"
         }
       }

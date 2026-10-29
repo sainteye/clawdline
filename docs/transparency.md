@@ -105,3 +105,13 @@ It does not prepare provider context, run a model prompt or change instruction
 injection. The new guide paragraph documents that explicit diagnostic read only.
 Review of the entry-point changes and both guide languages leaves the existing
 English and Taiwan Traditional Chinese injection explanations applicable.
+
+
+Machine integrations have separate conditional entries for bundled workflow
+skills and Graphify guidance. Both are off by default and affect only new
+Clawdline-launched Claude/Codex Sessions across Projects on that machine,
+including broker launches. Resume retains original context. Workflow bodies are
+inlined with existing instructions; Graphify requires a read-only check before
+each optional query and remains cooperative guidance. Neither switch installs
+or uninstalls tools. The reviewed inventory includes both source bodies and the
+machine setting/launch producers; website publication follows the product tree.

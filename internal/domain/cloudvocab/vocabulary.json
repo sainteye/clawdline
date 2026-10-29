@@ -440,6 +440,98 @@
       "decode": {"reply": "session", "name": "info.{parts}", "fields": {"parts": {"type": "string", "enum": ["full", "summary", "remote-permission"], "into": "parts"}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/sessions/{session}/info", "query": {"parts": {"from": "parts"}}}}
     },
     {
+      "op": "integration-settings",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/settings/integrations",
+      "console_seam": "writer",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "request": "req-read",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/settings/integrations"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/settings/integrations"
+        }
+      }
+    },
+    {
+      "op": "integration-settings-update",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/settings/integrations",
+      "console_seam": "writer",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "changes": {
+          "workflow_skills_enabled": false,
+          "graphify_enabled": false
+        },
+        "request": "req-write",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "changes",
+            "request",
+            "session"
+          ],
+          "path": "/v1/settings/integrations",
+          "local_body": [
+            "graphify_enabled",
+            "workflow_skills_enabled"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "changes": {
+            "type": "object",
+            "max_bytes": 65536,
+            "closed": true,
+            "max_keys": 2,
+            "properties": {
+              "workflow_skills_enabled": {
+                "type": "bool"
+              },
+              "graphify_enabled": {
+                "type": "bool"
+              }
+            },
+            "copies": {
+              "max_bytes": "defaultModelsCloudBodyLimit"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/settings/integrations",
+          "body": {
+            "object": "changes"
+          }
+        }
+      }
+    },
+    {
       "op": "intents",
       "kind": "command",
       "write_gate": true,

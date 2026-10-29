@@ -871,6 +871,15 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-workflow-write", method: "POST", path: "/v1/settings/workflow",
 		body2: `{"dispatch_full_permission":false,"session_auto_discovery":false}`,
 	}, {
+		word:    "integration-settings",
+		body:    map[string]any{"type": "integration-settings", "session": machine, "request": "req-integrations"},
+		session: machine, name: "read:req-integrations", method: "GET", path: "/v1/settings/integrations",
+	}, {
+		word:    "integration-settings-update",
+		body:    map[string]any{"type": "integration-settings-update", "session": machine, "request": "req-integrations-write", "changes": map[string]any{"workflow_skills_enabled": true, "graphify_enabled": false}},
+		session: machine, name: "action:req-integrations-write", method: "POST", path: "/v1/settings/integrations",
+		body2: `{"graphify_enabled":false,"workflow_skills_enabled":true}`,
+	}, {
 		word:    "notification-settings",
 		body:    map[string]any{"type": "notification-settings", "session": machine, "request": "req-notifications"},
 		session: machine, name: "read:req-notifications",

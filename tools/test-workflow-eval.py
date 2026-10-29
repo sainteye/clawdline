@@ -132,11 +132,11 @@ class EvaluationTest(unittest.TestCase):
         with self.assertRaises(workflow.Invalid):
             workflow.report(self.out)
 
-    def test_native_discovery_paths_reach_the_same_skill(self):
+    def test_project_discovery_does_not_bypass_the_machine_switch(self):
         for name in workflow.SKILLS:
             canonical = ROOT / "skills" / name / "SKILL.md"
             for runtime in (".agents", ".claude"):
-                self.assertEqual((ROOT / runtime / "skills" / name / "SKILL.md").resolve(), canonical)
+                self.assertFalse((ROOT / runtime / "skills" / name).exists())
                 self.assertTrue(canonical.is_file())
 
     def test_source_inventory_cannot_be_silently_removed(self):
@@ -175,18 +175,20 @@ class EvaluationTest(unittest.TestCase):
         self.assertEqual(result["per_case"][case]["candidate"]["passed"], 0)
         self.assertEqual(result["per_case"][case]["baseline"]["passed"], 1)
 
-    def test_only_candidate_prompts_offer_the_new_skills(self):
+    def test_only_candidate_prompts_include_the_bundled_machine_instructions(self):
         manifest = self.read("manifest.json")
         case = workflow.load_suite()["cases"][0]["id"]
         pair = [row for row in manifest["trials"] if row["case"] == case]
         prompts = {row["arm"]: (self.out / "prompts" / (row["id"] + ".md")).read_text() for row in pair}
-        self.assertNotIn("# Available project skills", prompts["baseline"])
-        self.assertIn("# Available project skills", prompts["candidate"])
+        self.assertNotIn("# Machine integration instructions", prompts["baseline"])
+        self.assertIn("# Machine integration instructions", prompts["candidate"])
+        self.assertIn((ROOT / "skills/workflow-prefix.md").read_text().strip(), prompts["candidate"])
         for name in workflow.SKILLS:
-            self.assertIn(str(self.out / "sources" / name / "SKILL.md"), prompts["candidate"])
+            body = (ROOT / "skills" / name / "SKILL.md").read_text().strip()
+            self.assertIn(body, prompts["candidate"])
+            self.assertNotIn(body, prompts["baseline"])
         for arm in prompts:
             self.assertIn((ROOT / "AGENTS.md").read_text(), prompts[arm])
-            self.assertNotIn("# Evidence-led debugging", prompts[arm])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 ---
 name: evidence-review
-description: Use when reviewing a substantial change against its request, or assessing code-review feedback before applying it in this repository. Skip trivial copy edits and routine status questions.
+description: Use when reviewing a substantial change against its request, or assessing code-review feedback before applying it in the current project. Skip trivial copy edits and routine status questions.
 ---
 
 # Evidence-led review
@@ -18,6 +18,6 @@ When receiving feedback, first restate the concrete proposed change and verify i
 
 Match acceptance evidence to its subject: a child success message needs its artifact and landing checked; deployment needs the intended version and served asset checked; a bug needs its original symptom retested. Report partial verification as partial. Do not modify or delete someone else's work while checking a claim.
 
-For the project pilot, keep an invocation announcement and findings in the normal Session history. On the first applicable task on or after 2026-11-06, read `docs/workflow-skill-pilot.md` and perform its evidence-only checkpoint. Do not launch extra model calls as part of ordinary review.
+Keep invocation evidence and findings in the normal Session history. If the current project has an approved workflow pilot, follow its own checkpoint and evidence limits. Do not launch extra model calls as part of ordinary review.
 
-Adapted from obra/superpowers `receiving-code-review` and the spec/quality review distinction in `subagent-driven-development` at commit 2ce8aa15d05bd57213e6f746f953aafb7ded7a8b. Copyright (c) 2025 Jesse Vincent, MIT; see `docs/licenses/obra-superpowers-MIT.txt`. No orchestration, model-selection or branch-finishing instructions were imported.
+Adapted from obra/superpowers `receiving-code-review` and the spec/quality review distinction in `subagent-driven-development` at commit 2ce8aa15d05bd57213e6f746f953aafb7ded7a8b. Copyright (c) 2025 Jesse Vincent, MIT. No orchestration, model-selection or branch-finishing instructions were imported.

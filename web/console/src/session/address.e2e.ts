@@ -134,6 +134,9 @@ let machineSettings: Record<string, unknown> = {
 }
 let workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true }
 let refuseWorkflowWrite = false
+let integrationSettings = { workflow_skills_enabled: false, graphify_enabled: false }
+let refuseIntegrationWrite = false
+let refuseIntegrationRead = false
 let refuseDefaultModelWrite = false
 let refuseModelCatalog = false
 let assignmentBody: Record<string, unknown> | null = null
@@ -282,6 +285,18 @@ function daemon(): Server {
       }
       if (heldSessions) return void heldSessions.push(() => json(res, 200, snapshot()))
       return json(res, 200, snapshot())
+    }
+    if (path === "/v1/settings/integrations" && req.method === "GET") {
+      if (refuseIntegrationRead) { refuseIntegrationRead = false; return json(res, 503, { error: "settings_unavailable", detail: "Could not read settings." }) }
+      return json(res, 200, integrationSettings)
+    }
+    if (path === "/v1/settings/integrations" && req.method === "POST") {
+      void requestJSON(req).then(change => {
+        if (refuseIntegrationWrite) { refuseIntegrationWrite = false; return json(res, 503, { error: "settings_unavailable", detail: "Could not save settings." }) }
+        integrationSettings = { ...integrationSettings, ...change }
+        json(res, 200, integrationSettings)
+      })
+      return
     }
     if (path === "/v1/settings/workflow" && req.method === "GET") return json(res, 200, workflowSettings)
     if (path === "/v1/settings/workflow" && req.method === "POST") {
@@ -3135,7 +3150,7 @@ test("workflow settings explain both switches and persist independent changes on
         }
         await waitFor(`!!document.getElementById("settings-tab-3")`)
         await tab.run(`document.getElementById("settings-tab-3").click()`)
-        const switches = `.settings-workflow [role="switch"]`
+        const switches = `.settings-workflow:not(.settings-integrations) [role="switch"]`
         await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
         assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute("aria-checked"))`), ["true", "true"])
         assert.equal(await tab.run(`document.querySelectorAll('.workflow-setting-help:not([hidden])').length`), 0)
@@ -3286,3 +3301,58 @@ for (const size of [PHONE, DESK]) test(`composer drafts: ${size.width}px keeps t
     await wait(`document.getElementById("msg")?.isContentEditable`)
     assert.equal(await text(), "", "clearing text deletes the saved draft")
   }))
+
+
+test("integration switches persist machine opt-ins and recover failures in both languages and sizes", async () => {
+  for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
+    for (const tag of ["en", "zh-Hant"]) {
+      integrationSettings = { workflow_skills_enabled: false, graphify_enabled: false }
+      refuseIntegrationRead = true
+      await inTab(size, async tab => {
+        const waitFor = async (expression: string) => {
+          const end = Date.now() + 5000
+          while (!await tab.run(expression)) {
+            if (Date.now() > end) assert.fail("integration wait: " + expression)
+            await new Promise(resolve => setTimeout(resolve, 30))
+          }
+        }
+        await tab.go("/")
+        await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)})`)
+        await tab.run(`location.hash = "page=settings"`)
+        await tab.reload()
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
+        await waitFor(`!!document.querySelector('.settings-integrations .chip')`)
+        assert.equal(await tab.run(`document.querySelector('.settings-integrations [role="switch"]').disabled`), true)
+        await tab.run(`document.querySelector('.settings-integrations .chip').click()`)
+        const switches = `.settings-integrations [role="switch"]`
+        await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
+        assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["false", "false"])
+        await tab.run(`document.querySelector('.settings-integrations .workflow-info').click()`)
+        assert.ok(await tab.run(`document.querySelector('.settings-integrations .workflow-setting-help').textContent.includes(${JSON.stringify(tag === "en" ? "new Claude/Codex" : "新 Claude／Codex")})`))
+        for (const [index, key] of [[0, "workflow_skills_enabled"], [1, "graphify_enabled"]] as const) {
+          await tab.run(`document.querySelectorAll('${switches}')[${index}].click()`)
+          await waitFor(`document.querySelectorAll('${switches}')[${index}].getAttribute('aria-checked') === 'true' && !document.querySelector('${switches}').disabled`)
+          assert.equal(integrationSettings[key], true)
+        }
+        assert.deepEqual(integrationSettings, { workflow_skills_enabled: true, graphify_enabled: true })
+        const bounds = await tab.run(`({width:innerWidth,page:document.documentElement.scrollWidth})`)
+        assert.ok(bounds.page <= bounds.width + 1, `${tag} ${sizeName} integration overflow: ${JSON.stringify(bounds)}`)
+        await tab.run(`document.querySelector('.settings-integrations .workflow-info').click(); document.querySelectorAll('.settings-integrations .workflow-info')[1].click(); document.querySelector('.settings-integrations').scrollIntoView({block:'start'})`)
+        if (shots) { mkdirSync(shots, { recursive: true }); await tab.shot(`${tag}-${sizeName}-integration-settings`) }
+        await tab.reload()
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
+        await waitFor(`!document.querySelector('${switches}')?.disabled`)
+        assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["true", "true"])
+        refuseIntegrationWrite = true
+        await tab.run(`document.querySelector('${switches}').click()`)
+        await waitFor(`!document.querySelector('${switches}').disabled && !!document.querySelector('.settings-integrations .said').textContent`)
+        assert.equal(await tab.run(`document.querySelector('${switches}').getAttribute('aria-checked')`), "true")
+        await tab.run(`document.querySelector('${switches}').click()`)
+        await waitFor(`document.querySelector('${switches}').getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
+        assert.deepEqual(integrationSettings, { workflow_skills_enabled: false, graphify_enabled: true })
+      })
+    }
+  }
+})

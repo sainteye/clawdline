@@ -135,6 +135,8 @@ func init() {
 		op{name: "work-gate-settings", read: true},
 		op{name: "workflow-settings", read: true},
 		op{name: "workflow-settings-update"},
+		op{name: "integration-settings", read: true},
+		op{name: "integration-settings-update"},
 
 		op{name: "notification-settings", read: true},
 

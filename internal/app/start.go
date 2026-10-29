@@ -70,6 +70,9 @@ type Starter struct {
 	// (memory.Store.LaunchText): "" for a Project with none, which launches
 	// exactly as before it existed. Nil gives none, which only a test wants.
 	Memory func(dir string) string
+	// IntegrationInstructions reads this machine's explicit opt-ins once for
+	// a new Claude/Codex launch, across every Project. Resumes do not read it.
+	IntegrationInstructions func(context.Context, string) (string, error)
 }
 
 // PreparedAntigravity is one private durable launch intent. AttachTerminal
@@ -149,9 +152,17 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		return s.startAntigravity(ctx, place, projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
 			Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: persona, Memory: memory})
 	}
+	integrations := ""
+	if resume == "" && s.IntegrationInstructions != nil {
+		var err error
+		integrations, err = s.IntegrationInstructions(ctx, place.Path)
+		if err != nil {
+			return Started{}, err
+		}
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
 		Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: preflightPersona, PersonaDir: s.PersonaDir,
-		Memory: memory})
+		Memory: memory, IntegrationInstructions: integrations})
 	if err != nil {
 		if errors.Is(err, projects.ErrUnknownPersona) {
 			return Started{}, StartRefusal{Status: http.StatusBadRequest, Code: "unknown_persona", Message: err.Error()}
@@ -179,7 +190,7 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		if prepared.files.PromptPath != "" {
 			launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
 				Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: persona,
-				SquadPromptPath: prepared.files.PromptPath, Memory: memory})
+				SquadPromptPath: prepared.files.PromptPath, Memory: memory, IntegrationInstructions: integrations})
 			if err != nil {
 				_ = s.Squad.FailSquadLaunch(ctx, prepared.launch.ID)
 				return Started{}, err

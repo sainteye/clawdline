@@ -290,6 +290,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("workflow-settings" in CARRIED)
   assert.ok("work-gate-settings-update" in CARRIED)
   assert.ok("workflow-settings-update" in CARRIED)
+  assert.equal(CARRIED["integration-settings"], "GET /v1/settings/integrations")
+  assert.equal(CARRIED["integration-settings-update"], "POST /v1/settings/integrations")
   assert.ok("machine-usage" in CARRIED)
   assert.ok("update" in CARRIED)
   assert.ok("update-apply" in CARRIED)
@@ -328,7 +330,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["project-antigravity-consent-change"], "POST /v1/projects/{project}/antigravity-consent")
   assert.ok(!("project-antigravity-consent-status" in DEFERRED))
   assert.ok(!("project-antigravity-consent-change" in DEFERRED))
-  assert.equal(Object.keys(CARRIED).length, 173)
+  assert.equal(Object.keys(CARRIED).length, 175)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

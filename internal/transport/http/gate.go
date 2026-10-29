@@ -549,7 +549,7 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may read, and not change default models."
 		}
-	case p == "/v1/settings/work-gates" || p == "/v1/settings/workflow":
+	case p == "/v1/settings/work-gates" || p == "/v1/settings/workflow" || p == "/v1/settings/integrations":
 		// This narrow route exposes only the two future-assignment gate
 		// defaults. A paired device needs Send to change them, as it does for
 		// the other machine-wide controls carried to Settings.

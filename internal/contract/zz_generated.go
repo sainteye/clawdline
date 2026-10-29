@@ -3217,6 +3217,19 @@ type ImageStoreResult struct {
 	Terminal string `json:"terminal,omitempty"`
 }
 
+type IntegrationSettingsRequest struct {
+	GraphifyEnabled       bool `json:"graphify_enabled,omitempty"`
+	WorkflowSkillsEnabled bool `json:"workflow_skills_enabled,omitempty"`
+}
+
+type IntegrationSettingsSnapshot struct {
+	// Machine-wide explicit opt-in; absent settings remain disabled.
+	GraphifyEnabled bool `json:"graphify_enabled"`
+
+	// Machine-wide explicit opt-in; absent settings remain disabled.
+	WorkflowSkillsEnabled bool `json:"workflow_skills_enabled"`
+}
+
 type IntentDraft struct {
 	Assistant string `json:"assistant"`
 
@@ -6422,7 +6435,8 @@ type SettingsRequest struct {
 	CodexDefaultModel *string `json:"codex_default_model"`
 
 	// Whether the terminal selects the tab the bar points at.
-	FollowTarget *bool `json:"follow_target"`
+	FollowTarget    *bool `json:"follow_target"`
+	GraphifyEnabled *bool `json:"graphify_enabled"`
 
 	// A combination the shell can register (`cmd+shift+k`), or empty for none.
 	Hotkey *string `json:"hotkey"`
@@ -6582,7 +6596,8 @@ type SettingsRequest struct {
 	VoiceStopSeconds *float64 `json:"voice_stop_seconds"`
 
 	// 360 to 1400.
-	Width *float64 `json:"width"`
+	Width                 *float64 `json:"width"`
+	WorkflowSkillsEnabled *bool    `json:"workflow_skills_enabled"`
 
 	// 0.05 to 0.80.
 	YFraction *float64 `json:"y_fraction"`
@@ -6651,7 +6666,8 @@ type SettingsSnapshot struct {
 	Exists bool `json:"exists"`
 
 	// Whether the terminal selects the tab the bar points at.
-	FollowTarget *bool `json:"follow_target"`
+	FollowTarget    *bool `json:"follow_target"`
+	GraphifyEnabled *bool `json:"graphify_enabled"`
 
 	// The file's `hotkey`, or null when the file does not carry one as a string. Null
 	// means the default, option+space, which the Swift app used to own and no longer
@@ -6834,7 +6850,8 @@ type SettingsSnapshot struct {
 	VoiceStopSeconds *float64 `json:"voice_stop_seconds"`
 
 	// The bar's width in points.
-	Width *float64 `json:"width"`
+	Width                 *float64 `json:"width"`
+	WorkflowSkillsEnabled *bool    `json:"workflow_skills_enabled"`
 
 	// Where the bar's top sits, as a fraction of screen height.
 	YFraction *float64 `json:"y_fraction"`

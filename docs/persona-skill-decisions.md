@@ -1,6 +1,6 @@
 # Persona skill candidate decisions
 
-For the separate repository-local debugging/review experiment and its unevaluated
+For the separate optional machine-wide debugging/review experiment and its unevaluated
 behavioral status, see the [workflow skill pilot](workflow-skill-pilot.md).
 It does not change this built-in role catalog or the historical research ledger.
 

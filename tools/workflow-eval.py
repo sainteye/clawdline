@@ -82,7 +82,8 @@ def prepare(out, repeats, model, seed=None):
     require(isinstance(model, str) and model.strip(), "record the exact model and harness configuration")
     suite = load_suite()
     sources = {"sources/AGENTS.md": (ROOT / "AGENTS.md").read_bytes(),
-               "sources/cases.json": SUITE.read_bytes()}
+               "sources/cases.json": SUITE.read_bytes(),
+               "sources/workflow-prefix.md": (ROOT / "skills/workflow-prefix.md").read_bytes()}
     for name in SKILLS:
         sources["sources/" + name + "/SKILL.md"] = (ROOT / "skills" / name / "SKILL.md").read_bytes()
     # Read all inputs before creating output. mkdir is exclusive even when two
@@ -107,12 +108,11 @@ def prepare(out, repeats, model, seed=None):
         case = by_id[trial["case"]]
         prompt = "# Existing repository instructions\n\n" + rules + "\n\n# Scenario boundary\n\n" + suite["context"]
         if trial["arm"] == "candidate":
-            prompt += "\n\n# Available project skills\n\nCompare the request with these descriptions; read only an applicable skill.\n"
+            prompt += "\n\n# Machine integration instructions\n\n"
+            prompt += sources["sources/workflow-prefix.md"].decode("utf-8").strip()
             for name in SKILLS:
                 content = sources["sources/" + name + "/SKILL.md"].decode("utf-8")
-                description = next(line.removeprefix("description: ") for line in content.splitlines()
-                                   if line.startswith("description: "))
-                prompt += f"\n- {name}: {description} File: {out / 'sources' / name / 'SKILL.md'}\n"
+                prompt += "\n\n" + content.strip()
         prompt += "\n\n# Request\n\n" + case["request"] + "\n\n# Supplied artifacts\n\n" + case["artifacts"] + "\n"
         relative = "prompts/" + trial["id"] + ".md"
         (out / relative).write_text(prompt, encoding="utf-8")
@@ -142,7 +142,7 @@ def report(out):
     require(manifest.get("schema_version") == grades.get("schema_version") == 1, "unsupported experiment schema")
     files = manifest.get("files")
     require(isinstance(files, dict) and files, "missing frozen input inventory")
-    require({"sources/AGENTS.md", "sources/cases.json", "rubric.json",
+    require({"sources/AGENTS.md", "sources/cases.json", "sources/workflow-prefix.md", "rubric.json",
              *("sources/" + name + "/SKILL.md" for name in SKILLS)} <= set(files), "missing frozen source")
     for relative, expected in files.items():
         path = contained(out, relative)

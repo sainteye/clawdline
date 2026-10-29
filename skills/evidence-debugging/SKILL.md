@@ -1,6 +1,6 @@
 ---
 name: evidence-debugging
-description: Use when investigating a non-trivial bug, repeated failure, dropped event, stalled operation, or unexpected behavior in this repository. Skip routine copy, styling, and already-understood mechanical edits.
+description: Use when investigating a non-trivial bug, repeated failure, dropped event, stalled operation, or unexpected behavior in the current project. Skip routine copy, styling, and already-understood mechanical edits.
 ---
 
 # Evidence-led debugging
@@ -13,6 +13,6 @@ Find the failing boundary before choosing a fix. Apply the current task and repo
 4. Fix at the earliest responsible boundary with the smallest sufficient change. For behavioral fixes, prove a focused reproduction fails without the fix and succeeds with it, in an isolated tree. Use the repository's existing local gate; broader checks remain governed by project policy.
 5. Report the observed cause, correction, evidence and remaining uncertainty. Keep temporary mitigation distinct from a verified fix. Continue authorized work without adding approval checkpoints for routine implementation choices.
 
-For the project pilot, keep an invocation announcement and task verification evidence in the normal Session history. On the first applicable task on or after 2026-11-06, read `docs/workflow-skill-pilot.md` and perform its evidence-only checkpoint. A checkpoint reviews persisted evidence; it does not start paid model calls.
+Keep invocation and verification evidence in the normal Session history. If the current project has an approved workflow pilot, follow its own checkpoint and evidence limits. Do not start separate model calls to evaluate the skill during ordinary work.
 
-Adapted from obra/superpowers `systematic-debugging` at commit 2ce8aa15d05bd57213e6f746f953aafb7ded7a8b. Copyright (c) 2025 Jesse Vincent, MIT; see `docs/licenses/obra-superpowers-MIT.txt`. Clawdline-specific workflow and permission boundaries are local adaptations.
+Adapted from obra/superpowers `systematic-debugging` at commit 2ce8aa15d05bd57213e6f746f953aafb7ded7a8b. Copyright (c) 2025 Jesse Vincent, MIT. Clawdline-specific workflow and permission boundaries are local adaptations.

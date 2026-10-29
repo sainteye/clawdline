@@ -119,3 +119,9 @@ Start with the [task-based user index](user/README.md). It leads to a first Sess
 - [Onboarding survey](onboarding-survey.md): optional bilingual questions, consent, persistence and aggregate reporting.
 
 [Sharing images](share-images.md) describes the bilingual repository, README and community preview assets.
+
+## Development experiments
+
+- [Graphify local pilot (2026-10-30)](experiments/graphify-local-pilot-2026-10-30.md): fixed-source retrieval, call relationships, index maintenance and the boundary on adoption.
+
+[Optional Graphify guidance](graphify-integration.md) describes the read-only, per-use source comparison behind the machine opt-in.
