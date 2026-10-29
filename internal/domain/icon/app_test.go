@@ -61,9 +61,8 @@ func TestASplashIsOnTheManifestsGround(t *testing.T) {
 // Right way up is the assertion worth making: the rows are written top-down and
 // AppKit's origin is at the bottom, so a port that forgets the flip draws a
 // creature standing on its head and every pixel of it is still the right
-// colour. Clawd's top two rows are inset by two cells and its bottom rows have
-// a gap in the middle — legs — so the two ends are told apart by what is at the
-// centre column.
+// colour. The connected mark has inset top and bottom edges, black eyes on
+// the second row, and a continuous base below them.
 func TestTheCreatureIsCentredAndTheRightWayUp(t *testing.T) {
 	t.Parallel()
 	const w, h = 750, 1334
@@ -78,11 +77,11 @@ func TestTheCreatureIsCentredAndTheRightWayUp(t *testing.T) {
 	originX := (float64(w) - cell*columns) / 2
 	originY := (float64(h) - cell*lines) / 2
 
-	// The middle of a given cell, in this image's coordinates.
+	// A point inside a cell, away from the deliberate half-cell grid lines.
 	at := func(row, column int) (int, int) {
-		x := originX + (float64(column)+0.5)*cell
+		x := originX + (float64(column)+0.25)*cell
 		bottom := originY + (lines-1-float64(row))*cell
-		y := float64(h) - (bottom + cell/2)
+		y := float64(h) - (bottom + cell/4)
 		return int(x), int(y)
 	}
 	body16 := color.NRGBA{0xD9, 0x77, 0x57, 0xff}
@@ -94,13 +93,13 @@ func TestTheCreatureIsCentredAndTheRightWayUp(t *testing.T) {
 		colour      color.NRGBA
 		why         string
 	}{
-		{0, 8, ground, "the top row is empty"},
-		{1, 8, body16, "the second row is the top of the head"},
-		{3, 5, eye, "the left eye"},
-		{3, 10, eye, "the right eye"},
-		{5, 0, body16, "the widest row reaches the edge"},
-		{10, 8, ground, "the gap between the legs is on the bottom row"},
-		{10, 3, body16, "and a leg is beside it"},
+		{0, 0, ground, "the head has an inset left edge"},
+		{0, 4, body16, "the top of the head"},
+		{1, 2, eye, "the left eye"},
+		{1, 5, eye, "the right eye"},
+		{2, 0, body16, "the widest row reaches the edge"},
+		{3, 3, body16, "the base is connected at the centre"},
+		{3, 0, ground, "the base stays inset at the edge"},
 	} {
 		x, y := at(want.row, want.column)
 		r, g, b, a := rgba(img.At(x, y))
@@ -126,26 +125,26 @@ func TestASplashIsTheSameTwice(t *testing.T) {
 	}
 }
 
-func TestSolidLogoRowsHaveNoGridSeams(t *testing.T) {
-	for _, size := range [][2]int{{1179, 2556}, {2556, 1179}, {1290, 2796}} {
-		w, h := size[0], size[1]
-		body, ok := Splash(w, h)
-		if !ok {
-			t.Fatal("refused")
-		}
-		img := decode(t, body)
-		cell := int(math.Round(float64(min(w, h)) * 0.26 / 16))
-		left, top := (w-16*cell)/2, (h-11*cell)/2
-		// Two uninterrupted rows in the head must remain a single solid area,
-		// including the boundaries between the source grid's cells.
-		for y := top + cell + 1; y < top+3*cell-1; y++ {
-			for x := left + 2*cell + 1; x < left+14*cell-1; x++ {
-				r, g, b, a := rgba(img.At(x, y))
-				if r != 0xD9 || g != 0x77 || b != 0x57 || a != 255 {
-					t.Fatalf("%dx%d: grid seam at %d,%d: #%02x%02x%02x/%d", w, h, x, y, r, g, b, a)
-				}
+func TestLargeGridIsConfinedToTheOrangeBody(t *testing.T) {
+	solid, _ := AppIcon(512, false)
+	gridded, _ := AppIcon(512, true)
+	a, b := decode(t, solid), decode(t, gridded)
+	changed := 0
+	for y := 0; y < 512; y++ {
+		for x := 0; x < 512; x++ {
+			ar, ag, ab, aa := rgba(a.At(x, y))
+			br, bg, bb, ba := rgba(b.At(x, y))
+			if ar == br && ag == bg && ab == bb && aa == ba {
+				continue
+			}
+			changed++
+			if ar <= ag || ar <= ab || ba != aa || br > ar || bg > ag || bb > ab {
+				t.Fatalf("grid changed background, eyes or transparency at %d,%d", x, y)
 			}
 		}
+	}
+	if changed == 0 {
+		t.Fatal("large icon has no grid")
 	}
 }
 

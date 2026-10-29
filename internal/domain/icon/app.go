@@ -8,40 +8,14 @@ import (
 	"math"
 )
 
-// The app's own mark, drawn rather than shipped — `RemoteIcon.swift`.
-//
-// Drawn, because a pixel creature is nine hundred bytes of source and any file
-// of it would be a resampled version of the same thing at one particular size.
-//
-// **The art is written down here rather than read from the mascot pack**, and
-// that is deliberate even though it duplicates nine lines. A pack is a
-// preference — somebody can install `mochi` and the character in the notch
-// changes with it, which is the whole point of packs. What a browser tab is
-// showing is not a preference; it is *this app*, and the icon of a thing should
-// not become a different icon because its owner liked a different animal.
-//
-// Only the launch image is drawn here. The tab icon and the home-screen icons
-// are **copied**, byte for byte, into the console's bundle: those are three
-// small files with a rounded tile in them, and AppKit's rasteriser for that one
-// curve is not something a port can match to the pixel. A launch image is
-// axis-aligned rectangles on a flat ground, so this one is a port rather than a
-// copy — and it has to be, because there are twenty geometries and the list
-// grows every autumn.
-
-// appRows is Clawd, standing. Sixteen wide and eleven tall, `#` body, `o` eye,
-// `.` nothing — the same grid `Resources/mascots/clawd.json` draws from.
+// The application mark matches the compact console brand: an eight-by-four
+// face with a connected base. Large raster assets add a subtle half-cell grid;
+// small interface marks remain solid.
 var appRows = [...]string{
-	"................",
-	"..############..",
-	"..############..",
-	"..###oo##oo###..",
-	"..###oo##oo###..",
-	"################",
-	"################",
-	"..############..",
-	"..############..",
-	"..##.##..##.##..",
-	"..##.##..##.##..",
+	".######.",
+	".#o##o#.",
+	"########",
+	".######.",
 }
 
 var (
@@ -79,12 +53,37 @@ func Splash(width, height int) ([]byte, bool) {
 	columns := float64(len(appRows[0]))
 	lines := float64(len(appRows))
 	cell := math.Round(float64(min(width, height)) * 0.26 / columns)
-	// Whole-pixel edges keep neighbouring cells from compositing twice over
-	// their shared half-pixel boundary and leaving a dark grid in the logo.
+	// Whole-pixel edges avoid accidental antialiasing seams; the fine grid
+	// is added deliberately inside the orange cells by drawMark.
 	// On an odd-sized screen, the centre is at most half a pixel away.
 	originX := math.Round((float64(width) - cell*columns) / 2)
 	originY := math.Round((float64(height) - cell*lines) / 2)
-	drawMark(img, height, originX, originY, cell, cell)
+	drawMark(img, height, originX, originY, cell, cell, true)
+	return encode(img)
+}
+
+// AppIcon renders a rounded application tile from the same mark as Splash.
+// The caller selects the fine grid for large assets and a solid mark for tabs.
+func AppIcon(size int, grid bool) ([]byte, bool) {
+	if size <= 0 || size > SplashLimit {
+		return nil, false
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	fillRect(img, 0, 0, float64(size), float64(size), markGround)
+	cell := float64(size) * 0.78 / float64(len(appRows[0]))
+	x := (float64(size) - cell*float64(len(appRows[0]))) / 2
+	y := (float64(size) - cell*float64(len(appRows))) / 2
+	drawMark(img, size, x, y, cell, cell, grid)
+	radius := float64(size) * 0.20
+	for py := 0; py < size; py++ {
+		for px := 0; px < size; px++ {
+			cx := math.Max(radius, math.Min(float64(px)+0.5, float64(size)-radius))
+			cy := math.Max(radius, math.Min(float64(py)+0.5, float64(size)-radius))
+			distance := math.Hypot(float64(px)+0.5-cx, float64(py)+0.5-cy)
+			coverage := math.Max(0, math.Min(1, radius+0.5-distance))
+			img.Pix[img.PixOffset(px, py)+3] = uint8(math.Round(coverage * 255))
+		}
+	}
 	return encode(img)
 }
 
@@ -94,7 +93,7 @@ func Splash(width, height int) ([]byte, bool) {
 // `originY` counts from the other end and a row's rectangle is flipped back
 // into this image's top-left coordinates here. Getting that wrong draws the
 // creature upside down, which is a thing that has happened to somebody.
-func drawMark(img *image.NRGBA, height int, originX, originY, cell, size float64) {
+func drawMark(img *image.NRGBA, height int, originX, originY, cell, size float64, grid bool) {
 	lines := float64(len(appRows))
 	for row, line := range appRows {
 		for column, character := range line {
@@ -111,6 +110,32 @@ func drawMark(img *image.NRGBA, height int, originX, originY, cell, size float64
 			bottom := originY + (lines-1-float64(row))*cell
 			top := float64(height) - (bottom + size)
 			fillRect(img, x, top, x+size, top+size, paint)
+			if grid && character == '#' {
+				line := size * 0.018
+				for _, offset := range []float64{0, size / 2, size} {
+					at := math.Min(offset, size-line)
+					darkenRect(img, x+at, top, x+at+line, top+size)
+					darkenRect(img, x, top+at, x+size, top+at+line)
+				}
+			}
+		}
+	}
+}
+
+// darkenRect shades the already rendered body rather than compositing an
+// opaque line over antialiased edges. Eyes and the tile keep their own colors.
+func darkenRect(img *image.NRGBA, x0, y0, x1, y1 float64) {
+	bounds := img.Bounds()
+	for y := max(int(math.Floor(y0)), bounds.Min.Y); y < min(int(math.Ceil(y1)), bounds.Max.Y); y++ {
+		for x := max(int(math.Floor(x0)), bounds.Min.X); x < min(int(math.Ceil(x1)), bounds.Max.X); x++ {
+			at := img.PixOffset(x, y)
+			if img.Pix[at] <= img.Pix[at+1] || img.Pix[at] <= img.Pix[at+2] {
+				continue
+			}
+			cover := overlap(float64(x), float64(x+1), x0, x1) * overlap(float64(y), float64(y+1), y0, y1)
+			for c := 0; c < 3; c++ {
+				img.Pix[at+c] = uint8(math.Round(float64(img.Pix[at+c]) * (1 - 0.22*cover)))
+			}
 		}
 	}
 }

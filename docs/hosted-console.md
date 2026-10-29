@@ -66,7 +66,11 @@ without a wordmark or an artificial delay. Android derives its launch screen fro
 `manifest.webmanifest`; iOS uses the device-specific `apple-touch-startup-image`
 links in `web/console/index.html`.
 
-The daemon draws these PNGs through `icon.Splash`, but Cloudflare Pages cannot call
+The connected mark uses the same compact silhouette as the Console. Large tiles and
+launch marks have a subtle grid; tab icons remain solid. The `-brand` generator
+also refreshes the native ICNS, browser favicon and PWA icons from `icon.AppIcon`.
+
+The daemon draws launch PNGs through `icon.Splash`, but Cloudflare Pages cannot call
 that renderer. The console therefore ships matching static PNGs in `public/`.
 Without them, Pages returns its HTML SPA fallback at the image URL, even with HTTP
 200, and iOS has no usable launch image.
@@ -75,8 +79,8 @@ After changing the renderer or the declared launch geometries, regenerate from t
 repository root:
 
 ```sh
-go run ./internal/domain/icon/cmd/splashgen
-go run ./internal/domain/icon/cmd/splashgen -check
+go run ./internal/domain/icon/cmd/splashgen -brand
+go run ./internal/domain/icon/cmd/splashgen -brand -check
 ```
 
 The generator's Go tests verify that every declared launch image matches the daemon

@@ -26,7 +26,7 @@ for lang in ['en','zh-Hant']:
  s=[replace_colors(item,palette) for item in s]
  icons=json.loads((root/'docs/assets/cross-machine-icons.json').read_text())
  extra=[]
- for row,line in enumerate(['.######.','.#o##o#.','########','.##..##.']):
+ for row,line in enumerate(['.######.','.#o##o#.','########','.######.']):
   for col,ch in enumerate(line):
    if ch in '#o': extra.append(f'<rect x="{461+col*5}" y="{225+row*5}" width="5" height="5" fill="{"#d97757" if ch=="#" else "#141416"}"/>')
  for x,machine,assistant in [(48,'apple','codex'),(812,'linux','claude')]:
