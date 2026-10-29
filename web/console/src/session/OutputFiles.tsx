@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
-import { destinationFromFragment, destinationFragment } from "../cloud/all-machine-sessions.js"
+import { destinationFragment } from "../cloud/all-machine-sessions.js"
 import { nextWord } from "../next-strings.js"
 import { failureSentence } from "../legacy/js/core/failure-text.js"
 import { htmlPreviewSource } from "../legacy/js/view/document-html.js"
@@ -37,10 +37,10 @@ function errorWord(error: unknown): string {
 const size = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
 
 /** One entrance on both layouts. Closing preserves the mounted conversation and draft. */
-export function OutputFiles({ row, open, onClose, trigger }: {
-  row: SessionRow | null; open: boolean; onClose(): void; trigger: React.RefObject<HTMLButtonElement | null>
+export function OutputFiles({ row, machine, open, onClose, trigger }: {
+  row: SessionRow | null; machine?: string | null; open: boolean; onClose(): void; trigger: React.RefObject<HTMLButtonElement | null>
 }) {
-  const identity = outputSessionKey(row)
+  const identity = outputSessionKey(row ? { ...row, machine: machine ?? undefined } : null)
   const [data, setData] = useState<OutputListing | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -104,8 +104,9 @@ export function OutputFiles({ row, open, onClose, trigger }: {
   if (!open || !row) return null
   const files = data?.files ?? []
   const shown = filterOutputs(files, filter, query)
-  const target = import.meta.env.VITE_HOSTED_CONSOLE ? destinationFromFragment(location.hash) : null
-  const shareBase = target && target.sessionID === row.id && target.executionGeneration === row.execution_generation
+  const target = import.meta.env.VITE_HOSTED_CONSOLE && machine && /^[0-9a-f]{32}$/.test(row.execution_generation ?? "")
+    ? { machineID: machine, sessionID: row.id, executionGeneration: row.execution_generation! } : null
+  const shareBase = target
     ? "https://app.clawdline.com/" + destinationFragment(target) : ""
   const dismiss = () => { historyClose("sessionOutputs", owner.current); onClose(); trigger.current?.focus({ preventScroll: true }) }
   return <aside className="output-panel" aria-labelledby="output-title" onKeyDown={event => {

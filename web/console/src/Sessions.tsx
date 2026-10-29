@@ -72,6 +72,7 @@ export function SessionsPage({
   fleetCoordinatorBound = false,
   fleetDetailPending = false,
   fleetDetailProblem,
+  readerMachine,
 }: {
   rows: SessionRow[]
   statusFilter?: SessionStateFilter
@@ -117,6 +118,7 @@ export function SessionsPage({
   fleetDetailKey?: string
   fleetCoordinatorBound?: boolean
   fleetDetailPending?: boolean
+  readerMachine?: string | null
   fleetDetailProblem?: FleetDetailProblem | null
 }) {
   // The task list the chips, the indent and the detail header read: the
@@ -383,6 +385,7 @@ export function SessionsPage({
 
         <Detail key={fleetDetailKey} row={fleetDetailPending ? null : open} tasks={tasks} onOpenSession={onOpen} onBack={onBack} onDid={onDid}
           scanSources={scanSources}
+          readerMachine={readerMachine}
           projectedCoordinatorBound={fleetCoordinatorBound}
           onSent={streamTasks !== null ? undefined : onDid}
           listUnknown={listUnknown || fleetDetailPending} loadingDetail={fleetDetailPending} emptyProblem={fleetDetailProblem} />

@@ -1258,6 +1258,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         fleetCoordinatorBound={!!fleetList && !!fleetTarget && fleetTargetIdentity?.machineScope === true &&
           fleetTargetIdentity.coordinatorBound === true}
         fleetDetailPending={fleetDetailPending}
+        readerMachine={fleetReaderMachine}
         fleetDetailProblem={fleetList && fleetTarget ? fleetDetailProblem : null}
       />}
       {cloudPeerAccess && <section id="peer-access" className="page cloud-peer-access-page"

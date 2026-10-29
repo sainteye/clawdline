@@ -1291,7 +1291,9 @@ export class RelayWriter {
         if (route.op === "output-file" && (!/^(0|[1-9][0-9]*)$/.test(String(fields.offset)) || !["", "thumb"].includes(String(fields.size))))
           throw failure("malformed_read", "An output read needs an exact offset and size.", 400)
         if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, route.word, fields, init?.signal)
-        throw failure("execution_target_required", "An output read needs an exact Session execution.", 409)
+        const target = await this.contentTarget(route.session, init?.signal, true)
+        if (!target) throw failure("execution_target_required", "An output read needs an exact Session execution.", 409)
+        return this.contentRead(client, target, route.word, fields, init?.signal)
       }
       case "git":
         // A read, so nothing is marked written and `sessionOf` leaves it out:
@@ -2211,11 +2213,11 @@ export class RelayWriter {
    * must fail on replacement instead of silently resolving another execution.
    * Weak keys release pins with their callers; retries use a new signal.
    */
-  private async contentTarget(session: string, signal?: AbortSignal | null): Promise<SessionContentTarget | null> {
+  private async contentTarget(session: string, signal?: AbortSignal | null, resolveUnopened = false): Promise<SessionContentTarget | null> {
     if (signal?.aborted) throw failure("abandoned_read", "The content read was cancelled.", 499)
     const held = signal ? this.contentPins.get(signal)?.get(session) : null
     const opened = this.host.exactTarget?.()
-    if (!opened && !held) return null
+    if (!opened && !held && !resolveUnopened) return null
     const resolve = async (): Promise<SessionContentTarget> => {
       const target = opened?.machineID === this.host.machine && opened.sessionID === session
         ? opened : await this.host.resolveSession?.(this.host.machine, session)

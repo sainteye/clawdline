@@ -94,6 +94,7 @@ function suggestionsTitle(): string {
  */
 export function Detail({
   row,
+  readerMachine,
   tasks: _tasks,
   onOpenSession: _onOpenSession,
   onBack,
@@ -106,6 +107,7 @@ export function Detail({
   scanSources,
 }: {
   row: SessionRow | null
+  readerMachine?: string | null
   tasks: TaskRow[] | null
   onOpenSession: (id: string) => void
   onBack: () => void
@@ -381,7 +383,7 @@ export function Detail({
       {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} row={row} onDid={onDid} onSent={onSent} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} />}
       {selectedAgent || !row ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       </div>
-      <OutputFiles row={row} open={outputsOpen} trigger={outputTrigger} onClose={() => setOutputsFor(null)} />
+      <OutputFiles row={row} machine={readerMachine} open={outputsOpen} trigger={outputTrigger} onClose={() => setOutputsFor(null)} />
       </div>
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens

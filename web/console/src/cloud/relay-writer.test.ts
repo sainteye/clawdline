@@ -2788,3 +2788,49 @@ test("output list and file chunks use the opened Session's exact content-read de
   assert.notEqual((await reader.fetch(base,{method:"POST",body:JSON.stringify({path:"/private/example"})})).status,200)
   assert.equal(client.calls.filter(call=>call[0]==="readForGeneration").length,2)
 })
+
+test("single-machine outputs pin the resolved execution across file chunks and fail on replacement", async () => {
+  let generation = EXECUTION, resolves = 0
+  const client = new FakeClient()
+  Object.assign(client, { async readForGeneration(target: { machineID: string; sessionID: string; executionGeneration: string }, word: string, fields: Record<string, unknown>, signal?: AbortSignal) {
+    client.calls.push(["readForGeneration", target, word, fields, signal])
+    if (target.executionGeneration !== generation) throw refusal("execution_generation_changed", { status: 409 })
+    return {}
+  } })
+  const reader = new RelayReader("mac-a", { resolveSession: async (machineID, sessionID) => {
+    resolves++
+    return { machineID, sessionID, executionGeneration: generation }
+  } })
+  const writer = new RelayWriter(reader.writeHost)
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const controller = new AbortController(), base = "/v1/sessions/s1/outputs"
+  assert.equal((await reader.fetch(base, { signal: controller.signal })).status, 200)
+  const file = base + "/" + "a".repeat(64) + "?offset=0&revision=&size="
+  assert.equal((await reader.fetch(file, { signal: controller.signal })).status, 200)
+  assert.equal(resolves, 1)
+  generation = "c".repeat(32)
+  assert.equal((await reader.fetch(file, { signal: controller.signal })).status, 409)
+  assert.equal(resolves, 1, "a transfer cannot silently rebind to the replacement")
+  assert.equal((await reader.fetch(file, { signal: new AbortController().signal })).status, 200)
+  const before = client.calls.length
+  controller.abort()
+  assert.equal((await reader.fetch(file, { signal: controller.signal })).status >= 400, true)
+  assert.equal(client.calls.length, before)
+  for (const call of client.calls) assert.equal((call[1] as { machineID: string }).machineID, "mac-a")
+})
+
+test("single-machine outputs refuse missing, mismatched and invalid execution proof before content reads", async () => {
+  for (const target of [null,
+    { machineID: "mac-b", sessionID: "s1", executionGeneration: EXECUTION },
+    { machineID: "mac-a", sessionID: "s2", executionGeneration: EXECUTION },
+    { machineID: "mac-a", sessionID: "s1", executionGeneration: "" }]) {
+    const client = new FakeClient(), reader = new RelayReader("mac-a", { resolveSession: async () => target })
+    Object.assign(client, { async readForGeneration() { client.calls.push(["unexpected"]); return {} } })
+    const writer = new RelayWriter(reader.writeHost)
+    reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+    reader.attach(client)
+    assert.equal((await reader.fetch("/v1/sessions/s1/outputs")).status, 409)
+    assert.equal(client.calls.length, 0)
+  }
+})
