@@ -192,6 +192,7 @@
           "nullable": true,
           "type": "boolean"
         },
+        "push_on_model_capacity": { "description": "Notify when a Session stops because its model is at capacity.", "nullable": true, "type": "boolean" },
         "push_on_waiting": { "description": "Notify when a Session waits for the person.", "nullable": true, "type": "boolean" },
         "push_on_board_decision": { "description": "Notify when a Board decision needs an answer.", "nullable": true, "type": "boolean" },
         "push_on_board_done": { "description": "Notify when a Board item is completed.", "nullable": true, "type": "boolean" },
@@ -452,6 +453,7 @@
           "nullable": true,
           "type": "boolean"
         },
+        "push_on_model_capacity": { "description": "Notify when a Session stops because its model is at capacity.", "nullable": true, "type": "boolean" },
         "push_on_waiting": { "description": "Notify when a Session waits for the person.", "nullable": true, "type": "boolean" },
         "push_on_board_decision": { "description": "Notify when a Board decision needs an answer.", "nullable": true, "type": "boolean" },
         "push_on_board_done": { "description": "Notify when a Board item is completed.", "nullable": true, "type": "boolean" },

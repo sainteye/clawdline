@@ -8140,6 +8140,8 @@
   "notifications.smart_notifications": "Use details in completion notifications",
   "notifications.smart_notificationsHint": "Uses the Session's delivery summary or task titles instead of generic wording. This does not create another notification.",
   "notifications.title": "Notifications",
+  "notifications.push_on_model_capacity": "A model is at capacity",
+  "notifications.push_on_model_capacityHint": "Notify as soon as detected, once per stop. Choose another model or retry.",
   "plan.active": "Active",
   "plan.control": "View and control Sessions from your phone",
   "plan.current": "Current plan",

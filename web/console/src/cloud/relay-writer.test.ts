@@ -2037,10 +2037,10 @@ test("a phone manages machine notification switches without subscribing this bro
   const read = await reader.fetch("/v1/settings/notifications")
   assert.equal(read.status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "notification-settings", {}, "read"])
-  const write = await reader.fetch("/v1/settings/notifications", post({ push_on_waiting: false }))
+  const write = await reader.fetch("/v1/settings/notifications", post({ push_on_waiting: false, push_on_model_capacity: false }))
   assert.equal(write.status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "notification-settings-update", {
-    changes: { push_on_waiting: false },
+    changes: { push_on_waiting: false, push_on_model_capacity: false },
   }, "action"])
   assert.equal((await reader.fetch("/v1/settings/notifications?all=1")).status, 501)
 })

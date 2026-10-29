@@ -57,6 +57,8 @@ type Waiting struct {
 	Role func(ctx context.Context, terminal string) (WaitingRole, bool)
 	// Enabled is the person's switch. Nil is on.
 	Enabled func() bool
+	// ModelCapacityEnabled independently controls native model refusals.
+	ModelCapacityEnabled func() bool
 	// Rules are read for each sweep so changes apply without a restart.
 	Rules func() ([]notificationrule.Rule, error)
 	// Language reads the product language when a push intent is recorded.
@@ -127,9 +129,10 @@ const (
 
 // waitingStop is one session standing on a question, as this process saw it.
 type waitingStop struct {
-	since   time.Time
-	seen    time.Time
-	backend session.Backend
+	since         time.Time
+	seen          time.Time
+	backend       session.Backend
+	modelCapacity bool
 	// settled is a decision about this stop written down, by this process or
 	// an earlier one.
 	settled bool
@@ -195,43 +198,60 @@ func (w *Waiting) Observe(ctx context.Context, r session.Inventory) (int, error)
 			return 0, err
 		}
 	}
-	for _, s := range r.Sessions {
-		if !s.IsAssistant() {
-			continue
-		}
-		key := WaitingKey(s)
-		st := w.stops[key]
-		if s.Observation.Freshness == session.FreshnessUnverified || s.Observation.Freshness == session.FreshnessMissing {
-			// The list may draw the last known state; a watcher must not turn
-			// "it was waiting two minutes ago" into a new push now. Like a
-			// current unknown row, it keeps an existing stop open and decides
-			// nothing.
-			seen[key] = true
-			continue
-		}
-		switch s.State {
-		case session.StateWaiting:
-			seen[key] = true
-			if st == nil {
-				st = &waitingStop{since: now, backend: s.Backend}
-				w.stops[key] = st
+	for _, original := range r.Sessions {
+		for _, modelCapacity := range []bool{false, true} {
+			s := original
+			if !s.IsAssistant() {
+				continue
 			}
-			st.seen = now
-			selected, custom := notificationrule.Match(rules, s.Label)
-			after := w.after()
-			if custom {
-				after = time.Duration(selected.AfterMinutes) * time.Minute
+			key := WaitingKey(s)
+			if modelCapacity {
+				key += "|model_capacity"
 			}
-			if !st.settled && now.Sub(st.since) >= after {
-				owed = append(owed, due{key: key, s: s, st: st, custom: custom})
+			// A provider refusal can leave the terminal idle. It is an immediate,
+			// separate stop, never a question or permission request as well.
+			blocked := s.Activity.ProviderBlock == session.ProviderBlockModelCapacity
+			switch {
+			case modelCapacity && blocked:
+				s.State = session.StateWaiting
+			case modelCapacity && s.State != session.StateUnknown, !modelCapacity && blocked:
+				s.State = session.StateIdle
 			}
-		case session.StateUnknown:
-			// Nothing is known about it, which ends nothing.
-			seen[key] = true
-		default:
-			seen[key] = true
-			if st != nil {
-				ended = append(ended, key)
+			st := w.stops[key]
+			if s.Observation.Freshness == session.FreshnessUnverified || s.Observation.Freshness == session.FreshnessMissing {
+				// The list may draw the last known state; a watcher must not turn
+				// "it was waiting two minutes ago" into a new push now. Like a
+				// current unknown row, it keeps an existing stop open and decides
+				// nothing.
+				seen[key] = true
+				continue
+			}
+			switch s.State {
+			case session.StateWaiting:
+				seen[key] = true
+				if st == nil {
+					st = &waitingStop{since: now, backend: s.Backend, modelCapacity: modelCapacity}
+					w.stops[key] = st
+				}
+				st.seen = now
+				selected, custom := notificationrule.Match(rules, s.Label)
+				after := w.after()
+				if modelCapacity {
+					after, custom = 0, false
+				} else if custom {
+					after = time.Duration(selected.AfterMinutes) * time.Minute
+				}
+				if !st.settled && now.Sub(st.since) >= after {
+					owed = append(owed, due{key: key, s: s, st: st, custom: custom})
+				}
+			case session.StateUnknown:
+				// Nothing is known about it, which ends nothing.
+				seen[key] = true
+			default:
+				seen[key] = true
+				if st != nil {
+					ended = append(ended, key)
+				}
 			}
 		}
 	}
@@ -280,7 +300,11 @@ func (w *Waiting) Observe(ctx context.Context, r session.Inventory) (int, error)
 // settle decides one due stop and writes the decision down. It answers
 // whether a push was recorded.
 func (w *Waiting) settle(ctx context.Context, key string, s session.Session, st *waitingStop, now time.Time, custom bool) (bool, error) {
-	if !custom && w.Enabled != nil && !w.Enabled() {
+	enabled := w.Enabled
+	if st.modelCapacity {
+		enabled = w.ModelCapacityEnabled
+	}
+	if !custom && enabled != nil && !enabled() {
 		// Left undecided: turned back on while it still stands, it is pushed.
 		return false, nil
 	}
@@ -325,8 +349,18 @@ func (w *Waiting) settle(ctx context.Context, key string, s session.Session, st 
 		language = w.Language()
 	}
 	title, body := waitingTextLanguage(language, s, role, hasRole, now.Sub(st.since), now)
+	reason, tag := session.ProviderBlock(""), "waiting-"+s.ID
+	if st.modelCapacity {
+		reason, tag = session.ProviderBlockModelCapacity, "model-capacity-"+s.ID
+		label := strings.TrimSpace(s.Label)
+		if label == "" {
+			label = s.ID
+		}
+		title = clip(productcopy.Format(language, "model_capacity.title", map[string]string{"label": label}), 80)
+		body = productcopy.Format(language, "model_capacity.body", nil)
+	}
 	push, err := json.Marshal(orchestrator.WaitingPush{Key: key, Terminal: s.ID, Title: title, Body: body, Custom: custom,
-		Tag: "waiting-" + s.ID})
+		Tag: tag, Reason: reason})
 	if err != nil {
 		return false, err
 	}

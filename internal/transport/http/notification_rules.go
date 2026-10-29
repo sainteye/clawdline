@@ -21,7 +21,7 @@ type notificationRuleChange struct {
 }
 
 var notificationPreferenceKeys = map[string]bool{
-	"push_on_waiting": true, "orchestrator_agent_notify": true,
+	"push_on_model_capacity": true, "push_on_waiting": true, "orchestrator_agent_notify": true,
 	"push_on_board_decision": true, "push_on_board_done": true,
 	"push_on_schedule_failure": true, "push_on_capacity": true,
 	"push_on_dead_letter": true, "push_on_app_release_success": true,

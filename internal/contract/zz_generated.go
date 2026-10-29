@@ -6477,6 +6477,9 @@ type SettingsRequest struct {
 	// Notify when a whole batch of dispatched work ends.
 	PushOnFanout *bool `json:"push_on_fanout"`
 
+	// Notify when a Session stops because its model is at capacity.
+	PushOnModelCapacity *bool `json:"push_on_model_capacity"`
+
 	// Notify when an App install or Cloud verification fails.
 	PushOnReleaseFailure *bool `json:"push_on_release_failure"`
 
@@ -6715,6 +6718,9 @@ type SettingsSnapshot struct {
 
 	// Notify when a whole batch of dispatched work ends.
 	PushOnFanout *bool `json:"push_on_fanout"`
+
+	// Notify when a Session stops because its model is at capacity.
+	PushOnModelCapacity *bool `json:"push_on_model_capacity"`
 
 	// Notify when an App install or Cloud verification fails.
 	PushOnReleaseFailure *bool `json:"push_on_release_failure"`

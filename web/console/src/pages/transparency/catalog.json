@@ -2181,7 +2181,7 @@
         },
         {
           "path": "internal/adapters/nextconfig/nextconfig.go",
-          "line": 662
+          "line": 663
         }
       ],
       "original": [],
@@ -2417,7 +2417,7 @@
     "internal/adapters/antigravitysession/context.go": "7f7490cb414f00633f3e436d484f9d02e8a91e6f541eda148eefa6e83d6d854b",
     "internal/adapters/antigravitysession/host.go": "32d6a53893b3d412f96acca14237c87953a3cf53c2c99db471ee1960f8e5846e",
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
-    "internal/adapters/nextconfig/nextconfig.go": "aa82a75d236592c194c8b4b5fa81f76e1d83416d395ef9a1666dfcf5dc6d8587",
+    "internal/adapters/nextconfig/nextconfig.go": "5d0b3815c4bf766b249fac2d0cde4d656788099b2a02edfe10ebf8687a7864c8",
     "internal/adapters/projects/antigravity_context.go": "9706da1b7af1d019ac3c7feb3713fa02698f95bfe76b81bc430de5efa62fbb53",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "11473172607d2736aa2b46f85dc7126331814e659f8654e3e3f8f4f5dcd4122b",

@@ -531,6 +531,7 @@ var Settables = []Settable{
 	{Name: "smart_notifications", Kind: "bool"},
 	{Name: "push_on_deploy", Kind: "bool"},
 	{Name: "push_on_waiting", Kind: "bool"},
+	{Name: "push_on_model_capacity", Kind: "bool"},
 	{Name: "push_on_board_decision", Kind: "bool"},
 	{Name: "push_on_board_done", Kind: "bool"},
 	{Name: "push_on_schedule_failure", Kind: "bool"},

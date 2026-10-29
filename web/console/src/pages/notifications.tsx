@@ -10,6 +10,8 @@ import { Switch } from "./settings/Switch.js"
 import "./notifications/notifications.css"
 
 const notificationsEn = {
+  "push_on_model_capacity": "A model is at capacity",
+  "push_on_model_capacityHint": "Notify as soon as detected, once per stop. Choose another model or retry.",
   "push_on_waiting": "A Session needs my answer",
   "push_on_waitingHint": "Once per unanswered stop, after ten minutes.",
   "orchestrator_agent_notify": "An agent sends me a notification",
@@ -55,6 +57,8 @@ const notificationsEn = {
 } as const
 
 const notificationsZh: Record<keyof typeof notificationsEn, string> = {
+  "push_on_model_capacity": "模型容量不足",
+  "push_on_model_capacityHint": "偵測到時立即通知，每次停住最多一次；可換模型或重試。",
   "push_on_waiting": "Session 等我回答或授權",
   "push_on_waitingHint": "等待十分鐘後，每次停住最多通知一次。",
   "orchestrator_agent_notify": "Agent 主動通知我",
@@ -106,7 +110,7 @@ function word(key: keyof typeof notificationsEn): string {
 }
 
 type Preference = keyof Pick<SettingsRequest,
-  "push_on_waiting" | "orchestrator_agent_notify" | "push_on_board_decision" |
+  "push_on_model_capacity" | "push_on_waiting" | "orchestrator_agent_notify" | "push_on_board_decision" |
   "push_on_board_done" | "push_on_schedule_failure" | "push_on_capacity" |
   "push_on_dead_letter" | "push_on_app_release_success" | "push_on_cloud_release_success" | "push_on_release_failure" |
   "push_on_delivery" | "push_on_fanout" | "smart_notifications">
@@ -114,6 +118,7 @@ type Preference = keyof Pick<SettingsRequest,
 type Row = { key: Preference; destination: "Session" | "list" | "optional-session" | "none" }
 
 const rows: Row[] = [
+  { key: "push_on_model_capacity", destination: "Session" },
   { key: "push_on_waiting", destination: "Session" },
   { key: "orchestrator_agent_notify", destination: "optional-session" },
   { key: "push_on_board_decision", destination: "list" },

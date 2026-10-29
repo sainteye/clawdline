@@ -870,10 +870,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		word: "notification-settings-update",
 		body: map[string]any{"type": "notification-settings-update", "session": machine, "request": "req-notifications-write",
-			"changes": map[string]any{"push_on_waiting": false}},
+			"changes": map[string]any{"push_on_waiting": false, "push_on_model_capacity": false}},
 		session: machine, name: "action:req-notifications-write",
 		method: "POST", path: "/v1/settings/notifications",
-		body2: `{"push_on_waiting":false}`,
+		body2: `{"push_on_model_capacity":false,"push_on_waiting":false}`,
 	}, {
 		word:    "api-performance",
 		body:    map[string]any{"type": "api-performance", "session": machine, "request": "req-performance", "hours": "1"},

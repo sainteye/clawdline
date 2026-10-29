@@ -24,6 +24,7 @@ func (s *Server) waiting() *app.Waiting {
 		return w.(*app.Waiting)
 	}
 	w := &app.Waiting{Store: s.store, After: waitingAfter(), Enabled: func() bool { return s.notificationEnabled("push_on_waiting") }, Language: s.productLanguage}
+	w.ModelCapacityEnabled = func() bool { return s.notificationEnabled("push_on_model_capacity") }
 	if s.broker != nil {
 		// The push goes out the way the capacity push does: recorded with its
 		// decision in one transaction, then run by the broker's outbox, whose

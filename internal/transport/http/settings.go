@@ -32,7 +32,7 @@ var browserSettings = map[string]bool{
 	"remote": true, "tailscale_hostname": true, "cloudflare_tunnel_retired": true,
 	"push_on_delivery": true, "push_on_fanout": true,
 	"smart_notifications": true, "push_on_deploy": true,
-	"push_on_waiting": true, "push_on_board_decision": true, "push_on_board_done": true,
+	"push_on_model_capacity": true, "push_on_waiting": true, "push_on_board_decision": true, "push_on_board_done": true,
 	"push_on_schedule_failure": true, "push_on_capacity": true, "push_on_dead_letter": true,
 	"push_on_app_release_success": true, "push_on_cloud_release_success": true,
 	"push_on_release_failure":   true,
@@ -46,7 +46,7 @@ var browserSettings = map[string]bool{
 // notificationSettings is the machine-wide event policy. A device's ability
 // to subscribe is independent of these switches.
 var notificationSettings = map[string]bool{
-	"push_on_waiting": true, "orchestrator_agent_notify": true,
+	"push_on_model_capacity": true, "push_on_waiting": true, "orchestrator_agent_notify": true,
 	"push_on_board_decision": true, "push_on_board_done": true,
 	"push_on_schedule_failure": true, "push_on_capacity": true,
 	"push_on_dead_letter": true, "push_on_app_release_success": true,

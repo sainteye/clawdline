@@ -9,6 +9,15 @@ import (
 func TestNotificationPreferencesKeepLegacyChoicesAndSeparateEvents(t *testing.T) {
 	s := pushServer(t)
 	file := nextconfig.Open(s.cfg.Dir)
+	if !s.notificationEnabled("push_on_model_capacity") {
+		t.Fatal("model capacity default is off")
+	}
+	if _, err := file.Set(map[string]any{"push_on_model_capacity": false}); err != nil {
+		t.Fatal(err)
+	}
+	if s.notificationEnabled("push_on_model_capacity") {
+		t.Fatal("model capacity ignores explicit false")
+	}
 	if s.notificationEnabled("push_on_app_release_success") || s.notificationEnabled("push_on_cloud_release_success") || s.notificationEnabled("push_on_release_failure") {
 		t.Fatal("a fresh installation unexpectedly enables release pushes")
 	}
