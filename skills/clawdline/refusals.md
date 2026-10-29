@@ -13,6 +13,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `artifact_expired` | `internal/transport/http/images.go` |
 | `artifact_not_found` | `internal/transport/http/images.go` |
 | `artifact_storage_failed` | `internal/transport/http/images.go` |
+| `bad_assistant` | `internal/transport/http/cloud_agent.go` |
 | `bad_machine` | `internal/transport/http/cloud_agent.go` |
 | `bad_offer` | `internal/transport/http/cloud_agent.go` |
 | `bad_path` | `internal/transport/http/page.go` |

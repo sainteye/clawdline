@@ -74,31 +74,6 @@ test("the status line says sent, finished here, cancelled, or refused with the r
   assert.deepEqual(said({ ok: false, error: "busy" }), ["refused", 'cloudPairAgentRefused{"reason":"busy"}'])
 })
 
-// The card itself is React and is read here as source, as unpaired-rows.test.ts
-// reads it: the direct copy-to-Settings path precedes the optional agent path.
-test("the waiting card keeps the agent hand-off behind the direct code path", () => {
-  const here = dirname(fileURLToPath(import.meta.url))
-  const panel = readFileSync(resolve(here, "PairPanel.tsx"), "utf8")
-  const gate = readFileSync(resolve(here, "CloudGate.tsx"), "utf8")
-  assert.match(gate, /machineDescriptor\?\.\(machine\.id\)\?\.machine\?\.commands\?\.includes\("pair-agent-start"\)/)
-  assert.match(gate, /_machineRequestAs[\s\S]*"pair-agent-start"/)
-  assert.match(gate, /_machineRequestAs[\s\S]*"pair-agent-status"/)
-  assert.match(panel, /autoHelper\.current = selectedHelper\.id/)
-  assert.match(panel, /props\.onAgentStart\(helper\.id/)
-  assert.match(panel, /cloudPairCloudHand/)
-  const button = panel.indexOf('id="cloud-pair-agent"')
-  const codeCopy = panel.indexOf('id="cloud-pair-code-copy"')
-  // The agent instruction copy box is built as `manual` and drawn after
-  // the native hand-off inside the advanced disclosure.
-  const copyBox = panel.lastIndexOf("{manual}")
-  assert.ok(codeCopy > 0 && button > codeCopy && copyBox > button, "the direct code precedes optional agent paths")
-  assert.match(panel, /id="cloud-pair-copy"/)
-  const agentButton = panel.slice(panel.lastIndexOf("<button", button), button)
-  assert.match(agentButton, /className="go"/)
-  const manual = panel.indexOf('id="cloud-pair-agent-advanced"')
-  assert.ok(manual > codeCopy && manual < button, "the disclosure contains the hand-off")
-  assert.match(panel, /\{handOff && \(\s*<div className="cloud-pair-agent"/)
-})
 
 const TASK = "7ab00050-0000-4000-8000-000000000050"
 

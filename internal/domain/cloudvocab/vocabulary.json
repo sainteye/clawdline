@@ -565,11 +565,12 @@
       "console_route": "POST /v1/cloud/pairing/agent",
       "console_seam": "reader",
       "local": {"method": "POST", "local_exemption": true, "headers": ["Idempotency-Key"]},
-      "example": {"machine_id": "mac_target", "machine_name": "Target", "offer": "opaque", "request": "req-pair-agent-start", "session": "__clawdline_machine__"},
+      "example": {"assistant": "claude", "machine_id": "mac_target", "machine_name": "Target", "offer": "opaque", "request": "req-pair-agent-start", "session": "__clawdline_machine__"},
       "shapes": [
+        {"body": ["assistant", "machine_id", "machine_name", "offer", "request", "session"], "path": "/v1/cloud/pairing/agent", "local_body": ["assistant", "machine_id", "machine_name", "offer"]},
         {"body": ["machine_id", "machine_name", "offer", "request", "session"], "path": "/v1/cloud/pairing/agent", "local_body": ["machine_id", "machine_name", "offer"]}
       ],
-      "decode": {"reply": "action", "fields": {"offer": {"type": "string", "non_empty": true, "max_bytes": 4096}, "machine_id": {"type": "string", "non_empty": true, "max_bytes": 204}, "machine_name": {"type": "string", "max_bytes": 256}}, "route": {"path": "/v1/cloud/pairing/agent", "headers": {"Idempotency-Key": {"from": "request"}}, "body": {"fields": {"offer": {"from": "offer"}, "machine_id": {"from": "machine_id"}, "machine_name": {"from": "machine_name"}}}}}
+      "decode": {"reply": "action", "fields": {"assistant": {"type": "string", "enum": ["claude", "codex"]}, "offer": {"type": "string", "non_empty": true, "max_bytes": 4096}, "machine_id": {"type": "string", "non_empty": true, "max_bytes": 204}, "machine_name": {"type": "string", "max_bytes": 256}}, "route": {"path": "/v1/cloud/pairing/agent", "headers": {"Idempotency-Key": {"from": "request"}}, "body": {"fields": {"assistant": {"from": "assistant", "omit_empty": true}, "offer": {"from": "offer"}, "machine_id": {"from": "machine_id"}, "machine_name": {"from": "machine_name"}}}}}
     },
     {
       "op": "pair-agent-status",

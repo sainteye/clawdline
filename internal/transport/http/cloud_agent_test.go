@@ -453,3 +453,23 @@ func TestAPairingHandOffRefusesWhenTheCeilingCannotBeRead(t *testing.T) {
 		t.Fatalf("%d %s after %d completions", rec.Code, rec.Body.String(), h.completed)
 	}
 }
+
+func TestPairingUsesTheChosenAssistant(t *testing.T) {
+	for _, assistant := range []string{"claude", "codex"} {
+		t.Run(assistant, func(t *testing.T) {
+			h := newPairAgentHarness(t)
+			rec := h.post(t, map[string]any{"offer": h.offer.Fragment(), "machine_id": "mac_target", "assistant": assistant}, true)
+			if rec.Code != http.StatusOK || len(h.dispatched) != 1 {
+				t.Fatalf("status %d, dispatches %d", rec.Code, len(h.dispatched))
+			}
+			if h.dispatched[0].Assistant != assistant {
+				t.Fatalf("started %q instead of %q", h.dispatched[0].Assistant, assistant)
+			}
+		})
+	}
+	h := newPairAgentHarness(t)
+	rec := h.post(t, map[string]any{"offer": h.offer.Fragment(), "machine_id": "mac_target", "assistant": "unknown"}, true)
+	if rec.Code != http.StatusBadRequest || refusalCode(rec) != "bad_assistant" || len(h.dispatched) != 0 {
+		t.Fatalf("invalid assistant: status %d, code %s, dispatches %d", rec.Code, refusalCode(rec), len(h.dispatched))
+	}
+}

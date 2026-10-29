@@ -15,6 +15,7 @@ import {
   localPairing,
   pairAgentAvailable,
   progressSaid,
+  type PairAssistant,
   type PairAgentProgress,
   type PairAgentReply,
 } from "./pair-agent.js"
@@ -54,7 +55,7 @@ export function PairPanel(props: {
   onClose: () => void
   onPaired: () => void
   helpers?: { id: string; name: string }[]
-  onAgentStart?: (helper: string, offer: string, target: { id: string; name: string }) => Promise<PairAgentReply>
+  onAgentStart?: (helper: string, offer: string, target: { id: string; name: string }, assistant: PairAssistant) => Promise<PairAgentReply>
   onAgentStatus?: (helper: string, task: string) => Promise<PairAgentProgress>
   /** Which device this is: the Home Screen app and a phone browser scan the machine's QR here; a computer copies a code. */
   device: PairDevice
@@ -81,8 +82,10 @@ export function PairPanel(props: {
   const [progress, setProgress] = useState<PairAgentProgress | null>(null)
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
-  // The manual path: folded until asked for, or until the AI could not finish.
+  // Other methods stay folded during assisted pairing; an explicit manual start opens them.
   const [manualOpen, setManualOpen] = useState(false)
+  const [assistant, setAssistant] = useState<PairAssistant>("claude")
+  const [helperFlow, setHelperFlow] = useState(false)
   const [helperID, setHelperID] = useState("")
   const [runningHelper, setRunningHelper] = useState("")
   const autoHelper = useRef("")
@@ -107,8 +110,9 @@ export function PairPanel(props: {
     setAgent(null)
     setProgress(null)
     setStartedAt(null)
-    setManualOpen(false)
+    setManualOpen(phase === "waiting" && !helperFlow)
     setRunningHelper("")
+    if (phase === "idle") setHelperFlow(false)
   }, [phase])
   const followed = agent !== null && agent !== "sending" && agent.ok && agent.mode === "agent" ? agent.taskID : ""
   const following = followed !== "" && startedAt !== null
@@ -122,12 +126,10 @@ export function PairPanel(props: {
         pending = true
         void props.onAgentStatus!(runningHelper, followed).then((next) => {
           if (active) setProgress(next)
-          if (next.stage === "failed" && active) setManualOpen(true)
           if (next.stage === "done" || next.stage === "failed") active = false
         }).catch((error) => {
           if (active) {
             setProgress({ stage: "failed", summary: "", failedReason: error instanceof Error ? error.message : String(error) })
-            setManualOpen(true)
             active = false
           }
         }).finally(() => { pending = false })
@@ -138,7 +140,6 @@ export function PairPanel(props: {
     }
     return listenPairAgent(followed, (next) => {
       setProgress(next)
-      if (next.stage === "failed") setManualOpen(true)
     })
   }, [followed, runningHelper, props.onAgentStatus])
   const running = following && progress?.stage !== "done" && progress?.stage !== "failed"
@@ -149,13 +150,14 @@ export function PairPanel(props: {
     return () => clearInterval(tick)
   }, [running])
 
-  const selectedHelper = props.helpers?.find((machine) => machine.id === helperID) ?? props.helpers?.[0]
+  const selectedHelper = props.onAgentStart ? props.helpers?.find((machine) => machine.id === helperID) ?? props.helpers?.[0] : undefined
   function startAgent(helper: { id: string; name: string } | null, target: { id: string; name: string }) {
+    setManualOpen(false)
     setAgent("sending")
     setProgress(null)
     setRunningHelper(helper?.id ?? "")
     const started = helper && props.onAgentStart
-      ? props.onAgentStart(helper.id, state.phase === "waiting" ? state.fragment : "", target)
+      ? props.onAgentStart(helper.id, state.phase === "waiting" ? state.fragment : "", target, assistant)
       : handPairToAgent({ offer: state.phase === "waiting" ? state.fragment : "", machineID: target.id, machineName: target.name })
     void started.then((reply) => {
       setAgent(reply)
@@ -251,28 +253,12 @@ export function PairPanel(props: {
             : ["cloudPairStepOpen", "cloudPairStepScanApp", "cloudPairStepCompare"] as const
           const begin = () => {
             autoHelper.current = ""
+            setHelperFlow(false)
             onBegin()
           }
           return (
             <>
               <p className="cloud-pair-intro">{nextWord(device === "app" ? "cloudPairIntroApp" : "cloudPairIntro")}</p>
-              <ol className="cloud-pair-steps">
-                {steps.map((step) => <li key={step}>{nextWord(step)}</li>)}
-              </ol>
-              <p className="cloud-pair-outcome">{nextWord("cloudPairOutcome")}</p>
-              {localAvailable ? (
-                <>
-                  <button className="go cloud-pair-primary" type="button" id="cloud-pair-local-start"
-                    onClick={() => { localRequested.current = true; onBegin() }}>{nextWord("cloudPairLocal")}</button>
-                  <p className="fine">{nextWord("cloudPairLocalHint")}</p>
-                </>
-              ) : device !== "desktop" ? (
-                <PairScanner onScanned={onScan} onUseCode={begin} startRef={scanStart} />
-              ) : (
-                <button className="go cloud-pair-primary" type="button" id="cloud-pair-go" onClick={begin}>
-                  {nextWord("cloudPairGenerate")}
-                </button>
-              )}
               {selectedHelper && asked && (
                 <div className="cloud-pair-helper-way">
                   {(props.helpers?.length ?? 0) > 1 && <label className="cloud-pair-helper">
@@ -281,20 +267,42 @@ export function PairPanel(props: {
                       {props.helpers!.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
                     </select>
                   </label>}
+                  <p className="fine">{nextWord("cloudPairCloudHandWhen", { helper: selectedHelper.name, machine: asked.name })}</p>
+                  {assistantPicker()}
                   <button
-                    className="cloud-pair-link"
+                    className="go cloud-pair-primary"
                     type="button"
                     id="cloud-pair-helper-go"
                     onClick={() => {
+                      setHelperFlow(true)
                       autoHelper.current = selectedHelper.id
                       onBegin()
                     }}
                   >
-                    {nextWord("cloudPairCloudHand")}
+                    {nextWord("cloudPairHelperStart")}
                   </button>
-                  <p className="fine">{nextWord("cloudPairCloudHandWhen", { helper: selectedHelper.name, machine: asked.name })}</p>
                 </div>
               )}
+              <details className="cloud-pair-manual" open={selectedHelper && asked ? undefined : true}>
+                <summary>{nextWord("cloudPairOtherWays")}</summary>
+                <ol className="cloud-pair-steps">
+                  {steps.map((step) => <li key={step}>{nextWord(step)}</li>)}
+                </ol>
+                <p className="cloud-pair-outcome">{nextWord("cloudPairOutcome")}</p>
+                {localAvailable ? (
+                  <>
+                    <button className="go cloud-pair-primary" type="button" id="cloud-pair-local-start"
+                      onClick={() => { localRequested.current = true; onBegin() }}>{nextWord("cloudPairLocal")}</button>
+                    <p className="fine">{nextWord("cloudPairLocalHint")}</p>
+                  </>
+                ) : device !== "desktop" ? (
+                  <PairScanner onScanned={onScan} onUseCode={begin} startRef={scanStart} />
+                ) : (
+                  <button className="go cloud-pair-primary" type="button" id="cloud-pair-go" onClick={begin}>
+                    {nextWord("cloudPairGenerate")}
+                  </button>
+                )}
+              </details>
               <details className="cloud-pair-how">
                 <summary>{nextWord("cloudPairHowItWorks")}</summary>
                 <p className="fine">{nextWord("cloudPairWhy")}</p>
@@ -324,7 +332,7 @@ export function PairPanel(props: {
       case "asking":
         return (
           <>
-            <p className="cloud-pair-wait" role="status"><span className="cloud-pair-spinner" aria-hidden="true" />{nextWord("cloudPairAsking")}</p>
+            <p className="cloud-pair-wait" role="status"><span className="cloud-pair-spinner" aria-hidden="true" />{nextWord(helperFlow ? "cloudPairHelperPreparing" : "cloudPairAsking")}</p>
             <div className="buttons">
               <button className="chip" type="button" id="cloud-pair-stop" ref={first} onClick={onStop}>
                 {T.webCancel}
@@ -376,105 +384,116 @@ export function PairPanel(props: {
           <>
             {offer && (
               <>
-                {localAvailable && <div>
-                  <button className="go" type="button" id="cloud-pair-local" disabled={localBusy}
-                    onClick={() => { void finishLocally(state.fragment) }}>{nextWord("cloudPairLocal")}</button>
-                  <p className="fine">{nextWord("cloudPairLocalHint")}</p>
-                  {localError && <p role="status">{nextWord("cloudPairAgentRefused", { reason: localError })}</p>}
-                </div>}
-                {device === "desktop" && /Mac/i.test(navigator.platform) && !localAvailable && <div className="cloud-pair-native-way">
-                  <a className="go cloud-pair-primary" href={pairingAppLink(state.fragment, asked?.id)}>{catalogWord("browserPairing", "openApp")}</a>
-                  <p className="fine">{catalogWord("browserPairing", "openAppHint")}</p>
-                </div>}
-                <ol className="cloud-pair-steps cloud-pair-code-path">
-                  <li data-done={codeCopied === "yes" ? "true" : undefined}>
-                  <span id="cloud-pair-code-step">{nextWord("cloudPairCopyThis")}</span>
-                  <label className="sr-only" htmlFor="cloud-pair-code">{nextWord("cloudPairCodeLabel")}</label>
-                  <textarea
-                    className="cloud-pair-command cloud-pair-code"
-                    id="cloud-pair-code"
-                    ref={codeField}
-                    readOnly
-                    rows={3}
-                    spellCheck={false}
-                    autoCapitalize="off"
-                    autoCorrect="off"
-                    value={state.fragment}
-                    onFocus={(event) => event.currentTarget.select()}
-                  />
-                  <div className="cloud-pair-copy">
-                    <button className="chip" type="button" id="cloud-pair-code-copy" ref={first} onClick={() => copy(state.fragment, "code")}>
-                      {nextWord(codeCopied === "yes" ? "cloudPairCopyDone" : "cloudPairCodeCopy")}
-                    </button>
-                    {codeCopied === "no" && (
-                      <span className="cloud-pair-copied" role="status">{nextWord("cloudPairCopyFailed")}</span>
+                {!handOff && (
+                  <div className="cloud-pair-wait" role="status">
+                    <span className="cloud-pair-spinner" aria-hidden="true" />
+                    <div>
+                      <b id="cloud-pair-said">{nextWord("cloudPairWaiting")}</b>
+                      <p className="fine cloud-pair-expires">{nextWord("cloudPairWaitKeepOpen", { time: clock(state.expiresAt) })}</p>
+                    </div>
+                  </div>
+                )}
+                {handOff && (
+                  <div className="cloud-pair-agent">
+                    {cloudHandOff && (props.helpers?.length ?? 0) > 1 && !following && agent !== "sending" && (
+                      <label className="cloud-pair-helper">
+                        {nextWord("cloudPairHelperChoose")}
+                        <select value={cloudHandOff.id} onChange={(event) => setHelperID(event.target.value)}>
+                          {props.helpers!.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
+                        </select>
+                      </label>
+                    )}
+                    {!following && agent !== "sending" && cloudHandOff && assistantPicker()}
+                    {agent === "sending" ? (
+                      <div className="cloud-pair-wait" role="status">
+                        <span className="cloud-pair-spinner" aria-hidden="true" />
+                        <div><b>{nextWord("cloudPairHelperPreparing")}</b><p className="fine">{nextWord("cloudPairAgentSending")}</p></div>
+                      </div>
+                    ) : following ? (
+                      <>
+                        {agentProgress(handOff.name, send)}
+                        {progress?.stage !== "failed" && <p className="fine">{nextWord("cloudPairHelperKeepOpen")}</p>}
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          className="go cloud-pair-primary"
+                          type="button"
+                          id="cloud-pair-agent"
+                          disabled={agent !== null && agent.ok}
+                          onClick={send}
+                        >
+                          {cloudHandOff ? nextWord("cloudPairHelperStart") : nextWord("cloudPairAgentHand")}
+                        </button>
+                        <p className="fine">{cloudHandOff
+                          ? nextWord("cloudPairCloudHandWhen", { helper: cloudHandOff.name, machine: handOff.name })
+                          : nextWord("cloudPairAgentHandWhen", { machine: handOff.name })}</p>
+                        {agent && (
+                          <p className="cloud-pair-agent-said" id="cloud-pair-agent-said" role="status" data-agent={agentOutcome(agent)}>
+                            {agentSaid(agent, handOff.name, nextWord)}
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
-                  </li>
-                  <li>{nextWord("cloudPairStepPaste")}
-                    <label className="sr-only" htmlFor="cloud-pair-cli">{nextWord("cloudPairCliCopy")}</label>
-                    <textarea className="cloud-pair-command" id="cloud-pair-cli" readOnly rows={3}
-                      spellCheck={false} autoCapitalize="off" autoCorrect="off" value={line}
-                      onFocus={(event) => event.currentTarget.select()} />
-                    <button className="chip" type="button" id="cloud-pair-cli-copy" onClick={() => copy(line, "command")}>
-                      {nextWord(commandCopied === "yes" ? "cloudPairCopyDone" : "cloudPairCliCopy")}
-                    </button>
-                    {commandCopied === "no" && <span role="status">{nextWord("cloudPairCopyFailed")}</span>}
-                  </li>
-                </ol>
-                <div className="cloud-pair-wait" role="status">
-                  <span className="cloud-pair-spinner" aria-hidden="true" />
-                  <div>
-                    <b id="cloud-pair-said">{nextWord("cloudPairWaiting")}</b>
-                    <p className="fine cloud-pair-expires">{nextWord("cloudPairWaitKeepOpen", { time: clock(state.expiresAt) })}</p>
-                  </div>
-                </div>
-                <details
-                  className="cloud-pair-manual"
-                  id="cloud-pair-agent-advanced"
-                  open={manualOpen}
-                  onToggle={(event) => setManualOpen(event.currentTarget.open)}
-                >
-                  <summary>{nextWord("cloudPairAgentAdvanced")}</summary>
-                  {handOff && (
-                    <div className="cloud-pair-agent">
-                      {cloudHandOff && (props.helpers?.length ?? 0) > 1 && !following && (
-                        <label className="cloud-pair-helper">
-                          {nextWord("cloudPairHelperChoose")}
-                          <select value={cloudHandOff.id} disabled={agent === "sending"} onChange={(event) => setHelperID(event.target.value)}>
-                            {props.helpers!.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
-                          </select>
-                        </label>
-                      )}
-                      {following ? (
-                        <>
-                          {agentProgress(handOff.name, send)}
-                          <p className="fine">{nextWord("cloudPairAgentWindow")}</p>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            className="go"
-                            type="button"
-                            id="cloud-pair-agent"
-                            disabled={agent === "sending" || (agent !== null && agent.ok)}
-                            onClick={send}
-                          >
-                            {cloudHandOff ? nextWord("cloudPairCloudHand") : nextWord("cloudPairAgentHand")}
-                          </button>
-                          <p className="fine">{cloudHandOff
-                            ? nextWord("cloudPairCloudHandWhen", { helper: cloudHandOff.name, machine: handOff.name })
-                            : nextWord("cloudPairAgentHandWhen", { machine: handOff.name })}</p>
-                          {agent && (
-                            <p className="cloud-pair-agent-said" id="cloud-pair-agent-said" role="status" data-agent={agentOutcome(agent)}>
-                              {agentSaid(agent, handOff.name, nextWord)}
-                            </p>
-                          )}
-                        </>
+                )}
+                <details className="cloud-pair-manual" open={manualOpen || !handOff}
+                  onToggle={(event) => setManualOpen(event.currentTarget.open)}>
+                  <summary>{nextWord("cloudPairOtherWays")}</summary>
+                  {localAvailable && <div>
+                    <button className="go" type="button" id="cloud-pair-local" disabled={localBusy}
+                      onClick={() => { void finishLocally(state.fragment) }}>{nextWord("cloudPairLocal")}</button>
+                    <p className="fine">{nextWord("cloudPairLocalHint")}</p>
+                    {localError && <p role="status">{nextWord("cloudPairAgentRefused", { reason: localError })}</p>}
+                  </div>}
+                  {device === "desktop" && /Mac/i.test(navigator.platform) && !localAvailable && <div className="cloud-pair-native-way">
+                    <a className="go cloud-pair-primary" href={pairingAppLink(state.fragment, asked?.id)}>{catalogWord("browserPairing", "openApp")}</a>
+                    <p className="fine">{catalogWord("browserPairing", "openAppHint")}</p>
+                  </div>}
+                  <ol className="cloud-pair-steps cloud-pair-code-path">
+                    <li data-done={codeCopied === "yes" ? "true" : undefined}>
+                    <span id="cloud-pair-code-step">{nextWord("cloudPairCopyThis")}</span>
+                    <label className="sr-only" htmlFor="cloud-pair-code">{nextWord("cloudPairCodeLabel")}</label>
+                    <textarea
+                      className="cloud-pair-command cloud-pair-code"
+                      id="cloud-pair-code"
+                      ref={codeField}
+                      readOnly
+                      rows={3}
+                      spellCheck={false}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      value={state.fragment}
+                      onFocus={(event) => event.currentTarget.select()}
+                    />
+                    <div className="cloud-pair-copy">
+                      <button className="chip" type="button" id="cloud-pair-code-copy" ref={first} onClick={() => copy(state.fragment, "code")}>
+                        {nextWord(codeCopied === "yes" ? "cloudPairCopyDone" : "cloudPairCodeCopy")}
+                      </button>
+                      {codeCopied === "no" && (
+                        <span className="cloud-pair-copied" role="status">{nextWord("cloudPairCopyFailed")}</span>
                       )}
                     </div>
-                  )}
-                  {manual}
+                    </li>
+                    <li>{nextWord("cloudPairStepPaste")}
+                      <label className="sr-only" htmlFor="cloud-pair-cli">{nextWord("cloudPairCliCopy")}</label>
+                      <textarea className="cloud-pair-command" id="cloud-pair-cli" readOnly rows={3}
+                        spellCheck={false} autoCapitalize="off" autoCorrect="off" value={line}
+                        onFocus={(event) => event.currentTarget.select()} />
+                      <button className="chip" type="button" id="cloud-pair-cli-copy" onClick={() => copy(line, "command")}>
+                        {nextWord(commandCopied === "yes" ? "cloudPairCopyDone" : "cloudPairCliCopy")}
+                      </button>
+                      {commandCopied === "no" && <span role="status">{nextWord("cloudPairCopyFailed")}</span>}
+                    </li>
+                  </ol>
+                  <details
+                    className="cloud-pair-manual"
+                    id="cloud-pair-agent-advanced"
+                  >
+                    <summary>{nextWord("cloudPairAgentAdvanced")}</summary>
+                    {manual}
+                  </details>
+                  {yourKey(state.fingerprint)}
                 </details>
               </>
             )}
@@ -484,7 +503,7 @@ export function PairPanel(props: {
                 <b id="cloud-pair-said">{nextWord("cloudPairLinkWaiting")}</b>
               </p>
             )}
-            {yourKey(state.fingerprint)}
+            {!offer && yourKey(state.fingerprint)}
             <div className="buttons">
               <button className="chip" type="button" id="cloud-pair-stop" ref={offer ? undefined : first} onClick={onStop}>
                 {T.webCancel}
@@ -564,6 +583,16 @@ export function PairPanel(props: {
     }
   }
 
+  function assistantPicker() {
+    return <label className="cloud-pair-helper">
+      {nextWord("cloudPairHelperAssistant")}
+      <select value={assistant} onChange={(event) => setAssistant(event.target.value as PairAssistant)}>
+        <option value="claude">Claude</option>
+        <option value="codex">Codex</option>
+      </select>
+    </label>
+  }
+
   function scannerRecovery() {
     return device !== "desktop" ? <PairScanner onScanned={onScan} onUseCode={onClose} startRef={scanStart} /> : null
   }
@@ -581,7 +610,7 @@ export function PairPanel(props: {
       <div className="cloud-pair-progress" id="cloud-pair-progress" data-stage={stage}>
         <p className="cloud-pair-progress-head">
           {!ended && <span className="cloud-pair-spinner" aria-hidden="true" />}
-          <b>{nextWord("cloudPairAgentProgressTitle", { machine })}</b>
+          <b>{stage === "failed" ? nextWord("cloudPairFailedTitle") : nextWord("cloudPairAgentProgressTitle", { machine })}</b>
         </p>
         <p className="cloud-pair-progress-said" id="cloud-pair-agent-said" role="status" aria-live="polite">
           {progressSaid(progress, machine, nextWord)}

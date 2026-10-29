@@ -52,6 +52,16 @@ The [independent-reader baseline](performance/cloud-independent-reads.md) separa
 
 The [Go CPU attribution](performance/cloud-read-cpu.md) measures the parser and independent-reader cost separately from Node and network waiting.
 
+The browser recommends a paired helper machine when one is available. Choose Claude or Codex and
+press **Start pairing** once; generating the offer and handing it to the helper are one flow.
+Progress appears above the collapsed **Other pairing methods** disclosure. Code, terminal, QR,
+and copied instructions remain available there. The final fingerprint comparison is unchanged.
+`pair-agent-start` carries the optional `assistant` field (`claude` or `codex`) through the encrypted
+command to the helper. Omitting it preserves the helper's installed-assistant default. Helpers
+running older decoders refuse the new field rather than silently use another assistant; update
+the helper before using the selector. A task ending is not proof of pairing: the offer response
+still owns the fingerprint confirmation.
+
 ## Publications, reads and commands
 
 The hosted console offers pairing again only for a named pairing failure. A timed-out read,

@@ -1918,12 +1918,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("pair-agent-start") &&
             client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("pair-agent-status"),
           ).map((machine) => ({ id: machine.id, name: machine.name || machine.label || machine.id })),
-          onAgentStart: async (helper: string, offer: string, target: { id: string; name: string }): Promise<PairAgentReply> => {
+          onAgentStart: async (helper: string, offer: string, target: { id: string; name: string }, assistant: "claude" | "codex"): Promise<PairAgentReply> => {
             const request = client.current?._machineRequestAs
             if (!request) return { ok: false, error: "helper_unavailable" }
             try {
               const answer = await request.call(client.current, crypto.randomUUID(), helper, "pair-agent-start",
-                { offer, machine_id: target.id, machine_name: target.name }, "action", 130_000) as Record<string, unknown>
+                { offer, machine_id: target.id, machine_name: target.name, assistant }, "action", 130_000) as Record<string, unknown>
               if (answer?.mode === "agent" && typeof answer.task_id === "string" && answer.task_id) {
                 // The helper owns the new AI Session. Keep its Console mounted
                 // behind the pairing card so the person can see its activity.

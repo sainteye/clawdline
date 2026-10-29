@@ -958,8 +958,12 @@ func genDecodeNotificationSettingsUpdate(b body) (plan, LocalRequest, bool) {
 // caller but this machine's own token, which the in-process request carries.
 func genDecodePairAgentStart(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
+		[]string{"type", "assistant", "machine_id", "machine_name", "offer", "request", "session"},
 		[]string{"type", "machine_id", "machine_name", "offer", "request", "session"},
 	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("assistant", genRule{kind: "string", enum: []string{"claude", "codex"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true, maxBytes: 204}) {
@@ -981,7 +985,7 @@ func genDecodePairAgentStart(b body) (plan, LocalRequest, bool) {
 	if v, sent := b.genSource(genValue{from: "request"}); sent {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
-	req.Body = b.genFields(map[string]genValue{"machine_id": genValue{from: "machine_id"}, "machine_name": genValue{from: "machine_name"}, "offer": genValue{from: "offer"}})
+	req.Body = b.genFields(map[string]genValue{"assistant": genValue{from: "assistant", omitEmpty: true}, "machine_id": genValue{from: "machine_id"}, "machine_name": genValue{from: "machine_name"}, "offer": genValue{from: "offer"}})
 	return p, req, true
 }
 

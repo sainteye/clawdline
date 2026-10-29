@@ -1281,5 +1281,6 @@
   "http.ffed8239d8e297e0": "Supply the expected version and text content.",
   "http.18858b51e589e747": "Doctor reports are read with GET.",
   "http.6f0feac1947e8a32": "A Doctor check is already running. Wait for it to finish.",
-  "http.b3efd688ebb68c49": "The Doctor report exceeded its safe export limit."
+  "http.b3efd688ebb68c49": "The Doctor report exceeded its safe export limit.",
+  "http.a3477e7267821949": "Choose Claude or Codex for pairing."
 }

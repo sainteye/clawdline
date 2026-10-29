@@ -25,7 +25,7 @@ test("pairing dialog names its current title and leads with one way for the devi
   assert.doesNotMatch(scanner, /fetch\(|sendBeacon\(|\.post\(/, "camera frames and decoded offers stay on this device")
 })
 
-test("Home Screen offer exposes the complete code before optional agent instructions", () => {
+test("manual recovery keeps the complete code and separate agent instructions", () => {
   const code = panel.indexOf('id="cloud-pair-code"')
   const copy = panel.indexOf('id="cloud-pair-code-copy"')
   const advanced = panel.indexOf('id="cloud-pair-agent-advanced"')

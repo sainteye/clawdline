@@ -1281,5 +1281,6 @@
   "http.ffed8239d8e297e0": "請提供預期版本及文字內容。",
   "http.18858b51e589e747": "Doctor 報告使用 GET 讀取。",
   "http.6f0feac1947e8a32": "Doctor 正在檢查，請等候完成。",
-  "http.b3efd688ebb68c49": "Doctor 報告超過安全匯出上限。"
+  "http.b3efd688ebb68c49": "Doctor 報告超過安全匯出上限。",
+  "http.a3477e7267821949": "請選擇 Claude 或 Codex 協助配對。"
 }

@@ -23,6 +23,8 @@ export const PAIR_AGENT_HANDLER = "clawdlinePairAgent"
  * tab's assistant will open on a composer: `recorded`, `per_launch`, or
  * `not_recorded`, when a terminal may be asking whether to trust a folder.
  */
+export type PairAssistant = "claude" | "codex"
+
 export type PairAgentReply =
   | { ok: true; mode: "direct" | "agent"; taskID: string; trust: string }
   | { ok: false; error: string }

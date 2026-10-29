@@ -200,10 +200,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		word: "pair-agent-start",
 		body: map[string]any{"type": "pair-agent-start", "session": machine, "request": "req-pair-agent",
-			"offer": "opaque", "machine_id": "mac_target", "machine_name": "Target"},
+			"offer": "opaque", "machine_id": "mac_target", "machine_name": "Target", "assistant": "codex"},
 		session: machine, name: "action:req-pair-agent",
 		method: "POST", path: "/v1/cloud/pairing/agent",
-		body2: `{"machine_id":"mac_target","machine_name":"Target","offer":"opaque"}`,
+		body2: `{"assistant":"codex","machine_id":"mac_target","machine_name":"Target","offer":"opaque"}`,
 	}, {
 		word:    "pair-agent-status",
 		body:    map[string]any{"type": "pair-agent-status", "session": machine, "request": "req-pair-status", "task_id": taskID},
