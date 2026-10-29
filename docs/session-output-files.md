@@ -1,6 +1,12 @@
 # Session output files
 
-A Session's header has an **Output files** button on desktop and phone. Desktop
+A Session's header shows an **Output files** button on desktop and phone only
+after its index confirms at least one file. Loading, an empty answer or an
+unavailable index keeps the entrance hidden. Until a file is confirmed, Session
+activity and state changes recheck the bounded index without a separate polling
+timer. Switching machines, conversations or execution generations discards the
+previous Session's visibility. Previously recorded missing files still count as
+outputs. Desktop
 opens a right-hand panel; phone opens the same listing at full width. There are
 no conversation/files tabs. Closing leaves the mounted conversation, reading
 position and draft in place. Search and type filters operate on the retained

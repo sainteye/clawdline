@@ -1,4 +1,4 @@
-import { outputSessionKey } from "./output-files-api.js"
+import { outputSessionKey, readOutputs } from "./output-files-api.js"
 import { OutputFiles } from "./OutputFiles.js"
 import { assistantStateCurrent, assistantProtocolOwned } from "./antigravity-ui.js"
 import { assistantFactsMachine, useAssistantFacts } from "./assistant-facts.js"
@@ -145,8 +145,22 @@ export function Detail({
   // `Terminal.close` does.
   const [outputsFor, setOutputsFor] = useState<string | null>(null)
   const outputTrigger = useRef<HTMLButtonElement>(null)
-  const outputIdentity = outputSessionKey(row)
+  const outputIdentity = outputSessionKey(row ? { ...row, machine: readerMachine ?? undefined } : null)
+  const [outputsKnownFor, setOutputsKnownFor] = useState<string | null>(null)
+  const hasOutputs = outputsKnownFor === outputIdentity
   const outputsOpen = outputsFor === outputIdentity
+  useEffect(() => {
+    if (!row || conversationNotStarted(row) || hasOutputs) return
+    const abort = new AbortController()
+    // Only a positive index answer reveals the entrance. Until then, changes
+    // in the existing Session feed recheck it without adding a polling timer.
+    void readOutputs(row.id, abort.signal).then(page => {
+      if (!abort.signal.aborted && page.files.length) setOutputsKnownFor(outputIdentity)
+    }, () => { /* Unknown or unsupported output history does not reveal an empty entrance. */ })
+    return () => abort.abort()
+    // The index belongs to this exact conversation, not a fresh row object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outputIdentity, hasOutputs, row?.activity?.at, row?.state])
   useEffect(() => {
     const follow = () => {
       const values = new URLSearchParams(location.hash.slice(1))
@@ -305,7 +319,7 @@ export function Detail({
             </span>
           </button>
         </div>
-        {row && <button ref={outputTrigger} type="button" className="output-entry" aria-expanded={outputsOpen}
+        {row && hasOutputs && <button ref={outputTrigger} type="button" className="output-entry" aria-expanded={outputsOpen}
           aria-label={nextWord("outputsTitle")} title={nextWord("outputsTitle")} disabled={ending}
           onClick={() => setOutputsFor(outputsOpen ? null : outputIdentity)}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 7h7l2-3h8v16H3z"/><path d="M3 9h17"/></svg>
