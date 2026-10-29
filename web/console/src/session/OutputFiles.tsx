@@ -91,7 +91,9 @@ export function OutputFiles({ row, open, onClose, trigger }: {
   useLayoutEffect(() => { if (open) close.current?.focus({ preventScroll: true }) }, [open])
   useEffect(() => {
     if (!open || !data) return
-    const follow = () => {
+    const follow = (event?: HashChangeEvent) => {
+      // Restoring this panel's history is not a fresh request to reopen a preview.
+      if (event && history.state?.sessionOutputs === owner.current) return
       const id = new URLSearchParams(location.hash.slice(1)).get("output")
       const match = data.files.find(file => file.id === id)
       if (match) setSelected(match)
