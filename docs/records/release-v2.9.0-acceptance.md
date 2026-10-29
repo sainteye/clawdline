@@ -62,11 +62,18 @@ while the application uses `<title>Clawdline Cloud</title>`. Homepage, API and
 Relay health contracts passed; independent hosted checks and Chrome startup
 passed. No API or Relay deployment was made for this release.
 
-## Operator machine boundary
+## Operator machine update
 
-The operator machine remains on `v2.8.0-dev.e4a2c34`, source
-`e4a2c347c41514d0646c6dfb1406bdb19f75c733`. Applying the built-in updater would
-briefly interrupt its service, so it awaits the person's separate confirmation.
-No update, native App restart or manual bundle replacement was performed as part
-of publication. The isolated DMG acceptance above does not establish an update
-of this running machine.
+After the person separately approved the brief service interruption, the operator
+used `clawdline update --apply --version v2.9.0`. The fresh updater reading
+reported `apply.state: healthy`, from `v2.8.0-dev.e4a2c34` to `v2.9.0`, with the
+exact release source running. Health returned v2.9.0 and API level 32; console
+GET `/` answered 200, and the authenticated BUILD matched the release commit.
+All eight Sessions present immediately before the update remained afterwards.
+The earlier hosted observation had seven; the update comparison uses the fresh
+pre-update inventory rather than that earlier count.
+
+The installed native App bundle subsequently identified 2.9.0. No forced App
+quit/reopen or manual bundle replacement was performed. This verifies the
+running service and installed bundle metadata, not fresh TCC permission behavior
+or a clean-account installation.
