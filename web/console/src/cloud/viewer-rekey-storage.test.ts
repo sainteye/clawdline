@@ -2,6 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { adoptMachineRekey, importMasterSecret, importSenderPublicKey, loadMachineCryptoState, storePairingCryptoKeys, storePairingBinding } from "../legacy/js/net/cloud-crypto.js"
 import { CloudClient } from "../legacy/js/net/cloud-client.js"
+import { StatusCloudClient } from "./status-client.js"
 // @ts-expect-error Node executes TypeScript directly.
 import {rekeyKeyID,sealRekeyAnswer} from "./rekey-crypto.ts"
 import { CloudViewerSession } from "../legacy/js/net/cloud-boot.js"
@@ -58,6 +59,59 @@ export async function storedPairing() {
   preserve: {masterName:session.masterKeyName(), masterKeyIDName:session.masterKeyIDName(),senderName:session.senderKeyName("machine-test")}}, db.factory)
  return {db, machine, session, names, pairing:await session.machinePairing("machine-test")}
 }
+
+test("a cold viewer restores its saved pairing before the first machine envelope", async () => {
+ const {session} = await storedPairing()
+ const client = new StatusCloudClient({relayURL:"wss://relay.example.test",deviceToken:"synthetic",resolveMachinePairing:session.machinePairing.bind(session)})
+ assert.equal(client._machineRows().length,0,"the account roster alone is not a machine publication")
+ await client.restoreMachinePairing("machine-test")
+ const row = (await client.machines()).machines[0]
+ assert.equal(row.id,"machine-test")
+ assert.equal(row.pairing,"paired")
+ assert.equal(row.selectable,true)
+ assert.equal(row.freshness,"unknown","saved keys do not invent current presence")
+ assert.equal(row.sessions,undefined,"saved keys do not invent a Session inventory")
+ assert.equal(client.statusSnapshots.size,0)
+ assert.equal(client.orchestratorSnapshots.size,0)
+})
+
+test("a key-store interruption stays unknown and can recover in the same viewer", async () => {
+ const {session} = await storedPairing()
+ const client = new StatusCloudClient({relayURL:"wss://relay.example.test",deviceToken:"synthetic",resolveMachinePairing:async()=>{throw new Error("store is resuming")}})
+ await assert.rejects(client.restoreMachinePairing("machine-test"),/store is resuming/)
+ assert.equal(client.pairingAbsent.has("machine-test"),false)
+ assert.equal(client.pairingLookups.has("machine-test"),false)
+ client.resolveMachinePairing=session.machinePairing.bind(session)
+ await client.restoreMachinePairing("machine-test")
+ assert.equal((await client.machines()).machines[0].pairing,"paired")
+})
+
+test("restoration distinguishes missing keys from rejected or unreadable keys", async () => {
+ const {session,pairing} = await storedPairing()
+ const client = new StatusCloudClient({relayURL:"wss://relay.example.test",deviceToken:"synthetic",resolveMachinePairing:async()=>null})
+ await client.restoreMachinePairing("machine-test")
+ assert.equal((await client.machines()).machines[0].pairing,"not_paired")
+ for (const tuple of [{...pairing,machineID:"other"}, {...pairing,senderID:""},
+   {...pairing,masterKey:{extractable:true}}]) {
+  client.resolveMachinePairing=async()=>tuple
+  await assert.rejects(client.restoreMachinePairing("machine-test"))
+  assert.equal(client._machineRows().some((row:any)=>row.pairing==="paired"),false)
+ }
+ client.resolveMachinePairing=session.machinePairing.bind(session)
+ await client.restoreMachinePairing("machine-test")
+ assert.equal((await client.machines()).machines[0].pairing,"paired")
+})
+
+test("parallel machine restoration cannot invalidate another machine's key lookup", async () => {
+ const {session} = await storedPairing()
+ const client = new StatusCloudClient({relayURL:"wss://relay.example.test",deviceToken:"synthetic",
+  resolveMachinePairing:session.machinePairing.bind(session)})
+ client.pairingAbsent.add("machine-test")
+ client.pairingAbsent.add("other")
+ await Promise.all([client.restoreMachinePairing("machine-test"),client.restoreMachinePairing("other")])
+ assert.equal(client._machineRows().find((row:any)=>row.id==="machine-test")?.pairing,"paired")
+ assert.equal(client._machineRows().find((row:any)=>row.id==="other")?.pairing,"not_paired")
+})
 
 test("two tabs serialize floor comparisons; restart reads the complete newest tuple and preserves account aliases", async () => {
  const {db,session,names,pairing} = await storedPairing()

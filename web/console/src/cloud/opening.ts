@@ -22,6 +22,7 @@
 export interface ListedMachine {
   id: string
   selectable: boolean
+  pairing?: string
 }
 
 export type Opening =
@@ -93,8 +94,12 @@ export function openingFor(said: {
   // Nothing addressed, nothing chosen, and more than one machine to read:
   // the fleet, rather than a question.
   if (fleet) return { at: "console", machine: readable[0]!, fleet: true, remember: false }
-  // One machine and no choice recorded. The list is still the way in: its row
-  // carries this machine's own name, its pairing and the way to forget it, and
-  // a person who has never picked it has not yet seen any of that.
+  // A saved cryptographic pairing survives losing this tab's choice. The
+  // machine picker remains available from the console's header.
+  const sole = said.machines.find((machine) => machine.id === readable[0])
+  if (sole?.pairing === "paired") {
+    return { at: "console", machine: sole.id, fleet: false, remember: false }
+  }
+  // A merely named route has not proved this browser's pairing yet.
   return { at: "list" }
 }

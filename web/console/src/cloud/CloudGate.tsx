@@ -78,7 +78,7 @@ import { machineForAddress } from "./document-target.js"
 import { openingFor } from "./opening.js"
 import { toolMovesConsole } from "./machine-tool.js"
 import { CloudAccountContext } from "./account-context.js"
-import { machinesByCapability, reportsMachinePresence } from "./machine-access.js"
+import { machinesByCapability, needsMachinePairing, reportsMachinePresence, watchStoredMachinePairings } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader, machineApp, presentsEvery } from "./relay-reader.js"
@@ -662,18 +662,22 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   }, [transport])
 
   /** The machine list as the client computes it from what it has decrypted. */
+  const machineListRequest = useRef(0)
   const listMachines = useCallback(() => {
     const current = client.current
     if (!current) return
+    const request = ++machineListRequest.current
     if (recheck.current) clearTimeout(recheck.current)
     machinesByCapability(current, claimedPairings.current).then(
       (answer) => {
+        if (client.current !== current || request !== machineListRequest.current) return
         setMachineList(machineListAnswer(answer))
         // Inside the window after connecting, machines are still arriving
         // channel by channel; look again when it closes.
         if (answer.syncing) recheck.current = setTimeout(listMachines, Math.max(1000, answer.retryAfterMs))
       },
       (error) => {
+        if (client.current !== current || request !== machineListRequest.current) return
         setMachineList(machineListRefusal(error))
       },
     )
@@ -694,6 +698,18 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setMachineList({ phase: "loading" })
     listMachines()
   }, [listMachines])
+
+  // Account membership names candidates; only their complete saved key tuples
+  // restore pairing. Do not wait for the first ss/ or orch/ publication.
+  const registeredPairingIDs = JSON.stringify([...registered.keys()].sort())
+  const pairingRecoveryActive = SIGNED_IN.has(screen.at)
+  useEffect(() => {
+    const current = client.current
+    if (!current || !pairingRecoveryActive) return
+    return watchStoredMachinePairings(current, JSON.parse(registeredPairingIDs) as string[], () => {
+      if (client.current === current) listMachines()
+    }, { document, window })
+  }, [clientEpoch, registeredPairingIDs, listMachines, pairingRecoveryActive])
 
   // A schedule move asks which machines report in now before it calls one
   // offline (`cloud/schedule-machines.ts`): the list above is not drawn again
@@ -2621,7 +2637,7 @@ function GateCard(props: {
                   const count = sessionsFact(m)
                   const name = m.name || m.label || m.id
                   const identity = machineIdentityFacts(m)
-                  const pairable = m.pairing !== "paired"
+                  const pairable = needsMachinePairing(m.pairing)
                   const open = moreFor === m.id
                   // One word for where the machine stands; the evidence behind it
                   // (platform, id, each access fact, version) is under "⋯".

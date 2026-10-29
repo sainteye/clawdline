@@ -26,6 +26,16 @@ The console groups browser and phone pairing under **Settings → Remote** in bo
 
 The machine can create a one-time pairing link with `clawdline cloud pair`, or accept a browser-originated offer with `clawdline cloud pair --offer <code>`. Pairing transfers the content key and trust information through the handover protocol. Compare the fingerprints shown at both ends. A browser that retains old account or key records can appear paired while the machine lacks its local pin. The machine list therefore keeps the normal pairing action under each machine’s more menu even when it appears paired. Repeating the authenticated handover repairs that browser without deleting the machine or admitting it from roster membership alone. `clawdline cloud devices` lists viewers known to the machine, and `clawdline cloud revoke <device-id>` revokes one locally. Local pairing and revoke routes require this machine's own credential. The [remote access guide](user/remote-access.md) gives setup steps.
 
+On startup, the account roster names candidates for independent local pairing-key
+restoration. A complete, validated saved tuple restores pairing before any relay
+publication arrives; it proves neither machine presence nor a Session count.
+Unknown or unreadable storage never displays an inline instruction to pair again.
+An ordinary absent-key answer can expose that action; explicit repair remains in
+the more menu. Foreground, page restoration and network-return events retry local
+readings without polling or creating a pairing. Each machine shares its pending
+read, and a return during that read is retained for one follow-up rather than
+lost. A retired account or connection cannot publish its late result.
+
 ### Per-browser machine grants
 
 A local pin can carry `scope: "readonly"` or `scope: "operate"`. A pin written by an older daemon with no scope retains `operate`; an unknown scope never grants operations. The machine's `cloud_commands` switch remains an independent prerequisite. Account roster membership, revocation and signing-key checks still apply, but legacy account `send_prompt` bits do not override the machine's local grant. A roster cannot expand a readonly pin. Content-key rotation is not part of this grant change. Older daemons ignore the new scope field: rolling back to a pre-scope daemon restores its legacy operation rules. Keep a scope-aware daemon installed when relying on readonly grants; this migration does not make older executables enforce a new policy.
@@ -226,9 +236,9 @@ spinner canvases with the drawing clock.
 An account with more than one readable machine opens on **all of them**: the fleet list is the
 way in, and the machine list — which is where pairing, renaming and forgetting live — is one press
 away under the header's name. A tab that has chosen a single machine keeps it, because the choice
-is that tab's own (`sessionStorage`); a new tab has made none. An account with one readable machine
-still opens its list once, so the first thing a person sees names the machine and offers its
-pairing. The rules are `web/console/src/cloud/opening.ts` and are tested there.
+is that tab's own (`sessionStorage`); a new tab has made none. One machine with a confirmed
+pairing opens its Session console even without that tab-local choice. A route whose pairing is
+still unknown remains on the list. The rules are `web/console/src/cloud/opening.ts` and are tested there.
 
 On a cold load the gate holds one opening card until the account machine roster answers. The
 roster's active ids decide which retained relay rows may appear; a revoked registration or an old
