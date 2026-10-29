@@ -43,18 +43,20 @@ The failed first install command applied `--only-binary :all:` to the local Grap
 
 ## Curated retrieval tasks
 
+The table uses ∣ for regex alternation; the evidence below preserves the exact command expressions.
+
 Each Graphify command was `query <query> --budget 1500`; baseline was `rg -n -i <expression> . -g !graphify-out/**`. Both accessed identical source bytes. These are curated retrieval probes, not a fair estimate of how an unfamiliar Agent will formulate queries.
 
 | ID | Graphify query | Baseline expression | Expected-file hit (graph / rg) | CLI seconds (graph / rg) | Output bytes (graph / rg) |
 | --- | --- | --- | --- | --- | --- |
-| P01 | `project document root containment` | `ProjectRoot\|holdsTheAsker` | True / True | 0.484 / 0.0075 | 20687 / 1730 |
+| P01 | `project document root containment` | `ProjectRoot∣holdsTheAsker` | True / True | 0.484 / 0.0075 | 20687 / 1730 |
 | P02 | `Read sanitizeHTML` | `sanitizeHTML` | True / True | 0.517 / 0.0087 | 4989 / 1870 |
-| P03 | `video revision range` | `VideoChanged\|VideoRange` | True / True | 0.469 / 0.0084 | 5110 / 1441 |
-| P04 | `documentShareURL normalizeDocumentLocator` | `documentShareURL\|normalizeDocumentLocator` | True / True | 0.508 / 0.0083 | 5038 / 2267 |
-| P05 | `transcript view fallback` | `tools-v2\|tools-v1\|invalid_transcript_view` | False / True | 0.497 / 0.0073 | 5064 / 669 |
-| P06 | `checkpoint words changed` | `words-changed\|WordsDigest` | True / True | 0.489 / 0.0083 | 15500 / 1294 |
-| P07 | `nativeReceipts safeNativePath` | `nativeReceipts\|safeNativePath` | True / True | 0.477 / 0.0104 | 8700 / 402 |
-| P08 | `documentAnswer documentBytesAnswer base64Bytes` | `documentAnswer\|documentBytesAnswer\|base64Bytes` | True / True | 0.477 / 0.0084 | 5066 / 5477 |
+| P03 | `video revision range` | `VideoChanged∣VideoRange` | True / True | 0.469 / 0.0084 | 5110 / 1441 |
+| P04 | `documentShareURL normalizeDocumentLocator` | `documentShareURL∣normalizeDocumentLocator` | True / True | 0.508 / 0.0083 | 5038 / 2267 |
+| P05 | `transcript view fallback` | `tools-v2∣tools-v1∣invalid_transcript_view` | False / True | 0.497 / 0.0073 | 5064 / 669 |
+| P06 | `checkpoint words changed` | `words-changed∣WordsDigest` | True / True | 0.489 / 0.0083 | 15500 / 1294 |
+| P07 | `nativeReceipts safeNativePath` | `nativeReceipts∣safeNativePath` | True / True | 0.477 / 0.0104 | 8700 / 402 |
+| P08 | `documentAnswer documentBytesAnswer base64Bytes` | `documentAnswer∣documentBytesAnswer∣base64Bytes` | True / True | 0.477 / 0.0084 | 5066 / 5477 |
 
 Expected-file hits: Graphify 7/8, rg 8/8. Median process time: Graphify 0.487 s, rg 0.0084 s. Median output: Graphify 5088 bytes, rg 1585.5 bytes. Five Graphify answers carried a truncation notice. These figures do not establish Agent accuracy, token savings or return on investment.
 
