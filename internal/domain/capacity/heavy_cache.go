@@ -11,7 +11,7 @@ const MaxHeavyGoDiskReserveKiB = 2097152
 // than the running daemon. Both register guards include these entries; daemon
 // diagnostics and their copy/measurement guards use Register alone.
 func ToolRegister() []Entry {
-	return []Entry{
+	return append([]Entry{
 		{
 			Name: "build.go_cache_bytes", Class: Cache, Unit: Bytes,
 			Limit: MaxHeavyGoCacheKiB * 1024, AtLimit: Expire,
@@ -24,5 +24,5 @@ func ToolRegister() []Entry {
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaxHeavyGoDiskReserveKiB"},
 		},
-	}
+	}, graphifyToolBounds()...)
 }

@@ -300,8 +300,10 @@ export type WriteRoute =
   | { op: "notification-rules-update"; word: Carried<"notification-rules-update"> }
   | { op: "work-gate-settings"; word: Carried<"work-gate-settings"> }
   | { op: "workflow-settings"; word: Carried<"workflow-settings"> }
+  | { op: "integration-settings"; word: Carried<"integration-settings"> }
   | { op: "work-gate-settings-update"; word: Carried<"work-gate-settings-update"> }
   | { op: "workflow-settings-update"; word: Carried<"workflow-settings-update"> }
+  | { op: "integration-settings-update"; word: Carried<"integration-settings-update"> }
   | { op: "notification-settings"; word: Carried<"notification-settings"> }
   | { op: "notification-settings-update"; word: Carried<"notification-settings-update"> }
   | { op: "board-command"; word: Carried<"board-command"> }
@@ -482,6 +484,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "notification-rules",
   "work-gate-settings",
   "workflow-settings",
+  "integration-settings",
   "notification-settings",
   "restorable",
   "archived",
@@ -563,6 +566,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     if (head === "settings" && a === "workflow" && segments.length === 2) {
       return { op: "workflow-settings", word: "workflow-settings" }
+    }
+    if (head === "settings" && a === "integrations" && segments.length === 2) {
+      return { op: "integration-settings", word: "integration-settings" }
     }
     if (head === "settings" && a === "notifications" && segments.length === 2) {
       return { op: "notification-settings", word: "notification-settings" }
@@ -709,6 +715,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   }
   if (head === "settings" && a === "workflow" && segments.length === 2) {
     return { op: "workflow-settings-update", word: "workflow-settings-update" }
+  }
+  if (head === "settings" && a === "integrations" && segments.length === 2) {
+    return { op: "integration-settings-update", word: "integration-settings-update" }
   }
   if (head === "settings" && a === "notifications" && segments.length === 2) {
     return { op: "notification-settings-update", word: "notification-settings-update" }
@@ -942,8 +951,10 @@ function spellingOf(route: WriteRoute): Spelling {
     case "notification-rules":
     case "notification-rules-update":
     case "work-gate-settings":
+    case "integration-settings":
     case "workflow-settings":
     case "work-gate-settings-update":
+    case "integration-settings-update":
     case "workflow-settings-update":
     case "notification-settings":
     case "notification-settings-update":
@@ -1497,6 +1508,7 @@ export class RelayWriter {
       case "default-models":
       case "notification-rules":
       case "work-gate-settings":
+      case "integration-settings":
       case "workflow-settings":
       case "notification-settings":
       case "machine-usage":
@@ -1850,6 +1862,7 @@ export class RelayWriter {
         return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"))
       }
       case "work-gate-settings-update":
+      case "integration-settings-update":
       case "workflow-settings-update": {
         for (const [key] of url.searchParams) {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)

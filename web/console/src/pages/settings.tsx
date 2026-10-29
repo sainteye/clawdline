@@ -23,6 +23,7 @@ import "./settings/window/window.css"
 import "./settings/page.css"
 import { RemotePairingBlock } from "./settings/RemotePairingBlock.js"
 import { WorkflowSettingsBlock } from "./settings/WorkflowSettingsBlock.js"
+import { IntegrationSettingsBlock } from "./settings/IntegrationSettingsBlock.js"
 import { BoardBlock } from "./settings/BoardBlock.js"
 import { DoctorBlock } from "../doctor/DoctorBlock.js"
 import { CapacityBlock } from "./settings/CapacityBlock.js"
@@ -479,6 +480,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
 
         <div className="settings-pane" id="settings-pane-3" role="tabpanel" aria-labelledby="settings-tab-3" hidden={tab !== 3}>
           <WorkflowSettingsBlock shown={shown && tab === 3} />
+          <IntegrationSettingsBlock shown={shown && tab === 3} />
         </div>
         {cloud && <div className="settings-pane" id="settings-pane-4" role="tabpanel" aria-labelledby="settings-tab-4" hidden={tab !== 4}>
           {shown && tab === 4 && <RemotePairingBlock />}

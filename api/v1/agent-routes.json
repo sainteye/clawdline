@@ -510,6 +510,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/settings/integrations",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/settings/workflow",
       "guide": "connect"
     },

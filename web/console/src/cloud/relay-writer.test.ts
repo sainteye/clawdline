@@ -244,8 +244,10 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/notification-rules", "notification-rules-update"],
     ["GET", "/v1/settings/work-gates", "work-gate-settings"],
     ["GET", "/v1/settings/workflow", "workflow-settings"],
+    ["GET", "/v1/settings/integrations", "integration-settings"],
     ["POST", "/v1/settings/work-gates", "work-gate-settings-update"],
     ["POST", "/v1/settings/workflow", "workflow-settings-update"],
+    ["POST", "/v1/settings/integrations", "integration-settings-update"],
     ["POST", "/v1/update/apply", "update-apply"],
     ["POST", "/v1/board", "board-command"],
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
@@ -2474,6 +2476,7 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/settings/notifications", "notification-settings"],
     ["/v1/settings/work-gates", "work-gate-settings"],
     ["/v1/settings/workflow", "workflow-settings"],
+    ["/v1/settings/integrations", "integration-settings"],
     ["/v1/sessions/restorable", "restorable"],
     ["/v1/sessions/archived", "archived"],
     ["/v1/machine/usage", "machine-usage"],
@@ -2833,4 +2836,20 @@ test("single-machine outputs refuse missing, mismatched and invalid execution pr
     assert.equal((await reader.fetch("/v1/sessions/s1/outputs")).status, 409)
     assert.equal(client.calls.length, 0)
   }
+})
+
+
+test("integration opt-ins read and write only the selected machine", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal((await reader.fetch("/v1/settings/integrations")).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "integration-settings", {}, "read"])
+  for (const key of ["workflow_skills_enabled", "graphify_enabled"]) {
+    for (const on of [true, false]) {
+      assert.equal((await reader.fetch("/v1/settings/integrations", post({ [key]: on }))).status, 200)
+      assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "integration-settings-update", { changes: { [key]: on } }, "action"])
+    }
+  }
+  assert.equal((await reader.fetch("/v1/settings/integrations?project=other")).status, 501)
+  assert.equal((await reader.fetch("/v1/settings/integrations?project=other", post({ graphify_enabled: true }))).status, 501)
 })

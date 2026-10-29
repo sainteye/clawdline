@@ -30,6 +30,8 @@ var generatedDecoders = map[string]genDecoder{
 	"git-diff":                           genDecodeGitDiff,
 	"image":                              genDecodeImage,
 	"info":                               genDecodeInfo,
+	"integration-settings":               genDecodeIntegrationSettings,
+	"integration-settings-update":        genDecodeIntegrationSettingsUpdate,
 	"intents":                            genDecodeIntents,
 	"interrupt":                          genDecodeInterrupt,
 	"key":                                genDecodeKey,
@@ -786,6 +788,43 @@ func genDecodeInfo(b body) (plan, LocalRequest, bool) {
 	path := "/v1/sessions/" + segment(genText(b["session"])) + "/info"
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"parts": genValue{from: "parts"}})
+	return p, req, true
+}
+
+// genDecodeIntegrationSettings is the `integration-settings` row's decode.
+func genDecodeIntegrationSettings(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/settings/integrations"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeIntegrationSettingsUpdate is the `integration-settings-update` row's decode.
+func genDecodeIntegrationSettingsUpdate(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "changes", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"graphify_enabled": genRule{kind: "bool"}, "workflow_skills_enabled": genRule{kind: "bool"}}, closed: true, maxKeys: 2}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/settings/integrations"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("changes")
 	return p, req, true
 }
 

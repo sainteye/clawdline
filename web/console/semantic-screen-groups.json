@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9934,
-  "riskKeys": 4415,
-  "nonRiskCount": 5519,
+  "englishContentKeys": 9960,
+  "riskKeys": 4427,
+  "nonRiskCount": 5533,
   "groups": [
     {
       "name": "admin / other",
@@ -2449,6 +2449,25 @@
         "http.ff5e489c60f89bae",
         "http.ffd795cf51e7ebea",
         "http.ffed8239d8e297e0"
+      ]
+    },
+    {
+      "name": "integrationSettings / other",
+      "count": 10,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "integrationSettings.explain",
+        "integrationSettings.graphify_enabledTitle",
+        "integrationSettings.intro",
+        "integrationSettings.loading",
+        "integrationSettings.off",
+        "integrationSettings.on",
+        "integrationSettings.retry",
+        "integrationSettings.title",
+        "integrationSettings.unavailable",
+        "integrationSettings.workflow_skills_enabledTitle"
       ]
     },
     {
@@ -5692,7 +5711,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 134,
+      "count": 138,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -5765,6 +5784,10 @@
         "transparency.card.html-report.title",
         "transparency.card.investigation.condition",
         "transparency.card.investigation.title",
+        "transparency.card.machine-graphify.condition",
+        "transparency.card.machine-graphify.title",
+        "transparency.card.machine-workflow-skills.condition",
+        "transparency.card.machine-workflow-skills.title",
         "transparency.card.machine.condition",
         "transparency.card.machine.effect",
         "transparency.card.machine.how",

@@ -554,6 +554,8 @@ var Settables = []Settable{
 	// (docs/interface.md "Turning iTerm2 scanning off").
 	{Name: "iterm_scan", Kind: "bool"},
 	{Name: "session_auto_discovery", Kind: "bool"},
+	{Name: "workflow_skills_enabled", Kind: "bool"},
+	{Name: "graphify_enabled", Kind: "bool"},
 	// The console's setup wizard (web/console/src/setup): `local` is the
 	// person choosing to use this machine only, so the header shows a quiet
 	// local mark instead of unfinished Cloud steps.

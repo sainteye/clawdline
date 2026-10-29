@@ -3725,6 +3725,23 @@ export interface ImageStoreResult {
   terminal?: string
 }
 
+export interface IntegrationSettingsRequest {
+  graphify_enabled?: boolean
+  workflow_skills_enabled?: boolean
+}
+
+export interface IntegrationSettingsSnapshot {
+  /**
+   * Machine-wide explicit opt-in; absent settings remain disabled.
+   */
+  graphify_enabled: boolean
+
+  /**
+   * Machine-wide explicit opt-in; absent settings remain disabled.
+   */
+  workflow_skills_enabled: boolean
+}
+
 export interface IntentDraft {
   assistant: string
 
@@ -7667,6 +7684,7 @@ export interface SettingsRequest {
    * Whether the terminal selects the tab the bar points at.
    */
   follow_target: boolean | null
+  graphify_enabled: boolean | null
 
   /**
    * A combination the shell can register (`cmd+shift+k`), or empty for none.
@@ -7925,6 +7943,7 @@ export interface SettingsRequest {
    * 360 to 1400.
    */
   width: number | null
+  workflow_skills_enabled: boolean | null
 
   /**
    * 0.05 to 0.80.
@@ -8026,6 +8045,7 @@ export interface SettingsSnapshot {
    * Whether the terminal selects the tab the bar points at.
    */
   follow_target: boolean | null
+  graphify_enabled: boolean | null
 
   /**
    * The file's `hotkey`, or null when the file does not carry one as a string. Null
@@ -8312,6 +8332,7 @@ export interface SettingsSnapshot {
    * The bar's width in points.
    */
   width: number | null
+  workflow_skills_enabled: boolean | null
 
   /**
    * Where the bar's top sits, as a fraction of screen height.

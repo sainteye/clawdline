@@ -6657,6 +6657,106 @@
     ]
   },
   {
+    "Register": "tool",
+    "Name": "graphify.check_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.CheckSecondsLimit"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "graphify.metadata_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16777216,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.MaxMetadataBytes"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "graphify.scan_entries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 20000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.MaxScanEntries"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "graphify.source_file_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16777216,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.MaxFileBytes"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "graphify.total_read_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 134217728,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.MaxTotalBytes"
+    ]
+  },
+  {
     "Register": "daemon",
     "Name": "handoff.pack_bytes",
     "Class": "buffer",

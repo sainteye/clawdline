@@ -80,8 +80,12 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		preflightPersona = ""
 	}
 	memory := b.memoryFor(cwd)
+	integrations, err := b.integrationInstructions(ctx, cwd)
+	if err != nil {
+		return openedSession{}, err
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model, ReasoningEffort: effort,
-		Language: b.SessionLanguage(assistant), Persona: preflightPersona, PersonaDir: b.PersonaDir(), Memory: memory})
+		Language: b.SessionLanguage(assistant), Persona: preflightPersona, PersonaDir: b.PersonaDir(), Memory: memory, IntegrationInstructions: integrations})
 	if err != nil {
 		return openedSession{}, err
 	}
@@ -92,7 +96,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if prepared.files.PromptPath != "" {
 		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model, ReasoningEffort: effort,
 			Language: b.SessionLanguage(assistant), Persona: persona,
-			SquadPromptPath: prepared.files.PromptPath, Memory: memory})
+			SquadPromptPath: prepared.files.PromptPath, Memory: memory, IntegrationInstructions: integrations})
 		if err != nil {
 			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
 			return openedSession{}, err

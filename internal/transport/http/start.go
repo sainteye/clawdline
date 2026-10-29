@@ -279,12 +279,13 @@ func (s *Server) starter(reading startReading) app.Starter {
 			}
 			return false, nil
 		},
-		Recorded:             projects.Recorded,
-		PersonaDir:           personas.Dir(s.cfg.Dir),
-		Squad:                s.store,
-		SquadDir:             s.cfg.Dir,
-		ResolveSquadSnapshot: s.resolveSquadSnapshot,
-		Memory:               s.memoryLaunchText,
+		Recorded:                projects.Recorded,
+		PersonaDir:              personas.Dir(s.cfg.Dir),
+		Squad:                   s.store,
+		SquadDir:                s.cfg.Dir,
+		ResolveSquadSnapshot:    s.resolveSquadSnapshot,
+		Memory:                  s.memoryLaunchText,
+		IntegrationInstructions: s.integrationLaunchText,
 		// The broker's answer, so a session the person starts and one the
 		// broker opens answer in the same language.
 		Language: func(assistant string) string {

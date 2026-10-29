@@ -689,6 +689,11 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		preflightPersona = ""
 	}
 	memory := b.memoryFor(cwd)
+	integrations, err := b.integrationInstructions(ctx, cwd)
+	if err != nil {
+		r.State, r.SpawnError, r.FinishedAt = StateSpawnFailed, err.Error(), b.now()
+		return r
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
@@ -699,9 +704,10 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		Language:        b.SessionLanguage(r.Assistant),
 		// Admitted by name with the brief, and admitted again here for the
 		// reason the effort is.
-		Persona:    preflightPersona,
-		PersonaDir: b.PersonaDir(),
-		Memory:     memory,
+		Persona:                 preflightPersona,
+		PersonaDir:              b.PersonaDir(),
+		Memory:                  memory,
+		IntegrationInstructions: integrations,
 	})
 	if err != nil {
 		r.State = StateSpawnFailed
@@ -719,7 +725,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if prepared.files.PromptPath != "" {
 		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: r.Assistant,
 			Model: r.Model, ReasoningEffort: r.ReasoningEffort, Language: b.SessionLanguage(r.Assistant),
-			Persona: r.Persona, SquadPromptPath: prepared.files.PromptPath, Memory: memory})
+			Persona: r.Persona, SquadPromptPath: prepared.files.PromptPath, Memory: memory, IntegrationInstructions: integrations})
 		if err != nil {
 			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
 			r.State = StateSpawnFailed

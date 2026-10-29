@@ -699,6 +699,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/settings/default-models"}, s.defaultModelsRoute},
 		{Route{"*", "/v1/settings/work-gates"}, s.workGateSettingsRoute},
 		{Route{"*", "/v1/settings/workflow"}, s.workflowSettingsRoute},
+		{Route{"*", "/v1/settings/integrations"}, s.integrationSettingsRoute},
 		{Route{"*", "/v1/places"}, s.placesRoute},
 		{Route{"GET", "/v1/project-folders"}, s.projectFoldersRoute},
 		// The input bar's server list (devstacks.go): what the projects' own

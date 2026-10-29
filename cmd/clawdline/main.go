@@ -105,6 +105,8 @@ func main() {
 		os.Exit(providerObserveCommand(context.Background(), os.Args[2:], config.Load().Dir, os.Stdin, os.Stdout, os.Stderr))
 	case "serve":
 		serve()
+	case "graphify":
+		graphifyCommand(os.Args[2:])
 	case "doctor":
 		if len(os.Args) > 2 && os.Args[2] == "capacity" {
 			capacityCommand(os.Args[3:])
