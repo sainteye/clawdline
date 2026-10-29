@@ -3206,6 +3206,10 @@ type ImageStoreResult struct {
 	Note string `json:"note,omitempty"`
 	OK   bool   `json:"ok"`
 
+	// Typed error when the images were stored but original output paths could not be
+	// indexed; image delivery is not undone.
+	OutputIndexError string `json:"output_index_error,omitempty"`
+
 	// The terminal id of the Session the pictures are shown in, when the request named
 	// one: they appear under the first reply it writes after this answer. Stored is
 	// not seen — GET /v1/transcript?session=… shows them in that reply's
@@ -5936,6 +5940,39 @@ type SessionModel struct {
 	Command string `json:"command"`
 	ID      string `json:"id"`
 	Name    string `json:"name"`
+}
+
+type SessionOutputChunk struct {
+	Data       string `json:"data"`
+	ID         string `json:"id"`
+	MediaType  string `json:"media_type"`
+	Name       string `json:"name"`
+	Offset     int64  `json:"offset"`
+	Revision   string `json:"revision"`
+	TotalBytes int64  `json:"total_bytes"`
+}
+
+type SessionOutputFile struct {
+	AbsolutePath string `json:"absolute_path"`
+	Anchor       int64  `json:"anchor"`
+	Bytes        int64  `json:"bytes"`
+	FirstAt      int64  `json:"first_at"`
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
+	MediaType    string `json:"media_type"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	Source       string `json:"source"`
+	State        string `json:"state"`
+	UpdatedAt    int64  `json:"updated_at"`
+	Updates      int64  `json:"updates"`
+}
+
+type SessionOutputList struct {
+	Coverage string              `json:"coverage"`
+	Files    []SessionOutputFile `json:"files"`
+	More     bool                `json:"more"`
+	Partial  bool                `json:"partial"`
 }
 
 // One durable pause and wake receipt. Safe point is receiver acknowledged,

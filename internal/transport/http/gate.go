@@ -382,6 +382,9 @@ func machineScoped(p string) bool {
 	if squadAgentPath(p) {
 		return true
 	}
+	if parts := strings.Split(strings.TrimPrefix(p, "/v1/sessions/"), "/"); strings.HasPrefix(p, "/v1/sessions/") && len(parts) == 2 && parts[0] != "" && parts[1] == "outputs" {
+		return true
+	}
 	if strings.HasPrefix(p, "/v1/orchestrator/") {
 		return true
 	}

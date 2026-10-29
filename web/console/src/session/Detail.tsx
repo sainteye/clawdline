@@ -1,3 +1,5 @@
+import { outputSessionKey } from "./output-files-api.js"
+import { OutputFiles } from "./OutputFiles.js"
 import { assistantStateCurrent, assistantProtocolOwned } from "./antigravity-ui.js"
 import { assistantFactsMachine, useAssistantFacts } from "./assistant-facts.js"
 import { catalogWord } from "../catalog.js"
@@ -139,6 +141,18 @@ export function Detail({
   // console has; `pane-detail`'s `data-panel` is what the stylesheet reads, and
   // it is deleted rather than set to a word when nothing is open, as
   // `Terminal.close` does.
+  const [outputsFor, setOutputsFor] = useState<string | null>(null)
+  const outputTrigger = useRef<HTMLButtonElement>(null)
+  const outputIdentity = outputSessionKey(row)
+  const outputsOpen = outputsFor === outputIdentity
+  useEffect(() => {
+    const follow = () => {
+      const values = new URLSearchParams(location.hash.slice(1))
+      if (row && values.get("session") === row.id && /^[0-9a-f]{64}$/.test(values.get("output") ?? "")) setOutputsFor(outputIdentity)
+    }
+    follow(); window.addEventListener("hashchange", follow)
+    return () => window.removeEventListener("hashchange", follow)
+  }, [outputIdentity, row?.id])
   const [screenOpen, setScreenOpen] = useState(false)
   const actionsTrigger = useRef<HTMLButtonElement>(null)
   // A different session, or none, closes the panel: it is that session's
@@ -289,6 +303,12 @@ export function Detail({
             </span>
           </button>
         </div>
+        {row && <button ref={outputTrigger} type="button" className="output-entry" aria-expanded={outputsOpen}
+          aria-label={nextWord("outputsTitle")} title={nextWord("outputsTitle")} disabled={ending}
+          onClick={() => setOutputsFor(outputsOpen ? null : outputIdentity)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 7h7l2-3h8v16H3z"/><path d="M3 9h17"/></svg>
+          <span>{nextWord("outputsTitle")}</span>
+        </button>}
         <div className="tools">
           <Tools
             row={row}
@@ -303,6 +323,8 @@ export function Detail({
         </div>
       </div>}
 
+      <div className="session-output-layout" data-open={outputsOpen ? "true" : undefined}>
+      <div className="session-conversation">
       <ScreenPanel
         row={row}
         open={screenOpen}
@@ -358,6 +380,9 @@ export function Detail({
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
       {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} row={row} onDid={onDid} onSent={onSent} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} />}
       {selectedAgent || !row ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
+      </div>
+      <OutputFiles row={row} open={outputsOpen} trigger={outputTrigger} onClose={() => setOutputsFor(null)} />
+      </div>
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens
           it is this component's. */}

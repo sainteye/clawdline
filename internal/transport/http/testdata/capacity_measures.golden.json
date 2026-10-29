@@ -143,6 +143,31 @@
     "Note": true
   },
   {
+    "Name": "artifacts.output_files",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "artifacts.output_index_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "artifacts.output_path_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "artifacts.output_sessions",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "artifacts.output_store_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "artifacts.report_image_pixels",
     "Known": true,
     "Note": true

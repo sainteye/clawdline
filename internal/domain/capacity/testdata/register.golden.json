@@ -601,6 +601,106 @@
   },
   {
     "Register": "daemon",
+    "Name": "artifacts.output_files",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/sessionfiles.MaximumFiles"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "artifacts.output_index_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2097152,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/sessionfiles.MaximumIndexBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "artifacts.output_path_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/sessionfiles.MaximumPathBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "artifacts.output_sessions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/sessionfiles.MaximumSessions"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "artifacts.output_store_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 67108864,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/sessionfiles.MaximumStoreBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "artifacts.report_image_pixels",
     "Class": "buffer",
     "Unit": "rows",

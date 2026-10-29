@@ -158,6 +158,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "GET", path: "/v1/sessions/%2519/info",
 		query: map[string]string{"parts": "summary"},
 	}, {
+		word:    "outputs",
+		body:    map[string]any{"type": "outputs", "session": pane, "expected_generation": pinnedGeneration},
+		session: pane, name: "outputs", method: "GET", path: "/v1/sessions/%2519/outputs",
+	}, {
+		word:    "output-file",
+		body:    map[string]any{"type": "output-file", "session": pane, "expected_generation": pinnedGeneration, "request": "output-1", "id": strings.Repeat("a", 64), "offset": "0", "revision": "", "size": ""},
+		session: pane, name: "read:output-1", method: "GET", path: "/v1/sessions/%2519/outputs/" + strings.Repeat("a", 64), query: map[string]string{"offset": "0", "revision": "", "size": ""},
+	}, {
 		word:    "git",
 		body:    map[string]any{"type": "git", "session": pane},
 		session: pane, name: "git",

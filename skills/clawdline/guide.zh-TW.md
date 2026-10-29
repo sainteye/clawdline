@@ -73,6 +73,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
 | `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | 在 Session 上方留下需要人處理的便條（§9a） |
+| `clawdline output add [--kind created\|modified\|published] <file>` | 登錄一個確切的 Session 產出路徑（§8） |
 | `clawdline image send <picture>…` | 把圖片顯示在這個 Session 的回覆底下給使用者看（§8） |
 | `clawdline assistants` | 每個助理的帳號還剩多少額度 |
 | `clawdline landings` | 這台機器上所有還欠著的 landing；`--work-id <item id>`：一個看板項目所有已記錄的 landing |
@@ -1044,6 +1045,10 @@ terminal 還掛著同一個 conversation 時顯示。
   `conversation_ambiguous`、`registry_stale`、`session_not_found`、`session_unbound`、
   `child_session`。被拒絕就照實回報；在聊天裡寫一句話不算收據。
 
+**回報前先登錄交付檔案。** 標頭的「產出檔案」會顯示原生成功寫入與明確交付的路徑。
+用 Shell 產生的交付檔案必須執行 `clawdline output add <file>` 登錄（見 §8），不要用目錄掃描猜歸屬。
+只登錄這個 Session 真正產生的檔案，不要納入輸入附件、機密、快取或其他 Session 的工作。
+
 **留一份收尾狀態報告給使用者。** 這一輪改了某個 git 專案裡的檔案時，給使用者一頁：上面看得到進度，
 點檔案就能讀這一輪新增、修改的每個檔。它是本機的 HTML 檔：不上傳，也不載入任何外部資源。
 
@@ -1120,6 +1125,21 @@ clawdline image send /absolute/path.png [more.png …]
 - 只接受 orchestrator token。一到六個本機檔案；每一個都必須是一般檔案，最多 12 MiB、每邊最多
   12,000 px。PNG、JPEG、GIF 直接讀；其他格式在 macOS 上會先交給 `sips` 轉。圖片保留 24 小時。
   拒絕：`session_not_found`、`session_has_no_record`（那個 Session 還沒寫出第一段對話）。
+
+
+**登錄產出檔案。** 用 Shell 指令產生交付檔案，或助理沒有原生寫檔成功收據時，執行：
+
+```sh
+clawdline output add --kind created /absolute/path/to/file
+# For a file this Session modified: --kind modified
+# For an existing file deliberately delivered: omit --kind (published)
+```
+
+只登錄這個 Session 真正產生、修改或明確交付的檔案。不要登錄使用者輸入附件、憑證、快取或其他
+Session 的工作。這只記錄原始路徑，不會另存永久副本；要長期交付，先存到受管理的 artifacts 目錄。
+桌機與手機都從 Session 標頭的「產出檔案」按鈕開啟同一份紀錄，不使用分頁。原生成功收據涵蓋 Claude
+寫入／編輯與 Codex patch 事件，Shell 寫檔仍需這個明確指令。`image send` 也會在索引可用時登錄原圖路徑；
+它的暫存圖片與原始檔案各有自己的保存期限。
 
 ## 9. 通知使用者
 

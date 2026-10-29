@@ -394,3 +394,10 @@ for (const assistant of ["codex", "claude"] as const) {
     assert.equal(mergeListPresentation({ title: "Unknown work" }).assistant, undefined)
   })
 }
+
+test("output links keep the exact machine, Session and execution generation", () => {
+  const target = { machineID: "machine-a", sessionID: "%19", executionGeneration: "a".repeat(32) }
+  assert.deepEqual(destinationFromFragment(destinationFragment(target) + "&output=" + "b".repeat(64)), target)
+  assert.equal(destinationFromFragment(destinationFragment(target) + "&output=../../private"), null)
+  assert.equal(destinationFromFragment(destinationFragment(target) + "&output=" + "b".repeat(64) + "&machine=another"), null)
+})

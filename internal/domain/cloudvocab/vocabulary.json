@@ -558,6 +558,134 @@
       "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "properties": {"push_on_model_capacity": {"type": "bool", "nullable": true}, "push_on_waiting": {"type": "bool", "nullable": true}, "orchestrator_agent_notify": {"type": "bool", "nullable": true}, "push_on_board_decision": {"type": "bool", "nullable": true}, "push_on_board_done": {"type": "bool", "nullable": true}, "push_on_schedule_failure": {"type": "bool", "nullable": true}, "push_on_capacity": {"type": "bool", "nullable": true}, "push_on_dead_letter": {"type": "bool", "nullable": true}, "push_on_app_release_success": {"type": "bool", "nullable": true}, "push_on_cloud_release_success": {"type": "bool", "nullable": true}, "push_on_release_failure": {"type": "bool", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/notifications", "body": {"object": "changes"}}}
     },
     {
+      "op": "output-file",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/sessions/{session}/outputs/{id}",
+      "console_seam": "writer",
+      "local": {
+        "method": "GET"
+      },
+      "special": [
+        "content_read"
+      ],
+      "example": {
+        "session": "%19",
+        "expected_generation": "0123456789abcdef0123456789abcdef",
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "offset": "0",
+        "revision": "",
+        "request": "req-output",
+        "size": ""
+      },
+      "shapes": [
+        {
+          "body": [
+            "expected_generation",
+            "id",
+            "offset",
+            "request",
+            "revision",
+            "session",
+            "size"
+          ],
+          "path": "/v1/sessions/{session}/outputs/{id}",
+          "query": [
+            "offset",
+            "revision",
+            "size"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "session_request",
+        "fields": {
+          "expected_generation": {
+            "type": "string",
+            "checks": [
+              "generation"
+            ],
+            "into": "execution_generation"
+          },
+          "id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "offset": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "",
+              "thumb"
+            ]
+          }
+        },
+        "route": {
+          "path": "/v1/sessions/{session}/outputs/{id}",
+          "query": {
+            "offset": {
+              "from": "offset"
+            },
+            "revision": {
+              "from": "revision"
+            },
+            "size": {
+              "from": "size"
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "outputs",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/sessions/{session}/outputs",
+      "console_seam": "writer",
+      "local": {
+        "method": "GET"
+      },
+      "special": [
+        "content_read"
+      ],
+      "example": {
+        "session": "%19",
+        "expected_generation": "0123456789abcdef0123456789abcdef"
+      },
+      "shapes": [
+        {
+          "body": [
+            "expected_generation",
+            "session"
+          ],
+          "path": "/v1/sessions/{session}/outputs"
+        }
+      ],
+      "decode": {
+        "reply": "session",
+        "name": "outputs",
+        "fields": {
+          "expected_generation": {
+            "type": "string",
+            "checks": [
+              "generation"
+            ],
+            "into": "execution_generation"
+          }
+        },
+        "route": {
+          "path": "/v1/sessions/{session}/outputs"
+        }
+      }
+    },
+    {
       "op": "pair-agent-start",
       "kind": "command",
       "write_gate": true,

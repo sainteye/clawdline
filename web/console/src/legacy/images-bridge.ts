@@ -170,6 +170,16 @@ function imageLightbox(): Lightbox {
   return lightbox
 }
 
+/** Share the transcript's zoom, touch controls, download and native sharing. */
+export function openImagePreview(trigger: Element, src: string, name: string, onClose: () => void): () => void {
+  const preview = imageLightbox()
+  const dialog = document.getElementById("image-lightbox")!
+  preview.open(trigger, src, undefined, name)
+  const observer = new MutationObserver(() => { if (dialog.hidden) onClose() })
+  observer.observe(dialog, { attributes: true, attributeFilter: ["hidden"] })
+  return () => { observer.disconnect(); preview.close() }
+}
+
 /** `hydrateArtifactImages`: give each fresh tile its state, its listeners and its source. */
 function hydrate(tiles: HTMLElement[], queue: (ArtifactRef | undefined)[], session: string | undefined,
   selected?: PictureSource): void {

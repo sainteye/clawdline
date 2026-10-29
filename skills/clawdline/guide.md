@@ -79,6 +79,7 @@ the command instead.
 | `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | Leaves one actionable note above a Session (§9a) |
+| `clawdline output add [--kind created\|modified\|published] <file>` | Registers one exact Session output path (§8) |
 | `clawdline image send <picture>…` | Shows the person pictures under this Session's reply (§8) |
 | `clawdline assistants` | What each assistant's account has left |
 | `clawdline landings` | Every landing still owed on this machine; `--work-id <item id>`: every landing recorded for one Board item |
@@ -1186,6 +1187,12 @@ conversation.
   `conversation_ambiguous`, `registry_stale`, `session_not_found`, `session_unbound`,
   `child_session`. Report the refusal honestly; a sentence in chat is not a receipt.
 
+**Register deliverables before reporting.** The header's Output files button shows
+native successful writes and explicitly published paths. Shell-created deliverables
+must be registered with `clawdline output add <file>` (see §8); do not infer their
+ownership from a directory scan. Register only this Session's actual outputs,
+not input attachments, secrets, caches or another Session's work.
+
 **Leave a status report for the person.** When the turn changed files in a git project, hand the
 person one page where they can see where the work stands and read every file the turn added or
 changed. It is a local HTML file: nothing is uploaded, and it loads nothing.
@@ -1272,6 +1279,26 @@ Nothing has to be written into it. It is
   12,000 px a side. PNG, JPEG and GIF are read directly; other formats go through `sips` on macOS.
   Pictures are kept 24 hours. Refusals: `session_not_found`, `session_has_no_record` (the Session
   has not written its first conversation yet).
+
+
+**Record output files.** After producing a deliverable through a shell command or
+an assistant without native file-success receipts, run:
+
+```sh
+clawdline output add --kind created /absolute/path/to/file
+# For a file this Session modified: --kind modified
+# For an existing file deliberately delivered: omit --kind (published)
+```
+
+Only register files this Session actually produced, modified, or deliberately
+publishes. Never register user input attachments, credentials, caches, or other
+Sessions' work. This records the exact original path, not a durable copy. Keep
+long-lived deliverables in a managed artifacts directory before registering.
+The header's Output files button opens the same index on desktop and phone;
+there are no tabs. Native success receipts cover Claude file writes/edits and
+Codex patch events; shell writes require this explicit command. `image send`
+also records original image paths when the index is available. Its expiring
+image cache and the original file have separate lifetimes.
 
 ## 9. Tell the person
 
