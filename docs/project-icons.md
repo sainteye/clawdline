@@ -5,6 +5,16 @@ self-contained SVG (`svg`, with empty `cells`). The daemon resolves it for
 the console's project, Session and Board views. Application and assistant marks
 are separate assets.
 
+The compact application mark in `web/console/src/brand-mark.ts` has a continuous
+bottom edge. Its eight-by-four grid keeps the existing eyes and palette; only
+the two centre cells in the bottom row are filled. The settings window's CSS
+mask follows the same silhouette.
+
+For large illustrations, [the connected mark with a fine grid](assets/brand-mark-connected-grid.svg)
+adds low-contrast pixel lines inside the orange body. Compact interface marks
+remain solid. This illustration does not replace installer, home-screen or
+launch-screen assets.
+
 `internal/domain/icon` resolves a local mark in this order:
 
 1. A saved mark in `CLAWDLINE_NEXT_DIR/project-icon-overrides.json`, using the
