@@ -70,6 +70,19 @@ export function filterOutputs(files: OutputFile[], kind: string, search: string)
   return files.filter(file => (kind === "all" || outputCategory(file) === kind) && (!query || (file.name + "\n" + file.path).toLocaleLowerCase().includes(query)))
 }
 
+/** A failed system share still leaves a usable link on desktop and phone. */
+export async function shareOutputLink(title: string, url: string, actions: {
+  share?: (data: { title: string; url: string }) => Promise<void>
+  copy: (text: string) => Promise<void>
+}): Promise<"shared" | "copied" | "cancelled"> {
+  if (actions.share) {
+    try { await actions.share({ title, url }); return "shared" }
+    catch (error) { if ((error as Error)?.name === "AbortError") return "cancelled" }
+  }
+  await actions.copy(url)
+  return "copied"
+}
+
 /** A terminal coordinate alone must not keep another conversation's panel alive. */
 export function outputSessionKey(row: { id: string; sessionId?: string; execution_generation?: string; machine?: string } | null): string {
   return JSON.stringify([row?.machine, row?.id, row?.sessionId, row?.execution_generation])

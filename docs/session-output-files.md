@@ -71,6 +71,9 @@ SVG is downloadable but is not inserted as active markup. Unsupported formats
 retain their download action. A shared file link retains the machine, Session, execution generation and opaque
 file ID; it opens the same panel and preview in Cloud. Local mode cannot invent
 a paired-machine identity, so its share action is disabled.
+When system sharing is unavailable or refused, the same action copies the pinned
+link. A person's cancellation stays cancelled. If copying is also refused, the
+panel leaves the link as selectable text.
 
 Browser Blobs, thumbnail URLs and pending reads
 are released when the panel/preview leaves its Session.

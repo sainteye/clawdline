@@ -7,7 +7,7 @@ import { htmlPreviewSource } from "../legacy/js/view/document-html.js"
 import { DOCUMENT_MAX_BYTES } from "../legacy/js/net/document-links.js"
 import { openImagePreview } from "../legacy/images-bridge.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
-import { filterOutputs, outputCategory, outputSessionKey, readOutput, readOutputs, type OutputFile, type OutputListing } from "./output-files-api.js"
+import { filterOutputs, outputCategory, outputSessionKey, readOutput, readOutputs, shareOutputLink, type OutputFile, type OutputListing } from "./output-files-api.js"
 import "./output-files.css"
 
 const w = nextWord
@@ -131,6 +131,7 @@ export function OutputFiles({ row, open, onClose, trigger }: {
 function FileCard({ file, session, shareURL, onPreview }: { file: OutputFile; session: string; shareURL: string; onPreview(): void }) {
   const [url, setURL] = useState("")
   const [copied, setCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   const [busy, setBusy] = useState<number | null>(null)
   const [error, setError] = useState("")
   const card = useRef<HTMLElement>(null)
@@ -180,12 +181,15 @@ function FileCard({ file, session, shareURL, onPreview }: { file: OutputFile; se
         }, caught => { if (!abort.signal.aborted) setError(errorWord(caught)) }).finally(() => { if (!abort.signal.aborted) setBusy(null) })
       }}>{busy !== null ? `${busy}%` : w("outputsDownload")}</button>
       <button type="button" className="chip" disabled={!shareURL} title={shareURL ? w("outputsShare") : w("outputsShareCloud")} onClick={() => {
-        const send = navigator.share ? navigator.share({ title: file.name, url: shareURL }) : navigator.clipboard.writeText(shareURL)
-        void send.catch(caught => { if ((caught as Error)?.name !== "AbortError") setError(w("outputsShareFailed")) })
-      }}>{w("outputsShare")}</button>
+        setError("")
+        void shareOutputLink(file.name, shareURL, {
+          share: navigator.share?.bind(navigator), copy: text => navigator.clipboard.writeText(text),
+        }).then(result => { if (result === "copied") setLinkCopied(true) }, () => setError(w("outputsShareFailed")))
+      }}>{w(linkCopied ? "outputsCopied" : "outputsShare")}</button>
     </div>
     {error && <p className="output-error" role="alert">{error}</p>}
     {error === w("outputsCopyFailed") && <p className="output-path">{file.absolute_path}</p>}
+    {error === w("outputsShareFailed") && <p className="output-path">{shareURL}</p>}
   </article>
 }
 function OutputPreview({ file, session, onClose }: { file: OutputFile; session: string; onClose(): void }) {

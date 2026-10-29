@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node strip-types runs the source module.
-import { filterOutputs, outputCategory, outputSessionKey, outputChunk, outputListing, readOutput, type OutputFile } from "./output-files-api.ts"
+import { filterOutputs, outputCategory, outputSessionKey, outputChunk, outputListing, readOutput, shareOutputLink, type OutputFile } from "./output-files-api.ts"
 const file: OutputFile = { id: "a".repeat(64), name: "plan.md", path: "reports/plan.md", absolute_path: "/workspace/reports/plan.md", kind: "created", first_at: 1, updated_at: 2, updates: 2, bytes: 5, state: "available", media_type: "text/markdown", source: "native", anchor: 100 }
 const chunk = { id: file.id, name: file.name, media_type: file.media_type, total_bytes: 5, offset: 0, revision: "b".repeat(64), data: btoa("hello") }
 test("output listing rejects mixed identities, unknown state and fabricated counts", () => {
@@ -38,4 +38,18 @@ test("reusing a terminal or selecting another machine changes the output panel i
   const row = {id:"%19",sessionId:"conversation-a",machine:"machine-a",execution_generation:"a".repeat(32)}
   assert.notEqual(outputSessionKey(row),outputSessionKey({...row,sessionId:"conversation-b"}))
   assert.notEqual(outputSessionKey(row),outputSessionKey({...row,machine:"machine-b"}))
+})
+
+test("a refused system share copies the exact pinned link, while cancellation stays cancelled", async () => {
+  const link = "https://app.clawdline.com/#machine=machine-a&session=%2519&generation=" + "a".repeat(32) + "&output=" + file.id
+  const copies: string[] = []
+  const copy = async (text: string) => { copies.push(text) }
+  assert.equal(await shareOutputLink(file.name, link, { share: async () => { throw new DOMException("Unavailable", "NotAllowedError") }, copy }), "copied")
+  assert.deepEqual(copies, [link])
+  copies.length = 0
+  assert.equal(await shareOutputLink(file.name, link, { share: async data => { assert.deepEqual(data, { title: file.name, url: link }) }, copy }), "shared")
+  assert.equal(await shareOutputLink(file.name, link, { share: async () => { throw new DOMException("Cancelled", "AbortError") }, copy }), "cancelled")
+  assert.deepEqual(copies, [])
+  assert.equal(await shareOutputLink(file.name, link, { copy }), "copied")
+  await assert.rejects(() => shareOutputLink(file.name, link, { copy: async () => { throw new Error("Clipboard denied") } }), /Clipboard denied/)
 })
