@@ -245,6 +245,8 @@ export function destinationFragment(value: SessionDestination): string {
 }
 
 export function destinationFromFragment(hash: string): SessionDestination | null {
+  // Output links retain the complete pinned Session address, plus one opaque file ID.
+  hash = hash.replace(/&output=[0-9a-f]{64}$/, "")
   // Push URLs also contain #session first so the same notification still
   // opens in the local, single-machine console.
   const match = DESTINATION.exec(hash) || /^#session=([^&]+)&machine=([^&]+)&generation=([^&]+)$/.exec(hash)

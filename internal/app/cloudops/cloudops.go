@@ -384,7 +384,7 @@ func (b Bridge) contentReadChannel(cmd Command) bool {
 
 func contentReadWord(word string) bool {
 	switch word {
-	case "info", "transcript", "skills", "image", "git", "git-diff", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox", "sessions.list":
+	case "info", "transcript", "skills", "image", "git", "git-diff", "outputs", "output-file", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox", "sessions.list":
 		return true
 	default:
 		return false

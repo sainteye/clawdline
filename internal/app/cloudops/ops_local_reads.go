@@ -20,6 +20,8 @@ func init() {
 		},
 
 		op{name: "git", read: true},
+		op{name: "outputs", read: true},
+		op{name: "output-file", read: true},
 
 		op{name: "git-diff", read: true},
 

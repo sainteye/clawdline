@@ -803,6 +803,7 @@ test("original detail panels retain their read names on the exact r/ target", as
   for (const [word, fields, answer] of [
     ["info", {parts:"full"}, "info.full"], ["info", {parts:"remote-permission"}, "info.remote-permission"],
     ["git", {}, "git"], ["git-diff", { request: "diff-1", path: "README.md" }, "read:diff-1"],
+    ["outputs", {}, "outputs"], ["output-file", { request: "file-1", id: "a".repeat(64), offset: "0", revision: "", size: "thumb" }, "read:file-1"],
     ["screen", {}, "screen"], ["agent", { agent: "a", limit: 100 }, "agent:a"],
     ["agent", { agent: "a", limit: 100, before: 17 }, "agent:a.before.17"],
     ["shell", { shell: "sh", bytes: 4096 }, "shell:sh"], ["documents", {}, "documents"],
@@ -816,7 +817,7 @@ test("original detail panels retain their read names on the exact r/ target", as
     assert.deepEqual(sent[2], { ...fields, machine_id: "m", expected_generation: genA })
     assert.equal(sent[3], answer)
   }
-  assert.equal(calls.length, 11)
+  assert.equal(calls.length, 13)
   await assert.rejects(() => client.readForGeneration(target, "send", { request: "write-1" }),
     { code: "read_only_channel" })
   await assert.rejects(() => client.readForGeneration({ ...target, executionGeneration: "" }, "git"),

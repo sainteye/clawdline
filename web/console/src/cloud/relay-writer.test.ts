@@ -2489,6 +2489,8 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/sessions/s1/git", "git"],
     ["/v1/sessions/s1/git/diff", "git-diff"],
     ["/v1/sessions/s1/screen", "screen"],
+    ["/v1/sessions/s1/outputs", "outputs"],
+    ["/v1/sessions/s1/outputs/" + "a".repeat(64), "output-file"],
     ["/v1/sessions/s1/documents", "documents"],
     ["/v1/sessions/s1/documents/project/demo.md", "document"],
     ["/v1/sessions/s1/documents/project/clip.mp4", "video"],
@@ -2769,4 +2771,20 @@ test("RC permission inspection keeps its intent separate from routine info on bo
   if(pinned) assert.deepEqual(call[1],{machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION})
   else assert.equal(call[4],"info.remote-permission")
  }
+})
+
+test("output list and file chunks use the opened Session's exact content-read destination", async () => {
+  const client=new FakeClient()
+  Object.assign(client,{async readForGeneration(target:unknown,word:string,fields:Record<string,unknown>,signal?:AbortSignal){client.calls.push(["readForGeneration",target,word,fields,signal]);return {}}})
+  const {reader}=seam(client,{t:1000},true),abort=new AbortController()
+  const base="/v1/sessions/s1/outputs"
+  assert.equal((await reader.fetch(base,{signal:abort.signal})).status,200)
+  assert.equal((await reader.fetch(base+"/"+"a".repeat(64)+"?offset=0&revision=&size=thumb",{signal:abort.signal})).status,200)
+  const reads=client.calls.filter(call=>call[0]==="readForGeneration")
+  assert.equal(reads.length,2)
+  assert.deepEqual(reads.map(call=>call[2]),["outputs","output-file"])
+  for(const call of reads) assert.deepEqual(call[1],{machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION})
+  assert.equal((reads[1][3] as Record<string,unknown>).size,"thumb")
+  assert.notEqual((await reader.fetch(base,{method:"POST",body:JSON.stringify({path:"/private/example"})})).status,200)
+  assert.equal(client.calls.filter(call=>call[0]==="readForGeneration").length,2)
 })

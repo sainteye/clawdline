@@ -34,6 +34,11 @@
 | `artifacts.drops_young` | 1 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
 | `artifacts.image_bytes` | 67108864 | `bytes` | `evict_oldest` | `diagnostics, notice, log` | — |
 | `artifacts.images` | 256 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
+| `artifacts.output_files` | 200 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `artifacts.output_index_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `artifacts.output_path_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `artifacts.output_sessions` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `artifacts.output_store_bytes` | 67108864 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `artifacts.report_image_pixels` | 16777216 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `artifacts.report_image_side` | 8192 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `artifacts.report_total_image_pixels` | 67108864 | `rows` | `refuse` | `diagnostics, sender` | — |

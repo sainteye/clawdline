@@ -554,6 +554,10 @@ func (s *Server) routeTable() []route {
 				s.sessionShellRoute(w, r, sessionID, shellID)
 				return
 			}
+			if id, file, ok := outputPath(r); ok {
+				s.sessionOutputs(w, r, id, file)
+				return
+			}
 			if id, ok := infoPath(r); ok {
 				s.sessionInfoRoute(w, r, id)
 				return

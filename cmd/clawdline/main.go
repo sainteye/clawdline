@@ -166,6 +166,8 @@ func main() {
 		todoCommand(os.Args[2:])
 	case "note":
 		noteCommand(os.Args[2:])
+	case "output":
+		outputCommand(os.Args[2:])
 	case "image":
 		imageCommand(os.Args[2:])
 	case "secret":

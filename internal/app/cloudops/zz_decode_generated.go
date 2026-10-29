@@ -38,6 +38,8 @@ var generatedDecoders = map[string]genDecoder{
 	"notification-rules-update":          genDecodeNotificationRulesUpdate,
 	"notification-settings":              genDecodeNotificationSettings,
 	"notification-settings-update":       genDecodeNotificationSettingsUpdate,
+	"output-file":                        genDecodeOutputFile,
+	"outputs":                            genDecodeOutputs,
 	"pair-agent-start":                   genDecodePairAgentStart,
 	"pair-agent-status":                  genDecodePairAgentStatus,
 	"past-sessions":                      genDecodePastSessions,
@@ -949,6 +951,67 @@ func genDecodeNotificationSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genObject("changes")
+	return p, req, true
+}
+
+// genDecodeOutputFile is the `output-file` row's decode.
+func genDecodeOutputFile(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "expected_generation", "id", "offset", "request", "revision", "session", "size"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_generation", genRule{kind: "string", checks: []func(string) bool{executionGenerationValid}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("offset", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("revision", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("size", genRule{kind: "string", enum: []string{"", "thumb"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := sessionPlan(b, "")
+	if ok {
+		p.request, ok = requestName(b["request"])
+		p.name = "read:" + p.request
+	}
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	if v, named := b["expected_generation"]; named {
+		p.executionGeneration = genText(v)
+	}
+	path := "/v1/sessions/" + segment(genText(b["session"])) + "/outputs/" + segment(genText(b["id"]))
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"offset": genValue{from: "offset"}, "revision": genValue{from: "revision"}, "size": genValue{from: "size"}})
+	return p, req, true
+}
+
+// genDecodeOutputs is the `outputs` row's decode.
+func genDecodeOutputs(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "expected_generation", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_generation", genRule{kind: "string", checks: []func(string) bool{executionGenerationValid}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := sessionPlan(b, "outputs")
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	if v, named := b["expected_generation"]; named {
+		p.executionGeneration = genText(v)
+	}
+	path := "/v1/sessions/" + segment(genText(b["session"])) + "/outputs"
+	req := LocalRequest{Method: "GET", Path: path}
 	return p, req, true
 }
 

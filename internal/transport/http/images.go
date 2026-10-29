@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline/internal/adapters/sessionfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -164,12 +165,14 @@ func (s *Server) imagesRoute(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 	var shown artifacts.Shown
+	var outputCWD, outputConversation string
 	if session != "" {
 		item, err := s.actions().FindForRead(ctx, session)
 		if err != nil {
 			writeRefusal(w, http.StatusNotFound, "session_not_found", "No Session on this machine has that terminal id.")
 			return
 		}
+		outputCWD, outputConversation = item.CWD, outputKey(item)
 		record := s.recordPath(item)
 		offset, ok := recordEnd(record)
 		if !ok {
@@ -209,6 +212,22 @@ func (s *Server) imagesRoute(w http.ResponseWriter, r *http.Request) {
 			Width: int64(a.Width), Height: int64(a.Height), ExpiresAt: a.ExpiresAt, Marker: marker,
 		})
 	}
+	// The original paths were explicitly published by the machine. Retain their
+	// provenance independently of the expiring transcript image cache. Failure
+	// does not undo an image already stored; the response names the missing index.
+	if session != "" {
+		if outputConversation == "" {
+			out.OutputIndexError = "output_identity_unavailable"
+		} else {
+			for _, path := range paths {
+				if _, e := sessionfiles.New(s.cfg.Dir).Register(outputConversation, outputCWD, path, "published", "image", now.Unix(), shown.Offset); e != nil {
+					out.OutputIndexError = "output_index_unavailable"
+					break
+				}
+			}
+		}
+	}
+
 	s.recordPictures(ctx, len(stored))
 	writeJSON(w, out)
 }

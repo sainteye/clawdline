@@ -3711,6 +3711,12 @@ export interface ImageStoreResult {
   ok: boolean
 
   /**
+   * Typed error when the images were stored but original output paths could not be
+   * indexed; image delivery is not undone.
+   */
+  output_index_error?: string
+
+  /**
    * The terminal id of the Session the pictures are shown in, when the request
    * named one: they appear under the first reply it writes after this answer.
    * Stored is not seen — GET /v1/transcript?session=… shows them in that
@@ -7026,6 +7032,39 @@ export interface SessionModel {
   command: string
   id: string
   name: string
+}
+
+export interface SessionOutputChunk {
+  data: string
+  id: string
+  media_type: string
+  name: string
+  offset: number
+  revision: string
+  total_bytes: number
+}
+
+export interface SessionOutputFile {
+  absolute_path: string
+  anchor: number
+  bytes: number
+  first_at: number
+  id: string
+  kind: string
+  media_type: string
+  name: string
+  path: string
+  source: string
+  state: string
+  updated_at: number
+  updates: number
+}
+
+export interface SessionOutputList {
+  coverage: string
+  files: SessionOutputFile[]
+  more: boolean
+  partial: boolean
 }
 
 /**

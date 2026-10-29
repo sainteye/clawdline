@@ -60,6 +60,8 @@ export const CARRIED = {
   "notification-rules-update": "POST /v1/notification-rules",
   "notification-settings": "GET /v1/settings/notifications",
   "notification-settings-update": "POST /v1/settings/notifications",
+  "output-file": "GET /v1/sessions/{session}/outputs/{id}",
+  outputs: "GET /v1/sessions/{session}/outputs",
   "pair-agent-start": "POST /v1/cloud/pairing/agent",
   "pair-agent-status": "GET /v1/cloud/pairing/agent/{task}",
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",

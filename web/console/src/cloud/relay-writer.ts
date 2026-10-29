@@ -264,6 +264,8 @@ export type WriteRoute =
   | { op: "info"; word: Carried<"info">; session: string }
   | { op: "skills"; word: Carried<"skills">; session: string }
   | { op: "git"; word: Carried<"git">; session: string }
+  | { op: "outputs"; word: Carried<"outputs">; session: string }
+  | { op: "output-file"; word: Carried<"output-file">; session: string; id: string }
   | { op: "git-diff"; word: Carried<"git-diff">; session: string }
   | { op: "screen"; word: Carried<"screen">; session: string }
   | { op: "documents"; word: Carried<"documents">; session: string }
@@ -495,6 +497,8 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "skills",
   "git",
   "git-diff",
+  "outputs",
+  "output-file",
   "screen",
   "documents",
   "document",
@@ -609,6 +613,10 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // the same reason `info` is: it is a session's read, so it has to be asked
     // under the session's own identity as this page holds it (`identity`,
     // F5) rather than on the machine channel the reader's generic uses.
+    if (head === "sessions" && a && b === "outputs") {
+      if (segments.length === 3) return { op: "outputs", word: "outputs", session: a }
+      if (segments.length === 4 && c) return { op: "output-file", word: "output-file", session: a, id: c }
+    }
     if (head === "sessions" && a && b === "git" && segments.length === 3) {
       return { op: "git", word: "git", session: a }
     }
@@ -893,6 +901,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "skills":
     case "git":
     case "git-diff":
+    case "outputs":
+    case "output-file":
     case "screen":
     case "video":
     case "document":
@@ -1272,6 +1282,17 @@ export class RelayWriter {
         }
         if (!client.skills) throw failure("cloud_not_carried", "This Cloud client cannot read Session skills.", 501)
         return client.skills(await this.identity(client, route.session))
+      case "outputs":
+      case "output-file": {
+        const fields: Record<string, unknown> = route.op === "outputs" ? {} : {
+          id: route.id, request: this.requestID(), offset: url.searchParams.get("offset") ?? "",
+          revision: url.searchParams.get("revision") ?? "", size: url.searchParams.get("size") ?? "",
+        }
+        if (route.op === "output-file" && (!/^(0|[1-9][0-9]*)$/.test(String(fields.offset)) || !["", "thumb"].includes(String(fields.size))))
+          throw failure("malformed_read", "An output read needs an exact offset and size.", 400)
+        if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, route.word, fields, init?.signal)
+        throw failure("execution_target_required", "An output read needs an exact Session execution.", 409)
+      }
       case "git":
         // A read, so nothing is marked written and `sessionOf` leaves it out:
         // asking what a repository has changed changes nothing. The machine's own

@@ -272,5 +272,8 @@
   "webhook_create.usage": "用法：clawdline webhook create --url-file <新的私密路徑> --key <key> --session <conversation> --run <run> [--port n]",
   "webhook_create.file": "無法以專用方式建立 URL 檔案；尚未送出請求。",
   "webhook_create.connection": "無法連線至 daemon；尚未送出請求。",
-  "webhook_create.uncertain": "尚未確認建立結果。請以相同 key 重試；不要另建第二個 webhook。"
+  "webhook_create.uncertain": "尚未確認建立結果。請以相同 key 重試；不要另建第二個 webhook。",
+  "output.usage": "用法：clawdline output add [--target terminal] [--from conversation] [--port n] [--kind created|modified|published] <file>",
+  "output.identity_missing": "目前無法確認 Session 的終端身分。",
+  "image.output_index_failed": "圖片已存好，但原始路徑無法收錄到產出紀錄。之後可使用 clawdline output add 補登錄。"
 }
