@@ -165,3 +165,40 @@ test("desktop previews download even with sharing support; touch previews keep n
     assert.equal(await data.files?.[0].text(), "original image")
   }
 })
+
+test("reading a pannable screenshot below 100% does not swipe to its neighbour", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => ({
+    ok: true, blob: async () => new Blob(["image"], { type: "image/png" }),
+  }) as Response)
+  const dialog = new PreviewElement()
+  const image = new PreviewElement()
+  image.dataset.zoomed = "false"
+  const current = new PreviewElement()
+  let steps = 0
+  const next = new PreviewElement()
+  next.click = () => { steps++ }
+  const doc = Object.assign(new PreviewElement(), {
+    createElement: () => new PreviewElement(),
+    querySelectorAll: () => [current, next],
+    defaultView: { matchMedia: () => ({ matches: false }) },
+  })
+  const preview = attachLightboxSteps(dialog as unknown as HTMLElement, image as unknown as HTMLElement, {
+    previous: "Previous", next: "Next", download: "Download", share: "Share", position: (i, n) => `${i}/${n}`,
+  }, doc as unknown as Document)
+  preview.opened(current as unknown as Element, "picture.png")
+  const swipe = () => {
+    const start = new Event("touchstart")
+    Object.assign(start, { touches: [{ clientX: 200, clientY: 300 }] })
+    dialog.dispatchEvent(start)
+    const end = new Event("touchend")
+    Object.assign(end, { touches: [], changedTouches: [{ clientX: 100, clientY: 300 }] })
+    dialog.dispatchEvent(end)
+  }
+  image.dataset.pannable = "true"
+  swipe()
+  assert.equal(steps, 0)
+  image.dataset.pannable = "false"
+  swipe()
+  assert.equal(steps, 1)
+  await new Promise(resolve => setImmediate(resolve))
+})

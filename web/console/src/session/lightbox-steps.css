@@ -42,3 +42,12 @@
 
 /* Keep the browser's native image saving menu available alongside preview gestures. */
 .image-lightbox-frame img { -webkit-touch-callout: default; }
+
+/* One tap clears every overlay from the image; another restores the same controls.
+   CSS owns visibility so a share/download that finishes preparing stays concealed. */
+.image-lightbox[data-controls-hidden="true"] .image-lightbox-actions,
+.image-lightbox[data-controls-hidden="true"] .image-lightbox-close,
+.image-lightbox[data-controls-hidden="true"] .image-lightbox-download,
+.image-lightbox[data-controls-hidden="true"] .image-lightbox-share,
+.image-lightbox[data-controls-hidden="true"] .image-lightbox-step,
+.image-lightbox[data-controls-hidden="true"] .image-lightbox-count { display: none; }

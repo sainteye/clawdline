@@ -210,7 +210,7 @@ export function attachLightboxSteps(
   dialog.addEventListener("touchstart", (event) => {
     // An enlarged picture is dragged by one finger, so the swipe belongs to it.
     const t = event.touches
-    swipe = t.length === 1 && image.dataset.zoomed !== "true" ? { x: t[0].clientX, y: t[0].clientY } : null
+    swipe = t.length === 1 && image.dataset.zoomed !== "true" && image.dataset.pannable !== "true" ? { x: t[0].clientX, y: t[0].clientY } : null
   })
   dialog.addEventListener("touchend", (event) => {
     const start = swipe

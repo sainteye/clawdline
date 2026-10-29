@@ -289,14 +289,11 @@ export function connectArtifactTile(tile, artifact, options = {}) {
 
 /* ------------------------------------------------------------------- zooming */
 
-// How far into a picture the lightbox will go. The floor is 1 by construction: the stylesheet has
-// already fitted the picture to its frame, so scale 1 *is* "fits the screen" and there is nothing
-// below it worth showing. The ceiling is the end with a decision in it, and it is taken from the
-// source's own pixels — the point of enlarging a phone screenshot is to read the two thirds of it
-// the frame had no room for. Bounded at both ends because that ratio is not always useful: a
-// picture no larger than its frame would cap at 1x and never zoom at all, and a 6000px photo would
-// cap somewhere a finger cannot find its way back from.
+// Scale 1 is the initial reading size chosen by the stylesheet. Allow a little more
+// space around it so the reader can uncover image edges beneath the preview controls.
+// These scales are gesture parameters, not storage or concurrency capacities.
 var ZOOM_FIT = 1;
+var ZOOM_MIN = 0.75;
 var ZOOM_CEILING_MIN = 4;
 var ZOOM_CEILING_MAX = 8;
 // Where a double tap goes. Deliberately short of the ceiling: a double tap means "let me read
@@ -382,7 +379,7 @@ export function createImageZoom() {
             : null;
         var perfect = content && usableLength(n.width) ? n.width / content.width : 0;
         ceiling = Math.min(ZOOM_CEILING_MAX, Math.max(ZOOM_CEILING_MIN, perfect));
-        scale = Math.min(ceiling, Math.max(ZOOM_FIT, scale));
+        scale = Math.min(ceiling, Math.max(ZOOM_MIN, scale));
         settle();
     }
 
@@ -395,7 +392,7 @@ export function createImageZoom() {
     /** Zoom to an absolute scale, keeping whatever is under the anchor under the anchor. */
     function scaleTo(next, anchorX, anchorY) {
         var target = Math.min(ceiling,
-            Math.max(ZOOM_FIT, usableLength(next) ? next : ZOOM_FIT));
+            Math.max(ZOOM_MIN, usableLength(next) ? next : ZOOM_FIT));
         var centre = middle();
         var ratio = target / scale;
         if (centre && ratio !== 1 &&
@@ -474,7 +471,7 @@ export function createImageZoom() {
     return {
         layout: layout,
         state: function () { return { scale: scale, x: x, y: y }; },
-        limits: function () { return { min: ZOOM_FIT, max: ceiling }; },
+        limits: function () { return { min: ZOOM_MIN, max: ceiling }; },
         zoomed: zoomed,
         canPan: canPan,
         scaleTo: scaleTo,
@@ -555,6 +552,29 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
     var lastTap = null; // the last completed tap, waiting to be half of a double one
     var press = null;   // where the press now underway began, whatever it has become since
     var moved = false;  // has that press travelled far enough to stop being a press?
+    var controlsTap = null;
+    var controlsBeforeClick = true;
+    dialog.setAttribute("tabindex", "-1");
+
+    function cancelControlsTap() {
+        if (controlsTap !== null) clearTimeout(controlsTap);
+        controlsTap = null;
+    }
+
+    function showControls(visible) {
+        if (dialog.dataset) dialog.dataset.controlsHidden = visible ? "false" : "true";
+        // Do not leave keyboard focus on a control that has just become invisible.
+        if (!visible && dialog.focus) dialog.focus({ preventScroll: true });
+    }
+
+    function toggleControlsAfterTap() {
+        cancelControlsTap();
+        // Wait for a possible second tap: zooming must not toggle the controls as well.
+        controlsTap = setTimeout(function () {
+            controlsTap = null;
+            if (!dialog.hidden) showControls(dialog.dataset && dialog.dataset.controlsHidden === "true");
+        }, TAP_MILLISECONDS);
+    }
 
     /**
      * Whether the press underway is still a press.
@@ -636,6 +656,7 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
 
     function close() {
         if (dialog.hidden) return;
+        cancelControlsTap();
         dialog.hidden = true;
         image.removeAttribute("src");
         zoom.reset();
@@ -656,6 +677,8 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
     }
 
     function open(trigger, src, failed) {
+        cancelControlsTap();
+        showControls(true);
         previous = trigger;
         onImageError = failed || null;
         // Before the source, not after: the next picture is a different size and a different
@@ -678,6 +701,7 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
 
     function onTouchStart(event) {
         if (dialog.hidden) return;
+        cancelControlsTap();
         animate(false);
         relayout();
         var touches = touchPoints(event.touches);
@@ -757,9 +781,14 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
             lastTap = null;
             return;
         }
+        if (candidate.on !== image && candidate.on !== frame) {
+            lastTap = null;
+            return;
+        }
         if (lastTap && clock() - lastTap.at <= TAP_MILLISECONDS &&
             apart(ended, lastTap) <= DOUBLE_TAP_SLOP) {
             lastTap = null;
+            cancelControlsTap();
             moved = true;
             relayout();
             animate(true);
@@ -772,9 +801,14 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
             return;
         }
         lastTap = { x: ended.x, y: ended.y, at: clock() };
+        toggleControlsAfterTap();
+        // Handle touch taps here, including the double-tap clock. Suppress the synthetic
+        // mouse click/dblclick, whose browser-defined interval may be longer than ours.
+        stopGesture(event);
     }
 
     function onTouchCancel() {
+        cancelControlsTap();
         pinch = null;
         finger = null;
         press = null;
@@ -786,6 +820,7 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
 
     function onWheel(event) {
         if (dialog.hidden) return;
+        cancelControlsTap();
         // Unconditionally, before anything is decided: a wheel that reaches the page scrolls the
         // transcript behind the preview, and the reader comes back to a different conversation.
         stopGesture(event);
@@ -806,6 +841,7 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
         if (dialog.hidden || event.pointerType === "touch") return;
         // Recorded before the picture is asked whether it can move: a sweep across a fitted
         // picture starts no drag at all and is still not a press on what is behind it.
+        cancelControlsTap();
         pressBegan(event.clientX, event.clientY);
         animate(false);
         relayout();
@@ -836,6 +872,10 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
 
     function onDoubleClick(event) {
         if (dialog.hidden) return;
+        cancelControlsTap();
+        // Native mouse double-click intervals can exceed our tap interval. If the first
+        // click already toggled controls, put them back before applying the zoom gesture.
+        showControls(controlsBeforeClick);
         stopGesture(event);
         moved = true;
         animate(true);
@@ -853,7 +893,11 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
         // mid-drag. `moved` is cleared at the start of every press, so it can only ever swallow
         // the click of the gesture that set it.
         if (moved) { moved = false; return; }
-        if (event.target === dialog) close();
+        if (event.target === dialog) { close(); return; }
+        if (event.target !== image && event.target !== frame) return;
+        if (event.detail > 1) { cancelControlsTap(); return; }
+        controlsBeforeClick = !(dialog.dataset && dialog.dataset.controlsHidden === "true");
+        toggleControlsAfterTap();
     });
     // Not passive: all three of these have to be able to refuse the browser's own handling of the
     // gesture, and a listener that says it will not is never asked.
@@ -882,7 +926,12 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
         close();
     });
     doc.addEventListener("keydown", function (event) {
-        if (dialog.hidden || event.key !== "Escape") return;
+        if (dialog.hidden) return;
+        if (event.key === "Tab") {
+            cancelControlsTap();
+            showControls(true);
+        }
+        if (event.key !== "Escape") return;
         event.preventDefault();
         event.stopPropagation();
         close();

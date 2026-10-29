@@ -27,6 +27,20 @@ ends its loading state and offers another attempt; expired or missing artifacts 
 Removing a tile disconnects its visibility observer and releases delivered object URLs, including
 answers arriving after removal.
 
+## Preview gestures
+
+A single tap or click on the image or its frame hides the preview controls, including close,
+share/download, gallery arrows and the image count. Another tap restores them. The preview waits
+for the double-tap interval before toggling controls, so a double tap only changes magnification.
+Dragging and pinching do not toggle controls. Tab restores controls for keyboard navigation;
+Escape and a press on the outer backdrop still close the preview. Opening another image shows
+its controls again.
+
+Pinch and wheel zoom can shrink an image to 75% of its initial displayed size. The initial size
+remains the double-tap reset point. Long screenshots still open at reading width, and retain
+bounded vertical dragging when their scaled height exceeds the frame. A drag on such an image
+belongs to reading rather than gallery navigation, including below 100% magnification.
+
 ## Ordering and capacity
 
 An ordered DataChannel delivers envelopes in wire order, but asynchronous pairing lookup and
