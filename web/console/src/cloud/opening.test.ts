@@ -6,6 +6,17 @@ import { openingFor } from "./opening.ts"
 const two = [{ id: "mac", selectable: true }, { id: "linux", selectable: true }]
 const one = [{ id: "mac", selectable: true }]
 
+test("a sole restored pairing opens without a tab-local remembered choice", () => {
+  const paired = [{ id: "mac", selectable: true, pairing: "paired" }]
+  assert.deepEqual(openingFor({ machines: paired }),
+    { at: "console", machine: "mac", fleet: false, remember: false })
+  assert.deepEqual(openingFor({ machines: paired, remembered: "removed" }),
+    { at: "console", machine: "mac", fleet: false, remember: false })
+  assert.deepEqual(openingFor({ machines: paired, rosterPending: true }), { at: "list" })
+  assert.deepEqual(openingFor({ machines: paired, addressed: { machine: "other" } }), { at: "list" })
+  assert.deepEqual(openingFor({ machines: paired, forgotten: ["mac"] }), { at: "list" })
+})
+
 test("a tab that has chosen nothing opens on every machine", () => {
   assert.deepEqual(openingFor({ machines: two }), { at: "console", machine: "mac", fleet: true, remember: false })
 })

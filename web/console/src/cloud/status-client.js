@@ -515,6 +515,40 @@ export class StatusCloudClient extends CatalogCloudClient {
     return super._machineImplements(machine, type, options)
   }
 
+  /** Restore local capability without waiting for a relay publication or sending a request. */
+  async restoreMachinePairing(machine) {
+    if (typeof machine !== "string" || !machine) return
+    // A foreground return can find storage ready after an earlier absent or
+    // incomplete answer. Keep usable keys; retry only the unavailable reading.
+    if (!this.machinePairings.has(machine)) {
+      // Retrying an unavailable read is not a new pairing generation. The
+      // global invalidation barrier would cancel another machine's parallel
+      // restoration; explicit handovers still use that barrier unchanged.
+      this.pairingAbsent.delete(machine)
+      this.pairingIncomplete.delete(machine)
+    }
+    try {
+      await this._machinePairing(machine)
+    } catch (error) {
+      // The archived lookup records a tuple before validating it. A rejected
+      // tuple is not restoration proof and must not create a paired roster row.
+      const held = this.machinePairings.get(machine)
+      if (held && (held.machineID !== machine || !held.senderID || !held.keyID ||
+        held.masterKey?.extractable !== false || held.senderKey?.extractable !== false)) {
+        this.machinePairings.delete(machine)
+        this.pairingSeen.delete(machine)
+        this.pairingLookups.delete(machine)
+      }
+      throw error
+    }
+  }
+
+  _knownMachines() {
+    // Local lookups can prove saved keys or their absence, independently of
+    // account registration. Store failures do not leave a lookup answer.
+    return [...new Set([...super._knownMachines(), ...this.machinePairings.keys(), ...this.pairingLookups.keys()])].sort()
+  }
+
   /** Retry backoff expiring permits another request; only live evidence restores presence. */
   _machineRows() {
     return super._machineRows().map((row) => {

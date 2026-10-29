@@ -1,7 +1,69 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node's strip-types test runner.
-import { machinesByCapability, reportsMachinePresence } from "./machine-access.ts"
+import { machinesByCapability, needsMachinePairing, reportsMachinePresence, watchStoredMachinePairings } from "./machine-access.ts"
+
+test("unknown pairing never tells a returning person to pair again", () => {
+  assert.equal(needsMachinePairing("unknown"), false)
+  assert.equal(needsMachinePairing("paired"), false)
+  assert.equal(needsMachinePairing("not_paired"), true)
+})
+
+const drain = () => new Promise<void>(resolve => setImmediate(resolve))
+
+test("stored pairings restore independently and a foreground burst shares each pending read", async () => {
+  const document = Object.assign(new EventTarget(), { hidden: false })
+  const window = new EventTarget()
+  const asked: string[] = []
+  let release!: () => void
+  let changed = 0
+  const stop = watchStoredMachinePairings({ restoreMachinePairing(machine) {
+    asked.push(machine)
+    return machine === "slow" ? new Promise<void>(resolve => { release = resolve }) : Promise.resolve()
+  } }, ["slow", "fast"], () => changed++, { document, window })
+  await drain()
+  assert.deepEqual(asked, ["slow", "fast"])
+  assert.equal(changed, 1, "one machine does not wait for another machine's storage")
+  for (let n = 0; n < 60; n++) window.dispatchEvent(new Event("pageshow"))
+  await drain()
+  assert.equal(asked.filter(id => id === "slow").length, 1)
+  assert.equal(asked.filter(id => id === "fast").length, 2)
+  stop()
+  release()
+  await drain()
+  assert.equal(changed, 2, "a retired client cannot update the new account or connection")
+  window.dispatchEvent(new Event("online"))
+  await drain()
+  assert.equal(asked.length, 3)
+})
+
+test("a foreground return during a failed key read is replayed once without another app launch", async () => {
+  const document = Object.assign(new EventTarget(), { hidden: false })
+  const window = new EventTarget()
+  let fail!: (error: Error) => void
+  let asks = 0, changed = 0
+  const stop = watchStoredMachinePairings({ restoreMachinePairing() {
+    asks++
+    return asks === 1 ? new Promise<void>((_, reject) => { fail = reject }) : Promise.resolve()
+  } }, ["mac"], () => changed++, { document, window })
+  await drain()
+  for (let n = 0; n < 60; n++) window.dispatchEvent(new Event("pageshow"))
+  fail(new Error("IndexedDB was not ready"))
+  await drain()
+  assert.equal(asks, 2)
+  assert.equal(changed, 1)
+  await drain()
+  assert.equal(asks, 2, "no polling or repeating recovery loop")
+  document.hidden = true
+  window.dispatchEvent(new Event("online"))
+  await drain()
+  assert.equal(asks, 2)
+  document.hidden = false
+  document.dispatchEvent(new Event("visibilitychange"))
+  await drain()
+  assert.equal(asks, 3)
+  stop()
+})
 
 test("reports from either machine refresh presence while a single-machine reader is open", () => {
   for (const type of ["sessions", "orchestrator", "session_status", "machine_reachability"]) {
