@@ -232,6 +232,12 @@ final class CloudPairAgent: NSObject, WKScriptMessageHandlerWithReply {
 @MainActor
 final class CloudPairLocal: NSObject, WKScriptMessageHandlerWithReply {
     static let name = "clawdlinePairLocal"
+    private let trustedOrigin: URL
+
+    init(trustedOrigin: URL = cloudHome) {
+        self.trustedOrigin = trustedOrigin
+        super.init()
+    }
     private var busy = false
     private var invitationAllowed = false
     private var connectionAllowed = false
@@ -247,7 +253,7 @@ final class CloudPairLocal: NSObject, WKScriptMessageHandlerWithReply {
         let origin = message.frameInfo.securityOrigin
         return CloudPairingAccess.allows(mainFrame: message.frameInfo.isMainFrame,
             scheme: origin.`protocol`, host: origin.host, port: origin.port,
-            page: message.webView?.url, trusted: cloudHome)
+            page: message.webView?.url, trusted: trustedOrigin)
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage,

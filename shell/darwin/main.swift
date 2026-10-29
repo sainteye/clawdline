@@ -485,6 +485,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         content.add(WeakMessageHandler(self), name: "shellAgentSetup")
         content.add(WeakMessageHandler(self), name: "shellRestartApp")
         content.add(WeakMessageHandler(self), name: "shellCloudPair")
+        // Local Settings uses the same native confirmations as Cloud. Each
+        // view's handler trusts only its own origin, including the local port.
+        content.addScriptMessageHandler(
+            CloudPairLocal(trustedOrigin: home), contentWorld: .page, name: CloudPairLocal.name)
         // The notch island listens to the same stream and opens this window
         // when its character is pressed (NotchIsland.swift).
         NotchIsland.shared.attach(to: content, open: { [weak self] in self?.showConsole() })
