@@ -175,7 +175,11 @@ func TestAntigravityPrivateTmuxKernelIdentityAndForeground(t *testing.T) {
 		t.Fatal("background provider accepted")
 	}
 	// The same PID and terminal survive exec; the kernel generation must not.
-	command("respawn-pane", "-k", "-t", meta[0], "read answer; exec /bin/sleep 30")
+	// respawn-pane returns before the child has exec'd its shell. A signal
+	// from that shell establishes the pre-exec identity we intend to test.
+	ready := shellQuote(binary) + " -S " + shellQuote(socket) + " wait-for -S before-exec; read answer; exec /bin/sleep 30"
+	command("respawn-pane", "-k", "-t", meta[0], "/bin/sh", "-c", ready)
+	command("wait-for", "before-exec")
 	beforePID, err := strconv.Atoi(command("display-message", "-p", "-t", meta[0], "#{pane_pid}"))
 	if err != nil {
 		t.Fatal(err)
