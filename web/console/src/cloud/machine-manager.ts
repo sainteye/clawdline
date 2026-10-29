@@ -24,8 +24,8 @@ export interface MachineManager {
   enableSameNetwork?(machine: string): Promise<void>
   rename(machine: CloudMachine, name: string): Promise<RenameOutcome>
   forget(machine: CloudMachine): Promise<ForgetOutcome>
-  /** Opens the pairing card for a machine this browser is not paired with. */
-  pair(machine: string): void
+  /** Opens pairing for a named machine, or the target picker when null. */
+  pair(machine: string | null): void
 }
 
 let installed: MachineManager | null = null

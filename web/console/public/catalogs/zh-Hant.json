@@ -478,7 +478,7 @@
   "browserPairing.connected": "這台機器已連接。請配對這個 App，或顯示 QR Code 來配對其他瀏覽器或手機。",
   "browserPairing.failed": "無法完成瀏覽器配對。",
   "browserPairing.intro": "先在兩端登入同一個 Cloud 帳號，再把每個瀏覽器與這台機器配對，才能讀取 Session。",
-  "browserPairing.localOnly": "若使用 macOS 的 Clawdline App，請開啟其 Cloud 分頁，前往「設定」→「Session 與存取」→「配對瀏覽器或手機」。其他機器請使用瀏覽器顯示的配對指令。",
+  "browserPairing.localOnly": "請在要連接的機器開啟 Clawdline App → 本機瀏覽器 → 設定 → 遠端 → 配對瀏覽器或手機。Cloud 分頁也有相同操作，也可以使用下方設定精靈或終端機指令。",
   "browserPairing.machineFingerprint": "機器指紋",
   "browserPairing.mismatch": "指紋不一致，請勿繼續。在機器執行下方指令撤銷這個瀏覽器，再產生新的 QR Code。這不會從帳號移除機器。",
   "browserPairing.openApp": "開啟 Clawdline 配對",
@@ -6608,8 +6608,8 @@
   "next.cloudPairStatusUnpaired": "目前狀態：這個瀏覽器還沒有這台機器的金鑰。",
   "next.cloudPairStepCompare": "確認兩邊顯示的指紋一樣",
   "next.cloudPairStepCopy": "按下方按鈕，複製配對碼",
-  "next.cloudPairStepOpen": "在機器的 Clawdline App 開啟 Cloud → 設定 → Session 與存取 → 配對瀏覽器或手機，再顯示 QR Code。",
-  "next.cloudPairStepPaste": "在機器的 Clawdline Cloud → 設定 → Session 與存取 → 配對瀏覽器或手機貼上代碼，也可以使用下方終端機指令。",
+  "next.cloudPairStepOpen": "在機器的 Clawdline App 開啟本機瀏覽器 → 設定 → 遠端 → 配對瀏覽器或手機，再顯示 QR Code。",
+  "next.cloudPairStepPaste": "在機器的 Clawdline App 本機瀏覽器 → 設定 → 遠端 → 配對瀏覽器或手機貼上代碼，也可以使用下方終端機指令。",
   "next.cloudPairStepScanApp": "按下方按鈕，掃畫面上的 QR",
   "next.cloudPairStopped": "已經不等了。這組代碼到{time}以前仍然有效，這裡沒有辦法把它作廢。",
   "next.cloudPairStoppedEarly": "已經不等了。",
@@ -9874,5 +9874,10 @@
   "next.cloudPairHelperPreparing": "正在開始配對…",
   "next.cloudPairHelperKeepOpen": "請保持這一頁開啟。機器回應後，核對指紋即可完成。",
   "next.cloudPairHelperAssistant": "協助配對的助理",
-  "http.a3477e7267821949": "請選擇 Claude 或 Codex 協助配對。"
+  "http.a3477e7267821949": "請選擇 Claude 或 Codex 協助配對。",
+  "browserPairing.openSetup": "開啟 Clawdline 設定精靈",
+  "browserPairing.terminal": "也可以在那台機器執行下方指令，將產生的連結開在要配對的瀏覽器。登入同一個 Cloud 帳號後，請核對兩端指紋。",
+  "browserPairing.copyCommand": "複製配對指令",
+  "browserPairing.copied": "已複製配對指令。",
+  "browserPairing.pairBrowser": "配對這個瀏覽器"
 }

@@ -21,6 +21,7 @@ import { MACHINE_PANES, nextSettingsTab, settingsPanes } from "./settings/naviga
 import { W } from "./settings/window/copy.js"
 import "./settings/window/window.css"
 import "./settings/page.css"
+import { RemotePairingBlock } from "./settings/RemotePairingBlock.js"
 import { WorkflowSettingsBlock } from "./settings/WorkflowSettingsBlock.js"
 import { BoardBlock } from "./settings/BoardBlock.js"
 import { DoctorBlock } from "../doctor/DoctorBlock.js"
@@ -104,7 +105,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
     catalogWord("settings", "statusTab"),
     catalogWord("workflowSettings", "tab"),
     ...(!cloud ? [catalogWord("settings", "machineTab"), W.settingsVoice, W.settingsRemote,
-      W.settingsOrchestrator, catalogWord("dispatchPolicy", "navTitle")] : []),
+      W.settingsOrchestrator, catalogWord("dispatchPolicy", "navTitle")] : [W.settingsRemote]),
   ]
   // `enter` has not run until the page has been shown once; before that the
   // blocks it draws are as the markup has them.
@@ -267,7 +268,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
               type="button"
               role="tab"
               aria-selected={tab === index}
-              aria-controls={index >= 4 ? "settings-machine-pane" : `settings-pane-${index}`}
+              aria-controls={!cloud && index >= 4 ? "settings-machine-pane" : `settings-pane-${index}`}
               tabIndex={tab === index ? 0 : -1}
               onClick={(event) => {
                 setTab(index)
@@ -479,6 +480,9 @@ function SettingsPage({ shown }: { shown: boolean }) {
         <div className="settings-pane" id="settings-pane-3" role="tabpanel" aria-labelledby="settings-tab-3" hidden={tab !== 3}>
           <WorkflowSettingsBlock shown={shown && tab === 3} />
         </div>
+        {cloud && <div className="settings-pane" id="settings-pane-4" role="tabpanel" aria-labelledby="settings-tab-4" hidden={tab !== 4}>
+          {shown && tab === 4 && <RemotePairingBlock />}
+        </div>}
         {!cloud && <div className="settings-pane settings-machine-pane" id="settings-machine-pane" role="tabpanel" aria-labelledby={`settings-tab-${tab >= 4 ? tab : 4}`} hidden={tab < 4}>
           {shown && tab >= 4 && <SettingsWindow embedded hideNavigation pane={MACHINE_PANES[Math.max(0, tab - 4)]} />}
         </div>}

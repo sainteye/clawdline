@@ -34,3 +34,7 @@
 .cloud-local-setup { margin: 20px 0; padding: 16px 0; border-top: 1px solid var(--line); }
 .cloud-local-setup .settings-browser-pairing { text-align: left; }
 .cloud-local-setup .chip { min-height: 44px; }
+
+.settings-browser-pairing .chip {
+  display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box;
+}

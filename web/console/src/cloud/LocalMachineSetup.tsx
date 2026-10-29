@@ -5,7 +5,7 @@ import { nativePairing, nativePairingAvailable, type NativePairingReply } from "
 const word = (key: string) => catalogWord("browserPairing", key)
 
 /** The native owner can connect an unregistered machine before this viewer has a key. */
-export function LocalMachineSetup({ onPair, children }: { onPair: (machine: { id: string; name: string }) => void; children?: ReactNode }) {
+export function LocalMachineSetup({ onPair, children }: { onPair?: (machine: { id: string; name: string }) => void; children?: ReactNode }) {
   const [status, setStatus] = useState<NativePairingReply | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -61,9 +61,9 @@ export function LocalMachineSetup({ onPair, children }: { onPair: (machine: { id
         void nativePairing({ kind: "connection-cancel" }).then(value => { setStatus(value); setError("") },
           reason => setError(String(reason?.code || "connection_failed")))
       }}>{word("stopConnecting")}</button>
-    </> : !ready ? <button className="go" type="button" disabled={busy} onClick={() => void connect()}>{word("connect")}</button> : <>
+    </> : !ready ? <button className="go chip" type="button" disabled={busy} onClick={() => void connect()}>{word("connect")}</button> : <>
       <p>{status.machine_name}</p>
-      <button className="go" type="button" onClick={() => onPair({ id: status.machine_id!, name: status.machine_name || status.machine_id! })}>{word("pairApp")}</button>
+      {onPair && <button className="go chip" type="button" onClick={() => onPair({ id: status.machine_id!, name: status.machine_name || status.machine_id! })}>{word("pairApp")}</button>}
       {children}
     </>}
     {status.connection?.phase === "failed" && <p role="status">{word("connectFailed")} ({status.connection.code})</p>}

@@ -4,6 +4,12 @@ Current entry point (2026-10-27): the standalone macOS settings window, its menu
 items and its `/settings.html` entry have been removed. Use website Settings for
 configuration. iTerm2 consent is under **Workflow and control** in both Cloud and local browser consoles; see [the current boundary](interface.md#turning-iterm2-scanning-off).
 Machine setting components remain embedded in the local website Settings page.
+Browser pairing is under **Settings → Remote** in both the App's Local and Cloud views.
+Each view registers its own `clawdlinePairLocal` reply handler, bound to that view's
+exact origin (scheme, host and port). Both the initiating main frame and current
+top-level page must match before a request and after native confirmation. Local
+Settings can connect Cloud, show a pairing QR or accept a browser code without
+switching tabs. The assistant hand-off bridge remains Cloud-only.
 The native-window sections below are historical protocol records; they do not
 describe a supported window or an implemented native settings bridge.
 

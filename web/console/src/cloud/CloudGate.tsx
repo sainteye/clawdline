@@ -1163,6 +1163,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       rename: async (machine, name) => (await renameRef.current(machine, name)) ?? busy,
       forget: async (machine) => (await forgetRef.current(machine)) ?? busy,
       pair: (id) => {
+        if (id === null) { openPairingRef.current(null); return }
         const known = machinesRef.current?.find((m) => m.id === id)
         const named = known ? withAccountNames([known], namesRef.current, present)[0] : null
         openPairingRef.current({ id, name: named ? named.name || named.label || id : id })

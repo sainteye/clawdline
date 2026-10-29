@@ -12,7 +12,9 @@ test("both plain and authenticated compressed Cloud replies open to the same byt
   for (const value of [plain, framed(plain)]) {
     const envelope = await sealEnvelope({ ch:"t/m/s",seq:1,ts:1,class:"stream",key_id:"key",sender:"machine" }, value, key, signer.privateKey)
     assert.deepEqual(await openEnvelope(envelope,key,signer.publicKey),plain)
-    await assert.rejects(openEnvelope({...envelope,ct:Buffer.concat([Buffer.from([99]),Buffer.from(envelope.ct,"base64").subarray(1)]).toString("base64")},key,signer.publicKey),/signature/)
+    const tampered = Buffer.from(envelope.ct,"base64")
+    tampered[0] ^= 1
+    await assert.rejects(openEnvelope({...envelope,ct:tampered.toString("base64")},key,signer.publicKey),/signature/)
   }
 })
 test("decompression refuses corrupt data and stops at the registered output ceiling", async () => {
