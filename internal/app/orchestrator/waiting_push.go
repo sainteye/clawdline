@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The push a session standing on a question owes the person (app.Waiting,
@@ -25,11 +26,12 @@ type WaitingPush struct {
 	// Key is the stop's subject: the terminal and the conversation in it.
 	Key string `json:"key"`
 	// Terminal is where tapping the notification lands (D24).
-	Terminal string `json:"terminal"`
-	Title    string `json:"title"`
-	Body     string `json:"body"`
-	Tag      string `json:"tag"`
-	Custom   bool   `json:"custom,omitempty"`
+	Terminal string                `json:"terminal"`
+	Title    string                `json:"title"`
+	Body     string                `json:"body"`
+	Tag      string                `json:"tag"`
+	Custom   bool                  `json:"custom,omitempty"`
+	Reason   session.ProviderBlock `json:"reason,omitempty"`
 }
 
 // runWaitingPush sends one stopped session's push to every device that asked
@@ -40,7 +42,15 @@ func runWaitingPush(ctx context.Context, b *Broker, e store.Effect) effectResult
 	if err := json.Unmarshal(e.Payload, &p); err != nil || p.Key == "" || p.Title == "" {
 		return effectResult{state: store.EffectFailed, outcome: "the effect carries no stop"}
 	}
-	if !p.Custom && b.PushEnabled != nil && !b.PushEnabled("push_on_waiting") {
+	preference := "push_on_waiting"
+	switch p.Reason {
+	case "":
+	case session.ProviderBlockModelCapacity:
+		preference = "push_on_model_capacity"
+	default:
+		return effectResult{state: store.EffectFailed, outcome: "unknown provider block"}
+	}
+	if (!p.Custom || p.Reason != "") && b.PushEnabled != nil && !b.PushEnabled(preference) {
 		return effectResult{state: store.EffectDone, outcome: "disabled_by_user"}
 	}
 	if b.Push == nil {

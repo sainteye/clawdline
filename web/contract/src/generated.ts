@@ -7776,6 +7776,11 @@ export interface SettingsRequest {
   push_on_fanout: boolean | null
 
   /**
+   * Notify when a Session stops because its model is at capacity.
+   */
+  push_on_model_capacity: boolean | null
+
+  /**
    * Notify when an App install or Cloud verification fails.
    */
   push_on_release_failure: boolean | null
@@ -8146,6 +8151,11 @@ export interface SettingsSnapshot {
    * Notify when a whole batch of dispatched work ends.
    */
   push_on_fanout: boolean | null
+
+  /**
+   * Notify when a Session stops because its model is at capacity.
+   */
+  push_on_model_capacity: boolean | null
 
   /**
    * Notify when an App install or Cloud verification fails.

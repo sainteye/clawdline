@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9866,
+  "englishContentKeys": 9868,
   "riskKeys": 4382,
-  "nonRiskCount": 5484,
+  "nonRiskCount": 5486,
   "groups": [
     {
       "name": "admin / other",
@@ -4315,7 +4315,7 @@
     },
     {
       "name": "notifications / other",
-      "count": 32,
+      "count": 34,
       "sources": [
         "src/pages/notifications.tsx"
       ],
@@ -4345,6 +4345,8 @@
         "notifications.push_on_deliveryHint",
         "notifications.push_on_fanout",
         "notifications.push_on_fanoutHint",
+        "notifications.push_on_model_capacity",
+        "notifications.push_on_model_capacityHint",
         "notifications.push_on_release_failure",
         "notifications.push_on_release_failureHint",
         "notifications.push_on_waiting",

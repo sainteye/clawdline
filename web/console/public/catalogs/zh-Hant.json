@@ -8140,6 +8140,8 @@
   "notifications.smart_notifications": "完成通知顯示交件與任務內容",
   "notifications.smart_notificationsHint": "在通知中帶入 Session 交件摘要或任務名稱；不會多送一則通知。",
   "notifications.title": "通知",
+  "notifications.push_on_model_capacity": "模型容量不足",
+  "notifications.push_on_model_capacityHint": "偵測到時立即通知，每次停住最多一次；可換模型或重試。",
   "plan.active": "生效中",
   "plan.control": "用手機查看、控制 Session",
   "plan.current": "目前方案",

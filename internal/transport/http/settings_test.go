@@ -100,7 +100,7 @@ func TestNotificationSettingsAreIndependentOfThisBrowser(t *testing.T) {
 		s.notificationSettingsRoute(rec, req)
 		return rec
 	}
-	if rec := call(http.MethodPost, `{"push_on_waiting":false}`); rec.Code != http.StatusOK {
+	if rec := call(http.MethodPost, `{"push_on_waiting":false,"push_on_model_capacity":false}`); rec.Code != http.StatusOK {
 		t.Fatalf("write: %d %s", rec.Code, rec.Body)
 	}
 	read := call(http.MethodGet, "")
@@ -108,7 +108,7 @@ func TestNotificationSettingsAreIndependentOfThisBrowser(t *testing.T) {
 	if err := json.Unmarshal(read.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got["push_on_waiting"] != false {
+	if len(got) != 2 || got["push_on_waiting"] != false || got["push_on_model_capacity"] != false {
 		t.Fatalf("notification-only answer: %v", got)
 	}
 	for _, body := range []string{`{"tailscale_hostname":"example.invalid"}`, `{"push_on_waiting":"false"}`} {
