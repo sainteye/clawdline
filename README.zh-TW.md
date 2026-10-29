@@ -11,7 +11,11 @@
 
 ![Clawdline 將 Claude Code 與 Codex Session 集中在同一處，讓你掌握進度、回覆並留待辦；本機瀏覽器在你的機器上使用，選用 Cloud 可從手機及多台機器接續工作。](docs/assets/readme-overview-zh-Hant.png)
 
-[Herdr](https://github.com/herdrdev/herdr/blob/master/docs/versions/0.9.1/website/src/content/docs/connecting-machines.mdx) 也能在 SSH 的 TUI 視窗列出多台機器的 Agent；[T3 Code](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md) 可連接多個環境。Clawdline Cloud 則在手機瀏覽器將 Session 依機器列在同一頁，並直接開啟對話、待辦與圖片。
+## 與 Herdr、T3 Code 的差異
+
+- 🖥️ **Herdr：Agent 的終端工作區。** 在持續運行的終端窗格中執行 Agent，並在同一個 TUI 管理本機與 SSH 工作區。[Herdr 介紹](https://github.com/herdrdev/herdr#readme)・[多機器連線](https://herdr.dev/docs/connecting-machines/)
+- 💬 **T3 Code：操作程式開發 Agent 的 App。** 透過桌機、網頁與手機 App 操作 Agent，支援本機與遠端環境。[T3 Code 介紹](https://github.com/pingdotgg/t3code#readme)・[遠端存取](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md)
+- 🔁 **Clawdline：協調 Session，追蹤工作交付。** 在瀏覽器集中管理已使用的 Claude Code 和 Codex Session；留下待辦、回答 Agent 便條並派工，選用看板追蹤驗證、合併與部署；清楚區分「Agent 回報完成」與「已驗證合併」。選用 Cloud 後，也能從手機同一份清單掌握多台機器。[Session](docs/user/sessions.md)・[派工](docs/user/clawdfather-and-dispatch.md)・[看板](docs/user/board.md)
 
 ## 你可以做什麼
 

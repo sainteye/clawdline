@@ -11,7 +11,11 @@
 
 ![Clawdline brings Claude Code and Codex Sessions into one view so you can follow progress, reply and leave to-dos. Local browser use runs on your machine; optional Cloud adds phones and multiple machines.](docs/assets/readme-overview-en.png)
 
-[Herdr](https://github.com/herdrdev/herdr/blob/master/docs/versions/0.9.1/website/src/content/docs/connecting-machines.mdx) also lists agents across SSH machines in one TUI; [T3 Code](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md) connects to multiple environments. Clawdline Cloud groups them in a phone browser list and opens their conversations, to-dos, and images there.
+## How Clawdline differs from Herdr and T3 Code
+
+- 🖥️ **Herdr — a terminal workspace for Agents.** Run Agents in persistent terminal panes, with local and SSH workspaces together in one TUI. [Herdr overview](https://github.com/herdrdev/herdr#readme) · [Connecting machines](https://herdr.dev/docs/connecting-machines/)
+- 💬 **T3 Code — an app for working with coding Agents.** Control Agents through desktop, web and mobile apps, including local and remote environments. [T3 Code overview](https://github.com/pingdotgg/t3code#readme) · [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md)
+- 🔁 **Clawdline — coordinate Sessions and track delivery.** Bring your existing Claude Code and Codex Sessions into a browser console. Leave to-dos, answer Agent notes, dispatch work, and track verification, merge and deployment on the optional Board. A delivery report and a verified Git landing stay distinct. Cloud adds one phone list across machines. [Sessions](docs/user/sessions.md) · [Dispatch](docs/user/clawdfather-and-dispatch.md) · [Board](docs/user/board.md)
 
 ## What you can do
 
