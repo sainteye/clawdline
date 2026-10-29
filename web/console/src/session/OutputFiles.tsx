@@ -5,6 +5,7 @@ import { nextWord } from "../next-strings.js"
 import { failureSentence } from "../legacy/js/core/failure-text.js"
 import { htmlPreviewSource } from "../legacy/js/view/document-html.js"
 import { DOCUMENT_MAX_BYTES } from "../legacy/js/net/document-links.js"
+import { openImagePreview } from "../legacy/images-bridge.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
 import { filterOutputs, outputCategory, outputSessionKey, readOutput, readOutputs, type OutputFile, type OutputListing } from "./output-files-api.js"
 import "./output-files.css"
@@ -189,11 +190,9 @@ function FileCard({ file, session, shareURL, onPreview }: { file: OutputFile; se
 }
 function OutputPreview({ file, session, onClose }: { file: OutputFile; session: string; onClose(): void }) {
   const dialog = useRef<HTMLDialogElement>(null)
-  const [url, setURL] = useState("")
   const [text, setText] = useState<string | null>(null)
   const [percent, setPercent] = useState(0)
   const [error, setError] = useState("")
-  const [zoom, setZoom] = useState(false)
   const owner = useRef(crypto.randomUUID())
   const previewable = file.media_type.startsWith("image/") || (file.media_type.startsWith("text/") && file.bytes <= DOCUMENT_MAX_BYTES)
   const dismiss = () => {
@@ -205,7 +204,7 @@ function OutputPreview({ file, session, onClose }: { file: OutputFile; session: 
   useEffect(() => {
     const element = dialog.current!, opener = document.activeElement as HTMLElement | null
     showModalWithoutChoice(element); historyOpen("sessionOutputPreview", owner.current)
-    const abort = new AbortController(); let held = ""
+    const abort = new AbortController(); let held = "", releasePreview: (() => void) | undefined
     const pop = (event: PopStateEvent) => { if (history.state?.sessionOutputPreview !== owner.current) { event.stopImmediatePropagation(); onClose() } }
     window.addEventListener("popstate", pop, true)
     if (previewable) void (async () => {
@@ -215,18 +214,21 @@ function OutputPreview({ file, session, onClose }: { file: OutputFile; session: 
       return readOutput(session, file, abort.signal, setPercent)
     })().then(async blob => {
       if (abort.signal.aborted) return
-      if (file.media_type.startsWith("image/")) { held = URL.createObjectURL(blob); setURL(held) }
+      if (file.media_type.startsWith("image/")) {
+        held = URL.createObjectURL(blob)
+        element.close()
+        releasePreview = openImagePreview(opener ?? document.body, held, file.name, dismiss)
+      }
       else { const raw = await blob.text(); if (!abort.signal.aborted) setText(raw) }
     }, caught => { if (!abort.signal.aborted) setError(errorWord(caught)) })
-    return () => { abort.abort(); element.close(); if (held) URL.revokeObjectURL(held); window.removeEventListener("popstate", pop, true); historyClose("sessionOutputPreview", owner.current); if (opener?.isConnected) opener.focus({ preventScroll: true }) }
+    return () => { abort.abort(); releasePreview?.(); element.close(); if (held) URL.revokeObjectURL(held); window.removeEventListener("popstate", pop, true); historyClose("sessionOutputPreview", owner.current); if (opener?.isConnected) opener.focus({ preventScroll: true }) }
     // The keyed preview holds one exact file and Session through the transfer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return <dialog className="output-preview" ref={dialog} aria-labelledby="output-preview-title" onCancel={event => { event.preventDefault(); event.stopPropagation(); dismiss() }}>
     <header><h2 id="output-preview-title">{file.name}</h2><button type="button" className="chip" onClick={dismiss} aria-label={w("outputsClose")}>×</button></header>
     <div className="output-preview-body">
-      {error ? <p role="alert">{error}</p> : !previewable ? <p>{w("outputsNoPreview")}</p> : url ? <button type="button" className="output-image-canvas" onClick={() => setZoom(!zoom)} aria-label={w("outputsZoom")}><img src={url} className={zoom ? "output-image-original" : ""} alt={file.name} /></button>
-        : text !== null ? file.media_type === "text/html" ? <iframe title={file.name} sandbox="" referrerPolicy="no-referrer" srcDoc={htmlPreviewSource(text, window)} /> : <pre>{text}</pre> : <p role="status">{w("outputsReading", { percent })}</p>}
+      {error ? <p role="alert">{error}</p> : !previewable ? <p>{w("outputsNoPreview")}</p> : text !== null ? file.media_type === "text/html" ? <iframe title={file.name} sandbox="" referrerPolicy="no-referrer" srcDoc={htmlPreviewSource(text, window)} /> : <pre>{text}</pre> : <p role="status">{w("outputsReading", { percent })}</p>}
     </div>
     <footer><p className="output-path">{file.path}</p><p className="output-caption">{w("outputsLocalPath")}</p></footer>
   </dialog>
