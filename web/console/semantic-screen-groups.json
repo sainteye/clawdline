@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10119,
+  "englishContentKeys": 10120,
   "riskKeys": 4494,
-  "nonRiskCount": 5625,
+  "nonRiskCount": 5626,
   "groups": [
     {
       "name": "admin / other",
@@ -6538,6 +6538,16 @@
         "workflowSettings.session_auto_discoveryTitle",
         "workflowSettings.whenOff",
         "workflowSettings.whenOn"
+      ]
+    },
+    {
+      "name": "workingIndicator / other",
+      "count": 1,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "workingIndicator.title"
       ]
     },
     {

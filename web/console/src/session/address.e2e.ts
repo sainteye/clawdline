@@ -848,6 +848,12 @@ class Tab {
     writeFileSync(join(shots, name + ".png"), Buffer.from(data, "base64"))
   }
 
+  async reducedMotion(reduce: boolean): Promise<void> {
+    await this.b.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: reduce ? "reduce" : "no-preference" }],
+    }, this.session)
+  }
+
 }
 
 // ---- the run
@@ -3607,10 +3613,19 @@ test("Graphify project viewer respects the toggle and renders safe graphs in bot
     await tab.run(`document.getElementById("detail-info").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
     await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector(".graphify-build button")`)
     assert.equal(graphifyBuilds,0)
+    assert.equal(await tab.run(`document.querySelectorAll('.working-indicator').length`),0)
     assert.ok(await tab.run(`document.querySelector('.graphify-build').textContent.includes(${JSON.stringify(tag==="en"?"no model or paid API":"不使用模型或付費 API")})`))
     if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-graphify-build-missing`)}
     await tab.run(`document.querySelector('.graphify-build button').click()`);await wait(`document.querySelector('.graphify-build')?.textContent.includes(${JSON.stringify(tag==="en"?"Preparing":"準備")}) && !document.querySelector('.graphify-build button')`)
     assert.equal(graphifyBuilds,1)
+    assert.ok(await tab.run(`document.querySelector('.working-indicator [role="status"]').textContent.includes(${JSON.stringify(tag==="en"?"Clawdline is working":"Clawdline 正在努力工作")})`))
+    assert.equal(await tab.run(`document.querySelector('.working-indicator-art').getAttribute('aria-hidden')`),"true")
+    assert.notEqual(await tab.run(`getComputedStyle(document.querySelector('.working-indicator-body')).animationName`),"none")
+    await tab.reducedMotion(true)
+    assert.equal(await tab.run(`getComputedStyle(document.querySelector('.working-indicator-body')).animationName`),"none")
+    assert.ok(await tab.run(`document.querySelector('.working-indicator-detail').textContent.length>0`))
+    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-reduced-motion`)
+    await tab.reducedMotion(false)
     if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-running`)
     await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
     const reads=graphifyReads;await new Promise(r=>setTimeout(r,1200));assert.equal(graphifyReads,reads)
@@ -3620,11 +3635,13 @@ test("Graphify project viewer respects the toggle and renders safe graphs in bot
     graphifyBuildResult="prerequisite_missing"
     await wait(`!!document.querySelector('.graphify-dialog [role="alert"]') && !!document.querySelector('.graphify-build button')`)
     assert.ok(await tab.run(`document.querySelector('.graphify-dialog [role="alert"]').textContent.includes('Python 3.12')`))
+    assert.equal(await tab.run(`document.querySelectorAll('.working-indicator').length`),0)
     if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-failed`)
     graphifyBuildResult=""
     await tab.run(`document.querySelector('.graphify-build button').click()`);await wait(`!document.querySelector('.graphify-build button')`)
     assert.equal(graphifyBuilds,2);graphifyBuildResult="success"
     await wait(`document.querySelectorAll('.graphify-node').length===3`)
+    assert.equal(await tab.run(`document.querySelectorAll('.working-indicator').length`),0)
     if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-complete`)
     assert.equal(graphifyBuilds,2)
     assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
