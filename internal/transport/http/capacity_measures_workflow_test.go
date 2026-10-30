@@ -11,7 +11,7 @@ import (
 
 func TestWorkflowCapacityMeasuresStoredUsageAndReadFailures(t *testing.T) {
 	s := capacityServer(t)
-	for _, name := range []string{capacity.WorkflowLaunches, capacity.WorkflowSnapshotBytes} {
+	for _, name := range []string{capacity.WorkflowSnapshotBytes} {
 		if r := s.squadCapacityMeasures()[name](); !r.Known || r.Used != 0 {
 			t.Fatalf("fresh %s: %+v", name, r)
 		}
@@ -27,7 +27,7 @@ func TestWorkflowCapacityMeasuresStoredUsageAndReadFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, want := range map[string]int64{capacity.WorkflowLaunches: 1, capacity.WorkflowSnapshotBytes: int64(len(document))} {
+	for name, want := range map[string]int64{capacity.WorkflowSnapshotBytes: int64(len(document))} {
 		if r := s.squadCapacityMeasures()[name](); !r.Known || r.Used != want {
 			t.Fatalf("stored %s: %+v want %d", name, r, want)
 		}
@@ -35,13 +35,13 @@ func TestWorkflowCapacityMeasuresStoredUsageAndReadFailures(t *testing.T) {
 	if err := s.store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{capacity.WorkflowLaunches, capacity.WorkflowSnapshotBytes} {
+	for _, name := range []string{capacity.WorkflowSnapshotBytes} {
 		if r := s.squadCapacityMeasures()[name](); r.Known || r.Err == "" {
 			t.Fatalf("closed %s reported zero: %+v", name, r)
 		}
 	}
 	s.store = nil
-	for _, name := range []string{capacity.WorkflowLaunches, capacity.WorkflowSnapshotBytes} {
+	for _, name := range []string{capacity.WorkflowSnapshotBytes} {
 		if r := s.squadCapacityMeasures()[name](); !r.Known || r.Used != 0 || r.Note != "no store attached" {
 			t.Fatalf("detached %s: %+v", name, r)
 		}

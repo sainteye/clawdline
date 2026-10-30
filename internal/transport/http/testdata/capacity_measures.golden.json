@@ -2917,11 +2917,6 @@
     "Note": true
   },
   {
-    "Name": "workflow.launches",
-    "Known": true,
-    "Note": true
-  },
-  {
     "Name": "workflow.snapshot_bytes",
     "Known": true,
     "Note": true

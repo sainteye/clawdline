@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 9964,
+  "englishKeys": 9962,
   "counts": {
-    "negation": 2816,
-    "state": 1633,
+    "negation": 2815,
+    "state": 1631,
     "permission": 603,
-    "deletion": 220,
+    "deletion": 219,
     "uncertainty": 381
   },
-  "unionCount": 4431,
+  "unionCount": 4429,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -655,7 +655,6 @@
       "capacityRow.work_gate_round_details_per_item.full",
       "capacityRow.work_gate_round_details_per_item.what",
       "capacityRow.work_gate_round_details_per_store.full",
-      "capacityRow.workflow.launches.full",
       "composerDraft.storageUnavailable",
       "count.skillFoldersSkipped",
       "count.unsyncedProjects",
@@ -3363,8 +3362,6 @@
       "capacityRow.work_gate_round_details_per_item.full",
       "capacityRow.work_gate_round_details_per_store.full",
       "capacityRow.work_gate_tasks_per_round.full",
-      "capacityRow.workflow.launches.full",
-      "capacityRow.workflow.launches.what",
       "capacityRow.workflow.snapshot_bytes.full",
       "capacityRow.workflow.snapshot_bytes.what",
       "composerDraft.storageUnavailable",
@@ -5137,7 +5134,6 @@
       "capacityRow.work.images_per_item.full",
       "capacityRow.work.planning.what",
       "capacityRow.work_gate_round_details_per_item.what",
-      "capacityRow.workflow.launches.full",
       "clawdfatherMenu.limitReached",
       "doctor.dropped",
       "http.26d554c47eb3ebc1",
@@ -6671,8 +6667,6 @@
     "capacityRow.work_gate_round_details_per_item.what",
     "capacityRow.work_gate_round_details_per_store.full",
     "capacityRow.work_gate_tasks_per_round.full",
-    "capacityRow.workflow.launches.full",
-    "capacityRow.workflow.launches.what",
     "capacityRow.workflow.snapshot_bytes.full",
     "capacityRow.workflow.snapshot_bytes.what",
     "clawdfatherMenu.limitReached",

@@ -20,16 +20,6 @@ func (s *Server) squadCapacityMeasures() map[string]func() capacity.Reading {
 		return s.store.WorkflowUsage(context.Background())
 	})
 	return map[string]func() capacity.Reading{
-		capacity.WorkflowLaunches: func() capacity.Reading {
-			if s.store == nil {
-				return capacity.Reading{Known: true, Note: "no store attached"}
-			}
-			usage, err := workflowUsage()
-			if err != nil {
-				return capacity.Unmeasured(err.Error())
-			}
-			return capacity.Reading{Known: true, Used: usage.Launches, Note: "retained workflow launch identities"}
-		},
 		capacity.WorkflowSnapshotBytes: func() capacity.Reading {
 			if s.store == nil {
 				return capacity.Reading{Known: true, Note: "no store attached"}

@@ -14,16 +14,11 @@ import (
 // MaxWorkflowSnapshotBytes bounds one complete immutable launch snapshot.
 const MaxWorkflowSnapshotBytes = 1 << 20
 
-// MaxWorkflowLaunches bounds retained launch identities. Full refuses a new
-// launch rather than evicting the evidence required for an existing resume.
-const MaxWorkflowLaunches = 4096
-
 var (
 	ErrWorkflowSnapshotTooLarge  = errors.New("workflow_snapshot_too_large")
 	ErrWorkflowLaunchUnknown     = errors.New("workflow_launch_unknown")
 	ErrWorkflowLaunchConflict    = errors.New("workflow_launch_conflict")
 	ErrWorkflowConversationTaken = errors.New("workflow_conversation_taken")
-	ErrWorkflowLaunchesFull      = errors.New("workflow_launches_full")
 )
 
 const workflowSchema = `
@@ -101,13 +96,6 @@ func (s *Store) PrepareWorkflowLaunch(ctx context.Context, snapshot workflow.Sna
 		return WorkflowLaunch{}, classify(err)
 	}
 	defer tx.Rollback()
-	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM workflow_launches`).Scan(&count); err != nil {
-		return WorkflowLaunch{}, classify(err)
-	}
-	if count >= MaxWorkflowLaunches {
-		return WorkflowLaunch{}, ErrWorkflowLaunchesFull
-	}
 	now := time.Now().Unix()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_snapshots(id,document,created_at) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING`, snapshot.Digest, document, now); err != nil {
 		return WorkflowLaunch{}, classify(err)

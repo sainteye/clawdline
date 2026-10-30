@@ -190,7 +190,7 @@ func TestWorkflowConcurrentConversationBindingHasOneOwner(t *testing.T) {
 	}
 }
 
-func TestWorkflowFullStoreRefusesWithoutEvictingOriginal(t *testing.T) {
+func TestWorkflowHistoryDoesNotRefuseNewStandardLaunch(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(t.TempDir())
 	if err != nil {
@@ -201,21 +201,25 @@ func TestWorkflowFullStoreRefusesWithoutEvictingOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.db.ExecContext(ctx, `WITH RECURSIVE slots(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM slots WHERE n<?)
- INSERT INTO workflow_launches(id,snapshot_id,state,created_at) SELECT 'full-'||n,?,'failed',1 FROM slots`, MaxWorkflowLaunches-1, first.SnapshotID)
+	_, err = s.db.ExecContext(ctx, `WITH RECURSIVE slots(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM slots WHERE n<5000)
+ INSERT INTO workflow_launches(id,snapshot_id,state,created_at) SELECT 'history-'||n,?,'failed',1 FROM slots`, first.SnapshotID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.PrepareWorkflowLaunch(ctx, sealedWorkflow(t, "different")); !errors.Is(err, ErrWorkflowLaunchesFull) {
-		t.Fatalf("full: %v", err)
+	standard, err := workflow.Seal(workflow.Snapshot{ProfileID: "clawdline", Version: "1", Source: "builtin"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	got, ok, err := s.WorkflowLaunchByID(ctx, first.ID)
-	if err != nil || !ok || got.Snapshot.Instructions != "original" {
-		t.Fatalf("evicted original: %+v %t %v", got, ok, err)
+	if _, err := s.PrepareWorkflowLaunch(ctx, standard); err != nil {
+		t.Fatalf("history blocked standard launch: %v", err)
 	}
-	var snapshots int
-	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM workflow_snapshots`).Scan(&snapshots); err != nil || snapshots != 1 {
-		t.Fatalf("orphan snapshots: %d %v", snapshots, err)
+	original, ok, err := s.WorkflowLaunchByID(ctx, first.ID)
+	if err != nil || !ok || original.Snapshot.Instructions != "original" {
+		t.Fatalf("evicted original: %+v %t %v", original, ok, err)
+	}
+	usage, err := s.WorkflowUsage(ctx)
+	if err != nil || usage.Launches != 5002 {
+		t.Fatalf("history was evicted: %+v %v", usage, err)
 	}
 }
 

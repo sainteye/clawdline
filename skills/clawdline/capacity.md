@@ -601,5 +601,4 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `work_gate_round_details_per_item` | 64 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `work_gate_round_details_per_store` | 10000 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `work_gate_tasks_per_round` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
-| `workflow.launches` | 4096 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `workflow.snapshot_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender, health` | — |

@@ -1,6 +1,4 @@
 {
-  "capacityRow.workflow.launches.what": "這台機器保留的工作流程啟動紀錄，包含失敗的啟動與續接。這些紀錄會保留每個對話原先使用的流程副本。",
-  "capacityRow.workflow.launches.full": "新的流程啟動會被拒絕，不會刪除舊紀錄。目前沒有清理操作；既有對話的流程副本仍可讀取。",
   "capacityRow.workflow.snapshot_bytes.what": "每次開啟 Session 時，儲存的完整固定流程內容，包含指示、階段、來源版本與工具選擇。這裡顯示已儲存副本中最大的一份。",
   "capacityRow.workflow.snapshot_bytes.full": "這次啟動會在儲存副本或開啟 Session 前被拒絕。請縮短流程指示後再試。",
   "support.requestType": "提問類型",

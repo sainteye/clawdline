@@ -1,6 +1,4 @@
 {
-  "capacityRow.workflow.launches.what": "Retained workflow launch records on this machine, including failed launches and resumes. Records preserve the original workflow snapshot for each conversation.",
-  "capacityRow.workflow.launches.full": "New workflow launches are refused without deleting earlier records. There is no cleanup control yet; existing conversation snapshots remain readable.",
   "capacityRow.workflow.snapshot_bytes.what": "The complete fixed workflow instructions, stages, source version and tool choices saved for one Session launch. The reading shows the largest saved snapshot.",
   "capacityRow.workflow.snapshot_bytes.full": "The launch is refused before saving its snapshot or starting the Session. Shorten the workflow instructions before trying again.",
   "support.requestType": "Request type",
