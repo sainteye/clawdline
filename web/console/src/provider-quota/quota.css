@@ -27,7 +27,6 @@
 .quota-window[data-urgent] { color: var(--accent); }
 .quota-window-name, .quota-reset, .quota-caption { color: var(--faint); }
 .quota-window-name { font-size: 10px; }
-.quota-provider[data-provider="gemini"] .quota-window-name { display: none; }
 .quota-stale { font-size: 10px; color: var(--faint); }
 .quota-provider[data-stale] progress { opacity: .5; }
 .quota-refresh, .quota-more { flex: 0 0 auto; padding: 4px; }

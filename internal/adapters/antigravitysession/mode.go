@@ -3,7 +3,6 @@ package antigravitysession
 import (
 	"context"
 	"encoding/json"
-	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravityprocess"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -77,15 +76,12 @@ func nativeMode(raw json.RawMessage, wanted string) (string, error) {
 		}
 		seen := map[string]bool{}
 		for _, v := range option.Options {
-			if v.Value == "" || strings.ContainsAny(v.Value, " \t\r\n") || seen[v.Value] {
+			if v.Value == "" || seen[v.Value] {
 				return "", refusal("permission_unavailable")
 			}
 			seen[v.Value] = true
 		}
 		if !seen[wanted] || !seen[option.Current] {
-			return "", refusal("permission_unavailable")
-		}
-		if option.Current != "default" && option.Current != "auto_edit" && option.Current != "yolo" {
 			return "", refusal("permission_unavailable")
 		}
 		current = option.Current

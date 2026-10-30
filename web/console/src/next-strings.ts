@@ -172,6 +172,7 @@ const words = {
     quotaSourceClaude: "Source: Claude Code status line",
     quotaSourceCodex: "Source: Codex session quota record",
     quotaSourceAPI: "Source: provider quota service",
+    quotaSourceCLI: "Source: native CLI quota command",
     quotaRunCLI: "Run {provider} on this machine to refresh sign-in; no chat message is needed.",
     quotaRefreshHint: "Local records refresh when their CLI writes them. Provider checks have a 15-minute cooldown; refreshing this view does not bypass it.",
 
@@ -2365,6 +2366,7 @@ const words = {
     quotaSourceClaude: "來源：Claude Code 狀態列",
     quotaSourceCodex: "來源：Codex Session 額度紀錄",
     quotaSourceAPI: "來源：供應商額度服務",
+    quotaSourceCLI: "來源：原生 CLI 額度指令",
     quotaRunCLI: "請在這台機器執行 {provider} 更新登入，無須傳送對話訊息。",
     quotaRefreshHint: "本機紀錄會隨 CLI 寫入更新；供應商查詢間隔至少 15 分鐘，更新畫面不會略過冷卻時間。",
 

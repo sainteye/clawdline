@@ -7351,6 +7351,7 @@
   "next.quotaSettingMobileTitle": "Show quota bar in the mobile Session list",
   "next.quotaSettingTitle": "Show provider quota bar",
   "next.quotaSourceAPI": "Source: provider quota service",
+  "next.quotaSourceCLI": "Source: native CLI quota command",
   "next.quotaSourceClaude": "Source: Claude Code status line",
   "next.quotaSourceCodex": "Source: Codex session quota record",
   "next.quotaStale": "Outdated",
