@@ -561,6 +561,10 @@ func (s *Server) routeTable() []route {
 				s.sessionOutputs(w, r, id, file)
 				return
 			}
+			if id, ok := sessionSubresourcePath(r, "graphify"); ok {
+				s.sessionGraphifyRoute(w, r, id)
+				return
+			}
 			if id, ok := infoPath(r); ok {
 				s.sessionInfoRoute(w, r, id)
 				return

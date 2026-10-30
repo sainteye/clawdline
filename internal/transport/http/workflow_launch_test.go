@@ -62,3 +62,52 @@ func TestWorkflowInfoUsesTheLaunchSnapshotAndPreservesKnownOff(t *testing.T) {
 		t.Fatalf("unreadable store became legacy/default: %+v", info.Workflow)
 	}
 }
+
+func TestWorkflowInfoCanReadTheProvenLaunchBeforeObserverBinding(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	snap, err := skills.ResolveWorkflow("poteto", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch, err := st.PrepareWorkflowLaunch(ctx, snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordWorkflowTerminal(ctx, launch.ID, "%1"); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: st}
+	for _, conversation := range []string{"", "not-yet-bound"} {
+		var info contract.SessionInfo
+		s.fillWorkflowInfo(ctx, session.Session{ID: "%1", ConversationID: conversation, WorkflowLaunchID: launch.ID}, &info)
+		if info.Workflow.State != "recorded" || info.Workflow.Digest != snap.Digest {
+			t.Fatalf("early info lost launch: %+v", info.Workflow)
+		}
+	}
+	if _, found, err := st.WorkflowSnapshotForConversation(ctx, "not-yet-bound"); err != nil || found {
+		t.Fatalf("GET unexpectedly bound a conversation: %v %v", found, err)
+	}
+	var info contract.SessionInfo
+	s.fillWorkflowInfo(ctx, session.Session{ID: "%other", WorkflowLaunchID: launch.ID}, &info)
+	if info.Workflow.State == "recorded" {
+		t.Fatal("a different terminal borrowed the launch")
+	}
+	for _, freshness := range []session.Freshness{session.FreshnessUnverified, session.FreshnessMissing} {
+		s.fillWorkflowInfo(ctx, session.Session{ID: "%1", WorkflowLaunchID: launch.ID, Observation: session.Observation{Freshness: freshness}}, &info)
+		if info.Workflow.State == "recorded" {
+			t.Fatal("a retained row was treated as live proof")
+		}
+	}
+	if err := st.FailWorkflowLaunch(ctx, launch.ID); err != nil {
+		t.Fatal(err)
+	}
+	s.fillWorkflowInfo(ctx, session.Session{ID: "%1", WorkflowLaunchID: launch.ID}, &info)
+	if info.Workflow.State == "recorded" {
+		t.Fatal("failed launch was shown as recorded")
+	}
+}

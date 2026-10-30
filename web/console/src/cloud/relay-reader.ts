@@ -910,6 +910,24 @@ export class RelayReader {
       if (method !== "GET") {
         return this.refuse(method, path, 501, "cloud_not_carried", this.notCarried(method, path))
       }
+      const graphProject = projectUnifyRoute(path, "graphify")
+      if (graphProject) {
+        this.only(url, path)
+        const client = this.connected()
+        if (!client._place) throw Object.assign(new Error("This console cannot resolve this Project."), { code: "cloud_not_carried", status: 501 })
+        const place = client._place(graphProject)
+        if (place.machine !== this.machine) throw Object.assign(new Error("This Project belongs to another machine."), { code: "cloud_project_machine_mismatch", status: 409 })
+        return await this.machineRead(init?.signal, method, path, "project-graphify", { project: place.id })
+      }
+      const graphSession = /^\/v1\/sessions\/([^/]+)\/graphify$/u.exec(path)
+      if (graphSession) {
+        this.only(url, path)
+        const id = decodeURIComponent(graphSession[1]!)
+        return await this.sessionRead(init?.signal, method, path, "session-graphify", client =>
+          this.options.fleetTarget?.() ? this.coherentSession(id, init?.signal, "session-graphify").then(target =>
+            client.readForGeneration?.(target, "session-graphify", {}, init?.signal ?? undefined)) :
+            client._read?.({ machine: this.machine, session: id }, "session-graphify", {}, "session-graphify"))
+      }
       const projectFile = projectFileRoute(path)
       if (projectFile) {
         this.only(url, path)

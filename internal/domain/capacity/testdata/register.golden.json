@@ -8009,6 +8009,102 @@
   },
   {
     "Register": "daemon",
+    "Name": "projects.graphify_links",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 900,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.ViewLinkLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_nodes",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 300,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.ViewNodeLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_request_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 15000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_text",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 120,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.ViewTextLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_zoom",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "projects.workspace_metadata_bytes",
     "Class": "buffer",
     "Unit": "bytes",

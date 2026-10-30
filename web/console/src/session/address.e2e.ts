@@ -94,6 +94,13 @@ function protocolRow() {
  return { ...row(ACP, "Gemini fixture", "owned", "native-fixture"), assistant: "antigravity", identity: "protocol", isClaude: false,
   evidence: "structured", state: protocolMenuScenario?.waiting ? "waiting" : "idle", menu: protocolMenuScenario?.waiting ? protocolMenu : null }
 }
+let graphifyScenario = "matched"
+let graphifyReads = 0
+const graphifyFixture = {state:"source_matched",reason:"graphify_sources_match",checked_at:1793300000,total_nodes:3,total_links:2,truncated:false,
+ nodes:[{id:"a",label:"Entry",file:"src/entry.ts",location:"L1",community:"0"},
+ {id:"b",label:"Worker",file:"src/worker.ts",location:"L12",community:"1"},
+ {id:"c",label:'<img src=x onerror="globalThis.graphExecuted=true">',file:"src/inert.ts",location:"L4",community:"1"}],
+ links:[{source:"a",target:"b",relation:"calls",confidence:"EXTRACTED"},{source:"b",target:"c",relation:"references",confidence:"INFERRED"}]}
 let currentClaudeModel = "claude-opus-5-5"
 
 // ---- the stand-in daemon
@@ -344,6 +351,12 @@ function daemon(): Server {
         json(res, 200, { ok: true, id: ACP, action: "keyed" })
       })
       return
+    }
+    if (/^\/v1\/(sessions|projects)\/[^/]+\/graphify$/.test(path)) {
+      graphifyReads++
+      if (!integrationSettings.graphify_enabled) return json(res,403,{error:{code:"graphify_disabled",message:"Graphify is off."}})
+      if (graphifyScenario === "failure") return json(res,503,{error:{code:"graphify_unavailable",message:"Graph unavailable."}})
+      return json(res,200,graphifyScenario === "missing" ? {...graphifyFixture,state:"missing",nodes:[],links:[],total_nodes:0,total_links:0} : {...graphifyFixture,state:graphifyScenario === "stale" ? "stale" : "source_matched",truncated:graphifyScenario === "large",total_nodes:graphifyScenario === "large" ? 1000 : 3})
     }
     const info = /^\/v1\/sessions\/([^/]+)\/info$/.exec(path)
     if (info && req.method === "GET") {
@@ -3163,7 +3176,7 @@ test("workflow settings explain both switches and persist independent changes on
         assert.equal(await tab.run(`document.querySelectorAll('.workflow-setting-help:not([hidden])').length`), 0)
         await tab.run(`document.querySelector('.workflow-info').focus()`)
         await tab.press("Enter")
-        assert.equal(await tab.run(`document.querySelector('.workflow-info').getAttribute("aria-expanded")`), "true")
+        await waitFor(`document.querySelector('.workflow-info').getAttribute("aria-expanded") === 'true'`)
         assert.ok(await tab.run(`document.getElementById('workflow-dispatch_full_permission-help').textContent.includes(${JSON.stringify(tag === "en" ? "Running tasks" : "執行中的任務")})`))
         await tab.run(`document.querySelector('${switches}').click()`)
         await waitFor(`document.querySelector('${switches}').getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
@@ -3439,6 +3452,7 @@ test("Station shows pinned workflow evidence with progressive details and an hon
         await tab.run(`location.hash=${JSON.stringify(FRAGMENT[TMUX].slice(1))}`)
         await tab.reload()
         await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Poteto')`)
+        await tab.shot(`workflow-${tag}-${sizeName}-station`)
         await tab.run(`document.getElementById('detail-info').click()`)
         await waitFor(`!!document.querySelector('#info-body .flow-session')`)
         assert.equal(await tab.run(`document.querySelector('.flow-session').open`), false)
@@ -3486,4 +3500,50 @@ test("a late workflow read cannot relabel the next Session", async () => {
     for (const reply of heldWorkflowInfo?.replies ?? []) reply()
     heldWorkflowInfo = null; workflowRecords = {}
   }
+})
+
+test("Graphify project viewer respects the toggle and renders safe graphs in both entry points and sizes", async () => {
+ for(const size of [DESK,PHONE]) for(const tag of ["en","zh-Hant"]) {
+  integrationSettings={workflow_skills_enabled:false,graphify_enabled:false};graphifyScenario="matched";graphifyReads=0
+  await inTab(size,async tab => {
+   const wait=async(expression:string) => {const end=Date.now()+6000;while(!await tab.run(expression)) {if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+   await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
+   await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(tag)})`);await tab.reload();await tab.until("Session ready",s=>s.open===TMUX)
+   await tab.run(`document.getElementById("detail-info").click()`);await wait(`!document.getElementById("info").hidden && !!document.querySelector("#info .sec")`)
+   await new Promise(r=>setTimeout(r,100));assert.equal(await tab.run(`!!document.querySelector("[data-graphify-open]")`),false);assert.equal(graphifyReads,0)
+   integrationSettings.graphify_enabled=true
+   await tab.run(`document.getElementById("info-refresh").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
+   await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector(".graphify-dialog[open] .graphify-node")`)
+   assert.equal(await tab.run(`document.querySelectorAll(".graphify-node").length`),3)
+   assert.equal(await tab.run(`/\\{(?:arg)?[0-3]\\}/.test(document.querySelector(".graphify-body").textContent)`),false)
+   assert.equal(await tab.run(`document.querySelectorAll(".graphify-node text").length`),3)
+   await tab.run(`document.querySelector('.graphify-node').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`)
+   await wait(`!!document.querySelector(".graphify-node-detail")`)
+   assert.ok(await tab.run(`document.querySelector(".graphify-node-detail").textContent.includes("Worker")`))
+   const dims=await tab.run(`({viewport:innerWidth,page:document.documentElement.scrollWidth,dialog:document.querySelector('.graphify-dialog').getBoundingClientRect().width,executed:globalThis.graphExecuted===true,active:document.querySelectorAll('.graphify-dialog img,.graphify-dialog script').length})`)
+   assert.ok(dims.page<=dims.viewport+1);assert.ok(dims.dialog<=dims.viewport);assert.equal(dims.executed,false);assert.equal(dims.active,0)
+   await tab.run(`(()=>{const input=document.querySelector('.graphify-controls input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'worker');input.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+   await wait(`document.querySelectorAll('.graphify-node').length===1`)
+   assert.equal(await tab.run(`document.querySelectorAll('.graphify-canvas line').length`),0)
+   await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+   await tab.go("/?graphify-project=1#page=projects");await wait(`!!document.querySelector('button.project-row[data-place-id]')`)
+   await tab.run(`document.querySelector('button.project-row[data-place-id]').click()`);await wait(`!!document.querySelector('.project-setup-dialog[open] .graphify-open')`)
+   await tab.run(`document.querySelector('.project-setup-dialog .graphify-open').click()`);await wait(`document.querySelectorAll('.graphify-dialog[open] .graphify-node').length===3`)
+   if(shots) {mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-graphify`)}
+   for(const state of ["stale","large","missing","failure","matched"]) {
+    graphifyScenario=state
+    await tab.run(`document.querySelector('.graphify-dialog footer button').click()`)
+    if(state==="failure")await wait(`!!document.querySelector('.graphify-dialog [role="alert"]')`)
+    else await wait(`!!document.querySelector('.graphify-dialog .graphify-status') && !document.querySelector('.graphify-body').matches('[aria-busy="true"]')`)
+    if(state==="stale")assert.ok(await tab.run(`!!document.querySelector('.graphify-status.is-stale')`))
+    if(state==="large")assert.ok(await tab.run(`!!document.querySelector('.graphify-notice')`))
+    if(state==="missing")assert.equal(await tab.run(`document.querySelectorAll('.graphify-node').length`),0)
+    if(state==="matched")assert.equal(await tab.run(`document.querySelectorAll('.graphify-node').length`),3)
+   }
+   await tab.run(`window.dispatchEvent(new CustomEvent('clawdline:graphify-setting',{detail:false}))`)
+   assert.equal(await tab.run(`document.querySelectorAll('.graphify-node').length`),0)
+   await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+   assert.equal(await tab.run(`!!document.querySelector('.project-setup-dialog .graphify-open')`),false)
+  })
+ }
 })

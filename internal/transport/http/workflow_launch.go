@@ -13,13 +13,27 @@ func (s *Server) prepareWorkflow(ctx context.Context, root, resume, parent strin
 }
 func (s *Server) fillWorkflowInfo(ctx context.Context, item session.Session, info *contract.SessionInfo) {
 	info.Workflow = &contract.SessionWorkflow{State: "legacy_unsnapshotted"}
-	if s.store == nil || item.ConversationID == "" {
+	if s.store == nil {
 		return
 	}
 	snap, found, err := s.store.WorkflowSnapshotForConversation(ctx, item.ConversationID)
 	if err != nil {
 		info.Workflow.State = "unavailable"
 		return
+	}
+	if !found && item.WorkflowLaunchID != "" && item.Observation.Freshness != session.FreshnessUnverified && item.Observation.Freshness != session.FreshnessMissing {
+		// Inventory readers are answered before background observers bind the
+		// conversation. A live process and its terminal receipt already prove
+		// which instructions launched; this read never creates a binding.
+		launch, exists, readErr := s.store.WorkflowLaunchByID(ctx, item.WorkflowLaunchID)
+		if readErr != nil {
+			info.Workflow.State = "unavailable"
+			return
+		}
+		if exists && launch.TerminalID == item.ID && launch.State != "failed" &&
+			(launch.ConversationID == "" || launch.ConversationID == item.ConversationID) {
+			snap, found = launch.Snapshot, true
+		}
 	}
 	if !found {
 		return

@@ -1,3 +1,5 @@
+import { readIntegrationSettings } from "../pages/settings/api.js"
+import { GRAPHIFY_SETTING, graphWord, openGraphify } from "../graphify/graphify.js"
 import type { ProjectLink, SessionInfo, SessionLimits, SessionModel } from "@clawdline/contract"
 import { MENU_FOLLOW } from "../session/menu-follow.js"
 import { client } from "../client.js"
@@ -82,6 +84,16 @@ const node = (id: string) => document.getElementById(id)
 const T = L.strings
 const esc = L.escapeHTML
 const fill = L.fillString
+
+let graphifyEnabled = false
+let graphifySettingRead = 0
+function loadGraphifySetting(id: string): void {
+  graphifyEnabled = false
+  const version = ++graphifySettingRead
+  void readIntegrationSettings().then(settings => {
+    if (version === graphifySettingRead && forId === id && !hidden()) {graphifyEnabled = settings.graphify_enabled === true; draw()}
+  }, () => { if (version === graphifySettingRead && forId === id) {graphifyEnabled = false; draw()} })
+}
 
 let forId: string | null = null // whose card this is
 let data: Facts | null = null // as the daemon sent it; null until an answer has arrived
@@ -553,6 +565,7 @@ function html(d: Facts): string {
   out += sec(++i, T.webInfoStatus, "", statusHTML(session() || (s as unknown as Row)))
   const role = roleHTML(session())
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
+  if (graphifyEnabled && s.cwd) out += sec(++i, graphWord("title"), "", '<button type="button" class="chip" data-graphify-open>' + esc(graphWord("open")) + "</button>")
   // Read-only pairings get no buttons rather than dead ones.
   if (host.writable() && (models.length || s.assistant === "codex")) {
     out += sec(++i, T.webInfoSwitchModel, "", s.assistant === "codex" ? codexModelHTML(models, current) : modelsHTML(models, current))
@@ -703,6 +716,7 @@ export const Info = {
     said("")
     overlay.hidden = false
     load(forId, force)
+    loadGraphifySetting(forId)
     focusModalContainer(node("info-sheet"))
   },
 
@@ -713,9 +727,12 @@ export const Info = {
   refresh(): void {
     if (hidden() || !forId || loading) return
     load(forId, true)
+    loadGraphifySetting(forId)
   },
 
   close(): void {
+    graphifySettingRead++
+    graphifyEnabled = false
     RoleDetail.close(false)
     const overlay = node("info")
     if (overlay) overlay.hidden = true
@@ -969,6 +986,10 @@ export function bindInfo(): () => void {
   const onBody = (ev: MouseEvent) => {
     const t = ev.target as Element | null
     if (!t || !t.closest) return
+    if (t.closest("button[data-graphify-open]") && graphifyEnabled && forId) {
+      const target = { kind: "session" as const, id: forId, label: data?.session.title }
+      Info.close(); openGraphify(target); return
+    }
     const picker = t.closest<HTMLButtonElement>("button[data-model-picker]")
     if (picker) {
       if (!picker.disabled) Info.openModelPicker()
@@ -1040,6 +1061,8 @@ export function bindInfo(): () => void {
   // The role section needs the catalog; a card open when it arrives draws again.
   void loadPersonas()
   const offPersonas = onPersonas(() => draw())
+  const onGraphifySetting = (event: Event) => {graphifySettingRead++;graphifyEnabled = (event as CustomEvent<boolean>).detail === true; draw()}
+  window.addEventListener(GRAPHIFY_SETTING, onGraphifySetting)
   overlay.addEventListener("click", onOverlay)
   sheet.addEventListener("click", onSheet)
   close.addEventListener("click", onClose)
@@ -1050,6 +1073,7 @@ export function bindInfo(): () => void {
   body.addEventListener("keydown", onKeyDown)
   return () => {
     offPersonas()
+    window.removeEventListener(GRAPHIFY_SETTING, onGraphifySetting)
     overlay.removeEventListener("click", onOverlay)
     sheet.removeEventListener("click", onSheet)
     close.removeEventListener("click", onClose)

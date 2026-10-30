@@ -78,3 +78,42 @@ func TestChildInheritsTheParentsWorkflowInsteadOfTheMachineChoice(t *testing.T) 
 		}
 	}
 }
+
+func TestChildInheritsBeforeTheInventoryObserverBindsItsParent(t *testing.T) {
+	for _, assistant := range []string{"claude", "codex"} {
+		b, ctx := newTestBroker(t)
+		dir := t.TempDir()
+		snap, err := skills.ResolveWorkflow("superpowers", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parent, err := b.Store.PrepareWorkflowLaunch(ctx, snap)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := b.Store.RecordWorkflowTerminal(ctx, parent.ID, "%1"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "poteto", "graphify_enabled": true}); err != nil {
+			t.Fatal(err)
+		}
+		service := workflowlaunch.Service{Store: b.Store, Dir: dir, Resolve: skills.ResolveWorkflow}
+		b.PrepareWorkflow = service.Prepare
+		b.IntegrationInstructions = func(context.Context, string) (string, error) {
+			t.Fatal("child consulted mutable legacy settings")
+			return "", nil
+		}
+		record, line := dispatchWith(t, b, "c2800022-0000-4000-8000-000000000022", assistant, nil, parent.ID)
+		if record.State == StateSpawnFailed || !strings.Contains(line, "Evidence-led debugging") || strings.Contains(line, "Poteto workflow") || strings.Contains(line, "ordinary source search") {
+			t.Fatalf("wrong child workflow: %+v %s", record, line)
+		}
+		matches := regexp.MustCompile(`clawdline-workflow:([A-Za-z0-9_-]{22})`).FindStringSubmatch(line)
+		if len(matches) != 2 {
+			t.Fatalf("no durable launch identity: %s", line)
+		}
+		launch, found, err := b.Store.WorkflowLaunchByID(ctx, matches[1])
+		if err != nil || !found || launch.SnapshotID != snap.Digest || launch.TerminalID != record.ChildTerminalID {
+			t.Fatalf("child snapshot/terminal receipt mismatch: %+v %v", launch, err)
+		}
+	}
+}

@@ -62,6 +62,11 @@ func LaunchInstructions(ctx context.Context, projectRoot string) (string, error)
 // Inspect performs no writes and launches no process. Unknown formats, unsafe
 // paths, incomplete coverage and exhausted budgets all refuse graph use.
 func Inspect(ctx context.Context, projectRoot string) (Status, error) {
+	return inspect(ctx, projectRoot, nil)
+}
+
+// inspect can retain the exact graph bytes whose manifest was checked.
+func inspect(ctx context.Context, projectRoot string, graphData *[]byte) (Status, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(CheckSecondsLimit)*time.Second)
 	defer cancel()
 	s := Status{State: "unverified", Reason: "graphify_unverified"}
@@ -146,6 +151,9 @@ func Inspect(ctx context.Context, projectRoot string) (Status, error) {
 	if json.Unmarshal(graphBytes, &graph) != nil || graph.Graph.Schema != 1 || graph.Nodes == nil || graph.Links == nil {
 		s.Reason = "graphify_graph_format_unverified"
 		return s, nil
+	}
+	if graphData != nil {
+		*graphData = graphBytes
 	}
 	manifestBytes, err := read("graphify-out/manifest.json", MaxMetadataBytes)
 	if err != nil {

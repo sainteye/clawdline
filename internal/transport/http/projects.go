@@ -299,6 +299,10 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 	for i, part := range parts {
 		parts[i] = decodeSegment(part)
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "graphify" {
+		s.projectGraphifyRoute(w, r, parts[0])
+		return
+	}
 	if len(parts) >= 2 && parts[0] != "" && parts[1] == "files" && len(parts) <= 3 {
 		id := ""
 		if len(parts) == 3 {

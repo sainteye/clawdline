@@ -3503,6 +3503,32 @@ export interface GitSnapshot {
   head: string
 }
 
+export interface GraphifyLink {
+  confidence: string
+  relation: string
+  source: string
+  target: string
+}
+
+export interface GraphifyNode {
+  community: string
+  file: string
+  id: string
+  label: string
+  location: string
+}
+
+export interface GraphifyView {
+  checked_at: number
+  links: GraphifyLink[]
+  nodes: GraphifyNode[]
+  reason: string
+  state: string
+  total_links: number
+  total_nodes: number
+  truncated: boolean
+}
+
 /**
  * GET /v1/health, open without a token: that this daemon is alive, which
  * implementation it is, and the two answers a page needs before it can be let in
