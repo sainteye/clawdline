@@ -17,7 +17,8 @@ func (e *UpdateDecodeError) Error() string { return "antigravity_acp_" + e.Code 
 // SessionUpdate is one notification, in input order. The owner appends Text for
 // message/thought chunks separately; the decoder neither coalesces nor replays.
 // Ignored updates are recognizable but must not become chat or provider errors.
-// No raw input, output, extension metadata or billing counters are retained.
+// Tool output and explicitly understood input fields are retained for display;
+// arbitrary input, extension metadata and billing counters are not retained.
 type SessionUpdate struct {
 	SessionID string
 	Kind      string
@@ -40,7 +41,19 @@ type ToolCallDelta struct {
 	Status     *string
 	Content    *[]ToolUpdateContent
 	Locations  *[]ToolUpdateLocation
+	Output     *string
+	Input      *ToolInput
+	AgentID    string
 }
+
+// ToolInput is display data, never an instruction or a file-read capability.
+type ToolInput struct {
+	Path, Command, Query, Summary string
+	StartLine, EndLine            *int64
+	Delegates                     []ToolDelegate
+}
+
+type ToolDelegate struct{ Name, Model string }
 
 type ToolUpdateLocation struct {
 	Path string
@@ -150,6 +163,7 @@ func DecodeSessionUpdate(message []byte, expectedSession string) (SessionUpdate,
 			return fail("invalid_update")
 		}
 		out.Tool = tool
+		tool.AgentID = toolAgentID(tool.ToolCallID, expectedSession)
 	case "usage_update":
 		used, usedOK := updateInteger(u["used"])
 		size, sizeOK := updateInteger(u["size"])
@@ -173,6 +187,15 @@ func updateTool(u map[string]any, initial bool) (*ToolCallDelta, bool) {
 		return nil, false
 	}
 	out := &ToolCallDelta{ToolCallID: id}
+	if output := u["rawOutput"]; output != nil {
+		text, ok := output.(string)
+		if !ok {
+			encoded, _ := json.MarshalIndent(output, "", "  ")
+			text = string(encoded)
+		}
+		out.Output = &text
+	}
+	out.Input = toolInput(u["rawInput"])
 	for _, field := range []struct {
 		key string
 		dst **string

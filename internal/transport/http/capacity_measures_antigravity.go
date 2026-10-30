@@ -84,13 +84,6 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 			}
 			return capacity.Reading{Known: true, Note: "history connection pool is inactive"}
 		},
-		"antigravity.acp_sessions": func() capacity.Reading {
-			var n int
-			if h := s.antigravitySessions.Load(); h != nil {
-				n, _ = h.Stats()
-			}
-			return capacity.Reading{Known: true, Used: int64(n)}
-		},
 		"antigravity.acp_view_bytes": func() capacity.Reading {
 			var n int
 			if h := s.antigravitySessions.Load(); h != nil {

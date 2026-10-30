@@ -124,3 +124,14 @@ Traditional Chinese found that their context, consent and first-input explanatio
 remain accurate. The new account quota reader sends only the fixed `/usage`
 metadata command with no launch instructions, role snapshot or model generation.
 The ACP excerpt and reviewed source receipts follow the changed implementation.
+
+
+The Gemini normal-use audit removes the pilot's two-process count cap and admits
+an offered model selection before publishing a new owned row. It also connects
+successful native turns to the existing opt-in naming flow, using the configured
+Claude/Codex namer and scrubbed context rather than injecting another Gemini
+message. Review of both language versions of the managed-hook and owned-ACP
+cards confirms that first-input resources, role snapshots, language, consent
+and native tool permissions remain described accurately. Naming stays off when
+previously off; it does not establish skill use or loaded-context evidence.
+The reviewed source receipt and excerpt follow the revised launch code.

@@ -27,6 +27,9 @@ type Options struct {
 	Args                   []string
 	// NewSessionMode applies only to newly created conversations, never resume.
 	NewSessionMode string
+	// TurnComplete runs outside conversation locks after a successful model turn.
+	// It shares the host lifetime and job; callers must not create a work queue.
+	TurnComplete func(context.Context, session.Session)
 }
 
 type Host struct {
@@ -42,42 +45,43 @@ type Host struct {
 }
 
 type conversation struct {
-	mu               sync.Mutex
-	client           *antigravityprocess.Client
-	row              session.Session
-	entries          []contract.TranscriptEntry
-	tools            map[string]int
-	revision         uint64
-	omitted          int
-	bytes            int
-	busy             bool
-	stopping         bool
-	textIndex        int
-	writeGate        chan struct{}
-	model            string
-	models           []contract.SessionModel
-	effort           string
-	efforts          []string
-	structuredConfig bool
-	quota            *contract.SessionLimits
-	contextKnown     bool
-	context          antigravityacp.ContextUsage
-	store            *historyStore
-	profile          string
-	generation       string
-	ordinal          int64
-	textOrdinal      int64
-	textRole         string
-	uncertain        bool
-	hidden           bool
-	staging          bool
-	replaying        bool
-	storeErr         error
-	permission       *antigravityprocess.PermissionRequest
-	launchContext    LaunchContext
-	injected         *injectedTurn
-	replaySawUser    bool
-	noticeReads      map[string]bool
+	mu                sync.Mutex
+	client            *antigravityprocess.Client
+	row               session.Session
+	entries           []contract.TranscriptEntry
+	tools             map[string]int
+	revision          uint64
+	omitted           int
+	bytes             int
+	busy              bool
+	stopping          bool
+	textIndex         int
+	writeGate         chan struct{}
+	model             string
+	models            []contract.SessionModel
+	effort            string
+	efforts           []string
+	structuredConfig  bool
+	quota             *contract.SessionLimits
+	contextKnown      bool
+	context           antigravityacp.ContextUsage
+	store             *historyStore
+	profile           string
+	generation        string
+	ordinal           int64
+	textOrdinal       int64
+	textRole          string
+	uncertain         bool
+	hidden            bool
+	staging           bool
+	replaying         bool
+	storeErr          error
+	permission        *antigravityprocess.PermissionRequest
+	launchContext     LaunchContext
+	injected          *injectedTurn
+	replaySawUser     bool
+	noticeReads       map[string]bool
+	autoNameAttempted bool
 }
 
 type Error struct {
@@ -118,6 +122,12 @@ func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 }
 
 func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launch LaunchContext) (session.Session, error) {
+	return h.OpenWithModel(ctx, req, launch, "")
+}
+
+// OpenWithModel selects an offered native model before publishing ownership.
+// No prompt is sent, and a failed ACK closes only this new private process.
+func (h *Host) OpenWithModel(ctx context.Context, req ports.OpenRequest, launch LaunchContext, model string) (session.Session, error) {
 	if err := launch.validate(); err != nil {
 		return session.Session{}, err
 	}
@@ -126,7 +136,7 @@ func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launc
 	}
 	req.Cwd = filepath.Clean(req.Cwd)
 	h.mu.Lock()
-	if h.closed || h.ctx.Err() != nil || h.opening || h.activeLocked() >= MaxSessions {
+	if h.closed || h.ctx.Err() != nil || h.opening {
 		h.mu.Unlock()
 		return session.Session{}, refusal("unavailable")
 	}
@@ -168,15 +178,20 @@ func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launc
 	if err := selectInitialMode(ctx, client, created, h.opts.NewSessionMode); err != nil {
 		return session.Session{}, err
 	}
+	c.mu.Lock()
+	err = c.readMetadata(created, true)
+	c.mu.Unlock()
+	if err != nil {
+		return session.Session{}, err
+	}
+	if err := selectInitialModel(ctx, client, c, model); err != nil {
+		return session.Session{}, err
+	}
 	if err := publishIdentity(identityPath, client.SessionID()); err != nil {
 		return session.Session{}, err
 	}
 	now := time.Now()
 	c.mu.Lock()
-	if err := c.readMetadata(created, true); err != nil {
-		c.mu.Unlock()
-		return session.Session{}, err
-	}
 	c.row = session.Session{ID: ownedID, Persona: launch.Persona, SquadLaunchID: launch.SquadLaunchID, Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
 	if err := c.saveState(); err != nil {
 		c.mu.Unlock()
@@ -270,10 +285,10 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		return err
 	}
 	if text == "/model" || strings.HasPrefix(text, "/model ") {
-		return h.selectModel(ctx, c, strings.TrimPrefix(text, "/model "), before)
+		return h.selectModel(ctx, c, strings.TrimSpace(strings.TrimPrefix(text, "/model ")), before)
 	}
 	if text == "/effort" || strings.HasPrefix(text, "/effort ") {
-		return h.selectConfig(ctx, c, "thinking_level", strings.TrimPrefix(text, "/effort "), before)
+		return h.selectConfig(ctx, c, "thinking_level", strings.TrimSpace(strings.TrimPrefix(text, "/effort ")), before)
 	}
 	h.mu.Lock()
 	if h.closed || h.ctx.Err() != nil {
@@ -311,6 +326,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 	go func() {
 		defer h.jobs.Done()
 		defer close(done)
+		notify := false
 		defer func() {
 			c.mu.Lock()
 			c.busy = false
@@ -318,7 +334,11 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 				close(c.writeGate)
 				c.writeGate = nil
 			}
+			row := c.row
 			c.mu.Unlock()
+			if notify && h.ctx.Err() == nil && h.opts.TurnComplete != nil {
+				h.opts.TurnComplete(h.ctx, row)
+			}
 		}()
 		if ctx.Err() != nil {
 			outcome = refusal("cancelled")
@@ -403,6 +423,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		if result.StopReason != "end_turn" && result.StopReason != "cancelled" {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_did_not_end_normally", At: time.Now().Unix()})
 		}
+		notify = result.StopReason == "end_turn" && c.storeErr == nil
 	}()
 	select {
 	case <-accepted:

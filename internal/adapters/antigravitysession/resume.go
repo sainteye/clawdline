@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,19 +17,6 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
-
-// activeLocked counts processes, never saved history rows. Caller holds h.mu.
-func (h *Host) activeLocked() int {
-	n := 0
-	for _, c := range h.rows {
-		c.mu.Lock()
-		if c.client != nil {
-			n++
-		}
-		c.mu.Unlock()
-	}
-	return n
-}
 
 // Resume restores only a locally owned exact native identity under its original
 // cwd/profile. It never sends a prompt, discovers credentials, or creates a
@@ -90,7 +78,7 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 		h.mu.Unlock()
 		return row, err
 	}
-	if h.opening || h.activeOtherLocked(c) >= MaxSessions {
+	if h.opening {
 		c.mu.Unlock()
 		h.mu.Unlock()
 		return session.Session{}, refusal("unavailable")
@@ -209,6 +197,8 @@ func (h *Host) restore(ctx context.Context, cwd, conversationID string, allowImp
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	stage.row.PID = client.PID()
+	stage.autoNameAttempted = c.autoNameAttempted
+	stage.row.Rungs.Thread = c.row.Rungs.Thread
 	stage.row.State = session.StateIdle
 	stage.row.Observation = session.Observation{ObservedAt: time.Now(), Provenance: "owned", Freshness: session.FreshnessCurrent}
 	stage.hidden = false
@@ -316,22 +306,6 @@ func verifyNativeIdentity(raw json.RawMessage, cwd, id string) (string, string, 
 		title = row.Title
 	}
 	return title, page.NextCursor, found, nil
-}
-
-// c is already locked when excluding it from the process capacity count.
-func (h *Host) activeOtherLocked(exclude *conversation) int {
-	n := 0
-	for _, c := range h.rows {
-		if c == exclude {
-			continue
-		}
-		c.mu.Lock()
-		if c.client != nil {
-			n++
-		}
-		c.mu.Unlock()
-	}
-	return n
 }
 
 func (c *conversation) project(u antigravityacp.SessionUpdate) (err error) {
@@ -446,6 +420,10 @@ func (c *conversation) project(u antigravityacp.SessionUpdate) (err error) {
 }
 
 func applyToolDelta(e *contract.TranscriptEntry, d *antigravityacp.ToolCallDelta) {
+	e.Activity.ToolCallID = d.ToolCallID
+	if d.AgentID != "" {
+		e.Activity.AgentID = d.AgentID
+	}
 	if d.Title != nil {
 		e.Text = *d.Title
 		e.Activity.Title = *d.Title
@@ -462,16 +440,88 @@ func applyToolDelta(e *contract.TranscriptEntry, d *antigravityacp.ToolCallDelta
 	if d.Locations != nil {
 		e.Activity.Actions = []contract.TranscriptAction{}
 		for _, v := range *d.Locations {
-			e.Activity.Actions = append(e.Activity.Actions, contract.TranscriptAction{Kind: "read", Path: v.Path})
+			a := contract.TranscriptAction{Kind: "read", Path: v.Path}
+			if e.Tool == "search" {
+				a.Kind = "search"
+			}
+			if v.Line != nil && *v.Line < math.MaxInt64 {
+				a.Line = *v.Line + 1
+			}
+			e.Activity.Actions = append(e.Activity.Actions, a)
 		}
+	}
+	if input := d.Input; input != nil {
+		if input.Command != "" && (e.Activity.Title == "" || strings.HasPrefix(e.Activity.Title, "Running ")) {
+			e.Activity.Title, e.Text = input.Command, input.Command
+		}
+		if input.Summary != "" && strings.HasPrefix(e.Activity.Title, "Running ") {
+			e.Activity.Title, e.Text = input.Summary, input.Summary
+		}
+		if input.Path != "" && len(e.Activity.Actions) == 0 {
+			e.Activity.Actions = []contract.TranscriptAction{{Kind: "read", Path: input.Path}}
+		}
+		if input.Query != "" && len(e.Activity.Actions) == 0 {
+			e.Activity.Actions = []contract.TranscriptAction{{Kind: "search", Query: input.Query}}
+		}
+		for i := range e.Activity.Actions {
+			a := &e.Activity.Actions[i]
+			if e.Tool == "search" {
+				a.Kind = "search"
+				if input.Query != "" {
+					a.Query = input.Query
+				}
+			}
+			if input.Path == "" || a.Path == input.Path {
+				if input.StartLine != nil {
+					a.Line = *input.StartLine
+				}
+				if input.EndLine != nil {
+					a.EndLine = *input.EndLine
+				}
+			}
+		}
+		if input.Delegates != nil {
+			e.Activity.Delegates = []contract.TranscriptDelegate{}
+			for _, v := range input.Delegates {
+				e.Activity.Delegates = append(e.Activity.Delegates, contract.TranscriptDelegate{Name: v.Name, Model: v.Model})
+			}
+		}
+	}
+	if d.Output != nil {
+		e.Activity.Result = *d.Output
+		e.Activity.ResultKnown = true
 	}
 	if d.Content != nil {
 		parts := []string{}
+		changes := []contract.TranscriptFileChange{}
 		for _, v := range *d.Content {
 			if v.Content != nil && v.Content.Text != nil {
 				parts = append(parts, *v.Content.Text)
 			}
+			if v.Content != nil && v.Content.Resource != nil && v.Content.Resource.Text != nil {
+				parts = append(parts, *v.Content.Resource.Text)
+			}
+			if v.Content != nil && v.Content.URI != nil {
+				parts = append(parts, *v.Content.URI)
+			}
+			if v.TerminalID != nil {
+				parts = append(parts, *v.TerminalID)
+			}
+			if v.Type == "diff" && v.Path != nil && v.NewText != nil {
+				kind := "update"
+				if v.OldText == nil {
+					kind = "add"
+				}
+				changes = append(changes, contract.TranscriptFileChange{Kind: kind, Path: *v.Path, Content: *v.NewText})
+			}
 		}
-		e.Activity.Result = strings.Join(parts, "\n")
+		// rawOutput can include exit codes and other fields absent from the
+		// renderable projection. Keep that complete native result when supplied.
+		// Empty/unsupported content never erases a previously retained result.
+		if len(parts) > 0 && d.Output == nil {
+			e.Activity.Result = strings.Join(parts, "\n")
+			e.Activity.ResultKnown = true
+		}
+		e.FileChanges = changes
 	}
 }

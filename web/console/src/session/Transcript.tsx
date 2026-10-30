@@ -72,6 +72,7 @@ import "./history.css"
 import { VideoCards } from "./VideoCards.js"
 import { ToolResult } from "./ToolResult.js"
 import { AsyncQuestion } from "./AsyncQuestion.js"
+import { NativeToolRun, nativeRunLength } from "./NativeToolActivity.js"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -122,6 +123,7 @@ interface Question {
 type Entry = TranscriptEntry & { ask?: Question[] | null }
 
 type Block =
+  | { kind: "native"; rows: Entry[] }
   | { kind: "entry"; rows: Entry[] }
   | { kind: "run"; rows: Entry[]; live: boolean }
   | { kind: "explored"; rows: Entry[] }
@@ -706,7 +708,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
 /** The original conversation renderer, shared by local and pinned Cloud reads. */
 function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boolean, newestFirst: boolean,
   view: View, pictures?: NonNullable<TranscriptEntry["artifacts"]>): ReactElement[] {
-  const blocks = blocksOf(entries.map((entry) => ({ ...entry })).filter(worthDrawing), working)
+  const blocks = blocksOf(entries.map((entry) => ({ ...entry })).filter(worthDrawing), working, view.assistant)
   // Both local and pinned Cloud readers resolve the same artifact slots through
   // their respective picture source after the shared entry markup is drawn.
   if (pictures) {
@@ -721,6 +723,7 @@ function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boo
   const drawn = blocks.map((block) => {
     const start = at
     at += block.rows.length
+    if (block.kind === "native") return [<NativeToolRun key={"native:"+(block.rows[0].id || block.rows[0].activity?.toolCallID || start)} entries={block.rows} sessionID={view.sessionID}/>]
     if (block.kind === "run") return runHTML(view, block.rows, block.live, start)
     if (block.kind === "explored") return exploredRunHTML(view, block.rows, start)
     if (block.kind === "ask") return [askHTML(view, block.rows[0], start)]
@@ -1144,7 +1147,7 @@ function worthDrawing(e: Entry): boolean {
  * One message, one question, one structured card, or one whole run of tool
  * calls per block; the last run is live while the session works.
  */
-function blocksOf(entries: Entry[], working: boolean): Block[] {
+function blocksOf(entries: Entry[], working: boolean, assistant?: string): Block[] {
   const blocks: Block[] = []
   let liveAt = -1
   let i = 0
@@ -1154,6 +1157,12 @@ function blocksOf(entries: Entry[], working: boolean): Block[] {
     if (entries[i].role !== "tool") {
       blocks.push({ kind: "entry", rows: [entries[i]] })
       i += 1
+      continue
+    }
+    if (assistant === "antigravity" && activityOf(entries[i])) {
+      const length = nativeRunLength(entries, i)
+      blocks.push({kind:"native",rows:entries.slice(i,i+length)})
+      i+=length
       continue
     }
     // Adjacent Explored items read as one compact run.

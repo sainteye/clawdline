@@ -427,16 +427,12 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 		return
 	}
 	if assistant == projects.AssistantAntigravity {
-		if model != "" {
-			writePlaceRefusal(w, http.StatusConflict, "provider_operation_unsupported", "Select the Gemini model after opening the conversation.", "Gemini")
-			return
-		}
-		made, err := s.openOwnedAntigravity(ctx, starter, place, persona)
+		made, err := s.openOwnedAntigravity(ctx, starter, place, persona, model)
 		if err != nil {
 			writePlaceRefusal(w, http.StatusConflict, "provider_start_failed", err.Error(), "Gemini")
 			return
 		}
-		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Persona: made.Persona, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})
+		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Model: model, Persona: made.Persona, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})
 		return
 	}
 	if assistantNeedsSignIn(ctx, assistant) {

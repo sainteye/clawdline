@@ -9493,9 +9493,19 @@ export interface TranscriptAction {
   command?: string
 
   /**
+   * Inclusive one-based last source line, when supplied.
+   */
+  endLine?: number
+
+  /**
    * read or search.
    */
   kind: string
+
+  /**
+   * One-based first source line, when supplied.
+   */
+  line?: number
   name?: string
   path?: string
   query?: string
@@ -9509,6 +9519,13 @@ export interface TranscriptActivity {
   actions: TranscriptAction[]
 
   /**
+   * Explicit native trajectory namespace for a tool from another agent; absent when
+   * its owner was not supplied.
+   */
+  agentID?: string
+  delegates?: TranscriptDelegate[]
+
+  /**
    * How long the item took. -1 when the record did not say, which the Swift app
    * sends as an absent key; 0 is a real, sub-millisecond duration and is drawn as
    * one.
@@ -9517,15 +9534,26 @@ export interface TranscriptActivity {
   kind: string
 
   /**
-   * A called tool's result text, cut at 4,000 characters.
+   * A called tool result. Owned ACP retains complete received text and pages large
+   * bodies on demand; older readers may provide a clipped result.
    */
   result?: string
+
+  /**
+   * True when a native result was received, including an explicitly empty result.
+   */
+  resultKnown?: boolean
 
   /**
    * inProgress, pending, completed or failed.
    */
   status?: string
   title?: string
+
+  /**
+   * Native tool identity, stable across partial updates.
+   */
+  toolCallID?: string
   toolResult?: TranscriptToolResult
 }
 
@@ -9533,6 +9561,11 @@ export interface TranscriptChangeStats {
   additions: number
   deletions: number
   lineCount: number
+}
+
+export interface TranscriptDelegate {
+  model?: string
+  name: string
 }
 
 /**

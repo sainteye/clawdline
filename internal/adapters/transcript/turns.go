@@ -1972,6 +1972,12 @@ func decodeImageRef(o object) (ImageRef, bool) {
 		Width: a.Width, Height: a.Height, ExpiresAt: a.ExpiresAt}, true
 }
 
+// AssistantImageMarkers shares the existing fenced-code-aware image syntax
+// with structured native readers. It neither reads files nor resolves IDs.
+func AssistantImageMarkers(raw string) (string, []string) {
+	return readImageMarkers(raw, artifacts.ProductionPolicy.MaxImagesPerMessage)
+}
+
 // assistantEntry is `Transcript.assistantEntry`: one assistant turn with the
 // image markers it honoured lifted out of its prose. A turn that was nothing
 // but a picture is not empty — the marker was the whole message.

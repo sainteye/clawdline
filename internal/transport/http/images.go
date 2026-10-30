@@ -173,8 +173,16 @@ func (s *Server) imagesRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		outputCWD, outputConversation = item.CWD, outputKey(item)
-		record := s.recordPath(item)
-		offset, ok := recordEnd(record)
+		record, offset, ok := "", int64(0), false
+		if ownedGeminiImages(item) {
+			if h := s.antigravitySessions.Load(); h != nil {
+				record, offset, err = h.ImageAddress(ctx, item)
+				ok = err == nil
+			}
+		} else {
+			record = s.recordPath(item)
+			offset, ok = recordEnd(record)
+		}
 		if !ok {
 			writeRefusal(w, http.StatusConflict, "session_has_no_record",
 				"That Session has no conversation record yet, so there is no reply to show the pictures under.")

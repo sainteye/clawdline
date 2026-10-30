@@ -127,8 +127,22 @@ func compactEntryDetails(row contract.TranscriptEntry, e transcript.Entry, scope
 
 func (s *Server) transcriptEntryDetail(w http.ResponseWriter, r *http.Request, id string, item session.Session, view string) {
 	parts := strings.Split(view, ":")
-	if len(parts) != 3 || parts[0] != "entry-v1" && parts[0] != "entry-v1z" || len(parts[2]) != sha256.Size*2 || item.Assistant != session.AssistantCodex && item.Assistant != session.AssistantClaude {
+	owned := item.Assistant == session.AssistantAntigravity && item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol
+	if len(parts) != 3 || parts[0] != "entry-v1" && parts[0] != "entry-v1z" || len(parts[2]) != sha256.Size*2 || !owned && item.Assistant != session.AssistantCodex && item.Assistant != session.AssistantClaude {
 		writeRefusal(w, 400, "invalid_tool_result", "name a stored tool result and representation")
+		return
+	}
+	if owned {
+		if h := s.antigravitySessions.Load(); h != nil {
+			if row, err := h.ToolEntry(r.Context(), item, parts[1]+":"+parts[2]); err == nil {
+				if !s.admitPinnedTarget(w, r, id) {
+					return
+				}
+				writeJSON(w, map[string]any{"reference": parts[1] + ":" + parts[2], "entry": row})
+				return
+			}
+		}
+		writeRefusal(w, 409, "tool_result_stale", "the stored tool result changed or is unavailable; read the conversation again")
 		return
 	}
 	offset, err := strconv.ParseInt(parts[1], 10, 64)

@@ -7863,8 +7863,14 @@ var TerminalStatusValues = []TerminalStatus{TerminalStatusRunning, TerminalStatu
 type TranscriptAction struct {
 	Command string `json:"command,omitempty"`
 
+	// Inclusive one-based last source line, when supplied.
+	EndLine int64 `json:"endLine,omitempty"`
+
 	// read or search.
-	Kind  string `json:"kind"`
+	Kind string `json:"kind"`
+
+	// One-based first source line, when supplied.
+	Line  int64  `json:"line,omitempty"`
 	Name  string `json:"name,omitempty"`
 	Path  string `json:"path,omitempty"`
 	Query string `json:"query,omitempty"`
@@ -7875,18 +7881,30 @@ type TranscriptAction struct {
 type TranscriptActivity struct {
 	Actions []TranscriptAction `json:"actions"`
 
+	// Explicit native trajectory namespace for a tool from another agent; absent when
+	// its owner was not supplied.
+	AgentID   string               `json:"agentID,omitempty"`
+	Delegates []TranscriptDelegate `json:"delegates,omitempty"`
+
 	// How long the item took. -1 when the record did not say, which the Swift app
 	// sends as an absent key; 0 is a real, sub-millisecond duration and is drawn as
 	// one.
 	DurationMs int64  `json:"durationMs"`
 	Kind       string `json:"kind"`
 
-	// A called tool's result text, cut at 4,000 characters.
+	// A called tool result. Owned ACP retains complete received text and pages large
+	// bodies on demand; older readers may provide a clipped result.
 	Result string `json:"result,omitempty"`
 
+	// True when a native result was received, including an explicitly empty result.
+	ResultKnown bool `json:"resultKnown,omitempty"`
+
 	// inProgress, pending, completed or failed.
-	Status     string                `json:"status,omitempty"`
-	Title      string                `json:"title,omitempty"`
+	Status string `json:"status,omitempty"`
+	Title  string `json:"title,omitempty"`
+
+	// Native tool identity, stable across partial updates.
+	ToolCallID string                `json:"toolCallID,omitempty"`
 	ToolResult *TranscriptToolResult `json:"toolResult,omitempty"`
 }
 
@@ -7894,6 +7912,11 @@ type TranscriptChangeStats struct {
 	Additions int64 `json:"additions"`
 	Deletions int64 `json:"deletions"`
 	LineCount int64 `json:"lineCount"`
+}
+
+type TranscriptDelegate struct {
+	Model string `json:"model,omitempty"`
+	Name  string `json:"name"`
 }
 
 // Opt-in delta-v1 reply. Apply only to baseVersion of the exact pinned Session;

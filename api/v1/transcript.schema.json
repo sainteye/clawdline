@@ -123,9 +123,13 @@
       "required": ["actions", "durationMs", "kind"],
       "properties": {
         "actions": { "type": "array", "items": { "$ref": "#/$defs/TranscriptAction" } },
+        "agentID": { "type": "string", "description": "Explicit native trajectory namespace for a tool from another agent; absent when its owner was not supplied." },
+        "toolCallID": { "type": "string", "description": "Native tool identity, stable across partial updates." },
+        "delegates": { "type": "array", "items": { "$ref": "#/$defs/TranscriptDelegate" } },
+        "resultKnown": { "type": "boolean", "description": "True when a native result was received, including an explicitly empty result." },
         "durationMs": { "description": "How long the item took. -1 when the record did not say, which the Swift app sends as an absent key; 0 is a real, sub-millisecond duration and is drawn as one.", "type": "integer" },
         "kind": { "type": "string" },
-        "result": { "description": "A called tool's result text, cut at 4,000 characters.", "type": "string" },
+        "result": { "description": "A called tool result. Owned ACP retains complete received text and pages large bodies on demand; older readers may provide a clipped result.", "type": "string" },
         "status": { "description": "inProgress, pending, completed or failed.", "type": "string" },
         "title": { "type": "string" },
         "toolResult": { "$ref": "#/$defs/TranscriptToolResult" }
@@ -172,12 +176,18 @@
         }
       }
     },
+    "TranscriptDelegate": {
+      "type": "object", "additionalProperties": false, "required": ["name"],
+      "properties": { "name": { "type": "string" }, "model": { "type": "string" } }
+    },
     "TranscriptAction": {
       "type": "object",
       "additionalProperties": false,
       "required": ["kind"],
       "properties": {
         "command": { "type": "string" },
+        "line": { "type": "integer", "description": "One-based first source line, when supplied." },
+        "endLine": { "type": "integer", "description": "Inclusive one-based last source line, when supplied." },
         "kind": { "description": "read or search.", "type": "string" },
         "name": { "type": "string" },
         "path": { "type": "string" },

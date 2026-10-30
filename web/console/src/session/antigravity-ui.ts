@@ -39,8 +39,10 @@ export function assistantAdmits(facts: AssistantFacts | null | undefined, operat
 /** Terminal controls are not chat prompts. Absolute paths remain ordinary text.
  * Command names follow the official Antigravity CLI command reference.
  */
-export function antigravitySlashDraft(assistant: string | undefined, text: string): boolean {
+export function antigravitySlashDraft(assistant: string | undefined, text: string, protocolOwned = false): boolean {
   const draft = text.trimStart()
+  // These are metadata operations implemented by the owned Host itself.
+  if (protocolOwned && /^\/(?:model|effort) +\S[^\r\n]*$/.test(draft)) return false
   return assistant === "antigravity" && (draft.trim() === "/" ||
     /^\/(?:btw|changelog|clear|codesearch|cs|search|compact|config|settings|context|diff|effort|exit|quit|fast|feedback|fork|branch|goal|help|hooks|keybindings|learn|logout|mcp|model|open|permissions|planning|plugin|plugins|rename|remote-control|resume|switch|conversation|rewind|undo|schedule|skills|statusline|tasks|teamwork-preview|teamwork|title|usage|quota|voice|record)(?:\s|$)/.test(draft))
 }

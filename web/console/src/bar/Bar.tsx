@@ -460,7 +460,7 @@ export default function Bar() {
       say(words.nothingToSend, true)
       return
     }
-    if (antigravitySlashDraft(target.assistant, body)) {
+    if (antigravitySlashDraft(target.assistant, body, assistantProtocolOwned(target))) {
       say(catalogWord("antigravity", "slashDraft"), true)
       return
     }

@@ -73,7 +73,9 @@ func (h *Host) NativePast(ctx context.Context, cwd, cursor string) ([]Past, stri
 			if c.row.CWD == cwd && c.row.ConversationID == row.ID {
 				row.At = c.row.Activity.At
 				row.Live = !c.hidden && c.client != nil && c.client.Err() == nil
-				if c.row.Label != "" {
+				if c.row.Rungs.Thread != "" {
+					row.Title = c.row.Rungs.Thread
+				} else if c.row.Label != "" {
 					row.Title = c.row.Label
 				}
 			}

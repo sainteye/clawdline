@@ -223,7 +223,8 @@ func (s *Server) transcriptPageBeforeProjection(id string, item session.Session,
 			if len(revision) > 0 {
 				held = revision[0]
 			}
-			if snapshot, err := h.TranscriptPage(context.Background(), item, limit, before, held); err == nil {
+			if snapshot, err := h.TranscriptPage(context.Background(), item, limit, before, held, lazy); err == nil {
+				s.showOwnedPictures(context.Background(), h, item, snapshot.Entries, time.Now())
 				return snapshot
 			} else {
 				var typed *antigravitysession.Error

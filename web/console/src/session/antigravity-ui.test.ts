@@ -212,3 +212,12 @@ test("owned Gemini permission choices remain answerable without a terminal scree
     assert.equal(assistantMenuAdmits({ ...row, ...patch }), false)
   }
 })
+
+
+test("owned Gemini model and effort operations reach the Host while unsupported terminal commands stay drafts", () => {
+ for (const text of ["/model native-model", "/effort high", "/model   native-model"]) {
+  assert.equal(antigravitySlashDraft("antigravity", text, true), false)
+  assert.equal(antigravitySlashDraft("antigravity", text), true)
+ }
+ for (const text of ["/model", "/effort", "/exit", "/logout", "/model native\n/exit"]) assert.equal(antigravitySlashDraft("antigravity", text, true), true)
+})
