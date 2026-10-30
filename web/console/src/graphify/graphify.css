@@ -1,0 +1,27 @@
+.graphify-dialog { width:min(1100px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); padding:0; border:1px solid var(--line,#383838); border-radius:12px; color:var(--text,#eee); background:var(--panel,#191919); }
+.graphify-dialog::backdrop { background:#0009; }
+.graphify-dialog header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px; border-bottom:1px solid var(--line,#383838); }
+.graphify-dialog h2,.graphify-dialog header p { margin:0; overflow-wrap:anywhere; }
+.graphify-dialog h2 { font-size:18px; }
+.graphify-dialog header p,.graphify-meta,.graphify-hint { font-size:12px; opacity:.7; }
+.graphify-body { padding:16px; overflow:auto; }
+.graphify-status { margin-top:0; }
+.graphify-status.is-stale,.graphify-notice { color:var(--orange,#f0ac70); }
+.graphify-controls { display:flex; flex-wrap:wrap; gap:12px; align-items:end; }
+.graphify-controls label { display:grid; gap:5px; min-width:0; flex:1 1 150px; font-size:13px; }
+.graphify-controls input,.graphify-controls select { width:100%; min-width:0; box-sizing:border-box; background:var(--bg,#111); color:inherit; border:1px solid var(--line,#444); border-radius:6px; padding:9px; }
+.graphify-zoom { display:flex; gap:6px; }
+.graphify-canvas { overflow:auto; width:100%; max-height:62dvh; background:#111; border:1px solid var(--line,#333); border-radius:8px; }
+.graphify-canvas svg { display:block; min-width:100%; height:auto; }
+.graphify-canvas line { stroke:#697386; stroke-opacity:.23; stroke-width:1; }
+.graphify-canvas line.is-related { stroke:#ffc38c; stroke-opacity:.9; stroke-width:2; }
+.graphify-node { cursor:pointer; fill:#eb9666; }
+.graphify-node.color-1 { fill:#79b8ff; }.graphify-node.color-2 { fill:#92dca6; }.graphify-node.color-3 { fill:#d0a3ef; }.graphify-node.color-4 { fill:#e8d776; }.graphify-node.color-5 { fill:#88d6d6; }.graphify-node.color-6 { fill:#ea95b4; }.graphify-node.color-7 { fill:#b9bcc9; }
+.graphify-node.is-dim { opacity:.2; }.graphify-node:focus circle { stroke:white; stroke-width:3; }.graphify-node text { fill:#eee; font-size:12px; pointer-events:none; }
+.graphify-node-list ul,.graphify-node-detail ul { list-style:none; padding:0; max-height:220px; overflow:auto; }
+.graphify-node-list li,.graphify-node-detail li { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #ffffff12; }
+.graphify-node-list button,.graphify-node-detail button { color:inherit; background:none; border:0; padding:6px; text-align:left; cursor:pointer; text-decoration:underline; }
+.graphify-node-list span,.graphify-node-detail p { overflow-wrap:anywhere; font-size:12px; opacity:.75; }
+.graphify-node-detail small { opacity:.65; }.graphify-node-detail { border-top:1px solid var(--line,#333); margin-top:12px; }
+.graphify-body footer { margin-top:16px; }
+@media(max-width:600px) { .graphify-dialog { width:calc(100vw - 12px); max-width:calc(100vw - 12px); max-height:calc(100dvh - 12px); }.graphify-dialog header,.graphify-body { padding:12px; }.graphify-canvas { max-height:45dvh; } }

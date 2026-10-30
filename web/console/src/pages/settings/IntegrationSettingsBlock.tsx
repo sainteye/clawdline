@@ -1,3 +1,4 @@
+import { GRAPHIFY_SETTING, graphWord } from "../../graphify/graphify.js"
 import { useEffect, useRef, useState } from "react"
 import type { IntegrationSettingsSnapshot } from "@clawdline/contract"
 import { catalogFormat, catalogWord } from "../../catalog.js"
@@ -36,7 +37,8 @@ export function IntegrationSettingsBlock({ shown }: { shown: boolean }) {
     setBusy(true); setSaid("")
     try {
       const saved = await writeIntegrationSettings({ [key]: !snapshot[key] })
-      if (started === generation.current) { setSnapshot(saved); setSaid(word("saved")) }
+      window.dispatchEvent(new CustomEvent(GRAPHIFY_SETTING, {detail: saved.graphify_enabled === true}))
+      if (started === generation.current) { setSnapshot(saved); setSaid(key === "graphify_enabled" ? graphWord("saved") : word("saved")) }
     }
     catch (error) { if (started === generation.current) setSaid(L.failureSentence(error, word("saveFailed"))) }
     finally { if (started === generation.current) setBusy(false) }
@@ -66,7 +68,7 @@ export function IntegrationSettingsBlock({ shown }: { shown: boolean }) {
         </div>
         <div id={id + "-help"} className="workflow-setting-help" hidden={!expanded}>
           <p>{word(key + "Description")}</p>
-          <p>{word("scope")}</p>
+          <p>{key === "graphify_enabled" ? graphWord("scope") : word("scope")}</p>
         </div>
       </div>
     })}

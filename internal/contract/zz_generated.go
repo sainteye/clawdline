@@ -3028,6 +3028,32 @@ type GitSnapshot struct {
 	Head string `json:"head"`
 }
 
+type GraphifyLink struct {
+	Confidence string `json:"confidence"`
+	Relation   string `json:"relation"`
+	Source     string `json:"source"`
+	Target     string `json:"target"`
+}
+
+type GraphifyNode struct {
+	Community string `json:"community"`
+	File      string `json:"file"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Location  string `json:"location"`
+}
+
+type GraphifyView struct {
+	CheckedAt  int64          `json:"checked_at"`
+	Links      []GraphifyLink `json:"links"`
+	Nodes      []GraphifyNode `json:"nodes"`
+	Reason     string         `json:"reason"`
+	State      string         `json:"state"`
+	TotalLinks int64          `json:"total_links"`
+	TotalNodes int64          `json:"total_nodes"`
+	Truncated  bool           `json:"truncated"`
+}
+
 // GET /v1/health, open without a token: that this daemon is alive, which
 // implementation it is, and the two answers a page needs before it can be let
 // in — whether the asker's own credential is one this machine knows, and

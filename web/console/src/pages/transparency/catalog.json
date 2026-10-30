@@ -2590,7 +2590,7 @@
     "internal/adapters/antigravityprocess/client.go": "30d3b50ca51e05401b9be14214a251594a1e566fd3912d49bc05a72d3e266a9d",
     "internal/adapters/antigravitysession/context.go": "7f7490cb414f00633f3e436d484f9d02e8a91e6f541eda148eefa6e83d6d854b",
     "internal/adapters/antigravitysession/host.go": "32d6a53893b3d412f96acca14237c87953a3cf53c2c99db471ee1960f8e5846e",
-    "internal/adapters/graphify/graphify.go": "adf84d8a37c8a86de7abf3e178394c2b2871bdb6ae86a94d76d8a17c19f9f4f4",
+    "internal/adapters/graphify/graphify.go": "e4b738da462f701cd3f246f59fdbafda4631dd48cf9c8431fb31abf39b6feca0",
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
     "internal/adapters/nextconfig/nextconfig.go": "d9c5df3d7fa21d9b5c52c72329de6f342f72b04c1702e69000d441ac916b2e48",
     "internal/adapters/projects/antigravity_context.go": "9706da1b7af1d019ac3c7feb3713fa02698f95bfe76b81bc430de5efa62fbb53",

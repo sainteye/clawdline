@@ -8,6 +8,21 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) projectFilesCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"projects.graphify_zoom": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "viewer zoom cap; no retained graph cache"}
+		},
+		"projects.graphify_nodes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "on-demand Graphify viewer guard; no retained graph cache"}
+		},
+		"projects.graphify_links": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "on-demand Graphify viewer guard; no retained graph cache"}
+		},
+		"projects.graphify_text": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "on-demand Graphify viewer guard; no retained graph cache"}
+		},
+		"projects.graphify_request_ms": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "on-demand Graphify viewer guard; no retained graph cache"}
+		},
 		"projects.antigravity_consent_request_ms": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "website whole-response deadline; no automatic retry or retained request"}
 		},

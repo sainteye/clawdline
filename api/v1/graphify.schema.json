@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "graphify.schema.json",
+  "title": "Graphify project view",
+  "description": "Read-only GET /v1/projects/:place/graphify and /v1/sessions/:id/graphify. Machine opt-in required. Returns inert graph data with point-in-time freshness and explicit overview truncation. No installation, rebuild or native HTML execution.",
+  "$defs": {
+    "GraphifyNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "file",
+        "location",
+        "community"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "community": {
+          "type": "string"
+        }
+      }
+    },
+    "GraphifyLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "target",
+        "relation",
+        "confidence"
+      ],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "string"
+        }
+      }
+    },
+    "GraphifyView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reason",
+        "checked_at",
+        "total_nodes",
+        "total_links",
+        "truncated",
+        "nodes",
+        "links"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "checked_at": {
+          "type": "integer"
+        },
+        "total_nodes": {
+          "type": "integer"
+        },
+        "total_links": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphifyNode"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphifyLink"
+          }
+        }
+      }
+    }
+  }
+}

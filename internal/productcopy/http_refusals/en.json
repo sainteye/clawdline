@@ -1,4 +1,9 @@
 {
+  "http.281a0e5d53114907": "A Graphify view takes no query or body.",
+  "http.b7f45946cad6d100": "Enable Graphify in this machine's integration settings to view a graph.",
+  "http.6b574bdaf4e7b62d": "This Session has no local working directory.",
+  "http.dc23cdb43a21b0e0": "The graph could not be checked. Try again.",
+  "http.49d1f2e1e90685fe": "Graphify is disabled or its setting is unavailable.",
   "http.002261325d82f433": "This task has no root session to propose to; its work is nobody's line to follow.",
   "http.0035887da2a2da5a": "A new Clawdfather binding must come from the machine workspace, not a Project Session.",
   "http.009d6e05d9395474": "A pairing hand-off names the machine and carries the offer.",
