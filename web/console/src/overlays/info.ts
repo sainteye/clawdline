@@ -35,6 +35,7 @@ import { RoleDetail } from "./role-detail.js"
 import { reasoningEffortHTML } from "./reasoning-effort.js"
 import { catalogWord } from "../catalog.js"
 import "./info-next.css"
+import { workflowInfoHTML, type WorkflowRecord } from "../session/workflow-profile.js"
 
 /**
  * The Session info card — `Info` in `input/info.js`, function for function,
@@ -61,7 +62,7 @@ import "./info-next.css"
  */
 
 /** Fields of the original's answer this daemon may add later; read as the original reads them. */
-type Facts = SessionInfo & { session: SessionInfo["session"] & { seconds?: number } }
+type Facts = SessionInfo & { workflow?: WorkflowRecord; session: SessionInfo["session"] & { seconds?: number } }
 
 export interface InfoHost {
   /** The session on screen, `SessionSelection.snapshot().open`. */
@@ -547,6 +548,7 @@ function html(d: Facts): string {
   const current = s.model || (u && u.model) || ""
   if (pending && models.some((m) => m.command === pending && onModel(current, m))) pending = null
   let out = hero(s, u)
+  out += workflowInfoHTML(d.workflow)
   let i = 0
   out += sec(++i, T.webInfoStatus, "", statusHTML(session() || (s as unknown as Row)))
   const role = roleHTML(session())
@@ -598,7 +600,9 @@ function draw(): void {
   const titleCaret = titleFocused ? titleBox?.selectionStart ?? null : null
   const again = drawn
   box.classList.toggle("again", again)
+  const workflowOpen = drawn ? [...box.querySelectorAll<HTMLDetailsElement>("details[data-workflow-detail][open]")].map(el => el.dataset.workflowDetail) : []
   box.innerHTML = data ? html(data) : ""
+  for (const el of box.querySelectorAll<HTMLDetailsElement>("details[data-workflow-detail]")) el.open = workflowOpen.includes(el.dataset.workflowDetail)
   if (editor) box.querySelector(".title-editor")?.replaceWith(editor)
   const roleButton = box.querySelector<HTMLButtonElement>("button[data-role-detail]")
   const persona = personaById(personasNow(), session()?.persona)

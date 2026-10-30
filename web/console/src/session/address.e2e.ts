@@ -134,7 +134,10 @@ let machineSettings: Record<string, unknown> = {
 }
 let workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true }
 let refuseWorkflowWrite = false
-let integrationSettings = { workflow_skills_enabled: false, graphify_enabled: false }
+let integrationSettings: { workflow_profile?: string; workflow_skills_enabled: boolean; graphify_enabled: boolean } = { workflow_skills_enabled: false, graphify_enabled: false }
+let integrationWrites: Record<string, unknown>[] = []
+let workflowRecords: Record<string, unknown> = {}
+let heldWorkflowInfo: { id: string; replies: (() => void)[] } | null = null
 let refuseIntegrationWrite = false
 let refuseIntegrationRead = false
 let refuseDefaultModelWrite = false
@@ -293,6 +296,7 @@ function daemon(): Server {
     if (path === "/v1/settings/integrations" && req.method === "POST") {
       void requestJSON(req).then(change => {
         if (refuseIntegrationWrite) { refuseIntegrationWrite = false; return json(res, 503, { error: "settings_unavailable", detail: "Could not save settings." }) }
+        integrationWrites.push(change)
         integrationSettings = { ...integrationSettings, ...change }
         json(res, 200, integrationSettings)
       })
@@ -346,8 +350,9 @@ function daemon(): Server {
       const id = decodeURIComponent(info[1])
       const session = (protocolMenuScenario ? [protocolRow()] : ROWS).find((candidate) => candidate.id === id)
       if (!session) return json(res, 404, { error: { code: "not_found", message: id } })
-      return json(res, 200, {
+      const reply = () => json(res, 200, {
         info: {
+          workflow: workflowRecords[id],
           session: {
             id: session.id,
             title: session.label,
@@ -365,6 +370,8 @@ function daemon(): Server {
           links: [],
         },
       })
+      if (heldWorkflowInfo?.id === id) { heldWorkflowInfo.replies.push(reply); return }
+      return reply()
     }
     const interrupt = /^\/v1\/sessions\/([^/]+)\/interrupt$/.exec(path)
     if (interrupt && req.method === "POST") {
@@ -3354,5 +3361,127 @@ test("integration switches persist machine opt-ins and recover failures in both 
         assert.deepEqual(integrationSettings, { workflow_skills_enabled: false, graphify_enabled: true })
       })
     }
+  }
+})
+
+
+test("workflow profile picker saves only the selected profile and preserves Graphify", async () => {
+  for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
+    for (const tag of ["en", "zh-Hant"]) {
+      integrationSettings = { workflow_profile: "clawdline", workflow_skills_enabled: false, graphify_enabled: true }
+      integrationWrites = []
+      await inTab(size, async tab => {
+        const waitFor = async (expression: string) => {
+          const end = Date.now() + 5000
+          while (!await tab.run(expression)) {
+            if (Date.now() > end) assert.fail("workflow wait: " + expression)
+            await new Promise(resolve => setTimeout(resolve, 30))
+          }
+        }
+        await tab.go("/")
+        await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)}); location.hash = "page=settings"`)
+        await tab.reload()
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
+        await waitFor(`!!document.getElementById("workflow-profile-select")`)
+        const select = `document.getElementById("workflow-profile-select")`
+        assert.deepEqual(await tab.run(`[...${select}.options].map(x=>[x.value,x.disabled])`), [["clawdline",false],["superpowers",false],["poteto",false]])
+        const choose = async (profile: string) => {
+          await tab.run(`${select}.value=${JSON.stringify(profile)}; ${select}.dispatchEvent(new Event("change", {bubbles:true}))`)
+          await waitFor(`!${select}.disabled && !!document.querySelector('.settings-integrations .said').textContent`)
+        }
+        await choose("superpowers")
+        assert.equal(integrationSettings.workflow_profile, "superpowers")
+        await choose("poteto")
+        assert.equal(integrationSettings.workflow_profile, "poteto")
+        assert.deepEqual(integrationWrites, [{ workflow_profile: "superpowers" }, { workflow_profile: "poteto" }])
+        assert.equal(integrationSettings.graphify_enabled, true)
+        assert.equal(integrationSettings.workflow_skills_enabled, false)
+        refuseIntegrationWrite = true
+        await choose("clawdline")
+        assert.equal(await tab.run(`${select}.value`), "poteto", "failed save retains the last accepted choice")
+        assert.equal(integrationSettings.workflow_profile, "poteto")
+        await tab.run(`document.querySelector('.settings-integrations .workflow-info').click()`)
+        assert.ok(await tab.run(`document.getElementById('workflow-profile-help').textContent.includes('Poteto')`))
+        const bounds = await tab.run(`(() => {const s=${select}.getBoundingClientRect(),a=document.querySelector('.workflow-profile-picker svg').getBoundingClientRect();return {delta:Math.abs((s.top+s.bottom-a.top-a.bottom)/2),width:innerWidth,page:document.documentElement.scrollWidth}})()`)
+        assert.ok(bounds.delta < 1, `centered caret ${tag}/${sizeName}: ${JSON.stringify(bounds)}`)
+        assert.ok(bounds.page <= bounds.width + 1, `settings overflow ${tag}/${sizeName}`)
+        await tab.reload()
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
+        await waitFor(`!!${select}`)
+        assert.equal(await tab.run(`${select}.value`), "poteto")
+        await choose("clawdline")
+        assert.equal(integrationSettings.workflow_profile, "clawdline")
+      })
+    }
+  }
+  integrationSettings = { workflow_skills_enabled: false, graphify_enabled: false }
+})
+
+test("Station shows pinned workflow evidence with progressive details and an honest legacy state", async () => {
+  const record = { state: "recorded", profile_id: "poteto", source: "pstack 0.15.36", version: "1", digest: "a".repeat(64), graphify_enabled: true,
+    stages: [{id: "verify", title: "Verify", output: "Evidence", acceptance: "Passing checks"}] }
+  workflowRecords = { [TMUX]: record, [TTY]: { state: "legacy_unsnapshotted" } }
+  for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
+    for (const tag of ["en", "zh-Hant"]) {
+      await inTab(size, async tab => {
+        const waitFor = async (expression: string) => {
+          const end = Date.now() + 5000
+          while (!await tab.run(expression)) {
+            if (Date.now() > end) assert.fail("workflow info wait: " + expression + " " + JSON.stringify(await tab.run(`({hash:location.hash,lang:document.documentElement.lang,workflow:document.querySelector('.detail-workflow')?.textContent,head:document.querySelector('#detail-name')?.textContent})`)))
+            await new Promise(resolve => setTimeout(resolve, 30))
+          }
+        }
+        await tab.go("/")
+        await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)})`)
+        await tab.run(`location.hash=${JSON.stringify(FRAGMENT[TMUX].slice(1))}`)
+        await tab.reload()
+        await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Poteto')`)
+        await tab.run(`document.getElementById('detail-info').click()`)
+        await waitFor(`!!document.querySelector('#info-body .flow-session')`)
+        assert.equal(await tab.run(`document.querySelector('.flow-session').open`), false)
+        await tab.run(`document.querySelector('.flow-session > summary').click()`)
+        assert.ok(await tab.run(`document.querySelector('.flow-facts').textContent.includes('0.15.36')`))
+        assert.ok(await tab.run(`document.querySelector('.flow-facts').textContent.includes(${JSON.stringify(tag === "en" ? "No use receipt" : "尚無使用回報")})`))
+        assert.equal(await tab.run(`document.querySelector('.flow-steps').open`), false)
+        await tab.run(`document.querySelector('.flow-steps > summary').click()`)
+        assert.ok(await tab.run(`document.querySelector('.flow-steps').textContent.includes(${JSON.stringify(tag === "en" ? "Verify" : "驗證")})`))
+        const bounds = await tab.run(`({width:innerWidth,page:document.documentElement.scrollWidth,sheet:document.getElementById('info-sheet').getBoundingClientRect().width})`)
+        assert.ok(bounds.page <= bounds.width + 1 && bounds.sheet <= bounds.width, `info overflow ${tag}/${sizeName}: ${JSON.stringify(bounds)}`)
+        await tab.run(`document.getElementById('info-close').click()`)
+        await tab.go("/?workflow=legacy" + FRAGMENT[TTY])
+        const legacy = tag === "en" ? "No launch record" : "無啟動紀錄"
+        await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes(${JSON.stringify(legacy)})`)
+        assert.equal(await tab.run(`document.querySelector('.detail-workflow').textContent.includes('Poteto')`), false)
+      })
+    }
+  }
+  workflowRecords = {}
+})
+
+test("a late workflow read cannot relabel the next Session", async () => {
+  workflowRecords = { [TMUX]: {state: "recorded", profile_id: "poteto"}, [TTY]: {state: "recorded", profile_id: "superpowers"} }
+  heldWorkflowInfo = {id: TMUX, replies: []}
+  try {
+    await inTab(DESK, async tab => {
+      await tab.go("/" + FRAGMENT[TMUX])
+      const end = Date.now() + 5000
+      while (!heldWorkflowInfo!.replies.length) {
+        if (Date.now() > end) assert.fail("first workflow read was not held")
+        await new Promise(resolve => setTimeout(resolve, 30))
+      }
+      await tab.run(`location.hash=${JSON.stringify(FRAGMENT[TTY].slice(1))}`)
+      while (!await tab.run(`document.querySelector('.detail-workflow')?.textContent.includes('Superpowers')`)) {
+        if (Date.now() > end) assert.fail("next Session workflow was not shown")
+        await new Promise(resolve => setTimeout(resolve, 30))
+      }
+      const replies = heldWorkflowInfo!.replies; heldWorkflowInfo = null
+      for (const reply of replies) reply()
+      assert.ok(await tab.run(`document.querySelector('.detail-workflow').textContent.includes('Superpowers')`))
+    })
+  } finally {
+    for (const reply of heldWorkflowInfo?.replies ?? []) reply()
+    heldWorkflowInfo = null; workflowRecords = {}
   }
 })
