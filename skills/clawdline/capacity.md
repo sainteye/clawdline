@@ -6,7 +6,6 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | --- | ---: | --- | --- | --- | --- |
 | `antigravity.acp_call_seconds` | 45 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.acp_frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
-| `antigravity.acp_sessions` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.acp_view_bytes` | 1048576 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `antigravity.ancestry_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.context_history` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |

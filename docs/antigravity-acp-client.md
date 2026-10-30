@@ -125,7 +125,40 @@ Close, lifetime cancellation and an explicit caller deadline invalidate
 outstanding offers; an uncertain reply write is never replayed. Other server requests receive
 JSON-RPC -32601.
 
+## Tool projection and retained results
+
+Tool updates retain `rawOutput` as well as renderable `content`, including an
+explicit empty result. Missing/null fields preserve prior values; status-only
+completion never erases a result. Input projection accepts both live objects
+and historical JSON strings, retaining only understood paths, line ranges,
+commands, summaries and requested delegate roles/models. Other input and
+extension metadata are not retained. Text is data, never a file-read authority.
+
+Owned history keeps complete received output in SQLite. Version-2 transcript
+pages reuse the registered inline-tool and preview budgets; large bodies use an
+on-demand entry reference bound to the exact local Session, native conversation,
+profile, history generation, ordinal and content. A changed body or another
+Session refuses the old reference instead of reading a nearby result.
+
+Native exec IDs can explicitly namespace a tool by trajectory. Only a different
+valid native namespace produces a subagent source label. Unscoped `call_N` IDs
+stay unattributed; requested delegate roles alone do not establish ownership or
+child completion. The renderer groups only contiguous activities with the same
+known source, or adjacent unattributed reads/searches.
+
+The optional native-history capture test performs exactly initialize,
+authenticate and load, with no new Session, prompt or retry. A current native
+replay supplies structured command output in `rawOutput`, while some read tools
+receive empty strings despite having output in the CLI's separate native log.
+That upstream omission remains explicit. The decoder does not fabricate output,
+derive success from prose, reread tool-supplied paths, or infer completion early.
+
 ## Lifetime and platform boundary
+
+Explicitly opened native conversations have no provider-specific count cap.
+Opening and resume still serialize through the host opening gate; frame, RPC
+and history bounds remain registered. Each conversation keeps its own process
+and exact native identity.
 
 Darwin and Linux implementations start a private process group. The leader is
 never reaped until shutdown has signalled that group with SIGKILL. Shutdown then
@@ -229,8 +262,8 @@ receipts, not billing measurements or a production-phone acceptance claim.
 
 `antigravitysession.Host` composes the measured process client and update decoder
 behind the existing Session start, send and transcript routes. An explicitly
-configured machine opens personal ACP previews within the registered active-process
-limit in `antigravitysession/limits.go`. Each conversation owns its process,
+configured machine opens personal ACP previews without a provider-specific
+process-count cap. Each conversation owns its process,
 native identity and permission offer. The native
 `session/new` identity is carried as `protocol`, with the real owned PID and an
 `owned:acp:` terminal identifier. Inventory does not overwrite this structured
@@ -475,3 +508,54 @@ requests; the same zero-model check then succeeded outside that restriction.
 All attempts used zero model inputs and zero paid API calls.
 The 1.4.3 archive matched the registry SHA256 and its two executable signatures
 were verified; it was tested in isolation, without replacing the installed runtime.
+
+
+## Automatic naming and normal-use restriction audit
+
+Successful owned turns call the HTTP owner's naming hook after releasing the
+conversation write gate. The hook reads the existing `codex_auto_name` opt-in
+and `auto_name_assistant`, uses the shared scrubbed naming context and planner,
+and takes the existing small-turn capacity without queuing another goroutine.
+A durable claim is written before invoking the namer. Failure, cancellation or
+restart never replays that automatic attempt. Its automatic title is persisted
+explicitly because domain `Session.Rungs` is intentionally absent from JSON.
+Manual and task names retain their higher title rungs. Shutdown cancels and
+joins the existing turn job, including any naming callback.
+
+The audit covered the native process client's initialization/authentication,
+new/load/resume, prompt deadlines, model/config operations, Host admission,
+history/entry paging, HTTP start/send and composer preflights. Confirmed local
+restrictions corrected in this delivery are:
+
+- The pilot's hard cap of two active native processes. A third explicit open
+  reproduced `antigravity_session_unavailable`. Opening remains serialized;
+  conversations retain independent identities, pipes and process groups.
+- The HTTP start route's unconditional rejection of a requested Gemini model.
+  An offered model is now selected and acknowledged before publishing the row.
+  A failed selection closes that new process without publishing ownership; the
+  provider may retain an empty native conversation.
+- The composer blocked `/model …` and `/effort …` even though the owned Host
+  implements both as metadata operations. Only those supported operations with
+  arguments are admitted for an owned conversation. Terminal-only commands
+  remain drafts rather than becoming unintended model prompts.
+- Automatic naming had a settings control and a working manual naming context,
+  but no native-turn trigger. It now reuses the existing flow while retaining
+  the person's off preference and manual names.
+
+The earlier plan-name, exact CLI-version and help-text pins were already removed.
+Personal OAuth with AI Credits disabled is a billing/authentication boundary,
+not a Starter subscription-name check. Native offered-model/permission ACKs,
+exact identity and generation checks, frame/pipe/control-RPC budgets and history
+connection/view budgets remain. No new evidence in this audit established that
+those bounds rejected an ordinary operation. This is a source-path audit with
+focused reproductions, not a claim that every provider or platform limit is gone.
+
+Owned transcript projection also uses the shared fenced-code-aware Clawdline
+image marker parser and artifact liveness resolver. The image-send route stores
+an opaque owned/native/profile/cwd/generation address plus the next history
+ordinal instead of requiring a Claude/Codex JSONL path. The first later assistant
+ordinal is anchored once; page reads match its complete generation-bound entry
+ID. Restart retains the address, while replaced history cannot borrow the old
+ordinal. Marker text is projected only at read time, so original native history
+is not rewritten. This adds image delivery from the assistant; native image
+input is a separate capability and is not inferred from artifact display.

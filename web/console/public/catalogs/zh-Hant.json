@@ -695,8 +695,6 @@
   "capacityRow.antigravity.first_input_slots.what": "每次啟動最多保存一份首次輸入預約；重啟不會恢復輸入執行權。",
   "capacityRow.antigravity.hook_config_bytes.full": "設定超過上限時會拒絕，保留其他設定。",
   "capacityRow.antigravity.hook_config_bytes.what": "限制既有及合併後的工作區 hook 設定大小。",
-  "capacityRow.antigravity.acp_sessions.what": "這台機器保留一個個人 Antigravity 試用程序。",
-  "capacityRow.antigravity.acp_sessions.full": "請先關閉目前的試用 Session，再開啟另一個。",
   "capacityRow.antigravity.acp_frame_bytes.what": "限制每筆私有 ACP 協定訊息與個人設定讀取的大小。",
   "capacityRow.antigravity.acp_frame_bytes.full": "訊息過大會停止此程序；不會自動重送輸入。",
   "capacityRow.antigravity.acp_view_bytes.what": "限制每頁 Gemini 歷史及記憶體預覽的大小。",
@@ -10107,5 +10105,18 @@
   "graphifyView.buildUnsafeSource": "原始檔包含符號連結或非一般檔案，本機建立流程已停止，尚未發布索引。",
   "graphifyView.buildBusy": "這台機器正在為另一個工作目錄建立索引。請在完成後重新讀取；此次請求未進入佇列。",
   "graphifyView.buildHistoryFull": "這台機器保留的近期建立狀態已達上限。請在十分鐘保留期間結束後再試。",
-  "graphifyView.buildStopped": "機器服務已停止此次建立。請讀取目前狀態後再重新開始。"
+  "graphifyView.buildStopped": "機器服務已停止此次建立。請讀取目前狀態後再重新開始。",
+  "next.nativeToolRead": "讀取",
+  "next.nativeToolSearch": "搜尋",
+  "next.nativeToolAgent": "子代理 {id}",
+  "next.nativeToolDelegates": "委派工作",
+  "next.nativeToolRun": "{count} 筆工具活動",
+  "next.nativeToolAwaiting": "{count} 筆等待完成通知",
+  "next.nativeToolNoResult": "這份紀錄沒有可讀的工具結果。",
+  "next.nativeToolEmpty": "原生介面回傳空白文字結果。",
+  "transparency.card.gemini-auto-name.title": "Gemini Session 自動命名",
+  "transparency.card.gemini-auto-name.condition": "Clawdline 管理的 Gemini 回合成功完成後，僅在開啟「自動命名新 Session」，且對話尚無手動、任務或自動名稱時適用。",
+  "transparency.card.gemini-auto-name.summary": "使用設定選定的 Claude Code 或 Codex 命名助理及其額度。不會另外傳送 Gemini 提示，也不會開啟原本關閉的偏好。",
+  "transparency.card.gemini-auto-name.how": "沿用命名過濾流程讀取原始首次請求與近期脈絡。本機命名回合使用這裡列出的標題提示與既有容量、時間保護；Auto 可改試另一個助理，最多兩次。模型呼叫前先持久保存執行記錄。",
+  "transparency.card.gemini-auto-name.effect": "自動名稱依確切對話保存，重啟後仍保留。手動與任務名稱優先。失敗或取消後不會自動重試，仍可明確使用「智慧命名」。執行中關閉偏好會阻止套用名稱。這不代表工具、Skill 或脈絡載入的使用收據。"
 }

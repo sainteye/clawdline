@@ -101,6 +101,24 @@ workflow. Native model and permission choices must be acknowledged by the CLI.
 Worker completion notices are recorded as read only after their own normal turn
 completes; cancelled or limited turns do not create that receipt.
 
+## Reading tool activity
+
+Read and search activity shows the supplied filename and line range. Consecutive
+activities can be expanded as a group, and each tool opens its received result.
+Large results are read from saved history only when expanded. Closing a group
+does not delete its history.
+
+Delegation cards show the roles requested by Gemini. Activities with an explicit
+native subagent identity are grouped separately; activities without one are not
+assigned to a subagent by guesswork. A completed delegation call does not mean
+every child has finished.
+
+Some native interface versions return an empty text result even when the CLI's
+own log contains output. Clawdline distinguishes that from an older record with
+no saved result. It does not reread a source file and present its current contents
+as an earlier tool result. Tool completion follows native notifications, which
+can arrive after the assistant's reply.
+
 ## Preview boundaries
 
 This preview does not provide native terminal
@@ -109,3 +127,42 @@ supports macOS and Linux; Windows is not enabled by this path.
 
 For connection problems, see [Recovery](recovery.md). For another machine or a
 phone, see [Clawdline Cloud](cloud-first-look.md).
+
+## Automatic names
+
+**Settings → Auto-name new sessions** also applies to Gemini. Choose Claude Code,
+Codex or Auto there. After a native turn completes successfully, an unnamed
+conversation uses the same scrubbed first-request/latest-context naming flow as
+**Smart name** in Session Info. The chosen naming assistant uses its account quota; Auto can try the other
+assistant if the first fails, for at most two small model turns. Off remains off; enabling Gemini does not enable
+this preference or spend naming quota by itself.
+
+The resulting title is saved locally with the exact conversation and survives
+a daemon restart. Manual names and Board/task names keep priority. A failed or
+interrupted automatic naming attempt is not retried on every turn or restart;
+use **Smart name** explicitly to try again. Naming never blocks the next Gemini
+message. Turning the setting off while naming runs prevents title publication.
+
+There is no Clawdline limit of two Gemini conversations. Each explicitly opened
+conversation uses its own native process; more conversations can use more local
+memory and CPU. Opening remains serialized, and native/provider errors still
+apply. When a startup request names a model, it is selected from that native
+conversation's offered models before the Session is published. Unsupported
+choices fail without publishing another Clawdline Session; the native CLI may
+still retain the blank conversation created before selection. In an owned Gemini Session,
+`/model <native-model-id>` and `/effort <offered-value>` also use the existing
+metadata controls; they are not model prompts.
+
+## Pictures sent by the assistant
+
+Pictures published with `clawdline image send` use the same image tiles and
+original-image reader as other assistants. An exact image marker in an older
+Gemini reply is also resolved; a marker inside a fenced code example stays text.
+The stored native reply is preserved, and expired or unknown images keep their
+existing unavailable state.
+
+A Session-targeted image send binds to the first subsequent assistant row in
+that exact owned history generation. Paging and an ordinary daemon restart
+keep the same row. No marker is required in the assistant's prose. A replaced
+history generation cannot reuse the old row number. Images sent with the older
+marker-only API still need that marker in the reply.

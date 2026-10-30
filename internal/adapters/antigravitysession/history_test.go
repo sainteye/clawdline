@@ -322,8 +322,8 @@ func TestHistoryTwoIdentitiesCloseResumeAndProfileFence(t *testing.T) {
 	if _, err := h.Resume(context.Background(), second.CWD, second.ConversationID); err != nil {
 		t.Fatal("second saved conversation could not resume", err)
 	}
-	if _, err := h.Open(context.Background(), ports.OpenRequest{Cwd: first.CWD}); err == nil {
-		t.Fatal("process capacity exceeded")
+	if _, err := h.Open(context.Background(), ports.OpenRequest{Cwd: first.CWD}); err != nil {
+		t.Fatal("third explicit conversation refused", err)
 	}
 	stopHost(t, h)
 	opts.AccountDir = t.TempDir()

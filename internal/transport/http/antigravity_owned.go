@@ -41,7 +41,7 @@ func (p ownedAntigravityTerminal) Open(ctx context.Context, r ports.OpenRequest)
 
 // Prepare role files and shared memory through the same Starter as the other
 // providers. No model input is sent while opening the blank conversation.
-func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, place projects.Place, persona string) (session.Session, error) {
+func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, place projects.Place, persona, model string) (session.Session, error) {
 	prepared, err := starter.PrepareOwnedContext(ctx, place, persona)
 	if err != nil {
 		return session.Session{}, err
@@ -53,7 +53,7 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 		}
 		return session.Session{}, ownedAntigravityUnavailable()
 	}
-	row, err := h.OpenWithContext(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label}, ownedAntigravityContext(place, prepared))
+	row, err := h.OpenWithModel(ctx, ports.OpenRequest{Cwd: place.Path, Name: place.Label}, ownedAntigravityContext(place, prepared), model)
 	if err != nil {
 		if prepared.LaunchID != "" {
 			_ = s.store.FailSquadLaunch(ctx, prepared.LaunchID)
@@ -158,7 +158,7 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 	if st, err := os.Stat(cfg.Executable); err != nil || st.IsDir() || st.Mode()&0111 == 0 {
 		return nil, ownedAntigravityUnavailable()
 	}
-	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions"), NewSessionMode: "yolo"})
+	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions"), NewSessionMode: "yolo", TurnComplete: s.automaticGeminiTitle})
 	if err != nil {
 		return nil, err
 	}

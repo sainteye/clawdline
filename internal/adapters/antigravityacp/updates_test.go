@@ -136,6 +136,12 @@ func TestSessionUpdateToolContentSynthetic(t *testing.T) {
 		*c[4].Content.Data != "AA==" || *c[5].Content.MimeType != "audio/wav" || !c[6].Ignored || !c[7].Content.Ignored || out.Text != "" {
 		t.Fatalf("structured tool content lost: %+v", c)
 	}
+	if out.Tool.Output == nil || !strings.Contains(*out.Tool.Output, "opaque-output") {
+		t.Fatal("native output was discarded")
+	}
+	// Output is the requested result; arbitrary input and extension metadata
+	// still have no projection. Exclude output when checking that boundary.
+	out.Tool.Output = nil
 	encoded, _ := json.Marshal(out)
 	if bytes.Contains(encoded, []byte("opaque")) || bytes.Contains(encoded, []byte("rawOutput")) {
 		t.Fatal("opaque tool data was normalized")

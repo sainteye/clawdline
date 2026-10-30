@@ -138,3 +138,14 @@ the original launch excerpt and both language cards distinguishes these triggers
 the existing cooperative per-query check now shares the larger bounded metadata
 read budget used by native project graphs. The website snapshot must retain the
 latest workflow-profile content when importing this reviewed product revision.
+
+The Gemini normal-use audit removes the pilot's two-process count cap and admits
+an offered model selection before publishing a new owned row. It also connects
+successful native turns to the existing opt-in naming flow, using the configured
+Claude/Codex namer and scrubbed context rather than injecting another Gemini
+message. Review of both language versions of the managed-hook and owned-ACP
+cards confirms that first-input resources, role snapshots, language, consent
+and native tool permissions remain described accurately. Naming stays off when
+previously off; it does not establish skill use or loaded-context evidence.
+The reviewed source receipt and excerpt follow the revised launch code.
+

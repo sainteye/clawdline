@@ -106,6 +106,14 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			}
 			result = map[string]any{"configOptions": config()}
 		case "session/prompt":
+			if os.Getenv("CLW_HTTP_TOOLS") == "yes" {
+				for _, update := range []map[string]any{
+					{"sessionUpdate": "tool_call", "toolCallId": "read-fixture", "title": "Running view_file", "kind": "read", "status": "in_progress", "locations": []map[string]any{{"path": "/workspace/example.go", "line": 11}}},
+					{"sessionUpdate": "tool_call_update", "toolCallId": "read-fixture", "rawOutput": strings.Repeat("complete native output 😀\n", 2000), "status": "completed"},
+				} {
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": update}})
+				}
+			}
 			if os.Getenv("CLW_HTTP_INTERRUPT") == "yes" {
 				interruptedPrompt = append(json.RawMessage(nil), req.ID...)
 				continue
@@ -146,7 +154,11 @@ func TestOwnedHTTPPeer(t *testing.T) {
 				break
 			}
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "usage_update", "used": 12, "size": 100}}})
-			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic HTTP reply"}}}})
+			reply := "synthetic HTTP reply"
+			if raw, err := os.ReadFile(filepath.Join(os.Getenv("GEMINI_HOME"), "reply-text")); err == nil {
+				reply = string(raw)
+			}
+			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": reply}}}})
 			// Hold the response boundary after text is visible. Text alone
 			// does not prove the sender has released its metadata operation.
 			if gate := os.Getenv("CLW_HTTP_TURN_GATE"); gate != "" {

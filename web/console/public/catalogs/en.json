@@ -695,8 +695,6 @@
   "capacityRow.antigravity.first_input_slots.what": "Limits durable first-input reservations to one per launch; restart never restores execution authority.",
   "capacityRow.antigravity.hook_config_bytes.full": "Oversized configuration is refused; unrelated settings are preserved.",
   "capacityRow.antigravity.hook_config_bytes.what": "Limits the existing and merged workspace hook configuration.",
-  "capacityRow.antigravity.acp_sessions.what": "Keeps one personal Antigravity preview process on this machine.",
-  "capacityRow.antigravity.acp_sessions.full": "Close the current preview Session before opening another.",
   "capacityRow.antigravity.acp_frame_bytes.what": "Bounds each private ACP protocol frame and personal-settings read.",
   "capacityRow.antigravity.acp_frame_bytes.full": "An oversized frame stops this process; its prompt is never retried automatically.",
   "capacityRow.antigravity.acp_view_bytes.what": "Bounds each Gemini history page and the in-memory preview.",
@@ -10107,5 +10105,18 @@
   "graphifyView.buildUnsafeSource": "A source is a symbolic link or a nonregular file. The local build stopped without publishing an index.",
   "graphifyView.buildBusy": "Another directory is being indexed on this machine. Read again after it finishes; this request was not queued.",
   "graphifyView.buildHistoryFull": "The machine is holding the maximum number of recent build statuses. Try again after the ten-minute retention window.",
-  "graphifyView.buildStopped": "The machine service stopped this build. Read its current status before starting again."
+  "graphifyView.buildStopped": "The machine service stopped this build. Read its current status before starting again.",
+  "next.nativeToolRead": "Read",
+  "next.nativeToolSearch": "Search",
+  "next.nativeToolAgent": "Subagent {id}",
+  "next.nativeToolDelegates": "Delegated work",
+  "next.nativeToolRun": "{count} tool activities",
+  "next.nativeToolAwaiting": "{count} awaiting completion",
+  "next.nativeToolNoResult": "This record has no readable tool result.",
+  "next.nativeToolEmpty": "The native interface supplied an empty text result.",
+  "transparency.card.gemini-auto-name.title": "Automatic names for Gemini Sessions",
+  "transparency.card.gemini-auto-name.condition": "After a successful owned Gemini turn, only when Auto-name new sessions is enabled and the conversation has no manual, task or automatic name.",
+  "transparency.card.gemini-auto-name.summary": "Uses the configured Claude Code or Codex naming assistant and its quota. Does not send another Gemini prompt or enable a previously disabled preference.",
+  "transparency.card.gemini-auto-name.how": "Reads the original first request and recent context through the existing naming scrubber. A bounded local naming turn uses the title prompt shown here; Auto may try the other assistant, for at most two attempts. A durable claim is saved before the model call.",
+  "transparency.card.gemini-auto-name.effect": "Saves an automatic title for the exact owned conversation across restart. Manual and task names retain priority. Failure or cancellation is not retried automatically; a manual Smart name request remains available. Turning the preference off during naming prevents publication. This does not establish tool, skill or loaded-context receipts."
 }

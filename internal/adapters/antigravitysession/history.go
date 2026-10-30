@@ -24,10 +24,12 @@ type historyStore struct{ db *sql.DB }
 // Domain Session intentionally omits Activity from its JSON wire shape. Keep
 // the activity clock explicitly in the storage record, independent of that wire.
 type savedConversation struct {
-	Row           session.Session  `json:"row"`
-	Activity      session.Activity `json:"activity"`
-	LaunchContext LaunchContext    `json:"launch_context,omitempty"`
-	Injected      *injectedTurn    `json:"injected_turn,omitempty"`
+	Row               session.Session  `json:"row"`
+	Activity          session.Activity `json:"activity"`
+	LaunchContext     LaunchContext    `json:"launch_context,omitempty"`
+	Injected          *injectedTurn    `json:"injected_turn,omitempty"`
+	AutoNameAttempted bool             `json:"auto_name_attempted,omitempty"`
+	AutomaticTitle    string           `json:"automatic_title,omitempty"`
 }
 
 func openHistory(dir string) (*historyStore, error) {
@@ -103,6 +105,8 @@ func (s *historyStore) restore(profile string) (map[string]*conversation, error)
 			c.row.Activity = saved.Activity
 			c.launchContext = saved.LaunchContext
 			c.injected = saved.Injected
+			c.autoNameAttempted = saved.AutoNameAttempted
+			c.row.Rungs.Thread = saved.AutomaticTitle
 			c.row.Persona = c.launchContext.Persona
 			c.row.SquadLaunchID = c.launchContext.SquadLaunchID
 		}
@@ -131,7 +135,7 @@ func (c *conversation) saveRow(w historyWriter) error {
 	if c.staging {
 		return nil
 	}
-	raw, err := json.Marshal(savedConversation{Row: c.row, Activity: c.row.Activity, LaunchContext: c.launchContext, Injected: c.injected})
+	raw, err := json.Marshal(savedConversation{Row: c.row, Activity: c.row.Activity, LaunchContext: c.launchContext, Injected: c.injected, AutoNameAttempted: c.autoNameAttempted, AutomaticTitle: c.row.Rungs.Thread})
 	if err == nil {
 		_, err = w.Exec(`INSERT INTO conversations(id,native_id,cwd,profile,row_json,generation,revision,ordinal,uncertain,hidden)
 		 VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET row_json=excluded.row_json,generation=excluded.generation,
@@ -237,7 +241,10 @@ func (h *Host) Past(ctx context.Context, cwd, cursor string, limit int) ([]Past,
 	for _, c := range h.rows {
 		c.mu.Lock()
 		if c.row.CWD == filepath.Clean(cwd) {
-			title := c.row.Label
+			title := c.row.Rungs.Thread
+			if title == "" {
+				title = c.row.Label
+			}
 			if title == "" {
 				title = c.row.ConversationID
 			}
@@ -310,7 +317,7 @@ func (h *Host) FirstRequest(ctx context.Context, s session.Session) (string, err
 	return "", nil
 }
 
-func (h *Host) TranscriptPage(ctx context.Context, s session.Session, limit int, before int64, revision string) (contract.TranscriptPage, error) {
+func (h *Host) TranscriptPage(ctx context.Context, s session.Session, limit int, before int64, revision string, lazy ...bool) (contract.TranscriptPage, error) {
 	c, err := h.lookup(s)
 	if err != nil {
 		return contract.TranscriptPage{}, err
@@ -358,6 +365,9 @@ func (h *Host) TranscriptPage(ctx context.Context, s session.Session, limit int,
 			return page, refusal("history_unavailable")
 		}
 		e.ID = c.entryID(ordinal)
+		if len(lazy) > 0 && lazy[0] {
+			e = c.compactToolEntry(ordinal, e)
+		}
 		raw, _ = json.Marshal(e)
 		if bytes+len(raw)+1 > MaxViewBytes {
 			if len(page.Entries) == 0 {

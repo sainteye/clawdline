@@ -515,7 +515,7 @@ export function Composer({
     if (acceptSkill()) return
     const said = rawText().trim()
     const pictures = Shots.urls().slice()
-    if (antigravitySlashDraft(remote?.assistant ?? row?.assistant, said)) {
+    if (antigravitySlashDraft(remote?.assistant ?? row?.assistant, said, protocolOwned)) {
       setFailure(catalogWord("antigravity", "slashDraft"))
       return
     }

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10107,
-  "riskKeys": 4489,
-  "nonRiskCount": 5618,
+  "englishContentKeys": 10118,
+  "riskKeys": 4494,
+  "nonRiskCount": 5624,
   "groups": [
     {
       "name": "admin / other",
@@ -342,15 +342,13 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 385,
+      "count": 383,
       "sources": [
         null
       ],
       "keys": [
         "capacityRow.antigravity.acp_call_seconds.what",
         "capacityRow.antigravity.acp_frame_bytes.what",
-        "capacityRow.antigravity.acp_sessions.full",
-        "capacityRow.antigravity.acp_sessions.what",
         "capacityRow.antigravity.acp_view_bytes.what",
         "capacityRow.antigravity.ancestry_rows.what",
         "capacityRow.antigravity.context_history.what",
@@ -3600,7 +3598,7 @@
     },
     {
       "name": "next / other",
-      "count": 529,
+      "count": 536,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3775,6 +3773,13 @@
         "next.msTryOpen",
         "next.msTrying",
         "next.msTryingBody",
+        "next.nativeToolAgent",
+        "next.nativeToolAwaiting",
+        "next.nativeToolDelegates",
+        "next.nativeToolEmpty",
+        "next.nativeToolRead",
+        "next.nativeToolRun",
+        "next.nativeToolSearch",
         "next.newBuild",
         "next.newBuildReload",
         "next.noteWithdrawalReason",
@@ -5772,7 +5777,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 138,
+      "count": 139,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -5834,6 +5839,7 @@
         "transparency.card.gemini-acp-context.condition",
         "transparency.card.gemini-acp-context.summary",
         "transparency.card.gemini-acp-context.title",
+        "transparency.card.gemini-auto-name.title",
         "transparency.card.handoff.condition",
         "transparency.card.handoff.effect",
         "transparency.card.handoff.how",
