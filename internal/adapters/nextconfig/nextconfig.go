@@ -496,8 +496,8 @@ var Settables = []Settable{
 	{Name: "update_auto_apply", Kind: "bool"},
 	{Name: "follow_target", Kind: "bool"},
 	{Name: "codex_auto_name", Kind: "bool"},
-	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"claude", "codex", "auto"},
-		Refusal: "invalid_assistant", Because: "claude, codex or auto"},
+	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"session", "claude", "codex", "antigravity", "auto"},
+		Refusal: "invalid_assistant", Because: "session, claude, codex, antigravity or auto"},
 	{Name: "notch", Kind: "bool"},
 	// The Swift app takes y_fraction strictly between 0.02 and 0.9; the bound
 	// here is inclusive, so it is stated a step inside on both sides.

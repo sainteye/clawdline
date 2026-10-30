@@ -93,7 +93,7 @@ func failed(err error, said ...[]byte) error {
 // whose quota will be used, so a failure must not silently spend a different
 // one.
 func (p Planner) Name(ctx context.Context, text, assistant string) (string, error) {
-	if assistant != "claude" && assistant != "codex" {
+	if assistant != "claude" && assistant != "codex" && assistant != "antigravity" && assistant != "gemini" {
 		assistant = "codex"
 	}
 	executable := p.executable(assistant)
@@ -115,6 +115,22 @@ func (p Planner) Name(ctx context.Context, text, assistant string) (string, erro
 		}
 		var ok bool
 		object, ok = objectFromClaude(raw)
+		if !ok {
+			return "", failed(errors.New("namer did not return an object"), raw)
+		}
+	} else if assistant == "antigravity" || assistant == "gemini" {
+		asked := namePrompt + "\n\nReturn only the object, as JSON, with nothing before or after it.\n\n<session>\n" + text + "\n</session>"
+		args := []string{"-p", asked, "--mode", "plan", "--effort", "low",
+			"--output-format", "json", "--json-schema", nameSchema,
+			"--disable-slash-commands"}
+		turn, cancel := context.WithTimeout(ctx, p.timeout())
+		raw, err := p.runner()(turn, executable, args, "", scratch(), nil)
+		cancel()
+		if err != nil {
+			return "", failed(err, raw, stderrOf(err))
+		}
+		var ok bool
+		object, ok = objectFromText(raw)
 		if !ok {
 			return "", failed(errors.New("namer did not return an object"), raw)
 		}
@@ -165,7 +181,7 @@ func (p Planner) Name(ctx context.Context, text, assistant string) (string, erro
 // can select only an id in request.Candidates; an unknown id, extra outcome or
 // malformed object is unusable rather than a role the caller might assign.
 func (p Planner) SuggestPersona(ctx context.Context, request PersonaRequest, assistant string) (PersonaSuggestion, error) {
-	if assistant != "claude" && assistant != "codex" {
+	if assistant != "claude" && assistant != "codex" && assistant != "antigravity" && assistant != "gemini" {
 		assistant = "codex"
 	}
 	executable := p.executable(assistant)
@@ -193,6 +209,23 @@ func (p Planner) SuggestPersona(ctx context.Context, request PersonaRequest, ass
 		object, ok = objectFromClaude(raw)
 		if !ok {
 			return PersonaSuggestion{}, failed(errors.New("persona suggester did not return an object"), raw)
+		}
+	} else if assistant == "antigravity" || assistant == "gemini" {
+		asked := personaSuggestionPrompt + "\n\nReturn only the object, as JSON, with nothing before or after it." +
+			"\n\n<input_json>\n" + string(input) + "\n</input_json>"
+		args := []string{"-p", asked, "--mode", "plan", "--effort", "low",
+			"--output-format", "json", "--json-schema", personaSuggestionSchema,
+			"--disable-slash-commands"}
+		turn, cancel := context.WithTimeout(ctx, p.timeout())
+		raw, runErr := p.runner()(turn, executable, args, "", scratch(), nil)
+		cancel()
+		if runErr != nil {
+			return PersonaSuggestion{}, failed(runErr, raw, stderrOf(runErr))
+		}
+		var ok bool
+		object, ok = objectFromText(raw)
+		if !ok {
+			return PersonaSuggestion{}, errors.New("persona suggester did not return an object")
 		}
 	} else {
 		dir, makeErr := os.MkdirTemp("", "clawdline-persona-suggestion-")
@@ -377,14 +410,23 @@ func (p Planner) executable(name string) string {
 	if look == nil {
 		look = exec.LookPath
 	}
-	if path, err := look(name); err == nil {
-		return path
+	names := []string{name}
+	if name == "antigravity" || name == "gemini" {
+		names = []string{"agy", "antigravity"}
 	}
-	candidates := []string{"/opt/homebrew/bin/" + name, "/usr/local/bin/" + name}
-	if p.Home != "" {
-		candidates = append(candidates, filepath.Join(p.Home, ".local", "bin", name))
-		if name == "claude" {
-			candidates = append(candidates, filepath.Join(p.Home, ".claude", "local", name))
+	for _, n := range names {
+		if path, err := look(n); err == nil {
+			return path
+		}
+	}
+	candidates := []string{}
+	for _, n := range names {
+		candidates = append(candidates, "/opt/homebrew/bin/"+n, "/usr/local/bin/"+n)
+		if p.Home != "" {
+			candidates = append(candidates, filepath.Join(p.Home, ".local", "bin", n))
+			if n == "claude" {
+				candidates = append(candidates, filepath.Join(p.Home, ".claude", "local", n))
+			}
 		}
 	}
 	for _, path := range candidates {

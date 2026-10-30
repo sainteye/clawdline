@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10118,
+  "englishContentKeys": 10119,
   "riskKeys": 4494,
-  "nonRiskCount": 5624,
+  "nonRiskCount": 5625,
   "groups": [
     {
       "name": "admin / other",
@@ -5168,7 +5168,7 @@
     },
     {
       "name": "settings / other",
-      "count": 125,
+      "count": 126,
       "sources": [
         "src/pages/settings/window/copy.ts"
       ],
@@ -5194,6 +5194,7 @@
         "settings.settingsAgentNotifyNote",
         "settings.settingsAuto",
         "settings.settingsAutoNameAuto",
+        "settings.settingsAutoNameSession",
         "settings.settingsBar",
         "settings.settingsBlur",
         "settings.settingsClaudeDefaultModel",

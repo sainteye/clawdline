@@ -52,10 +52,14 @@
   }
   .app[data-view="detail"] ~ .provider-quota-bar { display: none; }
   .quota-full-windows { display: none; }
-  .quota-compact-window { display: inline-flex; }
+  .quota-compact-window { display: inline-flex; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quota-compact-window .quota-window { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quota-compact-window .quota-window span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .quota-compact-window .quota-window-name { display: none; }
   .quota-machine { display: none; }
-  .quota-providers { gap: 12px; }
+  .quota-providers { gap: 12px; overflow: hidden; }
+  .quota-provider { min-width: 0; flex-shrink: 1; overflow: hidden; }
+  .quota-stale { flex-shrink: 0; }
   .quota-compact-window progress, .quota-compact-window .quota-reset { display: none; }
 }
 
