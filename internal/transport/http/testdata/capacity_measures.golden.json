@@ -1901,6 +1901,16 @@
     "Known": true
   },
   {
+    "Name": "orchestrator.delivery_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "orchestrator.delivery_commits",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "orchestrator.opening_stuck_seconds",
     "Known": true,
     "Note": true

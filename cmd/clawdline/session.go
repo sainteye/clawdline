@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/sainteye/clawdline/internal/domain/session"
 	"io"
 	"net/http"
 	"net/url"
@@ -41,6 +44,7 @@ func sessionCommand(args []string) {
 	}
 	fs := flag.NewFlagSet("session report", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	evidenceFile := fs.String("evidence-file", "", cliCopy("workflow", "session.evidence_file", "complete verified delivery evidence JSON file"))
 	summary := fs.String("summary", "", cliCopy("workflow", "session.one_concrete_sentence_at_most_500_characters", "one concrete sentence, at most 500 characters"))
 	conversation := fs.String("conversation", "", cliCopy("workflow", "session.this_assistant_s_conversation_id_default_from_the", "this assistant's conversation id (default: from the environment)"))
 	terminal := fs.String("terminal", "", cliCopy("workflow", "session.the_terminal_id_to_report_for_instead_of", "the terminal id to report for, instead of asking whoami"))
@@ -52,7 +56,15 @@ func sessionCommand(args []string) {
 	if err != nil {
 		fail(err)
 	}
-	os.Exit(reportSession(os.Stdout, os.Stderr, b, *summary, *conversation, *terminal, os.Getenv))
+	evidence := ""
+	if *evidenceFile != "" {
+		raw, err := readDeliveryEvidenceFile(*evidenceFile)
+		if err != nil {
+			fail(err)
+		}
+		evidence = string(raw)
+	}
+	os.Exit(reportSessionEvidence(os.Stdout, os.Stderr, b, *summary, *conversation, *terminal, evidence, os.Getenv))
 }
 
 func sessionUsage() {
@@ -66,6 +78,53 @@ func sessionUsage() {
 // reportSession is the command, answering its exit status.
 func reportSession(stdout, stderr io.Writer, b *broker, summary, conversation, terminal string,
 	getenv func(string) string) int {
+	return reportSessionEvidence(stdout, stderr, b, summary, conversation, terminal, "", getenv)
+}
+
+func readDeliveryEvidenceFile(path string) ([]byte, error) {
+	before, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !before.Mode().IsRegular() {
+		return nil, session.DeliveryEvidenceError("delivery_evidence_invalid")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || !os.SameFile(before, info) {
+		return nil, session.DeliveryEvidenceError("delivery_evidence_invalid")
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, session.DeliveryEvidenceBytesLimit+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 {
+		return nil, session.DeliveryEvidenceError("delivery_evidence_invalid")
+	}
+	if len(raw) > session.DeliveryEvidenceBytesLimit {
+		return nil, session.DeliveryEvidenceError("delivery_evidence_too_large")
+	}
+	return raw, nil
+}
+
+func reportSessionEvidence(stdout, stderr io.Writer, b *broker, summary, conversation, terminal, evidence string, getenv func(string) string) int {
+	var digest string
+	var commits int
+	if evidence != "" {
+		var err error
+		digest, commits, err = session.ValidateDeliveryEvidence(evidence, summary)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
+	}
 	// Its length is the daemon's to judge (1–500 characters): one rule, in
 	// the one place that enforces it.
 	summary = strings.TrimSpace(summary)
@@ -109,10 +168,28 @@ func reportSession(stdout, stderr io.Writer, b *broker, summary, conversation, t
 	}
 	// One path segment: a tmux id such as %47 is otherwise read as an escape.
 	path := "/v1/orchestrator/sessions/" + url.PathEscape(terminal) + "/complete"
-	a, err := b.request(http.MethodPost, path, nil, map[string]string{"summary": summary}, "")
+	body := map[string]string{"summary": summary}
+	key := ""
+	if evidence != "" {
+		body["delivery_evidence"] = evidence
+		sum := sha256.Sum256([]byte(terminal + "\x00" + conversation + "\x00" + digest))
+		key = "delivery-" + hex.EncodeToString(sum[:])
+	}
+	a, err := b.request(http.MethodPost, path, nil, body, key)
 	if err != nil {
 		fmt.Fprintln(stderr, cliCopy("workflow", "session.clawdline_session_report", "clawdline session report:"), err)
 		return 1
+	}
+	if evidence != "" && a.ok() {
+		var ack struct {
+			OK      bool   `json:"ok"`
+			Digest  string `json:"delivery_evidence_sha256"`
+			Commits int    `json:"delivery_evidence_commits"`
+		}
+		if json.Unmarshal(a.Body, &ack) != nil || !ack.OK || ack.Digest != digest || ack.Commits != commits {
+			fmt.Fprintln(stderr, "delivery_evidence_ack_unknown")
+			return 1
+		}
 	}
 	code := report(stdout, stderr, "session report", a)
 	if code == 0 {

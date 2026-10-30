@@ -34,7 +34,7 @@ func TestHTTPRefusalTextRequiresExactWireDetailAndKnownKey(t *testing.T) {
 			t.Errorf("%+v rendered %q", test, got)
 		}
 	}
-	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1289 || total != 1289 {
+	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1290 || total != 1290 {
 		t.Fatalf("Traditional Chinese coverage = %d/%d", translated, total)
 	}
 	const handoffDetail = "The handoff package could not be written; nothing was opened."

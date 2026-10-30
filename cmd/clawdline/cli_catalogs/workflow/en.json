@@ -1,4 +1,5 @@
 {
+  "session.evidence_file": "complete verified delivery evidence JSON file",
   "board.a_track_is_todo_board_or_backlog_not": "a track is todo, board or backlog, not %q",
   "board.board_revision_d_d_cards_s": "board     revision %d, %d cards (%s)\n",
   "board.cards": "cards",

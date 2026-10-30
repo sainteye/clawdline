@@ -1036,7 +1036,19 @@ terminal 還掛著同一個 conversation 時顯示。
   `CLAWDLINE_PROTOCOL_SESSION_FILE` 找出你的 conversation（都沒有就用
   `--conversation`），向 `GET /v1/orchestrator/whoami` 問出 terminal，再把 `{"summary"}` 送到
   `POST /v1/orchestrator/sessions/<terminal>/complete`。
-- summary 長度 1–500 字元。每呼叫一次就是一張新的收據；以最新的為準。
+- summary 長度為 1–500 字元。舊式呼叫未帶 key 時，每次建立新收據，以最新的為準。
+- 大型 Git 交付使用 `clawdline session report --summary "…" --evidence-file <JSON>`。
+  UTF-8 證據檔最多 256 KiB、4,096 筆完整提交識別碼，將完全相同的摘要綁定至通過的 Git
+  交付閘門，以及基線和逐檔歸屬清單的 SHA-256。版本 1 格式與責任邊界見 `docs/session-delivery.md`。
+  原始證據全文及 SHA-256 與 `session.delivered` 一起保存；回應包含 `delivery_evidence_sha256`
+  與 `delivery_evidence_commits`。摘要只需包含有助閱讀的提交資訊。證據代表已認證 adapter 的聲明，
+  不代表獨立審查、落地、部署或發布授權。
+- 證據呼叫必須有 `Idempotency-Key`，CLI 依原始證據、terminal 與 conversation 產生穩定 key。
+  以相同檔案及身分重送會取得原回覆，不新增收據或推播；位元組改變會使用不同 key。
+  舊 daemon 會拒絕額外欄位，不得改用只有摘要的回報繞過。
+  `delivery_evidence_invalid`、`delivery_evidence_mismatch`、`delivery_evidence_unverified`、
+  `delivery_evidence_too_large` 都不建立收據。缺少或不一致的確認為 `delivery_evidence_ack_unknown`，
+  不算成功。daemon 當機後的 `request_outcome_unknown` 不可改用新 key 重試；先核對已保存事件。
 - 回應裡還有 `open_todos`：這個 Session 已送出或已讀、但還沒完成的 direct to-do，由舊到新，最多
   20 筆（更多時 `open_todos_truncated` 為 true）。指令會在收據之後把它們印到 stderr，一行一個 id
   和文字。做完的每一筆都用 `clawdline todo done <id>` 勾掉。收據無論如何都會記錄，離開碼也不變；

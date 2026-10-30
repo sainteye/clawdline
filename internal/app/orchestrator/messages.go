@@ -388,16 +388,32 @@ type SessionDelivery struct {
 	Terminal string `json:"-"`
 	// Conversation is the one the receipt was bound to, which is what names
 	// the Session's direct to-dos.
-	Conversation string    `json:"-"`
-	Summary      string    `json:"title"`
-	Scope        string    `json:"scope"`
-	Evidence     string    `json:"evidence"`
-	At           time.Time `json:"-"`
-	Created      bool      `json:"-"`
+	Conversation    string    `json:"-"`
+	Summary         string    `json:"title"`
+	Scope           string    `json:"scope"`
+	Evidence        string    `json:"evidence"`
+	At              time.Time `json:"-"`
+	Created         bool      `json:"-"`
+	EvidenceSHA256  string    `json:"delivery_evidence_sha256,omitempty"`
+	EvidenceCommits int       `json:"delivery_evidence_commits,omitempty"`
 }
 
 // ReportSessionDelivery records that a session's current turn delivered.
 func (b *Broker) ReportSessionDelivery(ctx context.Context, terminalID, summary string) (SessionDelivery, error) {
+	return b.ReportSessionDeliveryWithEvidence(ctx, terminalID, summary, "")
+}
+
+// ReportSessionDeliveryWithEvidence keeps the full document alongside the legacy sentence.
+func (b *Broker) ReportSessionDeliveryWithEvidence(ctx context.Context, terminalID, summary, evidence string) (SessionDelivery, error) {
+	var digest string
+	var commits int
+	if evidence != "" {
+		var err error
+		digest, commits, err = session.ValidateDeliveryEvidence(evidence, summary)
+		if err != nil {
+			return SessionDelivery{}, refuseRaw(http.StatusBadRequest, err.Error(), err.Error())
+		}
+	}
 	if terminalID == "" || strings.Contains(terminalID, "/") {
 		return SessionDelivery{}, refuse(http.StatusBadRequest, "bad_request",
 			"The route must name one session id.")
@@ -432,6 +448,7 @@ func (b *Broker) ReportSessionDelivery(ctx context.Context, terminalID, summary 
 	payload, _ := json.Marshal(map[string]any{
 		"terminal": terminalID, "conversation": s.ConversationID,
 		"assistant": string(s.Assistant), "summary": trimmed, "at": at.Unix(),
+		"delivery_evidence": evidence, "delivery_evidence_sha256": digest,
 	})
 	push, _ := json.Marshal(completionPush{
 		Terminal: terminalID, Conversation: s.ConversationID, After: at, Summary: trimmed,
@@ -446,13 +463,14 @@ func (b *Broker) ReportSessionDelivery(ctx context.Context, terminalID, summary 
 	// The receipt precedes the final answer. The beat releases its durable
 	// push only after a fresh idle reading of this same conversation.
 	return SessionDelivery{
-		Terminal:     terminalID,
-		Conversation: s.ConversationID,
-		Summary:      trimmed,
-		Scope:        "session",
-		Evidence:     "authenticated_session_delivery",
-		At:           at,
-		Created:      true,
+		Terminal:       terminalID,
+		Conversation:   s.ConversationID,
+		Summary:        trimmed,
+		Scope:          "session",
+		Evidence:       "authenticated_session_delivery",
+		At:             at,
+		Created:        true,
+		EvidenceSHA256: digest, EvidenceCommits: commits,
 	}, nil
 }
 

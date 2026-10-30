@@ -54,6 +54,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `conversation_unreadable` | `internal/transport/http/session_smart_title.go` |
 | `decision_is_for_sessions` | `internal/transport/http/proposals.go` |
 | `definition_version_conflict` | `internal/transport/http/squad.go` |
+| `delivery_evidence_invalid` | `internal/transport/http/orchestrator.go` |
 | `description_required` | `internal/domain/work/v2.go` |
 | `device_list_full` | `internal/transport/http/auth.go` |
 | `digest_mismatch` | `internal/transport/http/squad.go` |
@@ -87,7 +88,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `home_unavailable` | `internal/transport/http/project_files.go`, `internal/transport/http/project_folders.go` |
 | `icon_store_unavailable` | `internal/transport/http/projects.go`, `internal/transport/http/sessions.go` |
 | `idempotency_conflict` | `internal/transport/http/squad.go` |
-| `idempotency_key_required` | `internal/transport/http/snippets.go`, `internal/transport/http/squad.go`, `internal/transport/http/work.go` |
+| `idempotency_key_required` | `internal/transport/http/orchestrator.go`, `internal/transport/http/snippets.go`, `internal/transport/http/squad.go`, `internal/transport/http/work.go` |
 | `idempotency_key_reused` | `internal/transport/http/receipts.go` |
 | `image_not_found` | `internal/transport/http/work_v2_reference_images.go` |
 | `internal` | `internal/transport/http/actions.go`, `internal/transport/http/auth.go`, `internal/transport/http/board.go`, `internal/transport/http/orchestrator.go`, `internal/transport/http/push.go`, `internal/transport/http/terminals.go`, `internal/transport/http/tracks.go` |

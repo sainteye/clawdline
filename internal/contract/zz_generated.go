@@ -1483,9 +1483,15 @@ type BrokerRootCleanupEligibility struct {
 // produces the check that means `delivered, awaiting approval`, and can never
 // produce `landed`.
 type BrokerSessionDelivery struct {
-	Created     bool              `json:"created"`
-	Disposition BrokerDisposition `json:"disposition"`
-	OK          bool              `json:"ok"`
+	Created bool `json:"created"`
+
+	// Number of full commit IDs in the adapter-verified evidence.
+	DeliveryEvidenceCommits int64 `json:"delivery_evidence_commits,omitempty"`
+
+	// SHA-256 of the exact optional evidence document stored with session.delivered.
+	DeliveryEvidenceSha256 string            `json:"delivery_evidence_sha256,omitempty"`
+	Disposition            BrokerDisposition `json:"disposition"`
+	OK                     bool              `json:"ok"`
 
 	// This Session's direct to-dos that were sent or read and are not completed,
 	// oldest first, at most 20. The receipt is recorded either way: a turn may end

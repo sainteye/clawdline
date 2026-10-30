@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/limits"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -637,26 +638,53 @@ func (s *Server) brokerSessionRoute(w http.ResponseWriter, r *http.Request) {
 			"Reporting root delivery needs the orchestrator token.")
 		return
 	}
-	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body) != 1 {
-		writeAuthRefusal(w, http.StatusBadRequest, "bad_request",
-			"The body must contain only string summary.")
+	var body struct {
+		Summary  string          `json:"summary"`
+		Evidence json.RawMessage `json:"delivery_evidence,omitempty"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil || decoder.Decode(new(any)) != io.EOF {
+		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "The body must contain string summary and optional string delivery_evidence.")
 		return
 	}
-	summary, ok := body["summary"].(string)
-	if !ok {
-		writeAuthRefusal(w, http.StatusBadRequest, "bad_request",
-			"The body must contain only string summary.")
+	evidence := ""
+	if body.Evidence != nil {
+		if json.Unmarshal(body.Evidence, &evidence) != nil || string(body.Evidence) == "null" {
+			writeAuthRefusal(w, http.StatusBadRequest, "delivery_evidence_invalid", "delivery_evidence_invalid")
+			return
+		}
+		if evidence == "" {
+			writeAuthRefusal(w, http.StatusBadRequest, "delivery_evidence_invalid", "delivery_evidence_invalid")
+			return
+		}
+		if r.Header.Get("Idempotency-Key") == "" {
+			writeAuthRefusal(w, http.StatusBadRequest, "idempotency_key_required", "idempotency_key_required")
+			return
+		}
+	}
+	if key := r.Header.Get("Idempotency-Key"); key != "" {
+		payload, _ := json.Marshal(body)
+		s.receipted(w, r, store.ReceiptKey{Scope: "session-delivery", Actor: decodeSegment(terminal), Key: key}, requestDigest(payload),
+			func(status int) bool { return status < 500 }, func(w http.ResponseWriter) {
+				s.recordSessionDelivery(w, r, decodeSegment(terminal), body.Summary, evidence)
+			})
 		return
 	}
-	out, err := s.broker.ReportSessionDelivery(r.Context(), decodeSegment(terminal), summary)
+	s.recordSessionDelivery(w, r, decodeSegment(terminal), body.Summary, evidence)
+}
+
+func (s *Server) recordSessionDelivery(w http.ResponseWriter, r *http.Request, terminal, summary, evidence string) {
+	out, err := s.broker.ReportSessionDeliveryWithEvidence(r.Context(), terminal, summary, evidence)
 	if err != nil {
 		writeBrokerError(w, err)
 		return
 	}
 	answer := contract.BrokerSessionDelivery{
-		OK:      true,
-		Created: out.Created,
+		OK:                      true,
+		Created:                 out.Created,
+		DeliveryEvidenceSha256:  out.EvidenceSHA256,
+		DeliveryEvidenceCommits: int64(out.EvidenceCommits),
 		Disposition: contract.BrokerDisposition{
 			Scope:     out.Scope,
 			Title:     out.Summary,

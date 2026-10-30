@@ -473,3 +473,7 @@ OT=$(cat /tmp/x/dir/orchestrator-token)
 
 第一次在一個新 repo 用 worktree 隔離時，Claude Code 會問那個 repo 要不要信任（worktree 的信任跟著主 repo）。
 那是人的決定，broker 不會替人按；先在那個 repo 開一次 claude 回答它。
+
+Session turn receipts accept a short summary with separate complete Git evidence.
+See [Session delivery evidence](session-delivery.md) for the schema, adapter
+responsibility, bounded validation, acknowledgements and safe retries.
