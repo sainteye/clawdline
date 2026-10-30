@@ -285,3 +285,10 @@ func TestNewConversationNeverClaimsUnacknowledgedYolo(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeModeAcceptsAnOfferedCurrentModeWithoutANameAllowlist(t *testing.T) {
+	raw := json.RawMessage(`[{"id":"mode","type":"select","currentValue":"future mode","options":[{"value":"future mode"},{"value":"yolo"}]}]`)
+	if current, err := nativeMode(raw, "yolo"); err != nil || current != "future mode" {
+		t.Fatalf("current=%q err=%v", current, err)
+	}
+}

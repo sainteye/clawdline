@@ -229,6 +229,13 @@ func TestACPProcess(t *testing.T) {
 		default:
 			os.Exit(38)
 		}
+		if strings.HasPrefix(mode, "tier:") && (method == "session/new" || method == "session/resume" || method == "session/load") {
+			var tier any
+			if json.Unmarshal([]byte(strings.TrimPrefix(mode, "tier:")), &tier) != nil {
+				os.Exit(43)
+			}
+			result.(map[string]any)["_meta"] = map[string]any{"antigravity": map[string]any{"tier": tier}}
+		}
 		enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 		if method == "session/new" && mode == "stall-write" {
 			time.Sleep(time.Hour)
@@ -587,6 +594,51 @@ func TestPersonalFlowAndOrderedLateUpdates(t *testing.T) {
 	}
 }
 
+func TestPersonalSessionsDoNotGateOnTierMetadata(t *testing.T) {
+	// Sanitized tier fields from a native session/new response. No real model
+	// request is made by this fake peer regression.
+	for _, tier := range []string{`null`, `{}`, `{"id":"future-tier","name":"Future Plan"}`, `{"name":"Google AI Pro","id":"g1-pro-tier","upgradeUri":"https://antigravity.google/g1-upgrade"}`} {
+		for _, method := range []string{"session/new", "session/resume", "session/load"} {
+			t.Run(method, func(t *testing.T) {
+				c, dir := fake(t, "tier:"+tier, nil)
+				ctx := context.Background()
+				if _, err := c.Initialize(ctx); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := c.AuthenticatePersonal(ctx); err != nil {
+					t.Fatal(err)
+				}
+				var err error
+				wantID := "saved-exact"
+				switch method {
+				case "session/new":
+					_, err = c.NewSession(ctx)
+					wantID = "fake-session"
+				case "session/resume":
+					_, err = c.ResumeSession(ctx, wantID)
+				case "session/load":
+					_, err = c.LoadSession(ctx, wantID)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if c.SessionID() != wantID {
+					t.Fatal("native conversation identity changed")
+				}
+				if _, err = c.Prompt(ctx, "synthetic turn"); err != nil {
+					t.Fatal(err)
+				}
+				settings(t, dir, `{"useG1Credits":true,"auth":{"type":"oauth-personal"}}`)
+				_, err = c.Prompt(ctx, "must not reach peer")
+				requireError(t, err, "personal_settings_required", NotWritten)
+				if got := methods(t, dir); !reflect.DeepEqual(got, []string{"initialize", "authenticate", method, "session/prompt"}) {
+					t.Fatal("unexpected request or replay", got)
+				}
+			})
+		}
+	}
+}
+
 func TestPersonalSettingsAndTierRefuseBeforePrompt(t *testing.T) {
 	for _, value := range []string{`{}`, `{"useG1Credits":true,"auth":{"type":"oauth-personal"}}`, `{"useG1Credits":false,"auth":{"type":"api-key"}}`, `{"useG1Credits":false,"useG1Credits":true,"auth":{"type":"oauth-personal"}}`, `bad`} {
 		t.Run(value, func(t *testing.T) {
@@ -608,18 +660,6 @@ func TestPersonalSettingsAndTierRefuseBeforePrompt(t *testing.T) {
 		settings(t, dir, `{"useG1Credits":true,"auth":{"type":"oauth-personal"}}`)
 		_, err := c.Prompt(context.Background(), "never send")
 		requireError(t, err, "personal_settings_required", NotWritten)
-		if got := methods(t, dir); len(got) != 3 {
-			t.Fatal(got)
-		}
-	})
-	t.Run("tier", func(t *testing.T) {
-		c, dir := fake(t, "paid-tier", nil)
-		c.Initialize(context.Background())
-		c.AuthenticatePersonal(context.Background())
-		_, err := c.NewSession(context.Background())
-		requireError(t, err, "free_tier_required", Acknowledged)
-		_, err = c.Prompt(context.Background(), "never send")
-		requireError(t, err, "not_ready", NotWritten)
 		if got := methods(t, dir); len(got) != 3 {
 			t.Fatal(got)
 		}
@@ -833,4 +873,16 @@ func TestControlRPCStillTimesOut(t *testing.T) {
 	ready(t, c)
 	err := c.SetModelChecked(context.Background(), "offered-model", nil)
 	requireError(t, err, "cancelled", Uncertain)
+}
+
+func TestNativeConfigTransportDoesNotRestrictConfigNames(t *testing.T) {
+	c, dir := fake(t, "happy", nil)
+	ready(t, c)
+	if err := c.SetConfigOptionChecked(context.Background(), "future_option", "opaque value", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := methods(t, dir); !reflect.DeepEqual(got, []string{"initialize", "authenticate", "session/new", "session/set_config_option"}) {
+		t.Fatal(got)
+	}
+	requireError(t, c.SetConfigOptionChecked(context.Background(), "", "opaque value", nil, nil), "invalid_config", NotWritten)
 }

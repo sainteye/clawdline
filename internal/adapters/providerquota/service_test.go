@@ -242,3 +242,61 @@ func TestDoctorInspectionDoesNotReadCredentialsOrStartRefresh(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeGeminiReplacesLegacyCredentialsAndKeepsSingleFlight(t *testing.T) {
+	s := New(t.TempDir(), nil)
+	s.getenv = func(string) string { return "" }
+	s.readFile = func(path string) ([]byte, error) {
+		if strings.Contains(path, ".gemini") {
+			t.Error("native reader touched retired Gemini credentials")
+		}
+		return nil, os.ErrNotExist
+	}
+	s.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		t.Error("native reader called legacy HTTP API")
+		return response(500, ""), nil
+	})
+	var hits atomic.Int32
+	var fail atomic.Bool
+	entered, release := make(chan struct{}), make(chan struct{})
+	s.WithGemini(func(ctx context.Context) ([]Window, string) {
+		if hits.Add(1) == 1 {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return nil, "unavailable"
+			}
+		}
+		if fail.Load() {
+			return nil, "unavailable"
+		}
+		return []Window{{Name: "5h", UsedPercent: 0}, {Name: "7d", UsedPercent: 25}}, ""
+	})
+	now := time.Now()
+	s.Inspect(now)
+	if hits.Load() != 0 {
+		t.Fatal("diagnostics triggered native quota")
+	}
+	s.Snapshot(now)
+	<-entered
+	for i := 0; i < 10; i++ {
+		s.Snapshot(now)
+	}
+	if hits.Load() != 1 {
+		t.Fatal("duplicate native request", hits.Load())
+	}
+	close(release)
+	waitFinished(t, s)
+	r := s.Snapshot(now).Providers[0]
+	if r.ID != "gemini" || r.Source != "provider_cli" || r.Stale || len(r.Windows) != 2 || r.Windows[0].UsedPercent != 0 {
+		t.Fatalf("row=%+v", r)
+	}
+	fail.Store(true)
+	s.Snapshot(now.Add(RefreshSecondsLimit * time.Second))
+	waitFinished(t, s)
+	r = s.Inspect(now.Add(RefreshSecondsLimit * time.Second)).Providers[0]
+	if !r.Stale || r.Problem != "unavailable" || len(r.Windows) != 2 || hits.Load() != 2 {
+		t.Fatalf("failure lost last good quota: %+v calls=%d", r, hits.Load())
+	}
+}

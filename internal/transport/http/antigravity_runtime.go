@@ -105,7 +105,7 @@ func (s *Server) StartAntigravity(ctx context.Context, options AntigravityRuntim
 	if !info.Installed {
 		return nil, &antigravity.BridgeError{Code: "antigravity_runtime_inactive"}
 	}
-	if !info.Compatible || info.Version != "1.4.5" {
+	if !info.Compatible {
 		return nil, &antigravity.BridgeError{Code: "antigravity_runtime_incompatible"}
 	}
 	dir, err := antigravity.ProviderStateDir(s.cfg.Dir)

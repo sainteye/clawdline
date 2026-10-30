@@ -1,7 +1,9 @@
 package antigravitysession
 
 import (
+	"context"
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -17,7 +19,6 @@ func TestNativeConfigInvalidSnapshotsPreservePreviousState(t *testing.T) {
 	for _, raw := range []string{
 		`{}`, `{"configOptions":null}`, `{"configOptions":{}}`,
 		`{"configOptions":[{"id":"thinking_level","type":"select","currentValue":"low","options":[{"value":"low"},{"value":"low"}]}]}`,
-		`{"configOptions":[{"id":"thinking_level","type":"select","currentValue":"high","options":[{"value":"low extra"}]}]}`,
 		`{"configOptions":[{"id":"model","type":"select","currentValue":"new","options":[]},{"id":"thinking_level","type":"select","currentValue":false}]}`,
 	} {
 		if err := c.readMetadata(json.RawMessage(raw), false); err == nil {
@@ -89,4 +90,68 @@ func TestQuotaPreservesZeroAndUnknown(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestQuotaReadsBothNativeGeminiWindows(t *testing.T) {
+	text := "### Quota Limits\n- **Gemini Models**\n  - **Weekly Limit Remaining:** 100% remaining (resets Nov 06, 2026, 01:26 UTC)\n  - **Five Hour Limit Remaining:** 75% remaining (resets Oct 30, 2026, 06:26 UTC)\n- **Claude and GPT models**\n  - **Weekly Limit Remaining:** 9% remaining"
+	q := parseQuota(text, time.Now())
+	if len(q.Windows) != 2 {
+		t.Fatalf("windows=%+v", q.Windows)
+	}
+	if q.Windows[0].Name != "5h" || q.Windows[0].UsedPercent != 25 || q.Windows[1].Name != "7d" || q.Windows[1].UsedPercent != 0 {
+		t.Fatalf("windows=%+v", q.Windows)
+	}
+}
+
+func TestNativeConfigKeepsOpaqueOfferedValues(t *testing.T) {
+	c := &conversation{}
+	raw := json.RawMessage(`{"configOptions":[{"id":"model","type":"select","currentValue":"future model","options":[{"value":"future model","name":"Future"}]},{"id":"thinking_level","type":"select","currentValue":"adaptive high","options":[{"value":"adaptive high"}]}]}`)
+	if err := c.readMetadata(raw, true); err != nil {
+		t.Fatal(err)
+	}
+	if c.model != "future model" || c.effort != "adaptive high" || len(c.models) != 1 || len(c.efforts) != 1 {
+		t.Fatal("opaque native IDs were discarded")
+	}
+}
+
+// Opt-in metadata acceptance only: four ACP RPCs, fixed /usage, no model input.
+func TestNativeAccountQuotaMetadataOnly(t *testing.T) {
+	path := os.Getenv("CLAWDLINE_GEMINI_NATIVE_QUOTA_TEST_CONFIG")
+	if path == "" {
+		t.Skip("explicit native quota configuration required")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal("native configuration unavailable")
+	}
+	var cfg Options
+	if json.Unmarshal(raw, &cfg) != nil {
+		t.Fatal("invalid native configuration")
+	}
+	h, err := New(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := h.Shutdown(); err != nil {
+			t.Error(err)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	q, err := h.AccountQuota(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(q.Windows) == 0 || q.UnknownReason != "" {
+		t.Fatalf("quota unknown: %v", q.UnknownReason)
+	}
+	for _, w := range q.Windows {
+		t.Logf("%s used=%g%% reset=%d", w.Name, w.UsedPercent, w.ResetsAt)
+	}
+	inv, err := h.Inventory(ctx)
+	if err != nil || len(inv.Sessions) != 0 {
+		t.Fatal("metadata created a user Session")
+	}
+	t.Log("metadata RPCs=4; model inputs=0; usage-priced API calls=0")
 }

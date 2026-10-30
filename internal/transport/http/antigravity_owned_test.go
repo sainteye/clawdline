@@ -547,3 +547,75 @@ func TestOwnedSmartTitleReadsStructuredHistory(t *testing.T) {
 		t.Fatal("unavailable history spent a naming turn")
 	}
 }
+
+func TestNativeGeminiAccountQuotaReachesFooterWithoutAUserConversation(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv("CLW_HTTP_PEER", "yes")
+	if err := os.MkdirAll(filepath.Join(root, "antigravity-acp"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "antigravity-acp", "settings.json"), []byte(`{"useG1Credits":false,"auth":{"type":"oauth-personal"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := antigravitysession.New(context.Background(), antigravitysession.Options{Executable: exe, AccountDir: root, Args: []string{"-test.run=^TestOwnedHTTPPeer$"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := h.Shutdown(); err != nil {
+			t.Error(err)
+		}
+	})
+	s := &Server{}
+	s.antigravitySessions.Store(h)
+	read := func() contract.ProviderQuotaSnapshot {
+		rec := httptest.NewRecorder()
+		s.providerQuotas(rec, httptest.NewRequest("GET", "/v1/provider-quotas", nil))
+		if rec.Code != 200 {
+			t.Fatalf("quota endpoint: %d", rec.Code)
+		}
+		var out contract.ProviderQuotaSnapshot
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	out := read()
+	deadline := time.Now().Add(3 * time.Second)
+	for out.Updating && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+		out = read()
+	}
+	var gemini *contract.ProviderQuotaRow
+	for i := range out.Providers {
+		if out.Providers[i].ID == "gemini" {
+			gemini = &out.Providers[i]
+		}
+	}
+	if gemini == nil || gemini.Source != "provider_cli" || len(gemini.Windows) != 1 || gemini.Windows[0].UsedPercent != 38 || gemini.Stale {
+		t.Fatalf("Gemini footer=%+v", gemini)
+	}
+	inv, err := h.Inventory(context.Background())
+	if err != nil || len(inv.Sessions) != 0 {
+		t.Fatalf("quota created a visible Session: %+v %v", inv, err)
+	}
+	rawPrompt, err := os.ReadFile(filepath.Join(root, "last-prompt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prompt []struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(rawPrompt, &prompt) != nil || len(prompt) != 1 || prompt[0].Text != "/usage" {
+		t.Fatal("quota sent a model turn instead of the fixed metadata command")
+	}
+	usage, err := os.ReadFile(filepath.Join(root, "usage"))
+	if err != nil || string(usage) != "usage\n" {
+		t.Fatalf("metadata read was replayed: %q %v", usage, err)
+	}
+}

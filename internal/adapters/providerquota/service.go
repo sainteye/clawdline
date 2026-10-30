@@ -57,12 +57,20 @@ type Service struct {
 	slots    [CacheLimit]slot
 	readFile func(string) ([]byte, error)
 	getenv   func(string) string
+	gemini   func(context.Context) ([]Window, string)
 }
 
 func New(home string, local *limits.Reader) *Service {
 	return &Service{home: home, local: local,
 		client:   &http.Client{Timeout: RequestSecondsLimit * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		readFile: readSmall, getenv: os.Getenv}
+}
+
+// WithGemini selects the daemon's authenticated native quota reader before the
+// service is published. It replaces the retired personal Gemini CLI API path.
+func (s *Service) WithGemini(read func(context.Context) ([]Window, string)) *Service {
+	s.gemini = read
+	return s
 }
 func readSmall(path string) ([]byte, error) {
 	f, e := os.Open(path)
@@ -106,17 +114,21 @@ func (s *Service) snapshot(now time.Time, refresh bool) Snapshot {
 	for i, p := range []struct{ id, label string }{{"gemini", "Gemini"}, {"grok", "Grok"}} {
 		var cred credential
 		var problem string
-		if refresh {
+		source := "provider_api"
+		if p.id == "gemini" && s.gemini != nil {
+			cred.identity = "native"
+			source = "provider_cli"
+		} else if refresh {
 			cred, problem = s.credentials(p.id, now)
 		}
 		s.mu.Lock()
 		v := &s.slots[i]
 		if v.row.ID == "" {
-			v.row = baseRow(p.id, p.label, "provider_api")
+			v.row = baseRow(p.id, p.label, source)
 		}
 		if refresh && cred.identity != v.identity && !(cred.identity == "" && problem == "unreadable") {
 			v.generation++
-			v.row = baseRow(p.id, p.label, "provider_api")
+			v.row = baseRow(p.id, p.label, source)
 			v.identity = cred.identity
 			v.next = time.Time{}
 		}
@@ -331,6 +343,10 @@ func (s *Service) request(ctx context.Context, method, url string, c credential,
 }
 func (s *Service) fetch(ctx context.Context, id string, c credential) ([]Window, string, time.Time) {
 	if id == "gemini" {
+		if s.gemini != nil {
+			windows, problem := s.gemini(ctx)
+			return windows, problem, time.Time{}
+		}
 		b, p, r := s.request(ctx, "POST", "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", c, `{"metadata":{"ideType":"GEMINI_CLI","pluginType":"GEMINI"}}`)
 		if p != "" {
 			return nil, p, r

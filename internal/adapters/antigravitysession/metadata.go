@@ -3,7 +3,9 @@ package antigravitysession
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -126,7 +128,7 @@ func (c *conversation) readMetadata(raw json.RawMessage, allowLegacy bool) error
 	if json.Unmarshal(raw, &result) != nil {
 		return refusal("invalid_config")
 	}
-	validValue := func(value string) bool { return value != "" && !strings.ContainsAny(value, " \t\r\n") }
+	validValue := func(value string) bool { return value != "" }
 	if result.ConfigOptions == nil {
 		if !allowLegacy {
 			return refusal("invalid_config")
@@ -224,14 +226,56 @@ func unknownQuota(reason contract.AssistantUnknownReason) *contract.SessionLimit
 	return &contract.SessionLimits{Windows: []contract.SessionLimitWindow{}, UnknownReason: reason, Detail: "Gemini · ACP /usage"}
 }
 
-// ACP 1.4.1 emits English with LC_ALL=C. Only this exact numeric Gemini
-// quota shape is understood; session tokens and other model groups are ignored.
-var weeklyRemaining = regexp.MustCompile(`^- \*\*Weekly Limit Remaining:\*\* ([0-9]+(?:\.[0-9]+)?)% remaining(?: \(resets (.+ UTC)\))?$`)
+// AccountQuota reads the fixed native /usage command on a temporary connection.
+// The global quota service owns single-flight and refresh cadence. This does not
+// consume a user Session slot, borrow a busy conversation, or write its history.
+func (h *Host) AccountQuota(ctx context.Context) (reading *contract.SessionLimits, err error) {
+	h.mu.Lock()
+	if h.closed || h.ctx.Err() != nil {
+		h.mu.Unlock()
+		return nil, refusal("closed")
+	}
+	h.jobs.Add(1)
+	h.mu.Unlock()
+	defer h.jobs.Done()
+	cwd, err := os.MkdirTemp("", "clawdline-gemini-quota-")
+	if err != nil {
+		return nil, refusal("unavailable")
+	}
+	defer os.RemoveAll(cwd)
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime})
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := client.Close(); err == nil && closeErr != nil {
+			reading, err = nil, closeErr
+		}
+	}()
+	if _, err = client.Initialize(ctx); err != nil {
+		return nil, err
+	}
+	if _, err = client.AuthenticatePersonal(ctx); err != nil {
+		return nil, err
+	}
+	if _, err = client.NewSession(ctx); err != nil {
+		return nil, err
+	}
+	text, err := client.Usage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return parseQuota(text, time.Now()), nil
+}
+
+// ACP 1.4.1 emits English with LC_ALL=C. Only numeric Gemini quota windows
+// are understood; session tokens and other model groups are ignored.
+var quotaRemaining = regexp.MustCompile(`^- \*\*(Weekly|Five Hour) Limit Remaining:\*\* ([0-9]+(?:\.[0-9]+)?)% remaining(?: \(resets (.+ UTC)\))?$`)
 
 func parseQuota(text string, at time.Time) *contract.SessionLimits {
 	out := unknownQuota(contract.AssistantUnknownReasonNoReading)
 	inQuota, inGemini := false, false
-	found := false
+	found := map[string]bool{}
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "### ") {
@@ -249,32 +293,34 @@ func parseQuota(text string, at time.Time) *contract.SessionLimits {
 		if !inGemini {
 			continue
 		}
-		match := weeklyRemaining.FindStringSubmatch(trimmed)
+		match := quotaRemaining.FindStringSubmatch(trimmed)
 		if match == nil {
-			if strings.HasPrefix(trimmed, "- **Weekly Limit Remaining:") {
+			if strings.HasPrefix(trimmed, "- **Weekly Limit Remaining:") || strings.HasPrefix(trimmed, "- **Five Hour Limit Remaining:") {
 				return unknownQuota(contract.AssistantUnknownReasonNoReading)
 			}
 			continue
 		}
-		if found {
+		name := map[string]string{"Weekly": "7d", "Five Hour": "5h"}[match[1]]
+		if found[name] {
 			return unknownQuota(contract.AssistantUnknownReasonNoReading)
 		}
-		remaining, err := strconv.ParseFloat(match[1], 64)
+		remaining, err := strconv.ParseFloat(match[2], 64)
 		if err != nil || remaining < 0 || remaining > 100 {
 			return unknownQuota(contract.AssistantUnknownReasonNoReading)
 		}
-		window := contract.SessionLimitWindow{Name: "7d", UsedPercent: 100 - remaining, Hit: remaining == 0}
-		if match[2] != "" {
-			reset, err := time.Parse("Jan 2, 2006, 15:04 MST", match[2])
+		window := contract.SessionLimitWindow{Name: name, UsedPercent: 100 - remaining, Hit: remaining == 0}
+		if match[3] != "" {
+			reset, err := time.Parse("Jan 2, 2006, 15:04 MST", match[3])
 			if err != nil {
 				return unknownQuota(contract.AssistantUnknownReasonNoReading)
 			}
 			window.ResetsAt = reset.Unix()
 		}
-		out.Windows = []contract.SessionLimitWindow{window}
-		found = true
+		out.Windows = append(out.Windows, window)
+		found[name] = true
 	}
-	if found {
+	if len(found) > 0 {
+		sort.SliceStable(out.Windows, func(i, j int) bool { return out.Windows[i].Name < out.Windows[j].Name })
 		out.UnknownReason = ""
 		out.At, out.ReadAtMs = at.Unix(), at.UnixMilli()
 		age := int64(0)
