@@ -1,3 +1,4 @@
+import { GraphifyViewer } from "../graphify/GraphifyViewer.js"
 import { macKeyboard, shortcutLabel } from "../shortcuts.js"
 import { catalogWord } from "../catalog.js"
 import { Fragment, useEffect } from "react"
@@ -70,6 +71,7 @@ export function Overlays() {
   return (
     <>
       <ITermConsentDialog />
+      <GraphifyViewer />
       <div className="overlay" id="keys" hidden>
         <div className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-labelledby="keys-title">
           <div className="shortcuts-head">

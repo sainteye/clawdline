@@ -6,6 +6,11 @@ const AntigravityConsentRequestBytesLimit = 4096
 // projects.*.
 func projectFilesBounds() []Entry {
 	return []Entry{
+		{Name: "projects.graphify_zoom", Class: Buffer, Unit: Rows, Limit: 4, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon},
+		{Name: "projects.graphify_nodes", Class: Buffer, Unit: Rows, Limit: 300, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.ViewNodeLimit"}},
+		{Name: "projects.graphify_links", Class: Buffer, Unit: Rows, Limit: 900, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.ViewLinkLimit"}},
+		{Name: "projects.graphify_text", Class: Buffer, Unit: Characters, Limit: 120, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.ViewTextLimit"}},
+		{Name: "projects.graphify_request_ms", Class: Buffer, Unit: Milliseconds, Limit: 15000, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon},
 		// ANTIGRAVITY_CONSENT_REQUEST_MS in the Project consent website API
 		// bounds the entire response, including its JSON body, without retry.
 		{Name: "projects.antigravity_consent_request_ms", Class: Buffer, Unit: Milliseconds, Limit: 15000, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon},

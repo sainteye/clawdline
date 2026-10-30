@@ -166,6 +166,13 @@ func TestEveryLocalWordThatNeedsThisMachineSaysSo(t *testing.T) {
 		if o.Local == nil || o.Local.Device {
 			continue
 		}
+		// Exercise the credential boundary with the optional feature enabled.
+		// Its default-off refusal is tested separately by graphify_test.go.
+		if o.Op == "project-graphify" || o.Op == "session-graphify" {
+			if _, err := s.server.settingsFile().Set(map[string]any{"graphify_enabled": true}); err != nil {
+				t.Fatal(err)
+			}
+		}
 		reachedOnce := false
 		for _, shape := range o.Shapes {
 			example := o.Example

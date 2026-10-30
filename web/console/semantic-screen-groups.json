@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9960,
-  "riskKeys": 4427,
-  "nonRiskCount": 5533,
+  "englishContentKeys": 10006,
+  "riskKeys": 4446,
+  "nonRiskCount": 5560,
   "groups": [
     {
       "name": "admin / other",
@@ -342,7 +342,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 371,
+      "count": 377,
       "sources": [
         null
       ],
@@ -633,6 +633,12 @@
         "capacityRow.projects.antigravity_consent_request_ms.what",
         "capacityRow.projects.folder_rows.full",
         "capacityRow.projects.folder_rows.what",
+        "capacityRow.projects.graphify_nodes.full",
+        "capacityRow.projects.graphify_nodes.what",
+        "capacityRow.projects.graphify_text.full",
+        "capacityRow.projects.graphify_text.what",
+        "capacityRow.projects.graphify_zoom.full",
+        "capacityRow.projects.graphify_zoom.what",
         "capacityRow.projects.workspace_metadata_bytes.what",
         "capacityRow.projectsync.clones.what",
         "capacityRow.projectsync.file_bytes.what",
@@ -1120,6 +1126,35 @@
         "documents.videoPlay",
         "documents.videoPreview",
         "documents.videoTooLarge"
+      ]
+    },
+    {
+      "name": "graphifyView / other",
+      "count": 20,
+      "sources": [
+        "src/graphify/GraphifyViewer.tsx"
+      ],
+      "keys": [
+        "graphifyView.all",
+        "graphifyView.canvas",
+        "graphifyView.checked",
+        "graphifyView.close",
+        "graphifyView.community",
+        "graphifyView.counts",
+        "graphifyView.fit",
+        "graphifyView.hint",
+        "graphifyView.loading",
+        "graphifyView.matched",
+        "graphifyView.nodeList",
+        "graphifyView.open",
+        "graphifyView.refresh",
+        "graphifyView.relations",
+        "graphifyView.search",
+        "graphifyView.title",
+        "graphifyView.truncated",
+        "graphifyView.ungrouped",
+        "graphifyView.zoomIn",
+        "graphifyView.zoomOut"
       ]
     },
     {
@@ -1872,7 +1907,7 @@
     },
     {
       "name": "http / other",
-      "count": 572,
+      "count": 573,
       "sources": [
         "internal/productcopy/http_refusals/en.json"
       ],
@@ -2284,6 +2319,7 @@
         "http.b67b3564bed2e921",
         "http.b71f93b381052842",
         "http.b73da49c3637f3d3",
+        "http.b7f45946cad6d100",
         "http.b810113254d864d7",
         "http.b8cf6eb17c4de596",
         "http.b90b041e98d87c8d",

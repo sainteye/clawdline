@@ -1938,6 +1938,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/v2/human-interventions/conversation%3A10000000-0000-4000-8000-000000000002", "work.v2.human-interventions", { terminal: "conversation:10000000-0000-4000-8000-000000000002" }],
   ["/v1/projects", "projects", {}],
   ["/v1/projects/cloud-p1/files", "project-file-list", { project: "p1" }],
+  ["/v1/projects/cloud-p1/graphify", "project-graphify", { project: "p1" }],
   ["/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-read", { project: "p1", file: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
   ["/v1/projects/cloud-p1/antigravity-consent", "project-antigravity-consent-status", { project: "p1" }],
   ["/v1/projects/cloud-p1/unify", "project-unify-plan", { project: "p1" }],
@@ -2394,4 +2395,14 @@ test("expanding a stored tool body carries its exact machine and execution pin",
   assert.equal(answer.status, 200)
   assert.deepEqual(requests, [[target, "transcript", { limit: 200, view }, signal]])
   assert.equal(client.asks, 0, "expansion must not be replaced by a cached full-page read")
+})
+
+
+test("Graphify session reads preserve the exact session and reject extra fields", async () => {
+ const client=new FakeClient();const r=reader(client,{t:1000})
+ const res=await r.fetch("/v1/sessions/"+encodeURIComponent("%19")+"/graphify")
+ assert.equal(res.status,200)
+ assert.deepEqual(client.sessionPageReads,[{identity:{machine:"mac-a",session:"%19"},word:"session-graphify",body:{},answer:"session-graphify"}])
+ const bad=await r.fetch("/v1/sessions/"+encodeURIComponent("%19")+"/graphify?path=/elsewhere")
+ assert.equal(bad.status,501);assert.equal(client.sessionPageReads.length,1)
 })

@@ -420,6 +420,11 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `projects.antigravity_consent_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projects.antigravity_consent_request_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `projects.folder_rows` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_links` | 900 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_nodes` | 300 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_request_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_text` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_zoom` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projects.workspace_metadata_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.clones` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.entry_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |

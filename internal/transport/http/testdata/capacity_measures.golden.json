@@ -2046,6 +2046,31 @@
     "Note": true
   },
   {
+    "Name": "projects.graphify_links",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_nodes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_request_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_text",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_zoom",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "projects.workspace_metadata_bytes",
     "Known": true,
     "Note": true
