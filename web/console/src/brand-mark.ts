@@ -1,15 +1,7 @@
 import type { Icon, SessionRow } from "@clawdline/contract"
 
-// Machine workspace Sessions keep the solid brand mark.
+// Compact brand surfaces share the full-width terminal underline (L-01 + G-02).
 export const BRAND_MARK: Icon = {
-  accent: "#d97757",
-  cells: [".######.", ".#o##o#.", "########", ".######."].map((row) =>
-    row.split("").map((ch) => (ch === "#" ? "#d97757" : ch === "o" ? "#141416" : "#33201a")),
-  ),
-}
-
-// The navigation handle uses the full-width terminal underline (L-01 + G-02).
-export const NAVIGATION_MARK: Icon = {
   accent: "#d97757",
   cells: [
     "..############..", "..############..",
@@ -22,6 +14,8 @@ export const NAVIGATION_MARK: Icon = {
     ch === "#" ? "#d97757" : ch === "o" ? "#141416" : ch === "-" ? "#4ccb7f" : null,
   )),
 }
+
+export const NAVIGATION_MARK = BRAND_MARK
 
 export function sessionName(row: SessionRow): string {
   return row.machine_scope || row.coordinator ? "Clawdfather" : row.label || row.tty || row.id

@@ -437,7 +437,7 @@ function Shell({ route, go, say, consoleHref, stampText, refreshing, onRefresh, 
         role={narrow ? "dialog" : undefined} aria-modal={drawerOpen || undefined} aria-label={narrow ? say("menuLabel") : undefined}
         aria-hidden={narrow && !open ? true : undefined}>
         <div className="adm-brand">
-          <svg className="adm-brand-mark" viewBox="0 0 8 4" aria-hidden="true" focusable="false" shapeRendering="crispEdges">
+          <svg className="adm-brand-mark" viewBox="0 0 16 11" aria-hidden="true" focusable="false" shapeRendering="crispEdges">
             {BRAND_MARK.cells.flatMap((row, y) => row.map((fill, x) => fill ? (
               <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={fill} />
             ) : null))}
