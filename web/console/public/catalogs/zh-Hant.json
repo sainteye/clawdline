@@ -8543,6 +8543,7 @@
   "settings.webFailMacWritesOff": "這台機器目前不接受來自 Cloud 的指令。",
   "settings.webRemoteMachineOnly": "這個瀏覽器不能管理這台機器的 Cloud 登入。請在這台機器開啟設定精靈，或在這台機器的終端機執行 clawdline cloud login。",
   "settings.workTab": "工作",
+  "settings.settingsAutoNameSession": "跟隨 Session 助理",
   "shell.menuCopy": "複製",
   "shell.menuCut": "剪下",
   "shell.menuEdit": "編輯",

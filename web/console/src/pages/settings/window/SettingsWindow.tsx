@@ -547,8 +547,10 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
               value={naming}
               options={[
                 { label: W.settingsOff, value: "off" },
+                { label: W.settingsAutoNameSession, value: "session" },
                 { label: ASSISTANT_LABEL.codex, value: "codex" },
                 { label: ASSISTANT_LABEL.claude, value: "claude" },
+                { label: ASSISTANT_LABEL.antigravity, value: "antigravity" },
                 { label: W.settingsAutoNameAuto, value: "auto" },
               ]}
               onPick={(value) => {

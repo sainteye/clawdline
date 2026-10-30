@@ -7689,7 +7689,7 @@ export interface SettingsRequest {
   antigravity_default_model: string | null
 
   /**
-   * `claude` or `codex`.
+   * `session`, `claude`, `codex`, `antigravity`, or `auto`.
    */
   auto_name_assistant: string | null
 
@@ -8036,8 +8036,9 @@ export interface SettingsSnapshot {
   antigravity_default_model: string | null
 
   /**
-   * Whose quota that naming turn spends, `claude` or `codex`. Remembered while the
-   * switch above is off, so turning it back on does not quietly change providers.
+   * Whose quota that naming turn spends: `session`, `claude`, `codex`,
+   * `antigravity`, or `auto`. Remembered while the switch above is off, so turning
+   * it back on does not quietly change providers.
    */
   auto_name_assistant: string | null
 

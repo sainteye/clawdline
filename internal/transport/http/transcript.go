@@ -611,13 +611,16 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 				}
 			}
 		}
+		if naming, err := s.namingAssistantFor(item); err == nil {
+			info.Session.NamingAssistant = naming
+		}
 		if !s.admitPinnedTarget(w, r, id) {
 			return
 		}
 		writeJSON(w, contract.SessionInfoReply{Info: info})
 		return
 	}
-	if naming, err := s.namingAssistant(); err == nil {
+	if naming, err := s.namingAssistantFor(item); err == nil {
 		info.Session.NamingAssistant = naming
 	}
 	for _, m := range transcript.Models(home, string(item.Assistant)) {

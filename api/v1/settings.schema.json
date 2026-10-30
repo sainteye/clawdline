@@ -91,7 +91,7 @@
           "type": "boolean"
         },
         "auto_name_assistant": {
-          "description": "Whose quota that naming turn spends, `claude` or `codex`. Remembered while the switch above is off, so turning it back on does not quietly change providers.",
+          "description": "Whose quota that naming turn spends: `session`, `claude`, `codex`, `antigravity`, or `auto`. Remembered while the switch above is off, so turning it back on does not quietly change providers.",
           "nullable": true,
           "type": "string"
         },
@@ -350,7 +350,7 @@
           "type": "boolean"
         },
         "auto_name_assistant": {
-          "description": "`claude` or `codex`.",
+          "description": "`session`, `claude`, `codex`, `antigravity`, or `auto`.",
           "nullable": true,
           "type": "string"
         },

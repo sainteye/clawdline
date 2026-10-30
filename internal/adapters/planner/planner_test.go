@@ -162,7 +162,7 @@ func TestPlannerFallsBackToToollessCodex(t *testing.T) {
 }
 
 func TestNamerUsesOnlyTheChosenAssistantAndNoTools(t *testing.T) {
-	cases := []string{"claude", "codex"}
+	cases := []string{"claude", "codex", "antigravity"}
 	for _, assistant := range cases {
 		t.Run(assistant, func(t *testing.T) {
 			runs := 0
@@ -171,17 +171,23 @@ func TestNamerUsesOnlyTheChosenAssistantAndNoTools(t *testing.T) {
 				LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
 				Run: func(_ context.Context, executable string, args []string, stdin, _ string, _ []string) ([]byte, error) {
 					runs++
-					if executable != "/fake/"+assistant {
-						t.Fatalf("used %q, want chosen assistant %q", executable, assistant)
-					}
 					joined := strings.Join(args, " ")
 					if assistant == "claude" {
-						if !hasEmptyTools(args) || stdin != "ship the helper" || !strings.Contains(joined, "--model sonnet") {
+						if executable != "/fake/claude" || !hasEmptyTools(args) || stdin != "ship the helper" || !strings.Contains(joined, "--model sonnet") {
 							t.Fatalf("claude run = %q stdin=%q", joined, stdin)
 						}
 						return []byte(`{"structured_output":{"title":"Release helper"}}`), nil
 					}
-					if !strings.Contains(joined, "agents.enabled=false") || !strings.Contains(stdin, "<session>\nship the helper\n</session>") {
+					if assistant == "antigravity" {
+						if executable != "/fake/agy" && executable != "/fake/antigravity" {
+							t.Fatalf("antigravity executable = %q", executable)
+						}
+						if !strings.Contains(joined, "--mode plan") || !strings.Contains(joined, "--effort low") || !strings.Contains(joined, "<session>\nship the helper\n</session>") {
+							t.Fatalf("antigravity run = %q stdin=%q", joined, stdin)
+						}
+						return []byte(`{"title":"Release helper"}`), nil
+					}
+					if executable != "/fake/codex" || !strings.Contains(joined, "agents.enabled=false") || !strings.Contains(stdin, "<session>\nship the helper\n</session>") {
 						t.Fatalf("codex run = %q stdin=%q", joined, stdin)
 					}
 					for i := 0; i+1 < len(args); i++ {
@@ -208,23 +214,29 @@ func TestPersonaSuggesterUsesOneChosenAssistantWithoutTools(t *testing.T) {
 	request := PersonaRequest{Kind: "feature", Title: "改善手機版導覽", Description: "支援鍵盤操作",
 		Candidates: []PersonaCandidate{{ID: "frontend", Name: "Frontend Engineer", Summary: "Builds interfaces."},
 			{ID: "backend", Name: "Backend Engineer", Summary: "Builds services."}}}
-	for _, assistant := range []string{"claude", "codex"} {
+	for _, assistant := range []string{"claude", "codex", "antigravity"} {
 		t.Run(assistant, func(t *testing.T) {
 			runs := 0
 			p := Planner{Home: t.TempDir(), LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
 				Run: func(_ context.Context, executable string, args []string, stdin, _ string, _ []string) ([]byte, error) {
 					runs++
-					if executable != "/fake/"+assistant {
-						t.Fatalf("used %q, want %q", executable, assistant)
-					}
 					joined := strings.Join(args, " ")
 					if assistant == "claude" {
-						if !hasEmptyTools(args) || !strings.Contains(joined, "--json-schema") || !strings.Contains(stdin, "改善手機版導覽") {
+						if executable != "/fake/claude" || !hasEmptyTools(args) || !strings.Contains(joined, "--json-schema") || !strings.Contains(stdin, "改善手機版導覽") {
 							t.Fatalf("claude run = %q stdin=%q", joined, stdin)
 						}
 						return []byte(`{"structured_output":{"outcome":"recommend","persona_id":"frontend"}}`), nil
 					}
-					if !strings.Contains(joined, "agents.enabled=false") || !strings.Contains(joined, "web_search=\"disabled\"") ||
+					if assistant == "antigravity" {
+						if executable != "/fake/agy" && executable != "/fake/antigravity" {
+							t.Fatalf("antigravity executable = %q", executable)
+						}
+						if !strings.Contains(joined, "--mode plan") || !strings.Contains(joined, "--effort low") || !strings.Contains(joined, "改善手機版導覽") {
+							t.Fatalf("antigravity run = %q", joined)
+						}
+						return []byte(`{"outcome":"recommend","persona_id":"frontend"}`), nil
+					}
+					if executable != "/fake/codex" || !strings.Contains(joined, "agents.enabled=false") || !strings.Contains(joined, "web_search=\"disabled\"") ||
 						!strings.Contains(stdin, "<input_json>") || !strings.Contains(stdin, "改善手機版導覽") {
 						t.Fatalf("codex run = %q stdin=%q", joined, stdin)
 					}

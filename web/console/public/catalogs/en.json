@@ -8543,6 +8543,7 @@
   "settings.webFailMacWritesOff": "This machine does not currently accept commands from Cloud.",
   "settings.webRemoteMachineOnly": "This browser cannot manage this machine's Cloud sign-in. Use the setup guide on this machine, or run clawdline cloud login in a terminal on this machine.",
   "settings.workTab": "Work",
+  "settings.settingsAutoNameSession": "Match session assistant",
   "shell.menuCopy": "Copy",
   "shell.menuCut": "Cut",
   "shell.menuEdit": "Edit",
