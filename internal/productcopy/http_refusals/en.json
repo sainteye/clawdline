@@ -1289,6 +1289,8 @@
   "http.6f0feac1947e8a32": "A Doctor check is already running. Wait for it to finish.",
   "http.b3efd688ebb68c49": "The Doctor report exceeded its safe export limit.",
   "http.a3477e7267821949": "Choose Claude or Codex for pairing.",
+  "http.33e8b1887d80ca96": "Choose clawdline, superpowers or poteto.",
+  "http.56454b28183b6a32": "Send either workflow_profile or the legacy opt-in, not both.",
   "http.851fee22f3dee8cb": "GET or POST only",
   "http.556a46e41d6d8f2b": "Graphify takes no query fields.",
   "http.db9ed8d71941b2be": "Building an index needs send access to this machine.",

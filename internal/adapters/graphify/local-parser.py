@@ -4,6 +4,8 @@ The audit hook is a Python network/process tripwire, not an OS sandbox for
 native libraries. Only the hash-pinned parser wheels are loaded as native code.
 """
 import sys
+import os
+import threading
 
 
 def deny_external(event, args):
@@ -15,6 +17,18 @@ def deny_external(event, args):
 
 
 sys.addaudithook(deny_external)
+
+
+def watch_parent():
+    # The daemon alone holds the pipe's write end. A lost parent cannot leave
+    # this AST worker running indefinitely. Native code can delay a Python
+    # thread, so this is a crash tripwire rather than an OS process sandbox.
+    while os.read(0, 1):
+        pass
+    os._exit(74)
+
+
+threading.Thread(target=watch_parent, daemon=True).start()
 
 # Force sequential extraction before the CLI imports its AST entry point.
 # --max-workers alone caps a pool but still tries to start a subprocess.

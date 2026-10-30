@@ -16,7 +16,20 @@ func (s *Server) squadCapacityMeasures() map[string]func() capacity.Reading {
 	squadUsage := sync.OnceValues(func() (store.SquadCounts, error) {
 		return s.store.SquadUsage(context.Background())
 	})
+	workflowUsage := sync.OnceValues(func() (store.WorkflowCounts, error) {
+		return s.store.WorkflowUsage(context.Background())
+	})
 	return map[string]func() capacity.Reading{
+		capacity.WorkflowSnapshotBytes: func() capacity.Reading {
+			if s.store == nil {
+				return capacity.Reading{Known: true, Note: "no store attached"}
+			}
+			usage, err := workflowUsage()
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: usage.LargestSnapshotBytes, Note: "largest immutable workflow launch snapshot"}
+		},
 		capacity.PersonasCatalog: func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: int64(len(persona.All())), Note: "compiled in; refused at load"}
 		},

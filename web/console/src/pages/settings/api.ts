@@ -1,15 +1,17 @@
 import type {
+  IntegrationSettingsSnapshot,
+  IntegrationSettingsRequest,
   WorkflowSettingsSnapshot,
   WorkflowSettingsRequest,
   SettingsRequest,
   SettingsSnapshot,
   WorkGateSettingsRequest,
   WorkGateSettingsSnapshot,
-  IntegrationSettingsSnapshot,
-  IntegrationSettingsRequest,
 } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"
+
+export type { IntegrationSettingsSnapshot, IntegrationSettingsRequest } from "@clawdline/contract"
 
 export type DefaultModelAssistant = "codex" | "claude" | "antigravity"
 export type DefaultModelOption = { value: string; label: string }

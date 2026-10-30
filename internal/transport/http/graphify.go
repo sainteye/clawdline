@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/sainteye/clawdline/internal/adapters/store"
@@ -112,6 +113,8 @@ func (s *Server) graphifyBuilds() *graphify.Builder {
 	}
 	return s.graphifyBuilder
 }
+
+func (s *Server) StopGraphify(ctx context.Context) error { return s.graphifyBuilds().Close(ctx) }
 func (s *Server) graphifyResponse(w http.ResponseWriter, r *http.Request, root string) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method == http.MethodGet {
@@ -136,6 +139,9 @@ func (s *Server) graphifyResponse(w http.ResponseWriter, r *http.Request, root s
 				}
 				if code == "disabled" {
 					status = 403
+				}
+				if code == "unavailable" {
+					status = 503
 				}
 				writeRefusal(w, status, "graphify_"+code, "The local index build was not started. Read its status before retrying.")
 				return

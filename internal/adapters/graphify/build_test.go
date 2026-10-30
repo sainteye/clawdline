@@ -219,6 +219,42 @@ func TestBuildKeepsUnresolvedReferencesWithoutClaimingTheirSourceWasChecked(t *t
 		}
 	}
 }
+
+func TestBuildOwnerShutdownCancelsJoinsAndClosesAdmission(t *testing.T) {
+	root := buildFixture(t)
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	b := NewBuilder(t.TempDir(), nil, func(ctx context.Context, input, output string, p func(string)) error {
+		close(started)
+		<-ctx.Done()
+		close(finished)
+		return ctx.Err()
+	})
+	if _, err := b.Start(root, "one"); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if err := b.Close(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-finished:
+	default:
+		t.Fatal("shutdown returned before parser joined")
+	}
+	if got := b.Status(root); got.State != "failed" || got.Error != "stopped" {
+		t.Fatalf("%+v", got)
+	}
+	if _, err := b.Start(root, "after-stop"); err != BuildError("unavailable") {
+		t.Fatalf("stopped owner accepted a new job: %v", err)
+	}
+	if err := b.Close(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "graphify-out")); !os.IsNotExist(err) {
+		t.Fatal("shutdown published an index")
+	}
+}
 func containsBytes(a, b []byte) bool {
 	for i := 0; i+len(b) <= len(a); i++ {
 		if string(a[i:i+len(b)]) == string(b) {

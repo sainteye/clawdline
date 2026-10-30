@@ -36,6 +36,7 @@ export function buildFailureWord(code:string):string{
  if(code==="source_changed")return graphWord("buildSourceChanged")
  if(code==="custom_inputs")return graphWord("buildCustomInputs")
  if(code==="disabled")return graphWord("disabled")
+ if(code==="stopped" || code==="unavailable")return graphWord("buildStopped")
  if(code==="timeout")return graphWord("buildTimeout")
  if(["source_limit","graph_limit","runtime_limit"].includes(code))return graphWord("buildLimit")
  if(code==="parser_failed")return graphWord("buildParserFailed")

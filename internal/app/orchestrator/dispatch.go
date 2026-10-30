@@ -216,13 +216,26 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	// who asked for the work never hears that it is done. Resolving it now
 	// turns that into a refusal the dispatcher can act on, rather than a
 	// discovery somebody makes an hour later.
-	rootTerminal, err := b.resolveRoot(ctx, record.Root)
+	rootSession, err := b.resolveRootSession(ctx, record.Root)
 	if err != nil {
 		return Dispatched{}, err
 	}
+	rootTerminal := rootSession.ID
 	record.RootTerminalID = rootTerminal
 	if err := b.checkSquadDispatchActor(ctx, req, record, rootTerminal); err != nil {
 		return Dispatched{}, err
+	}
+
+	// The fresh root process is already resolved for admission. Bind its
+	// launch before preparing a child: inventory observers run after readers
+	// and may not yet have saved this conversation. No extra scan is needed.
+	if b.Store != nil && rootSession.WorkflowLaunchID != "" {
+		if err := b.Store.RecordWorkflowTerminal(ctx, rootSession.WorkflowLaunchID, rootTerminal); err != nil {
+			return Dispatched{}, err
+		}
+		if err := b.Store.BindWorkflowConversation(ctx, rootSession.WorkflowLaunchID, rootTerminal, rootSession.ConversationID); err != nil {
+			return Dispatched{}, err
+		}
 	}
 
 	live, err := b.liveTasks(ctx)
@@ -502,27 +515,32 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	return Dispatched{Record: record, Warnings: warnings}, nil
 }
 
-// resolveRoot proves the declared owner is one live session on this machine.
 func (b *Broker) resolveRoot(ctx context.Context, root *RootRef) (string, error) {
+	row, err := b.resolveRootSession(ctx, root)
+	return row.ID, err
+}
+
+// resolveRootSession proves the declared owner is one live session on this machine.
+func (b *Broker) resolveRootSession(ctx context.Context, root *RootRef) (session.Session, error) {
 	if root == nil {
-		return "", nil
+		return session.Session{}, nil
 	}
 	s, err := b.terminalFor(ctx, root.SessionID, root.Assistant)
 	if err == nil {
-		return s.ID, nil
+		return s, nil
 	}
 	ref, ok := err.(Refusal)
 	if !ok {
-		return "", err
+		return session.Session{}, err
 	}
 	const tail = " Resend from the Root's own terminal, where the conversation id is read from the environment, or " +
 		"name it: `clawdline dispatch --title <title> --claims <paths> --conversation <conversation id> " +
 		"--root-assistant <claude|codex|antigravity>`. Do not downgrade owned work to detached polling."
 	if ref.Code == "conversation_ambiguous" {
-		return "", refuse(http.StatusConflict, "conversation_ambiguous",
+		return session.Session{}, refuse(http.StatusConflict, "conversation_ambiguous",
 			"More than one live process of the declared assistant proves root.session_id; no owner was selected."+tail)
 	}
-	return "", refuse(http.StatusUnprocessableEntity, "root_unresolved",
+	return session.Session{}, refuse(http.StatusUnprocessableEntity, "root_unresolved",
 		"root.session_id did not resolve to one live process-bound session; completion notification, "+
 			"grouping and close cascade are not guaranteed."+tail)
 }
@@ -689,7 +707,29 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		preflightPersona = ""
 	}
 	memory := b.memoryFor(cwd)
-	integrations, err := b.integrationInstructions(ctx, cwd)
+	parent := ""
+	if r.Root != nil {
+		parent = r.Root.SessionID
+	}
+	preparedWorkflow, err := b.prepareWorkflow(ctx, cwd, parent)
+	if err != nil {
+		r.State = StateSpawnFailed
+		r.SpawnError = err.Error()
+		r.FinishedAt = b.now()
+		return r
+	}
+	workflowOpened := false
+	defer func() {
+		if !workflowOpened {
+			preparedWorkflow.Fail(ctx)
+		}
+	}()
+	integrations := ""
+	if b.PrepareWorkflow != nil {
+		integrations = preparedWorkflow.Text
+	} else {
+		integrations, err = b.integrationInstructions(ctx, cwd)
+	}
 	if err != nil {
 		r.State, r.SpawnError, r.FinishedAt = StateSpawnFailed, err.Error(), b.now()
 		return r
@@ -756,7 +796,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if prepared.files.PromptPath != "" {
 		launchEnv = append(launchEnv, prepared.files.PrivateEnv())
 	}
-	command := shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable(), launchEnv...)
+	command := preparedWorkflow.Wrap(shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable(), launchEnv...))
 	line := "cd " + projects.ShellQuoted(cwd) + " && " + command
 
 	// The same decision the dispatch was admitted on (capability.go), read
@@ -813,6 +853,10 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		return r
 	}
 	b.recordSquadTerminal(ctx, prepared, terminalID)
+	workflowOpened = true
+	if err := preparedWorkflow.Record(ctx, terminalID); err != nil {
+		log.Printf("workflow terminal binding pending recovery: %v", err)
+	}
 
 	r.ChildTerminalID = terminalID
 	r.ChildBackend = backend

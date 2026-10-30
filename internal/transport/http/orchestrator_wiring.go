@@ -202,6 +202,7 @@ func newBroker(s *Server) *orchestrator.Broker {
 		// a Board item's Session — is given that Project's shared memory.
 		Memory:                  s.memoryLaunchText,
 		IntegrationInstructions: s.integrationLaunchText,
+		PrepareWorkflow:         s.prepareWorkflow,
 		// The person decided that asking for a new Claude Code session in a
 		// registered project answers Claude Code's workspace-trust question
 		// for that folder (projects.TrustClaudeProject).

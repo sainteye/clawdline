@@ -2,8 +2,10 @@ package graphify
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -50,6 +52,15 @@ func TestRealLocalParser(t *testing.T) {
 		t.Fatalf("%+v %v", view, err)
 	}
 	t.Logf("state=%s nodes=%d links=%d source_files=%d source_bytes=%d", view.State, view.TotalNodes, view.TotalLinks, job.Files, job.Bytes)
+	if dest := os.Getenv("CLAWDLINE_GRAPHIFY_SMOKE_VIEW"); dest != "" {
+		raw, err := json.Marshal(view)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(dest, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// An attempted upload fails inside the same pinned Python interpreter and
 	// audit entry point. Source files are never executed by the AST parser.
 	home := t.TempDir()
@@ -110,5 +121,40 @@ func TestParserDiskBudgetAcceptsCacheFilesRenamedDuringItsScan(t *testing.T) {
 	}
 	if err := parserDiskSizeFS(t.Context(), changingCacheFS{os.DirFS(dir)}); err != nil {
 		t.Fatalf("atomic cache rename stopped a valid build: %v", err)
+	}
+}
+
+func TestLocalParserExitsWhenItsDaemonPipeCloses(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("Python tripwire requires a local interpreter")
+	}
+	prefix, _, found := strings.Cut(localParser, "# Force sequential")
+	if !found {
+		t.Fatal("missing local entry point")
+	}
+	entry := filepath.Join(t.TempDir(), "parent-loss.py")
+	if err = os.WriteFile(entry, []byte(prefix+"import time\ntime.sleep(60)\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	cmd := exec.CommandContext(ctx, python, "-I", "-B", entry)
+	cmd.Stdin = r
+	if err = cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	r.Close()
+	w.Close()
+	err = cmd.Wait()
+	exit, ok := err.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 74 {
+		t.Fatalf("parser did not observe parent loss: %v", err)
 	}
 }

@@ -103,13 +103,21 @@ func (b *Builder) runParserCommand(ctx context.Context, home, command string, ar
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(child, command, args...)
+	readParent, writeParent, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer readParent.Close()
+	defer writeParent.Close()
+	cmd.Stdin = readParent
 	cmd.Dir = home
 	cmd.Env = parserEnvironment(home)
 	var output cappedOutput
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	// Both uv (wheel-only, no keyring subprocess) and the Python audit entry
-	// point are configured not to spawn children. Cancel kills this exact PID.
+	// The parser refuses child processes; uv accepts only wheels and disables
+	// source builds/keyring runners. Cancel kills this exact command PID.
+	// The parser also watches stdin EOF if its daemon parent disappears.
 	if err := cmd.Start(); err != nil {
 		return err
 	}

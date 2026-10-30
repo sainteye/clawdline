@@ -8,19 +8,22 @@ import (
 	"math"
 )
 
-// The application mark matches the compact console brand: an eight-by-four
-// face with a connected base. Large raster assets add a subtle half-cell grid;
+// The application mark matches the compact console brand: a connected orange
+// face above a full-width green terminal line. Large raster assets add a subtle grid;
 // small interface marks remain solid.
 var appRows = [...]string{
-	".######.",
-	".#o##o#.",
-	"########",
-	".######.",
+	"..############..", "..############..",
+	"..##oo####oo##..", "..##oo####oo##..",
+	"################", "################",
+	"..############..", "..############..",
+	"................", "................",
+	"----------------",
 }
 
 var (
 	markBody   = color.NRGBA{0xD9, 0x77, 0x57, 0xff} // #D97757
 	markEye    = color.NRGBA{0x14, 0x14, 0x16, 0xff} // #141416
+	markLine   = color.NRGBA{0x4C, 0xCB, 0x7F, 0xff} // #4CCB7F
 	markGround = color.NRGBA{0x0E, 0x0E, 0x11, 0xff} // #0E0E11
 )
 
@@ -103,6 +106,8 @@ func drawMark(img *image.NRGBA, height int, originX, originY, cell, size float64
 				paint = markBody
 			case 'o':
 				paint = markEye
+			case '-':
+				paint = markLine
 			default:
 				continue
 			}

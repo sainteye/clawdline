@@ -62,26 +62,8 @@
   height: 22px;
   margin-right: -8px;
   flex: none;
-  /* The project's own creature at three pixels a cell, the wordmark's literal
-     (`brand-mark.ts`): ".######." / ".#o##o#." / "########" / ".######.". Drawn as a
-     gradient grid rather than fetched, so the window needs no second request. */
-  background-image: linear-gradient(var(--sw-accent), var(--sw-accent)), linear-gradient(#141416, #141416);
-  background-repeat: no-repeat;
-  background-size: 100% 100%, 0 0;
-  -webkit-mask-image: url("data:image/svg+xml;utf8,\
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'>\
-<path fill='black' d='M1 0h6v1H1zM1 1h1v1H1zM3 1h2v1H3zM6 1h1v1H6zM0 2h8v1H0zM1 3h6v1H1z'/>\
-</svg>");
-  -webkit-mask-size: 22px 11px;
-  -webkit-mask-position: center;
-  -webkit-mask-repeat: no-repeat;
-  mask-image: url("data:image/svg+xml;utf8,\
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'>\
-<path fill='black' d='M1 0h6v1H1zM1 1h1v1H1zM3 1h2v1H3zM6 1h1v1H6zM0 2h8v1H0zM1 3h6v1H1z'/>\
-</svg>");
-  mask-size: 22px 11px;
-  mask-position: center;
-  mask-repeat: no-repeat;
+  /* The compact orange mark and terminal-green line share the brand geometry. */
+  background: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxMSc+PHBhdGggZmlsbD0nI2Q5Nzc1NycgZD0nTTIgMGgxMnY4SDJ6TTAgNGgxNnYySDB6Jy8+PHBhdGggZmlsbD0nIzE0MTQxNicgZD0nTTQgMmgydjJINHpNMTAgMmgydjJoLTJ6Jy8+PHBhdGggZmlsbD0nIzRjY2I3ZicgZD0nTTAgMTBoMTZ2MUgweicvPjwvc3ZnPg==") center / 22px 15.125px no-repeat;
 }
 
 .sw-tab {

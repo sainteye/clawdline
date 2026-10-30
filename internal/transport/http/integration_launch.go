@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/graphify"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/skills"
 )
 
@@ -19,8 +20,16 @@ func (s *Server) integrationLaunchText(ctx context.Context, root string) (string
 		return "", err
 	}
 	var parts []string
-	if on, _ := values.Bool("workflow_skills_enabled"); on {
-		parts = append(parts, skills.WorkflowInstructions())
+	id, err := nextconfig.WorkflowProfile(values)
+	if err != nil {
+		return "", err
+	}
+	profile, err := skills.ResolveWorkflow(id, false)
+	if err != nil {
+		return "", err
+	}
+	if profile.Instructions != "" {
+		parts = append(parts, profile.Instructions)
 	}
 	if on, _ := values.Bool("graphify_enabled"); on {
 		text, err := graphify.LaunchInstructions(ctx, root)

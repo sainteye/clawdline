@@ -300,6 +300,14 @@ func serve() {
 	defer stopCloud()
 	stopAPIPerformance := srv.StartAPIPerformance(cloudCtx)
 	defer stopAPIPerformance()
+	stopGraphify := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), connectionHealthStopTimeout)
+		defer cancel()
+		if err := srv.StopGraphify(ctx); err != nil {
+			log.Print("graphify: shutdown cleanup did not finish")
+		}
+	}
+	defer stopGraphify()
 	// A device file that cannot be read stops the daemon here, rather than
 	// letting it listen and refuse everybody.
 	if err := srv.AuthReady(); err != nil {
@@ -343,6 +351,7 @@ func serve() {
 	defer stopAntigravityAll()
 	go stopConnectionHealthOnSignal(startConnectionHealth(cfg.Dir, srv), func() {
 		stopCloud()
+		stopGraphify()
 		stopAntigravityAll()
 	})
 	srv.StartScheduler(context.Background())
@@ -367,6 +376,7 @@ func serve() {
 	startCloudLine(cloudCtx, cfg, srv)
 	if err := srv.Serve(ln); err != nil {
 		stopCloud()
+		stopGraphify()
 		stopAntigravityAll()
 		refuseToServe(1, err.Error())
 	}

@@ -85,7 +85,10 @@ to keep generated local graph data out of ordinary Git adds. A changed/deleted/n
 source, failure, cancellation or limit refusal leaves no partial index. Turning
 the integration off cancels its active operation and is checked again before
 publication; closing the dialog only stops polling. Unpublished snapshots and
-staging files are removed after the operation. Interrupted processes may leave
+staging files are removed after the operation. Graceful daemon shutdown closes admission, cancels the active operation and
+joins cleanup within the existing daemon shutdown budget. The AST worker also
+watches its parent pipe for EOF as a crash tripwire; native code can delay a
+Python thread. Interrupted processes may leave
 private runtime/staging residue; it is never reused as a completed index.
 
 There is one active build per machine, with no queue. Up to 16 status receipts are

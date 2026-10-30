@@ -362,6 +362,9 @@ func New(cfg config.Config) (*Server, error) {
 	srv.archive = srv.newSessionArchive()
 	srv.readings.Observe(srv.restore.Observe)
 	srv.readings.Observe(func(ctx context.Context, inv session.Inventory) {
+		if err := app.ReconcileWorkflowLaunches(ctx, srv.store, inv); err != nil {
+			log.Printf("workflow launch reconciliation: %v", err)
+		}
 		if err := app.ReconcileSquadLaunches(ctx, srv.store, srv.cfg.Dir, inv); err != nil {
 			log.Printf("squad launch reconciliation: %v", err)
 		}

@@ -2495,12 +2495,70 @@
         {
           "path": "skills/evidence-review/SKILL.md",
           "line": 1
+        },
+        {
+          "path": "internal/adapters/workflowlaunch/launch.go",
+          "line": 1
+        },
+        {
+          "path": "internal/transport/http/workflow_launch.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/nextconfig/workflow.go",
+          "line": 1
+        },
+        {
+          "path": "internal/domain/workflow/snapshot.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/store/workflow.go",
+          "line": 1
+        },
+        {
+          "path": "skills/workflow_profiles.go",
+          "line": 1
+        },
+        {
+          "path": "skills/poteto-workflow.md",
+          "line": 1
+        },
+        {
+          "path": "skills/LICENSE.pstack",
+          "line": 1
         }
       ],
       "original": [
-        "# Optional machine workflow skills\n",
+        "# Poteto workflow for Clawdline\n",
         "\n",
-        "The person enabled these workflow skills for new Claude/Codex Sessions opened by Clawdline on this machine. Apply only the skill relevant to the task. Routine copy or styling edits do not require this workflow. The current request, repository rules, task boundaries and existing checks remain authoritative; this text grants no additional permission to install tools, delegate, deploy, spend or restart anything.\n"
+        "This is Clawdline's bundled adaptation of pstack 0.15.36, pinned to cursor/plugins c742dd61706fbacc1b95f1a20b7b988cf096ce6c. It is not the complete Cursor plugin. Its routing and verification practices run with Clawdline's existing tools. No remote skill, dependency installation, model routing, hook, PR stack, or autonomous publishing is required.\n",
+        "\n",
+        "The current request, repository rules, task boundaries, permissions and existing checks remain authoritative. This workflow grants no permission to spend, contact others, delegate, restart, deploy, delete data, force-push or bypass a guard. Ask for authorization only when the governing rules require it. Never infer authorization from a workflow name.\n",
+        "\n",
+        "## Route the task\n",
+        "\n",
+        "Start with the person's desired outcome and the smallest useful change. Determine whether this is an investigation, bug fix, feature, refactoring or evaluation. Investigations stop at a supported answer; they do not manufacture implementation work. A bug fix starts by reproducing the observed failure on the affected surface. A feature starts with the data shape and externally observable acceptance criteria. A refactoring preserves behavior. An evaluation defines the common task, controls and measurements before comparing results.\n",
+        "\n",
+        "## Work in verifiable units\n",
+        "\n",
+        "Identify the data owned by each boundary before changing code. Prefer a small, direct structure with explicit state over extra layers. For a real design uncertainty, inspect the repository or build a bounded local prototype. Product preference and authorization decisions still belong to the person.\n",
+        "\n",
+        "Divide substantial work into independently checkable units. Each unit names its inputs, output and acceptance evidence. Keep a short checkpoint of what is proved, what remains uncertain and the next verification. Combine stages for small changes; do not impose an elaborate ceremony on a one-line edit.\n",
+        "\n",
+        "Delegate only independent, bounded work when the current authorization and repository rules allow it. Give each worker the goal, exact write scope, starting revision, required tools and acceptance criteria. Use the existing Clawdline child/worktree/claims protocol where required; inherit the task's frozen workflow. Review the returned changes yourself. Do not invent Cursor agents, unavailable control skills or different-model calls.\n",
+        "\n",
+        "## Verify the delivered behavior\n",
+        "\n",
+        "For a defect, show that the reproducer fails before the fix and passes afterward. For a feature, make a verification map from each acceptance criterion to a test, real UI observation, artifact inspection or explicitly pending human judgment. Verify the actual surface: UI behavior in a browser, CLI behavior through its entry point, and deployment only at its authorized destination. Compilation alone does not establish behavior.\n",
+        "\n",
+        "Tests should exercise observable behavior rather than source spelling. Use the smallest relevant checks while editing and the repository's required commit gate before committing. Do not broaden testing repeatedly without a new failure or unresolved concern. Respect the repository's landing and release policy; pstack's stack shipping commands are not part of this adaptation.\n",
+        "\n",
+        "## Deliver evidence\n",
+        "\n",
+        "Report the change, exact revision, checks actually executed, failures or unknowns, and remaining work. Distinguish an instruction added to a launch, an agent reporting it followed the workflow, and independently verified results. No report proves causal benefit merely because it mentions this workflow. Preserve rerunnable evidence for measured claims. State the request count and cost for separately authorized paid API work; this workflow never authorizes it.\n",
+        "\n",
+        "If a repeated defect reveals a missing structural guard, propose or implement the smallest appropriate guard within scope and verify that it rejects the defect. Keep user-facing prose plain and specific. Never claim an unavailable tool ran or that a successful check proves an untested destination.\n"
       ],
       "locations": [
         "<state>/config.json",
@@ -2554,6 +2612,14 @@
         {
           "path": "cmd/clawdline/graphify.go",
           "line": 18
+        },
+        {
+          "path": "internal/adapters/workflowlaunch/launch.go",
+          "line": 1
+        },
+        {
+          "path": "internal/transport/http/workflow_launch.go",
+          "line": 1
         }
       ],
       "original": [
@@ -2598,7 +2664,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/graphify.go": "a0716503d418090b5056f7f529683124d4eecdbf14af16bc00f941d764f854f9",
-    "cmd/clawdline/main.go": "753837ead4489c0c38c9cd78899bf3abb17996ee1329f13cb6036606f66a4ac6",
+    "cmd/clawdline/main.go": "e8fee7db78abe3164aca8fff3cfd12e8b0336b6a22d4b33a48d77449c6dd7c8c",
     "cmd/clawdline/session.go": "0fc62871605339e63df21529801409aa809907ec05bb8343bbbd766600c11574",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -2609,21 +2675,24 @@
     "internal/adapters/antigravitysession/host.go": "32d6a53893b3d412f96acca14237c87953a3cf53c2c99db471ee1960f8e5846e",
     "internal/adapters/graphify/graphify.go": "b655b7f8100336c4f8306b3f66e63f6ca5adbd78a62b391a6e09a39dfab44b33",
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
-    "internal/adapters/nextconfig/nextconfig.go": "d9c5df3d7fa21d9b5c52c72329de6f342f72b04c1702e69000d441ac916b2e48",
+    "internal/adapters/nextconfig/nextconfig.go": "60e04a1eb84f619e7457690108d1d0ba2c2002a093220c7dc75d9559b6de4110",
+    "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/projects/antigravity_context.go": "9706da1b7af1d019ac3c7feb3713fa02698f95bfe76b81bc430de5efa62fbb53",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "4df36ebcc25bfa91148a8649ab8de4783663b1ea4e527ff047375a701d406687",
     "internal/adapters/skillfile/skillfile.go": "a10a410e8966b71a8c4d6666e0155a4b0b12cb3f513d9843038e3e2e2118ffde",
     "internal/adapters/squadfiles/launch.go": "8f3e51f35df23fc2c34537eab07a58857f81eaac0cf1c3236c6c2d9253ac4e6a",
+    "internal/adapters/store/workflow.go": "beff07175a0f854e298c7434185f4c5435e0c4e020cbd9251a9e72116d4f89fb",
     "internal/adapters/taskdir/broker.go": "9f5c355354c0ea181b1dcefcbaec3fe2431f867d09abc7cd03356c06866b4968",
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
+    "internal/adapters/workflowlaunch/launch.go": "b19c0a4c140be78dc6923b663b9872b1354ebfa9e4a3d2790fe8dfcce3e47229",
     "internal/app/orchestrator/brief.go": "bffb5769b7b2dd66a738d593f8c1c9b9191018e57155267009d6d73ebbf74931",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
-    "internal/app/orchestrator/dispatch.go": "b6707e17a4d6996f8a6557caf5e3c43771e11061d808857e9feca20d7952922e",
+    "internal/app/orchestrator/dispatch.go": "21983fd780981d7724a00e6a199d146a4469c50fe40bbebc8f9f043430eaba19",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
-    "internal/app/orchestrator/handoffs.go": "e3cba02fba5b6e3ae7bdcf43a20f44dd8e6278857cfec3a4a4b7e6294f9aace8",
+    "internal/app/orchestrator/handoffs.go": "c936be4ed05f384b5bc2616a601a450fdc4aeb016dc6bce5ce02bf850078bf2a",
     "internal/app/orchestrator/language.go": "ea219750d229ce7c35c245e5c653e1a323976f1b5bf2b3b9cf79f8e100d62e9e",
     "internal/app/orchestrator/notice.go": "986a076fd11eac9b8592813ca61f3b307796d8b1675c345a4186840125141cfd",
     "internal/app/orchestrator/policy.go": "f165e3bbc9b3c96b60a9a14de6b7cbd942eed6146771a4cd59ae2c7a4385624f",
@@ -2632,12 +2701,13 @@
     "internal/app/orchestrator/session_pause.go": "f1407a0ece5a3d54ee45062e71c688ffdd844c5aefe0fabaf4d1b3fdc3d6a164",
     "internal/app/owned_context.go": "983e6bdca8b89d4b1851a33a32e292a8c14335eb60fff7132cf48779f46194a0",
     "internal/app/squad_launch.go": "1ec83ebede904f62d9ad82471743702829e85a66f87ad575e9ee03408ee8065d",
-    "internal/app/start.go": "005b72df288bbf27e5e3c2132eafb4a8bdc12c3350f053271057eee9cd150859",
+    "internal/app/start.go": "658c68220ac6060050f078a2fe05abc4ce992915f6bf385ace6f070a39626d37",
     "internal/app/work_v2_todos.go": "2cd59124ffeb0adeae7d91e90484dd168930f406d5c7e3d5fc2a672d1e55060d",
     "internal/config/config.go": "25f547d482792bb8bc1cfef1ad6b9d8355d289104bf1f0842efe5002c7f6ab6c",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_playbook.go": "a72c51ba8318f25d1070276a3dd45c118bc08c5e2ac79c673af5dad01898b37a",
+    "internal/domain/workflow/snapshot.go": "08e45303c7f0e1998ff9454a4bd8f77e39d65c310e23c27a9074ea5fa509c965",
     "internal/productcopy/board.go": "710c175d79d8f607a2081dd6c444f3c7d64609535336cbc580f681174970527d",
     "internal/productcopy/board/en.json": "2a42aa5da3ebd5ac172e99d2d649de8a8c8908212b7166280134717d06316d1e",
     "internal/productcopy/board/zh-Hant.json": "df2de5da7232299462dc9688a972d3b559512ad21bc0bc96c81293f3af06671a",
@@ -2650,25 +2720,29 @@
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",
     "internal/transport/http/coordinator.go": "5f139556883583d34320783d063ee1e6a4a1124a726f69510cc4a9324a6cb3df",
-    "internal/transport/http/integration_launch.go": "76372ba6afbb8586a47f209134e0f22dd3daf794f46b99448191487b4574062a",
-    "internal/transport/http/integration_settings.go": "1edeff8b56d6413611ad8fd679ea1bcb1e384a7e44b9730fe8ce08906f0ebef6",
+    "internal/transport/http/integration_launch.go": "7b8f50a0cba4576e96ff3f598f28760449ba1220ea315885b30517013182927a",
+    "internal/transport/http/integration_settings.go": "369c5cd7f9a6edcab3a11abd551783835601c6e8eebb3cdc16ceed84e41f1781",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
-    "internal/transport/http/start.go": "0c3539ddcae30f95e898cfc8ad6ef7d406e5bf359335ecb801d201c96cc339d0",
+    "internal/transport/http/start.go": "c5f52850ce382be39263aa48e2d731bcd755b2fd42da3336dc859e6e04bee7dc",
     "internal/transport/http/work_v2.go": "eb358173079e9d962df36aeb0ac22e1c89b7fb22c7f2a376fd2aca115406f5a0",
     "internal/transport/http/work_v2_brief.go": "212fde2dc04a2694060c3a40de8dccd98889dd40d43d85589a54f1b09ca7aa39",
+    "internal/transport/http/workflow_launch.go": "06827497dc74db45f7d3e7d2bc7937152b0d09f2addc90b413ea98fa9f8fc92e",
+    "skills/LICENSE.pstack": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
     "skills/clawdline/SKILL.md": "6648251619176575f6b5e93793c7efd9b7fc569d45ed04977352560206cea1ee",
     "skills/clawdline/guide.md": "39ea33d9979c46b6c9e60d0a687c514de41ffb5bbc4177d85701838b33dde7de",
     "skills/clawdline/guide.zh-TW.md": "a81ff5f78e0d217a86686129cd0420b6024b224ca9fcc066d87cc0a0ee21e035",
     "skills/evidence-debugging/SKILL.md": "12bf03169a4af65212d4d84c69c56174c38046a398f240348ba6065c8caaceab",
     "skills/evidence-review/SKILL.md": "fd4c584fae5ba58d03250faad1e1219894548343502ca43fb360d313262ea5f6",
+    "skills/poteto-workflow.md": "0ed861c8e030cbb8ce36d266d67b62310696d01e0717959ee4439931e9c3f8cd",
     "skills/sections.go": "ba3de38ebe0e26817f337bd4ae93e19d07ba07af8971b4fba397e6fe9082b903",
     "skills/skills.go": "146b2605f5e82e4093f731222da229df949be007b19005a428b538686feed330",
     "skills/workflow-prefix.md": "3a250f0e7718aea26387e31e1785b48876232c08bede277073e4aa9eef429aa0",
     "skills/workflow.go": "4c01da1f86769d43e1e8b40b191d96b04a5dac9f03d1a3fb2822a286ed2d952e",
+    "skills/workflow_profiles.go": "2d08faa417a26c8421c92af6d75747a5e64b35a04f5a4a6c9c6e4317dbba59a5",
     "web/console/src/session/Start.tsx": "41ce5fb0848d5f5c202a03fd13655a87bb9ad4189473dccf1d075d437feefeb7"
   },
   "copyChecks": {
-    "en": "c0a08cbb1f98b6fc7510469b4c9b1ea9fa7819034662d2147dcb177cc83e1e78",
-    "zh-Hant": "8bed205da3f740c523a7efa74b237a8407d73c2f5edaaca60f6e266182ea7b38"
+    "en": "e96b9181f63a2ba85030de9f6624a31c645e0f761e1ab4ab66bc81a28fc44aa6",
+    "zh-Hant": "38ea20dcb59e756d3e203402b017613f88f7991f32bb2878e915cbe9d01e40f5"
   }
 }

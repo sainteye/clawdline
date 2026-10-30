@@ -3776,6 +3776,11 @@ export interface ImageStoreResult {
 
 export interface IntegrationSettingsRequest {
   graphify_enabled?: boolean
+
+  /**
+   * Machine-wide main workflow; omitted by older daemons.
+   */
+  workflow_profile?: string
   workflow_skills_enabled?: boolean
 }
 
@@ -3784,6 +3789,11 @@ export interface IntegrationSettingsSnapshot {
    * Machine-wide explicit opt-in; absent settings remain disabled.
    */
   graphify_enabled: boolean
+
+  /**
+   * Machine-wide main workflow; omitted by older daemons.
+   */
+  workflow_profile?: string
 
   /**
    * Machine-wide explicit opt-in; absent settings remain disabled.
@@ -6804,6 +6814,7 @@ export interface SessionInfo {
   repositoryUnreadable?: ProjectGitFailure
   session: SessionInfoSession
   usage?: SessionInfoUsage
+  workflow?: SessionWorkflow
 }
 
 /**
@@ -7645,6 +7656,16 @@ export interface SessionWaitTarget {
   task_id: string
 }
 
+export interface SessionWorkflow {
+  digest?: string
+  graphify_enabled: boolean | null
+  profile_id?: string
+  source?: string
+  stages?: WorkflowStage[]
+  state: string
+  version?: string
+}
+
 export interface SessionsSnapshot {
   at: number
   scan: Scan
@@ -7992,6 +8013,7 @@ export interface SettingsRequest {
    * 360 to 1400.
    */
   width: number | null
+  workflow_profile: string | null
   workflow_skills_enabled: boolean | null
 
   /**
@@ -8381,6 +8403,7 @@ export interface SettingsSnapshot {
    * The bar's width in points.
    */
   width: number | null
+  workflow_profile: string | null
   workflow_skills_enabled: boolean | null
 
   /**
@@ -11801,6 +11824,13 @@ export interface WorkflowSettingsSnapshot {
    */
   iterm_integration: boolean | null
   session_auto_discovery: boolean
+}
+
+export interface WorkflowStage {
+  acceptance: string
+  id: string
+  output: string
+  title: string
 }
 
 export interface WorktreeCanonical {

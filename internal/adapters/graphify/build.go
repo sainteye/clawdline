@@ -48,7 +48,9 @@ func (e BuildError) Error() string { return string(e) }
 type Engine func(context.Context, string, string, func(string)) error
 type buildJob struct {
 	BuildStatus
-	key string
+	key    string
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 type Builder struct {
 	mu      sync.Mutex
@@ -57,6 +59,7 @@ type Builder struct {
 	cache   string
 	engine  Engine
 	allowed func() bool
+	closed  bool
 }
 
 func NewBuilder(cache string, allowed func() bool, engine Engine) *Builder {
@@ -111,6 +114,9 @@ func (b *Builder) Start(root, key string) (BuildStatus, error) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.closed {
+		return BuildStatus{}, BuildError("unavailable")
+	}
 	if job := b.jobs[abs]; job != nil && (job.key == key || job.State == "running") {
 		return job.BuildStatus, nil
 	}
@@ -131,11 +137,34 @@ func (b *Builder) Start(root, key string) (BuildStatus, error) {
 		return BuildStatus{}, BuildError("history_full")
 	}
 	now := time.Now().Unix()
-	job := &buildJob{key: key, BuildStatus: BuildStatus{State: "running", Phase: "scanning", StartedAt: now, UpdatedAt: now}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(BuildSecondsLimit)*time.Second)
+	job := &buildJob{key: key, cancel: cancel, done: make(chan struct{}), BuildStatus: BuildStatus{State: "running", Phase: "scanning", StartedAt: now, UpdatedAt: now}}
 	b.jobs[abs] = job
 	b.active = abs
-	go b.run(abs, job)
+	go b.run(ctx, abs, job)
 	return job.BuildStatus, nil
+}
+
+// Close revokes new admissions, cancels the exact active job, and joins cleanup
+// within the owner's shutdown deadline. It never deletes a completed index.
+func (b *Builder) Close(ctx context.Context) error {
+	b.mu.Lock()
+	b.closed = true
+	var done <-chan struct{}
+	if job := b.jobs[b.active]; job != nil {
+		job.cancel()
+		done = job.done
+	}
+	b.mu.Unlock()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (b *Builder) change(job *buildJob, edit func(*BuildStatus)) {
@@ -145,9 +174,10 @@ func (b *Builder) change(job *buildJob, edit func(*BuildStatus)) {
 	job.UpdatedAt = time.Now().Unix()
 }
 
-func (b *Builder) run(root string, job *buildJob) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(BuildSecondsLimit)*time.Second)
+func (b *Builder) run(ctx context.Context, root string, job *buildJob) {
+	cancel := job.cancel
 	defer cancel()
+	defer close(job.done)
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
@@ -168,7 +198,7 @@ func (b *Builder) run(root string, job *buildJob) {
 		}
 	}()
 	err := b.build(ctx, root, job)
-	if ctx.Err() != nil {
+	if err != nil && ctx.Err() != nil {
 		err = ctx.Err()
 	}
 	b.mu.Lock()
@@ -192,6 +222,9 @@ func (b *Builder) run(root string, job *buildJob) {
 	}
 	if errors.Is(err, context.Canceled) {
 		job.Error = "disabled"
+		if b.closed {
+			job.Error = "stopped"
+		}
 	}
 }
 
