@@ -108,6 +108,7 @@ class PreviewElement extends EventTarget {
   src = "data:image/png;base64,aW1hZ2U="
   setAttribute() {}
   appendChild(child: PreviewElement) { this.children.push(child); return child }
+  remove() {}
   querySelector() { return null }
   closest() { return null }
   querySelectorAll() { return [] }
@@ -119,6 +120,13 @@ test("desktop previews download even with sharing support; touch previews keep n
   let supportsSharing = true
   let touchInterface = false
   const downloads: PreviewElement[] = []
+  const saved: Blob[] = []
+  const revoked: string[] = []
+  t.mock.method(URL, "createObjectURL", (blob: Blob) => {
+    saved.push(blob)
+    return `blob:download-${saved.length}`
+  })
+  t.mock.method(URL, "revokeObjectURL", (url: string) => { revoked.push(url) })
   t.mock.method(globalThis, "fetch", async () => ({
     ok: true, blob: async () => new Blob(["original image"], { type: "image/png" }),
   }) as Response)
@@ -128,6 +136,7 @@ test("desktop previews download even with sharing support; touch previews keep n
   }) as Navigator)
   const dialog = new PreviewElement()
   const doc = Object.assign(new PreviewElement(), {
+    body: new PreviewElement(),
     createElement: (tag: string) => {
       const element = new PreviewElement()
       if (tag === "a") element.addEventListener("click", () => downloads.push(element))
@@ -157,8 +166,12 @@ test("desktop previews download even with sharing support; touch previews keep n
   assert.equal(downloads.length, 3)
   for (const link of downloads) {
     assert.equal((link as unknown as HTMLAnchorElement).download, "picture.png")
-    assert.equal((link as unknown as HTMLAnchorElement).href, "data:image/png;base64,aW1hZ2U=")
+    assert.match((link as unknown as HTMLAnchorElement).href, /^blob:download-/)
   }
+  assert.equal(saved.length, 3)
+  for (const blob of saved) assert.equal(await blob.text(), "original image")
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(revoked.length, 3)
   assert.equal(shared.length, 2)
   for (const data of shared) {
     assert.equal(data.files?.[0].name, "picture.png")

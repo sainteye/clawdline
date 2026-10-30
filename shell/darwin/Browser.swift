@@ -423,6 +423,7 @@ func isCloud(_ url: URL) -> Bool {
 /// console's own address: the tab beside it is how somebody gets there.
 final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
     let view: WKWebView
+    private let downloads = WebDownloads()
 
     /// Signing in, while the person's browser has it (see `signInThroughBrowser`).
     /// The PKCE verifier for the sign-in in flight, and the API it was started
@@ -600,6 +601,10 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
             return
         }
         let scheme = url.scheme?.lowercased() ?? ""
+        if action.shouldPerformDownload && (isCloud(url) || scheme == "blob" || scheme == "data") {
+            decisionHandler(.download)
+            return
+        }
         if scheme == "about" || scheme == "blob" || scheme == "data" {
             decisionHandler(.allow)
             return
@@ -634,6 +639,10 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
             }
         }
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        downloads.start(download, in: webView.window)
     }
 
     /// `target="_blank"`: Cloud's own pages stay here; anything else is a link

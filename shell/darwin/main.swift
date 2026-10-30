@@ -196,6 +196,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     private let inputBarEnabled = false
     var window: ConsoleWindow!
     var web: WKWebView!
+    let downloads = WebDownloads()
     var statusItem: NSStatusItem!
     /// The daemon this shell started, if it started one. Daemon.swift.
     let daemon = BundledDaemon()
@@ -1181,6 +1182,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             decisionHandler(.allow)
             return
         }
+        if action.shouldPerformDownload && (isConsole(url) || url.scheme == "blob") {
+            decisionHandler(.download)
+            return
+        }
         // `about:blank` is the page this shell writes itself when the daemon is
         // not answering.
         if isConsole(url) || url.scheme == "about" {
@@ -1196,6 +1201,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         }
         shellLog("browser: \(url.absoluteString) is not the console; handing it to the browser")
         NSWorkspace.shared.open(url)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        downloads.start(download, in: webView.window)
     }
 
     // The shell says what it actually loaded. A window that came up is not

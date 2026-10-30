@@ -135,22 +135,28 @@ export function attachLightboxSteps(
   download.disabled = true
   let file: File | null = null
   let imageURL = ""
-  let imageName = ""
   let imageRevision = 0
   for (const kind of ["touchstart", "touchend", "pointerdown"]) {
     download.addEventListener(kind, (event) => event.stopPropagation())
   }
   download.addEventListener("click", () => {
     if (!file) return
-    saveImageFromClick(file, {
+    const selectedFile = file
+    saveImageFromClick(selectedFile, {
       showSaveFilePicker: (doc.defaultView as (Window & Pick<ImageSavePlatform, "showSaveFilePicker">) | null)
         ?.showSaveFilePicker?.bind(doc.defaultView),
     }, () => {
       // Other desktop browsers use their configured download destination.
+      // Download the prepared bytes, never navigate to the preview's source.
+      const url = URL.createObjectURL(selectedFile)
       const link = doc.createElement("a")
-      link.href = imageURL
-      link.download = imageName
+      link.href = url
+      link.download = selectedFile.name
+      doc.body.appendChild(link)
       link.click()
+      link.remove()
+      // Retain the Blob through the browser's download handoff.
+      setTimeout(() => URL.revokeObjectURL(url), 0)
     })
   })
   frame.appendChild(download)
@@ -229,7 +235,6 @@ export function attachLightboxSteps(
       current = trigger as Tile & Element
       const revision = ++imageRevision
       imageURL = (image as HTMLImageElement).src
-      imageName = name
       file = null
       share.hidden = true
       download.hidden = true
