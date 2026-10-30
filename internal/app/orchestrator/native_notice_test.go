@@ -74,6 +74,8 @@ func TestNativeNoticeUncertainWriteNeverAutomaticallyRetries(t *testing.T) {
 	for _, unsent := range []bool{false, true} {
 		t.Run(map[bool]string{false: "possibly-written", true: "definitely-unsent"}[unsent], func(t *testing.T) {
 			b, ctx := newTestBroker(t)
+			pushed := make(chan struct{})
+			b.pushed = func() { close(pushed) }
 			now := time.Now()
 			b.Clock = func() time.Time { return now }
 			row := ownedFixture(b.Dir).Row
@@ -87,6 +89,15 @@ func TestNativeNoticeUncertainWriteNeverAutomaticallyRetries(t *testing.T) {
 				return errors.New("lost native response")
 			}
 			b.PumpNotices(ctx)
+			if !unsent {
+				// The dead-letter effect outlives the pump. Let it record its
+				// outcome before advancing the clock or closing the test store.
+				select {
+				case <-pushed:
+				case <-time.After(5 * time.Second):
+					t.Fatal("dead-letter effect did not finish")
+				}
+			}
 			first, _, _ := b.Record(ctx, r.ID)
 			if unsent {
 				if first.Notice.State == NoticeDeadLetter {
