@@ -1,4 +1,6 @@
 {
+  "capacityRow.workflow.snapshot_bytes.what": "每次開啟 Session 時，儲存的完整固定流程內容，包含指示、階段、來源版本與工具選擇。這裡顯示已儲存副本中最大的一份。",
+  "capacityRow.workflow.snapshot_bytes.full": "這次啟動會在儲存副本或開啟 Session 前被拒絕。請縮短流程指示後再試。",
   "support.requestType": "提問類型",
   "support.question": "使用問題",
   "support.issue": "回報問題",

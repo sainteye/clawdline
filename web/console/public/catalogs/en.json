@@ -1,4 +1,6 @@
 {
+  "capacityRow.workflow.snapshot_bytes.what": "The complete fixed workflow instructions, stages, source version and tool choices saved for one Session launch. The reading shows the largest saved snapshot.",
+  "capacityRow.workflow.snapshot_bytes.full": "The launch is refused before saving its snapshot or starting the Session. Shorten the workflow instructions before trying again.",
   "support.requestType": "Request type",
   "support.question": "Usage question",
   "support.issue": "Report a problem",

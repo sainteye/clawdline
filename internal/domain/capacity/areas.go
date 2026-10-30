@@ -13,7 +13,7 @@ import "strings"
 //     settings, sse
 //   - projectfiles: projects
 //   - session: naming, schedule, snippets
-//   - squad: personas
+//   - squad: personas, workflow
 //
 // internal/transport/http measures each area in the capacity_measures_<area>.go
 // of the same name.
@@ -42,7 +42,7 @@ var areas = []area{
 	{"release", []string{"release"}, releaseBounds},
 	{"session", []string{"session", "naming", "schedule", "snippets"}, sessionBounds},
 	{"sessions", []string{"sessions"}, sessionsBounds},
-	{"squad", []string{"squad", "personas"}, squadBounds},
+	{"squad", []string{"squad", "personas", "workflow"}, squadBounds},
 	{"squadpackage", []string{"squadpackage"}, squadPackageBounds},
 	{"store", []string{"store"}, storeBounds},
 	{"terminal", []string{"terminal"}, terminalBounds},

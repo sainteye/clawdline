@@ -11591,5 +11591,26 @@
     "Sources": [
       "internal/contract.WorkGateTasksPerRoundLimit"
     ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "workflow.snapshot_bytes",
+    "Class": "evidence",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.MaxWorkflowSnapshotBytes"
+    ]
   }
 ]
