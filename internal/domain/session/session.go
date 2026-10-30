@@ -213,6 +213,8 @@ type Session struct {
 	// command line. It is not sent on the session wire; the binding API joins
 	// it with the durable launch and conversation record.
 	SquadLaunchID string `json:"-"`
+	// WorkflowLaunchID comes from a verified ancestor wrapper, never current settings.
+	WorkflowLaunchID string `json:"-"`
 
 	// Rungs are the parts Label was chosen from, kept so a reader holding a
 	// higher rung (a name typed in the Swift app, the task that opened the tab)

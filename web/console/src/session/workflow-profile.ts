@@ -1,12 +1,10 @@
+import type { SessionWorkflow, WorkflowStage } from "@clawdline/contract"
 import { catalogWord } from "../catalog.js"
 import { escapeHTML } from "../legacy/bridge.js"
 
 export const WORKFLOW_PROFILES = ["clawdline", "superpowers", "poteto"] as const
-export type WorkflowStage = { id: string; title: string; output: string; acceptance: string }
-export type WorkflowRecord = {
-  state: string; profile_id?: string; version?: string; source?: string; digest?: string
-  graphify_enabled?: boolean; stages?: WorkflowStage[]
-}
+export type { WorkflowStage }
+export type WorkflowRecord = SessionWorkflow
 export const workflowWord = (key: string) => catalogWord("workflowProfiles", key)
 export function workflowName(id: string): string {
   return WORKFLOW_PROFILES.includes(id as typeof WORKFLOW_PROFILES[number]) ? workflowWord(id) : id

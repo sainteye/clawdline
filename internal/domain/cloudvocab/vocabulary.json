@@ -509,8 +509,9 @@
             "type": "object",
             "max_bytes": 65536,
             "closed": true,
-            "max_keys": 2,
+            "max_keys": 3,
             "properties": {
+              "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"] },
               "workflow_skills_enabled": {
                 "type": "bool"
               },

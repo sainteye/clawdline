@@ -80,7 +80,22 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		preflightPersona = ""
 	}
 	memory := b.memoryFor(cwd)
-	integrations, err := b.integrationInstructions(ctx, cwd)
+	preparedWorkflow, err := b.prepareWorkflow(ctx, cwd, "")
+	if err != nil {
+		return openedSession{}, err
+	}
+	workflowOpened := false
+	defer func() {
+		if !workflowOpened {
+			preparedWorkflow.Fail(ctx)
+		}
+	}()
+	integrations := ""
+	if b.PrepareWorkflow != nil {
+		integrations = preparedWorkflow.Text
+	} else {
+		integrations, err = b.integrationInstructions(ctx, cwd)
+	}
 	if err != nil {
 		return openedSession{}, err
 	}
@@ -128,8 +143,8 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if prepared.files.PromptPath != "" {
 		set = append(set, prepared.files.PrivateEnv())
 	}
-	command := envPrefix(launch.Assistant, set) +
-		strings.Join(append([]string{launch.Assistant}, args...), " ")
+	command := preparedWorkflow.Wrap(envPrefix(launch.Assistant, set) +
+		strings.Join(append([]string{launch.Assistant}, args...), " "))
 
 	if b.Lanes != nil {
 		release, err := b.Lanes.Acquire(ctx, "open:"+name)
@@ -172,6 +187,10 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		return openedSession{}, err
 	}
 	b.recordSquadTerminal(ctx, prepared, out.TerminalID)
+	workflowOpened = true
+	if err := preparedWorkflow.Record(ctx, out.TerminalID); err != nil {
+		log.Printf("workflow terminal binding pending recovery: %v", err)
+	}
 	out.OpenedAt = b.now().Unix()
 	return out, nil
 }

@@ -23,8 +23,18 @@ func TestIntegrationSettingsAreIndependentMachineOptIns(t *testing.T) {
 		if w.Code != 200 {
 			t.Fatalf("%s %s: %d %s", method, body, w.Code, w.Body)
 		}
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+			t.Fatal(err)
+		}
+		var profile string
+		if err := json.Unmarshal(raw["workflow_profile"], &profile); err != nil {
+			t.Fatal(err)
+		}
+		delete(raw, "workflow_profile")
+		encoded, _ := json.Marshal(raw)
 		var got map[string]bool
-		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		if err := json.Unmarshal(encoded, &got); err != nil {
 			t.Fatal(err)
 		}
 		return got
@@ -61,6 +71,8 @@ func TestIntegrationSettingsRejectMalformedChangesAtomically(t *testing.T) {
 		`{"workflow_skills_enabled":null}`, `{"graphify_enabled":"on"}`,
 		`{"workflow_skills_enabled":true,"remote":true}`, `{"project":"/somewhere"}`,
 		`{"workflow_skills_enabled":true} {}`, `[]`, `null`,
+		`{"workflow_profile":"unknown","graphify_enabled":true}`, `{"workflow_profile":null}`,
+		`{"workflow_profile":"poteto","workflow_skills_enabled":true}`,
 	} {
 		r := httptest.NewRequest("POST", "/v1/settings/integrations", strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")

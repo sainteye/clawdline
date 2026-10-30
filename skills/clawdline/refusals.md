@@ -47,6 +47,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `cloud_runtime_unavailable` | `internal/transport/http/cloud.go`, `internal/transport/http/cloud_onboarding.go` |
 | `cloud_unavailable` | `internal/transport/http/schedule_webhook_create.go` |
 | `confirmation_mismatch` | `internal/transport/http/work_v2.go` |
+| `conflicting_workflow_settings` | `internal/transport/http/integration_settings.go` |
 | `conversation_empty` | `internal/transport/http/session_smart_title.go` |
 | `conversation_id_malformed` | `internal/transport/http/human_interventions.go`, `internal/transport/http/work_v2_session_todos.go` |
 | `conversation_id_required` | `internal/transport/http/orchestrator.go` |
@@ -116,6 +117,7 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `invalid_user_authorization` | `internal/transport/http/schedule_webhook_create.go` |
 | `invalid_viewer_scope` | `internal/transport/http/cloud.go`, `internal/transport/http/cloud_agent.go` |
 | `invalid_work_id` | `internal/transport/http/orchestrator.go` |
+| `invalid_workflow_profile` | `internal/transport/http/integration_settings.go` |
 | `item_terminal` | `internal/domain/work/v2.go` |
 | `item_unassigned` | `internal/domain/work/v2.go` |
 | `landing_owed` | `internal/domain/work/v2.go` |

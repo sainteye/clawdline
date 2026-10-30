@@ -1,5 +1,7 @@
 # Machine workflow skill pilot
 
+Current machine selection, frozen launch records and Poteto adaptation are described in [machine workflow profiles](workflow-profiles.md). The pilot below records the original two-switch implementation and its separate evaluation checkpoint.
+
 Status: local pilot, 2026-10-30. Behavioral effectiveness is **not evaluated**.
 [繁體中文](workflow-skill-pilot.zh-TW.md)
 

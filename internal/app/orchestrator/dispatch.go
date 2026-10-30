@@ -689,7 +689,29 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		preflightPersona = ""
 	}
 	memory := b.memoryFor(cwd)
-	integrations, err := b.integrationInstructions(ctx, cwd)
+	parent := ""
+	if r.Root != nil {
+		parent = r.Root.SessionID
+	}
+	preparedWorkflow, err := b.prepareWorkflow(ctx, cwd, parent)
+	if err != nil {
+		r.State = StateSpawnFailed
+		r.SpawnError = err.Error()
+		r.FinishedAt = b.now()
+		return r
+	}
+	workflowOpened := false
+	defer func() {
+		if !workflowOpened {
+			preparedWorkflow.Fail(ctx)
+		}
+	}()
+	integrations := ""
+	if b.PrepareWorkflow != nil {
+		integrations = preparedWorkflow.Text
+	} else {
+		integrations, err = b.integrationInstructions(ctx, cwd)
+	}
 	if err != nil {
 		r.State, r.SpawnError, r.FinishedAt = StateSpawnFailed, err.Error(), b.now()
 		return r
@@ -756,7 +778,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if prepared.files.PromptPath != "" {
 		launchEnv = append(launchEnv, prepared.files.PrivateEnv())
 	}
-	command := shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable(), launchEnv...)
+	command := preparedWorkflow.Wrap(shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable(), launchEnv...))
 	line := "cd " + projects.ShellQuoted(cwd) + " && " + command
 
 	// The same decision the dispatch was admitted on (capability.go), read
@@ -813,6 +835,10 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		return r
 	}
 	b.recordSquadTerminal(ctx, prepared, terminalID)
+	workflowOpened = true
+	if err := preparedWorkflow.Record(ctx, terminalID); err != nil {
+		log.Printf("workflow terminal binding pending recovery: %v", err)
+	}
 
 	r.ChildTerminalID = terminalID
 	r.ChildBackend = backend

@@ -107,11 +107,15 @@ Review of the entry-point changes and both guide languages leaves the existing
 English and Taiwan Traditional Chinese injection explanations applicable.
 
 
-Machine integrations have separate conditional entries for bundled workflow
-skills and Graphify guidance. Both are off by default and affect only new
-Clawdline-launched Claude/Codex Sessions across Projects on that machine,
-including broker launches. Resume retains original context. Workflow bodies are
-inlined with existing instructions; Graphify requires a read-only check before
-each optional query and remains cooperative guidance. Neither switch installs
-or uninstalls tools. The reviewed inventory includes both source bodies and the
-machine setting/launch producers; website publication follows the product tree.
+Machine workflow selection now preserves Clawdline standard as the default with
+no added workflow prompt or compulsory stages. A previous skills opt-in keeps
+its Superpowers selection. The selected debugging/review content is unchanged;
+Poteto adds a bundled local pstack adaptation with task routing, verifiable units
+and evidence mapping. Neither option grants additional authorization. Fresh roots
+seal a source/version/body/stage/tool-choice snapshot; owned children inherit it,
+and resume keeps its original context. Existing unsnapshotted conversations are
+not relabeled from current settings. Graphify remains separate, with its launch
+choice frozen in the same context. Launch records do not prove model application
+or benefit. The reviewed source inventory and both language explanations include
+the resolver, storage, local source bodies and launch producers. The public website
+snapshot must follow this product tree when this feature is approved for landing.

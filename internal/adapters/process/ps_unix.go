@@ -76,6 +76,7 @@ func (p *PS) scan(ctx context.Context, ttys map[string]bool) (session.Inventory,
 		return inv, err
 	}
 
+	workflowParents := workflowParentTable(string(out))
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 6 {
@@ -159,6 +160,7 @@ func (p *PS) scan(ctx context.Context, ttys map[string]bool) (session.Inventory,
 		// The persona is read off the same command line, by the same rule:
 		// what the process was launched with is proof, not inference.
 		s.Persona = persona.FromCommandLine(command)
+		s.WorkflowLaunchID = workflowAncestor(workflowParents, pid)
 		if m := squadLaunchID.FindStringSubmatch(command); len(m) == 2 {
 			s.SquadLaunchID = m[1]
 		}

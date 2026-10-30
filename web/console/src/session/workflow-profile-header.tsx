@@ -29,7 +29,7 @@ export function WorkflowProfileHeader({ row, machine }: { row: SessionRow | null
         if (!body?.info?.session || (row.sessionId && body.info.session.sessionId !== row.sessionId)) throw new Error("Workflow launch identity changed")
         setAnswer({ identity, workflow: body.info.workflow })
       } catch {
-        if (!controller.signal.aborted && current.current === identity) setAnswer({ identity, workflow: { state: "unavailable" } })
+        if (!controller.signal.aborted && current.current === identity) setAnswer({ identity, workflow: { state: "unavailable", graphify_enabled: null } })
       }
     }
     void load()

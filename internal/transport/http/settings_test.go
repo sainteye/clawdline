@@ -341,6 +341,8 @@ func TestSettingsEveryWindowRow(t *testing.T) {
 		switch key.Kind {
 		case "string":
 			switch {
+			case key.Name == "workflow_profile":
+				sent[key.Name] = "superpowers" // Consistent with the legacy opt-in written in the same fixture.
 			case len(key.Choices) > 0:
 				sent[key.Name] = key.Choices[len(key.Choices)-1]
 			case key.Name == "antigravity_default_effort":

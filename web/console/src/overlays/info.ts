@@ -35,7 +35,7 @@ import { RoleDetail } from "./role-detail.js"
 import { reasoningEffortHTML } from "./reasoning-effort.js"
 import { catalogWord } from "../catalog.js"
 import "./info-next.css"
-import { workflowInfoHTML, type WorkflowRecord } from "../session/workflow-profile.js"
+import { workflowInfoHTML } from "../session/workflow-profile.js"
 
 /**
  * The Session info card — `Info` in `input/info.js`, function for function,
@@ -62,7 +62,7 @@ import { workflowInfoHTML, type WorkflowRecord } from "../session/workflow-profi
  */
 
 /** Fields of the original's answer this daemon may add later; read as the original reads them. */
-type Facts = SessionInfo & { workflow?: WorkflowRecord; session: SessionInfo["session"] & { seconds?: number } }
+type Facts = SessionInfo & { session: SessionInfo["session"] & { seconds?: number } }
 
 export interface InfoHost {
   /** The session on screen, `SessionSelection.snapshot().open`. */

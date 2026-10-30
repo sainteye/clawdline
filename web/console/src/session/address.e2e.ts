@@ -3406,6 +3406,7 @@ test("workflow profile picker saves only the selected profile and preserves Grap
         const bounds = await tab.run(`(() => {const s=${select}.getBoundingClientRect(),a=document.querySelector('.workflow-profile-picker svg').getBoundingClientRect();return {delta:Math.abs((s.top+s.bottom-a.top-a.bottom)/2),width:innerWidth,page:document.documentElement.scrollWidth}})()`)
         assert.ok(bounds.delta < 1, `centered caret ${tag}/${sizeName}: ${JSON.stringify(bounds)}`)
         assert.ok(bounds.page <= bounds.width + 1, `settings overflow ${tag}/${sizeName}`)
+        await tab.shot(`workflow-${tag}-${sizeName}-settings`)
         await tab.reload()
         await waitFor(`!!document.getElementById("settings-tab-3")`)
         await tab.run(`document.getElementById("settings-tab-3").click()`)
@@ -3449,6 +3450,7 @@ test("Station shows pinned workflow evidence with progressive details and an hon
         assert.ok(await tab.run(`document.querySelector('.flow-steps').textContent.includes(${JSON.stringify(tag === "en" ? "Verify" : "驗證")})`))
         const bounds = await tab.run(`({width:innerWidth,page:document.documentElement.scrollWidth,sheet:document.getElementById('info-sheet').getBoundingClientRect().width})`)
         assert.ok(bounds.page <= bounds.width + 1 && bounds.sheet <= bounds.width, `info overflow ${tag}/${sizeName}: ${JSON.stringify(bounds)}`)
+        await tab.shot(`workflow-${tag}-${sizeName}-info`)
         await tab.run(`document.getElementById('info-close').click()`)
         await tab.go("/?workflow=legacy" + FRAGMENT[TTY])
         const legacy = tag === "en" ? "No launch record" : "無啟動紀錄"

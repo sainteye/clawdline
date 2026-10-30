@@ -208,6 +208,7 @@ func (f *File) Change(change func(Values) (map[string]any, error)) (Values, erro
 
 // set merges changes onto a reading taken under f.mu and writes the result.
 func (f *File) set(current Values, changes map[string]any) (Values, error) {
+	changes = workflowChanges(changes)
 	next := make(map[string]json.RawMessage, len(current.Raw)+len(changes))
 	for k, v := range current.Raw {
 		next[k] = v
@@ -555,6 +556,7 @@ var Settables = []Settable{
 	{Name: "iterm_scan", Kind: "bool"},
 	{Name: "session_auto_discovery", Kind: "bool"},
 	{Name: "workflow_skills_enabled", Kind: "bool"},
+	{Name: "workflow_profile", Kind: "string", Choices: []string{"clawdline", "superpowers", "poteto"}, Refusal: "invalid_workflow_profile", Because: "clawdline, superpowers or poteto"},
 	{Name: "graphify_enabled", Kind: "bool"},
 	// The console's setup wizard (web/console/src/setup): `local` is the
 	// person choosing to use this machine only, so the header shows a quiet
