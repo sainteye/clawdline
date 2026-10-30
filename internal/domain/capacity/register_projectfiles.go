@@ -6,6 +6,15 @@ const AntigravityConsentRequestBytesLimit = 4096
 // projects.*.
 func projectFilesBounds() []Entry {
 	return []Entry{
+		{Name: "projects.graphify_build_jobs", Class: Buffer, Unit: Rows, Limit: 16, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.BuildJobsLimit"}},
+		{Name: "projects.graphify_build_seconds", Class: Buffer, Unit: Seconds, Limit: 600, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.BuildSecondsLimit"}},
+		{Name: "projects.graphify_build_poll_ms", Class: Buffer, Unit: Milliseconds, Limit: 1000, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.BuildPollMillisecondsLimit"}},
+		{Name: "projects.graphify_build_log_bytes", Class: Buffer, Unit: Bytes, Limit: 65536, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.BuildLogBytesLimit"}},
+		{Name: "projects.graphify_runtime_bytes", Class: Buffer, Unit: Bytes, Limit: 536870912, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.RuntimeBytesLimit"}},
+		{Name: "projects.graphify_build_raw_bytes", Class: Buffer, Unit: Bytes, Limit: 134217728, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.BuildRawBytesLimit"}},
+		{Name: "projects.graphify_build_workers", Class: Buffer, Unit: Rows, Limit: 1, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.BuildWorkersLimit"}},
+		{Name: "projects.graphify_build_body_bytes", Class: Buffer, Unit: Bytes, Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.BuildBodyBytesLimit"}},
+
 		{Name: "projects.graphify_zoom", Class: Buffer, Unit: Rows, Limit: 4, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon},
 		{Name: "projects.graphify_nodes", Class: Buffer, Unit: Rows, Limit: 300, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.ViewNodeLimit"}},
 		{Name: "projects.graphify_links", Class: Buffer, Unit: Rows, Limit: 900, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.ViewLinkLimit"}},

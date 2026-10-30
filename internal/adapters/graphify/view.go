@@ -22,14 +22,17 @@ type ViewLink struct {
 	Confidence string `json:"confidence"`
 }
 type ViewData struct {
-	State      string     `json:"state"`
-	Reason     string     `json:"reason"`
-	CheckedAt  int64      `json:"checked_at"`
-	TotalNodes int64      `json:"total_nodes"`
-	TotalLinks int64      `json:"total_links"`
-	Truncated  bool       `json:"truncated"`
-	Nodes      []ViewNode `json:"nodes"`
-	Links      []ViewLink `json:"links"`
+	UnverifiedSources int64       `json:"unverified_sources"`
+	Build             BuildStatus `json:"build"`
+	CanBuild          bool        `json:"can_build"`
+	State             string      `json:"state"`
+	Reason            string      `json:"reason"`
+	CheckedAt         int64       `json:"checked_at"`
+	TotalNodes        int64       `json:"total_nodes"`
+	TotalLinks        int64       `json:"total_links"`
+	Truncated         bool        `json:"truncated"`
+	Nodes             []ViewNode  `json:"nodes"`
+	Links             []ViewLink  `json:"links"`
 }
 
 // View bounds cap a single on-demand read, not a retained graph cache.
@@ -52,6 +55,9 @@ func View(ctx context.Context, root string) (ViewData, error) {
 		return out, nil
 	}
 	var graph struct {
+		Graph struct {
+			UnverifiedSources int64 `json:"unverified_sources"`
+		} `json:"graph"`
 		Nodes []struct {
 			ID        string          `json:"id"`
 			Label     string          `json:"label"`
@@ -67,6 +73,12 @@ func View(ctx context.Context, root string) (ViewData, error) {
 		} `json:"links"`
 	}
 	if json.Unmarshal(raw, &graph) != nil {
+		out.State = "unverified"
+		out.Reason = "graphify_graph_format_unverified"
+		return out, nil
+	}
+	out.UnverifiedSources = graph.Graph.UnverifiedSources
+	if out.UnverifiedSources < 0 || out.UnverifiedSources > int64(len(graph.Nodes)) {
 		out.State = "unverified"
 		out.Reason = "graphify_graph_format_unverified"
 		return out, nil

@@ -871,6 +871,12 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-workflow-write", method: "POST", path: "/v1/settings/workflow",
 		body2: `{"dispatch_full_permission":false,"session_auto_discovery":false}`,
 	}, {
+		word: "project-graphify-build", body: map[string]any{"type": "project-graphify-build", "project": "p1", "request": "build-1", "session": machine},
+		session: machine, name: "action:build-1", method: "POST", path: "/v1/projects/p1/graphify", body2: `{}`,
+	}, {
+		word: "session-graphify-build", body: map[string]any{"type": "session-graphify-build", "session": pane, "request": "build-1", "execution_generation": pinnedGeneration},
+		session: pane, name: "action:build-1", method: "POST", path: "/v1/sessions/" + segment(pane) + "/graphify", body2: `{}`,
+	}, {
 		word: "project-graphify", body: map[string]any{"type": "project-graphify", "project": "p1", "request": "req-graphify", "session": machine},
 		session: machine, name: "read:req-graphify", method: "GET", path: "/v1/projects/p1/graphify",
 	}, {

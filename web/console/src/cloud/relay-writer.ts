@@ -250,6 +250,8 @@ export interface WriteHost {
  * report name.
  */
 export type WriteRoute =
+ | {op:"project-graphify-build";word:Carried<"project-graphify-build">;project:string}
+ | {op:"session-graphify-build";word:Carried<"session-graphify-build">;session:string}
  | { op: "squad-write"; word: Carried<"squad.settings.update" | "squad.motion.update" | "squad.catalog.update" | "squad.role-draft"> }
   | { op: "squad-package"; word: Carried<"squad.packages.preview" | "squad.packages.adopt" | "squad.packages.export"> }
   | { op: "project-hide"; word: Carried<"project-hide"> }
@@ -677,6 +679,8 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "projects" && a && b === "antigravity-consent" && segments.length === 3 && method === "POST") {
     return { op: "project-antigravity-consent-change", word: "project-antigravity-consent-change", project: a }
   }
+  if (head === "projects" && a && b === "graphify" && segments.length === 3 && method === "POST") return {op:"project-graphify-build",word:"project-graphify-build",project:a}
+  if (head === "sessions" && a && b === "graphify" && segments.length === 3 && method === "POST") return {op:"session-graphify-build",word:"session-graphify-build",session:a}
   if (head === "projects" && a && b === "unify" && segments.length === 3 && method === "POST") {
     return { op: "project-unify-apply", word: "project-unify-apply", project: a }
   }
@@ -964,6 +968,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "project-hide":
     case "project-add":
     case "project-file-save":
+    case "project-graphify-build":
+    case "session-graphify-build":
     case "project-antigravity-consent-change":
     case "project-unify-apply":
     case "project-mirror-apply":
@@ -1940,6 +1946,24 @@ export class RelayWriter {
         if (!request) throw failure("idempotency_key_required", "Saving a Project file needs an Idempotency-Key.", 400)
         return client._machineRequestAs(request, place.machine, route.word,
           { project: place.id, file: route.file, item: await bodyOf(init) }, "action")
+      }
+      case "project-graphify-build": {
+        if(client.allowWrites!==true)throw failure("send_disabled","Building an index needs send access to this machine.",403)
+        if ([...url.searchParams].length || Object.keys(await bodyOf(init)).length) throw failure("bad_request","An index build accepts only an empty JSON object.",400)
+        if (typeof client._place!=="function" || typeof client._machineRequestAs!=="function") throw failure("cloud_not_carried",route.word,501)
+        const place=client._place(route.project)
+        if (place.machine!==this.host.machine) throw failure("cloud_project_machine_mismatch","This Project belongs to another machine.",409)
+        const request=headerOf(init,"idempotency-key")
+        if (!request) throw failure("idempotency_key_required","An index build needs an Idempotency-Key.",400)
+        return client._machineRequestAs(request,place.machine,route.word,{project:place.id},"action")
+      }
+      case "session-graphify-build": {
+        if(client.allowWrites!==true)throw failure("send_disabled","Building an index needs send access to this machine.",403)
+        if ([...url.searchParams].length || Object.keys(await bodyOf(init)).length) throw failure("bad_request","An index build accepts only an empty JSON object.",400)
+        const request=headerOf(init,"idempotency-key")
+        if (!request) throw failure("idempotency_key_required","An index build needs an Idempotency-Key.",400)
+        const {identity,generation,client:current}=await this.mutationTarget(client,route.session,route.word)
+        return current._read!(identity,route.word,{request,execution_generation:generation},"action:"+request)
       }
       case "project-antigravity-consent-change":
       case "project-unify-apply": {

@@ -1,9 +1,11 @@
 package http
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/sainteye/clawdline/internal/adapters/graphify"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"net/http/httptest"
@@ -11,7 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestGraphifyProjectReadCrossesAuthenticationAndMachineOptIn(t *testing.T) {
@@ -92,7 +96,7 @@ func TestGraphifySessionViewUsesOnlyTheSelectedSessionDirectory(t *testing.T) {
 		{"GET", "/v1/sessions/" + url.PathEscape("%19") + "/graphify", 200},
 		{"GET", "/v1/sessions/" + url.PathEscape("%19") + "/graphify?path=/elsewhere", 400},
 		{"GET", "/v1/sessions/" + url.PathEscape("%19") + "/graphify/more", 501},
-		{"POST", "/v1/sessions/" + url.PathEscape("%19") + "/graphify", 405},
+		{"POST", "/v1/sessions/" + url.PathEscape("%19") + "/graphify", 400},
 	} {
 		r := httptest.NewRequest(test.method, "http://127.0.0.1:7757"+test.path, nil)
 		r.Header.Set("Authorization", "Bearer "+local)
@@ -104,5 +108,101 @@ func TestGraphifySessionViewUsesOnlyTheSelectedSessionDirectory(t *testing.T) {
 		if test.status == 200 && !strings.Contains(w.Body.String(), `"state":"missing"`) {
 			t.Fatalf("wrong directory: %s", w.Body)
 		}
+	}
+}
+
+func TestGraphifyBuildRequiresStrictExplicitMutationAndPublishesAsync(t *testing.T) {
+	s := projectCloudStandIn(t)
+	project, _ := s.server.workV2Project(t.Context(), s.place)
+	if err := os.WriteFile(filepath.Join(project.Path, "main.go"), []byte("package main\nfunc main(){}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	token, _, _ := s.server.CloudCredentials()
+	path := "/v1/projects/" + s.place + "/graphify"
+	var calls atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	s.server.graphifyBuilder = graphify.NewBuilder(t.TempDir(), s.server.graphifyEnabled, func(ctx context.Context, input, output string, p func(string)) error {
+		calls.Add(1)
+		close(started)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-release:
+		}
+		return os.WriteFile(filepath.Join(output, "graph.json"), []byte(`{"graph":{"schema_version":1},"nodes":[{"id":"main","source_file":"main.go"}],"links":[]}`), 0600)
+	})
+	post := func(path, body, key, auth string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "http://127.0.0.1:7757"+path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+auth)
+		r.Header.Set("Idempotency-Key", key)
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		s.handler.ServeHTTP(w, r)
+		return w
+	}
+	if w := post(path, "{}", "off", token); w.Code != 403 {
+		t.Fatalf("off: %d %s", w.Code, w.Body)
+	}
+	if _, err := s.server.settingsFile().Set(map[string]any{"graphify_enabled": true}); err != nil {
+		t.Fatal(err)
+	}
+	if w := post(path, "{}", "anonymous", ""); w.Code == 202 {
+		t.Fatal("anonymous mutation accepted")
+	}
+	for _, body := range []string{"", `null`, `[]`, `{"path":"/outside"}`, `{"backend":"openai"}`, `{} {}`, strings.Repeat(" ", graphify.BuildBodyBytesLimit+1)} {
+		if w := post(path, body, "bad", token); w.Code != 400 {
+			t.Fatalf("bad body accepted: %d", w.Code)
+		}
+	}
+	if w := post(path+"?path=/outside", "{}", "query", token); w.Code != 400 {
+		t.Fatal("query accepted")
+	}
+	if w := post("/v1/projects/unknown/graphify", "{}", "unknown", token); w.Code != 404 {
+		t.Fatal("unknown Project accepted")
+	}
+	if w := post(path, "{}", "", token); w.Code != 400 {
+		t.Fatal("missing request key accepted")
+	}
+	if calls.Load() != 0 {
+		t.Fatal("validation executed parser")
+	}
+	w := post(path, "{}", "one", token)
+	if w.Code != 202 {
+		t.Fatalf("start: %d %s", w.Code, w.Body)
+	}
+	<-started
+	for _, key := range []string{"one", "two"} {
+		if w = post(path, "{}", key, token); w.Code != 202 {
+			t.Fatalf("dedup: %d %s", w.Code, w.Body)
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatal("duplicate parser")
+	}
+	close(release)
+	deadline := time.After(5 * time.Second)
+	for s.server.graphifyBuilds().Status(project.Path).State == "running" {
+		select {
+		case <-deadline:
+			t.Fatal("not completed")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	r := httptest.NewRequest("GET", "http://127.0.0.1:7757"+path, nil)
+	r.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	s.handler.ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"state":"source_matched"`) || !strings.Contains(w.Body.String(), `"state":"succeeded"`) {
+		t.Fatalf("completion: %d %s", w.Code, w.Body)
+	}
+	// The durable acceptance receipt remains usable after the in-memory builder
+	// is replaced, without executing a second parser after a daemon restart.
+	s.server.graphifyBuilder = graphify.NewBuilder(t.TempDir(), nil, func(context.Context, string, string, func(string)) error { calls.Add(1); return nil })
+	if w = post(path, "{}", "one", token); w.Code != 202 {
+		t.Fatalf("receipt lost: %d %s", w.Code, w.Body)
+	}
+	if calls.Load() != 1 {
+		t.Fatal("replayed mutation after restart")
 	}
 }

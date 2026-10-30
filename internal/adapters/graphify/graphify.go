@@ -254,7 +254,7 @@ func inspect(ctx context.Context, projectRoot string, graphData *[]byte) (Status
 }
 
 func excludedDirectory(name string) bool {
-	return name == ".git" || name == "graphify-out" || name == "node_modules" || name == "venv" || name == ".venv" || name == "dist" || name == "build" || name == "target" || name == "__pycache__"
+	return strings.HasPrefix(name, ".clawdline-graphify-") || name == ".git" || name == "graphify-out" || name == "node_modules" || name == "venv" || name == ".venv" || name == "dist" || name == "build" || name == "target" || name == "__pycache__"
 }
 
 func sourceName(name string) bool {

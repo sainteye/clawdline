@@ -2664,7 +2664,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/graphify.go": "a0716503d418090b5056f7f529683124d4eecdbf14af16bc00f941d764f854f9",
-    "cmd/clawdline/main.go": "753837ead4489c0c38c9cd78899bf3abb17996ee1329f13cb6036606f66a4ac6",
+    "cmd/clawdline/main.go": "e8fee7db78abe3164aca8fff3cfd12e8b0336b6a22d4b33a48d77449c6dd7c8c",
     "cmd/clawdline/session.go": "0fc62871605339e63df21529801409aa809907ec05bb8343bbbd766600c11574",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -2673,7 +2673,7 @@
     "internal/adapters/antigravityprocess/client.go": "561d81c21cfb102fc87eecbaea2725a41b32dd485fc2574fa5949d1c0b898aad",
     "internal/adapters/antigravitysession/context.go": "7f7490cb414f00633f3e436d484f9d02e8a91e6f541eda148eefa6e83d6d854b",
     "internal/adapters/antigravitysession/host.go": "32d6a53893b3d412f96acca14237c87953a3cf53c2c99db471ee1960f8e5846e",
-    "internal/adapters/graphify/graphify.go": "e4b738da462f701cd3f246f59fdbafda4631dd48cf9c8431fb31abf39b6feca0",
+    "internal/adapters/graphify/graphify.go": "b655b7f8100336c4f8306b3f66e63f6ca5adbd78a62b391a6e09a39dfab44b33",
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
     "internal/adapters/nextconfig/nextconfig.go": "60e04a1eb84f619e7457690108d1d0ba2c2002a093220c7dc75d9559b6de4110",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
@@ -2742,7 +2742,7 @@
     "web/console/src/session/Start.tsx": "41ce5fb0848d5f5c202a03fd13655a87bb9ad4189473dccf1d075d437feefeb7"
   },
   "copyChecks": {
-    "en": "5b4a756a0b8fed3538d7929cbc5b9d4bc63dfd9d114a35e95d505fc7f318a761",
-    "zh-Hant": "e5e64a4deecb27c6aad497f4437af8f7429ebd65765db3b63ba7bc1195bdd8a2"
+    "en": "e96b9181f63a2ba85030de9f6624a31c645e0f761e1ab4ab66bc81a28fc44aa6",
+    "zh-Hant": "38ea20dcb59e756d3e203402b017613f88f7991f32bb2878e915cbe9d01e40f5"
   }
 }

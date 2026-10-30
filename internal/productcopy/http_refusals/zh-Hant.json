@@ -1290,5 +1290,12 @@
   "http.b3efd688ebb68c49": "Doctor 報告超過安全匯出上限。",
   "http.a3477e7267821949": "請選擇 Claude 或 Codex 協助配對。",
   "http.33e8b1887d80ca96": "請選擇 Clawdline 標準、Superpowers 或 Poteto。",
-  "http.56454b28183b6a32": "請擇一傳送 workflow_profile 或舊版啟用開關，不能同時傳送。"
+  "http.56454b28183b6a32": "請擇一傳送 workflow_profile 或舊版啟用開關，不能同時傳送。",
+  "http.851fee22f3dee8cb": "僅接受 GET 或 POST",
+  "http.556a46e41d6d8f2b": "Graphify 不接受查詢欄位。",
+  "http.db9ed8d71941b2be": "建立索引需要這台機器的傳送權限。",
+  "http.d06ba0fa3093ad93": "建立索引需要最多 128 位元組、由可見 ASCII 字元組成的 Idempotency-Key。",
+  "http.503b58d15178edc2": "建立索引只接受空的 JSON 物件。",
+  "http.7cdded1263a7d681": "讀取 Graphify 不接受請求內容。",
+  "http.679604233947a571": "尚未啟動本機索引建立流程。請讀取狀態後再試。"
 }

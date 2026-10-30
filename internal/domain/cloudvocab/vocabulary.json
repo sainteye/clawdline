@@ -1133,6 +1133,50 @@
       }
     },
     {
+      "op": "project-graphify-build",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/projects/{project}/graphify",
+      "console_seam": "writer",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "project": "p1",
+        "request": "build-1",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "project",
+            "request",
+            "session"
+          ],
+          "path": "/v1/projects/{project}/graphify",
+          "local_body": []
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "project": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 200
+          }
+        },
+        "route": {
+          "path": "/v1/projects/{project}/graphify",
+          "body": {
+            "empty": true
+          }
+        }
+      }
+    },
+    {
       "op": "project-hide",
       "kind": "command",
       "write_gate": true,
@@ -1646,7 +1690,52 @@
         }
       }
     },
-
+    {
+      "op": "session-graphify-build",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/sessions/{id}/graphify",
+      "console_seam": "writer",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "execution_generation": "0123456789abcdef0123456789abcdef",
+        "request": "build-1",
+        "session": "%19"
+      },
+      "shapes": [
+        {
+          "body": [
+            "execution_generation",
+            "request",
+            "session"
+          ],
+          "path": "/v1/sessions/{session}/graphify",
+          "local_body": []
+        }
+      ],
+      "decode": {
+        "reply": "session_action",
+        "fields": {
+          "execution_generation": {
+            "type": "string",
+            "checks": [
+              "generation"
+            ],
+            "into": "execution_generation"
+          }
+        },
+        "route": {
+          "path": "/v1/sessions/{session}/graphify",
+          "body": {
+            "empty": true
+          }
+        }
+      }
+    },
     {
       "op": "session-receipt",
       "kind": "read",

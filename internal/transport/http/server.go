@@ -26,6 +26,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/clauderemote"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/doctor"
+	"github.com/sainteye/clawdline/internal/adapters/graphify"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
 	"github.com/sainteye/clawdline/internal/adapters/logs"
 	"github.com/sainteye/clawdline/internal/adapters/machineusage"
@@ -57,7 +58,9 @@ import (
 )
 
 type Server struct {
-	claudeRemote interface {
+	graphifyMu      sync.Mutex
+	graphifyBuilder *graphify.Builder
+	claudeRemote    interface {
 		SendRemote(context.Context, session.Session, string, func() error) error
 		Page(context.Context, session.Session, int, int64, int64, string) (contract.TranscriptPage, error)
 	}

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
+import { RefusalError } from "@clawdline/core"
 import type { GraphifyView } from "@clawdline/contract"
 import { catalogFormat, currentCatalogTag } from "../catalog.js"
 import { failureSentence } from "../legacy/bridge.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
-import { GRAPHIFY_OPEN, GRAPHIFY_SETTING, graphWord as w, readGraphify, type GraphifyTarget } from "./graphify.js"
+import { GRAPHIFY_OPEN, GRAPHIFY_SETTING, graphWord as w, readGraphify, buildGraphify, buildFailureWord, type GraphifyTarget } from "./graphify.js"
 import { graphSelection, layoutGraph } from "./layout.js"
 import "./graphify.css"
 
@@ -12,6 +13,8 @@ export function GraphifyViewer() {
  const [target, setTarget] = useState<GraphifyTarget | null>(null)
  const [view, setView] = useState<GraphifyView | null>(null)
  const [error, setError] = useState("")
+ const [starting,setStarting]=useState(false)
+ const buildRequest=useRef<AbortController | null>(null)
  const [busy, setBusy] = useState(false)
  const [refresh, setRefresh] = useState(0)
  const [search, setSearch] = useState("")
@@ -36,14 +39,22 @@ export function GraphifyViewer() {
   if (!target) return
   const controller = new AbortController()
   setBusy(true);setView(null);setError("")
-  void readGraphify(target, controller.signal).then(answer => {
-   if (!controller.signal.aborted) {setView(answer);setBusy(false)}
-  }, reason => { if (!controller.signal.aborted) {setError(failureSentence(reason, w("failed")));setBusy(false)} })
+  let timer:ReturnType<typeof setTimeout> | undefined
+  const load=async()=>{
+   try{
+    const answer=await readGraphify(target,controller.signal)
+    if (controller.signal.aborted)return
+    setView(answer);setBusy(false)
+    // Poll only an accepted, running operation. Reads never start or retry work.
+    if(answer.build?.state==="running")timer=setTimeout(()=>void load(),1000)
+   }catch(reason){if(!controller.signal.aborted){setError(failureSentence(reason,w("failed")));setBusy(false)}}
+  }
+  void load()
   const off = (event: Event) => { if ((event as CustomEvent<boolean>).detail !== true) {
-   controller.abort();setView(null);setBusy(false);setError(w("disabled"))
+   controller.abort();clearTimeout(timer);buildRequest.current?.abort();setStarting(false);setView(null);setBusy(false);setError(w("disabled"))
   } }
   window.addEventListener(GRAPHIFY_SETTING, off)
-  return () => { controller.abort();window.removeEventListener(GRAPHIFY_SETTING, off) }
+  return () => { controller.abort();clearTimeout(timer);buildRequest.current?.abort();window.removeEventListener(GRAPHIFY_SETTING, off) }
  }, [target, refresh])
  const positions = useMemo(() => layoutGraph(view?.nodes ?? []), [view])
  const filtered = useMemo(() => graphSelection(positions, view?.links ?? [], search, group), [positions, view, search, group])
@@ -51,11 +62,18 @@ export function GraphifyViewer() {
  const node = positions.find(n => n.id === selected)
  const related = view?.links.filter(link => link.source === selected || link.target === selected) ?? []
  const neighbors = new Set(related.flatMap(link => [link.source, link.target]))
+ const build=async()=>{
+  if(!target || starting)return
+  const controller=new AbortController();buildRequest.current=controller;setStarting(true);setError("")
+  try {await buildGraphify(target,controller.signal);if(!controller.signal.aborted)setRefresh(n=>n+1)}
+  catch(reason){if(!controller.signal.aborted)setError(reason instanceof RefusalError && reason.code.startsWith("graphify_")?buildFailureWord(reason.code.slice(9)):failureSentence(reason,w("buildFailed")))}
+  finally{if(!controller.signal.aborted)setStarting(false)}
+ }
  const close = () => dialog.current?.close()
  return createPortal(<dialog ref={dialog} className="graphify-dialog" aria-labelledby="graphify-title" tabIndex={-1}
   onCancel={event => {event.preventDefault();close()}}
-  onClose={() => { setTarget(null);setView(null);setError("");
-   const button = opener.current?.getClientRects().length ? opener.current : document.getElementById("session-info")
+  onClose={() => { setTarget(null);setView(null);setError("");setStarting(false);
+   const button = opener.current?.getClientRects().length ? opener.current : document.getElementById("detail-info")
    button?.focus({preventScroll:true})
   }}>
   <header><div><h2 id="graphify-title">{w("title")}</h2>{target?.label && <p>{target.label}</p>}</div>
@@ -68,6 +86,7 @@ export function GraphifyViewer() {
     <p className="graphify-meta">{w("checked")} {new Date(view.checked_at * 1000).toLocaleString(currentCatalogTag())}</p>
     {!!view.nodes.length && <>
      <p>{catalogFormat("graphifyView", "counts", [view.nodes.length,view.total_nodes,view.links.length,view.total_links])}</p>
+     {!!view.unverified_sources && <p className="graphify-hint">{catalogFormat("graphifyView","unverifiedSources",[view.unverified_sources])}</p>}
      {view.truncated && <p className="graphify-notice">{w("truncated")}</p>}
      <div className="graphify-controls">
       <label>{w("search")}<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
@@ -97,9 +116,18 @@ export function GraphifyViewer() {
      <p className="graphify-hint">{w("evidence")}</p>
     </>}
     {view.state === "source_matched" && !view.nodes.length && <p>{w("empty")}</p>}
-    {view.state !== "source_matched" && !view.nodes.length && <p>{w("noBuild")}</p>}
+    {view.build?.state==="running" && <section className="graphify-build" aria-live="polite">
+     <p role="status">{w(`buildPhase_${view.build.phase}`)}</p>
+     <p>{catalogFormat("graphifyView","buildCounts",[view.build.files,(view.build.bytes/1048576).toFixed(1)])}</p>
+     <p className="graphify-hint">{w("buildContinues")}</p>
+    </section>}
+    {view.build?.state==="failed" && <p role="alert">{buildFailureWord(view.build.error)}</p>}
+    {view.can_build && <section className="graphify-build"><p>{w("buildScope")}</p>
+     <button className="chip" type="button" disabled={starting} onClick={()=>void build()}>{starting?w("buildStarting"):view.build?.state==="failed"?w("buildRetry"):w("build")}</button>
+    </section>}
+    {view.state !== "source_matched" && !view.nodes.length && !view.can_build && view.build?.state!=="running" && <p>{w("noBuild")}</p>}
    </>}
-   <footer><button className="chip" type="button" disabled={busy} onClick={() => {setSelected("");setRefresh(n=>n+1)}}>{w("refresh")}</button></footer>
+   <footer><button className="chip" type="button" disabled={busy || starting} onClick={() => {setSelected("");setRefresh(n=>n+1)}}>{w("refresh")}</button></footer>
   </div>
  </dialog>,document.body)
 }

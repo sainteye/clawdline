@@ -1290,5 +1290,12 @@
   "http.b3efd688ebb68c49": "The Doctor report exceeded its safe export limit.",
   "http.a3477e7267821949": "Choose Claude or Codex for pairing.",
   "http.33e8b1887d80ca96": "Choose clawdline, superpowers or poteto.",
-  "http.56454b28183b6a32": "Send either workflow_profile or the legacy opt-in, not both."
+  "http.56454b28183b6a32": "Send either workflow_profile or the legacy opt-in, not both.",
+  "http.851fee22f3dee8cb": "GET or POST only",
+  "http.556a46e41d6d8f2b": "Graphify takes no query fields.",
+  "http.db9ed8d71941b2be": "Building an index needs send access to this machine.",
+  "http.d06ba0fa3093ad93": "An index build needs a visible ASCII Idempotency-Key of at most 128 bytes.",
+  "http.503b58d15178edc2": "An index build accepts only an empty JSON object.",
+  "http.7cdded1263a7d681": "A Graphify read takes no body.",
+  "http.679604233947a571": "The local index build was not started. Read its status before retrying."
 }

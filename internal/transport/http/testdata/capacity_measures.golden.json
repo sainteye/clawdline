@@ -2056,6 +2056,41 @@
     "Note": true
   },
   {
+    "Name": "projects.graphify_build_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_build_jobs",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_build_log_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_build_poll_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_build_raw_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_build_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_build_workers",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "projects.graphify_links",
     "Known": true,
     "Note": true
@@ -2067,6 +2102,11 @@
   },
   {
     "Name": "projects.graphify_request_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.graphify_runtime_bytes",
     "Known": true,
     "Note": true
   },
