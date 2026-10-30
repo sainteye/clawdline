@@ -800,6 +800,23 @@ class Tab {
     await this.b.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }, this.session)
   }
 
+  async clickPoint(x: number, y: number): Promise<void> {
+    await this.b.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 }, this.session)
+    await this.b.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 }, this.session)
+  }
+
+  async pinch(x: number, y: number): Promise<void> {
+    const points = (distance: number) => [{ x: x - distance, y, id: 1 }, { x: x + distance, y, id: 2 }]
+    await this.b.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(25) }, this.session)
+    await this.b.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(50) }, this.session)
+    await this.b.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }, this.session)
+  }
+
+  async withoutWebGL(): Promise<void> {
+    await this.b.send("Page.addScriptToEvaluateOnNewDocument", { source: `const originalGetContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function(type,...args) { return /^webgl/.test(type) ? null : originalGetContext.call(this,type,...args) }` }, this.session)
+  }
+
   async screenshot(path: string): Promise<void> {
     const { data } = await this.b.send("Page.captureScreenshot", { format: "png", fromSurface: true }, this.session)
     writeFileSync(path, Buffer.from(data, "base64"))
@@ -3567,22 +3584,22 @@ test("Graphify project viewer respects the toggle and renders safe graphs in bot
    await new Promise(r=>setTimeout(r,100));assert.equal(await tab.run(`!!document.querySelector("[data-graphify-open]")`),false);assert.equal(graphifyReads,0)
    integrationSettings.graphify_enabled=true
    await tab.run(`document.getElementById("info-refresh").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
-   await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector(".graphify-dialog[open] .graphify-node")`)
-   assert.equal(await tab.run(`document.querySelectorAll(".graphify-node").length`),3)
+   await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector('.graphify-dialog[open] .graphify-stage[data-renderer-state="ready"]')`)
+   assert.equal(await tab.run(`document.querySelectorAll(".graphify-node-list button").length`),3)
    assert.equal(await tab.run(`/\\{(?:arg)?[0-3]\\}/.test(document.querySelector(".graphify-body").textContent)`),false)
-   assert.equal(await tab.run(`document.querySelectorAll(".graphify-node text").length`),3)
-   await tab.run(`document.querySelector('.graphify-node').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`)
+   assert.ok(await tab.run(`document.querySelectorAll(".graphify-canvas canvas").length > 0`))
+   await tab.run(`document.querySelector('.graphify-node-list summary').click(); document.querySelector('.graphify-node-list button').focus()`); await tab.press('Enter')
    await wait(`!!document.querySelector(".graphify-node-detail")`)
    assert.ok(await tab.run(`document.querySelector(".graphify-node-detail").textContent.includes("Worker")`))
    const dims=await tab.run(`({viewport:innerWidth,page:document.documentElement.scrollWidth,dialog:document.querySelector('.graphify-dialog').getBoundingClientRect().width,executed:globalThis.graphExecuted===true,active:document.querySelectorAll('.graphify-dialog img,.graphify-dialog script').length})`)
    assert.ok(dims.page<=dims.viewport+1);assert.ok(dims.dialog<=dims.viewport);assert.equal(dims.executed,false);assert.equal(dims.active,0)
    await tab.run(`(()=>{const input=document.querySelector('.graphify-controls input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'worker');input.dispatchEvent(new Event('input',{bubbles:true}))})()`)
-   await wait(`document.querySelectorAll('.graphify-node').length===1`)
-   assert.equal(await tab.run(`document.querySelectorAll('.graphify-canvas line').length`),0)
+   await wait(`document.querySelectorAll('.graphify-node-list button').length===1`)
+   assert.ok(await tab.run(`document.querySelector('.graphify-map-heading').textContent.includes(${JSON.stringify(tag==='en'?'0 connections':'0 條連線')})`))
    await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
    await tab.go("/?graphify-project=1#page=projects");await wait(`!!document.querySelector('button.project-row[data-place-id]')`)
    await tab.run(`document.querySelector('button.project-row[data-place-id]').click()`);await wait(`!!document.querySelector('.project-setup-dialog[open] .graphify-open')`)
-   await tab.run(`document.querySelector('.project-setup-dialog .graphify-open').click()`);await wait(`document.querySelectorAll('.graphify-dialog[open] .graphify-node').length===3`)
+   await tab.run(`document.querySelector('.project-setup-dialog .graphify-open').click()`);await wait(`document.querySelectorAll('.graphify-dialog[open] .graphify-node-list button').length===3`)
    if(shots) {mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-graphify`)}
    for(const state of ["stale","large","missing","failure","matched"]) {
     graphifyScenario=state
@@ -3591,11 +3608,11 @@ test("Graphify project viewer respects the toggle and renders safe graphs in bot
     else await wait(`!!document.querySelector('.graphify-dialog .graphify-status') && !document.querySelector('.graphify-body').matches('[aria-busy="true"]')`)
     if(state==="stale")assert.ok(await tab.run(`!!document.querySelector('.graphify-status.is-stale')`))
     if(state==="large")assert.ok(await tab.run(`!!document.querySelector('.graphify-notice')`))
-    if(state==="missing")assert.equal(await tab.run(`document.querySelectorAll('.graphify-node').length`),0)
-    if(state==="matched")assert.equal(await tab.run(`document.querySelectorAll('.graphify-node').length`),3)
+    if(state==="missing")assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),0)
+    if(state==="matched")assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),3)
    }
    await tab.run(`window.dispatchEvent(new CustomEvent('clawdline:graphify-setting',{detail:false}))`)
-   assert.equal(await tab.run(`document.querySelectorAll('.graphify-node').length`),0)
+   assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),0)
    await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
    assert.equal(await tab.run(`!!document.querySelector('.project-setup-dialog .graphify-open')`),false)
   })
@@ -3640,7 +3657,7 @@ test("Graphify project viewer respects the toggle and renders safe graphs in bot
     graphifyBuildResult=""
     await tab.run(`document.querySelector('.graphify-build button').click()`);await wait(`!document.querySelector('.graphify-build button')`)
     assert.equal(graphifyBuilds,2);graphifyBuildResult="success"
-    await wait(`document.querySelectorAll('.graphify-node').length===3`)
+    await wait(`document.querySelectorAll('.graphify-node-list button').length===3`)
     assert.equal(await tab.run(`document.querySelectorAll('.working-indicator').length`),0)
     if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-complete`)
     assert.equal(graphifyBuilds,2)
@@ -3659,8 +3676,8 @@ test("Graphify project viewer respects the toggle and renders safe graphs in bot
     await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
     await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(tag)})`);await tab.reload();await tab.until("Session ready",s=>s.open===TMUX)
     await tab.run(`document.getElementById("detail-info").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
-    await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector('.graphify-status.is-source_matched')`)
-    assert.equal(await tab.run(`document.querySelectorAll('.graphify-node').length`),graphifyRealView.nodes.length)
+    await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector('.graphify-status.is-source_matched') && document.querySelector('.graphify-stage')?.dataset.rendererState==='ready'`)
+    assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),graphifyRealView.nodes.length)
     assert.ok(graphifyRealView.total_nodes>graphifyRealView.nodes.length)
     assert.ok(await tab.run(`!!document.querySelector('.graphify-notice')`))
     const copy=await tab.run(`document.querySelector('.graphify-body').textContent`)
@@ -3672,3 +3689,49 @@ test("Graphify project viewer respects the toggle and renders safe graphs in bot
    })
   }
  })
+
+test("Sigma graph supports real picking, camera controls and phone pinch without rebuilding the index", async () => {
+ for(const size of [DESK,PHONE]) {
+  integrationSettings={workflow_skills_enabled:false,graphify_enabled:true};graphifyScenario="matched";graphifyBuilds=0
+  await inTab(size,async tab=>{
+   const wait=async(expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+   await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
+   await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-graphify-open]')`)
+   await tab.run(`document.querySelector('[data-graphify-open]').click()`);await wait(`document.querySelector('.graphify-stage')?.dataset.rendererState==='ready'`)
+   await tab.run(`document.querySelector('.graphify-node-list summary').click(); document.querySelectorAll('.graphify-node-list button')[1].click()`)
+   await wait(`document.querySelector('.graphify-node-detail h3')?.textContent==='Worker'`)
+   await tab.run(`document.querySelector('.graphify-focus').click();document.querySelector('.graphify-inspector-heading button').click()`)
+   await wait(`!document.querySelector('.graphify-node-detail')`)
+   const center=await tab.run(`(()=>{const r=document.querySelector('.graphify-canvas').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`)
+   if(size.mobile)await tab.touch(center.x,center.y);else await tab.clickPoint(center.x,center.y)
+   await wait(`document.querySelector('.graphify-node-detail h3')?.textContent==='Worker'`)
+   await tab.run(`document.querySelector('.graphify-zoom button:last-child').click()`)
+   await wait(`parseInt(document.querySelector('.graphify-zoom button:nth-child(2)').textContent)>100`)
+   await tab.run(`document.querySelector('.graphify-zoom button:nth-child(2)').click()`)
+   await wait(`document.querySelector('.graphify-zoom button:nth-child(2)').textContent==='100%'`)
+   if(size.mobile){await tab.pinch(center.x,center.y);await wait(`parseInt(document.querySelector('.graphify-zoom button:nth-child(2)').textContent)>100`)}
+   await tab.run(`document.querySelector('.graphify-canvas').focus()`);await tab.press('0');await wait(`document.querySelector('.graphify-zoom button:nth-child(2)').textContent==='100%'`)
+   assert.equal(graphifyBuilds,0)
+   assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
+   if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`sigma-${size.width}-selected`)}
+   await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+   await wait(`!document.querySelector('.graphify-dialog').open && document.querySelectorAll('.graphify-canvas canvas').length===0`)
+  })
+ }
+})
+
+test("Sigma rendering failure keeps the keyboard node list and source inspector usable",async()=>{
+ integrationSettings={workflow_skills_enabled:false,graphify_enabled:true};graphifyScenario="matched"
+ await inTab(PHONE,async tab=>{
+  await tab.withoutWebGL();await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
+  const wait=async(expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+  await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-graphify-open]')`)
+  await tab.run(`document.querySelector('[data-graphify-open]').click()`);await wait(`document.querySelector('.graphify-stage')?.dataset.rendererState==='unavailable'`)
+  assert.ok(await tab.run(`document.querySelector('.graphify-render-message').textContent.length>0`))
+  await tab.run(`document.querySelector('.graphify-node-list summary').click(); document.querySelector('.graphify-node-list button').focus()`);await tab.press('Enter')
+  await wait(`!!document.querySelector('.graphify-node-detail')`)
+  assert.ok(await tab.run(`document.querySelector('.graphify-node-detail').textContent.includes('src/entry.ts')`))
+  assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
+  if(shots){mkdirSync(shots,{recursive:true});await tab.shot('sigma-phone-unavailable')}
+ })
+})
