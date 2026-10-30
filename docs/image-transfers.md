@@ -27,6 +27,13 @@ ends its loading state and offers another attempt; expired or missing artifacts 
 Removing a tile disconnects its visibility observer and releases delivered object URLs, including
 answers arriving after removal.
 
+Desktop downloads save the prepared original bytes through the browser's save picker or a Blob
+download link. They do not navigate to the preview's source URL. The macOS shell handles WebKit
+download actions in both its local and Cloud tabs and asks for a destination with the native save
+panel. Cancelling leaves the preview and any existing destination intact. Downloads stage in a
+temporary directory on the destination volume; only a completed download replaces an existing
+file. A failed transfer removes its temporary data and presents the system error.
+
 ## Preview gestures
 
 A single tap or click on the image or its frame hides the preview controls, including close,
