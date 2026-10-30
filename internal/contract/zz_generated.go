@@ -6456,7 +6456,7 @@ type SettingsRequest struct {
 	// fallback to another provider.
 	AntigravityDefaultModel *string `json:"antigravity_default_model"`
 
-	// `claude` or `codex`.
+	// `session`, `claude`, `codex`, `antigravity`, or `auto`.
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
 	// 0 to 1.
@@ -6675,8 +6675,9 @@ type SettingsSnapshot struct {
 	// fallback to another provider.
 	AntigravityDefaultModel *string `json:"antigravity_default_model"`
 
-	// Whose quota that naming turn spends, `claude` or `codex`. Remembered while the
-	// switch above is off, so turning it back on does not quietly change providers.
+	// Whose quota that naming turn spends: `session`, `claude`, `codex`,
+	// `antigravity`, or `auto`. Remembered while the switch above is off, so turning
+	// it back on does not quietly change providers.
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
 	// How much the bar blurs what is behind it.
