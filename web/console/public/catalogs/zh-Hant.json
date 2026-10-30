@@ -7305,6 +7305,7 @@
   "next.quotaSettingMobileTitle": "手機 Session 列表顯示額度列",
   "next.quotaSettingTitle": "顯示供應商額度列",
   "next.quotaSourceAPI": "來源：供應商額度服務",
+  "next.quotaSourceCLI": "來源：原生 CLI 額度指令",
   "next.quotaSourceClaude": "來源：Claude Code 狀態列",
   "next.quotaSourceCodex": "來源：Codex Session 額度紀錄",
   "next.quotaStale": "舊資料",

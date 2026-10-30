@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 9960,
+  "englishContentKeys": 9961,
   "riskKeys": 4427,
-  "nonRiskCount": 5533,
+  "nonRiskCount": 5534,
   "groups": [
     {
       "name": "admin / other",
@@ -3540,7 +3540,7 @@
     },
     {
       "name": "next / other",
-      "count": 528,
+      "count": 529,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3811,6 +3811,7 @@
         "next.quotaSettingMobileTitle",
         "next.quotaSettingTitle",
         "next.quotaSourceAPI",
+        "next.quotaSourceCLI",
         "next.quotaSourceClaude",
         "next.quotaSourceCodex",
         "next.quotaStale",

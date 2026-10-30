@@ -115,3 +115,12 @@ inlined with existing instructions; Graphify requires a read-only check before
 each optional query and remains cooperative guidance. Neither switch installs
 or uninstalls tools. The reviewed inventory includes both source bodies and the
 machine setting/launch producers; website publication follows the product tree.
+
+
+Gemini subscription and compatibility checks now defer to authenticated provider
+eligibility and advertised capabilities instead of plan names or a pinned CLI
+release. Review of the managed-hook and owned-ACP cards in English and Taiwan
+Traditional Chinese found that their context, consent and first-input explanations
+remain accurate. The new account quota reader sends only the fixed `/usage`
+metadata command with no launch instructions, role snapshot or model generation.
+The ACP excerpt and reviewed source receipts follow the changed implementation.

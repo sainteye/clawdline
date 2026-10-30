@@ -54,7 +54,8 @@ func TestExecutableFingerprint(t *testing.T) {
 		{"standalone", "1.4.5\n", cliHelp, true},
 		{"editor", "1.107.0", "--new-window\n--install-extension\nserve-web", false},
 		{"spoofed_version", "1.4.5", "--new-window\n--install-extension", false},
-		{"unverified_version", "1.4.6", cliHelp, false},
+		{"newer_version", "1.4.6", cliHelp, true},
+		{"changed_description", "2.0.0", strings.ReplaceAll(strings.ReplaceAll(cliHelp, "low|medium|high|xhigh|max", "adaptive"), "accept-edits, auto, plan", "new modes"), true},
 		{"missing_option", "1.4.5", strings.ReplaceAll(cliHelp, "--conversation", "--continue"), false},
 		{"mentioned_option", "1.4.5", strings.ReplaceAll(cliHelp, "--conversation", "See --conversation"), false},
 		{"oversized", "1.4.5", cliHelp + strings.Repeat("x", CLIProbeOutputLimit), false},
@@ -69,7 +70,7 @@ func TestExecutableFingerprint(t *testing.T) {
 			if !got.Installed || got.Compatible != tc.compatible || got.AuthState != AuthUnknown {
 				t.Fatalf("%+v", got)
 			}
-			if tc.compatible && (got.Path != canonical || got.Version != "1.4.5") {
+			if tc.compatible && (got.Path != canonical || got.Version != strings.TrimSpace(tc.version)) {
 				t.Fatalf("%+v", got)
 			}
 			if !tc.compatible && (got.Path != "" || got.Version != "") {
@@ -109,10 +110,7 @@ func TestPollingCachesSuccessAndFailureAndInvalidatesChangedFiles(t *testing.T) 
 			go func() { defer wg.Done(); r.Snapshot(context.Background()) }()
 		}
 		wg.Wait()
-		want := 1
-		if version == "1.4.5" {
-			want = 2
-		}
+		want := 2
 		if calls != want {
 			t.Fatalf("poll calls %d, want %d", calls, want)
 		}

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"time"
@@ -13,6 +14,24 @@ func (s *Server) providerQuotaReader() *providerquota.Service {
 		if s.providerQuotaService == nil {
 			home, _ := os.UserHomeDir()
 			s.providerQuotaService = providerquota.New(home, quotaReader())
+			if host := s.antigravitySessions.Load(); host != nil {
+				s.providerQuotaService.WithGemini(func(ctx context.Context) ([]providerquota.Window, string) {
+					reading, err := host.AccountQuota(ctx)
+					if err != nil {
+						return nil, "unavailable"
+					}
+					windows := []providerquota.Window{}
+					for _, w := range reading.Windows {
+						window := providerquota.Window{Name: w.Name, UsedPercent: w.UsedPercent}
+						if w.ResetsAt != 0 {
+							reset := w.ResetsAt
+							window.ResetsAt = &reset
+						}
+						windows = append(windows, window)
+					}
+					return windows, ""
+				})
+			}
 		}
 	})
 	return s.providerQuotaService

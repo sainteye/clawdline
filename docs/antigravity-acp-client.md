@@ -47,7 +47,7 @@ model change, auth fallback or prompt replay. Successful setup calls return thei
 raw result for the owner's capability/model codecs. Different model config and
 runtime model identifiers are retained without interpreting them as failure.
 
-## Personal/free checks
+## Personal quota checks
 
 Before authentication and session creation, and again immediately before each
 prompt, the client reads only the explicitly supplied profile's
@@ -58,15 +58,28 @@ does not read account credential files. An initialization response or advertised
 auth method cannot mark a client authenticated: a successful `authenticate`
 response is required.
 
-`session/new` must return a nonempty session ID and
-`_meta.antigravity.tier.id: "free-tier"` with name
-`"Antigravity Starter Quota"`. A missing/different tier closes the process and
-never enables prompting. The session ID remains available even after a tier
-refusal. Environment filtering removes inherited API-key, Google/ADC/Vertex,
+`session/new` must return a nonempty session ID. Subscription tier IDs and
+marketing names are informational and never determine whether creation, resume,
+load, configuration or prompting is allowed. Provider authentication and errors
+own plan eligibility; Clawdline does not maintain a plan-name allowlist.
+Environment filtering removes inherited API-key, Google/ADC/Vertex,
 enterprise, AI-credit and supported provider selectors; GEMINI_HOME, LC_ALL=C
 and a disabled browser are supplied explicitly. Stderr goes to a null FD, so
 this client does not retain or surface provider auth links. Interactive profile
 preparation remains the owner's responsibility.
+
+## Capability compatibility
+
+The standalone resolver checks required CLI flags and rejects the unrelated IDE
+launcher. It records the reported version without requiring one exact release or
+specific help-description prose. Native offered option IDs/values are opaque JSON
+strings. A current permission mode is valid when the provider offers it; the
+client does not add a separate fixed-name allowlist. Owners still validate each
+selection against the current offer and require its acknowledgement.
+
+The global quota footer uses the configured native profile's fixed `/usage`
+metadata command and reads both Gemini five-hour and weekly windows. It does not
+infer plan eligibility from the quota or substitute another model group's quota.
 
 ## Wire and failure contract
 
@@ -79,14 +92,14 @@ and `Error.Delivery` distinguishes:
 
 - `not_written`: local refusal; no request write was attempted.
 - `acknowledged`: a matching valid RPC response arrived, including RPC rejection
-  or a setup result rejected by the local free-tier/protocol gate.
+  or a setup result rejected by the local protocol gate.
 - `uncertain`: a write was attempted but its final effect is unproven (including
   partial/stalled writes, EOF, malformed/oversized frames and cancellation).
 
 Neither an update nor a successful pipe write proves prompt completion. Never
 blindly resend an uncertain request. Typed error codes include `invalid_options`,
 `unsupported_platform`, `pipe_failed`, `start_failed`, `busy`, `invalid_state`,
-`not_ready`, `personal_settings_required`, `free_tier_required`,
+`not_ready`, `personal_settings_required`,
 `unsupported_protocol`, `invalid_session`, `invalid_stop_reason`, `unexpected_id`,
 `invalid_response`, `invalid_frame`, `invalid_id`, `frame_too_large`, `rpc_error`,
 `write_failed`, `read_failed`, `eof`, `cancelled`, `closed`, `update_rejected` and
