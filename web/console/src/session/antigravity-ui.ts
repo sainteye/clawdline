@@ -87,3 +87,12 @@ export function assistantStateCurrent(row: SessionRow | null, now = Date.now()):
 export function assistantRolesAdmit(assistant: string | null, facts?: AssistantFacts): boolean {
   return assistant !== "antigravity" || facts?.capabilities?.roles === true
 }
+
+export function sessionActionVisibility(row: SessionRow | null): {
+  interrupt: boolean
+  focus: boolean
+  screen: boolean
+} {
+  const noTerminal = assistantProtocolOwned(row) || row?.backend === "claude_remote"
+  return { interrupt: true, focus: !noTerminal, screen: !noTerminal }
+}

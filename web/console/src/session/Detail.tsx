@@ -1,7 +1,7 @@
 import { outputSessionKey, readOutputs } from "./output-files-api.js"
 import { OutputFiles } from "./OutputFiles.js"
 import { WorkflowProfileHeader } from "./workflow-profile-header.js"
-import { assistantStateCurrent, assistantProtocolOwned } from "./antigravity-ui.js"
+import { assistantStateCurrent, assistantProtocolOwned, sessionActionVisibility } from "./antigravity-ui.js"
 import { assistantFactsMachine, useAssistantFacts } from "./assistant-facts.js"
 import { catalogWord } from "../catalog.js"
 import type { Icon, ScanSource, SessionAgent, SessionRow, SessionShell, TaskRow } from "@clawdline/contract"
@@ -560,8 +560,7 @@ function Tools({
   const T = L.strings
   const steward = !!row && !!(row.machine_scope || row.coordinator)
   const actions = richSessionSwipeActions(row)
-  const protocolOwned = assistantProtocolOwned(row)
-  const noTerminal = protocolOwned || row?.backend === "claude_remote"
+  const menuVisibility = sessionActionVisibility(row)
   const [open, setOpen] = useState(false)
   const [more, setMore] = useState(false)
   const [openingTerminal, setOpeningTerminal] = useState(false)
@@ -582,7 +581,7 @@ function Tools({
 
   const items = () => {
     const level = more ? moreRef.current : mainRef.current
-    return level ? [...level.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")] : []
+    return level ? [...level.querySelectorAll<HTMLButtonElement>("button:not(:disabled):not([hidden])")] : []
   }
 
   useEffect(() => {
@@ -763,7 +762,7 @@ function Tools({
         className="chip"
         id="tx-focus"
         type="button"
-        hidden={!atMac() || noTerminal}
+        hidden={!atMac() || !menuVisibility.focus}
         disabled={!row || ending}
         title={T.webShowOnMacTip}
         onClick={focusMac}
@@ -815,7 +814,7 @@ function Tools({
             >
               <button
                 id="session-interrupt"
-                hidden={protocolOwned}
+                hidden={!menuVisibility.interrupt}
                 type="button"
                 role="menuitem"
                 disabled={!row || ending}
@@ -828,7 +827,7 @@ function Tools({
               </button>
               <button
                 id="session-focus"
-                hidden={noTerminal}
+                hidden={!menuVisibility.focus}
                 type="button"
                 role="menuitem"
                 disabled={!row || ending}
@@ -866,7 +865,7 @@ function Tools({
                   it sits in cannot be opened without a session. */}
               <button
                 id="session-screen"
-                hidden={noTerminal}
+                hidden={!menuVisibility.screen}
                 type="button"
                 role="menuitem"
                 onClick={() => {

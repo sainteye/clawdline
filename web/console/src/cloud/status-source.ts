@@ -156,7 +156,7 @@ function directList(client: StatusClient, machineID: string, reply: unknown, now
       return { destination: { machineID, sessionID: String(row!.id),
         executionGeneration: String(row!.execution_generation) }, state: String(status.state),
       assistant: row!.assistant === "claude" || row!.assistant === "codex" || row!.assistant === "antigravity" ? row!.assistant : before?.assistant,
-      backend: row!.backend === "tmux" || row!.backend === "iterm" || row!.backend === "ps" || row!.backend === "claude_remote" ? row!.backend : before?.backend,
+      backend: row!.backend === "tmux" || row!.backend === "iterm" || row!.backend === "ps" || row!.backend === "owned" || row!.backend === "claude_remote" ? row!.backend : before?.backend,
       parentSessionID: parentSessionID && parentSessionID !== row!.id ? parentSessionID : before?.parentSessionID,
       machineScope: status.machine_scope === true || before?.machineScope === true,
       coordinatorBound: status.coordinator_bound === true || before?.coordinatorBound === true,

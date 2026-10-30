@@ -223,3 +223,16 @@ test("provider counts preserve zero and unknown without accepting malformed coun
     assert.equal(reading.rows[0].agentCountUnknown, count === undefined)
   }
 })
+
+test("owned ACP Gemini sessions retain their backend in the fleet projection", () => {
+  const source = fleet("a", ["owned:acp:one"])
+  const held = source.statusSnapshots.get(JSON.stringify(["a", "owned:acp:one"])) as { payload: Record<string, unknown> }
+  held.payload.backend = "owned"
+  held.payload.assistant = "antigravity"
+  const projected = statusProjection(source, "a", 2000)
+  assert.equal(projected.kind, "ready")
+  if (projected.kind === "ready") {
+    assert.equal(projected.rows[0].backend, "owned")
+    assert.equal(projected.rows[0].assistant, "antigravity")
+  }
+})

@@ -1071,3 +1071,17 @@ test("a cold direct list retains the RC backend while signed status is missing",
  assert.equal(reading.rows?.[0]?.backend,"claude_remote","fallback must retain the worker's native controls")
  assert.equal(reading.rows?.[0]?.destination.executionGeneration,executionGeneration)
 })
+
+test("a cold direct list retains the owned backend for ACP Gemini while signed status is missing", async () => {
+  const { client } = clientFixture()
+  client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
+  const list = client.listPresentationsForMachine
+  client.listPresentationsForMachine = async (machine) => {
+    const reply = await list(machine)
+    return { ...reply, sessions: reply.sessions.map((row) => ({ ...row, assistant: "antigravity", backend: "owned" })) }
+  }
+  const reading = await statusSource(() => client as never).readMachine(machineID, new AbortController().signal)
+  assert.equal(reading.kind, "ready")
+  assert.equal(reading.rows?.[0]?.backend, "owned", "fallback must retain owned ACP backend so terminal-only controls stay hidden")
+  assert.equal(reading.rows?.[0]?.assistant, "antigravity")
+})

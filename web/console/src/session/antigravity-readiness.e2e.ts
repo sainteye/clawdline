@@ -15,7 +15,7 @@ const shots = process.env.CLAWDLINE_SHOTS || ""
 const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 const now = () => Math.floor(Date.now() / 1000)
 let mode = "ready", language = "en", fixtureSequence = 0
-let sends: string[] = [], inventoryReads: string[] = []
+let sends: string[] = [], inventoryReads: string[] = [], interrupts: { path: string; key: string }[] = []
 let queueReady = false
 let nativeEffortOverride = false
 let selectedModel = "synthetic-flash", selectedEffort = "high", modelWrites: string[] = [], fullInfoReads = 0
@@ -69,6 +69,7 @@ function daemon(): Server {
   if (path === "/v1/events") { res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" }); streams.add(res)
     const refresh = mode === "owned-protocol-refresh" ? setInterval(() => res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n"),250) : undefined
     req.on("close", () => { streams.delete(res); clearInterval(refresh) }); res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n"); return }
+  if (req.method === "POST" && /\/interrupt$/.test(path)) { interrupts.push({ path, key: String(req.headers["idempotency-key"] ?? "") }); return json(res, 200, { ok: true, action: "interrupted" }) }
   if (req.method === "POST" && /\/(send|key)$/.test(path)) { sends.push(path)
     if (mode === "owned-protocol-models") {
       let body=""; req.on("data",chunk=>body+=String(chunk)); req.on("end",()=>{
@@ -554,4 +555,56 @@ for (const lang of ["en", "zh-Hant"]) test(`phone ${lang}: long tool labels stay
   await tab.until("queued input is accepted",s=>!s.text.includes(lang==="en"?"Queued in this browser":"已在此瀏覽器排隊"))
   assert.equal(sends.length,1)
  } finally {await tab.close()}
+})
+
+for (const lang of ["en", "zh-Hant"]) test(`owned Gemini session actions menu (${lang}) offers Stop current work (Esc) and skips hidden terminal rows`, { timeout: 30000 }, async () => {
+  mode = "owned-protocol-queue"; language = lang; queueReady = false; interrupts = []
+  const tab = await Tab.open(browser, 1280, 800, false)
+  try {
+    await tab.go("/?interruptCase=" + lang + "#session=fixture-alpha")
+    await tab.until("owned Gemini detail opens", s => s.text.includes("Synthetic owned protocol reply."))
+    await tab.run(`document.querySelector('.setup-dialog[open] .setup-x')?.click()`)
+    assert.equal(await tab.run(`document.getElementById("tx-focus")?.hidden`), true, "header terminal chip stays hidden without a terminal")
+    await tab.run(`document.getElementById("detail-actions-trigger")?.focus()`)
+    await tab.run(`document.getElementById("detail-actions-trigger")?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))`)
+    await tab.until("actions menu opens", () => true)
+    const menu = await tab.run(`(() => {
+      const stop = document.getElementById("session-interrupt")
+      const focus = document.getElementById("session-focus")
+      const screen = document.getElementById("session-screen")
+      const openMenu = document.getElementById("session-actions")
+      return {
+        open: openMenu ? !openMenu.hidden : false,
+        activeFirst: document.activeElement?.id,
+        stopHidden: stop?.hidden,
+        stopDisabled: stop?.disabled,
+        stopRects: stop?.getClientRects().length ?? 0,
+        stopLabel: stop?.textContent?.trim(),
+        focusHidden: focus?.hidden,
+        focusRects: focus?.getClientRects().length ?? 0,
+        screenHidden: screen?.hidden,
+        screenRects: screen?.getClientRects().length ?? 0,
+      }
+    })()`)
+    assert.equal(menu.open, true)
+    assert.equal(menu.stopHidden, false, "Stop current work (Esc) must be visible on owned Gemini sessions")
+    assert.equal(menu.stopDisabled, false)
+    assert.ok(menu.stopRects > 0)
+    assert.equal(menu.stopLabel, lang === "en" ? "Stop current work (Esc)" : "停止目前的工作（Esc）")
+    assert.equal(menu.focusHidden, true)
+    assert.equal(menu.focusRects, 0)
+    assert.equal(menu.screenHidden, true)
+    assert.equal(menu.screenRects, 0)
+    assert.equal(menu.activeFirst, "session-interrupt")
+    await tab.run(`document.getElementById("session-actions")?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))`)
+    assert.equal(await tab.run(`document.activeElement?.id`), "session-open-terminal", "keyboard navigation must skip hidden terminal rows")
+    await tab.click("#session-interrupt")
+    await tab.until("interrupt toast appears", s => s.text.includes(lang === "en" ? "Esc sent." : "已送出 Esc"))
+    assert.equal(await tab.run(`document.getElementById("session-actions")?.hidden`), true)
+    assert.equal(interrupts.length, 1)
+    assert.equal(interrupts[0].path, "/v1/sessions/fixture-alpha/interrupt")
+    assert.ok(interrupts[0].key.length > 0, "interrupt carries an idempotency key")
+  } finally {
+    await tab.close()
+  }
 })

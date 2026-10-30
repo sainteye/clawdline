@@ -16,7 +16,7 @@ import { STATUS_FRESH_MS, statusProjection } from "../cloud/status-projection.ts
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
 import { pinnedQuestion } from "../cloud/status-source.ts"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
-import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantMenuAdmits, assistantStateCurrent, assistantLabel, assistantRolesAdmit, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
+import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantMenuAdmits, assistantStateCurrent, assistantLabel, assistantRolesAdmit, sessionActionVisibility, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
 
 const active: AssistantFacts = { id: "antigravity", installed: true, authState: "ready", integrationState: "active",
   capabilities: { start: true, resume: true, send: true, menus: true, transcript: true } }
@@ -220,4 +220,16 @@ test("owned Gemini model and effort operations reach the Host while unsupported 
   assert.equal(antigravitySlashDraft("antigravity", text), true)
  }
  for (const text of ["/model", "/effort", "/exit", "/logout", "/model native\n/exit"]) assert.equal(antigravitySlashDraft("antigravity", text, true), true)
+})
+
+test("owned Gemini and Remote Control keep Stop current work while hiding terminal-only actions", () => {
+  const terminalRow = { id: "%1", backend: "tmux", assistant: "codex", identity: "launch_hook" } as any
+  const ownedRow = { id: "owned:acp:one", backend: "owned", assistant: "antigravity", identity: "protocol" } as any
+  const fleetOwnedRow = { id: "owned:acp:one", backend: "owned", assistant: "antigravity",
+    identity: { machine: "m", session: "owned:acp:one" }, sessionBinding: "protocol" } as any
+  const remoteRow = { id: "rc:one", backend: "claude_remote", assistant: "claude" } as any
+  assert.deepEqual(sessionActionVisibility(terminalRow), { interrupt: true, focus: true, screen: true })
+  assert.deepEqual(sessionActionVisibility(ownedRow), { interrupt: true, focus: false, screen: false })
+  assert.deepEqual(sessionActionVisibility(fleetOwnedRow), { interrupt: true, focus: false, screen: false })
+  assert.deepEqual(sessionActionVisibility(remoteRow), { interrupt: true, focus: false, screen: false })
 })

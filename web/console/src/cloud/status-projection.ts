@@ -88,7 +88,7 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     rows.push({
       destination: { machineID: machine, sessionID: session, executionGeneration: data.execution_generation },
       assistant: data.assistant === "claude" || data.assistant === "codex" || data.assistant === "antigravity" ? data.assistant : undefined,
-      backend: data.backend === "tmux" || data.backend === "iterm" || data.backend === "ps" || data.backend === "claude_remote" ? data.backend : undefined,
+      backend: data.backend === "tmux" || data.backend === "iterm" || data.backend === "ps" || data.backend === "owned" || data.backend === "claude_remote" ? data.backend : undefined,
       parentSessionID: typeof data.parent_session_id === "string" && data.parent_session_id !== session
         ? data.parent_session_id : taskParents.get(session),
       machineScope: data.machine_scope === true,
