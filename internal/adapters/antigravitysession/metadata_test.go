@@ -103,6 +103,62 @@ func TestQuotaReadsBothNativeGeminiWindows(t *testing.T) {
 	}
 }
 
+// Separate model buckets must remain visible even when the general group is healthy.
+func TestQuotaReadsSeparateArgonBucket(t *testing.T) {
+	text := "### Quota Limits\n- **Gemini Models**\n  - **Weekly Limit Remaining:** 87% remaining\n  - **Five Hour Limit Remaining:** 100% remaining\n- **Claude and GPT models**\n  - **Weekly Limit Remaining:** 100% remaining\n- **Gemini 4 Argon**\n  *(For paid Pro plans, Argon quota is separate.)*\n  - **Gemini 4 Argon Weekly Limit:** 0% remaining (resets Nov 6, 2026, 01:57 UTC)"
+	q := parseQuota(text, time.Date(2026, 10, 30, 8, 0, 0, 0, time.UTC))
+	if q.UnknownReason != "" || len(q.Windows) != 3 {
+		t.Fatalf("separate bucket lost: %+v", q)
+	}
+	want := map[string]float64{"5h": 0, "7d": 13, "Argon 7d": 100}
+	for _, w := range q.Windows {
+		used, ok := want[w.Name]
+		if !ok || w.UsedPercent != used || w.Hit != (used == 100) {
+			t.Fatalf("wrong quota window: %+v", w)
+		}
+		if w.Name == "Argon 7d" && w.ResetsAt != time.Date(2026, 11, 6, 1, 57, 0, 0, time.UTC).Unix() {
+			t.Fatalf("wrong Argon reset: %+v", w)
+		}
+		delete(want, w.Name)
+	}
+	if len(want) != 0 {
+		t.Fatal("missing windows", want)
+	}
+}
+
+func TestQuotaArgonPreservesZeroAndUnknown(t *testing.T) {
+	prefix := "### Quota Limits\n- **Gemini Models**\n  - **Weekly Limit Remaining:** 95% remaining\n- **Gemini 4 Argon**\n"
+	for _, tc := range []struct {
+		name, line string
+		known      bool
+		used       float64
+	}{
+		{"unused", "  - **Gemini 4 Argon Weekly Limit:** 100% remaining", true, 0},
+		{"fraction", "  - **Gemini 4 Argon Weekly Limit:** 62.5% remaining", true, 37.5},
+		{"unavailable", "  - **Gemini 4 Argon Weekly Limit:** unavailable", false, 0},
+		{"out-of-range", "  - **Gemini 4 Argon Weekly Limit:** 101% remaining", false, 0},
+		{"bad-reset", "  - **Gemini 4 Argon Weekly Limit:** 42% remaining (resets tomorrow UTC)", false, 0},
+		{"duplicate", "  - **Gemini 4 Argon Weekly Limit:** 42% remaining\n  - **Gemini 4 Argon Weekly Limit:** 41% remaining", false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := parseQuota(prefix+tc.line, time.Now())
+			if !tc.known {
+				if len(q.Windows) != 0 || q.UnknownReason != contract.AssistantUnknownReasonNoReading {
+					t.Fatalf("unknown Argon became healthy: %+v", q)
+				}
+				return
+			}
+			if len(q.Windows) != 2 || q.Windows[1].Name != "Argon 7d" || q.Windows[1].UsedPercent != tc.used {
+				t.Fatalf("Argon=%+v", q)
+			}
+		})
+	}
+	q := parseQuota("### Quota Limits\n- **Claude and GPT models**\n  - **Gemini 4 Argon Weekly Limit:** 0% remaining", time.Now())
+	if len(q.Windows) != 0 {
+		t.Fatal("read Argon from unrelated group", q)
+	}
+}
+
 func TestNativeConfigKeepsOpaqueOfferedValues(t *testing.T) {
 	c := &conversation{}
 	raw := json.RawMessage(`{"configOptions":[{"id":"model","type":"select","currentValue":"future model","options":[{"value":"future model","name":"Future"}]},{"id":"thinking_level","type":"select","currentValue":"adaptive high","options":[{"value":"adaptive high"}]}]}`)

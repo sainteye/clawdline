@@ -78,7 +78,9 @@ client does not add a separate fixed-name allowlist. Owners still validate each
 selection against the current offer and require its acknowledgement.
 
 The global quota footer uses the configured native profile's fixed `/usage`
-metadata command and reads both Gemini five-hour and weekly windows. It does not
+metadata command and reads Gemini five-hour and weekly windows plus a separately
+reported Gemini 4 Argon weekly bucket (`Argon 7d`). The general Gemini balance
+cannot substitute for that model-specific bucket. It does not
 infer plan eligibility from the quota or substitute another model group's quota.
 
 ## Wire and failure contract

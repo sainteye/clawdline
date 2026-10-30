@@ -268,39 +268,44 @@ func (h *Host) AccountQuota(ctx context.Context) (reading *contract.SessionLimit
 	return parseQuota(text, time.Now()), nil
 }
 
-// ACP 1.4.1 emits English with LC_ALL=C. Only numeric Gemini quota windows
-// are understood; session tokens and other model groups are ignored.
-var quotaRemaining = regexp.MustCompile(`^- \*\*(Weekly|Five Hour) Limit Remaining:\*\* ([0-9]+(?:\.[0-9]+)?)% remaining(?: \(resets (.+ UTC)\))?$`)
+// ACP emits English with LC_ALL=C. Argon can have a separate weekly bucket;
+// the general Gemini group's remaining balance does not establish Argon access.
+// Session tokens and unrelated model groups are ignored.
+var quotaRemaining = regexp.MustCompile(`^- \*\*(Weekly Limit Remaining|Five Hour Limit Remaining|Gemini 4 Argon Weekly Limit):\*\* ([0-9]+(?:\.[0-9]+)?)% remaining(?: \(resets (.+ UTC)\))?$`)
 
 func parseQuota(text string, at time.Time) *contract.SessionLimits {
 	out := unknownQuota(contract.AssistantUnknownReasonNoReading)
-	inQuota, inGemini := false, false
+	inQuota, group := false, ""
 	found := map[string]bool{}
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "### ") {
 			inQuota = trimmed == "### Quota Limits"
-			inGemini = false
+			group = ""
 			continue
 		}
 		if !inQuota {
 			continue
 		}
 		if strings.HasPrefix(line, "- **") {
-			inGemini = trimmed == "- **Gemini Models**"
+			group = trimmed
 			continue
 		}
-		if !inGemini {
+		if group != "- **Gemini Models**" && group != "- **Gemini 4 Argon**" {
 			continue
 		}
 		match := quotaRemaining.FindStringSubmatch(trimmed)
 		if match == nil {
-			if strings.HasPrefix(trimmed, "- **Weekly Limit Remaining:") || strings.HasPrefix(trimmed, "- **Five Hour Limit Remaining:") {
+			if strings.HasPrefix(trimmed, "- **Weekly Limit Remaining:") || strings.HasPrefix(trimmed, "- **Five Hour Limit Remaining:") || strings.HasPrefix(trimmed, "- **Gemini 4 Argon Weekly Limit:") {
 				return unknownQuota(contract.AssistantUnknownReasonNoReading)
 			}
 			continue
 		}
-		name := map[string]string{"Weekly": "7d", "Five Hour": "5h"}[match[1]]
+		argon := match[1] == "Gemini 4 Argon Weekly Limit"
+		if argon != (group == "- **Gemini 4 Argon**") {
+			return unknownQuota(contract.AssistantUnknownReasonNoReading)
+		}
+		name := map[string]string{"Weekly Limit Remaining": "7d", "Five Hour Limit Remaining": "5h", "Gemini 4 Argon Weekly Limit": "Argon 7d"}[match[1]]
 		if found[name] {
 			return unknownQuota(contract.AssistantUnknownReasonNoReading)
 		}

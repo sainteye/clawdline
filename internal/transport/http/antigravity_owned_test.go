@@ -149,7 +149,7 @@ func TestOwnedHTTPPeer(t *testing.T) {
 				f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "usage"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 				f.WriteString("usage\n")
 				f.Close()
-				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "### Quota Limits\n- **Gemini Models**\n  - **Weekly Limit Remaining:** 62% remaining (resets Oct 29, 2026, 07:51 UTC)\n- **Claude and GPT models**\n  - **Weekly Limit Remaining:** 9% remaining"}}}})
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "### Quota Limits\n- **Gemini Models**\n  - **Weekly Limit Remaining:** 62% remaining (resets Oct 29, 2026, 07:51 UTC)\n- **Claude and GPT models**\n  - **Weekly Limit Remaining:** 9% remaining\n- **Gemini 4 Argon**\n  - **Gemini 4 Argon Weekly Limit:** 0% remaining (resets Nov 6, 2026, 02:00 UTC)"}}}})
 				result = map[string]string{"stopReason": "end_turn"}
 				break
 			}
@@ -419,12 +419,12 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 		if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil {
 			t.Fatalf("native info=%d %s", infoResponse.Code, infoResponse.Body.String())
 		}
-		if info.Info.Limits != nil && len(info.Info.Limits.Windows) == 1 {
+		if info.Info.Limits != nil && len(info.Info.Limits.Windows) == 2 {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-pro" || info.Info.Session.Effort != "medium" || !reflect.DeepEqual(info.Info.Efforts, []string{"medium", "high"}) || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-pro" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 1 || info.Info.Limits.Windows[0].UsedPercent != 38 {
+	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-pro" || info.Info.Session.Effort != "medium" || !reflect.DeepEqual(info.Info.Efforts, []string{"medium", "high"}) || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-pro" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 2 || info.Info.Limits.Windows[0].UsedPercent != 38 || info.Info.Limits.Windows[1].Name != "Argon 7d" || info.Info.Limits.Windows[1].UsedPercent != 100 || !info.Info.Limits.Windows[1].Hit {
 		t.Fatalf("native facts missing or billing invented: %d %s", infoResponse.Code, infoResponse.Body.String())
 	}
 	readAt := info.Info.Limits.ReadAtMs
@@ -609,7 +609,7 @@ func TestNativeGeminiAccountQuotaReachesFooterWithoutAUserConversation(t *testin
 			gemini = &out.Providers[i]
 		}
 	}
-	if gemini == nil || gemini.Source != "provider_cli" || len(gemini.Windows) != 1 || gemini.Windows[0].UsedPercent != 38 || gemini.Stale {
+	if gemini == nil || gemini.Source != "provider_cli" || len(gemini.Windows) != 2 || gemini.Windows[0].UsedPercent != 38 || gemini.Windows[1].Name != "Argon 7d" || gemini.Windows[1].UsedPercent != 100 || gemini.Windows[1].ResetsAt != time.Date(2026, 11, 6, 2, 0, 0, 0, time.UTC).Unix() || gemini.Stale {
 		t.Fatalf("Gemini footer=%+v", gemini)
 	}
 	inv, err := h.Inventory(context.Background())
