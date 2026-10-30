@@ -34,7 +34,12 @@ These are quota metadata reads, never model generations or chat prompts. The imp
 not copy CLI credentials, generate model output, redeem credits or switch accounts.
 The native Gemini reader opens and closes a temporary ACP connection for the fixed
 metadata command, with no user Session slot or transcript entry. Its existing
-process owner observes daemon shutdown and cleanup failures. Provider responses and
+process owner observes daemon shutdown and cleanup failures. The native report may list a separate
+**Gemini 4 Argon** weekly bucket alongside the general Gemini group. Both the
+Session limits and account footer retain this bucket as **Argon 7d**, with its own
+percentage and reset time. A healthy general Gemini balance does not imply Argon
+quota remains; a zero remaining Argon balance is 100% used. Unreadable or duplicate
+recognized bucket values remain unknown rather than silently dropping the constraint. Provider responses and
 credential files are capped at 1 MiB per read. Only numeric quota windows, timestamps, source names
 and typed problem codes cross the local API and encrypted Cloud transport; tokens, emails, account
 identifiers, provider response bodies and filesystem paths do not.
