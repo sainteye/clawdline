@@ -470,6 +470,8 @@ const (
 	SquadPackageExpansionRatio   = "squadpackage.expansion_ratio"
 	SquadPackagePreviewRows      = "squadpackage.preview_rows"
 	SquadPackagePreviewAge       = "squadpackage.preview_age"
+	WorkflowSnapshotBytes        = "workflow.snapshot_bytes"
+	WorkflowLaunches             = "workflow.launches"
 	SquadSnapshotBytes           = "squad.snapshot_bytes"
 	SquadConsoleActiveSkillBytes = "squad.console_active_skill_bytes"
 	SquadRecoveryRows            = "squad.recovery_page_rows"

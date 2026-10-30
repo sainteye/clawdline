@@ -1,8 +1,23 @@
 package capacity
 
-// squadBounds is every registered row named squad.* and personas.*.
+// squadBounds is every registered row named squad.*, personas.*, and workflow.*.
 func squadBounds() []Entry {
 	return []Entry{
+		{
+			// Retained launch identities preserve original workflow bindings.
+			// New launches are refused instead of evicting resume evidence.
+			Name: WorkflowLaunches, Class: Evidence, Unit: Rows,
+			Limit: 4096, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person,
+			Sources: []string{"internal/adapters/store.MaxWorkflowLaunches"},
+		},
+		{
+			// One complete workflow snapshot, including tool choices.
+			Name: WorkflowSnapshotBytes, Class: Evidence, Unit: Bytes,
+			Limit: 1 << 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person,
+			Sources: []string{"internal/adapters/store.MaxWorkflowSnapshotBytes"},
+		},
 		{
 			// The personas compiled into this daemon (docs/personas.md). The
 			// catalog is embedded, so it cannot grow while the daemon runs: a
