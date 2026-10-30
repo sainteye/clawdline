@@ -3450,7 +3450,7 @@ test("workflow profile picker saves only the selected profile and preserves Grap
   integrationSettings = { workflow_skills_enabled: false, graphify_enabled: false }
 })
 
-test("Station shows pinned workflow evidence with progressive details and an honest legacy state", async () => {
+test("Station shows confirmed optional workflows and keeps absent or uncertain records out of the header", async () => {
   const record = { state: "recorded", profile_id: "poteto", source: "pstack 0.15.36", version: "1", digest: "a".repeat(64), graphify_enabled: true,
     stages: [{id: "verify", title: "Verify", output: "Evidence", acceptance: "Passing checks"}] }
   workflowRecords = { [TMUX]: record, [TTY]: { state: "legacy_unsnapshotted" } }
@@ -3483,10 +3483,41 @@ test("Station shows pinned workflow evidence with progressive details and an hon
         assert.ok(bounds.page <= bounds.width + 1 && bounds.sheet <= bounds.width, `info overflow ${tag}/${sizeName}: ${JSON.stringify(bounds)}`)
         await tab.shot(`workflow-${tag}-${sizeName}-info`)
         await tab.run(`document.getElementById('info-close').click()`)
-        await tab.go("/?workflow=legacy" + FRAGMENT[TTY])
-        const legacy = tag === "en" ? "No launch record" : "無啟動紀錄"
-        await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes(${JSON.stringify(legacy)})`)
-        assert.equal(await tab.run(`document.querySelector('.detail-workflow').textContent.includes('Poteto')`), false)
+        const hiddenRecords = [
+          { state: "legacy_unsnapshotted" },
+          { state: "unavailable" },
+          { state: "recorded", profile_id: "clawdline" },
+          { state: "recorded", profile_id: "future-profile" },
+          { state: "recorded" },
+          undefined,
+        ]
+        for (const hidden of hiddenRecords) {
+          workflowRecords[TTY] = hidden
+          await tab.tap(TMUX)
+          await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Poteto')`)
+          await tab.tap(TTY)
+          await waitFor(`document.getElementById('detail-name')?.textContent.includes('Bravo')`)
+          await tab.run(`document.getElementById('detail-info').click()`)
+          await waitFor(`!!document.querySelector('#info-body .flow-session')`)
+          assert.equal(await tab.run(`!!document.querySelector('.detail-workflow')`), false, `hidden workflow ${tag}/${sizeName}: ${JSON.stringify(hidden)}`)
+          await tab.run(`document.getElementById('info-close').click()`)
+        }
+        workflowRecords[TTY] = { state: "recorded", profile_id: "superpowers" }
+        await tab.tap(TMUX)
+        await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Poteto')`)
+        await tab.tap(TTY)
+        await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Superpowers')`)
+        await tab.shot(`workflow-${tag}-${sizeName}-confirmed-header`)
+        workflowRecords[TTY] = { state: "legacy_unsnapshotted" }
+        await tab.tap(TMUX)
+        await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Poteto')`)
+        await tab.tap(TTY)
+        await waitFor(`document.getElementById('detail-name')?.textContent.includes('Bravo')`)
+        await tab.run(`document.getElementById('detail-info').click()`)
+        await waitFor(`!!document.querySelector('#info-body .flow-session')`)
+        await tab.run(`document.getElementById('info-close').click()`)
+        assert.equal(await tab.run(`!!document.querySelector('.detail-workflow')`), false)
+        await tab.shot(`workflow-${tag}-${sizeName}-quiet-header`)
       })
     }
   }

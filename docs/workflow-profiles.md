@@ -16,6 +16,8 @@ A fresh launch seals the schema, profile ID, version, source, instruction bytes,
 
 Resume uses the original conversation snapshot without reinjecting new instructions. A child inherits the parent's snapshot even if settings changed. A legacy parent or conversation without a recorded snapshot remains explicitly unsnapshotted and does not acquire today's workflow. Externally launched Sessions and unsupported providers remain unsnapshotted. Changing the setting affects future roots; it does not withdraw existing model context. Tool-use and quality claims still require their own evidence.
 
+The Station header names a workflow only when the launch record confirms Superpowers or Poteto. Standard, missing, unreadable and unknown records leave that header space empty; their evidence remains available in Session info. A header label confirms the launch selection, not adherence to every workflow step.
+
 The five descriptive boundaries are `brief`, `plan`, `execute`, `verify` and `deliver`. Each carries its output and acceptance description. Small tasks may combine stages, and investigations need not modify code. This first version does not claim to enforce natural-language criteria or receive stage-completion events. The standard profile has no added stages. Independent existing gates remain enforced by their existing owners.
 
 ## Extension boundary

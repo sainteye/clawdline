@@ -36,5 +36,7 @@ export function WorkflowProfileHeader({ row, machine }: { row: SessionRow | null
     return () => controller.abort()
   }, [identity])
   if (!row || answer?.identity !== identity) return null
+  const workflow = answer.workflow
+  if (workflow?.state !== "recorded" || !["superpowers", "poteto"].includes(workflow.profile_id || "")) return null
   return <span className="detail-workflow" title={workflowWord("title") + ": " + workflowLabel(answer.workflow)}>{workflowLabel(answer.workflow)}<span aria-hidden="true"> · </span></span>
 }
