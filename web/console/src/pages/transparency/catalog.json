@@ -2363,7 +2363,7 @@
         },
         {
           "path": "internal/adapters/antigravityprocess/client.go",
-          "line": 605
+          "line": 590
         },
         {
           "path": "internal/adapters/antigravitysession/host.go",
@@ -2388,7 +2388,7 @@
         "\t\treturn PromptResult{}, failure(\"busy\", NotWritten)\n",
         "\t}\n",
         "\tdefer c.callMu.Unlock()\n",
-        "\tif !c.authenticated || !c.free || c.SessionID() == \"\" {\n",
+        "\tif !c.authenticated || c.SessionID() == \"\" {\n",
         "\t\treturn PromptResult{}, failure(\"not_ready\", NotWritten)\n",
         "\t}\n",
         "\tif err := c.checkPersonal(); err != nil {\n",
@@ -2653,7 +2653,7 @@
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
     "internal/adapters/antigravitylaunch/store.go": "e3a2344fda42de6142bc0d8646cb73527211c3eaea6547cf03107a21bd430a12",
-    "internal/adapters/antigravityprocess/client.go": "30d3b50ca51e05401b9be14214a251594a1e566fd3912d49bc05a72d3e266a9d",
+    "internal/adapters/antigravityprocess/client.go": "561d81c21cfb102fc87eecbaea2725a41b32dd485fc2574fa5949d1c0b898aad",
     "internal/adapters/antigravitysession/context.go": "7f7490cb414f00633f3e436d484f9d02e8a91e6f541eda148eefa6e83d6d854b",
     "internal/adapters/antigravitysession/host.go": "32d6a53893b3d412f96acca14237c87953a3cf53c2c99db471ee1960f8e5846e",
     "internal/adapters/graphify/graphify.go": "e4b738da462f701cd3f246f59fdbafda4631dd48cf9c8431fb31abf39b6feca0",
@@ -2701,7 +2701,7 @@
     "internal/transport/http/antigravity_owned.go": "f152ceee566a87f19d773dfe0baf12c5c00329cacfc823977b01227f1a728e41",
     "internal/transport/http/antigravity_policy.go": "ed646015b98fa641123d74c344225a5ba12db02787ba2d4107d7bd8c2bf67474",
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
-    "internal/transport/http/antigravity_runtime.go": "f27a2f0242a39b7a77792b88ad8d2337760d2da49cd4374b6f010887bbacab21",
+    "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",
     "internal/transport/http/coordinator.go": "5f139556883583d34320783d063ee1e6a4a1124a726f69510cc4a9324a6cb3df",
     "internal/transport/http/integration_launch.go": "7b8f50a0cba4576e96ff3f598f28760449ba1220ea315885b30517013182927a",
     "internal/transport/http/integration_settings.go": "369c5cd7f9a6edcab3a11abd551783835601c6e8eebb3cdc16ceed84e41f1781",

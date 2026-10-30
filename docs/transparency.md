@@ -119,3 +119,12 @@ choice frozen in the same context. Launch records do not prove model application
 or benefit. The reviewed source inventory and both language explanations include
 the resolver, storage, local source bodies and launch producers. The public website
 snapshot must follow this product tree when this feature is approved for landing.
+
+
+Gemini subscription and compatibility checks now defer to authenticated provider
+eligibility and advertised capabilities instead of plan names or a pinned CLI
+release. Review of the managed-hook and owned-ACP cards in English and Taiwan
+Traditional Chinese found that their context, consent and first-input explanations
+remain accurate. The new account quota reader sends only the fixed `/usage`
+metadata command with no launch instructions, role snapshot or model generation.
+The ACP excerpt and reviewed source receipts follow the changed implementation.

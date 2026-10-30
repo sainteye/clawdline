@@ -49,5 +49,5 @@ func TestGeminiPersonalNativeSetupStages(t *testing.T) {
 		}
 		t.Log(stage.name, "completed", time.Since(started))
 	}
-	t.Log("metadata RPCs=3; model prompts=0; personal free tier verified")
+	t.Log("metadata RPCs=3; model prompts=0; personal session setup verified")
 }

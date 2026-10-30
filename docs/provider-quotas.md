@@ -26,11 +26,15 @@ the saved browser preference.
 | --- | --- | --- |
 | Claude Code | Existing `limits.Reader`: status-line `rate-limits.json` | No credential access or login change |
 | Codex | Existing `limits.Reader`: quota keys in recent rollouts | No credential access or login change |
-| Gemini CLI | Existing `~/.gemini/oauth_creds.json`; `loadCodeAssist`, then `retrieveUserQuota` | Reads the saved access token; an expired token requires running Gemini CLI |
+| Gemini | Configured native ACP profile: fixed `/usage` command, five-hour and weekly Gemini windows | Reuses the selected personal OAuth profile with AI Credits off; does not borrow user conversations |
+| Legacy Gemini CLI (without native configuration) | Existing `~/.gemini/oauth_creds.json`; `loadCodeAssist`, then `retrieveUserQuota` | Reads the saved access token; login remains owned by that CLI |
 | Grok CLI | Existing `$GROK_HOME/auth.json` or `~/.grok/auth.json`; CLI billing credits, optionally its monthly view | Uses the xAI issuer entry; an expired token requires running Grok CLI |
 
 These are quota metadata reads, never model generations or chat prompts. The implementation does
-not write CLI credentials, run agents, redeem credits or switch accounts. Provider responses and
+not copy CLI credentials, generate model output, redeem credits or switch accounts.
+The native Gemini reader opens and closes a temporary ACP connection for the fixed
+metadata command, with no user Session slot or transcript entry. Its existing
+process owner observes daemon shutdown and cleanup failures. Provider responses and
 credential files are capped at 1 MiB per read. Only numeric quota windows, timestamps, source names
 and typed problem codes cross the local API and encrypted Cloud transport; tokens, emails, account
 identifiers, provider response bodies and filesystem paths do not.
@@ -40,7 +44,8 @@ It is separate from `/v1/orchestrator/assistants`: adding quota-only providers d
 can be dispatched. The browser polls while visible, normally every 30 seconds. Gemini and Grok
 refresh asynchronously, one in flight per provider, with a 15-minute minimum interval shared by
 all browsers on that daemon. A complete refresh has a ten-second deadline, no automatic retries,
-and respects a longer `Retry-After`. The Refresh button rereads this cache and the local files;
+and respects a longer `Retry-After`. The native reader replaces the legacy credential/API path when configured.
+The Refresh button rereads this cache and the local files;
 it does not bypass provider cooldowns.
 
 Failed refreshes keep the last successful windows marked outdated. A changed credential identity

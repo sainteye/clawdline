@@ -1,6 +1,6 @@
 // Package antigravityprocess owns one personal ACP process and its regular pipes.
 // It does not discover credentials or retry calls. Model selection and the exact
-// metadata-only /usage command use the same authenticated personal/free session.
+// metadata-only /usage command use the same authenticated personal session.
 package antigravityprocess
 
 import (
@@ -126,28 +126,28 @@ func (p *PermissionRequest) reply(ctx context.Context, option string, before fun
 }
 
 type Client struct {
-	opts                             Options
-	cmd                              *exec.Cmd
-	in, out                          *os.File
-	ctx                              context.Context
-	cancel                           context.CancelFunc
-	done, readDone, watchDone        chan struct{}
-	responses                        chan json.RawMessage
-	once                             sync.Once
-	callMu, writeMu, stateMu         sync.Mutex
-	terminal                         *Error
-	closeErr                         error
-	sequence                         uint64
-	initialized, authenticated, free bool
-	sessionID                        string
-	usage                            *usageCapture               // stateMu; readLoop owns chunk order
-	configResult                     func(json.RawMessage) error // stateMu; invoked by readLoop before later updates
-	configResultID                   string
-	embeddedContext                  bool
-	configOptions                    json.RawMessage    // stateMu; current native metadata, never persisted
-	canLoad, canResume, canList      bool               // negotiated before opening a session
-	activePrompt, cancelledPrompt    string             // stateMu; native turn, not process lifetime
-	activePermission                 *PermissionRequest // stateMu
+	opts                          Options
+	cmd                           *exec.Cmd
+	in, out                       *os.File
+	ctx                           context.Context
+	cancel                        context.CancelFunc
+	done, readDone, watchDone     chan struct{}
+	responses                     chan json.RawMessage
+	once                          sync.Once
+	callMu, writeMu, stateMu      sync.Mutex
+	terminal                      *Error
+	closeErr                      error
+	sequence                      uint64
+	initialized, authenticated    bool
+	sessionID                     string
+	usage                         *usageCapture               // stateMu; readLoop owns chunk order
+	configResult                  func(json.RawMessage) error // stateMu; invoked by readLoop before later updates
+	configResultID                string
+	embeddedContext               bool
+	configOptions                 json.RawMessage    // stateMu; current native metadata, never persisted
+	canLoad, canResume, canList   bool               // negotiated before opening a session
+	activePrompt, cancelledPrompt string             // stateMu; native turn, not process lifetime
+	activePermission              *PermissionRequest // stateMu
 }
 
 type usageCapture struct {
@@ -294,8 +294,8 @@ func (c *Client) AuthenticatePersonal(ctx context.Context) (json.RawMessage, err
 	return r, err
 }
 
-// NewSession retains the provider identity and refuses prompting unless its
-// response explicitly declares the measured personal Starter free tier.
+// NewSession retains the authenticated provider identity. Subscription metadata
+// is informational; the provider owns plan eligibility and model availability.
 func (c *Client) NewSession(ctx context.Context) (json.RawMessage, error) {
 	if !c.callMu.TryLock() {
 		return nil, failure("busy", NotWritten)
@@ -322,21 +322,7 @@ func (c *Client) NewSession(ctx context.Context) (json.RawMessage, error) {
 	c.stateMu.Lock()
 	c.sessionID = id
 	c.stateMu.Unlock()
-	if err := c.acceptFreeTier(m); err != nil {
-		return nil, err
-	}
 	return r, nil
-}
-
-func (c *Client) acceptFreeTier(m map[string]json.RawMessage) error {
-	meta, _ := object(m["_meta"])
-	ag, _ := object(meta["antigravity"])
-	tier, _ := object(ag["tier"])
-	if !equalString(tier["id"], "free-tier") || !equalString(tier["name"], "Antigravity Starter Quota") {
-		return c.badResult("free_tier_required")
-	}
-	c.free = true
-	return nil
 }
 
 // CanResume reports the negotiated no-replay method. Owners with a durable
@@ -388,9 +374,6 @@ func (c *Client) restoreSession(ctx context.Context, id string, replay bool) (js
 	}
 	if raw, ok := m["sessionId"]; ok && !equalString(raw, id) {
 		return nil, c.badResult("session_identity_changed")
-	}
-	if err := c.acceptFreeTier(m); err != nil {
-		return nil, err
 	}
 	return r, nil
 }
@@ -473,7 +456,7 @@ func (c *Client) SetModelChecked(ctx context.Context, modelID string, before fun
 		return failure("busy", NotWritten)
 	}
 	defer c.callMu.Unlock()
-	if !c.authenticated || !c.free || c.SessionID() == "" {
+	if !c.authenticated || c.SessionID() == "" {
 		return failure("not_ready", NotWritten)
 	}
 	if modelID == "" {
@@ -500,10 +483,10 @@ func (c *Client) SetConfigOptionChecked(ctx context.Context, configID, value str
 		return failure("busy", NotWritten)
 	}
 	defer c.callMu.Unlock()
-	if !c.authenticated || !c.free || c.SessionID() == "" {
+	if !c.authenticated || c.SessionID() == "" {
 		return failure("not_ready", NotWritten)
 	}
-	if (configID != "model" && configID != "thinking_level" && configID != "mode") || value == "" {
+	if configID == "" || value == "" {
 		return failure("invalid_config", NotWritten)
 	}
 	if err := c.checkPersonal(); err != nil {
@@ -550,7 +533,7 @@ func (c *Client) Usage(ctx context.Context) (string, error) {
 		return "", failure("busy", NotWritten)
 	}
 	defer c.callMu.Unlock()
-	if !c.authenticated || !c.free || c.SessionID() == "" {
+	if !c.authenticated || c.SessionID() == "" {
 		return "", failure("not_ready", NotWritten)
 	}
 	if err := c.checkPersonal(); err != nil {
@@ -609,7 +592,7 @@ func (c *Client) prompt(ctx context.Context, text, uri, contextText string, befo
 		return PromptResult{}, failure("busy", NotWritten)
 	}
 	defer c.callMu.Unlock()
-	if !c.authenticated || !c.free || c.SessionID() == "" {
+	if !c.authenticated || c.SessionID() == "" {
 		return PromptResult{}, failure("not_ready", NotWritten)
 	}
 	if err := c.checkPersonal(); err != nil {
