@@ -2946,5 +2946,10 @@
     "Name": "work_gate_tasks_per_round",
     "Known": true,
     "Note": true
+  },
+  {
+    "Name": "workflow.snapshot_bytes",
+    "Known": true,
+    "Note": true
   }
 ]

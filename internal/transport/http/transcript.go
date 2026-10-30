@@ -571,6 +571,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 		},
 		Models: []contract.SessionModel{},
 	}
+	s.fillWorkflowInfo(ctx, item, &info)
 	if item.Backend == session.BackendClaudeRemote {
 		if controls, ok := s.claudeRemote.(ports.ClaudeRemoteControls); ok && r.URL.Query().Get("parts") == "remote-permission" {
 			if menu, err := controls.InspectRemote(ctx, item); err == nil {

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10022,
-  "riskKeys": 4454,
-  "nonRiskCount": 5568,
+  "englishContentKeys": 10069,
+  "riskKeys": 4467,
+  "nonRiskCount": 5602,
   "groups": [
     {
       "name": "admin / other",
@@ -1906,7 +1906,7 @@
     },
     {
       "name": "http / other",
-      "count": 573,
+      "count": 574,
       "sources": [
         "internal/productcopy/http_refusals/en.json"
       ],
@@ -2016,6 +2016,7 @@
         "http.3359a2985546bea3",
         "http.33628dac8027c1ae",
         "http.33e0a185032d8bda",
+        "http.33e8b1887d80ca96",
         "http.342b860098965cae",
         "http.346173053bc87fc6",
         "http.34650a8d45d015e9",
@@ -6451,6 +6452,48 @@
         "work.usageTitle",
         "work.usageTokens",
         "work.usageUpperBound"
+      ]
+    },
+    {
+      "name": "workflowProfiles / other",
+      "count": 33,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "workflowProfiles.acceptance",
+        "workflowProfiles.clawdline",
+        "workflowProfiles.digest",
+        "workflowProfiles.fixed",
+        "workflowProfiles.fixedShort",
+        "workflowProfiles.graphify",
+        "workflowProfiles.intro",
+        "workflowProfiles.launch",
+        "workflowProfiles.loadedState",
+        "workflowProfiles.off",
+        "workflowProfiles.on",
+        "workflowProfiles.output",
+        "workflowProfiles.poteto",
+        "workflowProfiles.source",
+        "workflowProfiles.stage.brief.acceptance",
+        "workflowProfiles.stage.brief.output",
+        "workflowProfiles.stage.brief.title",
+        "workflowProfiles.stage.deliver.output",
+        "workflowProfiles.stage.deliver.title",
+        "workflowProfiles.stage.execute.output",
+        "workflowProfiles.stage.execute.title",
+        "workflowProfiles.stage.plan.acceptance",
+        "workflowProfiles.stage.plan.output",
+        "workflowProfiles.stage.plan.title",
+        "workflowProfiles.stage.verify.acceptance",
+        "workflowProfiles.stage.verify.output",
+        "workflowProfiles.stage.verify.title",
+        "workflowProfiles.standardState",
+        "workflowProfiles.steps",
+        "workflowProfiles.superpowers",
+        "workflowProfiles.title",
+        "workflowProfiles.use",
+        "workflowProfiles.version"
       ]
     },
     {

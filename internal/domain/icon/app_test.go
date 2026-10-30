@@ -62,7 +62,7 @@ func TestASplashIsOnTheManifestsGround(t *testing.T) {
 // AppKit's origin is at the bottom, so a port that forgets the flip draws a
 // creature standing on its head and every pixel of it is still the right
 // colour. The connected mark has inset top and bottom edges, black eyes on
-// the second row, and a continuous base below them.
+// the third row, a connected base and a separate green line below it.
 func TestTheCreatureIsCentredAndTheRightWayUp(t *testing.T) {
 	t.Parallel()
 	const w, h = 750, 1334
@@ -95,11 +95,14 @@ func TestTheCreatureIsCentredAndTheRightWayUp(t *testing.T) {
 	}{
 		{0, 0, ground, "the head has an inset left edge"},
 		{0, 4, body16, "the top of the head"},
-		{1, 2, eye, "the left eye"},
-		{1, 5, eye, "the right eye"},
-		{2, 0, body16, "the widest row reaches the edge"},
-		{3, 3, body16, "the base is connected at the centre"},
-		{3, 0, ground, "the base stays inset at the edge"},
+		{2, 4, eye, "the left eye"},
+		{2, 10, eye, "the right eye"},
+		{4, 0, body16, "the hands reach the edge"},
+		{7, 7, body16, "the base is connected at the centre"},
+		{7, 0, ground, "the base stays inset at the edge"},
+		{8, 7, ground, "the terminal line is separate from the body"},
+		{10, 0, markLine, "the terminal line starts under the left hand"},
+		{10, 15, markLine, "the terminal line reaches the right hand"},
 	} {
 		x, y := at(want.row, want.column)
 		r, g, b, a := rgba(img.At(x, y))

@@ -5,19 +5,17 @@ self-contained SVG (`svg`, with empty `cells`). The daemon resolves it for
 the console's project, Session and Board views. Application and assistant marks
 are separate assets.
 
-The compact application mark in `web/console/src/brand-mark.ts` has a continuous
-bottom edge. Its eight-by-four grid keeps the existing eyes and palette; only
-the two centre cells in the bottom row are filled. The settings window's CSS
-mask follows the same silhouette.
+The compact application mark in `web/console/src/brand-mark.ts` uses L-01 + G-02:
+a connected orange body and a separate full-width terminal-green underline
+(`#4CCB7F`). Its transparent sixteen-by-eleven grid is shared by navigation,
+sign-in, support, administration and machine-workspace marks. The settings window
+uses the same geometry in its existing icon slot.
 
-For large illustrations, [the connected mark with a fine grid](assets/brand-mark-connected-grid.svg)
-adds low-contrast pixel lines inside the orange body. Compact interface marks
-remain solid. This illustration does not replace installer, home-screen or
-launch-screen assets.
-
-The local and hosted console navigation handles use L-01 + G-02: a full-width,
-solid green underline (`#4CCB7F`) below the orange body. It has a transparent
-sixteen-by-eleven grid so the half-cell line fits the existing button.
+Large artwork adds low-contrast pixel lines inside the orange body. The selected
+F-04 animation moves only left to right; static surfaces use a still rendering.
+Compact interface and browser marks retain solid colors. `internal/domain/icon`
+renders matching browser, home-screen and launch-screen assets; regenerate them
+with `go run ./internal/domain/icon/cmd/splashgen -brand`.
 
 Large-format flow concepts retain the fine body grid and explore the underline:
 [one-way flow](assets/brand-line-concepts/f-01.svg),

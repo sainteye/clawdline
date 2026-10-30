@@ -1,5 +1,6 @@
 import { outputSessionKey, readOutputs } from "./output-files-api.js"
 import { OutputFiles } from "./OutputFiles.js"
+import { WorkflowProfileHeader } from "./workflow-profile-header.js"
 import { assistantStateCurrent, assistantProtocolOwned } from "./antigravity-ui.js"
 import { assistantFactsMachine, useAssistantFacts } from "./assistant-facts.js"
 import { catalogWord } from "../catalog.js"
@@ -314,6 +315,7 @@ export function Detail({
               </span>
               <span className="sub" id="detail-sub">
                 {role ? <DetailPersona head={role} /> : null}
+                <WorkflowProfileHeader row={row} machine={readerMachine} />
                 {detailSub(row, projectedCoordinatorBound)}
               </span>
             </span>

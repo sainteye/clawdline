@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/sainteye/clawdline/internal/adapters/workflowlaunch"
+	"log"
 	"net/http"
 	"os"
 	"runtime"
@@ -73,6 +75,7 @@ type Starter struct {
 	// IntegrationInstructions reads this machine's explicit opt-ins once for
 	// a new Claude/Codex launch, across every Project. Resumes do not read it.
 	IntegrationInstructions func(context.Context, string) (string, error)
+	PrepareWorkflow         func(context.Context, string, string, string) (workflowlaunch.Prepared, error)
 }
 
 // PreparedAntigravity is one private durable launch intent. AttachTerminal
@@ -128,7 +131,17 @@ func (s Starter) Place(ctx context.Context, id string) (projects.Place, bool) {
 
 // Start is StartPoints.start(_:assistant:model:…resume:), with the persona
 // the session is launched as ("" for none).
-func (s Starter) Start(ctx context.Context, place projects.Place, assistant, model, resume, persona string) (Started, error) {
+func (s Starter) Start(ctx context.Context, place projects.Place, assistant, model, resume, persona string) (result Started, resultErr error) {
+	var preparedWorkflow workflowlaunch.Prepared
+	defer func() {
+		if resultErr != nil {
+			preparedWorkflow.Fail(ctx)
+		} else if result.ID != "" {
+			if err := preparedWorkflow.Record(ctx, result.ID); err != nil {
+				log.Printf("workflow terminal binding pending recovery: %v", err)
+			}
+		}
+	}()
 	if model == "" && resume == "" && s.DefaultModel != nil {
 		model = s.DefaultModel(assistant)
 	}
@@ -153,7 +166,14 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 			Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: persona, Memory: memory})
 	}
 	integrations := ""
-	if resume == "" && s.IntegrationInstructions != nil {
+	if s.PrepareWorkflow != nil {
+		var err error
+		preparedWorkflow, err = s.PrepareWorkflow(ctx, place.Path, resume, "")
+		if err != nil {
+			return Started{}, err
+		}
+		integrations = preparedWorkflow.Text
+	} else if resume == "" && s.IntegrationInstructions != nil {
 		var err error
 		integrations, err = s.IntegrationInstructions(ctx, place.Path)
 		if err != nil {
@@ -197,28 +217,28 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 			}
 			launch.Arguments = append(launch.Arguments, projects.UpdateCheckArgs(assistant)...)
 			return s.openSquadTerminal(ctx, place, model, plan, prepared,
-				launch.ShellCommandWithEnv([]string{prepared.files.PrivateEnv()}))
+				preparedWorkflow.Wrap(launch.ShellCommandWithEnv([]string{prepared.files.PrivateEnv()})))
 		}
 	}
 	launch.Arguments = append(launch.Arguments, projects.UpdateCheckArgs(assistant)...)
 
 	switch plan {
 	case projects.PlanITerm:
-		id, err := s.Launcher.NewITermTab(ctx, launch.ShellLine())
+		id, err := s.Launcher.NewITermTab(ctx, "cd "+projects.ShellQuoted(place.Path)+" && "+preparedWorkflow.Wrap(launch.ShellCommand()))
 		if err != nil {
 			return Started{}, openRefusal(err, "iTerm2")
 		}
 		return Started{ID: id, Backend: "iterm", Model: model}, nil
 	case projects.PlanITermTmux:
-		return s.openViewed(ctx, place, model, launch.ShellCommand())
+		return s.openViewed(ctx, place, model, preparedWorkflow.Wrap(launch.ShellCommand()))
 	case projects.PlanTmux:
-		id, err := s.Launcher.NewTmuxWindow(ctx, place.Path, launch.ShellCommand())
+		id, err := s.Launcher.NewTmuxWindow(ctx, place.Path, preparedWorkflow.Wrap(launch.ShellCommand()))
 		if err != nil {
 			return Started{}, openRefusal(err, "")
 		}
 		return Started{ID: id, Backend: "tmux", Model: model}, nil
 	case projects.PlanTmuxDetached:
-		id, err := s.Launcher.NewTmuxSession(ctx, place.Path, projects.TmuxStartedSessionName, launch.ShellCommand())
+		id, err := s.Launcher.NewTmuxSession(ctx, place.Path, projects.TmuxStartedSessionName, preparedWorkflow.Wrap(launch.ShellCommand()))
 		if err != nil {
 			return Started{}, openRefusal(err, "")
 		}

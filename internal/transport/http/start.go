@@ -286,6 +286,7 @@ func (s *Server) starter(reading startReading) app.Starter {
 		ResolveSquadSnapshot:    s.resolveSquadSnapshot,
 		Memory:                  s.memoryLaunchText,
 		IntegrationInstructions: s.integrationLaunchText,
+		PrepareWorkflow:         s.prepareWorkflow,
 		// The broker's answer, so a session the person starts and one the
 		// broker opens answer in the same language.
 		Language: func(assistant string) string {

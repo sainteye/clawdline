@@ -137,11 +137,10 @@ func TestGeminiAutomaticNamingRespectsOffAndManualTitles(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			sendAutomaticFixture(t, s, row, "First request")
-			// Shutdown joins every callback, including a wrongly started model turn.
-			if err := s.antigravitySessions.Load().Shutdown(); err != nil {
-				t.Fatal(err)
-			}
+			s.firstSessionRequest = func(session.Session) (string, error) { return "First request", nil }
+			// Invoke the callback synchronously with a live context. Shutdown
+			// cancellation must not hide an incorrectly admitted naming turn.
+			s.automaticGeminiTitle(t.Context(), row)
 			if calls.Load() != 0 {
 				t.Fatal("off/manual conversation spent a model turn")
 			}
@@ -227,5 +226,44 @@ func TestGeminiNamingDoesNotBlockInputOrOverwriteManualName(t *testing.T) {
 	}
 	if current.Rungs.Thread != "Model name" || s.sessionDisplayLabel(t.Context(), current) != "Human name" {
 		t.Fatal("manual name lost its priority")
+	}
+}
+
+func TestGeminiAutomaticNamingOffDuringTurnPreventsPublication(t *testing.T) {
+	s, row := automaticGeminiFixture(t)
+	s.firstSessionRequest = func(session.Session) (string, error) { return "First request", nil }
+	if _, err := nextconfig.Open(s.cfg.Dir).Set(map[string]any{"codex_auto_name": true, "auto_name_assistant": "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	called, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	s.nameSession = func(ctx context.Context, _ string, _ string) (string, error) {
+		calls.Add(1)
+		close(called)
+		select {
+		case <-release:
+			return "Model name", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	go func() { defer close(done); s.automaticGeminiTitle(t.Context(), row) }()
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("naming did not start")
+	}
+	if _, err := nextconfig.Open(s.cfg.Dir).Set(map[string]any{"codex_auto_name": false}); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("naming did not settle")
+	}
+	inv, _ := s.antigravitySessions.Load().Inventory(t.Context())
+	if calls.Load() != 1 || len(inv.Sessions) != 1 || inv.Sessions[0].Rungs.Thread != "" {
+		t.Fatal("disabled naming published a title")
 	}
 }
