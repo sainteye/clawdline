@@ -343,6 +343,8 @@ compilation if the selected identity is not Developer ID Application.
 
 ## Recent acceptance records
 
+- [v2.10.0 publication, workflows, project graphs and isolated DMG evidence](records/release-v2.10.0-acceptance.md).
+
 - [v2.9.0 publication, model-capacity notifications and isolated DMG evidence](records/release-v2.9.0-acceptance.md).
 
 - [v2.8.0 publication, Doctor and installed release evidence](records/release-v2.8.0-acceptance.md).

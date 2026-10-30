@@ -78,7 +78,7 @@ A paired browser can send instructions and use your terminal, so pair only devic
 
 ## Install
 
-[![Download Clawdline v2.9.0 for macOS — Apple Silicon, macOS 13+](docs/assets/download-macos-en.svg)](https://github.com/sainteye/clawdline/releases/download/v2.9.0/Clawdline-v2.9.0-macos-arm64.dmg)
+[![Download Clawdline v2.10.0 for macOS — Apple Silicon, macOS 13+](docs/assets/download-macos-en.svg)](https://github.com/sainteye/clawdline/releases/download/v2.10.0/Clawdline-v2.10.0-macos-arm64.dmg)
 
 Apple Silicon · macOS 13+ · [Install guide](https://clawdline.com/docs/install/#mac-dmg)
 
