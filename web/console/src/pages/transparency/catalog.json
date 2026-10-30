@@ -1949,11 +1949,11 @@
       "sources": [
         {
           "path": "skills/clawdline/guide.md",
-          "line": 1085
+          "line": 1160
         },
         {
           "path": "cmd/clawdline/session.go",
-          "line": 64
+          "line": 79
         }
       ],
       "original": [
@@ -1977,7 +1977,23 @@
         "  or the daemon-published `CLAWDLINE_PROTOCOL_SESSION_FILE` for an owned Gemini conversation\n",
         "  (`--conversation` otherwise), asks `GET /v1/orchestrator/whoami` for the terminal, and posts\n",
         "  `{\"summary\"}` to `POST /v1/orchestrator/sessions/<terminal>/complete`.\n",
-        "- The summary is 1–500 characters. Each call is a new receipt; the newest counts.\n",
+        "- The summary is 1–500 characters. Legacy calls without a key create a new receipt; the newest counts.\n",
+        "- For a large Git delivery, use `clawdline session report --summary \"…\" --evidence-file <JSON>`.\n",
+        "  The UTF-8 document (at most 256 KiB and 4,096 full commit IDs) binds the exact summary to a\n",
+        "  passed Git delivery check and the SHA-256 digests of its baseline and ownership manifest.\n",
+        "  See `docs/session-delivery.md` for the version 1 schema and responsibility boundary.\n",
+        "  The full original document and its SHA-256 are stored with `session.delivered`; the answer\n",
+        "  includes `delivery_evidence_sha256` and `delivery_evidence_commits`. No commit goes in the\n",
+        "  summary unless it helps the reader. Evidence is an authenticated adapter assertion, not\n",
+        "  independent review, landing, deployment, or permission to publish.\n",
+        "- Evidence calls require an `Idempotency-Key`; the CLI derives a stable key from the exact\n",
+        "  document, terminal and conversation. Retry the same document and identity to replay the\n",
+        "  original answer without another receipt or push. Changed bytes use a different key.\n",
+        "  An older daemon refuses the extra field; do not fall back to a summary-only report.\n",
+        "  `delivery_evidence_invalid`, `delivery_evidence_mismatch`, `delivery_evidence_unverified`,\n",
+        "  and `delivery_evidence_too_large` create no receipt. A missing/mismatched acknowledgement is\n",
+        "  `delivery_evidence_ack_unknown`, not success. `request_outcome_unknown` after a daemon crash\n",
+        "  is not retried under a new key; inspect the stored event before deciding what to do.\n",
         "- The answer also carries `open_todos`: this Session's direct to-dos that were sent or read and are\n",
         "  not completed, oldest first, at most 20 (`open_todos_truncated` when there are more). The command\n",
         "  prints them on stderr after the receipt, one id and text per line. Check off each one you\n",
@@ -2017,6 +2033,7 @@
         "  `report_local_only`).\n",
         "- `--out` writes another file or directory instead, with the `file://` address only. stderr says\n",
         "  what it left out or shortened. `--open` also opens the file in this machine's browser.\n",
+        "\n",
         "\n"
       ],
       "locations": [
@@ -2582,7 +2599,7 @@
   "sourceChecks": {
     "cmd/clawdline/graphify.go": "a0716503d418090b5056f7f529683124d4eecdbf14af16bc00f941d764f854f9",
     "cmd/clawdline/main.go": "753837ead4489c0c38c9cd78899bf3abb17996ee1329f13cb6036606f66a4ac6",
-    "cmd/clawdline/session.go": "36c97435b123e283e9c8e99593eceead3adad058993b22ef93d22bbecc0770aa",
+    "cmd/clawdline/session.go": "0fc62871605339e63df21529801409aa809907ec05bb8343bbbd766600c11574",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
     "internal/adapters/antigravitylaunch/response.go": "b891ab92df8a171384eda575a21e6cf79ea24aba67101a49db129a4ba6e1e517",
@@ -2640,8 +2657,8 @@
     "internal/transport/http/work_v2.go": "eb358173079e9d962df36aeb0ac22e1c89b7fb22c7f2a376fd2aca115406f5a0",
     "internal/transport/http/work_v2_brief.go": "212fde2dc04a2694060c3a40de8dccd98889dd40d43d85589a54f1b09ca7aa39",
     "skills/clawdline/SKILL.md": "6648251619176575f6b5e93793c7efd9b7fc569d45ed04977352560206cea1ee",
-    "skills/clawdline/guide.md": "f8451cc040d44ad1c16666cbdcbddf5aabd9a4564e64e2aa8e08a364451126c6",
-    "skills/clawdline/guide.zh-TW.md": "f0b6c13bf7eded7c69d57ee288e2fa8a5d171e7aa5cd6bc0ffb593ecf103847d",
+    "skills/clawdline/guide.md": "39ea33d9979c46b6c9e60d0a687c514de41ffb5bbc4177d85701838b33dde7de",
+    "skills/clawdline/guide.zh-TW.md": "a81ff5f78e0d217a86686129cd0420b6024b224ca9fcc066d87cc0a0ee21e035",
     "skills/evidence-debugging/SKILL.md": "12bf03169a4af65212d4d84c69c56174c38046a398f240348ba6065c8caaceab",
     "skills/evidence-review/SKILL.md": "fd4c584fae5ba58d03250faad1e1219894548343502ca43fb360d313262ea5f6",
     "skills/sections.go": "ba3de38ebe0e26817f337bd4ae93e19d07ba07af8971b4fba397e6fe9082b903",
@@ -2651,7 +2668,7 @@
     "web/console/src/session/Start.tsx": "41ce5fb0848d5f5c202a03fd13655a87bb9ad4189473dccf1d075d437feefeb7"
   },
   "copyChecks": {
-    "en": "d40ca4abdfb589a38c0b298a78beac1c0301c5fcf9fff528059c90964c55575c",
-    "zh-Hant": "d30ab29406abfb2d32624c4fe79c7752e6c51e6f95b73cebc064427202786098"
+    "en": "e38da1b2074b7d89f44bf15d746018ae5b1f0990bb6141558fa85125eaf279df",
+    "zh-Hant": "8a2544be7aca324dd14e80080d7671ac991b2752d67f20355d5ca8437382558a"
   }
 }

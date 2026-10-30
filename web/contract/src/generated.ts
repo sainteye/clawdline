@@ -1685,6 +1685,16 @@ export interface BrokerRootCleanupEligibility {
  */
 export interface BrokerSessionDelivery {
   created: boolean
+
+  /**
+   * Number of full commit IDs in the adapter-verified evidence.
+   */
+  delivery_evidence_commits?: number
+
+  /**
+   * SHA-256 of the exact optional evidence document stored with session.delivered.
+   */
+  delivery_evidence_sha256?: string
   disposition: BrokerDisposition
   ok: boolean
 

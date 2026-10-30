@@ -1,4 +1,8 @@
 {
+  "capacityRow.orchestrator.delivery_bytes.what": "The full Git delivery evidence document is limited to 256 KiB so it can be stored and retried with a short summary.",
+  "capacityRow.orchestrator.delivery_bytes.full": "A larger document is rejected in full; no completion receipt is created.",
+  "capacityRow.orchestrator.delivery_commits.what": "A delivery evidence document can contain up to 4,096 complete commit IDs.",
+  "capacityRow.orchestrator.delivery_commits.full": "Larger commit lists are rejected; commits are never removed to fit.",
   "capacityRow.projects.graphify_nodes.what": "The maximum number of nodes in one project graph overview, keeping the phone view responsive.",
   "capacityRow.projects.graphify_nodes.full": "Larger graphs show their most connected nodes and state the original count; search covers only this subset.",
   "capacityRow.projects.graphify_links.what": "The maximum number of relationships sent with a project graph overview.",
@@ -8909,7 +8913,7 @@
   "transparency.card.report.condition": "Read with core or report; used at delivery",
   "transparency.card.report.effect": "After a root finishes and verifies a turn, before its final reply. Children do not send it.",
   "transparency.card.report.how": "The core or report guide, before the receipt command is run.",
-  "transparency.card.report.summary": "Records a finished turn and asks the root to register actual output files before reporting. It neither checks off all Board work nor closes the Session.",
+  "transparency.card.report.summary": "Records a finished turn after the root registers its actual outputs. Optional complete Git evidence is stored separately from the short summary and acknowledged by hash; the adapter owns Git verification. This does not independently approve, publish, check off all Board work or close the Session.",
   "transparency.card.report.title": "Session Report rule",
   "transparency.card.role-skills.condition": "A selected role has an enabled, applicable skill",
   "transparency.card.role-skills.effect": "When doing work the skill applies to.",

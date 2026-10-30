@@ -1,4 +1,8 @@
 {
+  "capacityRow.orchestrator.delivery_bytes.what": "完整 Git 交付證據檔上限為 256 KiB，讓短摘要能搭配可保存及重送的完整證據。",
+  "capacityRow.orchestrator.delivery_bytes.full": "超限時整份拒絕，不建立完成收據。",
+  "capacityRow.orchestrator.delivery_commits.what": "每份交付證據最多容納 4,096 筆完整提交識別碼。",
+  "capacityRow.orchestrator.delivery_commits.full": "超限時拒絕整份清單，不會刪減提交來符合上限。",
   "capacityRow.projects.graphify_nodes.what": "單次專案圖概覽可顯示的節點數，避免手機畫面負擔過大。",
   "capacityRow.projects.graphify_nodes.full": "較大的圖只顯示連線較多的節點，並標明原始數量；搜尋僅涵蓋這個範圍。",
   "capacityRow.projects.graphify_links.what": "單次專案圖概覽可傳送的關係連線數。",
@@ -8909,7 +8913,7 @@
   "transparency.card.report.condition": "讀 core／report 時載入，完成 Turn 時生效",
   "transparency.card.report.effect": "Root 本輪完成並驗證後、最後回答前；Child 不送。",
   "transparency.card.report.how": "core／report 指南；不是送出當下才注入。",
-  "transparency.card.report.summary": "記錄完成收據，並要求 Root 在回報前登錄真正的產出檔案；不會自動勾完看板，也不等於關閉 Session。",
+  "transparency.card.report.summary": "Root 登錄實際產出後回報完成；可將完整 Git 證據與短摘要分開保存，依雜湊確認，Git 驗證仍由 adapter 負責。不代表獨立核可、發布、自動勾完看板或關閉 Session。",
   "transparency.card.report.title": "完成 Turn 時的 Session Report 規則",
   "transparency.card.role-skills.condition": "選了角色，技能已啟用且符合任務",
   "transparency.card.role-skills.effect": "處理適用的任務時。",

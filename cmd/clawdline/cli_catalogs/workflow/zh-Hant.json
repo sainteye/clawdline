@@ -1,4 +1,5 @@
 {
+  "session.evidence_file": "完整且已驗證的交付證據 JSON 檔",
   "board.a_track_is_todo_board_or_backlog_not": "軌道須為 todo、board 或 backlog，不能是 %q",
   "board.board_revision_d_d_cards_s": "看板      修訂 %d，%d 張卡片（%s）\n",
   "board.cards": "卡片",

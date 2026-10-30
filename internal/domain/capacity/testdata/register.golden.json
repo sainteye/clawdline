@@ -7422,6 +7422,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "orchestrator.delivery_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 262144,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/session.DeliveryEvidenceBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "orchestrator.delivery_commits",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/session.DeliveryEvidenceCommitsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "orchestrator.opening_stuck_seconds",
     "Class": "observation",
     "Unit": "seconds",

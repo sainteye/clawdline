@@ -1177,7 +1177,23 @@ conversation.
   or the daemon-published `CLAWDLINE_PROTOCOL_SESSION_FILE` for an owned Gemini conversation
   (`--conversation` otherwise), asks `GET /v1/orchestrator/whoami` for the terminal, and posts
   `{"summary"}` to `POST /v1/orchestrator/sessions/<terminal>/complete`.
-- The summary is 1–500 characters. Each call is a new receipt; the newest counts.
+- The summary is 1–500 characters. Legacy calls without a key create a new receipt; the newest counts.
+- For a large Git delivery, use `clawdline session report --summary "…" --evidence-file <JSON>`.
+  The UTF-8 document (at most 256 KiB and 4,096 full commit IDs) binds the exact summary to a
+  passed Git delivery check and the SHA-256 digests of its baseline and ownership manifest.
+  See `docs/session-delivery.md` for the version 1 schema and responsibility boundary.
+  The full original document and its SHA-256 are stored with `session.delivered`; the answer
+  includes `delivery_evidence_sha256` and `delivery_evidence_commits`. No commit goes in the
+  summary unless it helps the reader. Evidence is an authenticated adapter assertion, not
+  independent review, landing, deployment, or permission to publish.
+- Evidence calls require an `Idempotency-Key`; the CLI derives a stable key from the exact
+  document, terminal and conversation. Retry the same document and identity to replay the
+  original answer without another receipt or push. Changed bytes use a different key.
+  An older daemon refuses the extra field; do not fall back to a summary-only report.
+  `delivery_evidence_invalid`, `delivery_evidence_mismatch`, `delivery_evidence_unverified`,
+  and `delivery_evidence_too_large` create no receipt. A missing/mismatched acknowledgement is
+  `delivery_evidence_ack_unknown`, not success. `request_outcome_unknown` after a daemon crash
+  is not retried under a new key; inspect the stored event before deciding what to do.
 - The answer also carries `open_todos`: this Session's direct to-dos that were sent or read and are
   not completed, oldest first, at most 20 (`open_todos_truncated` when there are more). The command
   prints them on stderr after the receipt, one id and text per line. Check off each one you

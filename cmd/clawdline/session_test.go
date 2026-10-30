@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/devices"
 	"github.com/sainteye/clawdline/internal/adapters/skillfile"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 const (
@@ -581,5 +583,57 @@ func TestSessionCloseDuringItsOwnTurnIsScheduled(t *testing.T) {
 		if r.Method == http.MethodPost {
 			t.Fatal("another blocker posted the close")
 		}
+	}
+}
+
+func TestSessionEvidenceBindsReceiptAndRetriesSameKey(t *testing.T) {
+	evidence := `{"schema_version":1,"summary":"Verified.","baseline_sha256":"` + strings.Repeat("a", 64) + `","manifest_sha256":"` + strings.Repeat("b", 64) + `","git_receipt":{"schemaVersion":1,"ok":true,"root":"/repo","baselineHead":"` + strings.Repeat("1", 40) + `","head":"` + strings.Repeat("2", 40) + `","commits":["` + strings.Repeat("2", 40) + `"],"ownedFiles":1,"issues":[]}}`
+	digest, _, err := session.ValidateDeliveryEvidence(evidence, "Verified.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ack := range []string{digest, "", "wrong"} {
+		s, b := newStandIn(t, func(r *http.Request) (int, string) {
+			return 200, fmt.Sprintf(`{"ok":true,"delivery_evidence_sha256":%q,"delivery_evidence_commits":1}`, ack)
+		})
+		for i := 0; i < 2; i++ {
+			var out, errs bytes.Buffer
+			code := reportSessionEvidence(&out, &errs, b, "Verified.", "", "pane-9", evidence, envOf(nil))
+			if (code == 0) != (ack == digest) {
+				t.Fatalf("ack %q: %d %s", ack, code, &errs)
+			}
+		}
+		seen := s.requests()
+		if len(seen) != 2 || seen[0].Key == "" || seen[0].Key != seen[1].Key || !bytes.Equal(seen[0].Body, seen[1].Body) {
+			t.Fatalf("retry %+v", seen)
+		}
+	}
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { t.Fatal("invalid evidence reached daemon"); return 500, "" })
+	var out, errs bytes.Buffer
+	if reportSessionEvidence(&out, &errs, b, "Changed.", "", "pane-9", evidence, envOf(nil)) == 0 || len(s.requests()) != 0 {
+		t.Fatal("mismatch accepted")
+	}
+}
+
+func TestDeliveryEvidenceFilesAreBoundedPlainAndNonempty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "evidence.json")
+	for _, raw := range []string{"", strings.Repeat("x", session.DeliveryEvidenceBytesLimit+1)} {
+		if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readDeliveryEvidenceFile(path); err == nil {
+			t.Fatal("invalid file accepted")
+		}
+	}
+	if _, err := readDeliveryEvidenceFile(dir); err == nil {
+		t.Fatal("directory accepted")
+	}
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := readDeliveryEvidenceFile(path)
+	if err != nil || string(raw) != "{}" {
+		t.Fatalf("plain file %s %v", raw, err)
 	}
 }
