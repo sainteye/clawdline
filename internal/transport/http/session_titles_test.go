@@ -488,3 +488,53 @@ func TestSmartTitleRefusesUnreadableHistoryBeforeSpending(t *testing.T) {
 		t.Fatalf("unreadable: %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestSmartTitleUsesSessionAssistant(t *testing.T) {
+	for _, tc := range []struct {
+		assistant session.Assistant
+		config    string
+		wantNamer string
+	}{
+		{session.AssistantClaude, "session", "claude"},
+		{session.AssistantCodex, "session", "codex"},
+		{session.AssistantAntigravity, "session", "antigravity"},
+		{session.AssistantAntigravity, "", "antigravity"},
+		{session.AssistantClaude, "", "claude"},
+		{session.AssistantCodex, "", "codex"},
+		{session.AssistantClaude, "antigravity", "antigravity"},
+	} {
+		t.Run(string(tc.assistant)+"/config="+tc.config, func(t *testing.T) {
+			item := session.Session{ID: "%99", Backend: session.BackendTmux, Assistant: tc.assistant,
+				ConversationID: "conversation-99", State: session.StateIdle}
+			s := paneServer(t, &pane{s: item})
+			s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
+			s.icons = &icon.Registry{}
+			if tc.config != "" {
+				if _, err := nextconfig.Open(s.cfg.Dir).Set(map[string]any{"auto_name_assistant": tc.config}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s.firstSessionRequest = func(session.Session) (string, error) { return "name this", nil }
+			s.sessionTailRead = func(session.Session) (transcript.Page, error) { return transcript.Page{}, nil }
+			namedWith := ""
+			s.nameSession = func(_ context.Context, _ string, assistant string) (string, error) {
+				namedWith = assistant
+				return "Test title", nil
+			}
+			rec := act(t, s, "smart-title", item.ID, "smart-session-namer", `{}`)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("response code = %d %s", rec.Code, rec.Body)
+			}
+			if namedWith != tc.wantNamer {
+				t.Fatalf("named with %q, want %q", namedWith, tc.wantNamer)
+			}
+			var reply contract.SessionTitleReply
+			if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+				t.Fatal(err)
+			}
+			if string(reply.NamedBy) != tc.wantNamer {
+				t.Fatalf("NamedBy = %q, want %q", reply.NamedBy, tc.wantNamer)
+			}
+		})
+	}
+}
