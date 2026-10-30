@@ -28,6 +28,20 @@ The [animated comparison](assets/brand-line-concepts/flow-comparison.gif) shows
 the four transmission treatments together. These are design drafts, not selected
 production assets. Small marks keep the solid line rather than the lighting effects.
 
+F-01 and F-04 also have standalone, dark-background animation drafts for a
+possible homepage illustration. Both are 832 by 608 pixels at 20 frames per
+second, with the body held still and only the underline moving. The repeated
+endpoint matches the opening frame before encoding; the endpoint is not included
+twice in the loop.
+
+| Concept | Loop | GIF preview | Animated WebP alternative |
+|---|---|---|---|
+| F-01, one-way flow | 2.4 seconds, 48 frames | [GIF](assets/brand-line-concepts/f-01-loop.gif), 837,714 bytes | [WebP](assets/brand-line-concepts/f-01-loop.webp), 107,244 bytes |
+| F-04, quiet shimmer | 4 seconds, 80 frames | [GIF](assets/brand-line-concepts/f-04-loop.gif), 1,292,044 bytes | [WebP](assets/brand-line-concepts/f-04-loop.webp), 132,428 bytes |
+
+These files are previews and have not been wired into the website. Keep a static
+poster available if an animation is later adopted for a reduced-motion setting.
+
 `internal/domain/icon` resolves a local mark in this order:
 
 1. A saved mark in `CLAWDLINE_NEXT_DIR/project-icon-overrides.json`, using the
