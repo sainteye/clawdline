@@ -7,6 +7,7 @@ import { failureSentence } from "../legacy/bridge.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
 import { GRAPHIFY_OPEN, GRAPHIFY_SETTING, graphWord as w, readGraphify, buildGraphify, buildFailureWord, type GraphifyTarget } from "./graphify.js"
 import { graphSelection, layoutGraph } from "./layout.js"
+import { WorkingIndicator } from "../ui/WorkingIndicator.js"
 import "./graphify.css"
 
 export function GraphifyViewer() {
@@ -116,9 +117,10 @@ export function GraphifyViewer() {
      <p className="graphify-hint">{w("evidence")}</p>
     </>}
     {view.state === "source_matched" && !view.nodes.length && <p>{w("empty")}</p>}
-    {view.build?.state==="running" && <section className="graphify-build" aria-live="polite">
-     <p role="status">{w(`buildPhase_${view.build.phase}`)}</p>
-     <p>{catalogFormat("graphifyView","buildCounts",[view.build.files,(view.build.bytes/1048576).toFixed(1)])}</p>
+    {view.build?.state==="running" && <section className="graphify-build">
+     <WorkingIndicator detail={w(`buildPhase_${view.build.phase}`)}>
+      <p>{catalogFormat("graphifyView","buildCounts",[view.build.files,(view.build.bytes/1048576).toFixed(1)])}</p>
+     </WorkingIndicator>
      <p className="graphify-hint">{w("buildContinues")}</p>
     </section>}
     {view.build?.state==="failed" && <p role="alert">{buildFailureWord(view.build.error)}</p>}

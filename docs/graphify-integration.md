@@ -52,6 +52,14 @@ request from running again after a lost response or daemon restart. In-memory
 progress does not survive restart: reopen/read the viewer and explicitly retry a
 missing index with a new press. Reads and polling never start work.
 
+An accepted running build displays the shared `WorkingIndicator` with the existing
+Clawdline pixel mark, a small stepping animation, the reported phase and scanned
+file counts. It disappears on success, failure, closing or disabling the viewer.
+The component does not infer percentages or promise a completion time. Other
+surfaces may reuse it only while their own operation is confirmed active and must
+supply a localized phase. Its decorative SVG is hidden from assistive technology;
+the text announces phase changes politely, and reduced motion keeps the art still.
+
 The first explicit build requires an installed `uv` and Python 3.12 or later.
 Clawdline creates a private environment below its own state directory, with
 `graphifyy==0.9.97` and exact dependency versions and wheel SHA-256 hashes from
