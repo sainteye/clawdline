@@ -15,7 +15,7 @@ import { createPortal, flushSync } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import App from "../App.js"
 import { CLOSE_EXECUTION_CHANGED } from "../overlays/events.js"
-import { BRAND_MARK } from "../brand-mark.js"
+import { NAVIGATION_MARK } from "../brand-mark.js"
 import type { ConnectionLight } from "../connection-state.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord, type NextWord } from "../next-strings.js"
@@ -2222,7 +2222,7 @@ function GateCard(props: {
   // Which machine row has its details and rare actions (rename, remove) open.
   const [moreFor, setMoreFor] = useState<string | null>(null)
   useLayoutEffect(() => {
-    L.paintIcon(mark.current, BRAND_MARK, 3)
+    L.paintIcon(mark.current, NAVIGATION_MARK, 3)
   }, [])
   useLayoutEffect(() => {
     if (asking) focusModalContainer(card.current)

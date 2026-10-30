@@ -15,7 +15,7 @@ adds low-contrast pixel lines inside the orange body. Compact interface marks
 remain solid. This illustration does not replace installer, home-screen or
 launch-screen assets.
 
-The local console's navigation handle uses L-01 + G-02: a full-width,
+The local and hosted console navigation handles use L-01 + G-02: a full-width,
 solid green underline (`#4CCB7F`) below the orange body. It has a transparent
 sixteen-by-eleven grid so the half-cell line fits the existing button.
 
