@@ -813,8 +813,8 @@ func validateAssignment(req RootAssignmentRequest) error {
 	if !uuidShape.MatchString(req.RequestID) {
 		return badAssignment("request_id must be a lowercase UUID.")
 	}
-	if req.Assistant != "claude" && req.Assistant != "codex" {
-		return badAssignment("assistant must be claude or codex.")
+	if req.Assistant != "claude" && req.Assistant != "codex" && req.Assistant != "antigravity" {
+		return badAssignment("assistant must be claude, codex or antigravity.")
 	}
 	if req.Model != "" && req.Model != "default" && !modelName(req.Model) {
 		return badAssignment("model must be \"default\" or a model name.")

@@ -78,16 +78,18 @@ func TestRestoreRecordingFollowsTheCurrentBootAndIgnoresIncompleteReadings(t *te
 	nameless := claudeRow("%8", "")
 	codex := session.Session{ID: "%7", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
 		CWD: "/work/x", ConversationID: "cx-1"}
-	r.Observe(ctx, complete(claudeRow("%1", "c-1"), claudeRow("%2", "c-2"), shell, nameless, codex))
+	gemini := session.Session{ID: "owned:acp:1", Backend: session.BackendOwned, Assistant: session.AssistantAntigravity,
+		CWD: "/work/g", ConversationID: "gem-1", Label: "gemini label"}
+	r.Observe(ctx, complete(claudeRow("%1", "c-1"), claudeRow("%2", "c-2"), shell, nameless, codex, gemini))
 	got := recorded(t, st, "boot-now")
-	if len(got) != 3 || got["c-1"].Place != projects.PlaceID("/work/c-1") || got["c-1"].Title != "label c-1" ||
-		got["cx-1"].Assistant != "codex" || got["c-2"].Backend != "tmux" {
+	if len(got) != 4 || got["c-1"].Place != projects.PlaceID("/work/c-1") || got["c-1"].Title != "label c-1" ||
+		got["cx-1"].Assistant != "codex" || got["c-2"].Backend != "tmux" || got["gem-1"].Assistant != "antigravity" {
 		t.Fatalf("recorded = %+v", got)
 	}
 
 	// An incomplete reading — even one with nothing in it — changes nothing.
 	r.Observe(ctx, session.Inventory{Complete: false})
-	if got := recorded(t, st, "boot-now"); len(got) != 3 {
+	if got := recorded(t, st, "boot-now"); len(got) != 4 {
 		t.Fatalf("an incomplete reading changed the record: %+v", got)
 	}
 
@@ -97,7 +99,7 @@ func TestRestoreRecordingFollowsTheCurrentBootAndIgnoresIncompleteReadings(t *te
 	gone := clock
 	r.Observe(ctx, complete(claudeRow("%1", "c-1")))
 	got = recorded(t, st, "boot-now")
-	if len(got) != 3 || !got["c-1"].GoneAt.IsZero() || !got["c-2"].GoneAt.Equal(gone) || !got["cx-1"].GoneAt.Equal(gone) {
+	if len(got) != 4 || !got["c-1"].GoneAt.IsZero() || !got["c-2"].GoneAt.Equal(gone) || !got["cx-1"].GoneAt.Equal(gone) || !got["gem-1"].GoneAt.Equal(gone) {
 		t.Fatalf("recorded = %+v", got)
 	}
 	// A complete empty one — a shutdown's last scan, after iTerm2 quit and
@@ -105,7 +107,7 @@ func TestRestoreRecordingFollowsTheCurrentBootAndIgnoresIncompleteReadings(t *te
 	clock = clock.Add(time.Second)
 	r.Observe(ctx, complete())
 	got = recorded(t, st, "boot-now")
-	if len(got) != 3 || !got["c-1"].GoneAt.Equal(clock) || !got["c-2"].GoneAt.Equal(gone) {
+	if len(got) != 4 || !got["c-1"].GoneAt.Equal(clock) || !got["c-2"].GoneAt.Equal(gone) {
 		t.Fatalf("a complete empty reading left: %+v", got)
 	}
 	// Seen again in the same boot, it is open again.

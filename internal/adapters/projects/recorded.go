@@ -30,6 +30,13 @@ func Recorded(place Place, assistant, id string) bool {
 		return err == nil && st.Mode().IsRegular()
 	case AssistantCodex:
 		return transcript.CodexPath(h, id) != ""
+	case AssistantAntigravity:
+		path, ok := transcript.AntigravityPath(h, id)
+		if !ok {
+			return false
+		}
+		st, err := os.Stat(path)
+		return err == nil && st.Mode().IsRegular()
 	}
 	return false
 }

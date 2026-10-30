@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS restore_boots (
 CREATE TABLE IF NOT EXISTS restore_sessions (
   boot_id         TEXT    NOT NULL,
   conversation_id TEXT    NOT NULL,
-  assistant       TEXT    NOT NULL CHECK (assistant IN ('claude', 'codex')),
+  assistant       TEXT    NOT NULL CHECK (assistant IN ('claude', 'codex', 'antigravity')),
   cwd             TEXT    NOT NULL,
   place           TEXT    NOT NULL,
   title           TEXT    NOT NULL DEFAULT '',
@@ -81,6 +81,30 @@ func openSessionRestore(db *sql.DB) error {
 		}
 		if _, err := db.Exec(step.ddl); err != nil {
 			return fmt.Errorf("restore_sessions.%s: %w", step.column, err)
+		}
+	}
+	var createSQL string
+	_ = db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='restore_sessions'`).Scan(&createSQL)
+	if strings.Contains(createSQL, "CHECK (assistant IN ('claude', 'codex'))") {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		steps := []string{
+			`ALTER TABLE restore_sessions RENAME TO restore_sessions_old`,
+			sessionRestoreSchema,
+			`INSERT INTO restore_sessions (boot_id, conversation_id, assistant, cwd, place, title, backend, persona, first_seen, last_seen, resolution, resolved_at, gone_at, closed_at)
+			 SELECT boot_id, conversation_id, assistant, cwd, place, title, backend, persona, first_seen, last_seen, resolution, resolved_at, gone_at, closed_at FROM restore_sessions_old`,
+			`DROP TABLE restore_sessions_old`,
+		}
+		for _, s := range steps {
+			if _, err := tx.Exec(s); err != nil {
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
 		}
 	}
 	return nil

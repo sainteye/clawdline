@@ -303,6 +303,21 @@ func (s *Server) resumeConversation(ctx context.Context, reading startReading, t
 		log.Printf("audit place.%s place=%.64s ok=0 why=place_unavailable", t.verb, t.place)
 		return app.Started{}, app.ErrRestorePlaceUnavailable
 	}
+	if t.assistant == string(session.AssistantAntigravity) {
+		h := s.antigravitySessions.Load()
+		if h == nil {
+			return app.Started{}, app.StartRefusal{Status: http.StatusServiceUnavailable, Code: "provider_foundation_unavailable", Message: "Antigravity ACP session host is not available"}
+		}
+		row, err := h.Import(ctx, place.Path, t.conversation)
+		if err != nil {
+			log.Printf("audit place.%s place=%s cwd=%q assistant=%s session=%.64s ok=0 why=%v",
+				t.verb, place.ID, place.Path, t.assistant, t.conversation, err)
+			return app.Started{}, err
+		}
+		log.Printf("audit place.%s place=%s cwd=%q assistant=%s session=%s ok=1 id=%s",
+			t.verb, place.ID, place.Path, t.assistant, t.conversation, row.ID)
+		return app.Started{ID: row.ID, Backend: string(row.Backend)}, nil
+	}
 	resume := starter.Resume
 	if t.recorded {
 		resume = starter.ResumeRecorded

@@ -868,7 +868,7 @@ type workV2EpicAssignRequest struct {
 func (a workV2EpicAssignRequest) check() error {
 	switch {
 	case a.Mode == "existing_session" && strings.TrimSpace(a.TerminalID) != "":
-	case a.Mode == "new_session" && (a.Assistant == "" || a.Assistant == "codex" || a.Assistant == "claude"):
+	case a.Mode == "new_session" && (a.Assistant == "" || a.Assistant == "codex" || a.Assistant == "claude" || a.Assistant == "antigravity"):
 	default:
 		return &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assignment",
 			Message: "assign is {\"mode\":\"existing_session\",\"terminal_id\":…} or " +

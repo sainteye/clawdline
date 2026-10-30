@@ -51,12 +51,17 @@ type closeHost struct {
 	err   error
 	// conversation is the one the session in it is running, if any.
 	conversation string
+	assistant    session.Assistant
 }
 
 func (h *closeHost) Name() string { return "tmux" }
 func (h *closeHost) Inventory(context.Context) (session.Inventory, error) {
+	ast := h.assistant
+	if ast == "" {
+		ast = session.AssistantClaude
+	}
 	return session.Inventory{Complete: true, Provenance: "tmux", Sessions: []session.Session{
-		{ID: "%1", TTY: "ttys1", Backend: session.BackendTmux, Assistant: session.AssistantClaude, PID: 400,
+		{ID: "%1", TTY: "ttys1", Backend: session.BackendTmux, Assistant: ast, PID: 400,
 			CWD: "/work", ConversationID: h.conversation},
 	}}, nil
 }

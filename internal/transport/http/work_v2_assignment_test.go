@@ -437,7 +437,7 @@ func TestAnAgentSeesAndCanRetractItsRecentCompletion(t *testing.T) {
 // assignment record, a blank one from an older console still means Codex, and
 // an assistant this machine cannot open is refused before anything is written.
 func TestANewSessionAssignmentRecordsTheChosenAssistant(t *testing.T) {
-	for _, tc := range []struct{ sent, recorded string }{{"claude", "claude"}, {"codex", "codex"}, {"", "codex"}} {
+	for _, tc := range []struct{ sent, recorded string }{{"claude", "claude"}, {"codex", "codex"}, {"antigravity", "antigravity"}, {"", "codex"}} {
 		t.Run("sent="+tc.sent, func(t *testing.T) {
 			s, _, v := workV2AssignmentServer(t, session.StateIdle)
 			// This broker has no terminal to open a Session in, so the

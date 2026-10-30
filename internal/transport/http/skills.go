@@ -74,6 +74,14 @@ func (s *Server) sessionSkillsRoute(w http.ResponseWriter, r *http.Request, id s
 			}
 			return skillmenu.Codex(path, home)
 		}
+	case session.AssistantAntigravity:
+		if strings.TrimSpace(item.CWD) == "" {
+			writeRefusal(w, http.StatusNotFound, "not_found",
+				"Could not find that session's working directory")
+			return
+		}
+		key = "antigravity\x00" + item.CWD
+		read = func() skillmenu.Reading { return skillmenu.Antigravity(item.CWD, home) }
 	default:
 		if !s.admitPinnedTarget(w, r, id) {
 			return

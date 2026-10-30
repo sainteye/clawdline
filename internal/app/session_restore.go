@@ -179,7 +179,7 @@ func (r *SessionRestore) currentBoot(ctx context.Context) (string, error) {
 // with the conversation id that resuming needs.
 func restorable(s session.Session) bool {
 	return s.ConversationID != "" && s.CWD != "" &&
-		(s.Assistant == session.AssistantClaude || s.Assistant == session.AssistantCodex)
+		(s.Assistant == session.AssistantClaude || s.Assistant == session.AssistantCodex || s.Assistant == session.AssistantAntigravity)
 }
 
 // Observe records one reading. Only a reading in which every source asked

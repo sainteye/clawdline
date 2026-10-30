@@ -30,10 +30,20 @@ func TestTheSlashMenuIsReadPerSession(t *testing.T) {
 	if err := os.WriteFile(skillFile, []byte("---\ndescription: Ship it\n---\nbody\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	geminiWork := t.TempDir()
+	geminiSkillFile := filepath.Join(geminiWork, ".gemini", "skills", "audit", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(geminiSkillFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(geminiSkillFile, []byte("---\ndescription: Audit it\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	reading := session.Inventory{Provenance: "ps", Complete: true, Sessions: []session.Session{
 		{ID: "%81", TTY: "ttys081", Assistant: session.AssistantClaude, CWD: work},
 		{ID: "%82", TTY: "ttys082", Assistant: session.AssistantClaude},
 		{ID: "%83", TTY: "ttys083", Assistant: session.AssistantCodex},
+		{ID: "%84", TTY: "ttys084", Assistant: session.AssistantAntigravity, CWD: geminiWork},
+		{ID: "%85", TTY: "ttys085", Assistant: session.AssistantAntigravity},
 	}}
 	s := &Server{inventory: app.Inventory{Process: todoProcesses{reading}}, skillMenu: skillmenu.NewCache()}
 	get := func(target, method string) *httptest.ResponseRecorder {
@@ -72,6 +82,18 @@ func TestTheSlashMenuIsReadPerSession(t *testing.T) {
 	if rec := get("/v1/sessions/%2583/skills", http.MethodGet); rec.Code != http.StatusOK ||
 		!strings.Contains(rec.Body.String(), `"skills":[]`) {
 		t.Fatalf("a Codex session started fresh: %d %s", rec.Code, rec.Body)
+	}
+	recGemini := get("/v1/sessions/%2584/skills", http.MethodGet)
+	var geminiReply contract.SkillsReply
+	if err := json.Unmarshal(recGemini.Body.Bytes(), &geminiReply); err != nil || recGemini.Code != http.StatusOK {
+		t.Fatalf("a Gemini session: %d %s", recGemini.Code, recGemini.Body)
+	}
+	if len(geminiReply.Skills) != 1 || geminiReply.Skills[0].Name != "audit" || geminiReply.Skills[0].Description != "Audit it" {
+		t.Fatalf("gemini answer: %s", recGemini.Body)
+	}
+	if rec := get("/v1/sessions/%2585/skills", http.MethodGet); rec.Code != http.StatusNotFound ||
+		!strings.Contains(rec.Body.String(), `"not_found"`) {
+		t.Fatalf("a Gemini session with no directory: %d %s", rec.Code, rec.Body)
 	}
 	if rec := get("/v1/sessions/%2599/skills", http.MethodGet); rec.Code != http.StatusNotFound {
 		t.Fatalf("a session a complete reading does not hold: %d %s", rec.Code, rec.Body)

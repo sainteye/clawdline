@@ -872,9 +872,9 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
 }) {
   const [terminal, setTerminal] = useState("")
   const providerReading = useAssistantFacts("", `${item.id}:${item.version}`)
-  const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? (id === "antigravity" ? undefined : { id })
+  const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? { id }
   const [selectedAssistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
-  const assistant = selectedAssistant === "antigravity" ? "claude" : selectedAssistant
+  const assistant = selectedAssistant
   const [modelChoice, setModelChoice] = useState<{ assistant: Assistant; option: DefaultModelOption } | null>(null)
   const model = modelChoice?.assistant === assistant ? modelChoice.option : null
   const [rolesOpen, setRolesOpen] = useState(false)
@@ -1064,7 +1064,7 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
         <div className="work-new-session" role="radiogroup" aria-label={catalogWord("inline", "d7c6293edaf2")}>
         {/* The product mark alone: the button beside it already spells out the
             chosen assistant, so the name is kept for the label and tooltip. */}
-        {NEW_SESSION_ASSISTANTS.filter((choice) => choice !== "antigravity").map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
+        {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
           role="radio" aria-checked={choice === assistant} disabled={!!busy || aiSuggestionBusy || !assistantAdmits(providerFacts(choice), "start")}
           aria-label={assistantName(choice)} title={assistantUnavailable(providerFacts(choice), "start") ? catalogWord("antigravity", assistantUnavailable(providerFacts(choice), "start")!).replace("{assistant}", assistantName(choice)) : assistantName(choice)}
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
