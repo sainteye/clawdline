@@ -422,9 +422,17 @@
 | `projects.antigravity_consent_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projects.antigravity_consent_request_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `projects.folder_rows` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_jobs` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_log_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_poll_ms` | 1000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_raw_bytes` | 134217728 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_seconds` | 600 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_workers` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projects.graphify_links` | 900 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projects.graphify_nodes` | 300 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projects.graphify_request_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_runtime_bytes` | 536870912 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projects.graphify_text` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `projects.graphify_zoom` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projects.workspace_metadata_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |

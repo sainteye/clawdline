@@ -2607,7 +2607,7 @@
     "internal/adapters/antigravityprocess/client.go": "561d81c21cfb102fc87eecbaea2725a41b32dd485fc2574fa5949d1c0b898aad",
     "internal/adapters/antigravitysession/context.go": "7f7490cb414f00633f3e436d484f9d02e8a91e6f541eda148eefa6e83d6d854b",
     "internal/adapters/antigravitysession/host.go": "32d6a53893b3d412f96acca14237c87953a3cf53c2c99db471ee1960f8e5846e",
-    "internal/adapters/graphify/graphify.go": "e4b738da462f701cd3f246f59fdbafda4631dd48cf9c8431fb31abf39b6feca0",
+    "internal/adapters/graphify/graphify.go": "b655b7f8100336c4f8306b3f66e63f6ca5adbd78a62b391a6e09a39dfab44b33",
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
     "internal/adapters/nextconfig/nextconfig.go": "d9c5df3d7fa21d9b5c52c72329de6f342f72b04c1702e69000d441ac916b2e48",
     "internal/adapters/projects/antigravity_context.go": "9706da1b7af1d019ac3c7feb3713fa02698f95bfe76b81bc430de5efa62fbb53",
@@ -2668,7 +2668,7 @@
     "web/console/src/session/Start.tsx": "41ce5fb0848d5f5c202a03fd13655a87bb9ad4189473dccf1d075d437feefeb7"
   },
   "copyChecks": {
-    "en": "e38da1b2074b7d89f44bf15d746018ae5b1f0990bb6141558fa85125eaf279df",
-    "zh-Hant": "8a2544be7aca324dd14e80080d7671ac991b2752d67f20355d5ca8437382558a"
+    "en": "c0a08cbb1f98b6fc7510469b4c9b1ea9fa7819034662d2147dcb177cc83e1e78",
+    "zh-Hant": "8bed205da3f740c523a7efa74b237a8407d73c2f5edaaca60f6e266182ea7b38"
   }
 }

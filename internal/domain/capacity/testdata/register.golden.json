@@ -6681,7 +6681,7 @@
     "Name": "graphify.metadata_bytes",
     "Class": "buffer",
     "Unit": "bytes",
-    "Limit": 16777216,
+    "Limit": 67108864,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
@@ -6741,7 +6741,7 @@
     "Name": "graphify.total_read_bytes",
     "Class": "buffer",
     "Unit": "bytes",
-    "Limit": 134217728,
+    "Limit": 268435456,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
@@ -8049,6 +8049,146 @@
   },
   {
     "Register": "daemon",
+    "Name": "projects.graphify_build_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.BuildBodyBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_build_jobs",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 16,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.BuildJobsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_build_log_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.BuildLogBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_build_poll_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.BuildPollMillisecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_build_raw_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 134217728,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.BuildRawBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_build_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 600,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.BuildSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_build_workers",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.BuildWorkersLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "projects.graphify_links",
     "Class": "buffer",
     "Unit": "rows",
@@ -8104,6 +8244,26 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.graphify_runtime_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 536870912,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/graphify.RuntimeBytesLimit"
+    ]
   },
   {
     "Register": "daemon",

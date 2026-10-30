@@ -267,6 +267,8 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["PUT", "/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-save"],
     ["POST", "/v1/projects/cloud-p1/antigravity-consent", "project-antigravity-consent-change"],
     ["POST", "/v1/projects/cloud-p1/unify", "project-unify-apply"],
+ ["POST","/v1/projects/cloud-p1/graphify","project-graphify-build"],
+ ["POST","/v1/sessions/s1/graphify","session-graphify-build"],
     // The plan is a read, answered by `relay-reader.ts`.
     ["GET", "/v1/projects/cloud-p1/unify", null],
     // The list is a read and is answered by `relay-reader.ts`, not here, and
@@ -2853,3 +2855,23 @@ test("integration opt-ins read and write only the selected machine", async () =>
   assert.equal((await reader.fetch("/v1/settings/integrations?project=other")).status, 501)
   assert.equal((await reader.fetch("/v1/settings/integrations?project=other", post({ graphify_enabled: true }))).status, 501)
 })
+
+ test("Graphify builds carry explicit machine writes and pinned Session commands",async()=>{
+  const client=new FakeClient();client.rows=[row("s1")]
+  client.descriptors.set("mac-a",{machine:{commands:[...GO_DAEMON.machine.commands,"project-graphify-build","session-graphify-build"]}})
+  const {reader}=seam(client)
+  const headers={"Idempotency-Key":"build-1"}
+  assert.equal((await reader.fetch("/v1/projects/cloud-p1/graphify",post({},headers))).status,200)
+  assert.deepEqual(client.calls.pop(),["_machineRequestAs","build-1","mac-a","project-graphify-build",{project:"p1"},"action"])
+  assert.equal((await reader.fetch("/v1/sessions/s1/graphify",post({},headers))).status,200)
+  assert.deepEqual(client.calls.pop(),["_read",{machine:"mac-a",session:"s1"},"session-graphify-build",{request:"build-1",execution_generation:EXECUTION},"action:build-1",undefined,undefined])
+  for(const path of ["/v1/projects/cloud-p1/graphify","/v1/sessions/s1/graphify"]){
+   client.calls=[]
+   for(const body of [{path:"/outside"},{backend:"openai"},{command:"run"}])assert.equal((await reader.fetch(path,post(body,headers))).status,400)
+   assert.equal((await reader.fetch(path+"?path=/outside",post({},headers))).status,400)
+   assert.equal((await reader.fetch(path,post({}))).status,400)
+   assert.equal(client.calls.length,0)
+  }
+  client.allowWrites=false
+  assert.equal((await reader.fetch("/v1/projects/cloud-p1/graphify",post({},headers))).status,403)
+ })

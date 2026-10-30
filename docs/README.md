@@ -124,4 +124,4 @@ Start with the [task-based user index](user/README.md). It leads to a first Sess
 
 - [Graphify local pilot (2026-10-30)](experiments/graphify-local-pilot-2026-10-30.md): fixed-source retrieval, call relationships, index maintenance and the boundary on adoption.
 
-[Optional Graphify guidance and project graph viewer](graphify-integration.md) describes the machine opt-in, per-use source checks, and the read-only Session/Project graph view available on desktop and phone.
+[Optional Graphify guidance and project graph viewer](graphify-integration.md) describes the machine opt-in, per-use source checks, the Session/Project graph view, and explicit local-only code index creation on desktop and phone.

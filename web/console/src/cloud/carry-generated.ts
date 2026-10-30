@@ -86,6 +86,7 @@ export const CARRIED = {
   "project-file-save": "PUT /v1/projects/{project}/files/{file}",
   "project-folders": "GET /v1/project-folders?path=&machine=",
   "project-graphify": "GET /v1/projects/{project}/graphify",
+  "project-graphify-build": "POST /v1/projects/{project}/graphify",
   "project-hide": "DELETE /v1/places",
   // Project settings sync (docs/project-sync.md). The two source reads are also
   // asked of *another* paired machine by `cloud/project-sync.ts`, which is how
@@ -133,6 +134,7 @@ export const CARRIED = {
   screen: "GET /v1/sessions/{id}/screen",
   send: "POST /v1/sessions/{id}/send",
   "session-graphify": "GET /v1/sessions/{id}/graphify",
+  "session-graphify-build": "POST /v1/sessions/{id}/graphify",
   "session-receipt": "GET /v1/sessions/{id}/cloud-receipts/{request}?action=&execution_generation=",
   "session-snippets": "GET /v1/playbook-project?session={id}",
   "sessions.list": "GET /v1/sessions?parts=list (one machine-level display read)",

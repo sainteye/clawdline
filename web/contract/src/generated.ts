@@ -3513,6 +3513,16 @@ export interface GitSnapshot {
   head: string
 }
 
+export interface GraphifyBuildStatus {
+  bytes: number
+  error: string
+  files: number
+  phase: string
+  started_at: number
+  state: string
+  updated_at: number
+}
+
 export interface GraphifyLink {
   confidence: string
   relation: string
@@ -3529,6 +3539,8 @@ export interface GraphifyNode {
 }
 
 export interface GraphifyView {
+  build: GraphifyBuildStatus
+  can_build: boolean
   checked_at: number
   links: GraphifyLink[]
   nodes: GraphifyNode[]
@@ -3537,6 +3549,7 @@ export interface GraphifyView {
   total_links: number
   total_nodes: number
   truncated: boolean
+  unverified_sources: number
 }
 
 /**

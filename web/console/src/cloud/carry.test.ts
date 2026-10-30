@@ -170,6 +170,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   // compile time (`Carried<K>`); this says so of the parser's actual output,
   // which is what reaches the machine.
   const routes: [string, string][] = [
+ ["POST","/v1/projects/p1/graphify"],
+ ["POST","/v1/sessions/s1/graphify"],
     ["POST", "/v1/sessions/s1/send"],
     ["POST", "/v1/sessions/s1/key"],
     ["POST", "/v1/sessions/s1/close"],
@@ -330,7 +332,9 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["project-antigravity-consent-change"], "POST /v1/projects/{project}/antigravity-consent")
   assert.ok(!("project-antigravity-consent-status" in DEFERRED))
   assert.ok(!("project-antigravity-consent-change" in DEFERRED))
-  assert.equal(Object.keys(CARRIED).length, 177)
+  assert.equal(CARRIED["project-graphify-build"],"POST /v1/projects/{project}/graphify")
+  assert.equal(CARRIED["session-graphify-build"],"POST /v1/sessions/{id}/graphify")
+  assert.equal(Object.keys(CARRIED).length, 179)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

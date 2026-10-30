@@ -45,3 +45,47 @@ func TestGraphifyContentReadPinsTheSelectedExecution(t *testing.T) {
 		t.Fatalf("unpinned read: %+v %v", a, r.seen)
 	}
 }
+
+func TestGraphifyBuildsAreCommandsWithKnownIdentityAndNoClientOptions(t *testing.T) {
+	for _, prefix := range []string{"project", "session"} {
+		input := map[string]any{"type": prefix + "-graphify-build", "request": "build-1", "session": MachineReplySession}
+		path := "/v1/projects/p1/graphify"
+		if prefix == "project" {
+			input["project"] = "p1"
+		} else {
+			input["session"] = pane
+			input["execution_generation"] = pinnedGeneration
+			path = "/v1/sessions/%2519/graphify"
+		}
+		r := &router{status: 202, body: `{"state":"running"}`}
+		b := open(r)
+		a := b.Handle(t.Context(), request(t, ClassCtl, input))
+		if a.Status != 202 || len(r.seen) != 1 || r.last().Method != "POST" || r.last().Path != path || string(r.last().Body) != "{}" || r.last().Header["Idempotency-Key"] == "" {
+			t.Fatalf("%+v %v", a, r.seen)
+		}
+		r = &router{}
+		b = open(r)
+		b.AllowCommands = func() bool { return false }
+		a = b.Handle(t.Context(), request(t, ClassCtl, input))
+		if a.OK() || len(r.seen) != 0 {
+			t.Fatalf("read-only command accepted: %+v", a)
+		}
+		for _, option := range []string{"path", "backend", "command", "item"} {
+			input[option] = "outside"
+			r = &router{}
+			a = open(r).Handle(t.Context(), request(t, ClassCtl, input))
+			if a.OK() || len(r.seen) != 0 {
+				t.Fatalf("%s accepted: %+v", option, a)
+			}
+			delete(input, option)
+		}
+		if prefix == "session" {
+			delete(input, "execution_generation")
+			r = &router{}
+			a = open(r).Handle(t.Context(), request(t, ClassCtl, input))
+			if a.OK() || len(r.seen) != 0 {
+				t.Fatal("unpinned mutation accepted")
+			}
+		}
+	}
+}

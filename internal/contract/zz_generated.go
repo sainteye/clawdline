@@ -3034,6 +3034,16 @@ type GitSnapshot struct {
 	Head string `json:"head"`
 }
 
+type GraphifyBuildStatus struct {
+	Bytes     int64  `json:"bytes"`
+	Error     string `json:"error"`
+	Files     int64  `json:"files"`
+	Phase     string `json:"phase"`
+	StartedAt int64  `json:"started_at"`
+	State     string `json:"state"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
 type GraphifyLink struct {
 	Confidence string `json:"confidence"`
 	Relation   string `json:"relation"`
@@ -3050,14 +3060,17 @@ type GraphifyNode struct {
 }
 
 type GraphifyView struct {
-	CheckedAt  int64          `json:"checked_at"`
-	Links      []GraphifyLink `json:"links"`
-	Nodes      []GraphifyNode `json:"nodes"`
-	Reason     string         `json:"reason"`
-	State      string         `json:"state"`
-	TotalLinks int64          `json:"total_links"`
-	TotalNodes int64          `json:"total_nodes"`
-	Truncated  bool           `json:"truncated"`
+	Build             GraphifyBuildStatus `json:"build"`
+	CanBuild          bool                `json:"can_build"`
+	CheckedAt         int64               `json:"checked_at"`
+	Links             []GraphifyLink      `json:"links"`
+	Nodes             []GraphifyNode      `json:"nodes"`
+	Reason            string              `json:"reason"`
+	State             string              `json:"state"`
+	TotalLinks        int64               `json:"total_links"`
+	TotalNodes        int64               `json:"total_nodes"`
+	Truncated         bool                `json:"truncated"`
+	UnverifiedSources int64               `json:"unverified_sources"`
 }
 
 // GET /v1/health, open without a token: that this daemon is alive, which

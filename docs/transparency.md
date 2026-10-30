@@ -124,3 +124,13 @@ Traditional Chinese found that their context, consent and first-input explanatio
 remain accurate. The new account quota reader sends only the fixed `/usage`
 metadata command with no launch instructions, role snapshot or model generation.
 The ACP excerpt and reviewed source receipts follow the changed implementation.
+
+
+The Graphify lookup launch instruction is unchanged by explicit local index
+creation. The graph viewer now has a separate, user-triggered Build index action:
+it prepares a hash-pinned private parser and runs code-only extraction without a
+model API. The machine switch alone still installs or builds nothing. Review of
+the original launch excerpt and both language cards distinguishes these triggers;
+the existing cooperative per-query check now shares the larger bounded metadata
+read budget used by native project graphs. The website snapshot must retain the
+latest workflow-profile content when importing this reviewed product revision.

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10011,
-  "riskKeys": 4449,
-  "nonRiskCount": 5562,
+  "englishContentKeys": 10059,
+  "riskKeys": 4475,
+  "nonRiskCount": 5584,
   "groups": [
     {
       "name": "admin / other",
@@ -342,7 +342,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 378,
+      "count": 385,
       "sources": [
         null
       ],
@@ -634,8 +634,15 @@
         "capacityRow.projects.antigravity_consent_request_ms.what",
         "capacityRow.projects.folder_rows.full",
         "capacityRow.projects.folder_rows.what",
+        "capacityRow.projects.graphify_build_body_bytes.what",
+        "capacityRow.projects.graphify_build_jobs.what",
+        "capacityRow.projects.graphify_build_log_bytes.what",
+        "capacityRow.projects.graphify_build_raw_bytes.what",
+        "capacityRow.projects.graphify_build_seconds.what",
+        "capacityRow.projects.graphify_build_workers.what",
         "capacityRow.projects.graphify_nodes.full",
         "capacityRow.projects.graphify_nodes.what",
+        "capacityRow.projects.graphify_runtime_bytes.what",
         "capacityRow.projects.graphify_text.full",
         "capacityRow.projects.graphify_text.what",
         "capacityRow.projects.graphify_zoom.full",
@@ -1131,12 +1138,24 @@
     },
     {
       "name": "graphifyView / other",
-      "count": 20,
+      "count": 32,
       "sources": [
         "src/graphify/GraphifyViewer.tsx"
       ],
       "keys": [
         "graphifyView.all",
+        "graphifyView.build",
+        "graphifyView.buildContinues",
+        "graphifyView.buildCounts",
+        "graphifyView.buildCustomInputs",
+        "graphifyView.buildHistoryFull",
+        "graphifyView.buildIndexExists",
+        "graphifyView.buildPhase_checking",
+        "graphifyView.buildPhase_parsing",
+        "graphifyView.buildPhase_preparing",
+        "graphifyView.buildPhase_scanning",
+        "graphifyView.buildRetry",
+        "graphifyView.buildStarting",
         "graphifyView.canvas",
         "graphifyView.checked",
         "graphifyView.close",
@@ -1908,7 +1927,7 @@
     },
     {
       "name": "http / other",
-      "count": 573,
+      "count": 576,
       "sources": [
         "internal/productcopy/http_refusals/en.json"
       ],
@@ -2088,6 +2107,7 @@
         "http.4f3d488ff6a50a8d",
         "http.4f93dedd2c3479f0",
         "http.4f9cb2087a7b1afe",
+        "http.503b58d15178edc2",
         "http.5059039f40d7a8c5",
         "http.50ad73802030517b",
         "http.50e615fe60f2e9aa",
@@ -2200,6 +2220,7 @@
         "http.847843bf2f20c35c",
         "http.84d8001798484861",
         "http.84ebf2ca42f50313",
+        "http.851fee22f3dee8cb",
         "http.8533582e36254568",
         "http.859ca9439f67856c",
         "http.861f5f391bb04651",
@@ -2382,6 +2403,7 @@
         "http.cfd5f6924ec3568e",
         "http.d03a621f7d66057f",
         "http.d057ee63a855caa5",
+        "http.d06ba0fa3093ad93",
         "http.d0dc81811afabdd6",
         "http.d13b0026c788f485",
         "http.d1427f4174aad548",

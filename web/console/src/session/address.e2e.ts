@@ -96,6 +96,9 @@ function protocolRow() {
 }
 let graphifyScenario = "matched"
 let graphifyReads = 0
+let graphifyBuilds=0
+let graphifyBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""}
+let graphifyBuildResult=""
 const graphifyFixture = {state:"source_matched",reason:"graphify_sources_match",checked_at:1793300000,total_nodes:3,total_links:2,truncated:false,
  nodes:[{id:"a",label:"Entry",file:"src/entry.ts",location:"L1",community:"0"},
  {id:"b",label:"Worker",file:"src/worker.ts",location:"L12",community:"1"},
@@ -349,10 +352,22 @@ function daemon(): Server {
       return
     }
     if (/^\/v1\/(sessions|projects)\/[^/]+\/graphify$/.test(path)) {
+      if(req.method==="POST"){
+       void requestJSON(req).then(body=>{
+        if(!integrationSettings.graphify_enabled)return json(res,403,{error:"graphify_disabled"})
+        assert.deepEqual(body,{});assert.ok(req.headers["idempotency-key"])
+        graphifyBuilds++;graphifyBuild={state:"running",phase:"preparing",files:2,bytes:1024,started_at:1793300000,updated_at:1793300000,error:""}
+        json(res,202,graphifyBuild)
+       });return
+      }
       graphifyReads++
+      if(graphifyBuild.state==="running" && graphifyBuildResult){
+       if(graphifyBuildResult==="success"){graphifyScenario="matched";graphifyBuild={...graphifyBuild,state:"succeeded",phase:"complete"}}
+       else graphifyBuild={...graphifyBuild,state:"failed",phase:"failed",error:graphifyBuildResult}
+      }
       if (!integrationSettings.graphify_enabled) return json(res,403,{error:{code:"graphify_disabled",message:"Graphify is off."}})
       if (graphifyScenario === "failure") return json(res,503,{error:{code:"graphify_unavailable",message:"Graph unavailable."}})
-      return json(res,200,graphifyScenario === "missing" ? {...graphifyFixture,state:"missing",nodes:[],links:[],total_nodes:0,total_links:0} : {...graphifyFixture,state:graphifyScenario === "stale" ? "stale" : "source_matched",truncated:graphifyScenario === "large",total_nodes:graphifyScenario === "large" ? 1000 : 3})
+      return json(res,200,graphifyScenario === "missing" ? {...graphifyFixture,build:graphifyBuild,can_build:graphifyBuild.state!=="running",state:"missing",nodes:[],links:[],total_nodes:0,total_links:0} : {...graphifyFixture,build:graphifyBuild,can_build:false,state:graphifyScenario === "stale" ? "stale" : "source_matched",truncated:graphifyScenario === "large",total_nodes:graphifyScenario === "large" ? 1000 : 3})
     }
     const info = /^\/v1\/sessions\/([^/]+)\/info$/.exec(path)
     if (info && req.method === "GET") {
@@ -3416,3 +3431,40 @@ test("Graphify project viewer respects the toggle and renders safe graphs in bot
   })
  }
 })
+
+ test("Graphify local index build survives closing, explains failure and loads the completed graph",async()=>{
+  for(const size of [DESK,PHONE])for(const tag of ["en","zh-Hant"]){
+   graphifyScenario="missing";graphifyBuilds=0;graphifyBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""};graphifyBuildResult=""
+   integrationSettings={workflow_skills_enabled:false,graphify_enabled:true}
+   await inTab(size,async tab=>{
+    const wait=async(expression:string)=>{const end=Date.now()+6000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+    await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
+    await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(tag)})`);await tab.reload();await tab.until("Session ready",s=>s.open===TMUX)
+    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
+    await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector(".graphify-build button")`)
+    assert.equal(graphifyBuilds,0)
+    assert.ok(await tab.run(`document.querySelector('.graphify-build').textContent.includes(${JSON.stringify(tag==="en"?"no model or paid API":"不使用模型或付費 API")})`))
+    if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-graphify-build-missing`)}
+    await tab.run(`document.querySelector('.graphify-build button').click()`);await wait(`document.querySelector('.graphify-build')?.textContent.includes(${JSON.stringify(tag==="en"?"Preparing":"準備")}) && !document.querySelector('.graphify-build button')`)
+    assert.equal(graphifyBuilds,1)
+    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-running`)
+    await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+    const reads=graphifyReads;await new Promise(r=>setTimeout(r,1200));assert.equal(graphifyReads,reads)
+    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!document.getElementById("info").hidden && !!document.querySelector("[data-graphify-open]")`)
+    await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector('.graphify-build')`)
+    assert.equal(graphifyBuilds,1)
+    graphifyBuildResult="prerequisite_missing"
+    await wait(`!!document.querySelector('.graphify-dialog [role="alert"]') && !!document.querySelector('.graphify-build button')`)
+    assert.ok(await tab.run(`document.querySelector('.graphify-dialog [role="alert"]').textContent.includes('Python 3.12')`))
+    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-failed`)
+    graphifyBuildResult=""
+    await tab.run(`document.querySelector('.graphify-build button').click()`);await wait(`!document.querySelector('.graphify-build button')`)
+    assert.equal(graphifyBuilds,2);graphifyBuildResult="success"
+    await wait(`document.querySelectorAll('.graphify-node').length===3`)
+    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-complete`)
+    assert.equal(graphifyBuilds,2)
+    assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
+    await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+   })
+  }
+ })

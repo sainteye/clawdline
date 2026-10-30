@@ -58,6 +58,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-file-save":                  genDecodeProjectFileSave,
 	"project-folders":                    genDecodeProjectFolders,
 	"project-graphify":                   genDecodeProjectGraphify,
+	"project-graphify-build":             genDecodeProjectGraphifyBuild,
 	"project-hide":                       genDecodeProjectHide,
 	"project-manifest":                   genDecodeProjectManifest,
 	"project-mirror":                     genDecodeProjectMirror,
@@ -87,6 +88,7 @@ var generatedDecoders = map[string]genDecoder{
 	"screen":                             genDecodeScreen,
 	"send":                               genDecodeSend,
 	"session-graphify":                   genDecodeSessionGraphify,
+	"session-graphify-build":             genDecodeSessionGraphifyBuild,
 	"session-receipt":                    genDecodeSessionReceipt,
 	"session-snippets":                   genDecodeSessionSnippets,
 	"sessions.list":                      genDecodeSessionsList,
@@ -1417,6 +1419,27 @@ func genDecodeProjectGraphify(b body) (plan, LocalRequest, bool) {
 	return p, req, true
 }
 
+// genDecodeProjectGraphifyBuild is the `project-graphify-build` row's decode.
+func genDecodeProjectGraphifyBuild(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/graphify"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = []byte("{}")
+	return p, req, true
+}
+
 // genDecodeProjectHide is the `project-hide` row's decode.
 func genDecodeProjectHide(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
@@ -2003,6 +2026,30 @@ func genDecodeSessionGraphify(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/sessions/" + segment(genText(b["session"])) + "/graphify"
 	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeSessionGraphifyBuild is the `session-graphify-build` row's decode.
+func genDecodeSessionGraphifyBuild(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "execution_generation", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("execution_generation", genRule{kind: "string", checks: []func(string) bool{executionGenerationValid}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, true)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	if v, named := b["execution_generation"]; named {
+		p.executionGeneration = genText(v)
+	}
+	path := "/v1/sessions/" + segment(genText(b["session"])) + "/graphify"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = []byte("{}")
 	return p, req, true
 }
 
