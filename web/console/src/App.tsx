@@ -12,7 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client, followsRelay } from "./client.js"
-import { BRAND_MARK } from "./brand-mark.js"
+import { NAVIGATION_MARK } from "./brand-mark.js"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
 import { SetupGuide } from "./setup/SetupGuide.js"
 import { useFleet, usePoll } from "./useFleet.js"
@@ -375,7 +375,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   }, [])
 
   useLayoutEffect(() => {
-    L.paintIcon(markRef.current, BRAND_MARK, 3)
+    L.paintIcon(markRef.current, NAVIGATION_MARK, 3)
   }, [])
 
   // `Sidebar.close`: where the focus is is read before the drawer goes, because
