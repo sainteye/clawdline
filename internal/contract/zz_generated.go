@@ -3250,13 +3250,19 @@ type ImageStoreResult struct {
 }
 
 type IntegrationSettingsRequest struct {
-	GraphifyEnabled       bool `json:"graphify_enabled,omitempty"`
-	WorkflowSkillsEnabled bool `json:"workflow_skills_enabled,omitempty"`
+	GraphifyEnabled bool `json:"graphify_enabled,omitempty"`
+
+	// Machine-wide main workflow; omitted by older daemons.
+	WorkflowProfile       string `json:"workflow_profile,omitempty"`
+	WorkflowSkillsEnabled bool   `json:"workflow_skills_enabled,omitempty"`
 }
 
 type IntegrationSettingsSnapshot struct {
 	// Machine-wide explicit opt-in; absent settings remain disabled.
 	GraphifyEnabled bool `json:"graphify_enabled"`
+
+	// Machine-wide main workflow; omitted by older daemons.
+	WorkflowProfile string `json:"workflow_profile,omitempty"`
 
 	// Machine-wide explicit opt-in; absent settings remain disabled.
 	WorkflowSkillsEnabled bool `json:"workflow_skills_enabled"`
@@ -5771,6 +5777,7 @@ type SessionInfo struct {
 	RepositoryUnreadable ProjectGitFailure  `json:"repositoryUnreadable,omitempty"`
 	Session              SessionInfoSession `json:"session"`
 	Usage                *SessionInfoUsage  `json:"usage,omitempty"`
+	Workflow             *SessionWorkflow   `json:"workflow,omitempty"`
 }
 
 // How full this conversation's context window is. The used side is counted —
@@ -6410,6 +6417,16 @@ type SessionWaitTarget struct {
 	TaskID string `json:"task_id"`
 }
 
+type SessionWorkflow struct {
+	Digest          string          `json:"digest,omitempty"`
+	GraphifyEnabled *bool           `json:"graphify_enabled"`
+	ProfileID       string          `json:"profile_id,omitempty"`
+	Source          string          `json:"source,omitempty"`
+	Stages          []WorkflowStage `json:"stages,omitempty"`
+	State           string          `json:"state"`
+	Version         string          `json:"version,omitempty"`
+}
+
 type SessionsSnapshot struct {
 	At       int64        `json:"at"`
 	Scan     Scan         `json:"scan"`
@@ -6629,6 +6646,7 @@ type SettingsRequest struct {
 
 	// 360 to 1400.
 	Width                 *float64 `json:"width"`
+	WorkflowProfile       *string  `json:"workflow_profile"`
 	WorkflowSkillsEnabled *bool    `json:"workflow_skills_enabled"`
 
 	// 0.05 to 0.80.
@@ -6883,6 +6901,7 @@ type SettingsSnapshot struct {
 
 	// The bar's width in points.
 	Width                 *float64 `json:"width"`
+	WorkflowProfile       *string  `json:"workflow_profile"`
 	WorkflowSkillsEnabled *bool    `json:"workflow_skills_enabled"`
 
 	// Where the bar's top sits, as a fraction of screen height.
@@ -9844,6 +9863,13 @@ type WorkflowSettingsSnapshot struct {
 	// field.
 	ItermIntegration     *bool `json:"iterm_integration"`
 	SessionAutoDiscovery bool  `json:"session_auto_discovery"`
+}
+
+type WorkflowStage struct {
+	Acceptance string `json:"acceptance"`
+	ID         string `json:"id"`
+	Output     string `json:"output"`
+	Title      string `json:"title"`
 }
 
 type WorktreeCanonical struct {

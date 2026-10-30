@@ -1,5 +1,7 @@
 # 機器層級工作流程技能試行
 
+Current machine selection, frozen launch records and Poteto adaptation are described in [machine workflow profiles](workflow-profiles.md). The pilot below records the original two-switch implementation and its separate evaluation checkpoint.
+
 狀態：2026-10-30 本機試行；**尚未評估行為成效**。
 [English](workflow-skill-pilot.md)
 

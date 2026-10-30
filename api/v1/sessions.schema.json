@@ -4,6 +4,24 @@
   "title": "The fleet list",
   "description": "GET /v1/sessions, and the `sessions` frame of GET /v1/events. They are the same payload because they are the same snapshot; two builders would drift and a client could not tell which one it got.",
   "$defs": {
+    "WorkflowStage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "title", "output", "acceptance"],
+      "properties": {
+        "id": { "type": "string" }, "title": { "type": "string" },
+        "output": { "type": "string" }, "acceptance": { "type": "string" }
+      }
+    },
+    "SessionWorkflow": {
+      "type": "object", "additionalProperties": false, "required": ["state"],
+      "properties": {
+        "state": { "type": "string" },
+        "profile_id": { "type": "string" }, "version": { "type": "string" },
+        "source": { "type": "string" }, "digest": { "type": "string" },
+        "graphify_enabled": { "type": "boolean", "nullable": true },
+        "stages": { "type": "array", "items": { "$ref": "#/$defs/WorkflowStage" } }
+      }
+    },
     "WorkState": {
       "description": "One projection of what this session needs, ranked so a reader can sort by it. `unknown` outranks nothing and means the inputs were incomplete.",
       "type": "string",
@@ -429,6 +447,7 @@
       "additionalProperties": false,
       "required": ["models", "session"],
       "properties": {
+        "workflow": { "$ref": "#/$defs/SessionWorkflow" },
         "remotePermission": { "$ref": "#/$defs/SessionMenu" },
         "remotePermissionKnown": { "type": "boolean", "description": "The live RC worker answered the permission query. Without this, an absent menu does not establish that no request is pending." },
         "remotePermissionExpect": { "type": "string", "description": "Fingerprint of the exact RC tool permission, including request ID, complete tool input, bridge and kernel generation." },

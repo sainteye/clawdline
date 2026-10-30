@@ -38,3 +38,14 @@
 .settings-browser-pairing .chip {
   display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box;
 }
+
+/* The native picker owns keyboard and phone positioning; the SVG only paints its caret. */
+.workflow-profile-picker { position: relative; display: inline-flex; align-items: center; flex: 0 1 auto; min-width: 0; }
+.workflow-profile-picker select {
+  appearance: none; box-sizing: border-box; min-height: 44px; max-width: 100%;
+  padding: 8px 34px 8px 12px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--card); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+}
+.workflow-profile-picker svg { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; pointer-events: none; fill: none; stroke: currentColor; stroke-width: 1.5; color: var(--dim); }
+.workflow-profile-picker select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.workflow-profile-picker select:disabled { cursor: default; opacity: .5; }

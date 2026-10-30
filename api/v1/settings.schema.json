@@ -12,6 +12,7 @@
         "path"
       ],
       "properties": {
+        "workflow_profile": { "type": "string", "nullable": true },
         "workflow_skills_enabled": { "type": "boolean", "nullable": true },
         "graphify_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
@@ -282,6 +283,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "workflow_profile": { "type": "string", "nullable": true },
         "workflow_skills_enabled": { "type": "boolean", "nullable": true },
         "graphify_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
@@ -570,6 +572,7 @@
         "graphify_enabled"
       ],
       "properties": {
+        "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"], "description": "Machine-wide main workflow; omitted by older daemons." },
         "workflow_skills_enabled": {
           "type": "boolean",
           "description": "Machine-wide explicit opt-in; absent settings remain disabled."
@@ -584,6 +587,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"], "description": "Machine-wide main workflow; omitted by older daemons." },
         "workflow_skills_enabled": {
           "type": "boolean"
         },

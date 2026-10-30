@@ -39,3 +39,20 @@ func TestIntegrationSettingsCrossOnlyTheirNarrowMachineRoute(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkflowProfileCrossesOnlyTheIntegrationSettingsRoute(t *testing.T) {
+	for _, profile := range []string{"clawdline", "superpowers", "poteto"} {
+		r := &router{}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "integration-settings-update", "session": MachineReplySession, "request": "req-profile", "changes": map[string]any{"workflow_profile": profile}}))
+		if answer.Status != 200 || len(r.seen) != 1 || r.last().Path != "/v1/settings/integrations" || string(r.last().Body) != `{"workflow_profile":"`+profile+`"}` {
+			t.Fatalf("profile route mismatch: %+v %+v", answer, r.seen)
+		}
+	}
+	for _, value := range []any{"", "unknown", true, nil} {
+		r := &router{}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "integration-settings-update", "session": MachineReplySession, "request": "req-profile-bad", "changes": map[string]any{"workflow_profile": value}}))
+		if answer.Code != "malformed_command" || len(r.seen) != 0 {
+			t.Fatalf("invalid profile crossed boundary: %+v", answer)
+		}
+	}
+}

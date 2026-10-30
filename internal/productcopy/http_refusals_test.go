@@ -34,7 +34,7 @@ func TestHTTPRefusalTextRequiresExactWireDetailAndKnownKey(t *testing.T) {
 			t.Errorf("%+v rendered %q", test, got)
 		}
 	}
-	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1290 || total != 1290 {
+	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1292 || total != 1292 {
 		t.Fatalf("Traditional Chinese coverage = %d/%d", translated, total)
 	}
 	const handoffDetail = "The handoff package could not be written; nothing was opened."
@@ -89,6 +89,15 @@ func TestAntigravityFirstInputRefusalsHaveTraditionalChineseCopy(t *testing.T) {
 		key := HTTPRefusalKey(detail)
 		if key == "" || HTTPRefusalText("zh-Hant", key, detail) == detail || HTTPRefusalText("ja", key, detail) != detail {
 			t.Fatalf("first-input translation or fallback missing: %q", detail)
+		}
+	}
+}
+
+func TestWorkflowSelectionRefusalsHaveTraditionalChineseCopy(t *testing.T) {
+	for _, detail := range []string{"Choose clawdline, superpowers or poteto.", "Send either workflow_profile or the legacy opt-in, not both."} {
+		key := HTTPRefusalKey(detail)
+		if key == "" || HTTPRefusalText("zh-Hant", key, detail) == detail || HTTPRefusalText("ja", key, detail) != detail {
+			t.Fatalf("workflow refusal copy missing: %s", detail)
 		}
 	}
 }
