@@ -42,6 +42,17 @@ twice in the loop.
 These files are previews and have not been wired into the website. Keep a static
 poster available if an animation is later adopted for a reduced-motion setting.
 
+The revised motion study sends both highlights from left to right at constant
+speed. F-04 no longer reverses direction. Each highlight continues from the left
+after exiting the right edge; the periodic light copies preserve the loop seam.
+The body and its fine grid remain unchanged. These revisions run at 25 frames per
+second; the earlier drafts above are retained for comparison.
+
+| Revised concept | Loop | GIF preview | Animated WebP alternative |
+|---|---|---|---|
+| F-01, fast left-to-right flow | 1 second, 25 frames | [GIF](assets/brand-line-concepts/f-01-fast-ltr.gif), 474,174 bytes | [WebP](assets/brand-line-concepts/f-01-fast-ltr.webp), 56,108 bytes |
+| F-04, soft left-to-right flow | 1.2 seconds, 30 frames | [GIF](assets/brand-line-concepts/f-04-fast-ltr.gif), 858,630 bytes | [WebP](assets/brand-line-concepts/f-04-fast-ltr.webp), 69,304 bytes |
+
 `internal/domain/icon` resolves a local mark in this order:
 
 1. A saved mark in `CLAWDLINE_NEXT_DIR/project-icon-overrides.json`, using the
