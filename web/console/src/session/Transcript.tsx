@@ -73,6 +73,7 @@ import { VideoCards } from "./VideoCards.js"
 import { ToolResult } from "./ToolResult.js"
 import { AsyncQuestion } from "./AsyncQuestion.js"
 import { NativeToolRun, nativeRunLength } from "./NativeToolActivity.js"
+import { ToolRow, ToolRunToggle } from "./ToolPresentation.js"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -723,7 +724,7 @@ function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boo
   const drawn = blocks.map((block) => {
     const start = at
     at += block.rows.length
-    if (block.kind === "native") return [<NativeToolRun key={"native:"+(block.rows[0].id || block.rows[0].activity?.toolCallID || start)} entries={block.rows} sessionID={view.sessionID}/>]
+    if (block.kind === "native") return [<NativeToolRun key={"native:"+(block.rows[0].id || block.rows[0].activity?.toolCallID || start)} entries={block.rows} sessionID={view.sessionID} toolLabel={view.who.tool} countLabel={count => L.fillString(L.strings.webSteps, { n: count })}/>]
     if (block.kind === "run") return runHTML(view, block.rows, block.live, start)
     if (block.kind === "explored") return exploredRunHTML(view, block.rows, start)
     if (block.kind === "ask") return [askHTML(view, block.rows[0], start)]
@@ -1203,26 +1204,14 @@ function toolRowHTML(v: View, e: Entry, live: boolean, n: number) {
   const key = "e" + foldKey([e])
   const open = !!v.expanded[key]
   return (
-    <div className="entry toolrow" data-role="tool" data-live={live ? "1" : undefined} key={e.detail ? "tool:" + (v.sessionID ?? "") + e.detail.reference : key + ":" + n}>
-      <div className="who">{v.who.tool}</div>
-      <div className="body">
-        <button
-          type="button"
-          className="toolline"
-          data-fold={key}
-          aria-expanded={open ? "true" : "false"}
-          onClick={() => v.toggle(key)}
-        >
-          {e.tool ? <span className="toolname">{e.tool}</span> : <span className="caret">{open ? "⏷" : "⏵"}</span>}
-          <span className="subject">{firstLine(e.text)}</span>
-        </button>
+    <ToolRow label={v.who.tool} name={e.tool} subject={firstLine(e.text)} open={open} onToggle={() => v.toggle(key)} foldKey={key} live={live}
+      key={e.detail ? "tool:" + (v.sessionID ?? "") + e.detail.reference : key + ":" + n}>
         {e.detail ? <LazyEntryBody key={(v.sessionID ?? "") + e.detail.reference} sessionID={v.sessionID} detail={e.detail} open={open}>
           {(full) => <div className="toolbody" onClick={copyFrom} dangerouslySetInnerHTML={{ __html: L.richTextHTML(full.text) }} />}
         </LazyEntryBody> : open ? (
           <div className="toolbody" onClick={copyFrom} dangerouslySetInnerHTML={{ __html: L.richTextHTML(e.text) }} />
         ) : null}
-      </div>
-    </div>
+    </ToolRow>
   )
 }
 
@@ -1240,22 +1229,8 @@ function runHTML(v: View, rows: Entry[], live: boolean, at: number) {
 /** `foldHTML`: the line a folded run leaves behind, and the handle that opens it. */
 function foldHTML(v: View, key: string, names: string[], open: boolean, live: boolean, at: number) {
   return (
-    <div className="entry folded" data-role="tool" data-live={live ? "1" : undefined} key={key + ":" + at}>
-      <div className="who">{v.who.tool}</div>
-      <div className="body">
-        <button
-          type="button"
-          className="pill"
-          data-fold={key}
-          aria-expanded={open ? "true" : "false"}
-          onClick={() => v.toggle(key)}
-        >
-          <span className="caret">{open ? "⏷" : "⏵"}</span>
-          <span className="steps">{L.fillString(L.strings.webSteps, { n: names.length })}</span>
-          {open ? null : <span className="what">{foldedRunDescription(names)}</span>}
-        </button>
-      </div>
-    </div>
+    <ToolRunToggle key={key + ":" + at} label={v.who.tool} count={L.fillString(L.strings.webSteps, { n: names.length })}
+      description={foldedRunDescription(names)} open={open} onToggle={() => v.toggle(key)} foldKey={key} live={live} />
   )
 }
 

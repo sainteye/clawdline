@@ -108,7 +108,10 @@ activities can be expanded as a group, and each tool opens its received result.
 Large results are read from saved history only when expanded. Closing a group
 does not delete its history.
 
-Delegation cards show the roles requested by Gemini. Activities with an explicit
+Tool calls use the same compact rows and fold controls as Claude Code and Codex.
+Long commands stay on one line; open a row to read the full command and result.
+
+Delegated activities show the roles requested by Gemini. Activities with an explicit
 native subagent identity are grouped separately; activities without one are not
 assigned to a subagent by guesswork. A completed delegation call does not mean
 every child has finished.
