@@ -20,6 +20,7 @@
   "http.6b574bdaf4e7b62d": "這個 Session 沒有本機工作目錄。",
   "http.dc23cdb43a21b0e0": "無法核對這份圖，請再試一次。",
   "http.49d1f2e1e90685fe": "Graphify 已關閉，或目前無法讀取其設定。",
+  "workingIndicator.title": "Clawdline 正在努力工作",
   "graphifyView.open": "查看專案圖",
   "graphifyView.title": "專案圖",
   "graphifyView.close": "關閉",
