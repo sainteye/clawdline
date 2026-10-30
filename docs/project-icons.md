@@ -15,6 +15,19 @@ adds low-contrast pixel lines inside the orange body. Compact interface marks
 remain solid. This illustration does not replace installer, home-screen or
 launch-screen assets.
 
+The local console's navigation handle uses L-01 + G-02: a full-width,
+solid green underline (`#4CCB7F`) below the orange body. It has a transparent
+sixteen-by-eleven grid so the half-cell line fits the existing button.
+
+Large-format flow concepts retain the fine body grid and explore the underline:
+[one-way flow](assets/brand-line-concepts/f-01.svg),
+[packet pulses](assets/brand-line-concepts/f-02.svg),
+[two-way exchange](assets/brand-line-concepts/f-03.svg), and
+[quiet shimmer](assets/brand-line-concepts/f-04.svg).
+The [animated comparison](assets/brand-line-concepts/flow-comparison.gif) shows
+the four transmission treatments together. These are design drafts, not selected
+production assets. Small marks keep the solid line rather than the lighting effects.
+
 `internal/domain/icon` resolves a local mark in this order:
 
 1. A saved mark in `CLAWDLINE_NEXT_DIR/project-icon-overrides.json`, using the
