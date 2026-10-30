@@ -5,11 +5,21 @@ import type {
   SettingsSnapshot,
   WorkGateSettingsRequest,
   WorkGateSettingsSnapshot,
-  IntegrationSettingsSnapshot,
-  IntegrationSettingsRequest,
 } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"
+
+/** Profile presence advertises support; older machines only expose the legacy switch. */
+export interface IntegrationSettingsSnapshot {
+  workflow_profile?: string
+  workflow_skills_enabled: boolean
+  graphify_enabled: boolean
+}
+export interface IntegrationSettingsRequest {
+  workflow_profile?: string
+  workflow_skills_enabled?: boolean
+  graphify_enabled?: boolean
+}
 
 export type DefaultModelAssistant = "codex" | "claude" | "antigravity"
 export type DefaultModelOption = { value: string; label: string }
