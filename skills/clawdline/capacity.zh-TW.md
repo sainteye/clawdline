@@ -282,6 +282,7 @@
 | `console.public_analytics_activems` | 1800000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `console.public_analytics_countries` | 250 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.public_analytics_days` | 90 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_hours` | 2160 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.public_analytics_page` | 10000 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.public_analytics_path` | 300 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `console.public_analytics_readms` | 10000 | `milliseconds` | `expire` | `sender, diagnostics` | — |

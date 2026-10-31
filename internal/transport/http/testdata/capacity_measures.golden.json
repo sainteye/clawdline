@@ -1373,6 +1373,11 @@
     "Note": true
   },
   {
+    "Name": "console.public_analytics_hours",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.public_analytics_page",
     "Known": true,
     "Note": true

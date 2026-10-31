@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10380,
+  "englishKeys": 10389,
   "counts": {
-    "negation": 2905,
-    "state": 1690,
+    "negation": 2908,
+    "state": 1691,
     "permission": 621,
     "deletion": 222,
-    "uncertainty": 390
+    "uncertainty": 391
   },
-  "unionCount": 4583,
+  "unionCount": 4587,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -77,6 +77,9 @@
       "admin.visitsCoverage",
       "admin.visitsEmpty",
       "admin.visitsFailed",
+      "admin.visitsHourlyEmpty",
+      "admin.visitsHourlyNote",
+      "admin.visitsHourlyUnavailable",
       "admin.visitsIntro",
       "admin.visitsNoCampaign",
       "admin.visitsNoComparison",
@@ -3172,6 +3175,7 @@
       "capacityRow.console.public_analytics_countries.full",
       "capacityRow.console.public_analytics_countries.what",
       "capacityRow.console.public_analytics_days.full",
+      "capacityRow.console.public_analytics_hours.full",
       "capacityRow.console.public_analytics_page.full",
       "capacityRow.console.public_analytics_page.what",
       "capacityRow.console.public_analytics_path.full",
@@ -5463,6 +5467,7 @@
       "admin.usageUnknown",
       "admin.usageUnknownLabel",
       "admin.visitsCoverage",
+      "admin.visitsHourlyNote",
       "admin.visitsUnknown",
       "antigravity.bootstrap",
       "antigravity.disabled",
@@ -5944,6 +5949,9 @@
     "admin.visitsCoverage",
     "admin.visitsEmpty",
     "admin.visitsFailed",
+    "admin.visitsHourlyEmpty",
+    "admin.visitsHourlyNote",
+    "admin.visitsHourlyUnavailable",
     "admin.visitsIntro",
     "admin.visitsMemberNote",
     "admin.visitsNoCampaign",
@@ -6413,6 +6421,7 @@
     "capacityRow.console.public_analytics_countries.full",
     "capacityRow.console.public_analytics_countries.what",
     "capacityRow.console.public_analytics_days.full",
+    "capacityRow.console.public_analytics_hours.full",
     "capacityRow.console.public_analytics_page.full",
     "capacityRow.console.public_analytics_page.what",
     "capacityRow.console.public_analytics_path.full",

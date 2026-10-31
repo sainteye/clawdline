@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "englishContentKeys": 10380,
-  "riskKeys": 4583,
-  "nonRiskCount": 5797,
+  "englishContentKeys": 10389,
+  "riskKeys": 4587,
+  "nonRiskCount": 5802,
   "groups": [
     {
       "name": "admin / other",
-      "count": 258,
+      "count": 262,
       "sources": [
         "src/cloud/admin/words.ts"
       ],
@@ -246,6 +246,9 @@
         "admin.visitsDevices",
         "admin.visitsDirect",
         "admin.visitsDuration",
+        "admin.visitsHour",
+        "admin.visitsHourly",
+        "admin.visitsHourlyHelp",
         "admin.visitsLoading",
         "admin.visitsMemberHistory",
         "admin.visitsMembers",
@@ -264,6 +267,7 @@
         "admin.visitsTablet",
         "admin.visitsTime",
         "admin.visitsTitle",
+        "admin.visitsToday",
         "admin.visitsViews",
         "admin.windowAlways",
         "admin.windowFrom",
@@ -375,7 +379,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 393,
+      "count": 394,
       "sources": [
         null
       ],
@@ -556,6 +560,7 @@
         "capacityRow.console.owner_retention_request_seconds.what",
         "capacityRow.console.persona_retry_seconds.full",
         "capacityRow.console.public_analytics_days.what",
+        "capacityRow.console.public_analytics_hours.what",
         "capacityRow.console.public_analytics_path.what",
         "capacityRow.console.public_analytics_rows.what",
         "capacityRow.console.relay_transcript_expect_reask_seconds.what",

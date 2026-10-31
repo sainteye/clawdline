@@ -5294,6 +5294,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.public_analytics_hours",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 2160,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.public_analytics_page",
     "Class": "buffer",
     "Unit": "rows",

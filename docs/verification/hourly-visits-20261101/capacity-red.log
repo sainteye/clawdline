@@ -1,0 +1,6 @@
+DEVELOPMENT CHECK ONLY: this does not satisfy the pre-commit gate.
+--- FAIL: TestPublicAnalyticsUIBoundsAreRegistered (0.00s)
+    public_analytics_test.go:33: unregistered public analytics bound: hours
+FAIL
+FAIL	github.com/sainteye/clawdline/internal/domain/capacity	0.226s
+FAIL
