@@ -92,7 +92,10 @@ existing send permission, per-Session serialization, one idempotency key per pre
 and Cloud execution-generation receipts. It requires the visible grid fingerprint
 and verifies the kernel foreground PID, process birth and assistant identity before
 writing. It supports both a CLI running under a shell and a CLI rooted directly in
-its tty. An unknown, replaced, exited or unverifiable process is refused; the
+its tty. Native Claude installations may use a version as the kernel command;
+that case also requires the kernel executable at the current user's standard
+`~/.local/share/claude/versions/<version>` path. A version string alone is refused.
+An unknown, replaced, exited or unverifiable process is refused; the
 channel never opens a fallback shell. iTerm2 still requires its explicit integration
 consent. Platforms without foreground-process verification refuse interaction.
 
