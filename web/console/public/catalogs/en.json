@@ -10144,5 +10144,18 @@
   "graphifyView.sourceUnverified": "Unverified index",
   "graphifyView.focusNode": "Focus node",
   "slashCommands.label": "Commands and skills",
-  "slashCommands.availability": "Available commands depend on your CLI version, account and enabled features."
+  "slashCommands.availability": "Available commands depend on your CLI version, account and enabled features.",
+  "nativeTerminal.title": "Terminal",
+  "nativeTerminal.back": "Back to conversation",
+  "nativeTerminal.screen": "The current Session terminal",
+  "nativeTerminal.loading": "Reading the current CLI…",
+  "nativeTerminal.hint": "Continue in the same CLI. Text is entered first; press Enter separately to confirm.",
+  "nativeTerminal.unavailable": "This Session terminal cannot be read or verified.",
+  "nativeTerminal.changed": "The screen or CLI changed. This input was not sent. Read the screen again before continuing.",
+  "nativeTerminal.uncertain": "The input outcome is unconfirmed. Read the screen before continuing; input is never replayed automatically.",
+  "nativeTerminal.refresh": "Read screen again",
+  "nativeTerminal.keys": "Terminal keys",
+  "nativeTerminal.text": "Text to enter in the CLI",
+  "nativeTerminal.type": "Enter text",
+  "nativeTerminal.sending": "Entering…"
 }

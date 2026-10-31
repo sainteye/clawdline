@@ -58,6 +58,8 @@ export const CARRIED = {
   // The dashboard behind the session counts (`machine/`): CPU, memory, disk
   // space and grouped reclaim backlog, a machine read with no parameter.
   "machine-usage": "GET /v1/machine/usage",
+  "native-terminal-input": "POST /v1/sessions/{id}/native-terminal",
+  "native-terminal-screen": "GET /v1/sessions/{id}/native-terminal",
   "notification-rules": "GET /v1/notification-rules",
   "notification-rules-update": "POST /v1/notification-rules",
   "notification-settings": "GET /v1/settings/notifications",

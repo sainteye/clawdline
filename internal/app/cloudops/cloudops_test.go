@@ -947,6 +947,15 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-role-snapshot", method: "GET",
 		path: "/v1/squad/session-snapshots/conversation-a",
 	}, {
+		word:    "native-terminal-screen",
+		body:    map[string]any{"type": "native-terminal-screen", "session": pane},
+		session: pane, name: "native-terminal-screen", method: "GET", path: "/v1/sessions/%2519/native-terminal",
+	}, {
+		word:    "native-terminal-input",
+		body:    map[string]any{"type": "native-terminal-input", "session": pane, "request": "native-press", "expect": fingerprint, "key": "down"},
+		session: pane, name: "action:native-press", method: "POST", path: "/v1/sessions/%2519/native-terminal",
+		body2: `{"expect":"` + fingerprint + `","key":"down"}`,
+	}, {
 		word: "send",
 		body: map[string]any{"type": "send", "session": pane, "request": "req-send",
 			"text": "hello", "images": []any{}},

@@ -40,6 +40,7 @@ import "./drop-target.css"
 import { RemotePermissions } from "./RemotePermissions.js"
 import { Start } from "./Start.js"
 import { commandCatalog } from "../legacy/command-catalog.js"
+import { nativeTerminalCommand } from "./native-terminal-command.js"
 import { resumeCommandQuery } from "./resume-command.js"
 
 /**
@@ -89,6 +90,7 @@ export function Composer({
   row,
   onDid,
   onSent,
+  onNativeTerminal,
   onScreen,
   suggestedDraft,
   remote,
@@ -102,6 +104,7 @@ export function Composer({
   onDid: () => void
   /** After a delivered send; nothing when left out (`Detail`'s `onSent`). */
   onSent?: () => void
+  onNativeTerminal?: () => void
   onScreen?: () => void
   suggestedDraft?: { target: InterventionTarget; text: string; id: number } | null
   /** A fixed remote destination uses this same editor and picture path. */
@@ -595,6 +598,7 @@ export function Composer({
         if (/^\/[^\s/]+(?:\s|$)/.test(said) && !pictures.length && (row.assistant === "codex" || row.assistant === "claude"))
           document.dispatchEvent(new CustomEvent(MENU_FOLLOW, { detail: row.id }))
         onSent?.()
+        if (nativeTerminalCommand(said,row.assistant,row.backend,pictures.length)) onNativeTerminal?.()
       }
     } catch (err) {
       const code = err instanceof RefusalError ? err.code : "unexpected_error"

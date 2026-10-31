@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10144,
-  "riskKeys": 4499,
-  "nonRiskCount": 5645,
+  "englishContentKeys": 10157,
+  "riskKeys": 4502,
+  "nonRiskCount": 5655,
   "groups": [
     {
       "name": "admin / other",
@@ -3229,6 +3229,25 @@
         "template.c4e5c8cf3d7b",
         "template.ca37c38d230b",
         "template.d9b292916aa7"
+      ]
+    },
+    {
+      "name": "nativeTerminal / other",
+      "count": 10,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "nativeTerminal.back",
+        "nativeTerminal.hint",
+        "nativeTerminal.keys",
+        "nativeTerminal.loading",
+        "nativeTerminal.refresh",
+        "nativeTerminal.screen",
+        "nativeTerminal.sending",
+        "nativeTerminal.text",
+        "nativeTerminal.title",
+        "nativeTerminal.type"
       ]
     },
     {

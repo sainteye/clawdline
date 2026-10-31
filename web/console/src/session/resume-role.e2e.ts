@@ -54,6 +54,10 @@ let commandPastFailure = false
 let commandLive = false
 let commandSends: string[] = []
 let commandPastReads: string[] = []
+let nativeRequests: {key?:string;text?:string;request:string}[]=[]
+let nativeRevision=1
+let nativeRejectNext=false
+let nativeText=""
 const safeCommandSession = () => ({ activity_generation: 1, attestation_id: null, mover: null,
   obligation_generation: 1, observed_at: now(), provenance: [], reasons: [], session_generation: 1,
   source: { freshness: "current", observed_at: now(), provenance: "fixture" }, state: "safe", version: "fixture-safe" })
@@ -124,6 +128,17 @@ function daemon(): Server {
           { id: "past-2", title: "Write the release notes for the resume sheet", at: now() - 86400 * 2, live: false },
         ],
       })
+    }
+    if (path === "/v1/sessions/fixture-current/native-terminal") {
+      if (req.method === "GET") return json(res,200,{text:nativeText || (commandAssistant === "codex" ? "Codex" : "Claude Code") + "\nSelect a model\n❯ Current model\n  Another model\nEnter to confirm · Esc to go back",expect:nativeRevision.toString(16).padStart(64,"0")})
+      if (req.method === "POST") {
+        let raw="";req.on("data",chunk=>raw+=String(chunk));req.on("end",()=>{
+          const input=JSON.parse(raw);nativeRequests.push({...input,request:String(req.headers["idempotency-key"]||"")})
+          if (nativeRejectNext) {nativeRejectNext=false;nativeRevision++;return json(res,409,{error:"input_moved",detail:"input_moved"})}
+          nativeRevision++;nativeText=(commandAssistant === "codex" ? "Codex" : "Claude Code")+"\nInput: "+(input.key||input.text)
+          return json(res,200,{ok:true,id:"fixture-current",action:"keyed"})
+        });return
+      }
     }
     if (path === "/v1/sessions/fixture-current/skills") return json(res, 200, {
       skills: [{ name: "resume", description: "A synthetic colliding skill", source: "project" }],
@@ -601,7 +616,7 @@ test("the restore sheet names the role each conversation will come back with", a
 
 for (const assistant of ["claude", "codex"]) {
  test(`${assistant}: every catalog command can be selected and native lines use the ordinary send`, async () => {
-  commandAssistant = assistant; commandSends = []
+  commandAssistant = assistant; commandSends = []; nativeRequests=[]; nativeRevision=1; nativeRejectNext=false; nativeText=""
   const tab = await Tab.open(browser, 390, 844, true)
   try {
    await tab.go('/')
@@ -635,11 +650,42 @@ for (const assistant of ["claude", "codex"]) {
    const end=Date.now()+3000
    while(!commandSends.length && Date.now()<end) await new Promise(r=>setTimeout(r,20))
    assert.deepEqual(commandSends, [assistant === 'claude' ? '/effort high' : '/plan inspect the API'])
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),false)
+   await tab.click('#native-terminal .panel-view-head button')
    await compose(tab, '/future-provider-command value')
    await tab.click('.composer button[type=submit]')
    const next=Date.now()+3000
    while(commandSends.length<2 && Date.now()<next) await new Promise(r=>setTimeout(r,20))
    assert.equal(commandSends[1],'/future-provider-command value', 'execution has no builtin allowlist')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('terminal not ready');await new Promise(r=>setTimeout(r,20))}})()`)
+   await tab.shot(`native-terminal-${assistant}`)
+   nativeRequests=[]
+   for(const key of ['down','tab','enter','escape']) {
+    await tab.run(`(async()=>{const end=Date.now()+5000;const button=document.querySelector('#native-terminal [data-native-key=${key}]');while(button.disabled){if(Date.now()>end)throw Error('input still blocked');await new Promise(r=>setTimeout(r,20))}button.click()})()`)
+    await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('input not acknowledged');await new Promise(r=>setTimeout(r,20))}})()`)
+   }
+   assert.deepEqual(nativeRequests.map(input=>input.key),['down','tab','enter','escape'])
+   assert.equal(new Set(nativeRequests.map(input=>input.request)).size,4)
+   assert.ok(nativeRequests.every(input=>input.request))
+   await tab.run(`(()=>{const field=document.querySelector('#native-terminal form input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'搜尋模型');field.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+   await tab.click('#native-terminal form button[type=submit]')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('text input not acknowledged');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.equal(nativeRequests[4]?.text,'搜尋模型')
+   assert.equal(nativeRequests[4]?.key,undefined,'text entry never adds Enter')
+   nativeRejectNext=true
+   await tab.click('#native-terminal [data-native-key=down]')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(!document.querySelector('#native-terminal [role=alert]')){if(Date.now()>end)throw Error('no stale input error');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.equal(await tab.run(`document.querySelector('#native-terminal [data-native-key=down]').disabled`),true)
+   assert.equal(nativeRequests.length,6,'a moved screen is never automatically replayed')
+   await tab.click('#native-terminal .native-terminal-controls > button')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('manual reread did not re-enable input');await new Promise(r=>setTimeout(r,20))}})()`)
+   await tab.click('#native-terminal .panel-view-head button')
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),true)
+   await tab.click('#detail-actions-trigger')
+   await tab.click('#session-native-terminal')
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),false)
+   await tab.click('#native-terminal .panel-view-head button')
+
   } finally { commandAssistant=''; await tab.close() }
  })
 }

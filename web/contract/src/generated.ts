@@ -4270,6 +4270,32 @@ export type MoverKind =
 
 export const MoverKindValues: readonly MoverKind[] = ["this_session", "other_session", "person", "task", "broker"] as const
 
+export interface NativeTerminalFrame {
+  /**
+   * A fingerprint of the foreground process and this grid.
+   */
+  expect: string
+
+  /**
+   * The visible terminal grid.
+   */
+  text: string
+}
+
+export interface NativeTerminalInput {
+  expect: string
+
+  /**
+   * One named terminal key; exclusive with text.
+   */
+  key?: string
+
+  /**
+   * One UTF-8 line without control characters. Does not submit.
+   */
+  text?: string
+}
+
 export interface Obligation {
   age_seconds: number
   escalation: Escalation

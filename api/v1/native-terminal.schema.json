@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "native-terminal.schema.json",
+  "title": "The existing assistant terminal",
+  "description": "Read or operate the verified foreground CLI without starting another shell.",
+  "$defs": {
+    "NativeTerminalFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "expect"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The visible terminal grid."
+        },
+        "expect": {
+          "type": "string",
+          "description": "A fingerprint of the foreground process and this grid."
+        }
+      }
+    },
+    "NativeTerminalInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expect"
+      ],
+      "properties": {
+        "expect": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string",
+          "description": "One named terminal key; exclusive with text."
+        },
+        "text": {
+          "type": "string",
+          "description": "One UTF-8 line without control characters. Does not submit."
+        }
+      }
+    }
+  }
+}

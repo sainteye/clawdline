@@ -76,3 +76,33 @@ arguments and an unknown future command use the ordinary send endpoint. The exis
 resume cases assert no terminal send and correct provider-scoped history routing.
 Browser fixtures use synthetic metadata; they do not establish real-account feature
 availability or invoke paid commands.
+
+## Continue in the same terminal
+
+After a successfully delivered Claude Code or Codex slash command, a physical
+Session opens its interactive Terminal panel. This is the existing foreground CLI,
+not a newly created project shell. `/resume` still opens the Clawdline history modal.
+The panel exposes navigation, Tab, Shift+Tab, Enter, Esc and text entry, with a return
+to the conversation. The Session actions menu can reopen the same Terminal panel
+without sending another command. Entering text does not submit it: the person presses Enter
+separately. There is no command-name allowlist deciding which dialog is supported.
+
+The native-terminal read and input routes require API level 37. The input route uses
+existing send permission, per-Session serialization, one idempotency key per press,
+and Cloud execution-generation receipts. It requires the visible grid fingerprint
+and verifies the kernel foreground PID, process birth and assistant identity before
+writing. It supports both a CLI running under a shell and a CLI rooted directly in
+its tty. An unknown, replaced, exited or unverifiable process is refused; the
+channel never opens a fallback shell. iTerm2 still requires its explicit integration
+consent. Platforms without foreground-process verification refuse interaction.
+
+Text is a bounded UTF-8 line without control characters; navigation keys are named
+separately. A stale screen or uncertain write blocks further input until a manual
+reread. No input is retried automatically. This panel is a visible-grid controller,
+without terminal scrollback, arbitrary control sequences or mouse reporting.
+
+Verification includes a private real tmux/tty with a synthetic CLI, exact byte
+receipts, foreground replacement and exit checks, real HTTP authentication and
+idempotency, Cloud execution replacement, and browser key/text/return interactions.
+The synthetic CLI makes no model or account request. Provider-specific feature and
+account availability still needs the provider's own CLI to decide.

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10144,
+  "englishKeys": 10157,
   "counts": {
-    "negation": 2866,
-    "state": 1648,
+    "negation": 2869,
+    "state": 1649,
     "permission": 609,
     "deletion": 219,
-    "uncertainty": 386
+    "uncertainty": 387
   },
-  "unionCount": 4499,
+  "unionCount": 4502,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2034,6 +2034,9 @@
       "literal.feba2f8d9bcd",
       "literal.febcaa56ae82",
       "literal.ff95187970b9",
+      "nativeTerminal.changed",
+      "nativeTerminal.unavailable",
+      "nativeTerminal.uncertain",
       "next.agentsNoRecord",
       "next.agentsTruncated",
       "next.agentsUnknown",
@@ -4019,6 +4022,7 @@
       "literal.f987cffe62e7",
       "literal.ff569bc2e31d",
       "literal.ffa731746caa",
+      "nativeTerminal.changed",
       "next.adminAttentionMark",
       "next.apiPerformanceActive",
       "next.apiPerformanceBuild",
@@ -5660,6 +5664,7 @@
       "literal.e761602c4ba2",
       "literal.f5520c76f525",
       "literal.feba2f8d9bcd",
+      "nativeTerminal.uncertain",
       "next.apiPerformanceMissing",
       "next.apiPerformanceStale",
       "next.apiPerformanceUnavailable",
@@ -8729,6 +8734,9 @@
     "literal.ff569bc2e31d",
     "literal.ff95187970b9",
     "literal.ffa731746caa",
+    "nativeTerminal.changed",
+    "nativeTerminal.unavailable",
+    "nativeTerminal.uncertain",
     "next.adminAttentionMark",
     "next.agentsNoRecord",
     "next.agentsTruncated",

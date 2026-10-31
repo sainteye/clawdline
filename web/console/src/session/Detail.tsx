@@ -27,6 +27,8 @@ import { Transcript } from "./Transcript.js"
 import { GitPanel } from "./GitPanel.js"
 import { Composer } from "./Composer.js"
 import { composerDraftKey } from "./composer-drafts.js"
+import { nativeTerminalCommand } from "./native-terminal-command.js"
+import { NativeTerminalPanel } from "./NativeTerminalPanel.js"
 import { ScreenPanel } from "./ScreenPanel.js"
 import { ShellPanel } from "./ShellPanel.js"
 import { BackgroundStrip } from "./BackgroundStrip.js"
@@ -171,12 +173,14 @@ export function Detail({
     return () => window.removeEventListener("hashchange", follow)
   }, [outputIdentity, row?.id])
   const [screenOpen, setScreenOpen] = useState(false)
+  const [nativeTerminalOpen,setNativeTerminalOpen] = useState(false)
   const actionsTrigger = useRef<HTMLButtonElement>(null)
   // A different session, or none, closes the panel: it is that session's
   // terminal that was being watched (`followTerminal`).
   useEffect(() => {
     setScreenOpen(false)
-  }, [row?.id])
+    setNativeTerminalOpen(false)
+  }, [row?.id,row?.execution_generation])
 
   // `input/shell-panel.js`: the background command whose output has the
   // transcript's space, as the strip's row was when it was opened. A
@@ -248,7 +252,7 @@ export function Detail({
     <DetailPane
       id="pane-detail"
       data-agent-view={selectedAgent ? "on" : undefined}
-      data-panel={screenOpen ? "screen" : gitOpen ? "git" : shellOpen ? "shell" : undefined}
+      data-panel={nativeTerminalOpen ? "native-terminal" : screenOpen ? "screen" : gitOpen ? "git" : shellOpen ? "shell" : undefined}
     >
       {selectedAgent ? (
         <AgentHead
@@ -334,7 +338,8 @@ export function Detail({
             ending={ending}
             onDid={onDid}
             triggerRef={actionsTrigger}
-            onScreen={() => setScreenOpen(true)}
+            onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}}
+            onScreen={() => {setNativeTerminalOpen(false);setScreenOpen(true)}}
             onOpenGit={() => setGitOpen(true)}
             onSuggestions={requestSnippets}
           />
@@ -343,6 +348,7 @@ export function Detail({
 
       <div className="session-output-layout" data-open={outputsOpen ? "true" : undefined}>
       <div className="session-conversation">
+      <NativeTerminalPanel row={row} open={nativeTerminalOpen} onClose={()=>setNativeTerminalOpen(false)} />
       <ScreenPanel
         row={row}
         open={screenOpen}
@@ -396,7 +402,7 @@ export function Detail({
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
-      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} row={row} onDid={onDid} onSent={onSent} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} />}
+      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} />}
       {selectedAgent || !row ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       </div>
       <OutputFiles row={row} machine={readerMachine} open={outputsOpen} trigger={outputTrigger} onClose={() => setOutputsFor(null)} />
@@ -545,6 +551,7 @@ function Tools({
   onDid,
   triggerRef,
   onScreen,
+  onNativeTerminal,
   onOpenGit,
   onSuggestions,
 }: {
@@ -554,6 +561,7 @@ function Tools({
   onDid: () => void
   triggerRef: RefObject<HTMLButtonElement | null>
   onScreen: () => void
+  onNativeTerminal: () => void
   onOpenGit: () => void
   onSuggestions: () => void
 }) {
@@ -863,6 +871,11 @@ function Tools({
               {/* The original writes no `disabled` on this row and neither does
                   this: reading a screen needs no send capability, and the menu
                   it sits in cannot be opened without a session. */}
+              <button type="button" role="menuitem" id="session-native-terminal"
+                hidden={!nativeTerminalCommand("/help",row?.assistant,row?.backend)} disabled={!row||ending}
+                onClick={()=>{closeMenu(false);onNativeTerminal()}}>
+                {catalogWord("nativeTerminal","title")}
+              </button>
               <button
                 id="session-screen"
                 hidden={!menuVisibility.screen}

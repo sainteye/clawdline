@@ -8,6 +8,8 @@ import type {
   DispatchRequest,
   DispatchResult,
   Health,
+  NativeTerminalFrame,
+  NativeTerminalInput,
   Inventory,
   ObligationList,
   ScheduleList,
@@ -130,6 +132,14 @@ export class ClawdlineClient {
    */
   send(id: string, text: string, request: string): Promise<ActionResult> {
     return this.post(sessionRoutes.send(id), { text }, { "Idempotency-Key": request })
+  }
+
+  nativeTerminal(id: string): Promise<NativeTerminalFrame> {
+    return this.get(`/v1/sessions/${encodeURIComponent(id)}/native-terminal`)
+  }
+
+  nativeTerminalInput(id: string, input: NativeTerminalInput, request: string): Promise<ActionResult> {
+    return this.post(`/v1/sessions/${encodeURIComponent(id)}/native-terminal`, input, { "Idempotency-Key": request })
   }
 
   interrupt(id: string): Promise<ActionResult> {
