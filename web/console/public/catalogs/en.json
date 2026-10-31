@@ -315,7 +315,7 @@
   "admin.issueTitle": "Issue a code",
   "admin.lead_accounts": "How many accounts Clawdline Cloud has, and how many arrive each day.",
   "admin.lead_health": "What Cloud has stored about connections, and how much of it can be seen.",
-  "admin.lead_overview": "The figures that changed, and where to look next. Every number is an anonymous total.",
+  "admin.lead_overview": "Review Cloud operations, public-page trends and member arrivals.",
   "admin.lead_promotions": "Make campaigns, issue codes, see how each code is used, and revoke a campaign.",
   "admin.lead_survey": "Voluntary answers about workflows, tools and discovery.",
   "admin.lead_usage": "What Cloud carried this month so far and last month, by calendar month in UTC.",
