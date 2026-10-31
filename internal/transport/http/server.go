@@ -729,6 +729,8 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/places/"}, s.placeRoute},
 		// The built-in personas a start or a dispatch may name (personas.go).
 		{Route{"*", "/v1/personas"}, s.personasRoute},
+		{Route{"*", "/v1/tool-library"}, s.toolLibraryRoute},
+		{Route{"*", "/v1/tool-library/"}, s.toolLibraryRoute},
 		{Route{"*", "/v1/squad/events/head"}, s.squadEventHead},
 		{Route{"*", "/v1/squad/events"}, s.squadEvents},
 		{Route{"*", "/v1/squad/session-bindings"}, s.squadSessionBindings},

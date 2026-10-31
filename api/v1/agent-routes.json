@@ -695,6 +695,16 @@
       "method": "*",
       "pattern": "/v1/work/proposals/",
       "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/tool-library",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/tool-library/",
+      "guide": "project"
     }
   ]
 }

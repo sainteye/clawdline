@@ -577,6 +577,10 @@
 | `terminal.paste_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `terminal.streams` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `terminal.viewers` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `tools.project_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `tools.projects` | 100 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `tools.request_bytes` | 131072 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `tools.request_key_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `update.apply_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
 | `update.build_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
 | `update.fetch_timeout_seconds` | 10 | `seconds` | `evict_oldest` | `diagnostics` | — |

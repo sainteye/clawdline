@@ -11085,6 +11085,87 @@
   },
   {
     "Register": "daemon",
+    "Name": "tools.project_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 8192,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/toollibrary.MaxProjectBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "tools.projects",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 100,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/toollibrary.MaxSavedProjects"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "tools.request_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 131072,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/toollibrary.MaxRequestBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "tools.request_key_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/toollibrary.MaxRequestKeyBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "update.apply_body_bytes",
     "Class": "buffer",
     "Unit": "bytes",

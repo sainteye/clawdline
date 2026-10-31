@@ -45,6 +45,7 @@ var areas = []area{
 	{"squad", []string{"squad", "personas", "workflow"}, squadBounds},
 	{"squadpackage", []string{"squadpackage"}, squadPackageBounds},
 	{"store", []string{"store"}, storeBounds},
+	{"toollibrary", []string{"tools"}, toolLibraryBounds},
 	{"terminal", []string{"terminal"}, terminalBounds},
 	{"update", []string{"update"}, updateBounds},
 	{"work", []string{"work"}, workBounds},

@@ -1,0 +1,2754 @@
+{
+  "schema_version": 1,
+  "researched_at": "2026-10-31T06:55:34.204644+00:00",
+  "categories": [
+    {
+      "id": "architecture",
+      "name": {
+        "en": "Architecture & domain modeling",
+        "zh-Hant": "程式架構與領域建模"
+      }
+    },
+    {
+      "id": "development",
+      "name": {
+        "en": "Development & code quality",
+        "zh-Hant": "開發效率與程式品質"
+      }
+    },
+    {
+      "id": "design",
+      "name": {
+        "en": "Interface & visual design",
+        "zh-Hant": "介面與視覺設計"
+      }
+    },
+    {
+      "id": "frontend",
+      "name": {
+        "en": "Frontend performance & accessibility",
+        "zh-Hant": "前端效能與無障礙"
+      }
+    },
+    {
+      "id": "security",
+      "name": {
+        "en": "Security review",
+        "zh-Hant": "安全稽核"
+      }
+    },
+    {
+      "id": "diagrams",
+      "name": {
+        "en": "Architecture diagrams & documentation",
+        "zh-Hant": "架構圖與技術文件"
+      }
+    },
+    {
+      "id": "product",
+      "name": {
+        "en": "Product, SEO & growth",
+        "zh-Hant": "產品、SEO 與成長"
+      }
+    },
+    {
+      "id": "media",
+      "name": {
+        "en": "Video & motion production",
+        "zh-Hant": "影片與動態製作"
+      }
+    },
+    {
+      "id": "workflow",
+      "name": {
+        "en": "Optional development workflows",
+        "zh-Hant": "選用開發流程"
+      }
+    }
+  ],
+  "projects": [
+    {
+      "id": "mattpocock--skills",
+      "repo_url": "https://github.com/mattpocock/skills",
+      "owner": "mattpocock",
+      "repo": "skills",
+      "name": {
+        "en": "Matt Pocock Skills",
+        "zh-Hant": "Matt Pocock 工程技能"
+      },
+      "summary": {
+        "en": "Small, composable skills for requirements, domain modeling, architecture, testing and review.",
+        "zh-Hant": "以小型技能處理需求、領域建模、架構、測試與審查。"
+      },
+      "category_id": "architecture",
+      "category": {
+        "en": "Architecture & domain modeling",
+        "zh-Hant": "程式架構與領域建模"
+      },
+      "recommendation": {
+        "en": "Start with architecture surveys and domain modeling; use the project setup convention deliberately.",
+        "zh-Hant": "優先用於架構巡檢與領域建模；依專案決定是否採用其設定慣例。"
+      },
+      "recommendation_tier": "start_here",
+      "icon": {
+        "url": "https://github.com/mattpocock.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/mattpocock",
+        "asset": "/tool-library/mattpocock--skills.png"
+      },
+      "source_commit": "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/LICENSE",
+          "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "mattpocock--skills--improve-codebase-architecture",
+          "native_name": "improve-codebase-architecture",
+          "name": {
+            "en": "Improve Codebase Architecture",
+            "zh-Hant": "改善程式架構"
+          },
+          "purpose": {
+            "en": "Find module boundaries that expose too much complexity and propose bounded improvements.",
+            "zh-Hant": "找出外露過多複雜度的模組邊界，提出範圍明確的改善方案。"
+          },
+          "path": "skills/engineering/improve-codebase-architecture/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/improve-codebase-architecture/SKILL.md",
+          "sha256": "35b03a3db61e0f5aa333ea59b54963e45a3d2ace6649b2ef4f9576603e2582a6",
+          "source_bytes": 6028,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "mattpocock--skills--domain-modeling",
+          "native_name": "domain-modeling",
+          "name": {
+            "en": "Domain Modeling",
+            "zh-Hant": "領域建模"
+          },
+          "purpose": {
+            "en": "Align domain terms and relationships before changing the implementation.",
+            "zh-Hant": "修改實作前，先統一領域名詞與關係。"
+          },
+          "path": "skills/engineering/domain-modeling/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/domain-modeling/SKILL.md",
+          "sha256": "7b925d7b1e341a2eeae33ad68a8a8c0ab889a38ddd22a7598e4c240e5a7556a3",
+          "source_bytes": 3346,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "mattpocock--skills--tdd",
+          "native_name": "tdd",
+          "name": {
+            "en": "Test-Driven Development",
+            "zh-Hant": "測試驅動開發"
+          },
+          "purpose": {
+            "en": "Build one behavior at a time with a failing test and a verified implementation.",
+            "zh-Hant": "每次處理一項行為，以失敗測試與實作驗證建立回饋。"
+          },
+          "path": "skills/engineering/tdd/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/tdd/SKILL.md",
+          "sha256": "5505d25bbaa8fc14a79e4d20163936958992a2995b7f1dd1d6197edc9ed722e0",
+          "source_bytes": 3629,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "mattpocock--skills--code-review",
+          "native_name": "code-review",
+          "name": {
+            "en": "Code Review",
+            "zh-Hant": "程式碼審查"
+          },
+          "purpose": {
+            "en": "Review the change against project rules and requested behavior.",
+            "zh-Hant": "依專案規則與要求的行為審查變更。"
+          },
+          "path": "skills/engineering/code-review/SKILL.md",
+          "mode": "instruction",
+          "requirements": [
+            {
+              "en": "Subagents for the upstream parallel-review flow.",
+              "zh-Hant": "上游平行審查流程需要子代理。"
+            }
+          ],
+          "source_url": "https://github.com/mattpocock/skills/blob/a496f5513d4a4cf889bc48e189e579f4b0bdf6aa/skills/engineering/code-review/SKILL.md",
+          "sha256": "9c921a8d88138a41401d8897ca1bb852088ab1b7b605cdd04edc13e3e8aab6dd",
+          "source_bytes": 6721,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://mer.vin/news/mattpocock-skills-the-skill-pack-topping-github-trending/",
+          "kind": "dated_editorial",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-09-06",
+          "period": "daily",
+          "scope": "all_languages",
+          "rank": 2,
+          "note": {
+            "en": "Mervin Praison reports GitHub daily #2 for September 6. This is a dated third-party report.",
+            "zh-Hant": "Mervin Praison 的日期文章記載 9 月 6 日日榜第 2；屬第三方歷史報導。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "Some entries invoke other skills, setup conventions, issue trackers or subagents. A pinned entry alone is not a complete import bundle.",
+          "zh-Hant": "部分入口會呼叫其他技能、設定慣例、議題追蹤器或子代理；固定入口檔不等於完整匯入套件。"
+        }
+      ]
+    },
+    {
+      "id": "addyosmani--agent-skills",
+      "repo_url": "https://github.com/addyosmani/agent-skills",
+      "owner": "addyosmani",
+      "repo": "agent-skills",
+      "name": {
+        "en": "Addy Osmani Agent Skills",
+        "zh-Hant": "Addy Osmani 工程技能"
+      },
+      "summary": {
+        "en": "Engineering practices covering API boundaries, code health, debugging and performance.",
+        "zh-Hant": "涵蓋 API 邊界、程式品質、除錯與效能的工程實務。"
+      },
+      "category_id": "development",
+      "category": {
+        "en": "Development & code quality",
+        "zh-Hant": "開發效率與程式品質"
+      },
+      "recommendation": {
+        "en": "Adopt focused review and interface-design skills alongside the existing workflow.",
+        "zh-Hant": "優先採用審查與介面設計單項技能，搭配既有工作流程。"
+      },
+      "recommendation_tier": "start_here",
+      "icon": {
+        "url": "https://github.com/addyosmani.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/addyosmani",
+        "asset": "/tool-library/addyosmani--agent-skills.jpg"
+      },
+      "source_commit": "8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/LICENSE",
+          "sha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "addyosmani--agent-skills--api-and-interface-design",
+          "native_name": "api-and-interface-design",
+          "name": {
+            "en": "API & Interface Design",
+            "zh-Hant": "API 與介面設計"
+          },
+          "purpose": {
+            "en": "Review contracts, error semantics and boundary validation.",
+            "zh-Hant": "檢查契約、錯誤語意與邊界驗證。"
+          },
+          "path": "skills/api-and-interface-design/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/api-and-interface-design/SKILL.md",
+          "sha256": "cc5e2166c484b2c297e8253f56e7525e5031f81d66101ca4e760ef378ea6bad0",
+          "source_bytes": 14938,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "addyosmani--agent-skills--code-simplification",
+          "native_name": "code-simplification",
+          "name": {
+            "en": "Code Simplification",
+            "zh-Hant": "簡化程式碼"
+          },
+          "purpose": {
+            "en": "Reduce complexity while preserving observable behavior.",
+            "zh-Hant": "在保留可觀察行為的前提下降低複雜度。"
+          },
+          "path": "skills/code-simplification/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/code-simplification/SKILL.md",
+          "sha256": "e13b433345e6bf425c3625442ac1b3507b371c18d7ea3e3db822da7a7f742a29",
+          "source_bytes": 13719,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "addyosmani--agent-skills--performance-optimization",
+          "native_name": "performance-optimization",
+          "name": {
+            "en": "Performance Optimization",
+            "zh-Hant": "效能最佳化"
+          },
+          "purpose": {
+            "en": "Measure performance before choosing an optimization.",
+            "zh-Hant": "先量測效能，再決定最佳化方向。"
+          },
+          "path": "skills/performance-optimization/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/addyosmani/agent-skills/blob/8bfcc1f9916f2eea55494d8c1fa7f4bde867dd9e/skills/performance-optimization/SKILL.md",
+          "sha256": "82af71540457cf853893685211f64509cd1e781c0de09d0186f16960f2d6eeba",
+          "source_bytes": 16783,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://www.github-trending-archives.com/d/2026-06-10",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-06-10",
+          "period": "daily",
+          "scope": "all_languages",
+          "rank": 1,
+          "note": {
+            "en": "The June 10 captured daily list places this repository first.",
+            "zh-Hant": "6 月 10 日保存的日榜列此專案為第 1。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "Selected skills reference shared repository files that single-skill installers may omit.",
+          "zh-Hant": "選用技能可能引用單項安裝器未複製的儲存庫共用檔案。"
+        }
+      ]
+    },
+    {
+      "id": "pbakaus--impeccable",
+      "repo_url": "https://github.com/pbakaus/impeccable",
+      "owner": "pbakaus",
+      "repo": "impeccable",
+      "name": {
+        "en": "Impeccable",
+        "zh-Hant": "Impeccable 設計修整"
+      },
+      "summary": {
+        "en": "Design vocabulary, focused refinement commands and interface quality checks.",
+        "zh-Hant": "提供設計詞彙、聚焦修整指令與介面品質檢查。"
+      },
+      "category_id": "design",
+      "category": {
+        "en": "Interface & visual design",
+        "zh-Hant": "介面與視覺設計"
+      },
+      "recommendation": {
+        "en": "First choice for improving an existing Clawdline screen or component.",
+        "zh-Hant": "優先用於改善 Clawdline 既有畫面或元件。"
+      },
+      "recommendation_tier": "start_here",
+      "icon": {
+        "url": "https://raw.githubusercontent.com/pbakaus/impeccable/b7a89176e4e87422b40f98adabceb051dbb5448b/cursor-plugin/assets/icon.png",
+        "kind": "project",
+        "source_url": "https://github.com/pbakaus/impeccable/blob/b7a89176e4e87422b40f98adabceb051dbb5448b/cursor-plugin/assets/icon.png",
+        "asset": "/tool-library/pbakaus--impeccable.png"
+      },
+      "source_commit": "b7a89176e4e87422b40f98adabceb051dbb5448b",
+      "license": "Apache-2.0",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/pbakaus/impeccable/blob/b7a89176e4e87422b40f98adabceb051dbb5448b/LICENSE",
+          "sha256": "02bb8c3b4e70190e3986c0404ad2fd8d639b4f534252d82379cc1b502b6d1812",
+          "license": "Apache-2.0"
+        }
+      ],
+      "skills": [
+        {
+          "id": "pbakaus--impeccable--impeccable",
+          "native_name": "impeccable",
+          "name": {
+            "en": "Impeccable",
+            "zh-Hant": "設計修整與稽核"
+          },
+          "purpose": {
+            "en": "Use critique, audit and polish operations to improve an existing interface.",
+            "zh-Hant": "透過 critique、audit、polish 等操作改善既有介面。"
+          },
+          "path": "plugin/skills/impeccable/SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "The matching Impeccable engine, references and project initialization.",
+              "zh-Hant": "對應版本的 Impeccable 引擎、參考檔與專案初始化。"
+            }
+          ],
+          "source_url": "https://github.com/pbakaus/impeccable/blob/b7a89176e4e87422b40f98adabceb051dbb5448b/plugin/skills/impeccable/SKILL.md",
+          "sha256": "068987f99e59dfaa78288e0927b2a985a1237c4154de93baf03efbc544d06cb8",
+          "source_bytes": 12042,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "Apache-2.0"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/pbakaus--impeccable/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-29",
+          "period": "daily",
+          "scope": "all_languages",
+          "rank": 3,
+          "note": {
+            "en": "The October 29 snapshot reports GitHub daily #3.",
+            "zh-Hant": "10 月 29 日快照記載 GitHub 日榜第 3。"
+          }
+        },
+        {
+          "url": "https://syusodo.co.jp/tech-blog/articles/github-trending-2026-07",
+          "kind": "dated_editorial",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-07",
+          "period": "monthly",
+          "scope": "editorial_roundup",
+          "rank": null,
+          "note": {
+            "en": "A July 2026 monthly roundup by Mizuki Ishikawa also includes Impeccable.",
+            "zh-Hant": "石川瑞起的 2026 年 7 月月榜回顧也收錄 Impeccable。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "emilkowalski--skills",
+      "repo_url": "https://github.com/emilkowalski/skills",
+      "owner": "emilkowalski",
+      "repo": "skills",
+      "name": {
+        "en": "Emil Kowalski Skills",
+        "zh-Hant": "Emil 介面與動效技能"
+      },
+      "summary": {
+        "en": "Detailed interaction and motion guidance grounded in design engineering practice.",
+        "zh-Hant": "以設計工程實務整理互動與動效的細節準則。"
+      },
+      "category_id": "design",
+      "category": {
+        "en": "Interface & visual design",
+        "zh-Hant": "介面與視覺設計"
+      },
+      "recommendation": {
+        "en": "First choice for motion, mobile interaction and precise interface polish.",
+        "zh-Hant": "優先用於動效、手機互動與介面細節修整。"
+      },
+      "recommendation_tier": "start_here",
+      "icon": {
+        "url": "https://github.com/emilkowalski.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/emilkowalski",
+        "asset": "/tool-library/emilkowalski--skills.jpg"
+      },
+      "source_commit": "a81dbca07f2217b7103e510c0f13f8d5b017afc9",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/emilkowalski/skills/blob/a81dbca07f2217b7103e510c0f13f8d5b017afc9/LICENSE",
+          "sha256": "4ff5bdb7887ec1435c9cab0e8d1a7caee704d894d65c2a008ccc68b1cc2f260b",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "emilkowalski--skills--emil-design-eng",
+          "native_name": "emil-design-eng",
+          "name": {
+            "en": "Design Engineering",
+            "zh-Hant": "設計工程細節"
+          },
+          "purpose": {
+            "en": "Review small interaction and visual decisions that affect interface quality.",
+            "zh-Hant": "檢查影響介面品質的互動與視覺細節。"
+          },
+          "path": "skills/emil-design-eng/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/emilkowalski/skills/blob/a81dbca07f2217b7103e510c0f13f8d5b017afc9/skills/emil-design-eng/SKILL.md",
+          "sha256": "ffbe68e6007fb42cb8149f089b400a1ca007d59ba23e8948e2be4476f3175939",
+          "source_bytes": 27123,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "emilkowalski--skills--review-animations",
+          "native_name": "review-animations",
+          "name": {
+            "en": "Review Animations",
+            "zh-Hant": "動效審查"
+          },
+          "purpose": {
+            "en": "Review easing, duration and motion behavior.",
+            "zh-Hant": "審查緩動曲線、持續時間與動態行為。"
+          },
+          "path": "skills/review-animations/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/emilkowalski/skills/blob/a81dbca07f2217b7103e510c0f13f8d5b017afc9/skills/review-animations/SKILL.md",
+          "sha256": "6ff590d29e436766135aa3d137be1fac2a867165c7257fc315b189361f1873af",
+          "source_bytes": 8407,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "emilkowalski--skills--mobile-native",
+          "native_name": "mobile-native",
+          "name": {
+            "en": "Mobile Native Feel",
+            "zh-Hant": "手機原生操作感"
+          },
+          "purpose": {
+            "en": "Improve mobile web interactions, viewport behavior and safe areas.",
+            "zh-Hant": "改善手機網頁互動、視窗尺寸行為與安全區域。"
+          },
+          "path": "skills/mobile-native/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/emilkowalski/skills/blob/a81dbca07f2217b7103e510c0f13f8d5b017afc9/skills/mobile-native/SKILL.md",
+          "sha256": "888b7651d66d66dbac4e72b7c554638eb19bd971d686d6cbdf030a5ef3788f55",
+          "source_bytes": 16838,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://syusodo.co.jp/tech-blog/articles/github-trending-2026-07",
+          "kind": "dated_editorial",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-07",
+          "period": "monthly",
+          "scope": "editorial_roundup",
+          "rank": 4,
+          "note": {
+            "en": "The July 2026 monthly roundup places this repository fourth.",
+            "zh-Hant": "2026 年 7 月月榜回顧列此專案為第 4。"
+          }
+        },
+        {
+          "url": "https://trend.ondo.sh/github/2026-07-28/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-07-28",
+          "period": "monthly",
+          "scope": "all_languages",
+          "rank": 6,
+          "note": {
+            "en": "The July 28 archive also includes this repository on the monthly list.",
+            "zh-Hant": "7 月 28 日歷史頁也收錄此專案於月榜。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "jakubkrehel--skills",
+      "repo_url": "https://github.com/jakubkrehel/skills",
+      "owner": "jakubkrehel",
+      "repo": "skills",
+      "name": {
+        "en": "Jakub Krehel Skills",
+        "zh-Hant": "Jakub 介面品質技能"
+      },
+      "summary": {
+        "en": "Focused interface skills for typography, layout, accessibility and product writing.",
+        "zh-Hant": "以單項技能處理字體、版面、無障礙與產品文案。"
+      },
+      "category_id": "design",
+      "category": {
+        "en": "Interface & visual design",
+        "zh-Hant": "介面與視覺設計"
+      },
+      "recommendation": {
+        "en": "First choice for multilingual interfaces, edge states and actionable UI review.",
+        "zh-Hant": "優先用於多語介面、邊界狀態與可執行的 UI 審查。"
+      },
+      "recommendation_tier": "start_here",
+      "icon": {
+        "url": "https://github.com/jakubkrehel.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/jakubkrehel",
+        "asset": "/tool-library/jakubkrehel--skills.png"
+      },
+      "source_commit": "592aedc44d7d5b3e29740984252902f3e5402a1c",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/jakubkrehel/skills/blob/592aedc44d7d5b3e29740984252902f3e5402a1c/LICENSE",
+          "sha256": "ed1dfe988fc40511b4845ccd9050a143a2002fee3bedc8064c47fa342b5d8d4f",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "jakubkrehel--skills--better-interface",
+          "native_name": "better-interface",
+          "name": {
+            "en": "Better Interface",
+            "zh-Hant": "整體介面審查"
+          },
+          "purpose": {
+            "en": "Produce a prioritized report across layout, copy, typography, color and usability.",
+            "zh-Hant": "整合版面、文案、字體、色彩與易用性，產出有優先順序的報告。"
+          },
+          "path": "skills/better-interface/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/jakubkrehel/skills/blob/592aedc44d7d5b3e29740984252902f3e5402a1c/skills/better-interface/SKILL.md",
+          "sha256": "915ed5dc1442d9b78782900ff8b62160133362a2fe23998917814bfb6422869e",
+          "source_bytes": 8779,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "jakubkrehel--skills--better-accessibility",
+          "native_name": "better-accessibility",
+          "name": {
+            "en": "Better Accessibility",
+            "zh-Hant": "改善無障礙"
+          },
+          "purpose": {
+            "en": "Review keyboard access, focus, accessible names and form behavior.",
+            "zh-Hant": "檢查鍵盤操作、焦點、無障礙名稱與表單行為。"
+          },
+          "path": "skills/better-accessibility/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/jakubkrehel/skills/blob/592aedc44d7d5b3e29740984252902f3e5402a1c/skills/better-accessibility/SKILL.md",
+          "sha256": "f3f9dc26c947dbdfc64be80d3c0d278d5d8bb070c7826b2dae6bf8c380e81586",
+          "source_bytes": 10949,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "jakubkrehel--skills--better-layout",
+          "native_name": "better-layout",
+          "name": {
+            "en": "Better Layout",
+            "zh-Hant": "改善版面"
+          },
+          "purpose": {
+            "en": "Check responsive grouping and room for translated text.",
+            "zh-Hant": "檢查響應式分組與翻譯文字所需空間。"
+          },
+          "path": "skills/better-layout/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/jakubkrehel/skills/blob/592aedc44d7d5b3e29740984252902f3e5402a1c/skills/better-layout/SKILL.md",
+          "sha256": "4e7fd6880f41a87a21bb3be8e0b2bd7e7b8c561af5fb706ec0bb3e58877d60ec",
+          "source_bytes": 8414,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "jakubkrehel--skills--state-machine",
+          "native_name": "state-machine",
+          "name": {
+            "en": "Component State Machine",
+            "zh-Hant": "元件狀態總覽"
+          },
+          "purpose": {
+            "en": "Render component states with mock data in a disposable preview.",
+            "zh-Hant": "在可拋棄預覽中以模擬資料呈現元件各種狀態。"
+          },
+          "path": "skills/state-machine/SKILL.md",
+          "mode": "runtime",
+          "requirements": [],
+          "source_url": "https://github.com/jakubkrehel/skills/blob/592aedc44d7d5b3e29740984252902f3e5402a1c/skills/state-machine/SKILL.md",
+          "sha256": "a94d55cf0a6b71bb8e374e66da9fd66fc8095141e7ff9859ab7c23e6f704f5cf",
+          "source_bytes": 6295,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/jakubkrehel--skills/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-29",
+          "period": "weekly",
+          "scope": "all_languages",
+          "rank": 10,
+          "note": {
+            "en": "The October 29 snapshot reports weekly #10.",
+            "zh-Hant": "10 月 29 日快照記載週榜第 10。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "vercel-labs--agent-skills",
+      "repo_url": "https://github.com/vercel-labs/agent-skills",
+      "owner": "vercel-labs",
+      "repo": "agent-skills",
+      "name": {
+        "en": "Vercel Agent Skills",
+        "zh-Hant": "Vercel 前端技能"
+      },
+      "summary": {
+        "en": "Official React performance, composition and web-interface guidance.",
+        "zh-Hant": "官方 React 效能、元件組合與網頁介面準則。"
+      },
+      "category_id": "frontend",
+      "category": {
+        "en": "Frontend performance & accessibility",
+        "zh-Hant": "前端效能與無障礙"
+      },
+      "recommendation": {
+        "en": "First choice for React performance and focused interface checks in the console.",
+        "zh-Hant": "優先用於 Console 的 React 效能與聚焦介面檢查。"
+      },
+      "recommendation_tier": "start_here",
+      "icon": {
+        "url": "https://github.com/vercel-labs.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/vercel-labs",
+        "asset": "/tool-library/vercel-labs--agent-skills.png"
+      },
+      "source_commit": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
+      "license": null,
+      "license_evidence": [],
+      "skills": [
+        {
+          "id": "vercel-labs--agent-skills--vercel-react-best-practices",
+          "native_name": "vercel-react-best-practices",
+          "name": {
+            "en": "React Best Practices",
+            "zh-Hant": "React 最佳實務"
+          },
+          "purpose": {
+            "en": "Review request waterfalls, bundle size and unnecessary re-rendering.",
+            "zh-Hant": "檢查請求瀑布、bundle 大小與不必要的重新渲染。"
+          },
+          "path": "skills/react-best-practices/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/vercel-labs/agent-skills/blob/1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62/skills/react-best-practices/SKILL.md",
+          "sha256": "71ed7794962fa6e803ee83030517b5b93a9f70fbfeb431ec4535c5480a8d8355",
+          "source_bytes": 7251,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "vercel-labs--agent-skills--vercel-composition-patterns",
+          "native_name": "vercel-composition-patterns",
+          "name": {
+            "en": "Composition Patterns",
+            "zh-Hant": "元件組合模式"
+          },
+          "purpose": {
+            "en": "Improve reusable React component APIs and composition boundaries.",
+            "zh-Hant": "改善可重用 React 元件的 API 與組合邊界。"
+          },
+          "path": "skills/composition-patterns/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/vercel-labs/agent-skills/blob/1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62/skills/composition-patterns/SKILL.md",
+          "sha256": "e38e0eaa609316b10423a9a138ed95e35099accd3f735585295c8a8f165c28a3",
+          "source_bytes": 2886,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "vercel-labs--agent-skills--web-design-guidelines",
+          "native_name": "web-design-guidelines",
+          "name": {
+            "en": "Web Design Guidelines",
+            "zh-Hant": "網頁介面準則"
+          },
+          "purpose": {
+            "en": "Audit focus, forms, accessibility and responsive interface behavior.",
+            "zh-Hant": "檢查焦點、表單、無障礙與響應式介面行為。"
+          },
+          "path": "skills/web-design-guidelines/SKILL.md",
+          "mode": "instruction",
+          "requirements": [
+            {
+              "en": "Network access to fetch its external Web Interface Guidelines.",
+              "zh-Hant": "需要網路以讀取外部 Web Interface Guidelines。"
+            }
+          ],
+          "source_url": "https://github.com/vercel-labs/agent-skills/blob/1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62/skills/web-design-guidelines/SKILL.md",
+          "sha256": "f4647ca866a3accf763777f83e7682954f0187cd6bea7eea0399796652414e8f",
+          "source_bytes": 1231,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": null
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://gitnova.dev/en/r/vercel-labs/agent-skills",
+          "kind": "github_language_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-16",
+          "period": "daily",
+          "scope": "JavaScript",
+          "rank": 10,
+          "note": {
+            "en": "The dated record reports JavaScript daily #10 on October 16, not the all-language list.",
+            "zh-Hant": "日期紀錄記載 10 月 16 日 JavaScript 日榜第 10，並非全語言榜。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "Two selected entries declare MIT in frontmatter; web-design-guidelines has no license declaration or applicable license file found here and fetches a live external guideline. Repository-wide license is left null.",
+          "zh-Hant": "兩項選用入口在 frontmatter 宣告 MIT；web-design-guidelines 在本輪未找到授權宣告或可適用授權檔，且會讀取即時外部準則。儲存庫整體授權保留 null。"
+        }
+      ]
+    },
+    {
+      "id": "cloudflare--security-audit-skill",
+      "repo_url": "https://github.com/cloudflare/security-audit-skill",
+      "owner": "cloudflare",
+      "repo": "security-audit-skill",
+      "name": {
+        "en": "Cloudflare Security Audit",
+        "zh-Hant": "Cloudflare 安全稽核"
+      },
+      "summary": {
+        "en": "A multi-phase audit with coverage records, candidate verification and structured findings.",
+        "zh-Hant": "包含覆蓋紀錄、候選驗證與結構化發現的多階段稽核。"
+      },
+      "category_id": "security",
+      "category": {
+        "en": "Security review",
+        "zh-Hant": "安全稽核"
+      },
+      "recommendation": {
+        "en": "Use for a scoped repository security audit with explicit resource limits.",
+        "zh-Hant": "適合有明確範圍與資源上限的儲存庫安全稽核。"
+      },
+      "recommendation_tier": "start_here",
+      "icon": {
+        "url": "https://github.com/cloudflare.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/cloudflare",
+        "asset": "/tool-library/cloudflare--security-audit-skill.jpg"
+      },
+      "source_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8/LICENSE",
+          "sha256": "e598e694aa506650c7192d5ea3be0e50aca0d356ea00551c53429f0b01eb6391",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "cloudflare--security-audit-skill--security-audit",
+          "native_name": "security-audit",
+          "name": {
+            "en": "Security Audit",
+            "zh-Hant": "安全稽核"
+          },
+          "purpose": {
+            "en": "Map trust boundaries, investigate candidates and independently verify findings.",
+            "zh-Hant": "盤點信任邊界、調查候選問題，並獨立驗證發現。"
+          },
+          "path": "skills/security-audit/SKILL.md",
+          "mode": "framework",
+          "requirements": [
+            {
+              "en": "Isolated subagents and Node.js validators for the complete audit workflow.",
+              "zh-Hant": "完整稽核流程需要隔離的子代理與 Node.js 驗證程式。"
+            }
+          ],
+          "source_url": "https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8/skills/security-audit/SKILL.md",
+          "sha256": "5e3e96a1e438d8f35fef0a1e38f02d4f00e2bdf910401b7dfe00e6779c6dac85",
+          "source_bytes": 22026,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://topgit.dev/trending/weekly",
+          "kind": "github_trending_snapshot",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-30",
+          "period": "weekly",
+          "scope": "all_languages",
+          "rank": 1,
+          "note": {
+            "en": "The page stamped October 30 lists this repository first in the GitHub-derived weekly view.",
+            "zh-Hant": "標記 10 月 30 日的 GitHub 週榜整理列此專案為第 1。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "tt-a1i--archify",
+      "repo_url": "https://github.com/tt-a1i/archify",
+      "owner": "tt-a1i",
+      "repo": "archify",
+      "name": {
+        "en": "Archify",
+        "zh-Hant": "Archify 互動架構圖"
+      },
+      "summary": {
+        "en": "Interactive architecture, sequence and workflow diagrams from source-backed facts.",
+        "zh-Hant": "依有來源的事實建立互動架構圖、時序圖與流程圖。"
+      },
+      "category_id": "diagrams",
+      "category": {
+        "en": "Architecture diagrams & documentation",
+        "zh-Hant": "架構圖與技術文件"
+      },
+      "recommendation": {
+        "en": "Useful for explaining Clawdline runtime paths and state transitions.",
+        "zh-Hant": "適合說明 Clawdline 執行路徑與狀態轉換。"
+      },
+      "recommendation_tier": "start_here",
+      "icon": {
+        "url": "https://github.com/tt-a1i.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/tt-a1i",
+        "asset": "/tool-library/tt-a1i--archify.jpg"
+      },
+      "source_commit": "a4065941f12be7967436261d9934784e381d423c",
+      "license": "Apache-2.0",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/tt-a1i/archify/blob/a4065941f12be7967436261d9934784e381d423c/LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "license": "Apache-2.0"
+        },
+        {
+          "path": "LICENSE-MIT",
+          "source_url": "https://github.com/tt-a1i/archify/blob/a4065941f12be7967436261d9934784e381d423c/LICENSE-MIT",
+          "sha256": "b799ab081703e7821ae5096d2c1abdf14bbdc75e8ea1c4045998c36ed6db9706",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "tt-a1i--archify--archify",
+          "native_name": "archify",
+          "name": {
+            "en": "Archify",
+            "zh-Hant": "互動架構與流程圖"
+          },
+          "purpose": {
+            "en": "Turn verified components and relationships into a self-contained HTML diagram.",
+            "zh-Hant": "將已核對的元件與關係轉為獨立 HTML 圖解。"
+          },
+          "path": "archify/SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "The bundled Archify CLI and diagram templates; a browser for interactive review.",
+              "zh-Hant": "隨附的 Archify CLI 與圖解模板；互動檢視需要瀏覽器。"
+            }
+          ],
+          "source_url": "https://github.com/tt-a1i/archify/blob/a4065941f12be7967436261d9934784e381d423c/archify/SKILL.md",
+          "sha256": "1382cfb7108b05e500b82af93c04fd7b694430d3908039bd92d634f01c1e7181",
+          "source_bytes": 18877,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "Apache-2.0"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/tt-a1i--archify/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-08-26",
+          "period": "daily",
+          "scope": "all_languages",
+          "rank": 1,
+          "note": {
+            "en": "The collector records daily #1 on August 26.",
+            "zh-Hant": "蒐集站記錄 8 月 26 日日榜第 1。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "The selected skill declares Apache-2.0 and the repository also includes an MIT license for applicable material; file scope must be preserved.",
+          "zh-Hant": "所選技能宣告 Apache-2.0，儲存庫也含適用素材的 MIT 授權；需保留檔案適用範圍。"
+        }
+      ]
+    },
+    {
+      "id": "dietrichgebert--ponytail",
+      "repo_url": "https://github.com/DietrichGebert/ponytail",
+      "owner": "DietrichGebert",
+      "repo": "ponytail",
+      "name": {
+        "en": "Ponytail",
+        "zh-Hant": "Ponytail 最小修改"
+      },
+      "summary": {
+        "en": "A reuse-first approach to reducing unnecessary code and abstractions.",
+        "zh-Hant": "以優先重用的方式，減少不必要的程式碼與抽象層。"
+      },
+      "category_id": "development",
+      "category": {
+        "en": "Development & code quality",
+        "zh-Hant": "開發效率與程式品質"
+      },
+      "recommendation": {
+        "en": "Use for bounded maintenance changes; evaluate upstream savings claims separately.",
+        "zh-Hant": "適合範圍明確的維護修改；節省比例需另做實測。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://raw.githubusercontent.com/DietrichGebert/ponytail/96608e078b2d5ea607c5c3b8b5a54d1c1fba6846/assets/logo.png",
+        "kind": "project",
+        "source_url": "https://github.com/DietrichGebert/ponytail/blob/96608e078b2d5ea607c5c3b8b5a54d1c1fba6846/assets/logo.png",
+        "asset": "/tool-library/dietrichgebert--ponytail.png"
+      },
+      "source_commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/DietrichGebert/ponytail/blob/96608e078b2d5ea607c5c3b8b5a54d1c1fba6846/LICENSE",
+          "sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "dietrichgebert--ponytail--ponytail",
+          "native_name": "ponytail",
+          "name": {
+            "en": "Ponytail",
+            "zh-Hant": "最小充分修改"
+          },
+          "purpose": {
+            "en": "Look for an existing solution before adding new code.",
+            "zh-Hant": "新增程式碼前，先找可重用的既有解法。"
+          },
+          "path": "skills/ponytail/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/DietrichGebert/ponytail/blob/96608e078b2d5ea607c5c3b8b5a54d1c1fba6846/skills/ponytail/SKILL.md",
+          "sha256": "9badd22a32e19cb884e46dfa8d3aae82bb81dfa5484105b8b4f0262df823a509",
+          "source_bytes": 3496,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "dietrichgebert--ponytail--ponytail-review",
+          "native_name": "ponytail-review",
+          "name": {
+            "en": "Ponytail Review",
+            "zh-Hant": "最小修改審查"
+          },
+          "purpose": {
+            "en": "Review a diff for unnecessary work and avoidable complexity.",
+            "zh-Hant": "檢查差異中不必要的工作與可避免的複雜度。"
+          },
+          "path": "skills/ponytail-review/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/DietrichGebert/ponytail/blob/96608e078b2d5ea607c5c3b8b5a54d1c1fba6846/skills/ponytail-review/SKILL.md",
+          "sha256": "33fe4ebe22a460924e5d4a261e223df22e409cc94ab76182bee9fb91a3ef022e",
+          "source_bytes": 5143,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-30",
+          "period": "last_30_days",
+          "scope": "appearance",
+          "rank": null,
+          "note": {
+            "en": "Included among repositories recorded on GitHub Trending in the prior 30 days; the category list is not the GitHub ranking.",
+            "zh-Hant": "收錄於近 30 天曾登上 GitHub Trending 的專案；分類清單順序不是 GitHub 榜單名次。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "othmanadi--planning-with-files",
+      "repo_url": "https://github.com/OthmanAdi/planning-with-files",
+      "owner": "OthmanAdi",
+      "repo": "planning-with-files",
+      "name": {
+        "en": "Planning with Files",
+        "zh-Hant": "檔案化工作計畫"
+      },
+      "summary": {
+        "en": "Persist plans, findings and progress so long tasks can recover their working state.",
+        "zh-Hant": "將計畫、發現與進度寫入檔案，協助長任務恢復工作狀態。"
+      },
+      "category_id": "development",
+      "category": {
+        "en": "Development & code quality",
+        "zh-Hant": "開發效率與程式品質"
+      },
+      "recommendation": {
+        "en": "Useful for long research tasks; check its hooks and plan ownership before enabling runtime features.",
+        "zh-Hant": "適合長時間研究；啟用執行期功能前，先確認 hooks 與計畫檔擁有權。"
+      },
+      "recommendation_tier": "optional",
+      "icon": {
+        "url": "https://github.com/OthmanAdi.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/OthmanAdi",
+        "asset": "/tool-library/othmanadi--planning-with-files.jpg"
+      },
+      "source_commit": "b6580cd24af1d8a95ab268794456e05608a1afd3",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/OthmanAdi/planning-with-files/blob/b6580cd24af1d8a95ab268794456e05608a1afd3/LICENSE",
+          "sha256": "4f2e5ecfaa4e0833621cfe54c0bdc2f60f086c0925540d7bdc713517eafb3c84",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "othmanadi--planning-with-files--planning-with-files",
+          "native_name": "planning-with-files",
+          "name": {
+            "en": "Planning with Files",
+            "zh-Hant": "檔案化工作計畫"
+          },
+          "purpose": {
+            "en": "Maintain a durable task plan, findings and progress record.",
+            "zh-Hant": "維護可持續讀取的任務計畫、研究發現與進度紀錄。"
+          },
+          "path": "skills/planning-with-files/SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "Compatible host hooks and bundled helper files for automatic recovery.",
+              "zh-Hant": "自動恢復需要主機支援的 hooks 與隨附輔助檔。"
+            }
+          ],
+          "source_url": "https://github.com/OthmanAdi/planning-with-files/blob/b6580cd24af1d8a95ab268794456e05608a1afd3/skills/planning-with-files/SKILL.md",
+          "sha256": "ef827a9e4e5e1fe4cd5c6cbb2d2175cb36e4f64acd29680fd502a732f06072b3",
+          "source_bytes": 41375,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/OthmanAdi--planning-with-files/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-07-05",
+          "period": "daily",
+          "scope": "all_languages",
+          "rank": 20,
+          "note": {
+            "en": "The archive badge records daily #20 on July 5; first recorded by this collector does not mean first-ever appearance.",
+            "zh-Hant": "歷史徽章記錄 7 月 5 日日榜第 20；蒐集站首次記錄不代表專案史上首次上榜。"
+          }
+        }
+      ],
+      "integration_kind": "optional_integration",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "leonxlnx--taste-skill",
+      "repo_url": "https://github.com/Leonxlnx/taste-skill",
+      "owner": "Leonxlnx",
+      "repo": "taste-skill",
+      "name": {
+        "en": "Taste Skill",
+        "zh-Hant": "Taste 視覺方向"
+      },
+      "summary": {
+        "en": "Art direction, visual references and browser checks for distinctive pages.",
+        "zh-Hant": "以視覺方向、參考素材與瀏覽器檢查，建立有辨識度的網頁。"
+      },
+      "category_id": "design",
+      "category": {
+        "en": "Interface & visual design",
+        "zh-Hant": "介面與視覺設計"
+      },
+      "recommendation": {
+        "en": "Useful for a new landing page or a design exploration with a clear brief.",
+        "zh-Hant": "適合有清楚需求的新首頁或設計探索。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://raw.githubusercontent.com/Leonxlnx/taste-skill/12af471f627f866411b4bd785b19646d3672784c/assets/taste-skill-wordmark.png",
+        "kind": "project",
+        "source_url": "https://github.com/Leonxlnx/taste-skill/blob/12af471f627f866411b4bd785b19646d3672784c/assets/taste-skill-wordmark.png",
+        "asset": "/tool-library/leonxlnx--taste-skill.png"
+      },
+      "source_commit": "12af471f627f866411b4bd785b19646d3672784c",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/Leonxlnx/taste-skill/blob/12af471f627f866411b4bd785b19646d3672784c/LICENSE",
+          "sha256": "4575a543ab88dad12ccea7d97e563d0bce5b448b06072e65d3264497dad326df",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "leonxlnx--taste-skill--design-taste-frontend",
+          "native_name": "design-taste-frontend",
+          "name": {
+            "en": "Design Taste Frontend",
+            "zh-Hant": "前端視覺方向"
+          },
+          "purpose": {
+            "en": "Choose a visual direction and verify the resulting page in a browser.",
+            "zh-Hant": "選定視覺方向，並在瀏覽器中驗證產出的頁面。"
+          },
+          "path": "skills/taste-skill/SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "Node.js 22+, Chrome/Edge/Chromium and network access for reference images.",
+              "zh-Hant": "Node.js 22 以上、Chrome／Edge／Chromium，以及搜尋參考圖片的網路權限。"
+            }
+          ],
+          "source_url": "https://github.com/Leonxlnx/taste-skill/blob/12af471f627f866411b4bd785b19646d3672784c/skills/taste-skill/SKILL.md",
+          "sha256": "3435ed963b15a1b6447746ec8844ab2cd38d8d2e8ead3451937f42df01e408c4",
+          "source_bytes": 39537,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-30",
+          "period": "weekly",
+          "scope": "all_languages",
+          "rank": 7,
+          "note": {
+            "en": "The October 30 archive lists this repository on the weekly list.",
+            "zh-Hant": "10 月 30 日歷史整理列此專案於週榜。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "nextlevelbuilder--ui-ux-pro-max-skill",
+      "repo_url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+      "owner": "nextlevelbuilder",
+      "repo": "ui-ux-pro-max-skill",
+      "name": {
+        "en": "UI UX Pro Max",
+        "zh-Hant": "UI UX Pro Max 設計系統"
+      },
+      "summary": {
+        "en": "Searchable design references for styles, palettes, typography and UI patterns.",
+        "zh-Hant": "可檢索的風格、配色、字體與介面模式參考。"
+      },
+      "category_id": "design",
+      "category": {
+        "en": "Interface & visual design",
+        "zh-Hant": "介面與視覺設計"
+      },
+      "recommendation": {
+        "en": "Useful for exploring design directions; keep the established product design system authoritative.",
+        "zh-Hant": "適合探索設計方向；沿用既有產品設計系統作為準則。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/nextlevelbuilder.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/nextlevelbuilder",
+        "asset": "/tool-library/nextlevelbuilder--ui-ux-pro-max-skill.png"
+      },
+      "source_commit": "9a3f14f7423037ccb8feeb4fee7482291b9c820e",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/9a3f14f7423037ccb8feeb4fee7482291b9c820e/LICENSE",
+          "sha256": "738f69dfa83db5c347c678fb9d90e560877059f0de93a327c39001bff92dc014",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "nextlevelbuilder--ui-ux-pro-max-skill--ui-ux-pro-max",
+          "native_name": "ui-ux-pro-max",
+          "name": {
+            "en": "UI UX Pro Max",
+            "zh-Hant": "介面設計系統探索"
+          },
+          "purpose": {
+            "en": "Find design-system recommendations for a product type and technology stack.",
+            "zh-Hant": "依產品類型與技術組合尋找設計系統建議。"
+          },
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "Python 3 and the matching bundled search scripts and reference data.",
+              "zh-Hant": "Python 3，以及對應版本隨附的搜尋程式與參考資料。"
+            }
+          ],
+          "source_url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/9a3f14f7423037ccb8feeb4fee7482291b9c820e/.claude/skills/ui-ux-pro-max/SKILL.md",
+          "sha256": "ea087c341bfb5b23195c7302027268ede86da802554c18a5c4896a6017b439f9",
+          "source_bytes": 15969,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trendshift.io/repositories/15781",
+          "kind": "trendshift_own_ranking",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-01-01",
+          "period": "daily",
+          "scope": "trendshift_all_languages",
+          "rank": 1,
+          "note": {
+            "en": "Trendshift records its own daily #1 on January 1 and weekly #5 in week 1. These are not GitHub Trending ranks.",
+            "zh-Hant": "Trendshift 記錄其自有日榜 1 月 1 日第 1、第一週週榜第 5；這些不是 GitHub Trending 名次。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "The verified popularity evidence is Trendshift’s own ranking. GitHub Trending placement is unconfirmed in this research.",
+          "zh-Hant": "本輪確認的熱門證據是 Trendshift 自有榜；尚未確認 GitHub Trending 名次。"
+        }
+      ]
+    },
+    {
+      "id": "anthropics--skills",
+      "repo_url": "https://github.com/anthropics/skills",
+      "owner": "anthropics",
+      "repo": "skills",
+      "name": {
+        "en": "Anthropic Skills",
+        "zh-Hant": "Anthropic 官方技能"
+      },
+      "summary": {
+        "en": "Official examples for frontend design, browser testing and reusable agent capabilities.",
+        "zh-Hant": "官方提供的前端設計、瀏覽器測試與可重用代理能力範例。"
+      },
+      "category_id": "design",
+      "category": {
+        "en": "Interface & visual design",
+        "zh-Hant": "介面與視覺設計"
+      },
+      "recommendation": {
+        "en": "Use selected frontend and testing entries; document skills have separate license terms.",
+        "zh-Hant": "精選使用前端與測試項目；文件技能另有授權條款。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/anthropics.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/anthropics",
+        "asset": "/tool-library/anthropics--skills.png"
+      },
+      "source_commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "license": "Apache-2.0",
+      "license_evidence": [
+        {
+          "path": "skills/frontend-design/LICENSE.txt",
+          "source_url": "https://github.com/anthropics/skills/blob/ca45fc496a3436251f191354091d557da31c15b5/skills/frontend-design/LICENSE.txt",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "license": "Apache-2.0"
+        },
+        {
+          "path": "skills/webapp-testing/LICENSE.txt",
+          "source_url": "https://github.com/anthropics/skills/blob/ca45fc496a3436251f191354091d557da31c15b5/skills/webapp-testing/LICENSE.txt",
+          "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362",
+          "license": "Apache-2.0"
+        }
+      ],
+      "skills": [
+        {
+          "id": "anthropics--skills--frontend-design",
+          "native_name": "frontend-design",
+          "name": {
+            "en": "Frontend Design",
+            "zh-Hant": "前端視覺設計"
+          },
+          "purpose": {
+            "en": "Create a distinctive interface with intentional typography and composition.",
+            "zh-Hant": "以有意識的字體與構圖選擇建立具辨識度的介面。"
+          },
+          "path": "skills/frontend-design/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/anthropics/skills/blob/ca45fc496a3436251f191354091d557da31c15b5/skills/frontend-design/SKILL.md",
+          "sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3",
+          "source_bytes": 9390,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "Apache-2.0"
+        },
+        {
+          "id": "anthropics--skills--webapp-testing",
+          "native_name": "webapp-testing",
+          "name": {
+            "en": "Web App Testing",
+            "zh-Hant": "網頁應用測試"
+          },
+          "purpose": {
+            "en": "Exercise a local web app with browser automation and screenshots.",
+            "zh-Hant": "以瀏覽器自動化與截圖測試本機網頁應用。"
+          },
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "Python, Playwright and a local test application.",
+              "zh-Hant": "Python、Playwright 與本機測試應用程式。"
+            }
+          ],
+          "source_url": "https://github.com/anthropics/skills/blob/ca45fc496a3436251f191354091d557da31c15b5/skills/webapp-testing/SKILL.md",
+          "sha256": "51b7349e77ec63b7744a6f63647e7566a0b4d2e301121cc10e8c2113af6556a2",
+          "source_bytes": 3913,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "Apache-2.0"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-30",
+          "period": "last_30_days",
+          "scope": "appearance",
+          "rank": null,
+          "note": {
+            "en": "Included in the October 30 archive of recent GitHub Trending appearances. The evidence applies to the repository, not each skill.",
+            "zh-Hant": "收錄於 10 月 30 日的近期 GitHub Trending 紀錄；證據指向儲存庫，不代表每項 Skill 個別上榜。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "License checks cover only the two selected Apache-2.0 entries. Document skills have separate terms.",
+          "zh-Hant": "授權核對僅涵蓋所選的兩項 Apache-2.0 入口；文件技能另有條款。"
+        }
+      ]
+    },
+    {
+      "id": "trailofbits--skills",
+      "repo_url": "https://github.com/trailofbits/skills",
+      "owner": "trailofbits",
+      "repo": "skills",
+      "name": {
+        "en": "Trail of Bits Skills",
+        "zh-Hant": "Trail of Bits 安全技能"
+      },
+      "summary": {
+        "en": "Security-review plugins with focused entry points for analyzing code changes.",
+        "zh-Hant": "以聚焦入口分析程式碼變更的安全審查插件。"
+      },
+      "category_id": "security",
+      "category": {
+        "en": "Security review",
+        "zh-Hant": "安全稽核"
+      },
+      "recommendation": {
+        "en": "Start with differential review; verify the selected plugin and its dependencies.",
+        "zh-Hant": "從差異審查開始，確認所選插件與其相依項目。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/trailofbits.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/trailofbits",
+        "asset": "/tool-library/trailofbits--skills.png"
+      },
+      "source_commit": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
+      "license": "CC-BY-SA-4.0",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/trailofbits/skills/blob/2be6433b39e009cd2b6fd3be1895f6b1faa5af9a/LICENSE",
+          "sha256": "7abe19ec9bb73b36141b999b861d24ad855e808bafe0f81e84cce28556f6c297",
+          "license": "CC-BY-SA-4.0"
+        }
+      ],
+      "skills": [
+        {
+          "id": "trailofbits--skills--differential-review",
+          "native_name": "differential-review",
+          "name": {
+            "en": "Differential Review",
+            "zh-Hant": "安全差異審查"
+          },
+          "purpose": {
+            "en": "Review the security impact of a bounded code change.",
+            "zh-Hant": "審查範圍明確的程式碼變更對安全性的影響。"
+          },
+          "path": "plugins/differential-review/skills/differential-review/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/trailofbits/skills/blob/2be6433b39e009cd2b6fd3be1895f6b1faa5af9a/plugins/differential-review/skills/differential-review/SKILL.md",
+          "sha256": "f9af6a8193fc1a9f8ca3c54bb8d19095a5f20c9472ca6d014488bbde50b67da0",
+          "source_bytes": 7439,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "CC-BY-SA-4.0"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://ageshio.dev/repo/trailofbits/skills/",
+          "kind": "github_language_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-16",
+          "period": "daily",
+          "scope": "Python",
+          "rank": 13,
+          "note": {
+            "en": "The saved table records Python daily #13 on October 16.",
+            "zh-Hant": "保存的表格記錄 10 月 16 日 Python 日榜第 13。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "The repository license is CC-BY-SA-4.0. Review attribution and share-alike obligations before redistribution or adaptation.",
+          "zh-Hant": "儲存庫授權為 CC-BY-SA-4.0；散布或改作前需確認署名與相同方式分享義務。"
+        }
+      ]
+    },
+    {
+      "id": "cathrynlavery--diagram-design",
+      "repo_url": "https://github.com/cathrynlavery/diagram-design",
+      "owner": "cathrynlavery",
+      "repo": "diagram-design",
+      "name": {
+        "en": "Diagram Design",
+        "zh-Hant": "Diagram Design 文件圖解"
+      },
+      "summary": {
+        "en": "Brand-consistent diagrams delivered as self-contained HTML and SVG.",
+        "zh-Hant": "以獨立 HTML 與 SVG 產出符合品牌的文件圖解。"
+      },
+      "category_id": "diagrams",
+      "category": {
+        "en": "Architecture diagrams & documentation",
+        "zh-Hant": "架構圖與技術文件"
+      },
+      "recommendation": {
+        "en": "Useful for README illustrations, architecture explanations and technical documents.",
+        "zh-Hant": "適合 README 插圖、架構說明與技術文件。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://raw.githubusercontent.com/cathrynlavery/diagram-design/0cf73c3fcc56667ad91a9a04c439ac6ccfabc9d1/assets/logo.svg",
+        "kind": "project",
+        "source_url": "https://github.com/cathrynlavery/diagram-design/blob/0cf73c3fcc56667ad91a9a04c439ac6ccfabc9d1/assets/logo.svg",
+        "asset": "/tool-library/cathrynlavery--diagram-design.svg"
+      },
+      "source_commit": "0cf73c3fcc56667ad91a9a04c439ac6ccfabc9d1",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/cathrynlavery/diagram-design/blob/0cf73c3fcc56667ad91a9a04c439ac6ccfabc9d1/LICENSE",
+          "sha256": "bb7e12e91fecef43024111123ff784cec6c485585561d8b552557c0173b3ed29",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "cathrynlavery--diagram-design--diagram-design",
+          "native_name": "diagram-design",
+          "name": {
+            "en": "Diagram Design",
+            "zh-Hant": "技術文件圖解"
+          },
+          "purpose": {
+            "en": "Create diagrams that follow a chosen brand palette and typography.",
+            "zh-Hant": "依選定的品牌配色與字體建立圖解。"
+          },
+          "path": "skills/diagram-design/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/cathrynlavery/diagram-design/blob/0cf73c3fcc56667ad91a9a04c439ac6ccfabc9d1/skills/diagram-design/SKILL.md",
+          "sha256": "83fd5aa46965ce2b14bd42ade80c065a4e17a9f83d2a9f4f275b47cd45d72666",
+          "source_bytes": 30874,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/cathrynlavery--diagram-design/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-29",
+          "period": "last_30_days",
+          "scope": "appearance",
+          "rank": null,
+          "note": {
+            "en": "The October 29 archive reports appearances on 15 of its last 30 recorded days; no rank is inferred.",
+            "zh-Hant": "10 月 29 日歷史頁記錄近 30 天中有 15 天上榜；未推定未列出的名次。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "coreyhaines31--marketingskills",
+      "repo_url": "https://github.com/coreyhaines31/marketingskills",
+      "owner": "coreyhaines31",
+      "repo": "marketingskills",
+      "name": {
+        "en": "Marketing Skills",
+        "zh-Hant": "行銷與成長技能"
+      },
+      "summary": {
+        "en": "Skills for product positioning, conversion, copywriting and search optimization.",
+        "zh-Hant": "處理產品定位、轉換率、文案與搜尋最佳化的技能。"
+      },
+      "category_id": "product",
+      "category": {
+        "en": "Product, SEO & growth",
+        "zh-Hant": "產品、SEO 與成長"
+      },
+      "recommendation": {
+        "en": "Use for website copy and conversion analysis with actual product evidence.",
+        "zh-Hant": "搭配真實產品證據，用於官網文案與轉換分析。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/coreyhaines31.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/coreyhaines31",
+        "asset": "/tool-library/coreyhaines31--marketingskills.jpg"
+      },
+      "source_commit": "88c79f6528a9347420e57ceb1fff9a60de651768",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/LICENSE",
+          "sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "coreyhaines31--marketingskills--copywriting",
+          "native_name": "copywriting",
+          "name": {
+            "en": "Copywriting",
+            "zh-Hant": "產品文案"
+          },
+          "purpose": {
+            "en": "Draft product-page copy based on verified audience and product facts.",
+            "zh-Hant": "依已核對的受眾與產品事實撰寫產品頁文案。"
+          },
+          "path": "skills/copywriting/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/copywriting/SKILL.md",
+          "sha256": "02f0ab1ddd41d95b3c230d4bcff3de6578c8f2e45776c8ef2e4b931636af5bee",
+          "source_bytes": 15553,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "coreyhaines31--marketingskills--cro",
+          "native_name": "cro",
+          "name": {
+            "en": "Conversion Optimization",
+            "zh-Hant": "轉換率最佳化"
+          },
+          "purpose": {
+            "en": "Identify friction in landing pages and forms.",
+            "zh-Hant": "找出到達頁與表單的操作阻力。"
+          },
+          "path": "skills/cro/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/cro/SKILL.md",
+          "sha256": "6e172cc38178c800ff41ceb097f36c6a1db8035fb88a1fee53043f8ec38a6f35",
+          "source_bytes": 7114,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "coreyhaines31--marketingskills--seo-audit",
+          "native_name": "seo-audit",
+          "name": {
+            "en": "SEO Audit",
+            "zh-Hant": "SEO 稽核"
+          },
+          "purpose": {
+            "en": "Review technical and content issues that affect discoverability.",
+            "zh-Hant": "檢查影響可發現性的技術與內容問題。"
+          },
+          "path": "skills/seo-audit/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/coreyhaines31/marketingskills/blob/88c79f6528a9347420e57ceb1fff9a60de651768/skills/seo-audit/SKILL.md",
+          "sha256": "e0ebb5808787f2ff26b96d7b429423874d9785541cd4ab775629a5cf1137e7a9",
+          "source_bytes": 18192,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/coreyhaines31--marketingskills/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-28",
+          "period": "last_30_days",
+          "scope": "appearance",
+          "rank": null,
+          "note": {
+            "en": "The October 28 archive reports two recent Trending appearances; no rank is inferred.",
+            "zh-Hant": "10 月 28 日歷史頁記錄近期兩次 Trending 上榜；未推定未列出的名次。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "agricidaniel--claude-seo",
+      "repo_url": "https://github.com/AgriciDaniel/claude-seo",
+      "owner": "AgriciDaniel",
+      "repo": "claude-seo",
+      "name": {
+        "en": "Claude SEO",
+        "zh-Hant": "Claude SEO 網站稽核"
+      },
+      "summary": {
+        "en": "SEO auditing for technical structure, schema, content and international sites.",
+        "zh-Hant": "針對技術結構、結構化資料、內容與多語網站進行 SEO 稽核。"
+      },
+      "category_id": "product",
+      "category": {
+        "en": "Product, SEO & growth",
+        "zh-Hant": "產品、SEO 與成長"
+      },
+      "recommendation": {
+        "en": "Use core audits first; external data extensions need separate setup and cost review.",
+        "zh-Hant": "先使用核心稽核；外部資料擴充需另行設定並確認費用。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/AgriciDaniel.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/AgriciDaniel",
+        "asset": "/tool-library/agricidaniel--claude-seo.png"
+      },
+      "source_commit": "6be93f45064ffbadced572b5d5c95f55fd263af0",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/LICENSE",
+          "sha256": "a42b3b0253cecea9af810c5207a67b0be8c9a0cfbf52b9302c3d26b063e7a86b",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "agricidaniel--claude-seo--seo-audit",
+          "native_name": "seo-audit",
+          "name": {
+            "en": "SEO Audit",
+            "zh-Hant": "網站 SEO 稽核"
+          },
+          "purpose": {
+            "en": "Plan and coordinate an SEO audit of a specified website.",
+            "zh-Hant": "規劃並統整指定網站的 SEO 稽核。"
+          },
+          "path": "skills/seo-audit/SKILL.md",
+          "mode": "framework",
+          "requirements": [
+            {
+              "en": "Website access and the selected audit helpers; external data extensions may require credentials and paid APIs.",
+              "zh-Hant": "網站讀取權限與所選稽核輔助工具；外部資料擴充可能需要憑證與付費 API。"
+            }
+          ],
+          "source_url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-audit/SKILL.md",
+          "sha256": "9ac7cd233c2a6f0cf4c796c6916a15c8eaf7d2bccca4008e859756cc0f8b6437",
+          "source_bytes": 10644,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "agricidaniel--claude-seo--seo-hreflang",
+          "native_name": "seo-hreflang",
+          "name": {
+            "en": "International SEO",
+            "zh-Hant": "多語網站 SEO"
+          },
+          "purpose": {
+            "en": "Review language and region targeting across translated pages.",
+            "zh-Hant": "檢查翻譯頁面的語言與地區對應。"
+          },
+          "path": "skills/seo-hreflang/SKILL.md",
+          "mode": "instruction",
+          "requirements": [
+            {
+              "en": "Website access and the selected audit helpers; external data extensions may require credentials and paid APIs.",
+              "zh-Hant": "網站讀取權限與所選稽核輔助工具；外部資料擴充可能需要憑證與付費 API。"
+            }
+          ],
+          "source_url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-hreflang/SKILL.md",
+          "sha256": "e0c433db352567045f30de9761fbf4d45d029e666c8cdac5c3dc83716c966ce2",
+          "source_bytes": 14182,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "agricidaniel--claude-seo--seo-schema",
+          "native_name": "seo-schema",
+          "name": {
+            "en": "Schema Review",
+            "zh-Hant": "結構化資料審查"
+          },
+          "purpose": {
+            "en": "Review structured data against actual page content.",
+            "zh-Hant": "依實際頁面內容檢查結構化資料。"
+          },
+          "path": "skills/seo-schema/SKILL.md",
+          "mode": "instruction",
+          "requirements": [
+            {
+              "en": "Website access and the selected audit helpers; external data extensions may require credentials and paid APIs.",
+              "zh-Hant": "網站讀取權限與所選稽核輔助工具；外部資料擴充可能需要憑證與付費 API。"
+            }
+          ],
+          "source_url": "https://github.com/AgriciDaniel/claude-seo/blob/6be93f45064ffbadced572b5d5c95f55fd263af0/skills/seo-schema/SKILL.md",
+          "sha256": "8137d12b4f5aad3f5df4c3e16507f8650cd1c0ff3fd998b6be67d513e61e3719",
+          "source_bytes": 7436,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://topgit.dev/trending/weekly",
+          "kind": "github_trending_snapshot",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-30",
+          "period": "weekly",
+          "scope": "all_languages",
+          "rank": 2,
+          "note": {
+            "en": "The page stamped October 30 lists this repository second in its GitHub-derived weekly view.",
+            "zh-Hant": "標記 10 月 30 日的 GitHub 週榜整理列此專案為第 2。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "phuryn--pm-skills",
+      "repo_url": "https://github.com/phuryn/pm-skills",
+      "owner": "phuryn",
+      "repo": "pm-skills",
+      "name": {
+        "en": "PM Skills",
+        "zh-Hant": "產品決策技能"
+      },
+      "summary": {
+        "en": "Product-discovery, specification and prioritization frameworks for agent-assisted work.",
+        "zh-Hant": "以代理輔助的產品探索、規格與優先排序框架。"
+      },
+      "category_id": "product",
+      "category": {
+        "en": "Product, SEO & growth",
+        "zh-Hant": "產品、SEO 與成長"
+      },
+      "recommendation": {
+        "en": "Useful before coding; keep assumptions and real customer evidence distinguishable.",
+        "zh-Hant": "適合在寫程式前使用，清楚區分假設與真實客戶證據。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/phuryn.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/phuryn",
+        "asset": "/tool-library/phuryn--pm-skills.jpg"
+      },
+      "source_commit": "2a12295a7717569baa7be181b4cfebe3ca38a6bb",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/phuryn/pm-skills/blob/2a12295a7717569baa7be181b4cfebe3ca38a6bb/LICENSE",
+          "sha256": "a2c922f9b81b4f40347ddfa79c38eda0f1278b5a6d108bd4099b4da254c774ee",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "phuryn--pm-skills--create-prd",
+          "native_name": "create-prd",
+          "name": {
+            "en": "Create a PRD",
+            "zh-Hant": "建立產品需求文件"
+          },
+          "purpose": {
+            "en": "Turn product goals and constraints into a structured requirements document.",
+            "zh-Hant": "將產品目標與限制整理為結構化需求文件。"
+          },
+          "path": "pm-execution/skills/create-prd/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/phuryn/pm-skills/blob/2a12295a7717569baa7be181b4cfebe3ca38a6bb/pm-execution/skills/create-prd/SKILL.md",
+          "sha256": "e3aa10a437ed7f748a957bd5d1eb06d8fa3f56dc728dcb93ce484387ecc3fa13",
+          "source_bytes": 7301,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "phuryn--pm-skills--prioritize-features",
+          "native_name": "prioritize-features",
+          "name": {
+            "en": "Prioritize Features",
+            "zh-Hant": "功能優先排序"
+          },
+          "purpose": {
+            "en": "Compare candidate features against explicit product criteria.",
+            "zh-Hant": "依明確產品準則比較候選功能。"
+          },
+          "path": "pm-product-discovery/skills/prioritize-features/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/phuryn/pm-skills/blob/2a12295a7717569baa7be181b4cfebe3ca38a6bb/pm-product-discovery/skills/prioritize-features/SKILL.md",
+          "sha256": "d05c001ea9d71ccf6aca975e0530a2a85545192b1eec9e06cc6d1339156c0f87",
+          "source_bytes": 2497,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://www.github-trending-archives.com/d/2026-06-10",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-06-10",
+          "period": "daily",
+          "scope": "all_languages",
+          "rank": 2,
+          "note": {
+            "en": "The June 10 captured daily list places this repository second.",
+            "zh-Hant": "6 月 10 日保存的日榜列此專案為第 2。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "remotion-dev--skills",
+      "repo_url": "https://github.com/remotion-dev/skills",
+      "owner": "remotion-dev",
+      "repo": "skills",
+      "name": {
+        "en": "Remotion Agent Skills",
+        "zh-Hant": "Remotion 影片技能"
+      },
+      "summary": {
+        "en": "Official guidance for creating and rendering code-based videos with Remotion.",
+        "zh-Hant": "官方提供以 Remotion 建立與渲染程式化影片的準則。"
+      },
+      "category_id": "media",
+      "category": {
+        "en": "Video & motion production",
+        "zh-Hant": "影片與動態製作"
+      },
+      "recommendation": {
+        "en": "Useful for product demos and explainers in a dedicated Remotion project.",
+        "zh-Hant": "適合在獨立 Remotion 專案製作產品展示與解說影片。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/remotion-dev.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/remotion-dev",
+        "asset": "/tool-library/remotion-dev--skills.png"
+      },
+      "source_commit": "30d4553ecd46fbc5212fd0ff006ae43af522158b",
+      "license": null,
+      "license_evidence": [],
+      "skills": [
+        {
+          "id": "remotion-dev--skills--remotion-best-practices",
+          "native_name": "remotion-best-practices",
+          "name": {
+            "en": "Remotion Best Practices",
+            "zh-Hant": "Remotion 最佳實務"
+          },
+          "purpose": {
+            "en": "Apply Remotion guidance to composition, timing and media handling.",
+            "zh-Hant": "將 Remotion 準則用於構圖、時間安排與媒體處理。"
+          },
+          "path": "skills/remotion-best-practices/SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "A Remotion project and its media/rendering environment; this router uses sibling skills.",
+              "zh-Hant": "Remotion 專案及其媒體／渲染環境；此路由技能會使用其他同層技能。"
+            }
+          ],
+          "source_url": "https://github.com/remotion-dev/skills/blob/30d4553ecd46fbc5212fd0ff006ae43af522158b/skills/remotion-best-practices/SKILL.md",
+          "sha256": "b4cfddd463ca44b6127aac813c5f8330f5fe2587f516af5ddfdb0fda453cf8eb",
+          "source_bytes": 4215,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": null
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://www.skills.sh/trending",
+          "kind": "skill_install_leaderboard",
+          "observed_at": "2026-10-31",
+          "snapshot_at": null,
+          "period": null,
+          "scope": "skill_installs",
+          "rank": null,
+          "note": {
+            "en": "The observed skills.sh list includes remotion-best-practices. Its page labels were inconsistent between indexed and opened views; no exact rank or period is asserted. This is not GitHub Trending evidence.",
+            "zh-Hant": "觀察到的 skills.sh 榜單包含 remotion-best-practices；索引與開啟頁面的週期標籤不一致，因此不主張精確名次或週期。這不是 GitHub Trending 證據。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        },
+        {
+          "en": "Popularity evidence is a skill-install list. No applicable license file was found in the pinned repository tree; reuse terms remain unverified.",
+          "zh-Hant": "熱門證據來自技能安裝榜。固定版本樹中未找到可適用的授權檔，使用條款仍待確認。"
+        }
+      ]
+    },
+    {
+      "id": "obra--superpowers",
+      "repo_url": "https://github.com/obra/superpowers",
+      "owner": "obra",
+      "repo": "superpowers",
+      "name": {
+        "en": "Superpowers",
+        "zh-Hant": "Superpowers 開發流程"
+      },
+      "summary": {
+        "en": "An end-to-end development methodology built from composable skills.",
+        "zh-Hant": "由可組合技能構成的完整開發方法。"
+      },
+      "category_id": "workflow",
+      "category": {
+        "en": "Optional development workflows",
+        "zh-Hant": "選用開發流程"
+      },
+      "recommendation": {
+        "en": "List as an optional workflow; coordinate with the existing machine workflow selection.",
+        "zh-Hant": "列為選用流程，與既有機器工作流程選擇整合。"
+      },
+      "recommendation_tier": "optional",
+      "icon": {
+        "url": "https://github.com/obra.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/obra",
+        "asset": "/tool-library/obra--superpowers.jpg"
+      },
+      "source_commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/obra/superpowers/blob/2ce8aa15d05bd57213e6f746f953aafb7ded7a8b/LICENSE",
+          "sha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "obra--superpowers--systematic-debugging",
+          "native_name": "systematic-debugging",
+          "name": {
+            "en": "Systematic Debugging",
+            "zh-Hant": "系統化除錯"
+          },
+          "purpose": {
+            "en": "Reproduce a failure and investigate its cause before changing code.",
+            "zh-Hant": "先重現失敗並調查原因，再修改程式碼。"
+          },
+          "path": "skills/systematic-debugging/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/obra/superpowers/blob/2ce8aa15d05bd57213e6f746f953aafb7ded7a8b/skills/systematic-debugging/SKILL.md",
+          "sha256": "51c6435d98c83c42c96ba7c35725a0b2c376cd487fb1a4e6bd0ddbe7e33ef202",
+          "source_bytes": 9530,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "obra--superpowers--verification-before-completion",
+          "native_name": "verification-before-completion",
+          "name": {
+            "en": "Verification Before Completion",
+            "zh-Hant": "完成前驗證"
+          },
+          "purpose": {
+            "en": "Require fresh evidence before claiming that a task is complete.",
+            "zh-Hant": "宣稱任務完成前，先取得新的驗證證據。"
+          },
+          "path": "skills/verification-before-completion/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/obra/superpowers/blob/2ce8aa15d05bd57213e6f746f953aafb7ded7a8b/skills/verification-before-completion/SKILL.md",
+          "sha256": "2befe7fc55bcadaa3d97dd9e8efeb633d2561c0ebe74c5a8b17c4d9e7e4520b3",
+          "source_bytes": 3646,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "obra--superpowers--using-superpowers",
+          "native_name": "using-superpowers",
+          "name": {
+            "en": "Superpowers Workflow",
+            "zh-Hant": "Superpowers 完整流程"
+          },
+          "purpose": {
+            "en": "Route development tasks through the framework skill set.",
+            "zh-Hant": "透過框架技能集安排開發任務。"
+          },
+          "path": "skills/using-superpowers/SKILL.md",
+          "mode": "framework",
+          "requirements": [],
+          "source_url": "https://github.com/obra/superpowers/blob/2ce8aa15d05bd57213e6f746f953aafb7ded7a8b/skills/using-superpowers/SKILL.md",
+          "sha256": "82c5c8866ad7f5dd4440ce66bd7806ba48a2f13771beae5cf112e53f08fe36ba",
+          "source_bytes": 3192,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/obra--superpowers/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-29",
+          "period": "daily",
+          "scope": "all_languages",
+          "rank": 2,
+          "note": {
+            "en": "The October 29 snapshot reports GitHub daily #2.",
+            "zh-Hant": "10 月 29 日快照記載 GitHub 日榜第 2。"
+          }
+        }
+      ],
+      "integration_kind": "workflow",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "affaan-m--ecc",
+      "repo_url": "https://github.com/affaan-m/ECC",
+      "owner": "affaan-m",
+      "repo": "ECC",
+      "name": {
+        "en": "ECC",
+        "zh-Hant": "ECC 工程環境"
+      },
+      "summary": {
+        "en": "A broad agent environment with skills, hooks, memory and security integrations.",
+        "zh-Hant": "涵蓋技能、hooks、記憶與安全整合的代理工程環境。"
+      },
+      "category_id": "workflow",
+      "category": {
+        "en": "Optional development workflows",
+        "zh-Hant": "選用開發流程"
+      },
+      "recommendation": {
+        "en": "Optional for broader environment work; extract a focused architecture skill first.",
+        "zh-Hant": "適合另行評估工程環境；首輪先採用聚焦的架構技能。"
+      },
+      "recommendation_tier": "optional",
+      "icon": {
+        "url": "https://raw.githubusercontent.com/affaan-m/ECC/b38be6a7f6350964d59328b52f0624e1d1d552d1/assets/images/ecc-logo.png",
+        "kind": "project",
+        "source_url": "https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/assets/images/ecc-logo.png",
+        "asset": "/tool-library/affaan-m--ecc.png"
+      },
+      "source_commit": "b38be6a7f6350964d59328b52f0624e1d1d552d1",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/LICENSE",
+          "sha256": "326146379f01bb137c0a5d3c54770c1aa31076705c8b88a7f6b26a460f6221b2",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "affaan-m--ecc--architecture-decision-records",
+          "native_name": "architecture-decision-records",
+          "name": {
+            "en": "Architecture Decision Records",
+            "zh-Hant": "架構決策紀錄"
+          },
+          "purpose": {
+            "en": "Record the context, alternatives and consequences of a technical decision.",
+            "zh-Hant": "記錄技術決策的脈絡、替代方案與後果。"
+          },
+          "path": "skills/architecture-decision-records/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/skills/architecture-decision-records/SKILL.md",
+          "sha256": "263b20e81801aa5fa7e75eaec6c38345c0ac028ca0edbd67b1b9071c5fcbe11f",
+          "source_bytes": 7182,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "affaan-m--ecc--security-review",
+          "native_name": "security-review",
+          "name": {
+            "en": "Security Review",
+            "zh-Hant": "安全審查"
+          },
+          "purpose": {
+            "en": "Review sensitive application boundaries and security-sensitive changes.",
+            "zh-Hant": "審查敏感應用邊界與涉及安全性的變更。"
+          },
+          "path": "skills/security-review/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/skills/security-review/SKILL.md",
+          "sha256": "b9eb6416eebc8dda046674f0a2dbb3be88aff526d182b60a0f55998d3d6d0d8d",
+          "source_bytes": 12955,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/affaan-m--ECC/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-29",
+          "period": "monthly",
+          "scope": "all_languages",
+          "rank": 15,
+          "note": {
+            "en": "The October 29 snapshot reports GitHub monthly #15.",
+            "zh-Hant": "10 月 29 日快照記載 GitHub 月榜第 15。"
+          }
+        }
+      ],
+      "integration_kind": "workflow",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "garrytan--gstack",
+      "repo_url": "https://github.com/garrytan/gstack",
+      "owner": "garrytan",
+      "repo": "gstack",
+      "name": {
+        "en": "gstack",
+        "zh-Hant": "gstack 產品開發流程"
+      },
+      "summary": {
+        "en": "Role-based product, architecture, review and browser-QA workflows.",
+        "zh-Hant": "依角色安排產品、架構、審查與瀏覽器 QA 的流程。"
+      },
+      "category_id": "workflow",
+      "category": {
+        "en": "Optional development workflows",
+        "zh-Hant": "選用開發流程"
+      },
+      "recommendation": {
+        "en": "An optional alternative workflow; test in isolation before adopting its runtime.",
+        "zh-Hant": "列為可選替代流程，採用執行環境前先隔離驗證。"
+      },
+      "recommendation_tier": "optional",
+      "icon": {
+        "url": "https://github.com/garrytan.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/garrytan",
+        "asset": "/tool-library/garrytan--gstack.jpg"
+      },
+      "source_commit": "a77fae2837695ffc3e7937bb8f3e9dc5eb337fc4",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/garrytan/gstack/blob/a77fae2837695ffc3e7937bb8f3e9dc5eb337fc4/LICENSE",
+          "sha256": "e56fbb5b3d95756f3fa1cfefa24732ec79f18ece1ad08a4e79e00df57e8b198c",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "garrytan--gstack--plan-eng-review",
+          "native_name": "plan-eng-review",
+          "name": {
+            "en": "Engineering Plan Review",
+            "zh-Hant": "工程計畫審查"
+          },
+          "purpose": {
+            "en": "Review architecture and engineering risks before implementation.",
+            "zh-Hant": "實作前審查架構與工程風險。"
+          },
+          "path": "plan-eng-review/SKILL.md",
+          "mode": "framework",
+          "requirements": [
+            {
+              "en": "The matching gstack runtime, Bun and browser tooling for the selected host.",
+              "zh-Hant": "對應版本的 gstack 執行環境、Bun 與所選主機的瀏覽器工具。"
+            }
+          ],
+          "source_url": "https://github.com/garrytan/gstack/blob/a77fae2837695ffc3e7937bb8f3e9dc5eb337fc4/plan-eng-review/SKILL.md",
+          "sha256": "803714f69dc738228045a4c7be92fec52edd9dbbde651bb9d18397cab9bc8f04",
+          "source_bytes": 41175,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        },
+        {
+          "id": "garrytan--gstack--qa-only",
+          "native_name": "qa-only",
+          "name": {
+            "en": "QA Only",
+            "zh-Hant": "僅執行 QA"
+          },
+          "purpose": {
+            "en": "Inspect an application and report reproducible problems.",
+            "zh-Hant": "檢查應用程式並回報可重現問題。"
+          },
+          "path": "qa-only/SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "The matching gstack runtime, Bun and browser tooling for the selected host.",
+              "zh-Hant": "對應版本的 gstack 執行環境、Bun 與所選主機的瀏覽器工具。"
+            }
+          ],
+          "source_url": "https://github.com/garrytan/gstack/blob/a77fae2837695ffc3e7937bb8f3e9dc5eb337fc4/qa-only/SKILL.md",
+          "sha256": "fd8b7b36c5aeed4fb425134ae2c3ca93c3fee5f183f7e7d5b382711780313646",
+          "source_bytes": 21913,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-30",
+          "period": "last_30_days",
+          "scope": "appearance",
+          "rank": null,
+          "note": {
+            "en": "Included in the October 30 archive of repositories that appeared on GitHub Trending in the last 30 days.",
+            "zh-Hant": "收錄於 10 月 30 日整理的近 30 天 GitHub Trending 上榜專案。"
+          }
+        }
+      ],
+      "integration_kind": "workflow",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    },
+    {
+      "id": "nutlope--hallmark",
+      "repo_url": "https://github.com/Nutlope/hallmark",
+      "owner": "Nutlope",
+      "repo": "hallmark",
+      "name": {
+        "en": "Hallmark",
+        "zh-Hant": "Hallmark 網頁設計"
+      },
+      "summary": {
+        "en": "A design skill with material themes, browser checks and an independent final review.",
+        "zh-Hant": "結合材質主題、瀏覽器檢查與獨立最終審查的網頁設計技能。"
+      },
+      "category_id": "design",
+      "category": {
+        "en": "Interface & visual design",
+        "zh-Hant": "介面與視覺設計"
+      },
+      "recommendation": {
+        "en": "Useful for building a purpose-led landing page or exploring alternative visual directions.",
+        "zh-Hant": "適合依頁面目的建立到達頁，或探索不同視覺方向。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://github.com/Nutlope.png?size=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/Nutlope",
+        "asset": "/tool-library/nutlope--hallmark.jpg"
+      },
+      "source_commit": "4f6a46c6dc325d40ab268c93e25c7b96676ebccd",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/Nutlope/hallmark/blob/4f6a46c6dc325d40ab268c93e25c7b96676ebccd/LICENSE",
+          "sha256": "06088a8b94598626f27612dea42300154bf7be967c85d9d3eee4490cb056af7d",
+          "license": "MIT"
+        }
+      ],
+      "skills": [
+        {
+          "id": "nutlope--hallmark--hallmark",
+          "native_name": "hallmark",
+          "name": {
+            "en": "Hallmark",
+            "zh-Hant": "網頁設計與品質檢查"
+          },
+          "purpose": {
+            "en": "Choose an appropriate visual theme and check whether the page serves its visitor’s task.",
+            "zh-Hant": "選擇合適視覺主題，並檢查頁面是否能完成訪客的任務。"
+          },
+          "path": "skills/hallmark/SKILL.md",
+          "mode": "runtime",
+          "requirements": [
+            {
+              "en": "Bundled themes, helper files and browser inspection for the selected host.",
+              "zh-Hant": "所選主機對應的主題檔、輔助檔與瀏覽器檢查工具。"
+            }
+          ],
+          "source_url": "https://github.com/Nutlope/hallmark/blob/4f6a46c6dc325d40ab268c93e25c7b96676ebccd/skills/hallmark/SKILL.md",
+          "sha256": "25a1ff92d925b2389e8409f42fb8ad7e033fceca8b5d1f07ed4ca4c28da53dc3",
+          "source_bytes": 18239,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "MIT"
+        }
+      ],
+      "evidence": [
+        {
+          "url": "https://syusodo.co.jp/tech-blog/articles/github-trending-2026-07",
+          "kind": "dated_editorial",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-07",
+          "period": "monthly",
+          "scope": "editorial_roundup",
+          "rank": 6,
+          "note": {
+            "en": "The July 2026 monthly roundup places Hallmark sixth.",
+            "zh-Hant": "2026 年 7 月月榜回顧列 Hallmark 為第 6。"
+          }
+        }
+      ],
+      "integration_kind": "skill",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and applicable located license files were fetched at pinned commits and hashed. Dependency closure and runtime behavior are not verified.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
+        }
+      ]
+    }
+  ],
+  "research_backlog": [
+    {
+      "repo_url": "https://github.com/multica-ai/andrej-karpathy-skills",
+      "name": {
+        "en": "Karpathy-inspired Guidelines",
+        "zh-Hant": "Karpathy 啟發的編程準則"
+      },
+      "source_commit": "2c606141936f1eeef17fa3043a72095b4765b9c2",
+      "reason": {
+        "en": "No root license file was found in the pinned tree. Retain as a reference until applicable reuse terms are verified.",
+        "zh-Hant": "固定版本樹中未找到根目錄授權檔；先保留為參考，待核對可適用的使用條款。"
+      },
+      "status": "research_reference",
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-30",
+          "period": "last_30_days",
+          "scope": "appearance",
+          "rank": null,
+          "note": {
+            "en": "Recorded by the recent GitHub Trending archive; kept outside the first import catalog.",
+            "zh-Hant": "近期 GitHub Trending 歷史整理有收錄；保留於首輪匯入目錄之外。"
+          }
+        }
+      ]
+    },
+    {
+      "repo_url": "https://github.com/Graphify-Labs/graphify",
+      "name": {
+        "en": "Graphify",
+        "zh-Hant": "Graphify 程式知識圖譜"
+      },
+      "source_commit": "a0946f962af31b19bff941b453f6dae9a7077c7a",
+      "reason": {
+        "en": "The pinned tree contains no SKILL.md entry. Treat as an optional runtime integration; this machine already exposes a guarded Graphify workflow.",
+        "zh-Hant": "固定版本樹中沒有 SKILL.md 入口；列為選用執行期整合，本機已有受控的 Graphify 流程。"
+      },
+      "status": "research_reference",
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-30",
+          "period": "last_30_days",
+          "scope": "appearance",
+          "rank": null,
+          "note": {
+            "en": "Recorded by the recent GitHub Trending archive; kept outside the first import catalog.",
+            "zh-Hant": "近期 GitHub Trending 歷史整理有收錄；保留於首輪匯入目錄之外。"
+          }
+        }
+      ]
+    },
+    {
+      "repo_url": "https://github.com/mksglu/context-mode",
+      "name": {
+        "en": "Context Mode",
+        "zh-Hant": "Context Mode 上下文管理"
+      },
+      "source_commit": "1e64208082f9ee10d1f6a8f60be5da723349ee47",
+      "reason": {
+        "en": "An MCP and hook runtime rather than a plain instruction skill; review its ELv2 license and host integration separately.",
+        "zh-Hant": "屬於 MCP 與 hook 執行環境，需另行確認 ELv2 授權與主機整合。"
+      },
+      "status": "research_reference",
+      "evidence": [
+        {
+          "url": "https://trend.ondo.sh/github/r/en.html",
+          "kind": "github_trending_archive",
+          "observed_at": "2026-10-31",
+          "snapshot_at": "2026-10-30",
+          "period": "last_30_days",
+          "scope": "appearance",
+          "rank": null,
+          "note": {
+            "en": "Recorded by the recent GitHub Trending archive; kept outside the first import catalog.",
+            "zh-Hant": "近期 GitHub Trending 歷史整理有收錄；保留於首輪匯入目錄之外。"
+          }
+        }
+      ]
+    }
+  ]
+}

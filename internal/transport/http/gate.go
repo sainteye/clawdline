@@ -379,6 +379,9 @@ func openPath(p string) bool {
 // orchestrator's credential opens; the shadows of the board and the schedules
 // are gone (D07).
 func machineScoped(p string) bool {
+	if p == "/v1/tool-library" || p == "/v1/tool-library/prepare" {
+		return true
+	}
 	if squadAgentPath(p) {
 		return true
 	}
@@ -571,6 +574,10 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		// The export handler separately requires Send for selected private scopes.
 		if !v.Allowed {
 			return http.StatusForbidden, "forbidden", "This device may not read squad packages."
+		}
+	case p == "/v1/tool-library" || p == "/v1/tool-library/prepare":
+		if !machine && !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			return http.StatusForbidden, "forbidden", "Saving or preparing a tool needs send permission."
 		}
 	case strings.HasPrefix(p, "/v1/squad-packages/") || strings.HasPrefix(p, "/v1/squad/"):
 		if machine && squadAgentPath(p) {

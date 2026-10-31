@@ -30,6 +30,7 @@ var capacityMeasureAreas = []struct {
 	{"squad", (*Server).squadCapacityMeasures},
 	{"squadpackage", (*Server).squadPackageCapacityMeasures},
 	{"store", (*Server).storeCapacityMeasures},
+	{"toollibrary", (*Server).toolLibraryCapacityMeasures},
 	{"terminal", (*Server).terminalCapacityMeasures},
 	{"update", (*Server).updateCapacityMeasures},
 	{"work", (*Server).workCapacityMeasures},

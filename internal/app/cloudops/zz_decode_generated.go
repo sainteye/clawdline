@@ -123,6 +123,9 @@ var generatedDecoders = map[string]genDecoder{
 	"squad.settings.update":              genDecodeSquadSettingsUpdate,
 	"squad.skill-sources":                genDecodeSquadSkillSources,
 	"title":                              genDecodeTitle,
+	"tools.catalog":                      genDecodeToolsCatalog,
+	"tools.prepare":                      genDecodeToolsPrepare,
+	"tools.save":                         genDecodeToolsSave,
 	"transcript":                         genDecodeTranscript,
 	"update":                             genDecodeUpdate,
 	"update-apply":                       genDecodeUpdateApply,
@@ -2797,6 +2800,65 @@ func genDecodeTitle(b body) (plan, LocalRequest, bool) {
 	path := "/v1/sessions/" + segment(genText(b["session"])) + "/title"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Body = b.genFields(map[string]genValue{"title": genValue{from: "text"}})
+	return p, req, true
+}
+
+// genDecodeToolsCatalog is the `tools.catalog` row's decode.
+func genDecodeToolsCatalog(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/tool-library"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeToolsPrepare is the `tools.prepare` row's decode.
+func genDecodeToolsPrepare(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "changes", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 131072}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/tool-library/prepare"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("changes")
+	return p, req, true
+}
+
+// genDecodeToolsSave is the `tools.save` row's decode.
+func genDecodeToolsSave(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "changes", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 131072}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/tool-library"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("changes")
 	return p, req, true
 }
 

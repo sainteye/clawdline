@@ -455,6 +455,22 @@ POST 建立（`title`、`body`、`scope`、選填 `project` 與 `source`）；PA
 遇到 429／5xx，先核對儲存狀態再決定是否重試，不要循環呼叫。來源欄位與完整 API 契約見
 `docs/playbooks.md`。
 
+**工具庫（API 等級 38）。** Session ⋯ → 工具庫可查看收藏與推薦的 GitHub 來源。
+GET `/v1/tool-library` 回傳 `{version,saved,catalog}`。POST 同一路徑，帶
+`{expected_version,project}` 儲存一個正規化來源，或 `{expected_version,remove}` 取消收藏該 ID。
+POST `/v1/tool-library/prepare` 接受
+`{session,conversation,generation,project_id,skill_id,command,target,task,mode,locale}`，
+`mode` 為 `task` 或 `project`。回傳來源選擇與準備指令，不下載或執行程式、不傳送訊息，也不宣稱已安裝。
+使用者在輸入框檢視可編輯任務與清楚顯示的指令附件。收到的 Agent 檢查環境、固定來源、讀取 Skill、
+安裝已獲准的前置項目、驗證後執行；既有授權、憑證與付費呼叫規則仍適用。
+
+讀取需要已配對讀者或這台機器的 orchestrator 憑證；寫入及準備需要 Local／Send 或機器憑證。
+每個 POST 都要 JSON 與最長 200 bytes 的固定 Idempotency-Key。收藏寫入以 `version` 比對後更新；
+`version_conflict` 時先重新讀取。結果未知時沿用相同 bytes 與 key 重試。其他拒絕包含
+`invalid_project`、`unsupported_source`、`project_too_large`、`body_too_large`、`capacity_full`、
+`unknown_project`、`unknown_skill`、`invalid_task`、`stale_session` 與既有收據／執行身分錯誤。
+缺少安裝、載入或採用收據時維持未知。完整契約見 `docs/tool-library.md`。
+
 ## 2a. Feature Root 的一般流程
 
 一般的 Feature Root——負責一張看板項目的 Session——要執行的就是下面這些，依序。每一步都是指令：指令

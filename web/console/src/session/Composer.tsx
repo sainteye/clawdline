@@ -1,3 +1,4 @@
+import { decodeToolDraft, encodeToolDraft, toolMessage, type ToolAttachment, type ToolDraft } from "../tool-library/model.js"
 import { shortcutAria } from "../shortcuts.js"
 import type { AssistantFactsReading } from "./assistant-facts.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
@@ -95,6 +96,8 @@ export function Composer({
   onNativeTerminal,
   onScreen,
   suggestedDraft,
+  toolDraft,
+  toolIdentity = "",
   remote,
   assistantFacts,
   assistantReadiness,
@@ -108,6 +111,8 @@ export function Composer({
   onSent?: () => void
   onNativeTerminal?: () => void
   onScreen?: () => void
+  toolDraft?: ToolDraft | null
+  toolIdentity?: string
   suggestedDraft?: { target: InterventionTarget; text: string; id: number } | null
   /** A fixed remote destination uses this same editor and picture path. */
   remote?: { key: string; machineID: string; assistant?: string; canSend: boolean; allowPictures: boolean;
@@ -121,6 +126,9 @@ export function Composer({
   const msg = useRef<HTMLDivElement>(null)
   const send = useRef<HTMLButtonElement>(null)
   const [text, setText] = useState("")
+  const [tool, setTool] = useState<ToolAttachment | null>(null)
+  const toolAttachment = useRef<ToolAttachment | null>(null)
+  const appliedTool = useRef("")
   const draftKey = remote ? JSON.stringify([remote.machineID, remote.key]) : composerDraftKey(row)
   const [draftReady, setDraftReady] = useState(false)
   const alive = useRef(false)
@@ -137,8 +145,10 @@ export function Composer({
     void composerDrafts.read(draftKey).then(draft => {
       if (!current || !msg.current) return
       if (!draft.durable) warnDraft()
-      msg.current.textContent = draft.text
-      setText(draft.text)
+      const decoded = decodeToolDraft(draft.text)
+      toolAttachment.current = decoded.attachment; setTool(decoded.attachment)
+      msg.current.textContent = decoded.text
+      setText(decoded.text)
       setDraftReady(true)
     }).catch(() => {
       if (current) { setDraftReady(true); warnDraft() }
@@ -156,7 +166,7 @@ export function Composer({
     }
   }, [draftKey, Shots])
   const saveText = (value: string) => {
-    composerDrafts.stageText(draftKey, value)
+    composerDrafts.stageText(draftKey, encodeToolDraft(value, toolAttachment.current))
     // Clearing must delete the durable copy immediately, including a submitted draft.
     if (!value && draftKey) void composerDrafts.flushText(draftKey).catch(warnDraft)
   }
@@ -522,6 +532,13 @@ export function Composer({
     msg.current.focus({ preventScroll: true })
   }, [suggestedDraft, draftReady])
 
+  useEffect(() => {
+    if (!draftReady || !toolDraft || toolDraft.attachment.id === appliedTool.current || toolDraft.attachment.target !== toolIdentity) return
+    appliedTool.current = toolDraft.attachment.id
+    toolAttachment.current = toolDraft.attachment; setTool(toolDraft.attachment)
+    sink.current(toolDraft.text); msg.current?.focus({preventScroll:true})
+  }, [draftReady, toolDraft, toolIdentity])
+
   // The microphone, attached once. `Voice` is a module rather than a hook for
   // the reason the original is one object: there is one recorder on the page,
   // so there is one of these at a time, and a second composer mounting must
@@ -555,7 +572,7 @@ export function Composer({
     // yet; Return comes through here as well as the button.
     if (inFlight.current || Shots.busy()) return
     if (!remote && row?.assistant === "antigravity" && !protocolOwned && !assistantStateCurrent(row)) return
-    const resumeQuery = resumeCommandQuery(rawText(), remote?.assistant ?? row?.assistant, Shots.urls().length)
+    const resumeQuery = toolAttachment.current ? null : resumeCommandQuery(rawText(), remote?.assistant ?? row?.assistant, Shots.urls().length)
     if (resumeQuery !== null && (row || remote)) {
       const owner = row ? L.machineFor(row) : null
       Start.openResume({
@@ -565,6 +582,7 @@ export function Composer({
         } : {}),
       })
       if (msg.current) msg.current.textContent = ""
+      toolAttachment.current = null; setTool(null)
       setText("")
       saveText("")
       hideSkills()
@@ -573,7 +591,11 @@ export function Composer({
     }
     // With the menu up, Return and the button choose the highlighted skill.
     if (acceptSkill()) return
-    const said = rawText().trim()
+    if (toolAttachment.current && (!toolIdentity || toolAttachment.current.target !== toolIdentity)) {
+      setFailure(nextWord("toolLibraryStale"))
+      return
+    }
+    const said = toolMessage(rawText().trim(), toolAttachment.current, toolIdentity)
     const pictures = Shots.urls().slice()
     if (antigravitySlashDraft(remote?.assistant ?? row?.assistant, said, protocolOwned)) {
       setFailure(catalogWord("antigravity", "slashDraft"))
@@ -589,6 +611,7 @@ export function Composer({
         return
       }
       if (msg.current) msg.current.textContent = ""
+      toolAttachment.current = null; setTool(null)
       setText("")
       saveText("")
       setFailure("")
@@ -608,6 +631,7 @@ export function Composer({
     // that it did not go — and then keeps them, with a way to send them again.
     if (msg.current) msg.current.textContent = ""
     if (document.activeElement === msg.current) caretToEnd()
+    toolAttachment.current = null; setTool(null)
     setText("")
     saveText("")
     setFailure("")
@@ -675,6 +699,7 @@ export function Composer({
         void submit()
       }}
     >
+      {tool && <div className="tl-attachment" aria-label={nextWord("toolLibraryAttachment")}><div><span><b>{tool.title}</b><small>{nextWord("toolLibraryPrepared")}</small><small>{tool.revision || nextWord("toolLibraryResolveRevision")}</small></span><button type="button" aria-label={nextWord("toolLibraryRemoveAttachment")} onClick={() => {toolAttachment.current=null;setTool(null);saveText(rawText())}}>×</button></div><details><summary>{nextWord("toolLibraryReadPrompt")}</summary><pre>{tool.prompt}</pre></details>{tool.target !== toolIdentity && <p role="alert">{nextWord("toolLibraryStale")}</p>}</div>}
       {remoteControl && row && <RemotePermissions row={row} write={!!write} />}
       {!remote && <Waiting row={row} assistantFacts={assistantFacts} write={write} onScreen={row && nativeTerminalCommand("/help",row.assistant,row.backend) ? onNativeTerminal ?? onScreen : onScreen} />}
       <div

@@ -457,6 +457,10 @@ const (
 	PersonasCatalog   = "personas.catalog"
 	PersonasTextBytes = "personas.text_bytes"
 	// Versioned squad definitions and private settings.
+	ToolLibraryProjects          = "tools.projects"
+	ToolLibraryProjectBytes      = "tools.project_bytes"
+	ToolLibraryRequestBytes      = "tools.request_bytes"
+	ToolLibraryRequestKeyBytes   = "tools.request_key_bytes"
 	SquadEntities                = "squad.entities"
 	SquadSettingsRows            = "squad.settings_rows"
 	SquadReceipts                = "squad.receipts"

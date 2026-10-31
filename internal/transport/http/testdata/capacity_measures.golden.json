@@ -2813,6 +2813,25 @@
     "Note": true
   },
   {
+    "Name": "tools.project_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "tools.projects",
+    "Known": true
+  },
+  {
+    "Name": "tools.request_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "tools.request_key_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "update.apply_body_bytes",
     "Known": true,
     "Note": true

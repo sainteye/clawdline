@@ -505,6 +505,26 @@ HTTP retries; a completed receipt replays with `Idempotent-Replayed: true`. A 40
 changed content needs reconciliation, not a new key. On 429/5xx, inspect saved state before
 retrying; do not loop. See `docs/playbooks.md` for source fields and the full API contract.
 
+**Tool library (API level 38).** Session ⋯ → Tool library lists saved and recommended
+GitHub sources. GET `/v1/tool-library` returns `{version,saved,catalog}`. POST the same
+path with `{expected_version,project}` to save one normalized source, or
+`{expected_version,remove}` to remove its ID. POST `/v1/tool-library/prepare` accepts
+`{session,conversation,generation,project_id,skill_id,command,target,task,mode,locale}`;
+`mode` is `task` or `project`. It returns a source selection and preparation prompt,
+without fetching or running code, sending a message, or claiming installation.
+The person reviews an editable task and visible instruction attachment in the composer.
+The receiving agent inspects, pins, reads, installs permitted prerequisites, verifies,
+and executes. Existing authorization, credential and paid-call rules remain in force.
+
+Reads require a paired reader or this machine's orchestrator credential; writes and
+preparation need Local/Send or the machine credential. Every POST needs JSON and a stable
+Idempotency-Key of at most 200 bytes. Collection writes use compare-and-swap `version`;
+`version_conflict` requires rereading before another edit. Retry uncertain requests with
+the same bytes and key. Other refusals include `invalid_project`, `unsupported_source`,
+`project_too_large`, `body_too_large`, `capacity_full`, `unknown_project`, `unknown_skill`,
+`invalid_task`, `stale_session`, and the existing receipt/execution refusals. Missing
+installation, load or application receipts remain unknown. Full details: `docs/tool-library.md`.
+
 ## 2a. A Feature Root's ordinary path
 
 This is everything an ordinary Feature Root — a Session that owns one Board item — runs, in order.

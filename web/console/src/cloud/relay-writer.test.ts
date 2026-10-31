@@ -2920,3 +2920,20 @@ test("native Terminal reads keep the opened execution and receipts keep the orig
  assert.equal(receipt.status,200)
  assert.deepEqual(client.calls.pop()?.slice(1,5),[{machine:"mac-a",session:"s1"},"session-receipt",{request:"lookup-1",target_request:"native-key-1",execution_generation:EXECUTION,action:"native-terminal-input"},"read:lookup-1"])
 })
+
+
+test("tool library carries preparation to the chosen machine without sending the task", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  for (const [path, word, changes] of [
+    ["/v1/tool-library", "tools.save", {expected_version:0,remove:"example--skills"}],
+    ["/v1/tool-library/prepare", "tools.prepare", {session:"%tools",conversation:"conversation-a",generation:"execution-a",project_id:"example--skills",mode:"task",task:"Review"}],
+  ] as const) {
+    const request = word + "-1"
+    assert.equal((await reader.fetch(path, post(changes, {"Idempotency-Key":request}))).status,200)
+    assert.deepEqual(client.calls.pop(), ["_machineRequestAs",request,"mac-a",word,{changes},"action"])
+    const count = client.calls.length
+    assert.equal((await reader.fetch(path,post(changes))).status,400)
+    assert.equal(client.calls.length,count)
+  }
+})

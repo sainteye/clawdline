@@ -177,6 +177,9 @@ export const CARRIED = {
   "squad.skill-sources": "GET /v1/squad/skill-sources?provider=&place_id=&id=&folder=",
   start: "POST /v1/places/{id}/start[/{assistant}[/{model}][/as/{persona}]]",
   title: "POST /v1/sessions/{id}/title",
+  "tools.catalog": "GET /v1/tool-library",
+  "tools.prepare": "POST /v1/tool-library/prepare",
+  "tools.save": "POST /v1/tool-library",
   transcript: "GET /v1/transcript?session={id}",
   // The Settings page's update panel and the list's banner
   // (`machine/update.ts`): whether this machine trails the latest build, a

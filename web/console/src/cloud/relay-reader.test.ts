@@ -2058,6 +2058,7 @@ test("squad reads carry exact scope, binding and cursor fields to the chosen mac
   const client = new FakeClient()
   const r = reader(client, { t: 1000 })
   const cases: [string, string, Record<string, unknown>][] = [
+    ["/v1/tool-library", "tools.catalog", {}],
     ["/v1/squad/catalog", "squad.catalog", {}],
     ["/v1/squad/scopes", "squad.scopes", {}],
     ["/v1/squad/skill-sources?provider=codex&place_id=p1", "squad.skill-sources", { provider: "codex", place_id: "p1" }],

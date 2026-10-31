@@ -250,6 +250,7 @@ export interface WriteHost {
  * report name.
  */
 export type WriteRoute =
+ | {op: "tool-library-write"; word: Carried<"tools.save" | "tools.prepare">}
  | {op:"native-terminal-screen";word:Carried<"native-terminal-screen">;session:string}
  | {op:"native-terminal-input";word:Carried<"native-terminal-input">;session:string}
  | {op:"project-graphify-build";word:Carried<"project-graphify-build">;project:string}
@@ -688,6 +689,10 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "projects" && a && b === "unify" && segments.length === 3 && method === "POST") {
     return { op: "project-unify-apply", word: "project-unify-apply", project: a }
   }
+  if (head === "tool-library" && method === "POST") {
+    if (segments.length === 1) return {op:"tool-library-write",word:"tools.save"}
+    if (segments.length === 2 && a === "prepare") return {op:"tool-library-write",word:"tools.prepare"}
+  }
   if (head === "squad" && segments.length === 2 && method === "PUT") {
     if (a === "settings") return { op: "squad-write", word: "squad.settings.update" }
     if (a === "motion") return { op: "squad-write", word: "squad.motion.update" }
@@ -969,6 +974,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "workflow-settings-update":
     case "notification-settings":
     case "notification-settings-update":
+    case "tool-library-write":
     case "squad-write":
     case "squad-package":
     case "board-command":
@@ -1903,10 +1909,11 @@ export class RelayWriter {
         }
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
+      case "tool-library-write":
       case "squad-write": {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         const request = headerOf(init, "idempotency-key")
-        if (!request) throw failure("idempotency_key_required", "Squad writes need an Idempotency-Key.", 400)
+        if (!request) throw failure("idempotency_key_required", "This operation needs an Idempotency-Key.", 400)
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, request)
       }
       case "squad-package": {

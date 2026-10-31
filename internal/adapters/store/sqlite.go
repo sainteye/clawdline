@@ -208,6 +208,9 @@ func Open(dir string) (*Store, error) {
 	if err := openSnippets(db); err != nil {
 		return nil, err
 	}
+	if _, err := db.Exec(toolLibrarySchema); err != nil {
+		return nil, err
+	}
 	if err := openSquad(db); err != nil {
 		return nil, err
 	}
