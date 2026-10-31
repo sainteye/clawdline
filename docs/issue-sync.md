@@ -1,8 +1,7 @@
 # Issue sync: mirroring a Board item into GitHub or Jira
 
-Status (2026-11-01): decided by the owner (D73). Steps 1–5 are implemented. Step 6 is done for
-Jira Cloud (a real site, below) and pending a real GitHub test repository; the GitHub path is
-covered by a transport test against a fake GitHub and by a real device-flow connection.
+Status (2026-11-01): decided by the owner (D73). Steps 1–6 are done: both trackers were exercised
+end to end against the real services (§5, step 6).
 
 This page supersedes the 2026-09-19 rulings G4 ("Clawdline does not open issues") and G6 ("no
 two-way sync") in `work-system.md` §6 and `github-issues.md` §7. Their concern still holds and
@@ -117,7 +116,9 @@ on 2026-11-01; the form links to Atlassian's token page, and the token is checke
    2026-11-01 on an isolated daemon against a real Jira Cloud site: an item created with Jira sync
    stayed `waiting`; at `implementing` the reconciler opened the issue with the title, description
    and marker label; completing the item moved the issue to the done category. Localized issue-type
-   names, here Traditional Chinese, worked as given by the projects route. GitHub: pending a test
-   repository.)*
+   names, here Traditional Chinese, worked as given by the projects route. GitHub done the same day
+   against this repository, from an isolated daemon connected by the device flow: the item's
+   repository came from the Project's `origin`; at `implementing` the issue opened with the body
+   marker, and completing the item closed it with the reason `completed`.)*
 
 Available in the free edition: it runs on one machine's daemon and involves no other machine.
