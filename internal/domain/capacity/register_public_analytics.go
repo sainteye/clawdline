@@ -3,6 +3,7 @@ package capacity
 // Hosted report-reader bounds. Cloud collection and storage have a separate register.
 func publicAnalyticsUIBounds() []Entry {
 	return []Entry{
+		{Name: "console.public_analytics_hours", Class: Buffer, Unit: Rows, Limit: 2160, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person},
 		{Name: "console.public_analytics_days", Class: Buffer, Unit: Rows, Limit: 90, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person},
 		{Name: "console.public_analytics_rows", Class: Buffer, Unit: Rows, Limit: 20, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person},
 		{Name: "console.public_analytics_countries", Class: Buffer, Unit: Rows, Limit: 250, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person},

@@ -19,7 +19,7 @@ func TestPublicAnalyticsUIBoundsAreRegistered(t *testing.T) {
 	for _, row := range Register() {
 		entries[row.Name] = row
 	}
-	for _, field := range []string{"days", "rows", "countries", "page", "readMs", "path", "activeMs"} {
+	for _, field := range []string{"hours", "days", "rows", "countries", "page", "readMs", "path", "activeMs"} {
 		match := regexp.MustCompile(field + `: ([0-9]+)`).FindStringSubmatch(string(raw))
 		if len(match) != 2 {
 			t.Fatalf("missing analytics reader bound %s", field)

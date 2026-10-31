@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node runs source tests directly.
-import { demoVisits, parseVisits, readVisits, visitPath } from "./visits.ts"
+import { demoVisits, parseVisits, readVisits, visitPath, visitHourlyValues } from "./visits.ts"
 test("accepts the separate browser/request units and preserves unknown comparisons",()=>{
  const data=demoVisits(30,1,new Date("2026-10-31T10:00:00Z"));data.previous_views=null
  const s=parseVisits(data);assert.equal(s.previous_views,null);assert.equal(s.views,s.daily.reduce((n:number,r:{views:number})=>n+r.views,0));assert.equal(s.members[0].path,"/docs/install")
@@ -27,4 +27,23 @@ test("keeps server refusal codes and normalizes unreadable or unreachable report
  await assert.rejects(readVisits((async()=>new Response(JSON.stringify({error:{code:"analytics_busy",message:"internal detail"}}),{status:503})) as typeof fetch,"x",7,1,signal),/analytics_busy/)
  await assert.rejects(readVisits((async()=>{throw new Error("private network detail")}) as typeof fetch,"x",7,1,signal),/analytics_network_error/)
  await assert.rejects(readVisits((async()=>new Response("broken JSON")) as typeof fetch,"x",7,1,signal),/invalid_analytics_report/)
+})
+
+test("hourly values keep per-hour distinct accounts and divide active time by that hour's page views",()=>{
+ const hours=[{hour:"2026-10-31T06:00:00Z",views:2,requests:8,member_accounts:1,active_ms:60000},{hour:"2026-10-31T07:00:00Z",views:0,requests:3,member_accounts:0,active_ms:0}]
+ assert.deepEqual(visitHourlyValues(hours,"duration").map(p=>p.value),[30,null])
+ assert.deepEqual(visitHourlyValues(hours,"member_accounts").map(p=>p.value),[1,0])
+ assert.deepEqual(visitHourlyValues(hours,"requests").map(p=>p.value),[8,3])
+})
+test("refuses malformed hourly sequences, future hours, forged counts, and inconsistent totals",()=>{
+ for(const mutate of [
+  (s:ReturnType<typeof demoVisits>)=>{s.hourly![1].hour=s.hourly![0].hour},
+  (s:ReturnType<typeof demoVisits>)=>{s.hourly![1].hour="2026-02-31T00:00:00Z"},
+  (s:ReturnType<typeof demoVisits>)=>{s.hourly![0].member_accounts=s.hourly![0].views+1},
+  (s:ReturnType<typeof demoVisits>)=>{s.hourly![0].active_ms=-1},
+  (s:ReturnType<typeof demoVisits>)=>{s.hourly![0].views++},
+  (s:ReturnType<typeof demoVisits>)=>{s.hourly=Array(2161).fill(s.hourly![0])},
+  (s:ReturnType<typeof demoVisits>)=>{s.hourly![s.hourly!.length-1].hour="2026-11-01T00:00:00Z"},
+ ]){const s=demoVisits(30,1,new Date("2026-10-31T10:00:00Z"));mutate(s);assert.throws(()=>parseVisits(s),/invalid_analytics_report/)}
+ const older=demoVisits();delete older.hourly;assert.equal(parseVisits(older).hourly,undefined)
 })

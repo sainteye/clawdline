@@ -15,6 +15,9 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.public_analytics_countries": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
 		},
+		"console.public_analytics_hours": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
+		},
 		"console.public_analytics_days": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
 		},

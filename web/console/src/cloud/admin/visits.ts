@@ -1,8 +1,10 @@
-export const VISIT_BOUNDS = { days: 90, rows: 20, countries: 250, page: 10000, readMs: 10000, path: 300, activeMs: 1800000 } as const
+export const VISIT_BOUNDS = { hours: 2160, days: 90, rows: 20, countries: 250, page: 10000, readMs: 10000, path: 300, activeMs: 1800000 } as const
 export interface VisitGroup { key: string; views: number; active_ms: number }
+export interface VisitHour { hour: string; views: number; requests: number; member_accounts: number; active_ms: number }
 export interface Visits {
   schema: string; generated_at: string; started_at: string; timezone: "UTC"; days: number; from: string; until: string;
   views: number; member_views: number; member_accounts: number; active_ms: number; requests: number; previous_views: number | null;
+  hourly?: VisitHour[];
   daily: { day: string; views: number; requests: number }[];
   pages: VisitGroup[]; pages_more: boolean; pages_total: number; pages_page: number; sources: VisitGroup[]; campaigns: VisitGroup[]; devices: VisitGroup[]; agents: VisitGroup[]; countries: VisitGroup[];
   members_total: number; page: number; page_size: number; retention_days: number;
@@ -17,7 +19,7 @@ export function parseVisits(value: unknown): Visits {
   const count = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v>=0
   const stamp = (v: unknown) => typeof v === "string" && Number.isFinite(Date.parse(v))
   const fail = () => { throw new Error("invalid_analytics_report") }
-  if (!s || s.schema!=="clawdline.public-analytics.v1" || s.timezone!=="UTC" || ![7,30,90].includes(s.days) ||
+  if (!s || s.schema!=="clawdline.public-analytics.v1" || s.timezone!=="UTC" || ![1,7,30,90].includes(s.days) ||
     ![s.generated_at,s.started_at,s.from,s.until].every(stamp) || Date.parse(s.from)>=Date.parse(s.until) ||
     ![s.views,s.member_views,s.member_accounts,s.active_ms,s.requests,s.members_total,s.page,s.pages_total,s.pages_page].every(count) || s.member_views>s.views || s.member_accounts>s.member_views ||
     !(s.previous_views===null || count(s.previous_views)) || s.pages_page<1 || s.pages_page>VISIT_BOUNDS.page || s.page<1 || s.page>VISIT_BOUNDS.page || s.page_size!==VISIT_BOUNDS.rows || s.retention_days!==90 || typeof s.pages_more!=="boolean") fail()
@@ -29,6 +31,17 @@ export function parseVisits(value: unknown): Visits {
     s.campaigns.some(r=>!["none","launch","reddit-launch"].includes(r.key)) || s.devices.some(r=>!["desktop","mobile","tablet","unknown"].includes(r.key)) ||
     s.agents.some(r=>!["browser","crawler","ai","unknown"].includes(r.key)) || s.countries.some(r=>r.key!=="unknown"&&!/^[A-Z]{2}$/.test(r.key))) fail()
   if (!Array.isArray(s.daily) || s.daily.length>VISIT_BOUNDS.days || s.daily.some(r=>!r || !/^\d{4}-\d{2}-\d{2}$/.test(r.day) || !stamp(r.day) || !count(r.views) || !count(r.requests)) || new Set(s.daily.map(r=>r.day)).size!==s.daily.length) fail()
+  if (s.hourly !== undefined) {
+    const first = Math.max(Date.parse(s.from), Math.floor(Date.parse(s.started_at)/3600000)*3600000)
+    const last = Math.min(Date.parse(s.until)-1, Date.parse(s.generated_at))
+    if (!Array.isArray(s.hourly) || s.hourly.length>VISIT_BOUNDS.hours || s.hourly.some((r,i) =>
+      !r || !/^\d{4}-\d{2}-\d{2}T\d{2}:00:00Z$/.test(r.hour) || !stamp(r.hour) ||
+      new Date(r.hour).toISOString().slice(0,19)+"Z"!==r.hour || Date.parse(r.hour)<first || Date.parse(r.hour)>last ||
+      (i>0 && Date.parse(r.hour)-Date.parse(s.hourly![i-1].hour)!==3600000) ||
+      ![r.views,r.requests,r.member_accounts,r.active_ms].every(count) || r.member_accounts>r.views || r.active_ms>r.views*VISIT_BOUNDS.activeMs)) fail()
+    if (s.hourly.length!==Math.max(0,Math.floor(last/3600000)-Math.floor(first/3600000)+1) || (s.hourly.length>0 && Date.parse(s.hourly[0].hour)!==first)) fail()
+    if (s.hourly.reduce((n,r)=>n+r.views,0)!==s.views || s.hourly.reduce((n,r)=>n+r.requests,0)!==s.requests || s.hourly.reduce((n,r)=>n+r.active_ms,0)!==s.active_ms) fail()
+  }
   if (!Array.isArray(s.members) || s.members.length>VISIT_BOUNDS.rows || s.members.length>s.members_total || s.members.some(r=>!r || typeof r.account_id!=="string" || !r.account_id || r.account_id.length>200 || !(r.account_name===null || typeof r.account_name==="string"&&r.account_name.length<=200) || !visitPath(r.path) || !stamp(r.at) || !count(r.active_ms) || r.active_ms>VISIT_BOUNDS.activeMs)) fail()
   return s
 }
@@ -52,11 +65,23 @@ export async function readVisits(get: typeof fetch, origin: string, days: number
 }
 export function demoVisits(days = 30, page = 1, now = new Date()): Visits {
   const until=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()+1)), from=new Date(+until-days*86400000)
-  const daily=Array.from({length:days},(_,i)=>({day:new Date(+from+i*86400000).toISOString().slice(0,10),views:20+(i*13)%43,requests:34+(i*17)%61}))
-  const views=daily.reduce((n,r)=>n+r.views,0), requests=daily.reduce((n,r)=>n+r.requests,0)
+  const hourly=Array.from({length:Math.floor((+now-+from)/3600000)+1},(_,i)=>{
+    const views=1+(i*13)%5
+    return {hour:new Date(+from+i*3600000).toISOString().slice(0,19)+"Z",views,requests:2+(i*17)%9,member_accounts:i%3===0?1:0,active_ms:views*(15000+(i%6)*7000)}
+  })
+  const daily=Array.from({length:days},(_,i)=>{
+    const day=new Date(+from+i*86400000).toISOString().slice(0,10), rows=hourly.filter(h=>h.hour.startsWith(day))
+    return {day,views:rows.reduce((n,r)=>n+r.views,0),requests:rows.reduce((n,r)=>n+r.requests,0)}
+  })
+  const views=hourly.reduce((n,r)=>n+r.views,0), requests=hourly.reduce((n,r)=>n+r.requests,0), active_ms=hourly.reduce((n,r)=>n+r.active_ms,0)
   return {schema:"clawdline.public-analytics.v1",generated_at:now.toISOString(),started_at:new Date(+from-90*86400000).toISOString(),timezone:"UTC",days,from:from.toISOString(),until:until.toISOString(),
-    views,member_views:32,member_accounts:8,active_ms:views*42000,requests,previous_views:days===90?null:Math.floor(views*.8),daily,
+    views,member_views:32,member_accounts:8,active_ms,requests,previous_views:days===90?null:Math.floor(views*.8),daily,hourly,
     pages:[{key:"/",views:Math.floor(views*.4),active_ms:views*12000},{key:"/docs/install",views:Math.floor(views*.35),active_ms:views*20000},{key:"/docs/first-session",views:views-Math.floor(views*.4)-Math.floor(views*.35),active_ms:views*10000}],pages_more:false,pages_total:3,pages_page:1,
     sources:[{key:"reddit",views:Math.floor(views*.6),active_ms:views*21000},{key:"direct",views:views-Math.floor(views*.6),active_ms:views*21000}],campaigns:[{key:"reddit-launch",views,active_ms:views*42000}],devices:[{key:"desktop",views,active_ms:views*42000}],agents:[{key:"browser",views:Math.floor(requests*.8),active_ms:0},{key:"ai",views:requests-Math.floor(requests*.8),active_ms:0}],countries:[{key:"TW",views:requests,active_ms:0}],
     members_total:32,page,page_size:20,retention_days:90,members:page===1?[{account_id:"example-account",account_name:"Example member",path:"/docs/install",at:now.toISOString(),active_ms:54000}]:[] }
+}
+
+export type VisitMetric = "views" | "requests" | "member_accounts" | "duration"
+export function visitHourlyValues(hours: VisitHour[], metric: VisitMetric): {hour:string;value:number|null}[] {
+  return hours.map(h=>({hour:h.hour,value:metric==="duration"?(h.views?h.active_ms/h.views/1000:null):h[metric]}))
 }
