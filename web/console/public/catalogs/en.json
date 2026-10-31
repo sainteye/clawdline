@@ -10241,7 +10241,7 @@
   "next.toolLibraryCommand": "Optional command or effect",
   "next.toolLibraryConflict": "The collection changed elsewhere. Read it again before saving.",
   "next.toolLibraryCustomNote": "Saving does not fetch or execute code. On first use, the agent discovers the Skill and its required setup at a pinned revision.",
-  "next.toolLibraryDescription": "Save useful projects. Prepare and use Skills or web libraries in this Session.",
+  "next.toolLibraryDescription": "Save useful projects. Prepare and use their tools in this Session.",
   "next.toolLibraryDetails": "View details",
   "next.toolLibraryDiscover": "Discover the matching Skill",
   "next.toolLibraryEmpty": "No saved projects yet. Start with a recommendation or a GitHub URL.",
@@ -10311,11 +10311,13 @@
   "next.toolLibraryUnsupported": "Update this machine to use the tool library.",
   "next.toolLibraryUse": "Prepare and use",
   "next.toolLibraryWriteFailed": "The write outcome could not be confirmed. Read the collection before starting another change, or retry this same request.",
-  "transparency.card.tool-library.condition": "The person prepares a selected Skill and sends its composer draft.",
-  "transparency.card.tool-library.effect": "The receiving agent checks the environment, performs permitted setup, verifies availability and uses the Skill or library. Preparation or delivery is not proof of installation, loading or application.",
+  "transparency.card.tool-library.condition": "The person prepares a selected Skill, library or evaluation framework and sends its composer draft.",
+  "transparency.card.tool-library.effect": "The receiving agent checks the environment, performs permitted setup, verifies availability and uses the Skill, library or evaluation framework. Framework experiments preserve a baseline and independent validation. Preparation or delivery is not proof of installation, loading or application.",
   "transparency.card.tool-library.how": "The machine prepares instructions; the existing composer sends them as user task text after explicit send. Third-party content stays untrusted, and existing permissions and spending approvals still apply.",
-  "transparency.card.tool-library.summary": "Adds a visible, removable task attachment with the repository, pinned revision, real Skill entry or library prerequisites, and reversible setup instructions. Saving or recommending a project installs nothing.",
+  "transparency.card.tool-library.summary": "Adds a visible, removable task attachment with the repository, pinned revision, real Skill entry or library/framework prerequisites, and reversible setup instructions. Saving or recommending a project installs nothing.",
   "transparency.card.tool-library.title": "Tool library preparation task",
   "next.toolLibraryLibrary": "Web library",
-  "next.toolLibraryLibraryNote": "Use the official documentation and only the required components or packages. No SKILL.md is required."
+  "next.toolLibraryLibraryNote": "Use the official documentation and only the required components or packages. No SKILL.md is required.",
+  "next.toolLibraryEvaluationFramework": "Evaluation framework",
+  "next.toolLibraryEvaluationFrameworkNote": "Use the pinned setup guide in an isolated environment. Define independent checks and an approved model-call budget before running experiments. No SKILL.md is required."
 }

@@ -71,6 +71,13 @@
         "en": "Optional development workflows",
         "zh-Hant": "選用開發流程"
       }
+    },
+    {
+      "id": "evaluation",
+      "name": {
+        "en": "Agent evaluation & improvement",
+        "zh-Hant": "代理評測與流程改進"
+      }
     }
   ],
   "projects": [
@@ -2983,6 +2990,109 @@
           "note": {
             "en": "Official documentation checked at the pinned revision; no ranking claim.",
             "zh-Hant": "已核對固定版本的官方文件；不宣稱任何榜單排名。"
+          }
+        }
+      ],
+      "review_status": "documentation_metadata_verified",
+      "dependency_review_status": "not_reviewed"
+    },
+    {
+      "id": "google-research--harness2",
+      "repo_url": "https://github.com/google-research/harness2",
+      "owner": "google-research",
+      "repo": "harness2",
+      "name": {
+        "en": "Harness²",
+        "zh-Hant": "Harness² 代理流程評測"
+      },
+      "summary": {
+        "en": "Refine agent prompts, skills and tools through matched executions, then retain evidence-supported lessons for later tasks.",
+        "zh-Hant": "以同條件實跑比較提示、技能與工具配置，再保留有執行證據的經驗，協助後續任務改進流程。"
+      },
+      "category_id": "evaluation",
+      "category": {
+        "en": "Agent evaluation & improvement",
+        "zh-Hant": "代理評測與流程改進"
+      },
+      "recommendation": {
+        "en": "Use for bounded workflow experiments and evidence-based memory, with independent validation and a preserved baseline.",
+        "zh-Hant": "適合有限範圍的流程實驗與證據式記憶，須搭配獨立驗收並保留原始基準。"
+      },
+      "recommendation_tier": "task_specific",
+      "icon": {
+        "url": "https://raw.githubusercontent.com/google-research/harness2/1cfe254e8d25b15f37048c3730134686abe60335/assets/logo.png",
+        "kind": "project",
+        "source_url": "https://github.com/google-research/harness2/blob/1cfe254e8d25b15f37048c3730134686abe60335/assets/logo.png",
+        "asset": "/tool-library/google-research--harness2.png"
+      },
+      "source_commit": "1cfe254e8d25b15f37048c3730134686abe60335",
+      "license": "Apache-2.0",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/google-research/harness2/blob/1cfe254e8d25b15f37048c3730134686abe60335/LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "license": "Apache-2.0"
+        }
+      ],
+      "skills": [],
+      "integration_kind": "framework",
+      "requirements": [
+        {
+          "en": "The upstream benchmark environment uses Linux, Python 3.12 and uv. Model-backed benchmarks also require Node.js 20+ and the selected executor/provider setup.",
+          "zh-Hant": "上游基準環境使用 Linux、Python 3.12 與 uv；模型評測另需 Node.js 20 以上及選定執行器／供應商設定。"
+        },
+        {
+          "en": "LAB needs Pandoc and Poppler; WorkBuddy-Bench needs Docker. Install only dependencies for the selected benchmark.",
+          "zh-Hant": "LAB 需要 Pandoc 與 Poppler；WorkBuddy-Bench 需要 Docker。只安裝選定基準需要的相依。"
+        },
+        {
+          "en": "Use isolated task data and network controls. Set independent acceptance criteria and obtain any required paid API approval with a request or cost cap before model-backed execution.",
+          "zh-Hant": "使用隔離任務資料與網路控管，定義獨立驗收；模型執行前依規則取得付費 API 核准並設定請求或費用上限。"
+        }
+      ],
+      "limitations": [
+        {
+          "en": "This is an evaluation framework, not an agent Skill. The reviewed tree has no SKILL.md; installation, dependency closure and runtime behavior remain unverified.",
+          "zh-Hant": "這是評測框架，並非 agent Skill；檢閱版本沒有 SKILL.md。尚未驗證安裝、完整相依與執行行為。"
+        },
+        {
+          "en": "At k=1, the core budget includes four task executions and three editing stages; reflection and other work add overhead. These are stages, not API-request counts or a spending cap.",
+          "zh-Hant": "k=1 的核心預算包含四次任務執行與三次編修階段，反思等另有開銷；這些是階段數，不是 API 請求數或費用上限。"
+        },
+        {
+          "en": "Final selection excludes original baseline artifacts, and model judgment does not guarantee correctness or transfer. Preserve an independently checked baseline and allow rejecting a revision.",
+          "zh-Hant": "最終挑選不包含原始基準產物，模型判斷不保證正確或可轉移；須保留獨立驗收的基準及拒絕新版的方式。"
+        },
+        {
+          "en": "The upstream Codex executor disables its sandbox, and public benchmark rubrics may be accessible online. Preserve local permissions and isolate execution and network access before use.",
+          "zh-Hant": "上游 Codex 執行器會關閉沙盒，公開基準的評分規則也可能被網路取得；使用前須保留本機權限限制並隔離執行與網路。"
+        },
+        {
+          "en": "Third-party benchmarks and datasets retain their own licenses. This is not an officially supported Google product.",
+          "zh-Hant": "第三方基準與資料集依各自授權；此專案並非 Google 正式支援產品。"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/google-research/harness2/blob/1cfe254e8d25b15f37048c3730134686abe60335/README.md",
+          "observed_at": "2026-10-31",
+          "scope": "project_readme",
+          "sha256": "17639ac4194bb5c042cbf645430a772ae9be81baee95ab41eaea73cafa138f23",
+          "note": {
+            "en": "Reviewed the pinned README, setup/experiment guides and core implementation. No ranking, installation or measured local improvement is claimed.",
+            "zh-Hant": "已檢閱固定版本 README、安裝／實驗指南及核心實作；不宣稱排名、已安裝或本地效益已驗證。"
+          }
+        },
+        {
+          "kind": "research_paper",
+          "url": "https://arxiv.org/abs/2610.14224v1",
+          "observed_at": "2026-10-31",
+          "scope": "method_and_limitations",
+          "note": {
+            "en": "Author-reported research results are separate from local runtime acceptance.",
+            "zh-Hant": "作者研究結果與本機執行驗收分開。"
           }
         }
       ],

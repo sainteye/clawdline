@@ -176,3 +176,10 @@ the source, perform permitted reversible setup, verify availability and execute
 the task. Neither the daemon nor the recommendation catalog installs third-party
 code. Delivery, installation, loading and application remain separate claims.
 The inventory registers the new producer and composer in both languages.
+
+Tool preparation also distinguishes evaluation frameworks from Skills and web
+libraries. The Harness² path prepares an isolated experiment, independent
+acceptance criteria, preserved baseline artifacts and explicit model-call cost
+controls. It grants no sandbox bypass, paid calls or machine workflow changes.
+Both language cards and the reviewed producer excerpt include this conditional
+framework path; catalog inclusion itself performs no installation or execution.

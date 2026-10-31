@@ -10311,11 +10311,13 @@
   "next.toolLibraryUnsupported": "請更新這台機器以使用工具庫。",
   "next.toolLibraryUse": "準備並使用",
   "next.toolLibraryWriteFailed": "無法確認這次儲存結果，請先重新讀取收藏，或重試同一筆請求。",
-  "transparency.card.tool-library.condition": "使用者選擇 Skill、準備草稿並送出訊息。",
-  "transparency.card.tool-library.effect": "收到任務的 agent 會檢查環境、完成已獲准的準備、驗證可用性，再使用 Skill 或函式庫；指令準備好或送達不代表已安裝、載入或採用。",
+  "transparency.card.tool-library.condition": "使用者選擇 Skill、函式庫或評測框架，準備草稿並送出訊息。",
+  "transparency.card.tool-library.effect": "收到任務的 agent 會檢查環境、完成已獲准的準備、驗證可用性，再使用 Skill、函式庫或評測框架；框架實驗須保留基準與獨立驗收。指令準備好或送達不代表已安裝、載入或採用。",
   "transparency.card.tool-library.how": "機器準備指令，再由既有輸入框於使用者送出時作為任務文字傳送。第三方內容仍不可信任，沿用既有權限與支出核准規則。",
-  "transparency.card.tool-library.summary": "加入可見且可移除的任務附件，包含來源專案、固定版本、真實 Skill 入口或函式庫前置需求，以及可逆的準備指令。收藏或推薦不會安裝任何工具。",
+  "transparency.card.tool-library.summary": "加入可見且可移除的任務附件，包含來源專案、固定版本、真實 Skill 入口或函式庫／框架前置需求，以及可逆的準備指令。收藏或推薦不會安裝任何工具。",
   "transparency.card.tool-library.title": "工具庫準備任務",
   "next.toolLibraryLibrary": "網頁函式庫",
-  "next.toolLibraryLibraryNote": "依官方文件使用所需元件或套件，無須 SKILL.md。"
+  "next.toolLibraryLibraryNote": "依官方文件使用所需元件或套件，無須 SKILL.md。",
+  "next.toolLibraryEvaluationFramework": "評測框架",
+  "next.toolLibraryEvaluationFrameworkNote": "依固定版本的安裝指南準備隔離環境，執行實驗前先定義獨立驗收與獲准的模型呼叫預算，無須 SKILL.md。"
 }

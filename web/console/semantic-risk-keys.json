@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10317,
+  "englishKeys": 10319,
   "counts": {
-    "negation": 2893,
-    "state": 1674,
+    "negation": 2894,
+    "state": 1675,
     "permission": 617,
     "deletion": 222,
     "uncertainty": 389
   },
-  "unionCount": 4556,
+  "unionCount": 4557,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2555,6 +2555,7 @@
       "next.todosReadFailed",
       "next.toolLibraryCustomNote",
       "next.toolLibraryEmpty",
+      "next.toolLibraryEvaluationFrameworkNote",
       "next.toolLibraryFailed",
       "next.toolLibraryIconInitials",
       "next.toolLibraryInvalidURL",
@@ -4370,6 +4371,7 @@
       "next.todosRefreshFailed",
       "next.todosRetryTip",
       "next.toolLibraryEmpty",
+      "next.toolLibraryEvaluationFrameworkNote",
       "next.toolLibraryIsSaved",
       "next.toolLibraryPrepared",
       "next.toolResultImageNotRetained",
@@ -9767,6 +9769,7 @@
     "next.todosRetryTip",
     "next.toolLibraryCustomNote",
     "next.toolLibraryEmpty",
+    "next.toolLibraryEvaluationFrameworkNote",
     "next.toolLibraryFailed",
     "next.toolLibraryIconInitials",
     "next.toolLibraryInvalidURL",

@@ -2747,7 +2747,8 @@
         "[Clawdline tool library / prepare-and-use]",
         "Inspect the current environment and reuse matching installed tools.",
         "Distinguish prepared, installed, loaded and applied; a prompt being delivered proves none of the latter.",
-        "This source is a library, with no Skill entry required."
+        "This source is a library, with no Skill entry required.",
+        "Prepare and use the selected agent evaluation framework. No Skill entry is required."
       ],
       "locations": [
         "Session → Actions → Tool library → Prepare and use",
@@ -2802,7 +2803,7 @@
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_playbook.go": "a72c51ba8318f25d1070276a3dd45c118bc08c5e2ac79c673af5dad01898b37a",
-    "internal/domain/toollibrary/library.go": "6275de59585a710e87006da69a03a32938d05416f6aff37b420864f3b2487726",
+    "internal/domain/toollibrary/library.go": "5fa9cd8bcd54553fce879eca8ca1314fd77d4fee4fbed6e586449df7dcebecb9",
     "internal/domain/workflow/snapshot.go": "08e45303c7f0e1998ff9454a4bd8f77e39d65c310e23c27a9074ea5fa509c965",
     "internal/productcopy/board.go": "710c175d79d8f607a2081dd6c444f3c7d64609535336cbc580f681174970527d",
     "internal/productcopy/board/en.json": "2a42aa5da3ebd5ac172e99d2d649de8a8c8908212b7166280134717d06316d1e",
@@ -2842,7 +2843,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "cabd10e4a0f092dc5ae682f1ad63bbae55782c5230f5155b321ea74b6d2e58d9",
-    "zh-Hant": "7157bb860578dd465263daec01365fcc5555db3de90350ebd3c2cfcc60faed85"
+    "en": "3accdafb1b2b87eb27f4e23a3631337e0c66bf9d455b3853c0cc7afa541b7eec",
+    "zh-Hant": "cb91679bca0b82e02973d7dd2edecae84572257f51017ab8a0faec489ef7e12f"
   }
 }

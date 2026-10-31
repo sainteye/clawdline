@@ -5,8 +5,8 @@ are stored in the machine SQLite database, shared by its paired readers. Writes
 require Send permission or the machine credential. This is a collection of source
 metadata; it never establishes that a tool is installed or enabled.
 
-The compiled recommendation snapshot contains 27 public projects, including four
-web libraries, 46 verified Skill entry paths and ten categories. English and Taiwan Traditional Chinese
+The compiled recommendation snapshot contains 28 public projects, including four
+web libraries and one evaluation framework, 46 verified Skill entry paths and eleven categories. English and Taiwan Traditional Chinese
 names, purposes, requirements and limitations accompany commit and entry SHA-256
 metadata. Historical ranking evidence retains its original kind, date and scope.
 Bundled icons distinguish official project assets from owner avatars; custom
@@ -63,6 +63,27 @@ that the library fits a particular product. Applicable terms must be checked for
 the intended use. Only icon assets are bundled; library runtime code is not shipped
 with Clawdline. The bundled React Bits icon retains its upstream notice in
 `web/console/public/tool-library/react-bits-LICENSE.txt`.
+
+## Evaluation frameworks
+
+The Agent evaluation & improvement category includes [Harness²](https://github.com/google-research/harness2)
+at revision `1cfe254e8d25b15f37048c3730134686abe60335`. It uses
+`integration_kind: framework`, an empty Skill list, a bundled upstream project
+icon and bilingual prerequisites and limitations. The reviewed source has no
+SKILL.md. Its Apache-2.0 license does not replace benchmark or dataset terms.
+The bundled icon retains the license in
+`web/console/public/tool-library/google-research--harness2-LICENSE.txt`.
+
+Framework preparation reads the pinned setup guide and source, defines a bounded
+experiment with independent acceptance criteria and preserves baseline artifacts.
+It uses an isolated environment and keeps the current machine workflow and
+permissions. Upstream Codex disables sandboxing; this preparation does not grant
+permission to do that on the user's host. Credential-free checks and demos remain
+separate from model-backed experiments, whose executor, editor, selector,
+reflection, judge and retry costs all follow existing paid-API approval rules.
+A recursion parameter is not a complete request or spending cap. A selected
+result is not proof of correctness, transfer or improvement over the baseline.
+Inclusion records source review; it does not install or run the framework.
 
 The prompt grants no extra permission for credentials, protected system access,
 paid APIs, destructive changes, publication or contacting others. It preserves

@@ -8,7 +8,7 @@ import (
 
 func TestToolLibrarySourcesAndPinnedPreparation(t *testing.T) {
 	c := Recommendations()
-	if len(c.Projects) != 27 || len(c.Categories) != 10 {
+	if len(c.Projects) != 28 || len(c.Categories) != 11 {
 		t.Fatalf("catalog: %d projects, %d categories", len(c.Projects), len(c.Categories))
 	}
 	skills := 0
@@ -80,6 +80,47 @@ func TestToolLibraryPreparesLibrariesWithoutInventingSkills(t *testing.T) {
 	}
 	if libraries != 4 {
 		t.Fatalf("libraries %d", libraries)
+	}
+}
+
+func TestToolLibraryPreparesEvaluationFrameworkWithoutInventingSkills(t *testing.T) {
+	var p Project
+	for _, candidate := range Recommendations().Projects {
+		if candidate.ID == "google-research--harness2" {
+			p = candidate
+		}
+	}
+	if p.IntegrationKind != "framework" || len(p.Skills) != 0 || !commit.MatchString(p.Commit) || len(p.Requirements) == 0 || p.License == nil {
+		t.Fatal("Harness2 must be a pinned evaluation framework with prerequisites and a license")
+	}
+	for _, mode := range []string{"task", "project"} {
+		for _, locale := range []string{"en", "zh-Hant-TW"} {
+			out, err := Prepare(p, Preparation{Task: "Compare two workflows", Mode: mode, Locale: locale})
+			if err != nil || out.Skill != nil || out.Project.IntegrationKind != "framework" || out.Mode != mode {
+				t.Fatalf("framework preparation: %v", err)
+			}
+			for _, want := range []string{p.Commit, *p.License, p.Requirements[0]["en"], p.Requirements[0]["zh-Hant"]} {
+				if !strings.Contains(out.Prompt, want) {
+					t.Fatalf("framework lost source or prerequisites: %q", want)
+				}
+			}
+			if locale == "en" {
+				for _, want := range []string{"No Skill entry is required", "independent acceptance", "baseline", "request or cost cap", "sandbox", "credential-free", "actual or bounded cost"} {
+					if !strings.Contains(out.Prompt, want) {
+						t.Fatalf("framework preparation lost %q", want)
+					}
+				}
+				if strings.Contains(out.Prompt, "discover the real SKILL.md entries") || strings.Contains(out.Prompt, "Integrate the selected effect") {
+					t.Fatal("framework was given Skill or web-library setup")
+				}
+			} else if !strings.Contains(out.Prompt, "無須 Skill 入口") || !strings.Contains(out.Prompt, "獨立驗收") || !strings.Contains(out.Prompt, "費用上限") {
+				t.Fatal("framework lost localized setup")
+			}
+		}
+	}
+	p.Skills = Recommendations().Projects[0].Skills[:1]
+	if _, err := Normalize(p); err == nil {
+		t.Fatal("evaluation framework accepted a fabricated Skill")
 	}
 }
 

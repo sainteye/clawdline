@@ -81,6 +81,20 @@ func TestToolPreparationPinsConversationAndDoesNotSend(t *testing.T) {
 	if len(p.done()) != 0 {
 		t.Fatal("preparation sent or executed a message", p.done())
 	}
+	input["project_id"] = "google-research--harness2"
+	input["skill_id"] = ""
+	input["locale"] = "zh-Hant-TW"
+	raw, _ = json.Marshal(input)
+	status, body = f.ask("POST", "/v1/tool-library/prepare", f.sender, string(raw), "prepare-framework")
+	if status != 200 {
+		t.Fatalf("framework prepare %d %s", status, body)
+	}
+	if err := json.Unmarshal([]byte(body), &prepared); err != nil || prepared.Skill != nil || prepared.Project.IntegrationKind != "framework" || !strings.Contains(prepared.Prompt, "獨立驗收") || !strings.Contains(prepared.Prompt, prepared.Project.Commit) {
+		t.Fatalf("framework preparation: %s %v", body, err)
+	}
+	if len(p.done()) != 0 {
+		t.Fatal("framework preparation sent or executed a message", p.done())
+	}
 	input["conversation"] = "another-conversation"
 	raw, _ = json.Marshal(input)
 	if status, body = f.ask("POST", "/v1/tool-library/prepare", f.sender, string(raw), "prepare-stale"); status != 409 {

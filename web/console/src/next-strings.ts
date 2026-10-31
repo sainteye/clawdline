@@ -14,7 +14,7 @@ import { catalogWord } from "./catalog.ts"
 const words = {
   en: {
     toolLibraryTitle: "Tool library",
-    toolLibraryDescription: "Save useful projects. Prepare and use Skills or web libraries in this Session.",
+    toolLibraryDescription: "Save useful projects. Prepare and use their tools in this Session.",
     toolLibrarySaved: "My collection",
     toolLibraryRecommended: "Recommended",
     toolLibraryAdd: "Save project",
@@ -55,6 +55,8 @@ const words = {
     toolLibraryEntry: "Skill entry",
     toolLibraryMode: "Content type",
     toolLibraryLibrary: "Web library",
+    toolLibraryEvaluationFramework: "Evaluation framework",
+    toolLibraryEvaluationFrameworkNote: "Use the pinned setup guide in an isolated environment. Define independent checks and an approved model-call budget before running experiments. No SKILL.md is required.",
     toolLibraryLibraryNote: "Use the official documentation and only the required components or packages. No SKILL.md is required.",
     toolLibraryInstruction: "Instructions",
     toolLibraryRuntime: "Requires runtime tools",
@@ -2340,6 +2342,8 @@ const words = {
     toolLibraryEntry: "Skill 入口",
     toolLibraryMode: "內容類型",
     toolLibraryLibrary: "網頁函式庫",
+    toolLibraryEvaluationFramework: "評測框架",
+    toolLibraryEvaluationFrameworkNote: "依固定版本的安裝指南準備隔離環境，執行實驗前先定義獨立驗收與獲准的模型呼叫預算，無須 SKILL.md。",
     toolLibraryLibraryNote: "依官方文件使用所需元件或套件，無須 SKILL.md。",
     toolLibraryInstruction: "指引",
     toolLibraryRuntime: "需要執行工具",
