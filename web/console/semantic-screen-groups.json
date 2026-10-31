@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10315,
-  "riskKeys": 4555,
-  "nonRiskCount": 5760,
+  "englishContentKeys": 10317,
+  "riskKeys": 4556,
+  "nonRiskCount": 5761,
   "groups": [
     {
       "name": "admin / other",
@@ -3673,7 +3673,7 @@
     },
     {
       "name": "next / other",
-      "count": 598,
+      "count": 599,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4121,6 +4121,7 @@
         "next.toolLibraryIconProject",
         "next.toolLibraryInstallation",
         "next.toolLibraryInstruction",
+        "next.toolLibraryLibrary",
         "next.toolLibraryLicense",
         "next.toolLibraryLimitations",
         "next.toolLibraryLoading",

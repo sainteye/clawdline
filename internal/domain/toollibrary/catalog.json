@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "researched_at": "2026-10-31T06:55:34.204644+00:00",
+  "researched_at": "2026-10-31T08:55:17.717876+00:00",
   "categories": [
     {
       "id": "architecture",
@@ -21,6 +21,13 @@
       "name": {
         "en": "Interface & visual design",
         "zh-Hant": "介面與視覺設計"
+      }
+    },
+    {
+      "id": "animation",
+      "name": {
+        "en": "Web animation & interaction",
+        "zh-Hant": "網頁動畫與互動"
       }
     },
     {
@@ -2663,6 +2670,324 @@
           "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與找到的適用授權檔；相依檔案完整性與執行行為尚未驗證。"
         }
       ]
+    },
+    {
+      "id": "darkroomengineering--lenis",
+      "repo_url": "https://github.com/darkroomengineering/lenis",
+      "owner": "darkroomengineering",
+      "repo": "lenis",
+      "name": {
+        "en": "Lenis",
+        "zh-Hant": "Lenis 平滑捲動"
+      },
+      "summary": {
+        "en": "Smooth scrolling with framework adapters and optional GSAP ScrollTrigger synchronization.",
+        "zh-Hant": "平滑捲動，支援框架整合與 GSAP ScrollTrigger 同步。"
+      },
+      "category_id": "animation",
+      "category": {
+        "en": "Web animation & interaction",
+        "zh-Hant": "網頁動畫與互動"
+      },
+      "recommendation": {
+        "en": "Choose this library for a matching animation task; review prerequisites and verify the actual browser result.",
+        "zh-Hant": "依動畫任務需求選用，先核對前置需求，再驗證實際瀏覽器效果。"
+      },
+      "recommendation_tier": "task_specific",
+      "icon": {
+        "url": "https://avatars.githubusercontent.com/u/67077908?v=4&s=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/darkroomengineering",
+        "asset": "/tool-library/darkroomengineering--lenis.png"
+      },
+      "source_commit": "e01eefb1f55cd08bc051521d74f5f8182b71ee9d",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/darkroomengineering/lenis/blob/e01eefb1f55cd08bc051521d74f5f8182b71ee9d/LICENSE",
+          "sha256": "7d1896b31f2eed9f286b05faca067c4e35b2f109ae7c4ed5105220e2d2820228",
+          "license": "MIT"
+        }
+      ],
+      "skills": [],
+      "integration_kind": "library",
+      "requirements": [
+        {
+          "en": "A browser application; install the lenis package with the existing package manager and import its CSS.",
+          "zh-Hant": "瀏覽器應用程式；用既有套件管理器安裝 lenis，並匯入其 CSS。"
+        },
+        {
+          "en": "Use the framework adapter when applicable and manage a single animation loop with cleanup.",
+          "zh-Hant": "依框架選用對應整合，管理單一動畫迴圈並在結束時清理。"
+        }
+      ],
+      "limitations": [
+        {
+          "en": "This is a web library, not an agent Skill. No SKILL.md exists in the reviewed tree; no installation or dependency audit was performed.",
+          "zh-Hant": "這是網頁函式庫，並非 agent Skill；檢閱版本未找到 SKILL.md，尚未執行安裝或相依稽核。"
+        },
+        {
+          "en": "Validate keyboard, anchors, nested scrolling, touch behavior and reduced motion in the target application.",
+          "zh-Hant": "須在目標應用程式驗證鍵盤、錨點、巢狀捲動、觸控及減少動態設定。"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/darkroomengineering/lenis/blob/e01eefb1f55cd08bc051521d74f5f8182b71ee9d/README.md",
+          "observed_at": "2026-10-31",
+          "scope": "project_readme",
+          "note": {
+            "en": "Official documentation checked at the pinned revision; no ranking claim.",
+            "zh-Hant": "已核對固定版本的官方文件；不宣稱任何榜單排名。"
+          }
+        }
+      ],
+      "review_status": "documentation_metadata_verified",
+      "dependency_review_status": "not_reviewed"
+    },
+    {
+      "id": "greensock--gsap",
+      "repo_url": "https://github.com/greensock/GSAP",
+      "owner": "greensock",
+      "repo": "GSAP",
+      "name": {
+        "en": "GSAP",
+        "zh-Hant": "GSAP 動畫工具組"
+      },
+      "summary": {
+        "en": "Timeline, text, SVG and scroll-driven animations with plugins such as ScrollTrigger.",
+        "zh-Hant": "以時間軸控制文字、SVG 與捲動動畫，可選用 ScrollTrigger 等外掛。"
+      },
+      "category_id": "animation",
+      "category": {
+        "en": "Web animation & interaction",
+        "zh-Hant": "網頁動畫與互動"
+      },
+      "recommendation": {
+        "en": "Choose this library for a matching animation task; review prerequisites and verify the actual browser result.",
+        "zh-Hant": "依動畫任務需求選用，先核對前置需求，再驗證實際瀏覽器效果。"
+      },
+      "recommendation_tier": "task_specific",
+      "icon": {
+        "url": "https://avatars.githubusercontent.com/u/2386673?v=4&s=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/greensock",
+        "asset": "/tool-library/greensock--gsap.png"
+      },
+      "source_commit": "13e2b790546426a1a2e0e9b409f3f8dc6d6611f2",
+      "license": "GSAP Standard No Charge License",
+      "license_evidence": [
+        {
+          "path": "package.json",
+          "source_url": "https://github.com/greensock/GSAP/blob/13e2b790546426a1a2e0e9b409f3f8dc6d6611f2/package.json",
+          "sha256": "4ca16b896affd09e270d4dcf5149a02f57def55e4747ce11f68c7723fd3dedaa",
+          "license": "GSAP Standard No Charge License"
+        }
+      ],
+      "skills": [],
+      "integration_kind": "library",
+      "requirements": [
+        {
+          "en": "Install gsap with the application package manager; import and register only required plugins.",
+          "zh-Hant": "以應用程式的套件管理器安裝 gsap，只匯入並註冊必要外掛。"
+        },
+        {
+          "en": "For React, evaluate @gsap/react and clean up contexts, timelines and scroll triggers on unmount.",
+          "zh-Hant": "React 可評估 @gsap/react；卸載時清理 context、時間軸及捲動觸發器。"
+        }
+      ],
+      "limitations": [
+        {
+          "en": "This is a web library, not an agent Skill. No SKILL.md exists in the reviewed tree; no installation or dependency audit was performed.",
+          "zh-Hant": "這是網頁函式庫，並非 agent Skill；檢閱版本未找到 SKILL.md，尚未執行安裝或相依稽核。"
+        },
+        {
+          "en": "Custom license, not MIT. Review the standard license, including restrictions on competing visual animation builders.",
+          "zh-Hant": "採自訂授權，並非 MIT。須核對標準授權，包含競爭性視覺動畫編輯工具的限制。"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/greensock/GSAP/blob/13e2b790546426a1a2e0e9b409f3f8dc6d6611f2/README.md",
+          "observed_at": "2026-10-31",
+          "scope": "project_readme",
+          "note": {
+            "en": "Official documentation checked at the pinned revision; no ranking claim.",
+            "zh-Hant": "已核對固定版本的官方文件；不宣稱任何榜單排名。"
+          }
+        },
+        {
+          "kind": "upstream_license",
+          "url": "https://gsap.com/standard-license/",
+          "observed_at": "2026-10-31",
+          "scope": "license",
+          "note": {
+            "en": "Standard license linked by the pinned README. Recheck applicable terms before use.",
+            "zh-Hant": "固定版本 README 所連結的標準授權；使用前仍須核對適用條款。"
+          }
+        }
+      ],
+      "review_status": "documentation_metadata_verified",
+      "dependency_review_status": "not_reviewed"
+    },
+    {
+      "id": "tengbao--vanta",
+      "repo_url": "https://github.com/tengbao/vanta",
+      "owner": "tengbao",
+      "repo": "vanta",
+      "name": {
+        "en": "Vanta.js",
+        "zh-Hant": "Vanta.js 互動背景"
+      },
+      "summary": {
+        "en": "Customizable animated 3D backgrounds that respond to mouse and touch input.",
+        "zh-Hant": "可自訂的 3D 動態背景，能回應滑鼠與觸控互動。"
+      },
+      "category_id": "animation",
+      "category": {
+        "en": "Web animation & interaction",
+        "zh-Hant": "網頁動畫與互動"
+      },
+      "recommendation": {
+        "en": "Choose this library for a matching animation task; review prerequisites and verify the actual browser result.",
+        "zh-Hant": "依動畫任務需求選用，先核對前置需求，再驗證實際瀏覽器效果。"
+      },
+      "recommendation_tier": "task_specific",
+      "icon": {
+        "url": "https://avatars.githubusercontent.com/u/306044?v=4&s=96",
+        "kind": "owner_avatar",
+        "source_url": "https://github.com/tengbao",
+        "asset": "/tool-library/tengbao--vanta.jpg"
+      },
+      "source_commit": "f8b351906688b56f0fc744e53bde81fc3c56f150",
+      "license": "MIT",
+      "license_evidence": [
+        {
+          "path": "LICENSE.md",
+          "source_url": "https://github.com/tengbao/vanta/blob/f8b351906688b56f0fc744e53bde81fc3c56f150/LICENSE.md",
+          "sha256": "65df69dccc2a06fcf307e81da62c0f64b4abc03fe64a23944427a69642edadcb",
+          "license": "MIT"
+        }
+      ],
+      "skills": [],
+      "integration_kind": "library",
+      "requirements": [
+        {
+          "en": "Install vanta and a compatible Three.js or p5.js version for the selected effect; initialize in the browser.",
+          "zh-Hant": "安裝 vanta，並依效果搭配相容的 Three.js 或 p5.js；在瀏覽器端初始化。"
+        },
+        {
+          "en": "Provide a sized container, retain the effect instance and call destroy during cleanup.",
+          "zh-Hant": "提供有尺寸的容器，保留效果實例並於結束時呼叫 destroy。"
+        }
+      ],
+      "limitations": [
+        {
+          "en": "This is a web library, not an agent Skill. No SKILL.md exists in the reviewed tree; no installation or dependency audit was performed.",
+          "zh-Hant": "這是網頁函式庫，並非 agent Skill；檢閱版本未找到 SKILL.md，尚未執行安裝或相依稽核。"
+        },
+        {
+          "en": "Engine compatibility, mobile GPU cost, WebGL fallback and reduced-motion behavior need application-specific checks.",
+          "zh-Hant": "需依應用程式驗證引擎相容性、手機 GPU 負擔、WebGL 替代呈現與減少動態設定。"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/tengbao/vanta/blob/f8b351906688b56f0fc744e53bde81fc3c56f150/README.md",
+          "observed_at": "2026-10-31",
+          "scope": "project_readme",
+          "note": {
+            "en": "Official documentation checked at the pinned revision; no ranking claim.",
+            "zh-Hant": "已核對固定版本的官方文件；不宣稱任何榜單排名。"
+          }
+        }
+      ],
+      "review_status": "documentation_metadata_verified",
+      "dependency_review_status": "not_reviewed"
+    },
+    {
+      "id": "davidhdev--react-bits",
+      "repo_url": "https://github.com/DavidHDev/react-bits",
+      "owner": "DavidHDev",
+      "repo": "react-bits",
+      "name": {
+        "en": "React Bits",
+        "zh-Hant": "React Bits 動態元件"
+      },
+      "summary": {
+        "en": "Customizable React text effects, interactions, components and animated backgrounds.",
+        "zh-Hant": "可自訂的 React 文字特效、互動元件與動態背景。"
+      },
+      "category_id": "animation",
+      "category": {
+        "en": "Web animation & interaction",
+        "zh-Hant": "網頁動畫與互動"
+      },
+      "recommendation": {
+        "en": "Choose this library for a matching animation task; review prerequisites and verify the actual browser result.",
+        "zh-Hant": "依動畫任務需求選用，先核對前置需求，再驗證實際瀏覽器效果。"
+      },
+      "recommendation_tier": "task_specific",
+      "icon": {
+        "url": "https://raw.githubusercontent.com/DavidHDev/react-bits/4dc7b5b7772e1217c8fb8d2a7aa074302180e5b4/public/apple-touch-icon.png",
+        "kind": "project",
+        "source_url": "https://github.com/DavidHDev/react-bits/blob/4dc7b5b7772e1217c8fb8d2a7aa074302180e5b4/public/apple-touch-icon.png",
+        "asset": "/tool-library/davidhdev--react-bits.png"
+      },
+      "source_commit": "4dc7b5b7772e1217c8fb8d2a7aa074302180e5b4",
+      "license": "MIT + Commons Clause",
+      "license_evidence": [
+        {
+          "path": "LICENSE.md",
+          "source_url": "https://github.com/DavidHDev/react-bits/blob/4dc7b5b7772e1217c8fb8d2a7aa074302180e5b4/LICENSE.md",
+          "sha256": "4bdd1fa59a6b7d5954bc3b213dbc34e455c635a94bbcecf9293553797d0fad02",
+          "license": "MIT + Commons Clause"
+        }
+      ],
+      "skills": [],
+      "integration_kind": "library",
+      "requirements": [
+        {
+          "en": "Use an existing React application; select the JavaScript/TypeScript and CSS/Tailwind variant matching it.",
+          "zh-Hant": "使用既有 React 應用程式，選符合專案的 JavaScript／TypeScript 與 CSS／Tailwind 版本。"
+        },
+        {
+          "en": "Copy only the selected component and required dependencies from the reviewed revision; registry content must be separately pinned and reviewed if used.",
+          "zh-Hant": "只從檢閱版本複製選定元件及必要相依；若改用 registry，須另外固定並核對其內容。"
+        }
+      ],
+      "limitations": [
+        {
+          "en": "This is a web library, not an agent Skill. No SKILL.md exists in the reviewed tree; no installation or dependency audit was performed.",
+          "zh-Hant": "這是網頁函式庫，並非 agent Skill；檢閱版本未找到 SKILL.md，尚未執行安裝或相依稽核。"
+        },
+        {
+          "en": "MIT plus Commons Clause; preserve notices and review restrictions on redistributing components, tools and exports as products themselves.",
+          "zh-Hant": "MIT 加上 Commons Clause；須保留聲明，並核對將元件、工具或匯出素材本身重新散布為產品的限制。"
+        },
+        {
+          "en": "Optional MCP and paid Pro content are outside this recommendation; they are not required or enabled.",
+          "zh-Hant": "此推薦不含選用 MCP 與付費 Pro 內容；使用推薦元件不需要也不會啟用它們。"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/DavidHDev/react-bits/blob/4dc7b5b7772e1217c8fb8d2a7aa074302180e5b4/README.md",
+          "observed_at": "2026-10-31",
+          "scope": "project_readme",
+          "note": {
+            "en": "Official documentation checked at the pinned revision; no ranking claim.",
+            "zh-Hant": "已核對固定版本的官方文件；不宣稱任何榜單排名。"
+          }
+        }
+      ],
+      "review_status": "documentation_metadata_verified",
+      "dependency_review_status": "not_reviewed"
     }
   ],
   "research_backlog": [

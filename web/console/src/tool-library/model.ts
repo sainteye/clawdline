@@ -5,7 +5,7 @@ export interface Evidence { url: string; kind: string; rank?: number | null; sco
 export interface Project {
   id: string; repo_url: string; owner: string; repo: string; name: Names; summary: Names; category_id: string; category: Names
   recommendation?: Names; recommendation_tier?: string; icon: { url: string; kind: string; source_url: string; asset?: string }
-  source_commit: string; license: string | null; skills: Skill[]; evidence?: Evidence[]; integration_kind?: string; limitations?: Names[]
+  source_commit: string; license: string | null; skills: Skill[]; evidence?: Evidence[]; integration_kind?: string; requirements?: Names[]; limitations?: Names[]
 }
 export interface Library { version: number; saved: Project[]; catalog: { categories: Category[]; projects: Project[]; researched_at: string } }
 export interface Prepared { project: Project; skill: Skill | null; task: string; prompt: string; mode: string }

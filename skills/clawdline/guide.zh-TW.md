@@ -463,6 +463,8 @@ POST `/v1/tool-library/prepare` 接受
 `mode` 為 `task` 或 `project`。回傳來源選擇與準備指令，不下載或執行程式、不傳送訊息，也不宣稱已安裝。
 使用者在輸入框檢視可編輯任務與清楚顯示的指令附件。收到的 Agent 檢查環境、固定來源、讀取 Skill、
 安裝已獲准的前置項目、驗證後執行；既有授權、憑證與付費呼叫規則仍適用。
+`integration_kind: library` 的來源沒有 Skill 入口，須讀取固定版本的 README、套件資訊、
+授權與專案前置需求。分別記錄實際安裝的套件版本與檢閱的 commit，準備後驗證相關瀏覽器行為。
 
 讀取需要已配對讀者或這台機器的 orchestrator 憑證；寫入及準備需要 Local／Send 或機器憑證。
 每個 POST 都要 JSON 與最長 200 bytes 的固定 Idempotency-Key。收藏寫入以 `version` 比對後更新；

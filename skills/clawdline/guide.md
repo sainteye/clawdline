@@ -515,6 +515,9 @@ without fetching or running code, sending a message, or claiming installation.
 The person reviews an editable task and visible instruction attachment in the composer.
 The receiving agent inspects, pins, reads, installs permitted prerequisites, verifies,
 and executes. Existing authorization, credential and paid-call rules remain in force.
+Sources with `integration_kind: library` have no Skill entry; use their pinned README,
+package manifest, license and project prerequisites. Keep installed package versions
+separate from the reviewed commit, and verify relevant browser behavior after setup.
 
 Reads require a paired reader or this machine's orchestrator credential; writes and
 preparation need Local/Send or the machine credential. Every POST needs JSON and a stable

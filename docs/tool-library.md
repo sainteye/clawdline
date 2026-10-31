@@ -5,8 +5,8 @@ are stored in the machine SQLite database, shared by its paired readers. Writes
 require Send permission or the machine credential. This is a collection of source
 metadata; it never establishes that a tool is installed or enabled.
 
-The compiled recommendation snapshot contains 23 public projects, 46 verified
-Skill entry paths and nine categories. English and Taiwan Traditional Chinese
+The compiled recommendation snapshot contains 27 public projects, including four
+web libraries, 46 verified Skill entry paths and ten categories. English and Taiwan Traditional Chinese
 names, purposes, requirements and limitations accompany commit and entry SHA-256
 metadata. Historical ranking evidence retains its original kind, date and scope.
 Bundled icons distinguish official project assets from owner avatars; custom
@@ -28,6 +28,35 @@ reviewed product change, not runtime third-party execution.
 6. The receiving agent inspects existing tools, pins and reads the source and its
    references, completes permitted reversible setup, checks availability, then
    performs the task. It reports commands, versions, paths and any blockers.
+
+## Web libraries
+
+The Web animation & interaction category contains [Lenis](https://github.com/darkroomengineering/lenis),
+[GSAP](https://github.com/greensock/GSAP), [Vanta.js](https://github.com/tengbao/vanta)
+and [React Bits](https://github.com/DavidHDev/react-bits). Their reviewed trees have
+no SKILL.md. They use `integration_kind: library`, an empty Skill list and bilingual
+project prerequisites. Their cards and details identify a web library rather than
+offering Skill discovery. Source evidence is official documentation, not a ranking.
+
+Library preparation includes the prerequisites and license in the visible prompt.
+The receiving agent reads the pinned README, selected source and package manifest,
+reviews installation scripts, then installs a compatible package or copies only the
+required component. It records the installed package version separately from the
+reviewed commit. Task scope uses an isolated example; Project scope integrates into
+the application. Verification includes the build and relevant browser behavior,
+cleanup, reduced motion, mobile use and rendering fallbacks. It does not install
+the upstream documentation website or enable an optional MCP server.
+
+Lenis and Vanta use MIT licenses. GSAP uses its
+[custom standard license](https://gsap.com/standard-license/), with restrictions
+on competing visual animation builders. React Bits uses
+[MIT plus Commons Clause](https://github.com/DavidHDev/react-bits/blob/4dc7b5b7772e1217c8fb8d2a7aa074302180e5b4/LICENSE.md),
+with restrictions on redistributing the components, tools and exports themselves.
+Catalog inclusion is metadata review, not dependency review, installation or proof
+that the library fits a particular product. Applicable terms must be checked for
+the intended use. Only icon assets are bundled; library runtime code is not shipped
+with Clawdline. The bundled React Bits icon retains its upstream notice in
+`web/console/public/tool-library/react-bits-LICENSE.txt`.
 
 The prompt grants no extra permission for credentials, protected system access,
 paid APIs, destructive changes, publication or contacting others. It preserves

@@ -2746,7 +2746,8 @@
       "original": [
         "[Clawdline tool library / prepare-and-use]",
         "Inspect the current environment and reuse matching installed tools.",
-        "Distinguish prepared, installed, loaded and applied; a prompt being delivered proves none of the latter."
+        "Distinguish prepared, installed, loaded and applied; a prompt being delivered proves none of the latter.",
+        "This source is a library, with no Skill entry required."
       ],
       "locations": [
         "Session → Actions → Tool library → Prepare and use",
@@ -2801,7 +2802,7 @@
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_playbook.go": "a72c51ba8318f25d1070276a3dd45c118bc08c5e2ac79c673af5dad01898b37a",
-    "internal/domain/toollibrary/library.go": "e3ea1f21b4f32248e657a72d98ad64747ec358a196b1c3ba828f95a7b20483c6",
+    "internal/domain/toollibrary/library.go": "6275de59585a710e87006da69a03a32938d05416f6aff37b420864f3b2487726",
     "internal/domain/workflow/snapshot.go": "08e45303c7f0e1998ff9454a4bd8f77e39d65c310e23c27a9074ea5fa509c965",
     "internal/productcopy/board.go": "710c175d79d8f607a2081dd6c444f3c7d64609535336cbc580f681174970527d",
     "internal/productcopy/board/en.json": "2a42aa5da3ebd5ac172e99d2d649de8a8c8908212b7166280134717d06316d1e",
@@ -2826,8 +2827,8 @@
     "internal/transport/http/workflow_launch.go": "06827497dc74db45f7d3e7d2bc7937152b0d09f2addc90b413ea98fa9f8fc92e",
     "skills/LICENSE.pstack": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
     "skills/clawdline/SKILL.md": "6648251619176575f6b5e93793c7efd9b7fc569d45ed04977352560206cea1ee",
-    "skills/clawdline/guide.md": "b89ff208711681d0b026bb0e818ad415a2549a5b3d53f0daf467dddcca19960c",
-    "skills/clawdline/guide.zh-TW.md": "af4ee7be2c85f2cd30cf9c9d6b9fd1b5dd48143e697a44d75ee718ddaa757d8c",
+    "skills/clawdline/guide.md": "d368e151da889722bd3eaca0bc9280802c61c804ed7deab9d7774e0a964b57ac",
+    "skills/clawdline/guide.zh-TW.md": "7d893b50450e4f54322f06e4273b8e5a431e55e944c14f0dcb8af315036e9a61",
     "skills/evidence-debugging/SKILL.md": "12bf03169a4af65212d4d84c69c56174c38046a398f240348ba6065c8caaceab",
     "skills/evidence-review/SKILL.md": "fd4c584fae5ba58d03250faad1e1219894548343502ca43fb360d313262ea5f6",
     "skills/poteto-workflow.md": "0ed861c8e030cbb8ce36d266d67b62310696d01e0717959ee4439931e9c3f8cd",
@@ -2838,10 +2839,10 @@
     "skills/workflow_profiles.go": "2d08faa417a26c8421c92af6d75747a5e64b35a04f5a4a6c9c6e4317dbba59a5",
     "web/console/src/session/Composer.tsx": "95d8615144b1651de1ba797bfec52db60bf84dff576723e1f76568d6a133b44b",
     "web/console/src/session/Start.tsx": "972136f5262dabb0d9e64258b2bf539780466958385158c8c05bf65fb43ef070",
-    "web/console/src/tool-library/model.ts": "642aeeede227919a4149380c061ebc1b6398b00e3664cd44e768b54b43c30354"
+    "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "178147b87093bb40a13272633287d720926fab9b11c17efbb4e2dbc514e17490",
-    "zh-Hant": "b469c6cd9a0af4f327ae8ecbc07d1f75bc0d047091b7b3f5edd2b5512969f573"
+    "en": "cabd10e4a0f092dc5ae682f1ad63bbae55782c5230f5155b321ea74b6d2e58d9",
+    "zh-Hant": "7157bb860578dd465263daec01365fcc5555db3de90350ebd3c2cfcc60faed85"
   }
 }

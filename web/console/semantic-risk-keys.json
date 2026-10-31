@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10315,
+  "englishKeys": 10317,
   "counts": {
-    "negation": 2892,
+    "negation": 2893,
     "state": 1674,
     "permission": 617,
     "deletion": 222,
     "uncertainty": 389
   },
-  "unionCount": 4555,
+  "unionCount": 4556,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -2558,6 +2558,7 @@
       "next.toolLibraryFailed",
       "next.toolLibraryIconInitials",
       "next.toolLibraryInvalidURL",
+      "next.toolLibraryLibraryNote",
       "next.toolLibraryNoMatch",
       "next.toolLibraryNoReceipt",
       "next.toolLibraryNoRequirements",
@@ -9770,6 +9771,7 @@
     "next.toolLibraryIconInitials",
     "next.toolLibraryInvalidURL",
     "next.toolLibraryIsSaved",
+    "next.toolLibraryLibraryNote",
     "next.toolLibraryNoMatch",
     "next.toolLibraryNoReceipt",
     "next.toolLibraryNoRequirements",

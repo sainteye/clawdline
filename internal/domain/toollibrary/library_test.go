@@ -8,7 +8,7 @@ import (
 
 func TestToolLibrarySourcesAndPinnedPreparation(t *testing.T) {
 	c := Recommendations()
-	if len(c.Projects) != 23 || len(c.Categories) != 9 {
+	if len(c.Projects) != 27 || len(c.Categories) != 10 {
 		t.Fatalf("catalog: %d projects, %d categories", len(c.Projects), len(c.Categories))
 	}
 	skills := 0
@@ -43,6 +43,43 @@ func TestToolLibrarySourcesAndPinnedPreparation(t *testing.T) {
 	}
 	if _, err := Prepare(p, Preparation{SkillID: "unknown", Task: "Do it", Mode: "task"}); err == nil {
 		t.Fatal("unknown entry accepted")
+	}
+}
+
+func TestToolLibraryPreparesLibrariesWithoutInventingSkills(t *testing.T) {
+	libraries := 0
+	for _, p := range Recommendations().Projects {
+		if p.IntegrationKind != "library" {
+			continue
+		}
+		libraries++
+		if !commit.MatchString(p.Commit) || len(p.Skills) != 0 || len(p.Requirements) == 0 || p.License == nil {
+			t.Fatalf("incomplete library source: %s", p.ID)
+		}
+		for _, locale := range []string{"en", "zh-Hant-TW"} {
+			out, err := Prepare(p, Preparation{Task: "Add an accessible animation", Mode: "project", Locale: locale})
+			if err != nil || out.Skill != nil || out.Project.IntegrationKind != "library" {
+				t.Fatalf("%s library preparation: %v", p.ID, err)
+			}
+			for _, want := range []string{p.Commit, *p.License, p.Requirements[0]["en"], p.Requirements[0]["zh-Hant"]} {
+				if !strings.Contains(out.Prompt, want) {
+					t.Fatalf("%s lost prerequisite or source: %q", p.ID, want)
+				}
+			}
+			if locale == "en" && (!strings.Contains(out.Prompt, "no Skill entry required") || !strings.Contains(out.Prompt, "actual browser behavior") || strings.Contains(out.Prompt, "discover the real SKILL.md entries")) {
+				t.Fatalf("%s was given the Skill discovery flow", p.ID)
+			}
+			if locale != "en" && (!strings.Contains(out.Prompt, "無須 Skill 入口") || !strings.Contains(out.Prompt, "實際瀏覽器行為")) {
+				t.Fatalf("%s lost localized library flow", p.ID)
+			}
+		}
+		p.Skills = Recommendations().Projects[0].Skills[:1]
+		if _, err := Normalize(p); err == nil {
+			t.Fatalf("%s library accepted a fabricated Skill entry", p.ID)
+		}
+	}
+	if libraries != 4 {
+		t.Fatalf("libraries %d", libraries)
 	}
 }
 
