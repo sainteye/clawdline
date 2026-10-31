@@ -88,7 +88,9 @@ func (c *Connection) Start(ctx context.Context) (Status, error) {
 	if c.cancel != nil {
 		c.cancel()
 	}
-	poll, cancel := context.WithDeadline(c.life, device.ExpiresAt)
+	// ExpiresAt is on the client's clock, which a test or a skewed caller may
+	// not share with the runtime's: the context gets the time that remains.
+	poll, cancel := context.WithTimeout(c.life, device.ExpiresAt.Sub(c.client.now()))
 	c.gen++
 	c.flow, c.cancel, c.outcome, c.reason = &device, cancel, "", ""
 	go c.poll(poll, device, c.gen)
