@@ -41,6 +41,7 @@ func TestCapacityStatusNeedsAttentionWithoutAskingForAMenuReply(t *testing.T) {
 func TestStatusProjectionCannotCarryContentAndWithholdsUnverifiedTarget(t *testing.T) {
 	row := map[string]any{
 		"id": "%19", "state": "waiting", "assistant": "claude", "backend": "tmux",
+		"prompt_suggestion":    map[string]any{"text": "private native suggestion"},
 		"execution_generation": "0123456789abcdef0123456789abcdef",
 		"line":                 "private prompt", "label": "private label", "cwd": "/private/path",
 		"menu":   map[string]any{"question": "private menu"},

@@ -1,0 +1,7 @@
+/* Ghost text shares the editor's origin and never changes its measured height. */
+.composer .msg[data-prompt-suggestion]::before {
+  right: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

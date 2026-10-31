@@ -10142,5 +10142,6 @@
   "graphifyView.sourceStale": "Sources changed",
   "graphifyView.sourceMissing": "No index yet",
   "graphifyView.sourceUnverified": "Unverified index",
-  "graphifyView.focusNode": "Focus node"
+  "graphifyView.focusNode": "Focus node",
+  "promptSuggestion.acceptHint": "Press Space or Tab to complete."
 }

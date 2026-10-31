@@ -161,6 +161,7 @@
           "description": "When and how this row's terminal state was read. `current` was read this pass; `unverified` is the last complete row retained across a failed source reading; `missing` means that source has never answered or its retained answer crossed the cache.session_inventory honesty line. A retained state is a true statement about that earlier moment, never authority for an action now.",
           "$ref": "coordination.schema.json#/$defs/BearingsSource"
         },
+        "prompt_suggestion": { "$ref": "screens.schema.json#/$defs/PromptSuggestion" },
         "screen_reading": { "$ref": "#/$defs/SessionScreenReading" },
         "sessionId": { "description": "The assistant's own conversation id, when one was recovered from its command line.", "type": "string" },
         "shells": {"description": "Active provider shells followed by daemon-owned callbacks. Provider shells retain their existing display bound; callbacks use MaxCallbacksPerRoot and are available for every assistant.", "type": "array", "items": {"$ref": "#/$defs/SessionShell"}},

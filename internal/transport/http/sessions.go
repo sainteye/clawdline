@@ -905,6 +905,15 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		Persona:      item.Persona,
 		MachineScope: projects.IsMachineWorkspace(s.cfg.Dir, item.CWD),
 	}
+	if s.screens != nil && currentExecution(item, in.inv) {
+		item.ExpectedStart = in.live.ProcessStart
+		if s.screens.PromptSupported(item) {
+			row.PromptSuggestion = wirePromptSuggestion(s.screens.Peek(item))
+			if row.PromptSuggestion == nil {
+				row.PromptSuggestion = &contract.PromptSuggestion{State: "none", Source: "claude-terminal", ConversationID: item.ConversationID}
+			}
+		}
+	}
 	// The Project this row would be accepted into, by the claim's own rule:
 	// a subdirectory or a linked worktree of a repository is that repository.
 	if key, ok := s.projectKeys.key(item.CWD); ok {

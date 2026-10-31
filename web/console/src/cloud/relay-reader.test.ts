@@ -2406,3 +2406,38 @@ test("Graphify session reads preserve the exact session and reject extra fields"
  const bad=await r.fetch("/v1/sessions/"+encodeURIComponent("%19")+"/graphify?path=/elsewhere")
  assert.equal(bad.status,501);assert.equal(client.sessionPageReads.length,1)
 })
+
+test("Cloud restores native prompt text only from the current authorized execution row", async () => {
+  for (const fleet of [false, true]) {
+    const client = new FakeClient()
+    const now = 1_000_000
+    const execution = "a".repeat(32)
+    const destination = { machineID: "mac-a", sessionID: "s1", executionGeneration: execution }
+    const projection = { destination, assistant: "claude" as const, state: "idle", freshness: "current" as const, observedAt: now }
+    const suggestion = { id: "native-1", text: "Run the fixture tests", source: "claude-terminal", conversation_id: "conversation-a", observed_at: 1, state: "available" }
+    const rich = (extra: Record<string, unknown> = {}) => ({ machine: "mac-a", session: "s1", execution_generation: execution,
+      state: "idle", prompt_suggestion: suggestion, source: { freshness: "current", observed_at: now / 1000 }, ...extra })
+    const held = new Map<string, unknown>([["mac-a\u0000s1", rich()]])
+    Object.assign(client, fleet ? { detailSnapshots: held } : { sessionSnapshots: held })
+    client.statusSnapshots = new Map([
+      [JSON.stringify(["mac-a", SESSION_INVENTORY_ID]), { payload: { at: now / 1000, complete: true,
+        snapshot_generation: execution, inventory: { version: 1, sessions: ["s1"] } } }],
+      [JSON.stringify(["mac-a", "s1"]), { payload: { machine_id: "mac-a", session_id: "s1", execution_generation: execution,
+        snapshot_generation: execution, state: "idle", assistant: "claude", source: { freshness: "current", observed_at: now / 1000 } } }],
+    ])
+    const reader = new RelayReader("mac-a", { classicStatus: true, now: () => now,
+      ...(fleet ? { fleetTarget: () => destination } : {}),
+      listPresentations: async () => [{ destination, title: "Fixture Session", assistant: "claude", status: { state: "idle", sessionId: "conversation-a" }, projection }],
+    })
+    reader.attach(client)
+    const drawn = async () => (await reader.snapshot()).sessions[0]
+    assert.deepEqual((await drawn()).prompt_suggestion, suggestion)
+    for (const extra of [{ machine: "mac-b" }, { session: "s2" }, { execution_generation: "b".repeat(32) }, { state: "working" },
+      { source: { freshness: "unverified", observed_at: now / 1000 } }, { source: { freshness: "current", observed_at: (now - 600_000) / 1000 } }]) {
+      held.set("mac-a\u0000s1", rich(extra))
+      assert.equal((await drawn()).prompt_suggestion, undefined)
+    }
+    held.set("mac-a\u0000s1", rich({ prompt_suggestion: { ...suggestion, id: undefined, text: undefined, state: "none", observed_at: 2 } }))
+    assert.equal((await drawn()).prompt_suggestion?.state, "none")
+  }
+})

@@ -32,6 +32,8 @@ import { deliverUntilSeen, pendingSends, nextMessages } from "./send.js"
 import { MENU_FOLLOW } from "./menu-follow.js"
 import { Waiting } from "./Waiting.js"
 import { ImageMarkup } from "./ImageMarkup.js"
+import { usePromptSuggestion } from "./prompt-suggestions.js"
+import "./prompt-suggestions.css"
 import { ComposerBox } from "./ComposerBox.js"
 import { voiceSource } from "./voice-source.js"
 import "./voice-source.css"
@@ -207,6 +209,11 @@ export function Composer({
   const providerOn = assistantComposeAdmits(remote?.assistant ?? row?.assistant, remote?.assistantFacts ?? assistantFacts,
     remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu, protocolOwned)
   const on = draftReady && write && (remote ? remote.canSend : !!row) && providerOn
+  const promptSuggestion = usePromptSuggestion(row, on && !remote)
+  const composing = useRef(false)
+  const modifiedSpace = useRef(false)
+  const ghost = !composing.current && !text && !shotsBusy && voice === "off" && !sending && !skills.shown && !Shots.count()
+    ? promptSuggestion.candidate : null
   const cardsVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   useEffect(() => {
     if (!protocolOwned || !row) return
@@ -320,13 +327,40 @@ export function Composer({
   })
 
   /** What is in the box, as text. `innerText`, so line breaks survive; a non-breaking space becomes an ordinary one. */
-  const rawText = () => String(msg.current?.innerText || "").replace(/\u00A0/g, " ")
+  const rawText = () => msg.current?.textContent
+    ? String(msg.current.innerText || "").replace(/\u00A0/g, " ") : ""
   const changed = () => {
+    promptSuggestion.dismiss()
     setText(rawText())
     saveText(rawText())
     setFailure("")
     skillsChanged()
   }
+
+  const acceptPromptSuggestion = (): boolean => {
+    const el = msg.current
+    if (!ghost || !el || composing.current || (el.textContent ?? "") !== "" || !on || inFlight.current) return false
+    const accepted = promptSuggestion.take(ghost.id ?? "")
+    if (!accepted) return false
+    el.focus({ preventScroll: true })
+    caretToEnd()
+    insertText(accepted.text ?? "")
+    changed()
+    caretToEnd()
+    return true
+  }
+
+  const promptAcceptor = useRef(acceptPromptSuggestion)
+  promptAcceptor.current = acceptPromptSuggestion
+  useEffect(() => {
+    const el = msg.current
+    if (!el) return
+    const beforeInput = (event: InputEvent) => {
+      if (!composing.current && !modifiedSpace.current && !event.isComposing && event.cancelable && event.inputType === "insertText" && event.data === " " && promptAcceptor.current()) event.preventDefault()
+    }
+    el.addEventListener("beforeinput", beforeInput)
+    return () => el.removeEventListener("beforeinput", beforeInput)
+  }, [])
 
   /** `SkillPicker.hide()`. */
   const hideSkills = () => setSkills((was) => (was.shown || was.matches.length ? { shown: false, matches: [], selected: 0 } : was))
@@ -521,6 +555,7 @@ export function Composer({
     }
     if ((!said && !pictures.length) || (!row && !remote) || !on ||
       (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
+    promptSuggestion.dismiss()
     if (protocolOwned && row && ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
       pendingSends.of(row.id).some(card => card.state === "queued"))) {
       if (!nextMessages.add(row.id, said, pictures, Date.now())) {
@@ -729,11 +764,16 @@ export function Composer({
           autoCorrect="off"
           spellCheck={false}
           enterKeyHint={keyboard ? "send" : "enter"}
-          data-placeholder={placeholder}
+          data-placeholder={ghost?.text ?? placeholder}
+          data-prompt-suggestion={ghost?.id ?? undefined}
+          aria-autocomplete="inline"
+          aria-description={ghost ? catalogWord("promptSuggestion", "acceptHint") + " " + ghost.text : undefined}
           aria-label={placeholder}
           contentEditable={on ? (PLAINTEXT_ONLY ? "plaintext-only" : "true") : "false"}
           suppressContentEditableWarning
           onInput={changed}
+          onCompositionStart={() => { composing.current = true; promptSuggestion.dismiss() }}
+          onCompositionEnd={() => { composing.current = false }}
           onPaste={(e) => {
             const pasted = e.clipboardData?.getData("text/plain") || ""
             // A picture goes to the document's handler; anything else with
@@ -743,13 +783,20 @@ export function Composer({
             insertText(pasted)
             changed()
           }}
+          onKeyUp={e => { if (e.key === " ") modifiedSpace.current = false }}
           onKeyDown={(e) => {
+            modifiedSpace.current = e.key === " " && (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey)
             // Not while an input method is mid-word: Return there accepts the candidate.
-            if (e.nativeEvent.isComposing || e.keyCode === 229) return
+            if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return
             // The menu's keys, before anything else sees them (`SkillPicker`).
             if (e.key === "ArrowDown" && moveSkill(1)) return e.preventDefault()
             if (e.key === "ArrowUp" && moveSkill(-1)) return e.preventDefault()
-            if (e.key === "Tab" && acceptSkill()) return e.preventDefault()
+            if (e.key === "Tab" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && acceptSkill()) return e.preventDefault()
+            if (!e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey &&
+              (e.key === "Tab" || e.key === " ") && acceptPromptSuggestion()) return e.preventDefault()
+            if (e.key === "Escape" && ghost) {
+              e.preventDefault(); promptSuggestion.dismiss(); return
+            }
             if (e.key === "Escape" && skills.shown) {
               e.preventDefault()
               hideSkills()

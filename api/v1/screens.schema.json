@@ -9,6 +9,19 @@
       "type": "string",
       "enum": ["signalled", "on-demand"]
     },
+    "PromptSuggestion": {
+      "description": "An unaccepted native Claude terminal suggestion, kept outside the draft. It is absent when styling, execution identity or the screen lease cannot prove it. This is terminal evidence, not an independently generated prediction.",
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "conversation_id", "source", "observed_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "state": { "type": "string", "enum": ["available", "none"] },
+        "observed_at": { "description": "Monotonic Unix milliseconds when the native suggestion changed, for ordering snapshots and invalidations. Zero advertises support before the first watched capture.", "type": "integer" },
+        "conversation_id": { "type": "string" },
+        "source": { "type": "string", "enum": ["claude-terminal"] }
+      }
+    },
     "Screen": {
       "description": "One reading of a terminal. `backend` and `channel` come first because a screen with no backend named is the defect this exists to avoid, and `lines` is what came back rather than what was asked for: an alternate-screen program has no history to give and this must not imply otherwise.",
       "type": "object",
@@ -24,6 +37,7 @@
         "watchingUntil": { "description": "Unix seconds. The lease this read renewed; a lease nobody renews expires and takes the pipe with it.", "type": "integer" },
         "captures": { "type": "integer" },
         "signals": { "type": "integer" },
+        "prompt_suggestion": { "$ref": "#/$defs/PromptSuggestion" },
         "text": { "description": "The capture, escape sequences kept. Absent until the first one completes.", "type": "string" },
         "lines": { "description": "How many rows actually came back. The trailing newline a capture ends with is a terminator, not a row.", "type": "integer" },
         "at": { "description": "Unix seconds of the capture this text came from.", "type": "integer" },
