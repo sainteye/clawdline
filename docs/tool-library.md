@@ -15,7 +15,10 @@ reviewed product change, not runtime third-party execution.
 
 ## Use
 
-1. Open a live Session's actions menu and choose Tool library.
+1. Open a live Session's actions menu and choose Tool library. With no saved
+   projects, the initial view browses all recommendations. With saved projects,
+   it opens Saved projects. Subsequent refreshes and saves preserve a person's
+   selected tab until the dialog closes.
 2. Search Saved projects or Recommended; inspect purpose, category, source,
    revision, license, Skill mode, prerequisites and historical evidence.
 3. Save a project or add an HTTPS GitHub repository. Custom sources may name an
@@ -28,6 +31,9 @@ reviewed product change, not runtime third-party execution.
 6. The receiving agent inspects existing tools, pins and reads the source and its
    references, completes permitted reversible setup, checks availability, then
    performs the task. It reports commands, versions, paths and any blockers.
+
+The dialog uses 15 px body copy and at least 13 px supporting text. Mobile
+layouts retain these sizes and reflow the cards; form fields use 16 px text.
 
 ## Web libraries
 

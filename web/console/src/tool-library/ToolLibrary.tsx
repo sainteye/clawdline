@@ -25,7 +25,7 @@ export function ToolLibrary({ row, machine, onClose, onPrepared }: {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [tab, setTab] = useState<"saved" | "recommended">("saved")
+  const [tab, setTab] = useState<"saved" | "recommended" | null>(null)
   const [category, setCategory] = useState("all")
   const [query, setQuery] = useState("")
   const [project, setProject] = useState<Project | null>(null)
@@ -54,7 +54,10 @@ export function ToolLibrary({ row, machine, onClose, onPrepared }: {
     const abort = new AbortController(), mine = identity
     operation.current = abort; retryWrite.current = null; setLoading(true); setError("")
     void connection.current.read(abort.signal).then(value => {
-      if (!abort.signal.aborted && mine === current.current) setData(value)
+      if (!abort.signal.aborted && mine === current.current) {
+        setData(value)
+        setTab(selected => selected ?? (value.saved.length ? "saved" : "recommended"))
+      }
     }, caught => { if (!abort.signal.aborted && mine === current.current) fail(caught) })
       .finally(() => { if (!abort.signal.aborted && mine === current.current) setLoading(false) })
   }
