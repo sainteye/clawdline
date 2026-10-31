@@ -122,6 +122,8 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `invalid_viewer_scope` | `internal/transport/http/cloud.go`, `internal/transport/http/cloud_agent.go` |
 | `invalid_work_id` | `internal/transport/http/orchestrator.go` |
 | `invalid_workflow_profile` | `internal/transport/http/integration_settings.go` |
+| `issue_sync_authorization_required` | `internal/domain/work/issuesync.go` |
+| `issue_sync_target_invalid` | `internal/domain/work/issuesync.go` |
 | `item_terminal` | `internal/domain/work/v2.go` |
 | `item_unassigned` | `internal/domain/work/v2.go` |
 | `landing_owed` | `internal/domain/work/v2.go` |

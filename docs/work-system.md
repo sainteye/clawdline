@@ -231,9 +231,9 @@ remain for their other readers; `clawdline landings` still prints the landing le
 | G1 | 對外的需求與缺陷改在 `sainteye/clawdline` 的 Issues 收，加 bug、feature 兩個 issue form | 做，併進 repo 替換的那一步 | 還沒做 |
 | G2 | 開 Discussions | 不開 | 關著 |
 | G3 | 連結、不同步（GH-4～GH-6） | 做，排在 T 線之後 | 還沒做 |
-| G4 | 由 Clawdline 代開 issue | 不做 | 沒有這條路 |
+| G4 | 由 Clawdline 代開 issue | 不做（2026-10-31 由 D73 取代：開始實作時開 issue，見 [`issue-sync.md`](issue-sync.md)） | 第 1 步：規則已寫，尚未連外 |
 | G5 | `duplicate` 關閉原因、每個專案的短編號 `#N`（BD-16） | 做 | 還沒做 |
-| G6 | 雙向同步 | 不做 | 沒有這條路 |
+| G6 | 雙向同步 | 不做（2026-10-31 由 D73 改為單向：只依項目階段開關 issue，tracker 不回寫） | 第 1 步：規則已寫，尚未連外 |
 
 ## 7. 物件之間的路：提議、決定、摘要
 
