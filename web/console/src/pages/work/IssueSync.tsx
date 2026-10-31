@@ -129,9 +129,13 @@ function IssueSyncAuthorize({ draft, onDone, onCancel }: {
   onDone: (choice: IssueSyncChoice) => void
   onCancel: () => void
 }) {
-  return draft.provider === "github"
+  // The panel opens below the form's fields, often under the fold of a long
+  // form: bring it into view so pressing Create visibly does something.
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => { box.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }) }, [])
+  return <div ref={box}>{draft.provider === "github"
     ? <GitHubAuthorize onConnected={() => onDone({ provider: "github" })} onCancel={onCancel} />
-    : <JiraAuthorize draft={draft} onDone={onDone} onCancel={onCancel} />
+    : <JiraAuthorize draft={draft} onDone={onDone} onCancel={onCancel} />}</div>
 }
 
 /** The device flow: a code, a link, and a poll until GitHub answers. */
@@ -297,7 +301,7 @@ export function IssueTrackersBlock({ shown }: { shown: boolean }) {
         ? <button className="chip" type="button" onClick={() => { setFailure(""); void disconnect().then(refresh, (e) => setFailure(failureWords(e))) }}>{nextWord("issueTrackersDisconnect")}</button>
         : <button className="chip on" type="button" disabled={!!connecting} onClick={() => setConnecting(provider)}>{nextWord("issueTrackersConnect")}</button>}
     </div>
-  return <section className="block issue-trackers" aria-labelledby="issue-trackers-title">
+  return <section className="block settings-workflow issue-trackers" aria-labelledby="issue-trackers-title">
     <b id="issue-trackers-title">{nextWord("issueTrackersTitle")}</b>
     <p className="say">{nextWord("issueTrackersBody")}</p>
     {row("github", github?.login ? `@${github.login}` : "", github?.state === "connected", disconnectGitHub)}
