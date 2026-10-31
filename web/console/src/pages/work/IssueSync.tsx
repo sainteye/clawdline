@@ -194,6 +194,9 @@ export function GitHubAuthorize({ onConnected, onCancel }: { onConnected: () => 
 }
 
 /** Site, email and API token; then, when the form had none, the project. */
+/** Atlassian's page for creating an API token; signing in there may ask for a code. */
+const ATLASSIAN_API_TOKENS = "https://id.atlassian.com/manage-profile/security/api-tokens"
+
 export function JiraAuthorize({ draft, onDone, onCancel }: {
   draft?: IssueSyncDraft
   onDone: (choice: IssueSyncChoice) => void
@@ -235,6 +238,7 @@ export function JiraAuthorize({ draft, onDone, onCancel }: {
     <label>{nextWord("issueAuthJiraToken")}<input className="work-input" type="password" value={token} autoComplete="off"
       onChange={(e) => setToken(e.target.value)} /></label>
     <p className="issue-sync-hint">{nextWord("issueAuthJiraTokenHelp")}</p>
+    <a className="chip issue-sync-token-link" href={ATLASSIAN_API_TOKENS} target="_blank" rel="noopener noreferrer">{nextWord("issueAuthJiraCreateToken")} ↗</a>
     {failure && <p className="work-note" role="alert">{failure}</p>}
     <div className="work-actions">
       <button className="chip on" type="button" disabled={busy || !site.trim() || !email.trim() || !token.trim()} aria-busy={busy}

@@ -1,8 +1,8 @@
 # Issue sync: mirroring a Board item into GitHub or Jira
 
-Status (2026-10-31): decided by the owner (D73). Steps 1–2 — the pure rules in
-`internal/domain/work/issuesync.go` and the GitHub connection — are implemented. Steps 3–6 are not:
-nothing opens or closes an issue yet.
+Status (2026-11-01): decided by the owner (D73). Steps 1–5 are implemented. Step 6 is done for
+Jira Cloud (a real site, below) and pending a real GitHub test repository; the GitHub path is
+covered by a transport test against a fake GitHub and by a real device-flow connection.
 
 This page supersedes the 2026-09-19 rulings G4 ("Clawdline does not open issues") and G6 ("no
 two-way sync") in `work-system.md` §6 and `github-issues.md` §7. Their concern still holds and
@@ -67,7 +67,11 @@ the body, and a retry searches for it before creating.
 - **Credentials**: GitHub through Clawdline's OAuth App device flow (client id `Ov23lioodvbqh76e5rtY`,
   scope `repo`, expiring user tokens). It works from the phone: the person sees a code and opens
   `github.com/login/device`. Neither authorizing nor refreshing needs a client secret, and none
-  ships. Jira Cloud uses an API token (step 5). The token is kept the way `cloudkeys` keeps this
+  ships. Jira Cloud uses an API token (step 5): Jira offers no device flow, and its OAuth 2.0 (3LO)
+token exchange needs a client secret that an open-source daemon cannot hold, so a one-click Jira
+connection would have to route every token through Clawdline Cloud. The owner chose the API token
+on 2026-11-01; the form links to Atlassian's token page, and the token is checked against
+`/rest/api/3/myself` before it is saved under `<state dir>/integrations/jira/`. Both secrets are kept the way `cloudkeys` keeps this
   daemon's own secrets — an owner-only file under `<state dir>/integrations/github/` (0700/0600,
   atomic rename, symlinks refused, unreadable is a failure, not "disconnected"), because that is
   the one store all three platforms have; a platform keystore can replace it behind the same
@@ -80,12 +84,18 @@ the body, and a retry searches for it before creating.
   it under Settings → Applications, because revoking needs the client secret.
 - **Link record** per item: provider, target, observed state, external key, URL, typed last error,
   attempts, version. Every change writes an item event.
-- **Outbox (D08)**: the phase transition records the owed op inside its transaction; the call runs
-  after commit and its result is recorded by a second command. Retries honour `Retry-After`, and
-  errors are typed (`github_rate_limited`, `jira_auth_expired`, `issue_target_not_found`). New
-  bounds are registered in `internal/domain/capacity`.
-- **Privacy**: the outgoing title and body pass the same rules as `tools/check-private.sh`
-  (`internal/domain/privacy`) before they are queued.
+- **Reconciler, not an outbox**: the link row (`work_v2_issue_links`) records the target and the
+  last observed tracker state; `internal/app/issuesync` compares it with the item's phase
+  (`work.NextIssueOp`) every 15 seconds and on a wake after create, assign and retry, at most
+  `MaxLinksPerPass` links a pass. A create first looks for an issue carrying the item's marker
+  (GitHub: the body marker among the newest issues; Jira: the label `clawdline-item-<id>`), so a lost
+  answer never opens a second issue. Failures back off from one minute to an hour, or follow
+  `Retry-After`, and are typed (`github_rate_limited`, `jira_reauthorization_required`,
+  `issue_target_not_found`, `jira_transition_missing`, …); each new code writes one item event.
+  Bounds are registered in `internal/domain/capacity` (`work.issue_sync_*`).
+- **What is sent**: the item's title and description, plus a line saying Clawdline opened it. The
+  form says so before sending and warns that a public repository's issue is public. No automatic
+  privacy filter runs on them; the person decides by ticking the option.
 
 ## 5. Delivery
 
@@ -100,6 +110,14 @@ the body, and a retry searches for it before creating.
 4. Console: the option, authorize-on-send, preview, card badge and Retry, integration settings;
    desktop and phone; English and Taiwan Traditional Chinese; Cloud relay fields via `contract-gen`.
 5. Jira Cloud: API token, project and issue-type choice, discovery of the done transition.
-6. End-to-end on a real test repository and Jira test project, with browser evidence.
+   *(steps 3–5 done: `internal/adapters/githubissues/issues.go`, `internal/adapters/jiraissues`,
+   `internal/app/issuesync`, `POST /v1/issue-sync/<id>/retry`, `/v1/integrations/jira` and
+   `/v1/integrations/jira/projects`; Settings → Session and access → Issue trackers.)*
+6. End-to-end on a real test repository and Jira test project, with browser evidence. *(Jira done
+   2026-11-01 on an isolated daemon against a real Jira Cloud site: an item created with Jira sync
+   stayed `waiting`; at `implementing` the reconciler opened the issue with the title, description
+   and marker label; completing the item moved the issue to the done category. Localized issue-type
+   names, here Traditional Chinese, worked as given by the projects route. GitHub: pending a test
+   repository.)*
 
 Available in the free edition: it runs on one machine's daemon and involves no other machine.

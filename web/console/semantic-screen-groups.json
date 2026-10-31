@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10282,
+  "englishContentKeys": 10283,
   "riskKeys": 4555,
-  "nonRiskCount": 5727,
+  "nonRiskCount": 5728,
   "groups": [
     {
       "name": "admin / other",
@@ -3675,7 +3675,7 @@
     },
     {
       "name": "next / other",
-      "count": 566,
+      "count": 567,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3779,6 +3779,7 @@
         "next.issueAuthJiraChoose",
         "next.issueAuthJiraConnect",
         "next.issueAuthJiraConnecting",
+        "next.issueAuthJiraCreateToken",
         "next.issueAuthJiraEmail",
         "next.issueAuthJiraSite",
         "next.issueAuthJiraTitle",
