@@ -10142,5 +10142,6 @@
   "graphifyView.sourceStale": "來源已變更",
   "graphifyView.sourceMissing": "尚無索引",
   "graphifyView.sourceUnverified": "索引尚未核對",
-  "graphifyView.focusNode": "聚焦節點"
+  "graphifyView.focusNode": "聚焦節點",
+  "promptSuggestion.acceptHint": "按空白鍵或 Tab 補完。"
 }

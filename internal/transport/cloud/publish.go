@@ -124,6 +124,8 @@ type Publisher struct {
 	// (internal/transport/http producer.go), so this publisher no longer builds
 	// a list of its own. Nil, or false, reads the route through Router.
 	Sessions func(context.Context) ([]byte, bool)
+	// PromptChanges wakes publication only when a watched native suggestion changes.
+	PromptChanges <-chan struct{}
 	// Fresh is the same list built now rather than taken from the shared
 	// product, which may be a tick old (producer.go). Settle's passes read it,
 	// because they run right after a press changed a screen and a tick-old list
@@ -419,6 +421,10 @@ func (p *Publisher) Run(ctx context.Context) error {
 				continue
 			}
 			p.tick(ctx)
+		case <-p.PromptChanges:
+			p.fresh = true
+			p.pass(ctx)
+			p.fresh = false
 		case <-settle:
 			p.pressedAt = p.now()
 			stopSettling()

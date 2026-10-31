@@ -747,3 +747,29 @@ The hosted main Console shows an Admin dashboard link in its Manage sidebar grou
 the cookie session explicitly reports `operations_access: true`. Missing/false values and session
 revocation hide it. The link opens `/admin/health` directly, including on mobile. Local-only
 Consoles do not show it; operations endpoints independently recheck the superuser binding.
+
+
+## Native prompt suggestions in the message box
+
+The composer keeps native Claude suggestions separate from its persisted text draft. Its existing
+placeholder layer draws the suggestion without increasing the editor height; only Space or Tab
+in a genuinely empty editor inserts it through the normal editor operation. The send path remains
+separate. The keyboard and native beforeinput handlers exclude input-method composition, modified
+shortcuts and nonempty drafts. The input's accessible label stays stable, with an English or
+Traditional Chinese completion instruction in its description.
+
+The initial read renews the existing bounded screen lease. tmux pipe signals drive later reads;
+only a native suggestion change wakes Cloud publication immediately, using a fresh authenticated
+Session row instead of waiting for the five-second snapshot tick. Text travels in the encrypted
+full s/ row, never the content-free ss/ feed. The Cloud reader joins it only to the matching live
+execution. Process start, conversation and watch identity fence captures; stale native versions
+cannot replace newer ones. A temporary disconnect hides the reading, while an accepted or
+dismissed native ID stays dismissed if it is replayed.
+
+The terminal adapter requires the lowest complete native composer frame and SGR dim evidence.
+A focused Claude 2.1.314 reverses its first glyph and dims the rest; an accepted draft loses the
+dim attribute. Loopback-provider captures cover these native transitions without a paid request.
+No-color captures, ellipsis-truncated suggestions, unframed choices and ambiguous multiline input
+are withheld. This adapter does not attach to the SDK event stream of an already-running TUI,
+and it does not claim suggestions for plain iTerm2 or Remote Control workers. Generation latency
+belongs to Claude; native-ready-to-render latency must be measured separately from it.

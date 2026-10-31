@@ -109,6 +109,18 @@ Sessions while a picture is shrinking cannot attach it to the newly opened Sessi
 - **Skills:** type `/` (or `$` for Codex) as the whole message to list the session's skills and
   commands. Choosing one writes it into the box and does not send.
 
+Claude Code's next-prompt suggestion can appear as gray placeholder text in an empty message
+box. Press **Space** or **Tab** to copy the complete suggestion into your draft, then edit it or
+press **Send**. Accepting never sends. Typing dismisses that suggestion; **Escape** also dismisses
+it. Space and Tab keep their input-method behavior while you are composing a character, and
+Shift+Tab keeps ordinary focus navigation. Undo removes an accepted suggestion.
+
+This reads an existing native suggestion from a color-preserving tmux Session. Clawdline does
+not generate another prediction or enable Claude's background model requests. Suggestions
+without reliable dim styling, truncated native suggestions and ambiguous multiline frames are
+withheld. Plain iTerm2 captures and Remote Control do not supply this terminal evidence. Claude
+itself can skip suggestions, so an empty placeholder does not imply a broken connection.
+
 **Check:** your message appears in the transcript, and the row goes back to working.
 
 ## Attention notes from Agents

@@ -4705,6 +4705,22 @@ const (
 // ProjectUnifyStatusValues is every value the contract allows, in contract order.
 var ProjectUnifyStatusValues = []ProjectUnifyStatus{ProjectUnifyStatusUnified, ProjectUnifyStatusDrifting, ProjectUnifyStatusUnknown}
 
+// An unaccepted native Claude terminal suggestion, kept outside the draft. It
+// is absent when styling, execution identity or the screen lease cannot prove
+// it. This is terminal evidence, not an independently generated prediction.
+type PromptSuggestion struct {
+	ConversationID string `json:"conversation_id"`
+	ID             string `json:"id,omitempty"`
+
+	// Monotonic Unix milliseconds when the native suggestion changed, for ordering
+	// snapshots and invalidations. Zero advertises support before the first watched
+	// capture.
+	ObservedAt int64  `json:"observed_at"`
+	Source     string `json:"source"`
+	State      string `json:"state"`
+	Text       string `json:"text,omitempty"`
+}
+
 // /v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what
 // the server decided about asking a person in the conversation, and what the
 // sessions reported doing, counted from the proposals table — durable, the
@@ -5522,8 +5538,9 @@ type Screen struct {
 	// answers this and the screen arrives a few milliseconds later on the `screen`
 	// event, because the answer comes out of a published snapshot and the capture
 	// happens behind it.
-	Pending  bool `json:"pending"`
-	Readable bool `json:"readable"`
+	Pending          bool              `json:"pending"`
+	PromptSuggestion *PromptSuggestion `json:"prompt_suggestion,omitempty"`
+	Readable         bool              `json:"readable"`
 
 	// What a client compares to decide whether it already has this screen. FNV-1a over
 	// the UTF-8 bytes, which is enough for "did these change" and is deliberately not
@@ -6163,7 +6180,8 @@ type SessionRow struct {
 	// worktree followed to the repository it belongs to and symlinks resolved. A Board
 	// item's `project.path` is compared with it. Absent when `cwd` is absent or not
 	// absolute.
-	ProjectKey string `json:"project_key,omitempty"`
+	ProjectKey       string            `json:"project_key,omitempty"`
+	PromptSuggestion *PromptSuggestion `json:"prompt_suggestion,omitempty"`
 
 	// Current actionable provider refusal read from the native turn record.
 	// Independent of terminal activity; cleared by a later native turn boundary. Not a

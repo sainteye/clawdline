@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10142,
+  "englishKeys": 10143,
   "counts": {
     "negation": 2866,
-    "state": 1648,
+    "state": 1649,
     "permission": 609,
     "deletion": 219,
     "uncertainty": 386
   },
-  "unionCount": 4499,
+  "unionCount": 4500,
   "categories": {
     "negation": [
       "admin.accountsPrivacy",
@@ -4352,6 +4352,7 @@
       "projects.folderGo",
       "projects.folderTruncated",
       "projects.statusUpdateFailed",
+      "promptSuggestion.acceptHint",
       "resourceCoordination.accepted",
       "resourceCoordination.delivered",
       "resourceCoordination.empty",
@@ -9781,6 +9782,7 @@
     "promo.rejected",
     "promo.signedOut",
     "promo.unavailable",
+    "promptSuggestion.acceptHint",
     "resourceCoordination.accepted",
     "resourceCoordination.delivered",
     "resourceCoordination.empty",

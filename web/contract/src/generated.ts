@@ -5478,6 +5478,26 @@ export type ProjectUnifyStatus =
 export const ProjectUnifyStatusValues: readonly ProjectUnifyStatus[] = ["unified", "drifting", "unknown"] as const
 
 /**
+ * An unaccepted native Claude terminal suggestion, kept outside the draft. It is
+ * absent when styling, execution identity or the screen lease cannot prove it. This
+ * is terminal evidence, not an independently generated prediction.
+ */
+export interface PromptSuggestion {
+  conversation_id: string
+  id?: string
+
+  /**
+   * Monotonic Unix milliseconds when the native suggestion changed, for ordering
+   * snapshots and invalidations. Zero advertises support before the first watched
+   * capture.
+   */
+  observed_at: number
+  source: string
+  state: string
+  text?: string
+}
+
+/**
  * /v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what the
  * server decided about asking a person in the conversation, and what the sessions
  * reported doing, counted from the proposals table — durable, the same after a
@@ -6496,6 +6516,7 @@ export interface Screen {
    * happens behind it.
    */
   pending: boolean
+  prompt_suggestion?: PromptSuggestion
   readable: boolean
 
   /**
@@ -7302,6 +7323,7 @@ export interface SessionRow {
    * not absolute.
    */
   project_key?: string
+  prompt_suggestion?: PromptSuggestion
 
   /**
    * Current actionable provider refusal read from the native turn record.

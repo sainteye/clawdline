@@ -149,3 +149,13 @@ and native tool permissions remain described accurately. Naming stays off when
 previously off; it does not establish skill use or loaded-context evidence.
 The reviewed source receipt and excerpt follow the revised launch code.
 
+
+
+Native prompt-suggestion forwarding adds a content-free publisher invalidation
+callback to the daemon wiring in `cmd/clawdline/main.go`. Review confirmed that
+this does not change managed Antigravity context preparation, policy consent,
+loaded evidence, role or memory injection, or tool permissions. Both English and
+Taiwan Traditional Chinese Antigravity context explanations remain accurate.
+Suggestion text is read from the existing native terminal and only becomes a
+user message after the person accepts and sends it. The source receipt changes;
+the instruction inventory and its human copy do not gain another injection.

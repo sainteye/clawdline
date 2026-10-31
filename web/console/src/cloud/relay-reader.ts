@@ -2591,6 +2591,23 @@ export class RelayReader {
       agent_count_unknown: data.agent_count_unknown === true }
   }
 
+  /** Native prompt text belongs only to this opened, authorized execution. */
+  private withPromptSuggestion(client: CloudReadClient, row: CloudRow): CloudRow {
+    if (row.assistant !== "claude" || row.state !== "idle" && row.state !== "working") return row
+    const id = typeof row.session === "string" ? row.session : row.id
+    const target = this.options.fleetTarget?.()
+    if (target && (target.machineID !== this.machine || target.sessionID !== id || target.executionGeneration !== row.execution_generation)) return row
+    const key = this.machine + "\u0000" + id
+    const rich = (client.detailSnapshots?.get(key) ??
+      (client as { sessionSnapshots?: ReadonlyMap<string, unknown> }).sessionSnapshots?.get(key)) as
+      | { machine?: unknown; session?: unknown; execution_generation?: unknown; state?: unknown;
+        prompt_suggestion?: unknown; source?: { freshness?: unknown; observed_at?: unknown } } | undefined
+    if (!rich || rich.machine !== this.machine || rich.session !== id || rich.execution_generation !== row.execution_generation ||
+      (rich.state !== row.state && !(row.state === "working" && rich.state === "idle")) || rich.source?.freshness !== "current" ||
+      !Number.isFinite(rich.source.observed_at) || Math.abs(this.now() - Number(rich.source.observed_at) * 1000) > RICH_MENU_FRESH_MS) return row
+    return { ...row, prompt_suggestion: rich.prompt_suggestion }
+  }
+
   /**
    * The compact display list carries no provider work. Restore it from the
    * authenticated s/ row for this exact execution, including complete zero
@@ -2599,6 +2616,7 @@ export class RelayReader {
    * the existing bounded restatement path; list rows never initiate reads.
    */
   private withProviderWork(client: CloudReadClient, row: CloudRow): CloudRow {
+    row = this.withPromptSuggestion(client, row)
     row = this.withProviderCount(client, row)
     if (row.assistant !== "claude" && row.assistant !== "codex") return row
     const id = typeof row.session === "string" ? row.session : row.id
