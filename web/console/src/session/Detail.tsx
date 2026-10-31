@@ -1,9 +1,11 @@
+import { ToolLibrary } from "../tool-library/ToolLibrary.js"
+import { localized, toolTarget, type ToolDraft } from "../tool-library/model.js"
 import { outputSessionKey, readOutputs } from "./output-files-api.js"
 import { OutputFiles } from "./OutputFiles.js"
 import { WorkflowProfileHeader } from "./workflow-profile-header.js"
 import { assistantStateCurrent, assistantProtocolOwned, sessionActionVisibility } from "./antigravity-ui.js"
 import { assistantFactsMachine, useAssistantFacts } from "./assistant-facts.js"
-import { catalogWord } from "../catalog.js"
+import { catalogWord, currentCatalogTag } from "../catalog.js"
 import type { Icon, ScanSource, SessionAgent, SessionRow, SessionShell, TaskRow } from "@clawdline/contract"
 import {
   useEffect,
@@ -28,7 +30,7 @@ import { Transcript } from "./Transcript.js"
 import { GitPanel } from "./GitPanel.js"
 import { Composer } from "./Composer.js"
 import { composerDraftKey } from "./composer-drafts.js"
-import { nativeTerminalCommand } from "./native-terminal-command.js"
+import { nativeTerminalCommand, nativeTerminalAvailable as terminalPanelAvailable } from "./native-terminal-command.js"
 import { NativeTerminalPanel } from "./NativeTerminalPanel.js"
 import { pendingSends } from "./send.js"
 import { ScreenPanel } from "./ScreenPanel.js"
@@ -177,6 +179,10 @@ export function Detail({
   const [screenOpen, setScreenOpen] = useState(false)
   const [nativeTerminalOpen,setNativeTerminalOpen] = useState(false)
   const actionsTrigger = useRef<HTMLButtonElement>(null)
+  const [toolOpen, setToolOpen] = useState(false)
+  const [toolDraft, setToolDraft] = useState<ToolDraft | null>(null)
+  const toolIdentity = toolTarget(row, readerMachine || "")
+  useEffect(() => { setToolOpen(false); setToolDraft(null) }, [toolIdentity])
   // A different session, or none, closes the panel: it is that session's
   // terminal that was being watched (`followTerminal`).
   useEffect(() => {
@@ -360,6 +366,7 @@ export function Detail({
             onScreen={() => {setNativeTerminalOpen(false);setScreenOpen(true)}}
             onOpenGit={() => setGitOpen(true)}
             onSuggestions={requestSnippets}
+            onTools={() => setToolOpen(true)}
           />
         </div>
       </div>}
@@ -420,7 +427,7 @@ export function Detail({
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
-      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} />}
+      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}
       {selectedAgent || !row ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       </div>
       <OutputFiles row={row} machine={readerMachine} open={outputsOpen} trigger={outputTrigger} onClose={() => setOutputsFor(null)} />
@@ -428,6 +435,9 @@ export function Detail({
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens
           it is this component's. */}
+      {row && toolOpen && <ToolLibrary key={toolIdentity} row={row} machine={readerMachine} onClose={() => {setToolOpen(false); actionsTrigger.current?.focus({preventScroll:true})}} onPrepared={(prepared, identity) => {
+        setAgentId(null); setToolDraft({text:prepared.task, attachment:{id:crypto.randomUUID(),target:identity,title:localized(prepared.project.name, currentCatalogTag()) || prepared.project.repo, prompt:prepared.prompt,revision:prepared.project.source_commit,mode:prepared.mode}});setToolOpen(false)
+      }} />}
       <UserMessages row={row} />
       <Snippets row={row} steward={steward} />
     </DetailPane>
@@ -572,6 +582,7 @@ function Tools({
   onNativeTerminal,
   onOpenGit,
   onSuggestions,
+  onTools,
 }: {
   row: SessionRow | null
   project: string
@@ -582,6 +593,7 @@ function Tools({
   onNativeTerminal: () => void
   onOpenGit: () => void
   onSuggestions: () => void
+  onTools: () => void
 }) {
   const T = L.strings
   const steward = !!row && !!(row.machine_scope || row.coordinator)
@@ -864,16 +876,7 @@ function Tools({
               >
                 {T.webShowOnMac}
               </button>
-              <button
-                id="session-open-terminal"
-                type="button"
-                role="menuitem"
-                disabled={!row || ending || openingTerminal}
-                onClick={() => {
-                  closeMenu(false)
-                  void startProjectTerminal()
-                }}
-              >{nextWord("terminalStartTerminalTab")}</button>
+              <button type="button" role="menuitem" id="session-tool-library" disabled={!row || ending} onClick={() => {closeMenu(false); onTools()}}>{nextWord("toolLibraryTitle")}</button>
               <button
                 id="session-info"
                 type="button"
@@ -890,7 +893,7 @@ function Tools({
                   this: reading a screen needs no send capability, and the menu
                   it sits in cannot be opened without a session. */}
               <button type="button" role="menuitem" id="session-native-terminal"
-                hidden={!nativeTerminalCommand("/help",row?.assistant,row?.backend)} disabled={!row||ending}
+                hidden={!terminalPanelAvailable(row?.assistant,row?.backend)} disabled={!row||ending}
                 onClick={()=>{closeMenu(false);onNativeTerminal()}}>
                 {catalogWord("nativeTerminal","title")}
               </button>
@@ -955,6 +958,16 @@ function Tools({
               >
                 ‹ {T.webSessionActions}
               </button>
+              <button
+                id="session-open-terminal"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending || openingTerminal}
+                onClick={() => {
+                  closeMenu(false)
+                  void startProjectTerminal()
+                }}
+              >{nextWord("terminalStartTerminalTab")}</button>
               <button
                 id="session-documents"
                 type="button"

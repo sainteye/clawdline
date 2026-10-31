@@ -170,6 +170,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   // compile time (`Carried<K>`); this says so of the parser's actual output,
   // which is what reaches the machine.
   const routes: [string, string][] = [
+    ["POST", "/v1/tool-library"],
+    ["POST", "/v1/tool-library/prepare"],
  ["POST","/v1/projects/p1/graphify"],
  ["POST","/v1/sessions/s1/graphify"],
     ["GET", "/v1/sessions/s1/native-terminal"],
@@ -339,7 +341,10 @@ test("one word, one list, and every route names a word the table carries", () =>
   // Issue sync's tracker connections and Retry (pages/work/IssueSync.tsx).
   assert.equal(CARRIED["jira-connect"], "POST /v1/integrations/jira")
   assert.equal(CARRIED["issue-sync.retry"], "POST /v1/issue-sync/{id}/retry")
-  assert.equal(Object.keys(CARRIED).length, 189)
+  assert.equal(CARRIED["tools.catalog"],"GET /v1/tool-library")
+  assert.equal(CARRIED["tools.save"],"POST /v1/tool-library")
+  assert.equal(CARRIED["tools.prepare"],"POST /v1/tool-library/prepare")
+  assert.equal(Object.keys(CARRIED).length, 192)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

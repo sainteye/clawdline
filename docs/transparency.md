@@ -166,3 +166,20 @@ Taiwan Traditional Chinese Antigravity context explanations remain accurate.
 Suggestion text is read from the existing native terminal and only becomes a
 user message after the person accepts and sends it. The source receipt changes;
 the instruction inventory and its human copy do not gain another injection.
+
+
+The Session tool library adds a conditional user-message attachment, not a
+startup default. The person chooses a repository and Skill, reviews installation
+scope, prepares the visible draft, then sends it through the existing composer.
+The instructions ask the receiving agent to inspect existing tools, pin and read
+the source, perform permitted reversible setup, verify availability and execute
+the task. Neither the daemon nor the recommendation catalog installs third-party
+code. Delivery, installation, loading and application remain separate claims.
+The inventory registers the new producer and composer in both languages.
+
+Tool preparation also distinguishes evaluation frameworks from Skills and web
+libraries. The Harness² path prepares an isolated experiment, independent
+acceptance criteria, preserved baseline artifacts and explicit model-call cost
+controls. It grants no sandbox bypass, paid calls or machine workflow changes.
+Both language cards and the reviewed producer excerpt include this conditional
+framework path; catalog inclusion itself performs no installation or execution.

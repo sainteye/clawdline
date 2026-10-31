@@ -487,6 +487,30 @@ export function paintRows(text: string | null | undefined): string {
 }
 
 /**
+ * The grid as the terminal laid it out, with its colours: one line per row,
+ * no reflow, for a `white-space: pre` block that scrolls sideways (the
+ * Terminal panel). Same parser and escaping as `paintRows`.
+ */
+export function paintGrid(text: string | null | undefined): string {
+  return segments(text).map((all) => {
+    const row = unpad(all)
+    let body = ""
+    let open: string | null = null
+    for (const run of row) {
+      const piece = paintSegment(run.text, run.css)
+      if (!piece) continue
+      if (run.href !== open) {
+        if (open) body += "</a>"
+        open = run.href
+        if (open) body += anchor(open)
+      }
+      body += piece
+    }
+    return open ? body + "</a>" : body
+  }).join("\n")
+}
+
+/**
  * The one line that says what this panel is: which terminal it is reading, and
  * whether that terminal can tell it when something changed (`badge`).
  *

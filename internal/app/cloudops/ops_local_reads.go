@@ -82,6 +82,9 @@ func init() {
 
 		// The complete squad catalog and private effective settings cross only
 		// the paired machine relay. The local route repeats its own read gate.
+		op{name: "tools.catalog", read: true},
+		op{name: "tools.save"},
+		op{name: "tools.prepare"},
 		op{name: "squad.catalog", read: true},
 		op{name: "squad.definition", read: true},
 		op{name: "squad.scopes", read: true},

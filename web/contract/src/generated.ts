@@ -4272,9 +4272,14 @@ export const MoverKindValues: readonly MoverKind[] = ["this_session", "other_ses
 
 export interface NativeTerminalFrame {
   /**
-   * A fingerprint of the foreground process and this grid.
+   * A fingerprint of the foreground process and the plain grid.
    */
   expect: string
+
+  /**
+   * The same grid with its colour escape sequences, when the backend provides them.
+   */
+  styled?: string
 
   /**
    * The visible terminal grid.

@@ -1052,6 +1052,9 @@ export class RelayReader {
           if (!body) return this.refuse(method, path, 400, "invalid_query", "Usage overview accepts days=7 or days=28 and one project.")
           return await this.machineRead(init?.signal, method, path, "usage.overview", body)
         }
+        case "/v1/tool-library":
+          this.only(url,path)
+          return await this.machineRead(init?.signal,method,path,"tools.catalog",{})
         case "/v1/squad/catalog":
           this.only(url, path)
           return await this.machineRead(init?.signal, method, path, "squad.catalog", {})

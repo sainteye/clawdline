@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node source tests use the source extension.
-import { nativeTerminalCommand } from "./native-terminal-command.ts"
+import { nativeTerminalAvailable, nativeTerminalCommand } from "./native-terminal-command.ts"
 
 test("all slash commands, including future names, can continue in the same CLI",()=>{
  for(const assistant of ["claude","codex"]) {
@@ -20,3 +20,10 @@ for (const assistant of ["claude", "codex"]) {
  assert.equal(nativeTerminalCommand("/resume previous",assistant,"iterm"),false)
  assert.equal(nativeTerminalCommand("/resume-plugin",assistant,"tmux"),true)
 }
+
+test("Gemini gets the Terminal panel without routing its slash commands there",()=>{
+ assert.equal(nativeTerminalAvailable("antigravity","tmux"),true)
+ assert.equal(nativeTerminalAvailable("antigravity","owned"),false)
+ assert.equal(nativeTerminalAvailable("claude","claude_remote"),false)
+ assert.equal(nativeTerminalCommand("/help","antigravity","tmux"),false)
+})

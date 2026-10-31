@@ -257,6 +257,18 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-hide",
 		method: "DELETE", path: "/v1/places", body2: `{"paths":["/projects/example"]}`,
 	}, {
+		word:    "tools.catalog",
+		body:    map[string]any{"type": "tools.catalog", "session": machine, "request": "req-tools-catalog"},
+		session: machine, name: "read:req-tools-catalog", method: "GET", path: "/v1/tool-library",
+	}, {
+		word:    "tools.save",
+		body:    map[string]any{"type": "tools.save", "session": machine, "request": "req-tools-save", "changes": map[string]any{"expected_version": 0}},
+		session: machine, name: "action:req-tools-save", method: "POST", path: "/v1/tool-library", body2: `{"expected_version":0}`,
+	}, {
+		word:    "tools.prepare",
+		body:    map[string]any{"type": "tools.prepare", "session": machine, "request": "req-tools-prepare", "changes": map[string]any{"session": "%tools", "conversation": "conversation-a", "mode": "task", "task": "Review"}},
+		session: machine, name: "action:req-tools-prepare", method: "POST", path: "/v1/tool-library/prepare", body2: `{"conversation":"conversation-a","mode":"task","session":"%tools","task":"Review"}`,
+	}, {
 		word:    "squad.catalog",
 		body:    map[string]any{"type": "squad.catalog", "session": machine, "request": "req-squad-catalog"},
 		session: machine, name: "read:req-squad-catalog",

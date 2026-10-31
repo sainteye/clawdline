@@ -73,7 +73,7 @@ var routeWords = func() map[string]bool {
 		schedule-webhooks schedules scopes screen screens seen send session-bindings session-events
 		session-name session-snapshots session-todos sessions settings shells skill skill-sources skills
 		smart-title snippets squad squad-packages stall start status steps stop stream strings subscribe
-		successions task tasks team terminal terminals timeline title todos tracks transcript tree tunnel
+		successions task tasks team terminal terminals timeline title todos tool-library prepare tracks transcript tree tunnel
 		unassign unify unsubscribe update usage v1 v2 verification-note verifications viewer voice waits
 		wake whoami work work-gates work-samples work-units worktrees`) {
 		words[w] = true

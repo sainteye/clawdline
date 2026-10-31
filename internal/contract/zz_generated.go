@@ -3685,8 +3685,11 @@ const (
 var MoverKindValues = []MoverKind{MoverKindThisSession, MoverKindOtherSession, MoverKindPerson, MoverKindTask, MoverKindBroker}
 
 type NativeTerminalFrame struct {
-	// A fingerprint of the foreground process and this grid.
+	// A fingerprint of the foreground process and the plain grid.
 	Expect string `json:"expect"`
+
+	// The same grid with its colour escape sequences, when the backend provides them.
+	Styled string `json:"styled,omitempty"`
 
 	// The visible terminal grid.
 	Text string `json:"text"`

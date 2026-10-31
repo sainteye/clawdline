@@ -597,7 +597,7 @@ for (const lang of ["en", "zh-Hant"]) test(`owned Gemini session actions menu ($
     assert.equal(menu.screenRects, 0)
     assert.equal(menu.activeFirst, "session-interrupt")
     await tab.run(`document.getElementById("session-actions")?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))`)
-    assert.equal(await tab.run(`document.activeElement?.id`), "session-open-terminal", "keyboard navigation must skip hidden terminal rows")
+    assert.equal(await tab.run(`document.activeElement?.id`), "session-tool-library", "keyboard navigation must skip hidden terminal rows")
     await tab.click("#session-interrupt")
     await tab.until("interrupt toast appears", s => s.text.includes(lang === "en" ? "Esc sent." : "已送出 Esc"))
     assert.equal(await tab.run(`document.getElementById("session-actions")?.hidden`), true)
