@@ -37,6 +37,8 @@ import { voiceSource } from "./voice-source.js"
 import "./voice-source.css"
 import "./drop-target.css"
 import { RemotePermissions } from "./RemotePermissions.js"
+import { Start } from "./Start.js"
+import { resumeCommandQuery } from "./resume-command.js"
 
 /**
  * The composer, as the original's `form#composer` is built.
@@ -511,6 +513,22 @@ export function Composer({
     // yet; Return comes through here as well as the button.
     if (inFlight.current || Shots.busy()) return
     if (!remote && row?.assistant === "antigravity" && !protocolOwned && !assistantStateCurrent(row)) return
+    const resumeQuery = resumeCommandQuery(rawText(), remote?.assistant ?? row?.assistant, Shots.urls().length)
+    if (resumeQuery !== null && (row || remote)) {
+      const owner = row ? L.machineFor(row) : null
+      Start.openResume({
+        assistant: (remote?.assistant ?? row?.assistant)!, cwd: row?.cwd, query: resumeQuery,
+        ...(followsRelay() && (remote?.machineID || owner?.id) ? {
+          machine: { id: remote?.machineID || owner!.id, name: owner?.label || remote!.machineID },
+        } : {}),
+      })
+      if (msg.current) msg.current.textContent = ""
+      setText("")
+      saveText("")
+      hideSkills()
+      setFailure("")
+      return
+    }
     // With the menu up, Return and the button choose the highlighted skill.
     if (acceptSkill()) return
     const said = rawText().trim()
@@ -756,6 +774,11 @@ export function Composer({
               return
             }
             if (e.key !== "Enter" || e.shiftKey) return
+            if (resumeCommandQuery(rawText(), remote?.assistant ?? row?.assistant, Shots.urls().length) !== null) {
+              e.preventDefault()
+              void submit()
+              return
+            }
             // Return chooses on every keyboard, a touch screen's included.
             if (acceptSkill()) return e.preventDefault()
             // On a touch screen Return is a new line and the button is how you send.

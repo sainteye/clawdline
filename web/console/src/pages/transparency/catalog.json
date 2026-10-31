@@ -229,7 +229,7 @@
       "sources": [
         {
           "path": "web/console/src/session/Start.tsx",
-          "line": 89
+          "line": 91
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -273,7 +273,7 @@
       "sources": [
         {
           "path": "web/console/src/session/Start.tsx",
-          "line": 89
+          "line": 91
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -308,7 +308,7 @@
       "sources": [
         {
           "path": "web/console/src/session/Start.tsx",
-          "line": 89
+          "line": 91
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -2795,7 +2795,7 @@
     "skills/workflow-prefix.md": "3a250f0e7718aea26387e31e1785b48876232c08bede277073e4aa9eef429aa0",
     "skills/workflow.go": "4c01da1f86769d43e1e8b40b191d96b04a5dac9f03d1a3fb2822a286ed2d952e",
     "skills/workflow_profiles.go": "2d08faa417a26c8421c92af6d75747a5e64b35a04f5a4a6c9c6e4317dbba59a5",
-    "web/console/src/session/Start.tsx": "41ce5fb0848d5f5c202a03fd13655a87bb9ad4189473dccf1d075d437feefeb7"
+    "web/console/src/session/Start.tsx": "972136f5262dabb0d9e64258b2bf539780466958385158c8c05bf65fb43ef070"
   },
   "copyChecks": {
     "en": "cb9e16081c7d150d0623a21541a441287abf11a884c629ec0ba386d9f4970502",

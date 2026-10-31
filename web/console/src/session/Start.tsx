@@ -17,6 +17,7 @@ import { ProjectFolderPicker } from "../pages/projects/ProjectFolderPicker.js"
 import { removeProjectPlace } from "../pages/work/api.js"
 import { catalogRefusalDetail, catalogWord } from "../catalog.js"
 import { assistantAdmits, assistantLabel, assistantRolesAdmit, assistantUnavailable, type AssistantOperation } from "./antigravity-ui.js"
+import { resumeCommandPlace } from "./resume-command.js"
 
 /**
  * Starting a session, and picking one back up, against the `div#start` sheet
@@ -100,6 +101,15 @@ let startArch = ""
 let pressing: string | null = null
 let find = ""
 let resume = false
+interface ResumeEntry {
+  assistant: string
+  cwd?: string
+  query: string
+  machine?: { id: string; name: string }
+}
+let resumeOnly = false
+let resumeEntry: ResumeEntry | null = null
+let resumeSearch = ""
 let at: Place | null = null
 let pasts: PastRow[] | null = null
 /** The past list was asked for and not read: it is not empty, it is unknown, and the sheet must not say "no records". */
@@ -294,7 +304,7 @@ function matchingPast(): PastRow[] {
   const q = find.trim().toLowerCase()
   return (pasts || []).filter((r) => {
     if (!q) return true
-    return (r.title || "").toLowerCase().indexOf(q) >= 0
+    return ((r.title || "") + " " + r.id).toLowerCase().indexOf(q) >= 0
   })
 }
 
@@ -353,7 +363,7 @@ function drawWith(): void {
     chip.setAttribute("aria-pressed", a.id === with_ ? "true" : "false")
     chip.onclick = () => {
       with_ = a.id
-      if (!resumable()) { resume = false; leave() }
+      if (!resumable()) { resume = resumeOnly; leave() }
       draw()
     }
     row.appendChild(chip)
@@ -437,7 +447,7 @@ function drawResume(): void {
   const row = el("start-resume")
   row.innerHTML = ""
   // Resuming needs a project to resume in; with none, the sheet's one job is adding a folder.
-  row.hidden = !write || (!at && !!places && places.length === 0)
+  row.hidden = !write || (!at && (resumeOnly || !!places && places.length === 0))
   if (row.hidden) return
 
   if (at) {
@@ -525,7 +535,7 @@ function draw(): void {
   editProjects.setAttribute("aria-label", editLabel)
   editProjects.title = editLabel
   editProjects.setAttribute("aria-pressed", editingProjects ? "true" : "false")
-  el("start-title").textContent = machineOnly ? "Clawdfather" : mode === "terminal" ? nextWord("terminalStartTitle") : T().webStart
+  el("start-title").textContent = machineOnly ? "Clawdfather" : mode === "terminal" ? nextWord("terminalStartTitle") : resumeOnly ? T().webResumeWith : T().webStart
   machineAction.hidden = !machineOnly
   machineAction.disabled = !!pressing || !!wait || !admitted("start") || !write
   machineAction.querySelector(".label")!.textContent =
@@ -613,7 +623,7 @@ function draw(): void {
     row.type = "button"
     row.className = "place"
     row.dataset.id = p.id
-    row.disabled = !!pressing || !!wait || editingProjects || (mode !== "terminal" && !admitted(resume && resumable() ? "resume" : "start"))
+    row.disabled = !!pressing || !!wait || editingProjects || (mode !== "terminal" && !admitted(resume ? "resume" : "start"))
     if (pressing === p.id) row.dataset.busy = "1"
     row.innerHTML = '<canvas></canvas><span class="name"></span><span class="where"></span>'
 
@@ -667,7 +677,7 @@ function drawPast(list: HTMLElement, box: HTMLInputElement): void {
   const loadingPast = reading && !pasts
   el("start-say").classList.toggle("loading", loadingPast)
 
-  box.hidden = !(pasts && pasts.length > 1)
+  box.hidden = !find && !(pasts && pasts.length > 1)
   if (box.hidden && box.value) {
     box.value = ""
     find = ""
@@ -692,7 +702,7 @@ function drawPast(list: HTMLElement, box: HTMLInputElement): void {
     row.type = "button"
     row.className = "place past"
     row.dataset.session = r.id
-    const open = r.live ? L.bySessionId(r.id) : null
+    const open = r.live ? L.bySessionId(r.id, with_, resumeOnly ? onMachine?.id ?? L.localSessionMachine : undefined) : null
     row.disabled = !!pressing || !!wait || (!!r.live && !open) || (!r.live && !admitted("resume"))
     if (pressing === r.id) row.dataset.busy = "1"
     row.innerHTML = '<span class="name"></span><span class="where"></span>'
@@ -750,7 +760,13 @@ function load(background = false): void {
       said("")
       places = (d && d.places) || []
       assistants = (d && d.assistants) || []
-      if (!with_ || !assistants.some((a) => a.id === with_)) {
+      if (resumeEntry) {
+        const entry = resumeEntry
+        with_ = entry.assistant
+        const place = resumeCommandPlace(places, entry.cwd)
+        resumeEntry = null
+        if (place && resumable()) enter(place)
+      } else if (!resumeOnly && (!with_ || !assistants.some((a) => a.id === with_))) {
         with_ = assistants.find(a => assistantAdmits(a, "start"))?.id || assistants[0]?.id || null
       }
     })
@@ -776,8 +792,8 @@ function enter(place: Place): void {
   pasts = null
   pastsUnread = false
   capped = false
-  find = ""
-  el<HTMLInputElement>("start-filter").value = ""
+  find = resumeOnly ? resumeSearch : ""
+  el<HTMLInputElement>("start-filter").value = find
   said("")
   pastCursor = ""
   pastFailed = false
@@ -861,6 +877,7 @@ function press(id: string): void {
     return
   }
   if (pressing || wait || !write || !with_ || typeof api.startPlace !== "function") return
+  if (resumeOnly && !resumable()) { said(assistantStatus("resume")); return }
   const place = (places || []).find((p) => p.id === id) ?? null
   if (resume && resumable() && place) {
     enter(place)
@@ -907,7 +924,7 @@ function pick(sessionID: string): void {
   if (!row) return
 
   if (row.live) {
-    const open = L.bySessionId(sessionID)
+    const open = L.bySessionId(sessionID, with_, resumeOnly ? onMachine?.id ?? L.localSessionMachine : undefined)
     if (!open) return
     close()
     host.open(open.id)
@@ -1010,14 +1027,18 @@ function hideBand(): void {
   L.setBandSpin(null)
 }
 
-function openMode(machine: boolean, requested: StartMode = "session", on: { id: string; name: string } | null = null): void {
+function openMode(machine: boolean, requested: StartMode = "session", on: { id: string; name: string } | null = null, entry: ResumeEntry | null = null): void {
   onMachine = on
   const active = document.activeElement
   opener = machine ? el("machine-dashboard-open") : active instanceof HTMLElement && active !== document.body ? active : el("start-go")
   machineOnly = machine
   mode = machine ? "session" : requested
   editingProjects = false
-  resume = false
+  resumeOnly = !!entry
+  resumeEntry = entry
+  resumeSearch = entry?.query || ""
+  resume = resumeOnly
+  if (entry) { with_ = entry.assistant; places = null; assistants = [] }
   el("start-title").textContent = machine ? "Clawdfather" : T().webStart
   el("start").hidden = false
   said("")
@@ -1067,6 +1088,7 @@ function arrived(id: string) {
 export const Start = {
   open,
   openOn,
+  openResume: (entry: ResumeEntry) => openMode(false, "session", entry.machine ?? null, entry),
   openTerminal: () => openMode(false, "terminal"),
   openMachine: () => openMode(true),
   close,
