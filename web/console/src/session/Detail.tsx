@@ -30,7 +30,7 @@ import { Transcript } from "./Transcript.js"
 import { GitPanel } from "./GitPanel.js"
 import { Composer } from "./Composer.js"
 import { composerDraftKey } from "./composer-drafts.js"
-import { nativeTerminalCommand } from "./native-terminal-command.js"
+import { nativeTerminalCommand, nativeTerminalAvailable as terminalPanelAvailable } from "./native-terminal-command.js"
 import { NativeTerminalPanel } from "./NativeTerminalPanel.js"
 import { pendingSends } from "./send.js"
 import { ScreenPanel } from "./ScreenPanel.js"
@@ -893,7 +893,7 @@ function Tools({
                   this: reading a screen needs no send capability, and the menu
                   it sits in cannot be opened without a session. */}
               <button type="button" role="menuitem" id="session-native-terminal"
-                hidden={!nativeTerminalCommand("/help",row?.assistant,row?.backend)} disabled={!row||ending}
+                hidden={!terminalPanelAvailable(row?.assistant,row?.backend)} disabled={!row||ending}
                 onClick={()=>{closeMenu(false);onNativeTerminal()}}>
                 {catalogWord("nativeTerminal","title")}
               </button>

@@ -58,6 +58,11 @@ func nativeTerminalProcessMatches(assistant session.Assistant, process ttyProc, 
 	if assistantOfComm(process.Comm) == assistant {
 		return true
 	}
+	// Gemini's standalone CLI is the native `agy` binary. Its pid and birth were
+	// verified against the executable at discovery; `ours` re-checks the birth.
+	if assistant == session.AssistantAntigravity && process.Comm == "agy" {
+		return true
+	}
 	// Native Claude uses its version as the kernel command. A version string
 	// alone proves nothing: require the kernel image at the standard install root.
 	if assistant != session.AssistantClaude || !nativeTerminalClaudeVersion.MatchString(process.Comm) || executable == nil {

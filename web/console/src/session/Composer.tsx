@@ -43,7 +43,7 @@ import "./drop-target.css"
 import { RemotePermissions } from "./RemotePermissions.js"
 import { Start } from "./Start.js"
 import { commandCatalog } from "../legacy/command-catalog.js"
-import { nativeTerminalCommand } from "./native-terminal-command.js"
+import { nativeTerminalAvailable, nativeTerminalCommand } from "./native-terminal-command.js"
 import { resumeCommandQuery } from "./resume-command.js"
 
 /**
@@ -701,7 +701,7 @@ export function Composer({
     >
       {tool && <div className="tl-attachment" aria-label={nextWord("toolLibraryAttachment")}><div><span><b>{tool.title}</b><small>{nextWord("toolLibraryPrepared")}</small><small>{tool.revision || nextWord("toolLibraryResolveRevision")}</small></span><button type="button" aria-label={nextWord("toolLibraryRemoveAttachment")} onClick={() => {toolAttachment.current=null;setTool(null);saveText(rawText())}}>×</button></div><details><summary>{nextWord("toolLibraryReadPrompt")}</summary><pre>{tool.prompt}</pre></details>{tool.target !== toolIdentity && <p role="alert">{nextWord("toolLibraryStale")}</p>}</div>}
       {remoteControl && row && <RemotePermissions row={row} write={!!write} />}
-      {!remote && <Waiting row={row} assistantFacts={assistantFacts} write={write} onScreen={row && nativeTerminalCommand("/help",row.assistant,row.backend) ? onNativeTerminal ?? onScreen : onScreen} />}
+      {!remote && <Waiting row={row} assistantFacts={assistantFacts} write={write} onScreen={row && nativeTerminalAvailable(row.assistant,row.backend) ? onNativeTerminal ?? onScreen : onScreen} />}
       <div
         className="shots"
         id="shots"

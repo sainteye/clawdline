@@ -41,7 +41,7 @@ func nativeTerminalActions() (*nativeTerminalFixture, Actions) {
 }
 
 func TestNativeTerminalSupportsMenusAndTextWithoutImplicitSubmission(t *testing.T) {
-	for _, assistant := range []session.Assistant{session.AssistantClaude, session.AssistantCodex} {
+	for _, assistant := range []session.Assistant{session.AssistantClaude, session.AssistantCodex, session.AssistantAntigravity} {
 		h, a := nativeTerminalActions()
 		h.s.Assistant = assistant
 		frame, err := a.NativeTerminal(context.Background(), "%1", nil)
@@ -77,7 +77,7 @@ func TestNativeTerminalRejectsMovedTargetsBeforeTyping(t *testing.T) {
 			case "unreadable":
 				h.blind = true
 			case "unsupported":
-				h.s.Assistant = session.AssistantAntigravity
+				h.s.Assistant = ""
 			case "revoked":
 				ctx = WithOperationCheck(ctx, func() error { return Refusal{Code: "forbidden"} })
 			case "changed-during-permission-check":
@@ -109,5 +109,46 @@ func TestNativeTerminalRejectsInjectedKeysAndNeverRetriesUnknownWrites(t *testin
 	}
 	if len(h.keys()) != 0 || h.attempts != 1 {
 		t.Fatalf("keys %q attempts %d", h.keys(), h.attempts)
+	}
+}
+
+// A permission prompt under a running tool: the clock, the spinner and the
+// blinking bullet move every second while the question does not. Before this,
+// every Enter on such a prompt was refused as input_moved.
+func TestNativeTerminalKeepsAPromptWhoseOnlyChangeIsATickingClock(t *testing.T) {
+	h, a := nativeTerminalActions()
+	h.screen = "⏺ Running 2 shell commands · 1m 57s…\n✻ Calculating… (0h 3m 05s · ↓ 12.4k tokens)\nDo you want to proceed?\n❯ 1. Yes\n  2. No\n⠏ 測試 1m11s  ctx 45%\n"
+	frame, err := a.NativeTerminal(context.Background(), "%1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.screen = "  Running 2 shell commands · 1m 58s…\n✶ Calculating… (0h 3m 06s · ↓ 12.5k tokens)\nDo you want to proceed?\n❯ 1. Yes\n  2. No\n⠋ 測試 1m12s  ctx 46%\n"
+	if _, err := a.NativeTerminal(context.Background(), "%1", &NativeTerminalInput{Expect: frame.Expect, Key: "enter"}); err != nil {
+		t.Fatalf("a ticking clock refused the key: %v", err)
+	}
+	if got := h.keys(); len(got) != 1 || got[0] != "\r" {
+		t.Fatalf("keys %q", got)
+	}
+	h.screen = "Do you want to delete everything?\n❯ 1. Yes\n  2. No\n"
+	if _, err := a.NativeTerminal(context.Background(), "%1", &NativeTerminalInput{Expect: frame.Expect, Key: "enter"}); err == nil {
+		t.Fatal("a different question accepted the key")
+	}
+}
+
+// One tmux capture gives both pictures: the plain grid that is fingerprinted
+// and shown without colour, and the coloured grid the panel paints.
+func TestNativeTerminalCarriesTheColouredGrid(t *testing.T) {
+	h, a := nativeTerminalActions()
+	h.screen = "\x1b[38;5;174m✻\x1b[39m Thinking…\n"
+	frame, err := a.NativeTerminal(context.Background(), "%1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.Text != "✻ Thinking…\n" || frame.Styled != h.screen {
+		t.Fatalf("text %q styled %q", frame.Text, frame.Styled)
+	}
+	h.screen = "plain\n"
+	if frame, _ = a.NativeTerminal(context.Background(), "%1", nil); frame.Styled != "" || frame.Text != "plain\n" {
+		t.Fatalf("an uncoloured grid repeated itself: %+v", frame)
 	}
 }

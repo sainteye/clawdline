@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
-import { nativeTerminalCommand } from "./native-terminal-command.ts"
+import { nativeTerminalAvailable } from "./native-terminal-command.ts"
 import test from "node:test"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 import english from "../../public/catalogs/en.json" with { type: "json" }
@@ -239,8 +239,8 @@ test("owned Gemini and Remote Control keep Stop current work while hiding termin
 test("the read-only screen mirror stays only where the interactive Terminal is unavailable", () => {
   for (const assistant of ["claude", "codex"]) for (const backend of ["tmux", "iterm"])
     assert.equal(sessionActionVisibility({ id: "%1", backend, assistant } as any).screen, false, assistant + "/" + backend)
-  assert.equal(sessionActionVisibility({ id: "%2", backend: "tmux", assistant: "gemini" } as any).screen, true)
+  assert.equal(sessionActionVisibility({ id: "%2", backend: "tmux", assistant: "antigravity" } as any).screen, false, "Gemini in tmux has the Terminal too")
   assert.equal(sessionActionVisibility({ id: "%3", backend: "tmux", assistant: "shell" } as any).screen, true)
-  for (const assistant of ["claude", "codex", "gemini", "shell"]) for (const backend of ["tmux", "iterm", "pty"])
-    assert.equal(sessionActionVisibility({ id: "%4", backend, assistant } as any).screen, !nativeTerminalCommand("/help", assistant, backend), assistant + "/" + backend)
+  for (const assistant of ["claude", "codex", "antigravity", "shell"]) for (const backend of ["tmux", "iterm", "pty"])
+    assert.equal(sessionActionVisibility({ id: "%4", backend, assistant } as any).screen, !nativeTerminalAvailable(assistant, backend), assistant + "/" + backend)
 })

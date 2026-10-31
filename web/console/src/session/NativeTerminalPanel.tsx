@@ -5,6 +5,8 @@ import { catalogWord } from "../catalog.js"
 import { pressKey } from "../press-key.js"
 import { pendingSends } from "./send.js"
 import { nativeTerminalCommand } from "./native-terminal-command.js"
+import { assistantLabel } from "./antigravity-ui.js"
+import { paintGrid } from "../legacy/screen-bridge.js"
 import { FOLLOW_MS } from "./transcript-follow.js"
 import "./native-terminal.css"
 
@@ -78,7 +80,7 @@ export function NativeTerminalPanel({row,open,onClose}:{row:SessionRow|null;open
  return <section className="panel-view native-terminal" id="native-terminal" hidden={!open} aria-labelledby="native-terminal-title">
   <header className="panel-view-head">
    <h2 id="native-terminal-title">{word("title")}</h2>
-   <span>{row?.assistant==="codex"?"Codex":"Claude Code"}</span>
+   <span>{assistantLabel(row?.assistant)}</span>
    <button type="button" className="chip" onClick={onClose}>{word("back")}</button>
   </header>
   <pre ref={region} className="native-terminal-grid" tabIndex={0} aria-label={word("screen")} onKeyDown={event=>{
@@ -86,7 +88,7 @@ export function NativeTerminalPanel({row,open,onClose}:{row:SessionRow|null;open
    const key=event.key==="Tab"&&event.shiftKey?"shift+tab":hardware[event.key]
    if(!key)return
    event.preventDefault();event.stopPropagation();void input({key})
-  }}>{frame?.text||word("loading")}</pre>
+  }} {...(frame?.styled ? {dangerouslySetInnerHTML:{__html:paintGrid(frame.styled)}} : {children:frame?.text||word("loading")})} />
   <div className="native-terminal-controls">
    <p>{word("hint")}</p>
    {failure&&<p role="alert">{failure}</p>}

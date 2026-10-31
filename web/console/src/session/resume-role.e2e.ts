@@ -133,7 +133,11 @@ function daemon(): Server {
       })
     }
     if (path === "/v1/sessions/fixture-current/native-terminal") {
-      if (req.method === "GET") return json(res,200,{text:nativeText || (commandAssistant === "codex" ? "Codex" : "Claude Code") + "\nSelect a model\n❯ Current model\n  Another model\nEnter to confirm · Esc to go back",expect:nativeRevision.toString(16).padStart(64,"0")})
+      if (req.method === "GET") {
+        const text = nativeText || (commandAssistant === "codex" ? "Codex" : "Claude Code") + "\nSelect a model\n❯ Current model\n  Another model\nEnter to confirm · Esc to go back"
+        // tmux's coloured capture of the same grid: the marker in the assistant's colour.
+        return json(res,200,{text,styled:text.replace("❯","\x1b[38;5;174m❯\x1b[39m"),expect:nativeRevision.toString(16).padStart(64,"0")})
+      }
       if (req.method === "POST") {
         let raw="";req.on("data",chunk=>raw+=String(chunk));req.on("end",()=>{
           const input=JSON.parse(raw);nativeRequests.push({...input,request:String(req.headers["idempotency-key"]||"")})
@@ -665,6 +669,10 @@ for (const assistant of ["claude", "codex"]) {
    while(commandSends.length<2 && Date.now()<next) await new Promise(r=>setTimeout(r,20))
    assert.equal(commandSends[1],'/future-provider-command value', 'execution has no builtin allowlist')
    await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('terminal not ready');await new Promise(r=>setTimeout(r,20))}})()`)
+   const painted = await tab.run(`(()=>{const grid=document.querySelector('#native-terminal .native-terminal-grid');const span=[...grid.querySelectorAll('span')].find(node=>node.textContent==='❯');return {text:grid.textContent,colour:span?getComputedStyle(span).color:null}})()`)
+   assert.match(painted.text,/Select a model\n❯ Current model/,'the coloured grid keeps its rows and words')
+   assert.ok(painted.colour && painted.colour!==await tab.run(`getComputedStyle(document.querySelector('#native-terminal .native-terminal-grid')).color`),'the marker keeps the colour tmux drew')
+   assert.ok(!painted.text.includes('\x1b'),'no escape sequence reaches the page')
    await tab.shot(`native-terminal-${assistant}`)
    nativeRequests=[]
    for(const key of ['down','tab','enter','escape']) {

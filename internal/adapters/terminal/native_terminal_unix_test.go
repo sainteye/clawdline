@@ -104,3 +104,23 @@ func TestNativeTerminalExecutableReadsTheRunningImage(t *testing.T) {
 		t.Fatal("accepted a missing process")
 	}
 }
+
+func TestNativeTerminalIdentityAcceptsGeminiStandaloneCLI(t *testing.T) {
+	start := time.Unix(100, 0)
+	s := session.Session{ID: "%1", Backend: session.BackendTmux, Assistant: session.AssistantAntigravity, PID: 22, ExpectedStart: start}
+	processes := []ttyProc{{PID: 1, PGID: 1, Comm: "zsh", Start: start}, {PID: 22, PPID: 1, PGID: 22, Comm: "agy", Start: start}}
+	if identity, err := nativeTerminalIdentityOf(s, processes, 22, nil); err != nil || identity == "" {
+		t.Fatalf("%s %v", identity, err)
+	}
+	for _, change := range []string{"claude-in-front", "new-birth"} {
+		next := append([]ttyProc(nil), processes...)
+		if change == "claude-in-front" {
+			next[1].Comm = "claude"
+		} else {
+			next[1].Start = start.Add(time.Second)
+		}
+		if _, err := nativeTerminalIdentityOf(s, next, 22, nil); err == nil {
+			t.Fatalf("%s: accepted", change)
+		}
+	}
+}

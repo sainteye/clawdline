@@ -16,9 +16,13 @@
           "type": "string",
           "description": "The visible terminal grid."
         },
+        "styled": {
+          "type": "string",
+          "description": "The same grid with its colour escape sequences, when the backend provides them."
+        },
         "expect": {
           "type": "string",
-          "description": "A fingerprint of the foreground process and this grid."
+          "description": "A fingerprint of the foreground process and the plain grid."
         }
       }
     },
