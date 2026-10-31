@@ -1358,6 +1358,41 @@
     "Note": true
   },
   {
+    "Name": "console.public_analytics_activems",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.public_analytics_countries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.public_analytics_days",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.public_analytics_page",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.public_analytics_path",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.public_analytics_readms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.public_analytics_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.relay_feature_wait_seconds",
     "Known": true,
     "Note": true
