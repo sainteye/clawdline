@@ -2877,6 +2877,21 @@
     "Known": true
   },
   {
+    "Name": "work.issue_sync_device_flow_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "work.issue_sync_response_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "work.issue_sync_token_file_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "work.item_description_bytes",
     "Known": true,
     "Note": true

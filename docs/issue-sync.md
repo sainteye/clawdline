@@ -1,7 +1,8 @@
 # Issue sync: mirroring a Board item into GitHub or Jira
 
-Status (2026-10-31): decided by the owner (D73). Step 1 — this page and the pure rules in
-`internal/domain/work/issuesync.go` — is implemented. Steps 2–6 are not.
+Status (2026-10-31): decided by the owner (D73). Steps 1–2 — the pure rules in
+`internal/domain/work/issuesync.go` and the GitHub connection — are implemented. Steps 3–6 are not:
+nothing opens or closes an issue yet.
 
 This page supersedes the 2026-09-19 rulings G4 ("Clawdline does not open issues") and G6 ("no
 two-way sync") in `work-system.md` §6 and `github-issues.md` §7. Their concern still holds and
@@ -63,10 +64,20 @@ the body, and a retry searches for it before creating.
 
 - **Project binding**: the GitHub repository comes from the Project's remote (`projectlinks`); the
   Jira site, project key and issue type are chosen by the person once per Project.
-- **Credentials**: GitHub through an OAuth App device flow (works from the phone: a code and a URL),
-  with a fine-grained token limited to Issues as the fallback; Jira Cloud through an API token.
-  Stored in the operating system's credential store (Keychain, Secret Service, Credential Manager),
-  never readable by an agent, never carried by Cloud.
+- **Credentials**: GitHub through Clawdline's OAuth App device flow (client id `Ov23lioodvbqh76e5rtY`,
+  scope `repo`, expiring user tokens). It works from the phone: the person sees a code and opens
+  `github.com/login/device`. Neither authorizing nor refreshing needs a client secret, and none
+  ships. Jira Cloud uses an API token (step 5). The token is kept the way `cloudkeys` keeps this
+  daemon's own secrets — an owner-only file under `<state dir>/integrations/github/` (0700/0600,
+  atomic rename, symlinks refused, unreadable is a failure, not "disconnected"), because that is
+  the one store all three platforms have; a platform keystore can replace it behind the same
+  type. No route answers the token or the device code, and Cloud never carries them. Processes
+  running as the same OS user are inside the endpoint trust boundary
+  (`platform-trust-boundary.md`), as they are for every other secret on the machine.
+- **Refresh**: GitHub retires the old token pair as soon as it answers a refresh, so the new pair
+  is saved before use and refreshes are serialized. A refused refresh is `reauthorize`.
+  Disconnecting forgets the token on this machine; GitHub keeps the grant until the person revokes
+  it under Settings → Applications, because revoking needs the client secret.
 - **Link record** per item: provider, target, observed state, external key, URL, typed last error,
   attempts, version. Every change writes an item event.
 - **Outbox (D08)**: the phase transition records the owed op inside its transaction; the call runs
@@ -79,8 +90,11 @@ the body, and a retry searches for it before creating.
 ## 5. Delivery
 
 1. Decision, this page, pure rules and tests. *(done)*
-2. Credential store, GitHub device-flow authorization, Project binding. Needs a registered
-   Clawdline OAuth App (its client id is public).
+2. Credential store, GitHub device-flow authorization, Project binding. *(done:
+   `internal/adapters/githubissues`; `GET`/`DELETE /v1/integrations/github` reads or forgets the
+   connection, `GET`/`POST /v1/integrations/github/device` starts the flow and reads its code.
+   Writes need this machine or a paired device that may send. `TargetFor` reads `owner/repo` from
+   the Project's `origin`, accepting only the host `github.com`.)*
 3. GitHub outbox worker: create, close, reopen; retry, offline, rate-limit and duplicate-create
    failure-injection tests.
 4. Console: the option, authorize-on-send, preview, card badge and Retry, integration settings;

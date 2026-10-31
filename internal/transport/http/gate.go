@@ -556,6 +556,12 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may read, and not change work gates."
 		}
+	case p == "/v1/integrations/github" || p == "/v1/integrations/github/device":
+		// Connecting or forgetting this machine's GitHub authorization is the
+		// person's act: this machine, or a paired device that may send.
+		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			return http.StatusForbidden, "forbidden", "This device may read, and not change the GitHub connection."
+		}
 	case p == "/v1/settings/notifications":
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may read, and not change notification preferences."

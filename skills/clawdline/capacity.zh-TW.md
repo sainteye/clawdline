@@ -592,6 +592,9 @@
 | `work.image_bytes_total` | 536870912 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
 | `work.image_request_body_bytes` | 18874368 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `work.images_per_item` | 6 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `work.issue_sync_device_flow_seconds` | 900 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `work.issue_sync_response_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `work.issue_sync_token_file_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `work.item_description_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
 | `work.item_title_bytes` | 240 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
 | `work.item_user_action_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender, health` | — |

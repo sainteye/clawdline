@@ -26,6 +26,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/clauderemote"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/doctor"
+	"github.com/sainteye/clawdline/internal/adapters/githubissues"
 	"github.com/sainteye/clawdline/internal/adapters/graphify"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
 	"github.com/sainteye/clawdline/internal/adapters/logs"
@@ -60,6 +61,8 @@ import (
 type Server struct {
 	graphifyMu      sync.Mutex
 	graphifyBuilder *graphify.Builder
+	githubMu        sync.Mutex
+	githubConn      *githubissues.Connection
 	claudeRemote    interface {
 		SendRemote(context.Context, session.Session, string, func() error) error
 		Page(context.Context, session.Session, int, int64, int64, string) (contract.TranscriptPage, error)
@@ -710,6 +713,9 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/settings/work-gates"}, s.workGateSettingsRoute},
 		{Route{"*", "/v1/settings/workflow"}, s.workflowSettingsRoute},
 		{Route{"*", "/v1/settings/integrations"}, s.integrationSettingsRoute},
+		// This machine's GitHub authorization for issue sync (github_integration.go).
+		{Route{"*", "/v1/integrations/github"}, s.githubIntegrationRoute},
+		{Route{"*", "/v1/integrations/github/device"}, s.githubDeviceRoute},
 		{Route{"*", "/v1/places"}, s.placesRoute},
 		{Route{"GET", "/v1/project-folders"}, s.projectFoldersRoute},
 		// The input bar's server list (devstacks.go): what the projects' own

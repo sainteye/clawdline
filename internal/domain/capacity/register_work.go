@@ -155,5 +155,28 @@ func workBounds() []Entry {
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/store.DigestKeepLimit"},
 		},
+		// Issue sync's GitHub connection (docs/issue-sync.md). Each answer
+		// is read whole and refused past the limit; nothing is retained but
+		// the one token file.
+		{
+			Name: WorkIssueSyncResponseBytes, Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/githubissues.MaxResponseBytes"},
+		},
+		{
+			Name: WorkIssueSyncTokenFileBytes, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/githubissues.MaxTokenFileBytes"},
+		},
+		{
+			// One device flow is polled at most this long; then the person
+			// starts again and gets a new code.
+			Name: WorkIssueSyncDeviceSeconds, Class: Buffer, Unit: Seconds,
+			Limit: 900, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/githubissues.MaxDeviceFlowSeconds"},
+		},
 	}
 }

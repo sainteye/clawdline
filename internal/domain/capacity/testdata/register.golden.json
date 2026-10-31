@@ -11401,6 +11401,66 @@
   },
   {
     "Register": "daemon",
+    "Name": "work.issue_sync_device_flow_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 900,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/githubissues.MaxDeviceFlowSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "work.issue_sync_response_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/githubissues.MaxResponseBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "work.issue_sync_token_file_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16384,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/githubissues.MaxTokenFileBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "work.item_description_bytes",
     "Class": "evidence",
     "Unit": "bytes",

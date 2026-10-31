@@ -2716,7 +2716,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/graphify.go": "a0716503d418090b5056f7f529683124d4eecdbf14af16bc00f941d764f854f9",
-    "cmd/clawdline/main.go": "a751390c29f6708207cd4e10c9148c97aa21d18e1516ad74d93d381eeb3eba9d",
+    "cmd/clawdline/main.go": "dd29bc6d263ce4a41f625fb1780b5fbb74e0d623b0478f3a4137124e3a4cf345",
     "cmd/clawdline/session.go": "0fc62871605339e63df21529801409aa809907ec05bb8343bbbd766600c11574",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",

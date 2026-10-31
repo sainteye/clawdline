@@ -79,5 +79,14 @@ func (s *Server) workCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.WorkListPageRows: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-answer Board page; later rows remain behind next_cursor"}
 		},
+		capacity.WorkIssueSyncResponseBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-answer guard on GitHub replies; no retained buffer"}
+		},
+		capacity.WorkIssueSyncTokenFileBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read guard on the one GitHub token file"}
+		},
+		capacity.WorkIssueSyncDeviceSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-flow deadline; a new start issues a new code"}
+		},
 	}
 }

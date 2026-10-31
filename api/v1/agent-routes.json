@@ -36,8 +36,16 @@
       "pattern": "/v1/board/tracks",
       "guide": "board"
     },
-    {"method": "*", "pattern": "/v1/provider-quotas", "guide": "connect"},
-    {"method": "*", "pattern": "/v1/doctor", "guide": "connect"},
+    {
+      "method": "*",
+      "pattern": "/v1/provider-quotas",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/doctor",
+      "guide": "connect"
+    },
     {
       "method": "*",
       "pattern": "/v1/capacity",
@@ -511,6 +519,16 @@
     {
       "method": "*",
       "pattern": "/v1/settings/integrations",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/integrations/github",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/integrations/github/device",
       "guide": "connect"
     },
     {

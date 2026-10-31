@@ -230,7 +230,11 @@ const (
 	WorkImageRequestBodyBytes = "work.image_request_body_bytes"
 	WorkStepsPerItem          = "work.steps_per_item"
 	WorkRootLandingsPerItem   = "work.root_landings_per_item"
-	SessionDirectTodos        = "session.direct_todos"
+	// Issue sync's GitHub connection (docs/issue-sync.md).
+	WorkIssueSyncResponseBytes  = "work.issue_sync_response_bytes"
+	WorkIssueSyncTokenFileBytes = "work.issue_sync_token_file_bytes"
+	WorkIssueSyncDeviceSeconds  = "work.issue_sync_device_flow_seconds"
+	SessionDirectTodos          = "session.direct_todos"
 	// The token ledger's work-unit cursors (docs/token-ledger.md "One unit of
 	// work", limits N73).
 	UsageWorkCursorRows          = "usage.work_cursor_rows"
