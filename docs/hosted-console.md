@@ -119,7 +119,7 @@ result when its notice arrives (`clawdline guide`, §5a):
 hosted=/absolute/path/to/built/hosted-worktree
 cloud=/absolute/path/to/private-cloud-checkout
 stamp=$(git -C "$hosted" rev-parse HEAD)
-clawdline callback --title "The hosted console serves $stamp" --timeout 20m -- \
+clawdline callback --title "Hosted console serves $(git -C "$hosted" rev-parse --short=9 HEAD)" --timeout 20m -- \
   sh -c '
     set -eu
     hosted=$1
@@ -151,6 +151,9 @@ clawdline callback --title "The hosted console serves $stamp" --timeout 20m -- \
     tools/wait-hosted-console.sh "$stamp"
   ' sh "$hosted" "$cloud"
 ```
+
+The title carries the short commit: `clawdline callback` refuses a title over 60 characters
+(`bad_task`), and a full 40-character commit after the words already reaches 63.
 
 Record the current production deployment id from the list before deploying, so rollback has an
 exact target. A failed ancestry check stops the callback before deployment.
