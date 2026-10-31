@@ -41,6 +41,121 @@
   },
   {
     "Register": "daemon",
+    "Name": "antigravity.acp_trace_bytes",
+    "Class": "observation",
+    "Unit": "bytes",
+    "Limit": 16777216,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxWireTraceBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_trace_connections",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxWireConnections"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_trace_queue_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16777216,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxWireQueueBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_trace_queue_records",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxWireQueueRecords",
+      "internal/adapters/antigravitysession.openWireRecorder:chan(MaxWireQueueRecords)"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_trace_records",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 8192,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxWireTraceRecords"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "antigravity.acp_trace_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/antigravitysession.MaxWireTraceAge"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "antigravity.acp_view_bytes",
     "Class": "observation",
     "Unit": "bytes",

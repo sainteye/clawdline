@@ -95,9 +95,8 @@ type UpdateResource struct {
 // DecodeSessionUpdate accepts a complete, already transport-bounded JSON-RPC
 // notification for exactly expectedSession. It owns no transport or mutable
 // shared state, starts no goroutines, and returns independently owned values.
-// Optional unsupported variants return Ignored; unknown variants return a typed
-// unsupported_update error. Wrong-session notifications are always errors,
-// including otherwise ignored variants. Error results contain no partial data.
+// Optional unsupported and unknown extension variants return Ignored.
+// Wrong-session notifications are errors even for otherwise ignored variants. Error results contain no partial data.
 func DecodeSessionUpdate(message []byte, expectedSession string) (SessionUpdate, error) {
 	fail := func(code string) (SessionUpdate, error) {
 		return SessionUpdate{}, &UpdateDecodeError{Code: code}
@@ -171,12 +170,14 @@ func DecodeSessionUpdate(message []byte, expectedSession string) (SessionUpdate,
 			return fail("invalid_update")
 		}
 		out.Context = &ContextUsage{Used: used, Size: size}
-	case "plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update":
+	case "plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update", "notice", "compaction_update", "compaction_summary_chunk":
 		// The variant is known, but its optional payload is deliberately not
 		// normalized. In particular, history user text is not assistant output.
 		out.Ignored = true
 	default:
-		return fail("unsupported_update")
+		// Forward-compatible notifications are not a failed prompt response.
+		// Preserve them at the raw transport boundary; do not infer lifecycle.
+		out.Ignored = true
 	}
 	return out, nil
 }

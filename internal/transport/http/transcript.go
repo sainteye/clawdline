@@ -606,6 +606,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 				info.Efforts = facts.Efforts
 				info.Models = facts.Models
 				info.Limits = facts.Limits
+				info.Protocol = facts.Protocol
 				if at := facts.Context; at != nil && at.Size > 0 {
 					info.Context = &contract.SessionInfoContext{UsedPercent: min(100, max(0, float64(at.Used)*100/float64(at.Size))), UsedTokens: at.Used, WindowTokens: at.Size}
 				}

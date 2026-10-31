@@ -6,6 +6,12 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | --- | ---: | --- | --- | --- | --- |
 | `antigravity.acp_call_seconds` | 45 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.acp_frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.acp_trace_bytes` | 16777216 | `bytes` | `evict_oldest` | `diagnostics` | — |
+| `antigravity.acp_trace_connections` | 1 | `rows` | `refuse` | `diagnostics` | — |
+| `antigravity.acp_trace_queue_bytes` | 16777216 | `bytes` | `refuse` | `diagnostics` | — |
+| `antigravity.acp_trace_queue_records` | 64 | `rows` | `refuse` | `diagnostics` | — |
+| `antigravity.acp_trace_records` | 8192 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `antigravity.acp_trace_seconds` | 86400 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `antigravity.acp_view_bytes` | 1048576 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `antigravity.ancestry_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.context_history` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |

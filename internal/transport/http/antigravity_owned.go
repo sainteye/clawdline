@@ -151,6 +151,7 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 		Executable string   `json:"executable"`
 		AccountDir string   `json:"accountDir"`
 		Args       []string `json:"args"`
+		RawTrace   bool     `json:"rawTrace"`
 	}
 	if json.Unmarshal(raw, &cfg) != nil {
 		return nil, ownedAntigravityUnavailable()
@@ -158,7 +159,7 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 	if st, err := os.Stat(cfg.Executable); err != nil || st.IsDir() || st.Mode()&0111 == 0 {
 		return nil, ownedAntigravityUnavailable()
 	}
-	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions"), NewSessionMode: "yolo", TurnComplete: s.automaticGeminiTitle})
+	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions"), NewSessionMode: "yolo", RawTrace: cfg.RawTrace, TurnComplete: s.automaticGeminiTitle})
 	if err != nil {
 		return nil, err
 	}

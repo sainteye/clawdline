@@ -76,7 +76,43 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 		}
 		return capacity.Unmeasured("unknown bridge measure")
 	}
+	trace := func(part string) capacity.Reading {
+		h := s.antigravitySessions.Load()
+		if h == nil {
+			return capacity.Reading{Known: true}
+		}
+		st := h.WireTraceStats()
+		if part == "queue_bytes" {
+			return capacity.Reading{Known: true, Used: st.QueueBytes, Counters: capacity.Counters{Dropped: st.Dropped, WriteErrors: st.WriteErrors}}
+		}
+		if part == "queue_records" {
+			return capacity.Reading{Known: true, Used: st.QueueRecords, Counters: capacity.Counters{Dropped: st.Dropped, WriteErrors: st.WriteErrors}}
+		}
+		if part == "connections" {
+			return capacity.Reading{Known: st.Known, Used: st.Connections}
+		}
+		if !st.Known {
+			return capacity.Unmeasured("acp_trace_unreadable")
+		}
+		n := st.Bytes
+		if part == "records" {
+			n = st.Records
+		}
+		if part == "age" {
+			n = 0
+			if st.OldestAt != 0 {
+				n = max(0, int64(time.Since(time.Unix(0, st.OldestAt)).Seconds()))
+			}
+		}
+		return capacity.Reading{Known: true, Used: n}
+	}
 	return map[string]func() capacity.Reading{
+		"antigravity.acp_trace_queue_bytes":   func() capacity.Reading { return trace("queue_bytes") },
+		"antigravity.acp_trace_queue_records": func() capacity.Reading { return trace("queue_records") },
+		"antigravity.acp_trace_connections":   func() capacity.Reading { return trace("connections") },
+		"antigravity.acp_trace_bytes":         func() capacity.Reading { return trace("bytes") },
+		"antigravity.acp_trace_records":       func() capacity.Reading { return trace("records") },
+		"antigravity.acp_trace_seconds":       func() capacity.Reading { return trace("age") },
 		"antigravity.history_connections": func() capacity.Reading {
 			if h := s.antigravitySessions.Load(); h != nil {
 				open, inUse, waits, waited := h.HistoryConnectionStats()
@@ -95,7 +131,7 @@ func (s *Server) antigravityCapacityMeasures() map[string]func() capacity.Readin
 			return capacity.Reading{Known: true, Note: "per-frame guard; no replay queue"}
 		},
 		"antigravity.acp_call_seconds": func() capacity.Reading {
-			return capacity.Reading{Known: true, Note: "per-call deadline; no automatic retry"}
+			return capacity.Reading{Known: true, Note: "control RPC/write/callback deadline; no model or human deadline"}
 		},
 		// Missing, closed or unreadable owners remain unknown.
 		"antigravity.first_input_slots":    func() capacity.Reading { return launchReading("first_inputs") },

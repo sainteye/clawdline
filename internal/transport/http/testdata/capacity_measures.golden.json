@@ -10,6 +10,30 @@
     "Note": true
   },
   {
+    "Name": "antigravity.acp_trace_bytes",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.acp_trace_connections",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.acp_trace_queue_bytes",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.acp_trace_queue_records",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.acp_trace_records",
+    "Known": true
+  },
+  {
+    "Name": "antigravity.acp_trace_seconds",
+    "Known": true
+  },
+  {
     "Name": "antigravity.acp_view_bytes",
     "Known": true
   },

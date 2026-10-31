@@ -15,7 +15,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
-func persistentFixture(t *testing.T) (*Host, session.Session, Options) {
+func persistentFixture(t *testing.T, trace ...bool) (*Host, session.Session, Options) {
 	t.Helper()
 	t.Setenv("CLW_SESSION_PEER", "yes")
 	t.Setenv("CLW_RESTORE_PEER", "yes")
@@ -31,6 +31,9 @@ func persistentFixture(t *testing.T) (*Host, session.Session, Options) {
 		t.Fatal(err)
 	}
 	opts := Options{Executable: exe, AccountDir: dir, StateDir: filepath.Join(dir, "state"), Args: []string{"-test.run=^TestOwnedPeer$"}}
+	if len(trace) > 0 {
+		opts.RawTrace = trace[0]
+	}
 	h := reopenHost(t, opts)
 	row, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir, Name: "Synthetic history"})
 	if err != nil {
