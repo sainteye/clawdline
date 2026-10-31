@@ -36,6 +36,7 @@ type Skill struct {
 	Name        string
 	Description string
 	Source      Source
+	Invocation  string
 }
 
 // Reading is one session's menu.
@@ -89,13 +90,13 @@ func Claude(cwd, home string) Reading {
 
 	effective := map[string]Skill{}
 	for _, dir := range projectDirectories(work, root, inRepo) {
-		for _, s := range skillsIn(filepath.Join(dir, ".claude", "skills"), Project, "") {
+		for _, s := range append(commandFiles(filepath.Join(dir, ".claude", "commands"), Project, "", true), skillsIn(filepath.Join(dir, ".claude", "skills"), Project, "")...) {
 			if settings.overrides[s.Name] != "off" {
 				effective[s.Name] = s
 			}
 		}
 	}
-	for _, s := range skillsIn(filepath.Join(homeDir, ".claude", "skills"), Personal, "") {
+	for _, s := range append(commandFiles(filepath.Join(homeDir, ".claude", "commands"), Personal, "", true), skillsIn(filepath.Join(homeDir, ".claude", "skills"), Personal, "")...) {
 		if settings.overrides[s.Name] != "off" {
 			effective[s.Name] = s
 		}
@@ -343,6 +344,7 @@ func pluginSkills(home string, enabled map[string]bool) []Skill {
 				continue
 			}
 			root := install.InstallPath
+			out = append(out, commandFiles(filepath.Join(root, "commands"), Plugin, prefix, true)...)
 			out = append(out, skillsIn(filepath.Join(root, "skills"), Plugin, prefix)...)
 			// A plugin may also be one skill at its root. There is no
 			// directory to name it, so its frontmatter `name` is required.

@@ -26,6 +26,7 @@ func init() {
 		op{name: "git-diff", read: true},
 
 		op{name: "screen", read: true},
+		op{name: "native-terminal-screen", read: true},
 
 		op{name: "image", read: true, shape: shapeImage},
 

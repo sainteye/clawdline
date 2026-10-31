@@ -9,6 +9,23 @@ conversations were open, so the person had to remember them and find each one ag
 
 The daemon now keeps that record and offers the conversations back after a restart.
 
+## Manual resume from a Session
+
+In a Claude Code or Codex Session composer, submitting `/resume` opens Clawdline's
+existing resume picker. The command is consumed by the console before Skill
+completion or terminal delivery; it creates no pending prompt and sends no bytes
+to the current assistant. `/resume <search text or conversation id>` opens the
+same picker with a search. Ordinary prose mentioning `/resume` and messages with
+pictures keep their normal send behavior.
+
+The picker reads Projects from the current machine and keeps the current
+assistant. It enters the most specific registered Project containing the current
+working directory; when none matches, the person chooses a Project first. A
+history read failure offers a retry and never falls back to typing `/resume`.
+Cancelling the picker starts nothing. Selecting a saved conversation uses the
+normal resume route below; selecting an already running conversation opens its
+existing Session on the same machine and with the same assistant.
+
 ## The rule: a reboot is a new boot id
 
 A daemon restart and a machine restart look the same from inside the daemon: it starts, and it
@@ -154,3 +171,6 @@ the boot's heartbeat and the grace window — are registered and listed in [limi
   by conversation id before terminal id, so it follows the restored session only if the assistant
   keeps the conversation id when it resumes, and only while the title row is inside its retention
   window. Whether each assistant keeps the id on resume was not measured for this change.
+
+The other slash commands and their catalog sources are described in
+[native commands](native-commands.md).

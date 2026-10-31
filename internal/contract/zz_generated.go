@@ -274,6 +274,11 @@ type AssistantSkill struct {
 	// never offered in its place.
 	Description string `json:"description"`
 
+	// The exact native invocation, including its prefix, for example /model or
+	// /prompts:review. Absent for older replies and ordinary skills, whose provider
+	// default prefix still applies.
+	Invocation string `json:"invocation,omitempty"`
+
 	// What follows the prefix: `/` for Claude, `$` for Codex. A plugin's skill keeps
 	// its namespace, `plugin:skill`.
 	Name   string      `json:"name"`
@@ -3678,6 +3683,24 @@ const (
 
 // MoverKindValues is every value the contract allows, in contract order.
 var MoverKindValues = []MoverKind{MoverKindThisSession, MoverKindOtherSession, MoverKindPerson, MoverKindTask, MoverKindBroker}
+
+type NativeTerminalFrame struct {
+	// A fingerprint of the foreground process and this grid.
+	Expect string `json:"expect"`
+
+	// The visible terminal grid.
+	Text string `json:"text"`
+}
+
+type NativeTerminalInput struct {
+	Expect string `json:"expect"`
+
+	// One named terminal key; exclusive with text.
+	Key string `json:"key,omitempty"`
+
+	// One UTF-8 line without control characters. Does not submit.
+	Text string `json:"text,omitempty"`
+}
 
 type Obligation struct {
 	AgeSeconds int64          `json:"age_seconds"`

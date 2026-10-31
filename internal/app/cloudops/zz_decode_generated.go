@@ -36,6 +36,8 @@ var generatedDecoders = map[string]genDecoder{
 	"interrupt":                          genDecodeInterrupt,
 	"key":                                genDecodeKey,
 	"machine-usage":                      genDecodeMachineUsage,
+	"native-terminal-input":              genDecodeNativeTerminalInput,
+	"native-terminal-screen":             genDecodeNativeTerminalScreen,
 	"notification-rules":                 genDecodeNotificationRules,
 	"notification-rules-update":          genDecodeNotificationRulesUpdate,
 	"notification-settings":              genDecodeNotificationSettings,
@@ -919,6 +921,56 @@ func genDecodeMachineUsage(b body) (plan, LocalRequest, bool) {
 		return plan{}, LocalRequest{}, false
 	}
 	path := "/v1/machine/usage"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeNativeTerminalInput is the `native-terminal-input` row's decode.
+func genDecodeNativeTerminalInput(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "expect", "key", "request", "session"},
+		[]string{"type", "expect", "request", "session", "text"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expect", genRule{kind: "string", checks: []func(string) bool{genFingerprint}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("key", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("text", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, true)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/sessions/" + segment(genText(b["session"])) + "/native-terminal"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Body = b.genFields(map[string]genValue{"expect": genValue{from: "expect"}, "key": genValue{from: "key"}, "text": genValue{from: "text"}})
+	return p, req, true
+}
+
+// genDecodeNativeTerminalScreen is the `native-terminal-screen` row's decode.
+func genDecodeNativeTerminalScreen(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "session"},
+		[]string{"type", "expected_generation", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_generation", genRule{kind: "string", checks: []func(string) bool{executionGenerationValid}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := sessionPlan(b, "native-terminal-screen")
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	if v, named := b["expected_generation"]; named {
+		p.executionGeneration = genText(v)
+	}
+	path := "/v1/sessions/" + segment(genText(b["session"])) + "/native-terminal"
 	req := LocalRequest{Method: "GET", Path: path}
 	return p, req, true
 }

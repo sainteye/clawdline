@@ -301,6 +301,13 @@ export interface AssistantSkill {
   description: string
 
   /**
+   * The exact native invocation, including its prefix, for example /model or
+   * /prompts:review. Absent for older replies and ordinary skills, whose provider
+   * default prefix still applies.
+   */
+  invocation?: string
+
+  /**
    * What follows the prefix: `/` for Claude, `$` for Codex. A plugin's skill keeps
    * its namespace, `plugin:skill`.
    */
@@ -4262,6 +4269,32 @@ export type MoverKind =
   | "broker"
 
 export const MoverKindValues: readonly MoverKind[] = ["this_session", "other_session", "person", "task", "broker"] as const
+
+export interface NativeTerminalFrame {
+  /**
+   * A fingerprint of the foreground process and this grid.
+   */
+  expect: string
+
+  /**
+   * The visible terminal grid.
+   */
+  text: string
+}
+
+export interface NativeTerminalInput {
+  expect: string
+
+  /**
+   * One named terminal key; exclusive with text.
+   */
+  key?: string
+
+  /**
+   * One UTF-8 line without control characters. Does not submit.
+   */
+  text?: string
+}
 
 export interface Obligation {
   age_seconds: number

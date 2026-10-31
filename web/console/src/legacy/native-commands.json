@@ -1,0 +1,1122 @@
+{
+  "reviewedAt": "2026-10-31",
+  "claude": {
+    "source": "https://code.claude.com/docs/en/commands",
+    "revision": "2026-10-31 reference; installed 2.1.314",
+    "commands": [
+      {
+        "name": "add-dir",
+        "description": "Add a working directory",
+        "descriptionZhHant": "新增工作目錄",
+        "aliases": []
+      },
+      {
+        "name": "advisor",
+        "description": "Choose an advisor model",
+        "descriptionZhHant": "選擇顧問模型",
+        "aliases": []
+      },
+      {
+        "name": "agents",
+        "description": "Manage subagents",
+        "descriptionZhHant": "管理子代理",
+        "aliases": []
+      },
+      {
+        "name": "artifact-capabilities",
+        "description": "Read artifact capabilities",
+        "descriptionZhHant": "讀取成品功能參考",
+        "aliases": []
+      },
+      {
+        "name": "artifact-diagramming",
+        "description": "Load diagram guidance",
+        "descriptionZhHant": "載入圖表指引",
+        "aliases": []
+      },
+      {
+        "name": "artifacts",
+        "description": "Browse artifacts",
+        "descriptionZhHant": "瀏覽成品",
+        "aliases": []
+      },
+      {
+        "name": "auto-mode-setup",
+        "description": "Configure automatic permissions",
+        "descriptionZhHant": "設定自動權限",
+        "aliases": []
+      },
+      {
+        "name": "autocompact",
+        "description": "Set the compaction window",
+        "descriptionZhHant": "設定自動壓縮範圍",
+        "aliases": []
+      },
+      {
+        "name": "autofix-pr",
+        "description": "Watch a pull request",
+        "descriptionZhHant": "持續檢查合併請求",
+        "aliases": []
+      },
+      {
+        "name": "background",
+        "description": "Continue in the background",
+        "descriptionZhHant": "移至背景繼續執行",
+        "aliases": [
+          "bg"
+        ]
+      },
+      {
+        "name": "batch",
+        "description": "Run a batch workflow",
+        "descriptionZhHant": "執行批次工作流程",
+        "aliases": []
+      },
+      {
+        "name": "branch",
+        "description": "Branch this conversation",
+        "descriptionZhHant": "建立對話分支",
+        "aliases": []
+      },
+      {
+        "name": "btw",
+        "description": "Ask a side question",
+        "descriptionZhHant": "提出旁支問題",
+        "aliases": []
+      },
+      {
+        "name": "bug",
+        "description": "Prepare a bug report",
+        "descriptionZhHant": "準備錯誤回報",
+        "aliases": [
+          "share"
+        ]
+      },
+      {
+        "name": "cd",
+        "description": "Change the working directory",
+        "descriptionZhHant": "切換工作目錄",
+        "aliases": []
+      },
+      {
+        "name": "chrome",
+        "description": "Configure Chrome integration",
+        "descriptionZhHant": "設定 Chrome 整合",
+        "aliases": []
+      },
+      {
+        "name": "claude-api",
+        "description": "Load API guidance",
+        "descriptionZhHant": "載入 API 指引",
+        "aliases": []
+      },
+      {
+        "name": "claude-in-chrome",
+        "description": "Work in Chrome",
+        "descriptionZhHant": "在 Chrome 中操作",
+        "aliases": []
+      },
+      {
+        "name": "clear",
+        "description": "Start a fresh conversation",
+        "descriptionZhHant": "開始新對話",
+        "aliases": [
+          "reset",
+          "new"
+        ]
+      },
+      {
+        "name": "code-review",
+        "description": "Review code changes",
+        "descriptionZhHant": "審查程式變更",
+        "aliases": []
+      },
+      {
+        "name": "color",
+        "description": "Change the prompt color",
+        "descriptionZhHant": "變更提示列顏色",
+        "aliases": []
+      },
+      {
+        "name": "compact",
+        "description": "Summarize the conversation",
+        "descriptionZhHant": "摘要並壓縮對話",
+        "aliases": []
+      },
+      {
+        "name": "config",
+        "description": "Open settings",
+        "descriptionZhHant": "開啟設定",
+        "aliases": [
+          "settings"
+        ]
+      },
+      {
+        "name": "context",
+        "description": "Inspect context usage",
+        "descriptionZhHant": "檢視上下文用量",
+        "aliases": []
+      },
+      {
+        "name": "copy",
+        "description": "Copy a response",
+        "descriptionZhHant": "複製回覆",
+        "aliases": []
+      },
+      {
+        "name": "cost",
+        "description": "Inspect usage and costs",
+        "descriptionZhHant": "檢視用量與費用",
+        "aliases": []
+      },
+      {
+        "name": "dataviz",
+        "description": "Create a visualization",
+        "descriptionZhHant": "建立視覺化圖表",
+        "aliases": []
+      },
+      {
+        "name": "debug",
+        "description": "Investigate a runtime issue",
+        "descriptionZhHant": "調查執行問題",
+        "aliases": []
+      },
+      {
+        "name": "deep-research",
+        "description": "Run a research workflow",
+        "descriptionZhHant": "執行研究工作流程",
+        "aliases": []
+      },
+      {
+        "name": "design",
+        "description": "Create a design",
+        "descriptionZhHant": "建立設計",
+        "aliases": []
+      },
+      {
+        "name": "design-login",
+        "description": "Connect a design account",
+        "descriptionZhHant": "連結設計帳號",
+        "aliases": []
+      },
+      {
+        "name": "design-sync",
+        "description": "Sync design resources",
+        "descriptionZhHant": "同步設計資源",
+        "aliases": []
+      },
+      {
+        "name": "desktop",
+        "description": "Continue in the desktop app",
+        "descriptionZhHant": "在桌面應用程式繼續",
+        "aliases": [
+          "app"
+        ]
+      },
+      {
+        "name": "diff",
+        "description": "Inspect code changes",
+        "descriptionZhHant": "檢視程式差異",
+        "aliases": []
+      },
+      {
+        "name": "doctor",
+        "description": "Check installation health",
+        "descriptionZhHant": "檢查安裝狀況",
+        "aliases": [
+          "checkup"
+        ]
+      },
+      {
+        "name": "effort",
+        "description": "Set reasoning effort",
+        "descriptionZhHant": "設定推理強度",
+        "aliases": []
+      },
+      {
+        "name": "exit",
+        "description": "Exit Claude Code",
+        "descriptionZhHant": "結束 Claude Code",
+        "aliases": [
+          "quit"
+        ]
+      },
+      {
+        "name": "export",
+        "description": "Export the conversation",
+        "descriptionZhHant": "匯出對話",
+        "aliases": []
+      },
+      {
+        "name": "fast",
+        "description": "Toggle fast mode",
+        "descriptionZhHant": "切換快速模式",
+        "aliases": []
+      },
+      {
+        "name": "feedback",
+        "description": "Send feedback",
+        "descriptionZhHant": "傳送意見回饋",
+        "aliases": []
+      },
+      {
+        "name": "fewer-permission-prompts",
+        "description": "Reduce permission prompts",
+        "descriptionZhHant": "減少權限提示",
+        "aliases": []
+      },
+      {
+        "name": "focus",
+        "description": "Toggle focus mode",
+        "descriptionZhHant": "切換專注模式",
+        "aliases": []
+      },
+      {
+        "name": "fork",
+        "description": "Fork into a background session",
+        "descriptionZhHant": "分支至背景 Session",
+        "aliases": []
+      },
+      {
+        "name": "goal",
+        "description": "Set a continuing goal",
+        "descriptionZhHant": "設定持續目標",
+        "aliases": []
+      },
+      {
+        "name": "heapdump",
+        "description": "Write memory diagnostics",
+        "descriptionZhHant": "輸出記憶體診斷",
+        "aliases": []
+      },
+      {
+        "name": "help",
+        "description": "Show command help",
+        "descriptionZhHant": "顯示指令說明",
+        "aliases": []
+      },
+      {
+        "name": "hooks",
+        "description": "Manage hooks",
+        "descriptionZhHant": "管理 Hooks",
+        "aliases": []
+      },
+      {
+        "name": "ide",
+        "description": "Manage IDE integration",
+        "descriptionZhHant": "管理 IDE 整合",
+        "aliases": []
+      },
+      {
+        "name": "import",
+        "description": "Import another tool's setup",
+        "descriptionZhHant": "匯入其他工具設定",
+        "aliases": []
+      },
+      {
+        "name": "init",
+        "description": "Create project instructions",
+        "descriptionZhHant": "建立專案指引",
+        "aliases": []
+      },
+      {
+        "name": "insights",
+        "description": "Analyze recent sessions",
+        "descriptionZhHant": "分析近期 Session",
+        "aliases": []
+      },
+      {
+        "name": "install-github-app",
+        "description": "Set up the GitHub app",
+        "descriptionZhHant": "設定 GitHub 應用程式",
+        "aliases": []
+      },
+      {
+        "name": "install-slack-app",
+        "description": "Set up the Slack app",
+        "descriptionZhHant": "設定 Slack 應用程式",
+        "aliases": []
+      },
+      {
+        "name": "keybindings",
+        "description": "Configure keyboard shortcuts",
+        "descriptionZhHant": "設定鍵盤快速鍵",
+        "aliases": []
+      },
+      {
+        "name": "list-agents",
+        "description": "List background agents",
+        "descriptionZhHant": "列出背景代理",
+        "aliases": []
+      },
+      {
+        "name": "login",
+        "description": "Sign in",
+        "descriptionZhHant": "登入帳號",
+        "aliases": []
+      },
+      {
+        "name": "logout",
+        "description": "Sign out",
+        "descriptionZhHant": "登出帳號",
+        "aliases": []
+      },
+      {
+        "name": "loop",
+        "description": "Repeat a task",
+        "descriptionZhHant": "重複執行任務",
+        "aliases": [
+          "proactive"
+        ]
+      },
+      {
+        "name": "mcp",
+        "description": "Manage MCP connections",
+        "descriptionZhHant": "管理 MCP 連線",
+        "aliases": []
+      },
+      {
+        "name": "memory",
+        "description": "Edit persistent memory",
+        "descriptionZhHant": "編輯持久記憶",
+        "aliases": []
+      },
+      {
+        "name": "mobile",
+        "description": "Connect the mobile app",
+        "descriptionZhHant": "連結手機應用程式",
+        "aliases": [
+          "ios",
+          "android"
+        ]
+      },
+      {
+        "name": "model",
+        "description": "Choose a model",
+        "descriptionZhHant": "選擇模型",
+        "aliases": []
+      },
+      {
+        "name": "output-style",
+        "description": "Choose a response style",
+        "descriptionZhHant": "選擇回覆風格",
+        "aliases": []
+      },
+      {
+        "name": "passes",
+        "description": "Manage guest passes",
+        "descriptionZhHant": "管理訪客通行證",
+        "aliases": []
+      },
+      {
+        "name": "permissions",
+        "description": "Manage permissions",
+        "descriptionZhHant": "管理權限",
+        "aliases": [
+          "allowed-tools"
+        ]
+      },
+      {
+        "name": "plan",
+        "description": "Switch to plan mode",
+        "descriptionZhHant": "切換至規劃模式",
+        "aliases": []
+      },
+      {
+        "name": "plugin",
+        "description": "Manage plugins",
+        "descriptionZhHant": "管理外掛",
+        "aliases": []
+      },
+      {
+        "name": "plugin-authoring",
+        "description": "Load plugin guidance",
+        "descriptionZhHant": "載入外掛開發指引",
+        "aliases": []
+      },
+      {
+        "name": "powerup",
+        "description": "Upgrade the current model",
+        "descriptionZhHant": "升級目前模型",
+        "aliases": []
+      },
+      {
+        "name": "privacy-settings",
+        "description": "Manage privacy settings",
+        "descriptionZhHant": "管理隱私設定",
+        "aliases": []
+      },
+      {
+        "name": "radio",
+        "description": "Listen to session updates",
+        "descriptionZhHant": "聆聽 Session 更新",
+        "aliases": []
+      },
+      {
+        "name": "rate-limit-options",
+        "description": "Configure usage-limit behavior",
+        "descriptionZhHant": "設定用量上限行為",
+        "aliases": []
+      },
+      {
+        "name": "recap",
+        "description": "Review the session recap",
+        "descriptionZhHant": "檢視 Session 回顧",
+        "aliases": []
+      },
+      {
+        "name": "release-notes",
+        "description": "Read release notes",
+        "descriptionZhHant": "閱讀版本說明",
+        "aliases": []
+      },
+      {
+        "name": "reload-plugins",
+        "description": "Reload installed plugins",
+        "descriptionZhHant": "重新載入已安裝外掛",
+        "aliases": []
+      },
+      {
+        "name": "reload-skills",
+        "description": "Reload skills",
+        "descriptionZhHant": "重新載入 Skills",
+        "aliases": []
+      },
+      {
+        "name": "remote-control",
+        "description": "Connect remote control",
+        "descriptionZhHant": "連結遠端控制",
+        "aliases": [
+          "rc"
+        ]
+      },
+      {
+        "name": "remote-env",
+        "description": "Choose a cloud environment",
+        "descriptionZhHant": "選擇雲端環境",
+        "aliases": []
+      },
+      {
+        "name": "rename",
+        "description": "Rename this conversation",
+        "descriptionZhHant": "重新命名對話",
+        "aliases": []
+      },
+      {
+        "name": "restart",
+        "description": "Restart and resume",
+        "descriptionZhHant": "重新啟動並恢復",
+        "aliases": [
+          "update"
+        ]
+      },
+      {
+        "name": "resume",
+        "description": "Resume a previous conversation",
+        "descriptionZhHant": "恢復先前對話",
+        "aliases": [
+          "continue"
+        ]
+      },
+      {
+        "name": "review",
+        "description": "Review code changes",
+        "descriptionZhHant": "審查程式變更",
+        "aliases": []
+      },
+      {
+        "name": "rewind",
+        "description": "Restore a checkpoint",
+        "descriptionZhHant": "還原檢查點",
+        "aliases": [
+          "checkpoint",
+          "undo"
+        ]
+      },
+      {
+        "name": "run",
+        "description": "Launch and inspect the app",
+        "descriptionZhHant": "啟動並檢視應用程式",
+        "aliases": []
+      },
+      {
+        "name": "run-skill-generator",
+        "description": "Configure app verification",
+        "descriptionZhHant": "設定應用程式驗證",
+        "aliases": []
+      },
+      {
+        "name": "sandbox",
+        "description": "Configure sandboxing",
+        "descriptionZhHant": "設定沙箱",
+        "aliases": []
+      },
+      {
+        "name": "schedule",
+        "description": "Manage scheduled tasks",
+        "descriptionZhHant": "管理排程任務",
+        "aliases": [
+          "routines"
+        ]
+      },
+      {
+        "name": "scroll-speed",
+        "description": "Adjust terminal scrolling",
+        "descriptionZhHant": "調整終端捲動速度",
+        "aliases": []
+      },
+      {
+        "name": "security-review",
+        "description": "Review security risks",
+        "descriptionZhHant": "審查安全風險",
+        "aliases": []
+      },
+      {
+        "name": "setup-bedrock",
+        "description": "Configure Amazon Bedrock",
+        "descriptionZhHant": "設定 Amazon Bedrock",
+        "aliases": []
+      },
+      {
+        "name": "setup-vertex",
+        "description": "Configure Google Cloud",
+        "descriptionZhHant": "設定 Google Cloud",
+        "aliases": []
+      },
+      {
+        "name": "simplify",
+        "description": "Simplify changed code",
+        "descriptionZhHant": "簡化變更的程式",
+        "aliases": []
+      },
+      {
+        "name": "skill-doctor",
+        "description": "Inspect skill usage",
+        "descriptionZhHant": "檢視 Skill 使用狀況",
+        "aliases": []
+      },
+      {
+        "name": "skills",
+        "description": "Manage available skills",
+        "descriptionZhHant": "管理可用 Skills",
+        "aliases": []
+      },
+      {
+        "name": "slides",
+        "description": "Create presentation slides",
+        "descriptionZhHant": "建立簡報",
+        "aliases": []
+      },
+      {
+        "name": "stats",
+        "description": "Inspect usage statistics",
+        "descriptionZhHant": "檢視用量統計",
+        "aliases": []
+      },
+      {
+        "name": "status",
+        "description": "Inspect session status",
+        "descriptionZhHant": "檢視 Session 狀態",
+        "aliases": []
+      },
+      {
+        "name": "statusline",
+        "description": "Configure the status line",
+        "descriptionZhHant": "設定狀態列",
+        "aliases": []
+      },
+      {
+        "name": "stickers",
+        "description": "Order stickers",
+        "descriptionZhHant": "訂購貼紙",
+        "aliases": []
+      },
+      {
+        "name": "stop",
+        "description": "Stop a background session",
+        "descriptionZhHant": "停止背景 Session",
+        "aliases": []
+      },
+      {
+        "name": "subtask",
+        "description": "Start a forked subagent",
+        "descriptionZhHant": "啟動分支子代理",
+        "aliases": []
+      },
+      {
+        "name": "tasks",
+        "description": "Inspect background work",
+        "descriptionZhHant": "檢視背景工作",
+        "aliases": [
+          "bashes"
+        ]
+      },
+      {
+        "name": "team-onboarding",
+        "description": "Create an onboarding guide",
+        "descriptionZhHant": "建立團隊入門指引",
+        "aliases": []
+      },
+      {
+        "name": "teleport",
+        "description": "Resume a cloud session",
+        "descriptionZhHant": "恢復雲端 Session",
+        "aliases": [
+          "tp"
+        ]
+      },
+      {
+        "name": "terminal-setup",
+        "description": "Configure the terminal",
+        "descriptionZhHant": "設定終端機",
+        "aliases": []
+      },
+      {
+        "name": "theme",
+        "description": "Choose a color theme",
+        "descriptionZhHant": "選擇配色主題",
+        "aliases": []
+      },
+      {
+        "name": "tui",
+        "description": "Choose a terminal renderer",
+        "descriptionZhHant": "選擇終端顯示模式",
+        "aliases": []
+      },
+      {
+        "name": "ultrareview",
+        "description": "Run a cloud code review",
+        "descriptionZhHant": "執行雲端程式審查",
+        "aliases": []
+      },
+      {
+        "name": "update-config",
+        "description": "Edit configuration",
+        "descriptionZhHant": "編輯設定",
+        "aliases": []
+      },
+      {
+        "name": "upgrade",
+        "description": "View plan upgrades",
+        "descriptionZhHant": "查看方案升級",
+        "aliases": []
+      },
+      {
+        "name": "usage",
+        "description": "Inspect usage and costs",
+        "descriptionZhHant": "檢視用量與費用",
+        "aliases": []
+      },
+      {
+        "name": "usage-credits",
+        "description": "Manage usage credits",
+        "descriptionZhHant": "管理用量點數",
+        "aliases": [
+          "extra-usage"
+        ]
+      },
+      {
+        "name": "verify",
+        "description": "Verify app behavior",
+        "descriptionZhHant": "驗證應用程式行為",
+        "aliases": []
+      },
+      {
+        "name": "voice",
+        "description": "Configure voice input",
+        "descriptionZhHant": "設定語音輸入",
+        "aliases": []
+      },
+      {
+        "name": "web-setup",
+        "description": "Connect cloud sessions",
+        "descriptionZhHant": "連結雲端 Session",
+        "aliases": []
+      },
+      {
+        "name": "workflow-authoring",
+        "description": "Load workflow guidance",
+        "descriptionZhHant": "載入工作流程開發指引",
+        "aliases": []
+      },
+      {
+        "name": "workflows",
+        "description": "Inspect workflow progress",
+        "descriptionZhHant": "檢視工作流程進度",
+        "aliases": []
+      }
+    ]
+  },
+  "codex": {
+    "source": "https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/tui/src/slash_command.rs",
+    "revision": "rust-v0.162.1",
+    "commands": [
+      {
+        "name": "model",
+        "description": "Choose a model and effort",
+        "descriptionZhHant": "選擇模型與推理強度",
+        "aliases": []
+      },
+      {
+        "name": "daybreak",
+        "description": "Toggle Daybreak",
+        "descriptionZhHant": "切換 Daybreak",
+        "aliases": []
+      },
+      {
+        "name": "ide",
+        "description": "Include IDE context",
+        "descriptionZhHant": "加入 IDE 上下文",
+        "aliases": []
+      },
+      {
+        "name": "permissions",
+        "description": "Manage permissions",
+        "descriptionZhHant": "管理權限",
+        "aliases": []
+      },
+      {
+        "name": "keymap",
+        "description": "Remap keyboard shortcuts",
+        "descriptionZhHant": "重新設定快速鍵",
+        "aliases": []
+      },
+      {
+        "name": "vim",
+        "description": "Toggle Vim editing",
+        "descriptionZhHant": "切換 Vim 編輯",
+        "aliases": []
+      },
+      {
+        "name": "setup-default-sandbox",
+        "description": "Configure the elevated sandbox",
+        "descriptionZhHant": "設定提升權限沙箱",
+        "aliases": []
+      },
+      {
+        "name": "experimental",
+        "description": "Configure experimental features",
+        "descriptionZhHant": "設定實驗性功能",
+        "aliases": []
+      },
+      {
+        "name": "approve",
+        "description": "Retry a denied approval",
+        "descriptionZhHant": "重新申請遭拒權限",
+        "aliases": []
+      },
+      {
+        "name": "memories",
+        "description": "Configure memory",
+        "descriptionZhHant": "設定記憶",
+        "aliases": []
+      },
+      {
+        "name": "skills",
+        "description": "Choose a skill",
+        "descriptionZhHant": "選擇 Skill",
+        "aliases": []
+      },
+      {
+        "name": "import",
+        "description": "Import Claude Code setup",
+        "descriptionZhHant": "匯入 Claude Code 設定",
+        "aliases": []
+      },
+      {
+        "name": "hooks",
+        "description": "Manage hooks",
+        "descriptionZhHant": "管理 Hooks",
+        "aliases": []
+      },
+      {
+        "name": "review",
+        "description": "Review code changes",
+        "descriptionZhHant": "審查程式變更",
+        "aliases": []
+      },
+      {
+        "name": "rename",
+        "description": "Rename this conversation",
+        "descriptionZhHant": "重新命名對話",
+        "aliases": []
+      },
+      {
+        "name": "new",
+        "description": "Start a new conversation",
+        "descriptionZhHant": "開始新對話",
+        "aliases": []
+      },
+      {
+        "name": "archive",
+        "description": "Archive this conversation",
+        "descriptionZhHant": "封存對話",
+        "aliases": []
+      },
+      {
+        "name": "delete",
+        "description": "Delete this conversation",
+        "descriptionZhHant": "刪除對話",
+        "aliases": []
+      },
+      {
+        "name": "resume",
+        "description": "Resume a previous conversation",
+        "descriptionZhHant": "恢復先前對話",
+        "aliases": []
+      },
+      {
+        "name": "fork",
+        "description": "Fork this conversation",
+        "descriptionZhHant": "建立對話分支",
+        "aliases": []
+      },
+      {
+        "name": "worktree",
+        "description": "Continue in a worktree",
+        "descriptionZhHant": "在工作樹繼續",
+        "aliases": []
+      },
+      {
+        "name": "app",
+        "description": "Continue in the desktop app",
+        "descriptionZhHant": "在桌面應用程式繼續",
+        "aliases": []
+      },
+      {
+        "name": "init",
+        "description": "Create project instructions",
+        "descriptionZhHant": "建立專案指引",
+        "aliases": []
+      },
+      {
+        "name": "compact",
+        "description": "Summarize the conversation",
+        "descriptionZhHant": "摘要並壓縮對話",
+        "aliases": []
+      },
+      {
+        "name": "recap",
+        "description": "Summarize this session",
+        "descriptionZhHant": "摘要目前 Session",
+        "aliases": []
+      },
+      {
+        "name": "plan",
+        "description": "Switch to plan mode",
+        "descriptionZhHant": "切換至規劃模式",
+        "aliases": []
+      },
+      {
+        "name": "voice",
+        "description": "Configure voice",
+        "descriptionZhHant": "設定語音",
+        "aliases": []
+      },
+      {
+        "name": "goal",
+        "description": "Set or inspect a goal",
+        "descriptionZhHant": "設定或檢視目標",
+        "aliases": []
+      },
+      {
+        "name": "agents",
+        "description": "Open the agent center",
+        "descriptionZhHant": "開啟代理中心",
+        "aliases": []
+      },
+      {
+        "name": "side",
+        "description": "Start a side conversation",
+        "descriptionZhHant": "開始旁支對話",
+        "aliases": []
+      },
+      {
+        "name": "btw",
+        "description": "Start a side conversation",
+        "descriptionZhHant": "開始旁支對話",
+        "aliases": []
+      },
+      {
+        "name": "copy",
+        "description": "Copy a response",
+        "descriptionZhHant": "複製回覆",
+        "aliases": []
+      },
+      {
+        "name": "export",
+        "description": "Export the conversation",
+        "descriptionZhHant": "匯出對話",
+        "aliases": []
+      },
+      {
+        "name": "raw",
+        "description": "Toggle raw scrollback",
+        "descriptionZhHant": "切換原始捲動模式",
+        "aliases": []
+      },
+      {
+        "name": "tui",
+        "description": "Choose a terminal mode",
+        "descriptionZhHant": "選擇終端顯示模式",
+        "aliases": []
+      },
+      {
+        "name": "diff",
+        "description": "Inspect code changes",
+        "descriptionZhHant": "檢視程式差異",
+        "aliases": []
+      },
+      {
+        "name": "mention",
+        "description": "Mention a file",
+        "descriptionZhHant": "引用檔案",
+        "aliases": []
+      },
+      {
+        "name": "status",
+        "description": "Inspect session status",
+        "descriptionZhHant": "檢視 Session 狀態",
+        "aliases": []
+      },
+      {
+        "name": "daemon",
+        "description": "Manage the background server",
+        "descriptionZhHant": "管理背景伺服器",
+        "aliases": []
+      },
+      {
+        "name": "warnings",
+        "description": "Inspect retained warnings",
+        "descriptionZhHant": "檢視保留的警告",
+        "aliases": []
+      },
+      {
+        "name": "cd",
+        "description": "Change the working directory",
+        "descriptionZhHant": "切換工作目錄",
+        "aliases": []
+      },
+      {
+        "name": "pwd",
+        "description": "Show the working directory",
+        "descriptionZhHant": "顯示工作目錄",
+        "aliases": [
+          "cwd"
+        ]
+      },
+      {
+        "name": "usage",
+        "description": "Inspect account usage",
+        "descriptionZhHant": "檢視帳號用量",
+        "aliases": []
+      },
+      {
+        "name": "debug-config",
+        "description": "Inspect effective configuration",
+        "descriptionZhHant": "檢視生效設定",
+        "aliases": []
+      },
+      {
+        "name": "title",
+        "description": "Configure the terminal title",
+        "descriptionZhHant": "設定終端標題",
+        "aliases": []
+      },
+      {
+        "name": "statusline",
+        "description": "Configure the status line",
+        "descriptionZhHant": "設定狀態列",
+        "aliases": []
+      },
+      {
+        "name": "theme",
+        "description": "Choose a color theme",
+        "descriptionZhHant": "選擇配色主題",
+        "aliases": []
+      },
+      {
+        "name": "pets",
+        "description": "Choose a terminal pet",
+        "descriptionZhHant": "選擇終端寵物",
+        "aliases": [
+          "pet"
+        ]
+      },
+      {
+        "name": "mcp",
+        "description": "Manage MCP tools",
+        "descriptionZhHant": "管理 MCP 工具",
+        "aliases": []
+      },
+      {
+        "name": "apps",
+        "description": "Manage connected apps",
+        "descriptionZhHant": "管理已連結應用程式",
+        "aliases": []
+      },
+      {
+        "name": "plugins",
+        "description": "Browse plugins",
+        "descriptionZhHant": "瀏覽外掛",
+        "aliases": []
+      },
+      {
+        "name": "logout",
+        "description": "Sign out",
+        "descriptionZhHant": "登出帳號",
+        "aliases": []
+      },
+      {
+        "name": "quit",
+        "description": "Exit Codex",
+        "descriptionZhHant": "結束 Codex",
+        "aliases": []
+      },
+      {
+        "name": "exit",
+        "description": "Exit Codex",
+        "descriptionZhHant": "結束 Codex",
+        "aliases": []
+      },
+      {
+        "name": "feedback",
+        "description": "Prepare feedback",
+        "descriptionZhHant": "準備意見回饋",
+        "aliases": []
+      },
+      {
+        "name": "ps",
+        "description": "List background terminals",
+        "descriptionZhHant": "列出背景終端",
+        "aliases": []
+      },
+      {
+        "name": "stop",
+        "description": "Stop background terminals",
+        "descriptionZhHant": "停止背景終端",
+        "aliases": [
+          "clean"
+        ]
+      },
+      {
+        "name": "clear",
+        "description": "Start fresh and clear the screen",
+        "descriptionZhHant": "清除畫面並開始新對話",
+        "aliases": []
+      },
+      {
+        "name": "subagents",
+        "description": "Switch between subagents",
+        "descriptionZhHant": "切換子代理",
+        "aliases": []
+      },
+      {
+        "name": "fast",
+        "description": "Choose the fast service tier",
+        "descriptionZhHant": "選擇快速服務層級",
+        "aliases": []
+      }
+    ]
+  }
+}
