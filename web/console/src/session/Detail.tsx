@@ -876,16 +876,6 @@ function Tools({
               >
                 {T.webShowOnMac}
               </button>
-              <button
-                id="session-open-terminal"
-                type="button"
-                role="menuitem"
-                disabled={!row || ending || openingTerminal}
-                onClick={() => {
-                  closeMenu(false)
-                  void startProjectTerminal()
-                }}
-              >{nextWord("terminalStartTerminalTab")}</button>
               <button type="button" role="menuitem" id="session-tool-library" disabled={!row || ending} onClick={() => {closeMenu(false); onTools()}}>{nextWord("toolLibraryTitle")}</button>
               <button
                 id="session-info"
@@ -968,6 +958,16 @@ function Tools({
               >
                 ‹ {T.webSessionActions}
               </button>
+              <button
+                id="session-open-terminal"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending || openingTerminal}
+                onClick={() => {
+                  closeMenu(false)
+                  void startProjectTerminal()
+                }}
+              >{nextWord("terminalStartTerminalTab")}</button>
               <button
                 id="session-documents"
                 type="button"

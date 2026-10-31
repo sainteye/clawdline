@@ -94,5 +94,8 @@ export function sessionActionVisibility(row: SessionRow | null): {
   screen: boolean
 } {
   const noTerminal = assistantProtocolOwned(row) || row?.backend === "claude_remote"
-  return { interrupt: true, focus: !noTerminal, screen: !noTerminal }
+  // Where the interactive Terminal panel exists (the rows `nativeTerminalCommand`
+  // admits) it shows the same pane the read-only mirror does: one door, not two.
+  const terminal = (row?.assistant === "claude" || row?.assistant === "codex") && (row?.backend === "tmux" || row?.backend === "iterm")
+  return { interrupt: true, focus: !noTerminal, screen: !noTerminal && !terminal }
 }

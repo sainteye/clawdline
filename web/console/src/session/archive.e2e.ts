@@ -557,7 +557,7 @@ test("More commands groups the reads and opens the same archive confirmation", (
       ids: [...document.querySelectorAll("#session-actions-main > button")].map((b) => b.id),
       more: document.getElementById("session-more")?.textContent?.trim(),
     }))()`)
-    assert.deepEqual(main.ids, ["session-interrupt", "session-focus", "session-open-terminal", "session-info", "session-screen", "session-more", "session-end"])
+    assert.deepEqual(main.ids, ["session-interrupt", "session-focus", "session-tool-library", "session-info", "session-native-terminal", "session-screen", "session-more", "session-end"])
     assert.match(main.more, /更多指令/)
 
     await tab.press("#session-more")
@@ -567,7 +567,7 @@ test("More commands groups the reads and opens the same archive confirmation", (
       archive: document.getElementById("session-archive")?.textContent?.trim(),
       disabled: document.getElementById("session-archive")?.hasAttribute("disabled"),
     }))()`)
-    assert.deepEqual(submenu.ids, ["session-actions-back", "session-documents", "session-user-messages", "session-snippets", "session-git", "session-archive"])
+    assert.deepEqual(submenu.ids, ["session-actions-back", "session-open-terminal", "session-documents", "session-user-messages", "session-snippets", "session-git", "session-archive"])
     assert.equal(submenu.git, "Git 變更")
     assert.equal(submenu.archive, "封存 Session")
     assert.equal(submenu.disabled, false)

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { nativeTerminalCommand } from "./native-terminal-command.ts"
 import test from "node:test"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 import english from "../../public/catalogs/en.json" with { type: "json" }
@@ -228,8 +230,17 @@ test("owned Gemini and Remote Control keep Stop current work while hiding termin
   const fleetOwnedRow = { id: "owned:acp:one", backend: "owned", assistant: "antigravity",
     identity: { machine: "m", session: "owned:acp:one" }, sessionBinding: "protocol" } as any
   const remoteRow = { id: "rc:one", backend: "claude_remote", assistant: "claude" } as any
-  assert.deepEqual(sessionActionVisibility(terminalRow), { interrupt: true, focus: true, screen: true })
+  assert.deepEqual(sessionActionVisibility(terminalRow), { interrupt: true, focus: true, screen: false })
   assert.deepEqual(sessionActionVisibility(ownedRow), { interrupt: true, focus: false, screen: false })
   assert.deepEqual(sessionActionVisibility(fleetOwnedRow), { interrupt: true, focus: false, screen: false })
   assert.deepEqual(sessionActionVisibility(remoteRow), { interrupt: true, focus: false, screen: false })
+})
+
+test("the read-only screen mirror stays only where the interactive Terminal is unavailable", () => {
+  for (const assistant of ["claude", "codex"]) for (const backend of ["tmux", "iterm"])
+    assert.equal(sessionActionVisibility({ id: "%1", backend, assistant } as any).screen, false, assistant + "/" + backend)
+  assert.equal(sessionActionVisibility({ id: "%2", backend: "tmux", assistant: "gemini" } as any).screen, true)
+  assert.equal(sessionActionVisibility({ id: "%3", backend: "tmux", assistant: "shell" } as any).screen, true)
+  for (const assistant of ["claude", "codex", "gemini", "shell"]) for (const backend of ["tmux", "iterm", "pty"])
+    assert.equal(sessionActionVisibility({ id: "%4", backend, assistant } as any).screen, !nativeTerminalCommand("/help", assistant, backend), assistant + "/" + backend)
 })
