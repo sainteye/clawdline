@@ -2710,7 +2710,7 @@
       "locations": [
         "Settings → Auto-name new sessions",
         "<state>/antigravity-sessions/conversations.sqlite",
-        "Selected local Claude Code or Codex naming CLI"
+        "Configured local Session, Claude Code, Codex or Gemini naming CLI"
       ]
     }
   ],
@@ -2730,7 +2730,7 @@
     "internal/adapters/memory/memory.go": "8e3aad25ea0efb9b69b09ec70776eda50a917be40cac52b188c4b25f9b07e2a1",
     "internal/adapters/nextconfig/nextconfig.go": "a1c0138b516cc6d957370e89dca420ca15b63b06d37e9e36fbfdecc8e2dc19b0",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
-    "internal/adapters/planner/planner.go": "c4b2940c44dac1350c38e0ac20e07f4802b02e3887fd2608596ef75e36913698",
+    "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/projects/antigravity_context.go": "9706da1b7af1d019ac3c7feb3713fa02698f95bfe76b81bc430de5efa62fbb53",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
     "internal/adapters/projects/launch.go": "4df36ebcc25bfa91148a8649ab8de4783663b1ea4e527ff047375a701d406687",
@@ -2777,7 +2777,7 @@
     "internal/transport/http/integration_launch.go": "7b8f50a0cba4576e96ff3f598f28760449ba1220ea315885b30517013182927a",
     "internal/transport/http/integration_settings.go": "369c5cd7f9a6edcab3a11abd551783835601c6e8eebb3cdc16ceed84e41f1781",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
-    "internal/transport/http/session_auto_title.go": "e4a5505399dda5a95c3da6538ebe1c776b4870b0a4c7b850bed40f2f27fd5cb9",
+    "internal/transport/http/session_auto_title.go": "822c692eb3b08e8b87063b598897508c21870aea57e627e5b069536972dbb211",
     "internal/transport/http/session_naming_context.go": "ed4b6662204915e5f26ce1a4a66940e97e82a085aaf5eac28070264eed09b1f1",
     "internal/transport/http/start.go": "7813b76e65308c666bafdd4d01c20459edbe1d5c49a98a8d096a928f47fed791",
     "internal/transport/http/work_v2.go": "2b63e2367056b3f5174f7c971d3a2f06f6a4ef43182f38b3d3e7ee454e326637",
@@ -2798,7 +2798,7 @@
     "web/console/src/session/Start.tsx": "972136f5262dabb0d9e64258b2bf539780466958385158c8c05bf65fb43ef070"
   },
   "copyChecks": {
-    "en": "cb9e16081c7d150d0623a21541a441287abf11a884c629ec0ba386d9f4970502",
-    "zh-Hant": "78d7adcecc261d075edc77965b80d26915ff266fde823ff4892ee9985add9c97"
+    "en": "860c790fde37fc1340a18a4a9847447146f3a125b07b53d3873ed08eef3bd25b",
+    "zh-Hant": "1620d30fab271704e5f0995a0fba178e7d4de2d3670dd1a7afab46815c008a0d"
   }
 }

@@ -11,6 +11,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
   type ComponentPropsWithRef,
@@ -29,6 +30,7 @@ import { Composer } from "./Composer.js"
 import { composerDraftKey } from "./composer-drafts.js"
 import { nativeTerminalCommand } from "./native-terminal-command.js"
 import { NativeTerminalPanel } from "./NativeTerminalPanel.js"
+import { pendingSends } from "./send.js"
 import { ScreenPanel } from "./ScreenPanel.js"
 import { ShellPanel } from "./ShellPanel.js"
 import { BackgroundStrip } from "./BackgroundStrip.js"
@@ -208,6 +210,22 @@ export function Detail({
     const trigger = document.getElementById("detail-actions-trigger") as HTMLButtonElement | null
     if (trigger && !trigger.disabled) trigger.focus({ preventScroll: true })
   }
+
+  const pendingVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
+  const terminalHandoff = useRef("")
+  const nativeTerminalAvailable = nativeTerminalCommand("/help", row?.assistant, row?.backend)
+  const acceptedCommand = row && nativeTerminalAvailable ? pendingSends.of(row.id).find(card =>
+    card.state === "accepted" && nativeTerminalCommand(card.text, row.assistant, row.backend, card.pictures.length)) : null
+  const unreadMenu = row?.state === "waiting" && !row.menu?.options?.length
+  useEffect(() => {
+    if (!row || !nativeTerminalAvailable) return
+    // Receipt and screen reads are sufficient for native dialogs; many never
+    // produce a transcript turn. Reopening a retained accepted card only reads.
+    const key = acceptedCommand?.token || (unreadMenu ? `${row.id}:${row.execution_generation}:${row.menu?.question || ""}` : "")
+    if (!key || terminalHandoff.current === key) return
+    terminalHandoff.current = key
+    setScreenOpen(false); setGitOpen(false); setShellOpen(null); setNativeTerminalOpen(true)
+  }, [row?.id, row?.execution_generation, row?.menu?.question, unreadMenu, nativeTerminalAvailable, acceptedCommand?.token, pendingVersion])
 
   // The project the machine resolved for this session, once the sheet has read
   // it (`snippetProjectFor`): a session in a subdirectory of a project, or in a

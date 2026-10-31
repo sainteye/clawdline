@@ -1,3 +1,7 @@
+.pane-detail[data-panel="native-terminal"] .session-conversation > .session-todos { display: none; }
+.native-terminal-shortcut { display: flex; justify-content: flex-end; margin-bottom: .35rem; }
+.native-terminal-shortcut button { padding: .3rem .6rem; font-size: .8rem; color: var(--dim); }
+
 .native-terminal-grid {
     flex: 1; min-height: 0; margin: 0; padding: 1rem; overflow: auto;
     color: var(--ink); background: var(--bg); font: 12px/1.5 var(--mono);
