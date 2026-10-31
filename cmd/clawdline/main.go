@@ -309,6 +309,8 @@ func serve() {
 	}
 	defer stopGraphify()
 	defer srv.StopGitHub()
+	stopIssueSync := srv.StartIssueSync(cloudCtx)
+	defer stopIssueSync()
 	// A device file that cannot be read stops the daemon here, rather than
 	// letting it listen and refuse everybody.
 	if err := srv.AuthReady(); err != nil {

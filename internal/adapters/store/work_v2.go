@@ -222,6 +222,9 @@ func openWorkV2(db *sql.DB) error {
 	if err := openWorkV2Gates(db); err != nil {
 		return err
 	}
+	if _, err := db.Exec(workV2IssueLinkSchema); err != nil {
+		return err
+	}
 	has, err := hasColumn(db, "work_v2_items", "user_action")
 	if err != nil {
 		return err

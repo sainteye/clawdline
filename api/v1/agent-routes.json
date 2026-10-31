@@ -533,6 +533,21 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/integrations/jira",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/integrations/jira/projects",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/issue-sync/",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/settings/workflow",
       "guide": "connect"
     },

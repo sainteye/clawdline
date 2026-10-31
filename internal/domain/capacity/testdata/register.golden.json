@@ -11547,6 +11547,85 @@
   },
   {
     "Register": "daemon",
+    "Name": "work.issue_sync_jira_credential_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16384,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/jiraissues.MaxCredentialFileBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "work.issue_sync_jira_projects",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 100,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/jiraissues.MaxProjects"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "work.issue_sync_jira_response_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 262144,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/jiraissues.MaxResponseBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "work.issue_sync_links_per_pass",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/issuesync.MaxLinksPerPass"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "work.issue_sync_response_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -11563,6 +11642,45 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/adapters/githubissues.MaxResponseBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "work.issue_sync_retry_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 3600,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/issuesync.MaxRetrySeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "work.issue_sync_scan_rows",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 30,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/githubissues.MaxIssueScanRows"
     ]
   },
   {

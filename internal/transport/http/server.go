@@ -29,6 +29,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/githubissues"
 	"github.com/sainteye/clawdline/internal/adapters/graphify"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
+	"github.com/sainteye/clawdline/internal/adapters/jiraissues"
 	"github.com/sainteye/clawdline/internal/adapters/logs"
 	"github.com/sainteye/clawdline/internal/adapters/machineusage"
 	"github.com/sainteye/clawdline/internal/adapters/planner"
@@ -63,6 +64,8 @@ type Server struct {
 	graphifyBuilder *graphify.Builder
 	githubMu        sync.Mutex
 	githubConn      *githubissues.Connection
+	jiraHTTP        *jiraissues.Client
+	issueSync       *issueSyncWorker
 	claudeRemote    interface {
 		SendRemote(context.Context, session.Session, string, func() error) error
 		Page(context.Context, session.Session, int, int64, int64, string) (contract.TranscriptPage, error)
@@ -720,6 +723,11 @@ func (s *Server) routeTable() []route {
 		// This machine's GitHub authorization for issue sync (github_integration.go).
 		{Route{"*", "/v1/integrations/github"}, s.githubIntegrationRoute},
 		{Route{"*", "/v1/integrations/github/device"}, s.githubDeviceRoute},
+		// This machine's Jira Cloud sign-in and its project picker (jira_integration.go).
+		{Route{"*", "/v1/integrations/jira"}, s.jiraIntegrationRoute},
+		{Route{"*", "/v1/integrations/jira/projects"}, s.jiraProjectsRoute},
+		// The person's Retry on a failed issue sync (issue_sync.go).
+		{Route{"*", "/v1/issue-sync/"}, s.issueSyncRoute},
 		{Route{"*", "/v1/places"}, s.placesRoute},
 		{Route{"GET", "/v1/project-folders"}, s.projectFoldersRoute},
 		// The input bar's server list (devstacks.go): what the projects' own

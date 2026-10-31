@@ -234,6 +234,12 @@ const (
 	WorkIssueSyncResponseBytes  = "work.issue_sync_response_bytes"
 	WorkIssueSyncTokenFileBytes = "work.issue_sync_token_file_bytes"
 	WorkIssueSyncDeviceSeconds  = "work.issue_sync_device_flow_seconds"
+	WorkIssueSyncScanRows       = "work.issue_sync_scan_rows"
+	WorkIssueSyncJiraResponse   = "work.issue_sync_jira_response_bytes"
+	WorkIssueSyncJiraCredential = "work.issue_sync_jira_credential_bytes"
+	WorkIssueSyncJiraProjects   = "work.issue_sync_jira_projects"
+	WorkIssueSyncLinksPerPass   = "work.issue_sync_links_per_pass"
+	WorkIssueSyncRetrySeconds   = "work.issue_sync_retry_seconds"
 	SessionDirectTodos          = "session.direct_todos"
 	// The token ledger's work-unit cursors (docs/token-ledger.md "One unit of
 	// work", limits N73).

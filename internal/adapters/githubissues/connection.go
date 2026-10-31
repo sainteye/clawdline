@@ -62,6 +62,9 @@ func NewConnection(client *Client, dir string) *Connection {
 	return &Connection{client: client, store: TokenStore{Dir: dir}, life: life, stop: stop, Sleep: sleepContext}
 }
 
+// Client is the GitHub client this connection authorizes.
+func (c *Connection) Client() *Client { return c.client }
+
 // Close stops a waiting device flow. The saved token is kept.
 func (c *Connection) Close() { c.stop() }
 

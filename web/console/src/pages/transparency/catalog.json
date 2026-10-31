@@ -2716,7 +2716,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/graphify.go": "a0716503d418090b5056f7f529683124d4eecdbf14af16bc00f941d764f854f9",
-    "cmd/clawdline/main.go": "dd29bc6d263ce4a41f625fb1780b5fbb74e0d623b0478f3a4137124e3a4cf345",
+    "cmd/clawdline/main.go": "48d4fcfa57cccb06c55c6f7d171ccad25f3af41e155c00279c03be1cdbcb6be8",
     "cmd/clawdline/session.go": "0fc62871605339e63df21529801409aa809907ec05bb8343bbbd766600c11574",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -2780,7 +2780,7 @@
     "internal/transport/http/session_auto_title.go": "e4a5505399dda5a95c3da6538ebe1c776b4870b0a4c7b850bed40f2f27fd5cb9",
     "internal/transport/http/session_naming_context.go": "ed4b6662204915e5f26ce1a4a66940e97e82a085aaf5eac28070264eed09b1f1",
     "internal/transport/http/start.go": "7813b76e65308c666bafdd4d01c20459edbe1d5c49a98a8d096a928f47fed791",
-    "internal/transport/http/work_v2.go": "2b63e2367056b3f5174f7c971d3a2f06f6a4ef43182f38b3d3e7ee454e326637",
+    "internal/transport/http/work_v2.go": "d54d9734228687871875d18570fa72283d74d3b13b154ea27fe9471681d97d36",
     "internal/transport/http/work_v2_brief.go": "212fde2dc04a2694060c3a40de8dccd98889dd40d43d85589a54f1b09ca7aa39",
     "internal/transport/http/workflow_launch.go": "06827497dc74db45f7d3e7d2bc7937152b0d09f2addc90b413ea98fa9f8fc92e",
     "skills/LICENSE.pstack": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",

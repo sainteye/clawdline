@@ -88,5 +88,23 @@ func (s *Server) workCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.WorkIssueSyncDeviceSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-flow deadline; a new start issues a new code"}
 		},
+		capacity.WorkIssueSyncScanRows: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-create read window; no retained rows"}
+		},
+		capacity.WorkIssueSyncJiraResponse: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-answer guard on Jira replies; no retained buffer"}
+		},
+		capacity.WorkIssueSyncJiraCredential: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read guard on the one Jira credential file"}
+		},
+		capacity.WorkIssueSyncJiraProjects: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-answer picker page; no retained rows"}
+		},
+		capacity.WorkIssueSyncLinksPerPass: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-pass call budget; later links wait for the next pass"}
+		},
+		capacity.WorkIssueSyncRetrySeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "longest wait between two attempts on one link"}
+		},
 	}
 }

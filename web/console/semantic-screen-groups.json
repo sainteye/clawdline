@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10221,
-  "riskKeys": 4529,
-  "nonRiskCount": 5692,
+  "englishContentKeys": 10233,
+  "riskKeys": 4537,
+  "nonRiskCount": 5696,
   "groups": [
     {
       "name": "admin / other",
@@ -375,7 +375,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 387,
+      "count": 391,
       "sources": [
         null
       ],
@@ -755,7 +755,11 @@
         "capacityRow.work.digests.what",
         "capacityRow.work.image_bytes.what",
         "capacityRow.work.image_request_body_bytes.what",
+        "capacityRow.work.issue_sync_jira_projects.what",
+        "capacityRow.work.issue_sync_jira_response_bytes.what",
         "capacityRow.work.issue_sync_response_bytes.what",
+        "capacityRow.work.issue_sync_retry_seconds.full",
+        "capacityRow.work.issue_sync_scan_rows.what",
         "capacityRow.work.item_description_bytes.what",
         "capacityRow.work.item_title_bytes.what",
         "capacityRow.work_gate_claims_per_round.what",
