@@ -578,6 +578,10 @@ func (s *Server) routeTable() []route {
 			// Watching a screen is a read and brings its own route (screen.go);
 			// sessionAction below refuses anything that is not a POST, so this has
 			// to be asked before it.
+			if id, ok := sessionVerbIs(r, "native-terminal", http.MethodGet); ok {
+				s.nativeTerminalScreen(w, r, id)
+				return
+			}
 			if id, ok := screenPath(r); ok {
 				s.sessionScreenRoute(w, r, id)
 				return

@@ -7,6 +7,7 @@ func init() {
 		op{name: "direct-local-network-enable"},
 
 		op{name: "send"},
+		op{name: "native-terminal-input"},
 
 		op{name: "answer", guard: answerNamesItsQuestion},
 		// The Swift bridge takes `answer` and `key` as one case, and the

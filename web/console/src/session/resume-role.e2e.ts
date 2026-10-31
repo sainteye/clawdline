@@ -48,6 +48,19 @@ let offer: Record<string, unknown> = { available: false, reason: "boot_unknown",
 /** Every resume that arrived, by its path. */
 let resumes: string[] = []
 let placeReads = 0
+let commandAssistant = ""
+let commandCWD = "/work/api"
+let commandPastFailure = false
+let commandLive = false
+let commandSends: string[] = []
+let commandPastReads: string[] = []
+let nativeRequests: {key?:string;text?:string;request:string}[]=[]
+let nativeRevision=1
+let nativeRejectNext=false
+let nativeText=""
+const safeCommandSession = () => ({ activity_generation: 1, attestation_id: null, mover: null,
+  obligation_generation: 1, observed_at: now(), provenance: [], reasons: [], session_generation: 1,
+  source: { freshness: "current", observed_at: now(), provenance: "fixture" }, state: "safe", version: "fixture-safe" })
 
 function snapshot() {
   return {
@@ -56,7 +69,13 @@ function snapshot() {
       complete: true, completed: { complete: true, sequence: 1 }, emptyAuthoritative: true, epoch: 1, generation: 1,
       provenance: "fixture", source: { freshness: "current", observed_at: now(), provenance: "fixture" },
     },
-    sessions: [],
+    sessions: commandAssistant ? [{ id: "fixture-current", backend: "tmux", assistant: commandAssistant,
+      label: "Current fixture", sessionId: "fixture-conversation", cwd: commandCWD, state: "idle", evidence: "process",
+      isClaude: commandAssistant === "claude", work_state: "ready",
+      activity: { known: true, at: now() }, closeability: safeCommandSession() },
+      ...(commandLive ? ["fixture-wrong", "fixture-live"].map(id => ({ id, backend: "tmux",
+        assistant: id === "fixture-wrong" ? "claude" : "codex", label: id, sessionId: "past-1", cwd: "/work/api",
+        state: "idle", work_state: "ready", evidence: "process", activity: { known: true, at: now() }, closeability: safeCommandSession() })) : [])] : [],
   }
 }
 
@@ -100,13 +119,38 @@ function daemon(): Server {
       })
     }
     if (/^\/v1\/places\/[^/]+\/sessions/.test(path)) {
+      commandPastReads.push(path)
+      if (commandPastFailure) return json(res, 503, { error: { code: "busy", message: "Synthetic history read failure" } })
       return json(res, 200, {
         at: now(), place: "place-api", assistant: "claude", more: false,
         sessions: [
-          { id: "past-1", title: "Tighten the reconnect loop", at: now() - 3600, live: false },
+          { id: "past-1", title: "Tighten the reconnect loop", at: now() - 3600, live: commandLive },
           { id: "past-2", title: "Write the release notes for the resume sheet", at: now() - 86400 * 2, live: false },
         ],
       })
+    }
+    if (path === "/v1/sessions/fixture-current/native-terminal") {
+      if (req.method === "GET") return json(res,200,{text:nativeText || (commandAssistant === "codex" ? "Codex" : "Claude Code") + "\nSelect a model\n❯ Current model\n  Another model\nEnter to confirm · Esc to go back",expect:nativeRevision.toString(16).padStart(64,"0")})
+      if (req.method === "POST") {
+        let raw="";req.on("data",chunk=>raw+=String(chunk));req.on("end",()=>{
+          const input=JSON.parse(raw);nativeRequests.push({...input,request:String(req.headers["idempotency-key"]||"")})
+          if (nativeRejectNext) {nativeRejectNext=false;nativeRevision++;return json(res,409,{error:"input_moved",detail:"input_moved"})}
+          nativeRevision++;nativeText=(commandAssistant === "codex" ? "Codex" : "Claude Code")+"\nInput: "+(input.key||input.text)
+          return json(res,200,{ok:true,id:"fixture-current",action:"keyed"})
+        });return
+      }
+    }
+    if (path === "/v1/sessions/fixture-current/skills") return json(res, 200, {
+      skills: [{ name: "resume", description: "A synthetic colliding skill", source: "project" }],
+    })
+    if (path === "/v1/transcript") return json(res, 200, { id: "fixture-current", entries: [], evidence: "transcript", signature: "fixture-empty" })
+    if (path.startsWith("/v1/work/v2/session-todos/")) return json(res, 200, {ok:true,done:0,active:0,waiting:0,assigned_items:[],recent_items:[],direct_todos:[],open_decisions:[],truncated:false})
+    if (path.startsWith("/v1/work/v2/human-interventions/")) return json(res, 200, {ok:true,rows:[],pruned_resolved:0})
+    if (path === "/v1/sessions/fixture-current/info") return json(res, 200, { info: { session: { assistant: commandAssistant }, models: [] } })
+    if (req.method === "POST" && path === "/v1/sessions/fixture-current/send") {
+      let body = ""; req.on("data", chunk => body += String(chunk))
+      req.on("end", () => { commandSends.push(JSON.parse(body).text); json(res, 200, { ok: true }) })
+      return
     }
     if (req.method === "POST" && /^\/v1\/places\/[^/]+\/resume\//.test(path)) {
       resumes.push(path)
@@ -145,6 +189,7 @@ class Browser {
     this.ws = ws
     ws.addEventListener("message", (ev) => {
       const msg = JSON.parse(String(ev.data))
+      if (msg.method === "Runtime.exceptionThrown") console.error("Browser exception:", msg.params?.exceptionDetails?.exception?.description ?? msg.params?.exceptionDetails?.text)
       if (msg.id !== undefined) {
         const p = this.pending.get(msg.id)
         this.pending.delete(msg.id)
@@ -329,15 +374,19 @@ before(async () => {
 })
 
 after(async () => {
+  console.error("fixture cleanup: browser")
   browser?.close()
-  if (browserProcess && browserProcess.exitCode === null) {
+  if (browserProcess && browserProcess.exitCode === null && browserProcess.signalCode === null) {
     const gone = new Promise((ok) => browserProcess.once("exit", ok))
     browserProcess.kill()
     await gone
   }
+  console.error("fixture cleanup: server")
   server?.closeAllConnections()
   await new Promise<void>((ok) => (server ? server.close(() => ok()) : ok()))
+  console.error("fixture cleanup: profile")
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
+  console.error("fixture cleanup: done")
 })
 
 /** Open the start sheet, tick "resume", and enter the api place. */
@@ -453,6 +502,95 @@ test("a resume with no role chosen sends the route it always sent", async () => 
   }
 })
 
+async function compose(tab: Tab, text: string): Promise<void> {
+  await tab.run(`(async () => {
+    const end = Date.now() + 5000;
+    while (!document.querySelector('#msg[contenteditable="true"], #msg[contenteditable="plaintext-only"]')) {
+      if (Date.now() > end) throw Error('composer not ready: '+document.querySelector('#msg')?.outerHTML+'; '+document.body.innerText.slice(-1800));
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    const box = document.querySelector('#msg'); box.textContent = ${JSON.stringify(text)};
+    box.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+  })()`)
+}
+
+for (const assistant of ["claude", "codex"]) {
+  test(`${assistant}: /resume opens the current Project picker without a terminal send`, async () => {
+    commandAssistant = assistant; commandSends = []; commandPastReads = []; resumes = []
+    const tab = await Tab.open(browser, 390, 844, true)
+    try {
+      await tab.go("/#session=fixture-current")
+      await compose(tab, "/resume")
+      // The colliding Skill must not consume this exact command on Enter.
+      await tab.run(`document.querySelector('#msg').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',bubbles:true,cancelable:true}))`)
+      const seen = await tab.until("the resume command opens the native Clawdline picker", state => state.pasts.length === 2)
+      assert.ok(seen.wide <= 390)
+      assert.equal(await tab.run(`document.querySelector('#start').hidden`), false)
+      assert.equal(await tab.run(`document.querySelector('#msg').textContent`), "")
+      assert.deepEqual(commandSends, [])
+      assert.deepEqual(resumes, [], "opening the modal does not restore anything")
+      assert.deepEqual(commandPastReads, [`/v1/places/place-api/sessions/${assistant}`])
+      await tab.shot(`resume-command-${assistant}`)
+      await tab.click('#start-list [data-session="past-1"]')
+      const end = Date.now() + 3000
+      while (!resumes.length && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 20))
+      assert.deepEqual(resumes, [`/v1/places/place-api/resume/${assistant}/past-1`])
+      assert.deepEqual(commandSends, [])
+    } finally { commandAssistant = ""; await tab.close() }
+  })
+}
+
+test("resume searches, cancellation, history failures and unmatched Projects stay local", async () => {
+  commandAssistant = "codex"; commandSends = []; resumes = []; commandCWD = "/unregistered/project"
+  const tab = await Tab.open(browser, 1100, 800, false)
+  try {
+    await tab.go("/#session=fixture-current")
+    await compose(tab, "/resume release notes")
+    await tab.click("#send")
+    await tab.until("an unregistered cwd offers Projects instead of guessing one", state => state.places === 2)
+    await tab.click('#start-list .place[data-id="place-api"]')
+    await tab.until("inline resume arguments filter the retained conversations", state => state.pasts.length === 1 && state.pasts[0] === "past-2")
+    await tab.click("#start-close")
+    assert.deepEqual(resumes, [])
+    assert.deepEqual(commandSends, [])
+
+    commandCWD = "/work/api"; commandPastFailure = true
+    // A new document makes the new Project visible; a same-URL navigation would not reload.
+    await tab.go("/?retry-fixture=1#session=fixture-current")
+    await compose(tab, "/resume")
+    await tab.click("#send")
+    await tab.until("an unreadable history remains an open picker", state => state.places === 0 && state.pasts.length === 0)
+    await tab.run(`(async()=>{ const end=Date.now()+5000; while(!document.querySelector('.start-past-more')) {if(Date.now()>end)throw Error('missing retry');await new Promise(r=>setTimeout(r,20))}})()`)
+    assert.deepEqual(commandSends, [])
+    commandPastFailure = false
+    await tab.click(".start-past-more")
+    await tab.until("retry reads the same provider and Project", state => state.pasts.length === 2)
+    await tab.click("#start-close")
+    assert.deepEqual(resumes, [])
+
+    await compose(tab, "explain /resume")
+    await tab.click("#send")
+    await tab.run(`new Promise(resolve=>setTimeout(resolve,300))`)
+    assert.deepEqual(commandSends, ["explain /resume"], "mentioning a command is an ordinary prompt")
+  } finally { commandAssistant = ""; commandCWD = "/work/api"; commandPastFailure = false; await tab.close() }
+})
+
+test("resume opens an already running conversation of the same assistant without launching another", async () => {
+  commandAssistant = "codex"; commandLive = true; resumes = []; commandSends = []
+  const tab = await Tab.open(browser, 390, 844, true)
+  try {
+    await tab.go("/#session=fixture-current")
+    await compose(tab, "/resume")
+    await tab.click("#send")
+    await tab.until("the running conversation is offered", state => state.pasts.length === 2)
+    assert.equal(await tab.run(`document.querySelector('#start-list [data-session="past-1"]').disabled`), false)
+    await tab.click('#start-list [data-session="past-1"]')
+    await tab.run(`(async()=>{ const end=Date.now()+5000; while(!location.hash.includes('fixture-live')) {if(Date.now()>end)throw Error('wrong live Session: '+location.hash);await new Promise(r=>setTimeout(r,20))}})()`)
+    assert.deepEqual(resumes, [])
+    assert.deepEqual(commandSends, [])
+  } finally { commandAssistant = ""; commandLive = false; await tab.close() }
+})
+
 test("the restore sheet names the role each conversation will come back with", async () => {
   const tab = await Tab.open(browser, 390, 844, true)
   try {
@@ -475,3 +613,79 @@ test("the restore sheet names the role each conversation will come back with", a
     await tab.close()
   }
 })
+
+for (const assistant of ["claude", "codex"]) {
+ test(`${assistant}: every catalog command can be selected and native lines use the ordinary send`, async () => {
+  commandAssistant = assistant; commandSends = []; nativeRequests=[]; nativeRevision=1; nativeRejectNext=false; nativeText=""
+  const tab = await Tab.open(browser, 390, 844, true)
+  try {
+   await tab.go('/')
+   await tab.run('localStorage.clear()')
+   await tab.go('/?catalog=' + assistant + '#session=fixture-current')
+   await compose(tab, '/')
+   await tab.run(`(async () => {
+    const end = Date.now()+5000;
+    while(document.querySelectorAll('#skill-menu .skill-option').length < 10) {
+     if(Date.now()>end) throw Error('catalog did not appear');
+     await new Promise(r=>setTimeout(r,20));
+    }
+   })()`)
+   const commands = await tab.run(`Array.from(document.querySelectorAll('#skill-menu .command'), node=>node.textContent)`)
+   assert.ok(commands.length > 9)
+   assert.ok(commands.includes('/model'))
+   assert.ok(commands.includes('/resume'))
+   assert.equal(await tab.run(`Array.from(document.querySelectorAll('#skill-menu .skill-option')).find(node=>node.querySelector('.command').textContent==='/model').querySelector('.description').textContent`), assistant === 'claude' ? '選擇模型' : '選擇模型與推理強度')
+   assert.ok(commands.includes(assistant === 'claude' ? '/effort' : '/permissions'))
+   // Exercise every rendered selection, including those outside the viewport.
+   for (const command of commands) {
+    await compose(tab, '/')
+    await tab.run(`Array.from(document.querySelectorAll('#skill-menu .skill-option')).find(node=>node.querySelector('.command').textContent===${JSON.stringify(command)}).click()`)
+    assert.equal(await tab.run(`document.querySelector('#msg').textContent`), command + ' ')
+   }
+   assert.deepEqual(commandSends, [], 'choosing metadata never executes a command')
+   await compose(tab, '/')
+   await tab.shot(`native-commands-${assistant}`)
+   await compose(tab, assistant === 'claude' ? '/effort high' : '/plan inspect the API')
+   await tab.click('.composer button[type=submit]')
+   const end=Date.now()+3000
+   while(!commandSends.length && Date.now()<end) await new Promise(r=>setTimeout(r,20))
+   assert.deepEqual(commandSends, [assistant === 'claude' ? '/effort high' : '/plan inspect the API'])
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),false)
+   await tab.click('#native-terminal .panel-view-head button')
+   await compose(tab, '/future-provider-command value')
+   await tab.click('.composer button[type=submit]')
+   const next=Date.now()+3000
+   while(commandSends.length<2 && Date.now()<next) await new Promise(r=>setTimeout(r,20))
+   assert.equal(commandSends[1],'/future-provider-command value', 'execution has no builtin allowlist')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('terminal not ready');await new Promise(r=>setTimeout(r,20))}})()`)
+   await tab.shot(`native-terminal-${assistant}`)
+   nativeRequests=[]
+   for(const key of ['down','tab','enter','escape']) {
+    await tab.run(`(async()=>{const end=Date.now()+5000;const button=document.querySelector('#native-terminal [data-native-key=${key}]');while(button.disabled){if(Date.now()>end)throw Error('input still blocked');await new Promise(r=>setTimeout(r,20))}button.click()})()`)
+    await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('input not acknowledged');await new Promise(r=>setTimeout(r,20))}})()`)
+   }
+   assert.deepEqual(nativeRequests.map(input=>input.key),['down','tab','enter','escape'])
+   assert.equal(new Set(nativeRequests.map(input=>input.request)).size,4)
+   assert.ok(nativeRequests.every(input=>input.request))
+   await tab.run(`(()=>{const field=document.querySelector('#native-terminal form input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'搜尋模型');field.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+   await tab.click('#native-terminal form button[type=submit]')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('text input not acknowledged');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.equal(nativeRequests[4]?.text,'搜尋模型')
+   assert.equal(nativeRequests[4]?.key,undefined,'text entry never adds Enter')
+   nativeRejectNext=true
+   await tab.click('#native-terminal [data-native-key=down]')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(!document.querySelector('#native-terminal [role=alert]')){if(Date.now()>end)throw Error('no stale input error');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.equal(await tab.run(`document.querySelector('#native-terminal [data-native-key=down]').disabled`),true)
+   assert.equal(nativeRequests.length,6,'a moved screen is never automatically replayed')
+   await tab.click('#native-terminal .native-terminal-controls > button')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('manual reread did not re-enable input');await new Promise(r=>setTimeout(r,20))}})()`)
+   await tab.click('#native-terminal .panel-view-head button')
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),true)
+   await tab.click('#detail-actions-trigger')
+   await tab.click('#session-native-terminal')
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),false)
+   await tab.click('#native-terminal .panel-view-head button')
+
+  } finally { commandAssistant=''; await tab.close() }
+ })
+}

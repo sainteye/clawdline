@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import type { ReactNode, RefObject } from "react"
 import type { AssistantSkill, SessionRow } from "@clawdline/contract"
 import { antigravitySlashDraft, assistantComposeAdmits, assistantProtocolOwned, assistantLabel, assistantUnavailable, assistantStateCurrent, type AssistantFacts } from "./antigravity-ui.js"
-import { catalogWord } from "../catalog.js"
+import { currentCatalogTag, catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client, followsRelay } from "../client.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
@@ -20,7 +20,8 @@ import {
   heldSkills,
   loadSkills,
   selectedSkill,
-  skillPrefix,
+  commandInvocation,
+  commandDescription,
   skillQuery,
 } from "../legacy/skills-bridge.js"
 import { toast } from "../overlays/toast.js"
@@ -39,6 +40,10 @@ import { voiceSource } from "./voice-source.js"
 import "./voice-source.css"
 import "./drop-target.css"
 import { RemotePermissions } from "./RemotePermissions.js"
+import { Start } from "./Start.js"
+import { commandCatalog } from "../legacy/command-catalog.js"
+import { nativeTerminalCommand } from "./native-terminal-command.js"
+import { resumeCommandQuery } from "./resume-command.js"
 
 /**
  * The composer, as the original's `form#composer` is built.
@@ -66,7 +71,7 @@ import { RemotePermissions } from "./RemotePermissions.js"
  *   element the row is drawn into, and where the words land.
  * - `.skill-menu` is `SkillPicker` (`legacy/skills-bridge.ts`): typing `/`
  *   (or Codex's `$`) as the whole box asks `GET /v1/sessions/<id>/skills`
- *   once and draws the nine best matches; ↑↓ move, Tab or Return choose,
+ *   once and draws every match in a scrollable list; ↑↓ move, Tab or Return choose,
  *   Esc closes, and choosing writes the invocation into the box — it never
  *   sends.
  *
@@ -87,6 +92,7 @@ export function Composer({
   row,
   onDid,
   onSent,
+  onNativeTerminal,
   onScreen,
   suggestedDraft,
   remote,
@@ -100,6 +106,7 @@ export function Composer({
   onDid: () => void
   /** After a delivered send; nothing when left out (`Detail`'s `onSent`). */
   onSent?: () => void
+  onNativeTerminal?: () => void
   onScreen?: () => void
   suggestedDraft?: { target: InterventionTarget; text: string; id: number } | null
   /** A fixed remote destination uses this same editor and picture path. */
@@ -379,9 +386,9 @@ export function Composer({
       hideSkills()
       return
     }
-    const held = heldSkills(target)
+    const held = heldSkills(target, assistant)
     if (held) {
-      const matches = filterSkills(held, q)
+      const matches = filterSkills(held, q, rawText()[0])
       setSkills((was) =>
         matches.length
           ? { shown: true, matches, selected: clampSkillPickerIndex(was.selected, matches.length) }
@@ -389,9 +396,10 @@ export function Composer({
       )
       return
     }
-    hideSkills()
-    void loadSkills(target, remote?.loadSkills).then(() => {
-      if ((remote?.key ?? rowRef.current?.id) === target && heldSkills(target)) skillsChanged()
+    const fallback = filterSkills(commandCatalog(assistant, []), q, rawText()[0])
+    setSkills({ shown: fallback.length > 0, matches: fallback, selected: 0 })
+    void loadSkills(target, remote?.loadSkills, assistant).then(() => {
+      if ((remote?.key ?? rowRef.current?.id) === target && heldSkills(target, assistant)) skillsChanged()
     })
   }
 
@@ -411,7 +419,7 @@ export function Composer({
     const skill = skills.shown ? selectedSkill(skills.matches, at) : null
     const el = msg.current
     if (!skill || !el) return false
-    el.textContent = skillPrefix(remote?.assistant ?? row?.assistant) + skill.name + " "
+    el.textContent = commandInvocation(skill, remote?.assistant ?? row?.assistant) + " "
     setText(rawText())
     saveText(rawText())
     setFailure("")
@@ -545,6 +553,22 @@ export function Composer({
     // yet; Return comes through here as well as the button.
     if (inFlight.current || Shots.busy()) return
     if (!remote && row?.assistant === "antigravity" && !protocolOwned && !assistantStateCurrent(row)) return
+    const resumeQuery = resumeCommandQuery(rawText(), remote?.assistant ?? row?.assistant, Shots.urls().length)
+    if (resumeQuery !== null && (row || remote)) {
+      const owner = row ? L.machineFor(row) : null
+      Start.openResume({
+        assistant: (remote?.assistant ?? row?.assistant)!, cwd: row?.cwd, query: resumeQuery,
+        ...(followsRelay() && (remote?.machineID || owner?.id) ? {
+          machine: { id: remote?.machineID || owner!.id, name: owner?.label || remote!.machineID },
+        } : {}),
+      })
+      if (msg.current) msg.current.textContent = ""
+      setText("")
+      saveText("")
+      hideSkills()
+      setFailure("")
+      return
+    }
     // With the menu up, Return and the button choose the highlighted skill.
     if (acceptSkill()) return
     const said = rawText().trim()
@@ -606,9 +630,10 @@ export function Composer({
       const code = await deliverUntilSeen(pendingSends.add(row.id, said, pictures, Date.now()))
       if (writeIsOff(code)) setBlocked({ machine, code })
       if (!code) {
-        if (said.trim() === "/model" && !pictures.length && row.assistant === "codex")
+        if (/^\/[^\s/]+(?:\s|$)/.test(said) && !pictures.length && (row.assistant === "codex" || row.assistant === "claude"))
           document.dispatchEvent(new CustomEvent(MENU_FOLLOW, { detail: row.id }))
         onSent?.()
+        if (nativeTerminalCommand(said,row.assistant,row.backend,pictures.length)) onNativeTerminal?.()
       }
     } catch (err) {
       const code = err instanceof RefusalError ? err.code : "unexpected_error"
@@ -671,20 +696,20 @@ export function Composer({
           browser's own permission sheet, which is on top of the page and says
           more than this row could, so the row stays hidden for it. */}
       <div className="voice" id="voice" role="status" hidden={voice === "off" || voice === "opening"} ref={voiceRow}></div>
-      {/* The original's label is English in every language; the catalog has no key for it. */}
+      <small hidden={!skills.shown}>{catalogWord("slashCommands", "availability")}</small>
       <div
         ref={skillMenu}
         className="skill-menu"
         data-motion-id="AN-009"
         id="skill-menu"
         role="listbox"
-        aria-label={`${assistantLabel(remote?.assistant ?? row?.assistant)} skills`}
+        aria-label={catalogWord("slashCommands", "label")}
         hidden={!skills.shown}
         inert={!skills.shown}
       >
         {skillPicture.current.matches.map((skill, i) => (
             <button
-              key={skill.name}
+              key={commandInvocation(skill, remote?.assistant ?? row?.assistant)}
               type="button"
               className="skill-option"
               role="option"
@@ -693,8 +718,8 @@ export function Composer({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => acceptSkill(i)}
             >
-              <span className="command">{skillPrefix(remote?.assistant ?? row?.assistant) + skill.name}</span>
-              <span className="description">{skill.description || ""}</span>
+              <span className="command">{commandInvocation(skill, remote?.assistant ?? row?.assistant)}</span>
+              <span className="description">{commandDescription(skill, currentCatalogTag()) || ""}</span>
             </button>
           ))}
       </div>
@@ -803,6 +828,11 @@ export function Composer({
               return
             }
             if (e.key !== "Enter" || e.shiftKey) return
+            if (resumeCommandQuery(rawText(), remote?.assistant ?? row?.assistant, Shots.urls().length) !== null) {
+              e.preventDefault()
+              void submit()
+              return
+            }
             // Return chooses on every keyboard, a touch screen's included.
             if (acceptSkill()) return e.preventDefault()
             // On a touch screen Return is a new line and the button is how you send.

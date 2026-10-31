@@ -3,7 +3,7 @@ import { assistantFactsMachine, useAssistantFacts } from "../session/assistant-f
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { AssistantSkill, DevStacksReply, SessionRow } from "@clawdline/contract"
 import { antigravitySlashDraft, assistantComposeAdmits, assistantProtocolOwned, assistantLabel, assistantUnavailable } from "../session/antigravity-ui.js"
-import { catalogWord } from "../catalog.js"
+import { currentCatalogTag, catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client } from "../client.js"
 import { useBarFleet } from "./fleet.js"
@@ -26,9 +26,11 @@ import {
   heldSkills,
   loadSkills,
   selectedSkill,
-  skillPrefix,
+  commandInvocation,
+  commandDescription,
   skillQuery,
 } from "../legacy/skills-bridge.js"
+import { commandCatalog } from "../legacy/command-catalog.js"
 import { nextWord } from "../next-strings.js"
 import { pressKey } from "../press-key.js"
 import { STACKS_REFRESH_MS, readStacks, stackLinks, stackStateSaid, stackTip } from "./stacks.js"
@@ -309,20 +311,20 @@ export default function Bar() {
       setSkillMatches((was) => (was.length ? [] : was))
       return
     }
-    const held = heldSkills(skillTarget)
+    const held = heldSkills(skillTarget, skillAssistant)
     setListMode("skills")
     if (!held) {
-      setSkillMatches([])
+      setSkillMatches(filterSkills(commandCatalog(skillAssistant, []), q, text[0]))
       setSkillIndex(0)
       let live = true
-      void loadSkills(skillTarget).then(() => {
-        if (live) setSkillsArrived((n) => n + 1)
+      void loadSkills(skillTarget, undefined, skillAssistant).then(() => {
+        if (live && heldSkills(skillTarget, skillAssistant)) setSkillsArrived((n) => n + 1)
       })
       return () => {
         live = false
       }
     }
-    const matches = filterSkills(held, q)
+    const matches = filterSkills(held, q, text[0])
     setSkillMatches(matches)
     setSkillIndex((at) => clampSkillPickerIndex(at, matches.length))
   }, [text, skillTarget, skillAssistant, skillsArrived])
@@ -413,7 +415,7 @@ export default function Bar() {
     const { matches, index } = skillsRef.current
     const skill = selectedSkill(matches, at ?? index)
     if (!skill) return false
-    const said = skillPrefix(currentRef.current?.assistant) + skill.name + " "
+    const said = commandInvocation(skill, currentRef.current?.assistant) + " "
     setText(said)
     setListMode("none")
     setSkillMatches([])
@@ -771,10 +773,10 @@ export default function Bar() {
       {listMode === "skills" && skillMatches.length > 0 && (
         // `rebuildRows()` for `.skills`: the command as it will be typed, and
         // the one line of description after it.
-        <div className="bar-list" role="listbox" aria-label={`${assistantLabel(current?.assistant)} skills`}>
+        <div className="bar-list" role="listbox" aria-label={catalogWord("slashCommands", "label")}>
           {skillMatches.map((skill, at) => (
             <button
-              key={skill.name}
+              key={commandInvocation(skill, current?.assistant)}
               className="bar-row bar-skill"
               type="button"
               role="option"
@@ -782,11 +784,11 @@ export default function Bar() {
               onMouseDown={(ev) => ev.preventDefault()}
               onClick={() => acceptSkill(at)}
             >
-              <span className="bar-badge">⌘{at + 1}</span>
-              <span className="bar-label">{skillPrefix(current?.assistant) + skill.name}</span>
+              <span className="bar-badge">{at < 9 ? `⌘${at + 1}` : ""}</span>
+              <span className="bar-label">{commandInvocation(skill, current?.assistant)}</span>
               {skill.description && (
-                <span className="bar-detail" title={skill.description}>
-                  {skill.description}
+                <span className="bar-detail" title={commandDescription(skill, currentCatalogTag())}>
+                  {commandDescription(skill, currentCatalogTag())}
                 </span>
               )}
             </button>

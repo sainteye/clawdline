@@ -1,0 +1,11 @@
+.native-terminal-grid {
+    flex: 1; min-height: 0; margin: 0; padding: 1rem; overflow: auto;
+    color: var(--ink); background: var(--bg); font: 12px/1.5 var(--mono);
+    white-space: pre; outline-offset: -3px;
+}
+.native-terminal-controls { padding: .6rem .8rem; border-top: 1px solid var(--line); }
+.native-terminal-controls p { margin: 0 0 .5rem; color: var(--dim); font-size: .8rem; }
+.native-terminal-controls [role="alert"] { color: var(--ink); }
+.native-terminal-keys { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0; }
+.native-terminal-controls form { display: flex; gap: .5rem; }
+.native-terminal-controls input { min-width: 0; flex: 1; padding: .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }

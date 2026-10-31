@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10149,
-  "riskKeys": 4505,
-  "nonRiskCount": 5644,
+  "englishContentKeys": 10164,
+  "riskKeys": 4508,
+  "nonRiskCount": 5656,
   "groups": [
     {
       "name": "admin / other",
@@ -3233,6 +3233,25 @@
       ]
     },
     {
+      "name": "nativeTerminal / other",
+      "count": 10,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "nativeTerminal.back",
+        "nativeTerminal.hint",
+        "nativeTerminal.keys",
+        "nativeTerminal.loading",
+        "nativeTerminal.refresh",
+        "nativeTerminal.screen",
+        "nativeTerminal.sending",
+        "nativeTerminal.text",
+        "nativeTerminal.title",
+        "nativeTerminal.type"
+      ]
+    },
+    {
       "name": "next / archive",
       "count": 15,
       "sources": [
@@ -5332,6 +5351,17 @@
         "shell.menuPaste",
         "shell.menuSelectAll",
         "shell.pairLinkReturn"
+      ]
+    },
+    {
+      "name": "slashCommands / other",
+      "count": 2,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "slashCommands.availability",
+        "slashCommands.label"
       ]
     },
     {

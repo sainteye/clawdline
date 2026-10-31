@@ -2494,6 +2494,7 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/sessions/s1/git", "git"],
     ["/v1/sessions/s1/git/diff", "git-diff"],
     ["/v1/sessions/s1/screen", "screen"],
+    ["/v1/sessions/s1/native-terminal", "native-terminal-screen"],
     ["/v1/sessions/s1/outputs", "outputs"],
     ["/v1/sessions/s1/outputs/" + "a".repeat(64), "output-file"],
     ["/v1/sessions/s1/documents", "documents"],
@@ -2875,3 +2876,47 @@ test("integration opt-ins read and write only the selected machine", async () =>
   client.allowWrites=false
   assert.equal((await reader.fetch("/v1/projects/cloud-p1/graphify",post({},headers))).status,403)
  })
+
+test("native Terminal input pins the execution and carries one press id",async()=>{
+ const client=new FakeClient()
+ client.descriptors.set("mac-a",{machine:{commands:[...GO_DAEMON.machine.commands,"native-terminal-screen","native-terminal-input"]}})
+ client.rows=[row("s1")]
+ const {reader}=seam(client)
+ const res=await reader.fetch('/v1/sessions/s1/native-terminal',post({expect:FINGERPRINT,key:"down"},{"Idempotency-Key":"native-key-1"}))
+ assert.equal(res.status,200)
+ const call=client.calls.find(call=>call[0]==="_read"&&call[2]==="native-terminal-input")
+ assert.deepEqual(call?.slice(1,5),[{machine:"mac-a",session:"s1"},"native-terminal-input",{request:"native-key-1",execution_generation:EXECUTION,expect:FINGERPRINT,key:"down"},"action:native-key-1"])
+ const before=client.calls.length
+ const unkeyed=await reader.fetch('/v1/sessions/s1/native-terminal',post({expect:FINGERPRINT,key:"enter"}))
+ assert.equal(unkeyed.status,400)
+ assert.equal(client.calls.length,before)
+})
+
+test("native Terminal cannot type after an opened exact execution is replaced",async()=>{
+ const client=new FakeClient()
+ const reader=new RelayReader("mac-a",{fleetTarget:()=>({machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION}),admitFleetMutation:async()=>{throw refusal("execution_generation_changed",{status:409})}})
+ const writer=new RelayWriter(reader.writeHost)
+ reader.carryWrites({route:writeRoute,answer:(route,method,url,init)=>writer.answer(route,method,url,init)})
+ reader.attach(client)
+ const res=await reader.fetch('/v1/sessions/s1/native-terminal',post({expect:FINGERPRINT,key:"enter"},{"Idempotency-Key":"old-native-key"}))
+ assert.equal(res.status,409)
+ assert.deepEqual(client.calls,[])
+})
+
+
+test("native Terminal reads keep the opened execution and receipts keep the original press",async()=>{
+ const client=new FakeClient()
+ client.descriptors.set("mac-a",{machine:{commands:[...GO_DAEMON.machine.commands,"native-terminal-screen","native-terminal-input"]}})
+ Object.assign(client,{async readForGeneration(target:unknown,word:string,fields:Record<string,unknown>){client.calls.push(["readForGeneration",target,word,fields]);return {text:"model menu",expect:FINGERPRINT}}})
+ const reader=new RelayReader("mac-a",{fleetTarget:()=>({machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION})})
+ const writer=new RelayWriter(reader.writeHost,{requestID:()=>"lookup-1"})
+ reader.carryWrites({route:writeRoute,answer:(route,method,url,init)=>writer.answer(route,method,url,init)})
+ reader.attach(client)
+ const screen=await reader.fetch('/v1/sessions/s1/native-terminal')
+ assert.equal(screen.status,200)
+ assert.deepEqual(await screen.json(),{text:"model menu",expect:FINGERPRINT})
+ assert.deepEqual(client.calls.shift(),["readForGeneration",{machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION},"native-terminal-screen",{}])
+ const receipt=await reader.fetch(`/v1/sessions/s1/cloud-receipts/native-key-1?action=native-terminal-input&execution_generation=${EXECUTION}`)
+ assert.equal(receipt.status,200)
+ assert.deepEqual(client.calls.pop()?.slice(1,5),[{machine:"mac-a",session:"s1"},"session-receipt",{request:"lookup-1",target_request:"native-key-1",execution_generation:EXECUTION,action:"native-terminal-input"},"read:lookup-1"])
+})

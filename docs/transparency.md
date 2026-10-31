@@ -6,6 +6,13 @@ The page describes a reviewed product revision, not a person's configuration. En
 
 ## Content ownership
 
+The Session composer's `/resume` shortcut opens the existing resume picker and
+does not send the command or inject a prompt into the current assistant. The
+picker retains the existing optional role selection and resume launcher. The
+English and Taiwan Traditional Chinese `claude-role`, `codex-role` and
+`role-skills` explanations still describe those choices and their effects;
+their source locations and review receipt follow the changed picker source.
+
 `web/console/src/pages/transparency/catalog.json` owns stable entry IDs, filters, runtime locations, original excerpts, source locations and review receipts. Human copy lives under `transparency.*` in both `public/catalogs/en.json` and `zh-Hant.json`. The website imports this inventory, both language copies and filter logic at an exact public product commit using its `scripts/sync-transparency.mjs`. Its build compares the imported content with current product main. No instruction excerpts are shipped in the Console bundle.
 
 Separate loading from applicability. In normal Clawdline-launched Codex Sessions, Board language and the Note rule are startup defaults; language falls through the configured language, machine, bundled language and `zh-Hant`. Claude's language and existing Project memory are automatic startup decisions. Roles, Skills, Board assignments, todos, notices and handoffs have their own triggers. Board assignment and reminder messages also carry the current Agent-language preference for Board text and person-facing task updates, subject to explicit Project/conversation rules and provider language choices. New Root briefing prose captures that preference until its startup message is delivered; English and Taiwan Traditional Chinese are translated, with English prose fallback for other locales. Reading a completion rule in a guide does not execute the completion action or reinject the guide every turn.

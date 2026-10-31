@@ -10149,5 +10149,20 @@
   "graphifyView.sourceMissing": "尚無索引",
   "graphifyView.sourceUnverified": "索引尚未核對",
   "graphifyView.focusNode": "聚焦節點",
-  "promptSuggestion.acceptHint": "按空白鍵或 Tab 補完。"
+  "promptSuggestion.acceptHint": "按空白鍵或 Tab 補完。",
+  "slashCommands.label": "指令與 Skills",
+  "slashCommands.availability": "可用指令依 CLI 版本、帳號及啟用功能而異。",
+  "nativeTerminal.title": "Terminal",
+  "nativeTerminal.back": "返回對話",
+  "nativeTerminal.screen": "目前 Session 的 Terminal",
+  "nativeTerminal.loading": "正在讀取目前的 CLI…",
+  "nativeTerminal.hint": "在同一個 CLI 繼續操作。文字會先輸入，再另外按 Enter 確認。",
+  "nativeTerminal.unavailable": "無法讀取或確認這個 Session 的 Terminal。",
+  "nativeTerminal.changed": "畫面或 CLI 已改變，這次操作未送出。請重新讀取後再繼續。",
+  "nativeTerminal.uncertain": "操作結果尚未確認。請先重新讀取畫面再繼續；不會自動重送。",
+  "nativeTerminal.refresh": "重新讀取畫面",
+  "nativeTerminal.keys": "Terminal 按鍵",
+  "nativeTerminal.text": "要輸入 CLI 的文字",
+  "nativeTerminal.type": "輸入文字",
+  "nativeTerminal.sending": "正在輸入…"
 }

@@ -172,6 +172,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   const routes: [string, string][] = [
  ["POST","/v1/projects/p1/graphify"],
  ["POST","/v1/sessions/s1/graphify"],
+    ["GET", "/v1/sessions/s1/native-terminal"],
+    ["POST", "/v1/sessions/s1/native-terminal"],
     ["POST", "/v1/sessions/s1/send"],
     ["POST", "/v1/sessions/s1/key"],
     ["POST", "/v1/sessions/s1/close"],
@@ -334,7 +336,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok(!("project-antigravity-consent-change" in DEFERRED))
   assert.equal(CARRIED["project-graphify-build"],"POST /v1/projects/{project}/graphify")
   assert.equal(CARRIED["session-graphify-build"],"POST /v1/sessions/{id}/graphify")
-  assert.equal(Object.keys(CARRIED).length, 179)
+  assert.equal(Object.keys(CARRIED).length, 181)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {
@@ -427,7 +429,8 @@ test("terminal HTTP routes remain local while hosted terminals use separate encr
   assert.equal(notCarriedDetail("POST", "/v1/terminals/trm_x/input"), MACHINE_ONLY[0].sentence)
   assert.equal(machineOnly("/v1/auth/devices/dev-1/revoke"), "", "a device route is not a terminal route")
   assert.equal(machineOnly("/v1/terminalsx"), "", "a prefix is a whole segment")
-  for (const word of words()) assert.ok(!/terminal/.test(word), word + ": the generic Router has no terminal word")
+  // Only the existing assistant foreground grid crosses the generic Session rail.
+  assert.deepEqual(words().filter(word=>/terminal/.test(word)).sort(),["native-terminal-input","native-terminal-screen"])
   assert.equal(mac.asked.length, 0, "nothing was asked of the machine")
 })
 

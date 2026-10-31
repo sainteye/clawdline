@@ -250,6 +250,8 @@ export interface WriteHost {
  * report name.
  */
 export type WriteRoute =
+ | {op:"native-terminal-screen";word:Carried<"native-terminal-screen">;session:string}
+ | {op:"native-terminal-input";word:Carried<"native-terminal-input">;session:string}
  | {op:"project-graphify-build";word:Carried<"project-graphify-build">;project:string}
  | {op:"session-graphify-build";word:Carried<"session-graphify-build">;session:string}
  | { op: "squad-write"; word: Carried<"squad.settings.update" | "squad.motion.update" | "squad.catalog.update" | "squad.role-draft"> }
@@ -473,6 +475,7 @@ const HTTP_STATUS: Readonly<Record<string, number>> = {
  * refused at once, so nothing pressed during the gap is sent after it.
  */
 export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["op"]>([
+  "native-terminal-screen",
   "voice-source",
   "work-v2-image",
   "usage-compare",
@@ -631,6 +634,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "sessions" && a && b === "git" && c === "diff" && segments.length === 4) {
       return { op: "git-diff", word: "git-diff", session: a }
     }
+    if (head === "sessions" && a && b === "native-terminal" && segments.length === 3) return {op:"native-terminal-screen",word:"native-terminal-screen",session:a}
     // A session's read for the same reason: asked under the row's identity.
     if (head === "sessions" && a && b === "screen" && segments.length === 3) {
       return { op: "screen", word: "screen", session: a }
@@ -820,6 +824,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   }
   if (head === "sessions" && a && segments.length === 3) {
     switch (b) {
+      case "native-terminal": return {op:"native-terminal-input",word:"native-terminal-input",session:a}
       case "send":
         return { op: "send", word: "send", session: a }
       case "key":
@@ -902,6 +907,8 @@ type Spelling = "flat" | "nested"
  */
 function spellingOf(route: WriteRoute): Spelling {
   switch (route.op) {
+    case "native-terminal-screen":
+    case "native-terminal-input":
     case "send":
     case "answer":
     case "end":
@@ -1155,6 +1162,21 @@ export class RelayWriter {
 
   private async carry(client: CloudWriteClient, route: WriteRoute, url: URL, init?: RequestInit): Promise<unknown> {
     switch (route.op) {
+      case "native-terminal-screen": {
+        if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, route.word, {}, init?.signal)
+        const target = await this.contentTarget(route.session, init?.signal, true)
+        if (!target) throw failure("execution_target_required", "The terminal needs an exact Session execution.", 409)
+        return this.contentRead(client, target, route.word, {}, init?.signal)
+      }
+      case "native-terminal-input": {
+        const body = await bodyOf(init)
+        const request = headerOf(init,"idempotency-key")
+        if (!request.trim()) throw failure("idempotency_key_required", "This action needs an Idempotency-Key.", 400)
+        const {identity,generation,client:current} = await this.mutationTarget(client,route.session,route.word)
+        if (typeof current._read !== "function") throw failure("cloud_not_carried",route.word,501)
+        return current._read(identity,route.word,{request,execution_generation:generation,expect:body.expect,
+          ...(typeof body.key === "string" && body.key ? {key:body.key} : {text:body.text})},"action:"+request)
+      }
       case "send": {
         const body = await bodyOf(init)
         const text = typeof body.text === "string" ? body.text : ""
@@ -1255,7 +1277,7 @@ export class RelayWriter {
       case "session-receipt": {
         const action = url.searchParams.get("action") ?? ""
         const generation = url.searchParams.get("execution_generation") ?? ""
-        if (!new Set(["send", "answer", "key", "interrupt", "end", "archive-session"]).has(action) || !/^[0-9a-f]{32}$/.test(generation)) {
+        if (!new Set(["send", "answer", "key", "interrupt", "end", "archive-session", "native-terminal-input"]).has(action) || !/^[0-9a-f]{32}$/.test(generation)) {
           throw failure("bad_request", "A receipt lookup needs its action and execution generation.", 400)
         }
         await this.host.settledWords?.("session-receipt", this.host.machine)
@@ -2405,6 +2427,7 @@ function declaredCommands(client: CloudWriteClient, machine: string): string[] |
 
 function sessionOf(route: WriteRoute): string | null {
   switch (route.op) {
+    case "native-terminal-input":
     case "send":
     case "answer":
     case "end":

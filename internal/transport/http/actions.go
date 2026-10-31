@@ -104,6 +104,8 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	switch verb {
+	case "native-terminal":
+		s.sessionWrite(w, r, keyBodyLimit, func(string, int64) string { return "bad_request" }, func(w http.ResponseWriter, raw []byte) { s.nativeTerminalInput(ctx, w, id, raw) })
 	case "send":
 		// Pictures travel inside this body, so it may be large; past the Swift
 		// server's limit it is refused with that server's words.
