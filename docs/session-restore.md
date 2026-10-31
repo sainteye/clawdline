@@ -171,3 +171,6 @@ the boot's heartbeat and the grace window — are registered and listed in [limi
   by conversation id before terminal id, so it follows the restored session only if the assistant
   keeps the conversation id when it resumes, and only while the title row is inside its retention
   window. Whether each assistant keeps the id on resume was not measured for this change.
+
+The other slash commands and their catalog sources are described in
+[native commands](native-commands.md).

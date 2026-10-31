@@ -274,6 +274,11 @@ type AssistantSkill struct {
 	// never offered in its place.
 	Description string `json:"description"`
 
+	// The exact native invocation, including its prefix, for example /model or
+	// /prompts:review. Absent for older replies and ordinary skills, whose provider
+	// default prefix still applies.
+	Invocation string `json:"invocation,omitempty"`
+
 	// What follows the prefix: `/` for Claude, `$` for Codex. A plugin's skill keeps
 	// its namespace, `plugin:skill`.
 	Name   string      `json:"name"`

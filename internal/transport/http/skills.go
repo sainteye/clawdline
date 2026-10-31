@@ -56,23 +56,15 @@ func (s *Server) sessionSkillsRoute(w http.ResponseWriter, r *http.Request, id s
 		key = "claude\x00" + item.CWD
 		read = func() skillmenu.Reading { return skillmenu.Claude(item.CWD, home) }
 	case session.AssistantCodex:
-		// A session started fresh carries no thread id, so its rollout cannot
-		// be named: an empty menu, as the Swift app answers it. The rollout is
-		// looked for only on a miss — finding it walks ~/.codex/sessions.
-		if item.ConversationID == "" {
-			if !s.admitPinnedTarget(w, r, id) {
-				return
-			}
-			writeSkills(w, skillmenu.Reading{Skills: []skillmenu.Skill{}}, time.Now())
-			return
-		}
-		key = "codex\x00" + item.ConversationID
+		key = "codex\x00" + item.ConversationID + "\x00" + item.CWD
 		read = func() skillmenu.Reading {
-			path := transcript.CodexPath(home, item.ConversationID)
-			if path == "" {
-				return skillmenu.Reading{Skills: []skillmenu.Skill{}}
+			var reading skillmenu.Reading
+			if item.ConversationID != "" {
+				if path := transcript.CodexPath(home, item.ConversationID); path != "" {
+					reading = skillmenu.Codex(path, home)
+				}
 			}
-			return skillmenu.Codex(path, home)
+			return skillmenu.WithCodexPrompts(reading, home)
 		}
 	case session.AssistantAntigravity:
 		if strings.TrimSpace(item.CWD) == "" {
@@ -115,6 +107,7 @@ func writeSkills(w http.ResponseWriter, r skillmenu.Reading, at time.Time) {
 			Name:        sk.Name,
 			Description: sk.Description,
 			Source:      contract.SkillSource(sk.Source),
+			Invocation:  sk.Invocation,
 		})
 	}
 	writeJSON(w, reply)

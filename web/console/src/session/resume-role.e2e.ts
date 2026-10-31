@@ -128,7 +128,9 @@ function daemon(): Server {
     if (path === "/v1/sessions/fixture-current/skills") return json(res, 200, {
       skills: [{ name: "resume", description: "A synthetic colliding skill", source: "project" }],
     })
-    if (path === "/v1/sessions/fixture-current/transcript") return json(res, 200, { id: "fixture-current", entries: [], more: false })
+    if (path === "/v1/transcript") return json(res, 200, { id: "fixture-current", entries: [], evidence: "transcript", signature: "fixture-empty" })
+    if (path.startsWith("/v1/work/v2/session-todos/")) return json(res, 200, {ok:true,done:0,active:0,waiting:0,assigned_items:[],recent_items:[],direct_todos:[],open_decisions:[],truncated:false})
+    if (path.startsWith("/v1/work/v2/human-interventions/")) return json(res, 200, {ok:true,rows:[],pruned_resolved:0})
     if (path === "/v1/sessions/fixture-current/info") return json(res, 200, { info: { session: { assistant: commandAssistant }, models: [] } })
     if (req.method === "POST" && path === "/v1/sessions/fixture-current/send") {
       let body = ""; req.on("data", chunk => body += String(chunk))
@@ -357,15 +359,19 @@ before(async () => {
 })
 
 after(async () => {
+  console.error("fixture cleanup: browser")
   browser?.close()
   if (browserProcess && browserProcess.exitCode === null && browserProcess.signalCode === null) {
     const gone = new Promise((ok) => browserProcess.once("exit", ok))
     browserProcess.kill()
     await gone
   }
+  console.error("fixture cleanup: server")
   server?.closeAllConnections()
   await new Promise<void>((ok) => (server ? server.close(() => ok()) : ok()))
+  console.error("fixture cleanup: profile")
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
+  console.error("fixture cleanup: done")
 })
 
 /** Open the start sheet, tick "resume", and enter the api place. */
@@ -592,3 +598,48 @@ test("the restore sheet names the role each conversation will come back with", a
     await tab.close()
   }
 })
+
+for (const assistant of ["claude", "codex"]) {
+ test(`${assistant}: every catalog command can be selected and native lines use the ordinary send`, async () => {
+  commandAssistant = assistant; commandSends = []
+  const tab = await Tab.open(browser, 390, 844, true)
+  try {
+   await tab.go('/')
+   await tab.run('localStorage.clear()')
+   await tab.go('/?catalog=' + assistant + '#session=fixture-current')
+   await compose(tab, '/')
+   await tab.run(`(async () => {
+    const end = Date.now()+5000;
+    while(document.querySelectorAll('#skill-menu .skill-option').length < 10) {
+     if(Date.now()>end) throw Error('catalog did not appear');
+     await new Promise(r=>setTimeout(r,20));
+    }
+   })()`)
+   const commands = await tab.run(`Array.from(document.querySelectorAll('#skill-menu .command'), node=>node.textContent)`)
+   assert.ok(commands.length > 9)
+   assert.ok(commands.includes('/model'))
+   assert.ok(commands.includes('/resume'))
+   assert.equal(await tab.run(`Array.from(document.querySelectorAll('#skill-menu .skill-option')).find(node=>node.querySelector('.command').textContent==='/model').querySelector('.description').textContent`), assistant === 'claude' ? '選擇模型' : '選擇模型與推理強度')
+   assert.ok(commands.includes(assistant === 'claude' ? '/effort' : '/permissions'))
+   // Exercise every rendered selection, including those outside the viewport.
+   for (const command of commands) {
+    await compose(tab, '/')
+    await tab.run(`Array.from(document.querySelectorAll('#skill-menu .skill-option')).find(node=>node.querySelector('.command').textContent===${JSON.stringify(command)}).click()`)
+    assert.equal(await tab.run(`document.querySelector('#msg').textContent`), command + ' ')
+   }
+   assert.deepEqual(commandSends, [], 'choosing metadata never executes a command')
+   await compose(tab, '/')
+   await tab.shot(`native-commands-${assistant}`)
+   await compose(tab, assistant === 'claude' ? '/effort high' : '/plan inspect the API')
+   await tab.click('.composer button[type=submit]')
+   const end=Date.now()+3000
+   while(!commandSends.length && Date.now()<end) await new Promise(r=>setTimeout(r,20))
+   assert.deepEqual(commandSends, [assistant === 'claude' ? '/effort high' : '/plan inspect the API'])
+   await compose(tab, '/future-provider-command value')
+   await tab.click('.composer button[type=submit]')
+   const next=Date.now()+3000
+   while(commandSends.length<2 && Date.now()<next) await new Promise(r=>setTimeout(r,20))
+   assert.equal(commandSends[1],'/future-provider-command value', 'execution has no builtin allowlist')
+  } finally { commandAssistant=''; await tab.close() }
+ })
+}

@@ -10142,5 +10142,7 @@
   "graphifyView.sourceStale": "Sources changed",
   "graphifyView.sourceMissing": "No index yet",
   "graphifyView.sourceUnverified": "Unverified index",
-  "graphifyView.focusNode": "Focus node"
+  "graphifyView.focusNode": "Focus node",
+  "slashCommands.label": "Commands and skills",
+  "slashCommands.availability": "Available commands depend on your CLI version, account and enabled features."
 }

@@ -301,6 +301,13 @@ export interface AssistantSkill {
   description: string
 
   /**
+   * The exact native invocation, including its prefix, for example /model or
+   * /prompts:review. Absent for older replies and ordinary skills, whose provider
+   * default prefix still applies.
+   */
+  invocation?: string
+
+  /**
    * What follows the prefix: `/` for Claude, `$` for Codex. A plugin's skill keeps
    * its namespace, `plugin:skill`.
    */

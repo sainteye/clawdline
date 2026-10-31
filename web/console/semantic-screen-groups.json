@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10142,
+  "englishContentKeys": 10144,
   "riskKeys": 4499,
-  "nonRiskCount": 5643,
+  "nonRiskCount": 5645,
   "groups": [
     {
       "name": "admin / other",
@@ -5331,6 +5331,17 @@
         "shell.menuPaste",
         "shell.menuSelectAll",
         "shell.pairLinkReturn"
+      ]
+    },
+    {
+      "name": "slashCommands / other",
+      "count": 2,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "slashCommands.availability",
+        "slashCommands.label"
       ]
     },
     {
