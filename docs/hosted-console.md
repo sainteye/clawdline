@@ -325,3 +325,9 @@ one set of OG/Twitter tags, a reachable image/png response with exact 1200×630 
 navigation updating both title and metadata. Also open the existing signed-in console and verify
 that changing the HTML response has not affected startup, navigation or pairing. No API or relay
 redeployment is required for this rendering layer.
+
+## Public website analytics
+
+The operations overview includes [public website visits](public-analytics.md). Its report API
+and website collection ship from the Cloud service; deploy and verify those contracts separately
+from the hosted console. A console BUILD stamp does not prove collection or member identity.

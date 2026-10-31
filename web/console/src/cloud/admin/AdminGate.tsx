@@ -267,7 +267,7 @@ export function AdminGate({ declared }: { declared: string }) {
               {say("staleNote", { code: phase.stale.code, time: new Intl.DateTimeFormat(locale, { timeZone: "UTC", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(phase.overview.generated_at)) })}
             </p>
           ) : null}
-          {route === "overview" ? <OverviewPage overview={demo ? sample : phase.overview} say={say} locale={locale} go={go} /> : null}
+          {route === "overview" ? <OverviewPage apiOrigin={config?.apiOrigin ?? ""} demo={demo} overview={demo ? sample : phase.overview} say={say} locale={locale} go={go} /> : null}
           {route === "survey" && config ? <SurveyStatistics apiOrigin={config.apiOrigin} demo={demo} refreshToken={phase.overview.generated_at} /> : null}
           {route === "accounts" ? <AccountsPage overview={demo ? sample : phase.overview} say={say} locale={locale} go={go} /> : null}
           {route === "usage" ? <UsagePage overview={demo ? sample : phase.overview} say={say} locale={locale} go={go} /> : null}

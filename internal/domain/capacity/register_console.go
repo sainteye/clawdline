@@ -2,7 +2,7 @@ package capacity
 
 // consoleBounds is every registered row named console.*.
 func consoleBounds() []Entry {
-	return append(append(append(append(append(connectionHealthUIBounds(), servicePerformanceUIBounds()...), supportUIBounds()...), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
+	return append(append(append(append(append(append(publicAnalyticsUIBounds(), connectionHealthUIBounds()...), servicePerformanceUIBounds()...), supportUIBounds()...), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
 		{
 			Name: "console.video_preview_frames", Class: Buffer, Unit: Rows,
 			Limit: MaximumVideoPreviewFrames, AtLimit: Refuse,

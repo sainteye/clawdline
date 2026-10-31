@@ -279,6 +279,13 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.owner_retention_request_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.persona_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.pinned_list_read_timeout_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
+| `console.public_analytics_activems` | 1800000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_countries` | 250 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_days` | 90 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_page` | 10000 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_path` | 300 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_readms` | 10000 | `milliseconds` | `expire` | `sender, diagnostics` | — |
+| `console.public_analytics_rows` | 20 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.relay_feature_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
 | `console.service_performance_alerts` | 30 | `rows` | `refuse` | `diagnostics` | — |
