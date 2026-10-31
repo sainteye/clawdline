@@ -62,14 +62,14 @@ test("a refusal that proves nothing was typed fails the card; anything else leav
   assert.equal(h.cards.card(d.token)?.state, "unknown", "a terminal that failed part-way may have taken the words")
 })
 
-// F2: every attempt of one card is one request, so the Mac can answer a
-// second attempt with the first one's answer instead of typing it again.
-test("every attempt of a card is sent under the card's one request", async () => {
+// F2: unanswered attempts keep their request, so a lost reply cannot type twice.
+test("an unanswered card keeps its request after the transcript is inspected", async () => {
   const h = harness()
-  h.answer({ ok: false, status: 429, code: "busy" })
+  h.answer({ ok: false, status: null, code: "offline" })
   const card = h.cards.add("s", "delete the build directory", [], T0)
   await h.sender.deliver(card)
   h.clock.t += 5_000
+  await h.sender.look(card.token)
   await h.sender.resend(card.token)
   assert.equal(h.posts.length, 2)
   assert.ok(h.posts[0].request, "the first attempt names a request")
@@ -90,7 +90,7 @@ test("try again after a definite refusal sends despite a failed read-back", asyn
   await h.sender.resend(card.token)
   assert.deepEqual(h.steps.slice(-2), ["wake", "read"], "retry wakes Cloud before checking the transcript")
   assert.equal(h.posts.length, 2, "a failed read cannot block a send known not to have arrived")
-  assert.equal(h.posts[1].request, h.posts[0].request)
+  assert.notEqual(h.posts[1].request, h.posts[0].request, "a definite refusal may be filed by Cloud")
   assert.equal(h.cards.card(card.token)?.state, "accepted")
 })
 
@@ -106,7 +106,16 @@ test("retry after an execution change uses a fresh request", async () => {
   assert.equal(h.posts[1].text, h.posts[0].text)
 })
 
-for (const code of ["execution_source_unknown", "execution_check_unavailable", "execution_records_full"]) {
+for (const [code, status] of [
+  ["backend_unsupported", 501],
+  ["busy", 429],
+  ["session_asking", 409],
+  ["forbidden", 403],
+  ["session_not_found", 404],
+  ["execution_source_unknown", 503],
+  ["execution_check_unavailable", 503],
+  ["execution_records_full", 503],
+] as const) {
   test(`an explicit retry escapes a filed ${code} without replaying an uncertain send`, async () => {
     const cards = new PendingSends()
     const receipts = new Map<string, Posted>()
@@ -119,7 +128,7 @@ for (const code of ["execution_source_unknown", "execution_check_unavailable", "
         requests.push(card.request)
         const replay = receipts.get(card.request)
         if (replay) return replay
-        const answer: Posted = admitted ? { ok: true } : { ok: false, status: 503, code }
+        const answer: Posted = admitted ? { ok: true } : { ok: false, status, code }
         if (answer.ok) effects++
         receipts.set(card.request, answer)
         return answer
@@ -140,16 +149,18 @@ for (const code of ["execution_source_unknown", "execution_check_unavailable", "
   })
 }
 
-test("an unknown execution-check outcome keeps its request after transcript inspection", async () => {
-  const h = harness()
-  h.answer({ ok: false, status: 503, code: "execution_source_unknown", outcome: "unknown" })
-  const card = h.cards.add("s", "follow up", [], T0)
-  await h.sender.deliver(card)
-  await h.sender.look(card.token)
-  await h.sender.resend(card.token)
-  assert.equal(h.posts.length, 2)
-  assert.equal(h.posts[1].request, h.posts[0].request, "an unknown outcome cannot authorize a new effect")
-})
+for (const code of ["backend_unsupported", "busy", "execution_source_unknown"]) {
+  test(`an unknown ${code} outcome keeps its request after transcript inspection`, async () => {
+    const h = harness()
+    h.answer({ ok: false, status: 503, code, outcome: "unknown" })
+    const card = h.cards.add("s", "follow up", [], T0)
+    await h.sender.deliver(card)
+    await h.sender.look(card.token)
+    await h.sender.resend(card.token)
+    assert.equal(h.posts.length, 2)
+    assert.equal(h.posts[1].request, h.posts[0].request, "an unknown outcome cannot authorize a new effect")
+  })
+}
 
 test("try again after an uncertain send still stops when read-back fails", async () => {
   const h = harness()
