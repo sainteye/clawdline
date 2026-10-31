@@ -82,7 +82,9 @@ func newConnection(t *testing.T, f *fakeGitHub) (*Connection, chan time.Duration
 	t.Helper()
 	srv := httptest.NewServer(f.handler(t))
 	t.Cleanup(srv.Close)
-	f.now = time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	// The runtime's own time, so no test depends on the date it runs on. A test
+	// about a client clock that disagrees with it sets f.now after this.
+	f.now = time.Now().UTC().Truncate(time.Second)
 	client := &Client{HTTP: srv.Client(), OAuthURL: srv.URL, APIURL: srv.URL, ClientID: ClientID,
 		Now: func() time.Time { return f.now }}
 	c := NewConnection(client, filepath.Join(t.TempDir(), "integrations", "github"))
@@ -349,5 +351,23 @@ func TestAProjectWithoutAGitHubRemoteSaysWhichWay(t *testing.T) {
 	got, err := TargetFor(context.Background(), remoteAnswer{url: "git@github.com:octo/widgets.git"}, "/p")
 	if err != nil || got.Repo != "octo/widgets" {
 		t.Fatalf("%+v %v", got, err)
+	}
+}
+
+// The device code's expiry is on the client's clock. A client clock behind or
+// ahead of the runtime's must not end the flow at once or let it outlive the
+// code: until 76d84444c a clock one hour behind ended every flow with
+// expired_token before the first poll.
+func TestADeviceFlowFollowsTheClientClockNotTheRuntimeClock(t *testing.T) {
+	for _, skew := range []time.Duration{-time.Hour, -24 * 365 * time.Hour, time.Hour} {
+		t.Run(skew.String(), func(t *testing.T) {
+			f := &fakeGitHub{polls: []string{"authorization_pending", "token"}}
+			c, _ := newConnection(t, f)
+			f.now = f.now.Add(skew)
+			if _, err := c.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, c, StateConnected)
+		})
 	}
 }
