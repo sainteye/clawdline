@@ -42,7 +42,7 @@ function refused(code, message) {
 function pinnedRead(type, body) {
   return (type === "sessions.list" && typeof body?.request === "string" ||
     type === "info" && ["full", "remote-permission"].includes(body?.parts) ||
-    ["session-graphify", "transcript", "skills", "image", "git", "git-diff", "outputs", "output-file", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox"].includes(type)) &&
+    ["session-graphify", "native-terminal-screen", "transcript", "skills", "image", "git", "git-diff", "outputs", "output-file", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox"].includes(type)) &&
     (body?.expected_generation !== undefined || type === "sessions.list")
 }
 
@@ -61,7 +61,7 @@ function basePinnedReadName(type, body) {
   if (type === "sessions.list" && typeof body?.request === "string" && body.request) return "read:" + body.request
   if (type === "info" && ["full", "remote-permission"].includes(body?.parts)) return "info." + body.parts
   if (type === "skills") return "skills"
-  if (type === "session-graphify" || type === "git" || type === "screen" || type === "documents" || type === "outputs") return type
+  if (type === "session-graphify" || type === "native-terminal-screen" || type === "git" || type === "screen" || type === "documents" || type === "outputs") return type
   if ((type === "output-file" || type === "git-diff" || type === "document" || type === "video" || type === "peer-inbox") &&
     typeof body?.request === "string" && body.request) return "read:" + body.request
   if (type === "agent" && typeof body?.agent === "string" && body.agent) {

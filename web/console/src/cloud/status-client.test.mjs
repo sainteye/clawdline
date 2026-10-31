@@ -715,60 +715,64 @@ test("native older pages keep their negotiated view through relay and carrier pu
   }
 })
 
-test("Graphify reads cross the real pinned client on relay and carrier without write access", async (t) => {
+test("Graphify and Terminal reads cross the real pinned client on relay and carrier without write access", async (t) => {
   const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"])
   const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
-  for (const transport of ["relay", "carrier"]) {
-    await t.test(transport, async () => {
-      let sequence = 10
-      const client = new StatusCloudClient({ relayURL: "wss://relay.example.test", deviceToken: "fixture",
-        deviceID: "viewer", devicePrivateKey: keys.privateKey, nextSequence: async () => sequence++ })
-      client.ready = true
-      client.allowWrites = false
-      client.machineDescriptor = () => null
-      client._unsupportedRefusal = () => null
-      client._offlineRefusal = () => null
-      client._outboundMachinePairing = async () => ({ keyID: "key", masterKey })
-      client._subscriptionRoom = () => null
-      client.subscribe = () => {}
-      client._releaseSubscription = () => {}
-      let published
-      const publication = new Promise(resolve => { published = resolve })
-      client._send = frame => published(frame.envelope)
-      client._carrierFor = () => transport === "carrier" ? { open: true, send: published } : null
-      const controller = new AbortController()
-      const result = client.readForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA },
-        "session-graphify", {}, controller.signal)
-      try {
-        const envelope = await Promise.race([publication, result.then(() => assert.fail("read settled before publication"))])
-        const fields = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
-          { name: "AES-GCM", iv: base64Bytes(envelope.nonce, "nonce") }, masterKey, base64Bytes(envelope.ct, "ct"))))
-        assert.equal(envelope.ch, "r/m")
-        assert.equal(fields.type, "session-graphify")
-        assert.equal(fields.machine_id, "m")
-        assert.equal(fields.session, "s")
-        assert.equal(fields.expected_generation, genA)
-        assert.equal(client.allowWrites, false)
-        const key = "m\u0000s\u0000session-graphify"
-        assert.ok(client.readWaiters.has(key))
-        assert.ok(client.pinnedReadProofs.has(key))
-        const body = { state: "index_missing", nodes: [], links: [] }
-        client._applySnapshot({ kind: "transcript", machine: "m", session: "s" }, {
-          read: "session-graphify", machine_id: "m", session_id: "s", expected_generation: genA,
-          seq: envelope.seq, body,
-        }, { seq: 50, ts: Date.now() }, false)
-        assert.deepEqual(await result, body)
-        assert.equal(client.readWaiters.size, 0)
-        assert.equal(client.pinnedReadProofs.size, 0)
-        assert.equal(client.pendingBySequence.size, 0)
-        await assert.rejects(() => client.readForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA },
-          "session-graphify-build", {}, controller.signal), { code: "read_only_channel" })
-        assert.equal(client.allowWrites, false)
-      } finally {
-        controller.abort()
-        await result.catch(() => {})
-      }
-    })
+  for (const [word, body, writeWord] of [
+    ["session-graphify", { state: "index_missing", nodes: [], links: [] }, "session-graphify-build"],
+    ["native-terminal-screen", { text: "Select a model", execution_generation: genA, frame: "fixture" }, "native-terminal-input"],
+  ]) {
+    for (const transport of ["relay", "carrier"]) {
+      await t.test(`${word}: ${transport}`, async () => {
+        let sequence = 10
+        const client = new StatusCloudClient({ relayURL: "wss://relay.example.test", deviceToken: "fixture",
+          deviceID: "viewer", devicePrivateKey: keys.privateKey, nextSequence: async () => sequence++ })
+        client.ready = true
+        client.allowWrites = false
+        client.machineDescriptor = () => null
+        client._unsupportedRefusal = () => null
+        client._offlineRefusal = () => null
+        client._outboundMachinePairing = async () => ({ keyID: "key", masterKey })
+        client._subscriptionRoom = () => null
+        client.subscribe = () => {}
+        client._releaseSubscription = () => {}
+        let published
+        const publication = new Promise(resolve => { published = resolve })
+        client._send = frame => published(frame.envelope)
+        client._carrierFor = () => transport === "carrier" ? { open: true, send: published } : null
+        const controller = new AbortController()
+        const result = client.readForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA },
+          word, {}, controller.signal)
+        try {
+          const envelope = await Promise.race([publication, result.then(() => assert.fail("read settled before publication"))])
+          const fields = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: base64Bytes(envelope.nonce, "nonce") }, masterKey, base64Bytes(envelope.ct, "ct"))))
+          assert.equal(envelope.ch, "r/m")
+          assert.equal(fields.type, word)
+          assert.equal(fields.machine_id, "m")
+          assert.equal(fields.session, "s")
+          assert.equal(fields.expected_generation, genA)
+          assert.equal(client.allowWrites, false)
+          const key = "m\u0000s\u0000" + word
+          assert.ok(client.readWaiters.has(key))
+          assert.ok(client.pinnedReadProofs.has(key))
+          client._applySnapshot({ kind: "transcript", machine: "m", session: "s" }, {
+            read: word, machine_id: "m", session_id: "s", expected_generation: genA,
+            seq: envelope.seq, body,
+          }, { seq: 50, ts: Date.now() }, false)
+          assert.deepEqual(await result, body)
+          assert.equal(client.readWaiters.size, 0)
+          assert.equal(client.pinnedReadProofs.size, 0)
+          assert.equal(client.pendingBySequence.size, 0)
+          await assert.rejects(() => client.readForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA },
+            writeWord, {}, controller.signal), { code: "read_only_channel" })
+          assert.equal(client.allowWrites, false)
+        } finally {
+          controller.abort()
+          await result.catch(() => {})
+        }
+      })
+    }
   }
 })
 
