@@ -222,6 +222,8 @@ export function Composer({
   const ghost = !composing.current && !text && !shotsBusy && voice === "off" && !sending && !skills.shown && !Shots.count()
     ? promptSuggestion.candidate : null
   const cardsVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
+  const terminalShortcut = !remote && row && onNativeTerminal && nativeTerminalCommand("/help", row.assistant, row.backend) &&
+    (text.trimStart().startsWith("/") || pendingSends.of(row.id).some(card => nativeTerminalCommand(card.text, row.assistant, row.backend, card.pictures.length)))
   useEffect(() => {
     if (!protocolOwned || !row) return
     const observation = row.source?.freshness === "current" && row.source.observed_at
@@ -674,7 +676,7 @@ export function Composer({
       }}
     >
       {remoteControl && row && <RemotePermissions row={row} write={!!write} />}
-      {!remote && <Waiting row={row} assistantFacts={assistantFacts} write={write} onScreen={onScreen} />}
+      {!remote && <Waiting row={row} assistantFacts={assistantFacts} write={write} onScreen={row && nativeTerminalCommand("/help",row.assistant,row.backend) ? onNativeTerminal ?? onScreen : onScreen} />}
       <div
         className="shots"
         id="shots"
@@ -696,6 +698,10 @@ export function Composer({
           browser's own permission sheet, which is on top of the page and says
           more than this row could, so the row stays hidden for it. */}
       <div className="voice" id="voice" role="status" hidden={voice === "off" || voice === "opening"} ref={voiceRow}></div>
+      {terminalShortcut &&
+        <div className="native-terminal-shortcut">
+          <button type="button" onClick={onNativeTerminal}>{catalogWord("nativeTerminal", "open")}</button>
+        </div>}
       <small hidden={!skills.shown}>{catalogWord("slashCommands", "availability")}</small>
       <div
         ref={skillMenu}

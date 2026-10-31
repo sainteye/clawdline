@@ -52,6 +52,9 @@ let commandAssistant = ""
 let commandCWD = "/work/api"
 let commandPastFailure = false
 let commandLive = false
+let commandWaiting = false
+let commandAliasTurns = false
+let commandSendUncertain = false
 let commandSends: string[] = []
 let commandPastReads: string[] = []
 let nativeRequests: {key?:string;text?:string;request:string}[]=[]
@@ -70,7 +73,7 @@ function snapshot() {
       provenance: "fixture", source: { freshness: "current", observed_at: now(), provenance: "fixture" },
     },
     sessions: commandAssistant ? [{ id: "fixture-current", backend: "tmux", assistant: commandAssistant,
-      label: "Current fixture", sessionId: "fixture-conversation", cwd: commandCWD, state: "idle", evidence: "process",
+      label: "Current fixture", sessionId: "fixture-conversation", cwd: commandCWD, state: commandWaiting ? "waiting" : "idle", evidence: "process",
       isClaude: commandAssistant === "claude", work_state: "ready",
       activity: { known: true, at: now() }, closeability: safeCommandSession() },
       ...(commandLive ? ["fixture-wrong", "fixture-live"].map(id => ({ id, backend: "tmux",
@@ -143,13 +146,13 @@ function daemon(): Server {
     if (path === "/v1/sessions/fixture-current/skills") return json(res, 200, {
       skills: [{ name: "resume", description: "A synthetic colliding skill", source: "project" }],
     })
-    if (path === "/v1/transcript") return json(res, 200, { id: "fixture-current", entries: [], evidence: "transcript", signature: "fixture-empty" })
+    if (path === "/v1/transcript") return json(res, 200, { id: "fixture-current", entries: commandAliasTurns && commandSends.includes("/cost") ? [{role:"user",text:"/usage",at:now()}] : [], evidence: "transcript", signature: commandAliasTurns && commandSends.length ? "fixture-alias" : "fixture-empty" })
     if (path.startsWith("/v1/work/v2/session-todos/")) return json(res, 200, {ok:true,done:0,active:0,waiting:0,assigned_items:[],recent_items:[],direct_todos:[],open_decisions:[],truncated:false})
     if (path.startsWith("/v1/work/v2/human-interventions/")) return json(res, 200, {ok:true,rows:[],pruned_resolved:0})
     if (path === "/v1/sessions/fixture-current/info") return json(res, 200, { info: { session: { assistant: commandAssistant }, models: [] } })
     if (req.method === "POST" && path === "/v1/sessions/fixture-current/send") {
       let body = ""; req.on("data", chunk => body += String(chunk))
-      req.on("end", () => { commandSends.push(JSON.parse(body).text); json(res, 200, { ok: true }) })
+      req.on("end", () => { commandSends.push(JSON.parse(body).text); commandSendUncertain ? json(res,503,{error:"send_failed",detail:"fixture uncertain",outcome:"unknown"}) : json(res, 200, { ok: true }) })
       return
     }
     if (req.method === "POST" && /^\/v1\/places\/[^/]+\/resume\//.test(path)) {
@@ -320,9 +323,10 @@ class Tab {
   click(selector: string): Promise<void> {
     return this.run(`(async () => {
       const selector = ${JSON.stringify(selector)}
-      for (let i = 0; i < 100 && !document.querySelector(selector); i++) await new Promise((r) => setTimeout(r, 50))
+      for (let i = 0; i < 100 && (!document.querySelector(selector) || document.querySelector(selector).disabled); i++) await new Promise((r) => setTimeout(r, 50))
       const button = document.querySelector(selector)
       if (!button) throw new Error('missing control: ' + selector)
+      if (button.disabled) throw new Error('disabled control: ' + selector)
       button.click()
     })()`)
   }
@@ -650,8 +654,11 @@ for (const assistant of ["claude", "codex"]) {
    const end=Date.now()+3000
    while(!commandSends.length && Date.now()<end) await new Promise(r=>setTimeout(r,20))
    assert.deepEqual(commandSends, [assistant === 'claude' ? '/effort high' : '/plan inspect the API'])
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal').hidden){if(Date.now()>end)throw Error('terminal did not open after delivery');await new Promise(r=>setTimeout(r,20))}})()`)
    assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),false)
+   assert.equal(await tab.run(`document.querySelector('#session-todos').getBoundingClientRect().height`),0,'Terminal leaves no Session to-do row')
    await tab.click('#native-terminal .panel-view-head button')
+   assert.ok(await tab.run(`document.querySelector('#session-todos').getBoundingClientRect().height`)>0,'returning to the conversation restores its to-do row')
    await compose(tab, '/future-provider-command value')
    await tab.click('.composer button[type=submit]')
    const next=Date.now()+3000
@@ -689,3 +696,83 @@ for (const assistant of ["claude", "codex"]) {
   } finally { commandAssistant=''; await tab.close() }
  })
 }
+
+for (const assistant of ["claude", "codex"]) {
+ test(`${assistant}: the slash shortcut opens Terminal manually and preserves the draft`,async()=>{
+  commandAssistant=assistant;commandSends=[];nativeRequests=[]
+  const tab=await Tab.open(browser,390,844,true)
+  try {
+   await tab.go("/#session=fixture-current")
+   await compose(tab,"/")
+   await tab.click('.native-terminal-shortcut button')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal')?.hidden!==false){if(Date.now()>end)throw Error('manual Terminal did not open');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.equal(await tab.run(`document.querySelector('#msg').textContent`),"/")
+   assert.equal(await tab.run(`document.querySelector('#session-todos').getBoundingClientRect().height`),0)
+   assert.deepEqual(commandSends,[])
+   assert.deepEqual(nativeRequests,[])
+   await tab.click('#native-terminal .panel-view-head button')
+   assert.equal(await tab.run(`document.querySelector('#msg').textContent`),"/")
+   await compose(tab,"/future-provider-command value")
+   await tab.click('.native-terminal-shortcut button')
+   await tab.click('#native-terminal .panel-view-head button')
+   assert.equal(await tab.run(`document.querySelector('#msg').textContent`),"/future-provider-command value")
+   await compose(tab,"ordinary text")
+   assert.equal(await tab.run(`document.querySelector('.native-terminal-shortcut')`),null)
+   await compose(tab,"$skill")
+   assert.equal(await tab.run(`document.querySelector('.native-terminal-shortcut')`),null)
+   assert.deepEqual(commandSends,[])
+   assert.deepEqual(nativeRequests,[])
+  }finally{commandAssistant="";await tab.close()}
+ })
+ test(`${assistant}: unparsed menus continue in Terminal without sending a second command`, async()=>{
+  commandAssistant=assistant;commandWaiting=true;commandSends=[];nativeRequests=[]
+  const tab=await Tab.open(browser,390,844,true)
+  try {
+   await tab.go("/#session=fixture-current")
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal')?.hidden!==false){if(Date.now()>end)throw Error('unparsed menu did not hand off to Terminal');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.equal(await tab.run(`document.querySelector('#session-todos').getBoundingClientRect().height`),0)
+   assert.deepEqual(commandSends,[])
+   assert.deepEqual(nativeRequests,[])
+   await tab.click('#native-terminal .panel-view-head button')
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),true)
+   assert.ok(await tab.run(`document.querySelector('#session-todos').getBoundingClientRect().height`)>0)
+   await tab.click('#waiting [data-screen]')
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),false)
+   assert.deepEqual(commandSends,[])
+   assert.deepEqual(nativeRequests,[])
+  }finally{commandWaiting=false;commandAssistant="";await tab.close()}
+ })
+ test(`${assistant}: a delivered command without a transcript turn stops syncing after Terminal handoff`, async()=>{
+  commandAssistant=assistant;commandWaiting=false;commandAliasTurns=assistant==="claude";commandSends=[];nativeRequests=[]
+  const tab=await Tab.open(browser,1100,800,false)
+  try {
+   await tab.go("/#session=fixture-current")
+   await compose(tab,"/")
+   const command=assistant==="claude"?"/cost":"/status"
+   await tab.run(`(async()=>{const end=Date.now()+5000;for(;;){const option=[...document.querySelectorAll('#skill-menu .skill-option')].find(e=>e.querySelector('.command')?.textContent===${JSON.stringify(command)});if(option){option.click();return}if(Date.now()>end)throw Error('command option not ready');await new Promise(r=>setTimeout(r,20))}})()`)
+   await tab.click('.composer button[type=submit]')
+   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('Terminal frame not ready');await new Promise(r=>setTimeout(r,20))}})()`)
+   await tab.click('#native-terminal .panel-view-head button')
+   await tab.run(`(async()=>{const end=Date.now()+3000;while(document.querySelector('.entry.pending[data-send=accepted]')){if(Date.now()>end)throw Error('delivered native command still waits for a nonexistent transcript turn');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.deepEqual(commandSends,[assistant==="claude"?"/cost":"/status"])
+   assert.deepEqual(nativeRequests,[])
+  }finally{commandAssistant="";commandAliasTurns=false;await tab.close()}
+ })
+}
+
+test("a native frame does not discard or replay an uncertain command",async()=>{
+ commandAssistant="claude";commandSendUncertain=true;commandSends=[];nativeRequests=[]
+ const tab=await Tab.open(browser,1100,800,false)
+ try {
+  await tab.go("/#session=fixture-current")
+  await compose(tab,"/future-provider-command argument")
+  await tab.click('.composer button[type=submit]')
+  await tab.run(`(async()=>{const end=Date.now()+5000;while(!document.querySelector('.entry.pending[data-send=unknown]')){if(Date.now()>end)throw Error('uncertain delivery not retained');await new Promise(r=>setTimeout(r,20))}})()`)
+  await tab.click('.native-terminal-shortcut button')
+  await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('Terminal not ready');await new Promise(r=>setTimeout(r,20))}})()`)
+  await tab.click('#native-terminal .panel-view-head button')
+  assert.equal(await tab.run(`document.querySelectorAll('.entry.pending[data-send=unknown]').length`),1)
+  assert.deepEqual(commandSends,["/future-provider-command argument"])
+  assert.deepEqual(nativeRequests,[])
+ }finally{commandAssistant="";commandSendUncertain=false;await tab.close()}
+})

@@ -3,6 +3,8 @@ import type { NativeTerminalFrame, SessionRow } from "@clawdline/contract"
 import { client } from "../client.js"
 import { catalogWord } from "../catalog.js"
 import { pressKey } from "../press-key.js"
+import { pendingSends } from "./send.js"
+import { nativeTerminalCommand } from "./native-terminal-command.js"
 import { FOLLOW_MS } from "./transcript-follow.js"
 import "./native-terminal.css"
 
@@ -33,6 +35,11 @@ export function NativeTerminalPanel({row,open,onClose}:{row:SessionRow|null;open
    if(mine!==epoch.current || destination.current!==id) return
    if(typeof next.expect!=="string" || !/^[a-f0-9]{64}$/.test(next.expect) || typeof next.text!=="string") throw Error("invalid_frame")
    held.current=next;setFrame(next)
+   // A delivered slash command has a visible native continuation now; it need
+   // not invent a user transcript turn. Uncertain sends retain their receipt.
+   for (const card of pendingSends.of(id)) {
+    if (card.state === "accepted" && nativeTerminalCommand(card.text,row?.assistant,row?.backend,card.pictures.length)) pendingSends.dismiss(card.token)
+   }
    if(acknowledge){setBlocked(false);setFailure("")}
   } catch(error) {
    if(mine!==epoch.current)return

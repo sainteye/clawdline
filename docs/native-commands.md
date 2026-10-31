@@ -86,6 +86,12 @@ The panel exposes navigation, Tab, Shift+Tab, Enter, Esc and text entry, with a 
 to the conversation. The Session actions menu can reopen the same Terminal panel
 without sending another command. Entering text does not submit it: the person presses Enter
 separately. There is no command-name allowlist deciding which dialog is supported.
+Typing `/` also reveals a small Open Terminal button above the composer. It remains
+available while the slash draft is present, including an unknown command, so the
+person can switch manually when automatic detection misses a screen. Switching
+preserves the conversation draft and sends neither that draft nor a terminal key.
+The shortcut also stays available while a native command's delivery card is pending,
+including an uncertain outcome after the composer has cleared.
 
 The native-terminal read and input routes require API level 37. The input route uses
 existing send permission, per-Session serialization, one idempotency key per press,
@@ -109,3 +115,14 @@ receipts, foreground replacement and exit checks, real HTTP authentication and
 idempotency, Cloud execution replacement, and browser key/text/return interactions.
 The synthetic CLI makes no model or account request. Provider-specific feature and
 account availability still needs the provider's own CLI to decide.
+
+Unreadable waiting menus also open the same Terminal automatically on physical
+Claude Code and Codex Sessions. Returning to the conversation keeps the explicit
+Terminal entrance available and does not cancel the CLI dialog. Once a confirmed
+delivery has a verified native frame, its pending card stops waiting for a matching
+transcript turn. Aliases may be recorded under another name, and some commands
+write no turn at all. Uncertain deliveries are kept and never resent automatically.
+The Session to-do row is hidden in Terminal and returns with the conversation.
+
+Measured command behavior and the limits of the real CLI probes are recorded in
+[native-command-coverage.md](native-command-coverage.md).

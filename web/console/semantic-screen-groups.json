@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10281,
+  "englishContentKeys": 10282,
   "riskKeys": 4555,
-  "nonRiskCount": 5726,
+  "nonRiskCount": 5727,
   "groups": [
     {
       "name": "admin / other",
@@ -5896,7 +5896,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 139,
+      "count": 140,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -5958,6 +5958,7 @@
         "transparency.card.gemini-acp-context.condition",
         "transparency.card.gemini-acp-context.summary",
         "transparency.card.gemini-acp-context.title",
+        "transparency.card.gemini-auto-name.summary",
         "transparency.card.gemini-auto-name.title",
         "transparency.card.handoff.condition",
         "transparency.card.handoff.effect",

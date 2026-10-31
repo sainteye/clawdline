@@ -14,3 +14,9 @@ test("all slash commands, including future names, can continue in the same CLI",
  }
  assert.equal(nativeTerminalCommand("/model","antigravity","tmux"),false)
 })
+
+for (const assistant of ["claude", "codex"]) {
+ assert.equal(nativeTerminalCommand("/resume",assistant,"tmux"),false)
+ assert.equal(nativeTerminalCommand("/resume previous",assistant,"iterm"),false)
+ assert.equal(nativeTerminalCommand("/resume-plugin",assistant,"tmux"),true)
+}
