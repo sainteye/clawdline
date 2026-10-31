@@ -130,7 +130,7 @@ func (p Planner) Name(ctx context.Context, text, assistant string) (string, erro
 			return "", failed(err, raw, stderrOf(err))
 		}
 		var ok bool
-		object, ok = objectFromText(raw)
+		object, ok = objectFromAntigravity(raw)
 		if !ok {
 			return "", failed(errors.New("namer did not return an object"), raw)
 		}
@@ -223,7 +223,7 @@ func (p Planner) SuggestPersona(ctx context.Context, request PersonaRequest, ass
 			return PersonaSuggestion{}, failed(runErr, raw, stderrOf(runErr))
 		}
 		var ok bool
-		object, ok = objectFromText(raw)
+		object, ok = objectFromAntigravity(raw)
 		if !ok {
 			return PersonaSuggestion{}, errors.New("persona suggester did not return an object")
 		}
@@ -693,6 +693,22 @@ func objectFromClaude(raw []byte) ([]byte, bool) {
 		return envelope.Structured, true
 	}
 	return objectFromText([]byte(envelope.Result))
+}
+
+func objectFromAntigravity(raw []byte) ([]byte, bool) {
+	var envelope struct {
+		Structured json.RawMessage `json:"structured_output"`
+		Response   string          `json:"response"`
+	}
+	if json.Unmarshal(raw, &envelope) == nil {
+		if validObject(envelope.Structured) {
+			return envelope.Structured, true
+		}
+		if obj, ok := objectFromText([]byte(envelope.Response)); ok {
+			return obj, true
+		}
+	}
+	return objectFromText(raw)
 }
 
 func objectFromText(raw []byte) ([]byte, bool) {

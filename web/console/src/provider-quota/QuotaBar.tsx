@@ -6,7 +6,7 @@ import { usePoll } from "../useFleet.js"
 import { useMachineVersion } from "../machine/NeedsUpdate.js"
 import { onMachineChanged } from "../cloud/machine-switch.js"
 import * as L from "../legacy/bridge.js"
-import { quotaCountdown, quotaStale, visibleQuotaRows, tightestWindow } from "./model.js"
+import { quotaCountdown, quotaStale, visibleQuotaRows, tightestWindow, compactWindow } from "./model.js"
 import { quotaVisible, subscribeQuotaVisible } from "./visibility.js"
 import "./quota.css"
 
@@ -86,16 +86,19 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
     <footer ref={footer} className="provider-quota-bar" aria-label={nextWord("quotaTitle")}>
       {machineName && <span className="quota-machine" title={machineName}>{machineName}</span>}
       <div className="quota-providers">
-        {shown.map((row) => <button key={row.id} className="quota-provider" type="button" data-provider={row.id}
-          data-stale={stale(row) || undefined} aria-label={`${row.label} · ${nextWord("quotaUsed", { percent: Math.round(tightestWindow(row).used_percent) })}`} aria-haspopup="dialog" aria-controls="provider-quota-detail"
-          onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
-          <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
-          <span className="quota-full-windows">{row.windows.map((w, i) => <Fragment key={i}>
-            {i > 0 && <span className="quota-window-separator" aria-hidden="true">·</span>}<WindowValue window={w} now={now} />
-          </Fragment>)}</span>
-          <span className="quota-compact-window"><WindowValue window={tightestWindow(row)} now={now} /></span>
-          {stale(row) && <span className="quota-stale">{offline ? nextWord("quotaOffline") : nextWord("quotaStale")}</span>}
-        </button>)}
+        {shown.map((row) => {
+          const compact = compactWindow(row)
+          return <button key={row.id} className="quota-provider" type="button" data-provider={row.id}
+            data-stale={stale(row) || undefined} aria-label={`${row.label} · ${nextWord("quotaUsed", { percent: Math.round(compact.used_percent) })}`} aria-haspopup="dialog" aria-controls="provider-quota-detail"
+            onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
+            <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
+            <span className="quota-full-windows">{row.windows.map((w, i) => <Fragment key={i}>
+              {i > 0 && <span className="quota-window-separator" aria-hidden="true">·</span>}<WindowValue window={w} now={now} />
+            </Fragment>)}</span>
+            <span className="quota-compact-window"><WindowValue window={compact} now={now} /></span>
+            {stale(row) && <span className="quota-stale">{offline ? nextWord("quotaOffline") : nextWord("quotaStale")}</span>}
+          </button>
+        })}
         {more > 0 && <button type="button" className="quota-more" aria-haspopup="dialog" aria-controls="provider-quota-detail"
           aria-label={nextWord("quotaMore", { count: more })} onClick={(e) => open(e.currentTarget)}>+{more}</button>}
       </div>

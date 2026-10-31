@@ -267,3 +267,35 @@ func TestGeminiAutomaticNamingOffDuringTurnPreventsPublication(t *testing.T) {
 		t.Fatal("disabled naming published a title")
 	}
 }
+
+func TestGeminiAutomaticNamingResolvesSessionModelToAntigravity(t *testing.T) {
+	s, row := automaticGeminiFixture(t)
+	// auto_name_assistant is set to "session", without explicitly setting codex_auto_name
+	if _, err := nextconfig.Open(s.cfg.Dir).Set(map[string]any{"auto_name_assistant": "session"}); err != nil {
+		t.Fatal(err)
+	}
+	var askedAssistant string
+	s.nameSession = func(ctx context.Context, text, assistant string) (string, error) {
+		askedAssistant = assistant
+		return "Antigravity generated title", nil
+	}
+	h := s.antigravitySessions.Load()
+	if err := h.Send(t.Context(), row, "Build an analytics dashboard"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		inv, _ := h.Inventory(t.Context())
+		if len(inv.Sessions) == 1 && inv.Sessions[0].Rungs.Thread == "Antigravity generated title" {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if askedAssistant != "antigravity" {
+		t.Fatalf("expected assistant antigravity, got %q", askedAssistant)
+	}
+	inv, _ := h.Inventory(t.Context())
+	if len(inv.Sessions) != 1 || inv.Sessions[0].Rungs.Thread != "Antigravity generated title" {
+		t.Fatalf("session was not automatically named: %+v", inv.Sessions)
+	}
+}

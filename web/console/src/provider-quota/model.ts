@@ -24,8 +24,20 @@ export function visibleQuotaRows(rows: readonly ProviderQuotaRow[]): ProviderQuo
 export function tightestWindow(row: ProviderQuotaRow) {
   return row.windows.reduce((a, b) => b.used_percent > a.used_percent ? b : a)
 }
+/**
+ * In compact / mobile layouts, select the window to display for a provider.
+ * For Gemini, default to all models' weekly limit ("7d") rather than a model-specific
+ * bucket like "Argon 7d". For other providers (or when "7d" is absent), choose the tightest window.
+ */
+export function compactWindow(row: ProviderQuotaRow) {
+  if (row.id === "gemini") {
+    const allModels7d = row.windows.find((w) => w.name === "7d")
+    if (allModels7d) return allModels7d
+  }
+  return tightestWindow(row)
+}
 export function compactQuotaRows(rows: readonly ProviderQuotaRow[], count: number): ProviderQuotaRow[] {
-  return [...rows].sort((a, b) => tightestWindow(b).used_percent - tightestWindow(a).used_percent).slice(0, count)
+  return [...rows].sort((a, b) => compactWindow(b).used_percent - compactWindow(a).used_percent).slice(0, count)
 }
 export function quotaStale(row: ProviderQuotaRow, now: number): boolean {
   return row.stale || row.windows.some((w) => w.resets_at !== undefined && w.resets_at <= now)

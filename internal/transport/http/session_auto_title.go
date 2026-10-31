@@ -17,7 +17,12 @@ func (s *Server) automaticGeminiTitle(ctx context.Context, item session.Session)
 	if err != nil || ctx.Err() != nil {
 		return
 	}
-	enabled, _ := values.Bool("codex_auto_name")
+	enabled, ok := values.Bool("codex_auto_name")
+	if !ok {
+		if asst, hasAsst := values.String("auto_name_assistant"); hasAsst && asst != "off" {
+			enabled = true
+		}
+	}
 	if !enabled || item.Backend != session.BackendOwned || item.Assistant != session.AssistantAntigravity || item.Binding != session.BindingProtocol || item.ConversationID == "" {
 		return
 	}
@@ -48,7 +53,7 @@ func (s *Server) automaticGeminiTitle(ctx context.Context, item session.Session)
 	if err != nil || strings.TrimSpace(scrub(first)) == "" {
 		return
 	}
-	assistant, err := s.namingAssistant()
+	assistant, err := s.namingAssistantFor(item)
 	if err != nil {
 		return
 	}
@@ -71,7 +76,12 @@ func (s *Server) automaticGeminiTitle(ctx context.Context, item session.Session)
 	if err != nil {
 		return
 	}
-	enabled, _ = values.Bool("codex_auto_name")
+	enabled, ok = values.Bool("codex_auto_name")
+	if !ok {
+		if asst, hasAsst := values.String("auto_name_assistant"); hasAsst && asst != "off" {
+			enabled = true
+		}
+	}
 	if !enabled {
 		return
 	}

@@ -14,8 +14,9 @@ progress bar, percentage and reset countdown, with middle dots between one provi
 together; readings that exceed a provider's available width end with an ellipsis instead of
 overlapping the next provider. The local footer starts with the
 provider icons, while Cloud may identify the selected machine by name. Every known window remains available in the details dialog. Below 900 CSS pixels,
-the mobile layout shows every available provider's tightest window, truncating long readings
-with an ellipsis, only in the Session
+the mobile layout shows each available provider's compact window (defaulting to all
+models' 7d window for Gemini rather than model-specific Argon, and the tightest window
+for other providers), truncating long readings with an ellipsis, only in the Session
 list. Session conversations and other pages unmount the footer and stop its reads, leaving no
 reserved bottom space. The mobile list reserves the full measured footer height, including its
 home-indicator clearance from `--indicator` (the console does not use `viewport-fit=cover`, so

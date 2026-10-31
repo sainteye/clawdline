@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 // @ts-expect-error -- Node tests load the TypeScript source.
-import { compactQuotaRows, quotaCountdown, quotaStale, QUOTA_VISIBLE_KEY, readQuotaVisible, saveQuotaVisible, visibleQuotaRows } from "./model.ts"
+import { compactQuotaRows, compactWindow, quotaCountdown, quotaStale, QUOTA_VISIBLE_KEY, readQuotaVisible, saveQuotaVisible, visibleQuotaRows } from "./model.ts"
 import type { ProviderQuotaRow } from "@clawdline/contract"
 const row = (id: ProviderQuotaRow["id"], percent: number): ProviderQuotaRow => ({ id, label: id, windows: [{ name: "7d", used_percent: percent }], stale: false, source: "provider_api" })
 test("providers with no number stay hidden while a real zero stays visible", () => {
@@ -47,4 +47,50 @@ test("desktop and mobile choices stay independent across reloads and legacy opt-
   assert.equal(readQuotaVisible(browser, "desktop"), false)
   assert.equal(readQuotaVisible(browser, "mobile"), true)
   assert.equal(readQuotaVisible({ getItem: () => null }, "mobile"), true)
+})
+
+test("mobile compact window prefers Gemini all-models 7d over specific model Argon", () => {
+  const gemini: ProviderQuotaRow = {
+    id: "gemini",
+    label: "Gemini",
+    windows: [
+      { name: "5h", used_percent: 0 },
+      { name: "7d", used_percent: 12 },
+      { name: "Argon 7d", used_percent: 99 },
+    ],
+    stale: false,
+    source: "provider_cli",
+  }
+  const chosen = compactWindow(gemini)
+  assert.equal(chosen.name, "7d")
+  assert.equal(chosen.used_percent, 12)
+})
+
+test("mobile compact window falls back to tightest window when 7d is absent", () => {
+  const gemini: ProviderQuotaRow = {
+    id: "gemini",
+    label: "Gemini",
+    windows: [
+      { name: "5h", used_percent: 45 },
+    ],
+    stale: false,
+    source: "provider_cli",
+  }
+  assert.equal(compactWindow(gemini).name, "5h")
+  assert.equal(compactWindow(gemini).used_percent, 45)
+})
+
+test("mobile compact window picks tightest window for non-Gemini providers", () => {
+  const claude: ProviderQuotaRow = {
+    id: "claude",
+    label: "Claude Code",
+    windows: [
+      { name: "5h", used_percent: 21 },
+      { name: "7d", used_percent: 38 },
+    ],
+    stale: false,
+    source: "claude_statusline",
+  }
+  assert.equal(compactWindow(claude).name, "7d")
+  assert.equal(compactWindow(claude).used_percent, 38)
 })
