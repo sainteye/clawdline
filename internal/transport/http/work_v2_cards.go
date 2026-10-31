@@ -38,6 +38,9 @@ func workV2CardOf(i workV2ItemWire) map[string]any {
 	if i.ParentID != "" {
 		out["parent_id"] = i.ParentID
 	}
+	if i.IssueSync != nil {
+		out["issue_sync"] = i.IssueSync
+	}
 	if i.DeploymentEvidence != "" {
 		out["deployment_evidence"] = i.DeploymentEvidence
 	}

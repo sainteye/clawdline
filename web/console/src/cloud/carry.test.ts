@@ -336,7 +336,10 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok(!("project-antigravity-consent-change" in DEFERRED))
   assert.equal(CARRIED["project-graphify-build"],"POST /v1/projects/{project}/graphify")
   assert.equal(CARRIED["session-graphify-build"],"POST /v1/sessions/{id}/graphify")
-  assert.equal(Object.keys(CARRIED).length, 181)
+  // Issue sync's tracker connections and Retry (pages/work/IssueSync.tsx).
+  assert.equal(CARRIED["jira-connect"], "POST /v1/integrations/jira")
+  assert.equal(CARRIED["issue-sync.retry"], "POST /v1/issue-sync/{id}/retry")
+  assert.equal(Object.keys(CARRIED).length, 189)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

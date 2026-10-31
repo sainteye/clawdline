@@ -406,6 +406,101 @@
       "decode": {"reply": "session_request", "fields": {"path": {"type": "string", "non_empty": true, "checks": ["printable"]}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/sessions/{session}/git/diff", "query": {"path": {"from": "path"}}}}
     },
     {
+      "op": "github-connect",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/integrations/github/device",
+      "console_seam": "writer",
+      "console_note": "Issue sync: starts or re-reads the GitHub device code.",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "request": "req-github-connect",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/github/device"
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "route": {
+          "path": "/v1/integrations/github/device"
+        }
+      }
+    },
+    {
+      "op": "github-connection",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/integrations/github",
+      "console_seam": "writer",
+      "console_note": "Issue sync: this machine's GitHub connection, never its token.",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "request": "req-read",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/github"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/integrations/github"
+        }
+      }
+    },
+    {
+      "op": "github-disconnect",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "DELETE /v1/integrations/github",
+      "console_seam": "writer",
+      "console_note": "Issue sync: forgets this machine's GitHub token.",
+      "local": {
+        "method": "DELETE",
+        "device": true
+      },
+      "example": {
+        "request": "req-github-disconnect",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/github"
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "route": {
+          "path": "/v1/integrations/github"
+        }
+      }
+    },
+    {
       "op": "image",
       "kind": "read",
       "write_gate": false,
@@ -560,6 +655,209 @@
         {"body": ["request", "session"], "path": "/v1/sessions/{session}/interrupt", "local_body": []}
       ],
       "decode": {"reply": "session_action", "route": {"path": "/v1/sessions/{session}/interrupt", "body": {"empty": true}}}
+    },
+    {
+      "op": "issue-sync.retry",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/issue-sync/{id}/retry",
+      "console_seam": "writer",
+      "console_note": "Issue sync: the person's Retry on a failed link.",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "id": "2f0c6b9e-0000-4000-8000-000000000001",
+        "request": "req-issue-sync.retry",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "id",
+            "request",
+            "session"
+          ],
+          "path": "/v1/issue-sync/{id}/retry"
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "id": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 256
+          }
+        },
+        "route": {
+          "path": "/v1/issue-sync/{id}/retry"
+        }
+      }
+    },
+    {
+      "op": "jira-connect",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/integrations/jira",
+      "console_seam": "writer",
+      "console_note": "Issue sync: the API token travels inside the end-to-end encrypted command.",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "connection": {
+          "site": "https://acme.atlassian.net",
+          "email": "me@example.test",
+          "token": "t"
+        },
+        "request": "req-jira-connect",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "connection",
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/jira",
+          "local_body": [
+            "email",
+            "site",
+            "token"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "connection": {
+            "type": "object",
+            "max_bytes": 65536,
+            "closed": true,
+            "max_keys": 3,
+            "properties": {
+              "site": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              }
+            },
+            "copies": {
+              "max_bytes": "defaultModelsCloudBodyLimit"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/integrations/jira",
+          "body": {
+            "object": "connection"
+          }
+        }
+      }
+    },
+    {
+      "op": "jira-connection",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/integrations/jira",
+      "console_seam": "writer",
+      "console_note": "Issue sync: this machine's Jira Cloud connection, never its token.",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "request": "req-read",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/jira"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/integrations/jira"
+        }
+      }
+    },
+    {
+      "op": "jira-disconnect",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "DELETE /v1/integrations/jira",
+      "console_seam": "writer",
+      "console_note": "Issue sync: forgets this machine's Jira sign-in.",
+      "local": {
+        "method": "DELETE",
+        "device": true
+      },
+      "example": {
+        "request": "req-jira-disconnect",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/jira"
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "route": {
+          "path": "/v1/integrations/jira"
+        }
+      }
+    },
+    {
+      "op": "jira-projects",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/integrations/jira/projects",
+      "console_seam": "writer",
+      "console_note": "Issue sync: the Jira projects and issue types the picker offers.",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "request": "req-read",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/jira/projects"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/integrations/jira/projects"
+        }
+      }
     },
     {
       "op": "key",

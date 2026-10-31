@@ -308,6 +308,9 @@ export type WriteRoute =
   | { op: "work-gate-settings-update"; word: Carried<"work-gate-settings-update"> }
   | { op: "workflow-settings-update"; word: Carried<"workflow-settings-update"> }
   | { op: "integration-settings-update"; word: Carried<"integration-settings-update"> }
+  | { op: "issue-tracker-read"; word: Carried<"github-connection" | "jira-connection" | "jira-projects"> }
+  | { op: "issue-tracker-write"; word: Carried<"github-connect" | "github-disconnect" | "jira-connect" | "jira-disconnect"> }
+  | { op: "issue-sync-retry"; word: Carried<"issue-sync.retry">; id: string }
   | { op: "notification-settings"; word: Carried<"notification-settings"> }
   | { op: "notification-settings-update"; word: Carried<"notification-settings-update"> }
   | { op: "board-command"; word: Carried<"board-command"> }
@@ -490,6 +493,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "work-gate-settings",
   "workflow-settings",
   "integration-settings",
+  "issue-tracker-read",
   "notification-settings",
   "restorable",
   "archived",
@@ -574,6 +578,13 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     if (head === "settings" && a === "integrations" && segments.length === 2) {
       return { op: "integration-settings", word: "integration-settings" }
+    }
+    // Issue sync's tracker connections (pages/work/IssueSync.tsx). No answer
+    // carries a token.
+    if (head === "integrations" && a === "github" && segments.length === 2) return { op: "issue-tracker-read", word: "github-connection" }
+    if (head === "integrations" && a === "jira" && segments.length === 2) return { op: "issue-tracker-read", word: "jira-connection" }
+    if (head === "integrations" && a === "jira" && b === "projects" && segments.length === 3) {
+      return { op: "issue-tracker-read", word: "jira-projects" }
     }
     if (head === "settings" && a === "notifications" && segments.length === 2) {
       return { op: "notification-settings", word: "notification-settings" }
@@ -675,6 +686,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "work" && a === "v2" && b === "items" && c && segments.length === 4 && method === "PATCH") {
     return { op: "work-v2-edit", word: "work.v2.edit", id: c }
   }
+  if (head === "integrations" && (a === "github" || a === "jira") && segments.length === 2 && method === "DELETE") {
+    return { op: "issue-tracker-write", word: a === "github" ? "github-disconnect" : "jira-disconnect" }
+  }
   if (head === "places" && segments.length === 1 && method === "DELETE") return { op: "project-hide", word: "project-hide" }
   if (head === "places" && segments.length === 1 && method === "POST") return { op: "project-add", word: "project-add" }
   if (head === "projects" && a && b === "files" && c && segments.length === 4 && method === "PUT" && /^[0-9a-f]{32}$/.test(c)) {
@@ -704,6 +718,12 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return { op: "worktree-remove", word: "project-worktree-remove", project: a, worktree: c }
   }
   if (method !== "POST") return null
+  if (head === "integrations" && a === "github" && b === "device" && segments.length === 3) {
+    return { op: "issue-tracker-write", word: "github-connect" }
+  }
+  // The Jira API token rides inside the end-to-end encrypted command only.
+  if (head === "integrations" && a === "jira" && segments.length === 2) return { op: "issue-tracker-write", word: "jira-connect" }
+  if (head === "issue-sync" && a && b === "retry" && segments.length === 3) return { op: "issue-sync-retry", word: "issue-sync.retry", id: a }
   if (head === "squad" && a === "catalog" && segments.length === 2) return { op: "squad-write", word: "squad.catalog.update" }
   if (head === "squad" && a === "role-draft" && segments.length === 2) return { op: "squad-write", word: "squad.role-draft" }
   if (head === "squad-packages" && segments.length === 2) {
@@ -967,6 +987,9 @@ function spellingOf(route: WriteRoute): Spelling {
     case "work-gate-settings-update":
     case "integration-settings-update":
     case "workflow-settings-update":
+    case "issue-tracker-read":
+    case "issue-tracker-write":
+    case "issue-sync-retry":
     case "notification-settings":
     case "notification-settings-update":
     case "squad-write":
@@ -1537,6 +1560,7 @@ export class RelayWriter {
       case "notification-rules":
       case "work-gate-settings":
       case "integration-settings":
+      case "issue-tracker-read":
       case "workflow-settings":
       case "notification-settings":
       case "machine-usage":
@@ -1896,6 +1920,15 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
         }
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "issue-tracker-write": {
+        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        const fields = route.word === "jira-connect" ? { connection: await bodyOf(init) } : {}
+        return this.machineWorkV2(client, route.word, fields, headerOf(init, "idempotency-key"))
+      }
+      case "issue-sync-retry": {
+        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        return this.machineWorkV2(client, route.word, { id: route.id }, headerOf(init, "idempotency-key"))
       }
       case "notification-settings-update": {
         for (const [key] of url.searchParams) {

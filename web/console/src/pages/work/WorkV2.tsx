@@ -36,6 +36,7 @@ import { WorkCompletionReports, WorkEpicPlanDocuments, WorkItemDocuments } from 
 import { epicGate, epicGateDetailShown, epicGateShown, featureLike, isEpic, planGateHint } from "./epic-gate.js"
 import { epicChildren, epicParent, epicProgress, epicProgressWords, needsFamilyList, readMissingParents, shortWorkID, type EpicParent } from "./epic-family.js"
 import { WorkIcon } from "./WorkIcon.js"
+import { IssueSyncBadge, IssueSyncField, useIssueSyncSend, type IssueSyncDraft } from "./IssueSync.js"
 import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
 import { useReferenceImage } from "./useReferenceImage.js"
 import { VoiceTextarea } from "./VoiceTextarea.js"
@@ -51,6 +52,7 @@ import { conditionWords, deploymentWords, needsPerson, nextActionWords, ownerOnl
 import {
   answerDecision,
   assignNewWorkV2,
+  type IssueSyncChoice,
   assignWorkV2,
   addWorkV2Image,
   completeWorkV2,
@@ -847,6 +849,7 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
       </span>
       {originSentence && <span id={originDescriptionID} className="work-card-origin-sentence">{originSentence}</span>}
     </button>
+    <IssueSyncBadge item={item} onChanged={announceWorkItemChanged} />
     {parent && <CardParentLine parent={parent} />}
   </article>
 }
@@ -938,6 +941,16 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
   // scrolled out of sight on a phone, where the press looked like nothing.
   const [assignFailed, setAssignFailed] = useState(false)
   const [assigningRoute, setAssigningRoute] = useState<"existing" | "new" | null>(null)
+  const [issueSync, setIssueSync] = useState<IssueSyncDraft | null>(null)
+  const sync = useIssueSyncSend()
+  // The sync choice is authorized before the assignment is sent; a cancelled
+  // authorization assigns nothing.
+  const assignSynced = (route: "existing" | "new", task: (choice: IssueSyncChoice | undefined) => Promise<unknown>) => {
+    if (sync.authorizing) return
+    void sync.ensure(item.issue_sync ? null : issueSync).then((chosen) => {
+      if (chosen !== "cancelled") assign(route, () => task(chosen))
+    })
+  }
   const assign = (route: "existing" | "new", task: () => Promise<unknown>) => {
     clearFailure(); setAssignFailed(false)
     setAssigningRoute(route)
@@ -1051,11 +1064,13 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
     {(assignable || (reassignable && reassigning)) && <div className="work-assignment">
       {epic && <p className="work-epic-assign-note">{catalogWord("inline", "b5e4c6c82f31")}</p>}
       {reassignable && <p className="work-reassign-note">{catalogWord("inline", "58f4894c12b1")}</p>}
+      {!item.issue_sync && <IssueSyncField id={`work-issue-sync-${item.id}`} value={issueSync} disabled={!!busy || sync.authorizing} onChange={setIssueSync} />}
+      {sync.panel}
       <section className="work-assignment-route" aria-labelledby={`work-assign-existing-${item.id}`}>
         <h4 id={`work-assign-existing-${item.id}`}>{catalogWord("inline", "c8232bd59817")}</h4>
         <SessionAssignmentPicker choices={choices} onRetry={retrySessions} value={terminal} onChange={setTerminal} autoFocus={!focusAssignment && epic && reassigning} />
         {terminal && <button className="chip on work-assignment-action" type="button" disabled={!!busy} aria-busy={busy === item.id && assigningRoute === "existing"}
-          onClick={() => assign("existing", () => assignWorkV2(item, terminal))}>
+          onClick={() => assignSynced("existing", (chosen) => assignWorkV2(item, terminal, chosen))}>
           {busy === item.id && assigningRoute === "existing" && <span className="work-assignment-spinner" aria-hidden="true" />}
           {busy === item.id && assigningRoute === "existing" ? catalogWord("literal", "c147921b47db") : catalogWord("literal", "d87caeb7f606")}</button>}
       </section>
@@ -1105,7 +1120,7 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
           </div>
         </div>}
         <button className="chip on work-assignment-action" type="button" disabled={!!busy || aiSuggestionBusy || !assistantAdmits(providerFacts(assistant), "start")} aria-busy={busy === item.id && assigningRoute === "new"}
-          onClick={() => { if (assistantAdmits(providerFacts(assistant), "start")) void assign("new", () => assignNewWorkV2(item, assistant, persona?.id, model?.value)) }}>
+          onClick={() => { if (assistantAdmits(providerFacts(assistant), "start")) assignSynced("new", (chosen) => assignNewWorkV2(item, assistant, persona?.id, model?.value, chosen)) }}>
           {busy === item.id && assigningRoute === "new" && <span className="work-assignment-spinner" aria-hidden="true" />}
           {persona
             ? nextWord(busy === item.id && assigningRoute === "new" ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })
@@ -1613,6 +1628,8 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   const [title, setTitle] = useState(initialDraft.title || "")
   const [description, setDescription] = useState(initialDraft.description || "")
   const [reviewRequired, setReviewRequired] = useState(false)
+  const [issueSync, setIssueSync] = useState<IssueSyncDraft | null>(null)
+  const sync = useIssueSyncSend()
   const [images, setImages] = useState<File[]>([])
   const createDecision = useRef<WorkV2CreateDecision | null>(null)
   const projectPlaces = initialDraft.project && !places.some((place) => place.id === initialDraft.project?.id)
@@ -1623,12 +1640,18 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   useModalDismiss(busy, onClose)
   return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
-    e.preventDefault(); if (!ready) return
-    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" as const,
-      ...(featureLike({ kind }) ? { review_required: reviewRequired } : {}) }
-    const decision = workV2CreateDecision(body, createDecision.current)
-    createDecision.current = decision
-    onCreate(body, images, decision.key)
+    e.preventDefault(); if (!ready || sync.authorizing) return
+    void (async () => {
+      // Sending a sync this machine is not authorized for authorizes first;
+      // cancelling the authorization sends nothing (docs/issue-sync.md).
+      const chosen = await sync.ensure(issueSync)
+      if (chosen === "cancelled") return
+      const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" as const,
+        ...(featureLike({ kind }) ? { review_required: reviewRequired } : {}), ...(chosen ? { issue_sync: chosen } : {}) }
+      const decision = workV2CreateDecision(body, createDecision.current)
+      createDecision.current = decision
+      onCreate(body, images, decision.key)
+    })()
   }}>
     <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? catalogWord("ui", "reviewWorkItem") : catalogWord("ui", "newWorkItem")}</p><h2 id="work-new-v2-title">{reviewingDraft ? catalogWord("literal", "30947e72b04b") : catalogWord("literal", "e2956f80c3ac")}</h2></div>
       <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
@@ -1643,7 +1666,9 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     <VoiceTextarea label={catalogWord("literal", "8561515b8b34")} value={description} onValue={setDescription} />
     {featureLike({ kind }) && <ReviewRequiredField id="work-new-review-required" checked={reviewRequired} disabled={busy} onChange={setReviewRequired} />}
     <PendingPictures images={images} busy={busy} note={catalogWord("literal", "983dac4efa86")} onChange={setImages} />
+    <IssueSyncField id="work-new-issue-sync" value={issueSync} disabled={busy || sync.authorizing} onChange={setIssueSync} />
+    {sync.panel}
     {failure && <p className="work-note" role="alert">{failure}</p>}
-    <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready} aria-busy={busy}><ActionProgress busy={busy}>{busy ? catalogWord("literal", "aca2a4fc28ff") : catalogWord("literal", "c5d8aaa266d8")}</ActionProgress></button><button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
+    <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready || sync.authorizing} aria-busy={busy}><ActionProgress busy={busy}>{busy ? catalogWord("literal", "aca2a4fc28ff") : catalogWord("literal", "c5d8aaa266d8")}</ActionProgress></button><button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
   </form></div>
 }

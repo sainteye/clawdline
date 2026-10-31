@@ -49,12 +49,28 @@ export const CARRIED = {
   "forget-archived": "POST /v1/sessions/archived/forget",
   git: "GET /v1/sessions/{id}/git",
   "git-diff": "GET /v1/sessions/{id}/git/diff?path=",
+  // Issue sync: starts or re-reads the GitHub device code.
+  "github-connect": "POST /v1/integrations/github/device",
+  // Issue sync: this machine's GitHub connection, never its token.
+  "github-connection": "GET /v1/integrations/github",
+  // Issue sync: forgets this machine's GitHub token.
+  "github-disconnect": "DELETE /v1/integrations/github",
   image: "GET /v1/artifacts/images/{id}?session={id}[&size=thumb]",
   info: "GET /v1/sessions/{id}/info[?parts=summary|remote-permission]",
   "integration-settings": "GET /v1/settings/integrations",
   "integration-settings-update": "POST /v1/settings/integrations",
   intents: "POST /v1/intents",
   interrupt: "POST /v1/sessions/{id}/interrupt",
+  // Issue sync: the person's Retry on a failed link.
+  "issue-sync.retry": "POST /v1/issue-sync/{id}/retry",
+  // Issue sync: the API token travels inside the end-to-end encrypted command.
+  "jira-connect": "POST /v1/integrations/jira",
+  // Issue sync: this machine's Jira Cloud connection, never its token.
+  "jira-connection": "GET /v1/integrations/jira",
+  // Issue sync: forgets this machine's Jira sign-in.
+  "jira-disconnect": "DELETE /v1/integrations/jira",
+  // Issue sync: the Jira projects and issue types the picker offers.
+  "jira-projects": "GET /v1/integrations/jira/projects",
   // The dashboard behind the session counts (`machine/`): CPU, memory, disk
   // space and grouped reclaim backlog, a machine read with no parameter.
   "machine-usage": "GET /v1/machine/usage",

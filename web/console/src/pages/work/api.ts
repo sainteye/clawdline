@@ -176,8 +176,26 @@ export interface WorkV2Project {
   available: boolean
 }
 
+/** The person's issue sync choice on the create and assign forms (docs/issue-sync.md). */
+export type IssueSyncChoice = { provider: "github" } | { provider: "jira"; jira_project: string; jira_issue_type: string }
+
+/** An item's GitHub or Jira issue, as the card shows it. */
+export interface IssueSyncState {
+  provider: "github" | "jira"
+  repo?: string
+  jira_site?: string
+  jira_project?: string
+  /** waiting: no issue yet; failed: the last call failed and is tried again. */
+  state: "waiting" | "open" | "closed" | "failed"
+  external_key?: string
+  url?: string
+  error?: string
+  retry_at?: number
+}
+
 export interface WorkV2Item {
   id: string
+  issue_sync?: IssueSyncState
   project: WorkV2Project
   kind: WorkV2Kind
   title: string
@@ -394,27 +412,60 @@ export type CreateWorkV2Body = {
   deployment_policy: "required" | "not_required" | "agent_decides"
   /** Sent only for a Feature; the daemon refuses `true` on any other kind. */
   review_required?: boolean
+  issue_sync?: IssueSyncChoice
 }
 
 export const createWorkV2 = (body: CreateWorkV2Body, key?: string) =>
   decide<{ item: WorkV2Item }>("/v1/work/v2/items", body, key)
 
-export const assignWorkV2 = (item: WorkV2Item, terminalID: string) =>
+export const assignWorkV2 = (item: WorkV2Item, terminalID: string, issueSync?: IssueSyncChoice) =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/assign`, {
     expected_version: item.version,
     mode: "existing_session",
     terminal_id: terminalID,
+    ...(issueSync ? { issue_sync: issueSync } : {}),
   })
 
 /** `persona` is sent only when one was chosen: a new Session with none is the Session it always was. */
-export const assignNewWorkV2 = (item: WorkV2Item, assistant: Assistant, persona?: string, model = "default") =>
+export const assignNewWorkV2 = (item: WorkV2Item, assistant: Assistant, persona?: string, model = "default", issueSync?: IssueSyncChoice) =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/assign`, {
     expected_version: item.version,
     mode: "new_session",
     assistant,
     model,
     ...(persona ? { persona } : {}),
+    ...(issueSync ? { issue_sync: issueSync } : {}),
   })
+
+/** This machine's GitHub connection for issue sync. No answer carries a token. */
+export interface GitHubConnection {
+  state: "disconnected" | "pending" | "connected" | "denied" | "expired" | "failed" | "reauthorize"
+  login?: string
+  user_code?: string
+  verification_uri?: string
+  expires_at?: string
+  error?: string
+}
+export interface JiraConnection {
+  state: "disconnected" | "connected" | "failed"
+  site?: string
+  email?: string
+  account?: string
+  error?: string
+}
+export interface JiraProject { key: string; name: string; issue_types: string[] }
+
+export const readGitHubConnection = () => call<GitHubConnection>("/v1/integrations/github")
+/** Starting again while a code is waiting answers the same code. */
+export const startGitHubConnection = () => mutate<GitHubConnection>("/v1/integrations/github/device", {})
+export const disconnectGitHub = () => call<GitHubConnection>("/v1/integrations/github", { method: "DELETE" })
+export const readJiraConnection = () => call<JiraConnection>("/v1/integrations/jira")
+export const connectJira = (site: string, email: string, token: string) =>
+  mutate<JiraConnection>("/v1/integrations/jira", { site, email, token })
+export const disconnectJira = () => call<JiraConnection>("/v1/integrations/jira", { method: "DELETE" })
+export const readJiraProjects = () => call<{ site: string; projects: JiraProject[] }>("/v1/integrations/jira/projects")
+export const retryIssueSync = (itemID: string) =>
+  mutate<{ accepted: boolean }>(`/v1/issue-sync/${encodeURIComponent(itemID)}/retry`, {})
 
 /** One explicit press; reading or rendering an item never calls this route. */
 export const suggestPersonaWorkV2 = (item: WorkV2Item) =>

@@ -28,12 +28,20 @@ var generatedDecoders = map[string]genDecoder{
 	"forget-archived":                    genDecodeForgetArchived,
 	"git":                                genDecodeGit,
 	"git-diff":                           genDecodeGitDiff,
+	"github-connect":                     genDecodeGithubConnect,
+	"github-connection":                  genDecodeGithubConnection,
+	"github-disconnect":                  genDecodeGithubDisconnect,
 	"image":                              genDecodeImage,
 	"info":                               genDecodeInfo,
 	"integration-settings":               genDecodeIntegrationSettings,
 	"integration-settings-update":        genDecodeIntegrationSettingsUpdate,
 	"intents":                            genDecodeIntents,
 	"interrupt":                          genDecodeInterrupt,
+	"issue-sync.retry":                   genDecodeIssueSyncRetry,
+	"jira-connect":                       genDecodeJiraConnect,
+	"jira-connection":                    genDecodeJiraConnection,
+	"jira-disconnect":                    genDecodeJiraDisconnect,
+	"jira-projects":                      genDecodeJiraProjects,
 	"key":                                genDecodeKey,
 	"machine-usage":                      genDecodeMachineUsage,
 	"native-terminal-input":              genDecodeNativeTerminalInput,
@@ -729,6 +737,56 @@ func genDecodeGitDiff(b body) (plan, LocalRequest, bool) {
 	return p, req, true
 }
 
+// genDecodeGithubConnect is the `github-connect` row's decode.
+func genDecodeGithubConnect(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/integrations/github/device"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeGithubConnection is the `github-connection` row's decode.
+func genDecodeGithubConnection(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/integrations/github"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeGithubDisconnect is the `github-disconnect` row's decode.
+func genDecodeGithubDisconnect(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/integrations/github"
+	req := LocalRequest{Method: "DELETE", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
 // genDecodeImage is the `image` row's decode.
 func genDecodeImage(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
@@ -868,6 +926,96 @@ func genDecodeInterrupt(b body) (plan, LocalRequest, bool) {
 	path := "/v1/sessions/" + segment(genText(b["session"])) + "/interrupt"
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Body = []byte("{}")
+	return p, req, true
+}
+
+// genDecodeIssueSyncRetry is the `issue-sync.retry` row's decode.
+func genDecodeIssueSyncRetry(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", nonEmpty: true, maxBytes: 256}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/issue-sync/" + segment(genText(b["id"])) + "/retry"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeJiraConnect is the `jira-connect` row's decode.
+func genDecodeJiraConnect(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "connection", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("connection", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"email": genRule{kind: "string"}, "site": genRule{kind: "string"}, "token": genRule{kind: "string"}}, closed: true, maxKeys: 3}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/integrations/jira"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("connection")
+	return p, req, true
+}
+
+// genDecodeJiraConnection is the `jira-connection` row's decode.
+func genDecodeJiraConnection(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/integrations/jira"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeJiraDisconnect is the `jira-disconnect` row's decode.
+func genDecodeJiraDisconnect(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/integrations/jira"
+	req := LocalRequest{Method: "DELETE", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeJiraProjects is the `jira-projects` row's decode.
+func genDecodeJiraProjects(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/integrations/jira/projects"
+	req := LocalRequest{Method: "GET", Path: path}
 	return p, req, true
 }
 

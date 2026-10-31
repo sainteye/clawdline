@@ -248,6 +248,14 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/settings/work-gates", "work-gate-settings-update"],
     ["POST", "/v1/settings/workflow", "workflow-settings-update"],
     ["POST", "/v1/settings/integrations", "integration-settings-update"],
+    ["GET", "/v1/integrations/github", "github-connection"],
+    ["POST", "/v1/integrations/github/device", "github-connect"],
+    ["DELETE", "/v1/integrations/github", "github-disconnect"],
+    ["GET", "/v1/integrations/jira", "jira-connection"],
+    ["POST", "/v1/integrations/jira", "jira-connect"],
+    ["DELETE", "/v1/integrations/jira", "jira-disconnect"],
+    ["GET", "/v1/integrations/jira/projects", "jira-projects"],
+    ["POST", "/v1/issue-sync/w1/retry", "issue-sync.retry"],
     ["POST", "/v1/update/apply", "update-apply"],
     ["POST", "/v1/board", "board-command"],
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
@@ -2479,6 +2487,9 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/settings/work-gates", "work-gate-settings"],
     ["/v1/settings/workflow", "workflow-settings"],
     ["/v1/settings/integrations", "integration-settings"],
+    ["/v1/integrations/github", "issue-tracker-read"],
+    ["/v1/integrations/jira", "issue-tracker-read"],
+    ["/v1/integrations/jira/projects", "issue-tracker-read"],
     ["/v1/sessions/restorable", "restorable"],
     ["/v1/sessions/archived", "archived"],
     ["/v1/machine/usage", "machine-usage"],
@@ -2841,6 +2852,21 @@ test("single-machine outputs refuse missing, mismatched and invalid execution pr
   }
 })
 
+
+test("issue tracker connections and Retry reach the selected machine with their fields", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal((await reader.fetch("/v1/integrations/github")).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "github-connection", {}, "read"])
+  assert.equal((await reader.fetch("/v1/integrations/github/device", post({}))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "github-connect", {}, "action"])
+  const connection = { site: "https://acme.atlassian.net", email: "pat", token: "t" }
+  assert.equal((await reader.fetch("/v1/integrations/jira", post(connection))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "jira-connect", { connection }, "action"])
+  assert.equal((await reader.fetch("/v1/issue-sync/w1/retry", post({}))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "issue-sync.retry", { id: "w1" }, "action"])
+  assert.equal((await reader.fetch("/v1/integrations/jira?site=x", post(connection))).status, 501)
+})
 
 test("integration opt-ins read and write only the selected machine", async () => {
   const client = new FakeClient()

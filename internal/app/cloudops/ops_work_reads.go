@@ -138,6 +138,18 @@ func init() {
 		op{name: "integration-settings", read: true},
 		op{name: "integration-settings-update"},
 
+		// Issue sync's tracker connections and the person's Retry
+		// (docs/issue-sync.md). No answer carries a token; a Jira API token
+		// arrives only inside the end-to-end encrypted jira-connect command.
+		op{name: "github-connection", read: true},
+		op{name: "github-connect"},
+		op{name: "github-disconnect"},
+		op{name: "jira-connection", read: true},
+		op{name: "jira-connect"},
+		op{name: "jira-disconnect"},
+		op{name: "jira-projects", read: true},
+		op{name: "issue-sync.retry"},
+
 		op{name: "notification-settings", read: true},
 
 		op{name: "notification-settings-update"},

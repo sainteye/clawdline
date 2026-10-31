@@ -892,6 +892,42 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-integrations-write", method: "POST", path: "/v1/settings/integrations",
 		body2: `{"graphify_enabled":false,"workflow_skills_enabled":true}`,
 	}, {
+		word:    "github-connection",
+		body:    map[string]any{"type": "github-connection", "session": machine, "request": "req-gh"},
+		session: machine, name: "read:req-gh", method: "GET", path: "/v1/integrations/github",
+	}, {
+		word:    "github-connect",
+		body:    map[string]any{"type": "github-connect", "session": machine, "request": "req-gh-connect"},
+		session: machine, name: "action:req-gh-connect", method: "POST", path: "/v1/integrations/github/device",
+	}, {
+		word:    "github-disconnect",
+		body:    map[string]any{"type": "github-disconnect", "session": machine, "request": "req-gh-off"},
+		session: machine, name: "action:req-gh-off", method: "DELETE", path: "/v1/integrations/github",
+	}, {
+		word:    "jira-connection",
+		body:    map[string]any{"type": "jira-connection", "session": machine, "request": "req-jira"},
+		session: machine, name: "read:req-jira", method: "GET", path: "/v1/integrations/jira",
+	}, {
+		word: "jira-connect",
+		body: map[string]any{"type": "jira-connect", "session": machine, "request": "req-jira-connect",
+			"connection": map[string]any{"site": "https://acme.atlassian.net", "email": "pat", "token": "t"}},
+		session: machine, name: "action:req-jira-connect", method: "POST", path: "/v1/integrations/jira",
+		body2: `{"email":"pat","site":"https://acme.atlassian.net","token":"t"}`,
+	}, {
+		word:    "jira-disconnect",
+		body:    map[string]any{"type": "jira-disconnect", "session": machine, "request": "req-jira-off"},
+		session: machine, name: "action:req-jira-off", method: "DELETE", path: "/v1/integrations/jira",
+	}, {
+		word:    "jira-projects",
+		body:    map[string]any{"type": "jira-projects", "session": machine, "request": "req-jira-projects"},
+		session: machine, name: "read:req-jira-projects", method: "GET", path: "/v1/integrations/jira/projects",
+	}, {
+		word: "issue-sync.retry",
+		body: map[string]any{"type": "issue-sync.retry", "session": machine, "request": "req-retry",
+			"id": "2f0c6b9e-0000-4000-8000-000000000001"},
+		session: machine, name: "action:req-retry", method: "POST",
+		path: "/v1/issue-sync/2f0c6b9e-0000-4000-8000-000000000001/retry",
+	}, {
 		word:    "notification-settings",
 		body:    map[string]any{"type": "notification-settings", "session": machine, "request": "req-notifications"},
 		session: machine, name: "read:req-notifications",
