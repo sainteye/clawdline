@@ -2,10 +2,18 @@ package projectsync
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestOriginDoesNotCallAMissingDirectoryANonRepository(t *testing.T) {
+	_, err := Origin(context.Background(), filepath.Join(t.TempDir(), "absent"))
+	if err == nil || errors.Is(err, ErrNotRepository) || errors.Is(err, ErrNoRemote) {
+		t.Fatalf("an unreadable directory must retain its error: %v", err)
+	}
+}
 
 // A clone that could never start says why. A machine without git prints
 // nothing on git's standard error, and the line the mirror's page showed was
