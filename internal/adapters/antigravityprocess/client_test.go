@@ -77,6 +77,9 @@ func TestACPProcess(t *testing.T) {
 		var result any
 		switch method {
 		case "session/cancel":
+			if mode == "lifecycle-held" {
+				continue
+			}
 			if len(m["id"]) != 0 || len(interruptedPrompt) == 0 {
 				os.Exit(40)
 			}
@@ -136,6 +139,22 @@ func TestACPProcess(t *testing.T) {
 				result = map[string]any{"configOptions": []any{map[string]string{"id": "thinking_level", "type": "select", "currentValue": "low"}}}
 			}
 		case "session/prompt":
+			if mode == "prompt-rpc-error" {
+				enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32800, "message": "synthetic private cancellation"}})
+				continue
+			}
+			if mode == "lifecycle-held" {
+				interruptedPrompt = append(json.RawMessage(nil), id...)
+				enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fake-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic finished"}}}})
+				continue
+			}
+			if mode == "lifecycle-updates" {
+				for _, kind := range []string{"user_message_chunk", "agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan", "usage_update", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update", "notice", "compaction_update", "compaction_summary_chunk", "future_update"} {
+					enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fake-session", "update": map[string]any{"sessionUpdate": kind}}})
+				}
+				result = map[string]string{"stopReason": "end_turn"}
+				break
+			}
 			if mode == "interrupt" || mode == "interrupt-permission" {
 				interruptTurns++
 				if interruptTurns > 1 {
@@ -460,7 +479,7 @@ func TestMetadataErrorsCancellationAndBusyNeverRetry(t *testing.T) {
 func fake(t *testing.T, mode string, update func(context.Context, json.RawMessage) error) (*Client, string) {
 	return fakePermission(t, mode, update, nil)
 }
-func fakePermission(t *testing.T, mode string, update func(context.Context, json.RawMessage) error, permission func(context.Context, *PermissionRequest) error) (*Client, string) {
+func fakePermission(t *testing.T, mode string, update func(context.Context, json.RawMessage) error, permission func(context.Context, *PermissionRequest) error, wire ...func(WireEvent) error) (*Client, string) {
 	t.Helper()
 	t.Setenv("CLAWDLINE_ACP_FAKE", "1")
 	t.Setenv("OPENAI_API_KEY", "synthetic")
@@ -476,7 +495,11 @@ func fakePermission(t *testing.T, mode string, update func(context.Context, json
 	if mode == "stall-write" {
 		maxFrame = 1 << 22
 	}
-	c, err := Start(context.Background(), Options{Executable: exe, Args: []string{"-test.run=^TestACPProcess$", "--", mode}, AccountDir: dir, WorkingDir: dir, MaxFrameBytes: maxFrame, CallTimeout: 2 * time.Second, OnUpdate: update, OnPermission: permission})
+	var observe func(WireEvent) error
+	if len(wire) > 0 {
+		observe = wire[0]
+	}
+	c, err := Start(context.Background(), Options{OnWire: observe, Executable: exe, Args: []string{"-test.run=^TestACPProcess$", "--", mode}, AccountDir: dir, WorkingDir: dir, MaxFrameBytes: maxFrame, CallTimeout: 2 * time.Second, OnUpdate: update, OnPermission: permission})
 	if err != nil {
 		t.Fatal(err)
 	}

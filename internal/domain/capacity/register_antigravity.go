@@ -3,6 +3,12 @@ package capacity
 // antigravityBounds registers the local native observation bridge.
 func antigravityBounds() []Entry {
 	return []Entry{
+		{Name: "antigravity.acp_trace_queue_bytes", Class: Buffer, Unit: Bytes, Limit: 16777216, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxWireQueueBytes"}},
+		{Name: "antigravity.acp_trace_queue_records", Class: Buffer, Unit: Rows, Limit: 64, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxWireQueueRecords", "internal/adapters/antigravitysession.openWireRecorder:chan(MaxWireQueueRecords)"}},
+		{Name: "antigravity.acp_trace_connections", Class: Buffer, Unit: Rows, Limit: 1, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxWireConnections"}},
+		{Name: "antigravity.acp_trace_bytes", Class: Observation, Unit: Bytes, Limit: 16777216, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxWireTraceBytes"}},
+		{Name: "antigravity.acp_trace_records", Class: Observation, Unit: Rows, Limit: 8192, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxWireTraceRecords"}},
+		{Name: "antigravity.acp_trace_seconds", Class: Observation, Unit: Seconds, Limit: 86400, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxWireTraceAge"}},
 		{Name: "antigravity.history_connections", Routine: true, Class: Buffer, Unit: Rows, Limit: 1, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxHistoryConnections"}},
 		{Name: "antigravity.acp_frame_bytes", Class: Buffer, Unit: Bytes, Limit: 1048576, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxFrameBytes"}},
 		{Name: "antigravity.acp_view_bytes", Class: Observation, Unit: Bytes, Limit: 1048576, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/antigravitysession.MaxViewBytes"}},

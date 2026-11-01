@@ -27,21 +27,25 @@ type Options struct {
 	Args                   []string
 	// NewSessionMode applies only to newly created conversations, never resume.
 	NewSessionMode string
+	// RawTrace explicitly opts into local raw ACP diagnostics, never Cloud export.
+	RawTrace bool
 	// TurnComplete runs outside conversation locks after a successful model turn.
 	// It shares the host lifetime and job; callers must not create a work queue.
 	TurnComplete func(context.Context, session.Session)
 }
 
 type Host struct {
-	mu      sync.Mutex
-	ctx     context.Context
-	cancel  context.CancelFunc
-	opts    Options
-	rows    map[string]*conversation
-	opening bool
-	closed  bool
-	jobs    sync.WaitGroup
-	store   *historyStore
+	mu       sync.Mutex
+	ctx      context.Context
+	cancel   context.CancelFunc
+	opts     Options
+	rows     map[string]*conversation
+	opening  bool
+	closed   bool
+	jobs     sync.WaitGroup
+	store    *historyStore
+	trace    *wireRecorder
+	traceErr string
 }
 
 type conversation struct {
@@ -113,6 +117,15 @@ func New(ctx context.Context, opts Options) (*Host, error) {
 			return nil, err
 		}
 	}
+	if opts.RawTrace {
+		if h.store == nil {
+			h.traceErr = "trace_unavailable"
+		} else if recorder, err := openWireRecorder(opts.StateDir); err != nil {
+			h.traceErr = "trace_unavailable"
+		} else {
+			h.trace = recorder
+		}
+	}
 	return h, nil
 }
 func (h *Host) Name() string { return string(session.BackendOwned) }
@@ -148,7 +161,7 @@ func (h *Host) OpenWithModel(ctx context.Context, req ports.OpenRequest, launch 
 	c := &conversation{tools: map[string]int{}, textIndex: -1, store: h.store, profile: filepath.Clean(h.opts.AccountDir), generation: rand.Text(), launchContext: launch}
 	ownedID := "owned:acp:" + rand.Text()
 	identityPath := h.identityPath(ownedID)
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{OnWire: h.wireObserver(ownedID), SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
 	if err != nil {
 		return session.Session{}, err
 	}
@@ -520,6 +533,9 @@ func (h *Host) Shutdown() error {
 		err = errors.Join(err, c.Close())
 	}
 	h.jobs.Wait()
+	if h.trace != nil {
+		err = errors.Join(err, h.trace.close())
+	}
 	h.mu.Lock()
 	clear(h.rows)
 	h.mu.Unlock()
@@ -725,12 +741,13 @@ func (h *Host) HistoryConnections() int {
 
 // Facts are provider observations, not inferred prices or cumulative spend.
 type Facts struct {
-	Model   string
-	Models  []contract.SessionModel
-	Effort  string
-	Efforts []string
-	Limits  *contract.SessionLimits
-	Context *antigravityacp.ContextUsage
+	Model    string
+	Models   []contract.SessionModel
+	Effort   string
+	Efforts  []string
+	Limits   *contract.SessionLimits
+	Context  *antigravityacp.ContextUsage
+	Protocol *contract.SessionProtocol
 }
 
 func (h *Host) Facts(s session.Session) (Facts, error) {
@@ -741,6 +758,18 @@ func (h *Host) Facts(s session.Session) (Facts, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	f := Facts{Model: c.model, Models: append([]contract.SessionModel{}, c.models...), Effort: c.effort, Efforts: append([]string(nil), c.efforts...), Limits: quotaSnapshot(c.quota, time.Now())}
+	f.Protocol = &contract.SessionProtocol{Phase: "not_connected"}
+	if c.client != nil {
+		// Both are an owned metadata-only snapshot. No raw frame can enter it.
+		raw, _ := json.Marshal(c.client.Lifecycle())
+		if err := json.Unmarshal(raw, f.Protocol); err != nil {
+			return Facts{}, refusal("invalid_lifecycle")
+		}
+	}
+	f.Protocol.TraceEnabled = h.opts.RawTrace
+	if err := h.wireError(); err != "" {
+		f.Protocol.TraceError = err
+	}
 	if c.contextKnown {
 		reading := c.context
 		f.Context = &reading

@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/auth"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -311,7 +312,7 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, _ := json.Marshal(map[string]any{"executable": exe, "accountDir": dir, "args": []string{"-test.run=^TestOwnedHTTPPeer$"}})
+	cfg, _ := json.Marshal(map[string]any{"executable": exe, "accountDir": dir, "rawTrace": true, "args": []string{"-test.run=^TestOwnedHTTPPeer$"}})
 	if err := os.WriteFile(filepath.Join(s.cfg.Dir, "antigravity-acp-pilot.json"), cfg, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -350,6 +351,9 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	if initial.Code != 200 || json.Unmarshal(initial.Body.Bytes(), &initialInfo) != nil || initialInfo.Info.Session.Model != "synthetic-flash" || initialInfo.Info.Session.Effort != "high" || !reflect.DeepEqual(initialInfo.Info.Efforts, []string{"low", "medium", "high"}) || len(initialInfo.Info.Models) != 2 || initialInfo.Info.Models[0].Name != "Synthetic Flash" {
 		t.Fatalf("initial native config=%s", initial.Body.String())
 	}
+	if initialInfo.Info.Protocol == nil || initialInfo.Info.Protocol.Phase != "idle" || !initialInfo.Info.Protocol.TraceEnabled {
+		t.Fatalf("initial protocol evidence=%+v", initialInfo.Info.Protocol)
+	}
 	for _, command := range []string{"/effort low", "/model synthetic-pro"} {
 		if _, err := s.actions().Send(ctx, answer.ID, command); err != nil {
 			t.Fatal(err)
@@ -385,6 +389,9 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	var summary contract.SessionInfoReply
 	if summaryResponse.Code != 200 || json.Unmarshal(summaryResponse.Body.Bytes(), &summary) != nil || len(summary.Info.Models) != 2 || summary.Info.Limits == nil || len(summary.Info.Limits.Windows) != 0 {
 		t.Fatalf("summary=%s", summaryResponse.Body.String())
+	}
+	if p := summary.Info.Protocol; p == nil || p.Phase != "prompt_pending" || p.RequestID == "" || p.CompletedAt != 0 || p.StopReason != "" {
+		t.Fatalf("text incorrectly completed protocol=%+v", p)
 	}
 	if summary.Info.Session.Model != "synthetic-pro" || summary.Info.Session.Effort != "medium" || !reflect.DeepEqual(summary.Info.Efforts, []string{"medium", "high"}) {
 		t.Fatalf("summary native config=%s", summaryResponse.Body.String())
@@ -426,6 +433,36 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	}
 	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-pro" || info.Info.Session.Effort != "medium" || !reflect.DeepEqual(info.Info.Efforts, []string{"medium", "high"}) || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-pro" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 2 || info.Info.Limits.Windows[0].UsedPercent != 38 || info.Info.Limits.Windows[1].Name != "Argon 7d" || info.Info.Limits.Windows[1].UsedPercent != 100 || !info.Info.Limits.Windows[1].Hit {
 		t.Fatalf("native facts missing or billing invented: %d %s", infoResponse.Code, infoResponse.Body.String())
+	}
+	// Sample the recorder used by this real-pipe owner, then read the public panel.
+	deadline = time.Now().Add(3 * time.Second)
+	for s.antigravitySessions.Load().WireTraceStats().QueueRecords != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	readings := map[string]capacity.Reading{}
+	for name, measure := range s.antigravityCapacityMeasures() {
+		if strings.HasPrefix(name, "antigravity.acp_trace_") {
+			readings[name] = measure()
+		}
+	}
+	fakeBeat(t, s, readings, nil)
+	capacityResponse := httptest.NewRecorder()
+	s.capacityRoute(capacityResponse, httptest.NewRequest(http.MethodGet, "/v1/capacity", nil))
+	var panel contract.CapacityPanel
+	if capacityResponse.Code != 200 || json.Unmarshal(capacityResponse.Body.Bytes(), &panel) != nil {
+		t.Fatalf("trace capacity panel=%s", capacityResponse.Body.String())
+	}
+	for name, reading := range readings {
+		row := entry(t, panel.Capacity, name)
+		if !reading.Known || row.Used == nil || *row.Used != reading.Used || row.State == contract.CapacityStateUnknown {
+			t.Fatalf("unmeasured trace capacity %s: %+v", name, row)
+		}
+	}
+	if *entry(t, panel.Capacity, "antigravity.acp_trace_bytes").Used == 0 || *entry(t, panel.Capacity, "antigravity.acp_trace_records").Used == 0 || *entry(t, panel.Capacity, "antigravity.acp_trace_connections").Used != 1 {
+		t.Fatal("active recorder reported empty capacity")
+	}
+	if strings.Contains(capacityResponse.Body.String(), "synthetic HTTP input") || strings.Contains(summaryResponse.Body.String(), "synthetic HTTP input") {
+		t.Fatal("raw protocol content leaked into a public summary")
 	}
 	readAt := info.Info.Limits.ReadAtMs
 	summaryResponse = httptest.NewRecorder()

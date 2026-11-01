@@ -5814,9 +5814,10 @@ type SessionInfo struct {
 	// When the walk behind `links` was taken, in seconds since 1970. A held reading is
 	// served however old it is, so a card that wants to say how old it is has the
 	// number.
-	LinksObservedAt  float64        `json:"linksObservedAt,omitempty"`
-	Models           []SessionModel `json:"models"`
-	RemotePermission *SessionMenu   `json:"remotePermission,omitempty"`
+	LinksObservedAt  float64          `json:"linksObservedAt,omitempty"`
+	Models           []SessionModel   `json:"models"`
+	Protocol         *SessionProtocol `json:"protocol,omitempty"`
+	RemotePermission *SessionMenu     `json:"remotePermission,omitempty"`
 
 	// Fingerprint of the exact RC tool permission, including request ID, complete tool
 	// input, bridge and kernel generation.
@@ -6118,6 +6119,31 @@ type SessionPauseRequest struct {
 	RequesterSessionID string `json:"requester_session_id"`
 	TargetSessionID    string `json:"target_session_id"`
 	WakeCondition      string `json:"wake_condition"`
+}
+
+// Observed ACP v1 lifecycle, separate from model activity. Timestamps are Unix
+// nanoseconds. Only a matched prompt response confirms completion; elapsed
+// silence and text never do. Raw frames stay in the private local store and are
+// never carried here. not_connected means no live worker was consulted, not
+// idle.
+type SessionProtocol struct {
+	CancelRequestedAt int64  `json:"cancel_requested_at,omitempty"`
+	CompletedAt       int64  `json:"completed_at,omitempty"`
+	Failure           string `json:"failure,omitempty"`
+	LastAppliedAt     int64  `json:"last_applied_at,omitempty"`
+	LastAppliedKind   string `json:"last_applied_kind,omitempty"`
+	LastReceivedAt    int64  `json:"last_received_at,omitempty"`
+	LastReceivedKind  string `json:"last_received_kind,omitempty"`
+	Operation         string `json:"operation,omitempty"`
+	Phase             string `json:"phase"`
+	RequestID         string `json:"request_id,omitempty"`
+	RpcError          *int64 `json:"rpc_error"`
+	Sequence          int64  `json:"sequence"`
+	StartedAt         int64  `json:"started_at,omitempty"`
+	StopReason        string `json:"stop_reason,omitempty"`
+	TraceEnabled      bool   `json:"trace_enabled"`
+	TraceError        string `json:"trace_error,omitempty"`
+	Unrecognized      int64  `json:"unrecognized"`
 }
 
 // One assistant session. Fields that cannot be supported are absent rather than

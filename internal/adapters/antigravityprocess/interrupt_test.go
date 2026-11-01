@@ -34,6 +34,9 @@ func TestInterruptCancelsNativeTurnAndKeepsConversation(t *testing.T) {
 			<-accepted
 			if mode == "interrupt-permission" {
 				<-permissionReady
+				if got := c.Lifecycle(); got.Phase != "permission_pending" {
+					t.Fatal(got)
+				}
 			}
 			denied := errors.New("write access revoked")
 			if err := c.Interrupt(ctx, func() error { return denied }); !errors.Is(err, denied) {
@@ -44,6 +47,9 @@ func TestInterruptCancelsNativeTurnAndKeepsConversation(t *testing.T) {
 			}
 			if err := <-done; err != nil {
 				t.Fatal(err)
+			}
+			if got := c.Lifecycle(); got.Phase != "idle" || got.StopReason != "cancelled" || got.CompletedAt == 0 {
+				t.Fatal(got)
 			}
 			if c.PID() != pid || c.SessionID() != sessionID || c.Err() != nil {
 				t.Fatal("interruption closed or replaced the conversation")

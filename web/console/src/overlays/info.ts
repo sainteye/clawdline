@@ -38,6 +38,7 @@ import { reasoningEffortHTML } from "./reasoning-effort.js"
 import { catalogWord } from "../catalog.js"
 import "./info-next.css"
 import { workflowInfoHTML } from "../session/workflow-profile.js"
+import { protocolStateHTML } from "../session/protocol-state.js"
 
 /**
  * The Session info card — `Info` in `input/info.js`, function for function,
@@ -563,6 +564,7 @@ function html(d: Facts): string {
   out += workflowInfoHTML(d.workflow)
   let i = 0
   out += sec(++i, T.webInfoStatus, "", statusHTML(session() || (s as unknown as Row)))
+  if (d.protocol) out += sec(++i, catalogWord("acp", "title"), "", protocolStateHTML(d.protocol, key => catalogWord("acp", key), esc, L.clock))
   const role = roleHTML(session())
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
   if (graphifyEnabled && s.cwd) out += sec(++i, graphWord("title"), "", '<button type="button" class="chip" data-graphify-open>' + esc(graphWord("open")) + "</button>")

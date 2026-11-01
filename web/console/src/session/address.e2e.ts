@@ -86,6 +86,7 @@ let modelMenuScenario: { stage: "missing" | "models" | "gap" | "effort"; looks: 
 const picker = (question: string, labels: string[]) => ({ question,
   options: labels.map((label, i) => ({ n: i + 1, label, can: true, selected: i === 0 })) })
 const ACP = "owned:acp:fixture"
+let acpProtocolState: Record<string, unknown> | undefined
 let protocolMenuScenario: { waiting: boolean; requests: Record<string, unknown>[] } | null = null
 const protocolMenu = { revision: "native-offer-exact", question: "Inspect the attached image?", options: [
   { n: 1, label: "Allow once", can: true, selected: false }, { n: 2, label: "Deny", can: true, selected: false },
@@ -382,6 +383,7 @@ function daemon(): Server {
       if (!session) return json(res, 404, { error: { code: "not_found", message: id } })
       const reply = () => json(res, 200, {
         info: {
+          protocol: id === ACP ? acpProtocolState : undefined,
           workflow: workflowRecords[id],
           session: {
             id: session.id,
@@ -3734,4 +3736,36 @@ test("Sigma rendering failure keeps the keyboard node list and source inspector 
   assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
   if(shots){mkdirSync(shots,{recursive:true});await tab.shot('sigma-phone-unavailable')}
  })
+})
+
+
+test("ACP lifecycle evidence renders in English and Traditional Chinese on phone and desktop", async () => {
+  protocolMenuScenario = {waiting:false,requests:[]}
+  try {
+    for (const lang of ["en", "zh-Hant"]) for (const [name,size] of [["desktop",DESK],["phone",PHONE]] as const) {
+      acpProtocolState = {phase:"cancel_requested",operation:"prompt",sequence:5,unrecognized:0,last_received_at:1e9,trace_enabled:true}
+      await inTab(size,async tab => {
+        await tab.go("/")
+        await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(lang)})`)
+        await tab.run(`history.replaceState(null,"",${JSON.stringify("/#session="+encodeURIComponent(ACP))})`)
+        await tab.reload()
+        await tab.until("Gemini is open",state=>state.open===ACP)
+        await tab.run(`document.getElementById("detail-info").click()`)
+        const seen = await tab.run(`new Promise((resolve,reject)=>{
+          const until=Date.now()+5000
+          const check=()=>{
+            const el=document.querySelector('[data-acp-phase="cancel_requested"]')
+            if(el)return resolve(el.textContent)
+            if(Date.now()>until)return reject(new Error("missing ACP lifecycle"))
+            setTimeout(check,25)
+          };check()
+        })`)
+        assert.match(String(seen),lang==="en"?/Cancellation was sent/:/已送出取消/)
+        assert.match(String(seen),lang==="en"?/Raw communication is recorded locally/:/原始通訊保存在本機/)
+        const bounds=await tab.run(`({width:innerWidth,page:document.documentElement.scrollWidth})`)
+        assert.ok(bounds.page<=bounds.width+1,JSON.stringify(bounds))
+        if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`acp-lifecycle-${lang}-${name}`)}
+      })
+    }
+  } finally {protocolMenuScenario=null;acpProtocolState=undefined}
 })

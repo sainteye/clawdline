@@ -64,6 +64,9 @@ type Options struct {
 	// OnPermission publishes one live request and returns promptly. No callback
 	// or an unsupported offer is cancelled. The reader waits in wire order.
 	OnPermission func(context.Context, *PermissionRequest) error
+	// OnWire observes private protocol evidence. Recorder failure is visible in
+	// Lifecycle but cannot fail an otherwise valid provider request.
+	OnWire func(WireEvent) error
 }
 
 // PermissionRequest owns one native reply. It stays active for the process
@@ -148,6 +151,8 @@ type Client struct {
 	canLoad, canResume, canList   bool               // negotiated before opening a session
 	activePrompt, cancelledPrompt string             // stateMu; native turn, not process lifetime
 	activePermission              *PermissionRequest // stateMu
+	lifeMu                        sync.Mutex
+	lifecycle                     Lifecycle
 }
 
 type usageCapture struct {
@@ -322,6 +327,7 @@ func (c *Client) NewSession(ctx context.Context) (json.RawMessage, error) {
 	c.stateMu.Lock()
 	c.sessionID = id
 	c.stateMu.Unlock()
+	c.sessionReady()
 	return r, nil
 }
 
@@ -375,6 +381,7 @@ func (c *Client) restoreSession(ctx context.Context, id string, replay bool) (js
 	if raw, ok := m["sessionId"]; ok && !equalString(raw, id) {
 		return nil, c.badResult("session_identity_changed")
 	}
+	c.sessionReady()
 	return r, nil
 }
 
@@ -635,6 +642,10 @@ func (c *Client) Close() error {
 
 func (c *Client) shutdown(reason *Error) {
 	c.once.Do(func() {
+		c.lifeMu.Lock()
+		c.lifecycle.Phase, c.lifecycle.Failure = "closed", reason.Code
+		c.lifeMu.Unlock()
+		c.observe("local", "closed", nil, 0)
 		c.stateMu.Lock()
 		c.terminal = reason
 		c.stateMu.Unlock()
@@ -745,11 +756,14 @@ func (c *Client) exchange(ctx context.Context, method string, params any, before
 			}
 		}
 		attempted.Store(true)
+		metadata := false
 		if method == "session/prompt" {
 			c.stateMu.Lock()
 			c.activePrompt = id
+			metadata = c.usage != nil
 			c.stateMu.Unlock()
 		}
+		c.requestStarted(id, method, metadata)
 		writeErr := c.writeUnlocked(b)
 		c.writeMu.Unlock()
 		if writeErr != nil {
@@ -761,6 +775,10 @@ func (c *Client) exchange(ctx context.Context, method string, params any, before
 			select {
 			case frame := <-c.responses:
 				r.raw, r.err = response(frame, id)
+				if r.err == nil || isRPCError(r.err) {
+					c.observe("in", "applied", frame, 0)
+				}
+				c.requestSettled(id, r.raw, r.err)
 			case <-c.done:
 				c.stateMu.Lock()
 				e := *c.terminal
@@ -800,8 +818,14 @@ func (c *Client) writeUnlocked(b []byte) error {
 	// Only a blocked write consumes this budget, never model or human time.
 	timer := time.AfterFunc(c.opts.CallTimeout, func() { c.shutdown(failure("write_failed", Uncertain)) })
 	defer timer.Stop()
+	c.observe("out", "write_started", b, 0)
 	b = append(b, '\n')
 	n, err := c.in.Write(b)
+	stage := "written"
+	if err != nil || n != len(b) {
+		stage = "write_failed"
+	}
+	c.observe("out", stage, b[:len(b)-1], n)
 	if err == nil && n != len(b) {
 		return io.ErrShortWrite
 	}
@@ -814,6 +838,7 @@ func (c *Client) readLoop() {
 	scanner.Buffer(make([]byte, 0), c.opts.MaxFrameBytes+1)
 	for scanner.Scan() {
 		frame := append(json.RawMessage(nil), scanner.Bytes()...)
+		c.observe("in", "received", frame, 0)
 		if len(frame) > c.opts.MaxFrameBytes {
 			c.shutdown(failure("frame_too_large", Uncertain))
 			return
@@ -840,6 +865,7 @@ func (c *Client) readLoop() {
 				var reply map[string]any
 				if equalString(method, "session/request_permission") {
 					if c.permission(frame) {
+						c.observe("in", "applied", frame, 0)
 						continue
 					}
 					reply = map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"outcome": map[string]string{"outcome": "cancelled"}}}
@@ -870,6 +896,7 @@ func (c *Client) readLoop() {
 					return
 				}
 				if captured || c.opts.OnUpdate == nil {
+					c.observe("in", "applied", frame, 0)
 					continue
 				}
 				ctx, cancel := context.WithTimeout(c.ctx, c.opts.CallTimeout)
@@ -880,6 +907,7 @@ func (c *Client) readLoop() {
 					return
 				}
 			}
+			c.observe("in", "applied", frame, 0)
 			continue
 		}
 		// The reply is the metadata boundary. Clear it here in wire order,
@@ -929,12 +957,14 @@ func (c *Client) permission(frame json.RawMessage) bool {
 	c.stateMu.Lock()
 	c.activePermission = p
 	c.stateMu.Unlock()
+	c.permissionPhase(true)
 	defer func() {
 		c.stateMu.Lock()
 		if c.activePermission == p {
 			c.activePermission = nil
 		}
 		c.stateMu.Unlock()
+		c.permissionPhase(false)
 	}()
 	if err := c.opts.OnPermission(ctx, p); err != nil {
 		_ = p.Cancel(ctx, nil)

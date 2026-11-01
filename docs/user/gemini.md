@@ -169,3 +169,20 @@ that exact owned history generation. Paging and an ordinary daemon restart
 keep the same row. No marker is required in the assistant's prose. A replaced
 history generation cannot reuse the old row number. Images sent with the older
 marker-only API still need that marker in the reply.
+
+## Connection state and optional communication recording
+
+**About this session → Gemini connection state** distinguishes a pending request,
+a permission decision, a cancellation awaiting confirmation, a completed request
+and an ended connection. A full-looking reply is not a completion receipt. The
+last received-signal time is observation evidence; an old time alone does not
+mean the model has stopped. Use the sheet's refresh action for a current reading.
+
+Raw ACP communication recording is optional and off by default. If the machine
+owner enables it, the records stay in the machine's private database. They can
+contain the full messages, tool output and secrets present in that communication;
+Clawdline does not upload or add them to Cloud conversation history. Recording
+shares a 16 MiB / 8,192-record limit across workers and expires old records after
+24 hours on the next capture or history-store open. A recording error is shown as
+a gap and does not interrupt a conversation. Setup and evidence details are in
+[the ACP integration guide](../antigravity-acp-client.md#official-lifecycle-evidence-and-private-wire-capture).

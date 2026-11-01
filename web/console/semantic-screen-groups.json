@@ -1,9 +1,29 @@
 {
   "version": 1,
-  "englishContentKeys": 10389,
-  "riskKeys": 4587,
-  "nonRiskCount": 5802,
+  "englishContentKeys": 10418,
+  "riskKeys": 4602,
+  "nonRiskCount": 5816,
   "groups": [
+    {
+      "name": "acp / other",
+      "count": 11,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "acp.closed",
+        "acp.idle",
+        "acp.lastReceived",
+        "acp.requestFailed",
+        "acp.requestFailedPhase",
+        "acp.starting",
+        "acp.stopReason",
+        "acp.title",
+        "acp.traceDisabled",
+        "acp.traceEnabled",
+        "acp.traceGap"
+      ]
+    },
     {
       "name": "admin / other",
       "count": 262,
@@ -379,13 +399,16 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 394,
+      "count": 397,
       "sources": [
         null
       ],
       "keys": [
-        "capacityRow.antigravity.acp_call_seconds.what",
+        "capacityRow.antigravity.acp_call_seconds.full",
         "capacityRow.antigravity.acp_frame_bytes.what",
+        "capacityRow.antigravity.acp_trace_bytes.what",
+        "capacityRow.antigravity.acp_trace_connections.what",
+        "capacityRow.antigravity.acp_trace_records.what",
         "capacityRow.antigravity.acp_view_bytes.what",
         "capacityRow.antigravity.ancestry_rows.what",
         "capacityRow.antigravity.context_history.what",

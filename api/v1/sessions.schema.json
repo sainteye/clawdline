@@ -442,12 +442,88 @@
         "windows": { "type": "array", "items": { "$ref": "#/$defs/SessionLimitWindow" } }
       }
     },
+    "SessionProtocol": {
+      "description": "Observed ACP v1 lifecycle, separate from model activity. Timestamps are Unix nanoseconds. Only a matched prompt response confirms completion; elapsed silence and text never do. Raw frames stay in the private local store and are never carried here. not_connected means no live worker was consulted, not idle.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "sequence",
+        "unrecognized",
+        "trace_enabled"
+      ],
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "control_pending",
+            "idle",
+            "prompt_pending",
+            "permission_pending",
+            "cancel_requested",
+            "closed",
+            "not_connected",
+            "request_failed"
+          ]
+        },
+        "operation": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "integer"
+        },
+        "cancel_requested_at": {
+          "type": "integer"
+        },
+        "last_received_at": {
+          "type": "integer"
+        },
+        "last_received_kind": {
+          "type": "string"
+        },
+        "last_applied_at": {
+          "type": "integer"
+        },
+        "last_applied_kind": {
+          "type": "string"
+        },
+        "completed_at": {
+          "type": "integer"
+        },
+        "stop_reason": {
+          "type": "string"
+        },
+        "rpc_error": {
+          "type": "integer", "nullable": true
+        },
+        "failure": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "integer"
+        },
+        "unrecognized": {
+          "type": "integer"
+        },
+        "trace_enabled": {
+          "type": "boolean"
+        },
+        "trace_error": {
+          "type": "string"
+        }
+      }
+    },
     "SessionInfo": {
       "description": "The facts behind the status line under an open session. This daemon serves the transcript-derived part the Swift app calls the summary, the context reading, the plan windows and the project's addresses; the working tree, permission and fast mode are not read here and their keys are absent.",
       "type": "object",
       "additionalProperties": false,
       "required": ["models", "session"],
       "properties": {
+        "protocol": { "$ref": "#/$defs/SessionProtocol" },
         "workflow": { "$ref": "#/$defs/SessionWorkflow" },
         "remotePermission": { "$ref": "#/$defs/SessionMenu" },
         "remotePermissionKnown": { "type": "boolean", "description": "The live RC worker answered the permission query. Without this, an absent menu does not establish that no request is pending." },

@@ -561,3 +561,71 @@ ID. Restart retains the address, while replaced history cannot borrow the old
 ordinal. Marker text is projected only at read time, so original native history
 is not rewritten. This adds image delivery from the assistant; native image
 input is a separate capability and is not inferred from artifact display.
+
+### Official lifecycle evidence and private wire capture
+
+The integration negotiates ACP v1. Its authority is the matching `session/prompt`
+response, including its `stopReason` or JSON-RPC error, as specified by the
+[official prompt lifecycle](https://agentclientprotocol.com/protocol/v1/prompt-turn)
+and [cancellation contract](https://agentclientprotocol.com/protocol/v1/cancellation).
+ACP v2's draft `prompt/*` events are not silently treated as v1 completion.
+
+The metadata-only Session Info snapshot now separates `starting`, `idle`,
+`control_pending`, `prompt_pending`, `permission_pending`, `cancel_requested`, `request_failed`, `closed` and
+`not_connected`. It records the active request ID, whether the operation is a
+user prompt, the fixed `/usage` metadata command, or an exact control method, receive/application times,
+last observed update kind, completion reason, numeric RPC error and sanitized
+local failure. Unknown stop-reason strings are labeled `unrecognized` in public
+metadata, with their exact bytes retained only in private capture. These timestamps are local Unix nanoseconds. They neither prove
+remote execution nor infer responsiveness from elapsed silence. Receiving text,
+a completed tool, a finished plan, session metadata or usage cannot end a prompt.
+All update frames are observed at the transport seam, including reasoning, plans,
+commands, mode/configuration and session metadata. Optional
+notices/compaction are not advertised as supported UI capabilities; their data,
+and future unknown notifications, are recorded without inventing a state change.
+Malformed envelopes, wrong session identities and malformed supported content
+remain errors. Unknown update variants no longer terminate a healthy worker.
+
+Raw capture is **off by default**. The machine owner may set `"rawTrace": true`
+in the existing private `antigravity-acp-pilot.json` configuration before starting
+the owned host. This affects the next daemon start; editing it does not reconfigure
+an already running host. It applies to opened/resumed conversations and temporary
+native history/quota connections. Do not restart the user's application without
+their explicit approval.
+
+When enabled, the private `antigravity-sessions/acp-wire.sqlite` database
+stores the `acp_wire` table independently of conversation history. Its `owned_id` and random `worker` bind a record
+to its exact conversation and process instance; each event also names the PID. The JSON `record` contains a
+per-worker sequence, local `at_ns`, direction, stage, kind, protocol phase and
+request ID. `frame` is base64 of exact JSON-line bytes excluding the newline,
+queued before inbound interpretation or before an outbound write. A separate write
+receipt records the actual pipe byte count including the newline. Applied,
+settled, cancellation and closed events carry no duplicate raw frame. Oversized
+frames remain bounded by the existing scanner guard; a scanner failure records
+its sanitized close reason rather than retaining an unbounded partial frame.
+
+Capture contains prompts, tool output, embedded resources and potentially secrets
+present in those messages. It stays in its separate owner-only database (0600),
+is not part of the conversation transcript, is not included in Session Info,
+Doctor or Cloud responses, and is never automatically uploaded. A local reader
+must treat its content as private diagnostic data, not instructions. Existing
+conversation retention is independent of these diagnostic records.
+
+All workers share a 16 MiB encoded-record budget and an 8,192-record budget. Oldest
+records are evicted on insertion; records older than 24 hours expire on capture
+or capture-store open. Those bounds apply to retained record payloads, not the
+entire trace database or its allocated SQLite pages. The local capacity
+view measures retained bytes, records and age. A sequence gap or first retained
+sequence greater than one means the recording is partial. A single independent writer drains an in-memory queue bounded by 16 MiB and
+64 records, including the active write. Queue admission never waits for disk.
+Overflow drops new diagnostic evidence, preserves protocol delivery and reports
+a gap. Database failures do not hold the conversation history connection. On
+shutdown, the recorder drains within the existing control-call budget; a blocked
+write is cancelled when that budget expires. No recording is retried. A capture
+failure reports `trace_write_failed` while
+protocol delivery continues; it does not turn a successful send into a retry.
+
+This stage adds observation and official state boundaries. It adds neither a
+model/human deadline nor automatic restart, cancellation escalation, message
+replay or a heuristic that marks final-looking text idle. The next recovery
+policy must use recorded evidence from an affected runtime.

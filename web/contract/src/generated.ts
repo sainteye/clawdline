@@ -6850,6 +6850,7 @@ export interface SessionInfo {
    */
   linksObservedAt?: number
   models: SessionModel[]
+  protocol?: SessionProtocol
   remotePermission?: SessionMenu
 
   /**
@@ -7244,6 +7245,32 @@ export interface SessionPauseRequest {
   requester_session_id: string
   target_session_id: string
   wake_condition: string
+}
+
+/**
+ * Observed ACP v1 lifecycle, separate from model activity. Timestamps are Unix
+ * nanoseconds. Only a matched prompt response confirms completion; elapsed silence
+ * and text never do. Raw frames stay in the private local store and are never
+ * carried here. not_connected means no live worker was consulted, not idle.
+ */
+export interface SessionProtocol {
+  cancel_requested_at?: number
+  completed_at?: number
+  failure?: string
+  last_applied_at?: number
+  last_applied_kind?: string
+  last_received_at?: number
+  last_received_kind?: string
+  operation?: string
+  phase: string
+  request_id?: string
+  rpc_error: number | null
+  sequence: number
+  started_at?: number
+  stop_reason?: string
+  trace_enabled: boolean
+  trace_error?: string
+  unrecognized: number
 }
 
 /**

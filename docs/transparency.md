@@ -183,3 +183,11 @@ acceptance criteria, preserved baseline artifacts and explicit model-call cost
 controls. It grants no sandbox bypass, paid calls or machine workflow changes.
 Both language cards and the reviewed producer excerpt include this conditional
 framework path; catalog inclusion itself performs no installation or execution.
+
+
+ACP lifecycle observation and opt-in private wire recording do not change the
+`gemini-acp-context` prompt/resource composition, startup snapshot, replay rule
+or provider permissions described in either language. The reviewed source
+locations follow the added observation calls. The separate recording file and
+its bounds are described in the English and Taiwan Traditional Chinese Gemini
+guide; raw records are not instruction excerpts for the public transparency page.
