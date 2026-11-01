@@ -129,10 +129,10 @@ else
   . tools/release/codesign.sh
   mac=()
   for d in "$work"/unpacked/clawdline_*_darwin_*; do
-    [ -d "$d" ] && mac+=("$d/clawdline" "$d/libexec/tmux")
+    [ -d "$d" ] && mac+=("$d/clawdline" "$d/clawdline-daemon" "$d/libexec/tmux")
   done
   for d in "$work"/unpacked/Clawdline-*-macos-*; do
-    [ -d "$d" ] && while IFS= read -r app; do mac+=("$app"); done < <(find "$d" -maxdepth 1 -name '*.app')
+    [ -d "$d" ] && while IFS= read -r app; do mac+=("$app" "$app/Contents/MacOS/clawdline-daemon"); done < <(find "$d" -maxdepth 1 -name '*.app')
   done
   [ "${#mac[@]}" -gt 0 ] || { echo "the release holds no macOS binary to check" >&2; exit 1; }
   codesign_verify_release ${mac[@]+"${mac[@]}"}

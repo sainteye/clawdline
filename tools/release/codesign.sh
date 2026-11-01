@@ -47,10 +47,12 @@ codesign_begin() {
 # entitlements are granted: nothing Clawdline ships loads unsigned code, uses
 # a JIT or sends Apple Events.
 codesign_path() {
-  local p opts=()
+  local p opts=() identity=()
   [ "${CLAWDLINE_CODESIGN_HARDENED:-0}" != 1 ] || opts=(--options runtime --timestamp)
   for p in "$@"; do
-    codesign --force ${opts[@]+"${opts[@]}"} --sign "${CLAWDLINE_CODESIGN_ID:--}" "$p"
+    identity=()
+    if [ "$(basename "$p")" = clawdline-daemon ]; then identity=(--identifier clawdline-daemon); fi
+    codesign --force ${opts[@]+"${opts[@]}"} ${identity[@]+"${identity[@]}"} --sign "${CLAWDLINE_CODESIGN_ID:--}" "$p"
   done
 }
 
@@ -122,6 +124,9 @@ codesign_verify_release() {
   for p in "$@"; do
     codesign --verify --deep --strict "$p" || { echo "$p: signature does not verify" >&2; return 1; }
     info=$(codesign -dvvv "$p" 2>&1)
+    if [ "$(basename "$p")" = clawdline-daemon ]; then
+      grep -qx 'Identifier=clawdline-daemon' <<<"$info" || { echo "$p: background service has the wrong signing identifier" >&2; return 1; }
+    fi
     grep -q '^Authority=Developer ID Application: ' <<<"$info" || { echo "$p: not signed by a Developer ID Application identity" >&2; return 1; }
     codesign --verify --deep --strict -R="$(codesign_release_requirement)" "$p" 2>/dev/null ||
       { echo "$p: not signed by the Clawdline release team $CLAWDLINE_RELEASE_TEAM_ID ($(grep '^TeamIdentifier=' <<<"$info"))" >&2; return 1; }

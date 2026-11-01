@@ -104,6 +104,9 @@ func main() {
 	case "provider":
 		os.Exit(providerObserveCommand(context.Background(), os.Args[2:], config.Load().Dir, os.Stdin, os.Stdout, os.Stderr))
 	case "serve":
+		if err := delegateNamedDaemon(); err != nil {
+			fail(err)
+		}
 		serve()
 	case "graphify":
 		graphifyCommand(os.Args[2:])

@@ -394,7 +394,7 @@ func runSetup(h setupHost, o setupOptions) int {
 		if err := place.layout.InstallServiceBinary(name); err != nil {
 			return setupRefuse(h, err)
 		}
-		spec.Exec = place.layout.ServiceBin
+		spec.Exec = place.layout.ServiceExecutable(name)
 		spec.LogPath = filepath.Join(place.stateDir, "service.log")
 		domain, isGUI := launchdDomain(h)
 		gui = isGUI

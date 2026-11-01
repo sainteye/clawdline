@@ -2267,7 +2267,7 @@
         },
         {
           "path": "cmd/clawdline/main.go",
-          "line": 302
+          "line": 326
         },
         {
           "path": "internal/adapters/projects/launch.go",
@@ -2758,7 +2758,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/graphify.go": "a0716503d418090b5056f7f529683124d4eecdbf14af16bc00f941d764f854f9",
-    "cmd/clawdline/main.go": "48d4fcfa57cccb06c55c6f7d171ccad25f3af41e155c00279c03be1cdbcb6be8",
+    "cmd/clawdline/main.go": "5c9d9704d02e0b98985ccde89c6dde5fbea6563eda03997c2f303a791f2c6f76",
     "cmd/clawdline/session.go": "0fc62871605339e63df21529801409aa809907ec05bb8343bbbd766600c11574",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",

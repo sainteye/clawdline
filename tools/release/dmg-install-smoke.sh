@@ -156,7 +156,7 @@ try:
         '(deny file-read* file-write* (require-all (subpath ' + json.dumps(original_home)
         + ') (require-not (subpath ' + json.dumps(str(root)) + '))))\n'
         '(deny process-exec (literal "/usr/bin/osascript"))\n')
-    binary = installed / 'Contents/MacOS/clawdline'
+    binary = installed / 'Contents/MacOS/clawdline-daemon'
     sandbox = ['sandbox-exec', '-f', str(profile)]
     version = json.loads(subprocess.check_output(sandbox + [str(binary), 'version', '--json'], env=env, timeout=30))
     require(version.get('version', '').lstrip('v') == args.version.lstrip('v'), 'wrong daemon version')

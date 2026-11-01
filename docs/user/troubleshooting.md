@@ -54,6 +54,52 @@ the installer again after the fix is safe: it picks up from what is already in p
 An update that does not come up healthy rolls back by itself; the console's Settings page and
 `clawdline update` give the reason ([updates.md](../updates.md)).
 
+## macOS file permissions
+
+An assistant can report `Operation not permitted` for Downloads, Documents or
+Desktop even when the Clawdline Next window already has access. macOS may
+attribute the assistant's file operations to Clawdline's separately installed
+background service.
+
+| Permission entry | Default installed location |
+| --- | --- |
+| `clawdline-daemon` (or `clawdline` on older installations) | `~/.local/share/clawdline-next/service/` |
+| Clawdline Next | The graphical `Clawdline Next.app` bundle |
+
+1. Open **System Settings → Privacy & Security → Files and Folders**.
+2. Find the background service entry. If names are ambiguous, use **Show in
+   Finder**, when offered, to verify its executable location. Custom installations
+   may use a different install root.
+3. Enable only the needed folder, such as **Downloads Folder**, for that service.
+   If there is no entry or folder switch, perform the intended file operation once
+   and respond to any macOS prompt. A prior denial may not prompt again; repeated
+   retries do not grant permission.
+4. Retry the affected operation in the intended Session. An enabled switch alone
+   is not proof of successful access. If it still fails, record the error and time.
+
+macOS consent and the assistant sandbox are separate. Codex `--add-dir` and command
+approvals do not override macOS protected-folder permissions; macOS consent does
+not expand a writable workspace. A service rename or update can require permission
+to be checked again, and an existing tmux Session can retain its original launch
+context. Save work before deliberately opening a replacement Session. These steps
+do not require Full Disk Access, disabling sandbox protections, resetting every
+privacy grant or editing the TCC database.
+
+If the folder switch is missing or access remains denied, report the running
+version, service name/location and failure time with personal paths removed.
+For advanced diagnosis, TCC `AttributionChain` and `AUTHREQ_SUBJECT` at the time of
+the attempt identify the authorization subject: `responsible_path` names it, while
+`accessing` names the executable doing the work. A parent-process chain alone is
+not sufficient. Logs can be private or unavailable, and cached decisions may not
+emit a new event. Keep raw logs private:
+
+```sh
+log stream --info --debug --predicate 'subsystem == "com.apple.TCC"'
+```
+
+The maintained English and Traditional Chinese online instructions are at
+[macOS file permissions](https://clawdline.com/docs/troubleshooting/#macos-file-permissions).
+
 ## Sessions
 
 | You see | It means | Do this |

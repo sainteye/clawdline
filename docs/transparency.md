@@ -17,6 +17,12 @@ their source locations and review receipt follow the changed picker source.
 
 Separate loading from applicability. In normal Clawdline-launched Codex Sessions, Board language and the Note rule are startup defaults; language falls through the configured language, machine, bundled language and `zh-Hant`. Claude's language and existing Project memory are automatic startup decisions. Roles, Skills, Board assignments, todos, notices and handoffs have their own triggers. Board assignment and reminder messages also carry the current Agent-language preference for Board text and person-facing task updates, subject to explicit Project/conversation rules and provider language choices. New Root briefing prose captures that preference until its startup message is delivered; English and Taiwan Traditional Chinese are translated, with English prose fallback for other locales. Reading a completion rule in a guide does not execute the completion action or reinject the guide every turn.
 
+The macOS public CLI now delegates `serve` to the separately named daemon before
+opening state. This changes executable identity, not provider instructions or
+native-hook consent. The English and Traditional Chinese Antigravity original
+launch context explanations were reviewed against the same launch-store and
+managed-hook calls; their source link follows the moved startup location.
+
 ## Updating an instruction or entry
 
 1. Change the implementation and update the matching entry, original excerpt, runtime path and source location. Add an entry for a new behavior; do not squeeze a new trigger into an unrelated existing card.

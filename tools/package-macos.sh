@@ -154,6 +154,7 @@ else
   CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" \
     -o "$BUILD/Contents/MacOS/clawdline" ./cmd/clawdline
 fi
+cp "$BUILD/Contents/MacOS/clawdline" "$BUILD/Contents/MacOS/clawdline-daemon"
 swiftc -O -target "arm64-apple-macos$MACOS_MIN" -o "$BUILD/Contents/MacOS/$NAME" shell/darwin/*.swift
 
 # The tmux the app carries, with the licenses of what it is built from.
@@ -268,7 +269,7 @@ PLIST
 
 # No binary may need a newer macOS than Info.plist promises: LaunchServices
 # reads the binary, not the promise.
-for bin in "$BUILD/Contents/MacOS/$NAME" "$BUILD/Contents/MacOS/clawdline" "$BUILD/Contents/Helpers/tmux"; do
+for bin in "$BUILD/Contents/MacOS/$NAME" "$BUILD/Contents/MacOS/clawdline" "$BUILD/Contents/MacOS/clawdline-daemon" "$BUILD/Contents/Helpers/tmux"; do
   minos="$(vtool -show-build "$bin" | awk '$1 == "minos" { print $2; exit }')"
   if ! awk -v a="$minos" -v b="$MACOS_MIN" 'BEGIN {
       if (a == "") exit 1
@@ -287,7 +288,7 @@ done
 # additionally requires an Apple-issued identity; official releases enforce
 # Developer ID Application in tools/release/build.sh.
 codesign_begin
-codesign_path "$BUILD/Contents/MacOS/clawdline" "$BUILD/Contents/Helpers/tmux" "$BUILD"
+codesign_path "$BUILD/Contents/MacOS/clawdline" "$BUILD/Contents/MacOS/clawdline-daemon" "$BUILD/Contents/Helpers/tmux" "$BUILD"
 
 echo "built $BUILD ($(du -sh "$BUILD" | cut -f1))"
 

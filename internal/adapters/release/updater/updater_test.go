@@ -83,7 +83,7 @@ func TestMacRollbackRestoresTheStableServiceBinary(t *testing.T) {
 	if err := f.env.Layout.InstallServiceBinary("v0.10.0"); err != nil {
 		t.Fatal(err)
 	}
-	f.exe = f.env.Layout.ServiceBin
+	f.exe = f.env.Layout.ServiceExecutable("v0.10.0")
 	if name, kind := Running(f.env.Layout, f.exe); name != "v0.10.0" || kind != install.KindRelease {
 		t.Fatalf("stable executable: %s %s", name, kind)
 	}

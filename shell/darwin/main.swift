@@ -453,7 +453,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             return
         }
         guard let dir = Bundle.main.executableURL?.deletingLastPathComponent() else { return }
-        let binary = dir.appendingPathComponent("clawdline")
+        let binary = dir.appendingPathComponent("clawdline-daemon")
         guard FileManager.default.isExecutableFile(atPath: binary.path) else { return }
 
         var env = ProcessInfo.processInfo.environment

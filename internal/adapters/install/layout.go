@@ -27,6 +27,9 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/release"
 )
 
+// DaemonBinary distinguishes the macOS background service from the public CLI.
+const DaemonBinary = "clawdline-daemon"
+
 // Layout is one installation's paths.
 type Layout struct {
 	Root     string
@@ -48,7 +51,7 @@ func NewLayout(root, binDir string) Layout {
 		Releases:   filepath.Join(root, "releases"),
 		Current:    filepath.Join(root, "current"),
 		Staging:    filepath.Join(root, "staging"),
-		ServiceBin: filepath.Join(root, "service", "clawdline"),
+		ServiceBin: filepath.Join(root, "service", DaemonBinary),
 		BinLink:    filepath.Join(binDir, "clawdline"),
 	}
 }
@@ -152,16 +155,16 @@ func (l Layout) KindOf(exe string) Kind {
 // stable service path. The inode comparison keeps rollback truthful even when
 // current has switched but the supervisor has not installed the next link.
 func (l Layout) ServiceRelease(exe string) (string, Kind) {
-	if filepath.Clean(exe) != filepath.Clean(l.ServiceBin) {
+	if filepath.Clean(exe) != filepath.Clean(l.ServiceBin) && filepath.Clean(exe) != filepath.Clean(l.LegacyServiceBin()) {
 		return "", KindNone
 	}
-	service, err := os.Stat(l.ServiceBin)
+	service, err := os.Stat(exe)
 	if err != nil {
 		return "", KindNone
 	}
 	current, _ := l.CurrentRelease()
 	if current != "" {
-		if candidate, err := os.Stat(filepath.Join(l.ReleaseDir(current), "clawdline")); err == nil && os.SameFile(service, candidate) {
+		if l.serviceMatches(service, current, exe) {
 			return current, kindOfRelease(current)
 		}
 	}
@@ -174,11 +177,32 @@ func (l Layout) ServiceRelease(exe string) (string, Kind) {
 		if name == current || kindOfRelease(name) == KindNone {
 			continue
 		}
-		if candidate, err := os.Stat(filepath.Join(l.ReleaseDir(name), "clawdline")); err == nil && os.SameFile(service, candidate) {
+		if l.serviceMatches(service, name, exe) {
 			return name, kindOfRelease(name)
 		}
 	}
 	return "", KindNone
+}
+
+// LegacyServiceBin remains available for rollback to releases predating the name.
+func (l Layout) LegacyServiceBin() string { return filepath.Join(l.Root, "service", "clawdline") }
+
+// ServiceExecutable selects the name actually shipped by a release. A legacy
+// release keeps its original path and signing identity when rolled back.
+func (l Layout) ServiceExecutable(name string) string {
+	if info, err := os.Lstat(filepath.Join(l.ReleaseDir(name), DaemonBinary)); err == nil && info.Mode().IsRegular() {
+		return l.ServiceBin
+	}
+	return l.LegacyServiceBin()
+}
+
+func (l Layout) serviceMatches(service os.FileInfo, name, exe string) bool {
+	binary := "clawdline"
+	if filepath.Clean(exe) == filepath.Clean(l.ServiceBin) {
+		binary = DaemonBinary
+	}
+	candidate, err := os.Stat(filepath.Join(l.ReleaseDir(name), binary))
+	return err == nil && os.SameFile(service, candidate)
 }
 
 // InstallServiceBinary atomically selects the macOS daemon at a fixed real
@@ -188,6 +212,12 @@ func (l Layout) ServiceRelease(exe string) (string, Kind) {
 func (l Layout) InstallServiceBinary(name string) error {
 	if kindOfRelease(name) == KindNone {
 		return fmt.Errorf("%q is not a release or commit name", name)
+	}
+	named := filepath.Join(l.ReleaseDir(name), DaemonBinary)
+	if info, err := os.Lstat(named); err == nil && (!info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0) {
+		return fmt.Errorf("the named background service is not an executable regular file")
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(l.ServiceBin), 0o755); err != nil {
 		return err
@@ -207,12 +237,17 @@ func (l Layout) InstallServiceBinary(name string) error {
 	if target != consoleTarget {
 		return fmt.Errorf("service console path %s links to %q, want %q", console, target, consoleTarget)
 	}
-	tmp := l.ServiceBin + ".new"
+	destination := l.ServiceExecutable(name)
+	source := "clawdline"
+	if destination == l.ServiceBin {
+		source = DaemonBinary
+	}
+	tmp := destination + ".new"
 	_ = os.Remove(tmp)
-	if err := os.Link(filepath.Join(l.ReleaseDir(name), "clawdline"), tmp); err != nil {
+	if err := os.Link(filepath.Join(l.ReleaseDir(name), source), tmp); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, l.ServiceBin); err != nil {
+	if err := os.Rename(tmp, destination); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}

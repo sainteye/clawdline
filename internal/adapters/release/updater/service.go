@@ -133,6 +133,40 @@ func (e Env) restartService(ctx context.Context, s install.ServiceFile) error {
 	case "systemd":
 		_, err = e.Run(ctx, "systemctl", "--user", "restart", s.Name)
 	case "launchd":
+		name, _ := e.Layout.CurrentRelease()
+		target := e.Layout.ServiceExecutable(name)
+		// Older test/installation records without a plist location keep their
+		// existing supervisor command. setup always records the owned path.
+		if s.File != "" {
+			body, readErr := os.ReadFile(s.File)
+			if readErr != nil {
+				return readErr
+			}
+			updated, changed, changeErr := install.RenameLaunchdExecutable(body, []string{e.Layout.ServiceBin, e.Layout.LegacyServiceBin(), filepath.Join(e.Layout.Current, "clawdline")}, target)
+			if changeErr != nil {
+				return changeErr
+			}
+			if changed {
+				info, statErr := os.Stat(s.File)
+				if statErr != nil {
+					return statErr
+				}
+				temporary := s.File + ".new"
+				if writeErr := os.WriteFile(temporary, updated, info.Mode().Perm()); writeErr != nil {
+					return writeErr
+				}
+				if renameErr := os.Rename(temporary, s.File); renameErr != nil {
+					_ = os.Remove(temporary)
+					return renameErr
+				}
+				// A failed candidate bootstrap may already have left the job
+				// unloaded. The following bootstrap and health check decide
+				// whether the selected service actually starts.
+				_, _ = e.Run(ctx, "launchctl", "bootout", s.Domain+"/"+s.Name)
+				_, err = e.Run(ctx, "launchctl", "bootstrap", s.Domain, s.File)
+				return err
+			}
+		}
 		_, err = e.Run(ctx, "launchctl", "kickstart", "-k", s.Domain+"/"+s.Name)
 	default:
 		err = fmt.Errorf("unknown supervisor %q", s.Supervisor)

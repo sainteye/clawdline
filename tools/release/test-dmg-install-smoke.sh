@@ -33,7 +33,7 @@ resources.mkdir()
 (resources / 'shell-revision').write_text('a' * 64 + '\n')
 (root / 'source/Applications').symlink_to('/Applications')
 # An executable fixture speaks the actual daemon version and HTTP interfaces.
-daemon = macos / 'clawdline'
+daemon = macos / 'clawdline-daemon'
 daemon.write_text('#!' + os.environ['DMG_TEST_PYTHON'] + '''
 import http.server, json, os, sys
 from pathlib import Path
@@ -65,7 +65,7 @@ daemon.chmod(0o755)
 shell = macos / 'Clawdline Next'
 shell.write_text('''#!/bin/bash
 set -eu
-"$(dirname "$0")/clawdline" serve &
+"$(dirname "$0")/clawdline-daemon" serve &
 child=$!
 trap 'kill "$child"; wait "$child" || true; exit 0' TERM INT
 wait "$child"
