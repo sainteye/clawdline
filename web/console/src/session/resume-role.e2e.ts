@@ -73,7 +73,7 @@ function snapshot() {
       provenance: "fixture", source: { freshness: "current", observed_at: now(), provenance: "fixture" },
     },
     sessions: commandAssistant ? [{ id: "fixture-current", backend: "tmux", assistant: commandAssistant,
-      label: "Current fixture", sessionId: "fixture-conversation", cwd: commandCWD, state: commandWaiting ? "waiting" : "idle", evidence: "process",
+      label: "Current fixture", sessionId: "fixture-conversation", cwd: commandCWD, state: commandWaiting ? "waiting" : "idle", ...(commandWaiting ? { screen_reading: "read" } : {}), evidence: "process",
       isClaude: commandAssistant === "claude", work_state: "ready",
       activity: { known: true, at: now() }, closeability: safeCommandSession() },
       ...(commandLive ? ["fixture-wrong", "fixture-live"].map(id => ({ id, backend: "tmux",
@@ -737,7 +737,18 @@ for (const assistant of ["claude", "codex"]) {
   const tab=await Tab.open(browser,390,844,true)
   try {
    await tab.go("/#session=fixture-current")
-   await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal')?.hidden!==false){if(Date.now()>end)throw Error('unparsed menu did not hand off to Terminal');await new Promise(r=>setTimeout(r,20))}})()`)
+   // A question without options may only be a read that has not landed yet:
+   // nothing switches at once, a notice comes first, and staying keeps the card.
+   await tab.run(`new Promise(r=>setTimeout(r,2000))`)
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),true)
+   assert.equal(await tab.run(`document.querySelector('dialog.menu-handoff')`),null)
+   await tab.run(`(async()=>{const end=Date.now()+12000;while(!document.querySelector('dialog.menu-handoff[open]')){if(Date.now()>end)throw Error('unparsed menu offered no Terminal notice');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),true)
+   await tab.click('dialog.menu-handoff .chip:not(.primary)')
+   assert.equal(await tab.run(`document.querySelector('dialog.menu-handoff')`),null)
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),true)
+   await tab.click('#waiting [data-screen]')
+   assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),false)
    assert.equal(await tab.run(`document.querySelector('#session-todos').getBoundingClientRect().height`),0)
    assert.deepEqual(commandSends,[])
    assert.deepEqual(nativeRequests,[])
@@ -746,6 +757,18 @@ for (const assistant of ["claude", "codex"]) {
    assert.ok(await tab.run(`document.querySelector('#session-todos').getBoundingClientRect().height`)>0)
    await tab.click('#waiting [data-screen]')
    assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`),false)
+   assert.deepEqual(commandSends,[])
+   assert.deepEqual(nativeRequests,[])
+  }finally{commandWaiting=false;commandAssistant="";await tab.close()}
+ })
+ test(`${assistant}: the Terminal notice switches on its own after its countdown`, async()=>{
+  commandAssistant=assistant;commandWaiting=true;commandSends=[];nativeRequests=[]
+  const tab=await Tab.open(browser,1100,800,false)
+  try {
+   await tab.go("/#session=fixture-current")
+   await tab.run(`(async()=>{const end=Date.now()+12000;while(!document.querySelector('dialog.menu-handoff[open]')){if(Date.now()>end)throw Error('unparsed menu offered no Terminal notice');await new Promise(r=>setTimeout(r,20))}})()`)
+   await tab.run(`(async()=>{const end=Date.now()+8000;while(document.querySelector('#native-terminal')?.hidden!==false){if(Date.now()>end)throw Error('the notice did not switch to Terminal');await new Promise(r=>setTimeout(r,20))}})()`)
+   assert.equal(await tab.run(`document.querySelector('dialog.menu-handoff')`),null)
    assert.deepEqual(commandSends,[])
    assert.deepEqual(nativeRequests,[])
   }finally{commandWaiting=false;commandAssistant="";await tab.close()}

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10421,
-  "riskKeys": 4604,
-  "nonRiskCount": 5817,
+  "englishContentKeys": 10426,
+  "riskKeys": 4605,
+  "nonRiskCount": 5821,
   "groups": [
     {
       "name": "acp / other",
@@ -3304,12 +3304,16 @@
     },
     {
       "name": "nativeTerminal / other",
-      "count": 10,
+      "count": 14,
       "sources": [
         null
       ],
       "keys": [
         "nativeTerminal.back",
+        "nativeTerminal.handoffCountdown",
+        "nativeTerminal.handoffNow",
+        "nativeTerminal.handoffStay",
+        "nativeTerminal.handoffTitle",
         "nativeTerminal.hint",
         "nativeTerminal.keys",
         "nativeTerminal.loading",
