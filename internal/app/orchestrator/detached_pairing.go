@@ -18,6 +18,7 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -92,7 +93,14 @@ this computer. Nobody is watching this tab: do the steps below and nothing else.
    command on this computer.
 
 3. Report the ` + "`browser`" + ` and ` + "`machine`" + ` fingerprint lines the command prints, word for
-   word, so the person can compare them with what the browser shows.
+   word. In result.json, also include this structured field, copying only fingerprints
+   actually printed by the successful command on the target over the existing access:
+
+       "pairing_comparison": {"machine_id": "%[2]s", "viewer_fingerprint": "<browser line>", "machine_fingerprint": "<machine line>"}
+
+   Never derive the machine fingerprint from Cloud, the browser, or the offer. Do not
+   invent, complete, or substitute values. If either line is missing, omit the field;
+   the browser will keep manual comparison. Do not operate the browser yourself.
 
 If the machine cannot be reached, or the command fails, say so with what it printed and
 stop. Do not try other ways in that would change anything.
@@ -196,9 +204,48 @@ func PairingAgentDir(stateDir string) (string, error) {
 // ended. Never the brief, which holds the offer.
 type PairingAgentProgress struct {
 	// State is one of starting, dialog, working, done, failed.
-	State        string `json:"state"`
-	Summary      string `json:"summary,omitempty"`
-	FailedReason string `json:"failed_reason,omitempty"`
+	State        string                  `json:"state"`
+	Summary      string                  `json:"summary,omitempty"`
+	FailedReason string                  `json:"failed_reason,omitempty"`
+	Comparison   *PairingAgentComparison `json:"comparison,omitempty"`
+}
+
+// PairingAgentComparison is the assistant's observation carried by the trusted helper,
+// bound by the helper to the exact offer. It is not an independent remote-execution audit.
+type PairingAgentComparison struct {
+	MachineID          string `json:"machine_id"`
+	OfferSHA256        string `json:"offer_sha256"`
+	ViewerFingerprint  string `json:"viewer_fingerprint"`
+	MachineFingerprint string `json:"machine_fingerprint"`
+}
+
+var pairingFingerprint = regexp.MustCompile(`^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$`)
+
+func pairingAgentComparison(r Record) *PairingAgentComparison {
+	if r.Kind != PairingAgentKind || r.Result == nil {
+		return nil
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(r.Result.PairingComparison, &fields) != nil || len(fields) != 3 {
+		return nil
+	}
+	var c PairingAgentComparison
+	if json.Unmarshal(fields["machine_id"], &c.MachineID) != nil ||
+		json.Unmarshal(fields["viewer_fingerprint"], &c.ViewerFingerprint) != nil ||
+		json.Unmarshal(fields["machine_fingerprint"], &c.MachineFingerprint) != nil ||
+		!pairingFingerprint.MatchString(c.ViewerFingerprint) || !pairingFingerprint.MatchString(c.MachineFingerprint) {
+		return nil
+	}
+	// The caller validated this ID before writing the fixed brief.
+	if !strings.Contains(r.Instructions, "(Cloud machine id `"+c.MachineID+"`)") || c.MachineID == "" {
+		return nil
+	}
+	m := pairingOfferInBrief.FindStringSubmatch(r.Instructions)
+	if m == nil || m[1] == "" {
+		return nil
+	}
+	c.OfferSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(m[1])))
+	return &c
 }
 
 // Pairing hand-off progress words.
@@ -233,7 +280,7 @@ func PairingAgentProgressOf(r Record) PairingAgentProgress {
 		if r.Result != nil {
 			summary = scrub(r.Result.Summary)
 		}
-		return PairingAgentProgress{State: PairingAgentDone, Summary: summary}
+		return PairingAgentProgress{State: PairingAgentDone, Summary: summary, Comparison: pairingAgentComparison(r)}
 	case StateFailure, StateTimeout, StateCancelled, StateSpawnFailed:
 		reason := ""
 		switch {

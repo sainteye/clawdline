@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "englishContentKeys": 10419,
-  "riskKeys": 4602,
+  "englishContentKeys": 10421,
+  "riskKeys": 4604,
   "nonRiskCount": 5817,
   "groups": [
     {
@@ -3366,7 +3366,7 @@
     },
     {
       "name": "next / cloud",
-      "count": 254,
+      "count": 255,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3504,6 +3504,7 @@
         "next.cloudPairAgentSent",
         "next.cloudPairAgentTrustAsk",
         "next.cloudPairAgentWorking",
+        "next.cloudPairAutoChecking",
         "next.cloudPairCodeCopy",
         "next.cloudPairCompareFine",
         "next.cloudPairCompareTitle",
@@ -5992,7 +5993,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 143,
+      "count": 142,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -6007,7 +6008,6 @@
         "transparency.card.board.how",
         "transparency.card.board.summary",
         "transparency.card.board.title",
-        "transparency.card.child.condition",
         "transparency.card.child.effect",
         "transparency.card.child.how",
         "transparency.card.child.title",

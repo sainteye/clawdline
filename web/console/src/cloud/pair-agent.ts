@@ -14,6 +14,7 @@
  * The pairing itself still completes through the offer run this card is
  * already waiting on — this only changes who carries the offer.
  */
+import type { PairState } from "./pair.js"
 import type { nextWord } from "../next-strings.js"
 
 export const PAIR_AGENT_HANDLER = "clawdlinePairAgent"
@@ -111,7 +112,40 @@ export const PAIR_AGENT_EVENT = "clawdline-pair-agent"
 /** Where the AI task is, as the card says it. */
 export type PairAgentStage = "starting" | "dialog" | "working" | "done" | "failed"
 
-export type PairAgentProgress = { stage: PairAgentStage; summary: string; failedReason: string }
+export interface PairAgentComparison {
+  machine_id: string
+  offer_sha256: string
+  viewer_fingerprint: string
+  machine_fingerprint: string
+}
+
+export type PairAgentProgress = { stage: PairAgentStage; summary: string; failedReason: string; comparison?: PairAgentComparison }
+
+/** Digest the exact offer sent through the trusted helper, including its one-use keys. */
+export async function pairingOfferDigest(offer: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(offer))
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("")
+}
+
+export function readPairAgentComparison(value: unknown): PairAgentComparison | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const c = value as Record<string, unknown>
+  const fingerprint = /^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$/u
+  if (typeof c.machine_id !== "string" || !c.machine_id ||
+      typeof c.offer_sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(c.offer_sha256) ||
+      typeof c.viewer_fingerprint !== "string" || !fingerprint.test(c.viewer_fingerprint) ||
+      typeof c.machine_fingerprint !== "string" || !fingerprint.test(c.machine_fingerprint)) return undefined
+  return c as unknown as PairAgentComparison
+}
+
+/** Both the authenticated handover and the trusted helper's observation must agree. */
+export function pairAgentMatches(state: PairState, progress: PairAgentProgress | null, expected: { machineID: string; offerDigest: string } | null): boolean {
+  const c = readPairAgentComparison(progress?.comparison)
+  return state.phase === "paired" && progress?.stage === "done" && !!expected && !!c &&
+    c.machine_id === expected.machineID && state.machineID === expected.machineID &&
+    c.offer_sha256 === expected.offerDigest && c.viewer_fingerprint === state.fingerprint &&
+    c.machine_fingerprint === state.machineFingerprint
+}
 
 const STAGES: readonly PairAgentStage[] = ["starting", "dialog", "working", "done", "failed"]
 
@@ -120,11 +154,12 @@ const STAGES: readonly PairAgentStage[] = ["starting", "dialog", "working", "don
  * something the card knows how to say; anything else is null.
  */
 export function readPairAgentEvent(detail: unknown, taskID: string): PairAgentProgress | null {
-  const d = (detail ?? {}) as { task_id?: unknown; state?: unknown; summary?: unknown; failed_reason?: unknown }
+  const d = (detail ?? {}) as { task_id?: unknown; state?: unknown; summary?: unknown; failed_reason?: unknown; comparison?: unknown }
   if (!taskID || d.task_id !== taskID) return null
   if (typeof d.state !== "string" || !STAGES.includes(d.state as PairAgentStage)) return null
   const text = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, 600) : "")
-  return { stage: d.state as PairAgentStage, summary: text(d.summary), failedReason: text(d.failed_reason) }
+  const comparison = readPairAgentComparison(d.comparison)
+  return { stage: d.state as PairAgentStage, summary: text(d.summary), failedReason: text(d.failed_reason), ...(comparison ? { comparison } : {}) }
 }
 
 type EventHost = {

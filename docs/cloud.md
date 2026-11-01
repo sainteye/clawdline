@@ -67,12 +67,19 @@ The [Go CPU attribution](performance/cloud-read-cpu.md) measures the parser and 
 The browser recommends a paired helper machine when one is available. Choose Claude or Codex and
 press **Start pairing** once; generating the offer and handing it to the helper are one flow.
 Progress appears above the collapsed **Other pairing methods** disclosure. Code, terminal, QR,
-and copied instructions remain available there. The final fingerprint comparison is unchanged.
+and copied instructions remain available there. Assisted pairing closes its dialog automatically
+only after the authenticated handover agrees with the successful helper task's structured
+`pairing_comparison` observation of both fingerprints. The helper binds that observation to the
+exact offer with SHA-256; the browser also checks the requested machine ID. This trusts the
+assistant to read output over the helper's existing SSH/session-manager access, as the person
+previously did when reading its report; it is not independent proof of remote execution.
+Missing, malformed, stale or mismatched evidence retains manual fingerprint comparison.
+A handover that arrives first keeps following the helper task until its observation arrives.
 `pair-agent-start` carries the optional `assistant` field (`claude` or `codex`) through the encrypted
 command to the helper. Omitting it preserves the helper's installed-assistant default. Helpers
 running older decoders refuse the new field rather than silently use another assistant; update
 the helper before using the selector. A task ending is not proof of pairing: the offer response
-still owns the fingerprint confirmation.
+still owns the handover; task success alone never dismisses the comparison.
 
 ## Publications, reads and commands
 

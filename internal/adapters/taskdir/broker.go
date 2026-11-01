@@ -156,7 +156,9 @@ type Result struct {
 	Symbols             []string        `json:"symbols,omitempty"`
 	Artifacts           []string        `json:"artifacts,omitempty"`
 	Review              json.RawMessage `json:"review,omitempty"`
-	Verify              *Verification   `json:"verification,omitempty"`
+	// PairingComparison contains fingerprints observed over the helper's existing remote access.
+	PairingComparison json.RawMessage `json:"pairing_comparison,omitempty"`
+	Verify            *Verification   `json:"verification,omitempty"`
 	// GateVerdict is filled only by the broker after it independently reads a
 	// durable verification-gate submission. Ordinary result.json files cannot
 	// author it.
