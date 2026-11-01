@@ -494,7 +494,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         // when its character is pressed (NotchIsland.swift).
         NotchIsland.shared.attach(to: content, open: { [weak self] in self?.showConsole() })
         config.userContentController = content
-        web = WKWebView(frame: .zero, configuration: config)
+        web = FileDropWebView(frame: .zero, configuration: config, trustedOrigin: home)
         web.navigationDelegate = self
         // The microphone, and only for the console's own origin — see
         // Microphone.swift. Without a UI delegate a WKWebView refuses

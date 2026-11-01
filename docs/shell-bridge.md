@@ -259,3 +259,17 @@ key 的拼法、值的範圍都跟舊 app 的 `Config` 一樣，所以一行從�
 4. 收上面那八種訊息，用 `window.dispatchEvent(new CustomEvent(...))` 回三種答案。
 5. `ShellState` 裡答不出來的欄位就給空的：`fonts: []` 會讓字型下拉只剩檔案裡那一個值，
    `hooks.supported: false` 會讓那顆按鈕維持關著。**不要編。**
+
+## Dropped file paths
+
+The Local and Cloud main views use `FileDropWebView`. On a native drop it records
+file URLs from that drag only; `clawdlineDroppedPaths.postMessage({})` consumes the
+snapshot once. The main frame and current top-level origin must both match the
+view's configured origin, including scheme and port. Requests never read a live
+pasteboard, file contents, or directory children.
+
+The composer keeps pictures as attachments and inserts other paths into the draft,
+with shell quoting for spaces and metacharacters. Dropping never sends a message.
+Browser-only drops use supplied file URLs or relative paths; when only names are
+available, the composer inserts those names and explains the limitation. Paths
+refer to the machine where the drag originated, including in the Cloud view.

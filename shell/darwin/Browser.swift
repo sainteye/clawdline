@@ -467,7 +467,7 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
         // can say whether the app itself is paired. It names no version and
         // carries no authority: it only labels a device the person pairs.
         config.applicationNameForUserAgent = cloudAppUserAgentToken
-        view = WKWebView(frame: .zero, configuration: config)
+        view = FileDropWebView(frame: .zero, configuration: config, trustedOrigin: cloudHome)
         super.init()
         view.navigationDelegate = self
         view.uiDelegate = self

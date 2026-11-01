@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10418,
+  "englishContentKeys": 10419,
   "riskKeys": 4602,
-  "nonRiskCount": 5816,
+  "nonRiskCount": 5817,
   "groups": [
     {
       "name": "acp / other",
@@ -3705,7 +3705,7 @@
     },
     {
       "name": "next / other",
-      "count": 631,
+      "count": 632,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3754,6 +3754,7 @@
         "next.doorAskTitle",
         "next.doorAskWhy",
         "next.doorWrongCodeTries",
+        "next.dropNamesOnly",
         "next.firstSessionEmptyHint",
         "next.firstSessionRetry",
         "next.firstSessionRetryAgent",

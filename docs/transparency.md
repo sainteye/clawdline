@@ -191,3 +191,12 @@ or provider permissions described in either language. The reviewed source
 locations follow the added observation calls. The separate recording file and
 its bounds are described in the English and Taiwan Traditional Chinese Gemini
 guide; raw records are not instruction excerpts for the public transparency page.
+
+
+File and folder drops now insert visible path references into the editable draft,
+while pictures remain attachments. The drop itself does not send, prepare a
+provider prompt, install a tool or change permissions. Review of the English and
+Taiwan Traditional Chinese tool-library explanations confirms that their explicit
+send condition and removable attachment description remain accurate. The source
+location and receipt follow the moved composer send code. The website snapshot
+must follow this reviewed product revision when it is published.

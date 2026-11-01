@@ -13,6 +13,7 @@ import { catalogWord } from "./catalog.ts"
 
 const words = {
   en: {
+    dropNamesOnly: "This browser exposes only file names. Drop in the app to insert full paths.",
     toolLibraryTitle: "Tool library",
     toolLibraryDescription: "Save useful projects. Prepare and use their tools in this Session.",
     toolLibrarySaved: "My collection",
@@ -2349,6 +2350,7 @@ const words = {
     setupPhoneAndroidOpen: "In Chrome, open {site}, then choose ⋮ → Add to Home screen",
   },
   "zh-Hant": {
+    dropNamesOnly: "此瀏覽器只提供檔名；拖放到 App 可插入完整路徑。",
     toolLibraryTitle: "工具庫",
     toolLibraryDescription: "收藏值得留著的專案，交給目前 Session 準備並使用。",
     toolLibrarySaved: "我的收藏",

@@ -44,6 +44,7 @@ import { RemotePermissions } from "./RemotePermissions.js"
 import { Start } from "./Start.js"
 import { commandCatalog } from "../legacy/command-catalog.js"
 import { nativeTerminalAvailable, nativeTerminalCommand } from "./native-terminal-command.js"
+import { droppedFiles, droppedReferences, nativeDroppedPaths } from "./file-drop.js"
 import { resumeCommandQuery } from "./resume-command.js"
 
 /**
@@ -245,9 +246,19 @@ export function Composer({
       onDid()
     })
   }, [row, protocolOwned, on, machine, cardsVersion, onDid])
+  const dropEditor = useRef({ draftKey, append: (value: string) => {} })
+  dropEditor.current = { draftKey, append: (value: string) => {
+    const el = msg.current
+    if (!el) return
+    el.focus({ preventScroll: true })
+    caretToEnd()
+    insertText((rawText() && !/\s$/.test(rawText()) ? " " : "") + value + " ")
+    setText(rawText())
+    saveText(rawText())
+  } }
   // The picture listeners are bound once, and ask what is open when they fire.
-  const open = useRef({ on })
-  open.current = { on: on && (!remote || remote.allowPictures) }
+  const open = useRef({ on, allowPictures: true })
+  open.current = { on, allowPictures: !remote || remote.allowPictures }
 
   useEffect(() => {
     const draft = remote?.restoreDraft
@@ -272,7 +283,7 @@ export function Composer({
     // Paste, because copying a screenshot and pressing paste is how this is
     // done everywhere else. Not while the filter box has the focus.
     const paste = (ev: ClipboardEvent) => {
-      if (!open.current.on) return
+      if (!open.current.on || !open.current.allowPictures) return
       if (document.activeElement === document.getElementById("filter")) return
       // The box runs first and takes anything with words in it; a paste
       // already spoken for is left alone.
@@ -306,7 +317,16 @@ export function Composer({
         say(T.webShotNeedsSession, true)
         return
       }
-      Shots.add(ev.dataTransfer?.files, say)
+      if (!ev.dataTransfer) return
+      const dropped = droppedFiles(ev.dataTransfer)
+      const target = dropEditor.current
+      void nativeDroppedPaths().then(paths => {
+        if (dropEditor.current.draftKey !== target.draftKey) return
+        const references = droppedReferences(dropped, paths)
+        if (references.text) dropEditor.current.append(references.text)
+        if (references.namesOnly) say(nextWord("dropNamesOnly"), false)
+      })
+      if (dropped.pictures.length && open.current.allowPictures) Shots.add(dropped.pictures, say)
     }
     document.addEventListener("paste", paste)
     document.addEventListener("dragover", over)
