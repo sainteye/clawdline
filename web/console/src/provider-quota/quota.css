@@ -15,9 +15,16 @@
 .quota-logo, .quota-logo svg { display: block; width: 16px; height: 16px; flex: 0 0 16px; }
 .provider-quota-bar .quota-logo, .provider-quota-bar .quota-logo svg { width: 12px; height: 12px; flex-basis: 12px; }
 .quota-provider-name { flex-shrink: 0; }
-/* A provider can shrink; keep its readings inside that share of the footer. */
-.quota-full-windows { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.quota-window-separator { margin: 0 8px; color: var(--faint); }
+/* A provider can shrink. The leading (7d) reading stays whole; later readings give up characters,
+   never their whole box, so a few missing pixels cannot blank out a reading behind one "…". */
+.quota-full-windows { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+.quota-full-windows > .quota-window { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.quota-full-windows > .quota-window:first-child { flex-shrink: 0; }
+.quota-full-windows > .quota-window > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quota-full-windows > .quota-window > progress { flex: 0 1 56px; min-width: 16px; }
+.quota-full-windows > .quota-window > span:not(.quota-reset) { flex-shrink: 0; }
+.quota-full-windows > .quota-window > .quota-reset { flex-shrink: 8; }
+.quota-window-separator { flex: 0 0 auto; margin: 0 8px; color: var(--faint); }
 .quota-compact-window { display: none; }
 .quota-window { display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; }
 .quota-window progress { width: 56px; height: 5px; border: 0; appearance: none; background: var(--line); border-radius: 4px; overflow: hidden; color: var(--dim); }

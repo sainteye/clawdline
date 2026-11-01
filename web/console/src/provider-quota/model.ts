@@ -24,17 +24,19 @@ export function visibleQuotaRows(rows: readonly ProviderQuotaRow[]): ProviderQuo
 export function tightestWindow(row: ProviderQuotaRow) {
   return row.windows.reduce((a, b) => b.used_percent > a.used_percent ? b : a)
 }
+/** The all-models weekly window leads: it is the reading a person plans a week around. */
+const weekly = (name: string) => name === "7d"
+/** Footer order: the weekly window first, then the remaining windows in provider order. */
+export function footerWindows(row: ProviderQuotaRow) {
+  return [...row.windows.filter((w) => weekly(w.name)), ...row.windows.filter((w) => !weekly(w.name))]
+}
 /**
- * In compact / mobile layouts, select the window to display for a provider.
- * For Gemini, default to all models' weekly limit ("7d") rather than a model-specific
- * bucket like "Argon 7d". For other providers (or when "7d" is absent), choose the tightest window.
+ * The single window a compact (mobile) footer shows: the all-models weekly window for every
+ * provider, so a model-specific bucket such as Gemini's "Argon 7d" or a busy 5h window does not
+ * stand in for it. Without a 7d window, the tightest window is shown.
  */
 export function compactWindow(row: ProviderQuotaRow) {
-  if (row.id === "gemini") {
-    const allModels7d = row.windows.find((w) => w.name === "7d")
-    if (allModels7d) return allModels7d
-  }
-  return tightestWindow(row)
+  return row.windows.find((w) => weekly(w.name)) ?? tightestWindow(row)
 }
 export function compactQuotaRows(rows: readonly ProviderQuotaRow[], count: number): ProviderQuotaRow[] {
   return [...rows].sort((a, b) => compactWindow(b).used_percent - compactWindow(a).used_percent).slice(0, count)

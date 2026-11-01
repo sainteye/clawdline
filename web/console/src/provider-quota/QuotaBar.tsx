@@ -6,7 +6,7 @@ import { usePoll } from "../useFleet.js"
 import { useMachineVersion } from "../machine/NeedsUpdate.js"
 import { onMachineChanged } from "../cloud/machine-switch.js"
 import * as L from "../legacy/bridge.js"
-import { quotaCountdown, quotaStale, visibleQuotaRows, tightestWindow, compactWindow } from "./model.js"
+import { quotaCountdown, quotaStale, visibleQuotaRows, compactWindow, footerWindows } from "./model.js"
 import { quotaVisible, subscribeQuotaVisible } from "./visibility.js"
 import "./quota.css"
 
@@ -92,7 +92,7 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
             data-stale={stale(row) || undefined} aria-label={`${row.label} · ${nextWord("quotaUsed", { percent: Math.round(compact.used_percent) })}`} aria-haspopup="dialog" aria-controls="provider-quota-detail"
             onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
             <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
-            <span className="quota-full-windows">{row.windows.map((w, i) => <Fragment key={i}>
+            <span className="quota-full-windows">{footerWindows(row).map((w, i) => <Fragment key={i}>
               {i > 0 && <span className="quota-window-separator" aria-hidden="true">·</span>}<WindowValue window={w} now={now} />
             </Fragment>)}</span>
             <span className="quota-compact-window"><WindowValue window={compact} now={now} /></span>
