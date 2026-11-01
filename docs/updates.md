@@ -42,8 +42,17 @@ The public command remains `clawdline`. New macOS archives and App bundles also
 carry `clawdline-daemon`, signed with that identifier; only the background service
 uses it. Old releases keep `service/clawdline` for rollback. Setup writes the
 selected release's service path into the LaunchAgent. An update reloads that
-managed LaunchAgent when its executable changes, preserving its other settings;
-rollback selects the old release's path again. The CLI's `serve` entry also
+managed LaunchAgent when its executable changes, preserving its other settings.
+Reload attempts share the existing 30-second service-command deadline because
+launchd can briefly reject bootstrap after bootout. A missing managed job is
+bootstrapped even when the selected executable name did not change; rollback
+selects the old release's path again. The supervisor retains its recovery record
+and retries while the previous service is unavailable, within its existing run
+budget. Neither a successful restart command nor switching `current` counts as
+recovery: the console must answer HTTP 200 with the previous release's BUILD.
+The boot guard hands recovery back to the supervisor instead of declaring success
+before a service has answered. Exhausted recovery is recorded as failed, never
+as a verified rollback. See [the recovery checks](records/daemon-launchagent-recovery-20261101.md). The CLI's `serve` entry also
 hands off to the named daemon before opening state, covering the first update
 performed by an older updater that still launches the CLI. It does not restart
 existing tmux Sessions or grant macOS privacy permissions.

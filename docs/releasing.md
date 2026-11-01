@@ -72,7 +72,12 @@ each step done. v2.2.0 was cut this way ([acceptance record](records/release-v2.
 5. **Wait for the draft**: the run concludes `success`, and `gh release view <version>` shows a
    draft whose `targetCommitish` is the released commit.
 6. **Gate, then publish** (step 3 of *Cutting a release*): `tools/release/gate.sh <version>`, then
-   `--publish`, which repeats every check and publishes only if all pass. `stapler validate`
+   `--publish`, which repeats every check and publishes only if all pass. Changes to the updater,
+   daemon executable identity or service registration also require the
+   [update/recovery transition matrix](records/daemon-launchagent-recovery-20261101.md#required-release-acceptance)
+   on the actual previous published updater and candidate signed archives before publication.
+   Record console/BUILD recovery under failure, including both managed executable paths;
+   source tests or a fresh installation alone do not accept this transition. `stapler validate`
    queries Apple (`api.apple-cloudkit.com`) on every run; if it reports *no stapled notarization
    ticket*, run `xcrun stapler validate -v` on the App it names a few times. A ticket that
    validates there makes the failure a failed query: run the gate again unchanged. A ticket that

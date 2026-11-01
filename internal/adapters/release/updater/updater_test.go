@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -197,14 +198,15 @@ func TestTheHealthWaitIsBounded(t *testing.T) {
 // release share a commit, so only the version tells the restarted daemon
 // from the one it replaced.
 func TestHealthNeedsTheNewVersionNotOnlyItsCommit(t *testing.T) {
-	var build string
+	var build atomic.Value
+	build.Store("")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/BUILD.json" {
 			if r.Header.Get("Authorization") != "Bearer local-secret" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			io.WriteString(w, build)
+			io.WriteString(w, build.Load().(string))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -220,16 +222,16 @@ func TestHealthNeedsTheNewVersionNotOnlyItsCommit(t *testing.T) {
 	}
 	svc := install.ServiceFile{Port: port}
 	want := Served{Commit: commitOf('b'), Version: "v1.0.0"}
-	build = `{"stamp":"` + commitOf('b') + `","version":"v1.0.0-rc.1"}`
+	build.Store(`{"stamp":"` + commitOf('b') + `","version":"v1.0.0-rc.1"}`)
 	if err := e.waitHealthy(context.Background(), svc, want); errCode(err) != CodeHealthTimeout {
 		t.Fatalf("the release candidate still running passed as the final release: %v", err)
 	}
-	build = `{"stamp":"` + commitOf('b') + `","version":"v1.0.0"}`
+	build.Store(`{"stamp":"` + commitOf('b') + `","version":"v1.0.0"}`)
 	if err := e.waitHealthy(context.Background(), svc, want); err != nil {
 		t.Fatalf("the final release: %v", err)
 	}
 	// A BUILD.json from before it carried a version is known by its commit.
-	build = `{"stamp":"` + commitOf('b') + `"}`
+	build.Store(`{"stamp":"` + commitOf('b') + `"}`)
 	if err := e.waitHealthy(context.Background(), svc, want); err != nil {
 		t.Fatalf("a versionless BUILD.json: %v", err)
 	}
@@ -336,11 +338,21 @@ func TestTheBootGuardRollsBackANewReleaseThatKeepsFailing(t *testing.T) {
 		}
 	}
 	exit, note, err := f.env.BootGuard(newExe)
-	if !exit || err != nil || !strings.Contains(note, "rolled back to v0.10.0") {
+	if !exit || err != nil || !strings.Contains(note, "rolling back to v0.10.0") {
 		t.Fatalf("start %d: exit=%v note=%q err=%v", BootAttemptsLimit+1, exit, note, err)
 	}
-	if got := f.apply(); got.State != contract.UpdateApplyStateRolledBack || got.Error.Code != CodeBootGuard || f.current() != "v0.10.0" {
+	if got := f.apply(); got.State != contract.UpdateApplyStateRestarting || got.Error.Code != CodeBootGuard || f.current() != "v0.10.0" {
 		t.Fatalf("boot guard: %+v current %s", got, f.current())
+	}
+	if pending, ok, err := f.env.ReadPending(); err != nil || !ok || pending.Phase != phaseRollback {
+		t.Fatalf("guard discarded recovery: %+v %v %v", pending, ok, err)
+	}
+	f.healthy = commitOf('a')
+	if err := f.env.Finish(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.apply(); got.State != contract.UpdateApplyStateRolledBack || got.Error.Code != CodeBootGuard {
+		t.Fatalf("after recovery: %+v", got)
 	}
 
 	// Past the deadline, the first start already gives up.
@@ -848,8 +860,8 @@ func exists(p string) bool {
 // A new release that exits at once is restarted by its service faster than
 // the supervisor's health wait ends (systemd restarts it every 3 s), so its
 // boot guard gives the update up while the supervisor still waits. What the
-// guard recorded is the reason; the supervisor stops waiting and does not
-// write the update back as pending or restart the service again.
+// guard recorded is the reason; the supervisor stops waiting for the candidate
+// and verifies recovery of the previous service before settling the update.
 func TestTheSupervisorKeepsWhatTheBootGuardDecided(t *testing.T) {
 	f := newFixture(t, "v0.10.0")
 	f.publish("v0.11.0", commitOf('b'), daemonArchive(t, commitOf('b')), true, nil)

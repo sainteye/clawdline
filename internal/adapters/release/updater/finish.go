@@ -109,11 +109,14 @@ func (e Env) trySwitch(ctx context.Context, svc install.ServiceFile, p Pending) 
 		return &contract.UpdateApplyError{Code: CodeSupervisorFailed, Detail: "restarting the service: " + err.Error()}
 	}
 	gaveUp := func() bool {
-		_, still, err := e.ReadPending()
-		return err == nil && !still
+		pending, still, err := e.ReadPending()
+		return err == nil && (!still || pending.Phase == phaseRollback)
 	}
 	if err := e.waitHealthyUnless(ctx, svc, Served{Commit: p.ToCommit, Version: p.To}, gaveUp); err != nil {
 		if errors.Is(err, errSettledElsewhere) {
+			if pending, still, readErr := e.ReadPending(); readErr == nil && still && pending.Phase == phaseRollback && pending.Reason != nil {
+				return pending.Reason
+			}
 			return &contract.UpdateApplyError{Code: codeSettledElsewhere}
 		}
 		return codeOf(err, CodeHealthTimeout)
@@ -165,6 +168,26 @@ func (e Env) rollback(ctx context.Context, svc install.ServiceFile, p Pending) e
 			detail = why.Detail + "; restarting the previous release failed too: " + restartErr.Error()
 		}
 		why = &contract.UpdateApplyError{Code: why.Code, Detail: detail}
+		// Selecting the previous release is not a recovered service. Keep
+		// pending.json and the supervisor alive so its next start can retry.
+		// Exhaustion must be failed, never a successful rollback receipt.
+		if p.SupervisorRuns <= 2*SupervisorRunsLimit {
+			if err := e.record(contract.UpdateApplyStateRestarting, p.From, p.To, why, ""); err != nil {
+				return err
+			}
+			return fail(why.Code, "%s", why.Detail)
+		}
+		if err := e.markFailed(p.To); err != nil {
+			return err
+		}
+		if err := e.clearPending(); err != nil {
+			return err
+		}
+		if err := e.record(contract.UpdateApplyStateFailed, p.From, p.To, why, ""); err != nil {
+			return err
+		}
+		e.endSupervisor(ctx, svc)
+		return nil
 	}
 	err := e.settleRolledBack(p, why)
 	e.endSupervisor(ctx, svc)
@@ -207,6 +230,9 @@ func (e Env) BootGuard(exe string) (exit bool, note string, err error) {
 	switch {
 	case p.Phase == phaseRollback:
 		why = p.Reason
+		if why == nil {
+			why = &contract.UpdateApplyError{Code: CodeBootGuard, Detail: "the new release did not come up"}
+		}
 	case e.now().After(p.Deadline):
 		why = &contract.UpdateApplyError{Code: CodeBootGuard, Detail: fmt.Sprintf("%s started after its update's deadline %s", p.To, p.Deadline.Format("2006-01-02T15:04:05Z"))}
 	case p.Attempts >= BootAttemptsLimit:
@@ -229,10 +255,16 @@ func (e Env) BootGuard(exe string) (exit bool, note string, err error) {
 			return true, note, err
 		}
 	}
-	if err := e.settleRolledBack(p, why); err != nil {
+	// The guard runs before serving HTTP. Only the supervisor can verify
+	// that the previous service actually returned, so it retains recovery.
+	p.Phase, p.Reason = phaseRollback, why
+	if err := e.writePending(p); err != nil {
 		return true, note, err
 	}
-	return true, strings.TrimPrefix(note+"; ", "; ") + "rolled back to " + p.From + ": " + why.Detail, nil
+	if err := e.record(contract.UpdateApplyStateRestarting, p.From, p.To, why, ""); err != nil {
+		return true, note, err
+	}
+	return true, strings.TrimPrefix(note+"; ", "; ") + "rolling back to " + p.From + ": " + why.Detail, nil
 }
 
 // pruneReleases keeps current and the PreviousReleasesKeptLimit newest other
