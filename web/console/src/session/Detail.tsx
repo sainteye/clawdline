@@ -32,6 +32,8 @@ import { Composer } from "./Composer.js"
 import { composerDraftKey } from "./composer-drafts.js"
 import { nativeTerminalCommand, nativeTerminalAvailable as terminalPanelAvailable } from "./native-terminal-command.js"
 import { NativeTerminalPanel } from "./NativeTerminalPanel.js"
+import { MenuHandoffNotice } from "./MenuHandoffNotice.js"
+import { menuHandoffDelay, unreadMenuSeen, type UnreadMenu } from "./menu-handoff.js"
 import { pendingSends } from "./send.js"
 import { ScreenPanel } from "./ScreenPanel.js"
 import { ShellPanel } from "./ShellPanel.js"
@@ -223,15 +225,36 @@ export function Detail({
   const acceptedCommand = row && nativeTerminalAvailable ? pendingSends.of(row.id).find(card =>
     card.state === "accepted" && nativeTerminalCommand(card.text, row.assistant, row.backend, card.pictures.length)) : null
   const unreadMenu = row?.state === "waiting" && !row.menu?.options?.length
+  const openNativeTerminal = () => { setScreenOpen(false); setGitOpen(false); setShellOpen(null); setNativeTerminalOpen(true) }
   useEffect(() => {
     if (!row || !nativeTerminalAvailable) return
     // Receipt and screen reads are sufficient for native dialogs; many never
     // produce a transcript turn. Reopening a retained accepted card only reads.
-    const key = acceptedCommand?.token || (unreadMenu ? `${row.id}:${row.execution_generation}:${row.menu?.question || ""}` : "")
+    // A command the person sent asked for that CLI screen, so it opens at once.
+    const key = acceptedCommand?.token || ""
     if (!key || terminalHandoff.current === key) return
     terminalHandoff.current = key
-    setScreenOpen(false); setGitOpen(false); setShellOpen(null); setNativeTerminalOpen(true)
-  }, [row?.id, row?.execution_generation, row?.menu?.question, unreadMenu, nativeTerminalAvailable, acceptedCommand?.token, pendingVersion])
+    openNativeTerminal()
+  }, [row?.id, nativeTerminalAvailable, acceptedCommand?.token, pendingVersion])
+  // A question without options is often only a read that has not landed yet
+  // (`menu-handoff.ts`): it is offered to Terminal, with a notice, only after
+  // it has stayed unreadable on a captured screen.
+  const unreadKey = row && nativeTerminalAvailable && unreadMenu ? `${row.id}:${row.execution_generation}:${row.menu?.question || ""}` : ""
+  const unreadSince = useRef<UnreadMenu | null>(null)
+  unreadSince.current = unreadMenuSeen(unreadSince.current, unreadKey, Date.now())
+  const [handoffOffer, setHandoffOffer] = useState("")
+  useEffect(() => {
+    const delay = menuHandoffDelay(unreadSince.current, row?.screen_reading, terminalHandoff.current, Date.now())
+    if (delay === null) return
+    const key = unreadKey
+    const timer = window.setTimeout(() => {
+      if (unreadSince.current?.key !== key) return
+      terminalHandoff.current = key
+      setHandoffOffer(key)
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [unreadKey, row?.screen_reading])
+  useEffect(() => { if (handoffOffer && handoffOffer !== unreadKey) setHandoffOffer("") }, [unreadKey, handoffOffer])
 
   // The project the machine resolved for this session, once the sheet has read
   // it (`snippetProjectFor`): a session in a subdirectory of a project, or in a
@@ -374,6 +397,8 @@ export function Detail({
       <div className="session-output-layout" data-open={outputsOpen ? "true" : undefined}>
       <div className="session-conversation">
       <NativeTerminalPanel row={row} open={nativeTerminalOpen} onClose={()=>setNativeTerminalOpen(false)} />
+      {handoffOffer && handoffOffer === unreadKey && !nativeTerminalOpen &&
+        <MenuHandoffNotice onSwitch={() => { setHandoffOffer(""); openNativeTerminal() }} onStay={() => setHandoffOffer("")} />}
       <ScreenPanel
         row={row}
         open={screenOpen}

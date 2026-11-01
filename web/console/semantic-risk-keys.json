@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10421,
+  "englishKeys": 10426,
   "counts": {
-    "negation": 2912,
+    "negation": 2913,
     "state": 1704,
     "permission": 625,
     "deletion": 225,
     "uncertainty": 391
   },
-  "unionCount": 4604,
+  "unionCount": 4605,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2056,6 +2056,7 @@
       "literal.febcaa56ae82",
       "literal.ff95187970b9",
       "nativeTerminal.changed",
+      "nativeTerminal.handoffBody",
       "nativeTerminal.unavailable",
       "nativeTerminal.uncertain",
       "next.agentsNoRecord",
@@ -8918,6 +8919,7 @@
     "literal.ff95187970b9",
     "literal.ffa731746caa",
     "nativeTerminal.changed",
+    "nativeTerminal.handoffBody",
     "nativeTerminal.open",
     "nativeTerminal.unavailable",
     "nativeTerminal.uncertain",
