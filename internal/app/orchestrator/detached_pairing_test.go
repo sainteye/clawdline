@@ -1,6 +1,9 @@
 package orchestrator
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -148,5 +151,49 @@ func TestAPairingHandOffProgressIsAWordAndNeverTheOffer(t *testing.T) {
 		if strings.Contains(got.Summary+got.FailedReason, testPairingOffer) {
 			t.Errorf("%s: the offer reached the card", c.name)
 		}
+	}
+}
+
+// The helper exposes an observation only for a successful pairing task and
+// binds it to the exact brief. A success sentence alone is never evidence.
+func TestPairingObservationIsBoundToItsSuccessfulTask(t *testing.T) {
+	raw := `{"machine_id":"mac_x","viewer_fingerprint":"ABCD-EFGH-IJKL-MNOP","machine_fingerprint":"QRST-UVWX-YZ23-4567"}`
+	base := Record{Kind: PairingAgentKind, State: StateSuccess, Instructions: PairingAgentInstructions("mac_x", "x", testPairingOffer), Result: &taskdir.Result{PairingComparison: json.RawMessage(raw)}}
+	got := PairingAgentProgressOf(base)
+	if got.Comparison == nil || got.Comparison.OfferSHA256 != fmt.Sprintf("%x", sha256.Sum256([]byte(testPairingOffer))) || got.Comparison.MachineID != "mac_x" {
+		t.Fatalf("missing bound observation: %+v", got)
+	}
+	for _, state := range []State{StateQueued, StateBriefed, StateFailure, StateTimeout, StateCancelled} {
+		r := base
+		r.State = state
+		if PairingAgentProgressOf(r).Comparison != nil {
+			t.Fatalf("%s supplied evidence", state)
+		}
+	}
+	for _, bad := range []string{"", `null`, `{}`, `{"machine_id":"mac_x"}`, strings.Replace(raw, "mac_x", "mac_other", 1), strings.Replace(raw, "ABCD", "abcd", 1), strings.Replace(raw, `"machine_id"`, `"extra":true,"machine_id"`, 1)} {
+		r := base
+		r.Result = &taskdir.Result{Summary: "success", PairingComparison: json.RawMessage(bad)}
+		if PairingAgentProgressOf(r).Comparison != nil {
+			t.Fatalf("accepted malformed or unrelated observation: %s", bad)
+		}
+	}
+	r := base
+	r.Kind = "custom"
+	if PairingAgentProgressOf(r).Comparison != nil {
+		t.Fatal("another task kind supplied evidence")
+	}
+	r = base
+	r.Instructions = "no offer"
+	if PairingAgentProgressOf(r).Comparison != nil {
+		t.Fatal("missing offer supplied evidence")
+	}
+	// JSON persistence must retain the optional observation through task results.
+	data, err := json.Marshal(base.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored taskdir.Result
+	if err := json.Unmarshal(data, &restored); err != nil || string(restored.PairingComparison) != raw {
+		t.Fatalf("observation lost: %s, %v", restored.PairingComparison, err)
 	}
 }

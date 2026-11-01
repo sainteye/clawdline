@@ -68,7 +68,7 @@ import {
 import { PairPanel, type PairDevice, type PairRequest } from "./PairPanel.js"
 import { FleetUpdateRow } from "./FleetUpdateRow.js"
 import { FleetUpdateNotice } from "./FleetUpdateNotice.js"
-import type { PairAgentProgress, PairAgentReply } from "./pair-agent.js"
+import { readPairAgentComparison, type PairAgentProgress, type PairAgentReply } from "./pair-agent.js"
 import { DeviceLimitPanel } from "./DeviceLimitPanel.js"
 import { readThroughRelay, setCloudConnectionRetry } from "./install.js"
 import { setTerminalHost } from "./terminal-host.js"
@@ -1928,8 +1928,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           onClose: closePairing,
           // Pairing already reconnected the line and bootstrapped the row from
           // the authenticated handover. Closing reveals that updated list;
-          // the fingerprint stays here until the person has compared it.
-          onPaired: closePairing,
+          // comparison remains until the person or the trusted helper verifies it.
+          onPaired: () => {
+            const id = pairState.phase === "paired" ? pairState.machineID : ""
+            closePairing()
+            if (id) toast(nextWord("cloudPairDoneToast", { machine: names.get(id)?.name || id }))
+          },
           helpers: quickMachines.filter((machine) =>
             machine.id !== (pairRequest.mode === "offer" ? pairRequest.machine?.id : "") &&
             client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("pair-agent-start") &&
@@ -1965,6 +1969,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
               stage: answer.state as PairAgentProgress["stage"],
               summary: typeof answer.summary === "string" ? answer.summary : "",
               failedReason: typeof answer.failed_reason === "string" ? answer.failed_reason : "",
+              comparison: readPairAgentComparison(answer.comparison),
             }
           },
           device: pairDevice(),

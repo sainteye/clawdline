@@ -1272,6 +1272,10 @@
         {
           "path": "internal/app/orchestrator/policy.go",
           "line": 116
+        },
+        {
+          "path": "internal/app/orchestrator/detached_pairing.go",
+          "line": 71
         }
       ],
       "original": [
@@ -1810,7 +1814,47 @@
         "\tw(\"builds JSON gets refused by command screening on its own shape, and that refusal is a prompt with\")\n",
         "\tw(\"no \\\"always allow\\\" on a tab nobody is watching.\")\n",
         "\treturn s.String()\n",
-        "}\n"
+        "}\n",
+        "\n",
+        "const pairingAgentTemplate = `# Pair a Clawdline Cloud browser with another machine\n",
+        "\n",
+        "From Clawdline Cloud, the person asked for the machine named %[1]s\n",
+        "(Cloud machine id ` + \"`%[2]s`\" + `) to be paired with their browser, and confirmed it on\n",
+        "this computer. Nobody is watching this tab: do the steps below and nothing else.\n",
+        "\n",
+        "1. Reach that machine with the access this computer already has — an ssh host alias, a\n",
+        "   cloud provider's session manager (for example ` + \"`aws ssm start-session`\" + ` or\n",
+        "   ` + \"`aws ssm send-command`\" + `), whichever this computer's own configuration (~/.ssh/config,\n",
+        "   known hosts, the cloud CLI's profiles) shows reaches a machine of that name or id.\n",
+        "   Do not install anything, create credentials, or change any configuration to get there.\n",
+        "\n",
+        "2. On that machine, as the user that runs Clawdline there, run exactly this one command:\n",
+        "\n",
+        "       clawdline cloud pair -offer '%[3]s'\n",
+        "\n",
+        "   If ` + \"`clawdline`\" + ` is not on that machine's PATH, find the binary first — ` + \"`command -v clawdline`\" + `,\n",
+        "   then ~/.local/bin/clawdline and /usr/local/bin/clawdline, then the ExecStart= line of\n",
+        "   ` + \"`systemctl --user cat clawdline-next`\" + ` or ` + \"`systemctl cat clawdline-next`\" + ` — and run the same\n",
+        "   command with that full path. Change nothing else on that machine, and do not run the\n",
+        "   command on this computer.\n",
+        "\n",
+        "3. Report the ` + \"`browser`\" + ` and ` + \"`machine`\" + ` fingerprint lines the command prints, word for\n",
+        "   word. In result.json, also include this structured field, copying only fingerprints\n",
+        "   actually printed by the successful command on the target over the existing access:\n",
+        "\n",
+        "       \"pairing_comparison\": {\"machine_id\": \"%[2]s\", \"viewer_fingerprint\": \"<browser line>\", \"machine_fingerprint\": \"<machine line>\"}\n",
+        "\n",
+        "   Never derive the machine fingerprint from Cloud, the browser, or the offer. Do not\n",
+        "   invent, complete, or substitute values. If either line is missing, omit the field;\n",
+        "   the browser will keep manual comparison. Do not operate the browser yourself.\n",
+        "\n",
+        "If the machine cannot be reached, or the command fails, say so with what it printed and\n",
+        "stop. Do not try other ways in that would change anything.\n",
+        "\n",
+        "The code in that command is a one-time pairing secret. Do not write it anywhere — a file,\n",
+        "a note, a log, a message — except into that one command.\n",
+        "`\n",
+        "\n"
       ],
       "locations": [
         "<state>/tasks/<id>/CHILD.md",
@@ -2780,12 +2824,13 @@
     "internal/adapters/skillfile/skillfile.go": "a10a410e8966b71a8c4d6666e0155a4b0b12cb3f513d9843038e3e2e2118ffde",
     "internal/adapters/squadfiles/launch.go": "8f3e51f35df23fc2c34537eab07a58857f81eaac0cf1c3236c6c2d9253ac4e6a",
     "internal/adapters/store/workflow.go": "beff07175a0f854e298c7434185f4c5435e0c4e020cbd9251a9e72116d4f89fb",
-    "internal/adapters/taskdir/broker.go": "9f5c355354c0ea181b1dcefcbaec3fe2431f867d09abc7cd03356c06866b4968",
+    "internal/adapters/taskdir/broker.go": "c69b1984763af3106a7482e71984321f6e75351d4371a2567ea5060b9c879328",
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
     "internal/adapters/workflowlaunch/launch.go": "b19c0a4c140be78dc6923b663b9872b1354ebfa9e4a3d2790fe8dfcce3e47229",
     "internal/app/orchestrator/brief.go": "bffb5769b7b2dd66a738d593f8c1c9b9191018e57155267009d6d73ebbf74931",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
+    "internal/app/orchestrator/detached_pairing.go": "baad265baa7f4f3c2a4a49f033e087b0f813fb0aa24aff035e13d839d7508e20",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
     "internal/app/orchestrator/dispatch.go": "21983fd780981d7724a00e6a199d146a4469c50fe40bbebc8f9f043430eaba19",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
@@ -2844,7 +2889,7 @@
     "web/console/src/tool-library/model.ts": "a49e782115b98f8fd648dba7e50ced9b191d28468467e347051cac60e3fe6d5d"
   },
   "copyChecks": {
-    "en": "3accdafb1b2b87eb27f4e23a3631337e0c66bf9d455b3853c0cc7afa541b7eec",
-    "zh-Hant": "cb91679bca0b82e02973d7dd2edecae84572257f51017ab8a0faec489ef7e12f"
+    "en": "245a964575d5f33dda10a5d685a1c1f318d05ebe282c40eceb3bc30d591809f8",
+    "zh-Hant": "4475faecff9116d4c2ea6c1ad1cbd3e51e8906dd638e0b17d5f56177be837948"
   }
 }

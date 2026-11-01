@@ -14,6 +14,8 @@ import {
   listenPairAgent,
   localPairing,
   pairAgentAvailable,
+  pairAgentMatches,
+  pairingOfferDigest,
   progressSaid,
   type PairAssistant,
   type PairAgentProgress,
@@ -89,6 +91,9 @@ export function PairPanel(props: {
   const [helperID, setHelperID] = useState("")
   const [runningHelper, setRunningHelper] = useState("")
   const autoHelper = useRef("")
+  const [agentExpected, setAgentExpected] = useState<{ machineID: string; offerDigest: string; expiresAt: number } | null>(null)
+  const attempt = useRef(0)
+  const completed = useRef(false)
   const field = useRef<HTMLTextAreaElement>(null)
   const codeField = useRef<HTMLTextAreaElement>(null)
   const titleRef = useRef<HTMLHeadingElement>(null)
@@ -103,6 +108,12 @@ export function PairPanel(props: {
     focusModalContainer(panel.current)
   }, [requestKey])
   useLayoutEffect(() => {
+    // Handover can arrive before the helper finishes reporting its observation.
+    // Keep following that same task through the paired phase.
+    if (phase === "paired") return
+    attempt.current++
+    completed.current = false
+    setAgentExpected(null)
     setMismatched(false)
     setCopied("")
     setCodeCopied("")
@@ -113,7 +124,7 @@ export function PairPanel(props: {
     setManualOpen(phase === "waiting" && !helperFlow)
     setRunningHelper("")
     if (phase === "idle") setHelperFlow(false)
-  }, [phase])
+  }, [phase, requestKey])
   const followed = agent !== null && agent !== "sending" && agent.ok && agent.mode === "agent" ? agent.taskID : ""
   const following = followed !== "" && startedAt !== null
   useEffect(() => {
@@ -123,6 +134,11 @@ export function PairPanel(props: {
       let pending = false
       const read = () => {
         if (pending || !active) return
+        if (agentExpected && Date.now() >= agentExpected.expiresAt) {
+          setProgress({ stage: "failed", summary: "", failedReason: nextWord("cloudPairAutoManual") })
+          active = false
+          return
+        }
         pending = true
         void props.onAgentStatus!(runningHelper, followed).then((next) => {
           if (active) setProgress(next)
@@ -141,7 +157,12 @@ export function PairPanel(props: {
     return listenPairAgent(followed, (next) => {
       setProgress(next)
     })
-  }, [followed, runningHelper, props.onAgentStatus])
+  }, [followed, runningHelper, props.onAgentStatus, agentExpected?.expiresAt])
+  useEffect(() => {
+    if (!following || !agentExpected || progress?.stage === "done" || progress?.stage === "failed") return
+    const timer = setTimeout(() => setProgress({ stage: "failed", summary: "", failedReason: nextWord("cloudPairAutoManual") }), Math.max(0, agentExpected.expiresAt - Date.now()))
+    return () => clearTimeout(timer)
+  }, [following, agentExpected, progress?.stage])
   const running = following && progress?.stage !== "done" && progress?.stage !== "failed"
   useEffect(() => {
     if (!running) return
@@ -152,6 +173,13 @@ export function PairPanel(props: {
 
   const selectedHelper = props.onAgentStart ? props.helpers?.find((machine) => machine.id === helperID) ?? props.helpers?.[0] : undefined
   function startAgent(helper: { id: string; name: string } | null, target: { id: string; name: string }) {
+    const generation = ++attempt.current
+    const fragment = state.phase === "waiting" ? state.fragment : ""
+    const expiresAt = state.phase === "waiting" ? state.expiresAt : Date.now()
+    setAgentExpected(null)
+    void pairingOfferDigest(fragment).then(offerDigest => {
+      if (attempt.current === generation) setAgentExpected({ machineID: target.id, offerDigest, expiresAt })
+    }).catch(() => {})
     setManualOpen(false)
     setAgent("sending")
     setProgress(null)
@@ -160,9 +188,12 @@ export function PairPanel(props: {
       ? props.onAgentStart(helper.id, state.phase === "waiting" ? state.fragment : "", target, assistant)
       : handPairToAgent({ offer: state.phase === "waiting" ? state.fragment : "", machineID: target.id, machineName: target.name })
     void started.then((reply) => {
+      if (attempt.current !== generation) return
       setAgent(reply)
       if (reply.ok && reply.mode === "agent") setStartedAt(Date.now())
-    }).catch((error) => setAgent({ ok: false, error: error instanceof Error ? error.message : String(error) }))
+    }).catch((error) => {
+      if (attempt.current === generation) setAgent({ ok: false, error: error instanceof Error ? error.message : String(error) })
+    })
   }
   useEffect(() => {
     if (state.phase !== "waiting" || !asked || !autoHelper.current) return
@@ -178,6 +209,13 @@ export function PairPanel(props: {
     }, () => {})
     return () => { active = false }
   }, [])
+  useEffect(() => {
+    if (completed.current || !pairAgentMatches(state, progress, agentExpected)) return
+    completed.current = true
+    onPaired()
+  }, [state, progress, agentExpected, onPaired])
+  useEffect(() => () => { attempt.current++ }, [])
+
   const localAvailable = !!asked && asked.id === localMachine
   async function finishLocally(fragment: string) {
     if (!asked || !localAvailable) return
@@ -514,8 +552,12 @@ export function PairPanel(props: {
       }
       case "paired": {
         const name = asked && asked.id === state.machineID ? asked.name : nameOf(state.machineID)
+        const assisted = agent !== null && agent !== "sending" && agent.ok && agent.mode === "agent"
+        const verifying = assisted && progress?.stage !== "done" && progress?.stage !== "failed"
         return (
           <>
+            {verifying && <p role="status" aria-live="polite">{nextWord("cloudPairAutoChecking")}</p>}
+            {assisted && !verifying && !pairAgentMatches(state, progress, agentExpected) && <p role="status">{nextWord("cloudPairAutoManual")}</p>}
             <p className="cloud-pair-question" id="cloud-pair-said" data-paired={state.machineID}>
               {nextWord("cloudPairCompareTitle")}
             </p>

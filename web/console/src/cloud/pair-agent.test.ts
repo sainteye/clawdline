@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
-import { PAIR_AGENT_EVENT, PAIR_AGENT_HANDLER, agentOutcome, agentSaid, elapsedSaid, handPairToAgent, localPairing, listenPairAgent, pairAgentAvailable, progressSaid, readPairAgentEvent, type PairAgentReply } from "./pair-agent.ts"
+import { pairAgentMatches, pairingOfferDigest, readPairAgentComparison, PAIR_AGENT_EVENT, PAIR_AGENT_HANDLER, agentOutcome, agentSaid, elapsedSaid, handPairToAgent, localPairing, listenPairAgent, pairAgentAvailable, progressSaid, readPairAgentEvent, type PairAgentReply } from "./pair-agent.ts"
 
 function host(answer: (body: unknown) => Promise<unknown>) {
   const sent: unknown[] = []
@@ -165,4 +165,29 @@ test("local handover has no fallback to the assistant handler", async () => {
   assert.deepEqual(await localPairing(INPUT, { webkit: { messageHandlers: { clawdlinePairLocal: {
     postMessage: async () => { throw new Error("closed") },
   } } } }), { ok: false, machineID: "", error: "unreachable" })
+})
+
+
+test("automatic completion requires both observations for the exact offer and target", async () => {
+  const offerDigest = await pairingOfferDigest("synthetic-offer")
+  assert.match(offerDigest, /^[a-f0-9]{64}$/u)
+  assert.notEqual(await pairingOfferDigest("other-offer"), offerDigest)
+  const comparison = { machine_id: "mac_target", offer_sha256: offerDigest, viewer_fingerprint: "ABCD-EFGH-IJKL-MNOP", machine_fingerprint: "QRST-UVWX-YZ23-4567" }
+  const paired = { phase: "paired", machineID: "mac_target", fingerprint: comparison.viewer_fingerprint, machineFingerprint: comparison.machine_fingerprint } as const
+  const expected = { machineID: "mac_target", offerDigest }
+  const done = { stage: "done", summary: "success", failedReason: "", comparison } as const
+  assert.equal(pairAgentMatches(paired, done, expected), true)
+  assert.equal(pairAgentMatches({ phase: "waiting", fragment: "offer", fingerprint: paired.fingerprint, expiresAt: 1 }, done, expected), false)
+  for (const stage of ["working", "failed"] as const) assert.equal(pairAgentMatches(paired, { ...done, stage }, expected), false)
+  assert.equal(pairAgentMatches(paired, { ...done, comparison: undefined }, expected), false)
+  assert.equal(pairAgentMatches(paired, done, null), false)
+  for (const key of Object.keys(comparison)) {
+    assert.equal(pairAgentMatches(paired, { ...done, comparison: { ...comparison, [key]: "wrong" } }, expected), false, key)
+  }
+  assert.equal(pairAgentMatches({ ...paired, machineID: "mac_wrong" }, done, expected), false)
+  assert.equal(pairAgentMatches({ ...paired, machineFingerprint: comparison.viewer_fingerprint }, done, expected), false)
+  assert.equal(pairAgentMatches({ ...paired, fingerprint: comparison.machine_fingerprint }, done, expected), false)
+  assert.equal(readPairAgentComparison({}), undefined)
+  assert.deepEqual(readPairAgentEvent({ task_id: TASK, state: "done", comparison }, TASK)?.comparison, comparison)
+  assert.equal(readPairAgentEvent({ task_id: "old-task", state: "done", comparison }, TASK), null)
 })

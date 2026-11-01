@@ -206,3 +206,15 @@ Taiwan Traditional Chinese tool-library explanations confirms that their explici
 send condition and removable attachment description remain accurate. The source
 location and receipt follow the moved composer send code. The website snapshot
 must follow this reviewed product revision when it is published.
+
+
+Assisted Cloud pairing tasks now include an optional structured observation in
+`result.json`. Review of the child briefing in English and Taiwan Traditional
+Chinese includes this existing detached-task trigger and its fixed pairing
+instructions. The browser compares the observation with the authenticated
+handover, requested machine and exact offer digest before closing the dialog.
+The observation trusts the helper assistant's reading of its existing remote
+access; it is not an independent execution audit. No new root defaults, remote
+credentials or generic provider-instruction mechanism are introduced. Missing
+or mismatched evidence keeps manual comparison. The public website snapshot
+must follow this reviewed product revision when published.
