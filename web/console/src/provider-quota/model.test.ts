@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 // @ts-expect-error -- Node tests load the TypeScript source.
-import { compactQuotaRows, compactWindow, footerWindows, quotaCountdown, quotaStale, QUOTA_VISIBLE_KEY, readQuotaVisible, saveQuotaVisible, visibleQuotaRows } from "./model.ts"
+import { compactQuotaRows, compactWindow, quotaCountdown, quotaStale, QUOTA_VISIBLE_KEY, readQuotaVisible, saveQuotaVisible, visibleQuotaRows } from "./model.ts"
 import type { ProviderQuotaRow } from "@clawdline/contract"
 const row = (id: ProviderQuotaRow["id"], percent: number): ProviderQuotaRow => ({ id, label: id, windows: [{ name: "7d", used_percent: percent }], stale: false, source: "provider_api" })
 test("providers with no number stay hidden while a real zero stays visible", () => {
@@ -95,11 +95,3 @@ test("mobile compact window prefers 7d even when 5h is tighter", () => {
   assert.equal(compactWindow(claude).used_percent, 38)
 })
 
-test("footer puts the 7d window first and keeps the rest in provider order", () => {
-  const gemini: ProviderQuotaRow = {
-    id: "gemini", label: "Gemini", stale: false, source: "provider_cli",
-    windows: [{ name: "5h", used_percent: 5 }, { name: "Argon 7d", used_percent: 70 }, { name: "7d", used_percent: 20 }],
-  }
-  assert.deepEqual(footerWindows(gemini).map((w) => w.name), ["7d", "5h", "Argon 7d"])
-  assert.deepEqual(footerWindows({ ...gemini, windows: [{ name: "monthly", used_percent: 1 }] }).map((w) => w.name), ["monthly"])
-})

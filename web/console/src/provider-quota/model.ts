@@ -26,12 +26,8 @@ export function tightestWindow(row: ProviderQuotaRow) {
 }
 /** The all-models weekly window leads: it is the reading a person plans a week around. */
 const weekly = (name: string) => name === "7d"
-/** Footer order: the weekly window first, then the remaining windows in provider order. */
-export function footerWindows(row: ProviderQuotaRow) {
-  return [...row.windows.filter((w) => weekly(w.name)), ...row.windows.filter((w) => !weekly(w.name))]
-}
 /**
- * The single window a compact (mobile) footer shows: the all-models weekly window for every
+ * The single window the footer shows; the other windows open with the provider's details: the all-models weekly window for every
  * provider, so a model-specific bucket such as Gemini's "Argon 7d" or a busy 5h window does not
  * stand in for it. Without a 7d window, the tightest window is shown.
  */
