@@ -343,6 +343,8 @@ compilation if the selected identity is not Developer ID Application.
 
 ## Recent acceptance records
 
+- [v2.12.0 publication, Board issue sync, named macOS service and installed release evidence](records/release-v2.12.0-acceptance.md).
+
 - [v2.11.0 publication, Terminal colour and prompt fix, and isolated DMG evidence](records/release-v2.11.0-acceptance.md).
 
 - [v2.10.0 publication, workflows, project graphs and isolated DMG evidence](records/release-v2.10.0-acceptance.md).
