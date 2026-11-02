@@ -74,7 +74,15 @@ clawdline assistants
 For each of Claude Code and Codex: whether it is installed, its availability (`ok`, `low`,
 `exhausted` or `unknown`), when its quota window resets, and how old the reading is.
 
-### Claude's 5h and 7d need a status line that writes them down
+### Claude's 5h and 7d come from your status line, or from Claude Code itself
+
+The **quota footer** no longer needs a status line: when none has written a fresh reading,
+Clawdline asks the installed Claude Code for its plan windows, at most once every 15 minutes,
+without sending a prompt or spending quota ([provider-quotas.md](../provider-quotas.md)). The
+Status Line corner, dispatch and **Session info** still read only the status line's file, as
+described below.
+
+#### The status line's file
 
 The two percentages at the right edge of the Status Line — `5h 96% 7d 45%` — are the account's,
 not a session's, and Clawdline does not ask Anthropic for them: spending quota to find out how
