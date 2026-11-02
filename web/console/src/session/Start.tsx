@@ -20,6 +20,7 @@ import { assistantAdmits, assistantLabel, assistantRolesAdmit, assistantUnavaila
 import { resumeCommandPlace } from "./resume-command.js"
 import type { Assistant } from "@clawdline/contract"
 import { WorkModelChoice } from "../pages/work/WorkModelChoice.js"
+import { useMachineVersion } from "../machine/NeedsUpdate.js"
 import type { DefaultModelOption } from "../pages/settings/api.js"
 import "../pages/work/work.css"
 
@@ -1215,14 +1216,22 @@ export const Start = {
 }
 
 /** `div#start`, as `index.html` writes it; `static.js`'s words drawn by React. */
+/**
+ * API level 40 is the first daemon whose start route admits every model the
+ * catalog offers; an older one answers 404 to Fable or a Codex model. The row
+ * is offered only to a daemon known to be at least that level.
+ */
+const START_MODEL_API_LEVEL = 40
+
 /** The model row; React draws it, from the sheet's imperative state. */
 function StartModelRow() {
+  const version = useMachineVersion()
   const [, setTick] = useState(0)
   useEffect(() => {
     redrawModel = () => setTick((n) => n + 1)
     return () => { redrawModel = () => {} }
   }, [])
-  if (!modelRowShown() || !with_) return null
+  if (!modelRowShown() || !with_ || (version.apiLevel ?? 0) < START_MODEL_API_LEVEL) return null
   const assistant = with_
   return <div className="start-model" id="start-model">
     <WorkModelChoice key={assistant} id="start-model-options" assistant={assistant as Assistant}

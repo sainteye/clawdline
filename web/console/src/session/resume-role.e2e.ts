@@ -49,6 +49,8 @@ let offer: Record<string, unknown> = { available: false, reason: "boot_unknown",
 let resumes: string[] = []
 /** Every new start that arrived, by its path. */
 let starts: string[] = []
+/** The route level /v1/health reports; 39 is a daemon before the start route admitted every model. */
+let healthLevel = 40
 let placeReads = 0
 let commandAssistant = ""
 let commandCWD = "/work/api"
@@ -108,7 +110,7 @@ function daemon(): Server {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
     if (path === "/v1/sessions") return json(res, 200, snapshot())
-    if (path === "/v1/health") return json(res, 200, { ok: true })
+    if (path === "/v1/health") return json(res, 200, { ok: true, api_level: healthLevel })
     if (path === "/v1/strings" && url.searchParams.get("lang") === "zh-Hant") {
       return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
     }
@@ -891,3 +893,24 @@ for (const [width, height, mobile, name] of [[390, 844, true, "phone"], [1280, 9
     }
   })
 }
+
+test("a daemon before API level 40 is offered no model choice", async () => {
+  const tab = await Tab.open(browser, 390, 844, true)
+  healthLevel = 39
+  starts = []
+  try {
+    await tab.go("/")
+    await tab.click("#start-go")
+    await tab.until("the places are listed", (s) => s.places > 0)
+    await new Promise((r) => setTimeout(r, 500))
+    const row = await tab.run(MODEL)
+    assert.equal(row.shown, false, "an older daemon would refuse the chosen model")
+    await tab.click('#start-list .place[data-id="place-api"]')
+    for (let i = 0; i < 100 && !starts.length; i++) await new Promise((r) => setTimeout(r, 50))
+    assert.equal(starts.length, 1)
+    assert.ok(!/\/(opus|fable|sonnet|gpt)/.test(starts[0]), starts[0])
+  } finally {
+    healthLevel = 40
+    await tab.close()
+  }
+})
