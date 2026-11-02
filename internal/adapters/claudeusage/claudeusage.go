@@ -70,7 +70,10 @@ func Ask(ctx context.Context, executable string) ([]Window, Outcome) {
 	defer os.RemoveAll(dir)
 	cmd := exec.CommandContext(ctx, executable, Args...)
 	cmd.Dir = dir
-	cmd.Stderr = io.Discard
+	// Stderr stays nil (the null device): an io.Writer here makes Wait copy
+	// until every inheritor closes it, so a child Claude Code leaves behind
+	// would hold the ask open long after its answer arrived.
+	cmd.WaitDelay = time.Second
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, Failed
