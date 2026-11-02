@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10426,
+  "englishKeys": 10432,
   "counts": {
-    "negation": 2913,
-    "state": 1704,
+    "negation": 2915,
+    "state": 1706,
     "permission": 625,
     "deletion": 225,
     "uncertainty": 391
   },
-  "unionCount": 4605,
+  "unionCount": 4608,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -154,6 +154,8 @@
       "capacityRow.cache.assistant_quota.full",
       "capacityRow.cache.background_agents.full",
       "capacityRow.cache.background_agents.what",
+      "capacityRow.cache.claude_usage_refresh_seconds.full",
+      "capacityRow.cache.claude_usage_request_seconds.full",
       "capacityRow.cache.git_not_repo.what",
       "capacityRow.cache.git_not_repo_rows.full",
       "capacityRow.cache.git_not_repo_rows.what",
@@ -3014,6 +3016,8 @@
       "capacityRow.board.receipts.full",
       "capacityRow.board.receipts.what",
       "capacityRow.cache.assistant_quota.full",
+      "capacityRow.cache.claude_usage_reply_bytes.full",
+      "capacityRow.cache.claude_usage_request_seconds.full",
       "capacityRow.cache.git_not_repo.full",
       "capacityRow.cache.image_thumbs.full",
       "capacityRow.cache.pinned_read.full",
@@ -6131,6 +6135,9 @@
     "capacityRow.cache.assistant_quota.what",
     "capacityRow.cache.background_agents.full",
     "capacityRow.cache.background_agents.what",
+    "capacityRow.cache.claude_usage_refresh_seconds.full",
+    "capacityRow.cache.claude_usage_reply_bytes.full",
+    "capacityRow.cache.claude_usage_request_seconds.full",
     "capacityRow.cache.git_not_repo.full",
     "capacityRow.cache.git_not_repo.what",
     "capacityRow.cache.git_not_repo_rows.full",

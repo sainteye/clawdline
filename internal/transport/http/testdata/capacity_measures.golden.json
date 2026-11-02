@@ -230,6 +230,21 @@
     "Known": true
   },
   {
+    "Name": "cache.claude_usage_refresh_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cache.claude_usage_reply_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cache.claude_usage_request_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cache.git_not_repo",
     "Known": true,
     "WindowSeconds": true

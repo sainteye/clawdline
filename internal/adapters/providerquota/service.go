@@ -96,8 +96,19 @@ func (s *Service) snapshot(now time.Time, refresh bool) Snapshot {
 	out := Snapshot{At: now.Unix(), Providers: []Row{}}
 	if s.local != nil {
 		for _, p := range []struct{ id, label, source string }{{"claude", "Claude Code", "claude_statusline"}, {"codex", "Codex", "codex_rollout"}} {
-			q := s.local.Quota(p.id, now)
-			row := baseRow(p.id, p.label, p.source)
+			// A refreshing read may let the Claude reading ask Claude Code;
+			// Doctor's inspection observes without asking.
+			var q limits.Quota
+			if refresh {
+				q = s.local.Quota(p.id, now)
+			} else {
+				q = s.local.Observe(p.id, now)
+			}
+			source := p.source
+			if q.FromClaudeCode {
+				source = "provider_cli"
+			}
+			row := baseRow(p.id, p.label, source)
 			row.Stale = q.Stale
 			row.ObservedAt = q.ObservedAt
 			for _, w := range q.Windows {

@@ -26,6 +26,15 @@ func (s *Server) cacheCapacityMeasures() map[string]func() capacity.Reading {
 		"cache.provider_quota_request_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-provider deadline across metadata requests; no retries"}
 		},
+		"cache.claude_usage_refresh_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "minimum interval between asks of Claude Code for its plan usage; asked only when the status line has no fresh window"}
+		},
+		"cache.claude_usage_request_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "deadline for one ask of Claude Code, process start included; no retries"}
+		},
+		"cache.claude_usage_reply_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-ask ceiling on Claude Code output read; larger output is refused"}
+		},
 		capacity.CacheTranscriptTitles: func() capacity.Reading {
 			h, ok := s.inventory.Identity.(*transcript.Host)
 			if !ok {
