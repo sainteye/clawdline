@@ -242,3 +242,35 @@ func TestPersonaDisplayVersionMatchesEscapedUnicode(t *testing.T) {
 		t.Fatalf("cross-viewer digest: %s", got)
 	}
 }
+
+// The Start sheet offers the same model catalog as Settings and the Board, so
+// the start route admits every name the launch policy admits, for every
+// assistant. `as` stays reserved for the persona suffix.
+func TestAStartPathAdmitsTheCatalogsModelNames(t *testing.T) {
+	s := &Server{}
+	post := func(path string) int {
+		w := httptest.NewRecorder()
+		s.placeRoute(w, httptest.NewRequest(http.MethodPost, path, nil))
+		return w.Code
+	}
+	for _, path := range []string{
+		"/v1/places/p1/start/claude/fable",
+		"/v1/places/p1/start/claude/opus",
+		"/v1/places/p1/start/codex/gpt-5.5",
+		"/v1/places/p1/start/codex/gpt-5.5-codex/as/architect",
+	} {
+		if status := post(path); status == http.StatusNotFound {
+			t.Errorf("%s: refused as an unknown model", path)
+		}
+	}
+	for _, path := range []string{
+		"/v1/places/p1/start/claude/as",
+		"/v1/places/p1/start/claude/Opus",
+		"/v1/places/p1/start/codex/-gpt",
+		"/v1/places/p1/start/codex/gpt%205",
+	} {
+		if status := post(path); status != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", path, status)
+		}
+	}
+}
