@@ -348,6 +348,7 @@ compilation if the selected identity is not Developer ID Application.
 
 ## Recent acceptance records
 
+- [v2.13.0 publication, the macOS CI fix it carries, and installed release evidence](records/release-v2.13.0-acceptance.md).
 - [v2.12.1 publication, signed-archive update transitions from v2.12.0 and v2.11.0, and installed release evidence](records/release-v2.12.1-acceptance.md).
 - [v2.12.0 publication, Board issue sync, named macOS service and installed release evidence](records/release-v2.12.0-acceptance.md).
 
