@@ -10426,5 +10426,11 @@
   "capacityRow.antigravity.acp_trace_connections.what": "以一個獨立的 SQLite 連線保存可選的原始 ACP 診斷紀錄。",
   "capacityRow.antigravity.acp_trace_connections.full": "保存失敗會回報紀錄缺口，不會佔住對話歷史的資料庫連線。",
   "acp.controlPending": "等待 Gemini 完成連線或設定操作。",
-  "acp.quotaPending": "等待 Gemini 完成額度讀取。"
+  "acp.quotaPending": "等待 Gemini 完成額度讀取。",
+  "capacityRow.cache.claude_usage_refresh_seconds.what": "設定向 Claude Code 查詢方案額度的最短間隔。",
+  "capacityRow.cache.claude_usage_refresh_seconds.full": "間隔內沿用上次的回答；只有在 status line 沒有新讀值時才會查詢 Claude Code。",
+  "capacityRow.cache.claude_usage_request_seconds.what": "限制單次向 Claude Code 查詢額度可花的時間。",
+  "capacityRow.cache.claude_usage_request_seconds.full": "查詢太慢時會中止，不阻擋介面，並保留上次讀值。",
+  "capacityRow.cache.claude_usage_reply_bytes.what": "限制單次額度查詢讀取 Claude Code 輸出的大小。",
+  "capacityRow.cache.claude_usage_reply_bytes.full": "超過上限的輸出會被拒絕，並保留上次讀值。"
 }

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/providerquota"
-	"github.com/sainteye/clawdline/internal/adapters/transcript"
 )
 
 func (s *Server) providerQuotaReader() *providerquota.Service {
@@ -15,9 +14,6 @@ func (s *Server) providerQuotaReader() *providerquota.Service {
 		if s.providerQuotaService == nil {
 			home, _ := os.UserHomeDir()
 			s.providerQuotaService = providerquota.New(home, quotaReader())
-			s.providerQuotaService.WithClaude(func(ctx context.Context) ([]providerquota.Window, string) {
-				return providerquota.ProbeClaude(ctx, transcript.ClaudeExecutable(home))
-			})
 			if host := s.antigravitySessions.Load(); host != nil {
 				s.providerQuotaService.WithGemini(func(ctx context.Context) ([]providerquota.Window, string) {
 					reading, err := host.AccountQuota(ctx)

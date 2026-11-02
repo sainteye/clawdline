@@ -58,9 +58,6 @@ type Service struct {
 	readFile func(string) ([]byte, error)
 	getenv   func(string) string
 	gemini   func(context.Context) ([]Window, string)
-	// claude asks Claude Code itself when the status line left no fresh reading.
-	claude     func(context.Context) ([]Window, string)
-	claudeSlot slot
 }
 
 func New(home string, local *limits.Reader) *Service {
@@ -75,15 +72,6 @@ func (s *Service) WithGemini(read func(context.Context) ([]Window, string)) *Ser
 	s.gemini = read
 	return s
 }
-
-// WithClaude selects the reader asked when the status line has no fresh
-// Claude reading. It runs under the same single-flight and 15-minute floor as
-// the provider readers, and never on a Doctor inspection.
-func (s *Service) WithClaude(read func(context.Context) ([]Window, string)) *Service {
-	s.claude = read
-	return s
-}
-
 func readSmall(path string) ([]byte, error) {
 	f, e := os.Open(path)
 	if e != nil {
@@ -108,8 +96,19 @@ func (s *Service) snapshot(now time.Time, refresh bool) Snapshot {
 	out := Snapshot{At: now.Unix(), Providers: []Row{}}
 	if s.local != nil {
 		for _, p := range []struct{ id, label, source string }{{"claude", "Claude Code", "claude_statusline"}, {"codex", "Codex", "codex_rollout"}} {
-			q := s.local.Quota(p.id, now)
-			row := baseRow(p.id, p.label, p.source)
+			// A refreshing read may let the Claude reading ask Claude Code;
+			// Doctor's inspection observes without asking.
+			var q limits.Quota
+			if refresh {
+				q = s.local.Quota(p.id, now)
+			} else {
+				q = s.local.Observe(p.id, now)
+			}
+			source := p.source
+			if q.FromClaudeCode {
+				source = "provider_cli"
+			}
+			row := baseRow(p.id, p.label, source)
 			row.Stale = q.Stale
 			row.ObservedAt = q.ObservedAt
 			for _, w := range q.Windows {
@@ -119,11 +118,6 @@ func (s *Service) snapshot(now time.Time, refresh bool) Snapshot {
 			}
 			if q.Reason != "" {
 				row.Problem = string(q.Reason)
-			}
-			if p.id == "claude" && s.claude != nil {
-				var updating bool
-				row, updating = s.claudeFallback(row, now, refresh)
-				out.Updating = out.Updating || updating
 			}
 			out.Providers = append(out.Providers, row)
 		}
@@ -171,70 +165,6 @@ func (s *Service) snapshot(now time.Time, refresh bool) Snapshot {
 	}
 	return out
 }
-
-// claudeFallback answers the Claude row from Claude Code's own usage reading
-// when the status line has nothing fresh: no file, no window, or an old one.
-// A fresh status-line reading is never replaced and never starts a probe.
-func (s *Service) claudeFallback(local Row, now time.Time, refresh bool) (Row, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(local.Windows) > 0 && !local.Stale {
-		return local, false
-	}
-	v := &s.claudeSlot
-	if refresh && !v.busy && !now.Before(v.next) {
-		v.busy = true
-		v.next = now.Add(RefreshSecondsLimit * time.Second)
-		go s.refreshClaude()
-	}
-	if len(v.row.Windows) == 0 {
-		if v.row.Problem != "" {
-			local.Problem = v.row.Problem
-		}
-		return local, v.busy
-	}
-	if len(local.Windows) > 0 && local.ObservedAt != nil && v.row.ObservedAt != nil && *local.ObservedAt >= *v.row.ObservedAt {
-		return local, v.busy
-	}
-	row := baseRow(local.ID, local.Label, "provider_cli")
-	for _, w := range v.row.Windows {
-		if w.ResetsAt == nil || *w.ResetsAt > now.Unix() {
-			row.Windows = append(row.Windows, w)
-		}
-	}
-	if len(row.Windows) == 0 {
-		return local, v.busy
-	}
-	row.ObservedAt = v.row.ObservedAt
-	row.Problem = v.row.Problem
-	row.Stale = v.row.Stale || (row.ObservedAt != nil && now.Unix()-*row.ObservedAt >= RefreshSecondsLimit)
-	return row, v.busy
-}
-
-func (s *Service) refreshClaude() {
-	ctx, cancel := context.WithTimeout(context.Background(), RequestSecondsLimit*time.Second)
-	defer cancel()
-	windows, problem := s.claude(ctx)
-	now := time.Now()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	v := &s.claudeSlot
-	v.busy = false
-	if problem != "" || len(windows) == 0 {
-		if problem == "" {
-			problem = "no_reading"
-		}
-		v.row.Problem = problem
-		v.row.Stale = len(v.row.Windows) > 0
-		return
-	}
-	v.row.Windows = append([]Window{}, windows...)
-	at := now.Unix()
-	v.row.ObservedAt = &at
-	v.row.Problem = ""
-	v.row.Stale = false
-}
-
 func (s *Service) refresh(index int, id string, c credential, generation uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), RequestSecondsLimit*time.Second)
 	defer cancel()

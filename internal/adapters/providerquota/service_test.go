@@ -78,7 +78,6 @@ func waitFinished(t *testing.T, s *Service) {
 		for _, v := range s.slots {
 			busy = busy || v.busy
 		}
-		busy = busy || s.claudeSlot.busy
 		s.mu.Unlock()
 		if !busy {
 			return

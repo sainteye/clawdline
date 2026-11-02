@@ -76,11 +76,11 @@ For each of Claude Code and Codex: whether it is installed, its availability (`o
 
 ### Claude's 5h and 7d come from your status line, or from Claude Code itself
 
-The **quota footer** no longer needs a status line: when none has written a fresh reading,
-Clawdline asks the installed Claude Code for its plan windows, at most once every 15 minutes,
-without sending a prompt or spending quota ([provider-quotas.md](../provider-quotas.md)). The
-Status Line corner, dispatch and **Session info** still read only the status line's file, as
-described below.
+You no longer need a status line for them. When none has written a fresh reading, Clawdline
+asks the installed Claude Code for its plan windows, at most once every 15 minutes, without
+sending a prompt or spending quota ([provider-quotas.md](../provider-quotas.md)). The Status
+Line corner, **Session info**, dispatch and the quota footer all read that one answer. A
+status line that does write the file is still read first, and is fresher while a session runs.
 
 #### The status line's file
 

@@ -66,9 +66,13 @@ their reset time remain marked outdated until the next usable observation.
 ## Claude without a status line
 
 Claude Code passes plan windows only to a configured `statusLine.command`, so a machine with no
-status line used to show no Claude reading at all. When `rate-limits.json` has no fresh window
-(missing, empty, every window reset, or too old), a footer read asks Claude Code itself: the
-daemon starts the installed `claude` in print mode with stream-json input and output, writes one
+status line used to show no Claude reading at all.
+
+There is one Claude reading per machine: `limits.Reader.Quota`. Dispatch availability, the
+assistants route, Session info and its Status Line corner, Cloud's assistant choice and this
+footer all read it, so they cannot disagree. When `rate-limits.json` has no fresh window
+(missing, empty, every window reset, or past its freshness line), that reader answers from the
+last reply Claude Code itself gave and, in the background, asks again: the daemon starts the installed `claude` in print mode with stream-json input and output, writes one
 experimental `get_usage` control request with `skip_behaviors`, reads the one matching reply, and
 stops the process. It never sends a prompt, so no model request is made and no quota is spent.
 
@@ -77,12 +81,17 @@ local settings, so none of the person's hooks or plugins run), `--strict-mcp-con
 servers) and `--no-session-persistence` (no transcript). `--bare` is not used because it also
 skips the keychain where Claude Code keeps its sign-in. Clawdline never reads the token.
 
-The probe shares the provider readers' single flight, ten-second deadline and 15-minute floor.
-Doctor inspection never starts it. A fresh status-line reading is never replaced or probed. The
-row then names its source as the native CLI. Unavailable plan windows (an API key, Bedrock,
-Vertex or a signed-out CLI) report `no_reading`; an older Claude Code without `get_usage`
-reports `unavailable`. Only the 5h and 7d windows are carried. The footer is the only consumer;
-dispatch availability and Session info still read the status line alone.
+A reading never waits for an ask. Asks run one at a time, at most once every 15 minutes
+(`claudeusage.RefreshSecondsLimit`), each stopped after ten seconds and 1 MiB of output; all
+three are registered capacity rows. Any reader may start one; Doctor's inspection reads with
+`Observe`, which never does. A fresh status-line reading is never replaced or asked about, and an
+answer replaces an old record only when it is newer. The answer ages by the same freshness line
+as the record. When it answers, the footer names the native CLI as the source and Session info's
+sentence ends "asked Claude Code". When it cannot, the reason stays the record's (`no_record`,
+for example) and the sentence adds what the ask found: no Claude Code installed, no plan windows
+(an API key, Bedrock, Vertex or signed out), or no answer (an older Claude Code without
+`get_usage`). A failed ask keeps the last good answer, which then ages. Only 5h and 7d are
+carried; the model-scoped Fable weekly window is not.
 
 Measured on 2026-11-02 with Claude Code 2.1.316: an answer in 0.06–0.65 s and about 2 s of
 process lifetime, total cost 0 and API time 0 ms. Clawdline listed no additional Session during a

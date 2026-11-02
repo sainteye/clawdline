@@ -26,8 +26,8 @@ the running daemon. Redirect its output to a JSON file for later upload. Plain
 `clawdline doctor` retains the basic local installation check.
 
 Missing quota data is unknown, not zero. Claude's quota comes from the status-line
-cache, or, when that has nothing fresh, from Claude Code's own usage answer, which the
-quota footer asks for. Doctor never starts that request itself, does not inspect the
+cache, or, when that has nothing fresh, from Claude Code's own usage answer. Doctor
+reads the same reading and never starts that request itself, does not inspect the
 login credential and does not observe the upstream usage request. Recent history covers only times Clawdline read quota data, retains up to
 24 changes for three days and reports gaps. A report may help locate the failing
 stage without proving the original cause.
