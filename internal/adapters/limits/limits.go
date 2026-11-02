@@ -687,6 +687,9 @@ type askedClaude struct {
 	outcome claudeusage.Outcome
 	next    time.Time
 	busy    bool
+	// answers counts finished asks, so a reading begun before one finished
+	// is not held over the answer it never saw.
+	answers uint64
 }
 
 type cached struct {
@@ -794,6 +797,7 @@ func (r *Reader) quota(assistant string, now time.Time, mayAsk bool) Quota {
 		r.mu.Unlock()
 		return hit.quota
 	}
+	answers := r.asked.answers
 	r.mu.Unlock()
 
 	s := r.settings()
@@ -838,7 +842,9 @@ func (r *Reader) quota(assistant string, now time.Time, mayAsk bool) Quota {
 	}
 
 	r.mu.Lock()
-	r.hold(assistant, cached{until: now.Add(cacheFor), used: now, quota: out})
+	if r.asked.answers == answers {
+		r.hold(assistant, cached{until: now.Add(cacheFor), used: now, quota: out})
+	}
 	r.mu.Unlock()
 	return out
 }
@@ -994,6 +1000,7 @@ func (r *Reader) askClaudeCode() {
 	defer r.mu.Unlock()
 	a := &r.asked
 	a.busy = false
+	a.answers++
 	a.outcome = outcome
 	if outcome == "" && len(got) > 0 {
 		a.windows = make([]Window, 0, len(got))
