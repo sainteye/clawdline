@@ -10606,5 +10606,7 @@
   "ops.playbookOverflow": "一行最多讀取 16 份 Ops 文件。",
   "ops.playbookRefs": "這個 Playbook 會讀取的 Ops 文件",
   "ops.playbookNotInOps": "不在 Ops 中",
-  "ops.playbookLocked": "連結來源的 Playbook，訊息由來源決定。"
+  "ops.playbookLocked": "連結來源的 Playbook，訊息由來源決定。",
+  "ops.sendAsking": "Session 正在等你回答一個問題，所以沒有送出。請先在 Session 裡回答，再按「送出」。",
+  "ops.sendBusy": "Session 正忙，所以沒有送出。請稍後再按「送出」。"
 }

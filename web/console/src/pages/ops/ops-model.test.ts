@@ -1,6 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
+  sendProblem,
   IntentKeys, buildTree, checkFileName, checkLinkUrl, filterCounts, includeInGitDefault, insertOpsIds, markdownName,
   needsGitChoice, opsIdsIn, opsReferences, phoneRows, resolveView, sameProjectSessions, statusView, typeWord, visibilityWord,
 // @ts-expect-error -- Node strips source TypeScript in the browser-free test.
@@ -139,4 +140,12 @@ test("a retried action keeps its key until it settles", () => {
   assert.equal(keys.key("create:link:https://b"), "k2")
   keys.settle("create:link:https://a")
   assert.equal(keys.key("create:link:https://a"), "k3")
+})
+
+test("a send refused because the Session shows a question is told apart from other failures", () => {
+  assert.equal(sendProblem("send_failed", "session_asking: The session is showing a question, so nothing was typed."), "asking")
+  assert.equal(sendProblem("session_asking", ""), "asking")
+  assert.equal(sendProblem("send_failed", "busy: lane full"), "busy")
+  assert.equal(sendProblem("send_failed", "terminal gone"), "other")
+  assert.equal(sendProblem("todo_not_found", ""), "other")
 })

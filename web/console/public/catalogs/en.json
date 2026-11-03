@@ -10606,5 +10606,7 @@
   "ops.playbookOverflow": "One line reads at most 16 Ops documents.",
   "ops.playbookRefs": "Ops documents this Playbook reads",
   "ops.playbookNotInOps": "not in Ops",
-  "ops.playbookLocked": "A linked Playbook's message follows its source."
+  "ops.playbookLocked": "A linked Playbook's message follows its source.",
+  "ops.sendAsking": "The Session is showing a question, so nothing was typed. Answer it in the Session, then use Send.",
+  "ops.sendBusy": "The Session is busy, so nothing was typed. Use Send again in a moment."
 }

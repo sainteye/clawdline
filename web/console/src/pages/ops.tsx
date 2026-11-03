@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import type { PageModule } from "./types.js"
+import { RefusalError } from "@clawdline/core"
 import { readProjectPlaces, readSessionsForWorkV2, directTodoActionV2, type ProjectPlace } from "./work/api.js"
 import { listProjectDirectory, type TreeEntry } from "./projects/project-tree-api.js"
 import { ProjectPicker } from "../ui/ProjectPicker.js"
@@ -16,7 +17,7 @@ import {
 import {
   IntentKeys, OPS_COLLECTION_NAME_BYTES, OPS_FILTERS, buildTree, checkFileName, checkLinkUrl, checkTitle, editable,
   fileNameOf, filterCounts, includeInGitDefault, markdownName, needsGitChoice, nextPosition, phoneRows,
-  sameProjectSessions, statusView, typeIcon, typeWord, visibilityWord, type InputProblem, type OpsFilter, type OpsIcon,
+  sameProjectSessions, sendProblem, statusView, typeIcon, typeWord, visibilityWord, type InputProblem, type OpsFilter, type OpsIcon,
 } from "./ops/ops-model.js"
 import { opsWord as W, type OpsWord } from "./ops/words.js"
 import "../page-skeleton.css"
@@ -41,6 +42,15 @@ function refusalText(error: unknown, fallback: OpsWord = "createRefused"): strin
   if (error.code === "not_implemented" || error.status === 501) return W("machineTooOld")
   if (/limit|full/.test(error.code)) return W("limitReached")
   return error.message && error.message !== error.code ? `${W(fallback)} ${error.message}` : W(fallback)
+}
+
+/** The send route's refusal, said as what the person can do about it. */
+function sendFailureText(cause: unknown): string {
+  if (!(cause instanceof RefusalError)) return W("linkSavedUnsent")
+  const problem = sendProblem(cause.code, cause.detail)
+  if (problem === "asking") return W("sendAsking")
+  if (problem === "busy") return W("sendBusy")
+  return W("linkSavedUnsent")
 }
 
 function useMedia(query: string): boolean {
@@ -441,7 +451,7 @@ function OpsReader({ place, entry, list, sessions, allSessions, sessionsFailed, 
     if (!entry.resolve) return
     setBusy("send"); setMessage("")
     try { await directTodoActionV2(entry.resolve.terminal, entry.resolve.todo, "send") }
-    catch { setMessage(W("linkSavedUnsent")) }
+    catch (cause) { setMessage(sendFailureText(cause)) }
     finally { setBusy(""); await onChanged() }
   }
 
@@ -571,7 +581,7 @@ async function askSession(place: ProjectPlace, id: string, terminal: string): Pr
     return refusalText(cause)
   }
   try { await directTodoActionV2(terminal, todo, "send"); return null }
-  catch { return W("linkSavedUnsent") }
+  catch (cause) { return sendFailureText(cause) }
 }
 
 // ---------------------------------------------------------------- dialogs

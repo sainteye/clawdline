@@ -288,3 +288,19 @@ export class IntentKeys {
   }
   settle(signature: string): void { this.open.delete(signature) }
 }
+
+/** Why a resolve to-do could not be typed into its Session, from the send route's refusal. */
+export type SendProblem = "asking" | "busy" | "other"
+
+/**
+ * The send route answers `send_failed` with the terminal's reason first in its
+ * detail (`session_asking: …`), or that reason as its own code. A question on
+ * the Session's screen is the common first-run case (a folder trust prompt),
+ * and the person can fix it; it must not read as an unexplained failure.
+ */
+export function sendProblem(code: string, detail: string): SendProblem {
+  const reason = code === "send_failed" ? detail.split(":", 1)[0].trim() : code
+  if (reason === "session_asking") return "asking"
+  if (reason === "busy") return "busy"
+  return "other"
+}

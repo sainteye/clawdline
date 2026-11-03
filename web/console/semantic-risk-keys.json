@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10606,
+  "englishKeys": 10608,
   "counts": {
-    "negation": 2949,
+    "negation": 2951,
     "state": 1728,
     "permission": 627,
     "deletion": 234,
     "uncertainty": 397
   },
-  "unionCount": 4663,
+  "unionCount": 4665,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2653,6 +2653,8 @@
       "ops.removeConfirm",
       "ops.resolveUnsent",
       "ops.saveRefused",
+      "ops.sendAsking",
+      "ops.sendBusy",
       "ops.sessionsUnavailable",
       "ops.setupUnavailable",
       "ops.slashName",
@@ -10082,6 +10084,8 @@
     "ops.saveRefused",
     "ops.saveUnknown",
     "ops.saved",
+    "ops.sendAsking",
+    "ops.sendBusy",
     "ops.sessionsUnavailable",
     "ops.setupUnavailable",
     "ops.slashName",
