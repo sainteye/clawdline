@@ -26,7 +26,7 @@ test("the GitHub probe is asked only when the caller asks for it", async () => {
 })
 
 test("a create carries its body and the action's key", async () => {
-  const body = { kind: "markdown", name: "Runbook", content: "# Runbook", git: "exclude" }
+  const body = { kind: "markdown", name: "Runbook", content: "# Runbook", git: "exclude" } as const
   const { sent } = await answering(201, { entry: {} }, () => createOps("p", body, "key-1"))
   assert.equal(sent?.method, "POST")
   assert.equal((sent?.headers as Record<string, string>)["Idempotency-Key"], "key-1")

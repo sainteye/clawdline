@@ -14,6 +14,9 @@ import { playbookWord as W } from "../playbook-words.js"
 import { playbookSourceMatches, playbookSourceText, playbookSourceTitle } from "../playbook-source.js"
 import { Mark } from "../session/List.js"
 import type { SessionRow } from "@clawdline/contract"
+import { listOps, type OpsEntry } from "./ops/ops-api.js"
+import { insertOpsIds, opsReferences, typeWord } from "./ops/ops-model.js"
+import { opsWord } from "./ops/words.js"
 
 type Draft = { id: string; title: string; body: string; global: boolean; source: PlaybookSource | null }
 const blank = (global: boolean): Draft => ({ id: "", title: "", body: "", global, source: null })
@@ -66,6 +69,14 @@ function PlaybookPage({ shown }: { shown: boolean }) {
   const projectPicker = useRef<HTMLDivElement>(null)
   const editor = useRef<HTMLDivElement>(null)
   const returnFocus = useRef<HTMLElement | null>(null)
+  const [opsEntries, setOpsEntries] = useState<OpsEntry[] | null>(null)
+  const [opsOpen, setOpsOpen] = useState(false)
+  const [opsPicked, setOpsPicked] = useState<string[]>([])
+  const [opsError, setOpsError] = useState("")
+  const opsOpenRef = useRef(false)
+  const opsDialog = useRef<HTMLDivElement>(null)
+  const opsReturnFocus = useRef<HTMLElement | null>(null)
+  opsOpenRef.current = opsOpen
   const openDraft = (next: Draft) => {
     if (!draft) returnFocus.current = document.activeElement as HTMLElement | null
     setError("")
@@ -135,6 +146,7 @@ function PlaybookPage({ shown }: { shown: boolean }) {
     if (!draft) return
     focusModalContainer(editor.current)
     const onKey = (event: KeyboardEvent) => {
+      if (opsOpenRef.current) return
       if (event.key === "Escape") { event.preventDefault(); if (!busyRef.current) setDraft(null); return }
       if (event.key !== "Tab") return
       const controls = Array.from(editor.current?.querySelectorAll<HTMLElement>("input, textarea, button:not(:disabled)") ?? [])
@@ -146,6 +158,39 @@ function PlaybookPage({ shown }: { shown: boolean }) {
     document.addEventListener("keydown", onKey)
     return () => { document.removeEventListener("keydown", onKey); returnFocus.current?.focus(); returnFocus.current = null }
   }, [!!draft])
+
+  // A Project Playbook can name Ops documents; read that Project's Ops once per opened draft.
+  const draftOpen = !!draft
+  useEffect(() => {
+    setOpsEntries(null); setOpsOpen(false)
+    if (!draftOpen || globalView || !place) return
+    let live = true
+    listOps(place.id).then((answer) => { if (live) setOpsEntries(answer.entries) }).catch(() => { if (live) setOpsEntries(null) })
+    return () => { live = false }
+  }, [draftOpen, globalView, place?.id])
+  const closeOps = () => { setOpsOpen(false); setOpsPicked([]); setOpsError("") }
+  useEffect(() => {
+    if (!opsOpen) return
+    focusModalContainer(opsDialog.current)
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); closeOps(); return }
+      if (event.key !== "Tab") return
+      const controls = Array.from(opsDialog.current?.querySelectorAll<HTMLElement>("input, button:not(:disabled)") ?? [])
+      if (!controls.length) return
+      const first = controls[0], last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    document.addEventListener("keydown", onKey)
+    return () => { document.removeEventListener("keydown", onKey); opsReturnFocus.current?.focus(); opsReturnFocus.current = null }
+  }, [opsOpen])
+  const insertOps = () => {
+    if (!draft || !opsPicked.length) return
+    const result = insertOpsIds(draft.body, opsPicked)
+    if ("overflow" in result) { setOpsError(opsWord("playbookOverflow")); return }
+    setDraft({ ...draft, body: result.body })
+    closeOps()
+  }
 
   useEffect(() => {
     const source = draft?.source
@@ -330,6 +375,19 @@ function PlaybookPage({ shown }: { shown: boolean }) {
         <label className={draft.source ? "playbook-message-locked" : undefined}>{W("message")}
           {draft.source && <small>{W("linkedMessageHint")}</small>}
           <textarea value={draft.body} readOnly={!!draft.source} rows={8} maxLength={4000} onChange={(event) => setDraft({ ...draft, body: event.target.value })} /></label>
+        <div className="playbook-ops">
+          <button type="button" disabled={draft.global || !place || !!draft.source || !opsEntries?.length} onClick={() => {
+            opsReturnFocus.current = document.activeElement as HTMLElement | null
+            setOpsPicked([]); setOpsError(""); setOpsOpen(true)
+          }}>{opsWord("playbookAdd")}</button>
+          {draft.global ? <small>{opsWord("playbookNoProject")}</small> : draft.source ? <small>{opsWord("playbookLocked")}</small>
+            : opsEntries && !opsEntries.length ? <small>{opsWord("playbookNoEntries")}</small> : null}
+          {(() => {
+            const refs = opsReferences(draft.body, opsEntries ?? [])
+            return refs.length > 0 && <div className="playbook-ops-refs"><span>{opsWord("playbookRefs")}</span>
+              <ul>{refs.map((ref) => <li key={ref.id}>{ref.title ?? <><code>{ref.id}</code>{opsEntries && <em> · {opsWord("playbookNotInOps")}</em>}</>}</li>)}</ul></div>
+          })()}
+        </div>
         {error && <p role="alert" className="playbook-error">{error}</p>}
         <div className="playbook-actions"><button className="playbook-primary" type="submit" aria-busy={busy && pendingAction === "save"} disabled={busy || !!draft.source && (sourceCheck !== "matched" || draft.global && draft.source.scope === "project")}><ActionProgress busy={busy && pendingAction === "save"} label={catalogWord("literal", "21aa64dd7446")}>{W("save")}</ActionProgress></button>
           <button type="button" disabled={busy} onClick={() => setDraft(null)}>{W("cancel")}</button>
@@ -357,6 +415,21 @@ function PlaybookPage({ shown }: { shown: boolean }) {
         </button>)}</div></div>}
         {!selectedSkill && <footer><button type="button" onClick={closeSkill}>{W("cancel")}</button></footer>}
         {selectedSkill && <p className="playbook-skill-hint">{linkingDraft && draft?.global && selectedSkill.source === "project" ? W("sourceScopeConflict") : linkingDraft ? W("linkHint") : W(selectedSkill.kind === "command" ? "commandImportHint" : "skillImportHint")}</p>}
+      </div>
+    </div>}
+    {opsOpen && draft && <div ref={opsDialog} className="playbook-skill-overlay playbook-ops-overlay" role="dialog" aria-modal="true" aria-labelledby="playbook-ops-dialog-title"
+      onPointerDown={(event) => { if (event.target === event.currentTarget) closeOps() }}>
+      <div className="playbook-skill-dialog">
+        <header><div><h2 id="playbook-ops-dialog-title">{opsWord("playbookPickTitle")}</h2><p>{opsWord("playbookPickHint")}</p></div>
+          <button type="button" onClick={closeOps} aria-label={W("cancel")}>×</button></header>
+        <div className="playbook-skill-content"><ul className="playbook-ops-options">{(opsEntries ?? []).map((entry) => <li key={entry.id}>
+          <label><input type="checkbox" checked={opsPicked.includes(entry.id)} onChange={(event) => setOpsPicked((current) =>
+            event.target.checked ? [...current, entry.id] : current.filter((id) => id !== entry.id))} />
+            <span><strong>{entry.title}</strong><small>{opsWord(typeWord(entry.type))}</small></span></label>
+        </li>)}</ul></div>
+        {opsError && <p role="alert" className="playbook-error">{opsError}</p>}
+        <footer><button type="button" onClick={closeOps}>{W("cancel")}</button>
+          <button className="playbook-primary" type="button" disabled={!opsPicked.length} onClick={insertOps}>{opsWord("playbookInsert")}</button></footer>
       </div>
     </div>}
     {sourcePreview && <div className="playbook-skill-overlay" role="dialog" aria-modal="true" aria-label={W("sourceDetail")}
