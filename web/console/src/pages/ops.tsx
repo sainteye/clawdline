@@ -191,7 +191,10 @@ function OpsPage({ shown }: { shown: boolean }) {
 
   const readSessions = useCallback(async () => {
     try { const snapshot = await readSessionsForWorkV2(); setSessions(snapshot.sessions ?? []); setSessionsFailed(false) }
-    catch { setSessionsFailed(true) }
+    catch {
+      // refusal-ok: the Session list only offers who may read a link; any failure leaves "Save without AI", which the page says
+      setSessionsFailed(true)
+    }
   }, [])
 
   useEffect(() => {
