@@ -1553,7 +1553,7 @@
       "write_gate": true,
       "console": "carried",
       "console_route": "POST /v1/projects/{project}/ops",
-      "console_seam": "reader",
+      "console_seam": "writer",
       "local": {"method": "POST", "device": true},
       "example": {"item": {"kind": "link", "url": "https://example.com/doc"}, "project": "p1", "request": "req-ops-create", "session": "__clawdline_machine__"},
       "shapes": [
@@ -1567,7 +1567,7 @@
       "write_gate": true,
       "console": "carried",
       "console_route": "DELETE /v1/projects/{project}/ops/{id}",
-      "console_seam": "reader",
+      "console_seam": "writer",
       "local": {"method": "DELETE", "device": true},
       "example": {"id": "ope_0123456789abcdef01234567", "project": "p1", "request": "req-ops-delete", "session": "__clawdline_machine__"},
       "shapes": [
@@ -1609,7 +1609,7 @@
       "write_gate": true,
       "console": "carried",
       "console_route": "POST /v1/projects/{project}/ops/{entry}/resolve-request",
-      "console_seam": "reader",
+      "console_seam": "writer",
       "local": {"method": "POST", "device": true},
       "example": {"entry": "ope_0123456789abcdef01234567", "item": {"terminal": "%19"}, "project": "p1", "request": "req-ops-resolve-request", "session": "__clawdline_machine__"},
       "shapes": [
@@ -1638,7 +1638,7 @@
       "write_gate": true,
       "console": "carried",
       "console_route": "PATCH /v1/projects/{project}/ops/{id}",
-      "console_seam": "reader",
+      "console_seam": "writer",
       "local": {"method": "PATCH", "device": true},
       "example": {"id": "ope_0123456789abcdef01234567", "item": {"title": "Runbook"}, "project": "p1", "request": "req-ops-update", "session": "__clawdline_machine__"},
       "shapes": [

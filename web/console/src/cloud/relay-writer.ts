@@ -260,6 +260,7 @@ export type WriteRoute =
   | { op: "project-hide"; word: Carried<"project-hide"> }
   | { op: "project-add"; word: Carried<"project-add"> }
   | { op: "project-file-save"; word: Carried<"project-file-save">; project: string; file: string }
+  | { op: "project-ops-write"; word: Carried<"project-ops-create" | "project-ops-update" | "project-ops-delete" | "project-ops-resolve-request">; project: string; id: string }
   | { op: "project-antigravity-consent-change"; word: Carried<"project-antigravity-consent-change">; project: string }
   | { op: "project-unify-apply"; word: Carried<"project-unify-apply">; project: string }
   | { op: "project-mirror-apply"; word: Carried<"project-mirror-apply"> }
@@ -695,6 +696,12 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "projects" && a && b === "files" && c && segments.length === 4 && method === "PUT" && /^[0-9a-f]{32}$/.test(c)) {
     return { op: "project-file-save", word: "project-file-save", project: a, file: c }
   }
+  if (head === "projects" && a && b === "ops") {
+    if (segments.length === 3 && method === "POST") return { op: "project-ops-write", word: "project-ops-create", project: a, id: "" }
+    if (segments.length === 4 && c && method === "PATCH") return { op: "project-ops-write", word: "project-ops-update", project: a, id: c }
+    if (segments.length === 4 && c && method === "DELETE") return { op: "project-ops-write", word: "project-ops-delete", project: a, id: c }
+    if (segments.length === 5 && c && d === "resolve-request" && method === "POST") return { op: "project-ops-write", word: "project-ops-resolve-request", project: a, id: c }
+  }
   if (head === "projects" && a && b === "antigravity-consent" && segments.length === 3 && method === "POST") {
     return { op: "project-antigravity-consent-change", word: "project-antigravity-consent-change", project: a }
   }
@@ -1004,6 +1011,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "project-hide":
     case "project-add":
     case "project-file-save":
+    case "project-ops-write":
     case "project-graphify-build":
     case "session-graphify-build":
     case "project-antigravity-consent-change":
@@ -2008,6 +2016,20 @@ export class RelayWriter {
         if (!request) throw failure("idempotency_key_required", "Saving a Project file needs an Idempotency-Key.", 400)
         return client._machineRequestAs(request, place.machine, route.word,
           { project: place.id, file: route.file, item: await bodyOf(init) }, "action")
+      }
+      case "project-ops-write": {
+        if (typeof client._place !== "function" || typeof client._machineRequestAs !== "function") throw failure("cloud_not_carried", route.word, 501)
+        if ([...url.searchParams].length) throw failure("cloud_not_carried", "Ops writes take no query fields.", 501)
+        const place = client._place(route.project)
+        if (place.machine !== this.host.machine) throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
+        const request = headerOf(init, "idempotency-key")
+        if (!request) throw failure("idempotency_key_required", "An Ops change needs an Idempotency-Key.", 400)
+        const fields: Record<string, unknown> =
+          route.word === "project-ops-create" ? { project: place.id, item: await bodyOf(init) }
+          : route.word === "project-ops-update" ? { project: place.id, id: route.id, item: await bodyOf(init) }
+          : route.word === "project-ops-delete" ? { project: place.id, id: route.id }
+          : { project: place.id, entry: route.id, item: await bodyOf(init) }
+        return client._machineRequestAs(request, place.machine, route.word, fields, "action")
       }
       case "project-graphify-build": {
         if(client.allowWrites!==true)throw failure("send_disabled","Building an index needs send access to this machine.",403)

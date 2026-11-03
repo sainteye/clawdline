@@ -957,6 +957,18 @@ export class RelayReader {
         if (place.machine !== this.machine) throw Object.assign(new Error("this Project belongs to another machine"), { code: "cloud_project_machine_mismatch", status: 409 })
         return await this.machineRead(init?.signal, method, path, "project-unify-plan", { project: place.id })
       }
+      const ops = projectOpsRoute(path)
+      if (ops) {
+        const query = this.only(url, path, ...(ops.entry === "setup" ? ["probe"] : []))
+        const client = this.connected()
+        if (typeof client._place !== "function") throw Object.assign(new Error("the Cloud client cannot resolve this Project"), { code: "cloud_not_carried", status: 501 })
+        const place = client._place(ops.project)
+        if (place.machine !== this.machine) throw Object.assign(new Error("this Project belongs to another machine"), { code: "cloud_project_machine_mismatch", status: 409 })
+        if (!ops.entry) return await this.machineRead(init?.signal, method, path, "project-ops-list", { project: place.id })
+        if (ops.entry === "setup") return await this.machineRead(init?.signal, method, path, "project-ops-setup",
+          { project: place.id, ...(query.probe !== undefined ? { probe: query.probe } : {}) })
+        return await this.machineRead(init?.signal, method, path, "project-ops-read", { project: place.id, entry: ops.entry })
+      }
       const projectTree = projectTreeRoute(path)
       if (projectTree) {
         const query = this.only(url, path, projectTree.file ? "path" : "directory")
@@ -3142,6 +3154,17 @@ function projectUnifyRoute(path: string, suffix = "unify"): string {
   const parts = path.split("/")
   if (parts.length !== 5 || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== suffix) return ""
   try { return decodeURIComponent(parts[3]) } catch { return "" }
+}
+
+/** `/v1/projects/{p}/ops`, `/ops/setup` or `/ops/{entry}`: the Ops reads (docs/ops-documents.md). */
+function projectOpsRoute(path: string): { project: string; entry: string } | null {
+  const parts = path.split("/")
+  if ((parts.length !== 5 && parts.length !== 6) || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== "ops") return null
+  try {
+    const project = decodeURIComponent(parts[3])
+    const entry = parts.length === 6 ? decodeURIComponent(parts[5]) : ""
+    return project && (parts.length === 5 || entry) ? { project, entry } : null
+  } catch { return null }
 }
 
 function projectTreeRoute(path: string): { project: string; file: boolean } | null {
