@@ -1201,6 +1201,13 @@ clawdline image send /absolute/path.png [more.png …]
 - 打開連結會在對話上方顯示播放器；回覆中含完整連結時也會顯示縮圖卡片。說「已傳送」之前，先自己打開
   連結確認片長。發布了不等於使用者看過了。
 
+**或直接上傳到 Litterbox。** 給使用者一個 Litterbox 連結就夠了，不必經過 Clawdline 發布；超過 32 MiB
+的 MP4 也用這個方法。上傳原始檔：
+`curl -F reqtype=fileupload -F time=24h -F fileToUpload=@film.mp4 https://litterbox.catbox.moe/resources/internals/api.php`
+（`time` 可為 `1h`、`12h`、`24h` 或 `72h`；不需帳號）。指令會印出 `https://litter.catbox.moe/…`
+網址。交出網址前，先把它下載回來，比對大小與 SHA-256 是否和原始檔一致。拿到連結的人在到期前都能觀看，
+使用者沒同意以這種方式分享的內容不要上傳。連結過期後，使用者要再看就重新上傳，不要保證舊連結仍有效。
+
 
 **登錄產出檔案。** 用 Shell 指令產生交付檔案，或助理沒有原生寫檔成功收據時，執行：
 

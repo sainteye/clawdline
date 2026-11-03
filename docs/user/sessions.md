@@ -108,7 +108,9 @@ Sessions while a picture is shrinking cannot attach it to the newly opened Sessi
   re-compressed copy; files are limited to 32 MiB, and H.264 video with AAC audio plays on the
   most phones. Only browsers allowed to read that Session can open it; there is no public
   link. Asking for "the video" or "send me the video" is enough for an Agent that has loaded the
-  Clawdline skill. [MP4 playback](../video-artifacts.md).
+  Clawdline skill. [MP4 playback](../video-artifacts.md). An Agent may instead upload the original to
+  [Litterbox](https://litterbox.catbox.moe/) and reply with its `litter.catbox.moe` link, which
+  anyone holding it can watch until it expires (24 hours by default).
 - **Snippets** are text you send often. Create them with **New snippet**, for this project
   or every project. Pressing one only fills the box; you still send it.
 - **Playbooks** hold a complete launch message. Open the

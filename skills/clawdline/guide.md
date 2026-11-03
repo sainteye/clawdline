@@ -1368,6 +1368,15 @@ fit it, which drops the sound and hits the 12 MiB picture cap. Publish the MP4 a
   shows a thumbnail card. Open the link yourself to confirm the duration before saying it was sent.
   Published is not watched.
 
+**Or simply upload it to Litterbox.** Giving the person a Litterbox link is enough, and needs no
+Clawdline publication; use it for an MP4 over 32 MiB too. Upload the original file with
+`curl -F reqtype=fileupload -F time=24h -F fileToUpload=@film.mp4 https://litterbox.catbox.moe/resources/internals/api.php`
+(`time` may be `1h`, `12h`, `24h` or `72h`; no account). It prints a
+`https://litter.catbox.moe/…` URL. Download that URL back and compare its size and SHA-256 with
+the original before handing it over. Anyone holding the link can watch it until it expires, so do
+not upload anything the person has not agreed to share that way. Re-upload on request rather than
+promising an expired link still works.
+
 
 **Record output files.** After producing a deliverable through a shell command or
 an assistant without native file-success receipts, run:
