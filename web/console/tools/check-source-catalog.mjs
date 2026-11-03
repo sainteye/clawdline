@@ -57,6 +57,7 @@ const bar = table("src/bar/words.ts", "export { baseWords }")
 const admin = table("src/cloud/admin/words.ts", "export { en as sourceEn, zhTW as sourceZh }", "en", ["en", "zhTW"])
 const health = table("src/cloud/admin/health/words.ts", "export { en as sourceEn, zhTW as sourceZh }", "en", ["en", "zhTW"])
 const playbook = table("src/playbook-words.ts", "export { words as sourceWords }", "en", ["en", "zhHant", "words"]).sourceWords
+const ops = table("src/pages/ops/words.ts", "export { words as sourceWords }", "en", ["en", "zhHant", "words"]).sourceWords
 const notifications = table("src/pages/notifications.tsx", "export { notificationsWords as sourceWords }", "en", ["notificationsEn", "notificationsZh", "notificationsWords"]).sourceWords
 const dispatchPolicy = table("src/pages/settings/window/DispatchPolicyPane.tsx", "export { dispatchPolicyWords as sourceWords }", "en", ["dispatchPolicyEn", "dispatchPolicyZh", "dispatchPolicyWords"]).sourceWords
 const promo = table("src/pages/plan/promo.ts", "export { promoSourceWords as sourceWords }", "en", ["promoEn", "promoZh", "promoSourceWords"]).sourceWords
@@ -79,6 +80,7 @@ const domains = [
   { name: "admin", en: admin.sourceEn, zh: admin.sourceZh, english: true },
   { name: "health", en: health.sourceEn, zh: health.sourceZh, english: true },
   { name: "playbook", en: playbook.en, zh: playbook["zh-Hant"], english: true },
+  { name: "ops", en: ops.en, zh: ops["zh-Hant"], english: true },
   { name: "notifications", en: notifications.en, zh: notifications["zh-Hant"], english: true },
   { name: "dispatchPolicy", en: dispatchPolicy.en, zh: dispatchPolicy["zh-Hant"], english: true },
   { name: "transcript", en: transcript.en, zh: transcript["zh-Hant"], english: true },
