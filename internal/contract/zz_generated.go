@@ -3740,6 +3740,233 @@ type ObligationList struct {
 	Stuck int64 `json:"stuck"`
 }
 
+// A named group of Ops entries.
+type OpsCollection struct {
+	// "opc_" and 24 lowercase hex digits.
+	ID string `json:"id"`
+
+	// At most 100 bytes.
+	Name     string `json:"name"`
+	Position int64  `json:"position"`
+}
+
+// An Ops collection just created or changed.
+type OpsCollectionAnswer struct {
+	Collection OpsCollection `json:"collection"`
+}
+
+// DELETE /v1/projects/:id/ops/:entry: the record is gone; a file stays on disk.
+type OpsDeleted struct {
+	Deleted string `json:"deleted"`
+	OK      bool   `json:"ok"`
+}
+
+// One Ops document: a file under the Project's canonical root or a link. Filed
+// under the Project's canonical key, so every worktree of a repository sees the
+// same list (docs/ops-documents.md).
+type OpsEntry struct {
+	// Why a link needs access (from the agent), or why a file is unreadable; at most
+	// 1000 bytes.
+	AccessNote string `json:"access_note,omitempty"`
+
+	// An OpsCollection id, or empty for none.
+	Collection string `json:"collection"`
+
+	// Unix seconds.
+	CreatedAt int64 `json:"created_at"`
+
+	// "ope_" and 24 lowercase hex digits.
+	ID   string       `json:"id"`
+	Kind OpsEntryKind `json:"kind"`
+
+	// kind=file only: relative to the canonical Project root, with / separators.
+	Path string `json:"path,omitempty"`
+
+	// Order within its collection.
+	Position int64          `json:"position"`
+	Resolve  *OpsResolve    `json:"resolve,omitempty"`
+	Status   OpsEntryStatus `json:"status"`
+
+	// The shown name, at most 200 bytes; a file defaults to its name without the
+	// extension.
+	Title       string         `json:"title"`
+	TitleSource OpsTitleSource `json:"title_source"`
+	Type        OpsEntryType   `json:"type"`
+
+	// Unix seconds.
+	UpdatedAt int64 `json:"updated_at"`
+
+	// kind=link only: an http(s) URL of at most 2048 bytes.
+	URL string `json:"url,omitempty"`
+}
+
+// An Ops entry just created or changed. version is a saved file's new version.
+type OpsEntryAnswer struct {
+	Entry   OpsEntry `json:"entry"`
+	Version string   `json:"version,omitempty"`
+}
+
+// What an Ops entry points at: a file under the Project's canonical root, or a
+// link.
+type OpsEntryKind string
+
+const (
+	OpsEntryKindFile OpsEntryKind = "file"
+	OpsEntryKindLink OpsEntryKind = "link"
+)
+
+// OpsEntryKindValues is every value the contract allows, in contract order.
+var OpsEntryKindValues = []OpsEntryKind{OpsEntryKindFile, OpsEntryKindLink}
+
+// ready; resolving while a Session reads a link; needs_access when that Session
+// could not; missing when the file is gone; unreadable when the file cannot be
+// read as text or at all.
+type OpsEntryStatus string
+
+const (
+	OpsEntryStatusReady       OpsEntryStatus = "ready"
+	OpsEntryStatusResolving   OpsEntryStatus = "resolving"
+	OpsEntryStatusNeedsAccess OpsEntryStatus = "needs_access"
+	OpsEntryStatusMissing     OpsEntryStatus = "missing"
+	OpsEntryStatusUnreadable  OpsEntryStatus = "unreadable"
+)
+
+// OpsEntryStatusValues is every value the contract allows, in contract order.
+var OpsEntryStatusValues = []OpsEntryStatus{OpsEntryStatusReady, OpsEntryStatusResolving, OpsEntryStatusNeedsAccess, OpsEntryStatusMissing, OpsEntryStatusUnreadable}
+
+// What the entry is. A link's type is read from its URL alone
+// (internal/domain/opsdocs/link_types.json); a file's from its extension and
+// content.
+type OpsEntryType string
+
+const (
+	OpsEntryTypeMarkdown     OpsEntryType = "markdown"
+	OpsEntryTypeText         OpsEntryType = "text"
+	OpsEntryTypeFile         OpsEntryType = "file"
+	OpsEntryTypeNotionPage   OpsEntryType = "notion_page"
+	OpsEntryTypeGoogleDoc    OpsEntryType = "google_doc"
+	OpsEntryTypeGoogleSheet  OpsEntryType = "google_sheet"
+	OpsEntryTypeGoogleSlides OpsEntryType = "google_slides"
+	OpsEntryTypeGoogleForm   OpsEntryType = "google_form"
+	OpsEntryTypeGoogleDrive  OpsEntryType = "google_drive"
+	OpsEntryTypeWeb          OpsEntryType = "web"
+)
+
+// OpsEntryTypeValues is every value the contract allows, in contract order.
+var OpsEntryTypeValues = []OpsEntryType{OpsEntryTypeMarkdown, OpsEntryTypeText, OpsEntryTypeFile, OpsEntryTypeNotionPage, OpsEntryTypeGoogleDoc, OpsEntryTypeGoogleSheet, OpsEntryTypeGoogleSlides, OpsEntryTypeGoogleForm, OpsEntryTypeGoogleDrive, OpsEntryTypeWeb}
+
+// Whether the canonical root is inside a git repository.
+type OpsGitState string
+
+const (
+	OpsGitStateRepo OpsGitState = "repo"
+	OpsGitStateNone OpsGitState = "none"
+)
+
+// OpsGitStateValues is every value the contract allows, in contract order.
+var OpsGitStateValues = []OpsGitState{OpsGitStateRepo, OpsGitStateNone}
+
+// GET /v1/projects/:id/ops and GET /v1/ops?session=: every collection and entry
+// of the Project. File entries are checked on disk when read.
+type OpsList struct {
+	Collections []OpsCollection `json:"collections"`
+	Entries     []OpsEntry      `json:"entries"`
+
+	// Only on GET /v1/ops: the place id the Session's Project is listed under.
+	Place string `json:"place,omitempty"`
+
+	// The canonical key the records are filed under.
+	ProjectKey string `json:"project_key"`
+}
+
+// GET /v1/projects/:id/ops/:entry and GET /v1/ops/:entry. content and version
+// only for a readable file of at most 128 KiB of UTF-8.
+type OpsRead struct {
+	Content string   `json:"content,omitempty"`
+	Entry   OpsEntry `json:"entry"`
+
+	// The SHA-256 of the content, the expected_version a save names.
+	Version string `json:"version,omitempty"`
+}
+
+// The Session asked to read a link and the to-do that asks it.
+type OpsResolve struct {
+	// The Session's terminal id.
+	Terminal string `json:"terminal"`
+
+	// The direct to-do's id.
+	Todo      string       `json:"todo"`
+	TodoState OpsTodoState `json:"todo_state"`
+}
+
+// POST /v1/projects/:id/ops/:entry/resolve-request: the entry, now resolving,
+// and the unsent to-do the caller sends with POST
+// /v1/work/v2/session-todos/:terminal/:todo/send.
+type OpsResolveRequested struct {
+	Entry OpsEntry   `json:"entry"`
+	Todo  OpsTodoRef `json:"todo"`
+}
+
+// GET and PATCH /v1/projects/:id/ops/setup: the clawdline-ops folder and
+// whether git ignores it through info/exclude.
+type OpsSetup struct {
+	// Whether /clawdline-ops/ is a line of the repository's info/exclude.
+	Excluded     bool          `json:"excluded"`
+	Folder       string        `json:"folder"`
+	FolderExists bool          `json:"folder_exists"`
+	Git          OpsGitState   `json:"git"`
+	Visibility   OpsVisibility `json:"visibility"`
+
+	// Why the visibility is unknown, e.g. not a GitHub remote.
+	VisibilityDetail string `json:"visibility_detail,omitempty"`
+}
+
+// Who named the entry: the person (never overwritten), the agent that resolved
+// a link, or the file name.
+type OpsTitleSource string
+
+const (
+	OpsTitleSourceUser  OpsTitleSource = "user"
+	OpsTitleSourceAgent OpsTitleSource = "agent"
+	OpsTitleSourceFile  OpsTitleSource = "file"
+)
+
+// OpsTitleSourceValues is every value the contract allows, in contract order.
+var OpsTitleSourceValues = []OpsTitleSource{OpsTitleSourceUser, OpsTitleSourceAgent, OpsTitleSourceFile}
+
+// A direct to-do by id.
+type OpsTodoRef struct {
+	ID string `json:"id"`
+}
+
+// Where the resolve to-do is: created and not sent, sent, read by its Session,
+// completed, or no longer in the store.
+type OpsTodoState string
+
+const (
+	OpsTodoStateUnsent  OpsTodoState = "unsent"
+	OpsTodoStateSent    OpsTodoState = "sent"
+	OpsTodoStateRead    OpsTodoState = "read"
+	OpsTodoStateDone    OpsTodoState = "done"
+	OpsTodoStateMissing OpsTodoState = "missing"
+)
+
+// OpsTodoStateValues is every value the contract allows, in contract order.
+var OpsTodoStateValues = []OpsTodoState{OpsTodoStateUnsent, OpsTodoStateSent, OpsTodoStateRead, OpsTodoStateDone, OpsTodoStateMissing}
+
+// The GitHub repository's visibility, read only when asked with ?probe=github.
+type OpsVisibility string
+
+const (
+	OpsVisibilityPublic    OpsVisibility = "public"
+	OpsVisibilityPrivate   OpsVisibility = "private"
+	OpsVisibilityUnknown   OpsVisibility = "unknown"
+	OpsVisibilityUnchecked OpsVisibility = "unchecked"
+)
+
+// OpsVisibilityValues is every value the contract allows, in contract order.
+var OpsVisibilityValues = []OpsVisibility{OpsVisibilityPublic, OpsVisibilityPrivate, OpsVisibilityUnknown, OpsVisibilityUnchecked}
+
 // Every iTerm2 osascript run this daemon started, counted by kind: since it
 // started, and since the last hourly `osascript: hour` line in daemon.log,
 // which writes the same counts. It is how a week with `iterm_scan` off is

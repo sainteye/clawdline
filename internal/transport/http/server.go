@@ -748,6 +748,10 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/squad-packages/"}, s.squadPackagesRoute},
 		{Route{"*", "/v1/projects"}, s.projectCatalogRoute},
 		{Route{"*", "/v1/projects/"}, s.projectsRoute},
+		// A Session's Ops documents, named by its terminal or an entry id
+		// (ops_documents.go).
+		{Route{"*", "/v1/ops"}, s.opsAgentRoute},
+		{Route{"*", "/v1/ops/"}, s.opsAgentRoute},
 		// Project settings a source machine offers and a mirror applies (project_sync.go).
 		{Route{"*", "/v1/project-sync/"}, s.projectSyncRoute},
 		{Route{"*", "/v1/transcript"}, s.transcriptRoute},

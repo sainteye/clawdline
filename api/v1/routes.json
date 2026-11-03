@@ -244,6 +244,16 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/ops",
+      "since": 40
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/ops/",
+      "since": 40
+    },
+    {
+      "method": "*",
       "pattern": "/v1/orchestrator/assistants",
       "since": 1
     },

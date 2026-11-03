@@ -4335,6 +4335,277 @@ export interface ObligationList {
 }
 
 /**
+ * A named group of Ops entries.
+ */
+export interface OpsCollection {
+  /**
+   * "opc_" and 24 lowercase hex digits.
+   */
+  id: string
+
+  /**
+   * At most 100 bytes.
+   */
+  name: string
+  position: number
+}
+
+/**
+ * An Ops collection just created or changed.
+ */
+export interface OpsCollectionAnswer {
+  collection: OpsCollection
+}
+
+/**
+ * DELETE /v1/projects/:id/ops/:entry: the record is gone; a file stays on disk.
+ */
+export interface OpsDeleted {
+  deleted: string
+  ok: boolean
+}
+
+/**
+ * One Ops document: a file under the Project's canonical root or a link. Filed
+ * under the Project's canonical key, so every worktree of a repository sees the
+ * same list (docs/ops-documents.md).
+ */
+export interface OpsEntry {
+  /**
+   * Why a link needs access (from the agent), or why a file is unreadable; at most
+   * 1000 bytes.
+   */
+  access_note?: string
+
+  /**
+   * An OpsCollection id, or empty for none.
+   */
+  collection: string
+
+  /**
+   * Unix seconds.
+   */
+  created_at: number
+
+  /**
+   * "ope_" and 24 lowercase hex digits.
+   */
+  id: string
+  kind: OpsEntryKind
+
+  /**
+   * kind=file only: relative to the canonical Project root, with / separators.
+   */
+  path?: string
+
+  /**
+   * Order within its collection.
+   */
+  position: number
+  resolve?: OpsResolve
+  status: OpsEntryStatus
+
+  /**
+   * The shown name, at most 200 bytes; a file defaults to its name without the
+   * extension.
+   */
+  title: string
+  title_source: OpsTitleSource
+  type: OpsEntryType
+
+  /**
+   * Unix seconds.
+   */
+  updated_at: number
+
+  /**
+   * kind=link only: an http(s) URL of at most 2048 bytes.
+   */
+  url?: string
+}
+
+/**
+ * An Ops entry just created or changed. version is a saved file's new version.
+ */
+export interface OpsEntryAnswer {
+  entry: OpsEntry
+  version?: string
+}
+
+/**
+ * What an Ops entry points at: a file under the Project's canonical root, or a
+ * link.
+ */
+export type OpsEntryKind =
+    "file"
+  | "link"
+
+export const OpsEntryKindValues: readonly OpsEntryKind[] = ["file", "link"] as const
+
+/**
+ * ready; resolving while a Session reads a link; needs_access when that Session
+ * could not; missing when the file is gone; unreadable when the file cannot be read
+ * as text or at all.
+ */
+export type OpsEntryStatus =
+    "ready"
+  | "resolving"
+  | "needs_access"
+  | "missing"
+  | "unreadable"
+
+export const OpsEntryStatusValues: readonly OpsEntryStatus[] = ["ready", "resolving", "needs_access", "missing", "unreadable"] as const
+
+/**
+ * What the entry is. A link's type is read from its URL alone
+ * (internal/domain/opsdocs/link_types.json); a file's from its extension and
+ * content.
+ */
+export type OpsEntryType =
+    "markdown"
+  | "text"
+  | "file"
+  | "notion_page"
+  | "google_doc"
+  | "google_sheet"
+  | "google_slides"
+  | "google_form"
+  | "google_drive"
+  | "web"
+
+export const OpsEntryTypeValues: readonly OpsEntryType[] = ["markdown", "text", "file", "notion_page", "google_doc", "google_sheet", "google_slides", "google_form", "google_drive", "web"] as const
+
+/**
+ * Whether the canonical root is inside a git repository.
+ */
+export type OpsGitState =
+    "repo"
+  | "none"
+
+export const OpsGitStateValues: readonly OpsGitState[] = ["repo", "none"] as const
+
+/**
+ * GET /v1/projects/:id/ops and GET /v1/ops?session=: every collection and entry of
+ * the Project. File entries are checked on disk when read.
+ */
+export interface OpsList {
+  collections: OpsCollection[]
+  entries: OpsEntry[]
+
+  /**
+   * Only on GET /v1/ops: the place id the Session's Project is listed under.
+   */
+  place?: string
+
+  /**
+   * The canonical key the records are filed under.
+   */
+  project_key: string
+}
+
+/**
+ * GET /v1/projects/:id/ops/:entry and GET /v1/ops/:entry. content and version only
+ * for a readable file of at most 128 KiB of UTF-8.
+ */
+export interface OpsRead {
+  content?: string
+  entry: OpsEntry
+
+  /**
+   * The SHA-256 of the content, the expected_version a save names.
+   */
+  version?: string
+}
+
+/**
+ * The Session asked to read a link and the to-do that asks it.
+ */
+export interface OpsResolve {
+  /**
+   * The Session's terminal id.
+   */
+  terminal: string
+
+  /**
+   * The direct to-do's id.
+   */
+  todo: string
+  todo_state: OpsTodoState
+}
+
+/**
+ * POST /v1/projects/:id/ops/:entry/resolve-request: the entry, now resolving, and
+ * the unsent to-do the caller sends with POST
+ * /v1/work/v2/session-todos/:terminal/:todo/send.
+ */
+export interface OpsResolveRequested {
+  entry: OpsEntry
+  todo: OpsTodoRef
+}
+
+/**
+ * GET and PATCH /v1/projects/:id/ops/setup: the clawdline-ops folder and whether
+ * git ignores it through info/exclude.
+ */
+export interface OpsSetup {
+  /**
+   * Whether /clawdline-ops/ is a line of the repository's info/exclude.
+   */
+  excluded: boolean
+  folder: string
+  folder_exists: boolean
+  git: OpsGitState
+  visibility: OpsVisibility
+
+  /**
+   * Why the visibility is unknown, e.g. not a GitHub remote.
+   */
+  visibility_detail?: string
+}
+
+/**
+ * Who named the entry: the person (never overwritten), the agent that resolved a
+ * link, or the file name.
+ */
+export type OpsTitleSource =
+    "user"
+  | "agent"
+  | "file"
+
+export const OpsTitleSourceValues: readonly OpsTitleSource[] = ["user", "agent", "file"] as const
+
+/**
+ * A direct to-do by id.
+ */
+export interface OpsTodoRef {
+  id: string
+}
+
+/**
+ * Where the resolve to-do is: created and not sent, sent, read by its Session,
+ * completed, or no longer in the store.
+ */
+export type OpsTodoState =
+    "unsent"
+  | "sent"
+  | "read"
+  | "done"
+  | "missing"
+
+export const OpsTodoStateValues: readonly OpsTodoState[] = ["unsent", "sent", "read", "done", "missing"] as const
+
+/**
+ * The GitHub repository's visibility, read only when asked with ?probe=github.
+ */
+export type OpsVisibility =
+    "public"
+  | "private"
+  | "unknown"
+  | "unchecked"
+
+export const OpsVisibilityValues: readonly OpsVisibility[] = ["public", "private", "unknown", "unchecked"] as const
+
+/**
  * Every iTerm2 osascript run this daemon started, counted by kind: since it
  * started, and since the last hourly `osascript: hour` line in daemon.log, which
  * writes the same counts. It is how a week with `iterm_scan` off is compared with a

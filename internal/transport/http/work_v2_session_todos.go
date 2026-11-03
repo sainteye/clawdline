@@ -71,32 +71,8 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			return
 		}
 	} else {
-		find := s.actions().Find
-		if len(parts) == 1 && r.Method == http.MethodGet {
-			// A read of the to-do list only needs the conversation id the
-			// row already showed (FindForRead); a mutation below still
-			// resolves the live terminal it acts for.
-			find = s.actions().FindForRead
-		}
-		sess, findErr := find(r.Context(), terminalID)
-		if findErr != nil {
-			writeRefusal(w, http.StatusConflict, "session_unavailable", "The Session is unavailable or has no conversation id.")
-			return
-		}
-		conversation = sess.ConversationID
-		if conversation == "" {
-			// Only an honestly unrecorded assistant may start work this way. An
-			// unreadable/ambiguous binding is not evidence of a fresh Session.
-			if sess.Binding != session.BindingNoRecord {
-				writeRefusal(w, http.StatusConflict, "session_unavailable", "The Session is unavailable or has no conversation id.")
-				return
-			}
-			conversation = app.PendingTodoOwner(sess)
-			if conversation == "" {
-				writeRefusal(w, http.StatusConflict, "session_unavailable", "The Session is unavailable or has no conversation id.")
-				return
-			}
-		} else if err := s.workV2().BindPendingTodos(r.Context(), app.PendingTodoOwner(sess), conversation); err != nil {
+		conversation, err = s.sessionTodoConversation(r.Context(), terminalID, len(parts) == 1 && r.Method == http.MethodGet)
+		if err != nil {
 			s.writeWorkV2Error(w, err)
 			return
 		}
@@ -488,4 +464,40 @@ func (s *Server) bindFirstSessionTodos(ctx context.Context, conversation string)
 		}
 	}
 	return nil
+}
+
+// sessionTodoConversation is the conversation id a Session's direct to-dos
+// are filed under, for its terminal id. forRead uses the inventory row a list
+// already showed; a mutation resolves the live terminal it acts for. The
+// Ops resolve request files its to-do under the same id, so the send route
+// finds it.
+func (s *Server) sessionTodoConversation(ctx context.Context, terminalID string, forRead bool) (string, error) {
+	unavailable := &app.WorkError{Status: http.StatusConflict, Code: "session_unavailable",
+		Message: "The Session is unavailable or has no conversation id."}
+	find := s.actions().Find
+	if forRead {
+		// A read of the to-do list only needs the conversation id the
+		// row already showed (FindForRead); a mutation below still
+		// resolves the live terminal it acts for.
+		find = s.actions().FindForRead
+	}
+	sess, findErr := find(ctx, terminalID)
+	if findErr != nil {
+		return "", unavailable
+	}
+	conversation := sess.ConversationID
+	if conversation == "" {
+		// Only an honestly unrecorded assistant may start work this way. An
+		// unreadable/ambiguous binding is not evidence of a fresh Session.
+		if sess.Binding != session.BindingNoRecord {
+			return "", unavailable
+		}
+		conversation = app.PendingTodoOwner(sess)
+		if conversation == "" {
+			return "", unavailable
+		}
+	} else if err := s.workV2().BindPendingTodos(ctx, app.PendingTodoOwner(sess), conversation); err != nil {
+		return "", err
+	}
+	return conversation, nil
 }

@@ -1548,6 +1548,105 @@
       "decode": {"reply": "action", "fields": {"repo": {"type": "string", "non_empty": true, "max_bytes": 512}}, "route": {"path": "/v1/project-sync/mirror", "query": {"repo": {"from": "repo"}}}}
     },
     {
+      "op": "project-ops-create",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/projects/{project}/ops",
+      "console_seam": "reader",
+      "local": {"method": "POST", "device": true},
+      "example": {"item": {"kind": "link", "url": "https://example.com/doc"}, "project": "p1", "request": "req-ops-create", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["item", "project", "request", "session"], "path": "/v1/projects/{project}/ops", "local_body": ["kind", "url"]}
+      ],
+      "decode": {"reply": "action", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}, "item": {"type": "object", "max_bytes": 262144, "copies": {"max_bytes": "projectfiles.MaxWriteBytes"}}}, "route": {"path": "/v1/projects/{project}/ops", "body": {"object": "item"}}}
+    },
+    {
+      "op": "project-ops-delete",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "DELETE /v1/projects/{project}/ops/{id}",
+      "console_seam": "reader",
+      "local": {"method": "DELETE", "device": true},
+      "example": {"id": "ope_0123456789abcdef01234567", "project": "p1", "request": "req-ops-delete", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["id", "project", "request", "session"], "path": "/v1/projects/{project}/ops/{id}"}
+      ],
+      "decode": {"reply": "action", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}, "id": {"type": "string", "non_empty": true, "max_bytes": 64}}, "route": {"path": "/v1/projects/{project}/ops/{id}"}}
+    },
+    {
+      "op": "project-ops-list",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/ops",
+      "console_seam": "reader",
+      "local": {"method": "GET"},
+      "example": {"project": "p1", "request": "req-ops-list", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["project", "request", "session"], "path": "/v1/projects/{project}/ops"}
+      ],
+      "decode": {"reply": "machine", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}}, "route": {"path": "/v1/projects/{project}/ops"}}
+    },
+    {
+      "op": "project-ops-read",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/ops/{entry}",
+      "console_seam": "reader",
+      "local": {"method": "GET"},
+      "example": {"entry": "ope_0123456789abcdef01234567", "project": "p1", "request": "req-ops-read", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["entry", "project", "request", "session"], "path": "/v1/projects/{project}/ops/{entry}"}
+      ],
+      "decode": {"reply": "machine", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}, "entry": {"type": "string", "length": 28, "prefix": "ope_"}}, "route": {"path": "/v1/projects/{project}/ops/{entry}"}}
+    },
+    {
+      "op": "project-ops-resolve-request",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/projects/{project}/ops/{entry}/resolve-request",
+      "console_seam": "reader",
+      "local": {"method": "POST", "device": true},
+      "example": {"entry": "ope_0123456789abcdef01234567", "item": {"terminal": "%19"}, "project": "p1", "request": "req-ops-resolve-request", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["entry", "item", "project", "request", "session"], "path": "/v1/projects/{project}/ops/{entry}/resolve-request", "local_body": ["terminal"]}
+      ],
+      "decode": {"reply": "action", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}, "entry": {"type": "string", "length": 28, "prefix": "ope_"}, "item": {"type": "object", "max_bytes": 262144, "copies": {"max_bytes": "projectfiles.MaxWriteBytes"}}}, "route": {"path": "/v1/projects/{project}/ops/{entry}/resolve-request", "body": {"object": "item"}}}
+    },
+    {
+      "op": "project-ops-setup",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/ops/setup?probe=",
+      "console_seam": "reader",
+      "local": {"method": "GET"},
+      "example": {"probe": "github", "project": "p1", "request": "req-ops-setup", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["project", "request", "session"], "path": "/v1/projects/{project}/ops/setup"},
+        {"body": ["probe", "project", "request", "session"], "path": "/v1/projects/{project}/ops/setup", "query": ["probe"]}
+      ],
+      "decode": {"reply": "machine", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}, "probe": {"type": "string", "enum": ["github"]}}, "route": {"path": "/v1/projects/{project}/ops/setup", "query": {"probe": {"from": "probe"}}}}
+    },
+    {
+      "op": "project-ops-update",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "PATCH /v1/projects/{project}/ops/{id}",
+      "console_seam": "reader",
+      "local": {"method": "PATCH", "device": true},
+      "example": {"id": "ope_0123456789abcdef01234567", "item": {"title": "Runbook"}, "project": "p1", "request": "req-ops-update", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["id", "item", "project", "request", "session"], "path": "/v1/projects/{project}/ops/{id}", "local_body": ["title"]}
+      ],
+      "decode": {"reply": "action", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}, "id": {"type": "string", "non_empty": true, "max_bytes": 64}, "item": {"type": "object", "max_bytes": 262144, "copies": {"max_bytes": "projectfiles.MaxWriteBytes"}}}, "route": {"path": "/v1/projects/{project}/ops/{id}", "body": {"object": "item"}}}
+    },
+    {
       "op": "project-tree-list",
       "kind": "read",
       "write_gate": false,

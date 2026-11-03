@@ -783,6 +783,40 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-file-save", method: "PUT", path: "/v1/projects/p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		body2: `{"content":"updated","expected_version":"v1"}`,
 	}, {
+		word:    "project-ops-list",
+		body:    map[string]any{"type": "project-ops-list", "session": machine, "request": "req-ops-list", "project": "p1"},
+		session: machine, name: "read:req-ops-list", method: "GET", path: "/v1/projects/p1/ops",
+	}, {
+		word:    "project-ops-read",
+		body:    map[string]any{"type": "project-ops-read", "session": machine, "request": "req-ops-read", "project": "p1", "entry": "ope_0123456789abcdef01234567"},
+		session: machine, name: "read:req-ops-read", method: "GET", path: "/v1/projects/p1/ops/ope_0123456789abcdef01234567",
+	}, {
+		word:    "project-ops-setup",
+		body:    map[string]any{"type": "project-ops-setup", "session": machine, "request": "req-ops-setup", "project": "p1", "probe": "github"},
+		session: machine, name: "read:req-ops-setup", method: "GET", path: "/v1/projects/p1/ops/setup", query: map[string]string{"probe": "github"},
+	}, {
+		word: "project-ops-create",
+		body: map[string]any{"type": "project-ops-create", "session": machine, "request": "req-ops-create", "project": "p1",
+			"item": map[string]any{"kind": "link", "url": "https://example.com/doc"}},
+		session: machine, name: "action:req-ops-create", method: "POST", path: "/v1/projects/p1/ops",
+		body2: `{"kind":"link","url":"https://example.com/doc"}`,
+	}, {
+		word: "project-ops-update",
+		body: map[string]any{"type": "project-ops-update", "session": machine, "request": "req-ops-update", "project": "p1", "id": "setup",
+			"item": map[string]any{"git": "exclude"}},
+		session: machine, name: "action:req-ops-update", method: "PATCH", path: "/v1/projects/p1/ops/setup",
+		body2: `{"git":"exclude"}`,
+	}, {
+		word:    "project-ops-delete",
+		body:    map[string]any{"type": "project-ops-delete", "session": machine, "request": "req-ops-delete", "project": "p1", "id": "ope_0123456789abcdef01234567"},
+		session: machine, name: "action:req-ops-delete", method: "DELETE", path: "/v1/projects/p1/ops/ope_0123456789abcdef01234567",
+	}, {
+		word: "project-ops-resolve-request",
+		body: map[string]any{"type": "project-ops-resolve-request", "session": machine, "request": "req-ops-resolve-request", "project": "p1", "entry": "ope_0123456789abcdef01234567",
+			"item": map[string]any{"terminal": "%19"}},
+		session: machine, name: "action:req-ops-resolve-request", method: "POST", path: "/v1/projects/p1/ops/ope_0123456789abcdef01234567/resolve-request",
+		body2: `{"terminal":"%19"}`,
+	}, {
 		word:    "project-antigravity-consent-status",
 		body:    map[string]any{"type": "project-antigravity-consent-status", "session": machine, "request": "req-consent-status", "project": "p1"},
 		session: machine, name: "read:req-consent-status", method: "GET", path: "/v1/projects/p1/antigravity-consent",

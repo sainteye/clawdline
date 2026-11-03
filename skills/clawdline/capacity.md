@@ -451,6 +451,16 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `projects.graphify_runtime_bytes` | 536870912 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projects.graphify_text` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `projects.graphify_zoom` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.ops_collection_name_bytes` | 100 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.ops_collections` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.ops_entries` | 500 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.ops_github_cache` | 64 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `projects.ops_github_probe_ms` | 3000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `projects.ops_markdown_name_bytes` | 255 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.ops_note_bytes` | 1000 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.ops_read_ids` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.ops_title_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.ops_url_bytes` | 2048 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projects.workspace_metadata_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.clones` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.entry_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |

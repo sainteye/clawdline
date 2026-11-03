@@ -1,0 +1,15 @@
+{
+  "description": "How an Ops link's type is read from its URL alone, without asking the network. Rules are tried in order; the first whose host matches (and whose path starts with path_prefix, when given) names the type. Any other http(s) URL is web. docs/ops-documents.md.",
+  "rules": [
+    {"host": "notion.so", "type": "notion_page"},
+    {"host": "www.notion.so", "type": "notion_page"},
+    {"host": "app.notion.com", "type": "notion_page"},
+    {"host_suffix": ".notion.site", "type": "notion_page"},
+    {"host": "docs.google.com", "path_prefix": "/document/", "type": "google_doc"},
+    {"host": "docs.google.com", "path_prefix": "/spreadsheets/", "type": "google_sheet"},
+    {"host": "docs.google.com", "path_prefix": "/presentation/", "type": "google_slides"},
+    {"host": "docs.google.com", "path_prefix": "/forms/", "type": "google_form"},
+    {"host": "drive.google.com", "type": "google_drive"}
+  ],
+  "fallback": "web"
+}

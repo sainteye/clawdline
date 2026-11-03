@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10438,
-  "riskKeys": 4610,
-  "nonRiskCount": 5828,
+  "englishContentKeys": 10458,
+  "riskKeys": 4619,
+  "nonRiskCount": 5839,
   "groups": [
     {
       "name": "acp / other",
@@ -399,7 +399,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 400,
+      "count": 411,
       "sources": [
         null
       ],
@@ -712,6 +712,17 @@
         "capacityRow.projects.graphify_text.what",
         "capacityRow.projects.graphify_zoom.full",
         "capacityRow.projects.graphify_zoom.what",
+        "capacityRow.projects.ops_collection_name_bytes.what",
+        "capacityRow.projects.ops_collections.what",
+        "capacityRow.projects.ops_entries.what",
+        "capacityRow.projects.ops_github_cache.full",
+        "capacityRow.projects.ops_github_cache.what",
+        "capacityRow.projects.ops_github_probe_ms.what",
+        "capacityRow.projects.ops_markdown_name_bytes.what",
+        "capacityRow.projects.ops_read_ids.full",
+        "capacityRow.projects.ops_read_ids.what",
+        "capacityRow.projects.ops_title_bytes.what",
+        "capacityRow.projects.ops_url_bytes.what",
         "capacityRow.projects.workspace_metadata_bytes.what",
         "capacityRow.projectsync.clones.what",
         "capacityRow.projectsync.file_bytes.what",
