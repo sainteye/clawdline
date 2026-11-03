@@ -10610,5 +10610,9 @@
   "ops.playbookNotInOps": "not in Ops",
   "ops.playbookLocked": "A linked Playbook's message follows its source.",
   "ops.sendAsking": "The Session is showing a question, so nothing was typed. Answer it in the Session, then use Send.",
-  "ops.sendBusy": "The Session is busy, so nothing was typed. Use Send again in a moment."
+  "ops.sendBusy": "The Session is busy, so nothing was typed. Use Send again in a moment.",
+  "ops.moveRefused": "This could not be moved.",
+  "ops.renameCaseOnly": "Changing only upper and lower case is not supported yet. Choose a different name.",
+  "ops.renameInstructionFile": "Instruction, Skill and command files keep their names so the assistants and Playbooks that use them keep working.",
+  "ops.renameUnsupported": "This disk cannot rename the file safely here. Rename it in the Project, then add it again."
 }

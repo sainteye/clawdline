@@ -304,3 +304,30 @@ export function sendProblem(code: string, detail: string): SendProblem {
   if (reason === "busy") return "busy"
   return "other"
 }
+
+/**
+ * The host an untitled link is known by. A link nobody named yet carries its
+ * URL as its title; shown as "<type> · <host>" it can be told apart from its
+ * neighbours without a two-line URL. Named links (by the person or the agent)
+ * return null and keep their title.
+ */
+export function untitledLinkHost(entry: Pick<OpsEntry, "kind" | "title_source" | "url">): string | null {
+  if (entry.kind !== "link" || entry.title_source === "user" || entry.title_source === "agent" || !entry.url) return null
+  try { return new URL(entry.url).host || null } catch { return null }
+}
+
+/** The name an entry is shown by; `word` turns a type into this interface's word. */
+export function displayName(entry: Pick<OpsEntry, "kind" | "title" | "title_source" | "url" | "type">, word: (type: OpsTypeWord) => string): string {
+  const host = untitledLinkHost(entry)
+  return host ? `${word(typeWord(entry.type))} · ${host}` : entry.title
+}
+
+/** The resolving rows an agent can still move: delivered or read, not unsent or gone. */
+export function awaitsAgent(entries: readonly OpsEntry[]): boolean {
+  return entries.some((entry) => entry.status === "resolving" && (entry.resolve?.todo_state === "sent" || entry.resolve?.todo_state === "read"))
+}
+
+/** Rows whose status differs from the previous read, for a screen-reader announcement. */
+export function changedStatus(before: ReadonlyMap<string, string>, entries: readonly OpsEntry[]): OpsEntry[] {
+  return entries.filter((entry) => before.has(entry.id) && before.get(entry.id) !== entry.status)
+}

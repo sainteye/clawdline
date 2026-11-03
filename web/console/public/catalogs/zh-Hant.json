@@ -10610,5 +10610,9 @@
   "ops.playbookNotInOps": "不在 Ops 中",
   "ops.playbookLocked": "連結來源的 Playbook，訊息由來源決定。",
   "ops.sendAsking": "Session 正在等你回答一個問題，所以沒有送出。請先在 Session 裡回答，再按「送出」。",
-  "ops.sendBusy": "Session 正忙，所以沒有送出。請稍後再按「送出」。"
+  "ops.sendBusy": "Session 正忙，所以沒有送出。請稍後再按「送出」。",
+  "ops.moveRefused": "無法移動。",
+  "ops.renameCaseOnly": "目前不支援只改大小寫。請換一個名稱。",
+  "ops.renameInstructionFile": "指示檔、Skill 與指令檔保留原名，使用它們的助理與 Playbook 才不會失效。",
+  "ops.renameUnsupported": "這個磁碟無法在這裡安全地改名。請在 Project 裡改名後再加入一次。"
 }

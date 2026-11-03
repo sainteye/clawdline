@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10610,
-  "riskKeys": 4667,
-  "nonRiskCount": 5943,
+  "englishContentKeys": 10614,
+  "riskKeys": 4670,
+  "nonRiskCount": 5944,
   "groups": [
     {
       "name": "acp / other",
@@ -4702,7 +4702,7 @@
     },
     {
       "name": "ops / other",
-      "count": 104,
+      "count": 105,
       "sources": [
         "src/pages/ops/words.ts"
       ],
@@ -4781,6 +4781,7 @@
         "ops.rename",
         "ops.renameFile",
         "ops.renameHint",
+        "ops.renameInstructionFile",
         "ops.renameTitle",
         "ops.resolveMissing",
         "ops.resolveReading",

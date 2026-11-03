@@ -67,6 +67,7 @@
 .ops-inline-name > span:first-child { overflow-wrap: anywhere; }
 .ops-inline-pencil { color: var(--faint); font-size: .85em; opacity: 0; }
 .ops-inline-name:hover .ops-inline-pencil, .ops-inline-name:focus-visible .ops-inline-pencil { opacity: 1; }
+@media (hover: none) { .ops-inline-pencil { opacity: 1; } }
 .ops-inline-edit { display: grid; gap: .3rem; font-size: 1rem; font-weight: 400; }
 .ops-inline-edit small { color: var(--dim); font-size: .8rem; }
 .ops-file-name { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; color: var(--dim); font-size: .9rem; }

@@ -15,7 +15,7 @@ import { playbookSourceMatches, playbookSourceText, playbookSourceTitle } from "
 import { Mark } from "../session/List.js"
 import type { SessionRow } from "@clawdline/contract"
 import { listOps, type OpsEntry } from "./ops/ops-api.js"
-import { insertOpsIds, opsReferences, typeWord } from "./ops/ops-model.js"
+import { insertOpsIds, opsReferences, typeWord, displayName } from "./ops/ops-model.js"
 import { opsWord } from "./ops/words.js"
 
 type Draft = { id: string; title: string; body: string; global: boolean; source: PlaybookSource | null }
@@ -383,7 +383,7 @@ function PlaybookPage({ shown }: { shown: boolean }) {
           {draft.global ? <small>{opsWord("playbookNoProject")}</small> : draft.source ? <small>{opsWord("playbookLocked")}</small>
             : opsEntries && !opsEntries.length ? <small>{opsWord("playbookNoEntries")}</small> : null}
           {(() => {
-            const refs = opsReferences(draft.body, opsEntries ?? [])
+            const refs = opsReferences(draft.body, (opsEntries ?? []).map((entry) => ({ ...entry, title: displayName(entry, (word) => opsWord(word)) })))
             return refs.length > 0 && <div className="playbook-ops-refs"><span>{opsWord("playbookRefs")}</span>
               <ul>{refs.map((ref) => <li key={ref.id}>{ref.title ?? <><code>{ref.id}</code>{opsEntries && <em> · {opsWord("playbookNotInOps")}</em>}</>}</li>)}</ul></div>
           })()}
@@ -425,7 +425,7 @@ function PlaybookPage({ shown }: { shown: boolean }) {
         <div className="playbook-skill-content"><ul className="playbook-ops-options">{(opsEntries ?? []).map((entry) => <li key={entry.id}>
           <label><input type="checkbox" checked={opsPicked.includes(entry.id)} onChange={(event) => setOpsPicked((current) =>
             event.target.checked ? [...current, entry.id] : current.filter((id) => id !== entry.id))} />
-            <span><strong>{entry.title}</strong><small>{opsWord(typeWord(entry.type))}</small></span></label>
+            <span><strong>{displayName(entry, (word) => opsWord(word))}</strong><small>{opsWord(typeWord(entry.type))}</small></span></label>
         </li>)}</ul></div>
         {opsError && <p role="alert" className="playbook-error">{opsError}</p>}
         <footer><button type="button" onClick={closeOps}>{W("cancel")}</button>

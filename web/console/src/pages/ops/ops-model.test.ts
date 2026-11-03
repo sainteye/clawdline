@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
-  sendProblem,
+  sendProblem, untitledLinkHost, displayName, awaitsAgent, changedStatus,
   IntentKeys, buildTree, checkFileName, checkLinkUrl, filterCounts, includeInGitDefault, insertOpsIds, markdownName,
   needsGitChoice, opsIdsIn, opsReferences, phoneRows, resolveView, sameProjectSessions, statusView, typeWord, visibilityWord,
 // @ts-expect-error -- Node strips source TypeScript in the browser-free test.
@@ -148,4 +148,22 @@ test("a send refused because the Session shows a question is told apart from oth
   assert.equal(sendProblem("send_failed", "busy: lane full"), "busy")
   assert.equal(sendProblem("send_failed", "terminal gone"), "other")
   assert.equal(sendProblem("todo_not_found", ""), "other")
+})
+
+test("an untitled link is shown by its type and host; a named one by its name", () => {
+  const word = (w: string) => w === "typeGoogleDoc" ? "Google Doc" : w
+  const untitled = { kind: "link" as const, title: "https://docs.google.com/document/d/x/edit", title_source: "file" as const, url: "https://docs.google.com/document/d/x/edit", type: "google_doc" as const }
+  assert.equal(untitledLinkHost(untitled), "docs.google.com")
+  assert.equal(displayName(untitled, word), "Google Doc · docs.google.com")
+  assert.equal(displayName({ ...untitled, title: "Support SOP", title_source: "agent" as const }, word), "Support SOP")
+  assert.equal(untitledLinkHost({ kind: "file" as const, title_source: "file" as const, url: undefined }), null)
+})
+
+test("the page keeps checking only while an agent can still answer, and names the rows that changed", () => {
+  const row = (id: string, status: string, todo_state?: string) => ({ id, status, resolve: todo_state ? { terminal: "%1", todo: "t", todo_state } : undefined }) as never
+  assert.equal(awaitsAgent([row("a", "resolving", "sent")]), true)
+  assert.equal(awaitsAgent([row("a", "resolving", "unsent")]), false)
+  assert.equal(awaitsAgent([row("a", "ready")]), false)
+  const before = new Map([["a", "resolving"], ["b", "ready"]])
+  assert.deepEqual(changedStatus(before, [row("a", "needs_access"), row("b", "ready"), row("c", "ready")]).map((e: { id: string }) => e.id), ["a"])
 })

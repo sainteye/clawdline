@@ -17,7 +17,7 @@ import {
 import {
   IntentKeys, OPS_COLLECTION_NAME_BYTES, OPS_FILTERS, buildTree, checkFileName, checkLinkUrl, checkTitle, editable,
   fileNameOf, filterCounts, includeInGitDefault, markdownName, needsGitChoice, nextPosition, phoneRows,
-  sameProjectSessions, sendProblem, statusView, typeIcon, typeWord, visibilityWord, type InputProblem, type OpsFilter, type OpsIcon,
+  sameProjectSessions, sendProblem, statusView, displayName, awaitsAgent, changedStatus, typeIcon, typeWord, visibilityWord, type InputProblem, type OpsFilter, type OpsIcon,
 } from "./ops/ops-model.js"
 import { opsWord as W, type OpsWord } from "./ops/words.js"
 import "../page-skeleton.css"
@@ -36,18 +36,32 @@ const problemWord = (problem: InputProblem): OpsWord | null =>
 /** A refusal as one sentence the person can act on; the machine's detail is kept when it has one. */
 function refusalText(error: unknown, fallback: OpsWord = "createRefused"): string {
   if (!(error instanceof OpsError)) return W("createUnknown")
-  if (error.uncertain) return W(fallback === "saveRefused" ? "saveUnknown" : "createUnknown")
+  if (error.uncertain) return W(fallback === "saveRefused" ? "saveUnknown" : fallback === "moveRefused" ? "moveUnknown" : "createUnknown")
   if (error.code === "ops_name_taken") return W("nameTaken")
   if (error.code === "ops_bad_url") return W("badUrl")
+  if (error.code === "ops_rename_case_only") return W("renameCaseOnly")
+  if (error.code === "ops_rename_instruction_file") return W("renameInstructionFile")
+  if (error.code === "ops_rename_unsupported") return W("renameUnsupported")
   if (error.code === "not_implemented" || error.status === 501) return W("machineTooOld")
   if (/limit|full/.test(error.code)) return W("limitReached")
   return error.message && error.message !== error.code ? `${W(fallback)} ${error.message}` : W(fallback)
 }
 
-/** The send route's refusal, said as what the person can do about it. */
 /** Registered as console.ops_resolving_poll_seconds (internal/domain/capacity). */
 export const OPS_RESOLVING_POLL_MS = 5_000
 
+/** The name an entry is shown by in this interface's language. */
+const entryName = (entry: OpsEntry) => displayName(entry, (word) => W(word))
+
+const LAST_PLACE = "clawdline.ops.place"
+function rememberedPlace(): string {
+  try { return globalThis.localStorage?.getItem(LAST_PLACE) ?? "" } catch { return "" }
+}
+function rememberPlace(id: string): void {
+  try { globalThis.localStorage?.setItem(LAST_PLACE, id) } catch { /* a private window keeps the choice for this page only */ }
+}
+
+/** The send route's refusal, said as what the person can do about it. */
 function sendFailureText(cause: unknown): string {
   if (!(cause instanceof RefusalError)) return W("linkSavedUnsent")
   const problem = sendProblem(cause.code, cause.detail)
@@ -186,6 +200,8 @@ function OpsPage({ shown }: { shown: boolean }) {
   const rows = useRef(new Map<string, HTMLButtonElement>())
   const backTo = useRef<string | null>(null)
   const request = useRef(0)
+  const statuses = useRef(new Map<string, string>())
+  const [notice, setNotice] = useState<{ id: string; text: string } | null>(null)
 
   const refresh = useCallback(async (target: ProjectPlace | null = place) => {
     if (!target) return null
@@ -193,6 +209,9 @@ function OpsPage({ shown }: { shown: boolean }) {
     try {
       const answer = await listOps(target.id)
       if (ticket !== request.current) return null
+      const changed = changedStatus(statuses.current, answer.entries)
+      statuses.current = new Map(answer.entries.map((row) => [row.id, row.status]))
+      if (changed.length) setLive(changed.map((row) => W("statusLive", { name: entryName(row), status: W(statusView(row).word) })).join(" "))
       setList(answer); setError("")
       return answer
     } catch (cause) {
@@ -217,7 +236,7 @@ function OpsPage({ shown }: { shown: boolean }) {
     readProjectPlaces().then((answer) => {
       if (!live) return
       setPlaces(answer.places ?? [])
-      setPlace((current) => answer.places.find((candidate) => candidate.id === current?.id) ?? answer.places[0] ?? null)
+      setPlace((current) => answer.places.find((candidate) => candidate.id === (current?.id ?? rememberedPlace())) ?? answer.places[0] ?? null)
       if (!answer.places.length) setLoading(false)
     }).catch(() => { if (live) { setError(W("projectUnavailable")); setLoading(false) } })
     void readSessions()
@@ -226,16 +245,17 @@ function OpsPage({ shown }: { shown: boolean }) {
 
   useEffect(() => {
     if (!shown || !place) return
+    rememberPlace(place.id)
     setLoading(true); setList(null); setSelected(null)
     void refresh(place).finally(() => setLoading(false))
   }, [shown, place?.id])
 
   // The agent's answer to a resolve request arrives with no event: while a link
   // is being read, read the list again (console.ops_resolving_poll_seconds).
-  const resolving = !!list?.entries.some((entry) => entry.status === "resolving")
+  const resolving = awaitsAgent(list?.entries ?? [])
   useEffect(() => {
     if (!shown || !place || !resolving) return
-    const timer = setInterval(() => { void refresh(place) }, OPS_RESOLVING_POLL_MS)
+    const timer = setInterval(() => { if (!document.hidden) void refresh(place) }, OPS_RESOLVING_POLL_MS)
     return () => clearInterval(timer)
   }, [shown, place?.id, resolving, refresh])
 
@@ -265,12 +285,12 @@ function OpsPage({ shown }: { shown: boolean }) {
 
   const open = (id: string) => { setSelected(id); if (phone) backTo.current = null }
   const back = () => { backTo.current = selected; setSelected(null) }
-  const opened = async (id: string | undefined) => {
+  const opened = async (id: string | undefined, notice?: string) => {
     setDialog(null)
     const answer = await refresh()
-    if (id && answer?.entries.some((row) => row.id === id)) setSelected(id)
+    if (id && answer?.entries.some((row) => row.id === id)) { setNotice(notice ? { id, text: notice } : null); setSelected(id) }
   }
-  const announce = (row: OpsEntry) => setLive(W("statusLive", { name: row.title, status: W(statusView(row).word) }))
+  const announce = (row: OpsEntry) => setLive(W("statusLive", { name: entryName(row), status: W(statusView(row).word) }))
 
   const addItems: { word: OpsWord; dialog: Exclude<Dialog, null> }[] = [
     { word: "newMarkdown", dialog: "markdown" }, { word: "addProjectFile", dialog: "file" },
@@ -291,7 +311,7 @@ function OpsPage({ shown }: { shown: boolean }) {
     </div>}
   </div>
 
-  const reader = entry && place && list && <OpsReader key={entry.id} place={place} entry={entry} list={list} sessions={projectSessions}
+  const reader = entry && place && list && <OpsReader key={entry.id} place={place} entry={entry} list={list} notice={notice?.id === entry.id ? notice.text : ""} sessions={projectSessions}
     allSessions={sessions ?? []} sessionsFailed={sessionsFailed} phone={phone} onBack={back}
     onChanged={async (next) => { const answer = await refresh(); const row = answer?.entries.find((r) => r.id === (next?.id ?? entry.id)); if (row) announce(row) }}
     onRemoved={async () => { setSelected(null); await refresh() }} />
@@ -318,7 +338,7 @@ function OpsPage({ shown }: { shown: boolean }) {
           return <li key={row.id}><button type="button" ref={(node) => { if (node) rows.current.set(row.id, node); else rows.current.delete(row.id) }}
             onClick={() => open(row.id)}>
             <TypeIcon icon={typeIcon(row.type)} />
-            <span className="ops-row-copy"><strong>{row.title}</strong>
+            <span className="ops-row-copy"><strong>{entryName(row)}</strong>
               <small>{W(typeWord(row.type))} · {dateText(row.updated_at)}</small></span>
             {status.tone !== "ready" && <span className={`ops-badge ops-tone-${status.tone}`}>{W(status.word)}</span>}
             <span aria-hidden="true" className="ops-row-chevron">›</span>
@@ -333,7 +353,7 @@ function OpsPage({ shown }: { shown: boolean }) {
           {group.entries.length ? <ul>{group.entries.map((row) => {
             const status = statusView(row)
             return <li key={row.id}><button type="button" aria-current={row.id === selected ? "true" : undefined} onClick={() => open(row.id)}>
-              <TypeIcon icon={typeIcon(row.type)} /><span className="ops-tree-title">{row.title}</span>
+              <TypeIcon icon={typeIcon(row.type)} /><span className="ops-tree-title">{entryName(row)}</span>
               {status.tone !== "ready" && <span className={`ops-dot ops-tone-${status.tone}`} title={W(status.word)}><span className="ops-visually-hidden">{W(status.word)}</span></span>}
             </button></li>
           })}</ul> : <p className="ops-muted ops-tree-empty">{W("emptyCollection")}</p>}
@@ -360,7 +380,7 @@ function OpsPage({ shown }: { shown: boolean }) {
       <MarkdownDialog open={dialog === "markdown"} place={place} onClose={() => setDialog(null)} onCreated={(row) => void opened(row?.id)} returnTo={addButton} />
       <FileDialog open={dialog === "file"} place={place} onClose={() => setDialog(null)} onCreated={(row) => void opened(row?.id)} returnTo={addButton} />
       <LinkDialog open={dialog === "link"} place={place} sessions={projectSessions} sessionsFailed={sessionsFailed}
-        onClose={() => setDialog(null)} onCreated={(row) => void opened(row?.id)} returnTo={addButton} />
+        onClose={() => setDialog(null)} onCreated={(row, notice) => void opened(row?.id, notice)} returnTo={addButton} />
       <CollectionDialog open={dialog === "collection"} place={place} onClose={() => setDialog(null)} onCreated={() => void opened(undefined)} returnTo={addButton} />
     </>}
   </section>
@@ -368,8 +388,8 @@ function OpsPage({ shown }: { shown: boolean }) {
 
 // ---------------------------------------------------------------- reader
 
-function OpsReader({ place, entry, list, sessions, allSessions, sessionsFailed, phone, onBack, onChanged, onRemoved }: {
-  place: ProjectPlace; entry: OpsEntry; list: OpsList; sessions: SessionRow[]; allSessions: SessionRow[]; sessionsFailed: boolean
+function OpsReader({ notice, place, entry, list, sessions, allSessions, sessionsFailed, phone, onBack, onChanged, onRemoved }: {
+  notice: string; place: ProjectPlace; entry: OpsEntry; list: OpsList; sessions: SessionRow[]; allSessions: SessionRow[]; sessionsFailed: boolean
   phone: boolean; onBack: () => void; onChanged: (entry?: OpsEntry) => Promise<void>; onRemoved: () => Promise<void>
 }) {
   const [content, setContent] = useState<string | null>(null)
@@ -380,7 +400,7 @@ function OpsReader({ place, entry, list, sessions, allSessions, sessionsFailed, 
   const [draft, setDraft] = useState("")
   const [conflict, setConflict] = useState(false)
   const [busy, setBusy] = useState<"" | "save" | "latest" | "move" | "remove" | "send" | "resolve">("")
-  const [message, setMessage] = useState("")
+  const [message, setMessage] = useState(notice)
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [terminal, setTerminal] = useState(() => entry.resolve?.terminal && sessions.some((row) => row.id === entry.resolve?.terminal) ? entry.resolve.terminal : sessions[0]?.id ?? "")
   const heading = useRef<HTMLHeadingElement>(null)
@@ -399,10 +419,10 @@ function OpsReader({ place, entry, list, sessions, allSessions, sessionsFailed, 
   useEffect(() => { void read() }, [read])
   useEffect(() => { if (phone) heading.current?.focus() }, [])
 
-  const patch = async (body: Parameters<typeof updateOpsEntry>[2], signature: string): Promise<string | null> => {
+  const patch = async (body: Parameters<typeof updateOpsEntry>[2], signature: string, fallback: OpsWord = "saveRefused"): Promise<string | null> => {
     const key = keys.key(signature)
     try { const answer = await updateOpsEntry(place.id, entry.id, body, key); keys.settle(signature); await onChanged(answer.entry); return null }
-    catch (cause) { if (!(cause instanceof OpsError && cause.uncertain)) keys.settle(signature); return refusalText(cause, "saveRefused") }
+    catch (cause) { if (!(cause instanceof OpsError && cause.uncertain)) keys.settle(signature); return refusalText(cause, fallback) }
   }
 
   const rename = (next: string) => {
@@ -443,7 +463,7 @@ function OpsReader({ place, entry, list, sessions, allSessions, sessionsFailed, 
 
   const move = async (collection: string) => {
     setBusy("move"); setMessage("")
-    const problem = await patch({ collection, position: nextPosition(list.entries, collection) }, `move:${entry.id}:${collection}`)
+    const problem = await patch({ collection, position: nextPosition(list.entries, collection) }, `move:${entry.id}:${collection}`, "moveRefused")
     if (problem) setMessage(problem)
     setBusy("")
   }
@@ -489,7 +509,7 @@ function OpsReader({ place, entry, list, sessions, allSessions, sessionsFailed, 
       <TypeIcon icon={typeIcon(entry.type)} />
       <div className="ops-reader-names">
         <h2 id="ops-reader-title" ref={heading} tabIndex={-1}>
-          <InlineName value={entry.title} label={W("titleField")} editLabel={W("renameTitle")} onSave={retitle} className="ops-title-name" />
+          <InlineName value={entryName(entry)} label={W("titleField")} editLabel={W("renameTitle")} onSave={retitle} className="ops-title-name" />
         </h2>
         {entry.kind === "file" && entry.path && <div className="ops-file-name">
           <InlineName value={fileNameOf(entry.path)} label={W("fileName")} editLabel={W("renameFile")} onSave={rename} />
@@ -565,7 +585,7 @@ function OpsReader({ place, entry, list, sessions, allSessions, sessionsFailed, 
 
     <footer className="ops-reader-foot">
       {confirmRemove ? <div className="ops-confirm" role="group" aria-label={W("removeFromOps")}>
-        <p>{W("removeConfirm", { name: entry.title })}</p>
+        <p>{W("removeConfirm", { name: entryName(entry) })}</p>
         <div className="ops-actions">
           <button type="button" className="ops-danger" disabled={!!busy} aria-busy={busy === "remove"} onClick={() => void remove()}>
             <ActionProgress busy={busy === "remove"} label={W("removing")}>{W("removeYes")}</ActionProgress></button>
@@ -598,7 +618,7 @@ async function askSession(place: ProjectPlace, id: string, terminal: string): Pr
 
 // ---------------------------------------------------------------- dialogs
 
-type DialogProps = { open: boolean; place: ProjectPlace; onClose: () => void; onCreated: (entry: OpsEntry | undefined) => void; returnTo: RefObject<HTMLElement | null> }
+type DialogProps = { open: boolean; place: ProjectPlace; onClose: () => void; onCreated: (entry: OpsEntry | undefined, notice?: string) => void; returnTo: RefObject<HTMLElement | null> }
 
 function MarkdownDialog({ open, place, onClose, onCreated, returnTo }: DialogProps) {
   const [name, setName] = useState("")
@@ -763,8 +783,8 @@ function LinkDialog({ open, place, sessions, sessionsFailed, onClose, onCreated,
       setError(refusalText(cause)); setBusy(false); return
     }
     // The link is saved whatever happens next; a failed request is shown on its page.
-    if (terminal && created) await askSession(place, created.id, terminal)
-    onCreated(created)
+    const problem = terminal && created ? await askSession(place, created.id, terminal) : null
+    onCreated(created, problem ?? undefined)
   }
 
   return <Modal open={open} title={W("linkDialog")} onClose={() => { if (!busy) onClose() }} returnTo={returnTo}>
