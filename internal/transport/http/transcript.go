@@ -595,6 +595,9 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 		writeJSON(w, contract.SessionInfoReply{Info: info})
 		return
 	}
+	if naming, err := s.namingAssistantFor(item); err == nil {
+		info.Session.NamingAssistant = naming
+	}
 	if item.Backend == session.BackendOwned && item.Binding == session.BindingProtocol {
 		if h := s.antigravitySessions.Load(); h != nil {
 			if r.URL.Query().Get("parts") != "summary" {
@@ -612,50 +615,40 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 				}
 			}
 		}
-		if naming, err := s.namingAssistantFor(item); err == nil {
-			info.Session.NamingAssistant = naming
+	} else {
+		for _, m := range transcript.Models(home, string(item.Assistant)) {
+			info.Models = append(info.Models, contract.SessionModel{ID: m.ID, Name: m.Name, Command: m.Command})
 		}
-		if !s.admitPinnedTarget(w, r, id) {
-			return
+		// Claude Code's status line writes one small file per session, and it
+		// carries both the cost and the exact context window. It is read once
+		// here: twice would be two answers about one moment.
+		var status transcript.ClaudeStatusLine
+		if item.Assistant == session.AssistantClaude {
+			status = transcript.ReadClaudeStatusLine(home, item.ConversationID)
 		}
-		writeJSON(w, contract.SessionInfoReply{Info: info})
-		return
-	}
-	if naming, err := s.namingAssistantFor(item); err == nil {
-		info.Session.NamingAssistant = naming
-	}
-	for _, m := range transcript.Models(home, string(item.Assistant)) {
-		info.Models = append(info.Models, contract.SessionModel{ID: m.ID, Name: m.Name, Command: m.Command})
-	}
-	// Claude Code's status line writes one small file per session, and it
-	// carries both the cost and the exact context window. It is read once
-	// here: twice would be two answers about one moment.
-	var status transcript.ClaudeStatusLine
-	if item.Assistant == session.AssistantClaude {
-		status = transcript.ReadClaudeStatusLine(home, item.ConversationID)
-	}
-	// No record, or one that cannot be read, leaves the model, the usage and
-	// the context absent: a session whose record was not found has not spent
-	// nothing, and it is not 0% full.
-	if path := s.recordPath(item); path != "" {
-		if facts, err := s.facts.Read(path, string(item.Assistant)); err == nil {
-			info.Session.Model = facts.Model
-			info.Session.Effort = facts.Effort
-			info.Usage = wireSessionUsage(facts.Usage, item, status)
-			info.Context = wireSessionContext(facts, item.Assistant, status)
+		// No record, or one that cannot be read, leaves the model, the usage and
+		// the context absent: a session whose record was not found has not spent
+		// nothing, and it is not 0% full.
+		if path := s.recordPath(item); path != "" {
+			if facts, err := s.facts.Read(path, string(item.Assistant)); err == nil {
+				info.Session.Model = facts.Model
+				info.Session.Effort = facts.Effort
+				info.Usage = wireSessionUsage(facts.Usage, item, status)
+				info.Context = wireSessionContext(facts, item.Assistant, status)
+			}
 		}
-	}
-	if item.Assistant == session.AssistantClaude && status.Effort != "" {
-		info.Session.Effort = status.Effort
-	}
-	// Before the first turn Codex may have no record naming its model yet.
-	// Its startup card is direct evidence; machine defaults are not.
-	if info.Session.Model == "" && item.Assistant == session.AssistantCodex && s.inventory.Screen != nil {
-		if screen, ok := s.inventory.Screen.Capture(ctx, item); ok {
-			info.Session.Model, info.Session.Effort = session.ReadStartupSettings(screen, item.Assistant)
+		if item.Assistant == session.AssistantClaude && status.Effort != "" {
+			info.Session.Effort = status.Effort
 		}
+		// Before the first turn Codex may have no record naming its model yet.
+		// Its startup card is direct evidence; machine defaults are not.
+		if info.Session.Model == "" && item.Assistant == session.AssistantCodex && s.inventory.Screen != nil {
+			if screen, ok := s.inventory.Screen.Capture(ctx, item); ok {
+				info.Session.Model, info.Session.Effort = session.ReadStartupSettings(screen, item.Assistant)
+			}
+		}
+		info.Limits = s.sessionLimits(item.Assistant, time.Now())
 	}
-	info.Limits = s.sessionLimits(item.Assistant, time.Now())
 	// Where this project can be opened, from the same maintained projection
 	// the Links sheet reads (links.go), so the card, the sheet and the status
 	// line cannot show one project three ways. The Swift app deferred these

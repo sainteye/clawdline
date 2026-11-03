@@ -605,7 +605,7 @@ function html(d: Facts): string {
   // Where this project can be opened. The section is drawn only when the
   // daemon read the directory at all: a session with no working directory has
   // not got an empty project, it has not been placed.
-  if (d.links || d.repository) {
+  if (d.links || d.repository || d.devStack) {
     // A held reading is served however old it is, so the card says its age
     // where the original says a plan reading's — the same words in the same
     // place.

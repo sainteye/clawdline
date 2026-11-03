@@ -351,6 +351,9 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	if initial.Code != 200 || json.Unmarshal(initial.Body.Bytes(), &initialInfo) != nil || initialInfo.Info.Session.Model != "synthetic-flash" || initialInfo.Info.Session.Effort != "high" || !reflect.DeepEqual(initialInfo.Info.Efforts, []string{"low", "medium", "high"}) || len(initialInfo.Info.Models) != 2 || initialInfo.Info.Models[0].Name != "Synthetic Flash" {
 		t.Fatalf("initial native config=%s", initial.Body.String())
 	}
+	if initialInfo.Info.DevStack != contract.ProjectServerSetupMissing {
+		t.Fatalf("initial devstack=%q", initialInfo.Info.DevStack)
+	}
 	if initialInfo.Info.Protocol == nil || initialInfo.Info.Protocol.Phase != "idle" || !initialInfo.Info.Protocol.TraceEnabled {
 		t.Fatalf("initial protocol evidence=%+v", initialInfo.Info.Protocol)
 	}
@@ -414,6 +417,9 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "release-turn"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, ".devstack.json"), []byte(`{"up":"make dev","processes":[{"name":"web","port":4173}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	// Acceptance, transcript text, and the completed native response are
 	// distinct events. Read until the sender releases its in-flight operation;
 	// the fixture's usage receipt below still requires exactly one /usage.
@@ -431,7 +437,7 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-pro" || info.Info.Session.Effort != "medium" || !reflect.DeepEqual(info.Info.Efforts, []string{"medium", "high"}) || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-pro" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 2 || info.Info.Limits.Windows[0].UsedPercent != 38 || info.Info.Limits.Windows[1].Name != "Argon 7d" || info.Info.Limits.Windows[1].UsedPercent != 100 || !info.Info.Limits.Windows[1].Hit {
+	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-pro" || info.Info.Session.Effort != "medium" || !reflect.DeepEqual(info.Info.Efforts, []string{"medium", "high"}) || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-pro" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 2 || info.Info.Limits.Windows[0].UsedPercent != 38 || info.Info.Limits.Windows[1].Name != "Argon 7d" || info.Info.Limits.Windows[1].UsedPercent != 100 || !info.Info.Limits.Windows[1].Hit || info.Info.DevStack != contract.ProjectServerSetupReady {
 		t.Fatalf("native facts missing or billing invented: %d %s", infoResponse.Code, infoResponse.Body.String())
 	}
 	// Sample the recorder used by this real-pipe owner, then read the public panel.
