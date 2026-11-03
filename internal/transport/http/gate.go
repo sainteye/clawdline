@@ -411,6 +411,10 @@ func machineScoped(p string) bool {
 	if p == "/v1/snippets" || strings.HasPrefix(p, "/v1/snippets/") {
 		return true
 	}
+	// A Session's Ops documents: `clawdline ops` reads and resolves them.
+	if p == "/v1/ops" || strings.HasPrefix(p, "/v1/ops/") {
+		return true
+	}
 	switch p {
 	case "/v1/doctor", "/v1/board", "/v1/next/coordinator", "/v1/places":
 		return true
@@ -428,7 +432,8 @@ func machineScoped(p string) bool {
 		parts := strings.Split(strings.TrimPrefix(p, "/v1/projects/"), "/")
 		// A Project's shared memory: a session of either assistant reads
 		// and writes it through `clawdline memory` (project_memory.go).
-		return len(parts) >= 2 && (parts[1] == "worktrees" || parts[1] == "memory" || parts[1] == "memory-groups")
+		// A Project's Ops documents: `clawdline ops` adds links (ops_documents.go).
+		return len(parts) >= 2 && (parts[1] == "worktrees" || parts[1] == "memory" || parts[1] == "memory-groups" || parts[1] == "ops")
 	}
 	return false
 }

@@ -15,6 +15,19 @@ func projectFilesBounds() []Entry {
 		{Name: "projects.graphify_build_workers", Class: Buffer, Unit: Rows, Limit: 1, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.BuildWorkersLimit"}},
 		{Name: "projects.graphify_build_body_bytes", Class: Buffer, Unit: Bytes, Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.BuildBodyBytesLimit"}},
 
+		// The Ops documents list (docs/ops-documents.md). Records are a
+		// person's input: at a limit a write is refused and nothing is evicted.
+		{Name: "projects.ops_entries", Class: Buffer, Unit: Rows, Limit: 500, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/opsdocs.EntriesPerProjectLimit"}},
+		{Name: "projects.ops_collections", Class: Buffer, Unit: Rows, Limit: 64, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/opsdocs.CollectionsPerProjectLimit"}},
+		{Name: "projects.ops_title_bytes", Class: Buffer, Unit: Bytes, Limit: 200, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/opsdocs.TitleBytesLimit"}},
+		{Name: "projects.ops_collection_name_bytes", Class: Buffer, Unit: Bytes, Limit: 100, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/opsdocs.CollectionNameBytesLimit"}},
+		{Name: "projects.ops_markdown_name_bytes", Class: Buffer, Unit: Bytes, Limit: 255, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/opsdocs.MarkdownNameBytesLimit"}},
+		{Name: "projects.ops_url_bytes", Class: Buffer, Unit: Bytes, Limit: 2048, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/opsdocs.URLBytesLimit"}},
+		{Name: "projects.ops_note_bytes", Class: Buffer, Unit: Bytes, Limit: 1000, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/opsdocs.NoteBytesLimit"}},
+		{Name: "projects.ops_read_ids", Class: Buffer, Unit: Rows, Limit: 16, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/opsdocs.ReadIDsLimit"}},
+		{Name: "projects.ops_github_probe_ms", Class: Buffer, Unit: Milliseconds, Limit: 3000, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/opsdocs.GitHubProbeMillisecondsLimit"}},
+		{Name: "projects.ops_github_cache", Class: Cache, Unit: Rows, Limit: 64, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/opsdocs.GitHubCacheEntriesLimit"}},
+
 		{Name: "projects.graphify_zoom", Class: Buffer, Unit: Rows, Limit: 4, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon},
 		{Name: "projects.graphify_nodes", Class: Buffer, Unit: Rows, Limit: 300, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.ViewNodeLimit"}},
 		{Name: "projects.graphify_links", Class: Buffer, Unit: Rows, Limit: 900, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/graphify.ViewLinkLimit"}},
@@ -65,7 +78,7 @@ func projectFilesBounds() []Entry {
 		{
 			Name: "projectfiles.write_bytes", Class: Buffer, Unit: Bytes,
 			Limit: 256 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/adapters/projectfiles.MaxWriteBytes"},
+			Sources: []string{"internal/adapters/projectfiles.MaxWriteBytes", "internal/transport/http.opsBodyLimit"},
 		},
 	}
 }

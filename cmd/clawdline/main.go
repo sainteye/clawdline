@@ -217,6 +217,9 @@ func main() {
 	case "memory":
 		// A Project's shared memory, for Claude and Codex alike (memory.go).
 		memoryCommand(os.Args[2:])
+	case "ops":
+		// A Project's Ops documents: files and links (opsdocs.go).
+		opsCommand(os.Args[2:])
 	case "task":
 		taskCommand(os.Args[2:])
 	case "webhook":
@@ -379,6 +382,11 @@ func serve() {
 	// Things waiting to be verified: the records this daemon owes are planted
 	// once (docs/verifications.md "The first one").
 	srv.StartVerifications(context.Background())
+	// An Ops rename the last daemon stopped in is finished or undone before
+	// anything reads the list (docs/ops-documents.md).
+	if err := srv.SettleOpsRenames(context.Background()); err != nil {
+		log.Printf("ops: pending renames were not settled: %v", err)
+	}
 	startCloudLine(cloudCtx, cfg, srv)
 	if err := srv.Serve(ln); err != nil {
 		stopCloud()
@@ -627,6 +635,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_handoff_summary_file_check_hand_this", "  handoff --summary <file> [--check]   hand this Session's work to a fresh Session at a milestone, with a bounded summary"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_todo_add_list_done_this_session", "  todo <add|list|done>          this session's own to-dos, added only when the person asks"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_playbook", "  playbook <list|create|edit|delete>   manage saved launch messages; guide project has examples"))
+	fmt.Fprintln(os.Stderr, cliCopy("opsdocs", "main_ops", "  ops <list|read|add-link|resolve>   a Project's Ops documents and links; guide project has examples"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_note_create_post_a_human_intervention", "  note create                   post a human intervention to one Session"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_secret_run", "  secret run <note-id> -- <command> [args...]   feed a one-time Secret Handoff to a tool"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_item_add_claim_name_child_assign", "  item <add|claim|name|child|assign|show|steps|step-add|step-done|doc|phase>   Board items, a Root's own name, steps, documents and phase"))

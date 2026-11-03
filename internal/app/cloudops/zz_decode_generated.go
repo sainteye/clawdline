@@ -74,6 +74,13 @@ var generatedDecoders = map[string]genDecoder{
 	"project-mirror":                     genDecodeProjectMirror,
 	"project-mirror-apply":               genDecodeProjectMirrorApply,
 	"project-mirror-detach":              genDecodeProjectMirrorDetach,
+	"project-ops-create":                 genDecodeProjectOpsCreate,
+	"project-ops-delete":                 genDecodeProjectOpsDelete,
+	"project-ops-list":                   genDecodeProjectOpsList,
+	"project-ops-read":                   genDecodeProjectOpsRead,
+	"project-ops-resolve-request":        genDecodeProjectOpsResolveRequest,
+	"project-ops-setup":                  genDecodeProjectOpsSetup,
+	"project-ops-update":                 genDecodeProjectOpsUpdate,
 	"project-tree-list":                  genDecodeProjectTreeList,
 	"project-tree-read":                  genDecodeProjectTreeRead,
 	"project-unify-apply":                genDecodeProjectUnifyApply,
@@ -1735,6 +1742,172 @@ func genDecodeProjectMirrorDetach(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "DELETE", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"repo": genValue{from: "repo"}})
 	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectOpsCreate is the `project-ops-create` row's decode.
+func genDecodeProjectOpsCreate(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "item", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("item", genRule{kind: "object", maxBytes: 262144}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/ops"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("item")
+	return p, req, true
+}
+
+// genDecodeProjectOpsDelete is the `project-ops-delete` row's decode.
+func genDecodeProjectOpsDelete(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "id", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/ops/" + segment(genText(b["id"]))
+	req := LocalRequest{Method: "DELETE", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectOpsList is the `project-ops-list` row's decode.
+func genDecodeProjectOpsList(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/ops"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeProjectOpsRead is the `project-ops-read` row's decode.
+func genDecodeProjectOpsRead(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "entry", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("entry", genRule{kind: "string", length: 28, prefix: "ope_"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/ops/" + segment(genText(b["entry"]))
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeProjectOpsResolveRequest is the `project-ops-resolve-request` row's decode.
+func genDecodeProjectOpsResolveRequest(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "entry", "item", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("entry", genRule{kind: "string", length: 28, prefix: "ope_"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("item", genRule{kind: "object", maxBytes: 262144}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/ops/" + segment(genText(b["entry"])) + "/resolve-request"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("item")
+	return p, req, true
+}
+
+// genDecodeProjectOpsSetup is the `project-ops-setup` row's decode.
+func genDecodeProjectOpsSetup(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "request", "session"},
+		[]string{"type", "probe", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("probe", genRule{kind: "string", enum: []string{"github"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/ops/setup"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"probe": genValue{from: "probe"}})
+	return p, req, true
+}
+
+// genDecodeProjectOpsUpdate is the `project-ops-update` row's decode.
+func genDecodeProjectOpsUpdate(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "id", "item", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("item", genRule{kind: "object", maxBytes: 262144}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/ops/" + segment(genText(b["id"]))
+	req := LocalRequest{Method: "PATCH", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("item")
 	return p, req, true
 }
 

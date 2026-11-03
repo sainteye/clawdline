@@ -505,6 +505,33 @@ HTTP retries; a completed receipt replays with `Idempotent-Replayed: true`. A 40
 changed content needs reconciliation, not a new key. On 429/5xx, inspect saved state before
 retrying; do not loop. See `docs/playbooks.md` for source fields and the full API contract.
 
+**Ops documents (API level 40).** A Project's Ops list holds its operational documents:
+files under the repository's main checkout and links to Google Docs, Notion pages and other
+http(s) pages. It is filed under the canonical Project, so a Session in a linked worktree
+reads the same list. When a Playbook or the person names Ops documents, read them with:
+
+```sh
+clawdline ops list --session <terminal-id>
+clawdline ops read <entry-id> <entry-id>
+clawdline ops add-link <url> --title "<title>" --session <terminal-id>
+```
+
+`read` prints a file's text. For a link it prints the title, type, URL and status; open the
+URL with whatever connector you have (Google Drive, Notion, web fetch), and if you cannot,
+ask the person to grant access. Never paste a linked document's content into chat, files or
+to-dos. When a to-do asks you to read an Ops link, report what it is with exactly one of:
+
+```sh
+clawdline ops resolve <entry-id> --todo <todo-id> --title "<the document's real title>"
+clawdline ops resolve <entry-id> --todo <todo-id> --needs-access --reason "<what the person must do>"
+```
+
+`resolve_stale` means the person asked another Session or removed the link: stop. Only this
+machine's credential may resolve (`ops_resolve_agent_only` otherwise); a title the person
+typed is never replaced. HTTP: GET `/v1/ops?session=<terminal>`, GET `/v1/ops/<entry-id>`,
+POST `/v1/ops/<entry-id>/resolve`. The console's routes, bounds and refusals are in
+`docs/ops-documents.md`.
+
 **Tool library (API level 38).** Session ⋯ → Tool library lists saved and recommended
 GitHub sources. GET `/v1/tool-library` returns `{version,saved,catalog}`. POST the same
 path with `{expected_version,project}` to save one normalized source, or

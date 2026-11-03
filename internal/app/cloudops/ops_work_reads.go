@@ -91,6 +91,16 @@ func init() {
 		op{name: "project-unify-apply",
 			partial: stoppedUnify},
 		op{name: "project-file-save"},
+		// The Ops documents list (docs/ops-documents.md): reads a paired
+		// device may make, and changes that need the write switch. Sending the
+		// resolve to-do is the existing work.v2.todo-action.
+		op{name: "project-ops-list", read: true},
+		op{name: "project-ops-read", read: true},
+		op{name: "project-ops-setup", read: true},
+		op{name: "project-ops-create"},
+		op{name: "project-ops-update"},
+		op{name: "project-ops-delete"},
+		op{name: "project-ops-resolve-request"},
 
 		// Project settings sync (docs/project-sync.md): a source offers, a
 		// mirror applies. The viewer is the courier; neither machine reaches

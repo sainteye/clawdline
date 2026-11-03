@@ -910,6 +910,9 @@ func createText(base *os.Root, name, text string, perm os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
+	if testBeforeCreateLink != nil {
+		testBeforeCreateLink(name)
+	}
 	if err := base.Link(tmpName, name); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return ErrNameTaken

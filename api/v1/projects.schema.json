@@ -815,6 +815,360 @@
         "enable",
         "disable"
       ]
+    },
+    "OpsEntryKind": {
+      "description": "What an Ops entry points at: a file under the Project's canonical root, or a link.",
+      "type": "string",
+      "enum": [
+        "file",
+        "link"
+      ]
+    },
+    "OpsTitleSource": {
+      "description": "Who named the entry: the person (never overwritten), the agent that resolved a link, or the file name.",
+      "type": "string",
+      "enum": [
+        "user",
+        "agent",
+        "file"
+      ]
+    },
+    "OpsEntryType": {
+      "description": "What the entry is. A link's type is read from its URL alone (internal/domain/opsdocs/link_types.json); a file's from its extension and content.",
+      "type": "string",
+      "enum": [
+        "markdown",
+        "text",
+        "file",
+        "notion_page",
+        "google_doc",
+        "google_sheet",
+        "google_slides",
+        "google_form",
+        "google_drive",
+        "web"
+      ]
+    },
+    "OpsEntryStatus": {
+      "description": "ready; resolving while a Session reads a link; needs_access when that Session could not; missing when the file is gone; unreadable when the file cannot be read as text or at all.",
+      "type": "string",
+      "enum": [
+        "ready",
+        "resolving",
+        "needs_access",
+        "missing",
+        "unreadable"
+      ]
+    },
+    "OpsTodoState": {
+      "description": "Where the resolve to-do is: created and not sent, sent, read by its Session, completed, or no longer in the store.",
+      "type": "string",
+      "enum": [
+        "unsent",
+        "sent",
+        "read",
+        "done",
+        "missing"
+      ]
+    },
+    "OpsResolve": {
+      "description": "The Session asked to read a link and the to-do that asks it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "terminal",
+        "todo",
+        "todo_state"
+      ],
+      "properties": {
+        "terminal": {
+          "description": "The Session's terminal id.",
+          "type": "string"
+        },
+        "todo": {
+          "description": "The direct to-do's id.",
+          "type": "string"
+        },
+        "todo_state": {
+          "$ref": "#/$defs/OpsTodoState"
+        }
+      }
+    },
+    "OpsEntry": {
+      "description": "One Ops document: a file under the Project's canonical root or a link. Filed under the Project's canonical key, so every worktree of a repository sees the same list (docs/ops-documents.md).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "title_source",
+        "collection",
+        "position",
+        "type",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "description": "\"ope_\" and 24 lowercase hex digits.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/OpsEntryKind"
+        },
+        "title": {
+          "description": "The shown name, at most 200 bytes; a file defaults to its name without the extension.",
+          "type": "string"
+        },
+        "title_source": {
+          "$ref": "#/$defs/OpsTitleSource"
+        },
+        "collection": {
+          "description": "An OpsCollection id, or empty for none.",
+          "type": "string"
+        },
+        "position": {
+          "description": "Order within its collection.",
+          "type": "integer"
+        },
+        "path": {
+          "description": "kind=file only: relative to the canonical Project root, with / separators.",
+          "type": "string"
+        },
+        "url": {
+          "description": "kind=link only: an http(s) URL of at most 2048 bytes.",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/OpsEntryType"
+        },
+        "status": {
+          "$ref": "#/$defs/OpsEntryStatus"
+        },
+        "access_note": {
+          "description": "Why a link needs access (from the agent), or why a file is unreadable; at most 1000 bytes.",
+          "type": "string"
+        },
+        "resolve": {
+          "$ref": "#/$defs/OpsResolve"
+        },
+        "created_at": {
+          "description": "Unix seconds.",
+          "type": "integer"
+        },
+        "updated_at": {
+          "description": "Unix seconds.",
+          "type": "integer"
+        }
+      }
+    },
+    "OpsCollection": {
+      "description": "A named group of Ops entries.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "position"
+      ],
+      "properties": {
+        "id": {
+          "description": "\"opc_\" and 24 lowercase hex digits.",
+          "type": "string"
+        },
+        "name": {
+          "description": "At most 100 bytes.",
+          "type": "string"
+        },
+        "position": {
+          "type": "integer"
+        }
+      }
+    },
+    "OpsGitState": {
+      "description": "Whether the canonical root is inside a git repository.",
+      "type": "string",
+      "enum": [
+        "repo",
+        "none"
+      ]
+    },
+    "OpsVisibility": {
+      "description": "The GitHub repository's visibility, read only when asked with ?probe=github.",
+      "type": "string",
+      "enum": [
+        "public",
+        "private",
+        "unknown",
+        "unchecked"
+      ]
+    },
+    "OpsSetup": {
+      "description": "GET and PATCH /v1/projects/:id/ops/setup: the clawdline-ops folder and whether git ignores it through info/exclude.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "folder",
+        "folder_exists",
+        "git",
+        "excluded",
+        "visibility"
+      ],
+      "properties": {
+        "folder": {
+          "type": "string",
+          "enum": [
+            "clawdline-ops"
+          ]
+        },
+        "folder_exists": {
+          "type": "boolean"
+        },
+        "git": {
+          "$ref": "#/$defs/OpsGitState"
+        },
+        "excluded": {
+          "description": "Whether /clawdline-ops/ is a line of the repository's info/exclude.",
+          "type": "boolean"
+        },
+        "visibility": {
+          "$ref": "#/$defs/OpsVisibility"
+        },
+        "visibility_detail": {
+          "description": "Why the visibility is unknown, e.g. not a GitHub remote.",
+          "type": "string"
+        }
+      }
+    },
+    "OpsList": {
+      "description": "GET /v1/projects/:id/ops and GET /v1/ops?session=: every collection and entry of the Project. File entries are checked on disk when read.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_key",
+        "collections",
+        "entries"
+      ],
+      "properties": {
+        "place": {
+          "description": "Only on GET /v1/ops: the place id the Session's Project is listed under.",
+          "type": "string"
+        },
+        "project_key": {
+          "description": "The canonical key the records are filed under.",
+          "type": "string"
+        },
+        "collections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OpsCollection"
+          }
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OpsEntry"
+          }
+        }
+      }
+    },
+    "OpsRead": {
+      "description": "GET /v1/projects/:id/ops/:entry and GET /v1/ops/:entry. content and version only for a readable file of at most 128 KiB of UTF-8.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry"
+      ],
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/OpsEntry"
+        },
+        "content": {
+          "type": "string"
+        },
+        "version": {
+          "description": "The SHA-256 of the content, the expected_version a save names.",
+          "type": "string"
+        }
+      }
+    },
+    "OpsEntryAnswer": {
+      "description": "An Ops entry just created or changed. version is a saved file's new version.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry"
+      ],
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/OpsEntry"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "OpsCollectionAnswer": {
+      "description": "An Ops collection just created or changed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "collection"
+      ],
+      "properties": {
+        "collection": {
+          "$ref": "#/$defs/OpsCollection"
+        }
+      }
+    },
+    "OpsDeleted": {
+      "description": "DELETE /v1/projects/:id/ops/:entry: the record is gone; a file stays on disk.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok",
+        "deleted"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "deleted": {
+          "type": "string"
+        }
+      }
+    },
+    "OpsTodoRef": {
+      "description": "A direct to-do by id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "OpsResolveRequested": {
+      "description": "POST /v1/projects/:id/ops/:entry/resolve-request: the entry, now resolving, and the unsent to-do the caller sends with POST /v1/work/v2/session-todos/:terminal/:todo/send.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry",
+        "todo"
+      ],
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/OpsEntry"
+        },
+        "todo": {
+          "$ref": "#/$defs/OpsTodoRef"
+        }
+      }
     }
   }
 }

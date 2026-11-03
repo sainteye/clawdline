@@ -8224,7 +8224,8 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/projectfiles.MaxWriteBytes"
+      "internal/adapters/projectfiles.MaxWriteBytes",
+      "internal/transport/http.opsBodyLimit"
     ]
   },
   {
@@ -8541,6 +8542,205 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.ops_collection_name_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 100,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/opsdocs.CollectionNameBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.ops_collections",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/opsdocs.CollectionsPerProjectLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.ops_entries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 500,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/opsdocs.EntriesPerProjectLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.ops_github_cache",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/opsdocs.GitHubCacheEntriesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.ops_github_probe_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 3000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/opsdocs.GitHubProbeMillisecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.ops_markdown_name_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 255,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/opsdocs.MarkdownNameBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.ops_note_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/opsdocs.NoteBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.ops_read_ids",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 16,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/opsdocs.ReadIDsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.ops_title_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/opsdocs.TitleBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "projects.ops_url_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2048,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/opsdocs.URLBytesLimit"
+    ]
   },
   {
     "Register": "daemon",

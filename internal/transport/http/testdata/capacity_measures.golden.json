@@ -2181,6 +2181,56 @@
     "Note": true
   },
   {
+    "Name": "projects.ops_collection_name_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.ops_collections",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.ops_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.ops_github_cache",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.ops_github_probe_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.ops_markdown_name_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.ops_note_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.ops_read_ids",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.ops_title_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "projects.ops_url_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "projects.workspace_metadata_bytes",
     "Known": true,
     "Note": true

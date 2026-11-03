@@ -455,6 +455,30 @@ POST 建立（`title`、`body`、`scope`、選填 `project` 與 `source`）；PA
 遇到 429／5xx，先核對儲存狀態再決定是否重試，不要循環呼叫。來源欄位與完整 API 契約見
 `docs/playbooks.md`。
 
+**Ops 文件（API 等級 40）。** 專案的 Ops 清單保存營運文件：儲存庫主要 checkout 底下的檔案，
+以及 Google 文件、Notion 頁面與其他 http(s) 網頁的連結。清單掛在 canonical 專案下，所以
+linked worktree 裡的 Session 讀到的是同一份。Playbook 或使用者提到 Ops 文件時，這樣讀：
+
+```sh
+clawdline ops list --session <terminal-id>
+clawdline ops read <entry-id> <entry-id>
+clawdline ops add-link <url> --title "<title>" --session <terminal-id>
+```
+
+`read` 會印出檔案文字；連結則印出標題、類型、網址與狀態。請用你手上的 connector（Google
+Drive、Notion、網頁擷取）開啟網址；開不了就請使用者開放權限。絕對不要把連結文件的內容貼到
+對話、檔案或待辦裡。待辦要你讀某個 Ops 連結時，用下面其中一行回報：
+
+```sh
+clawdline ops resolve <entry-id> --todo <todo-id> --title "<the document's real title>"
+clawdline ops resolve <entry-id> --todo <todo-id> --needs-access --reason "<what the person must do>"
+```
+
+`resolve_stale` 表示使用者改請別的 Session 讀，或已移除連結：停下來。只有這台機器的憑證能回報
+（否則是 `ops_resolve_agent_only`）；使用者自己打的標題不會被取代。HTTP：GET
+`/v1/ops?session=<terminal>`、GET `/v1/ops/<entry-id>`、POST `/v1/ops/<entry-id>/resolve`。
+console 用的路由、上限與拒絕代碼在 `docs/ops-documents.md`。
+
 **工具庫（API 等級 38）。** Session ⋯ → 工具庫可查看收藏與推薦的 GitHub 來源。
 GET `/v1/tool-library` 回傳 `{version,saved,catalog}`。POST 同一路徑，帶
 `{expected_version,project}` 儲存一個正規化來源，或 `{expected_version,remove}` 取消收藏該 ID。

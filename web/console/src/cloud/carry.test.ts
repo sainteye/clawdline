@@ -344,7 +344,11 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["tools.catalog"],"GET /v1/tool-library")
   assert.equal(CARRIED["tools.save"],"POST /v1/tool-library")
   assert.equal(CARRIED["tools.prepare"],"POST /v1/tool-library/prepare")
-  assert.equal(Object.keys(CARRIED).length, 192)
+  // The Ops documents list (docs/ops-documents.md).
+  assert.equal(CARRIED["project-ops-list"], "GET /v1/projects/{project}/ops")
+  assert.equal(CARRIED["project-ops-update"], "PATCH /v1/projects/{project}/ops/{id}")
+  assert.equal(CARRIED["project-ops-resolve-request"], "POST /v1/projects/{project}/ops/{entry}/resolve-request")
+  assert.equal(Object.keys(CARRIED).length, 199)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

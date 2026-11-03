@@ -35,6 +35,37 @@ func (s *Server) projectFilesCapacityMeasures() map[string]func() capacity.Readi
 			return capacity.Reading{Known: true, Used: active, Note: "one active machine-wide build; other roots are refused without a queue"}
 		},
 
+		"projects.ops_entries": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Project ceiling checked inside each create; a full list refuses new entries"}
+		},
+		"projects.ops_collections": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Project ceiling checked inside each create; a full list refuses new collections"}
+		},
+		"projects.ops_title_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "request field guard; nothing retained"}
+		},
+		"projects.ops_collection_name_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "request field guard; nothing retained"}
+		},
+		"projects.ops_markdown_name_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "request field guard; nothing retained"}
+		},
+		"projects.ops_url_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "request field guard; nothing retained"}
+		},
+		"projects.ops_note_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "request field guard; nothing retained"}
+		},
+		"projects.ops_read_ids": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "CLI argument guard; nothing retained"}
+		},
+		"projects.ops_github_probe_ms": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "one bounded GitHub request per probe; nothing queued"}
+		},
+		"projects.ops_github_cache": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(s.opsProber().Cached()), Note: "repository visibility answers kept for ten minutes; the oldest is forgotten first"}
+		},
+
 		"projects.graphify_zoom": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "viewer zoom cap; no retained graph cache"}
 		},

@@ -720,6 +720,16 @@
       "method": "*",
       "pattern": "/v1/tool-library/",
       "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/ops",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/ops/",
+      "guide": "project"
     }
   ]
 }
