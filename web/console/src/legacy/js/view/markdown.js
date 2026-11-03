@@ -411,6 +411,15 @@ export function inlineMd(text) {
             var closers = ")]}）」』》】〕", openers = "([{（「『《【〔";
             var enders = ".,;:!?'\u201d\u2019&*_~\u2026";
             var url = bare, tail = "";
+            // A full-width opening bracket belongs to the address only when the address is
+            // already written in that script — `…/wiki/中文（消歧義）`. After an all-ASCII
+            // address it is the sentence starting: `https://x/a.mp4（24 小時後過期）` linked
+            // `…mp4（24`, because nothing ends a bare address before the next space.
+            var fullWidth = url.search(/[（「『《【〔]/);
+            if (fullWidth > 0 && /^[\x00-\x7f]*$/.test(url.slice(0, fullWidth))) {
+                tail = url.slice(fullWidth);
+                url = url.slice(0, fullWidth);
+            }
             while (url.length) {
                 var last = url.charAt(url.length - 1);
                 if (closers.indexOf(last) >= 0) {
