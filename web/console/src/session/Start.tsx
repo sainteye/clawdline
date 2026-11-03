@@ -977,7 +977,8 @@ function began(answer: L.StartAnswer | undefined, place: Place | null): void {
 }
 
 function finishStarted(id: string): boolean {
-  if (!wait || wait.id !== id || wait.late || host.openId() !== wait.from) return false
+  if (!wait || wait.id !== id) return false
+  const navigate = !wait.late && host.openId() === wait.from
   wait = null
   landed = id
   if (timer) clearTimeout(timer)
@@ -985,8 +986,9 @@ function finishStarted(id: string): boolean {
   detached = null
   progress = null
   hideBand()
+  draw()
   renderList()
-  return true
+  return navigate
 }
 
 function detachedWords(): string {
@@ -1009,6 +1011,9 @@ function hideBand(): void {
 }
 
 function openMode(machine: boolean, requested: StartMode = "session", on: { id: string; name: string } | null = null): void {
+  // A previous pane may never report (for example its assistant exited).
+  // Reopening the sheet after the observation window permits a new start.
+  if (wait?.late) Start.dismiss()
   onMachine = on
   const active = document.activeElement
   opener = machine ? el("machine-dashboard-open") : active instanceof HTMLElement && active !== document.body ? active : el("start-go")

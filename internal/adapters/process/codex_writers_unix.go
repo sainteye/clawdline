@@ -61,11 +61,11 @@ func codexWriterPIDs(table string, sessions []session.Session) map[int][]int {
 				}
 				// A nested terminal belongs to its own session, including when
 				// ScanTTYs intentionally did not ask to discover that terminal.
-				if child.tty != "??" && child.tty != "-" && child.tty != row.TTY {
+				if !unattachedTTY(child.tty) && child.tty != row.TTY {
 					continue
 				}
 				queue = append(queue, child.pid)
-				if child.codex && (child.tty == "??" || child.tty == "-") {
+				if child.codex && unattachedTTY(child.tty) {
 					out[row.PID] = append(out[row.PID], child.pid)
 				}
 			}
@@ -96,3 +96,6 @@ func codexWriterFiles(files map[int][]string, pids []int) []string {
 	}
 	return out
 }
+
+// ps uses ? on Linux, ?? on macOS, and may use - for an absent tty.
+func unattachedTTY(tty string) bool { return tty == "?" || tty == "??" || tty == "-" }

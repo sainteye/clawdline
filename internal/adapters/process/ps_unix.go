@@ -98,7 +98,7 @@ func (p *PS) scan(ctx context.Context, ttys map[string]bool) (session.Inventory,
 				antigravity = fact
 			}
 		}
-		if assistant == "" || tty == "??" || tty == "-" {
+		if assistant == "" || unattachedTTY(tty) {
 			continue
 		}
 		// One terminal runs one session, and the terminal itself says which

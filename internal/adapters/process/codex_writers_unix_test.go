@@ -6,6 +6,7 @@ import (
 	"context"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -28,47 +29,54 @@ ttys002 102 102 102 1 /synthetic/bin/codex
 
 func TestManagedCodexWritersBindOnlyTheirOwnForegroundTUI(t *testing.T) {
 	ctx := context.Background()
-	for _, narrow := range []bool{false, true} {
-		t.Run(map[bool]string{false: "all", true: "selected-tty"}[narrow], func(t *testing.T) {
-			calls := 0
-			p := &PS{table: func(context.Context) ([]byte, error) { return []byte(managedCodexTable), nil },
-				Head: func(path string) (RolloutMeta, bool) {
-					switch path {
-					case rolloutA:
-						return RolloutMeta{Conversation: idA, Thread: idA, CWD: "/code/demo"}, true
-					case rolloutB:
-						return RolloutMeta{Conversation: idA, Thread: "guardian", ThreadSource: "guardian_review", CWD: "/code/demo"}, true
-					}
-					return RolloutMeta{}, false
-				}, Open: func(_ context.Context, pids []int) (map[int][]string, map[int]string, bool) {
-					calls++
-					sort.Ints(pids)
-					want := []int{101, 102, 201, 202, 301}
+	for _, marker := range []string{"??", "?", "-"} {
+		t.Run("tty="+marker, func(t *testing.T) {
+			for _, narrow := range []bool{false, true} {
+				t.Run(map[bool]string{false: "all", true: "selected-tty"}[narrow], func(t *testing.T) {
+					calls := 0
+					p := &PS{table: func(context.Context) ([]byte, error) {
+						return []byte(strings.ReplaceAll(managedCodexTable, "??", marker)), nil
+					},
+						Head: func(path string) (RolloutMeta, bool) {
+							switch path {
+							case rolloutA:
+								return RolloutMeta{Conversation: idA, Thread: idA, CWD: "/code/demo"}, true
+							case rolloutB:
+								return RolloutMeta{Conversation: idA, Thread: "guardian", ThreadSource: "guardian_review", CWD: "/code/demo"}, true
+							}
+							return RolloutMeta{}, false
+						}, Open: func(_ context.Context, pids []int) (map[int][]string, map[int]string, bool) {
+							calls++
+							sort.Ints(pids)
+							want := []int{101, 102, 201, 202, 301}
+							if narrow {
+								want = []int{101, 201, 301}
+							}
+							if !reflect.DeepEqual(pids, want) {
+								t.Fatalf("open files asked %v, want %v", pids, want)
+							}
+							return map[int][]string{301: {rolloutA, rolloutB}, 202: {"/unrelated"}, 999: {rolloutB}}, map[int]string{101: "/code/demo"}, true
+						}}
+					var inv session.Inventory
+					var err error
 					if narrow {
-						want = []int{101, 201, 301}
+						inv, err = p.ScanTTYs(ctx, map[string]bool{"ttys001": true})
+					} else {
+						inv, err = p.Scan(ctx)
 					}
-					if !reflect.DeepEqual(pids, want) {
-						t.Fatalf("open files asked %v, want %v", pids, want)
+					if err != nil || !inv.Complete || calls != 1 {
+						t.Fatalf("scan %+v, %v, calls %d", inv, err, calls)
 					}
-					return map[int][]string{301: {rolloutA, rolloutB}, 202: {"/unrelated"}, 999: {rolloutB}}, map[int]string{101: "/code/demo"}, true
-				}}
-			var inv session.Inventory
-			var err error
-			if narrow {
-				inv, err = p.ScanTTYs(ctx, map[string]bool{"ttys001": true})
-			} else {
-				inv, err = p.Scan(ctx)
+					row := inv.Sessions[0]
+					if row.PID != 101 || row.ConversationID != idA || row.Binding != session.BindingOpenFile || row.CWD != "/code/demo" {
+						t.Fatalf("managed TUI did not bind its writer: %+v", row)
+					}
+					if !narrow && (len(inv.Sessions) != 2 || inv.Sessions[1].ConversationID != "" || inv.Sessions[1].Binding != session.BindingNoRecord) {
+						t.Fatalf("another terminal borrowed this conversation: %+v", inv.Sessions)
+					}
+				})
 			}
-			if err != nil || !inv.Complete || calls != 1 {
-				t.Fatalf("scan %+v, %v, calls %d", inv, err, calls)
-			}
-			row := inv.Sessions[0]
-			if row.PID != 101 || row.ConversationID != idA || row.Binding != session.BindingOpenFile || row.CWD != "/code/demo" {
-				t.Fatalf("managed TUI did not bind its writer: %+v", row)
-			}
-			if !narrow && (len(inv.Sessions) != 2 || inv.Sessions[1].ConversationID != "" || inv.Sessions[1].Binding != session.BindingNoRecord) {
-				t.Fatalf("another terminal borrowed this conversation: %+v", inv.Sessions)
-			}
+
 		})
 	}
 }
