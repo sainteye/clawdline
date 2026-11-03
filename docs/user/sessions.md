@@ -100,6 +100,15 @@ Sessions while a picture is shrinking cannot attach it to the newly opened Sessi
   expired tile. A paired Cloud browser needs read permission. If an Agent says it sent one and you
   see nothing, see [Troubleshooting](troubleshooting.md#sessions).
   [How a picture finds its reply](../messages.md#pictures-a-session-shows-the-person).
+- <a id="videos-from-the-agent"></a>**Videos from the Agent:** an Agent shares an MP4 — a demo, a
+  screen recording, a rendered film — by copying it into the Session project's `artifacts/`
+  folder and replying with an `https://app.clawdline.com/#document=1&…` link to it. Press the link
+  or its thumbnail card to open a player above the conversation; playback starts only when you
+  press Play, and sound is kept. The Agent publishes its original file rather than a
+  re-compressed copy; files are limited to 32 MiB, and H.264 video with AAC audio plays on the
+  most phones. Only browsers allowed to read that Session can open it; there is no public
+  link. Asking for "the video" or "send me the video" is enough for an Agent that has loaded the
+  Clawdline skill. [MP4 playback](../video-artifacts.md).
 - **Snippets** are text you send often. Create them with **New snippet**, for this project
   or every project. Pressing one only fills the box; you still send it.
 - **Playbooks** hold a complete launch message. Open the

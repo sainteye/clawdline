@@ -1347,6 +1347,28 @@ Nothing has to be written into it. It is
   has not written its first conversation yet).
 
 
+**Show the person a video.** `image send` takes pictures only; do not turn an MP4 into a GIF to
+fit it, which drops the sound and hits the 12 MiB picture cap. Publish the MP4 and give its link:
+
+1. Publish the original render; do not re-encode or compress it. If it lacks faststart, remux it
+   losslessly with `ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4`. The file must be at most
+   32 MiB (`artifacts.video_bytes`); H.264 video with AAC audio plays on the most phones. If the
+   original is larger, tell the person and ask before shrinking it.
+2. Copy it under the Session project's `artifacts/` directory, or under your owned task's
+   `artifacts/`. A path written in a reply publishes nothing.
+3. Write the canonical link into your reply as a Markdown link:
+   `https://app.clawdline.com/#document=1&machine=<machine>&session=<terminal id>&scope=project&path=<file>`
+
+- `machine` is the `machine` identity printed by `clawdline cloud status`. `session` is your
+  terminal id, URL-encoded (`%33` becomes `%2533`), never the conversation id. `path` is relative
+  to `artifacts/`. Task scope adds `&task=<uuid>` and uses `scope=task`.
+- The link carries no credential. Only devices already allowed to read that Session can play it;
+  there is no public media URL. Hidden segments, `..` and absolute paths are refused.
+- Opening the link shows a player above the conversation; a reply holding a complete link also
+  shows a thumbnail card. Open the link yourself to confirm the duration before saying it was sent.
+  Published is not watched.
+
+
 **Record output files.** After producing a deliverable through a shell command or
 an assistant without native file-success receipts, run:
 

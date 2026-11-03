@@ -1181,6 +1181,27 @@ clawdline image send /absolute/path.png [more.png …]
   拒絕：`session_not_found`、`session_has_no_record`（那個 Session 還沒寫出第一段對話）。
 
 
+**給使用者看一支影片。** `image send` 只收圖片；不要把 MP4 轉成 GIF 硬塞，那會失去聲音，也會撞到
+單張圖片 12 MiB 的上限。請發布 MP4 並給連結：
+
+1. 發布原始輸出檔，不要重新編碼或壓縮。若沒有 faststart，用
+   `ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4` 無損 remux。檔案不得超過 32 MiB
+   （`artifacts.video_bytes`）；H.264 影像加 AAC 聲音在最多手機上能播放。原始檔超過上限時，先告訴
+   使用者並詢問，再決定是否縮小。
+2. 複製到這個 Session 所屬 project 的 `artifacts/` 目錄，或你擁有的 task 的 `artifacts/`。只在回覆
+   裡寫路徑不算發布。
+3. 把標準連結以 Markdown 連結寫進回覆：
+   `https://app.clawdline.com/#document=1&machine=<machine>&session=<terminal id>&scope=project&path=<file>`
+
+- `machine` 是 `clawdline cloud status` 印出的機器身分。`session` 是你的 terminal id，要做 URL
+  編碼（`%33` 寫成 `%2533`），絕不是 conversation id。`path` 是相對於 `artifacts/` 的路徑。
+  task 範圍改用 `scope=task` 並加上 `&task=<uuid>`。
+- 連結不帶任何憑證。只有已獲准讀取該 Session 的裝置能播放；沒有公開的影片網址。隱藏路徑段、`..`
+  與絕對路徑都會被拒絕。
+- 打開連結會在對話上方顯示播放器；回覆中含完整連結時也會顯示縮圖卡片。說「已傳送」之前，先自己打開
+  連結確認片長。發布了不等於使用者看過了。
+
+
 **登錄產出檔案。** 用 Shell 指令產生交付檔案，或助理沒有原生寫檔成功收據時，執行：
 
 ```sh

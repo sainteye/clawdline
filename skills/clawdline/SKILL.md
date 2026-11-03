@@ -4,7 +4,7 @@ description: |
   Use Clawdline to dispatch a bounded child task while this session keeps synthesis, integration
   and landing; to hand an existing line of work to another session; to open an independent Root
   for a new feature; to send a message or a picture to another live session; to show the person a
-  picture instead of pasting a local path; to put a question and
+  picture or an MP4 video instead of pasting a local path; to put a question and
   suggested replies in a Note before asking the person to choose, or to gather what needs the
   person's decision or attention into Notes when they ask; to tell the person something
   through a notification; to create, edit, list or delete saved Playbooks; to pair or revoke a Clawdline Cloud browser; or to record this
@@ -15,9 +15,9 @@ description: |
   "Clawdline Notes", "make Notes", "put this in a Note", 「便條紙」「整理成便條紙」「留便條給我」,
   "pair this browser", `clawdline
   cloud pair`, `/clawdline unify`, "share rules and skills between Claude and Codex", "report my milestone", "record this turn as delivered", "show the user this
-  screenshot", "send me the picture", "show me the screenshot", and 「派任務」「開 child」「交接給下一個 session」「請使用者選擇」「配對瀏覽器」「回報這一輪做完了」
-  「更新 milestone」「在 Clawdline 上顯示完成」「把這張截圖給他看」「傳圖片給我」「給我看截圖」「截圖給我看」 — the
-  person asking to see a picture means sending it through Clawdline, never pasting a local path. Do not use for work this
+  screenshot", "send me the picture", "show me the screenshot", "send me the video", and 「派任務」「開 child」「交接給下一個 session」「請使用者選擇」「配對瀏覽器」「回報這一輪做完了」
+  「更新 milestone」「在 Clawdline 上顯示完成」「把這張截圖給他看」「傳圖片給我」「給我看截圖」「截圖給我看」「傳影片給我」 — the
+  person asking to see a picture or a video means sending it through Clawdline, never pasting a local path. Do not use for work this
   conversation can simply do, or for provider-native subagents. When this session is a Clawdline
   child, the CHILD.md its briefing names governs instead.
 ---
