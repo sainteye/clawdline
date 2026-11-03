@@ -15,7 +15,9 @@ package contract
 // tty and, for a digit, that a Return followed only if the screen showed the
 // digit landed. `typed` is the strongest thing a send can claim: the bytes
 // reached the tty. Whether the assistant took the turn is a separate fact, read
-// from the fleet list, and this never asserts it.
+// from the fleet list, and this never asserts it. Remote Control `accepted`
+// means the controller event was accepted by the service, not necessarily
+// consumed or executed.
 type ActionResult struct {
 	Action string `json:"action"`
 
@@ -272,6 +274,11 @@ type AssistantSkill struct {
 	// never offered in its place.
 	Description string `json:"description"`
 
+	// The exact native invocation, including its prefix, for example /model or
+	// /prompts:review. Absent for older replies and ordinary skills, whose provider
+	// default prefix still applies.
+	Invocation string `json:"invocation,omitempty"`
+
 	// What follows the prefix: `/` for Claude, `$` for Codex. A plugin's skill keeps
 	// its namespace, `plugin:skill`.
 	Name   string      `json:"name"`
@@ -333,13 +340,14 @@ type AuthRefusal struct {
 type Backend string
 
 const (
-	BackendIterm Backend = "iterm"
-	BackendTmux  Backend = "tmux"
-	BackendOwned Backend = "owned"
+	BackendIterm        Backend = "iterm"
+	BackendTmux         Backend = "tmux"
+	BackendOwned        Backend = "owned"
+	BackendClaudeRemote Backend = "claude_remote"
 )
 
 // BackendValues is every value the contract allows, in contract order.
-var BackendValues = []Backend{BackendIterm, BackendTmux, BackendOwned}
+var BackendValues = []Backend{BackendIterm, BackendTmux, BackendOwned, BackendClaudeRemote}
 
 type BearingsLanding struct {
 	AgeSeconds int64  `json:"age_seconds"`
@@ -1480,9 +1488,15 @@ type BrokerRootCleanupEligibility struct {
 // produces the check that means `delivered, awaiting approval`, and can never
 // produce `landed`.
 type BrokerSessionDelivery struct {
-	Created     bool              `json:"created"`
-	Disposition BrokerDisposition `json:"disposition"`
-	OK          bool              `json:"ok"`
+	Created bool `json:"created"`
+
+	// Number of full commit IDs in the adapter-verified evidence.
+	DeliveryEvidenceCommits int64 `json:"delivery_evidence_commits,omitempty"`
+
+	// SHA-256 of the exact optional evidence document stored with session.delivered.
+	DeliveryEvidenceSha256 string            `json:"delivery_evidence_sha256,omitempty"`
+	Disposition            BrokerDisposition `json:"disposition"`
+	OK                     bool              `json:"ok"`
 
 	// This Session's direct to-dos that were sent or read and are not completed,
 	// oldest first, at most 20. The receipt is recorded either way: a turn may end
@@ -2787,6 +2801,49 @@ type DispatchResult struct {
 	TaskID   string `json:"task_id"`
 }
 
+type DoctorCoverage struct {
+	Dropped     int64  `json:"dropped"`
+	From        int64  `json:"from,omitempty"`
+	LostUnknown bool   `json:"lost_unknown"`
+	State       string `json:"state"`
+	Through     int64  `json:"through,omitempty"`
+}
+
+type DoctorEvent struct {
+	At       int64          `json:"at"`
+	Provider DoctorProvider `json:"provider"`
+}
+
+type DoctorProvider struct {
+	ID          string   `json:"id"`
+	ObservedAt  *int64   `json:"observed_at"`
+	Problem     string   `json:"problem,omitempty"`
+	Source      string   `json:"source"`
+	Stale       bool     `json:"stale"`
+	State       string   `json:"state"`
+	UsedPercent *float64 `json:"used_percent"`
+}
+
+type DoctorReport struct {
+	Arch       string           `json:"arch"`
+	At         int64            `json:"at"`
+	Coverage   DoctorCoverage   `json:"coverage"`
+	Gaps       []string         `json:"gaps"`
+	History    []DoctorEvent    `json:"history"`
+	Os         string           `json:"os"`
+	Providers  []DoctorProvider `json:"providers"`
+	Schema     string           `json:"schema"`
+	Tools      []DoctorTool     `json:"tools"`
+	Version    string           `json:"version"`
+	WebVersion string           `json:"web_version,omitempty"`
+}
+
+type DoctorTool struct {
+	ID      string `json:"id"`
+	State   string `json:"state"`
+	Version string `json:"version,omitempty"`
+}
+
 type DocumentList struct {
 	Documents []DocumentRow `json:"documents"`
 }
@@ -2982,6 +3039,45 @@ type GitSnapshot struct {
 	Head string `json:"head"`
 }
 
+type GraphifyBuildStatus struct {
+	Bytes     int64  `json:"bytes"`
+	Error     string `json:"error"`
+	Files     int64  `json:"files"`
+	Phase     string `json:"phase"`
+	StartedAt int64  `json:"started_at"`
+	State     string `json:"state"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
+type GraphifyLink struct {
+	Confidence string `json:"confidence"`
+	Relation   string `json:"relation"`
+	Source     string `json:"source"`
+	Target     string `json:"target"`
+}
+
+type GraphifyNode struct {
+	Community string `json:"community"`
+	File      string `json:"file"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Location  string `json:"location"`
+}
+
+type GraphifyView struct {
+	Build             GraphifyBuildStatus `json:"build"`
+	CanBuild          bool                `json:"can_build"`
+	CheckedAt         int64               `json:"checked_at"`
+	Links             []GraphifyLink      `json:"links"`
+	Nodes             []GraphifyNode      `json:"nodes"`
+	Reason            string              `json:"reason"`
+	State             string              `json:"state"`
+	TotalLinks        int64               `json:"total_links"`
+	TotalNodes        int64               `json:"total_nodes"`
+	Truncated         bool                `json:"truncated"`
+	UnverifiedSources int64               `json:"unverified_sources"`
+}
+
 // GET /v1/health, open without a token: that this daemon is alive, which
 // implementation it is, and the two answers a page needs before it can be let
 // in — whether the asker's own credential is one this machine knows, and
@@ -3160,11 +3256,34 @@ type ImageStoreResult struct {
 	Note string `json:"note,omitempty"`
 	OK   bool   `json:"ok"`
 
+	// Typed error when the images were stored but original output paths could not be
+	// indexed; image delivery is not undone.
+	OutputIndexError string `json:"output_index_error,omitempty"`
+
 	// The terminal id of the Session the pictures are shown in, when the request named
 	// one: they appear under the first reply it writes after this answer. Stored is
 	// not seen — GET /v1/transcript?session=… shows them in that reply's
 	// `artifacts` once it is written.
 	Terminal string `json:"terminal,omitempty"`
+}
+
+type IntegrationSettingsRequest struct {
+	GraphifyEnabled bool `json:"graphify_enabled,omitempty"`
+
+	// Machine-wide main workflow; omitted by older daemons.
+	WorkflowProfile       string `json:"workflow_profile,omitempty"`
+	WorkflowSkillsEnabled bool   `json:"workflow_skills_enabled,omitempty"`
+}
+
+type IntegrationSettingsSnapshot struct {
+	// Machine-wide explicit opt-in; absent settings remain disabled.
+	GraphifyEnabled bool `json:"graphify_enabled"`
+
+	// Machine-wide main workflow; omitted by older daemons.
+	WorkflowProfile string `json:"workflow_profile,omitempty"`
+
+	// Machine-wide explicit opt-in; absent settings remain disabled.
+	WorkflowSkillsEnabled bool `json:"workflow_skills_enabled"`
 }
 
 type IntentDraft struct {
@@ -3565,6 +3684,27 @@ const (
 // MoverKindValues is every value the contract allows, in contract order.
 var MoverKindValues = []MoverKind{MoverKindThisSession, MoverKindOtherSession, MoverKindPerson, MoverKindTask, MoverKindBroker}
 
+type NativeTerminalFrame struct {
+	// A fingerprint of the foreground process and the plain grid.
+	Expect string `json:"expect"`
+
+	// The same grid with its colour escape sequences, when the backend provides them.
+	Styled string `json:"styled,omitempty"`
+
+	// The visible terminal grid.
+	Text string `json:"text"`
+}
+
+type NativeTerminalInput struct {
+	Expect string `json:"expect"`
+
+	// One named terminal key; exclusive with text.
+	Key string `json:"key,omitempty"`
+
+	// One UTF-8 line without control characters. Does not submit.
+	Text string `json:"text,omitempty"`
+}
+
 type Obligation struct {
 	AgeSeconds int64          `json:"age_seconds"`
 	Escalation Escalation     `json:"escalation"`
@@ -3773,6 +3913,16 @@ type PersonaCatalog struct {
 	// The upstream licence the texts are adapted under, by its SPDX name (MIT).
 	License  string    `json:"license"`
 	Personas []Persona `json:"personas"`
+}
+
+// An opt-in display-v1 reading. version is the SHA-256 of the catalog with
+// sorted object keys and Go JSON string escaping. An unchanged receipt requires
+// a fresh authorized machine read.
+type PersonaDisplayReply struct {
+	Catalog   *PersonaCatalog `json:"catalog,omitempty"`
+	Unchanged bool            `json:"unchanged,omitempty"`
+	Version   string          `json:"version"`
+	View      string          `json:"view"`
 }
 
 // A name or a one-sentence summary in the two languages the console speaks.
@@ -4580,6 +4730,22 @@ const (
 
 // ProjectUnifyStatusValues is every value the contract allows, in contract order.
 var ProjectUnifyStatusValues = []ProjectUnifyStatus{ProjectUnifyStatusUnified, ProjectUnifyStatusDrifting, ProjectUnifyStatusUnknown}
+
+// An unaccepted native Claude terminal suggestion, kept outside the draft. It
+// is absent when styling, execution identity or the screen lease cannot prove
+// it. This is terminal evidence, not an independently generated prediction.
+type PromptSuggestion struct {
+	ConversationID string `json:"conversation_id"`
+	ID             string `json:"id,omitempty"`
+
+	// Monotonic Unix milliseconds when the native suggestion changed, for ordering
+	// snapshots and invalidations. Zero advertises support before the first watched
+	// capture.
+	ObservedAt int64  `json:"observed_at"`
+	Source     string `json:"source"`
+	State      string `json:"state"`
+	Text       string `json:"text,omitempty"`
+}
 
 // /v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what
 // the server decided about asking a person in the conversation, and what the
@@ -5398,8 +5564,9 @@ type Screen struct {
 	// answers this and the screen arrives a few milliseconds later on the `screen`
 	// event, because the answer comes out of a published snapshot and the capture
 	// happens behind it.
-	Pending  bool `json:"pending"`
-	Readable bool `json:"readable"`
+	Pending          bool              `json:"pending"`
+	PromptSuggestion *PromptSuggestion `json:"prompt_suggestion,omitempty"`
+	Readable         bool              `json:"readable"`
 
 	// What a client compares to decide whether it already has this screen. FNV-1a over
 	// the UTF-8 bytes, which is enough for "did these change" and is deliberately not
@@ -5647,8 +5814,18 @@ type SessionInfo struct {
 	// When the walk behind `links` was taken, in seconds since 1970. A held reading is
 	// served however old it is, so a card that wants to say how old it is has the
 	// number.
-	LinksObservedAt float64        `json:"linksObservedAt,omitempty"`
-	Models          []SessionModel `json:"models"`
+	LinksObservedAt  float64          `json:"linksObservedAt,omitempty"`
+	Models           []SessionModel   `json:"models"`
+	Protocol         *SessionProtocol `json:"protocol,omitempty"`
+	RemotePermission *SessionMenu     `json:"remotePermission,omitempty"`
+
+	// Fingerprint of the exact RC tool permission, including request ID, complete tool
+	// input, bridge and kernel generation.
+	RemotePermissionExpect string `json:"remotePermissionExpect,omitempty"`
+
+	// The live RC worker answered the permission query. Without this, an absent menu
+	// does not establish that no request is pending.
+	RemotePermissionKnown bool `json:"remotePermissionKnown,omitempty"`
 
 	// What the one git read behind `links` found. Present whenever the session has a
 	// working directory, including when it produced no row: `could not read` and
@@ -5657,6 +5834,7 @@ type SessionInfo struct {
 	RepositoryUnreadable ProjectGitFailure  `json:"repositoryUnreadable,omitempty"`
 	Session              SessionInfoSession `json:"session"`
 	Usage                *SessionInfoUsage  `json:"usage,omitempty"`
+	Workflow             *SessionWorkflow   `json:"workflow,omitempty"`
 }
 
 // How full this conversation's context window is. The used side is counted —
@@ -5873,6 +6051,39 @@ type SessionModel struct {
 	Name    string `json:"name"`
 }
 
+type SessionOutputChunk struct {
+	Data       string `json:"data"`
+	ID         string `json:"id"`
+	MediaType  string `json:"media_type"`
+	Name       string `json:"name"`
+	Offset     int64  `json:"offset"`
+	Revision   string `json:"revision"`
+	TotalBytes int64  `json:"total_bytes"`
+}
+
+type SessionOutputFile struct {
+	AbsolutePath string `json:"absolute_path"`
+	Anchor       int64  `json:"anchor"`
+	Bytes        int64  `json:"bytes"`
+	FirstAt      int64  `json:"first_at"`
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
+	MediaType    string `json:"media_type"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	Source       string `json:"source"`
+	State        string `json:"state"`
+	UpdatedAt    int64  `json:"updated_at"`
+	Updates      int64  `json:"updates"`
+}
+
+type SessionOutputList struct {
+	Coverage string              `json:"coverage"`
+	Files    []SessionOutputFile `json:"files"`
+	More     bool                `json:"more"`
+	Partial  bool                `json:"partial"`
+}
+
 // One durable pause and wake receipt. Safe point is receiver acknowledged,
 // never inferred from delivery.
 type SessionPause struct {
@@ -5908,6 +6119,31 @@ type SessionPauseRequest struct {
 	RequesterSessionID string `json:"requester_session_id"`
 	TargetSessionID    string `json:"target_session_id"`
 	WakeCondition      string `json:"wake_condition"`
+}
+
+// Observed ACP v1 lifecycle, separate from model activity. Timestamps are Unix
+// nanoseconds. Only a matched prompt response confirms completion; elapsed
+// silence and text never do. Raw frames stay in the private local store and are
+// never carried here. not_connected means no live worker was consulted, not
+// idle.
+type SessionProtocol struct {
+	CancelRequestedAt int64  `json:"cancel_requested_at,omitempty"`
+	CompletedAt       int64  `json:"completed_at,omitempty"`
+	Failure           string `json:"failure,omitempty"`
+	LastAppliedAt     int64  `json:"last_applied_at,omitempty"`
+	LastAppliedKind   string `json:"last_applied_kind,omitempty"`
+	LastReceivedAt    int64  `json:"last_received_at,omitempty"`
+	LastReceivedKind  string `json:"last_received_kind,omitempty"`
+	Operation         string `json:"operation,omitempty"`
+	Phase             string `json:"phase"`
+	RequestID         string `json:"request_id,omitempty"`
+	RpcError          *int64 `json:"rpc_error"`
+	Sequence          int64  `json:"sequence"`
+	StartedAt         int64  `json:"started_at,omitempty"`
+	StopReason        string `json:"stop_reason,omitempty"`
+	TraceEnabled      bool   `json:"trace_enabled"`
+	TraceError        string `json:"trace_error,omitempty"`
+	Unrecognized      int64  `json:"unrecognized"`
 }
 
 // One assistant session. Fields that cannot be supported are absent rather than
@@ -5996,7 +6232,13 @@ type SessionRow struct {
 	// worktree followed to the repository it belongs to and symlinks resolved. A Board
 	// item's `project.path` is compared with it. Absent when `cwd` is absent or not
 	// absolute.
-	ProjectKey     string                `json:"project_key,omitempty"`
+	ProjectKey       string            `json:"project_key,omitempty"`
+	PromptSuggestion *PromptSuggestion `json:"prompt_suggestion,omitempty"`
+
+	// Current actionable provider refusal read from the native turn record.
+	// Independent of terminal activity; cleared by a later native turn boundary. Not a
+	// permission menu.
+	ProviderBlock  string                `json:"provider_block,omitempty"`
 	RootAssignment *RootAssignmentRecord `json:"root_assignment,omitempty"`
 
 	// Exact provider subagent count from the current Cloud status projection,
@@ -6039,8 +6281,8 @@ type SessionRow struct {
 	// `work_state` (then `work_provenance` is `self`).
 	WorkNote string `json:"work_note,omitempty"`
 
-	// Whether that mover is a person. Absent unless the declaration decided the state;
-	// present and false is a real answer.
+	// Whether that mover is a person. Also true for a current actionable provider
+	// block; present and false is a real answer.
 	WorkPersonNeeded bool           `json:"work_person_needed,omitempty"`
 	WorkProvenance   WorkProvenance `json:"work_provenance,omitempty"`
 
@@ -6258,6 +6500,16 @@ type SessionWaitTarget struct {
 	TaskID string `json:"task_id"`
 }
 
+type SessionWorkflow struct {
+	Digest          string          `json:"digest,omitempty"`
+	GraphifyEnabled *bool           `json:"graphify_enabled"`
+	ProfileID       string          `json:"profile_id,omitempty"`
+	Source          string          `json:"source,omitempty"`
+	Stages          []WorkflowStage `json:"stages,omitempty"`
+	State           string          `json:"state"`
+	Version         string          `json:"version,omitempty"`
+}
+
 type SessionsSnapshot struct {
 	At       int64        `json:"at"`
 	Scan     Scan         `json:"scan"`
@@ -6274,7 +6526,7 @@ type SettingsRequest struct {
 	// fallback to another provider.
 	AntigravityDefaultModel *string `json:"antigravity_default_model"`
 
-	// `claude` or `codex`.
+	// `session`, `claude`, `codex`, `antigravity`, or `auto`.
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
 	// 0 to 1.
@@ -6315,7 +6567,8 @@ type SettingsRequest struct {
 	CodexDefaultModel *string `json:"codex_default_model"`
 
 	// Whether the terminal selects the tab the bar points at.
-	FollowTarget *bool `json:"follow_target"`
+	FollowTarget    *bool `json:"follow_target"`
+	GraphifyEnabled *bool `json:"graphify_enabled"`
 
 	// A combination the shell can register (`cmd+shift+k`), or empty for none.
 	Hotkey *string `json:"hotkey"`
@@ -6407,6 +6660,9 @@ type SettingsRequest struct {
 	// Notify when a whole batch of dispatched work ends.
 	PushOnFanout *bool `json:"push_on_fanout"`
 
+	// Notify when a Session stops because its model is at capacity.
+	PushOnModelCapacity *bool `json:"push_on_model_capacity"`
+
 	// Notify when an App install or Cloud verification fails.
 	PushOnReleaseFailure *bool `json:"push_on_release_failure"`
 
@@ -6472,7 +6728,9 @@ type SettingsRequest struct {
 	VoiceStopSeconds *float64 `json:"voice_stop_seconds"`
 
 	// 360 to 1400.
-	Width *float64 `json:"width"`
+	Width                 *float64 `json:"width"`
+	WorkflowProfile       *string  `json:"workflow_profile"`
+	WorkflowSkillsEnabled *bool    `json:"workflow_skills_enabled"`
 
 	// 0.05 to 0.80.
 	YFraction *float64 `json:"y_fraction"`
@@ -6487,8 +6745,9 @@ type SettingsSnapshot struct {
 	// fallback to another provider.
 	AntigravityDefaultModel *string `json:"antigravity_default_model"`
 
-	// Whose quota that naming turn spends, `claude` or `codex`. Remembered while the
-	// switch above is off, so turning it back on does not quietly change providers.
+	// Whose quota that naming turn spends: `session`, `claude`, `codex`,
+	// `antigravity`, or `auto`. Remembered while the switch above is off, so turning
+	// it back on does not quietly change providers.
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
 	// How much the bar blurs what is behind it.
@@ -6541,7 +6800,8 @@ type SettingsSnapshot struct {
 	Exists bool `json:"exists"`
 
 	// Whether the terminal selects the tab the bar points at.
-	FollowTarget *bool `json:"follow_target"`
+	FollowTarget    *bool `json:"follow_target"`
+	GraphifyEnabled *bool `json:"graphify_enabled"`
 
 	// The file's `hotkey`, or null when the file does not carry one as a string. Null
 	// means the default, option+space, which the Swift app used to own and no longer
@@ -6646,6 +6906,9 @@ type SettingsSnapshot struct {
 	// Notify when a whole batch of dispatched work ends.
 	PushOnFanout *bool `json:"push_on_fanout"`
 
+	// Notify when a Session stops because its model is at capacity.
+	PushOnModelCapacity *bool `json:"push_on_model_capacity"`
+
 	// Notify when an App install or Cloud verification fails.
 	PushOnReleaseFailure *bool `json:"push_on_release_failure"`
 
@@ -6721,7 +6984,9 @@ type SettingsSnapshot struct {
 	VoiceStopSeconds *float64 `json:"voice_stop_seconds"`
 
 	// The bar's width in points.
-	Width *float64 `json:"width"`
+	Width                 *float64 `json:"width"`
+	WorkflowProfile       *string  `json:"workflow_profile"`
+	WorkflowSkillsEnabled *bool    `json:"workflow_skills_enabled"`
 
 	// Where the bar's top sits, as a fraction of screen height.
 	YFraction *float64 `json:"y_fraction"`
@@ -7701,8 +7966,14 @@ var TerminalStatusValues = []TerminalStatus{TerminalStatusRunning, TerminalStatu
 type TranscriptAction struct {
 	Command string `json:"command,omitempty"`
 
+	// Inclusive one-based last source line, when supplied.
+	EndLine int64 `json:"endLine,omitempty"`
+
 	// read or search.
-	Kind  string `json:"kind"`
+	Kind string `json:"kind"`
+
+	// One-based first source line, when supplied.
+	Line  int64  `json:"line,omitempty"`
 	Name  string `json:"name,omitempty"`
 	Path  string `json:"path,omitempty"`
 	Query string `json:"query,omitempty"`
@@ -7713,18 +7984,56 @@ type TranscriptAction struct {
 type TranscriptActivity struct {
 	Actions []TranscriptAction `json:"actions"`
 
+	// Explicit native trajectory namespace for a tool from another agent; absent when
+	// its owner was not supplied.
+	AgentID   string               `json:"agentID,omitempty"`
+	Delegates []TranscriptDelegate `json:"delegates,omitempty"`
+
 	// How long the item took. -1 when the record did not say, which the Swift app
 	// sends as an absent key; 0 is a real, sub-millisecond duration and is drawn as
 	// one.
 	DurationMs int64  `json:"durationMs"`
 	Kind       string `json:"kind"`
 
-	// A called tool's result text, cut at 4,000 characters.
+	// A called tool result. Owned ACP retains complete received text and pages large
+	// bodies on demand; older readers may provide a clipped result.
 	Result string `json:"result,omitempty"`
+
+	// True when a native result was received, including an explicitly empty result.
+	ResultKnown bool `json:"resultKnown,omitempty"`
 
 	// inProgress, pending, completed or failed.
 	Status string `json:"status,omitempty"`
 	Title  string `json:"title,omitempty"`
+
+	// Native tool identity, stable across partial updates.
+	ToolCallID string                `json:"toolCallID,omitempty"`
+	ToolResult *TranscriptToolResult `json:"toolResult,omitempty"`
+}
+
+type TranscriptChangeStats struct {
+	Additions int64 `json:"additions"`
+	Deletions int64 `json:"deletions"`
+	LineCount int64 `json:"lineCount"`
+}
+
+type TranscriptDelegate struct {
+	Model string `json:"model,omitempty"`
+	Name  string `json:"name"`
+}
+
+// Opt-in delta-v1 reply. Apply only to baseVersion of the exact pinned Session;
+// replace metadata with page and apply ordered, non-overlapping splices in
+// original base coordinates atomically. A cache miss or a larger delta returns
+// a full TranscriptPage. Unchanged remains the existing version receipt.
+type TranscriptDelta struct {
+	BaseVersion string             `json:"baseVersion"`
+	Delta       []TranscriptSplice `json:"delta"`
+
+	// Exact resulting row count, including provider rows that expand into multiple
+	// entries.
+	EntryCount int64          `json:"entryCount"`
+	Page       TranscriptPage `json:"page"`
 }
 
 // One thing in a conversation, in the shape the Swift app's `transcriptRows`
@@ -7742,7 +8051,8 @@ type TranscriptEntry struct {
 	Artifacts []ImageArtifact `json:"artifacts,omitempty"`
 
 	// Unix seconds. Absent when the record carried no timestamp this reader accepts.
-	At int64 `json:"at,omitempty"`
+	At     int64                  `json:"at,omitempty"`
+	Detail *TranscriptEntryDetail `json:"detail,omitempty"`
 
 	// Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent
 	// on every other entry.
@@ -7780,16 +8090,26 @@ type TranscriptEntry struct {
 	Tool string `json:"tool,omitempty"`
 }
 
+// An opt-in stored tool body. The reference binds a native row, its full
+// projected content, machine and Session execution. Body fields arrive only
+// after expansion.
+type TranscriptEntryDetail struct {
+	LineCount int64  `json:"lineCount"`
+	Reference string `json:"reference"`
+	TextBytes int64  `json:"textBytes"`
+}
+
 type TranscriptFileChange struct {
 	// The whole file, for an addition, a deletion or a Claude `Write`.
 	Content string `json:"content,omitempty"`
 
 	// add, delete, update or write, as the record spelled it; `change` when it did
 	// not.
-	Kind        string `json:"kind"`
-	MovePath    string `json:"movePath,omitempty"`
-	Path        string `json:"path"`
-	UnifiedDiff string `json:"unifiedDiff,omitempty"`
+	Kind        string                 `json:"kind"`
+	MovePath    string                 `json:"movePath,omitempty"`
+	Path        string                 `json:"path"`
+	Stats       *TranscriptChangeStats `json:"stats,omitempty"`
+	UnifiedDiff string                 `json:"unifiedDiff,omitempty"`
 }
 
 // A decoded Clawdline notice without its protocol, version and body — the
@@ -7885,6 +8205,9 @@ type TranscriptPage struct {
 	Signature  string                `json:"signature"`
 	Truncation *TranscriptTruncation `json:"truncation,omitempty"`
 	Unread     *TranscriptUnread     `json:"unread,omitempty"`
+
+	// Digest of this exact compact page, scoped to machine and Session execution.
+	Version string `json:"version,omitempty"`
 }
 
 type TranscriptPlanStep struct {
@@ -7892,6 +8215,30 @@ type TranscriptPlanStep struct {
 	// rollout's in_progress.
 	Status string `json:"status"`
 	Step   string `json:"step"`
+}
+
+// One replacement in the exact held page. Equal prefix and suffix entries are
+// retained, including distinct repeated entries.
+type TranscriptSplice struct {
+	DeleteCount int64             `json:"deleteCount"`
+	Entries     []TranscriptEntry `json:"entries"`
+	Start       int64             `json:"start"`
+}
+
+type TranscriptToolResult struct {
+	Images   int64  `json:"images"`
+	Preview  string `json:"preview"`
+	RawBytes int64  `json:"rawBytes"`
+
+	// Opaque stored row offset and content digest; only readable in the same Session
+	// execution.
+	Reference       string `json:"reference"`
+	SourceTruncated bool   `json:"sourceTruncated"`
+	TextBytes       int64  `json:"textBytes"`
+
+	// Native tool call identity when the provider recorded one.
+	ToolID        string `json:"toolID,omitempty"`
+	UnknownBlocks int64  `json:"unknownBlocks"`
 }
 
 // The newest entries were kept and older ones left out, because the whole page
@@ -9623,6 +9970,13 @@ type WorkflowSettingsSnapshot struct {
 	// field.
 	ItermIntegration     *bool `json:"iterm_integration"`
 	SessionAutoDiscovery bool  `json:"session_auto_discovery"`
+}
+
+type WorkflowStage struct {
+	Acceptance string `json:"acceptance"`
+	ID         string `json:"id"`
+	Output     string `json:"output"`
+	Title      string `json:"title"`
 }
 
 type WorktreeCanonical struct {

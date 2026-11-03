@@ -380,7 +380,10 @@ paired machine without sending role names.
   is read as it was: a single `team` string is a list of one, and a catalog with neither field
   (or a Cloud machine not yet updated) is all engineering; with one team the label stays the
   plain "Role" it was. The decisions are pure functions in `personas.ts` (`personaTeams`,
-  `shownTeam`, `switchTeam`, `teamsOffered`, `personasOfTeam`).
+  `shownTeam`, `switchTeam`, `teamsOffered`, `personasOfTeam`). Background Project refreshes keep
+  the native select and its unchanged options attached so an open phone picker retains focus.
+  `session/resume-role.e2e.ts` checks two actual three-second refreshes with changing Project
+  labels on phone and desktop, then switches teams and chooses a role through the retained picker.
 - **Session list.** A row whose `persona` the catalog names starts its third line, before the
   state words, with the bot at two pixels a cell and the role's full name in the console's
   language (11.5 px, as the words beside it), with name and summary as its title. Both local and
@@ -521,3 +524,29 @@ Copyright (c) 2025 AgentLand Contributors. Each persona's `source` names the ups
 adapted from. The licence is kept word for word in
 `internal/domain/persona/catalog/LICENSE.agency-agents`, and a copy is written beside the texts on
 disk.
+
+
+### Display reads and reload validation
+
+The console opts in to `GET /v1/personas?view=display-v1`. The display projection
+keeps names, pixel icons, teams, suggested Board kinds and the short summary
+used by accessible labels and tooltips. Source and license contents are empty;
+the original parameterless reading retains them. Full role instructions remain
+on Squad's existing detail path and are never added to the display catalog.
+
+A display reply contains `view`, a SHA-256 `version`, and `catalog`. The digest
+uses sorted object keys and Go JSON string escaping, shared by the viewer. Sending the held `version` gives an
+`unchanged` receipt only when the current complete display projection matches.
+The route still reads the authorized catalog before answering a receipt, so
+private additions, renames, icon changes and removals invalidate it. This saves
+transport bytes; it does not claim to eliminate server catalog assembly work.
+
+Cloud readers negotiate only with `persona_display_v1` machines. Older peers
+receive the original field set. A tab keeps at most one display catalog in
+session storage, scoped to account, viewer device and machine and bounded by
+the existing 8 MiB read budget. Storage is an untrusted candidate: its digest
+is recomputed, and a fresh authorized machine read must confirm it before any
+cached role is displayed. Switching scope replaces the slot; sign-out and
+revocation clear it. Disabled storage simply forfeits reload savings. Failed
+or corrupt validation never exposes the old catalog. The per-page role cache
+and existing invalidation after role edits and package adoption remain in place.

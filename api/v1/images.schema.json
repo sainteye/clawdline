@@ -65,6 +65,7 @@
         "artifacts": { "type": "array", "items": { "$ref": "#/$defs/StoredImage" } },
         "at": { "type": "integer" },
         "ok": { "type": "boolean" },
+        "output_index_error": { "description": "Typed error when the images were stored but original output paths could not be indexed; image delivery is not undone.", "type": "string" },
         "note": { "description": "Present when the request named no `terminal`: the pictures are stored and shown nowhere until a reply carries their marker, which a model may summarise away. Name the Session's terminal (`clawdline image send` does) to have them shown under its reply.", "type": "string" },
         "terminal": { "description": "The terminal id of the Session the pictures are shown in, when the request named one: they appear under the first reply it writes after this answer. Stored is not seen — GET /v1/transcript?session=… shows them in that reply's `artifacts` once it is written.", "type": "string" }
       }

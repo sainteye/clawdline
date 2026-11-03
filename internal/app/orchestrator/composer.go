@@ -300,6 +300,15 @@ func frameUnder(lines []string, caret int) bool {
 // Four lines of slack: an empty composer sits two rows above its bar, and one
 // holding a typed message sits a row or two further up.
 func statusUnder(lines []string, caret, bottom int) bool {
+	// A fresh Codex 0.162.1 home draws this exact hint below its model bar.
+	// Keep unknown footer text closed: skipping arbitrary rows would let
+	// dialog prose above a chooser authorize its highlighted answer.
+	if strings.TrimSpace(lines[bottom]) == "? for shortcuts" {
+		bottom--
+		for bottom > caret && strings.TrimSpace(lines[bottom]) == "" {
+			bottom--
+		}
+	}
 	return bottom > caret && bottom <= caret+4 && isStatusBar(lines[bottom])
 }
 

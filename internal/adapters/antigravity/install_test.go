@@ -21,6 +21,10 @@ func installWorkspace(t *testing.T, data string) string {
 		if err = os.WriteFile(filepath.Join(workspace, ".agents", "hooks.json"), []byte(data), 0640); err != nil {
 			t.Fatal(err)
 		}
+		// Establish the fixture's intended mode even under a private service umask.
+		if err = os.Chmod(filepath.Join(workspace, ".agents", "hooks.json"), 0640); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return workspace
 }

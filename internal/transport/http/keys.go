@@ -64,11 +64,16 @@ func (s *Server) sessionKey(ctx context.Context, w http.ResponseWriter, id strin
 			"expect must be the fingerprint of the question being answered.")
 		return
 	}
-	if _, err := s.actions().Key(ctx, id, body.Key, body.Expect); err != nil {
+	sent, err := s.actions().Key(ctx, id, body.Key, body.Expect)
+	if err != nil {
 		writeActionRefusal(w, err)
 		return
 	}
-	writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "keyed"})
+	action := "keyed"
+	if sent.Backend == session.BackendClaudeRemote {
+		action = "accepted"
+	}
+	writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: action})
 }
 
 // menuWire is contract.SessionMenu as it is sent. It exists for one key the

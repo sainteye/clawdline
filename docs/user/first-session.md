@@ -18,6 +18,22 @@ On macOS 13 or later, or Linux, install Clawdline with the command on the [proje
 
 **If the row is missing:** check that the assistant is running inside tmux (or iTerm2 on macOS), then refresh the list. **If the row says its state is unknown:** open its live screen; Clawdline waits for readable evidence instead of guessing. [Recover from a problem](recovery.md).
 
+## Home and Settings on macOS
+
+The application menu's **Home / Settings** (**Shift–Command–H**) brings the main Clawdline
+console forward. If the Cloud tab was in front, this command returns to the local console.
+It is a navigation shortcut; it does not change a setting.
+
+Use **Settings** in the website console to change settings for the selected machine. Shared
+machine settings are also available from Clawdline Cloud, so select the intended machine before
+editing them. Browser-local preferences apply only to that browser.
+
+Older macOS builds also showed a separate **Settings…** (**Command–,**) application menu item
+for a native app settings window. That entry has been retired in current builds; settings are
+operated through the website. A screenshot showing both entries may be from an older build.
+If the visible menu differs, check the running version before assuming the two entries are two
+current settings systems.
+
 ## Continue from another device
 
 When this works locally, you can pair a phone or another computer. Cloud is optional and must be enabled on the machine. [See another machine](cloud-first-look.md).

@@ -12,6 +12,9 @@
         "path"
       ],
       "properties": {
+        "workflow_profile": { "type": "string", "nullable": true },
+        "workflow_skills_enabled": { "type": "boolean", "nullable": true },
+        "graphify_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "exists": {
           "description": "False before anything has been written. Every key then has the shell's default.",
@@ -88,7 +91,7 @@
           "type": "boolean"
         },
         "auto_name_assistant": {
-          "description": "Whose quota that naming turn spends, `claude` or `codex`. Remembered while the switch above is off, so turning it back on does not quietly change providers.",
+          "description": "Whose quota that naming turn spends: `session`, `claude`, `codex`, `antigravity`, or `auto`. Remembered while the switch above is off, so turning it back on does not quietly change providers.",
           "nullable": true,
           "type": "string"
         },
@@ -192,6 +195,7 @@
           "nullable": true,
           "type": "boolean"
         },
+        "push_on_model_capacity": { "description": "Notify when a Session stops because its model is at capacity.", "nullable": true, "type": "boolean" },
         "push_on_waiting": { "description": "Notify when a Session waits for the person.", "nullable": true, "type": "boolean" },
         "push_on_board_decision": { "description": "Notify when a Board decision needs an answer.", "nullable": true, "type": "boolean" },
         "push_on_board_done": { "description": "Notify when a Board item is completed.", "nullable": true, "type": "boolean" },
@@ -279,6 +283,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "workflow_profile": { "type": "string", "nullable": true },
+        "workflow_skills_enabled": { "type": "boolean", "nullable": true },
+        "graphify_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "hotkey": {
           "description": "A combination the shell can register (`cmd+shift+k`), or empty for none.",
@@ -343,7 +350,7 @@
           "type": "boolean"
         },
         "auto_name_assistant": {
-          "description": "`claude` or `codex`.",
+          "description": "`session`, `claude`, `codex`, `antigravity`, or `auto`.",
           "nullable": true,
           "type": "string"
         },
@@ -452,6 +459,7 @@
           "nullable": true,
           "type": "boolean"
         },
+        "push_on_model_capacity": { "description": "Notify when a Session stops because its model is at capacity.", "nullable": true, "type": "boolean" },
         "push_on_waiting": { "description": "Notify when a Session waits for the person.", "nullable": true, "type": "boolean" },
         "push_on_board_decision": { "description": "Notify when a Board decision needs an answer.", "nullable": true, "type": "boolean" },
         "push_on_board_done": { "description": "Notify when a Board item is completed.", "nullable": true, "type": "boolean" },
@@ -552,6 +560,38 @@
         },
         "verify_gate": {
           "nullable": true,
+          "type": "boolean"
+        }
+      }
+    },
+    "IntegrationSettingsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workflow_skills_enabled",
+        "graphify_enabled"
+      ],
+      "properties": {
+        "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"], "description": "Machine-wide main workflow; omitted by older daemons." },
+        "workflow_skills_enabled": {
+          "type": "boolean",
+          "description": "Machine-wide explicit opt-in; absent settings remain disabled."
+        },
+        "graphify_enabled": {
+          "type": "boolean",
+          "description": "Machine-wide explicit opt-in; absent settings remain disabled."
+        }
+      }
+    },
+    "IntegrationSettingsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"], "description": "Machine-wide main workflow; omitted by older daemons." },
+        "workflow_skills_enabled": {
+          "type": "boolean"
+        },
+        "graphify_enabled": {
           "type": "boolean"
         }
       }

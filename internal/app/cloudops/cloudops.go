@@ -330,9 +330,15 @@ func Knows(name string) bool { _, ok := catalog[name]; return ok }
 // machine say. A step that refuses names its own code; none of them is silent.
 func (b Bridge) Handle(ctx context.Context, cmd Command) (answer Answer) {
 	parsed, parseErr := decodeBody(cmd.Plaintext)
+	parsed, compressed := negotiateReadCompression(parsed)
 	word, _ := parsed.str("type")
 	mutating := false
-	defer func() { answer.Operation, answer.Mutating = word, mutating }()
+	defer func() {
+		if compressed {
+			answer = compressedReadAnswer(answer)
+		}
+		answer.Operation, answer.Mutating = word, mutating
+	}()
 
 	// Before anything about the request: is it even ours. The viewer listens
 	// on the channel it addressed, which is not one this machine publishes, so
@@ -378,7 +384,7 @@ func (b Bridge) contentReadChannel(cmd Command) bool {
 
 func contentReadWord(word string) bool {
 	switch word {
-	case "info", "transcript", "skills", "image", "git", "git-diff", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox", "sessions.list":
+	case "native-terminal-screen", "session-graphify", "info", "transcript", "skills", "image", "git", "git-diff", "outputs", "output-file", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox", "sessions.list":
 		return true
 	default:
 		return false
@@ -411,7 +417,7 @@ func (b Bridge) serveContentRead(ctx context.Context, cmd Command, parsed body, 
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "malformed_read",
 			Message: "This Cloud read is malformed.", fixedCopy: true})
 	}
-	if o.name == "info" && p.parts != "full" {
+	if o.name == "info" && p.parts != "full" && p.parts != "remote-permission" {
 		return b.contentReadAnswer(cmd, p, b.publish(cmd, p, Refusal{Status: 403, Code: "read_only_channel",
 			Message: "This Cloud channel accepts only pinned Session content reads.", fixedCopy: true}, nil))
 	}
@@ -464,6 +470,9 @@ func (b Bridge) contentReadAnswer(cmd Command, p plan, answer Answer) Answer {
 		return Answer{Status: 502, Code: "read_failed", Subject: p.target}
 	}
 	answer.Payload = encoded
+	if view := p.local.Query["view"]; strings.HasPrefix(view, "delta-v1z") || strings.HasPrefix(view, "tools-v1z") || strings.HasPrefix(view, "tool-v1z:") || strings.HasPrefix(view, "tools-v2z") || strings.HasPrefix(view, "entry-v1z:") {
+		answer.Payload = gzipReadPayload(encoded)
+	}
 	return answer
 }
 
@@ -500,6 +509,18 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 		// from: `machineLacks` stops it asking this machine for the word again.
 		return b.publish(cmd, plan, Refusal{Status: 400, Code: "unknown_command",
 			Message: "This machine does not know that Cloud command.", fixedCopy: true}, nil)
+	}
+	if o.name == "api-performance" {
+		// Machine history stays on the machine and crosses only to its verified
+		// paired reader. Recheck key, capability and revocation after the read.
+		if refusal, denied := b.authorizeTranscript(ctx, cmd.Sender, cmd.VerifiedKey); denied {
+			return b.publish(cmd, plan, refusal, nil)
+		}
+		answer := b.route(ctx, cmd, plan, o)
+		if refusal, denied := b.authorizeTranscript(ctx, cmd.Sender, cmd.VerifiedKey); denied {
+			return b.publish(cmd, plan, refusal, nil)
+		}
+		return answer
 	}
 	return b.route(ctx, cmd, plan, o)
 }

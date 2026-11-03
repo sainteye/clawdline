@@ -219,6 +219,7 @@ const (
 	// T3: the board and the Backlog.
 	WorkOpen                  = "work.open"
 	WorkListPageRows          = "work.list_page_rows"
+	WorkCardDescriptionRunes  = "work.card_description_runes"
 	WorkPlanning              = "work.planning"
 	WorkAssignments           = "work.assignments"
 	WorkDocumentsPerItem      = "work.documents_per_item"
@@ -229,7 +230,17 @@ const (
 	WorkImageRequestBodyBytes = "work.image_request_body_bytes"
 	WorkStepsPerItem          = "work.steps_per_item"
 	WorkRootLandingsPerItem   = "work.root_landings_per_item"
-	SessionDirectTodos        = "session.direct_todos"
+	// Issue sync's GitHub connection (docs/issue-sync.md).
+	WorkIssueSyncResponseBytes  = "work.issue_sync_response_bytes"
+	WorkIssueSyncTokenFileBytes = "work.issue_sync_token_file_bytes"
+	WorkIssueSyncDeviceSeconds  = "work.issue_sync_device_flow_seconds"
+	WorkIssueSyncScanRows       = "work.issue_sync_scan_rows"
+	WorkIssueSyncJiraResponse   = "work.issue_sync_jira_response_bytes"
+	WorkIssueSyncJiraCredential = "work.issue_sync_jira_credential_bytes"
+	WorkIssueSyncJiraProjects   = "work.issue_sync_jira_projects"
+	WorkIssueSyncLinksPerPass   = "work.issue_sync_links_per_pass"
+	WorkIssueSyncRetrySeconds   = "work.issue_sync_retry_seconds"
+	SessionDirectTodos          = "session.direct_todos"
 	// The token ledger's work-unit cursors (docs/token-ledger.md "One unit of
 	// work", limits N73).
 	UsageWorkCursorRows          = "usage.work_cursor_rows"
@@ -452,6 +463,10 @@ const (
 	PersonasCatalog   = "personas.catalog"
 	PersonasTextBytes = "personas.text_bytes"
 	// Versioned squad definitions and private settings.
+	ToolLibraryProjects          = "tools.projects"
+	ToolLibraryProjectBytes      = "tools.project_bytes"
+	ToolLibraryRequestBytes      = "tools.request_bytes"
+	ToolLibraryRequestKeyBytes   = "tools.request_key_bytes"
 	SquadEntities                = "squad.entities"
 	SquadSettingsRows            = "squad.settings_rows"
 	SquadReceipts                = "squad.receipts"
@@ -469,6 +484,7 @@ const (
 	SquadPackageExpansionRatio   = "squadpackage.expansion_ratio"
 	SquadPackagePreviewRows      = "squadpackage.preview_rows"
 	SquadPackagePreviewAge       = "squadpackage.preview_age"
+	WorkflowSnapshotBytes        = "workflow.snapshot_bytes"
 	SquadSnapshotBytes           = "squad.snapshot_bytes"
 	SquadConsoleActiveSkillBytes = "squad.console_active_skill_bytes"
 	SquadRecoveryRows            = "squad.recovery_page_rows"
@@ -614,6 +630,9 @@ type Entry struct {
 	// already happened has nothing to say when a day passes without it, and
 	// an announcement would spend the day's notice the next time it does.
 	QuietRecovery bool
+	// Routine marks a shared pool or rolling receipt history whose occupancy
+	// alone is not pressure. Failures and readings above the bound still alert.
+	Routine bool `json:",omitempty"`
 	// Sources are the declarations in this repository that bound this row, as
 	// the register guard spells them (guard_test.go). A bounded declaration
 	// that is neither a row's source nor on the guard's baseline is a failing
@@ -627,6 +646,18 @@ func (e Entry) Warn() float64 {
 		return e.WarnAt
 	}
 	return 0.8
+}
+
+// RoutineOccupancy distinguishes reusable space and normal retention from a
+// limit that refuses work or removes still-needed content. Byte/count caps on
+// journals remain pressure: they can shorten the promised retention window.
+func (e Entry) RoutineOccupancy() bool {
+	if e.EvictedBy != Daemon {
+		return false
+	}
+	return e.Routine || (e.Class == Cache && e.AtLimit == EvictOldest) ||
+		(e.AtLimit == Rotate && (e.Class == DiagnosticLog || e.Class == Journal)) ||
+		(e.Class == Journal && e.Unit == Seconds && e.AtLimit == EvictOldest)
 }
 
 // namePattern is `area.thing`, lower case. The work-gate plan deliberately

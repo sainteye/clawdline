@@ -256,6 +256,20 @@ struct ShellPairingPermissionTest {
         check(!admitted(true, "https", "app.clawdline.com", 8443), "another port cannot pair")
         check(!admitted(true, "https", "app.clawdline.com", 0, URL(string: "https://attacker.example")), "navigation away revokes bridge admission")
         check(!admitted(true, "https", "app.clawdline.com", 0, nil), "missing top-level page cannot pair")
+        let local = URL(string: "http://127.0.0.1:7999/")!
+        func localAdmitted(_ main: Bool = true, _ scheme: String = "http", _ host: String = "127.0.0.1",
+                           _ port: Int = 7999, _ page: URL? = URL(string: "http://127.0.0.1:7999/#settings")) -> Bool {
+            CloudPairingAccess.allows(mainFrame: main, scheme: scheme, host: host, port: port, page: page, trusted: local)
+        }
+        check(localAdmitted(), "local App settings can request native pairing confirmation")
+        check(!localAdmitted(false), "a local iframe cannot pair")
+        check(!localAdmitted(true, "http", "localhost"), "another loopback hostname cannot pair")
+        check(!localAdmitted(true, "http", "127.0.0.1", 8000), "another local port cannot pair")
+        check(!localAdmitted(true, "https"), "another local scheme cannot pair")
+        check(!localAdmitted(true, "http", "127.0.0.1", 7999, cloud), "navigation from local to Cloud revokes local admission")
+        check(!localAdmitted(true, "https", "app.clawdline.com", 0, cloud), "Cloud cannot use a local-origin bridge")
+        check(!admitted(true, "http", "127.0.0.1", 7999, local), "local cannot use a Cloud-origin bridge")
+        check(!localAdmitted(true, "http", "127.0.0.1", 7999, nil), "missing local top-level page cannot pair")
         try requests()
         outcomes()
         client()

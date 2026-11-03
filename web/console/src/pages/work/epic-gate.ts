@@ -32,8 +32,8 @@ export function isEpic(item: Pick<WorkV2Item, "kind">): boolean {
 }
 
 /** The Board does not show an empty gate panel or ask a person to supply its contract. */
-export function epicGateDetailShown(item: Pick<WorkV2Item, "kind" | "acceptance_criteria">): boolean {
-  return isEpic(item) && !!item.acceptance_criteria.trim()
+export function epicGateDetailShown(item: Pick<WorkV2Item, "kind"> & { acceptance_criteria?: string; acceptance_present?: boolean }): boolean {
+  return isEpic(item) && (item.acceptance_present === true || !!item.acceptance_criteria?.trim())
 }
 
 export function epicGate(documents: WorkV2Document[] | undefined): EpicGate {

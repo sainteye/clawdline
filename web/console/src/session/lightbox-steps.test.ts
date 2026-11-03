@@ -108,6 +108,7 @@ class PreviewElement extends EventTarget {
   src = "data:image/png;base64,aW1hZ2U="
   setAttribute() {}
   appendChild(child: PreviewElement) { this.children.push(child); return child }
+  remove() {}
   querySelector() { return null }
   closest() { return null }
   querySelectorAll() { return [] }
@@ -119,6 +120,13 @@ test("desktop previews download even with sharing support; touch previews keep n
   let supportsSharing = true
   let touchInterface = false
   const downloads: PreviewElement[] = []
+  const saved: Blob[] = []
+  const revoked: string[] = []
+  t.mock.method(URL, "createObjectURL", (blob: Blob) => {
+    saved.push(blob)
+    return `blob:download-${saved.length}`
+  })
+  t.mock.method(URL, "revokeObjectURL", (url: string) => { revoked.push(url) })
   t.mock.method(globalThis, "fetch", async () => ({
     ok: true, blob: async () => new Blob(["original image"], { type: "image/png" }),
   }) as Response)
@@ -128,6 +136,7 @@ test("desktop previews download even with sharing support; touch previews keep n
   }) as Navigator)
   const dialog = new PreviewElement()
   const doc = Object.assign(new PreviewElement(), {
+    body: new PreviewElement(),
     createElement: (tag: string) => {
       const element = new PreviewElement()
       if (tag === "a") element.addEventListener("click", () => downloads.push(element))
@@ -157,11 +166,52 @@ test("desktop previews download even with sharing support; touch previews keep n
   assert.equal(downloads.length, 3)
   for (const link of downloads) {
     assert.equal((link as unknown as HTMLAnchorElement).download, "picture.png")
-    assert.equal((link as unknown as HTMLAnchorElement).href, "data:image/png;base64,aW1hZ2U=")
+    assert.match((link as unknown as HTMLAnchorElement).href, /^blob:download-/)
   }
+  assert.equal(saved.length, 3)
+  for (const blob of saved) assert.equal(await blob.text(), "original image")
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(revoked.length, 3)
   assert.equal(shared.length, 2)
   for (const data of shared) {
     assert.equal(data.files?.[0].name, "picture.png")
     assert.equal(await data.files?.[0].text(), "original image")
   }
+})
+
+test("reading a pannable screenshot below 100% does not swipe to its neighbour", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => ({
+    ok: true, blob: async () => new Blob(["image"], { type: "image/png" }),
+  }) as Response)
+  const dialog = new PreviewElement()
+  const image = new PreviewElement()
+  image.dataset.zoomed = "false"
+  const current = new PreviewElement()
+  let steps = 0
+  const next = new PreviewElement()
+  next.click = () => { steps++ }
+  const doc = Object.assign(new PreviewElement(), {
+    createElement: () => new PreviewElement(),
+    querySelectorAll: () => [current, next],
+    defaultView: { matchMedia: () => ({ matches: false }) },
+  })
+  const preview = attachLightboxSteps(dialog as unknown as HTMLElement, image as unknown as HTMLElement, {
+    previous: "Previous", next: "Next", download: "Download", share: "Share", position: (i, n) => `${i}/${n}`,
+  }, doc as unknown as Document)
+  preview.opened(current as unknown as Element, "picture.png")
+  const swipe = () => {
+    const start = new Event("touchstart")
+    Object.assign(start, { touches: [{ clientX: 200, clientY: 300 }] })
+    dialog.dispatchEvent(start)
+    const end = new Event("touchend")
+    Object.assign(end, { touches: [], changedTouches: [{ clientX: 100, clientY: 300 }] })
+    dialog.dispatchEvent(end)
+  }
+  image.dataset.pannable = "true"
+  swipe()
+  assert.equal(steps, 0)
+  image.dataset.pannable = "false"
+  swipe()
+  assert.equal(steps, 1)
+  await new Promise(resolve => setImmediate(resolve))
 })

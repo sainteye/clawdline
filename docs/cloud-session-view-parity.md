@@ -35,3 +35,36 @@ The all-machines view is the reference for execution identity: a fleet target al
 6. A partial inventory never removes an unobserved Session. An authoritative complete inventory may remove it in either scope.
 
 The status projection and rich presentation remain separate because Cloud can distribute the former without Session content. Their join and action policy are shared; copying the full Session list into the fleet status channel would change that privacy boundary.
+
+## Phone browser navigation
+
+The Session detail uses the browser's Back/Forward history in both list scopes.
+Opening a phone detail keeps one list entry underneath it, including arrival by
+link, reload, and a desktop selection becoming a phone detail after resizing.
+The phone body and detail scrollers allow horizontal overscroll navigation;
+vertical containment remains in place for transcript reading and refresh.
+Code blocks, images and other controls keep their own gestures.
+
+`session/address.e2e.ts` checks the real browser history and computed styles,
+including Back/Forward after a width change. These checks do not reproduce a
+physical iPhone's edge gesture; that remains a device acceptance check.
+
+A restored `history.state.view === "detail"` belongs to an earlier document and
+cannot prove a usable list still exists below it. A newly mounted Session view
+rebuilds its list/detail pair once, then reuses its own detail step for Session
+switches and Forward. This also puts a list immediately under a Session after
+reloading a reusable, closed video-preview entry. A reload may leave an older
+list entry further back; it must never require traversing a second detail to
+reach the list. The regression fixture reconstructs a lone restored detail and
+opens/closes the actual video modal before reloading. Physical media-return
+reload behavior remains a separate iPhone acceptance case.
+
+The opening card (`next.cloudChecking`) is a Cloud gate state, not proof of a
+document reload. The ownership flag therefore belongs to the mounted `App`,
+not its JavaScript module. `session/remount-history.e2e.mjs` uses the real App
+and video modal, shows an opening placeholder while unmounted, and restores the
+view with an unchanged document token. One Back must then reach the list;
+Forward must not add history. Chromium and WebKit run this with both primary
+languages and React's StrictMode effect replay. This fixture tests the view
+lifecycle; it does not claim to reproduce the phone's reason for showing the
+gate.

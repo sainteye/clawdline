@@ -55,8 +55,8 @@ func TestRestoreUsesExactIdentityBeforeHistoryReplay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !c.free || c.SessionID() != "saved-exact" {
-				t.Fatal("exact free native conversation not adopted")
+			if c.SessionID() != "saved-exact" {
+				t.Fatal("exact personal-quota native conversation not adopted")
 			}
 			want := int32(0)
 			if replay {
@@ -73,7 +73,7 @@ func TestRestoreUsesExactIdentityBeforeHistoryReplay(t *testing.T) {
 }
 
 func TestRestoreFailureNeverCreatesOrPromptsAReplacement(t *testing.T) {
-	for _, tc := range []struct{ mode, code string }{{"no-restore", "resume_unsupported"}, {"restore-error", "rpc_error"}, {"restore-paid", "free_tier_required"}, {"restore-wrong-id", "session_identity_changed"}} {
+	for _, tc := range []struct{ mode, code string }{{"no-restore", "resume_unsupported"}, {"restore-error", "rpc_error"}, {"restore-wrong-id", "session_identity_changed"}} {
 		t.Run(tc.mode, func(t *testing.T) {
 			c, dir := fake(t, tc.mode, nil)
 			ctx := context.Background()

@@ -1,0 +1,16 @@
+.doctor-block { padding: 16px 0; color: var(--ink); min-width: 0; }
+.doctor-block h2 { font-size: 16px; margin: 0 0 8px; }
+.doctor-block p, .doctor-block li, .doctor-block label { font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.doctor-block p { color: var(--dim); }
+.doctor-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.doctor-block pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; padding: 12px; background: var(--surface, #202020); }
+.doctor-block summary { cursor: pointer; font-size: 13px; }
+.doctor-block textarea { display: block; width: 100%; box-sizing: border-box; margin: 6px 0 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+.doctor-consent { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; }
+.doctor-consent input { flex: none; margin-top: 5px; }
+.doctor-submit { color: var(--accent); }
+.doctor-block a { color: var(--accent); }
+.doctor-block .chip { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font: 500 13px/1.3 var(--ui); cursor: pointer; }
+.doctor-block .chip:disabled { opacity: .5; cursor: default; }
+.doctor-block .doctor-submit { background: var(--accent); border-color: transparent; color: #17120e; }
+.doctor-block .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

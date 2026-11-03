@@ -1,10 +1,11 @@
 # Agent routes in this build
 
-Generated from the registered routes and `api/v1/agent-routes.json`; API level: 30. Read `clawdline guide` first, then the part named below. A route here is discoverability, **not authorization or proof of completion**. For an action under a prefix, its input, permission, refusals, and receipt must be stated by that part and this build's schema. If the part does not specify that action, treat the route as unavailable to an Agent. Stop on a missing capability or version, mismatched identity, or unknown outcome; do not switch machines or use an older interface.
+Generated from the registered routes and `api/v1/agent-routes.json`; API level: 40. Read `clawdline guide` first, then the part named below. A route here is discoverability, **not authorization or proof of completion**. For an action under a prefix, its input, permission, refusals, and receipt must be stated by that part and this build's schema. If the part does not specify that action, treat the route as unavailable to an Agent. Stop on a missing capability or version, mismatched identity, or unknown outcome; do not switch machines or use an older interface.
 
 | Method | Registered route | Since API level | Agent guide | Human goal |
 | --- | --- | ---: | --- | --- |
 | `*` | `/reports/` | 1 | `clawdline guide report` | `docs/user/sessions.md` |
+| `*` | `/v1/api-performance` | 31 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/artifacts/images` | 1 | `clawdline guide send` | `docs/user/sessions.md` |
 | `*` | `/v1/artifacts/images/` | 1 | `clawdline guide send` | `docs/user/sessions.md` |
 | `*` | `/v1/auth/` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
@@ -38,9 +39,15 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/connection-health/` | 24 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/devstacks` | 1 | `clawdline guide project` | `docs/user/projects.md` |
 | `*` | `/v1/diagnostics` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/doctor` | 32 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/events` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/health` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/integrations/github` | 37 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/integrations/github/device` | 37 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/integrations/jira` | 38 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/integrations/jira/projects` | 38 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/intents` | 1 | `clawdline guide dispatch` | `docs/user/clawdfather-and-dispatch.md` |
+| `*` | `/v1/issue-sync/` | 38 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/machine/usage` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/next/coordinator` | 1 | `clawdline guide coordination` | `docs/user/clawdfather-and-dispatch.md` |
 | `*` | `/v1/next/obligations` | 1 | `clawdline guide coordination` | `docs/user/clawdfather-and-dispatch.md` |
@@ -103,6 +110,7 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/settings/browser` | 4 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/settings/default-models` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/settings/dispatch-policy` | 12 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/settings/integrations` | 33 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/settings/notifications` | 8 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/settings/work-gates` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/settings/workflow` | 26 | `clawdline guide connect` | `docs/user/first-session.md` |
@@ -120,6 +128,8 @@ Generated from the registered routes and `api/v1/agent-routes.json`; API level: 
 | `*` | `/v1/strings` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/terminals` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/terminals/` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
+| `*` | `/v1/tool-library` | 38 | `clawdline guide project` | `docs/user/projects.md` |
+| `*` | `/v1/tool-library/` | 38 | `clawdline guide project` | `docs/user/projects.md` |
 | `*` | `/v1/transcript` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/update` | 1 | `clawdline guide connect` | `docs/user/first-session.md` |
 | `*` | `/v1/update/apply` | 2 | `clawdline guide connect` | `docs/user/first-session.md` |

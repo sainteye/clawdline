@@ -1624,13 +1624,43 @@ test("closing the new Session sheet returns focus to its opener", () =>
     for (const mode of ["Escape", "button", "backdrop"] as const) {
       await tab.run(`document.getElementById('start-go').focus()`)
       await tab.press("#start-go")
-      assert.equal(await tab.run(`document.activeElement?.id`), "start-title")
+      assert.equal(await tab.run(`document.activeElement?.id`), "start-sheet")
       if (mode === "Escape") await tab.key("Escape")
       if (mode === "button") await tab.press("#start-close")
       if (mode === "backdrop") await tab.press("#start")
       assert.deepEqual(await tab.run(`({ hidden: document.getElementById('start').hidden, focused: document.activeElement?.id })`),
         { hidden: true, focused: "start-go" })
     }
+  }))
+
+test("Escape cancels the default action when dismissing new Session or leaving an input", () =>
+  inTab(async (tab) => {
+    await tab.desktop()
+    await list(tab)
+    const escape = async () => {
+      await tab.run(`window.addEventListener('keydown', event => { window.escapeEvent = event }, { capture: true, once: true })`)
+      await tab.key("Escape")
+      return tab.run(`window.escapeEvent.defaultPrevented`)
+    }
+    await tab.run(`document.activeElement?.blur()`)
+    await tab.shortcut("n")
+    await shortcutUntil(tab, `!document.getElementById('start').hidden`)
+    assert.equal(await escape(), true, "closing the sheet consumes Escape's native default")
+    assert.equal(await tab.run(`document.getElementById('start').hidden`), true)
+    assert.equal(await tab.run(`document.activeElement?.id`), "start-go")
+
+    await tab.run(`document.querySelector('#rows > li.row').click()`)
+    await tab.until("the Session opens", (state) => !!state.open)
+    await tab.run(`document.getElementById('msg').focus()`)
+    assert.equal(await tab.run(`document.activeElement?.id`), "msg")
+    const open = (await tab.seen()).open
+    assert.equal(await escape(), true, "leaving the composer consumes Escape's native default")
+    assert.notEqual(await tab.run(`document.activeElement?.id`), "msg")
+    assert.equal((await tab.seen()).open, open, "leaving the composer keeps the Session open")
+
+    await tab.run(`document.getElementById('filter').focus()`)
+    assert.equal(await escape(), true, "leaving the search field consumes Escape's native default")
+    assert.equal(await tab.run(`document.activeElement?.id`), "rows")
   }))
 
 test("a confirmed new pane opens on the phone before an inventory row exists", () =>
@@ -2829,16 +2859,15 @@ test("a Board summary opens the detail with focus and Escape returns to that sum
         summary.click()
         setTimeout(() => {
           const modal = document.querySelector('.work-item-detail-modal')
-          const close = modal?.querySelector('.work-modal-close')
-          const openedOnClose = document.activeElement === close
+          const openedOnContainer = document.activeElement === modal
           document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-          setTimeout(() => resolve({ openedOnClose, closed: !document.querySelector('.work-item-detail-modal'), returned: document.activeElement === summary,
+          setTimeout(() => resolve({ openedOnContainer, closed: !document.querySelector('.work-item-detail-modal'), returned: document.activeElement === summary,
             activeTag: document.activeElement?.tagName || '', activeClass: document.activeElement?.className || '', summaryConnected: summary.isConnected }), 25)
         }, 50)
       }
       open()
     })`)
-    assert.deepEqual(focus, { openedOnClose: true, closed: true, returned: true,
+    assert.deepEqual(focus, { openedOnContainer: true, closed: true, returned: true,
       activeTag: "BUTTON", activeClass: "work-card-summary", summaryConnected: true })
   }))
 

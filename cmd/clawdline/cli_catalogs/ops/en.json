@@ -5,7 +5,7 @@
   "capacity.dir_not_empty": "%s is not empty; the drill fills only a directory made for it",
   "capacity.drill_subscription_not_accepted": "the drill's subscription was not accepted by FromBrowser",
   "capacity.error": "error     %v\n",
-  "capacity.failed": "result    FAILED: the row did not go ok → warn → critical → full, act (%s) exactly once and produce exactly one notice\n",
+  "capacity.failed": "result    FAILED: the row did not follow its alert policy, act (%s) exactly once and produce the expected number of notices\n",
   "capacity.flag.dir": "a throwaway state directory, empty or not there yet (default: a new temporary one)",
   "capacity.flag.drill": "the row to fill on purpose: ",
   "capacity.flag.keep": "leave the directory behind to look at",

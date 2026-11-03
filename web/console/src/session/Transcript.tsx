@@ -1,3 +1,4 @@
+import { LazyEntryBody } from "./LazyEntryBody.js"
 import { catalogWord } from "../catalog.js"
 import { assistantLabel, assistantProtocolOwned } from "./antigravity-ui.js"
 import {
@@ -69,7 +70,10 @@ import { recordSendDiagnostic } from "../cloud/install.js"
 import "./jump.css"
 import "./history.css"
 import { VideoCards } from "./VideoCards.js"
+import { ToolResult } from "./ToolResult.js"
 import { AsyncQuestion } from "./AsyncQuestion.js"
+import { NativeToolRun, nativeRunLength } from "./NativeToolActivity.js"
+import { ToolRow, ToolRunToggle } from "./ToolPresentation.js"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -120,6 +124,7 @@ interface Question {
 type Entry = TranscriptEntry & { ask?: Question[] | null }
 
 type Block =
+  | { kind: "native"; rows: Entry[] }
   | { kind: "entry"; rows: Entry[] }
   | { kind: "run"; rows: Entry[]; live: boolean }
   | { kind: "explored"; rows: Entry[] }
@@ -704,7 +709,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
 /** The original conversation renderer, shared by local and pinned Cloud reads. */
 function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boolean, newestFirst: boolean,
   view: View, pictures?: NonNullable<TranscriptEntry["artifacts"]>): ReactElement[] {
-  const blocks = blocksOf(entries.map((entry) => ({ ...entry })).filter(worthDrawing), working)
+  const blocks = blocksOf(entries.map((entry) => ({ ...entry })).filter(worthDrawing), working, view.assistant)
   // Both local and pinned Cloud readers resolve the same artifact slots through
   // their respective picture source after the shared entry markup is drawn.
   if (pictures) {
@@ -719,6 +724,7 @@ function drawTranscriptEntries(entries: readonly TranscriptEntry[], working: boo
   const drawn = blocks.map((block) => {
     const start = at
     at += block.rows.length
+    if (block.kind === "native") return [<NativeToolRun key={"native:"+(block.rows[0].id || block.rows[0].activity?.toolCallID || start)} entries={block.rows} sessionID={view.sessionID} toolLabel={view.who.tool} countLabel={count => L.fillString(L.strings.webSteps, { n: count })}/>]
     if (block.kind === "run") return runHTML(view, block.rows, block.live, start)
     if (block.kind === "explored") return exploredRunHTML(view, block.rows, start)
     if (block.kind === "ask") return [askHTML(view, block.rows[0], start)]
@@ -759,6 +765,7 @@ export function TranscriptEntries({ entries, assistant, working = false, picture
     return next
   })
   const view: View = {
+    sessionID,
     who: { user: T.webWhoYou, assistant: assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant), error: assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant),
       agent: T.webAgents, peer: "Claude ↔", message: "Clawdline ↔", notice: "Clawdline", tool: T.webWhoTool },
     expanded, toggle, assistant, agents: [], onAgent: undefined, icons, slots: new Map(),
@@ -1141,7 +1148,7 @@ function worthDrawing(e: Entry): boolean {
  * One message, one question, one structured card, or one whole run of tool
  * calls per block; the last run is live while the session works.
  */
-function blocksOf(entries: Entry[], working: boolean): Block[] {
+function blocksOf(entries: Entry[], working: boolean, assistant?: string): Block[] {
   const blocks: Block[] = []
   let liveAt = -1
   let i = 0
@@ -1151,6 +1158,12 @@ function blocksOf(entries: Entry[], working: boolean): Block[] {
     if (entries[i].role !== "tool") {
       blocks.push({ kind: "entry", rows: [entries[i]] })
       i += 1
+      continue
+    }
+    if (assistant === "antigravity" && activityOf(entries[i])) {
+      const length = nativeRunLength(entries, i)
+      blocks.push({kind:"native",rows:entries.slice(i,i+length)})
+      i+=length
       continue
     }
     // Adjacent Explored items read as one compact run.
@@ -1191,24 +1204,14 @@ function toolRowHTML(v: View, e: Entry, live: boolean, n: number) {
   const key = "e" + foldKey([e])
   const open = !!v.expanded[key]
   return (
-    <div className="entry toolrow" data-role="tool" data-live={live ? "1" : undefined} key={key + ":" + n}>
-      <div className="who">{v.who.tool}</div>
-      <div className="body">
-        <button
-          type="button"
-          className="toolline"
-          data-fold={key}
-          aria-expanded={open ? "true" : "false"}
-          onClick={() => v.toggle(key)}
-        >
-          {e.tool ? <span className="toolname">{e.tool}</span> : <span className="caret">{open ? "⏷" : "⏵"}</span>}
-          <span className="subject">{firstLine(e.text)}</span>
-        </button>
-        {open ? (
+    <ToolRow label={v.who.tool} name={e.tool} subject={firstLine(e.text)} open={open} onToggle={() => v.toggle(key)} foldKey={key} live={live}
+      key={e.detail ? "tool:" + (v.sessionID ?? "") + e.detail.reference : key + ":" + n}>
+        {e.detail ? <LazyEntryBody key={(v.sessionID ?? "") + e.detail.reference} sessionID={v.sessionID} detail={e.detail} open={open}>
+          {(full) => <div className="toolbody" onClick={copyFrom} dangerouslySetInnerHTML={{ __html: L.richTextHTML(full.text) }} />}
+        </LazyEntryBody> : open ? (
           <div className="toolbody" onClick={copyFrom} dangerouslySetInnerHTML={{ __html: L.richTextHTML(e.text) }} />
         ) : null}
-      </div>
-    </div>
+    </ToolRow>
   )
 }
 
@@ -1226,22 +1229,8 @@ function runHTML(v: View, rows: Entry[], live: boolean, at: number) {
 /** `foldHTML`: the line a folded run leaves behind, and the handle that opens it. */
 function foldHTML(v: View, key: string, names: string[], open: boolean, live: boolean, at: number) {
   return (
-    <div className="entry folded" data-role="tool" data-live={live ? "1" : undefined} key={key + ":" + at}>
-      <div className="who">{v.who.tool}</div>
-      <div className="body">
-        <button
-          type="button"
-          className="pill"
-          data-fold={key}
-          aria-expanded={open ? "true" : "false"}
-          onClick={() => v.toggle(key)}
-        >
-          <span className="caret">{open ? "⏷" : "⏵"}</span>
-          <span className="steps">{L.fillString(L.strings.webSteps, { n: names.length })}</span>
-          {open ? null : <span className="what">{foldedRunDescription(names)}</span>}
-        </button>
-      </div>
-    </div>
+    <ToolRunToggle key={key + ":" + at} label={v.who.tool} count={L.fillString(L.strings.webSteps, { n: names.length })}
+      description={foldedRunDescription(names)} open={open} onToggle={() => v.toggle(key)} foldKey={key} live={live} />
   )
 }
 
@@ -1321,6 +1310,7 @@ function foldKey(run: Entry[]): string {
   for (const e of run) {
     let text = (e.tool || "") + "\u0001" + (e.text || "")
     if (Array.isArray(e.fileChanges)) text += "\u0001" + JSON.stringify(e.fileChanges)
+    if (e.detail) text += "\u0001" + e.detail.reference
     if (e.activity && typeof e.activity === "object") text += "\u0001" + JSON.stringify(e.activity)
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193)
   }
@@ -1764,7 +1754,6 @@ function activityActionsHTML(actions: TranscriptAction[]): string {
 
 /** `activityCardHTML`. */
 function activityCardHTML(v: View, e: Entry, at: number) {
-  const esc = L.escapeHTML
   const activity = activityOf(e) || ({} as Partial<TranscriptActivity>)
   const kind = activity.kind === "explored" ? "explored" : "called"
   const title = kind === "called" ? String(activity.title || e.text || e.tool || "") : ""
@@ -1772,25 +1761,18 @@ function activityCardHTML(v: View, e: Entry, at: number) {
   const status = activity.status && statusKeys[activity.status] ? catalogWord("antigravity", statusKeys[activity.status]) : activity.status
   const meta = [status, durationText(activity.durationMs)].filter((value) => !!value)
   const actions = kind === "explored" ? activityActionsHTML(activity.actions || []) : ""
-  const result =
-    kind === "called" && typeof activity.result === "string" && activity.result.length
-      ? '<pre class="activity-result">' + esc(activity.result) + "</pre>"
-      : ""
-  const card =
-    '<section class="activity-card"><header><span class="activity-kind">' +
-    esc(catalogWord("antigravity", kind === "called" ? "toolCalled" : "toolExplored")) +
-    "</span>" +
-    (title ? '<span class="activity-title">' + esc(title) + "</span>" : "") +
-    '<span class="activity-meta">' +
-    esc(meta.join(" · ")) +
-    "</span></header>" +
-    (actions ? "<ul>" + actions + "</ul>" : "") +
-    result +
-    "</section>"
   return (
-    <div className="entry activity" data-role={kind} key={"act:" + at}>
+    <div className="entry activity" data-role={kind} key={activity.toolResult ? "act:" + (v.sessionID ?? "") + ":" + activity.toolResult.reference : "act:" + at}>
       <div className="who">{v.who.tool}</div>
-      <div className="body" dangerouslySetInnerHTML={{ __html: card }} />
+      <div className="body"><section className={"activity-card" + (activity.toolResult ? " activity-readable" : "")}>
+        <header><span className="activity-kind">{catalogWord("antigravity", kind === "called" ? "toolCalled" : "toolExplored")}</span>
+          {title && <span className="activity-title">{title}</span>}
+          <span className="activity-meta">{meta.join(" · ")}</span></header>
+        {actions && <ul dangerouslySetInnerHTML={{ __html: actions }} />}
+        {kind === "called" && (activity.toolResult
+          ? <ToolResult key={(v.sessionID || "") + activity.toolResult.reference} sessionID={v.sessionID} result={activity.toolResult} />
+          : activity.result ? <pre className="activity-result">{activity.result}</pre> : null)}
+      </section></div>
     </div>
   )
 }
@@ -1892,8 +1874,8 @@ const PATCH_DETAIL_LINE_LIMIT = 18
 
 function fileChangeHTML(change: TranscriptFileChange, lines: DiffLine[], showLines: boolean): string {
   const esc = L.escapeHTML
-  const additions = lines.filter((l) => l.kind === "add").length
-  const deletions = lines.filter((l) => l.kind === "del").length
+  const additions = change.stats?.additions ?? lines.filter((l) => l.kind === "add").length
+  const deletions = change.stats?.deletions ?? lines.filter((l) => l.kind === "del").length
   const moved = change.movePath ? '<span class="diff-move">→ ' + esc(patchPath(change.movePath)) + "</span>" : ""
   const stats =
     (additions ? '<span class="add">+' + additions + "</span>" : "") +
@@ -1921,11 +1903,11 @@ function fileChangeHTML(change: TranscriptFileChange, lines: DiffLine[], showLin
 function patchHTML(v: View, e: Entry, at: number) {
   const views = (fileChangesOf(e) || []).map((change) => ({ change, lines: linesOfChange(change) }))
   const key = "p" + foldKey([e])
-  const lineCount = views.reduce((total, x) => total + x.lines.length, 0)
-  const defaultOpen = lineCount <= PATCH_DETAIL_LINE_LIMIT
+  const lineCount = e.detail?.lineCount ?? views.reduce((total, x) => total + x.lines.length, 0)
+  const defaultOpen = !e.detail && lineCount <= PATCH_DETAIL_LINE_LIMIT
   const open = defaultOpen ? v.expanded[key] !== false : !!v.expanded[key]
   return (
-    <div className="entry patch" data-role="patch" data-detail={open ? "open" : "collapsed"} key={"p:" + at}>
+    <div className="entry patch" data-role="patch" data-detail={open ? "open" : "collapsed"} key={e.detail ? "patch:" + (v.sessionID ?? "") + e.detail.reference : "p:" + at}>
       <div className="who">{v.who.tool}</div>
       <div className="body">
         <button
@@ -1940,10 +1922,13 @@ function patchHTML(v: View, e: Entry, at: number) {
           <span className="toolname">{e.tool}</span>
           <span className="subject">{e.text || ""}</span>
         </button>
-        <div
+        {e.detail ? <LazyEntryBody key={(v.sessionID ?? "") + e.detail.reference} sessionID={v.sessionID} detail={e.detail} open={open}
+          preview={<div className="patch-body" dangerouslySetInnerHTML={{ __html: views.map((x) => fileChangeHTML(x.change, [], false)).join("") }} />}>
+          {(full) => <div className="patch-body" dangerouslySetInnerHTML={{ __html: (full.fileChanges ?? []).map((change) => fileChangeHTML(change, linesOfChange(change), true)).join("") }} />}
+        </LazyEntryBody> : <div
           className="patch-body"
           dangerouslySetInnerHTML={{ __html: views.map((x) => fileChangeHTML(x.change, x.lines, open)).join("") }}
-        />
+        />}
       </div>
     </div>
   )

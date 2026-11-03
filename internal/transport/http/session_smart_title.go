@@ -41,7 +41,7 @@ func (s *Server) smartSessionTitle(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 
-	assistant, err := s.namingAssistant()
+	assistant, err := s.namingAssistantFor(item)
 	if err != nil {
 		writeSettingsFailure(w, s.settingsFile(), err)
 		return
@@ -193,8 +193,31 @@ func (s *Server) namingAssistant() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if named, ok := values.String("auto_name_assistant"); ok && (named == "claude" || named == "codex" || named == "auto") {
-		return named, nil
+	if named, ok := values.String("auto_name_assistant"); ok {
+		if named == "session" || named == "claude" || named == "codex" || named == "antigravity" || named == "auto" {
+			return named, nil
+		}
+		return "codex", nil
 	}
-	return "codex", nil
+	return "session", nil
+}
+
+func (s *Server) namingAssistantFor(item session.Session) (string, error) {
+	named, err := s.namingAssistant()
+	if err != nil {
+		return "", err
+	}
+	if named == "session" {
+		switch item.Assistant {
+		case session.AssistantClaude:
+			return "claude", nil
+		case session.AssistantCodex:
+			return "codex", nil
+		case session.AssistantAntigravity:
+			return "antigravity", nil
+		default:
+			return "codex", nil
+		}
+	}
+	return named, nil
 }

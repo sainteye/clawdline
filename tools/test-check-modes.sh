@@ -50,6 +50,12 @@ cat > "$scratch/bin/npm" <<'MOCK'
 #!/bin/bash
 printf 'npm %s\n' "$*" >> "$CALLS"
 MOCK
+cat > "$scratch/bin/python3" <<'MOCK'
+#!/bin/bash
+[ "$*" = tools/test-workflow-eval.py ] || exit 32
+printf 'workflow-evaluation\n' >> "$CALLS"
+exit "${FAIL_WORKFLOW:-0}"
+MOCK
 printf '#!/bin/sh\nexit 0\n' > "$scratch/bin/gofmt"
 chmod +x "$scratch/bin/"*
 export PATH="$scratch/bin:$PATH" TMPDIR="$scratch" CALLS="$scratch/calls" REAL_NODE="$real_node" CLAWDLINE_CHECK_WRAPPED=1
@@ -68,6 +74,7 @@ printf 'Documentation edit\n' >> docs/fixture.md
 bash tools/check.sh > "$scratch/docs.log"
 ! grep -Fxq 'go test ./...' "$CALLS"
 grep -Fxq 'go test -count=1 ./internal/config' "$CALLS"
+grep -Fxq 'workflow-evaluation' "$CALLS"
 ! grep -q '^heavy\|^go build\|^go vet\|^npm' "$CALLS"
 mkdir -p internal/example
 printf 'package example\n' > internal/example/example.go
@@ -116,6 +123,7 @@ for args in '--quick' '--quick --full ./internal/example' './internal/example'; 
 done
 if FAIL_TESTS=1 bash tools/check.sh --quick ./internal/example > /dev/null 2>&1; then exit 1; else [ "$?" = 7 ]; fi
 if FAIL_TESTS=1 bash tools/check.sh > /dev/null 2>&1; then exit 1; else [ "$?" = 1 ]; fi
+if FAIL_WORKFLOW=7 bash tools/check.sh > /dev/null 2>&1; then exit 1; else [ "$?" = 1 ]; fi
 : > "$CALLS"
 bash tools/check.sh --profile > "$scratch/profile.log"
 grep -Fxq 'go test -json -count=1 ./...' "$CALLS"

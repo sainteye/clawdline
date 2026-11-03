@@ -88,7 +88,7 @@ func TestStableServicePathIdentifiesTheActualBinaryAcrossSwitches(t *testing.T) 
 	if err := l.InstallServiceBinary("v0.10.0"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := l.ServiceRelease(l.ServiceBin); got != "v0.10.0" {
+	if got, _ := l.ServiceRelease(l.ServiceExecutable("v0.10.0")); got != "v0.10.0" {
 		t.Fatalf("initial service: %s", got)
 	}
 	console := filepath.Join(filepath.Dir(l.ServiceBin), "dist")
@@ -101,13 +101,13 @@ func TestStableServicePathIdentifiesTheActualBinaryAcrossSwitches(t *testing.T) 
 	if err := l.SwitchCurrent("v0.11.0"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := l.ServiceRelease(l.ServiceBin); got != "v0.10.0" {
+	if got, _ := l.ServiceRelease(l.ServiceExecutable("v0.10.0")); got != "v0.10.0" {
 		t.Fatalf("current switched before service binary: %s", got)
 	}
 	if err := l.InstallServiceBinary("v0.11.0"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := l.ServiceRelease(l.ServiceBin); got != "v0.11.0" {
+	if got, _ := l.ServiceRelease(l.ServiceExecutable("v0.11.0")); got != "v0.11.0" {
 		t.Fatalf("new service: %s", got)
 	}
 	if body, err := os.ReadFile(filepath.Join(console, "index.html")); err != nil || string(body) != "v0.11.0" {

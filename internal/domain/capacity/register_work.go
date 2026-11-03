@@ -3,6 +3,9 @@ package capacity
 // workBounds is every registered row named work.*.
 func workBounds() []Entry {
 	return []Entry{
+		{Name: WorkCardDescriptionRunes, Class: Observation, Unit: Characters,
+			Limit: 200, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.workV2CardDescriptionRunesLimit"}},
 		{
 			// Open work items (design-decisions T3): on the board and not
 			// closed, or planned in the Backlog. Each is a person's plan or
@@ -151,6 +154,71 @@ func workBounds() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/store.DigestKeepLimit"},
+		},
+		// Issue sync's GitHub connection (docs/issue-sync.md). Each answer
+		// is read whole and refused past the limit; nothing is retained but
+		// the one token file.
+		{
+			Name: WorkIssueSyncResponseBytes, Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/githubissues.MaxResponseBytes"},
+		},
+		{
+			Name: WorkIssueSyncTokenFileBytes, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/githubissues.MaxTokenFileBytes"},
+		},
+		{
+			// One device flow is polled at most this long; then the person
+			// starts again and gets a new code.
+			Name: WorkIssueSyncDeviceSeconds, Class: Buffer, Unit: Seconds,
+			Limit: 900, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/githubissues.MaxDeviceFlowSeconds"},
+		},
+		{
+			// A create reads this many of the account's newest issues to
+			// find one an unacknowledged attempt opened; older ones are not read.
+			Name: WorkIssueSyncScanRows, Class: Observation, Unit: Rows,
+			Limit: 30, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/githubissues.MaxIssueScanRows"},
+		},
+		{
+			Name: WorkIssueSyncJiraResponse, Class: Buffer, Unit: Bytes,
+			Limit: 256 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/jiraissues.MaxResponseBytes"},
+		},
+		{
+			Name: WorkIssueSyncJiraCredential, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/jiraissues.MaxCredentialFileBytes"},
+		},
+		{
+			// The Jira project picker lists this many projects; a person
+			// with more types the key of one that is not listed.
+			Name: WorkIssueSyncJiraProjects, Class: Observation, Unit: Rows,
+			Limit: 100, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/jiraissues.MaxProjects"},
+		},
+		{
+			// Tracker calls in one reconciler pass; the rest wait for the
+			// next pass fifteen seconds later.
+			Name: WorkIssueSyncLinksPerPass, Class: Observation, Unit: Rows,
+			Limit: 20, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/issuesync.MaxLinksPerPass"},
+		},
+		{
+			Name: WorkIssueSyncRetrySeconds, Class: Buffer, Unit: Seconds,
+			Limit: 3600, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/issuesync.MaxRetrySeconds"},
 		},
 	}
 }

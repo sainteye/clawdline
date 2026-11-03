@@ -56,7 +56,8 @@ type segment struct {
 
 // Recovery is what Open found from earlier boots.
 type Recovery struct {
-	Segments int `json:"segments"`
+	Segments        int `json:"segments"`
+	EntriesExamined int `json:"entries_examined"`
 	// Sealed segments closed cleanly; Unsealed ones were active when their
 	// process died and are read up to their last whole, valid frame.
 	Sealed   int `json:"sealed"`
@@ -109,6 +110,7 @@ func recoverDir(dir string) ([]*segment, uint64, Recovery, error) {
 			return nil, 0, rec, &Error{Code: classify(err), Field: "dir"}
 		}
 	}
+	rec.EntriesExamined = seen
 	var segs []*segment
 	var next uint64
 	boots := map[string]bool{}

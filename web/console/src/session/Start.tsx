@@ -17,6 +17,12 @@ import { ProjectFolderPicker } from "../pages/projects/ProjectFolderPicker.js"
 import { removeProjectPlace } from "../pages/work/api.js"
 import { catalogRefusalDetail, catalogWord } from "../catalog.js"
 import { assistantAdmits, assistantLabel, assistantRolesAdmit, assistantUnavailable, type AssistantOperation } from "./antigravity-ui.js"
+import { resumeCommandPlace } from "./resume-command.js"
+import type { Assistant } from "@clawdline/contract"
+import { WorkModelChoice } from "../pages/work/WorkModelChoice.js"
+import { useMachineVersion } from "../machine/NeedsUpdate.js"
+import type { DefaultModelOption } from "../pages/settings/api.js"
+import "../pages/work/work.css"
 
 /**
  * Starting a session, and picking one back up, against the `div#start` sheet
@@ -90,6 +96,10 @@ let with_: string | null = null
 let persona = ""
 /** The team the role row shows when no persona is chosen. */
 let team = ""
+/** The model chosen for the next start, kept with the assistant it belongs to; null for the default. */
+let model: { assistant: string; option: DefaultModelOption } | null = null
+/** Redraws the React model row after the imperative state it reads has changed. */
+let redrawModel: () => void = () => {}
 /** The persona chosen for the next resume from the place entered; "" for none. */
 let resumeAs = ""
 let loading = false
@@ -100,6 +110,15 @@ let startArch = ""
 let pressing: string | null = null
 let find = ""
 let resume = false
+interface ResumeEntry {
+  assistant: string
+  cwd?: string
+  query: string
+  machine?: { id: string; name: string }
+}
+let resumeOnly = false
+let resumeEntry: ResumeEntry | null = null
+let resumeSearch = ""
 let at: Place | null = null
 let pasts: PastRow[] | null = null
 /** The past list was asked for and not read: it is not empty, it is unknown, and the sheet must not say "no records". */
@@ -294,7 +313,7 @@ function matchingPast(): PastRow[] {
   const q = find.trim().toLowerCase()
   return (pasts || []).filter((r) => {
     if (!q) return true
-    return (r.title || "").toLowerCase().indexOf(q) >= 0
+    return ((r.title || "") + " " + r.id).toLowerCase().indexOf(q) >= 0
   })
 }
 
@@ -353,7 +372,7 @@ function drawWith(): void {
     chip.setAttribute("aria-pressed", a.id === with_ ? "true" : "false")
     chip.onclick = () => {
       with_ = a.id
-      if (!resumable()) { resume = false; leave() }
+      if (!resumable()) { resume = resumeOnly; leave() }
       draw()
     }
     row.appendChild(chip)
@@ -367,16 +386,36 @@ function chosenPersona(): string {
   return personaById(personasNow(onMachine?.id ?? null), id) ? id : ""
 }
 
+/**
+ * The model row, the Board's per-launch choice: shown for a new start in a
+ * Project on the machine this console reads, whose model catalog is the one
+ * `/v1/settings/default-models` answers with. A machine Session uses the
+ * configured default, and a start on another machine would read the wrong
+ * catalog, so neither offers it.
+ */
+function modelRowShown(): boolean {
+  const sheet = el("start")
+  return !!sheet && !sheet.hidden && write && mode === "session" && !machineOnly && !at && !onMachine &&
+    !!with_ && !!places?.length && !(resume && resumable())
+}
+
+/** The chosen model for `with_`, when the row is offered; "" for the default. */
+function chosenModel(): string {
+  return modelRowShown() && model && model.assistant === with_ ? model.option.value : ""
+}
+
 /** The role chips; see the header. */
 function drawPersona(): void {
   const row = el("start-persona")
   const catalog = personasNow(onMachine?.id ?? null) ?? []
-  // Every draw rebuilds the chips; the sideways scroll is kept across it, so a
-  // press on a chip the person scrolled to does not throw the row back.
+  // The shared renderer keeps the native team picker attached across refreshes;
+  // keep the chips' sideways scroll as well.
   const scrolled = row.scrollLeft
   row.hidden = !assistantRolesAdmit(with_, assistants.find((a) => a.id === with_)) || !catalog.length || (!at && resume && resumable())
-  row.innerHTML = ""
-  if (row.hidden) return
+  if (row.hidden) {
+    row.innerHTML = ""
+    return
+  }
   const choose = (id: string) => {
     if (at) {
       resumeAs = id
@@ -435,7 +474,7 @@ function drawResume(): void {
   const row = el("start-resume")
   row.innerHTML = ""
   // Resuming needs a project to resume in; with none, the sheet's one job is adding a folder.
-  row.hidden = !write || (!at && !!places && places.length === 0)
+  row.hidden = !write || (!at && (resumeOnly || !!places && places.length === 0))
   if (row.hidden) return
 
   if (at) {
@@ -490,6 +529,7 @@ function edge(): void {
 
 function draw(): void {
   L.setStartSpin(null)
+  redrawModel()
   if (sheetHidden()) return
   el("start-say").classList.remove("loading")
   const list = el("start-list")
@@ -523,7 +563,7 @@ function draw(): void {
   editProjects.setAttribute("aria-label", editLabel)
   editProjects.title = editLabel
   editProjects.setAttribute("aria-pressed", editingProjects ? "true" : "false")
-  el("start-title").textContent = machineOnly ? "Clawdfather" : mode === "terminal" ? nextWord("terminalStartTitle") : T().webStart
+  el("start-title").textContent = machineOnly ? "Clawdfather" : mode === "terminal" ? nextWord("terminalStartTitle") : resumeOnly ? T().webResumeWith : T().webStart
   machineAction.hidden = !machineOnly
   machineAction.disabled = !!pressing || !!wait || !admitted("start") || !write
   machineAction.querySelector(".label")!.textContent =
@@ -611,7 +651,7 @@ function draw(): void {
     row.type = "button"
     row.className = "place"
     row.dataset.id = p.id
-    row.disabled = !!pressing || !!wait || editingProjects || (mode !== "terminal" && !admitted(resume && resumable() ? "resume" : "start"))
+    row.disabled = !!pressing || !!wait || editingProjects || (mode !== "terminal" && !admitted(resume ? "resume" : "start"))
     if (pressing === p.id) row.dataset.busy = "1"
     row.innerHTML = '<canvas></canvas><span class="name"></span><span class="where"></span>'
 
@@ -665,7 +705,7 @@ function drawPast(list: HTMLElement, box: HTMLInputElement): void {
   const loadingPast = reading && !pasts
   el("start-say").classList.toggle("loading", loadingPast)
 
-  box.hidden = !(pasts && pasts.length > 1)
+  box.hidden = !find && !(pasts && pasts.length > 1)
   if (box.hidden && box.value) {
     box.value = ""
     find = ""
@@ -690,7 +730,7 @@ function drawPast(list: HTMLElement, box: HTMLInputElement): void {
     row.type = "button"
     row.className = "place past"
     row.dataset.session = r.id
-    const open = r.live ? L.bySessionId(r.id) : null
+    const open = r.live ? L.bySessionId(r.id, with_, resumeOnly ? onMachine?.id ?? L.localSessionMachine : undefined) : null
     row.disabled = !!pressing || !!wait || (!!r.live && !open) || (!r.live && !admitted("resume"))
     if (pressing === r.id) row.dataset.busy = "1"
     row.innerHTML = '<span class="name"></span><span class="where"></span>'
@@ -748,7 +788,13 @@ function load(background = false): void {
       said("")
       places = (d && d.places) || []
       assistants = (d && d.assistants) || []
-      if (!with_ || !assistants.some((a) => a.id === with_)) {
+      if (resumeEntry) {
+        const entry = resumeEntry
+        with_ = entry.assistant
+        const place = resumeCommandPlace(places, entry.cwd)
+        resumeEntry = null
+        if (place && resumable()) enter(place)
+      } else if (!resumeOnly && (!with_ || !assistants.some((a) => a.id === with_))) {
         with_ = assistants.find(a => assistantAdmits(a, "start"))?.id || assistants[0]?.id || null
       }
     })
@@ -774,8 +820,8 @@ function enter(place: Place): void {
   pasts = null
   pastsUnread = false
   capped = false
-  find = ""
-  el<HTMLInputElement>("start-filter").value = ""
+  find = resumeOnly ? resumeSearch : ""
+  el<HTMLInputElement>("start-filter").value = find
   said("")
   pastCursor = ""
   pastFailed = false
@@ -859,6 +905,7 @@ function press(id: string): void {
     return
   }
   if (pressing || wait || !write || !with_ || typeof api.startPlace !== "function") return
+  if (resumeOnly && !resumable()) { said(assistantStatus("resume")); return }
   const place = (places || []).find((p) => p.id === id) ?? null
   if (resume && resumable() && place) {
     enter(place)
@@ -873,7 +920,8 @@ function press(id: string): void {
   showProgress({ stage: "asking", resume: false, words: "", background: false, place: place || (id === MACHINE_PLACE
     ? { id, label: "Clawdfather", path: nextWord("machineSessionScope") } : null) })
   const as = id === MACHINE_PLACE ? "" : chosenPersona()
-  asked(() => api.startPlace(id, with_, undefined, as || undefined))
+  const chosen = id === MACHINE_PLACE ? "" : chosenModel()
+  asked(() => api.startPlace(id, with_, chosen || undefined, as || undefined))
     .then((d) => {
       startPress.settle(() => {
         pressing = null
@@ -905,7 +953,7 @@ function pick(sessionID: string): void {
   if (!row) return
 
   if (row.live) {
-    const open = L.bySessionId(sessionID)
+    const open = L.bySessionId(sessionID, with_, resumeOnly ? onMachine?.id ?? L.localSessionMachine : undefined)
     if (!open) return
     close()
     host.open(open.id)
@@ -1010,7 +1058,7 @@ function hideBand(): void {
   L.setBandSpin(null)
 }
 
-function openMode(machine: boolean, requested: StartMode = "session", on: { id: string; name: string } | null = null): void {
+function openMode(machine: boolean, requested: StartMode = "session", on: { id: string; name: string } | null = null, entry: ResumeEntry | null = null): void {
   // A previous pane may never report (for example its assistant exited).
   // Reopening the sheet after the observation window permits a new start.
   if (wait?.late) Start.dismiss()
@@ -1020,7 +1068,11 @@ function openMode(machine: boolean, requested: StartMode = "session", on: { id: 
   machineOnly = machine
   mode = machine ? "session" : requested
   editingProjects = false
-  resume = false
+  resumeOnly = !!entry
+  resumeEntry = entry
+  resumeSearch = entry?.query || ""
+  resume = resumeOnly
+  if (entry) { with_ = entry.assistant; places = null; assistants = [] }
   el("start-title").textContent = machine ? "Clawdfather" : T().webStart
   el("start").hidden = false
   said("")
@@ -1030,6 +1082,7 @@ function openMode(machine: boolean, requested: StartMode = "session", on: { id: 
   startArch = ""
   leave()
   persona = ""
+  model = null
   team = rememberedTeam()
   if (mode === "session") void loadPersonas(undefined, onMachine?.id ?? null).then(() => draw())
   if (mode === "session" && !hostedConsole()) void readTerminalMachine().then((reading) => {
@@ -1070,6 +1123,7 @@ function arrived(id: string) {
 export const Start = {
   open,
   openOn,
+  openResume: (entry: ResumeEntry) => openMode(false, "session", entry.machine ?? null, entry),
   openTerminal: () => openMode(false, "terminal"),
   openMachine: () => openMode(true),
   close,
@@ -1167,6 +1221,30 @@ export const Start = {
 }
 
 /** `div#start`, as `index.html` writes it; `static.js`'s words drawn by React. */
+/**
+ * API level 40 is the first daemon whose start route admits every model the
+ * catalog offers; an older one answers 404 to Fable or a Codex model. The row
+ * is offered only to a daemon known to be at least that level.
+ */
+const START_MODEL_API_LEVEL = 40
+
+/** The model row; React draws it, from the sheet's imperative state. */
+function StartModelRow() {
+  const version = useMachineVersion()
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    redrawModel = () => setTick((n) => n + 1)
+    return () => { redrawModel = () => {} }
+  }, [])
+  if (!modelRowShown() || !with_ || (version.apiLevel ?? 0) < START_MODEL_API_LEVEL) return null
+  const assistant = with_
+  return <div className="start-model" id="start-model">
+    <WorkModelChoice key={assistant} id="start-model-options" assistant={assistant as Assistant}
+      choice={model?.assistant === assistant ? model.option : null} disabled={!!pressing || !!wait}
+      onPick={(option) => { model = option ? { assistant, option } : null; draw() }} />
+  </div>
+}
+
 export function StartSheet() {
   const T = L.strings
   const bound = useRef(false)
@@ -1199,8 +1277,9 @@ export function StartSheet() {
     const sheet = el("start-sheet")
     const filter = el<HTMLInputElement>("start-filter")
     const list = el("start-list")
-    const onOverlay = () => close()
-    const onSheet = (ev: Event) => ev.stopPropagation()
+    // Only a press on the backdrop itself closes: the sheet lets its clicks
+    // bubble, so React's delegated handlers inside it (the model row) answer.
+    const onOverlay = (ev: Event) => { if (ev.target === ev.currentTarget) close() }
     const onClose = () => close()
     const onMachine = () => press(MACHINE_PLACE)
     const onInput = () => Start.typed(filter.value)
@@ -1237,6 +1316,7 @@ export function StartSheet() {
       if (document.getElementById("info")?.hidden === false) return
       const meta = ev.metaKey || ev.ctrlKey
       if (ev.key === "Escape") {
+        ev.preventDefault()
         close()
         ev.stopImmediatePropagation()
         return
@@ -1268,7 +1348,6 @@ export function StartSheet() {
       if (!typing) ev.stopImmediatePropagation()
     }
     start.addEventListener("click", onOverlay)
-    sheet.addEventListener("click", onSheet)
     el("start-close").addEventListener("click", onClose)
     el("start-machine-action").addEventListener("click", onMachine)
     el("start-add-project").addEventListener("click", onAddProject)
@@ -1289,7 +1368,6 @@ export function StartSheet() {
       window.clearInterval(placesRefresh)
       bound.current = false
       start.removeEventListener("click", onOverlay)
-      sheet.removeEventListener("click", onSheet)
       el("start-close")?.removeEventListener("click", onClose)
       el("start-machine-action")?.removeEventListener("click", onMachine)
       el("start-add-project")?.removeEventListener("click", onAddProject)
@@ -1316,6 +1394,7 @@ export function StartSheet() {
           <div className="row" id="start-machine" hidden></div>
           <div className="row" id="start-with" hidden></div>
           <div className="row persona-row" id="start-persona" role="group" aria-label={nextWord("personaPicker")} hidden></div>
+          <StartModelRow />
           <div className="row" id="start-resume" hidden></div>
           <button className="chip machine-start" id="start-machine-action" type="button" hidden>
             <span className="clawdfather-crown" aria-hidden="true" />

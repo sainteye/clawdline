@@ -15,7 +15,7 @@ import (
 // commands (including start and resume) have different destination contracts.
 func sessionMutation(word string) bool {
 	switch word {
-	case "send", "answer", "key", "interrupt", "end", "archive-session":
+	case "native-terminal-input", "send", "answer", "key", "interrupt", "end", "archive-session":
 		return true
 	}
 	return false

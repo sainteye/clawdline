@@ -1,9 +1,9 @@
-/** Stable machine pane names are independent of the standalone window's tab indices. */
+/** Stable pane names for machine controls embedded in website Settings. */
 export const MACHINE_PANES = ["general", "voice", "remote", "orchestrator", "dispatch-policy"] as const
 export type SettingsPane = typeof MACHINE_PANES[number]
 
 export function settingsPanes(cloud: boolean): readonly string[] {
-  return cloud ? ["browser", "work", "status", "workflow"] : ["browser", "work", "status", "workflow", ...MACHINE_PANES]
+  return cloud ? ["browser", "work", "status", "workflow", "remote"] : ["browser", "work", "status", "workflow", ...MACHINE_PANES]
 }
 
 /** A tablist's automatic activation, including wraparound and direct endpoint keys. */

@@ -16,7 +16,7 @@
     },
     "Backend": {
       "type": "string",
-      "enum": ["iterm", "tmux", "owned"]
+      "enum": ["iterm", "tmux", "owned", "claude_remote"]
     },
     "Assistant": {
       "type": "string",

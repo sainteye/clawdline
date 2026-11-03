@@ -1,5 +1,7 @@
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
 import { catalogRefusalDetail, catalogWord, currentCatalogTag } from "../catalog.ts"
+// @ts-expect-error -- Node runs the TypeScript source directly.
+import { nextWord } from "../next-strings.ts"
 import { describeFailure } from "../legacy/js/core/failure-text.js"
 
 // The copied formatter is pinned to the retired app. New Cloud refusal codes
@@ -49,8 +51,11 @@ export function failureParts(
   const key = typeof code === "string" ? SESSION_RECEIPT_SENTENCES[code] : undefined
   const own = typeof options === "object" ? options?.sentence : undefined
   const untranslated = !!detail && detail.lang === "en" && currentCatalogTag() !== "en"
+  const encodingSentence = code === "read_payload_corrupt" ? nextWord("compressedReadFailed")
+    : code === "read_payload_too_large" ? nextWord("compressedReadTooLarge")
+    : code === "read_encoding_unsupported" || code === "read_compression_unavailable" ? nextWord("compressedReadUnsupported") : undefined
   const sentence = (untranslated && own ? own : detail?.text) ?? own ??
-    (key ? catalogWord("legacy", key) : undefined)
+    (encodingSentence ?? (key ? catalogWord("legacy", key) : undefined))
   const said = (describeFailure as (
     error: unknown,
     options?: string | { sentence?: string; fallback?: string },

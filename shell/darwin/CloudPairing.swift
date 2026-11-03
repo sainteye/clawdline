@@ -32,9 +32,17 @@ private struct DaemonPairAgentProgress: Decodable, Equatable {
     let state: String
     let summary: String?
     let failedReason: String?
+    let comparison: Comparison?
+
+    struct Comparison: Decodable, Equatable {
+        let machine_id: String
+        let offer_sha256: String
+        let viewer_fingerprint: String
+        let machine_fingerprint: String
+    }
 
     enum CodingKeys: String, CodingKey {
-        case state, summary
+        case state, summary, comparison
         case failedReason = "failed_reason"
     }
 
@@ -159,6 +167,10 @@ final class CloudPairAgent: NSObject, WKScriptMessageHandlerWithReply {
 
     private static func tell(_ view: WKWebView, taskID: String, _ now: DaemonPairAgentProgress) {
         var detail: [String: Any] = ["task_id": taskID, "state": now.state]
+        if let c = now.comparison {
+            detail["comparison"] = ["machine_id": c.machine_id, "offer_sha256": c.offer_sha256,
+                "viewer_fingerprint": c.viewer_fingerprint, "machine_fingerprint": c.machine_fingerprint]
+        }
         if let summary = now.summary { detail["summary"] = summary }
         if let reason = now.failedReason { detail["failed_reason"] = reason }
         guard let data = try? JSONSerialization.data(withJSONObject: detail),
@@ -232,6 +244,12 @@ final class CloudPairAgent: NSObject, WKScriptMessageHandlerWithReply {
 @MainActor
 final class CloudPairLocal: NSObject, WKScriptMessageHandlerWithReply {
     static let name = "clawdlinePairLocal"
+    private let trustedOrigin: URL
+
+    init(trustedOrigin: URL = cloudHome) {
+        self.trustedOrigin = trustedOrigin
+        super.init()
+    }
     private var busy = false
     private var invitationAllowed = false
     private var connectionAllowed = false
@@ -247,7 +265,7 @@ final class CloudPairLocal: NSObject, WKScriptMessageHandlerWithReply {
         let origin = message.frameInfo.securityOrigin
         return CloudPairingAccess.allows(mainFrame: message.frameInfo.isMainFrame,
             scheme: origin.`protocol`, host: origin.host, port: origin.port,
-            page: message.webView?.url, trusted: cloudHome)
+            page: message.webView?.url, trusted: trustedOrigin)
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage,

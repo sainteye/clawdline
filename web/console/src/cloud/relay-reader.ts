@@ -24,6 +24,8 @@
 // without a page (`relay-reader.test.ts`).
 import type { CarriedWord, CarryTable } from "./carry.js"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
+import { readPersonaDisplay } from "./persona-cache.ts"
+// @ts-expect-error -- Node loads the source extension in focused behavior tests.
 import { usageOverviewQuery } from "./carry.ts"
 import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
@@ -131,6 +133,8 @@ export interface CloudEvent {
  * are `CloudWriteClient`, reached only through `relay-writer.ts`.
  */
 export interface CloudReadClient {
+  readonly account?: string | null
+  readonly deviceID?: string | null
   sendDiagnostic?(machine: string, data: Record<string, unknown>): Promise<unknown>
   readonly ready?: boolean
   readonly allowWrites?: boolean
@@ -247,7 +251,7 @@ export interface CloudReadClient {
    */
   snippets?(identity?: CloudIdentity, options?: { fresh?: boolean }): Promise<CloudSnippets>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
-  transcriptForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal): Promise<unknown>
+  transcriptForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, signal?: AbortSignal, held?: TranscriptPage): Promise<unknown>
   transcriptPageForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string }, before: number, signal?: AbortSignal, revision?: string): Promise<unknown>
   readForGeneration?(destination: { machineID: string; sessionID: string; executionGeneration: string },
     word: string, fields: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
@@ -906,6 +910,24 @@ export class RelayReader {
       if (method !== "GET") {
         return this.refuse(method, path, 501, "cloud_not_carried", this.notCarried(method, path))
       }
+      const graphProject = projectUnifyRoute(path, "graphify")
+      if (graphProject) {
+        this.only(url, path)
+        const client = this.connected()
+        if (!client._place) throw Object.assign(new Error("This console cannot resolve this Project."), { code: "cloud_not_carried", status: 501 })
+        const place = client._place(graphProject)
+        if (place.machine !== this.machine) throw Object.assign(new Error("This Project belongs to another machine."), { code: "cloud_project_machine_mismatch", status: 409 })
+        return await this.machineRead(init?.signal, method, path, "project-graphify", { project: place.id })
+      }
+      const graphSession = /^\/v1\/sessions\/([^/]+)\/graphify$/u.exec(path)
+      if (graphSession) {
+        this.only(url, path)
+        const id = decodeURIComponent(graphSession[1]!)
+        return await this.sessionRead(init?.signal, method, path, "session-graphify", client =>
+          this.options.fleetTarget?.() ? this.coherentSession(id, init?.signal, "session-graphify").then(target =>
+            client.readForGeneration?.(target, "session-graphify", {}, init?.signal ?? undefined)) :
+            client._read?.({ machine: this.machine, session: id }, "session-graphify", {}, "session-graphify"))
+      }
       const projectFile = projectFileRoute(path)
       if (projectFile) {
         this.only(url, path)
@@ -1030,6 +1052,9 @@ export class RelayReader {
           if (!body) return this.refuse(method, path, 400, "invalid_query", "Usage overview accepts days=7 or days=28 and one project.")
           return await this.machineRead(init?.signal, method, path, "usage.overview", body)
         }
+        case "/v1/tool-library":
+          this.only(url,path)
+          return await this.machineRead(init?.signal,method,path,"tools.catalog",{})
         case "/v1/squad/catalog":
           this.only(url, path)
           return await this.machineRead(init?.signal, method, path, "squad.catalog", {})
@@ -1215,6 +1240,13 @@ export class RelayReader {
         case "/v1/transcript": {
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
+          const view = url.searchParams.get("view")
+          if (view?.startsWith("tool-v1:") || view?.startsWith("tool-v1z:") || view?.startsWith("entry-v1:") || view?.startsWith("entry-v1z:")) {
+            const body = await this.connected().readForGeneration!(await this.coherentSession(session, init?.signal),
+              "transcript", { limit: CLOUD_TRANSCRIPT_LIMIT, view }, init?.signal ?? undefined)
+            this.note(method, path, "relay", undefined, { word: "transcript" })
+            return json(200, body)
+          }
           // An appended read (`after=`) is the daemon's own: this seam answers
           // from its held page, which is not "only what was appended", so it
           // says no and the page reads whole. Pages from here never carry
@@ -1331,7 +1363,8 @@ export class RelayReader {
           return await this.machineRead(init?.signal, method, path, "work.digests", { kind: q.kind ?? "" })
         }
         case "/v1/work/v2/items": {
-          const q = this.only(url, path, "project", "status", "q", "cursor")
+          const q = this.only(url, path, "project", "status", "q", "cursor", "view")
+          if (q.view && q.view !== "cards-v1") return this.refuse(method, path, 400, "bad_request", "Unknown board query field.")
           let project = q.project ?? ""
           if (project) {
             const client = this.connected()
@@ -1347,6 +1380,13 @@ export class RelayReader {
               })
             }
             project = place.id
+          }
+          // A new word keeps the old exact-key decoders untouched. Unknown
+          // capability uses the legacy read; a later live descriptor can opt in.
+          if (q.view === "cards-v1" && this.machineImplements("work.v2.cards")) {
+            return await this.machineRead(init?.signal, method, path, "work.v2.cards", {
+              project, status: q.status ?? "open", query: q.q ?? "", ...(q.cursor ? { cursor: q.cursor } : {}),
+            })
           }
           // Keep the first page's older body exact: daemons from before Board
           // pagination reject an extra empty cursor instead of ignoring it.
@@ -1387,8 +1427,29 @@ export class RelayReader {
           // machine other than the one this page reads: the roles offered have
           // to be the roles the machine that will run it knows. It is the same
           // naming `/v1/places` takes for that sheet's Projects.
-          const q = this.only(url, path, "machine")
-          return await this.machineRead(init?.signal, method, path, "personas", {}, q.machine || undefined)
+          const q = this.only(url, path, "machine", "view")
+          const machine = q.machine || this.machine
+          if (q.view && q.view !== "display-v1") return this.refuse(method, path, 400, "invalid_persona_view", "Use display-v1 and a SHA-256 catalog version.", "http.f5873bd0885dfca2")
+          const client = await this.connectedFor(init?.signal)
+          const descriptor = descriptorObject(descriptorObject(client?.orchestratorSnapshots?.get(machine))?.machine)
+          if (q.view !== "display-v1" || descriptor?.persona_display_v1 !== true) {
+            return await this.machineRead(init?.signal, method, path, "personas", {}, machine)
+          }
+          const scope = client?.account && client.deviceID ? JSON.stringify([client.account, client.deviceID, machine]) : null
+          const ask = (fields: Record<string, unknown>) => this.machineRead(init?.signal, method, path, "personas", fields, machine)
+          let response: Response
+          try { response = await readPersonaDisplay(ask, scope, init?.signal) }
+          catch (error) {
+            if (!init?.signal?.aborted && ["malformed_read", "unknown_command"].includes(failureCode(error)))
+              return await this.machineRead(init?.signal, method, path, "personas", {}, machine)
+            throw error
+          }
+          if (!response.ok && !init?.signal?.aborted) {
+            const body = await response.clone().json().catch(() => null) as { error?: string; code?: string } | null
+            if (["malformed_read", "unknown_command"].includes(body?.error ?? body?.code ?? ""))
+              return await this.machineRead(init?.signal, method, path, "personas", {}, machine)
+          }
+          return response
         }
         // Project settings sync (docs/project-sync.md): this machine's offer,
         // one offered project in full, and what this machine mirrors.
@@ -2086,7 +2147,7 @@ export class RelayReader {
           const target = await this.coherentSession(session)
           pinMs = Date.now() - pinStarted
           const wireStarted = Date.now()
-          body = await client.transcriptForGeneration!(target)
+          body = await client.transcriptForGeneration!(target, undefined, held?.answer ?? undefined)
           wireMs = Date.now() - wireStarted
         } else {
           const wireStarted = Date.now()
@@ -2533,6 +2594,23 @@ export class RelayReader {
       agent_count_unknown: data.agent_count_unknown === true }
   }
 
+  /** Native prompt text belongs only to this opened, authorized execution. */
+  private withPromptSuggestion(client: CloudReadClient, row: CloudRow): CloudRow {
+    if (row.assistant !== "claude" || row.state !== "idle" && row.state !== "working") return row
+    const id = typeof row.session === "string" ? row.session : row.id
+    const target = this.options.fleetTarget?.()
+    if (target && (target.machineID !== this.machine || target.sessionID !== id || target.executionGeneration !== row.execution_generation)) return row
+    const key = this.machine + "\u0000" + id
+    const rich = (client.detailSnapshots?.get(key) ??
+      (client as { sessionSnapshots?: ReadonlyMap<string, unknown> }).sessionSnapshots?.get(key)) as
+      | { machine?: unknown; session?: unknown; execution_generation?: unknown; state?: unknown;
+        prompt_suggestion?: unknown; source?: { freshness?: unknown; observed_at?: unknown } } | undefined
+    if (!rich || rich.machine !== this.machine || rich.session !== id || rich.execution_generation !== row.execution_generation ||
+      (rich.state !== row.state && !(row.state === "working" && rich.state === "idle")) || rich.source?.freshness !== "current" ||
+      !Number.isFinite(rich.source.observed_at) || Math.abs(this.now() - Number(rich.source.observed_at) * 1000) > RICH_MENU_FRESH_MS) return row
+    return { ...row, prompt_suggestion: rich.prompt_suggestion }
+  }
+
   /**
    * The compact display list carries no provider work. Restore it from the
    * authenticated s/ row for this exact execution, including complete zero
@@ -2541,6 +2619,7 @@ export class RelayReader {
    * the existing bounded restatement path; list rows never initiate reads.
    */
   private withProviderWork(client: CloudReadClient, row: CloudRow): CloudRow {
+    row = this.withPromptSuggestion(client, row)
     row = this.withProviderCount(client, row)
     if (row.assistant !== "claude" && row.assistant !== "codex") return row
     const id = typeof row.session === "string" ? row.session : row.id

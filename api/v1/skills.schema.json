@@ -35,6 +35,10 @@
         },
         "source": {
           "$ref": "#/$defs/SkillSource"
+        },
+        "invocation": {
+          "description": "The exact native invocation, including its prefix, for example /model or /prompts:review. Absent for older replies and ordinary skills, whose provider default prefix still applies.",
+          "type": "string"
         }
       }
     },

@@ -19,7 +19,7 @@ package http
 // TestEveryLocalWordThatNeedsThisMachineSaysSo refuses any other word that
 // would.
 //
-// The page supplies three values and no prose. Each is checked before it is
+// The page supplies a target, an offer, and an optional assistant choice, with no prose. Each is checked before it is
 // used: the offer is decoded exactly as `/v1/cloud/pairing/offer` decodes it,
 // the machine id must be the Cloud's own shape, and the name is cut to one
 // short line and then placed JSON-quoted. The instructions are the fixed
@@ -97,6 +97,7 @@ func (s *Server) startPairingAgent(w http.ResponseWriter, r *http.Request, raw [
 		Offer       string `json:"offer"`
 		MachineID   string `json:"machine_id"`
 		MachineName string `json:"machine_name"`
+		Assistant   string `json:"assistant"`
 		// Scope is this machine's choice of ceiling. Omitted keeps the
 		// device's existing pin; the offer itself never carries one.
 		Scope string `json:"scope"`
@@ -124,6 +125,14 @@ func (s *Server) startPairingAgent(w http.ResponseWriter, r *http.Request, raw [
 	if body.Scope != "" && !adaptercloud.ValidViewerScope(body.Scope) {
 		writeAuthRefusal(w, 400, "invalid_viewer_scope", "Choose readonly or operate.")
 		return
+	}
+	assistant := strings.TrimSpace(body.Assistant)
+	if assistant != "" && assistant != projects.AssistantClaude && assistant != projects.AssistantCodex {
+		writeAuthRefusal(w, http.StatusBadRequest, "bad_assistant", "Choose Claude or Codex for pairing.")
+		return
+	}
+	if assistant == "" {
+		assistant = pairAgentAssistant()
 	}
 	name := pairAgentMachineName(body.MachineName)
 	if name == "" {
@@ -158,7 +167,7 @@ func (s *Server) startPairingAgent(w http.ResponseWriter, r *http.Request, raw [
 	}
 	run := orchestrator.PairingAgentRun{
 		TaskID:      orchestrator.NewUUID(),
-		Assistant:   pairAgentAssistant(),
+		Assistant:   assistant,
 		ProjectDir:  projectDir,
 		MachineID:   machineID,
 		MachineName: name,

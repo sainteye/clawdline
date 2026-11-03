@@ -109,6 +109,18 @@ Sessions while a picture is shrinking cannot attach it to the newly opened Sessi
 - **Skills:** type `/` (or `$` for Codex) as the whole message to list the session's skills and
   commands. Choosing one writes it into the box and does not send.
 
+Claude Code's next-prompt suggestion can appear as gray placeholder text in an empty message
+box. Press **Space** or **Tab** to copy the complete suggestion into your draft, then edit it or
+press **Send**. Accepting never sends. Typing dismisses that suggestion; **Escape** also dismisses
+it. Space and Tab keep their input-method behavior while you are composing a character, and
+Shift+Tab keeps ordinary focus navigation. Undo removes an accepted suggestion.
+
+This reads an existing native suggestion from a color-preserving tmux Session. Clawdline does
+not generate another prediction or enable Claude's background model requests. Suggestions
+without reliable dim styling, truncated native suggestions and ambiguous multiline frames are
+withheld. Plain iTerm2 captures and Remote Control do not supply this terminal evidence. Claude
+itself can skip suggestions, so an empty placeholder does not imply a broken connection.
+
 **Check:** your message appears in the transcript, and the row goes back to working.
 
 ## Attention notes from Agents
@@ -142,6 +154,11 @@ the tunnel's HTTPS address, or the hosted console.
 3. Choose **Claude Code** or **Codex** under **Start with**, or resume a past
    conversation under **Pick up an earlier one**.
 
+Codex history includes interactive conversations from both the CLI and the VS Code extension.
+The selected folder must match the conversation's working directory exactly; background exec
+threads, provider subagents, temporary threads and dispatched children are excluded. Resuming
+keeps the original conversation ID.
+
 Codex history loads twenty provider records at a time. Choose **Load older sessions** to
 continue; a page containing only excluded background conversations still offers the next page.
 If a read fails, **Retry** keeps the sessions already loaded and retries the same page. A read
@@ -153,6 +170,8 @@ deadline; retries happen only when requested.
 **Check:** the sheet says **Started. Waiting for it to appear…** and the new
 session shows up in the list. With several machines on a Cloud account, **Machine** chooses
 where it runs.
+
+For a Board ticket, use the card’s new-Session assignment controls: choose Claude or Codex, expand **Model**, select a model, then confirm with **Start a new … Session**. That per-ticket flow is distinct from this general start sheet; see [Board assignment](board.md#assign-it-to-a-session).
 
 You can also press the microphone in the header (**Say what to start**) and describe the
 task; Clawdline drafts the project, assistant, model and first message, and nothing starts until you

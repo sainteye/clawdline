@@ -233,6 +233,10 @@ of the three work columns; completed items appear on the right. Hidden columns t
 space. The completed switch includes closed items in the existing cursor-bounded Board
 read; it does not complete work or record acceptance.
 
+Accepting an Agent proposal successfully turns on **Show Plans** before refreshing the desktop
+Board, so the created item is visible in the planning column. A failed acceptance or a rejection
+does not change the switches; the other visibility choices and fresh-visit defaults stay intact.
+
 Each desktop column is 280 CSS pixels wide. Only the column region scrolls horizontally;
 the page heading, Project selector, switches and search stay in place. Cards keep their
 existing detail modal and proposal actions, without drag operations. Empty work columns
@@ -802,8 +806,16 @@ distinct refusals, and terminal items or unassigned items cannot be reminded.
 
 ### 8.2 New Session
 
-The person chooses assistant and model. The assignment service reuses the existing reliable
-Root-Assignment mechanics below the API boundary:
+The person chooses an assistant and can optionally choose a model and role. Model and role
+choices start collapsed; each summary retains the selected model name or the role's icon and
+name. Model buttons wrap like Session info, and a long catalog scrolls within a bounded visual
+area. Models come from the machine's existing default-model catalog; an explicit choice is sent
+only for this launch, while **Use default** leaves the machine's configured default in charge.
+Switching assistant never sends the other assistant's selected model. The role picker retains
+its team selector and horizontally scrolling role chips, including **No role** and the explicit
+**AI suggestion** action. Reading these choices does not request AI work or change Settings.
+
+The assignment service reuses the existing reliable Root-Assignment mechanics below the API boundary:
 
 1. record intent and item relationship;
 2. open the terminal outside the store transaction;
@@ -1076,6 +1088,26 @@ membership, never stored placement.
 
 No other page keeps a machine-wide summary of work (the Now page was retired on 2026-09-26). Project pages link
 to the authoritative Board already filtered to that Project.
+
+### Board summary reads
+
+The console opts into `GET /v1/work/v2/items?view=cards-v1`. This is a separate,
+allowlisted projection with a `summary: true` marker, identity, placement, version,
+ownership, compact gate state, and a 200-rune description preview. Documents, images,
+steps, acceptance text, assignments, events, and landings stay on the existing one-item
+read. The store skips document, image, and step relation reads for summary pages. Search
+still matches the complete source content before projection, and paging and counts retain
+the full list's semantics.
+
+Opening a summary shows the existing accessible loading skeleton, then mounts the complete
+item and its mutation controls only after the one-item read succeeds. A failed read offers
+retry. A later list refresh cannot replace an open full item with a summary. Item versions
+trigger detail refreshes; late answers cannot replace a newer open request.
+
+Cloud carries this through the separately advertised `work.v2.cards` word, leaving older
+exact-key decoders unchanged. A missing or unknown capability uses the original list/search
+word. A new local console gets one legacy-list fallback when an older daemon rejects the
+new view. Legacy lists, Session ownership reads, and one-item reads retain their full shapes.
 
 ## 13. Capacity and concurrency
 

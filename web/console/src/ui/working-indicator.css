@@ -1,0 +1,20 @@
+.working-indicator { display:flex; align-items:center; gap:14px; padding:12px 0; min-width:0; }
+.working-indicator-art { width:64px; height:44px; flex:none; overflow:visible; }
+.working-indicator-copy { min-width:0; overflow-wrap:anywhere; }
+.working-indicator-title { margin:0; font-size:14px; font-weight:600; }
+.working-indicator-detail { margin:5px 0 0; font-size:13px; opacity:.8; }
+.working-indicator-extra { margin-top:8px; font-size:12px; opacity:.65; font-variant-numeric:tabular-nums; }
+.working-indicator-extra p { margin:0; }
+.working-indicator-body { animation:clawdline-working-bob 1.2s steps(2,end) infinite; }
+.working-indicator-foot { animation:clawdline-working-step 1.2s steps(2,end) infinite; }
+.working-indicator-foot.is-right { animation-delay:-.6s; }
+.working-indicator-dot { animation:clawdline-working-dot 1.8s steps(2,end) infinite; opacity:.3; }
+.working-indicator-dot:nth-of-type(4) { animation-delay:.3s; }
+.working-indicator-dot:nth-of-type(5) { animation-delay:.6s; }
+@keyframes clawdline-working-bob { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-2px); } }
+@keyframes clawdline-working-step { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-3px); } }
+@keyframes clawdline-working-dot { 0%,100% { opacity:.3; } 50% { opacity:1; } }
+@media (prefers-reduced-motion:reduce) {
+  .working-indicator-body,.working-indicator-foot,.working-indicator-dot { animation:none; transform:none; }
+  .working-indicator-dot { opacity:.7; }
+}

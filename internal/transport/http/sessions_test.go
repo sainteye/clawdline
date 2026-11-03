@@ -2,10 +2,34 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
+
+func TestProviderCapacityBlockOverridesReceiptsWithoutInventingAMenu(t *testing.T) {
+	s := &Server{}
+	item := session.Session{ID: "%3", Assistant: session.AssistantCodex,
+		State: session.StateIdle, Evidence: session.EvidenceScreen,
+		Activity: session.Activity{ProviderBlock: session.ProviderBlockModelCapacity}}
+	for _, err := range []error{nil, errors.New("records unavailable")} {
+		row := rowJSON(t, s.sessionRow(rowInput{item: item, ownErr: err}))
+		if row["provider_block"] != "model_capacity" || row["work_state"] != "waiting_you" || row["work_person_needed"] != true || row["state"] != "idle" {
+			t.Fatalf("capacity row = %+v", row)
+		}
+		for _, field := range []string{"menu", "disposition", "screen_reading"} {
+			if _, ok := row[field]; ok {
+				t.Fatalf("capacity invented %s", field)
+			}
+		}
+	}
+	item.Activity.ProviderBlock = ""
+	row := rowJSON(t, s.sessionRow(rowInput{item: item}))
+	if _, ok := row["provider_block"]; ok || row["work_person_needed"] == true || row["work_state"] == "waiting_you" {
+		t.Fatalf("recovered row retained a capacity block: %+v", row)
+	}
+}
 
 // rowJSON is a whole row as it is sent, the shadowed menu included.
 func rowJSON(t *testing.T, row sessionRowWire) map[string]any {

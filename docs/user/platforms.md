@@ -49,19 +49,19 @@ What it adds:
 
 - **A menu bar item** (✳). It turns to the accent colour with a dot when a session is waiting for
   you, and shows a count when several are working. Its menu opens the console
-  window (**Home / Settings center**), **Start at login**, **Settings…** and **Quit Clawdline**. The app's own menus are in Traditional Chinese; the names here are English translations.
+  window (**Home / Settings center**), **Start at login** and **Quit Clawdline**. The app's own menus are in Traditional Chinese; the names here are English translations.
 - **A mascot in the notch**, on displays that have one. It can be turned off.
-- **A settings window** with tabs for general settings, remote access,
-  dispatch, and Cloud pairing with a QR code.
+- **Settings in the website console**, with machine controls in the local browser.
+  Cloud pairing is available through the setup guide. The standalone App settings
+  window has been removed.
 
 **Check:** the app's window shows the same session list as the browser. An app that starts its own
 daemon (built from a checkout) finds a daemon already holding port 7727, lets its own exit and
 shows the one already there; quitting it stops only the daemon it started.
 
 The browser settings page uses tabs and two columns. A paired browser connected directly to the
-local daemon also has a **This machine** tab for the machine settings from the native settings
-window. Changing those settings requires Send access for that browser.
-The hosted Cloud browser has **Browser**, **Work**, and **Status** tabs; it only offers the settings
+local daemon also has machine, voice, remote access, dispatch and dispatch-rules tabs. Changing those settings requires Send access for that browser.
+The hosted Cloud browser has **Browser**, **Work**, **Status**, and **Workflow and control** tabs; it only offers the settings
 its remote connection can change.
 
 ## Linux: a `systemd --user` service

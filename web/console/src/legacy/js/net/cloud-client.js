@@ -3562,8 +3562,11 @@ export class CloudClient {
     _read(value, type, extra, answer, timeoutMs, readOptions) {
         // Native byte cursors are meaningful only with their held generation.
         // Different revisions must never join one pending older-page read.
+        // The negotiated view is also part of the machine's reply name and
+        // the pinned proof. Keep it when rebuilding the revision-bound name.
         if (type === "transcript" && extra && extra.before && extra.revision) {
-            answer = "transcript.before." + extra.before + ".revision." + extra.revision;
+            answer = "transcript.before." + extra.before + ".revision." + extra.revision +
+                (extra.view ? ".view." + extra.view : "");
         }
         if (this.retired) {
             return this._viaSuccessor(function (next) {

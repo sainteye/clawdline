@@ -268,6 +268,9 @@ func machineAuthed(r *http.Request) bool { return accessOf(r).machine }
 
 func (g *gate) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/api-performance" {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		// Before anything else, and before authentication: these are about
 		// who is allowed to be asking at all, not about who they are.
 		if msg := g.crossOriginRefusal(r); msg != "" {
@@ -376,7 +379,13 @@ func openPath(p string) bool {
 // orchestrator's credential opens; the shadows of the board and the schedules
 // are gone (D07).
 func machineScoped(p string) bool {
+	if p == "/v1/tool-library" || p == "/v1/tool-library/prepare" {
+		return true
+	}
 	if squadAgentPath(p) {
+		return true
+	}
+	if parts := strings.Split(strings.TrimPrefix(p, "/v1/sessions/"), "/"); strings.HasPrefix(p, "/v1/sessions/") && len(parts) == 2 && parts[0] != "" && parts[1] == "outputs" {
 		return true
 	}
 	if strings.HasPrefix(p, "/v1/orchestrator/") {
@@ -403,7 +412,7 @@ func machineScoped(p string) bool {
 		return true
 	}
 	switch p {
-	case "/v1/board", "/v1/next/coordinator", "/v1/places":
+	case "/v1/doctor", "/v1/board", "/v1/next/coordinator", "/v1/places":
 		return true
 	case "/v1/artifacts/images":
 		// Storing a session's pictures is the orchestrator's (images.go); the
@@ -543,12 +552,19 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may read, and not change default models."
 		}
-	case p == "/v1/settings/work-gates" || p == "/v1/settings/workflow":
+	case p == "/v1/settings/work-gates" || p == "/v1/settings/workflow" || p == "/v1/settings/integrations":
 		// This narrow route exposes only the two future-assignment gate
 		// defaults. A paired device needs Send to change them, as it does for
 		// the other machine-wide controls carried to Settings.
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may read, and not change work gates."
+		}
+	case p == "/v1/integrations/github" || p == "/v1/integrations/github/device" || p == "/v1/integrations/jira" ||
+		strings.HasPrefix(p, "/v1/issue-sync/"):
+		// Connecting or forgetting this machine's GitHub authorization is the
+		// person's act: this machine, or a paired device that may send.
+		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			return http.StatusForbidden, "forbidden", "This device may read, and not change the issue tracker connections."
 		}
 	case p == "/v1/settings/notifications":
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
@@ -559,6 +575,10 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		// The export handler separately requires Send for selected private scopes.
 		if !v.Allowed {
 			return http.StatusForbidden, "forbidden", "This device may not read squad packages."
+		}
+	case p == "/v1/tool-library" || p == "/v1/tool-library/prepare":
+		if !machine && !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			return http.StatusForbidden, "forbidden", "Saving or preparing a tool needs send permission."
 		}
 	case strings.HasPrefix(p, "/v1/squad-packages/") || strings.HasPrefix(p, "/v1/squad/"):
 		if machine && squadAgentPath(p) {

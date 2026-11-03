@@ -9,12 +9,12 @@ import { failureWords, when } from "./shared.js"
 import { AUTHORITY, gateSnapshotText, gateStatus, roundStatus } from "./gate-status.js"
 import { epicGateDetailShown } from "./epic-gate.js"
 
-function compactOf(item: WorkV2Item): WorkGateCompactRead | undefined {
+function compactOf(item: Pick<WorkV2Item, "verification">): WorkGateCompactRead | undefined {
   const verification = item.verification
   return verification && "compact" in verification ? verification.compact : verification
 }
 
-export function WorkGateLine({ item, id }: { item: WorkV2Item; id?: string }) {
+export function WorkGateLine({ item, id }: { item: Pick<WorkV2Item, "verification" | "gate_snapshot_cycle">; id?: string }) {
   const gate = compactOf(item)
   return <span id={id} className="work-gate-line" data-gate-state={gate?.latest_round?.state ?? "none"}>
     {gate ? gateStatus(gate) : item.gate_snapshot_cycle > 0 ? catalogWord("literal", "4d02b00558fa") : gateStatus()}

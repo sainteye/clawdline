@@ -12,10 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/claudeusage"
 	"github.com/sainteye/clawdline/internal/adapters/limits"
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -79,6 +81,7 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 			Persona           string                        `json:"persona,omitempty"`
 			State             contract.SessionState         `json:"state"`
 			WorkState         contract.WorkState            `json:"work_state"`
+			ProviderBlock     string                        `json:"provider_block,omitempty"`
 			WorkNote          string                        `json:"work_note,omitempty"`
 			WorkProvenance    contract.WorkProvenance       `json:"work_provenance,omitempty"`
 			WorkMovedBy       string                        `json:"work_moved_by,omitempty"`
@@ -105,6 +108,7 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 			WaitingForOmitted int64                        `json:"waiting_for_omitted,omitempty"`
 		}
 		type presentation struct {
+			Backend             contract.Backend   `json:"backend,omitempty"`
 			Assistant           contract.Assistant `json:"assistant,omitempty"`
 			ID                  string             `json:"id"`
 			Title               string             `json:"title"`
@@ -116,9 +120,9 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 		}
 		rows := make([]presentation, 0, len(snapshot.Sessions))
 		for _, row := range snapshot.Sessions {
-			rows = append(rows, presentation{Assistant: row.Assistant, ID: row.ID, Title: row.Label, CWD: row.CWD, ProjectKey: row.ProjectKey,
+			rows = append(rows, presentation{Backend: row.Backend, Assistant: row.Assistant, ID: row.ID, Title: row.Label, CWD: row.CWD, ProjectKey: row.ProjectKey,
 				Icon: row.Icon, ExecutionGeneration: row.ExecutionGeneration,
-				Status: status{SessionID: row.SessionID, EpicParent: row.EpicParent, Persona: row.Persona, State: row.State, WorkState: row.WorkState, WorkNote: row.WorkNote,
+				Status: status{SessionID: row.SessionID, EpicParent: row.EpicParent, Persona: row.Persona, State: row.State, WorkState: row.WorkState, WorkNote: row.WorkNote, ProviderBlock: string(row.ProviderBlock),
 					WorkProvenance: row.WorkProvenance, WorkMovedBy: row.WorkMovedBy,
 					WorkPersonNeeded: row.WorkPersonNeeded, Line: row.Line, Shells: row.Shells, BackgroundReading: row.BackgroundReading, BackgroundOmitted: row.BackgroundOmitted,
 					HeavyWork: row.HeavyWork, Source: row.Source, Activity: row.Activity,
@@ -897,10 +901,20 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		AgentsReading: wireAgentReading(item.AgentReading),
 		// When this row last moved, from this daemon: the list's order no
 		// longer depends on what any one browser happened to have watched.
-		Activity: wireActivity(item.Activity),
+		Activity:      wireActivity(item.Activity),
+		ProviderBlock: string(item.Activity.ProviderBlock),
 		// Read back from the process's command line; absent for none.
 		Persona:      item.Persona,
 		MachineScope: projects.IsMachineWorkspace(s.cfg.Dir, item.CWD),
+	}
+	if s.screens != nil && currentExecution(item, in.inv) {
+		item.ExpectedStart = in.live.ProcessStart
+		if s.screens.PromptSupported(item) {
+			row.PromptSuggestion = wirePromptSuggestion(s.screens.Peek(item))
+			if row.PromptSuggestion == nil {
+				row.PromptSuggestion = &contract.PromptSuggestion{State: "none", Source: "claude-terminal", ConversationID: item.ConversationID}
+			}
+		}
 	}
 	// The Project this row would be accepted into, by the claim's own rule:
 	// a subdirectory or a linked worktree of a repository is that repository.
@@ -960,6 +974,16 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 	// nothing it is saying is ready.
 	if row.Disposition != nil && row.Disposition.Scope == "session" {
 		row.Acceptance = in.acceptance
+	}
+	// A native provider refusal is actionable even when the terminal has no
+	// dialog and the broker's delivery/declaration records are unavailable.
+	if item.Activity.ProviderBlock == session.ProviderBlockModelCapacity {
+		row.WorkState = contract.WorkStateWaitingYou
+		row.WorkProvenance = contract.WorkProvenanceBroker
+		row.WorkNote, row.WorkMovedBy, row.WorkSince = "", "", 0
+		row.Disposition, row.Acceptance = nil, nil
+		needed := true
+		out.WorkPersonNeeded = &needed
 	}
 	row.RootAssignment = in.swift.RootAssignment(in.live)
 	if in.epicParent.OwnerSession != "" && in.epicParent.EpicID != "" {
@@ -1246,7 +1270,12 @@ var (
 func quotaReader() *limits.Reader {
 	limitsOnce.Do(func() {
 		home, _ := os.UserHomeDir()
-		limitsReader = limits.NewReader(home, nil)
+		// One Claude reading for every consumer: when the status line has no
+		// fresh window, the reader asks the installed Claude Code itself.
+		limitsReader = limits.NewReader(home, nil).WithClaudeCode(
+			func(ctx context.Context) ([]claudeusage.Window, claudeusage.Outcome) {
+				return claudeusage.Ask(ctx, transcript.ClaudeExecutable(home))
+			})
 	})
 	return limitsReader
 }

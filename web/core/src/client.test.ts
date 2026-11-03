@@ -28,3 +28,20 @@ test("native transcript cursors carry their held revision on both read direction
     ["conversation-b", null, null, null],
   ])
 })
+
+test("older local daemons get one v1 fallback without losing transcript cursors", async () => {
+  const urls: URL[] = []
+  const client = new ClawdlineClient({ baseUrl: "http://fixture", fetch: async (input: string | URL | Request) => {
+    const url = new URL(String(input)); urls.push(url)
+    return url.searchParams.get("view") === "tools-v2"
+      ? Response.json({ error: "invalid_transcript_view", detail: "Unknown view" }, { status: 400 })
+      : Response.json({ entries: [{role:"tool",text:"legacy full output"}], signature: "new", evidence: "transcript" })
+  } })
+  await client.transcriptAfter("s", 20, 100, "revision")
+  assert.equal(urls.length, 2)
+  assert.deepEqual(urls.map(url => url.searchParams.get("view")), ["tools-v2", "tools-v1"])
+  for (const url of urls) {
+    assert.equal(url.searchParams.get("after"), "100")
+    assert.equal(url.searchParams.get("revision"), "revision")
+  }
+})

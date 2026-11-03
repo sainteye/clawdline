@@ -202,6 +202,7 @@ export function RestoreSheet({
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") {
+        ev.preventDefault()
         if (!busy) onClose()
         ev.stopImmediatePropagation()
         return

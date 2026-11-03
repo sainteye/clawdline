@@ -86,3 +86,48 @@ func TestMissingAndHTMLLaunchImagesAreRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPublishedApplicationIconsMatchRenderer(t *testing.T) {
+	if err := generateBrand(filepath.Join("..", "..", "..", "..", ".."), true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBrandIconsRejectBrokenContainers(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"web/console/public", "shell/darwin/Resources"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := generateBrand(root, false); err != nil {
+		t.Fatal(err)
+	}
+	name := filepath.Join(root, "web/console/public/favicon.ico")
+	body, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body[18] = 0
+	if err := os.WriteFile(name, body, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := generateBrand(root, true); err == nil {
+		t.Fatal("invalid ICO image offset passed")
+	}
+	if err := generateBrand(root, false); err != nil {
+		t.Fatal(err)
+	}
+	name = filepath.Join(root, "shell/darwin/Resources/Clawdline.icns")
+	body, err = os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body[12] = 255
+	if err := os.WriteFile(name, body, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := generateBrand(root, true); err == nil {
+		t.Fatal("invalid ICNS chunk passed")
+	}
+}

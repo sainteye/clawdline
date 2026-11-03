@@ -804,7 +804,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "session-snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test", "diagnostics.events",
 		"board", "board-command", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-antigravity-consent-status", "project-antigravity-consent-change", "project-unify-plan", "project-unify-apply", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "project-worktree-remove", "capacity", "provider-quotas", "default-models", "default-models-update", "notification-rules", "notification-rules-update", "work-gate-settings", "work-gate-settings-update", "notification-settings", "notification-settings-update", "machine-usage", "update", "update-apply", "personas",
+		"project-worktree-lifecycle-refresh", "project-worktree-remove", "capacity", "provider-quotas", "doctor", "default-models", "default-models-update", "notification-rules", "notification-rules-update", "work-gate-settings", "work-gate-settings-update", "notification-settings", "notification-settings-update", "machine-usage", "api-performance", "update", "update-apply", "personas",
 		"work.proposals", "work.decisions", "work.decision", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.gate-export", "work.v2.gate-decision", "work.v2.gate-purge",
@@ -1849,6 +1849,28 @@ func TestThePersonasReadCrossesWithNothingButItsName(t *testing.T) {
 			t.Fatalf("took %v: %+v, asked %v", body, answer, r.seen)
 		}
 	}
+	for _, version := range []string{"", strings.Repeat("a", 64)} {
+		r := &router{}
+		body := map[string]any{"type": "personas", "session": MachineReplySession, "request": "display", "view": "display-v1"}
+		if version != "" {
+			body["version"] = version
+		}
+		result := open(r).Handle(context.Background(), request(t, ClassCtl, body))
+		if !result.OK() || len(r.seen) != 1 || r.last().Query["view"] != "display-v1" || r.last().Query["version"] != version {
+			t.Fatalf("display did not cross exactly: %+v %+v", result, r.seen)
+		}
+	}
+	for _, body := range []map[string]any{
+		{"type": "personas", "session": MachineReplySession, "request": "display", "version": strings.Repeat("a", 64)},
+		{"type": "personas", "session": MachineReplySession, "request": "display", "view": "display-v2"},
+		{"type": "personas", "session": MachineReplySession, "request": "display", "view": "display-v1", "private": true},
+	} {
+		r := &router{}
+		if result := open(r).Handle(context.Background(), request(t, ClassCtl, body)); result.Code != "malformed_read" || len(r.seen) != 0 {
+			t.Fatalf("unexpected display shape crossed: %+v", result)
+		}
+	}
+
 }
 
 // TestAStartOrAResumeMayNameAPersona: `persona` is an optional seventh key on

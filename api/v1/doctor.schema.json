@@ -1,0 +1,159 @@
+{
+  "$id": "doctor.schema.json",
+  "$defs": {
+    "DoctorProvider": {
+      "type": "object",
+      "required": [
+        "id",
+        "source",
+        "state",
+        "stale"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "observed_at": {
+          "type": "integer",
+          "nullable": true
+        },
+        "used_percent": {
+          "type": "number",
+          "nullable": true
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      }
+    },
+    "DoctorEvent": {
+      "type": "object",
+      "required": [
+        "at",
+        "provider"
+      ],
+      "properties": {
+        "at": {
+          "type": "integer"
+        },
+        "provider": {
+          "$ref": "#/$defs/DoctorProvider"
+        }
+      }
+    },
+    "DoctorTool": {
+      "type": "object",
+      "required": [
+        "id",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "DoctorCoverage": {
+      "type": "object",
+      "required": [
+        "state",
+        "dropped",
+        "lost_unknown"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "dropped": {
+          "type": "integer"
+        },
+        "from": {
+          "type": "integer"
+        },
+        "through": {
+          "type": "integer"
+        },
+        "lost_unknown": {
+          "type": "boolean"
+        }
+      }
+    },
+    "DoctorReport": {
+      "type": "object",
+      "required": [
+        "schema",
+        "at",
+        "version",
+        "os",
+        "arch",
+        "tools",
+        "providers",
+        "history",
+        "coverage",
+        "gaps"
+      ],
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "string"
+        },
+        "os": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DoctorTool"
+          }
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DoctorProvider"
+          }
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DoctorEvent"
+          }
+        },
+        "coverage": {
+          "$ref": "#/$defs/DoctorCoverage"
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "web_version": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -4,6 +4,8 @@ Clawdline Cloud is an optional way to read and act on a machine from the hosted 
 
 This page describes the **public repository's machine and browser code**. The account control plane, relay deployment, billing, retention and production operations belong to a private service repository and cannot be verified from this checkout. Its private `PROTOCOL.md` is the service-side contract; [cloud-wire.md](cloud-wire.md) specifies the public-side wire format; [the dated implementation record](records/cloud-wire-implementation-2026-09.md) holds test evidence. Local tests are not proof of current production behavior.
 
+For the separate account-service support content boundary and multilingual FAQ, see [Cloud help and private questions](cloud-support.md). Support questions are explicitly submitted service content; they do not enter the encrypted machine Session relay.
+
 ## Components and trust boundary
 
 | Component | Responsibility in this repository |
@@ -20,7 +22,19 @@ An envelope carries routing metadata the relay needs, while its payload is encry
 
 `clawdline cloud login` registers this machine and waits for account approval. `clawdline cloud on` sets `cloud_enabled` and asks the running daemon to apply it immediately. If no daemon is running, the switch applies at its next start. The daemon checks the switch before loading Cloud identity or keys. `clawdline cloud status` and local `GET /v1/cloud/status` distinguish off, unconfigured, connected and reconnecting states and expose typed failure information and counters. Default endpoints are defined in [`settings.go`](../internal/adapters/cloud/settings.go); configured endpoints can differ.
 
+The console groups browser and phone pairing under **Settings → Remote** in both local and hosted transports. Cloud exposes this pairing pane without mounting the machine-only settings window. Both the native App’s Local and Cloud views register the pairing bridge, each bound to its own exact origin; Local does not need a switch to Cloud. The native App bridge keeps local confirmation for QR invitations and pasted offers; ordinary browsers offer the setup-guide link and a copyable CLI command instead of a text-only dead end. Cloud's **Pair this browser** action opens the existing target picker. Pairing writes remain behind the machine's own credential. **Sessions and access** retains only workflow defaults and iTerm2 consent.
+
 The machine can create a one-time pairing link with `clawdline cloud pair`, or accept a browser-originated offer with `clawdline cloud pair --offer <code>`. Pairing transfers the content key and trust information through the handover protocol. Compare the fingerprints shown at both ends. A browser that retains old account or key records can appear paired while the machine lacks its local pin. The machine list therefore keeps the normal pairing action under each machine’s more menu even when it appears paired. Repeating the authenticated handover repairs that browser without deleting the machine or admitting it from roster membership alone. `clawdline cloud devices` lists viewers known to the machine, and `clawdline cloud revoke <device-id>` revokes one locally. Local pairing and revoke routes require this machine's own credential. The [remote access guide](user/remote-access.md) gives setup steps.
+
+On startup, the account roster names candidates for independent local pairing-key
+restoration. A complete, validated saved tuple restores pairing before any relay
+publication arrives; it proves neither machine presence nor a Session count.
+Unknown or unreadable storage never displays an inline instruction to pair again.
+An ordinary absent-key answer can expose that action; explicit repair remains in
+the more menu. Foreground, page restoration and network-return events retry local
+readings without polling or creating a pairing. Each machine shares its pending
+read, and a return during that read is retained for one follow-up rather than
+lost. A retired account or connection cannot publish its late result.
 
 ### Per-browser machine grants
 
@@ -49,6 +63,23 @@ Measured internal queue costs and the unchanged delivery contract are recorded i
 The [independent-reader baseline](performance/cloud-independent-reads.md) separates per-viewer reads from same-reader coalescing and documents its local-only measurement boundary.
 
 The [Go CPU attribution](performance/cloud-read-cpu.md) measures the parser and independent-reader cost separately from Node and network waiting.
+
+The browser recommends a paired helper machine when one is available. Choose Claude or Codex and
+press **Start pairing** once; generating the offer and handing it to the helper are one flow.
+Progress appears above the collapsed **Other pairing methods** disclosure. Code, terminal, QR,
+and copied instructions remain available there. Assisted pairing closes its dialog automatically
+only after the authenticated handover agrees with the successful helper task's structured
+`pairing_comparison` observation of both fingerprints. The helper binds that observation to the
+exact offer with SHA-256; the browser also checks the requested machine ID. This trusts the
+assistant to read output over the helper's existing SSH/session-manager access, as the person
+previously did when reading its report; it is not independent proof of remote execution.
+Missing, malformed, stale or mismatched evidence retains manual fingerprint comparison.
+A handover that arrives first keeps following the helper task until its observation arrives.
+`pair-agent-start` carries the optional `assistant` field (`claude` or `codex`) through the encrypted
+command to the helper. Omitting it preserves the helper's installed-assistant default. Helpers
+running older decoders refuse the new field rather than silently use another assistant; update
+the helper before using the selector. A task ending is not proof of pairing: the offer response
+still owns the handover; task success alone never dismisses the comparison.
 
 ## Publications, reads and commands
 
@@ -212,9 +243,9 @@ spinner canvases with the drawing clock.
 An account with more than one readable machine opens on **all of them**: the fleet list is the
 way in, and the machine list — which is where pairing, renaming and forgetting live — is one press
 away under the header's name. A tab that has chosen a single machine keeps it, because the choice
-is that tab's own (`sessionStorage`); a new tab has made none. An account with one readable machine
-still opens its list once, so the first thing a person sees names the machine and offers its
-pairing. The rules are `web/console/src/cloud/opening.ts` and are tested there.
+is that tab's own (`sessionStorage`); a new tab has made none. One machine with a confirmed
+pairing opens its Session console even without that tab-local choice. A route whose pairing is
+still unknown remains on the list. The rules are `web/console/src/cloud/opening.ts` and are tested there.
 
 On a cold load the gate holds one opening card until the account machine roster answers. The
 roster's active ids decide which retained relay rows may appear; a revoked registration or an old
@@ -245,6 +276,13 @@ subagents are running. Complete zero, unknown readings and omitted-row counts re
 their meanings. An opened detail missing that reading asks a machine supporting
 `sessions.row` to restate just that row, sharing the question recovery's existing
 throttle. Unopened list rows initiate no additional reads.
+
+The machine picker and Devices use the same signed, complete, fresh `ss/` inventory
+to count Sessions, including child Sessions. They do not count opened rich `s/`
+details or wait for every status row to replay. A missing, partial, invalid or
+expired marker leaves the count unknown; only a complete empty inventory proves
+zero. A pinned `sessions.list` fallback can show the Session list while its signed
+inventory is still arriving, without inventing a machine count.
 
 The provider subagent view replaces the main Session's to-do fold with **Close**,
 which returns to the parent conversation without stopping the agent. Claude and
@@ -337,6 +375,19 @@ follow-up; ordinary unread questions stop following when the Session resumes.
 The [static HTML report reader](html-artifacts.md) describes the document format, isolation, compatibility and measurement boundary for self-contained artifacts.
 
 
+### Composer draft storage and the deferred resilience proposal
+
+Session composers persist text drafts in localStorage at exit/background
+boundaries. Pictures stay only in the current editor and must be selected again
+after leaving it or reloading the page. Composer draft reads no longer wait on
+IndexedDB image storage; ordinary image sending is unchanged.
+
+[Cloud storage resilience and protocol compatibility](cloud-storage-resilience.md)
+records the optional image-storage dependency pitfall and the proposed IndexedDB failure recovery, connection-scoped replay state,
+mixed-version operation, rollback, costs and legacy-protocol retirement gates.
+The architecture recommendation is deferred; the compatibility paths and
+temporary pairing it describes have not been implemented by this change.
+
 ### Recovering a browser that can sign in but cannot read
 
 An account session and a machine's cryptographic pairing are separate. A cached
@@ -377,3 +428,5 @@ execution. No additional timer, provider request, transcript subscription, or pe
 read is introduced. Count changes update the existing status row without changing the display
 presentation generation or rereading titles. Tests cover running-to-finished, zero, partial,
 unknown, stale and older-machine readings.
+
+For operator-only service resources and owner-local API counts/latency, see [service performance monitoring](service-performance-monitoring.md). The two records and permissions are separate.

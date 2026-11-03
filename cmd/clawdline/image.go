@@ -90,11 +90,15 @@ func sendImages(stdout, stderr io.Writer, b *broker, target, from string, paths 
 		return report(stdout, stderr, "image send", a)
 	}
 	var out struct {
-		Artifacts []struct {
+		OutputIndexError string `json:"output_index_error"`
+		Artifacts        []struct {
 			ID string `json:"id"`
 		} `json:"artifacts"`
 	}
 	_ = json.Unmarshal(a.Body, &out)
+	if out.OutputIndexError != "" {
+		fmt.Fprintln(stderr, cliCopy("misc", "image.output_index_failed", "The pictures were stored, but their original paths could not be indexed. Register them later with clawdline output add."))
+	}
 	for _, art := range out.Artifacts {
 		fmt.Fprintln(stdout, art.ID)
 	}

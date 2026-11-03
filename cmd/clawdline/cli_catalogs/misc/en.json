@@ -272,5 +272,8 @@
   "webhook_create.usage": "usage: clawdline webhook create --url-file <new private path> --key <key> --session <conversation> --run <run> [--port n]",
   "webhook_create.file": "The URL file could not be created exclusively; nothing was requested.",
   "webhook_create.connection": "The daemon could not be opened; nothing was requested.",
-  "webhook_create.uncertain": "Creation could not be confirmed. Retry with the same key; do not create a second webhook."
+  "webhook_create.uncertain": "Creation could not be confirmed. Retry with the same key; do not create a second webhook.",
+  "output.usage": "usage: clawdline output add [--target terminal] [--from conversation] [--port n] [--kind created|modified|published] <file>",
+  "output.identity_missing": "The Session terminal identity is unavailable.",
+  "image.output_index_failed": "The pictures were stored, but their original paths could not be indexed. Register them later with clawdline output add."
 }

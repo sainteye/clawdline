@@ -54,6 +54,52 @@ the installer again after the fix is safe: it picks up from what is already in p
 An update that does not come up healthy rolls back by itself; the console's Settings page and
 `clawdline update` give the reason ([updates.md](../updates.md)).
 
+## macOS file permissions
+
+An assistant can report `Operation not permitted` for Downloads, Documents or
+Desktop even when the Clawdline Next window already has access. macOS may
+attribute the assistant's file operations to Clawdline's separately installed
+background service.
+
+| Permission entry | Default installed location |
+| --- | --- |
+| `clawdline-daemon` (or `clawdline` on older installations) | `~/.local/share/clawdline-next/service/` |
+| Clawdline Next | The graphical `Clawdline Next.app` bundle |
+
+1. Open **System Settings → Privacy & Security → Files and Folders**.
+2. Find the background service entry. If names are ambiguous, use **Show in
+   Finder**, when offered, to verify its executable location. Custom installations
+   may use a different install root.
+3. Enable only the needed folder, such as **Downloads Folder**, for that service.
+   If there is no entry or folder switch, perform the intended file operation once
+   and respond to any macOS prompt. A prior denial may not prompt again; repeated
+   retries do not grant permission.
+4. Retry the affected operation in the intended Session. An enabled switch alone
+   is not proof of successful access. If it still fails, record the error and time.
+
+macOS consent and the assistant sandbox are separate. Codex `--add-dir` and command
+approvals do not override macOS protected-folder permissions; macOS consent does
+not expand a writable workspace. A service rename or update can require permission
+to be checked again, and an existing tmux Session can retain its original launch
+context. Save work before deliberately opening a replacement Session. These steps
+do not require Full Disk Access, disabling sandbox protections, resetting every
+privacy grant or editing the TCC database.
+
+If the folder switch is missing or access remains denied, report the running
+version, service name/location and failure time with personal paths removed.
+For advanced diagnosis, TCC `AttributionChain` and `AUTHREQ_SUBJECT` at the time of
+the attempt identify the authorization subject: `responsible_path` names it, while
+`accessing` names the executable doing the work. A parent-process chain alone is
+not sufficient. Logs can be private or unavailable, and cached decisions may not
+emit a new event. Keep raw logs private:
+
+```sh
+log stream --info --debug --predicate 'subsystem == "com.apple.TCC"'
+```
+
+The maintained English and Traditional Chinese online instructions are at
+[macOS file permissions](https://clawdline.com/docs/troubleshooting/#macos-file-permissions).
+
 ## Sessions
 
 | You see | It means | Do this |
@@ -63,7 +109,7 @@ An update that does not come up healthy rolls back by itself; the console's Sett
 | You can read a session but cannot type into it | The sign-in or machine pairing may be missing, or that machine's Cloud command switch is off | Check the selected machine and pairing, then inspect `clawdline cloud status`; see [remote-access.md](remote-access.md) |
 | A state reads as unknown, not idle | The screen or transcript could not be read, and Clawdline does not guess | Open the session's screen; the state returns when the evidence does |
 | An Agent says it sent you a picture, and the conversation shows none | It stored the picture without naming its Session and put a `<clawdline-image id="…">` marker in its prose, which a model may keep only as a summary; or it used Claude Code's `SendUserFile`, which does not reach Clawdline | Ask it to run `clawdline image send <picture>` from that Session. The picture then appears under its reply with nothing written into it ([sessions.md](sessions.md#pictures-from-the-agent)) |
-| The Status Line's right edge says `Plan limits unknown`, or a fresh Linux box never shows Claude's `5h`/`7d` | Claude Code hands those percentages to the stdin of `statusLine.command` and to nothing else, so with no status line configured nothing ever writes `~/.claude/statusline-cache/rate-limits.json` | Configure a status line that writes that file ([usage.md](usage.md)). **Session info** names the missing file. Codex's weekly window is unaffected |
+| The Status Line's right edge says `Plan limits unknown`, or a fresh Linux box never shows Claude's `5h`/`7d` | Claude Code hands those percentages to the stdin of `statusLine.command` and to nothing else, so with no status line configured nothing ever writes `~/.claude/statusline-cache/rate-limits.json` | Clawdline then asks Claude Code itself, at most every 15 minutes, and every place that shows these numbers reads that answer; give it a minute. If they stay unknown, **Session info** says what the ask found: no Claude Code installed, no plan windows (an API key or signed out), or no answer (update Claude Code). A status line that writes that file ([usage.md](usage.md)) is still read first. Codex's weekly window is unaffected |
 
 ## Clawdline Cloud
 
@@ -78,6 +124,12 @@ An update that does not come up healthy rolls back by itself; the console's Sett
 | --- | --- | --- |
 | `mirror_source_mismatch` | Another machine already owns that project's settings here | Choose that machine as the source, or run `project import --replace-source` to hand it over |
 | `clone_failed` | The receiving machine could not reach the remote with its own credentials | Clone it by hand into the named directory, then sync again |
+
+## Doctor report
+
+For missing quota readings or version-dependent behavior, use
+[Doctor checks and private reports](doctor.md). Preview the report before submission;
+you do not need to paste terminal logs or share sign-in tokens.
 
 ## Still stuck
 

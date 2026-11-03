@@ -27,57 +27,65 @@ type Options struct {
 	Args                   []string
 	// NewSessionMode applies only to newly created conversations, never resume.
 	NewSessionMode string
+	// RawTrace explicitly opts into local raw ACP diagnostics, never Cloud export.
+	RawTrace bool
+	// TurnComplete runs outside conversation locks after a successful model turn.
+	// It shares the host lifetime and job; callers must not create a work queue.
+	TurnComplete func(context.Context, session.Session)
 }
 
 type Host struct {
-	mu      sync.Mutex
-	ctx     context.Context
-	cancel  context.CancelFunc
-	opts    Options
-	rows    map[string]*conversation
-	opening bool
-	closed  bool
-	jobs    sync.WaitGroup
-	store   *historyStore
+	mu       sync.Mutex
+	ctx      context.Context
+	cancel   context.CancelFunc
+	opts     Options
+	rows     map[string]*conversation
+	opening  bool
+	closed   bool
+	jobs     sync.WaitGroup
+	store    *historyStore
+	trace    *wireRecorder
+	traceErr string
 }
 
 type conversation struct {
-	mu               sync.Mutex
-	client           *antigravityprocess.Client
-	row              session.Session
-	entries          []contract.TranscriptEntry
-	tools            map[string]int
-	revision         uint64
-	omitted          int
-	bytes            int
-	busy             bool
-	stopping         bool
-	textIndex        int
-	writeGate        chan struct{}
-	model            string
-	models           []contract.SessionModel
-	effort           string
-	efforts          []string
-	structuredConfig bool
-	quota            *contract.SessionLimits
-	contextKnown     bool
-	context          antigravityacp.ContextUsage
-	store            *historyStore
-	profile          string
-	generation       string
-	ordinal          int64
-	textOrdinal      int64
-	textRole         string
-	uncertain        bool
-	hidden           bool
-	staging          bool
-	replaying        bool
-	storeErr         error
-	permission       *antigravityprocess.PermissionRequest
-	launchContext    LaunchContext
-	injected         *injectedTurn
-	replaySawUser    bool
-	noticeReads      map[string]bool
+	mu                sync.Mutex
+	client            *antigravityprocess.Client
+	row               session.Session
+	entries           []contract.TranscriptEntry
+	tools             map[string]int
+	revision          uint64
+	omitted           int
+	bytes             int
+	busy              bool
+	stopping          bool
+	textIndex         int
+	writeGate         chan struct{}
+	model             string
+	models            []contract.SessionModel
+	effort            string
+	efforts           []string
+	structuredConfig  bool
+	quota             *contract.SessionLimits
+	contextKnown      bool
+	context           antigravityacp.ContextUsage
+	store             *historyStore
+	profile           string
+	generation        string
+	ordinal           int64
+	textOrdinal       int64
+	textRole          string
+	uncertain         bool
+	hidden            bool
+	staging           bool
+	replaying         bool
+	storeErr          error
+	permission        *antigravityprocess.PermissionRequest
+	launchContext     LaunchContext
+	injected          *injectedTurn
+	replaySawUser     bool
+	noticeReads       map[string]bool
+	autoNameAttempted bool
 }
 
 type Error struct {
@@ -109,6 +117,15 @@ func New(ctx context.Context, opts Options) (*Host, error) {
 			return nil, err
 		}
 	}
+	if opts.RawTrace {
+		if h.store == nil {
+			h.traceErr = "trace_unavailable"
+		} else if recorder, err := openWireRecorder(opts.StateDir); err != nil {
+			h.traceErr = "trace_unavailable"
+		} else {
+			h.trace = recorder
+		}
+	}
 	return h, nil
 }
 func (h *Host) Name() string { return string(session.BackendOwned) }
@@ -118,6 +135,12 @@ func (h *Host) Open(ctx context.Context, req ports.OpenRequest) (session.Session
 }
 
 func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launch LaunchContext) (session.Session, error) {
+	return h.OpenWithModel(ctx, req, launch, "")
+}
+
+// OpenWithModel selects an offered native model before publishing ownership.
+// No prompt is sent, and a failed ACK closes only this new private process.
+func (h *Host) OpenWithModel(ctx context.Context, req ports.OpenRequest, launch LaunchContext, model string) (session.Session, error) {
 	if err := launch.validate(); err != nil {
 		return session.Session{}, err
 	}
@@ -126,7 +149,7 @@ func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launc
 	}
 	req.Cwd = filepath.Clean(req.Cwd)
 	h.mu.Lock()
-	if h.closed || h.ctx.Err() != nil || h.opening || h.activeLocked() >= MaxSessions {
+	if h.closed || h.ctx.Err() != nil || h.opening {
 		h.mu.Unlock()
 		return session.Session{}, refusal("unavailable")
 	}
@@ -138,7 +161,7 @@ func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launc
 	c := &conversation{tools: map[string]int{}, textIndex: -1, store: h.store, profile: filepath.Clean(h.opts.AccountDir), generation: rand.Text(), launchContext: launch}
 	ownedID := "owned:acp:" + rand.Text()
 	identityPath := h.identityPath(ownedID)
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{OnWire: h.wireObserver(ownedID), SessionIdentityPath: identityPath, Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: req.Cwd, SquadCapabilityPath: launch.SquadCapabilityPath, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime, OnUpdate: c.update, OnPermission: c.requestPermission})
 	if err != nil {
 		return session.Session{}, err
 	}
@@ -168,15 +191,20 @@ func (h *Host) OpenWithContext(ctx context.Context, req ports.OpenRequest, launc
 	if err := selectInitialMode(ctx, client, created, h.opts.NewSessionMode); err != nil {
 		return session.Session{}, err
 	}
+	c.mu.Lock()
+	err = c.readMetadata(created, true)
+	c.mu.Unlock()
+	if err != nil {
+		return session.Session{}, err
+	}
+	if err := selectInitialModel(ctx, client, c, model); err != nil {
+		return session.Session{}, err
+	}
 	if err := publishIdentity(identityPath, client.SessionID()); err != nil {
 		return session.Session{}, err
 	}
 	now := time.Now()
 	c.mu.Lock()
-	if err := c.readMetadata(created, true); err != nil {
-		c.mu.Unlock()
-		return session.Session{}, err
-	}
 	c.row = session.Session{ID: ownedID, Persona: launch.Persona, SquadLaunchID: launch.SquadLaunchID, Backend: session.BackendOwned, PID: client.PID(), Assistant: session.AssistantAntigravity, CWD: req.Cwd, Label: req.Name, ConversationID: client.SessionID(), Binding: session.BindingProtocol, State: session.StateIdle, Evidence: session.EvidenceStructured, Activity: session.Activity{At: now, Evidence: session.EvidenceStructured}, Observation: session.Observation{ObservedAt: now, Provenance: "owned", Freshness: session.FreshnessCurrent}}
 	if err := c.saveState(); err != nil {
 		c.mu.Unlock()
@@ -270,10 +298,10 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		return err
 	}
 	if text == "/model" || strings.HasPrefix(text, "/model ") {
-		return h.selectModel(ctx, c, strings.TrimPrefix(text, "/model "), before)
+		return h.selectModel(ctx, c, strings.TrimSpace(strings.TrimPrefix(text, "/model ")), before)
 	}
 	if text == "/effort" || strings.HasPrefix(text, "/effort ") {
-		return h.selectConfig(ctx, c, "thinking_level", strings.TrimPrefix(text, "/effort "), before)
+		return h.selectConfig(ctx, c, "thinking_level", strings.TrimSpace(strings.TrimPrefix(text, "/effort ")), before)
 	}
 	h.mu.Lock()
 	if h.closed || h.ctx.Err() != nil {
@@ -311,6 +339,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 	go func() {
 		defer h.jobs.Done()
 		defer close(done)
+		notify := false
 		defer func() {
 			c.mu.Lock()
 			c.busy = false
@@ -318,7 +347,11 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 				close(c.writeGate)
 				c.writeGate = nil
 			}
+			row := c.row
 			c.mu.Unlock()
+			if notify && h.ctx.Err() == nil && h.opts.TurnComplete != nil {
+				h.opts.TurnComplete(h.ctx, row)
+			}
 		}()
 		if ctx.Err() != nil {
 			outcome = refusal("cancelled")
@@ -403,6 +436,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 		if result.StopReason != "end_turn" && result.StopReason != "cancelled" {
 			c.append(contract.TranscriptEntry{Role: "error", Text: "antigravity_turn_did_not_end_normally", At: time.Now().Unix()})
 		}
+		notify = result.StopReason == "end_turn" && c.storeErr == nil
 	}()
 	select {
 	case <-accepted:
@@ -499,6 +533,9 @@ func (h *Host) Shutdown() error {
 		err = errors.Join(err, c.Close())
 	}
 	h.jobs.Wait()
+	if h.trace != nil {
+		err = errors.Join(err, h.trace.close())
+	}
 	h.mu.Lock()
 	clear(h.rows)
 	h.mu.Unlock()
@@ -687,6 +724,14 @@ func (h *Host) Stats() (sessions int, viewBytes int) {
 	return
 }
 
+func (h *Host) HistoryConnectionStats() (open, inUse int, waits int64, waited time.Duration) {
+	if h.store == nil {
+		return
+	}
+	st := h.store.db.Stats()
+	return st.OpenConnections, st.InUse, st.WaitCount, st.WaitDuration
+}
+
 func (h *Host) HistoryConnections() int {
 	if h.store == nil {
 		return 0
@@ -696,12 +741,13 @@ func (h *Host) HistoryConnections() int {
 
 // Facts are provider observations, not inferred prices or cumulative spend.
 type Facts struct {
-	Model   string
-	Models  []contract.SessionModel
-	Effort  string
-	Efforts []string
-	Limits  *contract.SessionLimits
-	Context *antigravityacp.ContextUsage
+	Model    string
+	Models   []contract.SessionModel
+	Effort   string
+	Efforts  []string
+	Limits   *contract.SessionLimits
+	Context  *antigravityacp.ContextUsage
+	Protocol *contract.SessionProtocol
 }
 
 func (h *Host) Facts(s session.Session) (Facts, error) {
@@ -712,6 +758,18 @@ func (h *Host) Facts(s session.Session) (Facts, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	f := Facts{Model: c.model, Models: append([]contract.SessionModel{}, c.models...), Effort: c.effort, Efforts: append([]string(nil), c.efforts...), Limits: quotaSnapshot(c.quota, time.Now())}
+	f.Protocol = &contract.SessionProtocol{Phase: "not_connected"}
+	if c.client != nil {
+		// Both are an owned metadata-only snapshot. No raw frame can enter it.
+		raw, _ := json.Marshal(c.client.Lifecycle())
+		if err := json.Unmarshal(raw, f.Protocol); err != nil {
+			return Facts{}, refusal("invalid_lifecycle")
+		}
+	}
+	f.Protocol.TraceEnabled = h.opts.RawTrace
+	if err := h.wireError(); err != "" {
+		f.Protocol.TraceError = err
+	}
 	if c.contextKnown {
 		reading := c.context
 		f.Context = &reading

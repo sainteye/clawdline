@@ -158,6 +158,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "GET", path: "/v1/sessions/%2519/info",
 		query: map[string]string{"parts": "summary"},
 	}, {
+		word:    "outputs",
+		body:    map[string]any{"type": "outputs", "session": pane, "expected_generation": pinnedGeneration},
+		session: pane, name: "outputs", method: "GET", path: "/v1/sessions/%2519/outputs",
+	}, {
+		word:    "output-file",
+		body:    map[string]any{"type": "output-file", "session": pane, "expected_generation": pinnedGeneration, "request": "output-1", "id": strings.Repeat("a", 64), "offset": "0", "revision": "", "size": ""},
+		session: pane, name: "read:output-1", method: "GET", path: "/v1/sessions/%2519/outputs/" + strings.Repeat("a", 64), query: map[string]string{"offset": "0", "revision": "", "size": ""},
+	}, {
 		word:    "git",
 		body:    map[string]any{"type": "git", "session": pane},
 		session: pane, name: "git",
@@ -200,10 +208,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		word: "pair-agent-start",
 		body: map[string]any{"type": "pair-agent-start", "session": machine, "request": "req-pair-agent",
-			"offer": "opaque", "machine_id": "mac_target", "machine_name": "Target"},
+			"offer": "opaque", "machine_id": "mac_target", "machine_name": "Target", "assistant": "codex"},
 		session: machine, name: "action:req-pair-agent",
 		method: "POST", path: "/v1/cloud/pairing/agent",
-		body2: `{"machine_id":"mac_target","machine_name":"Target","offer":"opaque"}`,
+		body2: `{"assistant":"codex","machine_id":"mac_target","machine_name":"Target","offer":"opaque"}`,
 	}, {
 		word:    "pair-agent-status",
 		body:    map[string]any{"type": "pair-agent-status", "session": machine, "request": "req-pair-status", "task_id": taskID},
@@ -248,6 +256,18 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body:    map[string]any{"type": "project-hide", "session": machine, "request": "req-hide", "path": "/projects/example"},
 		session: machine, name: "action:req-hide",
 		method: "DELETE", path: "/v1/places", body2: `{"paths":["/projects/example"]}`,
+	}, {
+		word:    "tools.catalog",
+		body:    map[string]any{"type": "tools.catalog", "session": machine, "request": "req-tools-catalog"},
+		session: machine, name: "read:req-tools-catalog", method: "GET", path: "/v1/tool-library",
+	}, {
+		word:    "tools.save",
+		body:    map[string]any{"type": "tools.save", "session": machine, "request": "req-tools-save", "changes": map[string]any{"expected_version": 0}},
+		session: machine, name: "action:req-tools-save", method: "POST", path: "/v1/tool-library", body2: `{"expected_version":0}`,
+	}, {
+		word:    "tools.prepare",
+		body:    map[string]any{"type": "tools.prepare", "session": machine, "request": "req-tools-prepare", "changes": map[string]any{"session": "%tools", "conversation": "conversation-a", "mode": "task", "task": "Review"}},
+		session: machine, name: "action:req-tools-prepare", method: "POST", path: "/v1/tool-library/prepare", body2: `{"conversation":"conversation-a","mode":"task","session":"%tools","task":"Review"}`,
 	}, {
 		word:    "squad.catalog",
 		body:    map[string]any{"type": "squad.catalog", "session": machine, "request": "req-squad-catalog"},
@@ -558,6 +578,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-work-v2-items",
 		method: "GET", path: "/v1/work/v2/items", query: map[string]string{"project": "p1", "cursor": "page-2"},
 	}, {
+		word: "work.v2.cards",
+		body: map[string]any{"type": "work.v2.cards", "session": machine,
+			"request": "req-work-v2-cards", "project": "p1", "status": "done", "query": "needle", "cursor": "page-3"},
+		session: machine, name: "read:req-work-v2-cards",
+		method: "GET", path: "/v1/work/v2/items",
+		query: map[string]string{"project": "p1", "status": "done", "q": "needle", "cursor": "page-3", "view": "cards-v1"},
+	}, {
 		word: "work.v2.search",
 		body: map[string]any{"type": "work.v2.search", "session": machine,
 			"request": "req-work-v2-search", "project": "p1", "status": "done", "query": "needle", "cursor": "page-3"},
@@ -803,6 +830,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-capacity",
 		method: "GET", path: "/v1/capacity",
 	}, {
+		word:    "doctor",
+		body:    map[string]any{"type": "doctor", "session": machine, "request": "req-doctor"},
+		session: machine, name: "read:req-doctor", method: "GET", path: "/v1/doctor",
+	}, {
 		word:    "provider-quotas",
 		body:    map[string]any{"type": "provider-quotas", "session": machine, "request": "req-provider-quotas"},
 		session: machine, name: "read:req-provider-quotas", method: "GET", path: "/v1/provider-quotas",
@@ -852,6 +883,63 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-workflow-write", method: "POST", path: "/v1/settings/workflow",
 		body2: `{"dispatch_full_permission":false,"session_auto_discovery":false}`,
 	}, {
+		word: "project-graphify-build", body: map[string]any{"type": "project-graphify-build", "project": "p1", "request": "build-1", "session": machine},
+		session: machine, name: "action:build-1", method: "POST", path: "/v1/projects/p1/graphify", body2: `{}`,
+	}, {
+		word: "session-graphify-build", body: map[string]any{"type": "session-graphify-build", "session": pane, "request": "build-1", "execution_generation": pinnedGeneration},
+		session: pane, name: "action:build-1", method: "POST", path: "/v1/sessions/" + segment(pane) + "/graphify", body2: `{}`,
+	}, {
+		word: "project-graphify", body: map[string]any{"type": "project-graphify", "project": "p1", "request": "req-graphify", "session": machine},
+		session: machine, name: "read:req-graphify", method: "GET", path: "/v1/projects/p1/graphify",
+	}, {
+		word: "session-graphify", body: map[string]any{"type": "session-graphify", "session": pane},
+		session: pane, name: "session-graphify", method: "GET", path: "/v1/sessions/" + segment(pane) + "/graphify",
+	}, {
+		word:    "integration-settings",
+		body:    map[string]any{"type": "integration-settings", "session": machine, "request": "req-integrations"},
+		session: machine, name: "read:req-integrations", method: "GET", path: "/v1/settings/integrations",
+	}, {
+		word:    "integration-settings-update",
+		body:    map[string]any{"type": "integration-settings-update", "session": machine, "request": "req-integrations-write", "changes": map[string]any{"workflow_skills_enabled": true, "graphify_enabled": false}},
+		session: machine, name: "action:req-integrations-write", method: "POST", path: "/v1/settings/integrations",
+		body2: `{"graphify_enabled":false,"workflow_skills_enabled":true}`,
+	}, {
+		word:    "github-connection",
+		body:    map[string]any{"type": "github-connection", "session": machine, "request": "req-gh"},
+		session: machine, name: "read:req-gh", method: "GET", path: "/v1/integrations/github",
+	}, {
+		word:    "github-connect",
+		body:    map[string]any{"type": "github-connect", "session": machine, "request": "req-gh-connect"},
+		session: machine, name: "action:req-gh-connect", method: "POST", path: "/v1/integrations/github/device",
+	}, {
+		word:    "github-disconnect",
+		body:    map[string]any{"type": "github-disconnect", "session": machine, "request": "req-gh-off"},
+		session: machine, name: "action:req-gh-off", method: "DELETE", path: "/v1/integrations/github",
+	}, {
+		word:    "jira-connection",
+		body:    map[string]any{"type": "jira-connection", "session": machine, "request": "req-jira"},
+		session: machine, name: "read:req-jira", method: "GET", path: "/v1/integrations/jira",
+	}, {
+		word: "jira-connect",
+		body: map[string]any{"type": "jira-connect", "session": machine, "request": "req-jira-connect",
+			"connection": map[string]any{"site": "https://acme.atlassian.net", "email": "pat", "token": "t"}},
+		session: machine, name: "action:req-jira-connect", method: "POST", path: "/v1/integrations/jira",
+		body2: `{"email":"pat","site":"https://acme.atlassian.net","token":"t"}`,
+	}, {
+		word:    "jira-disconnect",
+		body:    map[string]any{"type": "jira-disconnect", "session": machine, "request": "req-jira-off"},
+		session: machine, name: "action:req-jira-off", method: "DELETE", path: "/v1/integrations/jira",
+	}, {
+		word:    "jira-projects",
+		body:    map[string]any{"type": "jira-projects", "session": machine, "request": "req-jira-projects"},
+		session: machine, name: "read:req-jira-projects", method: "GET", path: "/v1/integrations/jira/projects",
+	}, {
+		word: "issue-sync.retry",
+		body: map[string]any{"type": "issue-sync.retry", "session": machine, "request": "req-retry",
+			"id": "2f0c6b9e-0000-4000-8000-000000000001"},
+		session: machine, name: "action:req-retry", method: "POST",
+		path: "/v1/issue-sync/2f0c6b9e-0000-4000-8000-000000000001/retry",
+	}, {
 		word:    "notification-settings",
 		body:    map[string]any{"type": "notification-settings", "session": machine, "request": "req-notifications"},
 		session: machine, name: "read:req-notifications",
@@ -859,10 +947,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		word: "notification-settings-update",
 		body: map[string]any{"type": "notification-settings-update", "session": machine, "request": "req-notifications-write",
-			"changes": map[string]any{"push_on_waiting": false}},
+			"changes": map[string]any{"push_on_waiting": false, "push_on_model_capacity": false}},
 		session: machine, name: "action:req-notifications-write",
 		method: "POST", path: "/v1/settings/notifications",
-		body2: `{"push_on_waiting":false}`,
+		body2: `{"push_on_model_capacity":false,"push_on_waiting":false}`,
+	}, {
+		word:    "api-performance",
+		body:    map[string]any{"type": "api-performance", "session": machine, "request": "req-performance", "hours": "1"},
+		session: machine, name: "read:req-performance", code: "read_transcript_unavailable", status: 503,
 	}, {
 		// The dashboard behind the session counts: machine-wide and
 		// parameterless, as the local route is.
@@ -902,6 +994,15 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 			"request": "req-role-snapshot", "conversation": "conversation-a"},
 		session: machine, name: "read:req-role-snapshot", method: "GET",
 		path: "/v1/squad/session-snapshots/conversation-a",
+	}, {
+		word:    "native-terminal-screen",
+		body:    map[string]any{"type": "native-terminal-screen", "session": pane},
+		session: pane, name: "native-terminal-screen", method: "GET", path: "/v1/sessions/%2519/native-terminal",
+	}, {
+		word:    "native-terminal-input",
+		body:    map[string]any{"type": "native-terminal-input", "session": pane, "request": "native-press", "expect": fingerprint, "key": "down"},
+		session: pane, name: "action:native-press", method: "POST", path: "/v1/sessions/%2519/native-terminal",
+		body2: `{"expect":"` + fingerprint + `","key":"down"}`,
 	}, {
 		word: "send",
 		body: map[string]any{"type": "send", "session": pane, "request": "req-send",

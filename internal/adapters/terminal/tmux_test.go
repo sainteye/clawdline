@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -29,13 +30,21 @@ func TestInventoryListsPanesUnderTheCLocale(t *testing.T) {
 	os.Unsetenv("TMUX")
 	os.Unsetenv("TMUX_PANE")
 	sock := filepath.Join(dir, "private.sock")
-	start := exec.Command(bin, "-S", sock, "new-session", "-d", "-s", "t", "-c", dir, "sleep", "30")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	// new-session can return before its child has changed directory. Wait for
+	// that child to report readiness before inspecting pane_current_path.
+	ready := shellQuote(bin) + " -S " + shellQuote(sock) + " wait-for -S inventory-ready; exec sleep 30"
+	start := exec.CommandContext(ctx, bin, "-S", sock, "new-session", "-d", "-s", "t", "-c", dir, "/bin/sh", "-c", ready)
 	if out, err := start.CombinedOutput(); err != nil {
 		t.Skipf("could not start a private tmux server: %v %s", err, out)
 	}
 	defer exec.Command(bin, "-S", sock, "kill-server").Run()
+	if out, err := exec.CommandContext(ctx, bin, "-S", sock, "wait-for", "inventory-ready").CombinedOutput(); err != nil {
+		t.Fatalf("private pane readiness: %v %s", err, out)
+	}
 
-	inv, err := (&Tmux{Binary: bin, Socket: sock}).Inventory(context.Background())
+	inv, err := (&Tmux{Binary: bin, Socket: sock}).Inventory(ctx)
 	if err != nil || !inv.Complete {
 		t.Fatalf("err=%v inv=%+v", err, inv)
 	}

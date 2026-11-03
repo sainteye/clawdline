@@ -39,8 +39,10 @@ export function assistantAdmits(facts: AssistantFacts | null | undefined, operat
 /** Terminal controls are not chat prompts. Absolute paths remain ordinary text.
  * Command names follow the official Antigravity CLI command reference.
  */
-export function antigravitySlashDraft(assistant: string | undefined, text: string): boolean {
+export function antigravitySlashDraft(assistant: string | undefined, text: string, protocolOwned = false): boolean {
   const draft = text.trimStart()
+  // These are metadata operations implemented by the owned Host itself.
+  if (protocolOwned && /^\/(?:model|effort) +\S[^\r\n]*$/.test(draft)) return false
   return assistant === "antigravity" && (draft.trim() === "/" ||
     /^\/(?:btw|changelog|clear|codesearch|cs|search|compact|config|settings|context|diff|effort|exit|quit|fast|feedback|fork|branch|goal|help|hooks|keybindings|learn|logout|mcp|model|open|permissions|planning|plugin|plugins|rename|remote-control|resume|switch|conversation|rewind|undo|schedule|skills|statusline|tasks|teamwork-preview|teamwork|title|usage|quota|voice|record)(?:\s|$)/.test(draft))
 }
@@ -84,4 +86,16 @@ export function assistantStateCurrent(row: SessionRow | null, now = Date.now()):
 /** Old daemon versions must not offer a role their ACP start route rejects. */
 export function assistantRolesAdmit(assistant: string | null, facts?: AssistantFacts): boolean {
   return assistant !== "antigravity" || facts?.capabilities?.roles === true
+}
+
+export function sessionActionVisibility(row: SessionRow | null): {
+  interrupt: boolean
+  focus: boolean
+  screen: boolean
+} {
+  const noTerminal = assistantProtocolOwned(row) || row?.backend === "claude_remote"
+  // Where the interactive Terminal panel exists (`nativeTerminalAvailable`) it
+  // shows the same pane the read-only mirror does: one door, not two.
+  const terminal = (row?.assistant === "claude" || row?.assistant === "codex" || row?.assistant === "antigravity") && (row?.backend === "tmux" || row?.backend === "iterm")
+  return { interrupt: true, focus: !noTerminal, screen: !noTerminal && !terminal }
 }

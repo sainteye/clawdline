@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -17,7 +18,7 @@ import (
 const sessionArchiveSchema = `
 CREATE TABLE IF NOT EXISTS session_archive (
   conversation_id TEXT    PRIMARY KEY,
-  assistant       TEXT    NOT NULL CHECK (assistant IN ('claude', 'codex')),
+  assistant       TEXT    NOT NULL CHECK (assistant IN ('claude', 'codex', 'antigravity')),
   cwd             TEXT    NOT NULL,
   place           TEXT    NOT NULL,
   title           TEXT    NOT NULL DEFAULT '',
@@ -29,6 +30,31 @@ CREATE INDEX IF NOT EXISTS session_archive_at ON session_archive (archived_at DE
 `
 
 func openSessionArchive(db *sql.DB) error {
+	var createSQL string
+	_ = db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='session_archive'`).Scan(&createSQL)
+	if strings.Contains(createSQL, "CHECK (assistant IN ('claude', 'codex'))") {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		steps := []string{
+			`ALTER TABLE session_archive RENAME TO session_archive_old`,
+			`DROP INDEX IF EXISTS session_archive_at`,
+			sessionArchiveSchema,
+			`INSERT INTO session_archive (conversation_id, assistant, cwd, place, title, persona, backend, archived_at)
+			 SELECT conversation_id, assistant, cwd, place, title, persona, backend, archived_at FROM session_archive_old`,
+			`DROP TABLE session_archive_old`,
+		}
+		for _, s := range steps {
+			if _, err := tx.Exec(s); err != nil {
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
 	_, err := db.Exec(sessionArchiveSchema)
 	return err
 }

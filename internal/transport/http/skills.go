@@ -56,24 +56,24 @@ func (s *Server) sessionSkillsRoute(w http.ResponseWriter, r *http.Request, id s
 		key = "claude\x00" + item.CWD
 		read = func() skillmenu.Reading { return skillmenu.Claude(item.CWD, home) }
 	case session.AssistantCodex:
-		// A session started fresh carries no thread id, so its rollout cannot
-		// be named: an empty menu, as the Swift app answers it. The rollout is
-		// looked for only on a miss — finding it walks ~/.codex/sessions.
-		if item.ConversationID == "" {
-			if !s.admitPinnedTarget(w, r, id) {
-				return
+		key = "codex\x00" + item.ConversationID + "\x00" + item.CWD
+		read = func() skillmenu.Reading {
+			var reading skillmenu.Reading
+			if item.ConversationID != "" {
+				if path := transcript.CodexPath(home, item.ConversationID); path != "" {
+					reading = skillmenu.Codex(path, home)
+				}
 			}
-			writeSkills(w, skillmenu.Reading{Skills: []skillmenu.Skill{}}, time.Now())
+			return skillmenu.WithCodexPrompts(reading, home)
+		}
+	case session.AssistantAntigravity:
+		if strings.TrimSpace(item.CWD) == "" {
+			writeRefusal(w, http.StatusNotFound, "not_found",
+				"Could not find that session's working directory")
 			return
 		}
-		key = "codex\x00" + item.ConversationID
-		read = func() skillmenu.Reading {
-			path := transcript.CodexPath(home, item.ConversationID)
-			if path == "" {
-				return skillmenu.Reading{Skills: []skillmenu.Skill{}}
-			}
-			return skillmenu.Codex(path, home)
-		}
+		key = "antigravity\x00" + item.CWD
+		read = func() skillmenu.Reading { return skillmenu.Antigravity(item.CWD, home) }
 	default:
 		if !s.admitPinnedTarget(w, r, id) {
 			return
@@ -107,6 +107,7 @@ func writeSkills(w http.ResponseWriter, r skillmenu.Reading, at time.Time) {
 			Name:        sk.Name,
 			Description: sk.Description,
 			Source:      contract.SkillSource(sk.Source),
+			Invocation:  sk.Invocation,
 		})
 	}
 	writeJSON(w, reply)

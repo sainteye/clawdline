@@ -47,7 +47,7 @@ func TestRoleChildCommandKeepsItsOwnCapability(t *testing.T) {
 // dispatchWith sends one brief through the whole dispatch, with the child's
 // tab answering as assistant's composer does, and answers the record and the
 // line its tab was opened with.
-func dispatchWith(t *testing.T, b *Broker, id, assistant string, extra map[string]any) (Record, string) {
+func dispatchWith(t *testing.T, b *Broker, id, assistant string, extra map[string]any, workflowLaunch ...string) (Record, string) {
 	t.Helper()
 	b.Clock = steppingClock(time.Date(2026, 9, 25, 6, 0, 0, 0, time.UTC), 10*time.Second)
 	launcher := &recordingLauncher{pane: "%90"}
@@ -57,9 +57,13 @@ func dispatchWith(t *testing.T, b *Broker, id, assistant string, extra map[strin
 	if assistant == "codex" {
 		live = session.AssistantCodex
 	}
+	launchID := ""
+	if len(workflowLaunch) != 0 {
+		launchID = workflowLaunch[0]
+	}
 	b.Live = func(context.Context) []session.Session {
 		return []session.Session{
-			{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation},
+			{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation, WorkflowLaunchID: launchID},
 			{ID: "%90", Backend: session.BackendTmux, Assistant: live},
 		}
 	}

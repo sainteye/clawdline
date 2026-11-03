@@ -43,7 +43,7 @@ const (
 	EntryBodyLimit = 64 << 10
 	// EntryCountLimit is how many entries one Project holds. One more is
 	// refused; only a person (or a session they asked) forgets one.
-	EntryCountLimit = 512
+	EntryCountLimit = 1024
 	// DescriptionByteLimit is the longest one-line description.
 	DescriptionByteLimit = 512
 	// nameByteLimit is the longest entry name, and the longest group slug.

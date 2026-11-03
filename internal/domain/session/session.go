@@ -10,6 +10,8 @@ const (
 	BackendITerm Backend = "iterm"
 	BackendTmux  Backend = "tmux"
 	BackendOwned Backend = "owned" // a terminal or protocol process this daemon owns
+	// BackendClaudeRemote is an external Remote Control worker, observed read-only.
+	BackendClaudeRemote Backend = "claude_remote"
 )
 
 type Assistant string
@@ -24,6 +26,12 @@ const (
 // is deliberately not flattened into `idle`: a terminal that did not answer has
 // told us nothing, which is different from a terminal that answered "nothing".
 type State string
+
+// ProviderBlock names an actionable provider failure without inventing a menu
+// or flattening the terminal's own activity into an error state.
+type ProviderBlock string
+
+const ProviderBlockModelCapacity ProviderBlock = "model_capacity"
 
 const (
 	StateWorking State = "working"
@@ -171,9 +179,11 @@ type Session struct {
 	PID               int     `json:"pid,omitempty"`
 	// ExpectedStart pins a recovery close to the process the person saw.
 	ExpectedStart time.Time `json:"-"`
-	Assistant     Assistant `json:"assistant,omitempty"`
-	CWD           string    `json:"cwd,omitempty"`
-	Label         string    `json:"label,omitempty"`
+	// RemoteSessionID is the native bridge address, never a browser-supplied target.
+	RemoteSessionID string    `json:"-"`
+	Assistant       Assistant `json:"assistant,omitempty"`
+	CWD             string    `json:"cwd,omitempty"`
+	Label           string    `json:"label,omitempty"`
 	// Line is what a working assistant says it is doing — the spinner line,
 	// with its own clock in it. Empty unless the session is working.
 	Line     string   `json:"line,omitempty"`
@@ -203,6 +213,8 @@ type Session struct {
 	// command line. It is not sent on the session wire; the binding API joins
 	// it with the durable launch and conversation record.
 	SquadLaunchID string `json:"-"`
+	// WorkflowLaunchID comes from a verified ancestor wrapper, never current settings.
+	WorkflowLaunchID string `json:"-"`
 
 	// Rungs are the parts Label was chosen from, kept so a reader holding a
 	// higher rung (a name typed in the Swift app, the task that opened the tab)

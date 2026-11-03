@@ -1,7 +1,5 @@
-import type { WorkV2Item } from "./api.js"
-
 /** Append a keyset page once, replacing a repeated row with its fresher copy. */
-export function appendWorkPage(current: WorkV2Item[], incoming: WorkV2Item[]): WorkV2Item[] {
+export function appendWorkPage<T extends { id: string }>(current: T[], incoming: T[]): T[] {
   const fresh = new Map(incoming.map((item) => [item.id, item]))
   const seen = new Set<string>()
   const rows = current.map((item) => {

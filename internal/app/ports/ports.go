@@ -226,3 +226,13 @@ type ProtocolInterruptHost interface {
 	ProtocolSessionHost
 	InterruptProtocol(context.Context, session.Session, func() error) error
 }
+
+// ClaudeRemoteControls acts on a verified native bridge without terminal keys.
+// Inspect is read-only; answers bind one exact request, input and process birth.
+type ClaudeRemoteControls interface {
+	SendRemoteImages(context.Context, session.Session, string, []string, func() error) error
+	InspectRemote(context.Context, session.Session) (*session.Menu, error)
+	SelectRemote(context.Context, session.Session, int, string, func() error) error
+	InterruptRemote(context.Context, session.Session, func() error) error
+	CloseRemote(context.Context, session.Session, func() error) error
+}

@@ -82,6 +82,9 @@ type workV2ItemWire struct {
 	// ParentID is the Epic this item was broken out of by the Epic's owner
 	// Session; absent for every other item.
 	ParentID string `json:"parent_id,omitempty"`
+	// IssueSync is the item's GitHub or Jira issue (issue_sync.go); absent
+	// when the person did not choose to sync it.
+	IssueSync *issueSyncWire `json:"issue_sync,omitempty"`
 	// ClaimedVia is the person's message the owning Session claimed the item
 	// on, or a Session assigned it to the owning new Session on (Assigned);
 	// absent when the person assigned it, or nobody holds it.
@@ -341,9 +344,16 @@ type workV2ProjectCatalog map[string]workV2ProjectWire
 func (s *Server) workV2Projects(ctx context.Context) workV2ProjectCatalog {
 	out := workV2ProjectCatalog{}
 	for _, p := range s.projectReaders().places.List(s.liveDirectories(ctx), 40) {
-		canonical, ok := projects.CanonicalProjectKey(p.Path)
-		if !ok {
-			continue
+		canonical := filepath.Clean(p.Path)
+		if p.ProjectKey != "" {
+			canonical = p.ProjectKey
+		}
+		if projects.MayInspectInBackground(p.Path) {
+			var ok bool
+			canonical, ok = projects.CanonicalProjectKey(p.Path)
+			if !ok {
+				continue
+			}
 		}
 		label := p.Label
 		if label == "" {
@@ -361,6 +371,11 @@ func (s *Server) workV2Projects(ctx context.Context) workV2ProjectCatalog {
 
 func (s *Server) workV2Project(ctx context.Context, id string) (workV2ProjectWire, bool) {
 	p, ok := s.workV2Projects(ctx)[id]
+	if ok && !projects.MayInspectInBackground(p.Path) {
+		// This route names one selected Project. Resolve it now, while the
+		// catalog above remains safe to build for every saved Project.
+		p.Path, ok = projects.CanonicalProjectKey(p.Path)
+	}
 	return p, ok
 }
 
@@ -387,7 +402,8 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 		DeploymentEvidence: v.CardProgress.DeploymentEvidence, NoDeploymentReason: v.CardProgress.NoDeploymentReason,
 		NoLandingReason: v.CardProgress.NoLandingReason, Landings: recordedLandingsWire(v.Landings),
 		GateSnapshotAt: optionalUnix(i.GateSnapshotAt), PlanningGate: i.PlanningGate, VerifyGate: i.VerifyGate,
-		Version: i.Version, ParentID: i.ParentID, Images: make([]workV2ImageWire, 0, len(v.Images))}
+		Version: i.Version, ParentID: i.ParentID, Images: make([]workV2ImageWire, 0, len(v.Images)),
+		IssueSync: issueSyncWireOf(v.IssueLink)}
 	if v.Gate != nil {
 		out.Verification = v.Gate
 	} else if v.GateCompact != nil {
@@ -751,8 +767,12 @@ func (s *Server) workV2ResolveProposal(w http.ResponseWriter, r *http.Request, i
 }
 
 func (s *Server) workV2List(w http.ResponseWriter, r *http.Request) {
-	q, ok := workQuery(w, r, "project", "owner", "terminal", "status", "q", "cursor")
+	q, ok := workQuery(w, r, "project", "owner", "terminal", "status", "q", "cursor", "view")
 	if !ok {
+		return
+	}
+	if q["view"] != "" && q["view"] != "cards-v1" {
+		writeRawRefusal(w, http.StatusBadRequest, "bad_request", "Unknown or repeated query field "+"view"+".")
 		return
 	}
 	status := q["status"]
@@ -768,19 +788,23 @@ func (s *Server) workV2List(w http.ResponseWriter, r *http.Request) {
 		s.workV2ListProjection(w, r, q, status)
 		return
 	}
-	page, err := s.workV2().ListPage(r.Context(), q["project"], status, q["q"], q["cursor"])
+	readPage := s.workV2().ListPage
+	if q["view"] == "cards-v1" {
+		readPage = s.workV2().ListCardsPage
+	}
+	page, err := readPage(r.Context(), q["project"], status, q["q"], q["cursor"])
 	if err != nil {
 		s.writeWorkV2Error(w, err)
 		return
 	}
 	out := struct {
-		OK        bool             `json:"ok"`
-		Rows      []workV2ItemWire `json:"rows"`
-		Counts    map[string]int   `json:"counts"`
-		Next      *string          `json:"next_cursor"`
-		PageSize  int              `json:"page_size"`
-		Truncated bool             `json:"truncated"`
-	}{OK: true, Rows: []workV2ItemWire{}, Counts: map[string]int{}, Next: optionalString(page.Next),
+		OK        bool           `json:"ok"`
+		Rows      []any          `json:"rows"`
+		Counts    map[string]int `json:"counts"`
+		Next      *string        `json:"next_cursor"`
+		PageSize  int            `json:"page_size"`
+		Truncated bool           `json:"truncated"`
+	}{OK: true, Rows: []any{}, Counts: map[string]int{}, Next: optionalString(page.Next),
 		PageSize: app.WorkV2ListPageLimit, Truncated: page.Next != ""}
 	var itemOf func(app.WorkV2View) workV2ItemWire
 	if len(page.Rows) > 0 {
@@ -788,7 +812,11 @@ func (s *Server) workV2List(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, row := range page.Rows {
 		wire := itemOf(row)
-		out.Rows = append(out.Rows, wire)
+		if q["view"] == "cards-v1" {
+			out.Rows = append(out.Rows, workV2CardOf(wire))
+		} else {
+			out.Rows = append(out.Rows, wire)
+		}
 		out.Counts[wire.Area]++
 	}
 	writeJSON(w, out)
@@ -919,13 +947,14 @@ func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ProjectID          string `json:"project_id"`
-		Kind               string `json:"kind"`
-		Title              string `json:"title"`
-		Description        string `json:"description"`
-		AcceptanceCriteria string `json:"acceptance_criteria"`
-		DeploymentPolicy   string `json:"deployment_policy"`
-		ReviewRequired     bool   `json:"review_required"`
+		ProjectID          string            `json:"project_id"`
+		Kind               string            `json:"kind"`
+		Title              string            `json:"title"`
+		Description        string            `json:"description"`
+		AcceptanceCriteria string            `json:"acceptance_criteria"`
+		DeploymentPolicy   string            `json:"deployment_policy"`
+		ReviewRequired     bool              `json:"review_required"`
+		IssueSync          *issueSyncRequest `json:"issue_sync"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -937,6 +966,10 @@ func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusUnprocessableEntity, "project_not_found", "Choose a Project from the current Project catalog.")
 		return
 	}
+	target, ok := s.issueSyncTarget(w, r, p.Path, body.IssueSync)
+	if !ok {
+		return
+	}
 	k, ok := s.beginWorkV2Write(w, r, actor, raw)
 	if !ok {
 		return
@@ -944,7 +977,8 @@ func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 	var answer []byte
 	v, err := s.workV2().Create(r.Context(), app.NewWorkV2{ProjectID: p.ID, ProjectPath: p.Path, Kind: work.Kind(body.Kind),
 		Title: body.Title, Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
-		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), ReviewRequired: body.ReviewRequired, Actor: actor},
+		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), ReviewRequired: body.ReviewRequired, Actor: actor,
+		IssueTarget: target},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = workV2Answer(s.workV2ItemOf(catalog, v))
 			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
@@ -953,6 +987,9 @@ func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
 		s.writeWorkV2Error(w, err)
 		return
+	}
+	if target != nil {
+		s.wakeIssueSync()
 	}
 	_ = v
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -1115,10 +1152,27 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 		Kind            work.Kind `json:"kind"`
 		Reason          string    `json:"reason"`
 		Note            string    `json:"note"`
+		// IssueSync opts the item into issue sync as it is assigned.
+		IssueSync *issueSyncRequest `json:"issue_sync"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
 		return
+	}
+	var target *work.IssueTarget
+	if body.IssueSync != nil {
+		if action != "assign" {
+			writeRefusal(w, http.StatusBadRequest, "bad_request", "Issue sync is chosen when an item is created or assigned.")
+			return
+		}
+		item, err := s.workV2().Item(r.Context(), id)
+		if err != nil {
+			s.writeWorkV2Error(w, err)
+			return
+		}
+		if target, ok = s.issueSyncTarget(w, r, item.Item.ProjectPath, body.IssueSync); !ok {
+			return
+		}
 	}
 	k, ok := s.beginWorkV2Write(w, r, actor, raw)
 	if !ok {
@@ -1144,8 +1198,16 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 	}
 	switch action {
 	case "assign":
-		out, err = s.assignWorkV2By(r.Context(), id, actor, "", body.ExpectedVersion, body.Mode, body.TerminalID,
-			body.Assistant, body.Model, body.Persona, file)
+		if target != nil {
+			err = s.workV2().LinkIssue(r.Context(), id, *target, actor)
+		}
+		if err == nil {
+			out, err = s.assignWorkV2By(r.Context(), id, actor, "", body.ExpectedVersion, body.Mode, body.TerminalID,
+				body.Assistant, body.Model, body.Persona, file)
+		}
+		if err == nil && target != nil {
+			s.wakeIssueSync()
+		}
 	case "remind":
 		out, err = s.remindWorkV2(r.Context(), id, body.ExpectedVersion)
 		if err == nil {
@@ -1368,10 +1430,10 @@ func (s *Server) assignWorkV2Via(ctx context.Context, id, actor, epicOwner strin
 	switch assistant {
 	case "":
 		assistant = "codex"
-	case "codex", "claude":
+	case "codex", "claude", "antigravity":
 	default:
 		return app.WorkV2View{}, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assistant",
-			Message: "A new Session is opened with codex or claude."}
+			Message: "A new Session is opened with codex, claude or antigravity."}
 	}
 	if model == "" {
 		model = "default"

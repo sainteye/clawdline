@@ -318,7 +318,8 @@ export const ActionConfirm = {
     const recordedWorkClear = workState === "ready" && work.length === 0 && openDirect.length === 0
     const lede = document.createElement("p")
     lede.className = "end-work-lede"
-    lede.textContent = pending.kind === "archive" ? nextWord("archiveSay") : T.webConfirmEndSay
+    lede.textContent = pending.kind === "archive" ? nextWord("archiveSay") :
+      byId(pending.id)?.backend === "claude_remote" ? nextWord("claudeRemoteCloseSay") : T.webConfirmEndSay
     say.appendChild(lede)
     if (pending.reconfirmed) {
       const changed = document.createElement("p")

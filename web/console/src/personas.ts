@@ -1,5 +1,7 @@
 // @ts-expect-error -- Node's strip-types runner needs the source extension.
 import { builtinDisplay } from "./builtin-display.ts"
+// @ts-expect-error -- Node loads the source extension in focused behavior tests.
+import { personaDisplayCatalog } from "./cloud/persona-cache.ts"
 import type { Persona, PersonaCatalog } from "@clawdline/contract"
 
 /**
@@ -55,10 +57,10 @@ export function loadPersonas(read: typeof fetch = (...args) => fetch(...args),
     let retry = false
     let list: Persona[] = []
     try {
-      const res = await read("/v1/personas" + (machine ? "?machine=" + encodeURIComponent(machine) : ""),
+      const res = await read("/v1/personas?view=display-v1" + (machine ? "&machine=" + encodeURIComponent(machine) : ""),
         { credentials: "same-origin" })
       if (res.ok) {
-        const body = (await res.json()) as PersonaCatalog | null
+        const body = personaDisplayCatalog(await res.json()) as PersonaCatalog | null
         list = Array.isArray(body?.personas) ? body.personas.filter(wellFormed).map(withTeams) : []
       } else {
         retry = res.status === 408 || res.status === 429 || (res.status >= 500 && res.status !== 501)

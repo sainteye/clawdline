@@ -23,8 +23,13 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/antigravityproject"
 	"github.com/sainteye/clawdline/internal/adapters/antigravitysession"
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline/internal/adapters/clauderemote"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/doctor"
+	"github.com/sainteye/clawdline/internal/adapters/githubissues"
+	"github.com/sainteye/clawdline/internal/adapters/graphify"
 	"github.com/sainteye/clawdline/internal/adapters/healthupload"
+	"github.com/sainteye/clawdline/internal/adapters/jiraissues"
 	"github.com/sainteye/clawdline/internal/adapters/logs"
 	"github.com/sainteye/clawdline/internal/adapters/machineusage"
 	"github.com/sainteye/clawdline/internal/adapters/planner"
@@ -55,6 +60,17 @@ import (
 )
 
 type Server struct {
+	graphifyMu      sync.Mutex
+	graphifyBuilder *graphify.Builder
+	githubMu        sync.Mutex
+	githubConn      *githubissues.Connection
+	jiraHTTP        *jiraissues.Client
+	issueSync       *issueSyncWorker
+	claudeRemote    interface {
+		SendRemote(context.Context, session.Session, string, func() error) error
+		Page(context.Context, session.Session, int, int64, int64, string) (contract.TranscriptPage, error)
+	}
+	transcriptBaselines       transcriptBaselines
 	antigravityProjectMu      sync.Mutex
 	antigravityProjectOwner   atomic.Pointer[antigravityproject.Manager]
 	antigravityPolicyInputs   atomic.Pointer[antigravityPolicyInputs]
@@ -181,6 +197,9 @@ type Server struct {
 	// the dashboard's shares are measured between two (machine_usage.go).
 	usageOnce sync.Once
 	// Quota metadata readers are shared by every paired browser on this daemon.
+	doctorOnce           sync.Once
+	doctorRecorder       *doctor.Recorder
+	doctorBusy           atomic.Bool
 	providerQuotaOnce    sync.Once
 	providerQuotaService *providerquota.Service
 	// update is the update check behind GET /v1/update (update.go), made on
@@ -266,8 +285,12 @@ func New(cfg config.Config) (*Server, error) {
 	agents := subagents.New(home)
 	hosts := terminal.Hosts()
 	terminal.ConnectTerminalServer(hosts, cfg.Dir)
+	identity := transcript.NewHost()
+	processes := process.New()
+	processes.RemoteControl = identity.RemoteControlSession
 	srv := &Server{
 		store:          st,
+		claudeRemote:   clauderemote.New(),
 		secretHandoffs: app.NewSecretHandoffs(),
 		cfg:            cfg,
 		terminals:      hosts,
@@ -279,9 +302,9 @@ func New(cfg config.Config) (*Server, error) {
 		links:          projectlinks.NewCache(),
 		agents:         agents,
 		inventory: app.Inventory{
-			Process:   process.New(),
+			Process:   processes,
 			Terminals: hosts,
-			Identity:  transcript.NewHost(),
+			Identity:  identity,
 			Agents:    agents,
 			Screen:    terminal.NewScreens(hosts...),
 			// The list's screens are held and refreshed behind the answer; the
@@ -345,6 +368,9 @@ func New(cfg config.Config) (*Server, error) {
 	srv.archive = srv.newSessionArchive()
 	srv.readings.Observe(srv.restore.Observe)
 	srv.readings.Observe(func(ctx context.Context, inv session.Inventory) {
+		if err := app.ReconcileWorkflowLaunches(ctx, srv.store, inv); err != nil {
+			log.Printf("workflow launch reconciliation: %v", err)
+		}
 		if err := app.ReconcileSquadLaunches(ctx, srv.store, srv.cfg.Dir, inv); err != nil {
 			log.Printf("squad launch reconciliation: %v", err)
 		}
@@ -450,6 +476,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/auth/"}, s.authRoute},
 		{Route{"*", "/v1/health"}, s.health},
 		{Route{"*", "/v1/diagnostics"}, s.diagnostics},
+		{Route{"*", "/v1/api-performance"}, s.apiPerformanceRoute},
 		{Route{"*", "/v1/capacity"}, s.capacityRoute},
 		// What the connection-health watchdog sees now and its journal
 		// (connection_health.go). This machine's own token, never via Cloud.
@@ -539,6 +566,14 @@ func (s *Server) routeTable() []route {
 				s.sessionShellRoute(w, r, sessionID, shellID)
 				return
 			}
+			if id, file, ok := outputPath(r); ok {
+				s.sessionOutputs(w, r, id, file)
+				return
+			}
+			if id, ok := sessionSubresourcePath(r, "graphify"); ok {
+				s.sessionGraphifyRoute(w, r, id)
+				return
+			}
 			if id, ok := infoPath(r); ok {
 				s.sessionInfoRoute(w, r, id)
 				return
@@ -546,6 +581,10 @@ func (s *Server) routeTable() []route {
 			// Watching a screen is a read and brings its own route (screen.go);
 			// sessionAction below refuses anything that is not a POST, so this has
 			// to be asked before it.
+			if id, ok := sessionVerbIs(r, "native-terminal", http.MethodGet); ok {
+				s.nativeTerminalScreen(w, r, id)
+				return
+			}
 			if id, ok := screenPath(r); ok {
 				s.sessionScreenRoute(w, r, id)
 				return
@@ -644,6 +683,7 @@ func (s *Server) routeTable() []route {
 		// keep (orchestrator.go).
 		{Route{"*", "/v1/orchestrator/assistants"}, s.brokerAssistants},
 		{Route{"*", "/v1/provider-quotas"}, s.providerQuotas},
+		{Route{"*", "/v1/doctor"}, s.doctorReport},
 		{Route{"*", "/v1/orchestrator/landings"}, s.brokerLandings},
 		{Route{"*", "/v1/orchestrator/notify"}, s.brokerMachineNotify},
 		// The coordination plane (W5): the machine role, file waits, leases (the
@@ -679,6 +719,15 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/settings/default-models"}, s.defaultModelsRoute},
 		{Route{"*", "/v1/settings/work-gates"}, s.workGateSettingsRoute},
 		{Route{"*", "/v1/settings/workflow"}, s.workflowSettingsRoute},
+		{Route{"*", "/v1/settings/integrations"}, s.integrationSettingsRoute},
+		// This machine's GitHub authorization for issue sync (github_integration.go).
+		{Route{"*", "/v1/integrations/github"}, s.githubIntegrationRoute},
+		{Route{"*", "/v1/integrations/github/device"}, s.githubDeviceRoute},
+		// This machine's Jira Cloud sign-in and its project picker (jira_integration.go).
+		{Route{"*", "/v1/integrations/jira"}, s.jiraIntegrationRoute},
+		{Route{"*", "/v1/integrations/jira/projects"}, s.jiraProjectsRoute},
+		// The person's Retry on a failed issue sync (issue_sync.go).
+		{Route{"*", "/v1/issue-sync/"}, s.issueSyncRoute},
 		{Route{"*", "/v1/places"}, s.placesRoute},
 		{Route{"GET", "/v1/project-folders"}, s.projectFoldersRoute},
 		// The input bar's server list (devstacks.go): what the projects' own
@@ -688,6 +737,8 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/places/"}, s.placeRoute},
 		// The built-in personas a start or a dispatch may name (personas.go).
 		{Route{"*", "/v1/personas"}, s.personasRoute},
+		{Route{"*", "/v1/tool-library"}, s.toolLibraryRoute},
+		{Route{"*", "/v1/tool-library/"}, s.toolLibraryRoute},
 		{Route{"*", "/v1/squad/events/head"}, s.squadEventHead},
 		{Route{"*", "/v1/squad/events"}, s.squadEvents},
 		{Route{"*", "/v1/squad/session-bindings"}, s.squadSessionBindings},

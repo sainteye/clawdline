@@ -104,10 +104,19 @@ func main() {
 	case "provider":
 		os.Exit(providerObserveCommand(context.Background(), os.Args[2:], config.Load().Dir, os.Stdin, os.Stdout, os.Stderr))
 	case "serve":
+		if err := delegateNamedDaemon(); err != nil {
+			fail(err)
+		}
 		serve()
+	case "graphify":
+		graphifyCommand(os.Args[2:])
 	case "doctor":
 		if len(os.Args) > 2 && os.Args[2] == "capacity" {
 			capacityCommand(os.Args[3:])
+			return
+		}
+		if len(os.Args) == 3 && os.Args[2] == "--json" {
+			doctorJSON()
 			return
 		}
 		doctor()
@@ -162,6 +171,8 @@ func main() {
 		todoCommand(os.Args[2:])
 	case "note":
 		noteCommand(os.Args[2:])
+	case "output":
+		outputCommand(os.Args[2:])
 	case "image":
 		imageCommand(os.Args[2:])
 	case "secret":
@@ -290,6 +301,19 @@ func serve() {
 	// closed rather than abandoned mid-write.
 	cloudCtx, stopCloud := context.WithCancel(context.Background())
 	defer stopCloud()
+	stopAPIPerformance := srv.StartAPIPerformance(cloudCtx)
+	defer stopAPIPerformance()
+	stopGraphify := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), connectionHealthStopTimeout)
+		defer cancel()
+		if err := srv.StopGraphify(ctx); err != nil {
+			log.Print("graphify: shutdown cleanup did not finish")
+		}
+	}
+	defer stopGraphify()
+	defer srv.StopGitHub()
+	stopIssueSync := srv.StartIssueSync(cloudCtx)
+	defer stopIssueSync()
 	// A device file that cannot be read stops the daemon here, rather than
 	// letting it listen and refuse everybody.
 	if err := srv.AuthReady(); err != nil {
@@ -333,6 +357,7 @@ func serve() {
 	defer stopAntigravityAll()
 	go stopConnectionHealthOnSignal(startConnectionHealth(cfg.Dir, srv), func() {
 		stopCloud()
+		stopGraphify()
 		stopAntigravityAll()
 	})
 	srv.StartScheduler(context.Background())
@@ -357,6 +382,7 @@ func serve() {
 	startCloudLine(cloudCtx, cfg, srv)
 	if err := srv.Serve(ln); err != nil {
 		stopCloud()
+		stopGraphify()
 		stopAntigravityAll()
 		refuseToServe(1, err.Error())
 	}
@@ -384,6 +410,7 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		AdmitExecution:    srv.CloudAdmitExecution,
 		Sessions:          srv.CloudSessions,
 		SessionsFresh:     srv.CloudSessionsFresh,
+		PromptChanges:     srv.CloudPromptChanges(),
 		SessionLook:       srv.CloudSessionLook,
 		// The daemon's own routes, gate and all. A Cloud request is answered by
 		// exactly the handler a paired browser on this machine's own network

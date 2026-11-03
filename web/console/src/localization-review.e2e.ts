@@ -22,20 +22,20 @@ export const REVIEW_SURFACES: Surface[] = [
   { id: 'device-remove-oldest', origin: 'cloud', path: '/', state: 'device-limit', ready: '#cloud-devices', action: 'device-remove-oldest' },
   { id: 'board-detail', origin: 'app', path: '/#page=work', state: 'ready', ready: '.work-card-summary', action: 'board-detail' },
   { id: 'board-edit', origin: 'app', path: '/#page=work', state: 'ready', ready: '.work-card-summary', action: 'board-edit' },
-  { id: 'dispatch-policy', origin: 'app', path: '/settings.html', state: 'ready', ready: '[role="tablist"]', action: 'dispatch-policy' },
+  { id: 'dispatch-policy', origin: 'app', path: '/#page=settings', state: 'ready', ready: '[role="tablist"]', action: 'dispatch-policy' },
   { id: 'capacity-loaded', origin: 'app', path: '/#page=settings', state: 'ready', ready: '#settings [role="tablist"]', action: 'capacity-loaded' },
-  { id: 'machine-remote', origin: 'app', path: '/settings.html', state: 'ready', ready: '[role="tablist"]', action: 'machine-remote' },
+  { id: 'machine-remote', origin: 'app', path: '/#page=settings', state: 'ready', ready: '[role="tablist"]', action: 'machine-remote' },
   { id: 'devices-loaded', origin: 'app', path: '/#page=devices', state: 'ready', ready: '#devices .device-card', action: 'devices-loaded' },
   { id: 'sessions', origin: 'app', path: '/', state: 'ready', ready: '#rows > .row' },
   { id: 'navigation', origin: 'app', path: '/', state: 'ready', ready: '#brand', action: 'navigation' },
   { id: 'session-detail-composer', origin: 'app', path: '/#session=review-session', state: 'ready', ready: '#composer' },
   { id: 'session-plan-card', origin: 'app', path: '/#session=review-session', state: 'ready', ready: '.plan-card' },
   ...['settings', 'playbook', 'notifications', 'work', 'projects', 'plan', 'documents'].map(id => ({ id, origin: 'app' as const, path: '/#page=' + id, state: 'ready' as const, ready: `[data-page-view="${id}"]:not([hidden])` })),
-  { id: 'machine-language-menu', origin: 'app', path: '/settings.html', state: 'ready', ready: '[role="tablist"]', action: 'machine-language-menu' },
-  { id: 'machine-voice', origin: 'app', path: '/settings.html', state: 'ready', ready: '[role="tablist"]', action: 'machine-voice' },
+  { id: 'machine-language-menu', origin: 'app', path: '/#page=settings', state: 'ready', ready: '[role="tablist"]', action: 'machine-language-menu' },
+  { id: 'machine-voice', origin: 'app', path: '/#page=settings', state: 'ready', ready: '[role="tablist"]', action: 'machine-voice' },
   { id: 'cloud-pairing-open', origin: 'cloud', path: '/', state: 'pairing', ready: '#cloud-pair-start', action: 'cloud-pairing-open' },
   { id: 'send-unknown', origin: 'app', path: '/#session=review-session', state: 'ready', ready: '#composer', action: 'send-unknown' },
-  { id: 'machine-settings', origin: 'app', path: '/settings.html', state: 'ready', ready: '[role="tablist"]' },
+  { id: 'machine-settings', origin: 'app', path: '/#page=settings', state: 'ready', ready: '[role="tablist"]' },
   { id: 'playbook-editor', origin: 'app', path: '/#page=playbook', state: 'ready', ready: '.playbook-primary', action: 'playbook-editor' },
   { id: 'board-modal', origin: 'app', path: '/#page=work', state: 'ready', ready: '#work .work-head-tools button', action: 'board-modal' },
   { id: 'project-files', origin: 'app', path: '/#page=projects', state: 'ready', ready: '.project-row-settings', action: 'project-files' },
@@ -191,14 +191,15 @@ test('candidate localization browser review', { timeout: 3_000_000 }, async () =
           try {
             // Select through the actual control and prove the real reload persists it.
             const origin = surface.origin === 'app' ? manifest.appOrigin : manifest.cloudOrigin
-            await page.goto(origin + '/settings.html')
-            await page.locator('#settings-window-ui-language').waitFor({ state: 'visible' })
-            await page.locator('#settings-window-ui-language').click()
+            await page.goto(origin + (surface.origin === 'app' ? '/#page=settings' : '/admin'))
+            const languageControl = page.locator(surface.origin === 'app' ? '#settings-ui-language-select' : '#admin-ui-language')
+            await languageControl.waitFor({ state: 'visible' })
+            await languageControl.click()
             await Promise.all([page.waitForEvent('load'), page.getByRole('option', { name: names[locale] }).click()])
             await page.waitForFunction(() => !document.documentElement.classList.contains('booting'))
             assert.equal(await page.locator('html').getAttribute('lang'), locale, 'Selected catalog activation fell back after reload')
             assert.equal(await page.evaluate(() => localStorage.getItem('ui_language')), locale)
-            assert.equal(await page.locator('#settings-window-ui-language').getAttribute('aria-label'), catalog['ui.language'], 'Language control copy did not update after reload')
+            assert.equal(await languageControl.getAttribute('aria-label'), catalog['ui.language'], 'Language control copy did not update after reload')
             await page.goto(origin + '/__review/state?state=' + surface.state)
             result.url = origin + surface.path
             await page.goto(result.url as string)
@@ -286,7 +287,7 @@ test('candidate localization browser review', { timeout: 3_000_000 }, async () =
               assert.ok((await page.locator('.cap-rows').innerText()).includes('Synthetic review evidence'))
             }
             if (surface.action === 'machine-remote') {
-              await Promise.all([page.waitForResponse((res: any) => res.url().endsWith('/v1/cloud/status') && res.status() === 200), page.getByRole('tab').nth(2).click()])
+              await page.locator('#settings-tab-6').click()
               await page.locator('#sw-pane-2').waitFor()
             }
             if (surface.action === 'devices-loaded') {
@@ -295,15 +296,18 @@ test('candidate localization browser review', { timeout: 3_000_000 }, async () =
               assert.equal((await diagnostics.json()).platform.os, 'linux')
               assert.equal(await page.locator('#devices-rows .device-card').count(), 1)
             }
+            if (surface.id === 'machine-settings') {
+              await page.locator('#settings-tab-4').click()
+            }
             if (surface.action === 'machine-language-menu') {
-              await page.locator('#settings-window-ui-language').click()
+              await page.locator('#settings-ui-language-select').click()
               const menu = page.getByRole('listbox')
               await menu.waitFor({ state: 'visible' })
               const box = await menu.boundingBox()
               assert.ok(box && box.x >= 0 && box.x + box.width <= width, 'Expanded language menu stays inside the viewport')
             }
             if (surface.action === 'machine-voice') {
-              await page.getByRole('tab').nth(1).click()
+              await page.locator('#settings-tab-5').click()
               await page.locator('.sw-voice-paths').first().waitFor({ state: 'visible' })
             }
             if (surface.action === 'cloud-pairing-open') {

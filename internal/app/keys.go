@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/app/ports"
@@ -70,6 +71,27 @@ func (a Actions) Key(ctx context.Context, id, key, expect string) (session.Sessi
 	s, err := a.Find(ctx, id)
 	if err != nil {
 		return session.Session{}, err
+	}
+	if s.Backend == session.BackendClaudeRemote {
+		controls, ok := a.RemoteControl.(ports.ClaudeRemoteControls)
+		person, _ := ctx.Value(remoteControlUserKey{}).(bool)
+		if !ok || !person || digit == 0 || expect == "" {
+			return s, beforeTheFirstByte(Refusal{Code: "menu_moved", Detail: "Remote Control answer must name the current permission request"})
+		}
+		release, err := a.turn(ctx, s)
+		if err != nil {
+			return s, err
+		}
+		defer release()
+		if err := controls.SelectRemote(ctx, s, digit, expect, func() error { return checkOperation(ctx) }); err != nil {
+			code := "terminal_io_failed"
+			var unsent terminal.Unsent
+			if errors.As(err, &unsent) {
+				code = "menu_moved"
+			}
+			return s, Refusal{Code: code, RawDetail: true, Detail: err.Error(), Cause: err}
+		}
+		return s, nil
 	}
 	h, err := a.host(ctx, s)
 	if err != nil {

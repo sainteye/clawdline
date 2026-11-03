@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { SessionRow } from "@clawdline/contract"
 import {
-  afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFromFragment,
+  afterEventGap, checkedProjection, destinationAvailable, destinationFragment, destinationFragmentWithOutput, destinationFromFragment,
   displayedPresentationStatus, fleetRowTitle, mergeListPresentation, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
   destinationKey, prependOlderPage, projectionRefreshAt, settleProjection, SessionDetailCache, shownDestinationKeys,
   SessionExecutionRecovery, supersedingDestination,
@@ -209,6 +209,14 @@ test("a new pass retains the same execution's work line until fresh status contr
     { ...presentation, observedAt: 1001 }), undefined)
 })
 
+test("a newer capacity reading invalidates old work copy even when terminal activity is unchanged", () => {
+  const current = { ...row("one", "s", "1"), state: "idle", observedAt: 1002 }
+  const old = { title: "Example", observedAt: 1001,
+    status: { state: "idle" as const, provider_block: "model_capacity" as const } }
+  assert.equal(displayedPresentationStatus(current, old), undefined)
+  assert.equal(displayedPresentationStatus({ ...current, providerBlock: "model_capacity" }, old), old.status)
+})
+
 test("retained observations remain readable but cannot authorize content", () => {
   const old = row("one", "same", "7")
   const retained: MachineSessionProjection = { kind: "unavailable", reason: "stale", complete: true,
@@ -386,3 +394,22 @@ for (const assistant of ["codex", "claude"] as const) {
     assert.equal(mergeListPresentation({ title: "Unknown work" }).assistant, undefined)
   })
 }
+
+test("output links keep the exact machine, Session and execution generation", () => {
+  const target = { machineID: "machine-a", sessionID: "%19", executionGeneration: "a".repeat(32) }
+  assert.deepEqual(destinationFromFragment(destinationFragment(target) + "&output=" + "b".repeat(64)), target)
+  assert.equal(destinationFromFragment(destinationFragment(target) + "&output=../../private"), null)
+  assert.equal(destinationFromFragment(destinationFragment(target) + "&output=" + "b".repeat(64) + "&machine=another"), null)
+})
+
+test("opening a pinned Session retains its file destination without carrying it to another execution", () => {
+  const target = { machineID: "machine-a", sessionID: "%19", executionGeneration: "a".repeat(32) }
+  const address = destinationFragment(target) + "&output=" + "b".repeat(64)
+  assert.equal(destinationFragmentWithOutput(target, address), address)
+  assert.equal(destinationFragmentWithOutput(target, address.replace(/^#machine=([^&]+)&session=([^&]+)/, "#session=$2&machine=$1")), address)
+  for (const next of [{ ...target, machineID: "machine-b" }, { ...target, sessionID: "%20" }, { ...target, executionGeneration: "c".repeat(32) }]) {
+    assert.equal(destinationFragmentWithOutput(next, address), destinationFragment(next))
+  }
+  assert.equal(destinationFragmentWithOutput(target, address + "&output=" + "c".repeat(64)), destinationFragment(target))
+  assert.equal(destinationFragmentWithOutput(target, destinationFragment(target) + "&output=../../private"), destinationFragment(target))
+})

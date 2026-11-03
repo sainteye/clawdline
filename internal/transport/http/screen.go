@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -58,6 +59,7 @@ func (s *Server) sessionScreenRoute(w http.ResponseWriter, r *http.Request, id s
 		writeActionRefusal(w, err)
 		return
 	}
+	item.ExpectedStart = ownrecords.ProcessStart(item.PID)
 	writeJSON(w, screenAnswerWire{Screen: wireScreen(s.screens.Read(item, time.Now()))})
 }
 
@@ -79,6 +81,7 @@ func wireScreen(reading app.ScreenReading) screenWire {
 		Captures:      int64(reading.Captures),
 		Signals:       int64(reading.Signals),
 	}}
+	out.PromptSuggestion = wirePromptSuggestion(reading)
 	if reading.Text != nil {
 		text := *reading.Text
 		out.Text = &text
@@ -225,4 +228,24 @@ func (b *screenBus) reading() capacity.Reading {
 	}
 	r.Note = strconv.Itoa(len(b.subs)) + " stream(s) open"
 	return r
+}
+
+func wirePromptSuggestion(reading app.ScreenReading) *contract.PromptSuggestion {
+	if reading.PromptConversation == "" || reading.PromptAt <= 0 {
+		return nil
+	}
+	state := "none"
+	if reading.PromptID != "" && reading.PromptText != "" {
+		state = "available"
+	}
+	return &contract.PromptSuggestion{ID: reading.PromptID, Text: reading.PromptText, ConversationID: reading.PromptConversation, Source: "claude-terminal", State: state, ObservedAt: reading.PromptAt}
+}
+
+// CloudPromptChanges is a content-free invalidation signal. Only the current
+// authenticated s/ row carries the suggestion, never the ss/ status feed.
+func (s *Server) CloudPromptChanges() <-chan struct{} {
+	if s.screens == nil {
+		return nil
+	}
+	return s.screens.PromptChanges()
 }

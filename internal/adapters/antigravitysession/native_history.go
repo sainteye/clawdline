@@ -29,7 +29,7 @@ func (h *Host) NativePast(ctx context.Context, cwd, cursor string) ([]Past, stri
 	defer func() { h.mu.Lock(); h.opening = false; h.mu.Unlock() }()
 	ctx, cancel := context.WithTimeout(ctx, MaxCallTime)
 	defer cancel()
-	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime})
+	client, err := antigravityprocess.Start(h.ctx, antigravityprocess.Options{OnWire: h.wireObserver("metadata:history"), Executable: h.opts.Executable, Args: h.opts.Args, AccountDir: h.opts.AccountDir, WorkingDir: cwd, MaxFrameBytes: MaxFrameBytes, CallTimeout: MaxCallTime})
 	if err != nil {
 		return nil, "", err
 	}
@@ -73,7 +73,9 @@ func (h *Host) NativePast(ctx context.Context, cwd, cursor string) ([]Past, stri
 			if c.row.CWD == cwd && c.row.ConversationID == row.ID {
 				row.At = c.row.Activity.At
 				row.Live = !c.hidden && c.client != nil && c.client.Err() == nil
-				if c.row.Label != "" {
+				if c.row.Rungs.Thread != "" {
+					row.Title = c.row.Rungs.Thread
+				} else if c.row.Label != "" {
 					row.Title = c.row.Label
 				}
 			}

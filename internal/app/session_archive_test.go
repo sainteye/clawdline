@@ -289,3 +289,20 @@ func TestPersonCanForceArchiveDespiteUnreadableWork(t *testing.T) {
 		t.Fatal("the confirmed close must close and record once")
 	}
 }
+
+func TestArchiveAntigravitySession(t *testing.T) {
+	clock := time.Unix(90_000, 0)
+	h := &closeHost{conversation: "gemini-conv-1", assistant: session.AssistantAntigravity}
+	a, st := archiveUnder(t, h, &clock)
+	closed, row, err := a.Archive(context.Background(), "%1", false)
+	if err != nil {
+		t.Fatalf("archive antigravity: %v", err)
+	}
+	if closed.ID != "%1" || row.Assistant != "antigravity" || row.ConversationID != "gemini-conv-1" {
+		t.Fatalf("unexpected archive row: %+v", row)
+	}
+	rows := archivedRows(t, st)
+	if len(rows) != 1 || rows[0] != row {
+		t.Fatalf("stored rows %+v, want %+v", rows, row)
+	}
+}

@@ -133,11 +133,82 @@ func (e Env) restartService(ctx context.Context, s install.ServiceFile) error {
 	case "systemd":
 		_, err = e.Run(ctx, "systemctl", "--user", "restart", s.Name)
 	case "launchd":
+		name, _ := e.Layout.CurrentRelease()
+		target := e.Layout.ServiceExecutable(name)
+		// Older test/installation records without a plist location keep their
+		// existing supervisor command. setup always records the owned path.
+		if s.File != "" {
+			body, readErr := os.ReadFile(s.File)
+			if readErr != nil {
+				return readErr
+			}
+			updated, changed, changeErr := install.RenameLaunchdExecutable(body, []string{e.Layout.ServiceBin, e.Layout.LegacyServiceBin(), filepath.Join(e.Layout.Current, "clawdline")}, target)
+			if changeErr != nil {
+				return changeErr
+			}
+			if changed {
+				info, statErr := os.Stat(s.File)
+				if statErr != nil {
+					return statErr
+				}
+				temporary := s.File + ".new"
+				if writeErr := os.WriteFile(temporary, updated, info.Mode().Perm()); writeErr != nil {
+					return writeErr
+				}
+				if renameErr := os.Rename(temporary, s.File); renameErr != nil {
+					_ = os.Remove(temporary)
+					return renameErr
+				}
+				// A failed candidate bootstrap may already have left the job
+				// unloaded. The following bootstrap and health check decide
+				// whether the selected service actually starts.
+				_, _ = e.Run(ctx, "launchctl", "bootout", s.Domain+"/"+s.Name)
+				return e.bootstrapService(ctx, s)
+			}
+		}
+		// A previous migration may have removed the job even though both
+		// releases use the same executable. kickstart cannot register a job.
+		if s.File != "" {
+			if _, probeErr := e.Run(ctx, "launchctl", "print", s.Domain+"/"+s.Name); probeErr != nil {
+				return e.bootstrapService(ctx, s)
+			}
+		}
 		_, err = e.Run(ctx, "launchctl", "kickstart", "-k", s.Domain+"/"+s.Name)
 	default:
 		err = fmt.Errorf("unknown supervisor %q", s.Supervisor)
 	}
 	return err
+}
+
+// bootstrapService waits for an unloaded launchd job to finish retiring.
+// bootout returning does not guarantee that an immediate bootstrap succeeds.
+// The existing service-command deadline bounds all attempts together.
+func (e Env) bootstrapService(ctx context.Context, s install.ServiceFile) error {
+	poll := e.Poll
+	if poll <= 0 {
+		poll = time.Second
+	}
+	var last error
+	for {
+		if err := ctx.Err(); err != nil {
+			if last != nil {
+				return fmt.Errorf("%w: %v", err, last)
+			}
+			return err
+		}
+		_, err := e.Run(ctx, "launchctl", "bootstrap", s.Domain, s.File)
+		if err == nil {
+			return nil
+		}
+		last = err
+		timer := time.NewTimer(poll)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("%w: %v", ctx.Err(), err)
+		case <-timer.C:
+		}
+	}
 }
 
 // waitHealthy asks the daemon on s.Port until it serves its console and
@@ -173,7 +244,13 @@ func (e Env) waitHealthyUnless(ctx context.Context, s install.ServiceFile, want 
 	}
 	last := errors.New("no answer yet")
 	for {
+		if settled != nil && settled() {
+			return errSettledElsewhere
+		}
 		if err := check(ctx, s.Port, strings.TrimSpace(string(token)), want); err == nil {
+			if settled != nil && settled() {
+				return errSettledElsewhere
+			}
 			return nil
 		} else {
 			last = err

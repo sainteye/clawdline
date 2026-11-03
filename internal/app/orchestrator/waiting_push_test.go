@@ -6,7 +6,28 @@ import (
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
+
+func TestModelCapacityOutboxRechecksItsOwnSwitch(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		calls := 0
+		b := &Broker{PushEnabled: func(key string) bool {
+			if key != "push_on_model_capacity" {
+				t.Fatalf("checked %q", key)
+			}
+			return enabled
+		}, Push: func(context.Context, string, string, string, string) (int, int, error) {
+			calls++
+			return 1, 0, nil
+		}}
+		payload, _ := json.Marshal(WaitingPush{Key: "A|c|model_capacity", Terminal: "A", Title: "Model at capacity: A", Reason: session.ProviderBlockModelCapacity})
+		result := runWaitingPush(context.Background(), b, store.Effect{Payload: payload})
+		if result.state != store.EffectDone || (calls == 1) != enabled {
+			t.Fatalf("enabled %v: calls %d, result %+v", enabled, calls, result)
+		}
+	}
+}
 
 // A stopped session's push is an outbox row like the capacity push, so the
 // same crash has the same answer: the one never begun is sent, with the tap

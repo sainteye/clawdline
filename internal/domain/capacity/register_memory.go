@@ -10,7 +10,7 @@ func memoryBounds() []Entry {
 			// the answer to the add, and only a person (or a session they
 			// asked) forgets one.
 			Name: MemoryEntries, Class: Evidence, Unit: Rows,
-			Limit: 512, AtLimit: Refuse,
+			Limit: 1024, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Sender, Health},
 			EvictedBy: Person,
 			Sources:   []string{"internal/adapters/memory.EntryCountLimit"},

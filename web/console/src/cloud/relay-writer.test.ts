@@ -244,8 +244,18 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/notification-rules", "notification-rules-update"],
     ["GET", "/v1/settings/work-gates", "work-gate-settings"],
     ["GET", "/v1/settings/workflow", "workflow-settings"],
+    ["GET", "/v1/settings/integrations", "integration-settings"],
     ["POST", "/v1/settings/work-gates", "work-gate-settings-update"],
     ["POST", "/v1/settings/workflow", "workflow-settings-update"],
+    ["POST", "/v1/settings/integrations", "integration-settings-update"],
+    ["GET", "/v1/integrations/github", "github-connection"],
+    ["POST", "/v1/integrations/github/device", "github-connect"],
+    ["DELETE", "/v1/integrations/github", "github-disconnect"],
+    ["GET", "/v1/integrations/jira", "jira-connection"],
+    ["POST", "/v1/integrations/jira", "jira-connect"],
+    ["DELETE", "/v1/integrations/jira", "jira-disconnect"],
+    ["GET", "/v1/integrations/jira/projects", "jira-projects"],
+    ["POST", "/v1/issue-sync/w1/retry", "issue-sync.retry"],
     ["POST", "/v1/update/apply", "update-apply"],
     ["POST", "/v1/board", "board-command"],
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
@@ -265,6 +275,8 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["PUT", "/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-save"],
     ["POST", "/v1/projects/cloud-p1/antigravity-consent", "project-antigravity-consent-change"],
     ["POST", "/v1/projects/cloud-p1/unify", "project-unify-apply"],
+ ["POST","/v1/projects/cloud-p1/graphify","project-graphify-build"],
+ ["POST","/v1/sessions/s1/graphify","session-graphify-build"],
     // The plan is a read, answered by `relay-reader.ts`.
     ["GET", "/v1/projects/cloud-p1/unify", null],
     // The list is a read and is answered by `relay-reader.ts`, not here, and
@@ -2037,10 +2049,10 @@ test("a phone manages machine notification switches without subscribing this bro
   const read = await reader.fetch("/v1/settings/notifications")
   assert.equal(read.status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "notification-settings", {}, "read"])
-  const write = await reader.fetch("/v1/settings/notifications", post({ push_on_waiting: false }))
+  const write = await reader.fetch("/v1/settings/notifications", post({ push_on_waiting: false, push_on_model_capacity: false }))
   assert.equal(write.status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "notification-settings-update", {
-    changes: { push_on_waiting: false },
+    changes: { push_on_waiting: false, push_on_model_capacity: false },
   }, "action"])
   assert.equal((await reader.fetch("/v1/settings/notifications?all=1")).status, 501)
 })
@@ -2468,14 +2480,20 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/usage/sessions/s1", "usage"],
     ["/v1/capacity", "capacity"],
     ["/v1/provider-quotas", "provider-quotas"],
+    ["/v1/doctor", "doctor"],
     ["/v1/settings/default-models", "default-models"],
     ["/v1/notification-rules", "notification-rules"],
     ["/v1/settings/notifications", "notification-settings"],
     ["/v1/settings/work-gates", "work-gate-settings"],
     ["/v1/settings/workflow", "workflow-settings"],
+    ["/v1/settings/integrations", "integration-settings"],
+    ["/v1/integrations/github", "issue-tracker-read"],
+    ["/v1/integrations/jira", "issue-tracker-read"],
+    ["/v1/integrations/jira/projects", "issue-tracker-read"],
     ["/v1/sessions/restorable", "restorable"],
     ["/v1/sessions/archived", "archived"],
     ["/v1/machine/usage", "machine-usage"],
+    ["/v1/api-performance", "api-performance"],
     ["/v1/update", "update"],
     ["/v1/update/fresh", "update-fresh"],
     ["/v1/verifications", "verification-read"],
@@ -2487,6 +2505,9 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/sessions/s1/git", "git"],
     ["/v1/sessions/s1/git/diff", "git-diff"],
     ["/v1/sessions/s1/screen", "screen"],
+    ["/v1/sessions/s1/native-terminal", "native-terminal-screen"],
+    ["/v1/sessions/s1/outputs", "outputs"],
+    ["/v1/sessions/s1/outputs/" + "a".repeat(64), "output-file"],
     ["/v1/sessions/s1/documents", "documents"],
     ["/v1/sessions/s1/documents/project/demo.md", "document"],
     ["/v1/sessions/s1/documents/project/clip.mp4", "video"],
@@ -2746,4 +2767,199 @@ test("linked content refuses mismatched source proof and cancellation during res
   const response = await writer.answer(writeRoute("GET", url.pathname)!, "GET", url, { signal: controller.signal })
   assert.equal(response.status >= 400, true)
   assert.equal(f.client.calls.length, 0)
+})
+
+
+test("RC permission inspection keeps its intent separate from routine info on both Cloud paths", async () => {
+ for(const pinned of [false,true]){
+  const client=Object.assign(new FakeClient(),{
+   async readForGeneration(this: FakeClient,target:unknown,word:string,fields:Record<string,unknown>){
+    this.calls.push(["readForGeneration",target,word,fields]);return {info:{remotePermissionKnown:true}}
+   },
+  })
+  client.rows=[row("s1")]
+  client.descriptors.set("mac-a",{machine:{commands:[...GO_DAEMON.machine.commands,"info"]}})
+  const {reader}=seam(client,undefined,pinned)
+  const response=await reader.fetch("/v1/sessions/s1/info?parts=remote-permission")
+  assert.equal(response.status,200)
+  const call=client.calls.find(([name])=>name===(pinned?"readForGeneration":"_read"))
+  assert.ok(call,"permission inspection must not become ordinary full info")
+  assert.deepEqual(call[3],{parts:"remote-permission"})
+  if(pinned) assert.deepEqual(call[1],{machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION})
+  else assert.equal(call[4],"info.remote-permission")
+ }
+})
+
+test("output list and file chunks use the opened Session's exact content-read destination", async () => {
+  const client=new FakeClient()
+  Object.assign(client,{async readForGeneration(target:unknown,word:string,fields:Record<string,unknown>,signal?:AbortSignal){client.calls.push(["readForGeneration",target,word,fields,signal]);return {}}})
+  const {reader}=seam(client,{t:1000},true),abort=new AbortController()
+  const base="/v1/sessions/s1/outputs"
+  assert.equal((await reader.fetch(base,{signal:abort.signal})).status,200)
+  assert.equal((await reader.fetch(base+"/"+"a".repeat(64)+"?offset=0&revision=&size=thumb",{signal:abort.signal})).status,200)
+  const reads=client.calls.filter(call=>call[0]==="readForGeneration")
+  assert.equal(reads.length,2)
+  assert.deepEqual(reads.map(call=>call[2]),["outputs","output-file"])
+  for(const call of reads) assert.deepEqual(call[1],{machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION})
+  assert.equal((reads[1][3] as Record<string,unknown>).size,"thumb")
+  assert.notEqual((await reader.fetch(base,{method:"POST",body:JSON.stringify({path:"/private/example"})})).status,200)
+  assert.equal(client.calls.filter(call=>call[0]==="readForGeneration").length,2)
+})
+
+test("single-machine outputs pin the resolved execution across file chunks and fail on replacement", async () => {
+  let generation = EXECUTION, resolves = 0
+  const client = new FakeClient()
+  Object.assign(client, { async readForGeneration(target: { machineID: string; sessionID: string; executionGeneration: string }, word: string, fields: Record<string, unknown>, signal?: AbortSignal) {
+    client.calls.push(["readForGeneration", target, word, fields, signal])
+    if (target.executionGeneration !== generation) throw refusal("execution_generation_changed", { status: 409 })
+    return {}
+  } })
+  const reader = new RelayReader("mac-a", { resolveSession: async (machineID, sessionID) => {
+    resolves++
+    return { machineID, sessionID, executionGeneration: generation }
+  } })
+  const writer = new RelayWriter(reader.writeHost)
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const controller = new AbortController(), base = "/v1/sessions/s1/outputs"
+  assert.equal((await reader.fetch(base, { signal: controller.signal })).status, 200)
+  const file = base + "/" + "a".repeat(64) + "?offset=0&revision=&size="
+  assert.equal((await reader.fetch(file, { signal: controller.signal })).status, 200)
+  assert.equal(resolves, 1)
+  generation = "c".repeat(32)
+  assert.equal((await reader.fetch(file, { signal: controller.signal })).status, 409)
+  assert.equal(resolves, 1, "a transfer cannot silently rebind to the replacement")
+  assert.equal((await reader.fetch(file, { signal: new AbortController().signal })).status, 200)
+  const before = client.calls.length
+  controller.abort()
+  assert.equal((await reader.fetch(file, { signal: controller.signal })).status >= 400, true)
+  assert.equal(client.calls.length, before)
+  for (const call of client.calls) assert.equal((call[1] as { machineID: string }).machineID, "mac-a")
+})
+
+test("single-machine outputs refuse missing, mismatched and invalid execution proof before content reads", async () => {
+  for (const target of [null,
+    { machineID: "mac-b", sessionID: "s1", executionGeneration: EXECUTION },
+    { machineID: "mac-a", sessionID: "s2", executionGeneration: EXECUTION },
+    { machineID: "mac-a", sessionID: "s1", executionGeneration: "" }]) {
+    const client = new FakeClient(), reader = new RelayReader("mac-a", { resolveSession: async () => target })
+    Object.assign(client, { async readForGeneration() { client.calls.push(["unexpected"]); return {} } })
+    const writer = new RelayWriter(reader.writeHost)
+    reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+    reader.attach(client)
+    assert.equal((await reader.fetch("/v1/sessions/s1/outputs")).status, 409)
+    assert.equal(client.calls.length, 0)
+  }
+})
+
+
+test("issue tracker connections and Retry reach the selected machine with their fields", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal((await reader.fetch("/v1/integrations/github")).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "github-connection", {}, "read"])
+  assert.equal((await reader.fetch("/v1/integrations/github/device", post({}))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "github-connect", {}, "action"])
+  const connection = { site: "https://acme.atlassian.net", email: "pat", token: "t" }
+  assert.equal((await reader.fetch("/v1/integrations/jira", post(connection))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "jira-connect", { connection }, "action"])
+  assert.equal((await reader.fetch("/v1/issue-sync/w1/retry", post({}))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "issue-sync.retry", { id: "w1" }, "action"])
+  assert.equal((await reader.fetch("/v1/integrations/jira?site=x", post(connection))).status, 501)
+})
+
+test("integration opt-ins read and write only the selected machine", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal((await reader.fetch("/v1/settings/integrations")).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "integration-settings", {}, "read"])
+  for (const key of ["workflow_skills_enabled", "graphify_enabled"]) {
+    for (const on of [true, false]) {
+      assert.equal((await reader.fetch("/v1/settings/integrations", post({ [key]: on }))).status, 200)
+      assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "integration-settings-update", { changes: { [key]: on } }, "action"])
+    }
+  }
+  assert.equal((await reader.fetch("/v1/settings/integrations?project=other")).status, 501)
+  assert.equal((await reader.fetch("/v1/settings/integrations?project=other", post({ graphify_enabled: true }))).status, 501)
+})
+
+ test("Graphify builds carry explicit machine writes and pinned Session commands",async()=>{
+  const client=new FakeClient();client.rows=[row("s1")]
+  client.descriptors.set("mac-a",{machine:{commands:[...GO_DAEMON.machine.commands,"project-graphify-build","session-graphify-build"]}})
+  const {reader}=seam(client)
+  const headers={"Idempotency-Key":"build-1"}
+  assert.equal((await reader.fetch("/v1/projects/cloud-p1/graphify",post({},headers))).status,200)
+  assert.deepEqual(client.calls.pop(),["_machineRequestAs","build-1","mac-a","project-graphify-build",{project:"p1"},"action"])
+  assert.equal((await reader.fetch("/v1/sessions/s1/graphify",post({},headers))).status,200)
+  assert.deepEqual(client.calls.pop(),["_read",{machine:"mac-a",session:"s1"},"session-graphify-build",{request:"build-1",execution_generation:EXECUTION},"action:build-1",undefined,undefined])
+  for(const path of ["/v1/projects/cloud-p1/graphify","/v1/sessions/s1/graphify"]){
+   client.calls=[]
+   for(const body of [{path:"/outside"},{backend:"openai"},{command:"run"}])assert.equal((await reader.fetch(path,post(body,headers))).status,400)
+   assert.equal((await reader.fetch(path+"?path=/outside",post({},headers))).status,400)
+   assert.equal((await reader.fetch(path,post({}))).status,400)
+   assert.equal(client.calls.length,0)
+  }
+  client.allowWrites=false
+  assert.equal((await reader.fetch("/v1/projects/cloud-p1/graphify",post({},headers))).status,403)
+ })
+
+test("native Terminal input pins the execution and carries one press id",async()=>{
+ const client=new FakeClient()
+ client.descriptors.set("mac-a",{machine:{commands:[...GO_DAEMON.machine.commands,"native-terminal-screen","native-terminal-input"]}})
+ client.rows=[row("s1")]
+ const {reader}=seam(client)
+ const res=await reader.fetch('/v1/sessions/s1/native-terminal',post({expect:FINGERPRINT,key:"down"},{"Idempotency-Key":"native-key-1"}))
+ assert.equal(res.status,200)
+ const call=client.calls.find(call=>call[0]==="_read"&&call[2]==="native-terminal-input")
+ assert.deepEqual(call?.slice(1,5),[{machine:"mac-a",session:"s1"},"native-terminal-input",{request:"native-key-1",execution_generation:EXECUTION,expect:FINGERPRINT,key:"down"},"action:native-key-1"])
+ const before=client.calls.length
+ const unkeyed=await reader.fetch('/v1/sessions/s1/native-terminal',post({expect:FINGERPRINT,key:"enter"}))
+ assert.equal(unkeyed.status,400)
+ assert.equal(client.calls.length,before)
+})
+
+test("native Terminal cannot type after an opened exact execution is replaced",async()=>{
+ const client=new FakeClient()
+ const reader=new RelayReader("mac-a",{fleetTarget:()=>({machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION}),admitFleetMutation:async()=>{throw refusal("execution_generation_changed",{status:409})}})
+ const writer=new RelayWriter(reader.writeHost)
+ reader.carryWrites({route:writeRoute,answer:(route,method,url,init)=>writer.answer(route,method,url,init)})
+ reader.attach(client)
+ const res=await reader.fetch('/v1/sessions/s1/native-terminal',post({expect:FINGERPRINT,key:"enter"},{"Idempotency-Key":"old-native-key"}))
+ assert.equal(res.status,409)
+ assert.deepEqual(client.calls,[])
+})
+
+
+test("native Terminal reads keep the opened execution and receipts keep the original press",async()=>{
+ const client=new FakeClient()
+ client.descriptors.set("mac-a",{machine:{commands:[...GO_DAEMON.machine.commands,"native-terminal-screen","native-terminal-input"]}})
+ Object.assign(client,{async readForGeneration(target:unknown,word:string,fields:Record<string,unknown>){client.calls.push(["readForGeneration",target,word,fields]);return {text:"model menu",expect:FINGERPRINT}}})
+ const reader=new RelayReader("mac-a",{fleetTarget:()=>({machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION})})
+ const writer=new RelayWriter(reader.writeHost,{requestID:()=>"lookup-1"})
+ reader.carryWrites({route:writeRoute,answer:(route,method,url,init)=>writer.answer(route,method,url,init)})
+ reader.attach(client)
+ const screen=await reader.fetch('/v1/sessions/s1/native-terminal')
+ assert.equal(screen.status,200)
+ assert.deepEqual(await screen.json(),{text:"model menu",expect:FINGERPRINT})
+ assert.deepEqual(client.calls.shift(),["readForGeneration",{machineID:"mac-a",sessionID:"s1",executionGeneration:EXECUTION},"native-terminal-screen",{}])
+ const receipt=await reader.fetch(`/v1/sessions/s1/cloud-receipts/native-key-1?action=native-terminal-input&execution_generation=${EXECUTION}`)
+ assert.equal(receipt.status,200)
+ assert.deepEqual(client.calls.pop()?.slice(1,5),[{machine:"mac-a",session:"s1"},"session-receipt",{request:"lookup-1",target_request:"native-key-1",execution_generation:EXECUTION,action:"native-terminal-input"},"read:lookup-1"])
+})
+
+
+test("tool library carries preparation to the chosen machine without sending the task", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  for (const [path, word, changes] of [
+    ["/v1/tool-library", "tools.save", {expected_version:0,remove:"example--skills"}],
+    ["/v1/tool-library/prepare", "tools.prepare", {session:"%tools",conversation:"conversation-a",generation:"execution-a",project_id:"example--skills",mode:"task",task:"Review"}],
+  ] as const) {
+    const request = word + "-1"
+    assert.equal((await reader.fetch(path, post(changes, {"Idempotency-Key":request}))).status,200)
+    assert.deepEqual(client.calls.pop(), ["_machineRequestAs",request,"mac-a",word,{changes},"action"])
+    const count = client.calls.length
+    assert.equal((await reader.fetch(path,post(changes))).status,400)
+    assert.equal(client.calls.length,count)
+  }
 })

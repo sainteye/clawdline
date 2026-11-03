@@ -36,6 +36,48 @@ func waitingStartServer(t *testing.T) (*Server, session.Session) {
 	return s, asking
 }
 
+func TestObserveWaitingPushesModelCapacityWithIndependentPreference(t *testing.T) {
+	s, row := waitingStartServer(t)
+	row.State = session.StateIdle
+	row.Assistant = session.AssistantCodex
+	row.Activity.ProviderBlock = session.ProviderBlockModelCapacity
+	s.readings = app.NewInventoryReading(func(context.Context) session.Inventory {
+		return session.Inventory{Sessions: []session.Session{row}, Complete: true,
+			Sources: map[string]bool{string(session.BackendTmux): true}}
+	}, time.Millisecond)
+	file := nextconfig.Open(s.cfg.Dir)
+	if _, err := file.Set(map[string]any{"push_on_waiting": false, "push_on_model_capacity": false}); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	s.broker.PushEnabled = s.notificationEnabled
+	s.broker.Push = func(_ context.Context, title, body, terminal, tag string) (int, int, error) {
+		calls++
+		if terminal != row.ID || tag != "model-capacity-"+row.ID || title != "Model at capacity: root 7" {
+			t.Fatalf("push %q %q %q", terminal, tag, title)
+		}
+		return 1, 0, nil
+	}
+	observe := func() {
+		t.Helper()
+		if err := s.observeWaiting(context.Background(), time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+	}
+	observe()
+	if calls != 0 {
+		t.Fatal("disabled model notification sent")
+	}
+	if _, err := file.Set(map[string]any{"push_on_model_capacity": true}); err != nil {
+		t.Fatal(err)
+	}
+	observe()
+	observe()
+	if calls != 1 {
+		t.Fatalf("capacity stop sent %d times", calls)
+	}
+}
+
 // The push for a session waiting on the person went silent for a month
 // because the only call that started its watcher lived inside the retired v1
 // board sweep. StartWaiting, the call serve makes, must by itself lead to one

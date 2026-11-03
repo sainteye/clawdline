@@ -402,6 +402,80 @@ not. That last number is the one thing looking cannot fix, and it is what the op
 
 ## Reading a session back
 
+Claude Code Remote Control conversations appear in the Session list on macOS and Linux when
+external Session discovery is enabled. An interactive `claude --remote-control` or `/remote-control`
+session keeps its existing terminal controls. A server-spawned worker has a **Remote Control** marker
+and supports text, images, one-time tool permission answers, interruption and closing here.
+General files and structured question answers still use Claude. The launcher itself is not a conversation and is not listed as one. Pinned list fallbacks
+retain the backend so a missing signed-status replay does not remove the worker controls.
+
+Discovery requires the native print-mode SDK transport to `https://api.anthropic.com/v1/code/sessions/…`,
+a matching remote session argument, and a live kernel process generation. Standard versioned native
+installations are recognized as well as executables named `claude`. A registry entry can enrich the
+worker with a local conversation UUID and status, but is not required: native 2.1.312 workers can
+have neither registry nor JSONL after a quota refusal. Workers never borrow the launcher's tty or
+tmux identity. An interactive terminal with the same proven local UUID remains the displayed row.
+
+Text, image and control submissions use Anthropic's **undocumented controller API**, not peer messaging or a new resumed
+Claude process. The daemon rereads process birth and transport immediately before submission,
+keeps existing write authorization and per-Session/machine lanes, and sends one UUID-tagged event.
+The HTTP response says `accepted`, which proves server acceptance only. Worker receipt, execution,
+and a quota failure are separate evidence. A lost or incompatible acknowledgement is not retried;
+the existing durable request-key receipt prevents another POST under the same key. Only the person
+can decide whether to submit again after checking the conversation. Unsupported device-attestation
+feedback fails closed and requires the native Claude client.
+
+Images use normalized native base64 image content blocks, without a pasteboard or terminal.
+Permission inspection is explicit: it asks the live worker to initialize, waits for its matching
+response, and offers the first pending tool request. Routine Session information reads do not
+post controls. Cloud carries this explicit read as `info.remote-permission`, separately from
+`info.full` and `info.summary`, with the same pinned execution and read authority. An answer rereads the live request and matches a fingerprint of the bridge,
+process birth, request ID, tool name and complete input. Allow sends that same input once;
+deny refuses the request. Permanent approval, permission-mode changes, input editing and
+structured `AskUserQuestion` answers are not implemented. Structured questions offer deny only.
+A permission answer says `accepted`, not executed; refresh to learn whether the worker still asks.
+
+Interrupt waits for a matching worker success response. Close retains the existing obligation,
+fresh-process and explicit-force checks, archives only the selected bridge, and proves that the
+original worker exited before reporting success. It never signals the launcher or sibling workers.
+Controls share the existing write lanes and request-key receipts. Unknown outcomes are not retried.
+
+The daemon reads the current CLI OAuth credentials on demand, using the default macOS Keychain or
+its configured credential file and organization. It does not refresh or rewrite credentials, copy
+them to the browser, use API keys, or accept a caller-supplied API origin. Expired/unavailable sign-in
+requires signing in through Claude Code. Custom config roots use their own credential file; custom
+Keychain-service discovery is not implemented. The controller platform header follows the native
+human-controller envelope; this path is for a person's submitted message, not peer-agent approval.
+
+RC transcript reads use bounded persisted controller events, including quota errors when there is
+no local transcript. Reads make one request without polling, retries or an unbounded cache. Native
+sequence cursors are scoped to bridge identity and process generation; assistant events require a
+worker source, and private reasoning uses the same projection as local JSONL. A provider API change
+can make this integration unavailable; native Claude remains the fallback.
+
+Project history includes SDK-origin conversations with a `bridge-session` record or a bridge ID on
+the user record, within the existing bounded opening scan. Unrelated SDK jobs and Clawdline child
+briefings remain excluded. Local history uses the daemon's absolute `CLAUDE_CONFIG_DIR`, otherwise
+`~/.claude`; separate process-specific stores and custom project-directory names are not searched.
+Local UUIDs and remote bridge IDs remain distinct; a saved transcript does not prove a live worker.
+
+The opt-in `TestNativeRemoteControl` acceptance test requires an exact worker PID and bridge ID.
+A send additionally requires a one-use attempt marker and explicit authorization; it checks that
+extra usage is disabled before submitting. Ordinary tests never contact a real Claude account.
+The native October 28 verification on 2.1.312 observed two accepted test prompts and worker quota
+refusals, including one through `Actions.Send`. A separately authorized image test observed one
+image event through `Actions.SendWithPictures`, followed by the same worker's quota refusal
+(`total_cost_usd=0`, `duration_api_ms=0`); further model tests stopped. No successful image answer
+or real tool-permission round trip was verified. Protocol-only native tests confirmed initialize,
+idle interrupt, and archive followed by worker exit while the launcher remained alive. Fixture
+and browser tests cover permission approval, stale requests and duplicate clicks; active-turn
+interruption remains unverified until quota is available.
+
+The controller envelope is also described in the independent [claude-rc-api protocol reference](https://github.com/ThatCrispyToast/claude-rc-api/blob/main/API_REFERENCE.md).
+
+See [Claude's Remote Control documentation](https://code.claude.com/docs/en/remote-control) and
+[session storage documentation](https://code.claude.com/docs/en/sessions#where-transcripts-are-stored).
+
 <kbd>⌘</kbd><kbd>J</kbd> opens a pane below the input showing what that session currently says,
 refreshed about once a second and following <kbd>Tab</kbd> as you switch. The rest of the screen
 blurs behind it, because reading a transcript is a different mode from firing off one line. The
@@ -673,3 +747,29 @@ The hosted main Console shows an Admin dashboard link in its Manage sidebar grou
 the cookie session explicitly reports `operations_access: true`. Missing/false values and session
 revocation hide it. The link opens `/admin/health` directly, including on mobile. Local-only
 Consoles do not show it; operations endpoints independently recheck the superuser binding.
+
+
+## Native prompt suggestions in the message box
+
+The composer keeps native Claude suggestions separate from its persisted text draft. Its existing
+placeholder layer draws the suggestion without increasing the editor height; only Space or Tab
+in a genuinely empty editor inserts it through the normal editor operation. The send path remains
+separate. The keyboard and native beforeinput handlers exclude input-method composition, modified
+shortcuts and nonempty drafts. The input's accessible label stays stable, with an English or
+Traditional Chinese completion instruction in its description.
+
+The initial read renews the existing bounded screen lease. tmux pipe signals drive later reads;
+only a native suggestion change wakes Cloud publication immediately, using a fresh authenticated
+Session row instead of waiting for the five-second snapshot tick. Text travels in the encrypted
+full s/ row, never the content-free ss/ feed. The Cloud reader joins it only to the matching live
+execution. Process start, conversation and watch identity fence captures; stale native versions
+cannot replace newer ones. A temporary disconnect hides the reading, while an accepted or
+dismissed native ID stays dismissed if it is replayed.
+
+The terminal adapter requires the lowest complete native composer frame and SGR dim evidence.
+A focused Claude 2.1.314 reverses its first glyph and dims the rest; an accepted draft loses the
+dim attribute. Loopback-provider captures cover these native transitions without a paid request.
+No-color captures, ellipsis-truncated suggestions, unframed choices and ambiguous multiline input
+are withheld. This adapter does not attach to the SDK event stream of an already-running TUI,
+and it does not claim suggestions for plain iTerm2 or Remote Control workers. Generation latency
+belongs to Claude; native-ready-to-render latency must be measured separately from it.

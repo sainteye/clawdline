@@ -14,6 +14,7 @@ import { ProbeScreen } from "./probe-view"
 import { healthHref, isProbeView, STORED_WINDOWS_S, TREND_RANGE_WORDS, type HealthRoute, type HealthScope, type HealthScreen, type TrendRangeWord } from "./route"
 import { TrendScreen } from "./trend-view"
 import { exactUTC, StoredScreen, type StoredNav } from "./stored-screens"
+import { PerformanceScreen } from "./performance-view"
 import { AttentionPanel } from "./attention-view"
 
 export type ConnectionHealthProps = {
@@ -34,7 +35,11 @@ export type ConnectionHealthProps = {
   arrivedByMove?: boolean
 }
 
-export function ConnectionHealth({ route, go, apiOrigin, get, fixture, onRefused, locale, arrivedByMove = false }: ConnectionHealthProps) {
+export function ConnectionHealth(props: ConnectionHealthProps) {
+  return props.route.screen === "M03" && props.route.performance ? <PerformanceScreen {...props} /> : <StoredConnectionHealth {...props} />
+}
+
+function StoredConnectionHealth({ route, go, apiOrigin, get, fixture, onRefused, locale, arrivedByMove = false }: ConnectionHealthProps) {
   const say = useMemo(() => healthWords(locale), [locale])
   const { state, refresh, loadOlder, loadOlderIncidents, refuse } = useStored(get, apiOrigin, route)
   const actions = useMemo(() => ({ get, apiOrigin, refresh, refuse, loadOlderIncidents }), [get, apiOrigin, refresh, refuse, loadOlderIncidents])
@@ -75,6 +80,7 @@ export function ConnectionHealth({ route, go, apiOrigin, get, fixture, onRefused
         <p className="adm-sub">{say(`lead_${route.screen}` as HealthWord)}</p>
       </header>
 
+      {route.screen === "M03" ? <nav className="adh-switch"><a className="adh-switch-btn" href={healthHref({ screen: "M03", performance: true }, scope)} onClick={e => { e.preventDefault(); go(healthHref({ screen: "M03", performance: true }, scope)) }}>{say("pf_view")}</a></nav> : null}
       {trendable || probes ? (
         <nav className="adh-switch adh-view-switch" aria-label={say("tr_viewLabel")}>
           {([

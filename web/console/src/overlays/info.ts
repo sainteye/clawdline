@@ -1,3 +1,5 @@
+import { readIntegrationSettings } from "../pages/settings/api.js"
+import { GRAPHIFY_SETTING, graphWord, openGraphify } from "../graphify/graphify.js"
 import type { ProjectLink, SessionInfo, SessionLimits, SessionModel } from "@clawdline/contract"
 import { MENU_FOLLOW } from "../session/menu-follow.js"
 import { client } from "../client.js"
@@ -35,6 +37,8 @@ import { RoleDetail } from "./role-detail.js"
 import { reasoningEffortHTML } from "./reasoning-effort.js"
 import { catalogWord } from "../catalog.js"
 import "./info-next.css"
+import { workflowInfoHTML } from "../session/workflow-profile.js"
+import { protocolStateHTML } from "../session/protocol-state.js"
 
 /**
  * The Session info card — `Info` in `input/info.js`, function for function,
@@ -81,6 +85,16 @@ const node = (id: string) => document.getElementById(id)
 const T = L.strings
 const esc = L.escapeHTML
 const fill = L.fillString
+
+let graphifyEnabled = false
+let graphifySettingRead = 0
+function loadGraphifySetting(id: string): void {
+  graphifyEnabled = false
+  const version = ++graphifySettingRead
+  void readIntegrationSettings().then(settings => {
+    if (version === graphifySettingRead && forId === id && !hidden()) {graphifyEnabled = settings.graphify_enabled === true; draw()}
+  }, () => { if (version === graphifySettingRead && forId === id) {graphifyEnabled = false; draw()} })
+}
 
 let forId: string | null = null // whose card this is
 let data: Facts | null = null // as the daemon sent it; null until an answer has arrived
@@ -236,7 +250,7 @@ function smartTitleButton(disabled: boolean): string {
 function namingAssistantName(assistant: string | undefined): string {
   if (assistant === "claude") return "Claude Code"
   if (assistant === "codex") return "Codex"
-  if (assistant === "antigravity") return "Gemini"
+  if (assistant === "antigravity" || assistant === "gemini") return "Gemini"
   // A turn under `auto` that ran and failed was Claude Code's: Codex is only
   // asked when Claude Code could not answer at all.
   if (assistant === "auto") return "Claude Code"
@@ -349,7 +363,7 @@ function statusHTML(s: Row | null): string {
       '<span class="session-work-copy" data-work-state="working">' + esc(s.line || T.webStateWorking) + "</span>" + owedBadgeHTML(s)
   } else if (work.state === "waiting_you") {
     workSaid =
-      '<span class="session-work-copy" data-work-state="waiting_you">' + statusGlyphHTML("🙋", T.sessionWaiting) + "</span>" + owedBadgeHTML(s)
+      '<span class="session-work-copy" data-work-state="waiting_you">' + statusGlyphHTML("🙋", s.provider_block === "model_capacity" ? nextWord("sessionModelCapacity") : T.sessionWaiting) + "</span>" + owedBadgeHTML(s)
   } else if (work.state === "waiting_session") {
     const waits = ((s.coordination || {}).waitingOn || []).map((wait: Record<string, string>) =>
       [wait.ownerLabel || wait.ownerSessionId, wait.releaseCondition].filter(Boolean).join(" · "),
@@ -547,10 +561,13 @@ function html(d: Facts): string {
   const current = s.model || (u && u.model) || ""
   if (pending && models.some((m) => m.command === pending && onModel(current, m))) pending = null
   let out = hero(s, u)
+  out += workflowInfoHTML(d.workflow)
   let i = 0
   out += sec(++i, T.webInfoStatus, "", statusHTML(session() || (s as unknown as Row)))
+  if (d.protocol) out += sec(++i, catalogWord("acp", "title"), "", protocolStateHTML(d.protocol, key => catalogWord("acp", key), esc, L.clock))
   const role = roleHTML(session())
   if (role) out += sec(++i, nextWord("personaPicker"), "", role)
+  if (graphifyEnabled && s.cwd) out += sec(++i, graphWord("title"), "", '<button type="button" class="chip" data-graphify-open>' + esc(graphWord("open")) + "</button>")
   // Read-only pairings get no buttons rather than dead ones.
   if (host.writable() && (models.length || s.assistant === "codex")) {
     out += sec(++i, T.webInfoSwitchModel, "", s.assistant === "codex" ? codexModelHTML(models, current) : modelsHTML(models, current))
@@ -598,7 +615,9 @@ function draw(): void {
   const titleCaret = titleFocused ? titleBox?.selectionStart ?? null : null
   const again = drawn
   box.classList.toggle("again", again)
+  const workflowOpen = drawn ? [...box.querySelectorAll<HTMLDetailsElement>("details[data-workflow-detail][open]")].map(el => el.dataset.workflowDetail) : []
   box.innerHTML = data ? html(data) : ""
+  for (const el of box.querySelectorAll<HTMLDetailsElement>("details[data-workflow-detail]")) el.open = workflowOpen.includes(el.dataset.workflowDetail)
   if (editor) box.querySelector(".title-editor")?.replaceWith(editor)
   const roleButton = box.querySelector<HTMLButtonElement>("button[data-role-detail]")
   const persona = personaById(personasNow(), session()?.persona)
@@ -699,6 +718,7 @@ export const Info = {
     said("")
     overlay.hidden = false
     load(forId, force)
+    loadGraphifySetting(forId)
     focusModalContainer(node("info-sheet"))
   },
 
@@ -709,9 +729,12 @@ export const Info = {
   refresh(): void {
     if (hidden() || !forId || loading) return
     load(forId, true)
+    loadGraphifySetting(forId)
   },
 
   close(): void {
+    graphifySettingRead++
+    graphifyEnabled = false
     RoleDetail.close(false)
     const overlay = node("info")
     if (overlay) overlay.hidden = true
@@ -965,6 +988,10 @@ export function bindInfo(): () => void {
   const onBody = (ev: MouseEvent) => {
     const t = ev.target as Element | null
     if (!t || !t.closest) return
+    if (t.closest("button[data-graphify-open]") && graphifyEnabled && forId) {
+      const target = { kind: "session" as const, id: forId, label: data?.session.title }
+      Info.close(); openGraphify(target); return
+    }
     const picker = t.closest<HTMLButtonElement>("button[data-model-picker]")
     if (picker) {
       if (!picker.disabled) Info.openModelPicker()
@@ -1036,6 +1063,8 @@ export function bindInfo(): () => void {
   // The role section needs the catalog; a card open when it arrives draws again.
   void loadPersonas()
   const offPersonas = onPersonas(() => draw())
+  const onGraphifySetting = (event: Event) => {graphifySettingRead++;graphifyEnabled = (event as CustomEvent<boolean>).detail === true; draw()}
+  window.addEventListener(GRAPHIFY_SETTING, onGraphifySetting)
   overlay.addEventListener("click", onOverlay)
   sheet.addEventListener("click", onSheet)
   close.addEventListener("click", onClose)
@@ -1046,6 +1075,7 @@ export function bindInfo(): () => void {
   body.addEventListener("keydown", onKeyDown)
   return () => {
     offPersonas()
+    window.removeEventListener(GRAPHIFY_SETTING, onGraphifySetting)
     overlay.removeEventListener("click", onOverlay)
     sheet.removeEventListener("click", onSheet)
     close.removeEventListener("click", onClose)

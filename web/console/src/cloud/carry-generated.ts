@@ -14,6 +14,9 @@
 export const CARRIED = {
   agent: "GET /v1/sessions/{id}/agents/{agent}?limit=",
   answer: "POST /v1/sessions/{id}/key",
+  // Machine-owned API aggregates read by its paired owner, including a phone;
+  // no operator ingest or global machine selection.
+  "api-performance": "GET /v1/api-performance",
   // Archived Sessions (docs/session-archive.md): the swipe's 封存 on a row
   // (`session/List.tsx`) and the sidebar's Archive page (`pages/archive.tsx`).
   // The archive rides the Session's own channel, as `end` does; the list is a
@@ -36,6 +39,9 @@ export const CARRIED = {
   "diagnostics.events": "cloud-client.js _deliverViewerEvents (after a recorded failure)",
   "direct-local-network-enable": "cloud-client.js enableSameNetwork",
   "dismiss-restorable": "POST /v1/sessions/restorable/dismiss",
+  // Account quota snapshots for the global footer. Credentials remain on the
+  // machine.
+  doctor: "GET /v1/doctor",
   document: "GET /v1/sessions/{id}/documents/{scope}/{path}",
   documents: "GET /v1/sessions/{id}/documents",
   end: "POST /v1/sessions/{id}/close",
@@ -43,17 +49,39 @@ export const CARRIED = {
   "forget-archived": "POST /v1/sessions/archived/forget",
   git: "GET /v1/sessions/{id}/git",
   "git-diff": "GET /v1/sessions/{id}/git/diff?path=",
+  // Issue sync: starts or re-reads the GitHub device code.
+  "github-connect": "POST /v1/integrations/github/device",
+  // Issue sync: this machine's GitHub connection, never its token.
+  "github-connection": "GET /v1/integrations/github",
+  // Issue sync: forgets this machine's GitHub token.
+  "github-disconnect": "DELETE /v1/integrations/github",
   image: "GET /v1/artifacts/images/{id}?session={id}[&size=thumb]",
-  info: "GET /v1/sessions/{id}/info[?parts=summary]",
+  info: "GET /v1/sessions/{id}/info[?parts=summary|remote-permission]",
+  "integration-settings": "GET /v1/settings/integrations",
+  "integration-settings-update": "POST /v1/settings/integrations",
   intents: "POST /v1/intents",
   interrupt: "POST /v1/sessions/{id}/interrupt",
+  // Issue sync: the person's Retry on a failed link.
+  "issue-sync.retry": "POST /v1/issue-sync/{id}/retry",
+  // Issue sync: the API token travels inside the end-to-end encrypted command.
+  "jira-connect": "POST /v1/integrations/jira",
+  // Issue sync: this machine's Jira Cloud connection, never its token.
+  "jira-connection": "GET /v1/integrations/jira",
+  // Issue sync: forgets this machine's Jira sign-in.
+  "jira-disconnect": "DELETE /v1/integrations/jira",
+  // Issue sync: the Jira projects and issue types the picker offers.
+  "jira-projects": "GET /v1/integrations/jira/projects",
   // The dashboard behind the session counts (`machine/`): CPU, memory, disk
   // space and grouped reclaim backlog, a machine read with no parameter.
   "machine-usage": "GET /v1/machine/usage",
+  "native-terminal-input": "POST /v1/sessions/{id}/native-terminal",
+  "native-terminal-screen": "GET /v1/sessions/{id}/native-terminal",
   "notification-rules": "GET /v1/notification-rules",
   "notification-rules-update": "POST /v1/notification-rules",
   "notification-settings": "GET /v1/settings/notifications",
   "notification-settings-update": "POST /v1/settings/notifications",
+  "output-file": "GET /v1/sessions/{session}/outputs/{id}",
+  outputs: "GET /v1/sessions/{session}/outputs",
   "pair-agent-start": "POST /v1/cloud/pairing/agent",
   "pair-agent-status": "GET /v1/cloud/pairing/agent/{task}",
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",
@@ -61,9 +89,10 @@ export const CARRIED = {
   "peer-inbox": "GET /v1/cloud/peer/inbox?machine_id=&session_id=&execution_generation=&before=",
   "peer-outbox": "GET /v1/cloud/peer/outbox/{request}",
   "peer-send": "POST /v1/cloud/peer/send",
-  // The built-in personas a start may name (docs/personas.md): a machine read
-  // with no parameter. A machine that does not list it is refused by the copied
-  // client before anything leaves (`_unsupportedRefusal`).
+  // The built-in personas a start may name (docs/personas.md): a machine read;
+  // display-v1 omits provenance and conditionally returns a version receipt. A
+  // machine that does not list it is refused by the copied client before
+  // anything leaves (`_unsupportedRefusal`).
   personas: "GET /v1/personas",
   places: "GET /v1/places",
   "project-add": "POST /v1/places?machine=",
@@ -74,6 +103,8 @@ export const CARRIED = {
   "project-file-read": "GET /v1/projects/{project}/files/{file}",
   "project-file-save": "PUT /v1/projects/{project}/files/{file}",
   "project-folders": "GET /v1/project-folders?path=&machine=",
+  "project-graphify": "GET /v1/projects/{project}/graphify",
+  "project-graphify-build": "POST /v1/projects/{project}/graphify",
   "project-hide": "DELETE /v1/places",
   // Project settings sync (docs/project-sync.md). The two source reads are also
   // asked of *another* paired machine by `cloud/project-sync.ts`, which is how
@@ -120,6 +151,8 @@ export const CARRIED = {
   // Waiting card that sends a person there to read the question.
   screen: "GET /v1/sessions/{id}/screen",
   send: "POST /v1/sessions/{id}/send",
+  "session-graphify": "GET /v1/sessions/{id}/graphify",
+  "session-graphify-build": "POST /v1/sessions/{id}/graphify",
   "session-receipt": "GET /v1/sessions/{id}/cloud-receipts/{request}?action=&execution_generation=",
   "session-snippets": "GET /v1/playbook-project?session={id}",
   "sessions.list": "GET /v1/sessions?parts=list (one machine-level display read)",
@@ -160,6 +193,9 @@ export const CARRIED = {
   "squad.skill-sources": "GET /v1/squad/skill-sources?provider=&place_id=&id=&folder=",
   start: "POST /v1/places/{id}/start[/{assistant}[/{model}][/as/{persona}]]",
   title: "POST /v1/sessions/{id}/title",
+  "tools.catalog": "GET /v1/tool-library",
+  "tools.prepare": "POST /v1/tool-library/prepare",
+  "tools.save": "POST /v1/tool-library",
   transcript: "GET /v1/transcript?session={id}",
   // The Settings page's update panel and the list's banner
   // (`machine/update.ts`): whether this machine trails the latest build, a
@@ -210,6 +246,7 @@ export const CARRIED = {
   "work.proposals": "GET /v1/work/proposals[?project=]",
   "work.v2.assign": "POST /v1/work/v2/items/{id}/assign",
   "work.v2.cancel": "POST /v1/work/v2/items/{id}/cancel",
+  "work.v2.cards": "GET /v1/work/v2/items?view=cards-v1&project=&status=&q=&cursor=",
   "work.v2.complete": "POST /v1/work/v2/items/{id}/complete",
   "work.v2.convert": "POST /v1/work/v2/items/{id}/convert",
   "work.v2.create": "POST /v1/work/v2/items",

@@ -45,6 +45,10 @@ func TestProviderStateDirReadDoesNotCreateAndRejectsUnsafe(t *testing.T) {
 	if err = os.Mkdir(path, 0755); err != nil {
 		t.Fatal(err)
 	}
+	// Mkdir's requested mode is filtered by the calling service's umask.
+	if err = os.Chmod(path, 0755); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = ProviderStateDir(root); err == nil {
 		t.Fatal("public state accepted")
 	}

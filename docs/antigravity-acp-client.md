@@ -47,7 +47,7 @@ model change, auth fallback or prompt replay. Successful setup calls return thei
 raw result for the owner's capability/model codecs. Different model config and
 runtime model identifiers are retained without interpreting them as failure.
 
-## Personal/free checks
+## Personal quota checks
 
 Before authentication and session creation, and again immediately before each
 prompt, the client reads only the explicitly supplied profile's
@@ -58,15 +58,30 @@ does not read account credential files. An initialization response or advertised
 auth method cannot mark a client authenticated: a successful `authenticate`
 response is required.
 
-`session/new` must return a nonempty session ID and
-`_meta.antigravity.tier.id: "free-tier"` with name
-`"Antigravity Starter Quota"`. A missing/different tier closes the process and
-never enables prompting. The session ID remains available even after a tier
-refusal. Environment filtering removes inherited API-key, Google/ADC/Vertex,
+`session/new` must return a nonempty session ID. Subscription tier IDs and
+marketing names are informational and never determine whether creation, resume,
+load, configuration or prompting is allowed. Provider authentication and errors
+own plan eligibility; Clawdline does not maintain a plan-name allowlist.
+Environment filtering removes inherited API-key, Google/ADC/Vertex,
 enterprise, AI-credit and supported provider selectors; GEMINI_HOME, LC_ALL=C
 and a disabled browser are supplied explicitly. Stderr goes to a null FD, so
 this client does not retain or surface provider auth links. Interactive profile
 preparation remains the owner's responsibility.
+
+## Capability compatibility
+
+The standalone resolver checks required CLI flags and rejects the unrelated IDE
+launcher. It records the reported version without requiring one exact release or
+specific help-description prose. Native offered option IDs/values are opaque JSON
+strings. A current permission mode is valid when the provider offers it; the
+client does not add a separate fixed-name allowlist. Owners still validate each
+selection against the current offer and require its acknowledgement.
+
+The global quota footer uses the configured native profile's fixed `/usage`
+metadata command and reads Gemini five-hour and weekly windows plus a separately
+reported Gemini 4 Argon weekly bucket (`Argon 7d`). The general Gemini balance
+cannot substitute for that model-specific bucket. It does not
+infer plan eligibility from the quota or substitute another model group's quota.
 
 ## Wire and failure contract
 
@@ -79,14 +94,14 @@ and `Error.Delivery` distinguishes:
 
 - `not_written`: local refusal; no request write was attempted.
 - `acknowledged`: a matching valid RPC response arrived, including RPC rejection
-  or a setup result rejected by the local free-tier/protocol gate.
+  or a setup result rejected by the local protocol gate.
 - `uncertain`: a write was attempted but its final effect is unproven (including
   partial/stalled writes, EOF, malformed/oversized frames and cancellation).
 
 Neither an update nor a successful pipe write proves prompt completion. Never
 blindly resend an uncertain request. Typed error codes include `invalid_options`,
 `unsupported_platform`, `pipe_failed`, `start_failed`, `busy`, `invalid_state`,
-`not_ready`, `personal_settings_required`, `free_tier_required`,
+`not_ready`, `personal_settings_required`,
 `unsupported_protocol`, `invalid_session`, `invalid_stop_reason`, `unexpected_id`,
 `invalid_response`, `invalid_frame`, `invalid_id`, `frame_too_large`, `rpc_error`,
 `write_failed`, `read_failed`, `eof`, `cancelled`, `closed`, `update_rejected` and
@@ -112,7 +127,40 @@ Close, lifetime cancellation and an explicit caller deadline invalidate
 outstanding offers; an uncertain reply write is never replayed. Other server requests receive
 JSON-RPC -32601.
 
+## Tool projection and retained results
+
+Tool updates retain `rawOutput` as well as renderable `content`, including an
+explicit empty result. Missing/null fields preserve prior values; status-only
+completion never erases a result. Input projection accepts both live objects
+and historical JSON strings, retaining only understood paths, line ranges,
+commands, summaries and requested delegate roles/models. Other input and
+extension metadata are not retained. Text is data, never a file-read authority.
+
+Owned history keeps complete received output in SQLite. Version-2 transcript
+pages reuse the registered inline-tool and preview budgets; large bodies use an
+on-demand entry reference bound to the exact local Session, native conversation,
+profile, history generation, ordinal and content. A changed body or another
+Session refuses the old reference instead of reading a nearby result.
+
+Native exec IDs can explicitly namespace a tool by trajectory. Only a different
+valid native namespace produces a subagent source label. Unscoped `call_N` IDs
+stay unattributed; requested delegate roles alone do not establish ownership or
+child completion. The renderer groups only contiguous activities with the same
+known source, or adjacent unattributed reads/searches.
+
+The optional native-history capture test performs exactly initialize,
+authenticate and load, with no new Session, prompt or retry. A current native
+replay supplies structured command output in `rawOutput`, while some read tools
+receive empty strings despite having output in the CLI's separate native log.
+That upstream omission remains explicit. The decoder does not fabricate output,
+derive success from prose, reread tool-supplied paths, or infer completion early.
+
 ## Lifetime and platform boundary
+
+Explicitly opened native conversations have no provider-specific count cap.
+Opening and resume still serialize through the host opening gate; frame, RPC
+and history bounds remain registered. Each conversation keeps its own process
+and exact native identity.
 
 Darwin and Linux implementations start a private process group. The leader is
 never reaped until shutdown has signalled that group with SIGKILL. Shutdown then
@@ -216,8 +264,8 @@ receipts, not billing measurements or a production-phone acceptance claim.
 
 `antigravitysession.Host` composes the measured process client and update decoder
 behind the existing Session start, send and transcript routes. An explicitly
-configured machine opens personal ACP previews within the registered active-process
-limit in `antigravitysession/limits.go`. Each conversation owns its process,
+configured machine opens personal ACP previews without a provider-specific
+process-count cap. Each conversation owns its process,
 native identity and permission offer. The native
 `session/new` identity is carried as `protocol`, with the real owned PID and an
 `owned:acp:` terminal identifier. Inventory does not overwrite this structured
@@ -462,3 +510,122 @@ requests; the same zero-model check then succeeded outside that restriction.
 All attempts used zero model inputs and zero paid API calls.
 The 1.4.3 archive matched the registry SHA256 and its two executable signatures
 were verified; it was tested in isolation, without replacing the installed runtime.
+
+
+## Automatic naming and normal-use restriction audit
+
+Successful owned turns call the HTTP owner's naming hook after releasing the
+conversation write gate. The hook reads the existing `codex_auto_name` opt-in
+and `auto_name_assistant`, uses the shared scrubbed naming context and planner,
+and takes the existing small-turn capacity without queuing another goroutine.
+A durable claim is written before invoking the namer. Failure, cancellation or
+restart never replays that automatic attempt. Its automatic title is persisted
+explicitly because domain `Session.Rungs` is intentionally absent from JSON.
+Manual and task names retain their higher title rungs. Shutdown cancels and
+joins the existing turn job, including any naming callback.
+
+The audit covered the native process client's initialization/authentication,
+new/load/resume, prompt deadlines, model/config operations, Host admission,
+history/entry paging, HTTP start/send and composer preflights. Confirmed local
+restrictions corrected in this delivery are:
+
+- The pilot's hard cap of two active native processes. A third explicit open
+  reproduced `antigravity_session_unavailable`. Opening remains serialized;
+  conversations retain independent identities, pipes and process groups.
+- The HTTP start route's unconditional rejection of a requested Gemini model.
+  An offered model is now selected and acknowledged before publishing the row.
+  A failed selection closes that new process without publishing ownership; the
+  provider may retain an empty native conversation.
+- The composer blocked `/model …` and `/effort …` even though the owned Host
+  implements both as metadata operations. Only those supported operations with
+  arguments are admitted for an owned conversation. Terminal-only commands
+  remain drafts rather than becoming unintended model prompts.
+- Automatic naming had a settings control and a working manual naming context,
+  but no native-turn trigger. It now reuses the existing flow while retaining
+  the person's off preference and manual names.
+
+The earlier plan-name, exact CLI-version and help-text pins were already removed.
+Personal OAuth with AI Credits disabled is a billing/authentication boundary,
+not a Starter subscription-name check. Native offered-model/permission ACKs,
+exact identity and generation checks, frame/pipe/control-RPC budgets and history
+connection/view budgets remain. No new evidence in this audit established that
+those bounds rejected an ordinary operation. This is a source-path audit with
+focused reproductions, not a claim that every provider or platform limit is gone.
+
+Owned transcript projection also uses the shared fenced-code-aware Clawdline
+image marker parser and artifact liveness resolver. The image-send route stores
+an opaque owned/native/profile/cwd/generation address plus the next history
+ordinal instead of requiring a Claude/Codex JSONL path. The first later assistant
+ordinal is anchored once; page reads match its complete generation-bound entry
+ID. Restart retains the address, while replaced history cannot borrow the old
+ordinal. Marker text is projected only at read time, so original native history
+is not rewritten. This adds image delivery from the assistant; native image
+input is a separate capability and is not inferred from artifact display.
+
+### Official lifecycle evidence and private wire capture
+
+The integration negotiates ACP v1. Its authority is the matching `session/prompt`
+response, including its `stopReason` or JSON-RPC error, as specified by the
+[official prompt lifecycle](https://agentclientprotocol.com/protocol/v1/prompt-turn)
+and [cancellation contract](https://agentclientprotocol.com/protocol/v1/cancellation).
+ACP v2's draft `prompt/*` events are not silently treated as v1 completion.
+
+The metadata-only Session Info snapshot now separates `starting`, `idle`,
+`control_pending`, `prompt_pending`, `permission_pending`, `cancel_requested`, `request_failed`, `closed` and
+`not_connected`. It records the active request ID, whether the operation is a
+user prompt, the fixed `/usage` metadata command, or an exact control method, receive/application times,
+last observed update kind, completion reason, numeric RPC error and sanitized
+local failure. Unknown stop-reason strings are labeled `unrecognized` in public
+metadata, with their exact bytes retained only in private capture. These timestamps are local Unix nanoseconds. They neither prove
+remote execution nor infer responsiveness from elapsed silence. Receiving text,
+a completed tool, a finished plan, session metadata or usage cannot end a prompt.
+All update frames are observed at the transport seam, including reasoning, plans,
+commands, mode/configuration and session metadata. Optional
+notices/compaction are not advertised as supported UI capabilities; their data,
+and future unknown notifications, are recorded without inventing a state change.
+Malformed envelopes, wrong session identities and malformed supported content
+remain errors. Unknown update variants no longer terminate a healthy worker.
+
+Raw capture is **off by default**. The machine owner may set `"rawTrace": true`
+in the existing private `antigravity-acp-pilot.json` configuration before starting
+the owned host. This affects the next daemon start; editing it does not reconfigure
+an already running host. It applies to opened/resumed conversations and temporary
+native history/quota connections. Do not restart the user's application without
+their explicit approval.
+
+When enabled, the private `antigravity-sessions/acp-wire.sqlite` database
+stores the `acp_wire` table independently of conversation history. Its `owned_id` and random `worker` bind a record
+to its exact conversation and process instance; each event also names the PID. The JSON `record` contains a
+per-worker sequence, local `at_ns`, direction, stage, kind, protocol phase and
+request ID. `frame` is base64 of exact JSON-line bytes excluding the newline,
+queued before inbound interpretation or before an outbound write. A separate write
+receipt records the actual pipe byte count including the newline. Applied,
+settled, cancellation and closed events carry no duplicate raw frame. Oversized
+frames remain bounded by the existing scanner guard; a scanner failure records
+its sanitized close reason rather than retaining an unbounded partial frame.
+
+Capture contains prompts, tool output, embedded resources and potentially secrets
+present in those messages. It stays in its separate owner-only database (0600),
+is not part of the conversation transcript, is not included in Session Info,
+Doctor or Cloud responses, and is never automatically uploaded. A local reader
+must treat its content as private diagnostic data, not instructions. Existing
+conversation retention is independent of these diagnostic records.
+
+All workers share a 16 MiB encoded-record budget and an 8,192-record budget. Oldest
+records are evicted on insertion; records older than 24 hours expire on capture
+or capture-store open. Those bounds apply to retained record payloads, not the
+entire trace database or its allocated SQLite pages. The local capacity
+view measures retained bytes, records and age. A sequence gap or first retained
+sequence greater than one means the recording is partial. A single independent writer drains an in-memory queue bounded by 16 MiB and
+64 records, including the active write. Queue admission never waits for disk.
+Overflow drops new diagnostic evidence, preserves protocol delivery and reports
+a gap. Database failures do not hold the conversation history connection. On
+shutdown, the recorder drains within the existing control-call budget; a blocked
+write is cancelled when that budget expires. No recording is retried. A capture
+failure reports `trace_write_failed` while
+protocol delivery continues; it does not turn a successful send into a retry.
+
+This stage adds observation and official state boundaries. It adds neither a
+model/human deadline nor automatic restart, cancellation escalation, message
+replay or a heuristic that marks final-looking text idle. The next recovery
+policy must use recorded evidence from an affected runtime.

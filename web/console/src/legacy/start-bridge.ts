@@ -17,7 +17,8 @@
 import { T } from "./js/core/i18n.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 import { resumePath, startPath } from "../session/place-routes.js"
-import type { Assistant, StartAssistant } from "@clawdline/contract"
+import type { Assistant, SessionRow, StartAssistant } from "@clawdline/contract"
+import { S } from "./js/core/state.js"
 import { bindFailureLine as bindFailureLineOriginal } from "./js/core/failure-text.js"
 import {
   bandSpin as bandSpinOriginal,
@@ -123,7 +124,12 @@ export const spinClock = {
   band: () => bandSpinOriginal as HTMLCanvasElement | null,
   start: () => startSpinOriginal as HTMLCanvasElement | null,
 }
-export const bySessionId = bySessionIdOriginal as (id: string) => { id: string } | null
+export function bySessionId(id: string, assistant?: string | null, machine?: string): { id: string } | null {
+  if (!assistant && !machine) return bySessionIdOriginal(id)
+  const rows = (S as unknown as { sessions: SessionRow[] }).sessions
+  return rows.find(row => row.sessionId === id && (!assistant || row.assistant === assistant) &&
+    (!machine || sessionSelectionIdentityOriginal(row)?.machine === machine)) ?? null
+}
 export const localSessionMachine = LOCAL_SESSION_MACHINE as string
 export type SelectionIdentity = { key: string; rowId: string; machine: string; session: string }
 export const sessionSelectionIdentity = sessionSelectionIdentityOriginal as (

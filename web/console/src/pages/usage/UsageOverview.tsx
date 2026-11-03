@@ -1,4 +1,6 @@
 import { ProjectPicker } from "../../ui/ProjectPicker.js"
+import type { SessionRow } from "@clawdline/contract"
+import { Mark } from "../../session/List.js"
 import { readProjectPlaces, type ProjectPlace } from "../work/api.js"
 import { UsageSkeleton } from "./UsageSkeleton.js"
 import { usageProjectOptions } from "./project-options.js"
@@ -99,7 +101,17 @@ export default function UsageOverviewPage({ shown }: { shown: boolean }) {
           <div className="usage-columns">
             <section><h2>{w("usageProjects")}</h2><div className="usage-projects">
               {data.projects.length === 0 && <p>{w(data.totals.tokens === null ? "usageMissing" : "usageEmpty")}</p>}
-              {data.projects.map(row => <div key={row.id} className="usage-project-row"><span>{row.id === "unattributed" ? w("usageUnattributed") : row.name}</span><div className="usage-track" aria-hidden="true"><div style={{ width: `${row.tokens / Math.max(1, ...data.projects.map(p => p.tokens)) * 100}%` }} /></div><span>{compactValue(row.tokens)}</span></div>)}
+              {data.projects.map(row => {
+                const icon = pickerOptions.find(option => option.id === row.id)?.icon
+                return <div key={row.id} className="usage-project-row">
+                  <span className="usage-project-mark" aria-hidden="true">{icon
+                    ? <Mark icon={icon as SessionRow["icon"]} cellPx={3} />
+                    : <span className="project-picker-placeholder">▦</span>}</span>
+                  <span className="usage-project-name">{row.id === "unattributed" ? w("usageUnattributed") : row.name}</span>
+                  <div className="usage-track" aria-hidden="true"><div style={{ width: `${row.tokens / Math.max(1, ...data.projects.map(p => p.tokens)) * 100}%` }} /></div>
+                  <span>{compactValue(row.tokens)}</span>
+                </div>
+              })}
             </div></section>
             <Composition data={data} />
           </div>

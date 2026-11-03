@@ -6,9 +6,22 @@ The page describes a reviewed product revision, not a person's configuration. En
 
 ## Content ownership
 
+The Session composer's `/resume` shortcut opens the existing resume picker and
+does not send the command or inject a prompt into the current assistant. The
+picker retains the existing optional role selection and resume launcher. The
+English and Taiwan Traditional Chinese `claude-role`, `codex-role` and
+`role-skills` explanations still describe those choices and their effects;
+their source locations and review receipt follow the changed picker source.
+
 `web/console/src/pages/transparency/catalog.json` owns stable entry IDs, filters, runtime locations, original excerpts, source locations and review receipts. Human copy lives under `transparency.*` in both `public/catalogs/en.json` and `zh-Hant.json`. The website imports this inventory, both language copies and filter logic at an exact public product commit using its `scripts/sync-transparency.mjs`. Its build compares the imported content with current product main. No instruction excerpts are shipped in the Console bundle.
 
 Separate loading from applicability. In normal Clawdline-launched Codex Sessions, Board language and the Note rule are startup defaults; language falls through the configured language, machine, bundled language and `zh-Hant`. Claude's language and existing Project memory are automatic startup decisions. Roles, Skills, Board assignments, todos, notices and handoffs have their own triggers. Board assignment and reminder messages also carry the current Agent-language preference for Board text and person-facing task updates, subject to explicit Project/conversation rules and provider language choices. New Root briefing prose captures that preference until its startup message is delivered; English and Taiwan Traditional Chinese are translated, with English prose fallback for other locales. Reading a completion rule in a guide does not execute the completion action or reinject the guide every turn.
+
+The macOS public CLI now delegates `serve` to the separately named daemon before
+opening state. This changes executable identity, not provider instructions or
+native-hook consent. The English and Traditional Chinese Antigravity original
+launch context explanations were reviewed against the same launch-store and
+managed-hook calls; their source link follows the moved startup location.
 
 ## Updating an instruction or entry
 
@@ -90,3 +103,118 @@ resource, original text, role identity, snapshot and permission choices remain
 unchanged. Both English and Taiwan Traditional Chinese context-card explanations
 remain accurate; only their original code excerpt, source line and receipt change.
 The website snapshot must follow this reviewed product source when published.
+
+
+The macOS permission-timing correction defers protected Project catalog reads
+until a Project is selected. Review of the Board entry in English and Taiwan
+Traditional Chinese found no change to assignment text, language, injection
+triggers or reminder delivery; those explanations remain accurate. The Board
+source link and review receipt follow the changed catalog/resolution code in
+`work_v2.go`. No instruction excerpt is added to the Console bundle.
+
+
+Doctor adds a fixed local CLI version probe and a sanitized support report read.
+It does not prepare provider context, run a model prompt or change instruction
+injection. The new guide paragraph documents that explicit diagnostic read only.
+Review of the entry-point changes and both guide languages leaves the existing
+English and Taiwan Traditional Chinese injection explanations applicable.
+
+
+Machine workflow selection now preserves Clawdline standard as the default with
+no added workflow prompt or compulsory stages. A previous skills opt-in keeps
+its Superpowers selection. The selected debugging/review content is unchanged;
+Poteto adds a bundled local pstack adaptation with task routing, verifiable units
+and evidence mapping. Neither option grants additional authorization. Fresh roots
+seal a source/version/body/stage/tool-choice snapshot; owned children inherit it,
+and resume keeps its original context. Existing unsnapshotted conversations are
+not relabeled from current settings. Graphify remains separate, with its launch
+choice frozen in the same context. Launch records do not prove model application
+or benefit. The reviewed source inventory and both language explanations include
+the resolver, storage, local source bodies and launch producers. The public website
+snapshot must follow this product tree when this feature is approved for landing.
+
+
+Gemini subscription and compatibility checks now defer to authenticated provider
+eligibility and advertised capabilities instead of plan names or a pinned CLI
+release. Review of the managed-hook and owned-ACP cards in English and Taiwan
+Traditional Chinese found that their context, consent and first-input explanations
+remain accurate. The new account quota reader sends only the fixed `/usage`
+metadata command with no launch instructions, role snapshot or model generation.
+The ACP excerpt and reviewed source receipts follow the changed implementation.
+
+
+The Graphify lookup launch instruction is unchanged by explicit local index
+creation. The graph viewer now has a separate, user-triggered Build index action:
+it prepares a hash-pinned private parser and runs code-only extraction without a
+model API. The machine switch alone still installs or builds nothing. Review of
+the original launch excerpt and both language cards distinguishes these triggers;
+the existing cooperative per-query check now shares the larger bounded metadata
+read budget used by native project graphs. The website snapshot must retain the
+latest workflow-profile content when importing this reviewed product revision.
+
+The Gemini normal-use audit removes the pilot's two-process count cap and admits
+an offered model selection before publishing a new owned row. It also connects
+successful native turns to the existing opt-in naming flow, using the configured
+Claude/Codex namer and scrubbed context rather than injecting another Gemini
+message. Review of both language versions of the managed-hook and owned-ACP
+cards confirms that first-input resources, role snapshots, language, consent
+and native tool permissions remain described accurately. Naming stays off when
+previously off; it does not establish skill use or loaded-context evidence.
+The reviewed source receipt and excerpt follow the revised launch code.
+
+
+
+Native prompt-suggestion forwarding adds a content-free publisher invalidation
+callback to the daemon wiring in `cmd/clawdline/main.go`. Review confirmed that
+this does not change managed Antigravity context preparation, policy consent,
+loaded evidence, role or memory injection, or tool permissions. Both English and
+Taiwan Traditional Chinese Antigravity context explanations remain accurate.
+Suggestion text is read from the existing native terminal and only becomes a
+user message after the person accepts and sends it. The source receipt changes;
+the instruction inventory and its human copy do not gain another injection.
+
+
+The Session tool library adds a conditional user-message attachment, not a
+startup default. The person chooses a repository and Skill, reviews installation
+scope, prepares the visible draft, then sends it through the existing composer.
+The instructions ask the receiving agent to inspect existing tools, pin and read
+the source, perform permitted reversible setup, verify availability and execute
+the task. Neither the daemon nor the recommendation catalog installs third-party
+code. Delivery, installation, loading and application remain separate claims.
+The inventory registers the new producer and composer in both languages.
+
+Tool preparation also distinguishes evaluation frameworks from Skills and web
+libraries. The Harness² path prepares an isolated experiment, independent
+acceptance criteria, preserved baseline artifacts and explicit model-call cost
+controls. It grants no sandbox bypass, paid calls or machine workflow changes.
+Both language cards and the reviewed producer excerpt include this conditional
+framework path; catalog inclusion itself performs no installation or execution.
+
+
+ACP lifecycle observation and opt-in private wire recording do not change the
+`gemini-acp-context` prompt/resource composition, startup snapshot, replay rule
+or provider permissions described in either language. The reviewed source
+locations follow the added observation calls. The separate recording file and
+its bounds are described in the English and Taiwan Traditional Chinese Gemini
+guide; raw records are not instruction excerpts for the public transparency page.
+
+
+File and folder drops now insert visible path references into the editable draft,
+while pictures remain attachments. The drop itself does not send, prepare a
+provider prompt, install a tool or change permissions. Review of the English and
+Taiwan Traditional Chinese tool-library explanations confirms that their explicit
+send condition and removable attachment description remain accurate. The source
+location and receipt follow the moved composer send code. The website snapshot
+must follow this reviewed product revision when it is published.
+
+
+Assisted Cloud pairing tasks now include an optional structured observation in
+`result.json`. Review of the child briefing in English and Taiwan Traditional
+Chinese includes this existing detached-task trigger and its fixed pairing
+instructions. The browser compares the observation with the authenticated
+handover, requested machine and exact offer digest before closing the dialog.
+The observation trusts the helper assistant's reading of its existing remote
+access; it is not an independent execution audit. No new root defaults, remote
+credentials or generic provider-instruction mechanism are introduced. Missing
+or mismatched evidence keeps manual comparison. The public website snapshot
+must follow this reviewed product revision when published.

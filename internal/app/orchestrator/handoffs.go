@@ -80,8 +80,27 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		preflightPersona = ""
 	}
 	memory := b.memoryFor(cwd)
+	preparedWorkflow, err := b.prepareWorkflow(ctx, cwd, "")
+	if err != nil {
+		return openedSession{}, err
+	}
+	workflowOpened := false
+	defer func() {
+		if !workflowOpened {
+			preparedWorkflow.Fail(ctx)
+		}
+	}()
+	integrations := ""
+	if b.PrepareWorkflow != nil {
+		integrations = preparedWorkflow.Text
+	} else {
+		integrations, err = b.integrationInstructions(ctx, cwd)
+	}
+	if err != nil {
+		return openedSession{}, err
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model, ReasoningEffort: effort,
-		Language: b.SessionLanguage(assistant), Persona: preflightPersona, PersonaDir: b.PersonaDir(), Memory: memory})
+		Language: b.SessionLanguage(assistant), Persona: preflightPersona, PersonaDir: b.PersonaDir(), Memory: memory, IntegrationInstructions: integrations})
 	if err != nil {
 		return openedSession{}, err
 	}
@@ -92,7 +111,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if prepared.files.PromptPath != "" {
 		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model, ReasoningEffort: effort,
 			Language: b.SessionLanguage(assistant), Persona: persona,
-			SquadPromptPath: prepared.files.PromptPath, Memory: memory})
+			SquadPromptPath: prepared.files.PromptPath, Memory: memory, IntegrationInstructions: integrations})
 		if err != nil {
 			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
 			return openedSession{}, err
@@ -124,8 +143,8 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if prepared.files.PromptPath != "" {
 		set = append(set, prepared.files.PrivateEnv())
 	}
-	command := envPrefix(launch.Assistant, set) +
-		strings.Join(append([]string{launch.Assistant}, args...), " ")
+	command := preparedWorkflow.Wrap(envPrefix(launch.Assistant, set) +
+		strings.Join(append([]string{launch.Assistant}, args...), " "))
 
 	if b.Lanes != nil {
 		release, err := b.Lanes.Acquire(ctx, "open:"+name)
@@ -168,6 +187,10 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		return openedSession{}, err
 	}
 	b.recordSquadTerminal(ctx, prepared, out.TerminalID)
+	workflowOpened = true
+	if err := preparedWorkflow.Record(ctx, out.TerminalID); err != nil {
+		log.Printf("workflow terminal binding pending recovery: %v", err)
+	}
 	out.OpenedAt = b.now().Unix()
 	return out, nil
 }
@@ -790,8 +813,8 @@ func validateAssignment(req RootAssignmentRequest) error {
 	if !uuidShape.MatchString(req.RequestID) {
 		return badAssignment("request_id must be a lowercase UUID.")
 	}
-	if req.Assistant != "claude" && req.Assistant != "codex" {
-		return badAssignment("assistant must be claude or codex.")
+	if req.Assistant != "claude" && req.Assistant != "codex" && req.Assistant != "antigravity" {
+		return badAssignment("assistant must be claude, codex or antigravity.")
 	}
 	if req.Model != "" && req.Model != "default" && !modelName(req.Model) {
 		return badAssignment("model must be \"default\" or a model name.")

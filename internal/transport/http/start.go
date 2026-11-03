@@ -132,11 +132,10 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 		model := ""
 		if len(parts) == 4 {
 			model = parts[3]
-			valid := projects.KnownStartModel(model)
-			if assistant == projects.AssistantAntigravity {
-				_, valid = projects.ModelName(model)
-			}
-			if !valid {
+			// The launch policy's slug, the same gate Settings and the Board's
+			// launches use, for every assistant; `as` stays the persona marker.
+			_, valid := projects.ModelName(model)
+			if !valid || model == "as" {
 				writePlaceRefusal(w, http.StatusNotFound, "not_found", "No model named that", "")
 				return
 			}
@@ -279,12 +278,14 @@ func (s *Server) starter(reading startReading) app.Starter {
 			}
 			return false, nil
 		},
-		Recorded:             projects.Recorded,
-		PersonaDir:           personas.Dir(s.cfg.Dir),
-		Squad:                s.store,
-		SquadDir:             s.cfg.Dir,
-		ResolveSquadSnapshot: s.resolveSquadSnapshot,
-		Memory:               s.memoryLaunchText,
+		Recorded:                projects.Recorded,
+		PersonaDir:              personas.Dir(s.cfg.Dir),
+		Squad:                   s.store,
+		SquadDir:                s.cfg.Dir,
+		ResolveSquadSnapshot:    s.resolveSquadSnapshot,
+		Memory:                  s.memoryLaunchText,
+		IntegrationInstructions: s.integrationLaunchText,
+		PrepareWorkflow:         s.prepareWorkflow,
 		// The broker's answer, so a session the person starts and one the
 		// broker opens answer in the same language.
 		Language: func(assistant string) string {
@@ -426,16 +427,12 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 		return
 	}
 	if assistant == projects.AssistantAntigravity {
-		if model != "" {
-			writePlaceRefusal(w, http.StatusConflict, "provider_operation_unsupported", "Select the Gemini model after opening the conversation.", "Gemini")
-			return
-		}
-		made, err := s.openOwnedAntigravity(ctx, starter, place, persona)
+		made, err := s.openOwnedAntigravity(ctx, starter, place, persona, model)
 		if err != nil {
 			writePlaceRefusal(w, http.StatusConflict, "provider_start_failed", err.Error(), "Gemini")
 			return
 		}
-		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Persona: made.Persona, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})
+		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Model: model, Persona: made.Persona, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})
 		return
 	}
 	if assistantNeedsSignIn(ctx, assistant) {

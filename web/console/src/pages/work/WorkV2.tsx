@@ -1,3 +1,4 @@
+import { BoardCardDetail } from "./BoardCardDetail.js"
 import { ActionProgress } from "../../ui/ActionProgress.js"
 import { useAssistantFacts } from "../../session/assistant-facts.js"
 import { assistantAdmits, assistantUnavailable } from "../../session/antigravity-ui.js"
@@ -20,6 +21,8 @@ import { Mark } from "../../session/List.js"
 import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
 import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, switchTeam } from "../../personas.js"
 import { RoleRow } from "../../session/RoleRow.js"
+import { WorkModelChoice } from "./WorkModelChoice.js"
+import type { DefaultModelOption } from "../settings/api.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
@@ -33,6 +36,7 @@ import { WorkCompletionReports, WorkEpicPlanDocuments, WorkItemDocuments } from 
 import { epicGate, epicGateDetailShown, epicGateShown, featureLike, isEpic, planGateHint } from "./epic-gate.js"
 import { epicChildren, epicParent, epicProgress, epicProgressWords, needsFamilyList, readMissingParents, shortWorkID, type EpicParent } from "./epic-family.js"
 import { WorkIcon } from "./WorkIcon.js"
+import { IssueSyncBadge, IssueSyncField, useIssueSyncSend, type IssueSyncDraft } from "./IssueSync.js"
 import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
 import { useReferenceImage } from "./useReferenceImage.js"
 import { VoiceTextarea } from "./VoiceTextarea.js"
@@ -48,6 +52,7 @@ import { conditionWords, deploymentWords, needsPerson, nextActionWords, ownerOnl
 import {
   answerDecision,
   assignNewWorkV2,
+  type IssueSyncChoice,
   assignWorkV2,
   addWorkV2Image,
   completeWorkV2,
@@ -63,7 +68,8 @@ import {
   readProjectPlaces,
   readSessionWorkV2,
   readSessionsForWorkV2,
-  readWorkV2,
+  readWorkV2Cards as readWorkV2,
+  workItemIsFull,
   readWorkV2Item,
   readWorkV2Proposals,
   remindWorkV2,
@@ -75,7 +81,8 @@ import {
   type WorkV2ExecutableKind,
   type WorkV2Kind,
   type WorkV2Proposal,
-  type WorkV2Page,
+  type WorkV2CardPage,
+  type WorkV2Card,
   type WorkV2Status,
   type SessionWorkV2,
 } from "./api.js"
@@ -113,7 +120,7 @@ const KIND_META: Record<WorkV2Kind, { icon: string; label: string; description: 
 }
 
 export function WorkV2Page({ shown }: { shown: boolean }) {
-  const [items, setItems] = useState<WorkV2Item[]>([])
+  const [items, setItems] = useState<WorkV2Card[]>([])
   const [places, setPlaces] = useState<ProjectPlace[]>([])
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [failure, setFailure] = useState("")
@@ -139,7 +146,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
   const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const [family, setFamily] = useState<{ rows: WorkV2Item[]; truncated: boolean }>({ rows: [], truncated: false })
+  const [family, setFamily] = useState<{ rows: WorkV2Card[]; truncated: boolean }>({ rows: [], truncated: false })
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -147,7 +154,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [creating, setCreating] = useState(false)
   const [createDraft, setCreateDraft] = useState<NewWorkItemDraft>({})
   const [createdItem, setCreatedItem] = useState<WorkV2Item | null>(null)
-  const [openedItem, setOpenedItem] = useState<WorkV2Item | null>(null)
+  const [openedItem, setOpenedItem] = useState<WorkV2Card | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState("")
   const [busy, setBusy] = useState("")
@@ -208,11 +215,9 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       }).catch((error: unknown) => {
         if (generation === loadGeneration.current) setFailure(failureWords(error))
       })
-      setCreatedItem((current) => current ? [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, work.rows.find((item) => item.id === current.id) ?? current) : null)
       setOpenedItem((current) => {
         if (!current) return null
-        const listed = work.rows.find((item) => item.id === current.id)
-        return [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, listed && listed.version !== current.version ? listed : current)
+        return [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, current)
       })
     } catch (e) {
       if (generation === loadGeneration.current) { setLoaded(true); setLoading(false); setFailure(failureWords(e)) }
@@ -280,30 +285,48 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     setCreateDraft(draft)
     setCreating(true)
   }), [])
+  const detailRequest = useRef(0)
   const refreshDetail = useCallback((id: string) => {
+    const request = ++detailRequest.current
     setDetailLoading(true); setDetailError("")
     void readWorkV2Item(id).then((answer) => {
-      setOpenedItem((current) => current?.id === id
+      if (request !== detailRequest.current) return
+      setOpenedItem((current) => current?.id === id && answer.item.version >= current.version
         ? [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, answer.item) : current)
-      setItems((current) => current.flatMap((listed) => {
+      setItems((current) => current.flatMap<WorkV2Card>((listed) => {
         if (listed.id !== id || listed.version >= answer.item.version) return [listed]
         if (status === "open" && answer.item.closed_at) return []
         if (status === "done" && answer.item.phase !== "done") return []
         return [answer.item]
       }))
     })
-      .catch((error: unknown) => setDetailError(failureWords(error)))
-      .finally(() => setDetailLoading(false))
+      .catch((error: unknown) => { if (request === detailRequest.current) setDetailError(failureWords(error)) })
+      .finally(() => { if (request === detailRequest.current) setDetailLoading(false) })
   }, [status])
   // Every request to open an item takes a ticket; a read that answers after a
   // later one was made is dropped rather than replacing what is now open.
   const openTicket = useRef(0)
-  const openItem = useCallback((item: WorkV2Item) => {
+  const openItem = useCallback((item: WorkV2Card) => {
     openTicket.current++
+    detailRequest.current++
     setFailure("")
     setOpenedItem([...answeredDecisionIDs.current].reduce(withoutAnsweredWait, item))
-    refreshDetail(item.id)
+    setDetailError("")
+    if (workItemIsFull(item)) refreshDetail(item.id)
   }, [refreshDetail])
+  const createdListedVersion = items.find((item) => item.id === createdItem?.id)?.version ?? 0
+  useEffect(() => {
+    if (!createdItem || createdListedVersion <= createdItem.version) return
+    let active = true
+    void readWorkV2Item(createdItem.id).then(({ item }) => {
+      if (active) setCreatedItem((current) => current?.id === item.id && current.version <= item.version ? item : current)
+    }).catch((error: unknown) => { if (active) setFailure(failureWords(error)) })
+    return () => { active = false }
+  }, [createdItem?.id, createdItem?.version, createdListedVersion])
+  const listedVersion = items.find((item) => item.id === openedItem?.id)?.version ?? 0
+  useEffect(() => {
+    if (openedItem && (!workItemIsFull(openedItem) || listedVersion > openedItem.version)) refreshDetail(openedItem.id)
+  }, [openedItem?.id, openedItem?.version, openedItem?.summary, listedVersion, refreshDetail])
   useEffect(() => onOpenWorkItem(openItem), [openItem])
   // Opening an item that reached deploying or done is the person's receipt for
   // it: its Session card stops saying 待驗收 on every device. The receipt rides
@@ -314,7 +337,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     if (!openedItem?.id || !seenPhase) return
     void markWorkV2Seen(openedItem.id, seenPhase).catch(() => undefined)
   }, [openedItem?.id, seenPhase])
-  const listedRows = useRef<WorkV2Item[]>([])
+  const listedRows = useRef<WorkV2Card[]>([])
   listedRows.current = items.concat(family.rows)
   /**
    * Opens an item's detail by id: from the Board or family row when one is
@@ -452,7 +475,8 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {desktop ? <DesktopBoard items={items} decisions={decisions} visibility={desktopVisibility}
         loading={loading} loadingLabel={L.strings.webLoading} proposalCount={visibleProposals.length}
-        proposals={<ProposalQueue column proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
+        proposals={<ProposalQueue column proposals={visibleProposals} items={items} places={places} busy={busy} run={run}
+          onAccepted={() => setDesktopVisibility((current) => ({ ...current, plans: true }))} />}
         renderCard={(item) => <CompactWorkCard key={item.id} item={item} sessions={sessions} nowSeconds={nowSeconds}
           decisions={decisionsForWorkItem(decisions, item.id)} onOpen={() => openItem(item)} />} /> : loading ? <BoardSkeleton /> : <>
       {visibleProposals.length > 0 && <ProposalQueue proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
@@ -534,9 +558,9 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
  * and the family drawn from what is on screen.
  */
 async function readEpicFamily(project: string, status: WorkV2Status, search: string,
-  work: WorkV2Page): Promise<{ rows: WorkV2Item[]; truncated: boolean }> {
+  work: WorkV2CardPage): Promise<{ rows: WorkV2Card[]; truncated: boolean }> {
   if (!needsFamilyList(work.rows)) return { rows: [], truncated: false }
-  let family: { rows: WorkV2Item[]; truncated: boolean }
+  let family: { rows: WorkV2Card[]; truncated: boolean }
   if (status === "all" && !search) family = work
   else {
     try {
@@ -570,7 +594,7 @@ function BoardSkeleton() {
 }
 
 interface EpicFamilyView {
-  rows: WorkV2Item[]
+  rows: WorkV2Card[]
   truncated: boolean
   /** Opens another item's detail by id; answers the failure words, or "" once it opened. */
   open: (id: string) => Promise<string>
@@ -615,7 +639,7 @@ function EpicChildren({ item, sessions }: { item: WorkV2Item; sessions: SessionR
 }
 
 /** On a child: the Epic it was created under. */
-function EpicParentLine({ item }: { item: WorkV2Item }) {
+function EpicParentLine({ item }: { item: WorkV2Card }) {
   const family = useContext(EpicFamilyContext)
   const [failure, setFailure] = useState("")
   const parent = epicParent(item, family.rows)
@@ -666,13 +690,14 @@ function AgentGlyph() {
  * Share proposal actions and disclosure between the phone inbox and the
  * optional desktop lane. Neither view creates an item before acceptance.
  */
-function ProposalQueue({ proposals, items, places, busy, run, column = false }: {
+function ProposalQueue({ proposals, items, places, busy, run, onAccepted, column = false }: {
   column?: boolean
   proposals: WorkV2Proposal[]
-  items: WorkV2Item[]
+  items: WorkV2Card[]
   places: ProjectPlace[]
   busy: string
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  onAccepted?: () => void
 }) {
   const list = <ul className="work-proposals">{proposals.map((proposal) => {
       const project = places.find((place) => place.id === proposal.project_id)
@@ -694,7 +719,11 @@ function ProposalQueue({ proposals, items, places, busy, run, column = false }: 
         </div>
         <div className="work-actions work-proposal-actions" aria-label={catalogFormat("template", "9e9521d6a3b6", [proposal.title])}>
           <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === proposal.id + ":accept"}
-            onClick={() => void run(proposal.id + ":accept", () => resolveWorkV2Proposal(proposal.id, "accept"))}><ActionProgress busy={busy === proposal.id + ":accept"}>{catalogWord("inline", "44ae4672eed2")}</ActionProgress></button>
+            onClick={() => void run(proposal.id + ":accept", async () => {
+              const answer = await resolveWorkV2Proposal(proposal.id, "accept")
+              onAccepted?.()
+              return answer
+            })}><ActionProgress busy={busy === proposal.id + ":accept"}>{catalogWord("inline", "44ae4672eed2")}</ActionProgress></button>
           <button className="chip danger" type="button" disabled={!!busy} aria-busy={busy === proposal.id + ":reject"}
             onClick={() => void run(proposal.id + ":reject", () => resolveWorkV2Proposal(proposal.id, "reject"))}><ActionProgress busy={busy === proposal.id + ":reject"}>{catalogWord("inline", "0f7e826a2f9f")}</ActionProgress></button>
         </div>
@@ -748,11 +777,11 @@ function WorkItemDecisions({ decisions, decisionAnswers, waitingOn, busy, answer
 
 function BoardRegion({ title, items, sessions, nowSeconds, decisions, onOpen }: {
   title: string
-  items: WorkV2Item[]
+  items: WorkV2Card[]
   sessions: SessionRow[]
   nowSeconds: number
   decisions: Decision[]
-  onOpen: (item: WorkV2Item) => void
+  onOpen: (item: WorkV2Card) => void
 }) {
   if (!items.length) return null
   return <section className="work-section"><div className="work-section-head"><h2>{title}</h2><span className="work-count">{items.length}</span></div>
@@ -767,7 +796,7 @@ function BoardRegion({ title, items, sessions, nowSeconds, decisions, onOpen }: 
  * keyboard and screen-reader user the same route into the shared detail modal.
  */
 function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
-  item: WorkV2Item
+  item: WorkV2Card
   sessions: SessionRow[]
   nowSeconds: number
   decisions: Decision[]
@@ -820,6 +849,7 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
       </span>
       {originSentence && <span id={originDescriptionID} className="work-card-origin-sentence">{originSentence}</span>}
     </button>
+    <IssueSyncBadge item={item} onChanged={announceWorkItemChanged} />
     {parent && <CardParentLine parent={parent} />}
   </article>
 }
@@ -845,9 +875,13 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
 }) {
   const [terminal, setTerminal] = useState("")
   const providerReading = useAssistantFacts("", `${item.id}:${item.version}`)
-  const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? (id === "antigravity" ? undefined : { id })
+  const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? { id }
   const [selectedAssistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
-  const assistant = selectedAssistant === "antigravity" ? "claude" : selectedAssistant
+  const assistant = selectedAssistant
+  const [modelChoice, setModelChoice] = useState<{ assistant: Assistant; option: DefaultModelOption } | null>(null)
+  const model = modelChoice?.assistant === assistant ? modelChoice.option : null
+  const [rolesOpen, setRolesOpen] = useState(false)
+  const roleTrigger = useRef<HTMLButtonElement>(null)
   // A new Session has no role until the person chooses one or asks AI.
   const personas = usePersonas()
   const [personaChoice, setPersonaChoice] = useState("")
@@ -907,6 +941,16 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
   // scrolled out of sight on a phone, where the press looked like nothing.
   const [assignFailed, setAssignFailed] = useState(false)
   const [assigningRoute, setAssigningRoute] = useState<"existing" | "new" | null>(null)
+  const [issueSync, setIssueSync] = useState<IssueSyncDraft | null>(null)
+  const sync = useIssueSyncSend()
+  // The sync choice is authorized before the assignment is sent; a cancelled
+  // authorization assigns nothing.
+  const assignSynced = (route: "existing" | "new", task: (choice: IssueSyncChoice | undefined) => Promise<unknown>) => {
+    if (sync.authorizing) return
+    void sync.ensure(item.issue_sync ? null : issueSync).then((chosen) => {
+      if (chosen !== "cancelled") assign(route, () => task(chosen))
+    })
+  }
   const assign = (route: "existing" | "new", task: () => Promise<unknown>) => {
     clearFailure(); setAssignFailed(false)
     setAssigningRoute(route)
@@ -1020,11 +1064,13 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
     {(assignable || (reassignable && reassigning)) && <div className="work-assignment">
       {epic && <p className="work-epic-assign-note">{catalogWord("inline", "b5e4c6c82f31")}</p>}
       {reassignable && <p className="work-reassign-note">{catalogWord("inline", "58f4894c12b1")}</p>}
+      {!item.issue_sync && <IssueSyncField id={`work-issue-sync-${item.id}`} value={issueSync} disabled={!!busy || sync.authorizing} onChange={setIssueSync} />}
+      {sync.panel}
       <section className="work-assignment-route" aria-labelledby={`work-assign-existing-${item.id}`}>
         <h4 id={`work-assign-existing-${item.id}`}>{catalogWord("inline", "c8232bd59817")}</h4>
         <SessionAssignmentPicker choices={choices} onRetry={retrySessions} value={terminal} onChange={setTerminal} autoFocus={!focusAssignment && epic && reassigning} />
         {terminal && <button className="chip on work-assignment-action" type="button" disabled={!!busy} aria-busy={busy === item.id && assigningRoute === "existing"}
-          onClick={() => assign("existing", () => assignWorkV2(item, terminal))}>
+          onClick={() => assignSynced("existing", (chosen) => assignWorkV2(item, terminal, chosen))}>
           {busy === item.id && assigningRoute === "existing" && <span className="work-assignment-spinner" aria-hidden="true" />}
           {busy === item.id && assigningRoute === "existing" ? catalogWord("literal", "c147921b47db") : catalogWord("literal", "d87caeb7f606")}</button>}
       </section>
@@ -1033,34 +1079,48 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
         <div className="work-new-session" role="radiogroup" aria-label={catalogWord("inline", "d7c6293edaf2")}>
         {/* The product mark alone: the button beside it already spells out the
             chosen assistant, so the name is kept for the label and tooltip. */}
-        {NEW_SESSION_ASSISTANTS.filter((choice) => choice !== "antigravity").map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
+        {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
           role="radio" aria-checked={choice === assistant} disabled={!!busy || aiSuggestionBusy || !assistantAdmits(providerFacts(choice), "start")}
           aria-label={assistantName(choice)} title={assistantUnavailable(providerFacts(choice), "start") ? catalogWord("antigravity", assistantUnavailable(providerFacts(choice), "start")!).replace("{assistant}", assistantName(choice)) : assistantName(choice)}
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
         </div>
-        {personas.length > 0 && <button className="chip work-persona-ai-button" type="button" disabled={!!busy || aiSuggestionBusy}
-          aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
-          onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? catalogWord("literal", "29e124139608") : catalogWord("literal", "2bbea1c41037")}</button>}
-        {aiSuggestion?.outcome === "recommend" && aiPersona && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
-          <strong>{catalogLabel("inline", "366cbb69bcce")}{personaName(aiPersona)}</strong>
-          <span>{aiSuggestionOverridden ? catalogWord("literal", "74a97b8b8227") : catalogWord("literal", "c1083b6ca5e0")}</span>
-        </p>}
-        {aiSuggestion?.outcome === "ambiguous" && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
-          <strong>{catalogWord("inline", "b4933eb2248e")}</strong><span>{catalogWord("inline", "56eb16ed4470")}</span>
-        </p>}
-        {aiSuggestionFailure && <p className="work-note" role="alert">{aiSuggestionFailure}</p>}
-        {personas.length > 0 && <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
-          team={team} disabled={!!busy || aiSuggestionBusy} press="radio" describedBy={aiSuggestion ? aiSuggestionID : undefined}
-          onPick={(id) => setPersonaChoice(id)}
-          onTeam={(next) => {
-            const switched = switchTeam(personas, persona?.id, next)
-            setTeam(next)
-            rememberTeam(next)
-            setPersonaChoice(switched.chosen)
-          }} />}
+        <WorkModelChoice id={`work-models-${item.id}`} assistant={assistant} choice={model} disabled={!!busy || aiSuggestionBusy}
+          onPick={(option) => setModelChoice(option ? { assistant, option } : null)} />
+        {personas.length > 0 && <div className="work-launch-option">
+          <button ref={roleTrigger} className="work-launch-toggle" type="button" disabled={!!busy || aiSuggestionBusy}
+            aria-expanded={rolesOpen} aria-controls={`work-roles-${item.id}`} onClick={() => setRolesOpen(!rolesOpen)}>
+            <span>{nextWord("personaPicker")}</span>
+            <span className={`work-launch-summary${persona ? " chosen" : ""}`} title={persona ? personaTitle(persona) : undefined}>
+              {persona && <PersonaBot persona={persona} cellPx={2} className="persona-tag-bot" />}
+              <span>{persona ? personaName(persona) : nextWord("personaNone")}</span><i aria-hidden="true" />
+            </span>
+          </button>
+          <div id={`work-roles-${item.id}`} className="work-launch-body" hidden={!rolesOpen}>
+            <button className="chip work-persona-ai-button" type="button" disabled={!!busy || aiSuggestionBusy}
+              aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
+              onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? catalogWord("literal", "29e124139608") : catalogWord("literal", "2bbea1c41037")}</button>
+            {aiSuggestion?.outcome === "recommend" && aiPersona && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
+              <strong>{catalogLabel("inline", "366cbb69bcce")}{personaName(aiPersona)}</strong>
+              <span>{aiSuggestionOverridden ? catalogWord("literal", "74a97b8b8227") : catalogWord("literal", "c1083b6ca5e0")}</span>
+            </p>}
+            {aiSuggestion?.outcome === "ambiguous" && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
+              <strong>{catalogWord("inline", "b4933eb2248e")}</strong><span>{catalogWord("inline", "56eb16ed4470")}</span>
+            </p>}
+            {aiSuggestionFailure && <p className="work-note" role="alert">{aiSuggestionFailure}</p>}
+            <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
+              team={team} disabled={!!busy || aiSuggestionBusy} press="radio" describedBy={aiSuggestion ? aiSuggestionID : undefined}
+              onPick={(id) => { setPersonaChoice(id); setRolesOpen(false); roleTrigger.current?.focus({ preventScroll: true }) }}
+              onTeam={(next) => {
+                const switched = switchTeam(personas, persona?.id, next)
+                setTeam(next)
+                rememberTeam(next)
+                setPersonaChoice(switched.chosen)
+              }} />
+          </div>
+        </div>}
         <button className="chip on work-assignment-action" type="button" disabled={!!busy || aiSuggestionBusy || !assistantAdmits(providerFacts(assistant), "start")} aria-busy={busy === item.id && assigningRoute === "new"}
-          onClick={() => { if (assistantAdmits(providerFacts(assistant), "start")) void assign("new", () => assignNewWorkV2(item, assistant, persona?.id)) }}>
+          onClick={() => { if (assistantAdmits(providerFacts(assistant), "start")) assignSynced("new", (chosen) => assignNewWorkV2(item, assistant, persona?.id, model?.value, chosen)) }}>
           {busy === item.id && assigningRoute === "new" && <span className="work-assignment-spinner" aria-hidden="true" />}
           {persona
             ? nextWord(busy === item.id && assigningRoute === "new" ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })
@@ -1253,7 +1313,7 @@ function SessionAssignmentPicker({ choices, onRetry, value, onChange, autoFocus 
       if (!root.current?.contains(event.target as Node)) setOpen(false)
     }
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false)
+      if (event.key === "Escape") { event.preventDefault(); setOpen(false) }
     }
     document.addEventListener("pointerdown", closeOutside)
     document.addEventListener("keydown", closeOnEscape)
@@ -1343,7 +1403,7 @@ function SessionWorkList({ title, empty, rows }: {
 }
 
 function CreatedWorkModal({ item, created = true, back, sessions, sessionList, retrySessions, decisions, decisionAnswers, busy, failure, clearFailure, run, answerWorkDecision, detailLoading, detailError, retryDetail, onClose }: {
-  item: WorkV2Item
+  item: WorkV2Card
   created?: boolean
   /** Shared by successive dialogs opened from one another, so focus returns to the first opener. */
   back?: ModalReturn
@@ -1375,8 +1435,11 @@ function CreatedWorkModal({ item, created = true, back, sessions, sessionList, r
         <h2 id={`work-created-title-${item.id}`}>{created ? catalogWord("literal", "935ee1ab45ca") : catalogWord("literal", "79a3cb6e5cdb")}</h2></div>
         <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <WorkCard item={item} sessions={sessions} decisions={decisions} decisionAnswers={decisionAnswers} busy={busy} failure={failure} clearFailure={clearFailure} run={run} answerWorkDecision={answerWorkDecision}
-        sessionList={sessionList} retrySessions={retrySessions} detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />
+      <BoardCardDetail card={item} error={detailError} retry={retryDetail} loadingLabel={L.strings.webLoading} retryLabel={catalogWord("inline", "7e59d0f16293")}>
+        {(item) => <WorkCard item={item} sessions={sessions} decisions={decisions} decisionAnswers={decisionAnswers} busy={busy} failure={failure} clearFailure={clearFailure} run={run} answerWorkDecision={answerWorkDecision}
+          sessionList={sessionList} retrySessions={retrySessions} detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />}
+      </BoardCardDetail>
+
     </div>
   </div>, document.body)
 }
@@ -1447,9 +1510,9 @@ function DeleteWorkModal({ item, busy, failure, onClose, onDelete }: {
 function useModalDismiss(busy: boolean, onClose: () => void) {
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || busy) return
+      if (event.key !== "Escape") return
       event.preventDefault()
-      onClose()
+      if (!busy) onClose()
     }
     document.addEventListener("keydown", close)
     return () => document.removeEventListener("keydown", close)
@@ -1565,6 +1628,8 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   const [title, setTitle] = useState(initialDraft.title || "")
   const [description, setDescription] = useState(initialDraft.description || "")
   const [reviewRequired, setReviewRequired] = useState(false)
+  const [issueSync, setIssueSync] = useState<IssueSyncDraft | null>(null)
+  const sync = useIssueSyncSend()
   const [images, setImages] = useState<File[]>([])
   const createDecision = useRef<WorkV2CreateDecision | null>(null)
   const projectPlaces = initialDraft.project && !places.some((place) => place.id === initialDraft.project?.id)
@@ -1575,12 +1640,18 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   useModalDismiss(busy, onClose)
   return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
-    e.preventDefault(); if (!ready) return
-    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" as const,
-      ...(featureLike({ kind }) ? { review_required: reviewRequired } : {}) }
-    const decision = workV2CreateDecision(body, createDecision.current)
-    createDecision.current = decision
-    onCreate(body, images, decision.key)
+    e.preventDefault(); if (!ready || sync.authorizing) return
+    void (async () => {
+      // Sending a sync this machine is not authorized for authorizes first;
+      // cancelling the authorization sends nothing (docs/issue-sync.md).
+      const chosen = await sync.ensure(issueSync)
+      if (chosen === "cancelled") return
+      const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" as const,
+        ...(featureLike({ kind }) ? { review_required: reviewRequired } : {}), ...(chosen ? { issue_sync: chosen } : {}) }
+      const decision = workV2CreateDecision(body, createDecision.current)
+      createDecision.current = decision
+      onCreate(body, images, decision.key)
+    })()
   }}>
     <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? catalogWord("ui", "reviewWorkItem") : catalogWord("ui", "newWorkItem")}</p><h2 id="work-new-v2-title">{reviewingDraft ? catalogWord("literal", "30947e72b04b") : catalogWord("literal", "e2956f80c3ac")}</h2></div>
       <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
@@ -1595,7 +1666,9 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     <VoiceTextarea label={catalogWord("literal", "8561515b8b34")} value={description} onValue={setDescription} />
     {featureLike({ kind }) && <ReviewRequiredField id="work-new-review-required" checked={reviewRequired} disabled={busy} onChange={setReviewRequired} />}
     <PendingPictures images={images} busy={busy} note={catalogWord("literal", "983dac4efa86")} onChange={setImages} />
+    <IssueSyncField id="work-new-issue-sync" value={issueSync} disabled={busy || sync.authorizing} onChange={setIssueSync} />
+    {sync.panel}
     {failure && <p className="work-note" role="alert">{failure}</p>}
-    <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready} aria-busy={busy}><ActionProgress busy={busy}>{busy ? catalogWord("literal", "aca2a4fc28ff") : catalogWord("literal", "c5d8aaa266d8")}</ActionProgress></button><button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
+    <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready || sync.authorizing} aria-busy={busy}><ActionProgress busy={busy}>{busy ? catalogWord("literal", "aca2a4fc28ff") : catalogWord("literal", "c5d8aaa266d8")}</ActionProgress></button><button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
   </form></div>
 }

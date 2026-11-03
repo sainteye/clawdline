@@ -15,7 +15,7 @@ import (
 // that surviving process as the replacement binary.
 func (e Env) CloudAdmission(exe string, running Served) func() bool {
 	name, kind := Running(e.Layout, exe)
-	if filepath.Clean(exe) == filepath.Clean(e.Layout.ServiceBin) && kind != install.KindRelease && kind != install.KindSourceDeploy {
+	if (filepath.Clean(exe) == filepath.Clean(e.Layout.ServiceBin) || filepath.Clean(exe) == filepath.Clean(e.Layout.LegacyServiceBin())) && kind != install.KindRelease && kind != install.KindSourceDeploy {
 		return func() bool { return false }
 	}
 	commit, _ := buildOf(e.Layout, name)

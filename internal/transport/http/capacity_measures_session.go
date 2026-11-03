@@ -11,6 +11,21 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) sessionCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"session.transcript_delta_rows": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-baseline comparison ceiling; larger provider expansions return a full page"}
+		},
+		"session.inline_tool_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-entry projection; full stored body remains available"}
+		},
+		"session.tool_preview_runes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-entry preview; full stored body remains available"}
+		},
+		"session.patch_detail_lines": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-patch initial detail; full stored body remains available"}
+		},
+		"session.tool_preview_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read byte guard; no retained buffer"}
+		},
 		"schedule.history_page_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-console reveal batch; older returned runs remain available"}
 		},

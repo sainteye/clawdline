@@ -79,6 +79,7 @@ the command instead.
 | `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | Leaves one actionable note above a Session (§9a) |
+| `clawdline output add [--kind created\|modified\|published] <file>` | Registers one exact Session output path (§8) |
 | `clawdline image send <picture>…` | Shows the person pictures under this Session's reply (§8) |
 | `clawdline assistants` | What each assistant's account has left |
 | `clawdline landings` | Every landing still owed on this machine; `--work-id <item id>`: every landing recorded for one Board item |
@@ -188,6 +189,9 @@ command. With `--handoff`, a queued wait starts a callback and exits 76; Ordinar
 `-H @<(printf 'X-Clawdline-Orchestrator: %s\n' "$(cat "$DIR/orchestrator-token")")`.
 Use `curl --fail-with-body`; every POST with a JSON body also needs
 `-H 'Content-Type: application/json'` (otherwise `415 unsupported_media_type`).
+
+`clawdline doctor --json` reads the running daemon’s sanitized Doctor report from `GET /v1/doctor` (API level 32; Cloud word `doctor`). It checks only fixed CLI version commands and existing quota evidence, without provider requests, credential reads or automatic uploads. Preview/download or explicitly submit a private report from Settings → Status → Doctor. `doctor_busy` means another check is running; `doctor_report_too_large` refuses an oversized export. Missing evidence remains unknown.
+
 
 ### Pair a Cloud browser
 
@@ -500,6 +504,29 @@ authentication/receipt errors may use nested `error.code`. Reuse exact request b
 HTTP retries; a completed receipt replays with `Idempotent-Replayed: true`. A 409 for
 changed content needs reconciliation, not a new key. On 429/5xx, inspect saved state before
 retrying; do not loop. See `docs/playbooks.md` for source fields and the full API contract.
+
+**Tool library (API level 38).** Session ⋯ → Tool library lists saved and recommended
+GitHub sources. GET `/v1/tool-library` returns `{version,saved,catalog}`. POST the same
+path with `{expected_version,project}` to save one normalized source, or
+`{expected_version,remove}` to remove its ID. POST `/v1/tool-library/prepare` accepts
+`{session,conversation,generation,project_id,skill_id,command,target,task,mode,locale}`;
+`mode` is `task` or `project`. It returns a source selection and preparation prompt,
+without fetching or running code, sending a message, or claiming installation.
+The person reviews an editable task and visible instruction attachment in the composer.
+The receiving agent inspects, pins, reads, installs permitted prerequisites, verifies,
+and executes. Existing authorization, credential and paid-call rules remain in force.
+Sources with `integration_kind: library` have no Skill entry; use their pinned README,
+package manifest, license and project prerequisites. Keep installed package versions
+separate from the reviewed commit, and verify relevant browser behavior after setup.
+
+Reads require a paired reader or this machine's orchestrator credential; writes and
+preparation need Local/Send or the machine credential. Every POST needs JSON and a stable
+Idempotency-Key of at most 200 bytes. Collection writes use compare-and-swap `version`;
+`version_conflict` requires rereading before another edit. Retry uncertain requests with
+the same bytes and key. Other refusals include `invalid_project`, `unsupported_source`,
+`project_too_large`, `body_too_large`, `capacity_full`, `unknown_project`, `unknown_skill`,
+`invalid_task`, `stale_session`, and the existing receipt/execution refusals. Missing
+installation, load or application receipts remain unknown. Full details: `docs/tool-library.md`.
 
 ## 2a. A Feature Root's ordinary path
 
@@ -1173,7 +1200,23 @@ conversation.
   or the daemon-published `CLAWDLINE_PROTOCOL_SESSION_FILE` for an owned Gemini conversation
   (`--conversation` otherwise), asks `GET /v1/orchestrator/whoami` for the terminal, and posts
   `{"summary"}` to `POST /v1/orchestrator/sessions/<terminal>/complete`.
-- The summary is 1–500 characters. Each call is a new receipt; the newest counts.
+- The summary is 1–500 characters. Legacy calls without a key create a new receipt; the newest counts.
+- For a large Git delivery, use `clawdline session report --summary "…" --evidence-file <JSON>`.
+  The UTF-8 document (at most 256 KiB and 4,096 full commit IDs) binds the exact summary to a
+  passed Git delivery check and the SHA-256 digests of its baseline and ownership manifest.
+  See `docs/session-delivery.md` for the version 1 schema and responsibility boundary.
+  The full original document and its SHA-256 are stored with `session.delivered`; the answer
+  includes `delivery_evidence_sha256` and `delivery_evidence_commits`. No commit goes in the
+  summary unless it helps the reader. Evidence is an authenticated adapter assertion, not
+  independent review, landing, deployment, or permission to publish.
+- Evidence calls require an `Idempotency-Key`; the CLI derives a stable key from the exact
+  document, terminal and conversation. Retry the same document and identity to replay the
+  original answer without another receipt or push. Changed bytes use a different key.
+  An older daemon refuses the extra field; do not fall back to a summary-only report.
+  `delivery_evidence_invalid`, `delivery_evidence_mismatch`, `delivery_evidence_unverified`,
+  and `delivery_evidence_too_large` create no receipt. A missing/mismatched acknowledgement is
+  `delivery_evidence_ack_unknown`, not success. `request_outcome_unknown` after a daemon crash
+  is not retried under a new key; inspect the stored event before deciding what to do.
 - The answer also carries `open_todos`: this Session's direct to-dos that were sent or read and are
   not completed, oldest first, at most 20 (`open_todos_truncated` when there are more). The command
   prints them on stderr after the receipt, one id and text per line. Check off each one you
@@ -1182,6 +1225,12 @@ conversation.
 - Refusals: `conversation_id_malformed` (not a lowercase UUID), `conversation_not_found`,
   `conversation_ambiguous`, `registry_stale`, `session_not_found`, `session_unbound`,
   `child_session`. Report the refusal honestly; a sentence in chat is not a receipt.
+
+**Register deliverables before reporting.** The header's Output files button shows
+native successful writes and explicitly published paths. Shell-created deliverables
+must be registered with `clawdline output add <file>` (see §8); do not infer their
+ownership from a directory scan. Register only this Session's actual outputs,
+not input attachments, secrets, caches or another Session's work.
 
 **Leave a status report for the person.** When the turn changed files in a git project, hand the
 person one page where they can see where the work stands and read every file the turn added or
@@ -1269,6 +1318,26 @@ Nothing has to be written into it. It is
   12,000 px a side. PNG, JPEG and GIF are read directly; other formats go through `sips` on macOS.
   Pictures are kept 24 hours. Refusals: `session_not_found`, `session_has_no_record` (the Session
   has not written its first conversation yet).
+
+
+**Record output files.** After producing a deliverable through a shell command or
+an assistant without native file-success receipts, run:
+
+```sh
+clawdline output add --kind created /absolute/path/to/file
+# For a file this Session modified: --kind modified
+# For an existing file deliberately delivered: omit --kind (published)
+```
+
+Only register files this Session actually produced, modified, or deliberately
+publishes. Never register user input attachments, credentials, caches, or other
+Sessions' work. This records the exact original path, not a durable copy. Keep
+long-lived deliverables in a managed artifacts directory before registering.
+The header's Output files button opens the same index on desktop and phone;
+there are no tabs. Native success receipts cover Claude file writes/edits and
+Codex patch events; shell writes require this explicit command. `image send`
+also records original image paths when the index is available. Its expiring
+image cache and the original file have separate lifetimes.
 
 ## 9. Tell the person
 

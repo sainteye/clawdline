@@ -18,7 +18,7 @@ import { toast } from "../core/util.js";
  * Everything is escaped before a single tag is written. This text came off somebody's terminal,
  * and a terminal will carry any angle bracket you put in front of it.
  */
-export function richText(text) {
+export function richText(text, { codeCopy = true } = {}) {
     if (!text) return "";
     var lines = String(text).replace(/\r\n?/g, "\n").split("\n");
     var out = [];
@@ -34,7 +34,7 @@ export function richText(text) {
             i += 1;
             while (i < lines.length && lines[i].trim().indexOf("```") !== 0) { body.push(lines[i]); i += 1; }
             i += 1;
-            out.push(codeBlockHTML(body.join("\n")));
+            out.push(codeBlockHTML(body.join("\n"), { codeCopy }));
             continue;
         }
 
@@ -142,10 +142,10 @@ export function richText(text) {
  *
  * An empty block has nothing to copy, and gets exactly the markup it had before.
  */
-export function codeBlockHTML(code) {
+export function codeBlockHTML(code, { codeCopy = true } = {}) {
     var text = String(code == null ? "" : code);
     var block = '<pre class="code">' + esc(text) + "</pre>";
-    if (!text) return block;
+    if (!text || !codeCopy) return block;
     return '<div class="codeblock">' + block +
         '<button type="button" class="codecopy" data-code-copy="' +
         esc(text).replace(/\n/g, "&#10;") + '" title="' + esc(T.webCodeCopy) +

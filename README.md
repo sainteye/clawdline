@@ -1,5 +1,7 @@
 # Clawdline
 
+🌐 **[Clawdline website](https://clawdline.com/)** — See how Clawdline brings Claude Code and Codex Sessions together, download the app, and explore setup guides and security details.
+
 [繁體中文](README.zh-TW.md) · [Security](https://clawdline.com/security/)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -7,24 +9,42 @@
 
 **With Clawdline Cloud, see Claude Code and Codex Sessions across your machines in one phone list, then open one to reply or leave a to-do.**
 
-One continuous recording of the real console with sample data:
+![Clawdline brings Claude Code and Codex Sessions into one view so you can follow progress, reply and leave to-dos. Local browser use runs on your machine; optional Cloud adds phones and multiple machines.](docs/assets/readme-overview-en.png)
 
-<img src="docs/assets/cloud-sessions-demo-en.gif" width="390" alt="A continuous phone recording of the real console: open a dashboard review from the multi-machine Session list, see a small design image sent by Codex, expand the to-dos and send Make the New project button larger, then see its sent receipt.">
+## How Clawdline differs from Herdr and T3 Code
 
-[Herdr](https://github.com/herdrdev/herdr/blob/master/docs/versions/0.9.1/website/src/content/docs/connecting-machines.mdx) also lists agents across SSH machines in one TUI; [T3 Code](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md) connects to multiple environments. Clawdline Cloud groups them in a phone browser list and opens their conversations, to-dos, and images there.
+- 🖥️ **Herdr — a terminal workspace for Agents.** Run Agents in persistent terminal panes, with local and SSH workspaces together in one TUI. [Herdr overview](https://github.com/herdrdev/herdr#readme) · [Connecting machines](https://herdr.dev/docs/connecting-machines/)
+- 💬 **T3 Code — an app for working with coding Agents.** Control Agents through desktop, web and mobile apps, including local and remote environments. [T3 Code overview](https://github.com/pingdotgg/t3code#readme) · [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md)
+- 🔁 **Clawdline — coordinate Sessions and track delivery.** Bring your existing Claude Code and Codex Sessions into a browser console. Leave to-dos, answer Agent notes, dispatch work, and track verification, merge and deployment on the optional Board. A delivery report and a verified Git landing stay distinct. Cloud adds one phone list across machines. [Sessions](docs/user/sessions.md) · [Dispatch](docs/user/clawdfather-and-dispatch.md) · [Board](docs/user/board.md)
 
 ## What you can do
 
-- **Follow Sessions:** See what is working or waiting, read the conversation, view pictures from Agents, and reply with text, voice, or a marked-up picture. [Sessions](docs/user/sessions.md)
-- **Keep work moving:** Leave [to-dos](docs/user/board.md#session-to-dos), answer [Agent notes](docs/user/sessions.md#attention-notes-from-agents), and get [notifications](docs/user/notifications.md). Agents can manage saved launch messages with
-  `clawdline playbook list|create|edit|delete`; see the [Playbook API and CLI guide](docs/playbooks.md#agent-api)
-  and `clawdline guide project`.
-- **Work in a terminal:** Open a live [terminal](https://clawdline.com/docs/shells/#terminals) beside your Sessions.
-- **Delegate and track delivery:** [Dispatch](docs/user/clawdfather-and-dispatch.md) to another Session, verify that its work landed, and follow larger work on the optional [Board](docs/user/board.md).
-- **Run work later:** Queue long commands with [callbacks](docs/user/clawdfather-and-dispatch.md#callbacks-for-long-commands) or start tasks with [schedules](docs/user/schedules.md). Cloud Pro adds webhook triggers.
-- **Bring your projects together:** [Register projects](docs/user/projects.md), share rules and skills across Claude Code and Codex with [unify](docs/project-files.md#unify), and see [usage](docs/user/usage.md).
-- **See every machine:** [Clawdline Cloud](docs/user/remote-access.md) shows Sessions from multiple machines together on your phone and connects through an end-to-end encrypted relay.
-- **Connect directly from your phone:** When ICE can reach your machine, live Terminal and Session reads use a direct WebRTC data channel. The encrypted relay remains available when direct connection fails. [Cloud connection](docs/cloud.md)
+### Follow your Agents
+
+- 🤖 **All your Sessions in one place** — See which Claude Code and Codex Sessions are working or waiting, then open a conversation to follow along. [Sessions](docs/user/sessions.md)
+- 💬 **Reply with text, voice or pictures** — Dictate a message, attach a screenshot, or circle what needs changing before sending it. Open pictures from Agents right in the conversation. [Messages and pictures](docs/user/sessions.md#answer-and-send)
+- 🖥️ **A live terminal beside your Sessions** — Run commands from the console without switching to another terminal app. [Terminals](https://clawdline.com/docs/shells/#terminals)
+- 📌 **Agent notes you can act on** — Keep questions, suggested replies and requests to review something above the conversation, ready when you return. [Attention notes](docs/user/sessions.md#attention-notes-from-agents)
+- 🔔 **Notifications when work needs you** — Enable alerts for waiting Sessions, deliveries, Board decisions and schedule failures, with links back to the work. [Notifications](docs/user/notifications.md)
+- 📊 **Token use and account quotas** — Inspect a Session's context and token use, see task and Board token bills, and check provider quota windows when readings are available. [Usage](docs/user/usage.md)
+
+### Turn requests into delivered work
+
+- ☑️ **To-dos without interrupting a turn** — Leave the next task in a Session's queue for the Agent to pick up when it checks its work. [Session to-dos](docs/user/board.md#session-to-dos)
+- 🗂️ **A Board from idea to deployment** — Track proposals, plans, implementation, verification, merge and deployment. Assign work to a Session and see what needs your decision. The Board is optional. [Board](docs/user/board.md)
+- 🤝 **Delegate to another Session** — Dispatch a bounded task, get its result back, and check whether the changes actually landed. [Dispatch](docs/user/clawdfather-and-dispatch.md)
+- 📖 **Playbook for repeatable work** — Save complete launch messages for reviews and other recurring tasks. Agents can manage them with `clawdline playbook list|create|edit|delete`. [Playbook API and CLI guide](docs/playbooks.md#agent-api) · `clawdline guide project`
+- 🧩 **Shared rules and skills** — Use unify to make project instructions and skills available to both Claude Code and Codex. [Unify](docs/project-files.md#unify)
+- 📁 **Projects and worktrees together** — Register projects, start Sessions in the right directory, and inspect worktrees, delivered work and landed changes. [Projects](docs/user/projects.md)
+
+### Keep work moving away from your desk
+
+- 📱 **Your machines in one phone list (Cloud)** — Open Sessions from multiple machines in a paired browser, read conversations, reply and leave to-dos. Cloud is optional. [Remote access](docs/user/remote-access.md)
+- 🌐 **Agents working across machines (Cloud · dev)** — After reciprocal pairing, let Agents discover remote Projects and Sessions, dispatch tasks and exchange messages. The new discovery and Session wake-up features are currently in dev builds. [Cross-machine work](docs/remote-agent-work.md)
+- ⚡ **A direct phone connection (Cloud)** — Live Terminal and Session reads use WebRTC when ICE can connect directly; the end-to-end encrypted relay carries them when it cannot. [Cloud connection](docs/cloud.md)
+- ⏳ **Long commands with a return notice** — Hand a command to a callback and let the Session resume when its result is ready. [Callbacks](docs/user/clawdfather-and-dispatch.md#callbacks-for-long-commands)
+- 🗓️ **Scheduled tasks and webhook triggers** — Start work at a chosen time or on a recurring schedule. Cloud Pro also lets external services trigger a schedule through a webhook. [Schedules](docs/user/schedules.md)
+- 💡 **A place for questions, Issues and Ideas (Cloud)** — Read community discussions, ask usage questions, report problems and propose features. Anyone can read; participation requires sign-in. Answers and delivery progress are tracked separately. [Community guide](docs/user/help-center.md) · [Publication boundaries](docs/cloud-support.md)
 
 Clawdline runs the daemon and console on your machine and works with Claude Code and Codex Sessions you already use. Cloud is optional; its relay carries encrypted data. [How it works](docs/architecture.md)
 
@@ -48,6 +68,8 @@ The machine can turn direct connections off in Settings → Remote or with `claw
 
 Clawdline reads your Claude Code and Codex conversations, terminals and project files on your own machine. Local use needs no account, and Cloud stays off until you turn it on.
 
+![Your machine and paired browsers encrypt and decrypt content. Clawdline Cloud relays ciphertext without content keys and still sees account, device and traffic metadata.](docs/assets/security-data-flow-en.svg)
+
 With Cloud on, content is encrypted on your machine before it leaves. Cloud relays ciphertext without the keys to decrypt it; only your machine and the browsers you pair can read it. Cloud still sees account, device and traffic metadata.
 
 A paired browser can send instructions and use your terminal, so pair only devices you trust. Claude Code and Codex still send requests to their AI providers under those providers' policies.
@@ -56,7 +78,7 @@ A paired browser can send instructions and use your terminal, so pair only devic
 
 ## Install
 
-[![Download Clawdline v2.5.0 for macOS — Apple Silicon, macOS 13+](docs/assets/download-macos-en.svg)](https://github.com/sainteye/clawdline/releases/download/v2.5.0/Clawdline-v2.5.0-macos-arm64.dmg)
+[![Download Clawdline v2.13.0 for macOS — Apple Silicon, macOS 13+](docs/assets/download-macos-en.svg)](https://github.com/sainteye/clawdline/releases/download/v2.13.0/Clawdline-v2.13.0-macos-arm64.dmg)
 
 Apple Silicon · macOS 13+ · [Install guide](https://clawdline.com/docs/install/#mac-dmg)
 
@@ -78,7 +100,7 @@ The short URL points to a reviewed verifier script and installs the latest stabl
 
 ## Guides
 
-[User guide](docs/user/README.md) · [Agent guide](docs/agent-contract.md) · [Build from source](docs/user/install.md) · [Troubleshooting](docs/user/troubleshooting.md) · [Developer docs](docs/README.md) · [UI motion catalog](docs/ui-motion-catalog.md) · [Static HTML reports](docs/html-artifacts.md)
+[User guide](docs/user/README.md) · [Agent guide](docs/agent-contract.md) · [Build from source](docs/user/install.md) · [Troubleshooting](docs/user/troubleshooting.md) · [Developer docs](docs/README.md) · [Graphify experiment](docs/experiments/graphify-local-pilot-2026-10-30.md) · [UI motion catalog](docs/ui-motion-catalog.md) · [Static HTML reports](docs/html-artifacts.md)
 
 ## License
 

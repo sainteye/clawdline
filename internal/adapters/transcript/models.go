@@ -285,6 +285,10 @@ func addClaudeVersions(out map[claudeVersion]struct{}, data []byte) {
 	}
 }
 
+// ClaudeExecutable is the Claude Code binary this machine would run: PATH
+// first, then the installer's usual places; "" when none is there.
+func ClaudeExecutable(home string) string { return claudeExecutable(home) }
+
 func claudeExecutable(home string) string {
 	var candidates []string
 	if found, err := exec.LookPath("claude"); err == nil {

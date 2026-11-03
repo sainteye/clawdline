@@ -5,6 +5,8 @@ package capacity
 // handoff and coordination rows.
 func brokerBounds() []Entry {
 	return []Entry{
+		{Name: "orchestrator.delivery_bytes", Class: Buffer, Unit: Bytes, Limit: 256 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/session.DeliveryEvidenceBytesLimit"}},
+		{Name: "orchestrator.delivery_commits", Class: Buffer, Unit: Rows, Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/session.DeliveryEvidenceCommitsLimit"}},
 		{
 			// The askers waiting for one lease — the compile slot, or one
 			// checkout's landing (D06 ②, D20). At the limit a new asker is

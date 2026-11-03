@@ -1,9 +1,17 @@
 # 殼與網頁之間的介面
 
-Current entry point (2026-10-21): the standalone macOS settings surface is sunset.
-Use website Settings for configuration. iTerm2 consent is under **Workflow and
-control** in both Cloud and local browser consoles; see [the current boundary](interface.md#turning-iterm2-scanning-off).
-The native-window sections below document the retained bridge, not the primary settings workflow.
+Current entry point (2026-10-27): the standalone macOS settings window, its menu
+items and its `/settings.html` entry have been removed. Use website Settings for
+configuration. iTerm2 consent is under **Workflow and control** in both Cloud and local browser consoles; see [the current boundary](interface.md#turning-iterm2-scanning-off).
+Machine setting components remain embedded in the local website Settings page.
+Browser pairing is under **Settings → Remote** in both the App's Local and Cloud views.
+Each view registers its own `clawdlinePairLocal` reply handler, bound to that view's
+exact origin (scheme, host and port). Both the initiating main frame and current
+top-level page must match before a request and after native confirmation. Local
+Settings can connect Cloud, show a pairing QR or accept a browser code without
+switching tabs. The assistant hand-off bridge remains Cloud-only.
+The native-window sections below are historical protocol records; they do not
+describe a supported window or an implemented native settings bridge.
 
 > 這份文件給「之後要寫 Linux／Windows 殼的人」。每一節寫一個畫面：**殼負責什麼、網頁負責什麼、
 > 兩邊怎麼講話**。寫 Linux 殼的時候，照著同一組訊息名字實作一次，同一份 web 就能用。
@@ -105,25 +113,25 @@ window.webkit.messageHandlers.shellBar.postMessage({ kind: … })
 字詞在 web 那邊（`web/console/src/pages/settings/window/copy.ts`，逐字抄自舊 app 的
 `Sources/Copy+Chinese.swift`）。這樣下一個平台的殼不用再抄一次字串。
 
-唯一的例外是**原生視窗標題列**：它在頁面載入之前就要畫出來，所以
-`shell/darwin/Copy.swift` 留了一個 `settingsTitle`。
+The removed native settings window previously kept its title in
+`shell/darwin/Copy.swift`. That unused title and its translations have also been removed.
 
-## 目前有哪些視窗
+## Current windows and Settings
 
-| 視窗 | 網址 | 殼的程式 | web 的程式 |
+| Surface | Address | Shell | Web |
 |---|---|---|---|
-| 主控台（session 清單等七頁） | `/` | `shell/darwin/main.swift` | `web/console/src/App.tsx` |
-| **Clawdline 設定** | `/settings.html` | `shell/darwin/SettingsWindow.swift` | `web/console/src/pages/settings/window/` |
+| Console, including Settings | `/` and `/#page=settings` | `shell/darwin/main.swift` | `web/console/src/App.tsx` |
+| Input bar (currently paused) | `/bar.html` | `shell/darwin/Bar.swift` | `web/console/src/bar/` |
 
-設定視窗是**獨立的 HTML 進入點**，不是主控台的一個分頁。理由：它是一個設定視窗，
-session 清單、抽屜、event stream 和二十九份樣式表沒有理由被載進去。
-`web/console/vite.config.ts` 的 `build.rollupOptions.input` 列了這兩個文件。
+The console owns Settings navigation. Shared controls are available through Cloud
+Settings; machine-only controls remain embedded in the local browser console.
+The old standalone settings document and macOS window are no longer shipped.
 
-兩個文件都在認證閘門後面。殼在載入前把 daemon 的 local token 當成 `clawdline-next`
-cookie 塞進 WKWebView 的 cookie store（`shell/darwin/Pairing.swift` 的 `LocalToken.install`），
-所以視窗跟其他 client 走同一道門。**`POST /v1/settings` 只接受這台機器自己的 token**
-（`internal/transport/http/gate.go` 的 `writePolicy`）——配對過的瀏覽器裝置就算能 send 也是 403，
-因為熱鍵是一個全域鍵盤攔截。
+## Historical standalone settings protocol (removed 2026-10-27)
+
+The remaining sections preserve the old protocol and implementation decisions.
+References to `shell/darwin/SettingsWindow.swift` and `/settings.html` below name
+removed code and entry points, not current implementation instructions.
 
 ## 設定視窗的橋：訊息格式
 
@@ -251,3 +259,17 @@ key 的拼法、值的範圍都跟舊 app 的 `Config` 一樣，所以一行從�
 4. 收上面那八種訊息，用 `window.dispatchEvent(new CustomEvent(...))` 回三種答案。
 5. `ShellState` 裡答不出來的欄位就給空的：`fonts: []` 會讓字型下拉只剩檔案裡那一個值，
    `hooks.supported: false` 會讓那顆按鈕維持關著。**不要編。**
+
+## Dropped file paths
+
+The Local and Cloud main views use `FileDropWebView`. On a native drop it records
+file URLs from that drag only; `clawdlineDroppedPaths.postMessage({})` consumes the
+snapshot once. The main frame and current top-level origin must both match the
+view's configured origin, including scheme and port. Requests never read a live
+pasteboard, file contents, or directory children.
+
+The composer keeps pictures as attachments and inserts other paths into the draft,
+with shell quoting for spaces and metacharacters. Dropping never sends a message.
+Browser-only drops use supplied file URLs or relative paths; when only names are
+available, the composer inserts those names and explains the limitation. Paths
+refer to the machine where the drag originated, including in the Cloud view.

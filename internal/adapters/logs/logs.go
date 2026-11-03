@@ -84,7 +84,7 @@ type Writer struct {
 	failures   int64
 	lastAction time.Time
 	// lastErr is the last failure to write, rotate or delete, nil once the
-	// next write succeeds.
+	// next write, including any required rotation, succeeds.
 	lastErr error
 }
 
@@ -158,8 +158,11 @@ func (w *Writer) segmentLimit() int64 {
 func (w *Writer) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	rotationFailed := false
 	if w.file != nil && w.size >= w.segmentLimit() {
+		before := w.failures
 		w.rotate()
+		rotationFailed = w.failures > before
 	}
 	if w.file == nil {
 		if err := w.reopen(); err != nil {
@@ -174,7 +177,9 @@ func (w *Writer) Write(p []byte) (int, error) {
 			w.failed(err)
 		} else {
 			written = true
-			w.lastErr = nil
+			if !rotationFailed {
+				w.lastErr = nil
+			}
 		}
 	}
 	if w.mirror != nil {
@@ -295,6 +300,7 @@ func (w *Writer) Reading() capacity.Reading {
 		Rotated: w.rotations, Evicted: w.deleted, WriteErrors: w.failures, LastActionAt: w.lastAction,
 	}}
 	if w.lastErr != nil {
+		r.Failing = true
 		r.Note = "the last write, rotation or deletion failed: " + w.lastErr.Error()
 	}
 	info, err := os.Lstat(w.Path())

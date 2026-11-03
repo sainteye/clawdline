@@ -204,6 +204,24 @@ console 原本寫了 `viewport-fit=cover`，而它抄來的那份 stylesheet 在
 時，列表上少了那一列也不是它不在了。沒有人看到結束的停頓（daemon 當時沒在跑）就當作已經推過，期限是 events 保留這一列的 30 天（`store.EventKeptAgeLimit`）：
 推兩次比讓他在列表上看到更糟（DG-7）。超過 30 天後重啟，仍在等的 Session 會再推一次。
 
+### Model capacity refusals
+
+The same watcher also reads the typed `provider_block=model_capacity` used by
+the Session list. It records a notification on the first current observation,
+including when the underlying terminal is idle, without waiting ten minutes.
+The `push_on_model_capacity` switch defaults to on and is independent of
+`push_on_waiting`, `orchestrator_agent_notify`, and system `push_on_capacity`.
+Custom question rules do not override this switch or delay this notification.
+
+Capacity stops have their own durable subject (`WaitingKey + |model_capacity`)
+and `model-capacity-<terminal>` tag, while sharing the existing six-per-hour
+waiting budget and outbox recovery. Repeated readings and daemon restarts do
+not repeat the same stop. A current recovery ends it; unknown, unverified and
+missing readings do not. A refusal does not also become a question notification.
+Outbox execution rechecks the capacity switch before sending, including after
+recovery. Tapping opens the affected Session. The notice asks the person to
+choose another model or retry; this watcher makes no provider API request.
+
 ### 不推的，以及為什麼
 
 - **提案（proposal）。** 它有安全預設（留在 to-do），不擋任何人。最近一天 38 筆，**0 筆被人回答**，
@@ -418,3 +436,16 @@ PWA 外殼實測（7731）：
   不是對真的服務。
 - 加到主畫面之後的樣子：manifest 與二十個 startup image 的路由都回 200 了，但**沒有真的在
   iPhone 上加過一次**。上面那個 59 點死區的實測是舊版 index.html 的註解記的，不是這一波量的。
+
+
+## Admin support notifications
+
+Cloud's Admin help inbox has a separate, explicit per-device opt-in for new member questions.
+It registers `/support-sw.js` under `/help/admin/`, with a distinct support VAPID identity and
+browser subscription. Only this dedicated support subscription gives Cloud its p256dh/auth keys;
+root-scope machine Session subscriptions retain their existing endpoint-only Cloud boundary.
+Do not copy Session push keys into the support flow. Admin notifications contain generic text
+and a fixed authenticated question URL, never member content. Clicking opens the Admin detail
+even if a different member or Session view is already open. An iOS/iPadOS device enables this
+from the installed Home Screen web app. Push provider acceptance is distinct from the person
+observing and opening the notification.

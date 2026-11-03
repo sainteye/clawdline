@@ -39,12 +39,12 @@
       }
     },
     "ActionResult": {
-      "description": "What actually happened. `keyed` says the keystrokes of an answer reached the tty and, for a digit, that a Return followed only if the screen showed the digit landed. `typed` is the strongest thing a send can claim: the bytes reached the tty. Whether the assistant took the turn is a separate fact, read from the fleet list, and this never asserts it.",
+      "description": "What actually happened. `keyed` says the keystrokes of an answer reached the tty and, for a digit, that a Return followed only if the screen showed the digit landed. `typed` is the strongest thing a send can claim: the bytes reached the tty. Whether the assistant took the turn is a separate fact, read from the fleet list, and this never asserts it. Remote Control `accepted` means the controller event was accepted by the service, not necessarily consumed or executed.",
       "type": "object",
       "additionalProperties": false,
       "required": ["action", "id", "ok"],
       "properties": {
-        "action": { "type": "string", "enum": ["typed", "interrupted", "closed", "keyed"] },
+        "action": { "type": "string", "enum": ["typed", "interrupted", "closed", "keyed", "accepted"] },
         "id": { "type": "string" },
         "ok": { "type": "boolean" },
         "forced": { "description": "Present on a close that went ahead over open obligations.", "type": "boolean" }

@@ -36,29 +36,28 @@ test ! -e "$hosted"
 git worktree add -f "$hosted" "$stamp"
 cd "$hosted/web"
 test ! -e console/dist          # use a new worktree; never reuse an old build's BUILD.json
-../tools/heavy.sh env VITE_HOSTED_CONSOLE='{"v":1,"app_origin":"https://app.clawdline.com","api_origin":"https://api.clawdline.com","relay_url":"wss://relay.clawdline.com/v1/connect"}' \
-  npm run build
+npm run build:cloud
 ```
 
-Wait for the build to finish before writing `BUILD.json`; if `heavy.sh` queues it and exits 76,
-read its callback result first. `npm run build` prepares this worktree's web dependencies. Keep
-`VITE_HOSTED_CONSOLE` inside the heavy command so a queued build receives it. Keep the
-`hosted` path for the deploy callback below.
+`npm run build:cloud` owns the production declaration and ignores an inherited value for
+`VITE_HOSTED_CONSOLE`. It requires a clean committed worktree, builds directly (frontend builds
+need no native compilation slot), checks the compiled declaration, and writes `BUILD.json` from
+that exact commit only after success. Keep the `hosted` path for the deploy callback below.
+Do not hand-assemble the JSON or substitute a boolean such as `VITE_HOSTED_CONSOLE=1`.
 
-The three endpoints are the production ones in `internal/adapters/cloud/settings.go`. Write a
-`BUILD.json` into `console/dist` carrying the commit sha as `stamp` and its committer time as
-`committed_at`, so a deploy can be identified afterwards and every daemon can tell whether it trails
-this build ([updates.md](updates.md)) — but see below for what it does and does not prove.
+The declaration remains necessary because the same console source serves both a local daemon
+and Cloud. It specifies the app origin, API origin, relay address and protocol version; the browser
+checks the app origin before connecting. This is deployment configuration, not a user preference.
+The production command fixes the endpoints in `web/console/tools/hosted-declaration.mjs`. The runtime parser
+is also used by Vite: a present malformed or incomplete declaration fails the build instead of
+shipping an error page. An unset declaration continues to produce the local console.
 
-```sh
-stamp=$(git rev-parse HEAD)
-committed_at=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ "$stamp")
-printf '{"stamp":"%s","committed_at":"%s"}\n' "$stamp" "$committed_at" >console/dist/BUILD.json
-rg -l CloudGate console/dist/assets/main-*.js
-```
-
-The last command must name the locally built main bundle. If it does not, the hosted build did
-not take the Cloud branch; stop before deployment.
+On 2026-10-27 a deployment passed the old CloudGate text check with the declaration `1`; the
+browser then reported an empty Cloud declaration. Production was restored to the previous Pages
+deployment. The regression test first reproduced the missing build rejection, then proved the
+same Vite configuration rejects that input. The served-bundle checker also rejects a bundle that
+contains `CloudGate` but lacks the complete production declaration. Checks remain independent:
+source stamp, served bundle, usable declaration, catalogs, then actual browser startup.
 
 ## PWA launch images
 
@@ -67,7 +66,11 @@ without a wordmark or an artificial delay. Android derives its launch screen fro
 `manifest.webmanifest`; iOS uses the device-specific `apple-touch-startup-image`
 links in `web/console/index.html`.
 
-The daemon draws these PNGs through `icon.Splash`, but Cloudflare Pages cannot call
+The connected mark uses the same compact silhouette as the Console. Large tiles and
+launch marks have a subtle grid; tab icons remain solid. The `-brand` generator
+also refreshes the native ICNS, browser favicon and PWA icons from `icon.AppIcon`.
+
+The daemon draws launch PNGs through `icon.Splash`, but Cloudflare Pages cannot call
 that renderer. The console therefore ships matching static PNGs in `public/`.
 Without them, Pages returns its HTML SPA fallback at the image URL, even with HTTP
 200, and iOS has no usable launch image.
@@ -76,8 +79,8 @@ After changing the renderer or the declared launch geometries, regenerate from t
 repository root:
 
 ```sh
-go run ./internal/domain/icon/cmd/splashgen
-go run ./internal/domain/icon/cmd/splashgen -check
+go run ./internal/domain/icon/cmd/splashgen -brand
+go run ./internal/domain/icon/cmd/splashgen -brand -check
 ```
 
 The generator's Go tests verify that every declared launch image matches the daemon
@@ -116,7 +119,7 @@ result when its notice arrives (`clawdline guide`, §5a):
 hosted=/absolute/path/to/built/hosted-worktree
 cloud=/absolute/path/to/private-cloud-checkout
 stamp=$(git -C "$hosted" rev-parse HEAD)
-clawdline callback --title "The hosted console serves $stamp" --timeout 20m -- \
+clawdline callback --title "Hosted console serves $(git -C "$hosted" rev-parse --short=9 HEAD)" --timeout 20m -- \
   sh -c '
     set -eu
     hosted=$1
@@ -149,12 +152,16 @@ clawdline callback --title "The hosted console serves $stamp" --timeout 20m -- \
   ' sh "$hosted" "$cloud"
 ```
 
+The title carries the short commit: `clawdline callback` refuses a title over 60 characters
+(`bad_task`), and a full 40-character commit after the words already reaches 63.
+
 Record the current production deployment id from the list before deploying, so rollback has an
 exact target. A failed ancestry check stops the callback before deployment.
 
 `tools/wait-hosted-console.sh <sha> [--deadline 15m] [--strict-catalogs]` polls `BUILD.json` until its stamp is
 `<sha>` or descends from it. Then it runs the three steps below and exits 0 only when the served
-bundle has `CloudGate`. Builds that ship product catalogs also read every advertised language's
+bundle has `CloudGate` and its compiled declaration names the exact production app, API and
+relay endpoints. It parses JavaScript syntax without executing downloaded code. Builds that ship product catalogs also read every advertised language's
 hosted JSON through `tools/check-hosted-catalogs.py`, which runs the same catalog
 validator used during Console development. The first multilingual release
 requires all nine catalogs to cover the frozen initial baseline and English
@@ -172,13 +179,15 @@ printf '%s\n' "$bundle"                                                   # 2
 curl -fsS "https://app.clawdline.com/$bundle" | grep -c CloudGate     # 3 — must be > 0
 ```
 
-**Three is the one that matters.** One says a file changed, not that the right file went up — a
-`BUILD.json` left behind by an earlier build reported the previous stamp after a deploy that
-replaced everything else. Two only names the bundle. Three asks whether the bundle that is now
-being served took the Cloud branch, which is the question the failure turns on.
+These checks establish the source and branch, but `CloudGate` text alone does not establish a
+usable configuration. `tools/wait-hosted-console.sh` additionally pipes the served bundle through
+`web/console/tools/check-hosted-build.mjs`, which verifies the compiled production declaration.
+A stamp can be stale, and a malformed hosted build can still contain the CloudGate import.
 
-Grepping the bundle for a string you added is not this check. It answers whether your change
-shipped, which was true in the broken deploy as well.
+After the static checks, reload the production console in the existing browser tab and verify
+that the actual Session list appears. Also verify the changed route. Preserve existing sign-in
+and pairing; do not create a duplicate viewer tab. Do not report a deployment as accepted before
+browser startup succeeds. If it fails, restore the recorded preceding deployment immediately.
 
 ## Verifying a preview deployment is not possible
 
@@ -225,6 +234,45 @@ and `fanout=0` on every ack say no viewer is subscribed — the relay had nobody
 publishes to. That pair separates "the Mac is down" from "the console cannot connect", and on
 2026-09-20 it is what showed the Mac was innocent.
 
+## Missing modules after a deployment
+
+An already-open page can still name the preceding deployment's hashed modules.
+If a newly opened lazy page requests a removed asset, Pages can answer with its
+HTML SPA fallback and HTTP 200. The browser rejects that module even while the
+index, API and new deployment's startup assets remain healthy. A live browser
+test on 2026-10-27 reproduced this when opening Usage overview from an older
+page: its missing JavaScript request returned `text/html`, and the uncaught
+React lazy import removed the entire interface.
+
+Registered pages now have individual module-load boundaries. A failed lazy page
+shows a quiet localized recovery card while the shell and neighbouring Session stay
+mounted. Its primary action reloads the current destination. Back to Sessions uses
+the existing in-page navigation, keeping the Session mounted and avoiding a full
+reload. The secondary action and its explanatory sentence are absent when startup
+has failed before a Session shell exists. The card states that reloading is manual;
+it does not claim that unsaved data is durable or that retrying must succeed.
+Startup gate imports have the same recovery UI, including removing the initial
+boot cover if the gate could not load. Vite preload events identify the
+original rejected error; they are not cancelled, so consumers still receive the
+real rejection. Ordinary API, cancellation and application errors keep their
+existing error paths.
+
+Recovery is manual, like the existing new-build notice: it never automatically
+reloads a live editor or enters a refresh loop. The reload keeps the current URL
+and uses the existing text-draft persistence at page-exit boundaries. Unsent
+pictures belong only to the current editor and must be selected again after
+reload; see [the storage decision](cloud-storage-resilience.md). A
+page loaded before this protection was deployed needs one ordinary reload to
+receive it. A missing initial entry script cannot be handled by JavaScript that
+has not itself loaded.
+
+Acceptance keeps an older protected page open while changing the served build,
+then opens a previously unvisited lazy page. Verify the recovery action, that
+the shell and draft remain available, and that using Reload restores the same
+destination and draft. Also exercise a persistent module failure to prove that
+no automatic reload loop occurs. A healthy API, a matching build stamp, or a
+same-version redeploy alone does not verify this path.
+
 ## Startup session checks
 
 Startup session checks distinguish authentication from transport failures. Only the session API's
@@ -263,3 +311,26 @@ events keep their existing bounded outbox and automatic retry policy.
 On the machine, inspect `cloud: viewer reported: event=cloud.send.diagnostic_requested`
 and the batch's `cloud: viewer events delivered:` summary in the daemon log.
 A relay acknowledgement alone does not establish that the machine logged the row.
+
+## Community sharing metadata
+
+The Cloud build emits `_worker.js` and a restricted `_routes.json` for `/community` and `/help`.
+Assets, the workspace, API and relay traffic remain outside that worker. The worker obtains the
+SPA asset through `ASSETS.fetch` and rewrites its head with the same metadata model used by the
+client. Its only upstream is the fixed anonymous public API, with no credentials, redirect
+following, query forwarding or persistent preview cache. Private/Admin routes never fetch content.
+The default static Cloud entry has generic metadata; daemon builds retain their existing entry.
+
+A production acceptance checks the raw GET HTML using an ordinary user agent and representative
+share crawlers, not only the browser DOM. Verify distinct list titles, a real public topic title
+and original-post excerpt, noindex for private/missing content, one canonical URL without tracking,
+one set of OG/Twitter tags, a reachable image/png response with exact 1200×630 dimensions, and SPA
+navigation updating both title and metadata. Also open the existing signed-in console and verify
+that changing the HTML response has not affected startup, navigation or pairing. No API or relay
+redeployment is required for this rendering layer.
+
+## Public website analytics
+
+The operations overview includes [public website visits](public-analytics.md). Its report API
+and website collection ship from the Cloud service; deploy and verify those contracts separately
+from the hosted console. A console BUILD stamp does not prove collection or member identity.

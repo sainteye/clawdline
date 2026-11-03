@@ -73,6 +73,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
 | `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | 在 Session 上方留下需要人處理的便條（§9a） |
+| `clawdline output add [--kind created\|modified\|published] <file>` | 登錄一個確切的 Session 產出路徑（§8） |
 | `clawdline image send <picture>…` | 把圖片顯示在這個 Session 的回覆底下給使用者看（§8） |
 | `clawdline assistants` | 每個助理的帳號還剩多少額度 |
 | `clawdline landings` | 這台機器上所有還欠著的 landing；`--work-id <item id>`：一個看板項目所有已記錄的 landing |
@@ -169,6 +170,9 @@ token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原�
 `-H @<(printf 'X-Clawdline-Orchestrator: %s\n' "$(cat "$DIR/orchestrator-token")")`。
 使用 `curl --fail-with-body`；帶 JSON body 的 POST 還要加
 `-H 'Content-Type: application/json'`（否則回 `415 unsupported_media_type`）。
+
+`clawdline doctor --json` 透過 `GET /v1/doctor` 讀取正在執行的服務程式所產生的安全 Doctor 報告（API 等級 32；Cloud 指令字 `doctor`）。只執行固定的 CLI 版本檢查並讀取既有額度證據，不查詢供應商、不讀登入憑證，也不自動上傳。可從「設定 → 狀態 → Doctor」預覽、下載或明確提交私人回報。`doctor_busy` 表示另一個檢查正在執行；`doctor_report_too_large` 表示報告超過匯出上限。缺少證據仍為未知。
+
 
 ### 配對一個 Cloud 瀏覽器
 
@@ -450,6 +454,24 @@ POST 建立（`title`、`body`、`scope`、選填 `project` 與 `source`）；PA
 已完成收據會以 `Idempotent-Replayed: true` 重播。內容不同的 409 須先核對狀態，不是換新 key。
 遇到 429／5xx，先核對儲存狀態再決定是否重試，不要循環呼叫。來源欄位與完整 API 契約見
 `docs/playbooks.md`。
+
+**工具庫（API 等級 38）。** Session ⋯ → 工具庫可查看收藏與推薦的 GitHub 來源。
+GET `/v1/tool-library` 回傳 `{version,saved,catalog}`。POST 同一路徑，帶
+`{expected_version,project}` 儲存一個正規化來源，或 `{expected_version,remove}` 取消收藏該 ID。
+POST `/v1/tool-library/prepare` 接受
+`{session,conversation,generation,project_id,skill_id,command,target,task,mode,locale}`，
+`mode` 為 `task` 或 `project`。回傳來源選擇與準備指令，不下載或執行程式、不傳送訊息，也不宣稱已安裝。
+使用者在輸入框檢視可編輯任務與清楚顯示的指令附件。收到的 Agent 檢查環境、固定來源、讀取 Skill、
+安裝已獲准的前置項目、驗證後執行；既有授權、憑證與付費呼叫規則仍適用。
+`integration_kind: library` 的來源沒有 Skill 入口，須讀取固定版本的 README、套件資訊、
+授權與專案前置需求。分別記錄實際安裝的套件版本與檢閱的 commit，準備後驗證相關瀏覽器行為。
+
+讀取需要已配對讀者或這台機器的 orchestrator 憑證；寫入及準備需要 Local／Send 或機器憑證。
+每個 POST 都要 JSON 與最長 200 bytes 的固定 Idempotency-Key。收藏寫入以 `version` 比對後更新；
+`version_conflict` 時先重新讀取。結果未知時沿用相同 bytes 與 key 重試。其他拒絕包含
+`invalid_project`、`unsupported_source`、`project_too_large`、`body_too_large`、`capacity_full`、
+`unknown_project`、`unknown_skill`、`invalid_task`、`stale_session` 與既有收據／執行身分錯誤。
+缺少安裝、載入或採用收據時維持未知。完整契約見 `docs/tool-library.md`。
 
 ## 2a. Feature Root 的一般流程
 
@@ -1032,7 +1054,19 @@ terminal 還掛著同一個 conversation 時顯示。
   `CLAWDLINE_PROTOCOL_SESSION_FILE` 找出你的 conversation（都沒有就用
   `--conversation`），向 `GET /v1/orchestrator/whoami` 問出 terminal，再把 `{"summary"}` 送到
   `POST /v1/orchestrator/sessions/<terminal>/complete`。
-- summary 長度 1–500 字元。每呼叫一次就是一張新的收據；以最新的為準。
+- summary 長度為 1–500 字元。舊式呼叫未帶 key 時，每次建立新收據，以最新的為準。
+- 大型 Git 交付使用 `clawdline session report --summary "…" --evidence-file <JSON>`。
+  UTF-8 證據檔最多 256 KiB、4,096 筆完整提交識別碼，將完全相同的摘要綁定至通過的 Git
+  交付閘門，以及基線和逐檔歸屬清單的 SHA-256。版本 1 格式與責任邊界見 `docs/session-delivery.md`。
+  原始證據全文及 SHA-256 與 `session.delivered` 一起保存；回應包含 `delivery_evidence_sha256`
+  與 `delivery_evidence_commits`。摘要只需包含有助閱讀的提交資訊。證據代表已認證 adapter 的聲明，
+  不代表獨立審查、落地、部署或發布授權。
+- 證據呼叫必須有 `Idempotency-Key`，CLI 依原始證據、terminal 與 conversation 產生穩定 key。
+  以相同檔案及身分重送會取得原回覆，不新增收據或推播；位元組改變會使用不同 key。
+  舊 daemon 會拒絕額外欄位，不得改用只有摘要的回報繞過。
+  `delivery_evidence_invalid`、`delivery_evidence_mismatch`、`delivery_evidence_unverified`、
+  `delivery_evidence_too_large` 都不建立收據。缺少或不一致的確認為 `delivery_evidence_ack_unknown`，
+  不算成功。daemon 當機後的 `request_outcome_unknown` 不可改用新 key 重試；先核對已保存事件。
 - 回應裡還有 `open_todos`：這個 Session 已送出或已讀、但還沒完成的 direct to-do，由舊到新，最多
   20 筆（更多時 `open_todos_truncated` 為 true）。指令會在收據之後把它們印到 stderr，一行一個 id
   和文字。做完的每一筆都用 `clawdline todo done <id>` 勾掉。收據無論如何都會記錄，離開碼也不變；
@@ -1040,6 +1074,10 @@ terminal 還掛著同一個 conversation 時顯示。
 - 拒絕：`conversation_id_malformed`（不是小寫的 UUID）、`conversation_not_found`、
   `conversation_ambiguous`、`registry_stale`、`session_not_found`、`session_unbound`、
   `child_session`。被拒絕就照實回報；在聊天裡寫一句話不算收據。
+
+**回報前先登錄交付檔案。** 標頭的「產出檔案」會顯示原生成功寫入與明確交付的路徑。
+用 Shell 產生的交付檔案必須執行 `clawdline output add <file>` 登錄（見 §8），不要用目錄掃描猜歸屬。
+只登錄這個 Session 真正產生的檔案，不要納入輸入附件、機密、快取或其他 Session 的工作。
 
 **留一份收尾狀態報告給使用者。** 這一輪改了某個 git 專案裡的檔案時，給使用者一頁：上面看得到進度，
 點檔案就能讀這一輪新增、修改的每個檔。它是本機的 HTML 檔：不上傳，也不載入任何外部資源。
@@ -1117,6 +1155,21 @@ clawdline image send /absolute/path.png [more.png …]
 - 只接受 orchestrator token。一到六個本機檔案；每一個都必須是一般檔案，最多 12 MiB、每邊最多
   12,000 px。PNG、JPEG、GIF 直接讀；其他格式在 macOS 上會先交給 `sips` 轉。圖片保留 24 小時。
   拒絕：`session_not_found`、`session_has_no_record`（那個 Session 還沒寫出第一段對話）。
+
+
+**登錄產出檔案。** 用 Shell 指令產生交付檔案，或助理沒有原生寫檔成功收據時，執行：
+
+```sh
+clawdline output add --kind created /absolute/path/to/file
+# For a file this Session modified: --kind modified
+# For an existing file deliberately delivered: omit --kind (published)
+```
+
+只登錄這個 Session 真正產生、修改或明確交付的檔案。不要登錄使用者輸入附件、憑證、快取或其他
+Session 的工作。這只記錄原始路徑，不會另存永久副本；要長期交付，先存到受管理的 artifacts 目錄。
+桌機與手機都從 Session 標頭的「產出檔案」按鈕開啟同一份紀錄，不使用分頁。原生成功收據涵蓋 Claude
+寫入／編輯與 Codex patch 事件，Shell 寫檔仍需這個明確指令。`image send` 也會在索引可用時登錄原圖路徑；
+它的暫存圖片與原始檔案各有自己的保存期限。
 
 ## 9. 通知使用者
 

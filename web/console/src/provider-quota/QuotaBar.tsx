@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { ProviderQuotaRow, ProviderQuotaSnapshot, ProviderQuotaWindow } from "@clawdline/contract"
 import { client } from "../client.js"
 import { nextWord } from "../next-strings.js"
@@ -6,17 +6,17 @@ import { usePoll } from "../useFleet.js"
 import { useMachineVersion } from "../machine/NeedsUpdate.js"
 import { onMachineChanged } from "../cloud/machine-switch.js"
 import * as L from "../legacy/bridge.js"
-import { quotaCountdown, quotaStale, visibleQuotaRows, tightestWindow, compactQuotaRows } from "./model.js"
+import { quotaCountdown, quotaStale, visibleQuotaRows, compactWindow } from "./model.js"
 import { quotaVisible, subscribeQuotaVisible } from "./visibility.js"
 import "./quota.css"
 
 function Icon({ id }: { id: string }) {
-  if (id === "claude" || id === "codex") return <span className="quota-logo" aria-hidden="true"
-    dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(id) }} />
+  const html = L.assistantLogoHTML(id)
+  if (html) return <span className="quota-logo" aria-hidden="true"
+    dangerouslySetInnerHTML={{ __html: html }} />
   return <svg className="quota-logo" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    {id === "gemini" ? <path fill="currentColor" d="M12 1C10.5 8.5 8.5 10.5 1 12c7.5 1.5 9.5 3.5 11 11 1.5-7.5 3.5-9.5 11-11C15.5 10.5 13.5 8.5 12 1Z" /> : <>
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
-      <path d="m6 18 12-12M8 6l10 12" stroke="currentColor" strokeWidth="2" /></>}
+    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
+    <path d="m6 18 12-12M8 6l10 12" stroke="currentColor" strokeWidth="2" />
   </svg>
 }
 function WindowValue({ window: w, now, detail = false }: { window: ProviderQuotaWindow; now: number; detail?: boolean }) {
@@ -60,8 +60,7 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
   }, [])
   const polling = usePoll<ProviderQuotaSnapshot>(read, 30_000)
   const rows = visibleQuotaRows(polling.data?.providers ?? [])
-  const mobile = useSyncExternalStore(subscribeMobile, isMobile)
-  const shown = mobile ? compactQuotaRows(rows, 2) : rows
+  const shown = rows
   const more = rows.length - shown.length
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
   useEffect(() => { const timer = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 60_000); return () => clearInterval(timer) }, [])
@@ -87,16 +86,16 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
     <footer ref={footer} className="provider-quota-bar" aria-label={nextWord("quotaTitle")}>
       {machineName && <span className="quota-machine" title={machineName}>{machineName}</span>}
       <div className="quota-providers">
-        {shown.map((row) => <button key={row.id} className="quota-provider" type="button" data-provider={row.id}
-          data-stale={stale(row) || undefined} aria-label={`${row.label} · ${nextWord("quotaUsed", { percent: Math.round(tightestWindow(row).used_percent) })}`} aria-haspopup="dialog" aria-controls="provider-quota-detail"
-          onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
-          <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
-          <span className="quota-full-windows">{(row.id === "claude" || row.id === "codex" ? row.windows : [tightestWindow(row)]).map((w, i) => <Fragment key={i}>
-            {i > 0 && <span className="quota-window-separator" aria-hidden="true">·</span>}<WindowValue window={w} now={now} />
-          </Fragment>)}</span>
-          <span className="quota-compact-window"><WindowValue window={tightestWindow(row)} now={now} /></span>
-          {stale(row) && <span className="quota-stale">{offline ? nextWord("quotaOffline") : nextWord("quotaStale")}</span>}
-        </button>)}
+        {shown.map((row) => {
+          const compact = compactWindow(row)
+          return <button key={row.id} className="quota-provider" type="button" data-provider={row.id}
+            data-stale={stale(row) || undefined} aria-label={`${row.label} · ${nextWord("quotaUsed", { percent: Math.round(compact.used_percent) })}`} aria-haspopup="dialog" aria-controls="provider-quota-detail"
+            onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
+            <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
+            <span className="quota-compact-window"><WindowValue window={compact} now={now} /></span>
+            {stale(row) && <span className="quota-stale">{offline ? nextWord("quotaOffline") : nextWord("quotaStale")}</span>}
+          </button>
+        })}
         {more > 0 && <button type="button" className="quota-more" aria-haspopup="dialog" aria-controls="provider-quota-detail"
           aria-label={nextWord("quotaMore", { count: more })} onClick={(e) => open(e.currentTarget)}>+{more}</button>}
       </div>
@@ -112,7 +111,7 @@ function QuotaReading({ machineName, offline }: { machineName?: string; offline:
         <h3><Icon id={row.id} />{row.label}{stale(row) && <span className="quota-stale">{nextWord("quotaStale")}</span>}</h3>
         {row.windows.map((w, i) => <WindowValue key={i} window={w} now={now} detail />)}
         {row.observed_at !== undefined && <p className="quota-caption">{nextWord("quotaUpdated", { time: new Date(row.observed_at * 1000).toLocaleString() })}</p>}
-        <p className="quota-caption">{nextWord(row.source === "claude_statusline" ? "quotaSourceClaude" : row.source === "codex_rollout" ? "quotaSourceCodex" : "quotaSourceAPI")}</p>
+        <p className="quota-caption">{nextWord(row.source === "claude_statusline" ? "quotaSourceClaude" : row.source === "codex_rollout" ? "quotaSourceCodex" : row.source === "provider_cli" ? "quotaSourceCLI" : "quotaSourceAPI")}</p>
         {(offline || polling.error || row.problem) && <p className="quota-problem">{offline ? nextWord("quotaOffline") : polling.error ? nextWord("quotaUnavailable") : problemWord(row.problem)}
           {row.problem === "reauth_required" && <span> {nextWord("quotaRunCLI", { provider: row.label })}</span>}</p>}
       </section>)}

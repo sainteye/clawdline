@@ -11,7 +11,7 @@ export function dashboardFetch(machine: string, connected: () => CloudReadClient
   const words = new RelayWriter(reader.writeHost)
   reader.carryWrites({ route: (method, path) => {
     const route = writeRoute(method, path)
-    return route?.op === "machine-usage" ? route : null
+    return route?.op === "machine-usage" || route?.op === "api-performance" ? route : null
   }, answer: (route, method, url, init) => words.answer(route, method, url, init) })
   return (input, init) => {
     const client = connected()

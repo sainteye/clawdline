@@ -104,3 +104,18 @@ for (const [lang, catalog] of [["en", english], ["zh-Hant", traditional]] as con
     }
   })
 }
+
+test("compressed reply failures use English and Traditional Chinese catalog copy",()=>{
+ const prior=globalThis.document
+ Object.defineProperty(globalThis,"document",{configurable:true,value:{documentElement:{lang:"en",dir:"ltr",setAttribute(){}}}})
+ try {
+  for(const [catalog,lang] of [[english,"en"],[traditional,"zh-Hant"]] as const) {
+   activateCatalog(catalog,lang)
+   for(const [code,key] of [["read_payload_corrupt","next.compressedReadFailed"],["read_encoding_unsupported","next.compressedReadUnsupported"],["read_payload_too_large","next.compressedReadTooLarge"]] as const) {
+    const sentence=failureSentence({code})
+    assert.ok(sentence.includes(catalog[key]))
+    assert.ok(sentence.includes(code))
+   }
+  }
+ } finally {resetCatalogForTest();Object.defineProperty(globalThis,"document",{configurable:true,value:prior})}
+})

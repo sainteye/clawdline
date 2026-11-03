@@ -2,8 +2,10 @@ package http
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +16,7 @@ import (
 
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/auth"
@@ -451,5 +454,49 @@ func TestAPairingHandOffRefusesWhenTheCeilingCannotBeRead(t *testing.T) {
 	rec := h.post(t, map[string]any{"offer": h.offer.Fragment(), "machine_id": "mac_this-one"}, true)
 	if rec.Code < 400 || h.completed != 0 {
 		t.Fatalf("%d %s after %d completions", rec.Code, rec.Body.String(), h.completed)
+	}
+}
+
+func TestPairingUsesTheChosenAssistant(t *testing.T) {
+	for _, assistant := range []string{"claude", "codex"} {
+		t.Run(assistant, func(t *testing.T) {
+			h := newPairAgentHarness(t)
+			rec := h.post(t, map[string]any{"offer": h.offer.Fragment(), "machine_id": "mac_target", "assistant": assistant}, true)
+			if rec.Code != http.StatusOK || len(h.dispatched) != 1 {
+				t.Fatalf("status %d, dispatches %d", rec.Code, len(h.dispatched))
+			}
+			if h.dispatched[0].Assistant != assistant {
+				t.Fatalf("started %q instead of %q", h.dispatched[0].Assistant, assistant)
+			}
+		})
+	}
+	h := newPairAgentHarness(t)
+	rec := h.post(t, map[string]any{"offer": h.offer.Fragment(), "machine_id": "mac_target", "assistant": "unknown"}, true)
+	if rec.Code != http.StatusBadRequest || refusalCode(rec) != "bad_assistant" || len(h.dispatched) != 0 {
+		t.Fatalf("invalid assistant: status %d, code %s, dispatches %d", rec.Code, refusalCode(rec), len(h.dispatched))
+	}
+}
+
+func TestPairingStatusCarriesBoundComparisonWithoutTheOffer(t *testing.T) {
+	h := newPairAgentHarness(t)
+	offer := h.offer.Fragment()
+	const task = "7ab00050-0000-4000-8000-000000000051"
+	comparison, _ := json.Marshal(map[string]string{"machine_id": "mac_target", "viewer_fingerprint": h.offer.ViewerFingerprint, "machine_fingerprint": "QRST-UVWX-YZ23-4567"})
+	h.s.pairAgentTask = func(_ context.Context, id string) (orchestrator.Record, error) {
+		return orchestrator.Record{ID: id, Kind: orchestrator.PairingAgentKind, State: orchestrator.StateSuccess, Instructions: orchestrator.PairingAgentInstructions("mac_target", "Target", offer), Result: &taskdir.Result{Summary: "Paired", PairingComparison: comparison}}, nil
+	}
+	rec := h.get(t, "/v1/cloud/pairing/agent/"+task, true)
+	var out orchestrator.PairingAgentProgress
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &out) != nil || out.Comparison == nil {
+		t.Fatalf("missing comparison: %d %s", rec.Code, rec.Body.String())
+	}
+	if out.Comparison.OfferSHA256 != fmt.Sprintf("%x", sha256.Sum256([]byte(offer))) || out.Comparison.ViewerFingerprint != h.offer.ViewerFingerprint {
+		t.Fatalf("wrong comparison: %+v", out.Comparison)
+	}
+	if strings.Contains(rec.Body.String(), offer) {
+		t.Fatal("status leaked the one-use offer")
+	}
+	if got := h.get(t, "/v1/cloud/pairing/agent/"+task, false); got.Code != http.StatusForbidden {
+		t.Fatalf("untrusted status: %d", got.Code)
 	}
 }

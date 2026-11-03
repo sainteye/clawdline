@@ -62,17 +62,17 @@ export function archivable(conversation: string | null | undefined): boolean {
 
 /** A retained Session is display history, not a target for a destructive press. */
 export function sessionSwipeActions(freshness: "current" | "stale" | "unknown",
-  conversation: string | null | undefined): { close: boolean; archive: boolean } {
+  conversation: string | null | undefined, backend?: string): { close: boolean; archive: boolean } {
   const close = freshness === "current"
-  return { close, archive: close && archivable(conversation) }
+  return { close, archive: close && backend !== "claude_remote" && archivable(conversation) }
 }
 
 /** Rich local/selected-machine rows use the same action rule as fleet rows. */
-export function richSessionSwipeActions(row: { source?: { freshness?: string }; sessionId?: string } | null):
+export function richSessionSwipeActions(row: { source?: { freshness?: string }; sessionId?: string; backend?: string } | null):
   { close: boolean; archive: boolean } {
   const freshness = row?.source?.freshness
   return sessionSwipeActions(freshness === "unverified" || freshness === "missing" ? "stale" : "current",
-    row?.sessionId)
+    row?.sessionId, row?.backend)
 }
 
 /** How much a row uncovers: both buttons, or the close alone. */

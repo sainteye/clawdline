@@ -1,3 +1,4 @@
+import { supportWord } from "../../support/words.js"
 import type { ReactNode } from "react"
 import { SidebarIcon } from "../../SidebarIcon.js"
 import { nextWord } from "../../next-strings.js"
@@ -16,6 +17,7 @@ export function AdministratorSection({ allowed, attention, children }: { allowed
       <SidebarIcon name="usage" />{nextWord("adminDashboardNav")}
       {owed ? <span className="sidebar-attention" role="img" aria-label={nextWord("adminAttentionMark", { n: String(count) })} /> : null}
     </a>
+    <a className="sidebar-item" href="/help/admin"><SidebarIcon name="verify" />{supportWord("inbox")}</a>
     {children}
   </section>
 }

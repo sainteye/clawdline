@@ -144,9 +144,8 @@ func (r *Resolver) Snapshot(parent context.Context) Installation {
 			result.Reason = "provider_cli_unreadable"
 			continue
 		}
-		// Pin the protocol actually measured. A future version needs fresh
-		// compatibility evidence, not a successful executable lookup.
-		if strings.TrimSpace(string(version)) != "1.4.5" {
+		versionText := strings.TrimSpace(string(version))
+		if versionText == "" || strings.ContainsAny(versionText, "\r\n") {
 			continue
 		}
 		help, err := r.run(ctx, absolute, "--help")
@@ -158,7 +157,7 @@ func (r *Resolver) Snapshot(parent context.Context) Installation {
 			continue
 		}
 		result = Installation{InstalledKnown: true, Installed: true, Compatible: true, Path: absolute,
-			Version: "1.4.5", AuthState: AuthUnknown}
+			Version: versionText, AuthState: AuthUnknown}
 		break
 	}
 	// Cancellation is transient: a later ordinary caller must be able to retry.
@@ -184,8 +183,7 @@ func standaloneHelp(help string) bool {
 			return false
 		}
 	}
-	return !flags["--new-window"] && !flags["--install-extension"] &&
-		strings.Contains(help, "low|medium|high|xhigh|max") && strings.Contains(help, "accept-edits, auto, plan")
+	return !flags["--new-window"] && !flags["--install-extension"]
 }
 
 // limitedOutput refuses overflow without retaining arbitrary process output.

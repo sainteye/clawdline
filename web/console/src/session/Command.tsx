@@ -473,6 +473,7 @@ export function CommandSheet() {
     const onKey = (event: KeyboardEvent) => {
       if (overlay.hidden) return
       if (event.key === "Escape") {
+        event.preventDefault()
         close()
         event.stopImmediatePropagation()
         return

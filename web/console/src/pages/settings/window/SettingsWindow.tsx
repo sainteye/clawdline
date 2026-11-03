@@ -53,6 +53,7 @@ import { gateModeOptions, gateModeText } from "./gate-mode.js"
 import { BrowserLanguageControl } from "../../../ui-language/BrowserLanguageControl.js"
 import { CATALOG_TAGS, catalogWord } from "../../../catalog.js"
 import { askShell } from "../shell.js"
+import { RemotePairingBlock } from "../RemotePairingBlock.js"
 import { WorkflowSettingsBlock } from "../WorkflowSettingsBlock.js"
 import { DispatchPolicyPane } from "./DispatchPolicyPane.js"
 
@@ -546,8 +547,10 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
               value={naming}
               options={[
                 { label: W.settingsOff, value: "off" },
+                { label: W.settingsAutoNameSession, value: "session" },
                 { label: ASSISTANT_LABEL.codex, value: "codex" },
                 { label: ASSISTANT_LABEL.claude, value: "claude" },
+                { label: ASSISTANT_LABEL.antigravity, value: "antigravity" },
                 { label: W.settingsAutoNameAuto, value: "auto" },
               ]}
               onPick={(value) => {
@@ -1156,11 +1159,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
         <div className="sw-column">
           {!embedded && cloud !== undefined && cloud !== null && cloudSetupBlock()}
           {!embedded && cloudBlock()}
-          {embedded && (
-            <Block label={W.webCloudStatus}>
-              <Note dot="idle">{W.webCloudManagedElsewhere}</Note>
-            </Block>
-          )}
+          {embedded && <RemotePairingBlock />}
           {!embedded && cloudPairingBlock()}
         </div>
       </>

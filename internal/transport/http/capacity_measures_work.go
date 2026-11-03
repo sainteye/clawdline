@@ -73,8 +73,38 @@ func (s *Server) workCapacityMeasures() map[string]func() capacity.Reading {
 			}
 			return capacity.Reading{Known: true, Used: n}
 		},
+		capacity.WorkCardDescriptionRunes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-card description preview; complete text remains on the one-item read"}
+		},
 		capacity.WorkListPageRows: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-answer Board page; later rows remain behind next_cursor"}
+		},
+		capacity.WorkIssueSyncResponseBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-answer guard on GitHub replies; no retained buffer"}
+		},
+		capacity.WorkIssueSyncTokenFileBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read guard on the one GitHub token file"}
+		},
+		capacity.WorkIssueSyncDeviceSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-flow deadline; a new start issues a new code"}
+		},
+		capacity.WorkIssueSyncScanRows: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-create read window; no retained rows"}
+		},
+		capacity.WorkIssueSyncJiraResponse: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-answer guard on Jira replies; no retained buffer"}
+		},
+		capacity.WorkIssueSyncJiraCredential: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read guard on the one Jira credential file"}
+		},
+		capacity.WorkIssueSyncJiraProjects: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-answer picker page; no retained rows"}
+		},
+		capacity.WorkIssueSyncLinksPerPass: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-pass call budget; later links wait for the next pass"}
+		},
+		capacity.WorkIssueSyncRetrySeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "longest wait between two attempts on one link"}
 		},
 	}
 }

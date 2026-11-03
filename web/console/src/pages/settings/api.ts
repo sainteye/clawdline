@@ -1,4 +1,6 @@
 import type {
+  IntegrationSettingsSnapshot,
+  IntegrationSettingsRequest,
   WorkflowSettingsSnapshot,
   WorkflowSettingsRequest,
   SettingsRequest,
@@ -8,6 +10,8 @@ import type {
 } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"
+
+export type { IntegrationSettingsSnapshot, IntegrationSettingsRequest } from "@clawdline/contract"
 
 export type DefaultModelAssistant = "codex" | "claude" | "antigravity"
 export type DefaultModelOption = { value: string; label: string }
@@ -46,7 +50,7 @@ export function defaultModelOptions(
  * stalls is a timeout, not a read that never ends. A caller's `signal` (an unmounted page, a read
  * made obsolete) aborts the same request; it never starts a second one.
  */
-async function call(init: RequestInit, path = "/v1/settings", signal?: AbortSignal): Promise<SettingsSnapshot> {
+async function call<T = SettingsSnapshot>(init: RequestInit, path = "/v1/settings", signal?: AbortSignal): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
   const forward = () => controller.abort()
@@ -75,11 +79,22 @@ async function call(init: RequestInit, path = "/v1/settings", signal?: AbortSign
     if (isRefusal(parsed)) throw new RefusalError(res.status, parsed, path)
     throw new TransportError(`${path} answered ${res.status} with no refusal in it`)
   }
-  return parsed as SettingsSnapshot
+  return parsed as T
 }
 
 export function readSettings(options: { signal?: AbortSignal } = {}): Promise<SettingsSnapshot> {
   return call({ method: "GET" }, "/v1/settings", options.signal)
+}
+
+export function readIntegrationSettings(signal?: AbortSignal): Promise<IntegrationSettingsSnapshot> {
+  return call<IntegrationSettingsSnapshot>({ method: "GET" }, "/v1/settings/integrations", signal)
+}
+
+export function writeIntegrationSettings(change: Partial<IntegrationSettingsRequest>): Promise<IntegrationSettingsSnapshot> {
+  return call<IntegrationSettingsSnapshot>({ method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify(change),
+  }, "/v1/settings/integrations")
 }
 
 /** The daemon console's paired-browser surface excludes native input-bar keys. */

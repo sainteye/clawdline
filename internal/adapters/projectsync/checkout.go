@@ -51,6 +51,11 @@ func git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); err != nil {
+		// Git may put a filesystem-boundary explanation after the fatal
+		// diagnostic. Keep the repository fact before shortening the message.
+		if strings.HasPrefix(errOut.String(), "fatal: not a git repository") {
+			return out.Bytes(), fmt.Errorf("git %s: %w: %w", args[0], ErrNotRepository, err)
+		}
 		return out.Bytes(), fmt.Errorf("git %s: %w: %s", args[0], err, lastLine(errOut.String()))
 	}
 	return out.Bytes(), nil
@@ -73,7 +78,7 @@ func Origin(ctx context.Context, dir string) (string, error) {
 		// Which of "no origin", "no repository" and "git did not answer" it was
 		// is asked once more rather than guessed.
 		if _, revErr := git(ctx, dir, "rev-parse", "--git-dir"); revErr != nil {
-			if strings.Contains(revErr.Error(), "not a git repository") {
+			if errors.Is(revErr, ErrNotRepository) {
 				return "", ErrNotRepository
 			}
 			return "", err

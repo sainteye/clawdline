@@ -136,6 +136,12 @@ func TestSessionUpdateToolContentSynthetic(t *testing.T) {
 		*c[4].Content.Data != "AA==" || *c[5].Content.MimeType != "audio/wav" || !c[6].Ignored || !c[7].Content.Ignored || out.Text != "" {
 		t.Fatalf("structured tool content lost: %+v", c)
 	}
+	if out.Tool.Output == nil || !strings.Contains(*out.Tool.Output, "opaque-output") {
+		t.Fatal("native output was discarded")
+	}
+	// Output is the requested result; arbitrary input and extension metadata
+	// still have no projection. Exclude output when checking that boundary.
+	out.Tool.Output = nil
 	encoded, _ := json.Marshal(out)
 	if bytes.Contains(encoded, []byte("opaque")) || bytes.Contains(encoded, []byte("rawOutput")) {
 		t.Fatal("opaque tool data was normalized")
@@ -147,7 +153,7 @@ func TestSessionUpdateToolContentSynthetic(t *testing.T) {
 }
 
 func TestSessionUpdateIgnoredVariants(t *testing.T) {
-	for _, kind := range []string{"plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update"} {
+	for _, kind := range []string{"plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update", "notice", "compaction_update", "compaction_summary_chunk", "future_update"} {
 		t.Run(kind, func(t *testing.T) {
 			frame := updateTestFrame(`{"sessionUpdate":"` + kind + `","_meta":{"text":"not chat"}}`)
 			out, err := DecodeSessionUpdate(frame, updateTestSession)
@@ -229,7 +235,6 @@ func TestSessionUpdateRejectsMalformed(t *testing.T) {
 	} {
 		cases = append(cases, struct{ name, frame, session, code string }{payload, string(updateTestFrame(payload)), updateTestSession, "invalid_update"})
 	}
-	cases = append(cases, struct{ name, frame, session, code string }{"unknown", string(updateTestFrame(`{"sessionUpdate":"unknown_vendor_update"}`)), updateTestSession, "unsupported_update"})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := DecodeSessionUpdate([]byte(tc.frame), tc.session)

@@ -89,6 +89,8 @@ export interface CloudClientHandle extends CloudReadClient {
   readonly viewerVerified?: ReadonlyMap<string, unknown>
   /** Clear an older negative pairing lookup after stronger capability evidence. */
   forgetMachinePairingAnswer?(machine: string): void
+  /** Read and validate saved local keys independently of retained relay data. */
+  restoreMachinePairing?(machine: string): Promise<void>
   machines(): Promise<{ machines: CloudMachine[]; syncing: boolean; retryAfterMs: number }>
   /**
    * What the last authenticated `orch/` snapshot of `machine` said it is, or

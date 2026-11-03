@@ -208,6 +208,7 @@ func (f *File) Change(change func(Values) (map[string]any, error)) (Values, erro
 
 // set merges changes onto a reading taken under f.mu and writes the result.
 func (f *File) set(current Values, changes map[string]any) (Values, error) {
+	changes = workflowChanges(changes)
 	next := make(map[string]json.RawMessage, len(current.Raw)+len(changes))
 	for k, v := range current.Raw {
 		next[k] = v
@@ -495,8 +496,8 @@ var Settables = []Settable{
 	{Name: "update_auto_apply", Kind: "bool"},
 	{Name: "follow_target", Kind: "bool"},
 	{Name: "codex_auto_name", Kind: "bool"},
-	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"claude", "codex", "auto"},
-		Refusal: "invalid_assistant", Because: "claude, codex or auto"},
+	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"session", "claude", "codex", "antigravity", "auto"},
+		Refusal: "invalid_assistant", Because: "session, claude, codex, antigravity or auto"},
 	{Name: "notch", Kind: "bool"},
 	// The Swift app takes y_fraction strictly between 0.02 and 0.9; the bound
 	// here is inclusive, so it is stated a step inside on both sides.
@@ -531,6 +532,7 @@ var Settables = []Settable{
 	{Name: "smart_notifications", Kind: "bool"},
 	{Name: "push_on_deploy", Kind: "bool"},
 	{Name: "push_on_waiting", Kind: "bool"},
+	{Name: "push_on_model_capacity", Kind: "bool"},
 	{Name: "push_on_board_decision", Kind: "bool"},
 	{Name: "push_on_board_done", Kind: "bool"},
 	{Name: "push_on_schedule_failure", Kind: "bool"},
@@ -553,6 +555,9 @@ var Settables = []Settable{
 	// (docs/interface.md "Turning iTerm2 scanning off").
 	{Name: "iterm_scan", Kind: "bool"},
 	{Name: "session_auto_discovery", Kind: "bool"},
+	{Name: "workflow_skills_enabled", Kind: "bool"},
+	{Name: "workflow_profile", Kind: "string", Choices: []string{"clawdline", "superpowers", "poteto"}, Refusal: "invalid_workflow_profile", Because: "clawdline, superpowers or poteto"},
+	{Name: "graphify_enabled", Kind: "bool"},
 	// The console's setup wizard (web/console/src/setup): `local` is the
 	// person choosing to use this machine only, so the header shows a quiet
 	// local mark instead of unfinished Cloud steps.

@@ -46,14 +46,23 @@ The phone Board keeps its existing layout and controls.
 ## Assign it to a session
 
 On the card, either choose an existing session (**Choose existing Session**) and press **Assign**, or choose
-Claude or Codex and press **Start a new … Session** to open a new one. **Go to Session** takes you to it, and
-**Remind Session** reminds it of the item.
+Claude or Codex. Expand **Model**, choose the model for this ticket, then press
+**Start a new … Session**. The model choice starts collapsed and shows the selected model in its summary.
+It applies only to this new Session; leaving the choice at its default uses the machine's existing
+assistant default. Switching assistant does not reuse a model selected for the other assistant.
+Choosing a model does not start work: the final start button confirms the assignment.
+
+If a role catalog is available, the separate **Role** section can ask AI to suggest a role; that
+recommendation also waits for the final start button. Role recommendation and model selection are
+different controls. There is no automatic model recommendation in this Board assignment flow.
+
+**Go to Session** takes you to the assigned Session, and **Remind Session** reminds it of the item.
 
 From then on the session moves the item itself, and each move needs evidence:
 
 In the console's **Settings → Planning and verification gates** block, planning is on by default and independent
-verification is off. The macOS app also shows the same pair in **Clawdline Next → Settings… →
-Dispatch work to other sessions**.
+verification is off. Open these controls in website Settings; the standalone macOS
+settings window has been removed.
 The two values are captured on the item's first successful assignment in each cycle; changing the
 switches later affects future cycles. With planning on, Feature and Epic need observable acceptance
 criteria before implementation. An Epic needs a plan and independent review; a Feature needs those

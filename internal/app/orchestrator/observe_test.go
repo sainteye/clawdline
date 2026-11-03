@@ -115,8 +115,10 @@ func TestABeatThatExitsIsRestarted(t *testing.T) {
 		once.Do(func() { exitGoroutine() })
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go b.Run(ctx, 10*time.Millisecond, nil)
+	// The beat must have stopped writing before TempDir removes its store.
+	done := make(chan struct{})
+	defer func() { cancel(); <-done }()
+	go func() { b.Run(ctx, 10*time.Millisecond, nil); close(done) }()
 	waitFor(t, 5*time.Second, "a restart after the exit", func() bool {
 		r := b.Beat()
 		return r.Restarts == 1 && r.Passes >= 3

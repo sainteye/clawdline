@@ -24,6 +24,7 @@ func init() {
 		op{name: "work.v2.gate-export", read: true},
 
 		op{name: "work.v2.items", read: true},
+		op{name: "work.v2.cards", read: true},
 
 		op{name: "work.v2.search", read: true},
 
@@ -113,6 +114,7 @@ func init() {
 		// nothing.
 		op{name: "capacity", read: true},
 		op{name: "provider-quotas", read: true},
+		op{name: "doctor", read: true},
 
 		// The machine-wide launch defaults shown on Settings. This is deliberately
 		// narrower than /v1/settings: a paired phone receives and changes only
@@ -133,6 +135,20 @@ func init() {
 		op{name: "work-gate-settings", read: true},
 		op{name: "workflow-settings", read: true},
 		op{name: "workflow-settings-update"},
+		op{name: "integration-settings", read: true},
+		op{name: "integration-settings-update"},
+
+		// Issue sync's tracker connections and the person's Retry
+		// (docs/issue-sync.md). No answer carries a token; a Jira API token
+		// arrives only inside the end-to-end encrypted jira-connect command.
+		op{name: "github-connection", read: true},
+		op{name: "github-connect"},
+		op{name: "github-disconnect"},
+		op{name: "jira-connection", read: true},
+		op{name: "jira-connect"},
+		op{name: "jira-disconnect"},
+		op{name: "jira-projects", read: true},
+		op{name: "issue-sync.retry"},
 
 		op{name: "notification-settings", read: true},
 
@@ -144,6 +160,7 @@ func init() {
 		// memory and each session's share. Machine-wide and parameterless, as
 		// the local route is; a read, since the route writes nothing.
 		op{name: "machine-usage", read: true},
+		op{name: "api-performance", read: true},
 
 		// Whether this machine trails the cloud's latest build
 		// (docs/updates.md): machine-wide and parameterless, as the local

@@ -132,8 +132,8 @@ The rationale and limits are in [clawdfather-role.md](../clawdfather-role.md).
 ## Troubleshooting
 
 - **`All N child slots for this session are busy`**: wait for a child to finish, or raise the
-  limit (`orchestrator_max_children`, 1–10) in the macOS app's settings window, under
-  **Dispatch work to other sessions**.
+  limit (`orchestrator_max_children`, 1–10) in the local browser console, under
+  **Settings → Dispatch work to other sessions**.
 - **A dispatch is refused with `stale_inventory`**: the command re-reads and retries once by itself;
   if it still fails, run it again.
 - **An older coordinator registration is offline**: read `clawdline guide coordination` for the

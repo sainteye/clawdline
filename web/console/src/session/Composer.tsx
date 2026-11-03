@@ -1,10 +1,11 @@
+import { decodeToolDraft, encodeToolDraft, toolMessage, type ToolAttachment, type ToolDraft } from "../tool-library/model.js"
 import { shortcutAria } from "../shortcuts.js"
 import type { AssistantFactsReading } from "./assistant-facts.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { ReactNode, RefObject } from "react"
 import type { AssistantSkill, SessionRow } from "@clawdline/contract"
 import { antigravitySlashDraft, assistantComposeAdmits, assistantProtocolOwned, assistantLabel, assistantUnavailable, assistantStateCurrent, type AssistantFacts } from "./antigravity-ui.js"
-import { catalogWord } from "../catalog.js"
+import { currentCatalogTag, catalogWord } from "../catalog.js"
 import { RefusalError } from "@clawdline/core"
 import { client, followsRelay } from "../client.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
@@ -20,7 +21,8 @@ import {
   heldSkills,
   loadSkills,
   selectedSkill,
-  skillPrefix,
+  commandInvocation,
+  commandDescription,
   skillQuery,
 } from "../legacy/skills-bridge.js"
 import { toast } from "../overlays/toast.js"
@@ -32,10 +34,18 @@ import { deliverUntilSeen, pendingSends, nextMessages } from "./send.js"
 import { MENU_FOLLOW } from "./menu-follow.js"
 import { Waiting } from "./Waiting.js"
 import { ImageMarkup } from "./ImageMarkup.js"
+import { usePromptSuggestion } from "./prompt-suggestions.js"
+import "./prompt-suggestions.css"
 import { ComposerBox } from "./ComposerBox.js"
 import { voiceSource } from "./voice-source.js"
 import "./voice-source.css"
 import "./drop-target.css"
+import { RemotePermissions } from "./RemotePermissions.js"
+import { Start } from "./Start.js"
+import { commandCatalog } from "../legacy/command-catalog.js"
+import { nativeTerminalAvailable, nativeTerminalCommand } from "./native-terminal-command.js"
+import { droppedFiles, droppedReferences, nativeDroppedPaths } from "./file-drop.js"
+import { resumeCommandQuery } from "./resume-command.js"
 
 /**
  * The composer, as the original's `form#composer` is built.
@@ -63,7 +73,7 @@ import "./drop-target.css"
  *   element the row is drawn into, and where the words land.
  * - `.skill-menu` is `SkillPicker` (`legacy/skills-bridge.ts`): typing `/`
  *   (or Codex's `$`) as the whole box asks `GET /v1/sessions/<id>/skills`
- *   once and draws the nine best matches; ↑↓ move, Tab or Return choose,
+ *   once and draws every match in a scrollable list; ↑↓ move, Tab or Return choose,
  *   Esc closes, and choosing writes the invocation into the box — it never
  *   sends.
  *
@@ -84,8 +94,11 @@ export function Composer({
   row,
   onDid,
   onSent,
+  onNativeTerminal,
   onScreen,
   suggestedDraft,
+  toolDraft,
+  toolIdentity = "",
   remote,
   assistantFacts,
   assistantReadiness,
@@ -97,7 +110,10 @@ export function Composer({
   onDid: () => void
   /** After a delivered send; nothing when left out (`Detail`'s `onSent`). */
   onSent?: () => void
+  onNativeTerminal?: () => void
   onScreen?: () => void
+  toolDraft?: ToolDraft | null
+  toolIdentity?: string
   suggestedDraft?: { target: InterventionTarget; text: string; id: number } | null
   /** A fixed remote destination uses this same editor and picture path. */
   remote?: { key: string; machineID: string; assistant?: string; canSend: boolean; allowPictures: boolean;
@@ -111,6 +127,9 @@ export function Composer({
   const msg = useRef<HTMLDivElement>(null)
   const send = useRef<HTMLButtonElement>(null)
   const [text, setText] = useState("")
+  const [tool, setTool] = useState<ToolAttachment | null>(null)
+  const toolAttachment = useRef<ToolAttachment | null>(null)
+  const appliedTool = useRef("")
   const draftKey = remote ? JSON.stringify([remote.machineID, remote.key]) : composerDraftKey(row)
   const [draftReady, setDraftReady] = useState(false)
   const alive = useRef(false)
@@ -120,18 +139,17 @@ export function Composer({
     draftWarningShown.current = true
     toast(catalogWord("composerDraft", "storageUnavailable"), true)
   }
-  const [{ Shots, shotsHTML, subscribeShots, shotsVersion }] = useState(() => createShots(urls => {
-    if (draftKey) void composerDrafts.images(draftKey, urls).catch(warnDraft)
-  }))
+  const [{ Shots, shotsHTML, subscribeShots, shotsVersion }] = useState(() => createShots())
   useLayoutEffect(() => {
     alive.current = true
     let current = true
     void composerDrafts.read(draftKey).then(draft => {
       if (!current || !msg.current) return
       if (!draft.durable) warnDraft()
-      msg.current.textContent = draft.text
-      setText(draft.text)
-      Shots.restore(draft.images, false)
+      const decoded = decodeToolDraft(draft.text)
+      toolAttachment.current = decoded.attachment; setTool(decoded.attachment)
+      msg.current.textContent = decoded.text
+      setText(decoded.text)
       setDraftReady(true)
     }).catch(() => {
       if (current) { setDraftReady(true); warnDraft() }
@@ -148,22 +166,8 @@ export function Composer({
       document.removeEventListener("visibilitychange", hidden)
     }
   }, [draftKey, Shots])
-  useEffect(() => {
-    const unsubscribe = composerDrafts.subscribeImages(draftKey, urls => {
-      const current = Shots.urls()
-      if (urls.length !== current.length || urls.some((url, index) => url !== current[index])) Shots.restore(urls, false)
-    })
-    return () => {
-      if (!Shots.busy()) { unsubscribe(); return }
-      // A pending decoder still owns this list. Keep it in step with edits made
-      // after reopening, so its eventual append cannot resurrect a removed image.
-      const finished = subscribeShots(() => {
-        if (!Shots.busy()) { unsubscribe(); finished() }
-      })
-    }
-  }, [draftKey, Shots, subscribeShots])
   const saveText = (value: string) => {
-    composerDrafts.stageText(draftKey, value)
+    composerDrafts.stageText(draftKey, encodeToolDraft(value, toolAttachment.current))
     // Clearing must delete the durable copy immediately, including a submitted draft.
     if (!value && draftKey) void composerDrafts.flushText(draftKey).catch(warnDraft)
   }
@@ -217,12 +221,20 @@ export function Composer({
 
   const machine = remote?.machineID ?? (row ? L.machineFor(row).id : "")
   const blockedCode = !remote && blocked?.machine === machine ? blocked.code : ""
+  const remoteControl = row?.backend === "claude_remote"
   const write = remote ? remote.canSend : !blockedCode
   const protocolOwned = !remote && assistantProtocolOwned(row)
   const providerOn = assistantComposeAdmits(remote?.assistant ?? row?.assistant, remote?.assistantFacts ?? assistantFacts,
     remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu, protocolOwned)
-  const on = draftReady && (remote ? remote.canSend : write && !!row) && providerOn
+  const on = draftReady && write && (remote ? remote.canSend : !!row) && providerOn
+  const promptSuggestion = usePromptSuggestion(row, on && !remote)
+  const composing = useRef(false)
+  const modifiedSpace = useRef(false)
+  const ghost = !composing.current && !text && !shotsBusy && voice === "off" && !sending && !skills.shown && !Shots.count()
+    ? promptSuggestion.candidate : null
   const cardsVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
+  const terminalShortcut = !remote && row && onNativeTerminal && nativeTerminalCommand("/help", row.assistant, row.backend) &&
+    (text.trimStart().startsWith("/") || pendingSends.of(row.id).some(card => nativeTerminalCommand(card.text, row.assistant, row.backend, card.pictures.length)))
   useEffect(() => {
     if (!protocolOwned || !row) return
     const observation = row.source?.freshness === "current" && row.source.observed_at
@@ -234,9 +246,19 @@ export function Composer({
       onDid()
     })
   }, [row, protocolOwned, on, machine, cardsVersion, onDid])
+  const dropEditor = useRef({ draftKey, append: (value: string) => {} })
+  dropEditor.current = { draftKey, append: (value: string) => {
+    const el = msg.current
+    if (!el) return
+    el.focus({ preventScroll: true })
+    caretToEnd()
+    insertText((rawText() && !/\s$/.test(rawText()) ? " " : "") + value + " ")
+    setText(rawText())
+    saveText(rawText())
+  } }
   // The picture listeners are bound once, and ask what is open when they fire.
-  const open = useRef({ on })
-  open.current = { on: on && (!remote || remote.allowPictures) }
+  const open = useRef({ on, allowPictures: true })
+  open.current = { on, allowPictures: !remote || remote.allowPictures }
 
   useEffect(() => {
     const draft = remote?.restoreDraft
@@ -261,7 +283,7 @@ export function Composer({
     // Paste, because copying a screenshot and pressing paste is how this is
     // done everywhere else. Not while the filter box has the focus.
     const paste = (ev: ClipboardEvent) => {
-      if (!open.current.on) return
+      if (!open.current.on || !open.current.allowPictures) return
       if (document.activeElement === document.getElementById("filter")) return
       // The box runs first and takes anything with words in it; a paste
       // already spoken for is left alone.
@@ -295,7 +317,16 @@ export function Composer({
         say(T.webShotNeedsSession, true)
         return
       }
-      Shots.add(ev.dataTransfer?.files, say)
+      if (!ev.dataTransfer) return
+      const dropped = droppedFiles(ev.dataTransfer)
+      const target = dropEditor.current
+      void nativeDroppedPaths().then(paths => {
+        if (dropEditor.current.draftKey !== target.draftKey) return
+        const references = droppedReferences(dropped, paths)
+        if (references.text) dropEditor.current.append(references.text)
+        if (references.namesOnly) say(nextWord("dropNamesOnly"), false)
+      })
+      if (dropped.pictures.length && open.current.allowPictures) Shots.add(dropped.pictures, say)
     }
     document.addEventListener("paste", paste)
     document.addEventListener("dragover", over)
@@ -335,13 +366,40 @@ export function Composer({
   })
 
   /** What is in the box, as text. `innerText`, so line breaks survive; a non-breaking space becomes an ordinary one. */
-  const rawText = () => String(msg.current?.innerText || "").replace(/\u00A0/g, " ")
+  const rawText = () => msg.current?.textContent
+    ? String(msg.current.innerText || "").replace(/\u00A0/g, " ") : ""
   const changed = () => {
+    promptSuggestion.dismiss()
     setText(rawText())
     saveText(rawText())
     setFailure("")
     skillsChanged()
   }
+
+  const acceptPromptSuggestion = (): boolean => {
+    const el = msg.current
+    if (!ghost || !el || composing.current || (el.textContent ?? "") !== "" || !on || inFlight.current) return false
+    const accepted = promptSuggestion.take(ghost.id ?? "")
+    if (!accepted) return false
+    el.focus({ preventScroll: true })
+    caretToEnd()
+    insertText(accepted.text ?? "")
+    changed()
+    caretToEnd()
+    return true
+  }
+
+  const promptAcceptor = useRef(acceptPromptSuggestion)
+  promptAcceptor.current = acceptPromptSuggestion
+  useEffect(() => {
+    const el = msg.current
+    if (!el) return
+    const beforeInput = (event: InputEvent) => {
+      if (!composing.current && !modifiedSpace.current && !event.isComposing && event.cancelable && event.inputType === "insertText" && event.data === " " && promptAcceptor.current()) event.preventDefault()
+    }
+    el.addEventListener("beforeinput", beforeInput)
+    return () => el.removeEventListener("beforeinput", beforeInput)
+  }, [])
 
   /** `SkillPicker.hide()`. */
   const hideSkills = () => setSkills((was) => (was.shown || was.matches.length ? { shown: false, matches: [], selected: 0 } : was))
@@ -360,9 +418,9 @@ export function Composer({
       hideSkills()
       return
     }
-    const held = heldSkills(target)
+    const held = heldSkills(target, assistant)
     if (held) {
-      const matches = filterSkills(held, q)
+      const matches = filterSkills(held, q, rawText()[0])
       setSkills((was) =>
         matches.length
           ? { shown: true, matches, selected: clampSkillPickerIndex(was.selected, matches.length) }
@@ -370,9 +428,10 @@ export function Composer({
       )
       return
     }
-    hideSkills()
-    void loadSkills(target, remote?.loadSkills).then(() => {
-      if ((remote?.key ?? rowRef.current?.id) === target && heldSkills(target)) skillsChanged()
+    const fallback = filterSkills(commandCatalog(assistant, []), q, rawText()[0])
+    setSkills({ shown: fallback.length > 0, matches: fallback, selected: 0 })
+    void loadSkills(target, remote?.loadSkills, assistant).then(() => {
+      if ((remote?.key ?? rowRef.current?.id) === target && heldSkills(target, assistant)) skillsChanged()
     })
   }
 
@@ -392,7 +451,7 @@ export function Composer({
     const skill = skills.shown ? selectedSkill(skills.matches, at) : null
     const el = msg.current
     if (!skill || !el) return false
-    el.textContent = skillPrefix(remote?.assistant ?? row?.assistant) + skill.name + " "
+    el.textContent = commandInvocation(skill, remote?.assistant ?? row?.assistant) + " "
     setText(rawText())
     saveText(rawText())
     setFailure("")
@@ -493,6 +552,13 @@ export function Composer({
     msg.current.focus({ preventScroll: true })
   }, [suggestedDraft, draftReady])
 
+  useEffect(() => {
+    if (!draftReady || !toolDraft || toolDraft.attachment.id === appliedTool.current || toolDraft.attachment.target !== toolIdentity) return
+    appliedTool.current = toolDraft.attachment.id
+    toolAttachment.current = toolDraft.attachment; setTool(toolDraft.attachment)
+    sink.current(toolDraft.text); msg.current?.focus({preventScroll:true})
+  }, [draftReady, toolDraft, toolIdentity])
+
   // The microphone, attached once. `Voice` is a module rather than a hook for
   // the reason the original is one object: there is one recorder on the page,
   // so there is one of these at a time, and a second composer mounting must
@@ -526,16 +592,38 @@ export function Composer({
     // yet; Return comes through here as well as the button.
     if (inFlight.current || Shots.busy()) return
     if (!remote && row?.assistant === "antigravity" && !protocolOwned && !assistantStateCurrent(row)) return
+    const resumeQuery = toolAttachment.current ? null : resumeCommandQuery(rawText(), remote?.assistant ?? row?.assistant, Shots.urls().length)
+    if (resumeQuery !== null && (row || remote)) {
+      const owner = row ? L.machineFor(row) : null
+      Start.openResume({
+        assistant: (remote?.assistant ?? row?.assistant)!, cwd: row?.cwd, query: resumeQuery,
+        ...(followsRelay() && (remote?.machineID || owner?.id) ? {
+          machine: { id: remote?.machineID || owner!.id, name: owner?.label || remote!.machineID },
+        } : {}),
+      })
+      if (msg.current) msg.current.textContent = ""
+      toolAttachment.current = null; setTool(null)
+      setText("")
+      saveText("")
+      hideSkills()
+      setFailure("")
+      return
+    }
     // With the menu up, Return and the button choose the highlighted skill.
     if (acceptSkill()) return
-    const said = rawText().trim()
+    if (toolAttachment.current && (!toolIdentity || toolAttachment.current.target !== toolIdentity)) {
+      setFailure(nextWord("toolLibraryStale"))
+      return
+    }
+    const said = toolMessage(rawText().trim(), toolAttachment.current, toolIdentity)
     const pictures = Shots.urls().slice()
-    if (antigravitySlashDraft(remote?.assistant ?? row?.assistant, said)) {
+    if (antigravitySlashDraft(remote?.assistant ?? row?.assistant, said, protocolOwned)) {
       setFailure(catalogWord("antigravity", "slashDraft"))
       return
     }
     if ((!said && !pictures.length) || (!row && !remote) || !on ||
       (remote && (!remote.canSend || pictures.length && !remote.allowPictures))) return
+    promptSuggestion.dismiss()
     if (protocolOwned && row && ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
       pendingSends.of(row.id).some(card => card.state === "queued"))) {
       if (!nextMessages.add(row.id, said, pictures, Date.now())) {
@@ -543,6 +631,7 @@ export function Composer({
         return
       }
       if (msg.current) msg.current.textContent = ""
+      toolAttachment.current = null; setTool(null)
       setText("")
       saveText("")
       setFailure("")
@@ -562,6 +651,7 @@ export function Composer({
     // that it did not go — and then keeps them, with a way to send them again.
     if (msg.current) msg.current.textContent = ""
     if (document.activeElement === msg.current) caretToEnd()
+    toolAttachment.current = null; setTool(null)
     setText("")
     saveText("")
     setFailure("")
@@ -586,9 +676,10 @@ export function Composer({
       const code = await deliverUntilSeen(pendingSends.add(row.id, said, pictures, Date.now()))
       if (writeIsOff(code)) setBlocked({ machine, code })
       if (!code) {
-        if (said.trim() === "/model" && !pictures.length && row.assistant === "codex")
+        if (/^\/[^\s/]+(?:\s|$)/.test(said) && !pictures.length && (row.assistant === "codex" || row.assistant === "claude"))
           document.dispatchEvent(new CustomEvent(MENU_FOLLOW, { detail: row.id }))
         onSent?.()
+        if (nativeTerminalCommand(said,row.assistant,row.backend,pictures.length)) onNativeTerminal?.()
       }
     } catch (err) {
       const code = err instanceof RefusalError ? err.code : "unexpected_error"
@@ -611,7 +702,7 @@ export function Composer({
     : catalogWord("antigravity", "sendUnavailable")
   const why: ReactNode = failure || (!providerOn ? providerWords : "") || (!remote && blockedCode
     ? L.failureSentence({ code: blockedCode }, blockedCode === "write_disabled" ? nextWord("sessionWriteDisabled") : T.sendFailed)
-    : "")
+    : "") || (remoteControl ? nextWord("claudeRemoteReadOnly") : "")
   const pinned = sending && sendWidth.current.px ? { minWidth: `${sendWidth.current.px}px` } : undefined
 
   return (
@@ -628,7 +719,9 @@ export function Composer({
         void submit()
       }}
     >
-      {!remote && <Waiting row={row} assistantFacts={assistantFacts} write={write} onScreen={onScreen} />}
+      {tool && <div className="tl-attachment" aria-label={nextWord("toolLibraryAttachment")}><div><span><b>{tool.title}</b><small>{nextWord("toolLibraryPrepared")}</small><small>{tool.revision || nextWord("toolLibraryResolveRevision")}</small></span><button type="button" aria-label={nextWord("toolLibraryRemoveAttachment")} onClick={() => {toolAttachment.current=null;setTool(null);saveText(rawText())}}>×</button></div><details><summary>{nextWord("toolLibraryReadPrompt")}</summary><pre>{tool.prompt}</pre></details>{tool.target !== toolIdentity && <p role="alert">{nextWord("toolLibraryStale")}</p>}</div>}
+      {remoteControl && row && <RemotePermissions row={row} write={!!write} />}
+      {!remote && <Waiting row={row} assistantFacts={assistantFacts} write={write} onScreen={row && nativeTerminalAvailable(row.assistant,row.backend) ? onNativeTerminal ?? onScreen : onScreen} />}
       <div
         className="shots"
         id="shots"
@@ -650,20 +743,24 @@ export function Composer({
           browser's own permission sheet, which is on top of the page and says
           more than this row could, so the row stays hidden for it. */}
       <div className="voice" id="voice" role="status" hidden={voice === "off" || voice === "opening"} ref={voiceRow}></div>
-      {/* The original's label is English in every language; the catalog has no key for it. */}
+      {terminalShortcut &&
+        <div className="native-terminal-shortcut">
+          <button type="button" onClick={onNativeTerminal}>{catalogWord("nativeTerminal", "open")}</button>
+        </div>}
+      <small hidden={!skills.shown}>{catalogWord("slashCommands", "availability")}</small>
       <div
         ref={skillMenu}
         className="skill-menu"
         data-motion-id="AN-009"
         id="skill-menu"
         role="listbox"
-        aria-label={`${assistantLabel(remote?.assistant ?? row?.assistant)} skills`}
+        aria-label={catalogWord("slashCommands", "label")}
         hidden={!skills.shown}
         inert={!skills.shown}
       >
         {skillPicture.current.matches.map((skill, i) => (
             <button
-              key={skill.name}
+              key={commandInvocation(skill, remote?.assistant ?? row?.assistant)}
               type="button"
               className="skill-option"
               role="option"
@@ -672,8 +769,8 @@ export function Composer({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => acceptSkill(i)}
             >
-              <span className="command">{skillPrefix(remote?.assistant ?? row?.assistant) + skill.name}</span>
-              <span className="description">{skill.description || ""}</span>
+              <span className="command">{commandInvocation(skill, remote?.assistant ?? row?.assistant)}</span>
+              <span className="description">{commandDescription(skill, currentCatalogTag()) || ""}</span>
             </button>
           ))}
       </div>
@@ -743,11 +840,16 @@ export function Composer({
           autoCorrect="off"
           spellCheck={false}
           enterKeyHint={keyboard ? "send" : "enter"}
-          data-placeholder={placeholder}
+          data-placeholder={ghost?.text ?? placeholder}
+          data-prompt-suggestion={ghost?.id ?? undefined}
+          aria-autocomplete="inline"
+          aria-description={ghost ? catalogWord("promptSuggestion", "acceptHint") + " " + ghost.text : undefined}
           aria-label={placeholder}
           contentEditable={on ? (PLAINTEXT_ONLY ? "plaintext-only" : "true") : "false"}
           suppressContentEditableWarning
           onInput={changed}
+          onCompositionStart={() => { composing.current = true; promptSuggestion.dismiss() }}
+          onCompositionEnd={() => { composing.current = false }}
           onPaste={(e) => {
             const pasted = e.clipboardData?.getData("text/plain") || ""
             // A picture goes to the document's handler; anything else with
@@ -757,19 +859,31 @@ export function Composer({
             insertText(pasted)
             changed()
           }}
+          onKeyUp={e => { if (e.key === " ") modifiedSpace.current = false }}
           onKeyDown={(e) => {
+            modifiedSpace.current = e.key === " " && (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey)
             // Not while an input method is mid-word: Return there accepts the candidate.
-            if (e.nativeEvent.isComposing || e.keyCode === 229) return
+            if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return
             // The menu's keys, before anything else sees them (`SkillPicker`).
             if (e.key === "ArrowDown" && moveSkill(1)) return e.preventDefault()
             if (e.key === "ArrowUp" && moveSkill(-1)) return e.preventDefault()
-            if (e.key === "Tab" && acceptSkill()) return e.preventDefault()
+            if (e.key === "Tab" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && acceptSkill()) return e.preventDefault()
+            if (!e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey &&
+              (e.key === "Tab" || e.key === " ") && acceptPromptSuggestion()) return e.preventDefault()
+            if (e.key === "Escape" && ghost) {
+              e.preventDefault(); promptSuggestion.dismiss(); return
+            }
             if (e.key === "Escape" && skills.shown) {
               e.preventDefault()
               hideSkills()
               return
             }
             if (e.key !== "Enter" || e.shiftKey) return
+            if (resumeCommandQuery(rawText(), remote?.assistant ?? row?.assistant, Shots.urls().length) !== null) {
+              e.preventDefault()
+              void submit()
+              return
+            }
             // Return chooses on every keyboard, a touch screen's included.
             if (acceptSkill()) return e.preventDefault()
             // On a touch screen Return is a new line and the button is how you send.
@@ -855,7 +969,7 @@ export function Composer({
                     setVoiceInstall({ ...voiceInstall, help: true })
                     return
                   }
-                  window.open("/settings.html", "_blank", "noopener")
+                  window.open("/#page=settings", "_blank", "noopener")
                   setVoiceInstall(null)
                 }}>
                   {nextWord("voiceInstallPromptSetUp")}

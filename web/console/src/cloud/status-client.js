@@ -5,6 +5,7 @@ import { CatalogCloudClient } from "./refusal-client.js"
 import { SESSION_INVENTORY_ID, SESSION_INVENTORY_LIMIT, channelSegment, decodedChannelSegment } from "../legacy/js/net/client.js"
 import { base64Bytes, bytesBase64, envelopeSigningBytes, importMasterSecret, openEnvelope, sealEnvelope, validateEnvelope } from "../legacy/js/net/cloud-crypto.js"
 import { classifyViewerError, viewerHealthBegin, viewerHealthFailed } from "../legacy/js/net/viewer-health-hook.js"
+import { statusInventoryIDs } from "./status-projection.ts"
 
 const decoder = new TextDecoder()
 const STATUS = /^ss\/([^/]+)\/([^/]+)$/u
@@ -40,8 +41,8 @@ function refused(code, message) {
 
 function pinnedRead(type, body) {
   return (type === "sessions.list" && typeof body?.request === "string" ||
-    type === "info" && body?.parts === "full" ||
-    ["transcript", "skills", "image", "git", "git-diff", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox"].includes(type)) &&
+    type === "info" && ["full", "remote-permission"].includes(body?.parts) ||
+    ["session-graphify", "native-terminal-screen", "transcript", "skills", "image", "git", "git-diff", "outputs", "output-file", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox"].includes(type)) &&
     (body?.expected_generation !== undefined || type === "sessions.list")
 }
 
@@ -49,12 +50,19 @@ function pinnedReplyKey(machine, session, read) {
   return machine + "\u0000" + session + "\u0000" + read
 }
 
+const COMPRESSED_READ_WORDS = new Set(["work.v2.cards", "work.v2.items", "work.v2.item", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.human-interventions", "personas", "projects", "project-folders", "schedules", "snippets", "provider-quotas", "capacity", "skills", "info", "sessions.list"])
+const READ_COMPRESSION_SUFFIX = ".encoding.gzip-v1"
 function pinnedReadName(type, body) {
+ const name = basePinnedReadName(type,body)
+ return name && body?.accept_encoding === "gzip-v1" ? name + READ_COMPRESSION_SUFFIX : name
+}
+
+function basePinnedReadName(type, body) {
   if (type === "sessions.list" && typeof body?.request === "string" && body.request) return "read:" + body.request
-  if (type === "info" && body?.parts === "full") return "info.full"
+  if (type === "info" && ["full", "remote-permission"].includes(body?.parts)) return "info." + body.parts
   if (type === "skills") return "skills"
-  if (type === "git" || type === "screen" || type === "documents") return type
-  if ((type === "git-diff" || type === "document" || type === "video" || type === "peer-inbox") &&
+  if (type === "session-graphify" || type === "native-terminal-screen" || type === "git" || type === "screen" || type === "documents" || type === "outputs") return type
+  if ((type === "output-file" || type === "git-diff" || type === "document" || type === "video" || type === "peer-inbox") &&
     typeof body?.request === "string" && body.request) return "read:" + body.request
   if (type === "agent" && typeof body?.agent === "string" && body.agent) {
     if (body.before === undefined) return "agent:" + body.agent
@@ -64,12 +72,36 @@ function pinnedReadName(type, body) {
   if (type === "shell" && typeof body?.shell === "string" && body.shell) return "shell:" + body.shell
   if (type === "image" && typeof body?.id === "string" && body.id) return "image." + body.id + (body.size === "thumb" ? ".thumb" : "")
   if (type === "transcript") {
-    if (body?.before === undefined) return "transcript"
+    if (body?.before === undefined) return "transcript" + (body.view ? ".view." + body.view : "")
     return Number.isSafeInteger(body.before) && body.before > 0
-      ? "transcript.before." + body.before + (body.revision ? ".revision." + body.revision : "") : null
+      ? "transcript.before." + body.before + (body.revision ? ".revision." + body.revision : "") + (body.view ? ".view." + body.view : "") : null
   }
   if (type === "peer-inbox" && typeof body?.request === "string" && body.request) return "read:" + body.request
   return null
+}
+
+/** Apply one authenticated update to its exact held page before publishing any rows. */
+export function applyTranscriptDelta(held, answer, session) {
+  const changes = answer?.delta, page = answer?.page
+  const stale = () => refused("transcript_cursor_stale", "The transcript update does not match its held page")
+  if (!held || !Array.isArray(held.entries) || held.id !== session || answer?.baseVersion !== held.version ||
+    !page || page.id !== session || !/^[0-9a-f]{64}$/u.test(page.version) ||
+    typeof page.signature !== "string" || !["transcript", "structured"].includes(page.evidence) ||
+    !Array.isArray(page.entries) || page.entries.length !== 0 || !Array.isArray(changes) ||
+    !Number.isSafeInteger(answer.entryCount) || answer.entryCount < 0) throw stale()
+  const entries = []
+  let cursor = 0
+  for (const change of changes) {
+    if (!change || !Number.isSafeInteger(change.start) || change.start < cursor || change.start > held.entries.length ||
+      !Number.isSafeInteger(change.deleteCount) || change.deleteCount < 0 || change.deleteCount > held.entries.length-change.start ||
+      !Array.isArray(change.entries) || change.entries.some(row => !row || typeof row.role !== "string" || typeof row.text !== "string") ||
+      entries.length+change.start-cursor+change.entries.length > answer.entryCount) throw stale()
+    entries.push(...held.entries.slice(cursor,change.start),...change.entries)
+    cursor = change.start+change.deleteCount
+  }
+  if (entries.length+held.entries.length-cursor !== answer.entryCount) throw stale()
+  entries.push(...held.entries.slice(cursor))
+  return { ...page, entries }
 }
 
 /** A retained or delayed t/ row must name the exact request before it can settle a pinned read. */
@@ -483,10 +515,50 @@ export class StatusCloudClient extends CatalogCloudClient {
     return super._machineImplements(machine, type, options)
   }
 
+  /** Restore local capability without waiting for a relay publication or sending a request. */
+  async restoreMachinePairing(machine) {
+    if (typeof machine !== "string" || !machine) return
+    // A foreground return can find storage ready after an earlier absent or
+    // incomplete answer. Keep usable keys; retry only the unavailable reading.
+    if (!this.machinePairings.has(machine)) {
+      // Retrying an unavailable read is not a new pairing generation. The
+      // global invalidation barrier would cancel another machine's parallel
+      // restoration; explicit handovers still use that barrier unchanged.
+      this.pairingAbsent.delete(machine)
+      this.pairingIncomplete.delete(machine)
+    }
+    try {
+      await this._machinePairing(machine)
+    } catch (error) {
+      // The archived lookup records a tuple before validating it. A rejected
+      // tuple is not restoration proof and must not create a paired roster row.
+      const held = this.machinePairings.get(machine)
+      if (held && (held.machineID !== machine || !held.senderID || !held.keyID ||
+        held.masterKey?.extractable !== false || held.senderKey?.extractable !== false)) {
+        this.machinePairings.delete(machine)
+        this.pairingSeen.delete(machine)
+        this.pairingLookups.delete(machine)
+      }
+      throw error
+    }
+  }
+
+  _knownMachines() {
+    // Local lookups can prove saved keys or their absence, independently of
+    // account registration. Store failures do not leave a lookup answer.
+    return [...new Set([...super._knownMachines(), ...this.machinePairings.keys(), ...this.pairingLookups.keys()])].sort()
+  }
+
   /** Retry backoff expiring permits another request; only live evidence restores presence. */
   _machineRows() {
-    return super._machineRows().map((row) => this.machineOffline?.has(row.id)
-      ? Object.freeze({ ...row, freshness: "stale", autoSelectable: false }) : row)
+    return super._machineRows().map((row) => {
+      // Rich s/ rows are opened detail, not the machine's Session inventory.
+      // The signed, fresh ss/ marker proves a count even before its rows replay.
+      // Missing or partial evidence remains unknown; only a complete empty set is zero.
+      const inventory = statusInventoryIDs(this, row.id)
+      return Object.freeze({ ...row, sessions: inventory?.length,
+        ...(this.machineOffline?.has(row.id) ? { freshness: "stale", autoSelectable: false } : {}) })
+    })
   }
 
   _machinesFor(type) {
@@ -836,8 +908,27 @@ export class StatusCloudClient extends CatalogCloudClient {
     }
   }
 
-  /** The copied reader's local write flag predates the read-only r/ channel. */
+  /** Only explicitly capable peers and bounded decoders negotiate a new representation. */
   _read(value, type, extra, answer, timeoutMs, readOptions) {
+    let identity
+    try { identity = this._sessionIdentity(value) } catch (error) { return Promise.reject(error) }
+    if (typeof DecompressionStream !== "function" || typeof answer !== "string" || !COMPRESSED_READ_WORDS.has(type) || extra?.accept_encoding !== undefined ||
+      this.machineLacks?.get(identity.machine)?.has("read-compression-v1") ||
+      this.machineDescriptor?.(identity.machine)?.machine?.read_compression_v1 !== true) {
+      return this._readRepresentation(value,type,extra,answer,timeoutMs,readOptions)
+    }
+    return this._readRepresentation(value,type,{...extra,accept_encoding:"gzip-v1"},answer+READ_COMPRESSION_SUFFIX,timeoutMs,readOptions).catch(error=>{
+      if (readOptions?.signal?.aborted || !["malformed_read","unknown_command","cloud_read_timeout","read_compression_unavailable","read_payload_corrupt","read_encoding_unsupported"].includes(error?.code)) throw error
+      this.machineLacks ??= new Map()
+      const lacks = this.machineLacks.get(identity.machine) ?? new Set()
+      lacks.add("read-compression-v1")
+      this.machineLacks.set(identity.machine,lacks)
+      return this._readRepresentation(value,type,extra,answer,timeoutMs,readOptions)
+    })
+  }
+
+  /** The copied reader's local write flag predates the read-only r/ channel. */
+  _readRepresentation(value, type, extra, answer, timeoutMs, readOptions) {
     if (!pinnedRead(type, extra)) return super._read(value, type, extra, answer, timeoutMs, readOptions)
     const machineList = type === "sessions.list" && value.session === "__clawdline_machine__"
     if ((!machineList && !GENERATION.test(extra.expected_generation)) ||
@@ -1416,7 +1507,7 @@ export class StatusCloudClient extends CatalogCloudClient {
   }
 
   /** Keep distinct generations from joining the copied client's per-session read waiter. */
-  transcriptForGeneration(destination, signal) {
+  transcriptForGeneration(destination, signal, held) {
     const { machineID, sessionID, executionGeneration } = destination
     if (!machineID || !sessionID || !/^[0-9a-f]{32}$/u.test(executionGeneration)) {
       return Promise.reject(refused("execution_target_required", "an exact Session execution is required"))
@@ -1430,10 +1521,35 @@ export class StatusCloudClient extends CatalogCloudClient {
       if (this.readWaiters?.has(machineID + "\u0000" + sessionID + "\u0000transcript")) {
         throw refused("cloud_read_busy", "an unpinned Session transcript read is already in flight")
       }
-      return this._read({ machine: machineID, session: sessionID }, "transcript", {
-        limit: 200, priority: "foreground", machine_id: machineID,
-        expected_generation: executionGeneration,
-      }, "transcript", undefined, { signal })
+      const version = this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v2 === true ? "tools-v2" : "tools-v1"
+      const known = held?.id === sessionID && /^[0-9a-f]{64}$/u.test(held?.version) ? held.version : ""
+      const delta = version === "tools-v2" && !!known && this.machineDescriptor?.(machineID)?.machine?.transcript_delta_v1 === true
+      const fullView = version + (typeof DecompressionStream === "function" ? "z" : "")
+      const view = (delta ? "delta-v1" + (typeof DecompressionStream === "function" ? "z" : "") : fullView) + (known ? ":" + known : "")
+      const fields = { limit: 200, priority: "foreground", machine_id: machineID, expected_generation: executionGeneration }
+      if (this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v1 !== true) {
+        return this._read({ machine: machineID, session: sessionID }, "transcript", fields, "transcript", undefined, { signal })
+      }
+      try {
+        const page = await this._read({ machine: machineID, session: sessionID }, "transcript",
+          { ...fields, view }, "transcript.view." + view, undefined, { signal })
+        if (page?.unchanged === true) {
+          if (!known || page.version !== known) throw refused("transcript_cursor_stale", "The held page no longer matches")
+          return held
+        }
+        return page?.delta !== undefined || page?.baseVersion !== undefined
+          ? applyTranscriptDelta(held, page, sessionID) : page
+      } catch (error) {
+        if (delta && ["transcript_cursor_stale", "invalid_transcript_view", "bad_payload"].includes(error?.code)) {
+          return this._read({ machine: machineID, session: sessionID }, "transcript", { ...fields, view: fullView }, "transcript.view." + fullView, undefined, { signal })
+        }
+        if (version === "tools-v2" && error?.code === "invalid_transcript_view") {
+          const fallback = "tools-v1" + (typeof DecompressionStream === "function" ? "z" : "")
+          return this._read({ machine: machineID, session: sessionID }, "transcript", { ...fields, view: fallback }, "transcript.view." + fallback, undefined, { signal })
+        }
+        if (!["malformed_read", "cloud_read_timeout"].includes(error?.code)) throw error
+        return this._read({ machine: machineID, session: sessionID }, "transcript", fields, "transcript", undefined, { signal })
+      }
     }
     const promise = run().finally(() => {
       if (this.pinnedTranscriptFlights.get(key)?.promise === promise) this.pinnedTranscriptFlights.delete(key)
@@ -1451,9 +1567,21 @@ export class StatusCloudClient extends CatalogCloudClient {
     }
     if (signal?.aborted) return Promise.reject(refused("read_aborted", "the Session detail was closed"))
     const answer = "transcript.before." + before + (revision ? ".revision." + revision : "")
-    return this._read({ machine: machineID, session: sessionID }, "transcript", {
-      limit: 200, before, ...(revision ? { revision } : {}), priority: "foreground", machine_id: machineID,
-      expected_generation: executionGeneration,
-    }, answer, undefined, { signal })
+    const fields = { limit: 200, before, ...(revision ? { revision } : {}), priority: "foreground", machine_id: machineID,
+      expected_generation: executionGeneration }
+    if (this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v1 !== true) {
+      return this._read({ machine: machineID, session: sessionID }, "transcript", fields, answer, undefined, { signal })
+    }
+    const version = this.machineDescriptor?.(machineID)?.machine?.transcript_tools_v2 === true ? "tools-v2" : "tools-v1"
+    const view = version + (typeof DecompressionStream === "function" ? "z" : "")
+    return this._read({ machine: machineID, session: sessionID }, "transcript", { ...fields, view },
+      answer + ".view." + view, undefined, { signal }).catch(error => {
+        if (version === "tools-v2" && error?.code === "invalid_transcript_view") {
+          const fallback = "tools-v1" + (typeof DecompressionStream === "function" ? "z" : "")
+          return this._read({ machine: machineID, session: sessionID }, "transcript", { ...fields, view: fallback }, answer + ".view." + fallback, undefined, { signal })
+        }
+        if (!["malformed_read", "cloud_read_timeout"].includes(error?.code)) throw error
+        return this._read({ machine: machineID, session: sessionID }, "transcript", fields, answer, undefined, { signal })
+      })
   }
 }

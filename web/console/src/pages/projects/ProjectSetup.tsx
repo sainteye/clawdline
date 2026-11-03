@@ -1,3 +1,4 @@
+import { GraphifyButton } from "../../graphify/GraphifyButton.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
 import { localizedLiteralMap } from "../../catalog.js"
 import { catalogFormat } from "../../catalog.js"
@@ -234,6 +235,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
       <div className="project-setup-dialog-body">
         {closeNotice && <p role="status">{closeNotice}</p>}
         {projectPath && <div className="project-setup-views" aria-label={catalogWord("inline", "a2d62aa7e4df")}>
+          {visiblePlaces[0] && <GraphifyButton shown={shown && !!projectPath} target={{kind:"project",id:visiblePlaces[0].id,label:visiblePlaces[0].label}} />}
           <button type="button" aria-pressed={view === "settings"} onClick={() => setView("settings")}>{catalogWord("inline", "c57e45ecd648")}</button>
           <button type="button" aria-pressed={view === "files"} onClick={() => {
             if (!mayLeave()) return

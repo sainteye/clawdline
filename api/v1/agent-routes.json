@@ -3,6 +3,11 @@
   "routes": [
     {
       "method": "*",
+      "pattern": "/v1/api-performance",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/reports/",
       "guide": "report"
     },
@@ -31,7 +36,16 @@
       "pattern": "/v1/board/tracks",
       "guide": "board"
     },
-    {"method": "*", "pattern": "/v1/provider-quotas", "guide": "connect"},
+    {
+      "method": "*",
+      "pattern": "/v1/provider-quotas",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/doctor",
+      "guide": "connect"
+    },
     {
       "method": "*",
       "pattern": "/v1/capacity",
@@ -504,6 +518,36 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/settings/integrations",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/integrations/github",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/integrations/github/device",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/integrations/jira",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/integrations/jira/projects",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/issue-sync/",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/settings/workflow",
       "guide": "connect"
     },
@@ -666,6 +710,16 @@
       "method": "*",
       "pattern": "/v1/work/proposals/",
       "guide": "board"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/tool-library",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/tool-library/",
+      "guide": "project"
     }
   ]
 }

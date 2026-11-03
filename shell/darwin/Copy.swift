@@ -36,7 +36,6 @@ struct ShellCopy {
     var menuReveal: String { word("menuReveal") }
     var menuMascot: String { word("menuMascot") }
     var menuLogin: String { word("menuLogin") }
-    var menuEditConfig: String { word("menuEditConfig") }
     var menuEdit: String { word("menuEdit") }
     var menuUndo: String { word("menuUndo") }
     var menuCut: String { word("menuCut") }
@@ -87,7 +86,6 @@ struct ShellCopy {
     }
     var loginFailed: String { word("loginFailed") }
 
-    var settingsTitle: String { word("settingsTitle") }
     var settingsHotkey: String { word("settingsHotkey") }
     var settingsRecording: String { word("settingsRecording") }
     var settingsScope: String { word("settingsScope") }

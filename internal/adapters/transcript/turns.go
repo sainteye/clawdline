@@ -63,6 +63,8 @@ type Entry struct {
 	// Before is the start of the JSONL row this entry came from. It is used
 	// only by the paged reader to preserve whole rows at page boundaries.
 	Before int64
+	// RowOrdinal distinguishes identical entries from the same native JSONL row.
+	RowOrdinal int
 	// Tool names the tool on a call. A result carries none.
 	Tool string
 	// At is Unix seconds, or 0 when the record carried no timestamp.
@@ -123,6 +125,7 @@ type Activity struct {
 	// DurationMs is nil when the record did not say how long it took.
 	DurationMs *int64
 	Result     *string
+	ToolResult *ToolResult
 	Actions    []Action
 }
 
@@ -1341,6 +1344,14 @@ func codexItemEntries(item object, at int64) []Entry {
 			}
 			activity := &Activity{Kind: "called", Title: &title, Status: status,
 				DurationMs: durationMs(item["duration"]), Actions: []Action{}}
+			activity.ToolResult = projectToolResult(result)
+			if projected := activity.ToolResult; projected != nil {
+				projected.ToolID, _ = item.str("id")
+				if projected.Failed {
+					failed := "failed"
+					activity.Status = &failed
+				}
+			}
 			if detail := mcpResultDetail(result); detail != "" {
 				activity.Result = &detail
 			}
@@ -1959,6 +1970,12 @@ func decodeImageRef(o object) (ImageRef, bool) {
 	}
 	return ImageRef{ID: a.ID, MediaType: a.MediaType, ByteCount: a.ByteCount,
 		Width: a.Width, Height: a.Height, ExpiresAt: a.ExpiresAt}, true
+}
+
+// AssistantImageMarkers shares the existing fenced-code-aware image syntax
+// with structured native readers. It neither reads files nor resolves IDs.
+func AssistantImageMarkers(raw string) (string, []string) {
+	return readImageMarkers(raw, artifacts.ProductionPolicy.MaxImagesPerMessage)
 }
 
 // assistantEntry is `Transcript.assistantEntry`: one assistant turn with the

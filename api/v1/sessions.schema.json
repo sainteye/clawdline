@@ -4,6 +4,24 @@
   "title": "The fleet list",
   "description": "GET /v1/sessions, and the `sessions` frame of GET /v1/events. They are the same payload because they are the same snapshot; two builders would drift and a client could not tell which one it got.",
   "$defs": {
+    "WorkflowStage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "title", "output", "acceptance"],
+      "properties": {
+        "id": { "type": "string" }, "title": { "type": "string" },
+        "output": { "type": "string" }, "acceptance": { "type": "string" }
+      }
+    },
+    "SessionWorkflow": {
+      "type": "object", "additionalProperties": false, "required": ["state"],
+      "properties": {
+        "state": { "type": "string" },
+        "profile_id": { "type": "string" }, "version": { "type": "string" },
+        "source": { "type": "string" }, "digest": { "type": "string" },
+        "graphify_enabled": { "type": "boolean", "nullable": true },
+        "stages": { "type": "array", "items": { "$ref": "#/$defs/WorkflowStage" } }
+      }
+    },
     "WorkState": {
       "description": "One projection of what this session needs, ranked so a reader can sort by it. `unknown` outranks nothing and means the inputs were incomplete.",
       "type": "string",
@@ -107,6 +125,7 @@
       "properties": {
         "persona": { "description": "The built-in persona (GET /v1/personas) this session was launched as, read back from its process command line; absent for none, and absent on a row with no process reading.", "type": "string" },
         "activity": { "$ref": "#/$defs/SessionActivity" },
+        "provider_block": { "type": "string", "enum": ["model_capacity"], "description": "Current actionable provider refusal read from the native turn record. Independent of terminal activity; cleared by a later native turn boundary. Not a permission menu." },
         "acceptance": { "$ref": "#/$defs/SessionAcceptance" },
 		"attention_count": { "description": "Unresolved attention notes for this conversation. Zero is a successful empty reading; absent means the count or current unique session identity could not be established.", "type": "integer", "minimum": 0 },
 		"agents": { "description": "Provider-native background threads, newest running work first. Broker children stay in the task list and are joined with these in the console, so their durable state is not flattened into a file inference.", "type": "array", "items": { "$ref": "#/$defs/SessionAgent" } },
@@ -142,6 +161,7 @@
           "description": "When and how this row's terminal state was read. `current` was read this pass; `unverified` is the last complete row retained across a failed source reading; `missing` means that source has never answered or its retained answer crossed the cache.session_inventory honesty line. A retained state is a true statement about that earlier moment, never authority for an action now.",
           "$ref": "coordination.schema.json#/$defs/BearingsSource"
         },
+        "prompt_suggestion": { "$ref": "screens.schema.json#/$defs/PromptSuggestion" },
         "screen_reading": { "$ref": "#/$defs/SessionScreenReading" },
         "sessionId": { "description": "The assistant's own conversation id, when one was recovered from its command line.", "type": "string" },
         "shells": {"description": "Active provider shells followed by daemon-owned callbacks. Provider shells retain their existing display bound; callbacks use MaxCallbacksPerRoot and are available for every assistant.", "type": "array", "items": {"$ref": "#/$defs/SessionShell"}},
@@ -152,7 +172,7 @@
         "working_since": { "description": "When the turn a working session's `line` reports began, in unix seconds: when the line was read, less the assistant's own clock in it. Present only beside a `line` that carries that clock. A page that has it draws the clock itself from this instant, so `line` is republished only when something other than the clock moved; a page without it draws `line` as sent.", "type": "integer" },
         "work_moved_by": { "description": "Who the declaring session said will move it — a session id, or a person.", "type": "string" },
         "work_note": { "description": "The session's own words for its state, present only when its declaration decided `work_state` (then `work_provenance` is `self`).", "type": "string" },
-        "work_person_needed": { "type": "boolean", "description": "Whether that mover is a person. Absent unless the declaration decided the state; present and false is a real answer." },
+        "work_person_needed": { "type": "boolean", "description": "Whether that mover is a person. Also true for a current actionable provider block; present and false is a real answer." },
         "work_provenance": { "$ref": "#/$defs/WorkProvenance" },
         "work_since": { "description": "Unix seconds: when that declaration was made.", "type": "integer" },
         "work_state": { "$ref": "#/$defs/WorkState" }
@@ -363,7 +383,7 @@
         "id": { "type": "string" },
         "model": { "description": "The model explicitly named by the session record, Codex startup card, or owned ACP metadata. Structured ACP model configOptions provide the native base ID independently of thinking_level; legacy IDs are not split. Absent without evidence.", "type": "string" },
         "effort": { "description": "The reasoning effort explicitly named by the session record or startup card, or the current native ACP thinking_level configOption. Never inferred from model ID suffixes. Absent when unknown.", "type": "string" },
-        "namingAssistant": { "description": "The assistant selected in Settings for one-turn session naming. The confirmation shows it before spending that assistant's quota. `auto` asks Claude Code first and Codex only when Claude Code has no usage left or is not installed.", "type": "string", "enum": ["claude", "codex", "auto"] },
+        "namingAssistant": { "description": "The assistant selected in Settings for one-turn session naming. The confirmation shows it before spending that assistant's quota. `auto` asks Claude Code first and Codex only when Claude Code has no usage left or is not installed.", "type": "string", "enum": ["session", "claude", "codex", "antigravity", "auto"] },
         "sessionId": { "type": "string" },
         "title": { "description": "The same label the session list shows.", "type": "string" }
       }
@@ -422,12 +442,92 @@
         "windows": { "type": "array", "items": { "$ref": "#/$defs/SessionLimitWindow" } }
       }
     },
+    "SessionProtocol": {
+      "description": "Observed ACP v1 lifecycle, separate from model activity. Timestamps are Unix nanoseconds. Only a matched prompt response confirms completion; elapsed silence and text never do. Raw frames stay in the private local store and are never carried here. not_connected means no live worker was consulted, not idle.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "sequence",
+        "unrecognized",
+        "trace_enabled"
+      ],
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "control_pending",
+            "idle",
+            "prompt_pending",
+            "permission_pending",
+            "cancel_requested",
+            "closed",
+            "not_connected",
+            "request_failed"
+          ]
+        },
+        "operation": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "integer"
+        },
+        "cancel_requested_at": {
+          "type": "integer"
+        },
+        "last_received_at": {
+          "type": "integer"
+        },
+        "last_received_kind": {
+          "type": "string"
+        },
+        "last_applied_at": {
+          "type": "integer"
+        },
+        "last_applied_kind": {
+          "type": "string"
+        },
+        "completed_at": {
+          "type": "integer"
+        },
+        "stop_reason": {
+          "type": "string"
+        },
+        "rpc_error": {
+          "type": "integer", "nullable": true
+        },
+        "failure": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "integer"
+        },
+        "unrecognized": {
+          "type": "integer"
+        },
+        "trace_enabled": {
+          "type": "boolean"
+        },
+        "trace_error": {
+          "type": "string"
+        }
+      }
+    },
     "SessionInfo": {
       "description": "The facts behind the status line under an open session. This daemon serves the transcript-derived part the Swift app calls the summary, the context reading, the plan windows and the project's addresses; the working tree, permission and fast mode are not read here and their keys are absent.",
       "type": "object",
       "additionalProperties": false,
       "required": ["models", "session"],
       "properties": {
+        "protocol": { "$ref": "#/$defs/SessionProtocol" },
+        "workflow": { "$ref": "#/$defs/SessionWorkflow" },
+        "remotePermission": { "$ref": "#/$defs/SessionMenu" },
+        "remotePermissionKnown": { "type": "boolean", "description": "The live RC worker answered the permission query. Without this, an absent menu does not establish that no request is pending." },
+        "remotePermissionExpect": { "type": "string", "description": "Fingerprint of the exact RC tool permission, including request ID, complete tool input, bridge and kernel generation." },
         "context": { "$ref": "#/$defs/SessionInfoContext" },
         "efforts": { "description": "Native offered thinking_level option values for this owned ACP session. May change with model selection. Absent when structured options are unavailable; no inferred effort control.", "type": "array", "items": { "type": "string" } },
         "limits": { "$ref": "#/$defs/SessionLimits" },

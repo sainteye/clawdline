@@ -171,13 +171,14 @@ for target in $targets; do
   echo "building ${goos}/${goarch}…"
   CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=true -ldflags "$ldflags" \
     -o "$stage/clawdline" ./cmd/clawdline
+  if [ "$goos" = darwin ]; then cp "$stage/clawdline" "$stage/clawdline-daemon"; fi
   # The linker signs a darwin binary ad hoc; it is signed again with the
   # build's certificate so its identity survives updates (codesign.sh).
   if [ "$goos" = darwin ] && command -v codesign >/dev/null; then
-    codesign_path "$stage/clawdline"
+    codesign_path "$stage/clawdline" "$stage/clawdline-daemon"
   fi
   if [ "$goos" = darwin ] && [ "$official_mac" = 1 ]; then
-    codesign_notarize "clawdline_${version}_${goos}_${goarch}" "$stage/clawdline" "$stage/libexec/tmux"
+    codesign_notarize "clawdline_${version}_${goos}_${goarch}" "$stage/clawdline" "$stage/clawdline-daemon" "$stage/libexec/tmux"
   fi
   cp -R "$dist" "$stage/dist"
   printf '{"stamp":"%s","committed_at":"%s","version":"%s"}\n' "$commit" "$committed_at" "$version" >"$stage/dist/BUILD.json"

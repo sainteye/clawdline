@@ -57,12 +57,20 @@ type Service struct {
 	slots    [CacheLimit]slot
 	readFile func(string) ([]byte, error)
 	getenv   func(string) string
+	gemini   func(context.Context) ([]Window, string)
 }
 
 func New(home string, local *limits.Reader) *Service {
 	return &Service{home: home, local: local,
 		client:   &http.Client{Timeout: RequestSecondsLimit * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		readFile: readSmall, getenv: os.Getenv}
+}
+
+// WithGemini selects the daemon's authenticated native quota reader before the
+// service is published. It replaces the retired personal Gemini CLI API path.
+func (s *Service) WithGemini(read func(context.Context) ([]Window, string)) *Service {
+	s.gemini = read
+	return s
 }
 func readSmall(path string) ([]byte, error) {
 	f, e := os.Open(path)
@@ -79,12 +87,28 @@ func readSmall(path string) ([]byte, error) {
 func baseRow(id, label, source string) Row {
 	return Row{ID: id, Label: label, Source: source, Windows: []Window{}}
 }
-func (s *Service) Snapshot(now time.Time) Snapshot {
+func (s *Service) Snapshot(now time.Time) Snapshot { return s.snapshot(now, true) }
+
+// Inspect reads existing evidence without credential access or provider requests.
+func (s *Service) Inspect(now time.Time) Snapshot { return s.snapshot(now, false) }
+
+func (s *Service) snapshot(now time.Time, refresh bool) Snapshot {
 	out := Snapshot{At: now.Unix(), Providers: []Row{}}
 	if s.local != nil {
 		for _, p := range []struct{ id, label, source string }{{"claude", "Claude Code", "claude_statusline"}, {"codex", "Codex", "codex_rollout"}} {
-			q := s.local.Quota(p.id, now)
-			row := baseRow(p.id, p.label, p.source)
+			// A refreshing read may let the Claude reading ask Claude Code;
+			// Doctor's inspection observes without asking.
+			var q limits.Quota
+			if refresh {
+				q = s.local.Quota(p.id, now)
+			} else {
+				q = s.local.Observe(p.id, now)
+			}
+			source := p.source
+			if q.FromClaudeCode {
+				source = "provider_cli"
+			}
+			row := baseRow(p.id, p.label, source)
 			row.Stale = q.Stale
 			row.ObservedAt = q.ObservedAt
 			for _, w := range q.Windows {
@@ -99,22 +123,30 @@ func (s *Service) Snapshot(now time.Time) Snapshot {
 		}
 	}
 	for i, p := range []struct{ id, label string }{{"gemini", "Gemini"}, {"grok", "Grok"}} {
-		cred, problem := s.credentials(p.id, now)
+		var cred credential
+		var problem string
+		source := "provider_api"
+		if p.id == "gemini" && s.gemini != nil {
+			cred.identity = "native"
+			source = "provider_cli"
+		} else if refresh {
+			cred, problem = s.credentials(p.id, now)
+		}
 		s.mu.Lock()
 		v := &s.slots[i]
 		if v.row.ID == "" {
-			v.row = baseRow(p.id, p.label, "provider_api")
+			v.row = baseRow(p.id, p.label, source)
 		}
-		if cred.identity != v.identity && !(cred.identity == "" && problem == "unreadable") {
+		if refresh && cred.identity != v.identity && !(cred.identity == "" && problem == "unreadable") {
 			v.generation++
-			v.row = baseRow(p.id, p.label, "provider_api")
+			v.row = baseRow(p.id, p.label, source)
 			v.identity = cred.identity
 			v.next = time.Time{}
 		}
 		if problem != "" {
 			v.row.Problem = problem
 			v.row.Stale = len(v.row.Windows) > 0
-		} else if !v.busy && !now.Before(v.next) {
+		} else if refresh && !v.busy && !now.Before(v.next) {
 			v.busy = true
 			v.next = now.Add(RefreshSecondsLimit * time.Second)
 			generation := v.generation
@@ -322,6 +354,10 @@ func (s *Service) request(ctx context.Context, method, url string, c credential,
 }
 func (s *Service) fetch(ctx context.Context, id string, c credential) ([]Window, string, time.Time) {
 	if id == "gemini" {
+		if s.gemini != nil {
+			windows, problem := s.gemini(ctx)
+			return windows, problem, time.Time{}
+		}
 		b, p, r := s.request(ctx, "POST", "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", c, `{"metadata":{"ideType":"GEMINI_CLI","pluginType":"GEMINI"}}`)
 		if p != "" {
 			return nil, p, r

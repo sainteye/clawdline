@@ -40,6 +40,22 @@
       "decode": {"reply": "session_action", "fields": {"answer": {"type": "string", "into": "key"}, "expect": {"type": "string", "checks": ["fingerprint"], "into": "expect"}, "typed": {"type": "string", "into": "typed"}}, "route": {"path": "/v1/sessions/{session}/key", "body": {"fields": {"key": {"from": "answer"}, "expect": {"from": "expect"}, "typed": {"from": "typed"}}}}}
     },
     {
+      "op": "api-performance",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/api-performance",
+      "console_seam": "writer",
+      "console_note": "Machine-owned API aggregates read by its paired owner, including a phone; no operator ingest or global machine selection.",
+      "local": {"method": "GET"},
+      "example": {"hours": "1", "request": "req-performance", "session": "__clawdline_machine__", "until": 1793179200000},
+      "shapes": [
+        {"body": ["hours", "request", "session"], "path": "/v1/api-performance", "query": ["hours"]},
+        {"body": ["hours", "request", "session", "until"], "path": "/v1/api-performance", "query": ["hours", "until"]}
+      ],
+      "decode": {"reply": "machine", "fields": {"hours": {"type": "string", "enum": ["1", "6", "24", "168"]}, "until": {"type": "integer", "min": 0}}, "route": {"path": "/v1/api-performance", "query": {"hours": {"from": "hours"}, "until": {"from": "until"}}}}
+    },
+    {
       "op": "archive-session",
       "kind": "command",
       "write_gate": true,
@@ -251,6 +267,37 @@
       "decode": {"hand": "its body is open: every field is accepted, and a body naming no request still decodes"}
     },
     {
+      "op": "doctor",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/doctor",
+      "console_seam": "writer",
+      "console_note": "Account quota snapshots for the global footer. Credentials remain on the machine.",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "request": "req",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/doctor"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/doctor"
+        }
+      }
+    },
+    {
       "op": "document",
       "kind": "read",
       "write_gate": false,
@@ -359,6 +406,101 @@
       "decode": {"reply": "session_request", "fields": {"path": {"type": "string", "non_empty": true, "checks": ["printable"]}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/sessions/{session}/git/diff", "query": {"path": {"from": "path"}}}}
     },
     {
+      "op": "github-connect",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/integrations/github/device",
+      "console_seam": "writer",
+      "console_note": "Issue sync: starts or re-reads the GitHub device code.",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "request": "req-github-connect",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/github/device"
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "route": {
+          "path": "/v1/integrations/github/device"
+        }
+      }
+    },
+    {
+      "op": "github-connection",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/integrations/github",
+      "console_seam": "writer",
+      "console_note": "Issue sync: this machine's GitHub connection, never its token.",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "request": "req-read",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/github"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/integrations/github"
+        }
+      }
+    },
+    {
+      "op": "github-disconnect",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "DELETE /v1/integrations/github",
+      "console_seam": "writer",
+      "console_note": "Issue sync: forgets this machine's GitHub token.",
+      "local": {
+        "method": "DELETE",
+        "device": true
+      },
+      "example": {
+        "request": "req-github-disconnect",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/github"
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "route": {
+          "path": "/v1/integrations/github"
+        }
+      }
+    },
+    {
       "op": "image",
       "kind": "read",
       "write_gate": false,
@@ -381,7 +523,7 @@
       "kind": "read",
       "write_gate": false,
       "console": "carried",
-      "console_route": "GET /v1/sessions/{id}/info[?parts=summary]",
+      "console_route": "GET /v1/sessions/{id}/info[?parts=summary|remote-permission]",
       "console_seam": "writer",
       "local": {"method": "GET"},
       "special": ["content_read", "divergence"],
@@ -390,7 +532,100 @@
         {"body": ["parts", "session"], "path": "/v1/sessions/{session}/info", "query": ["parts"]},
         {"body": ["expected_generation", "parts", "session"], "path": "/v1/sessions/{session}/info", "query": ["parts"]}
       ],
-      "decode": {"reply": "session", "name": "info.{parts}", "fields": {"parts": {"type": "string", "enum": ["full", "summary"], "into": "parts"}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/sessions/{session}/info", "query": {"parts": {"from": "parts", "only": "summary"}}}}
+      "decode": {"reply": "session", "name": "info.{parts}", "fields": {"parts": {"type": "string", "enum": ["full", "summary", "remote-permission"], "into": "parts"}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/sessions/{session}/info", "query": {"parts": {"from": "parts"}}}}
+    },
+    {
+      "op": "integration-settings",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/settings/integrations",
+      "console_seam": "writer",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "request": "req-read",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/settings/integrations"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/settings/integrations"
+        }
+      }
+    },
+    {
+      "op": "integration-settings-update",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/settings/integrations",
+      "console_seam": "writer",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "changes": {
+          "workflow_skills_enabled": false,
+          "graphify_enabled": false
+        },
+        "request": "req-write",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "changes",
+            "request",
+            "session"
+          ],
+          "path": "/v1/settings/integrations",
+          "local_body": [
+            "graphify_enabled",
+            "workflow_skills_enabled"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "changes": {
+            "type": "object",
+            "max_bytes": 65536,
+            "closed": true,
+            "max_keys": 3,
+            "properties": {
+              "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"] },
+              "workflow_skills_enabled": {
+                "type": "bool"
+              },
+              "graphify_enabled": {
+                "type": "bool"
+              }
+            },
+            "copies": {
+              "max_bytes": "defaultModelsCloudBodyLimit"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/settings/integrations",
+          "body": {
+            "object": "changes"
+          }
+        }
+      }
     },
     {
       "op": "intents",
@@ -420,6 +655,209 @@
         {"body": ["request", "session"], "path": "/v1/sessions/{session}/interrupt", "local_body": []}
       ],
       "decode": {"reply": "session_action", "route": {"path": "/v1/sessions/{session}/interrupt", "body": {"empty": true}}}
+    },
+    {
+      "op": "issue-sync.retry",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/issue-sync/{id}/retry",
+      "console_seam": "writer",
+      "console_note": "Issue sync: the person's Retry on a failed link.",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "id": "2f0c6b9e-0000-4000-8000-000000000001",
+        "request": "req-issue-sync.retry",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "id",
+            "request",
+            "session"
+          ],
+          "path": "/v1/issue-sync/{id}/retry"
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "id": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 256
+          }
+        },
+        "route": {
+          "path": "/v1/issue-sync/{id}/retry"
+        }
+      }
+    },
+    {
+      "op": "jira-connect",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/integrations/jira",
+      "console_seam": "writer",
+      "console_note": "Issue sync: the API token travels inside the end-to-end encrypted command.",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "connection": {
+          "site": "https://acme.atlassian.net",
+          "email": "me@example.test",
+          "token": "t"
+        },
+        "request": "req-jira-connect",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "connection",
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/jira",
+          "local_body": [
+            "email",
+            "site",
+            "token"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "connection": {
+            "type": "object",
+            "max_bytes": 65536,
+            "closed": true,
+            "max_keys": 3,
+            "properties": {
+              "site": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              }
+            },
+            "copies": {
+              "max_bytes": "defaultModelsCloudBodyLimit"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/integrations/jira",
+          "body": {
+            "object": "connection"
+          }
+        }
+      }
+    },
+    {
+      "op": "jira-connection",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/integrations/jira",
+      "console_seam": "writer",
+      "console_note": "Issue sync: this machine's Jira Cloud connection, never its token.",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "request": "req-read",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/jira"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/integrations/jira"
+        }
+      }
+    },
+    {
+      "op": "jira-disconnect",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "DELETE /v1/integrations/jira",
+      "console_seam": "writer",
+      "console_note": "Issue sync: forgets this machine's Jira sign-in.",
+      "local": {
+        "method": "DELETE",
+        "device": true
+      },
+      "example": {
+        "request": "req-jira-disconnect",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/jira"
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "route": {
+          "path": "/v1/integrations/jira"
+        }
+      }
+    },
+    {
+      "op": "jira-projects",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/integrations/jira/projects",
+      "console_seam": "writer",
+      "console_note": "Issue sync: the Jira projects and issue types the picker offers.",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "request": "req-read",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "request",
+            "session"
+          ],
+          "path": "/v1/integrations/jira/projects"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "route": {
+          "path": "/v1/integrations/jira/projects"
+        }
+      }
     },
     {
       "op": "key",
@@ -454,6 +892,8 @@
       ],
       "decode": {"reply": "machine", "route": {"path": "/v1/machine/usage"}}
     },
+    {"op": "native-terminal-input", "kind": "command", "write_gate": true, "console": "carried", "console_route": "POST /v1/sessions/{id}/native-terminal", "console_seam": "writer", "local": {"method": "POST"}, "special": ["session_receipt"], "example": {"session": "%19", "request": "req-native-terminal", "expect": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "key": "down", "text": "filter"}, "shapes": [{"body": ["expect", "key", "request", "session"], "path": "/v1/sessions/{session}/native-terminal", "local_body": ["expect", "key"]}, {"body": ["expect", "request", "session", "text"], "path": "/v1/sessions/{session}/native-terminal", "local_body": ["expect", "text"]}], "decode": {"reply": "session_action", "fields": {"expect": {"type": "string", "checks": ["fingerprint"]}, "key": {"type": "string"}, "text": {"type": "string"}}, "route": {"path": "/v1/sessions/{session}/native-terminal", "body": {"fields": {"expect": {"from": "expect"}, "key": {"from": "key"}, "text": {"from": "text"}}}}}},
+    {"op": "native-terminal-screen", "kind": "read", "write_gate": false, "console": "carried", "console_route": "GET /v1/sessions/{id}/native-terminal", "console_seam": "writer", "local": {"method": "GET"}, "special": ["content_read"], "example": {"expected_generation": "0123456789abcdef0123456789abcdef", "session": "%19"}, "shapes": [{"body": ["session"], "path": "/v1/sessions/{session}/native-terminal"}, {"body": ["expected_generation", "session"], "path": "/v1/sessions/{session}/native-terminal"}], "decode": {"reply": "session", "name": "native-terminal-screen", "fields": {"expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/sessions/{session}/native-terminal"}}},
     {
       "op": "notification-rules",
       "kind": "read",
@@ -508,7 +948,135 @@
       "shapes": [
         {"body": ["changes", "request", "session"], "path": "/v1/settings/notifications", "local_body": ["push_on_waiting"]}
       ],
-      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "properties": {"push_on_waiting": {"type": "bool", "nullable": true}, "orchestrator_agent_notify": {"type": "bool", "nullable": true}, "push_on_board_decision": {"type": "bool", "nullable": true}, "push_on_board_done": {"type": "bool", "nullable": true}, "push_on_schedule_failure": {"type": "bool", "nullable": true}, "push_on_capacity": {"type": "bool", "nullable": true}, "push_on_dead_letter": {"type": "bool", "nullable": true}, "push_on_app_release_success": {"type": "bool", "nullable": true}, "push_on_cloud_release_success": {"type": "bool", "nullable": true}, "push_on_release_failure": {"type": "bool", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/notifications", "body": {"object": "changes"}}}
+      "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 65536, "closed": true, "properties": {"push_on_model_capacity": {"type": "bool", "nullable": true}, "push_on_waiting": {"type": "bool", "nullable": true}, "orchestrator_agent_notify": {"type": "bool", "nullable": true}, "push_on_board_decision": {"type": "bool", "nullable": true}, "push_on_board_done": {"type": "bool", "nullable": true}, "push_on_schedule_failure": {"type": "bool", "nullable": true}, "push_on_capacity": {"type": "bool", "nullable": true}, "push_on_dead_letter": {"type": "bool", "nullable": true}, "push_on_app_release_success": {"type": "bool", "nullable": true}, "push_on_cloud_release_success": {"type": "bool", "nullable": true}, "push_on_release_failure": {"type": "bool", "nullable": true}}, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/settings/notifications", "body": {"object": "changes"}}}
+    },
+    {
+      "op": "output-file",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/sessions/{session}/outputs/{id}",
+      "console_seam": "writer",
+      "local": {
+        "method": "GET"
+      },
+      "special": [
+        "content_read"
+      ],
+      "example": {
+        "session": "%19",
+        "expected_generation": "0123456789abcdef0123456789abcdef",
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "offset": "0",
+        "revision": "",
+        "request": "req-output",
+        "size": ""
+      },
+      "shapes": [
+        {
+          "body": [
+            "expected_generation",
+            "id",
+            "offset",
+            "request",
+            "revision",
+            "session",
+            "size"
+          ],
+          "path": "/v1/sessions/{session}/outputs/{id}",
+          "query": [
+            "offset",
+            "revision",
+            "size"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "session_request",
+        "fields": {
+          "expected_generation": {
+            "type": "string",
+            "checks": [
+              "generation"
+            ],
+            "into": "execution_generation"
+          },
+          "id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "offset": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "",
+              "thumb"
+            ]
+          }
+        },
+        "route": {
+          "path": "/v1/sessions/{session}/outputs/{id}",
+          "query": {
+            "offset": {
+              "from": "offset"
+            },
+            "revision": {
+              "from": "revision"
+            },
+            "size": {
+              "from": "size"
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "outputs",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/sessions/{session}/outputs",
+      "console_seam": "writer",
+      "local": {
+        "method": "GET"
+      },
+      "special": [
+        "content_read"
+      ],
+      "example": {
+        "session": "%19",
+        "expected_generation": "0123456789abcdef0123456789abcdef"
+      },
+      "shapes": [
+        {
+          "body": [
+            "expected_generation",
+            "session"
+          ],
+          "path": "/v1/sessions/{session}/outputs"
+        }
+      ],
+      "decode": {
+        "reply": "session",
+        "name": "outputs",
+        "fields": {
+          "expected_generation": {
+            "type": "string",
+            "checks": [
+              "generation"
+            ],
+            "into": "execution_generation"
+          }
+        },
+        "route": {
+          "path": "/v1/sessions/{session}/outputs"
+        }
+      }
     },
     {
       "op": "pair-agent-start",
@@ -518,11 +1086,12 @@
       "console_route": "POST /v1/cloud/pairing/agent",
       "console_seam": "reader",
       "local": {"method": "POST", "local_exemption": true, "headers": ["Idempotency-Key"]},
-      "example": {"machine_id": "mac_target", "machine_name": "Target", "offer": "opaque", "request": "req-pair-agent-start", "session": "__clawdline_machine__"},
+      "example": {"assistant": "claude", "machine_id": "mac_target", "machine_name": "Target", "offer": "opaque", "request": "req-pair-agent-start", "session": "__clawdline_machine__"},
       "shapes": [
+        {"body": ["assistant", "machine_id", "machine_name", "offer", "request", "session"], "path": "/v1/cloud/pairing/agent", "local_body": ["assistant", "machine_id", "machine_name", "offer"]},
         {"body": ["machine_id", "machine_name", "offer", "request", "session"], "path": "/v1/cloud/pairing/agent", "local_body": ["machine_id", "machine_name", "offer"]}
       ],
-      "decode": {"reply": "action", "fields": {"offer": {"type": "string", "non_empty": true, "max_bytes": 4096}, "machine_id": {"type": "string", "non_empty": true, "max_bytes": 204}, "machine_name": {"type": "string", "max_bytes": 256}}, "route": {"path": "/v1/cloud/pairing/agent", "headers": {"Idempotency-Key": {"from": "request"}}, "body": {"fields": {"offer": {"from": "offer"}, "machine_id": {"from": "machine_id"}, "machine_name": {"from": "machine_name"}}}}}
+      "decode": {"reply": "action", "fields": {"assistant": {"type": "string", "enum": ["claude", "codex"]}, "offer": {"type": "string", "non_empty": true, "max_bytes": 4096}, "machine_id": {"type": "string", "non_empty": true, "max_bytes": 204}, "machine_name": {"type": "string", "max_bytes": 256}}, "route": {"path": "/v1/cloud/pairing/agent", "headers": {"Idempotency-Key": {"from": "request"}}, "body": {"fields": {"assistant": {"from": "assistant", "omit_empty": true}, "offer": {"from": "offer"}, "machine_id": {"from": "machine_id"}, "machine_name": {"from": "machine_name"}}}}}
     },
     {
       "op": "pair-agent-status",
@@ -617,13 +1186,15 @@
       "console": "carried",
       "console_route": "GET /v1/personas",
       "console_seam": "reader",
-      "console_note": "The built-in personas a start may name (docs/personas.md): a machine read with no parameter. A machine that does not list it is refused by the copied client before anything leaves (`_unsupportedRefusal`).",
+      "console_note": "The built-in personas a start may name (docs/personas.md): a machine read; display-v1 omits provenance and conditionally returns a version receipt. A machine that does not list it is refused by the copied client before anything leaves (`_unsupportedRefusal`).",
       "local": {"method": "GET"},
-      "example": {"request": "req", "session": "__clawdline_machine__"},
+      "example": {"request": "req", "session": "__clawdline_machine__", "view": "display-v1", "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
       "shapes": [
-        {"body": ["request", "session"], "path": "/v1/personas"}
+        {"body": ["request", "session"], "path": "/v1/personas"},
+        {"body": ["request", "session", "view"], "path": "/v1/personas", "query": ["view"]},
+        {"body": ["request", "session", "version", "view"], "path": "/v1/personas", "query": ["version", "view"]}
       ],
-      "decode": {"reply": "machine", "route": {"path": "/v1/personas"}}
+      "decode": {"reply": "machine", "fields": {"view": {"type": "string", "enum": ["display-v1"]}, "version": {"type": "string"}}, "route": {"path": "/v1/personas", "query": {"view": {"from": "view", "omit_empty": true}, "version": {"from": "version", "omit_empty": true}}}}
     },
     {
       "op": "places",
@@ -821,6 +1392,89 @@
         {"body": ["path", "request", "session"], "path": "/v1/project-folders", "query": ["path"]}
       ],
       "decode": {"reply": "machine", "fields": {"path": {"type": "string", "max_bytes": 4096}}, "route": {"path": "/v1/project-folders", "query": {"path": {"from": "path", "default": ""}}}}
+    },
+    {
+      "op": "project-graphify",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/graphify",
+      "console_seam": "reader",
+      "local": {
+        "method": "GET"
+      },
+      "example": {
+        "project": "p1",
+        "request": "req-graphify",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "project",
+            "request",
+            "session"
+          ],
+          "path": "/v1/projects/{project}/graphify"
+        }
+      ],
+      "decode": {
+        "reply": "machine",
+        "fields": {
+          "project": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 200
+          }
+        },
+        "route": {
+          "path": "/v1/projects/{project}/graphify"
+        }
+      }
+    },
+    {
+      "op": "project-graphify-build",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/projects/{project}/graphify",
+      "console_seam": "writer",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "project": "p1",
+        "request": "build-1",
+        "session": "__clawdline_machine__"
+      },
+      "shapes": [
+        {
+          "body": [
+            "project",
+            "request",
+            "session"
+          ],
+          "path": "/v1/projects/{project}/graphify",
+          "local_body": []
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "project": {
+            "type": "string",
+            "non_empty": true,
+            "max_bytes": 200
+          }
+        },
+        "route": {
+          "path": "/v1/projects/{project}/graphify",
+          "body": {
+            "empty": true
+          }
+        }
+      }
     },
     {
       "op": "project-hide",
@@ -1288,6 +1942,99 @@
         {"body": ["images", "request", "session", "text"], "path": "/v1/sessions/{session}/send", "local_body": ["images", "text"]}
       ],
       "decode": {"reply": "session_action", "fields": {"text": {"type": "string"}, "images": {"type": "list", "items": {"type": "string"}}}, "route": {"path": "/v1/sessions/{session}/send", "body": {"fields": {"text": {"from": "text"}, "images": {"from": "images"}}}}}
+    },
+    {
+      "op": "session-graphify",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/sessions/{id}/graphify",
+      "console_seam": "reader",
+      "local": {
+        "method": "GET"
+      },
+      "special": ["content_read"],
+      "example": {
+        "expected_generation": "0123456789abcdef0123456789abcdef",
+        "session": "%19"
+      },
+      "shapes": [
+        {
+          "body": [
+            "session"
+          ],
+          "path": "/v1/sessions/{session}/graphify"
+        },
+        {
+          "body": [
+            "expected_generation",
+            "session"
+          ],
+          "path": "/v1/sessions/{session}/graphify"
+        }
+      ],
+      "decode": {
+        "reply": "session",
+        "name": "session-graphify",
+        "fields": {
+          "expected_generation": {
+            "type": "string",
+            "checks": [
+              "generation"
+            ],
+            "into": "execution_generation"
+          }
+        },
+        "route": {
+          "path": "/v1/sessions/{session}/graphify"
+        }
+      }
+    },
+    {
+      "op": "session-graphify-build",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/sessions/{id}/graphify",
+      "console_seam": "writer",
+      "local": {
+        "method": "POST",
+        "device": true
+      },
+      "example": {
+        "execution_generation": "0123456789abcdef0123456789abcdef",
+        "request": "build-1",
+        "session": "%19"
+      },
+      "shapes": [
+        {
+          "body": [
+            "execution_generation",
+            "request",
+            "session"
+          ],
+          "path": "/v1/sessions/{session}/graphify",
+          "local_body": []
+        }
+      ],
+      "decode": {
+        "reply": "session_action",
+        "fields": {
+          "execution_generation": {
+            "type": "string",
+            "checks": [
+              "generation"
+            ],
+            "into": "execution_generation"
+          }
+        },
+        "route": {
+          "path": "/v1/sessions/{session}/graphify",
+          "body": {
+            "empty": true
+          }
+        }
+      }
     },
     {
       "op": "session-receipt",
@@ -1775,6 +2522,9 @@
       ],
       "decode": {"reply": "session_action", "fields": {"text": {"type": "string"}, "execution_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}}, "route": {"path": "/v1/sessions/{session}/title", "body": {"fields": {"title": {"from": "text"}}}}}
     },
+    {"op": "tools.catalog", "kind": "read", "write_gate": false, "console": "carried", "console_route": "GET /v1/tool-library", "console_seam": "reader", "local": {"method": "GET", "device": true}, "example": {"request": "req-tools-catalog", "session": "__clawdline_machine__"}, "shapes": [{"body": ["request", "session"], "path": "/v1/tool-library"}], "decode": {"reply": "machine", "route": {"path": "/v1/tool-library"}}},
+    {"op": "tools.prepare", "kind": "command", "write_gate": true, "console": "carried", "console_route": "POST /v1/tool-library/prepare", "console_seam": "writer", "local": {"method": "POST", "device": true}, "example": {"changes": {"expected_version": 0}, "request": "req-tools-prepare", "session": "__clawdline_machine__"}, "shapes": [{"body": ["changes", "request", "session"], "path": "/v1/tool-library/prepare", "local_body": ["expected_version"]}], "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 131072, "copies": {"max_bytes": "toollibrary.MaxRequestBytes"}}}, "route": {"path": "/v1/tool-library/prepare", "body": {"object": "changes"}}}},
+    {"op": "tools.save", "kind": "command", "write_gate": true, "console": "carried", "console_route": "POST /v1/tool-library", "console_seam": "writer", "local": {"method": "POST", "device": true}, "example": {"changes": {"expected_version": 0}, "request": "req-tools-save", "session": "__clawdline_machine__"}, "shapes": [{"body": ["changes", "request", "session"], "path": "/v1/tool-library", "local_body": ["expected_version"]}], "decode": {"reply": "action", "fields": {"changes": {"type": "object", "max_bytes": 131072, "copies": {"max_bytes": "toollibrary.MaxRequestBytes"}}}, "route": {"path": "/v1/tool-library", "body": {"object": "changes"}}}},
     {
       "op": "transcript",
       "kind": "read",
@@ -1784,7 +2534,7 @@
       "console_seam": "reader",
       "local": {"method": "GET"},
       "special": ["content_read", "divergence"],
-      "example": {"revision": "agy1:synthetic:12345:abc", "before": 12345, "expected_generation": "0123456789abcdef0123456789abcdef", "limit": 200, "priority": "foreground", "session": "%19"},
+      "example": {"view": "tools-v1", "revision": "agy1:synthetic:12345:abc", "before": 12345, "expected_generation": "0123456789abcdef0123456789abcdef", "limit": 200, "priority": "foreground", "session": "%19"},
       "shapes": [
         {"body": ["limit", "session"], "path": "/v1/transcript", "query": ["limit", "session"]},
         {"body": ["before", "limit", "session"], "path": "/v1/transcript", "query": ["before", "limit", "session"]},
@@ -1797,9 +2547,21 @@
         {"body": ["before", "limit", "revision", "session"], "path": "/v1/transcript", "query": ["before", "limit", "revision", "session"]},
         {"body": ["before", "expected_generation", "limit", "revision", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session"]},
         {"body": ["before", "limit", "priority", "revision", "session"], "path": "/v1/transcript", "query": ["before", "limit", "revision", "session"]},
-        {"body": ["before", "expected_generation", "limit", "priority", "revision", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session"]}
+        {"body": ["before", "expected_generation", "limit", "priority", "revision", "session"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session"]},
+        {"body": ["limit", "session", "view"], "path": "/v1/transcript", "query": ["limit", "session", "view"]},
+        {"body": ["before", "limit", "session", "view"], "path": "/v1/transcript", "query": ["before", "limit", "session", "view"]},
+        {"body": ["expected_generation", "limit", "session", "view"], "path": "/v1/transcript", "query": ["expected_generation", "limit", "session", "view"]},
+        {"body": ["limit", "priority", "session", "view"], "path": "/v1/transcript", "query": ["limit", "session", "view"]},
+        {"body": ["before", "expected_generation", "limit", "session", "view"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "session", "view"]},
+        {"body": ["before", "limit", "priority", "session", "view"], "path": "/v1/transcript", "query": ["before", "limit", "session", "view"]},
+        {"body": ["expected_generation", "limit", "priority", "session", "view"], "path": "/v1/transcript", "query": ["expected_generation", "limit", "session", "view"]},
+        {"body": ["before", "expected_generation", "limit", "priority", "session", "view"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "session", "view"]},
+        {"body": ["before", "limit", "revision", "session", "view"], "path": "/v1/transcript", "query": ["before", "limit", "revision", "session", "view"]},
+        {"body": ["before", "expected_generation", "limit", "revision", "session", "view"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session", "view"]},
+        {"body": ["before", "limit", "priority", "revision", "session", "view"], "path": "/v1/transcript", "query": ["before", "limit", "revision", "session", "view"]},
+        {"body": ["before", "expected_generation", "limit", "priority", "revision", "session", "view"], "path": "/v1/transcript", "query": ["before", "expected_generation", "limit", "revision", "session", "view"]}
       ],
-      "decode": {"reply": "session", "name": "transcript", "name_suffix": {"field": "before", "text": ".before.{before}"}, "fields": {"limit": {"type": "integer", "min": 1, "max": 1000}, "before": {"type": "integer", "min": 1}, "priority": {"type": "string", "enum": ["foreground", "background"]}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}, "revision": {"type": "string", "checks": ["session_name"]}}, "route": {"path": "/v1/transcript", "query": {"session": {"from": "session"}, "limit": {"from": "limit"}, "before": {"from": "before"}, "expected_generation": {"from": "expected_generation"}, "revision": {"from": "revision"}}}, "name_suffixes": [{"field": "revision", "text": ".revision.{revision}"}]}
+      "decode": {"reply": "session", "name": "transcript", "name_suffix": {"field": "before", "text": ".before.{before}"}, "fields": {"limit": {"type": "integer", "min": 1, "max": 1000}, "before": {"type": "integer", "min": 1}, "priority": {"type": "string", "enum": ["foreground", "background"]}, "expected_generation": {"type": "string", "checks": ["generation"], "into": "execution_generation"}, "revision": {"type": "string", "checks": ["session_name"]}, "view": {"type": "string", "checks": ["session_name"]}}, "route": {"path": "/v1/transcript", "query": {"session": {"from": "session"}, "limit": {"from": "limit"}, "before": {"from": "before"}, "expected_generation": {"from": "expected_generation"}, "revision": {"from": "revision"}, "view": {"from": "view"}}}, "name_suffixes": [{"field": "revision", "text": ".revision.{revision}"}, {"field": "view", "text": ".view.{view}"}]}
     },
     {
       "op": "update",
@@ -2271,6 +3033,21 @@
         {"body": ["id", "item", "request", "session"], "path": "/v1/work/v2/items/{id}/cancel", "local_body": ["expected_version", "reason"]}
       ],
       "decode": {"reply": "action", "fields": {"id": {"type": "string", "non_empty": true, "max_bytes": 256}, "item": {"type": "object", "max_bytes": 98304, "copies": {"max_bytes": "workV2CloudBodyLimit"}}}, "route": {"path": "/v1/work/v2/items/{id}/cancel", "body": {"object": "item"}}}
+    },
+    {
+      "op": "work.v2.cards",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/work/v2/items?view=cards-v1&project=&status=&q=&cursor=",
+      "console_seam": "reader",
+      "local": {"method": "GET"},
+      "example": {"cursor": "page-2", "project": "p1", "query": "needle", "request": "req-work-v2-cards", "session": "__clawdline_machine__", "status": "open"},
+      "shapes": [
+        {"body": ["project", "query", "request", "session", "status"], "path": "/v1/work/v2/items", "query": ["project", "q", "status", "view"]},
+        {"body": ["cursor", "project", "query", "request", "session", "status"], "path": "/v1/work/v2/items", "query": ["cursor", "project", "q", "status", "view"]}
+      ],
+      "decode": {"reply": "machine", "fields": {"project": {"type": "string", "max_bytes": 256}, "status": {"type": "string", "enum": ["open", "done", "all"]}, "query": {"type": "string", "max_bytes": 1024}, "cursor": {"type": "string", "max_bytes": 1024}}, "route": {"path": "/v1/work/v2/items", "query": {"view": {"const": "cards-v1"}, "project": {"from": "project", "omit_empty": true}, "status": {"from": "status", "omit_empty": true}, "q": {"from": "query", "omit_empty": true}, "cursor": {"from": "cursor", "omit_empty": true}}}}
     },
     {
       "op": "work.v2.complete",

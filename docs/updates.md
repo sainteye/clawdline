@@ -26,7 +26,7 @@ up.
 
 ## Release-day procedure for an installed Mac
 
-The macOS LaunchAgent uses `<install-root>/service/clawdline`, a stable real
+The macOS LaunchAgent uses `<install-root>/service/clawdline-daemon`, a stable real
 path selected atomically from the installed release. TCC records an unbundled
 daemon's Automation permission against that path, so the version directory
 can change without changing the path shown to TCC. Service installations keep
@@ -37,6 +37,30 @@ WebKit keychain identity. The first move from the old signing identity may
 ask once more. Acceptance requires checking two successive builds with both
 Automation and WebCrypto enabled; a passing unit test does not establish
 macOS permission persistence.
+
+The public command remains `clawdline`. New macOS archives and App bundles also
+carry `clawdline-daemon`, signed with that identifier; only the background service
+uses it. Old releases keep `service/clawdline` for rollback. Setup writes the
+selected release's service path into the LaunchAgent. An update reloads that
+managed LaunchAgent when its executable changes, preserving its other settings.
+Reload attempts share the existing 30-second service-command deadline because
+launchd can briefly reject bootstrap after bootout. A missing managed job is
+bootstrapped even when the selected executable name did not change; rollback
+selects the old release's path again. The supervisor retains its recovery record
+and retries while the previous service is unavailable, within its existing run
+budget. Neither a successful restart command nor switching `current` counts as
+recovery: the console must answer HTTP 200 with the previous release's BUILD.
+The boot guard hands recovery back to the supervisor instead of declaring success
+before a service has answered. Exhausted recovery is recorded as failed, never
+as a verified rollback. See [the recovery checks](records/daemon-launchagent-recovery-20261101.md). The CLI's `serve` entry also
+hands off to the named daemon before opening state, covering the first update
+performed by an older updater that still launches the CLI. It does not restart
+existing tmux Sessions or grant macOS privacy permissions.
+
+A service path or signing identifier change can require the person to grant the
+required folder access again. The graphical App and the background service are
+separate TCC subjects. See [macOS file permission troubleshooting](user/troubleshooting.md#macos-file-permissions)
+before changing permissions; successful health checks do not prove file access.
 
 The homepage's one-line installer is for the first installation. Once this Mac is a release
 install, use Clawdline's built-in updater for subsequent releases. Publishing a GitHub release or

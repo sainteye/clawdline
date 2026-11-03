@@ -131,16 +131,20 @@ func ScreenRevision(text string) string {
 // ScreenReading is one session's answer, the same shape whether it came from a
 // signal or from being asked. Text is nil until the first capture completes.
 type ScreenReading struct {
-	SessionID     string
-	Backend       session.Backend
-	Channel       ScreenChannel
-	Text          *string
-	Revision      string
-	At            time.Time
-	Readable      bool
-	WatchingUntil time.Time
-	Captures      int
-	Signals       int
+	SessionID          string
+	Backend            session.Backend
+	Channel            ScreenChannel
+	Text               *string
+	Revision           string
+	At                 time.Time
+	Readable           bool
+	WatchingUntil      time.Time
+	Captures           int
+	PromptText         string
+	PromptID           string
+	PromptConversation string
+	PromptAt           int64
+	Signals            int
 }
 
 // Pending is "nothing has been captured for this session yet".
@@ -195,15 +199,19 @@ func (c *screenCoalescer) forget(id string) {
 }
 
 type screenWatch struct {
-	session   session.Session
-	until     time.Time
-	text      *string
-	revision  string
-	at        time.Time
-	readable  bool
-	capturing bool
-	captures  int
-	signals   int
+	session       session.Session
+	until         time.Time
+	text          *string
+	revision      string
+	at            time.Time
+	readable      bool
+	capturing     bool
+	captures      int
+	signals       int
+	promptText    string
+	promptID      string
+	promptAt      time.Time
+	promptVersion int64
 }
 
 // Screens is demand-driven live screens: who is watching what, what their last
@@ -222,9 +230,10 @@ type screenWatch struct {
 // — attaching a pipe, taking one off, a capture — happens on a goroutine of its
 // own with the lock released.
 type Screens struct {
-	hosts   []ports.TerminalHost
-	signal  ports.PaneSignal
-	changed func(id, revision string)
+	hosts       []ports.TerminalHost
+	signal      ports.PaneSignal
+	changed     func(id, revision string)
+	promptMoved chan struct{}
 
 	mu        sync.Mutex
 	watches   map[string]*screenWatch
@@ -245,12 +254,13 @@ type Screens struct {
 // it publishes say `on-demand`, which is what the panel then draws.
 func NewScreens(hosts []ports.TerminalHost, signal ports.PaneSignal, changed func(id, revision string)) *Screens {
 	s := &Screens{
-		hosts:     hosts,
-		signal:    signal,
-		changed:   changed,
-		watches:   map[string]*screenWatch{},
-		coalescer: newScreenCoalescer(ScreenWindow),
-		done:      make(chan struct{}),
+		hosts:       hosts,
+		signal:      signal,
+		changed:     changed,
+		promptMoved: make(chan struct{}, 1),
+		watches:     map[string]*screenWatch{},
+		coalescer:   newScreenCoalescer(ScreenWindow),
+		done:        make(chan struct{}),
 	}
 	if signal != nil {
 		signal.OnMoved(s.paneMoved)
@@ -300,13 +310,19 @@ func (s *Screens) snapshot(item session.Session, until time.Time) ScreenReading 
 		Revision:      ScreenUnreadable,
 		WatchingUntil: until,
 	}
-	if held := s.watches[item.ID]; held != nil {
+	if held := s.watches[item.ID]; held != nil && sameScreenExecution(held.session, item) {
 		out.Text = held.text
 		out.Revision = held.revision
 		out.At = held.at
 		out.Readable = held.readable
 		out.Captures = held.captures
 		out.Signals = held.signals
+		if held.until.After(time.Now()) && s.PromptSupported(item) {
+			out.PromptText = held.promptText
+			out.PromptID = held.promptID
+			out.PromptConversation = held.session.ConversationID
+			out.PromptAt = held.promptVersion
+		}
 	}
 	return out
 }
@@ -320,8 +336,8 @@ func (s *Screens) demand(item session.Session, until, now time.Time) {
 		return
 	}
 	watch := s.watches[item.ID]
-	if watch == nil {
-		if live := s.liveWatchesLocked(now); live >= ScreenWatches {
+	if watch == nil || !sameScreenExecution(watch.session, item) || !watch.until.After(now) {
+		if live := s.liveWatchesLocked(now); watch == nil && live >= ScreenWatches {
 			s.mu.Unlock()
 			// Once per refusal rather than once per read: the page renews
 			// twice a lease, and a log nobody can read past is its own denial.
@@ -440,10 +456,10 @@ func (s *Screens) beginCaptureLocked(id string, now time.Time) {
 		text, ok := s.capture(ctx, item)
 		cancel()
 		if ok {
-			s.finish(id, &text)
+			s.finish(id, watch, &text)
 			return
 		}
-		s.finish(id, nil)
+		s.finish(id, watch, nil)
 	}()
 }
 
@@ -466,10 +482,10 @@ func (s *Screens) capture(ctx context.Context, item session.Session) (string, bo
 // of the time, and a client told about those would have fetched the same screen
 // again for nothing. A capture whose text and readability both match what is
 // already held bumps no revision and sends no event.
-func (s *Screens) finish(id string, text *string) {
+func (s *Screens) finish(id string, expected *screenWatch, text *string) {
 	s.mu.Lock()
 	watch := s.watches[id]
-	if watch == nil {
+	if watch == nil || watch != expected {
 		s.mu.Unlock()
 		return
 	}
@@ -484,6 +500,27 @@ func (s *Screens) finish(id string, text *string) {
 	watch.readable = readable
 	watch.text = text
 	watch.at = time.Now()
+	prompt := ""
+	if text != nil && s.PromptSupported(watch.session) {
+		prompt = session.ClaudePromptSuggestion(*text)
+	}
+	if s.PromptSupported(watch.session) && (watch.promptAt.IsZero() || prompt != watch.promptText) {
+		watch.promptAt = watch.at
+		nextVersion := watch.at.UnixMilli()
+		if nextVersion <= watch.promptVersion {
+			nextVersion = watch.promptVersion + 1
+		}
+		watch.promptVersion = nextVersion
+		watch.promptText = prompt
+		watch.promptID = ""
+		if prompt != "" {
+			watch.promptID = ScreenRevision(strconv.FormatInt(watch.at.UnixNano(), 10) + ":" + prompt)
+		}
+		select {
+		case s.promptMoved <- struct{}{}:
+		default:
+		}
+	}
 	if text != nil {
 		watch.revision = ScreenRevision(*text)
 	} else {
@@ -595,4 +632,21 @@ func (s *Screens) Stop() {
 	if s.signal != nil {
 		s.signal.DetachAll()
 	}
+}
+
+// PromptChanges coalesces invalidations of watched native suggestions. It never
+// carries text; the Cloud publisher reads the authenticated current row.
+func (s *Screens) PromptChanges() <-chan struct{} { return s.promptMoved }
+
+// Peek observes an existing lease without keeping an abandoned viewer alive.
+func (s *Screens) Peek(item session.Session) ScreenReading { return s.snapshot(item, time.Time{}) }
+
+func sameScreenExecution(a, b session.Session) bool {
+	return a.ID == b.ID && a.Backend == b.Backend && a.Assistant == b.Assistant && a.PID == b.PID && a.ExpectedStart.Equal(b.ExpectedStart) && a.ConversationID == b.ConversationID
+}
+
+// PromptSupported requires the native signal and process identity, not merely
+// a terminal backend label. Sampled terminal views have no immediate source.
+func (s *Screens) PromptSupported(item session.Session) bool {
+	return item.Assistant == session.AssistantClaude && item.Backend == session.BackendTmux && !session.IsTerminalPane(item.ID) && s.signal != nil && item.PID > 0 && !item.ExpectedStart.IsZero() && item.ConversationID != ""
 }

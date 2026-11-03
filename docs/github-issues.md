@@ -1,3 +1,5 @@
+> **2026-10-31：§6.5 第二步與 G4、G6 已由 D73 取代，現行設計見 [`issue-sync.md`](issue-sync.md)。**
+
 > **整套工作系統（看板項目、Session 待辦、Backlog、GitHub Issue）怎麼運作、哪些已經做到，一份講完在 [`docs/work-system.md`](work-system.md)。**
 
 > **實作依據仍是 [`docs/design-decisions.md`](design-decisions.md)。** 本文是分析與建議；要採納其中任何一條，由 root 在那份文件加一列裁決（它 §1 的用法）。

@@ -29,9 +29,9 @@ import (
 // rotate is exactly the kind of test that wrote fake landings into a real
 // store (limits §3.5).
 //
-// It exits 0 only when the row went ok → warn → critical → full, its at-limit
-// behaviour happened exactly once — a refusal as the row's own typed error —
-// and exactly one notice was produced.
+// It exits 0 only when the row follows its alert policy and acts once. A
+// pressure row climbs ok → warn → critical → full with one notice; routine
+// recycling stays ok without a notice. Refusals retain their typed error.
 func capacityCommand(args []string) {
 	fs := flag.NewFlagSet("doctor capacity", flag.ContinueOnError)
 	name := fs.String("drill", "", cliCopy("ops", "capacity.flag.drill", "the row to fill on purpose: ")+strings.Join(drillNames(), ", "))
@@ -138,10 +138,15 @@ func capacityCommand(args []string) {
 
 	want := []string{"ok", "warn", "critical", "full"}
 	climbed := len(states) >= len(want) && strings.Join(states[:len(want)], ",") == strings.Join(want, ",")
+	expectedNotices := 1
+	if row.Entry.RoutineOccupancy() {
+		climbed = len(states) == 1 && states[0] == string(capacity.OK)
+		expectedNotices = 0
+	}
 	refusedAsTyped := d.refusal == nil || refusal != nil
 	if !climbed || counterOf(last.Reading, d.action) != 1 || !refusedAsTyped || unexpected != nil ||
-		len(notices) != 1 || last.Reading.Failing {
-		fmt.Printf(cliCopy("ops", "capacity.failed", "result    FAILED: the row did not go ok → warn → critical → full, act (%s) exactly once and produce exactly one notice\n"), d.action)
+		len(notices) != expectedNotices || last.Reading.Failing {
+		fmt.Printf(cliCopy("ops", "capacity.failed", "result    FAILED: the row did not follow its alert policy, act (%s) exactly once and produce the expected number of notices\n"), d.action)
 		os.Exit(1)
 	}
 	fmt.Println(cliCopy("ops", "capacity.ok", "result    ok"))

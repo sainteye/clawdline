@@ -7,6 +7,21 @@ const INVENTORY = "__clawdline_inventory_v1__"
 const execution = "0123456789abcdef0123456789abcdef"
 const passOne = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const passTwo = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+test("capacity refusal crosses the status projection without inventing a menu", () => {
+  const source = fleet("a", ["same"])
+  const entry = source.statusSnapshots.get(JSON.stringify(["a", "same"])) as { payload: Record<string, unknown> }
+  Object.assign(entry.payload, { state: "idle", provider_block: "model_capacity", waiting_for_reply: false })
+  const reading = statusProjection(source, "a", 2000)
+  assert.equal(reading.kind, "ready")
+  if (reading.kind !== "ready") return
+  assert.equal(reading.rows[0].providerBlock, "model_capacity")
+  assert.equal(reading.rows[0].needsAttention, true)
+  assert.equal(reading.rows[0].waitingForReply, undefined)
+  delete entry.payload.provider_block
+  const recovered = statusProjection(source, "a", 2000)
+  assert.equal(recovered.rows?.[0].providerBlock, undefined)
+})
 function fleet(machine: string, sessions: string[], generation = passOne, missing = "") {
   const statusSnapshots = new Map<string, unknown>()
   const hold = (session: string, payload: unknown, sequence: number) => statusSnapshots.set(JSON.stringify([machine, session]), {
@@ -48,6 +63,16 @@ test("a complete ss pass with the same Session id on two machines stays scoped",
   assert.equal(a.rows[0].sourceProvenance, "session_watch")
   assert.equal(a.rows[0].inventoryComplete, true)
   assert.equal(a.snapshotGeneration, passOne)
+})
+
+test("Remote Control stays read-only in the fleet projection", () => {
+  const source = fleet("a", ["remote"])
+  const held = source.statusSnapshots.get(JSON.stringify(["a", "remote"])) as { payload: Record<string, unknown> }
+  held.payload.backend = "claude_remote"
+  held.payload.assistant = "claude"
+  const projected = statusProjection(source, "a", 2000)
+  assert.equal(projected.kind, "ready")
+  if (projected.kind === "ready") assert.equal(projected.rows[0].backend, "claude_remote")
 })
 
 test("a current machine task descriptor places a child when ss lacks its parent", () => {
@@ -196,5 +221,18 @@ test("provider counts preserve zero and unknown without accepting malformed coun
     if (reading.kind !== "ready") continue
     assert.equal(reading.rows[0].runningAgentCount, typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : undefined)
     assert.equal(reading.rows[0].agentCountUnknown, count === undefined)
+  }
+})
+
+test("owned ACP Gemini sessions retain their backend in the fleet projection", () => {
+  const source = fleet("a", ["owned:acp:one"])
+  const held = source.statusSnapshots.get(JSON.stringify(["a", "owned:acp:one"])) as { payload: Record<string, unknown> }
+  held.payload.backend = "owned"
+  held.payload.assistant = "antigravity"
+  const projected = statusProjection(source, "a", 2000)
+  assert.equal(projected.kind, "ready")
+  if (projected.kind === "ready") {
+    assert.equal(projected.rows[0].backend, "owned")
+    assert.equal(projected.rows[0].assistant, "antigravity")
   }
 })

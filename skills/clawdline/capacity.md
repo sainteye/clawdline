@@ -6,7 +6,12 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | --- | ---: | --- | --- | --- | --- |
 | `antigravity.acp_call_seconds` | 45 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.acp_frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
-| `antigravity.acp_sessions` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `antigravity.acp_trace_bytes` | 16777216 | `bytes` | `evict_oldest` | `diagnostics` | — |
+| `antigravity.acp_trace_connections` | 1 | `rows` | `refuse` | `diagnostics` | — |
+| `antigravity.acp_trace_queue_bytes` | 16777216 | `bytes` | `refuse` | `diagnostics` | — |
+| `antigravity.acp_trace_queue_records` | 64 | `rows` | `refuse` | `diagnostics` | — |
+| `antigravity.acp_trace_records` | 8192 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `antigravity.acp_trace_seconds` | 86400 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `antigravity.acp_view_bytes` | 1048576 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `antigravity.ancestry_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.context_history` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -33,7 +38,12 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `artifacts.drops` | 268435456 | `bytes` | `evict_oldest` | `diagnostics, log` | — |
 | `artifacts.drops_young` | 1 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
 | `artifacts.image_bytes` | 67108864 | `bytes` | `evict_oldest` | `diagnostics, notice, log` | — |
-| `artifacts.images` | 64 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
+| `artifacts.images` | 256 | `rows` | `evict_oldest` | `diagnostics, notice, log` | — |
+| `artifacts.output_files` | 200 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `artifacts.output_index_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `artifacts.output_path_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `artifacts.output_sessions` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `artifacts.output_store_bytes` | 67108864 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `artifacts.report_image_pixels` | 16777216 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `artifacts.report_image_side` | 8192 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `artifacts.report_total_image_pixels` | 67108864 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -43,6 +53,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
 | `cache.assistant_quota` | 32 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.background_agents` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
+| `cache.claude_usage_refresh_seconds` | 900 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `cache.claude_usage_reply_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
+| `cache.claude_usage_request_seconds` | 10 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `cache.git_not_repo` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.git_not_repo_rows` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.image_thumbs` | 8388608 | `bytes` | `evict_oldest` | `diagnostics` | — |
@@ -60,6 +73,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cache.session_skills` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.source_answer` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.terminal_screens` | 64 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
+| `cache.transcript_delta_bytes` | 8388608 | `bytes` | `evict_oldest` | `diagnostics` | — |
+| `cache.transcript_delta_pages` | 128 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.transcript_titles` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `callback.args` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `callback.command_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -139,6 +154,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.peer_ingress` | 16 | `rows` | `refuse` | `diagnostics, log, sender` | — |
 | `cloud.peer_outbox` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `cloud.peer_pairs` | 128 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `cloud.persona_display_cache` | 1 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `cloud.read_plaintext_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.read_queue` | 64 | `rows` | `refuse` | `diagnostics, log, sender` | — |
 | `cloud.rekey_body` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.rekey_interval` | 2 | `seconds` | `refuse` | `diagnostics, sender` | — |
@@ -147,6 +164,34 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.relay_queue` | 64 | `rows` | `refuse` | `diagnostics, notice, cloud_status, log, sender` | — |
 | `cloud.reload_stop_seconds` | 15 | `seconds` | `refuse` | `diagnostics, sender, log` | — |
 | `cloud.roster_short_read_attempts` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `cloud.service_monitor_active_requests` | 512 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_alert_attempts` | 6 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_alert_lease_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_alert_targets` | 32 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_batch_bytes` | 32768 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_batches_per_hour` | 240 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_delete_rows` | 500 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_deployment_rows` | 100 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_fresh_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_history_points` | 289 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_host_command_seconds` | 1 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_minute_buckets` | 3 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_minute_retention_seconds` | 86400 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_outbox_rows` | 256 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_query_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_query_points` | 288 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_query_seconds` | 2 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_readers` | 4 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_retention_seconds` | 604800 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_routes` | 32 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_runtime_memory_bytes` | 134217728 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_runtime_tasks` | 32 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_sample_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_source_bytes` | 65536 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_store_bytes` | 100663296 | `bytes` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_upload_attempts` | 3 | `rows` | `refuse` | `diagnostics` | — |
+| `cloud.service_monitor_upload_deadline_ms` | 2500 | `milliseconds` | `expire` | `diagnostics` | — |
+| `cloud.service_monitor_wal_bytes` | 16777216 | `bytes` | `refuse` | `diagnostics` | — |
 | `cloud.session_row_asks` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `cloud.session_row_id_bytes` | 256 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cloud.session_row_volatile_seconds` | 15 | `seconds` | `expire` | `diagnostics` | — |
@@ -201,6 +246,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.assistant_facts_read_milliseconds` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `console.carrier_receive_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `console.carrier_receive_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `console.community_share_fetch_seconds` | 3 | `seconds` | `expire` | `diagnostics` | — |
+| `console.community_share_response_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
+| `console.community_share_text_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
 | `console.direct_history_hours` | 24 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.direct_history_machines` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.execution_recovery_attempts` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
@@ -226,6 +274,11 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.health_ui_request_seconds` | 6 | `seconds` | `expire` | `diagnostics` | — |
 | `console.health_ui_trend_lanes` | 12 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_trend_signals` | 20 | `rows` | `refuse` | `diagnostics` | — |
+| `console.local_performance_body_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics` | — |
+| `console.local_performance_points` | 168 | `rows` | `refuse` | `diagnostics` | — |
+| `console.local_performance_refresh_ms` | 30000 | `milliseconds` | `expire` | `diagnostics` | — |
+| `console.local_performance_routes` | 129 | `rows` | `refuse` | `diagnostics` | — |
+| `console.local_performance_timeout_ms` | 6000 | `milliseconds` | `expire` | `diagnostics` | — |
 | `console.machine_list_poll_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.native_pairing_save_seconds` | 15 | `seconds` | `expire` | `sender, diagnostics` | — |
 | `console.next_messages` | 20 | `rows` | `refuse` | `sender, diagnostics` | — |
@@ -235,12 +288,35 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.owner_retention_request_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.persona_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.pinned_list_read_timeout_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
+| `console.public_analytics_activems` | 1800000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_countries` | 250 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_days` | 90 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_hours` | 2160 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_page` | 10000 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_path` | 300 | `characters` | `refuse` | `sender, diagnostics` | — |
+| `console.public_analytics_readms` | 10000 | `milliseconds` | `expire` | `sender, diagnostics` | — |
+| `console.public_analytics_rows` | 20 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.relay_feature_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
+| `console.service_performance_alerts` | 30 | `rows` | `refuse` | `diagnostics` | — |
+| `console.service_performance_body_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
+| `console.service_performance_deployments` | 100 | `rows` | `refuse` | `diagnostics` | — |
+| `console.service_performance_points` | 1440 | `rows` | `refuse` | `diagnostics` | — |
+| `console.service_performance_refresh_ms` | 30000 | `milliseconds` | `expire` | `diagnostics` | — |
+| `console.service_performance_routes` | 32 | `rows` | `refuse` | `diagnostics` | — |
+| `console.service_performance_timeout_ms` | 6000 | `milliseconds` | `expire` | `diagnostics` | — |
 | `console.session_notes_safety_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_gap_retry_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_recovery_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.status_marker_retry_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.support_image_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
+| `console.support_image_count` | 5 | `rows` | `refuse` | `diagnostics` | — |
+| `console.support_image_edge` | 2048 | `rows` | `refuse` | `diagnostics` | — |
+| `console.support_image_source_bytes` | 10485760 | `bytes` | `refuse` | `diagnostics` | — |
+| `console.support_image_upload_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `console.support_refresh_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
+| `console.support_request_seconds` | 15 | `seconds` | `expire` | `diagnostics` | — |
+| `console.support_title_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
 | `console.transcript_backoff_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_fill_pages` | 32 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.transcript_follow_fast_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
@@ -272,6 +348,27 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `decisions.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `deploy.health_seconds` | 30 | `seconds` | `refuse` | `diagnostics` | — |
 | `devices.list` | 512 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `diagnostics.api_active` | 512 | `rows` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_catchup` | 2 | `seconds` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_hours` | 169 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `diagnostics.api_minutes` | 61 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `diagnostics.api_query_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_query_seconds` | 2 | `seconds` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_queue` | 1024 | `rows` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_readers` | 2 | `rows` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_retention` | 608400 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `diagnostics.api_route_bytes` | 256 | `bytes` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_routes` | 128 | `rows` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_snapshot` | 33554432 | `bytes` | `refuse` | `diagnostics` | — |
+| `diagnostics.api_store` | 67108864 | `bytes` | `refuse` | `diagnostics` | — |
+| `diagnostics.doctor_checks` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `diagnostics.doctor_description_characters` | 500 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `diagnostics.doctor_history_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `diagnostics.doctor_history_rows` | 24 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
+| `diagnostics.doctor_history_seconds` | 259200 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
+| `diagnostics.doctor_report_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `diagnostics.doctor_version_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `diagnostics.doctor_version_seconds` | 3 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `diagnostics.route_latency_samples` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `diagnostics.route_stat_keys` | 512 | `rows` | `coalesce` | `diagnostics` | — |
 | `dispatch.also_work_ids` | 7 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -299,7 +396,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `leases.queue` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `log.daemon` | 10485760 | `bytes` | `rotate` | `diagnostics, notice` | — |
 | `memory.description_bytes` | 512 | `bytes` | `refuse` | `diagnostics, sender` | — |
-| `memory.entries` | 512 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `memory.entries` | 1024 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `memory.entry_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `memory.group_description_bytes` | 256 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `memory.groups` | 16 | `rows` | `refuse` | `diagnostics, sender, health` | — |
@@ -309,6 +406,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `notification.rule_label_characters` | 80 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `notification.rule_wait_seconds` | 7200 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
 | `notification.rules_rows` | 16 | `rows` | `refuse` | `diagnostics, health, sender` | — |
+| `orchestrator.delivery_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `orchestrator.delivery_commits` | 4096 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `orchestrator.opening_stuck_seconds` | 1800 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `personas.catalog` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `personas.suggestion_context_bytes` | 16384 | `bytes` | `evict_oldest` | `diagnostics` | — |
@@ -339,6 +438,19 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `projects.antigravity_consent_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projects.antigravity_consent_request_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `projects.folder_rows` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_jobs` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_log_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_poll_ms` | 1000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_raw_bytes` | 134217728 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_seconds` | 600 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_build_workers` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_links` | 900 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_nodes` | 300 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_request_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_runtime_bytes` | 536870912 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_text` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
+| `projects.graphify_zoom` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projects.workspace_metadata_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.clones` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `projectsync.entry_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -394,7 +506,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `session.human_interventions_open` | 8 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `session.human_interventions_recent` | 5 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `session.human_interventions_total` | 2000 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
+| `session.inline_tool_bytes` | 1200 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `session.no_movement_seconds` | 1800 | `seconds` | `expire` | `diagnostics, sender` | — |
+| `session.patch_detail_lines` | 18 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
 | `session.report_open_todo_characters` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `session.report_open_todo_rows` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `session.secret_handoff_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -406,11 +520,18 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `session.title_request_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `session.title_rows` | 200 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `session.todo_batch_rows` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `session.tool_preview_bytes` | 1024 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `session.tool_preview_runes` | 240 | `characters` | `evict_oldest` | `diagnostics, sender` | — |
+| `session.transcript_delta_rows` | 1000 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `session.waiting_for` | 8 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.activity_reads` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `sessions.agent_rows` | 6 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.archive_restore_batch` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `sessions.archive_rows` | 500 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `sessions.claude_remote_request_seconds` | 10 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
+| `sessions.claude_remote_response_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `sessions.rc_close_poll_ms` | 100 | `milliseconds` | `evict_oldest` | `diagnostics` | — |
+| `sessions.rc_permission_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `sessions.restore_batch` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `sessions.restore_boots` | 2 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.restore_grace` | 180 | `seconds` | `expire` | `diagnostics` | — |
@@ -466,6 +587,10 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `terminal.paste_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `terminal.streams` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `terminal.viewers` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `tools.project_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `tools.projects` | 100 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `tools.request_bytes` | 131072 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `tools.request_key_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `update.apply_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
 | `update.build_body_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
 | `update.fetch_timeout_seconds` | 10 | `seconds` | `evict_oldest` | `diagnostics` | — |
@@ -479,6 +604,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `voice.model_download_bytes` | 574041195 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `waits.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `work.assignments` | 4000 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `work.card_description_runes` | 200 | `characters` | `evict_oldest` | `diagnostics, sender` | — |
 | `work.completion_reason_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
 | `work.digests` | 800 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `work.documents_per_item` | 32 | `rows` | `refuse` | `diagnostics, sender, health` | — |
@@ -487,6 +613,15 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `work.image_bytes_total` | 536870912 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
 | `work.image_request_body_bytes` | 18874368 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `work.images_per_item` | 6 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `work.issue_sync_device_flow_seconds` | 900 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `work.issue_sync_jira_credential_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `work.issue_sync_jira_projects` | 100 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
+| `work.issue_sync_jira_response_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `work.issue_sync_links_per_pass` | 20 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `work.issue_sync_response_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `work.issue_sync_retry_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `work.issue_sync_scan_rows` | 30 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `work.issue_sync_token_file_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `work.item_description_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
 | `work.item_title_bytes` | 240 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
 | `work.item_user_action_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender, health` | — |
@@ -510,3 +645,4 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `work_gate_round_details_per_item` | 64 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `work_gate_round_details_per_store` | 10000 | `rows` | `refuse` | `diagnostics, notice, health` | — |
 | `work_gate_tasks_per_round` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `workflow.snapshot_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender, health` | — |

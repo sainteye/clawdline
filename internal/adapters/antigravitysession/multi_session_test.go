@@ -219,9 +219,6 @@ func TestTwoActiveSessionsKeepMessagesToolsAndRestartIdentitySeparate(t *testing
 	if a.ID == b.ID || a.ConversationID == b.ConversationID || a.PID == b.PID {
 		t.Fatal("identities collided", a, b)
 	}
-	if _, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir}); err == nil {
-		t.Fatal("third process exceeded capacity")
-	}
 	if n, _ := h.Stats(); n != 2 {
 		t.Fatal("active process count", n)
 	}
@@ -324,5 +321,37 @@ func assertParallelTranscript(t *testing.T, h *Host, row session.Session, own, o
 	}
 	if tools != 1 {
 		t.Fatal("exact native tool row missing", string(raw))
+	}
+}
+
+// Explicitly opened conversations are not limited to the pilot's two workers.
+func TestThreeActiveSessionsCanOpenAndResumeWithoutReplacingEachOther(t *testing.T) {
+	h, first, opts := persistentFixture(t)
+	rows := []session.Session{first}
+	for len(rows) < 3 {
+		row, err := h.Open(context.Background(), ports.OpenRequest{Cwd: opts.AccountDir})
+		if err != nil {
+			t.Fatalf("conversation %d refused: %v", len(rows)+1, err)
+		}
+		for _, previous := range rows {
+			if row.ID == previous.ID || row.ConversationID == previous.ConversationID || row.PID == previous.PID {
+				t.Fatal("identity reused")
+			}
+		}
+		rows = append(rows, row)
+	}
+	if n, _ := h.Stats(); n != 3 {
+		t.Fatal("active conversations", n)
+	}
+	stopHost(t, h)
+	h = reopenHost(t, opts)
+	for _, previous := range rows {
+		row, err := h.Resume(context.Background(), previous.CWD, previous.ConversationID)
+		if err != nil || row.ID != previous.ID || row.ConversationID != previous.ConversationID {
+			t.Fatal("resume failed", err)
+		}
+	}
+	if n, _ := h.Stats(); n != 3 {
+		t.Fatal("resumed conversations", n)
 	}
 }

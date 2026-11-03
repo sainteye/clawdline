@@ -170,6 +170,12 @@ test("one word, one list, and every route names a word the table carries", () =>
   // compile time (`Carried<K>`); this says so of the parser's actual output,
   // which is what reaches the machine.
   const routes: [string, string][] = [
+    ["POST", "/v1/tool-library"],
+    ["POST", "/v1/tool-library/prepare"],
+ ["POST","/v1/projects/p1/graphify"],
+ ["POST","/v1/sessions/s1/graphify"],
+    ["GET", "/v1/sessions/s1/native-terminal"],
+    ["POST", "/v1/sessions/s1/native-terminal"],
     ["POST", "/v1/sessions/s1/send"],
     ["POST", "/v1/sessions/s1/key"],
     ["POST", "/v1/sessions/s1/close"],
@@ -228,6 +234,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/settings/work-gates"],
     ["POST", "/v1/settings/work-gates"],
     ["GET", "/v1/machine/usage"],
+    ["GET", "/v1/api-performance"],
     ["GET", "/v1/update"],
     ["GET", "/v1/update/fresh"],
     ["POST", "/v1/update/apply"],
@@ -289,6 +296,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("workflow-settings" in CARRIED)
   assert.ok("work-gate-settings-update" in CARRIED)
   assert.ok("workflow-settings-update" in CARRIED)
+  assert.equal(CARRIED["integration-settings"], "GET /v1/settings/integrations")
+  assert.equal(CARRIED["integration-settings-update"], "POST /v1/settings/integrations")
   assert.ok("machine-usage" in CARRIED)
   assert.ok("update" in CARRIED)
   assert.ok("update-apply" in CARRIED)
@@ -327,7 +336,15 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["project-antigravity-consent-change"], "POST /v1/projects/{project}/antigravity-consent")
   assert.ok(!("project-antigravity-consent-status" in DEFERRED))
   assert.ok(!("project-antigravity-consent-change" in DEFERRED))
-  assert.equal(Object.keys(CARRIED).length, 168)
+  assert.equal(CARRIED["project-graphify-build"],"POST /v1/projects/{project}/graphify")
+  assert.equal(CARRIED["session-graphify-build"],"POST /v1/sessions/{id}/graphify")
+  // Issue sync's tracker connections and Retry (pages/work/IssueSync.tsx).
+  assert.equal(CARRIED["jira-connect"], "POST /v1/integrations/jira")
+  assert.equal(CARRIED["issue-sync.retry"], "POST /v1/issue-sync/{id}/retry")
+  assert.equal(CARRIED["tools.catalog"],"GET /v1/tool-library")
+  assert.equal(CARRIED["tools.save"],"POST /v1/tool-library")
+  assert.equal(CARRIED["tools.prepare"],"POST /v1/tool-library/prepare")
+  assert.equal(Object.keys(CARRIED).length, 192)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {
@@ -420,7 +437,8 @@ test("terminal HTTP routes remain local while hosted terminals use separate encr
   assert.equal(notCarriedDetail("POST", "/v1/terminals/trm_x/input"), MACHINE_ONLY[0].sentence)
   assert.equal(machineOnly("/v1/auth/devices/dev-1/revoke"), "", "a device route is not a terminal route")
   assert.equal(machineOnly("/v1/terminalsx"), "", "a prefix is a whole segment")
-  for (const word of words()) assert.ok(!/terminal/.test(word), word + ": the generic Router has no terminal word")
+  // Only the existing assistant foreground grid crosses the generic Session rail.
+  assert.deepEqual(words().filter(word=>/terminal/.test(word)).sort(),["native-terminal-input","native-terminal-screen"])
   assert.equal(mac.asked.length, 0, "nothing was asked of the machine")
 })
 

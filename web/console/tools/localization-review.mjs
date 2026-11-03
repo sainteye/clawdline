@@ -40,13 +40,13 @@ export async function buildReview({ repo, out, cloudOrigin }) {
   const require = createRequire(join(repo, 'web/package.json'))
   const { build } = await import(pathToFileURL(require.resolve('vite')).href)
   const { default: react } = await import(pathToFileURL(require.resolve('@vitejs/plugin-react')).href)
-  // The three documented Vite documents. No source rewrite and no candidate writes.
+  // The console and input-bar documents. No source rewrite and no candidate writes.
   for (const hosted of [false, true]) {
     const declaration = JSON.stringify({ v: 1, app_origin: cloudOrigin, api_origin: cloudOrigin, relay_url: cloudOrigin.replace('https:', 'wss:') + '/fixture-relay' })
     await build({ configFile: false, root: consoleRoot, plugins: [react()], base: hosted ? '/' : './',
       define: { 'import.meta.env.VITE_HOSTED_CONSOLE': hosted ? JSON.stringify(declaration) : 'undefined' },
       build: { outDir: join(out, hosted ? 'cloud' : 'app'), emptyOutDir: true,
-        rollupOptions: { input: Object.fromEntries(['index', 'bar', 'settings'].map(name => [name, join(consoleRoot, name + '.html')])) } },
+        rollupOptions: { input: Object.fromEntries(['index', 'bar'].map(name => [name, join(consoleRoot, name + '.html')])) } },
     })
   }
 }
@@ -348,7 +348,7 @@ export async function serveReview(options) {
         if (path === `/v1/sessions/${REVIEW_SESSION}/info`) return json(response, 200, { info: { session: { ...syntheticRow(), title: syntheticRow().label }, models: [], deploy: [], links: [] } })
         if (path === '/v1/places') return json(response, 200, { at: Date.now(), assistants: [{ id: 'claude', label: 'Claude Code', availability: 'available' }], places: state === 'empty' ? [] : [project] })
         if (path === '/v1/settings/default-models') return json(response, 200, { codex_default_model: '', claude_default_model: '', models: { codex: [], claude: [] } })
-        if (['/v1/settings', '/v1/settings/browser', '/v1/settings/notifications'].includes(path)) return json(response, 200, { language: 'auto', voice_language: 'auto', hotkey: 'ctrl+space', console_enabled: true, codex_default_model: '', claude_default_model: '', codex_default_effort: '' })
+        if (['/v1/settings', '/v1/settings/browser', '/v1/settings/notifications'].includes(path)) return json(response, 200, { setup_mode: 'local', language: 'auto', voice_language: 'auto', hotkey: 'ctrl+space', console_enabled: true, codex_default_model: '', claude_default_model: '', codex_default_effort: '' })
         if (path === '/v1/voice/setup') return json(response, 200, { status: 'ready', platform: 'darwin', binary: '/synthetic/whisper-cli', binary_dirs: ['/synthetic/bin'], binary_install: '', model: '/synthetic/ggml-review.bin', model_name: 'ggml-review.bin', model_bytes: 1048576, model_dirs: ['/synthetic/models'] })
         if (path === '/v1/voice/language') return json(response, 200, { setting: 'auto', code: 'en', script: '', source: 'language', tag: 'en', script_source: '', script_tag: '' })
         if (path === '/v1/personas') return json(response, 200, { license: 'MIT', personas })
@@ -414,7 +414,7 @@ export async function serveReview(options) {
     syntheticMutations: ['POST /v1/auth/session', 'DELETE /v1/auth/recovery/devices/<known-synthetic-id>; actor-scoped, at most 256 contexts'],
     states: REVIEW_STATES, locales: REVIEW_LOCALES, createdAt: new Date().toISOString(), catalogHashes: {},
     urls: { sessions: appOrigin + '/', detail: appOrigin + '/#session=review-session', settings: appOrigin + '/#page=settings',
-      machineSettings: appOrigin + '/settings.html', playbook: appOrigin + '/#page=playbook', board: appOrigin + '/#page=work',
+      machineSettings: appOrigin + '/#page=settings', playbook: appOrigin + '/#page=playbook', board: appOrigin + '/#page=work',
       projects: appOrigin + '/#page=projects', notifications: appOrigin + '/#page=notifications', plan: appOrigin + '/#page=plan', usageOverview: appOrigin + '/#page=usage',
       squad: appOrigin + '/#page=squad',
       document: appOrigin + '/#document=1&machine=this-mac&session=review-session&scope=project&path=README.md',

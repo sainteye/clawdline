@@ -10,6 +10,12 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) brokerCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"orchestrator.delivery_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-delivery evidence admission guard"}
+		},
+		"orchestrator.delivery_commits": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-delivery evidence admission guard"}
+		},
 		capacity.DispatchAlsoWorkIDs: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-dispatch guard"} },
 		capacity.HandoffWorktrees:    func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
 		capacity.HandoffPatchBytes:   func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },

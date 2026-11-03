@@ -1,9 +1,11 @@
+import { VisitsOverview } from "./VisitsOverview.js"
 import { useId } from "react"
 import { trend, type CampaignRow, type Comparison, type DailyCount, type Overview, type UsagePeriod } from "./api.js"
 import { adminPath, type AdminRoute, type Say } from "./words.js"
 
 /*
- * The operations pages that read the overview: the overview itself, accounts
+ * The public-website report has its own superuser contract, including member visit history.
+ * The operations pages that read the aggregate overview: the overview itself, accounts
  * and usage. Each route draws one subject; the overview answers "is anything
  * different today" and points at the page that holds the detail.
  *
@@ -42,12 +44,13 @@ interface PageProps {
 
 /* ---- overview --------------------------------------------------------- */
 
-export function OverviewPage({ overview, say, locale, go }: PageProps) {
+export function OverviewPage({ overview, say, locale, go, apiOrigin, demo = false }: PageProps & { apiOrigin: string; demo?: boolean }) {
   const n = new Intl.NumberFormat(locale)
   const { accounts, promotions, usage } = overview
   const yesterday = accounts.daily.length ? accounts.daily[accounts.daily.length - 1] : null
   return (
     <div className="adm-page">
+      <VisitsOverview apiOrigin={apiOrigin} demo={demo} refreshToken={overview.generated_at} say={say} locale={locale} />
       <div className="adm-tiles adm-tiles-4">
         <Tile label={say("accountsTotal")} value={n.format(accounts.total)} lead />
         <Tile label={say("accountsYesterday")} value={yesterday ? n.format(yesterday.count) : say("usageUnknown")}>

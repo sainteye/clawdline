@@ -11,7 +11,7 @@ import type { CloudPairing } from "./cloud.js"
 const word = (key: string) => catalogWord("browserPairing", key)
 
 /** A website entry to the local handover, still confirmed by the owning Mac. */
-export function BrowserPairingBlock({ shown }: { shown: boolean }) {
+export function BrowserPairingBlock({ shown, onPair }: { shown: boolean; onPair?: () => void }) {
   const available = nativePairingAvailable()
   const [machine, setMachine] = useState<NativePairingReply | null>(null)
   const [pairing, setPairing] = useState<CloudPairing | null>(null)
@@ -53,7 +53,17 @@ export function BrowserPairingBlock({ shown }: { shown: boolean }) {
   return <div className="block settings-browser-pairing">
     <b>{word("title")}</b>
     <p className="say">{word("intro")}</p>
-    {!available ? <p className="say">{word("localOnly")}</p> : <>
+    {!available ? <>
+      {onPair && <button type="button" className="chip" onClick={onPair}>{word("pairBrowser")}</button>}
+      <p className="say">{word("localOnly")}</p>
+      <a className="chip" href="clawdline-next://setup">{word("openSetup")}</a>
+      <p className="say">{word("terminal")}</p>
+      <p><code>clawdline cloud pair</code></p>
+      <button type="button" className="chip" onClick={() => void run(async () => {
+        await navigator.clipboard.writeText("clawdline cloud pair")
+        setSaid(word("copied"))
+      })}>{word("copyCommand")}</button>
+    </> : <>
       <p className="say">{machine?.machine_name}</p>
       {machine?.pairing_invitation ? <button type="button" className="chip" disabled={busy} onClick={invite}>{word("qr")}</button>
         : machine && <p className="say">{word("update")}</p>}

@@ -51,12 +51,17 @@ type closeHost struct {
 	err   error
 	// conversation is the one the session in it is running, if any.
 	conversation string
+	assistant    session.Assistant
 }
 
 func (h *closeHost) Name() string { return "tmux" }
 func (h *closeHost) Inventory(context.Context) (session.Inventory, error) {
+	ast := h.assistant
+	if ast == "" {
+		ast = session.AssistantClaude
+	}
 	return session.Inventory{Complete: true, Provenance: "tmux", Sessions: []session.Session{
-		{ID: "%1", TTY: "ttys1", Backend: session.BackendTmux, Assistant: session.AssistantClaude, PID: 400,
+		{ID: "%1", TTY: "ttys1", Backend: session.BackendTmux, Assistant: ast, PID: 400,
 			CWD: "/work", ConversationID: h.conversation},
 	}}, nil
 }
@@ -77,6 +82,34 @@ func closeActions(h *closeHost) Actions {
 		Inventory: Inventory{Terminals: []ports.TerminalHost{h}},
 		Terminals: []ports.TerminalHost{h},
 		Owed:      func(context.Context) ([]task.Obligation, error) { return nil, nil },
+	}
+}
+
+func TestRemoteControlCannotUseTerminalOrProcessActions(t *testing.T) {
+	row := session.Session{ID: "claude-remote:42:fixture", Backend: session.BackendClaudeRemote, PID: 42}
+	// Even a holder that claims this ID and an available process closer must
+	// not make a worker with no RC controller writable or closeable.
+	h := &ttyHolder{holds: map[string]bool{row.ID: true}}
+	procs := &processCloser{}
+	a := closeActions(&h.closeHost)
+	a.Inventory = Inventory{Process: stubProcess{inv: session.Inventory{
+		Sessions: []session.Session{row}, Complete: true, Provenance: "ps"}}}
+	a.Terminals, a.Processes = []ports.TerminalHost{h}, procs
+	ctx := context.Background()
+	for name, act := range map[string]func() (session.Session, error){
+		"send":      func() (session.Session, error) { return a.Send(ctx, row.ID, "fixture message") },
+		"interrupt": func() (session.Session, error) { return a.Interrupt(ctx, row.ID) },
+		"focus":     func() (session.Session, error) { return a.Focus(ctx, row.ID) },
+		"close":     func() (session.Session, error) { return a.Close(ctx, row.ID, true) },
+	} {
+		_, err := act()
+		var refusal Refusal
+		if !errors.As(err, &refusal) || refusal.Code != "backend_unsupported" {
+			t.Fatalf("%s = %v, want an unsupported backend refusal", name, err)
+		}
+	}
+	if len(h.done) != 0 || len(procs.closed) != 0 {
+		t.Fatalf("unsupported actions reached a writer: terminal=%v process=%v", h.done, procs.closed)
 	}
 }
 

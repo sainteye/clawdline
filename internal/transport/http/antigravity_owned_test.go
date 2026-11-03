@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/auth"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -106,6 +107,14 @@ func TestOwnedHTTPPeer(t *testing.T) {
 			}
 			result = map[string]any{"configOptions": config()}
 		case "session/prompt":
+			if os.Getenv("CLW_HTTP_TOOLS") == "yes" {
+				for _, update := range []map[string]any{
+					{"sessionUpdate": "tool_call", "toolCallId": "read-fixture", "title": "Running view_file", "kind": "read", "status": "in_progress", "locations": []map[string]any{{"path": "/workspace/example.go", "line": 11}}},
+					{"sessionUpdate": "tool_call_update", "toolCallId": "read-fixture", "rawOutput": strings.Repeat("complete native output 😀\n", 2000), "status": "completed"},
+				} {
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": update}})
+				}
+			}
 			if os.Getenv("CLW_HTTP_INTERRUPT") == "yes" {
 				interruptedPrompt = append(json.RawMessage(nil), req.ID...)
 				continue
@@ -141,12 +150,16 @@ func TestOwnedHTTPPeer(t *testing.T) {
 				f, _ := os.OpenFile(filepath.Join(os.Getenv("GEMINI_HOME"), "usage"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 				f.WriteString("usage\n")
 				f.Close()
-				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "### Quota Limits\n- **Gemini Models**\n  - **Weekly Limit Remaining:** 62% remaining (resets Oct 29, 2026, 07:51 UTC)\n- **Claude and GPT models**\n  - **Weekly Limit Remaining:** 9% remaining"}}}})
+				_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "### Quota Limits\n- **Gemini Models**\n  - **Weekly Limit Remaining:** 62% remaining (resets Oct 29, 2026, 07:51 UTC)\n- **Claude and GPT models**\n  - **Weekly Limit Remaining:** 9% remaining\n- **Gemini 4 Argon**\n  - **Gemini 4 Argon Weekly Limit:** 0% remaining (resets Nov 6, 2026, 02:00 UTC)"}}}})
 				result = map[string]string{"stopReason": "end_turn"}
 				break
 			}
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "usage_update", "used": 12, "size": 100}}})
-			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic HTTP reply"}}}})
+			reply := "synthetic HTTP reply"
+			if raw, err := os.ReadFile(filepath.Join(os.Getenv("GEMINI_HOME"), "reply-text")); err == nil {
+				reply = string(raw)
+			}
+			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-http-native", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": reply}}}})
 			// Hold the response boundary after text is visible. Text alone
 			// does not prove the sender has released its metadata operation.
 			if gate := os.Getenv("CLW_HTTP_TURN_GATE"); gate != "" {
@@ -299,7 +312,7 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, _ := json.Marshal(map[string]any{"executable": exe, "accountDir": dir, "args": []string{"-test.run=^TestOwnedHTTPPeer$"}})
+	cfg, _ := json.Marshal(map[string]any{"executable": exe, "accountDir": dir, "rawTrace": true, "args": []string{"-test.run=^TestOwnedHTTPPeer$"}})
 	if err := os.WriteFile(filepath.Join(s.cfg.Dir, "antigravity-acp-pilot.json"), cfg, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -338,6 +351,9 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	if initial.Code != 200 || json.Unmarshal(initial.Body.Bytes(), &initialInfo) != nil || initialInfo.Info.Session.Model != "synthetic-flash" || initialInfo.Info.Session.Effort != "high" || !reflect.DeepEqual(initialInfo.Info.Efforts, []string{"low", "medium", "high"}) || len(initialInfo.Info.Models) != 2 || initialInfo.Info.Models[0].Name != "Synthetic Flash" {
 		t.Fatalf("initial native config=%s", initial.Body.String())
 	}
+	if initialInfo.Info.Protocol == nil || initialInfo.Info.Protocol.Phase != "idle" || !initialInfo.Info.Protocol.TraceEnabled {
+		t.Fatalf("initial protocol evidence=%+v", initialInfo.Info.Protocol)
+	}
 	for _, command := range []string{"/effort low", "/model synthetic-pro"} {
 		if _, err := s.actions().Send(ctx, answer.ID, command); err != nil {
 			t.Fatal(err)
@@ -374,6 +390,9 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	if summaryResponse.Code != 200 || json.Unmarshal(summaryResponse.Body.Bytes(), &summary) != nil || len(summary.Info.Models) != 2 || summary.Info.Limits == nil || len(summary.Info.Limits.Windows) != 0 {
 		t.Fatalf("summary=%s", summaryResponse.Body.String())
 	}
+	if p := summary.Info.Protocol; p == nil || p.Phase != "prompt_pending" || p.RequestID == "" || p.CompletedAt != 0 || p.StopReason != "" {
+		t.Fatalf("text incorrectly completed protocol=%+v", p)
+	}
 	if summary.Info.Session.Model != "synthetic-pro" || summary.Info.Session.Effort != "medium" || !reflect.DeepEqual(summary.Info.Efforts, []string{"medium", "high"}) {
 		t.Fatalf("summary native config=%s", summaryResponse.Body.String())
 	}
@@ -407,13 +426,43 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 		if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil {
 			t.Fatalf("native info=%d %s", infoResponse.Code, infoResponse.Body.String())
 		}
-		if info.Info.Limits != nil && len(info.Info.Limits.Windows) == 1 {
+		if info.Info.Limits != nil && len(info.Info.Limits.Windows) == 2 {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-pro" || info.Info.Session.Effort != "medium" || !reflect.DeepEqual(info.Info.Efforts, []string{"medium", "high"}) || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-pro" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 1 || info.Info.Limits.Windows[0].UsedPercent != 38 {
+	if infoResponse.Code != 200 || json.Unmarshal(infoResponse.Body.Bytes(), &info) != nil || info.Info.Session.Model != "synthetic-pro" || info.Info.Session.Effort != "medium" || !reflect.DeepEqual(info.Info.Efforts, []string{"medium", "high"}) || info.Info.Context == nil || info.Info.Context.UsedPercent != 12 || info.Info.Context.WindowTokens != 100 || info.Info.Usage != nil || len(info.Info.Models) != 2 || info.Info.Models[1].Command != "synthetic-pro" || info.Info.Limits == nil || len(info.Info.Limits.Windows) != 2 || info.Info.Limits.Windows[0].UsedPercent != 38 || info.Info.Limits.Windows[1].Name != "Argon 7d" || info.Info.Limits.Windows[1].UsedPercent != 100 || !info.Info.Limits.Windows[1].Hit {
 		t.Fatalf("native facts missing or billing invented: %d %s", infoResponse.Code, infoResponse.Body.String())
+	}
+	// Sample the recorder used by this real-pipe owner, then read the public panel.
+	deadline = time.Now().Add(3 * time.Second)
+	for s.antigravitySessions.Load().WireTraceStats().QueueRecords != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	readings := map[string]capacity.Reading{}
+	for name, measure := range s.antigravityCapacityMeasures() {
+		if strings.HasPrefix(name, "antigravity.acp_trace_") {
+			readings[name] = measure()
+		}
+	}
+	fakeBeat(t, s, readings, nil)
+	capacityResponse := httptest.NewRecorder()
+	s.capacityRoute(capacityResponse, httptest.NewRequest(http.MethodGet, "/v1/capacity", nil))
+	var panel contract.CapacityPanel
+	if capacityResponse.Code != 200 || json.Unmarshal(capacityResponse.Body.Bytes(), &panel) != nil {
+		t.Fatalf("trace capacity panel=%s", capacityResponse.Body.String())
+	}
+	for name, reading := range readings {
+		row := entry(t, panel.Capacity, name)
+		if !reading.Known || row.Used == nil || *row.Used != reading.Used || row.State == contract.CapacityStateUnknown {
+			t.Fatalf("unmeasured trace capacity %s: %+v", name, row)
+		}
+	}
+	if *entry(t, panel.Capacity, "antigravity.acp_trace_bytes").Used == 0 || *entry(t, panel.Capacity, "antigravity.acp_trace_records").Used == 0 || *entry(t, panel.Capacity, "antigravity.acp_trace_connections").Used != 1 {
+		t.Fatal("active recorder reported empty capacity")
+	}
+	if strings.Contains(capacityResponse.Body.String(), "synthetic HTTP input") || strings.Contains(summaryResponse.Body.String(), "synthetic HTTP input") {
+		t.Fatal("raw protocol content leaked into a public summary")
 	}
 	readAt := info.Info.Limits.ReadAtMs
 	summaryResponse = httptest.NewRecorder()
@@ -545,5 +594,77 @@ func TestOwnedSmartTitleReadsStructuredHistory(t *testing.T) {
 	}
 	if runs != 1 {
 		t.Fatal("unavailable history spent a naming turn")
+	}
+}
+
+func TestNativeGeminiAccountQuotaReachesFooterWithoutAUserConversation(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv("CLW_HTTP_PEER", "yes")
+	if err := os.MkdirAll(filepath.Join(root, "antigravity-acp"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "antigravity-acp", "settings.json"), []byte(`{"useG1Credits":false,"auth":{"type":"oauth-personal"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := antigravitysession.New(context.Background(), antigravitysession.Options{Executable: exe, AccountDir: root, Args: []string{"-test.run=^TestOwnedHTTPPeer$"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := h.Shutdown(); err != nil {
+			t.Error(err)
+		}
+	})
+	s := &Server{}
+	s.antigravitySessions.Store(h)
+	read := func() contract.ProviderQuotaSnapshot {
+		rec := httptest.NewRecorder()
+		s.providerQuotas(rec, httptest.NewRequest("GET", "/v1/provider-quotas", nil))
+		if rec.Code != 200 {
+			t.Fatalf("quota endpoint: %d", rec.Code)
+		}
+		var out contract.ProviderQuotaSnapshot
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	out := read()
+	deadline := time.Now().Add(3 * time.Second)
+	for out.Updating && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+		out = read()
+	}
+	var gemini *contract.ProviderQuotaRow
+	for i := range out.Providers {
+		if out.Providers[i].ID == "gemini" {
+			gemini = &out.Providers[i]
+		}
+	}
+	if gemini == nil || gemini.Source != "provider_cli" || len(gemini.Windows) != 2 || gemini.Windows[0].UsedPercent != 38 || gemini.Windows[1].Name != "Argon 7d" || gemini.Windows[1].UsedPercent != 100 || gemini.Windows[1].ResetsAt != time.Date(2026, 11, 6, 2, 0, 0, 0, time.UTC).Unix() || gemini.Stale {
+		t.Fatalf("Gemini footer=%+v", gemini)
+	}
+	inv, err := h.Inventory(context.Background())
+	if err != nil || len(inv.Sessions) != 0 {
+		t.Fatalf("quota created a visible Session: %+v %v", inv, err)
+	}
+	rawPrompt, err := os.ReadFile(filepath.Join(root, "last-prompt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prompt []struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(rawPrompt, &prompt) != nil || len(prompt) != 1 || prompt[0].Text != "/usage" {
+		t.Fatal("quota sent a model turn instead of the fixed metadata command")
+	}
+	usage, err := os.ReadFile(filepath.Join(root, "usage"))
+	if err != nil || string(usage) != "usage\n" {
+		t.Fatalf("metadata read was replayed: %q %v", usage, err)
 	}
 }

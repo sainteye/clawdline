@@ -12,6 +12,62 @@ interface MachineCapabilityClient {
   machines(): Promise<MachineAnswer>
 }
 
+/** Unknown is a pending observation, never evidence that a pairing is missing. */
+export function needsMachinePairing(pairing: CloudMachine["pairing"]): boolean {
+  return pairing === "not_paired"
+}
+
+/** Restore each account-listed machine independently, including after a PWA return. */
+export function watchStoredMachinePairings(
+  client: { restoreMachinePairing?: (machine: string) => Promise<void> },
+  machines: readonly string[],
+  changed: () => void,
+  page: { document: EventTarget & { readonly hidden?: boolean }; window: EventTarget },
+): () => void {
+  if (!client.restoreMachinePairing) return () => {}
+  let stopped = false
+  // Scoped to this account roster and client; bursts share each outstanding local read.
+  const pending = new Set<string>()
+  const started = new Set<string>()
+  const returned = new Set<string>()
+  const read = (machine: string) => {
+    pending.add(machine)
+    void Promise.resolve().then(() => {
+      if (!stopped) {
+        started.add(machine)
+        return client.restoreMachinePairing!(machine)
+      }
+    }).then(
+      () => { if (!stopped) changed() },
+      () => { /* A failed key-store read remains unknown; a return retries it. */ },
+    ).finally(() => {
+      pending.delete(machine)
+      started.delete(machine)
+      // A return during an interrupted IndexedDB read must not be lost.
+      if (returned.delete(machine) && !stopped && !page.document.hidden) read(machine)
+    })
+  }
+  const restore = () => {
+    if (stopped || page.document.hidden) return
+    for (const machine of machines) {
+      if (pending.has(machine)) {
+        if (started.has(machine)) returned.add(machine)
+      }
+      else read(machine)
+    }
+  }
+  page.document.addEventListener("visibilitychange", restore)
+  page.window.addEventListener("pageshow", restore)
+  page.window.addEventListener("online", restore)
+  restore()
+  return () => {
+    stopped = true
+    page.document.removeEventListener("visibilitychange", restore)
+    page.window.removeEventListener("pageshow", restore)
+    page.window.removeEventListener("online", restore)
+  }
+}
+
 /** A verified machine report can change presence on every console view. */
 export function reportsMachinePresence(event: { type: string }): boolean {
   return event.type === "sessions" || event.type === "orchestrator" || event.type === "session_status" ||

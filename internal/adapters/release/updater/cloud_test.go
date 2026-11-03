@@ -177,7 +177,7 @@ func TestCloudAdmissionNormalBootAndCapturedIdentity(t *testing.T) {
 	if f.env.CloudAdmission(f.exe, Served{Version: "v2.0.0", Commit: commitOf('a')})() {
 		t.Fatal("already replaced executable path hid the process build identity")
 	}
-	if f.env.CloudAdmission(f.env.Layout.ServiceBin, Served{Version: "v2.0.1", Commit: commitOf('b')})() {
+	if f.env.CloudAdmission(f.env.Layout.ServiceExecutable("v2.0.1"), Served{Version: "v2.0.1", Commit: commitOf('b')})() {
 		t.Fatal("unidentifiable service binary was treated as a source checkout")
 	}
 }
@@ -195,7 +195,7 @@ func TestCloudAdmissionSurvivingServiceBinaryCannotBecomeTheRollback(t *testing.
 		t.Fatal(err)
 	}
 	running := Served{Version: "v2.0.1", Commit: commitOf('b')}
-	ready := f.env.CloudAdmission(f.env.Layout.ServiceBin, running)
+	ready := f.env.CloudAdmission(f.env.Layout.ServiceExecutable("v2.0.1"), running)
 	if !ready() {
 		t.Fatal("accepted service binary refused")
 	}
@@ -211,10 +211,10 @@ func TestCloudAdmissionSurvivingServiceBinaryCannotBecomeTheRollback(t *testing.
 	if ready() {
 		t.Fatal("captured candidate became the rollback service")
 	}
-	if f.env.CloudAdmission(f.env.Layout.ServiceBin, running)() {
+	if f.env.CloudAdmission(f.env.Layout.ServiceExecutable("v2.0.1"), running)() {
 		t.Fatal("replacement before admission capture hid the candidate process")
 	}
-	if !f.env.CloudAdmission(f.env.Layout.ServiceBin, Served{Version: "v2.0.0", Commit: commitOf('a')})() {
+	if !f.env.CloudAdmission(f.env.Layout.ServiceExecutable("v2.0.1"), Served{Version: "v2.0.0", Commit: commitOf('a')})() {
 		t.Fatal("genuine rolled-back binary cannot start Cloud")
 	}
 }

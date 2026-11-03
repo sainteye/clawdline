@@ -41,6 +41,8 @@ API, which is defined once, as JSON Schema, before any code is written against i
 The design notes linked from this page are written in Traditional Chinese. This page is the
 English map into them. [docs/README.md](README.md) lists them all.
 
+The separate [Cloud help and FAQ account service](cloud-support.md) stores questions that members explicitly submit to support. This service-owned support lane neither stores machine Session plaintext nor obtains content keys.
+
 ## What does not move
 
 The product has ten rules that any change must keep ([plan.md](plan.md) §1):
@@ -107,6 +109,22 @@ The daemon lists tmux panes, and iTerm2 sessions on macOS, and matches each term
 evidence: what its screen shows and what its own records say. With no evidence, the state is
 `unknown`. Transcripts are read from the assistant's own files under `~/.claude` and `~/.codex`.
 Nothing is written there.
+
+Codex model-capacity refusals are a separate `provider_block: model_capacity` fact, read from
+the latest native turn lifecycle event (`task_complete.error.codex_error_info` equal to
+`server_overloaded`, or the exact capacity refusal message). Messages and tool output cannot
+create this fact. The existing activity read budget, tail bound and stat cache own this reading;
+an unchanged record is not reopened. Later metadata keeps the refusal, while `task_started`, a
+successful completion, an interruption or a different terminal failure clears it.
+
+The block projects `work_state: waiting_you` and `work_person_needed: true`, independently of
+terminal activity. The console says **Model at capacity · choose another model or retry**. It
+does not invent a permission menu or a new terminal state: the action is already covered by
+the existing attention vocabulary, and the typed reason distinguishes the remedy. Single-machine
+and fleet lists carry the same fact; the content-free Cloud status allowlists only its reason
+code and attention signal, never the provider's error prose. This does not change closeability
+or automatically retry a provider request. Missing or out-of-tail records cannot establish a
+current block, and the existing retained-source freshness rules still apply.
 
 Managed Codex versions may keep the rollout on a no-tty `codex app-server` descendant instead of
 on the foreground TUI. The same process-table snapshot supplies the parent chain and native
@@ -359,6 +377,7 @@ panes share one mounted `SettingsWindow` with a controlled stable pane name; swi
 machine panes retains the window-level settings state and in-flight writes. Leaving the machine settings
 unmounts the window so background reads and listeners stop. Its embedded mode still uses the browser
 settings API and excludes privileged Cloud sign-in and pairing controls.
-Cloud browsers expose only browser, work and status. The standalone `settings.html`
-window retains its own navigation and machine-authorized controls. Update deep links
-continue to open the status pane.
+Cloud browsers expose browser, work, status and workflow settings. The standalone
+`settings.html` document and macOS settings window have been removed; the local
+browser console embeds the machine-authorized controls in its Settings tabs.
+Update deep links continue to open the status pane.

@@ -50,8 +50,10 @@
 .usage-columns > section + section { padding-left: 28px; border-left: 1px solid var(--line); }
 .usage-page h2 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 600; }
 .usage-projects { margin-top: 20px; color: var(--dim); font-size: 12px; }
-.usage-project-row { display: grid; grid-template-columns: minmax(60px, 100px) minmax(30px, 1fr) auto; align-items: center; gap: 12px; margin: 17px 0; }
-.usage-project-row > span:first-child { overflow-wrap: anywhere; }
+.usage-project-row { display: grid; grid-template-columns: 18px minmax(60px, 100px) minmax(30px, 1fr) auto; align-items: center; gap: 12px; margin: 17px 0; }
+.usage-project-mark { display: grid; place-items: center; width: 18px; height: 18px; }
+.usage-project-mark canvas { max-width: 18px; max-height: 18px; }
+.usage-project-name { min-width: 0; overflow-wrap: anywhere; }
 .usage-project-row > span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .usage-track { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
 .usage-track > div { height: 100%; background: var(--accent); border-radius: 4px; }

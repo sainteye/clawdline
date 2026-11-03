@@ -1,3 +1,4 @@
+import { supportWord } from "../support/words.js"
 import { BrowserPairingBlock } from "../pages/settings/BrowserPairingBlock.js"
 import { LocalMachineSetup } from "./LocalMachineSetup.js"
 import { accessProblemAfterRead, readProblemOffersPairing } from "./state.js"
@@ -14,7 +15,7 @@ import { createPortal, flushSync } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import App from "../App.js"
 import { CLOSE_EXECUTION_CHANGED } from "../overlays/events.js"
-import { BRAND_MARK } from "../brand-mark.js"
+import { NAVIGATION_MARK } from "../brand-mark.js"
 import type { ConnectionLight } from "../connection-state.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord, type NextWord } from "../next-strings.js"
@@ -53,6 +54,7 @@ import { machinePaired } from "./pairing-completion.js"
 import { setProjectSyncSeam, syncSeamFor, type SyncClient } from "./project-sync.js"
 import { machinePresentation } from "../legacy/js/session/selection.js"
 import { forgetPersonas } from "../personas.js"
+import { clearPersonaDisplayCache } from "./persona-cache.js"
 import { accountMachineForConfirmation, accountMachineRoster, devicesPageRows, machineIdentityFacts, sessionsFact, withAccountNames, withAccountRegistrations, type AccountName } from "./unpaired-rows.js"
 import { machineSeenWord } from "./machine-seen.js"
 import { MachinePlatformIcon } from "./MachinePlatformIcon.js"
@@ -66,7 +68,7 @@ import {
 import { PairPanel, type PairDevice, type PairRequest } from "./PairPanel.js"
 import { FleetUpdateRow } from "./FleetUpdateRow.js"
 import { FleetUpdateNotice } from "./FleetUpdateNotice.js"
-import type { PairAgentProgress, PairAgentReply } from "./pair-agent.js"
+import { readPairAgentComparison, type PairAgentProgress, type PairAgentReply } from "./pair-agent.js"
 import { DeviceLimitPanel } from "./DeviceLimitPanel.js"
 import { readThroughRelay, setCloudConnectionRetry } from "./install.js"
 import { setTerminalHost } from "./terminal-host.js"
@@ -76,7 +78,7 @@ import { machineForAddress } from "./document-target.js"
 import { openingFor } from "./opening.js"
 import { toolMovesConsole } from "./machine-tool.js"
 import { CloudAccountContext } from "./account-context.js"
-import { machinesByCapability, reportsMachinePresence } from "./machine-access.js"
+import { machinesByCapability, needsMachinePairing, reportsMachinePresence, watchStoredMachinePairings } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader, machineApp, presentsEvery } from "./relay-reader.js"
@@ -463,11 +465,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const [dashboardMachine, setDashboardMachine] = useState<CloudMachine | null>(null)
   const switchOpener = useRef<HTMLElement | null>(null)
   const dashboardClosed = useCallback(() => setDashboardMachine(null), [])
-  const readDashboardUsage = useMemo(() => {
-    if (!dashboardMachine) return undefined
-    const fetchUsage = dashboardFetch(dashboardMachine.id, () => client.current)
-    return () => readMachineUsage(fetchUsage)
-  }, [dashboardMachine?.id])
+  const dashboardRead = useMemo(() => dashboardMachine
+    ? dashboardFetch(dashboardMachine.id, () => client.current) : undefined, [dashboardMachine?.id])
+  const readDashboardUsage = useMemo(() => dashboardRead
+    ? () => readMachineUsage(dashboardRead) : undefined, [dashboardRead])
   const switcherRef = useRef<HTMLDivElement>(null)
   const switchButtonRef = useRef<HTMLButtonElement>(null)
   const closeSwitcher = useCallback(() => {
@@ -661,18 +662,22 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   }, [transport])
 
   /** The machine list as the client computes it from what it has decrypted. */
+  const machineListRequest = useRef(0)
   const listMachines = useCallback(() => {
     const current = client.current
     if (!current) return
+    const request = ++machineListRequest.current
     if (recheck.current) clearTimeout(recheck.current)
     machinesByCapability(current, claimedPairings.current).then(
       (answer) => {
+        if (client.current !== current || request !== machineListRequest.current) return
         setMachineList(machineListAnswer(answer))
         // Inside the window after connecting, machines are still arriving
         // channel by channel; look again when it closes.
         if (answer.syncing) recheck.current = setTimeout(listMachines, Math.max(1000, answer.retryAfterMs))
       },
       (error) => {
+        if (client.current !== current || request !== machineListRequest.current) return
         setMachineList(machineListRefusal(error))
       },
     )
@@ -693,6 +698,18 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setMachineList({ phase: "loading" })
     listMachines()
   }, [listMachines])
+
+  // Account membership names candidates; only their complete saved key tuples
+  // restore pairing. Do not wait for the first ss/ or orch/ publication.
+  const registeredPairingIDs = JSON.stringify([...registered.keys()].sort())
+  const pairingRecoveryActive = SIGNED_IN.has(screen.at)
+  useEffect(() => {
+    const current = client.current
+    if (!current || !pairingRecoveryActive) return
+    return watchStoredMachinePairings(current, JSON.parse(registeredPairingIDs) as string[], () => {
+      if (client.current === current) listMachines()
+    }, { document, window })
+  }, [clientEpoch, registeredPairingIDs, listMachines, pairingRecoveryActive])
 
   // A schedule move asks which machines report in now before it calls one
   // offline (`cloud/schedule-machines.ts`): the list above is not drawn again
@@ -1162,6 +1179,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       rename: async (machine, name) => (await renameRef.current(machine, name)) ?? busy,
       forget: async (machine) => (await forgetRef.current(machine)) ?? busy,
       pair: (id) => {
+        if (id === null) { openPairingRef.current(null); return }
         const known = machinesRef.current?.find((m) => m.id === id)
         const named = known ? withAccountNames([known], namesRef.current, present)[0] : null
         openPairingRef.current({ id, name: named ? named.name || named.label || id : id })
@@ -1279,6 +1297,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           return
         }
         case "sign_in":
+          forgetPersonas()
+          clearPersonaDisplayCache()
           setOperationsAccess(false)
           handover.stop()
           setHandoverAccount(null)
@@ -1313,6 +1333,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           setScreen({ at: "failed", code: update.error?.code ?? update.reason ?? "terminal_error" })
           return
         case "revoked": {
+          forgetPersonas()
+          clearPersonaDisplayCache()
           reader.current?.lost()
           setTerminalHost(null)
           // A revoked device keeps no diagnostics authority: the handover in flight stops, opened
@@ -1906,19 +1928,23 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           onClose: closePairing,
           // Pairing already reconnected the line and bootstrapped the row from
           // the authenticated handover. Closing reveals that updated list;
-          // the fingerprint stays here until the person has compared it.
-          onPaired: closePairing,
+          // comparison remains until the person or the trusted helper verifies it.
+          onPaired: () => {
+            const id = pairState.phase === "paired" ? pairState.machineID : ""
+            closePairing()
+            if (id) toast(nextWord("cloudPairDoneToast", { machine: names.get(id)?.name || id }))
+          },
           helpers: quickMachines.filter((machine) =>
             machine.id !== (pairRequest.mode === "offer" ? pairRequest.machine?.id : "") &&
             client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("pair-agent-start") &&
             client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("pair-agent-status"),
           ).map((machine) => ({ id: machine.id, name: machine.name || machine.label || machine.id })),
-          onAgentStart: async (helper: string, offer: string, target: { id: string; name: string }): Promise<PairAgentReply> => {
+          onAgentStart: async (helper: string, offer: string, target: { id: string; name: string }, assistant: "claude" | "codex"): Promise<PairAgentReply> => {
             const request = client.current?._machineRequestAs
             if (!request) return { ok: false, error: "helper_unavailable" }
             try {
               const answer = await request.call(client.current, crypto.randomUUID(), helper, "pair-agent-start",
-                { offer, machine_id: target.id, machine_name: target.name }, "action", 130_000) as Record<string, unknown>
+                { offer, machine_id: target.id, machine_name: target.name, assistant }, "action", 130_000) as Record<string, unknown>
               if (answer?.mode === "agent" && typeof answer.task_id === "string" && answer.task_id) {
                 // The helper owns the new AI Session. Keep its Console mounted
                 // behind the pairing card so the person can see its activity.
@@ -1943,6 +1969,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
               stage: answer.state as PairAgentProgress["stage"],
               summary: typeof answer.summary === "string" ? answer.summary : "",
               failedReason: typeof answer.failed_reason === "string" ? answer.failed_reason : "",
+              comparison: readPairAgentComparison(answer.comparison),
             }
           },
           device: pairDevice(),
@@ -2010,15 +2037,19 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       {chosen && who && transport.kind === "cloud" && screen.at === "console" && (
         <CloudAccountContext.Provider value={{ apiOrigin: transport.config.apiOrigin, deviceID: who.device }}>
           <App cloudOperationsAccess={operationsAccess} cloudOperationsAttention={operationsAttention} key={fleetScope ? "fleet" : reading ?? chosen.id} aside={aside} hideSessionCounts={fleetScope}
-            onChooseDashboardMachine={fleetScope ? () => {
+            onChooseDashboardMachine={() => {
+              if (!fleetScope) { setDashboardMachine(chosen); return }
               switchOpener.current = document.getElementById("machine-dashboard-open")
               setDashboardPicker(true)
               setSwitcherOpen(true)
-            } : undefined}
+            }}
             dashboardRequested={!!dashboardMachine}
             dashboardSource={dashboardMachine && readDashboardUsage ? {
               name: dashboardMachine.name || dashboardMachine.label || dashboardMachine.id,
               readUsage: readDashboardUsage,
+              machineID: dashboardMachine.id,
+              ownerScope: `${who.account}|${who.device}|${dashboardMachine.id}`,
+              apiFetch: dashboardRead!,
               sessions: [...fleetPresentations.current.values()].filter((row) =>
                 row.destination.machineID === dashboardMachine.id && row.projection?.freshness === "current")
                 .map((row) => ({ ...row.status, id: row.destination.sessionID, label: row.title,
@@ -2118,6 +2149,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             }} />
         </CloudAccountContext.Provider>
       )}
+      {words && screen.at !== "console" ? <a className="help-entry" href="/help/questions">{supportWord("mine")}</a> : null}
       {words && (screen.at !== "console" || pairing) && (
         <GateCard
           screen={screen.at === "machines" && !managingMachines &&
@@ -2195,7 +2227,7 @@ function GateCard(props: {
   // Which machine row has its details and rare actions (rename, remove) open.
   const [moreFor, setMoreFor] = useState<string | null>(null)
   useLayoutEffect(() => {
-    L.paintIcon(mark.current, BRAND_MARK, 3)
+    L.paintIcon(mark.current, NAVIGATION_MARK, 3)
   }, [])
   useLayoutEffect(() => {
     if (asking) focusModalContainer(card.current)
@@ -2610,7 +2642,7 @@ function GateCard(props: {
                   const count = sessionsFact(m)
                   const name = m.name || m.label || m.id
                   const identity = machineIdentityFacts(m)
-                  const pairable = m.pairing !== "paired"
+                  const pairable = needsMachinePairing(m.pairing)
                   const open = moreFor === m.id
                   // One word for where the machine stands; the evidence behind it
                   // (platform, id, each access fact, version) is under "⋯".

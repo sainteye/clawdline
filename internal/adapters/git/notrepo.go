@@ -68,12 +68,7 @@ func (n *NotRepos) Remember(cwd string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	now := n.now()
-	for dir, at := range n.seen {
-		if now.Sub(at) >= n.age {
-			delete(n.seen, dir)
-			n.expired++
-		}
-	}
+	n.expireLocked(now)
 	if _, ok := n.seen[cwd]; !ok && len(n.seen) >= n.rows {
 		oldest, first := "", true
 		for dir, at := range n.seen {
@@ -94,11 +89,22 @@ func (n *NotRepos) Forget(cwd string) {
 	n.mu.Unlock()
 }
 
+func (n *NotRepos) expireLocked(now time.Time) {
+	for dir, at := range n.seen {
+		age := now.Sub(at)
+		if age < 0 || age >= n.age {
+			delete(n.seen, dir)
+			n.expired++
+		}
+	}
+}
+
 // AgeReading is the capacity row for NotRepoAgeLimit: Used is the oldest
 // remembered answer's age.
 func (n *NotRepos) AgeReading() capacity.Reading {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.expireLocked(n.now())
 	reading := capacity.Reading{Known: true, WindowSeconds: int64(n.age / time.Second),
 		Counters: capacity.Counters{Expired: n.expired}}
 	now, oldest := n.now(), time.Time{}
@@ -120,6 +126,7 @@ func (n *NotRepos) AgeReading() capacity.Reading {
 func (n *NotRepos) RowsReading() capacity.Reading {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.expireLocked(n.now())
 	return capacity.Reading{Known: true, Used: int64(len(n.seen)),
 		Counters: capacity.Counters{Evicted: n.evicted}}
 }

@@ -19,7 +19,7 @@ export function ChoiceMenu({ value, options, label, disabled, onPick, compact = 
   useEffect(() => {
     if (!open) return
     const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setOpen(false); trigger.current?.focus() } }
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); setOpen(false); trigger.current?.focus() } }
     document.addEventListener("pointerdown", outside)
     document.addEventListener("keydown", escape)
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape) }

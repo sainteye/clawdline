@@ -449,6 +449,8 @@
       "additionalProperties": false,
       "required": ["created", "disposition", "ok", "open_todos", "open_todos_truncated", "open_todos_unknown"],
       "properties": {
+        "delivery_evidence_sha256": {"type":"string", "description":"SHA-256 of the exact optional evidence document stored with session.delivered."},
+        "delivery_evidence_commits": {"type":"integer", "description":"Number of full commit IDs in the adapter-verified evidence."},
         "ok": { "type": "boolean" },
         "created": { "type": "boolean" },
         "disposition": { "$ref": "#/$defs/BrokerDisposition" },

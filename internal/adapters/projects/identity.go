@@ -87,7 +87,15 @@ func canonicalFilesystemPath(path string) string {
 
 // comparablePath is ProjectWorktreeLifecycleService.comparablePath.
 func comparablePath(path string) string {
-	canonical := canonicalFilesystemPath(path)
+	return storedPathKey(canonicalFilesystemPath(path))
+}
+
+// storedPathKey compares saved spellings without asking the filesystem.
+func storedPathKey(path string) string {
+	if path == "" {
+		return ""
+	}
+	canonical := filepath.Clean(path)
 	for _, prefix := range []string{"/private/var/", "/private/tmp/", "/private/etc/"} {
 		if strings.HasPrefix(canonical, prefix) {
 			canonical = strings.TrimPrefix(canonical, "/private")

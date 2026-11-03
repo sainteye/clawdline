@@ -128,6 +128,13 @@ Opening a session goes home first. `#session=…` means the session list with th
 it, and without that line a push arriving while somebody is reading Usage would load the
 transcript underneath a page that is still on screen.
 
+### Session output files
+
+The Session header opens a provenance-backed output index on desktop and phone.
+See [Session output files](session-output-files.md) for supported native receipts,
+explicit publication, bounded downloads and current coverage. This index is
+separate from the project/task document publication list below.
+
 ### Document links
 
 Published MP4 files use the same locator and a dedicated bounded media read; see

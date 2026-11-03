@@ -90,6 +90,8 @@ type WorkV2View struct {
 	// Landings is every landing recorded for the item (ItemLandings), read
 	// only for one item; nil on a page of items and on a write's answer.
 	Landings []ItemLandingV2
+	// IssueLink is the item's issue sync, when it has one (docs/issue-sync.md).
+	IssueLink *store.IssueLink
 	// EffectIDs are durable side effects recorded by this write. They are not
 	// part of the work-system response; the transport hands them to the shared
 	// outbox runner after the transaction commits.
@@ -164,6 +166,9 @@ func mapWorkV2Error(err error) error {
 		return typed
 	}
 	var refusal work.RefusalV2
+	if errors.Is(err, store.ErrIssueLinkMoved) {
+		return workV2Error(http.StatusConflict, "issue_sync_already_linked", "This item's issue already exists in another tracker.")
+	}
 	switch {
 	case err == nil:
 		return nil
@@ -221,6 +226,9 @@ type NewWorkV2 struct {
 	// the person's create route carries it, and only a Feature takes true.
 	ReviewRequired bool
 	Actor          string
+	// IssueTarget opts the new item into issue sync (docs/issue-sync.md).
+	// The transport resolves it and checks the authorization first.
+	IssueTarget *work.IssueTarget
 }
 
 func validateWorkV2Acceptance(criteria string) error {
@@ -350,6 +358,12 @@ func (w *WorkSystemV2) Create(ctx context.Context, n NewWorkV2, file WorkV2Filer
 			return err
 		} else if ok {
 			v.Item = existing
+			if n.IssueTarget != nil {
+				if err := tx.LinkIssue(existing, *n.IssueTarget, n.Actor, now); err != nil {
+					return err
+				}
+				v.IssueLink = &store.IssueLink{WorkID: existing.ID, Target: *n.IssueTarget}
+			}
 			if file != nil {
 				if k, a, complete := file(v); complete {
 					return tx.CompleteReceipt(k, a)
@@ -360,6 +374,12 @@ func (w *WorkSystemV2) Create(ctx context.Context, n NewWorkV2, file WorkV2Filer
 		if err := tx.CreateItem(i, n.Actor, payload(map[string]any{"project_id": i.ProjectID, "kind": i.Kind,
 			"review_required": i.ReviewRequired})); err != nil {
 			return err
+		}
+		if n.IssueTarget != nil {
+			if err := tx.LinkIssue(i, *n.IssueTarget, n.Actor, now); err != nil {
+				return err
+			}
+			v.IssueLink = &store.IssueLink{WorkID: i.ID, Target: *n.IssueTarget}
 		}
 		if file != nil {
 			if k, a, ok := file(v); ok {
@@ -408,21 +428,37 @@ func (w *WorkSystemV2) Item(ctx context.Context, id string) (WorkV2View, error) 
 	if err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
 	}
-	return WorkV2View{Item: i, Assignments: a, Documents: d, Images: images, Steps: steps, Events: events,
+	links, err := w.Store.IssueLinks(ctx, []string{id})
+	if err != nil {
+		return WorkV2View{}, mapWorkV2Error(err)
+	}
+	v := WorkV2View{Item: i, Assignments: a, Documents: d, Images: images, Steps: steps, Events: events,
 		CardProgress: progress[id], Landings: landings,
-		Gate: &gate}, nil
+		Gate: &gate}
+	if link, ok := links[id]; ok {
+		v.IssueLink = &link
+	}
+	return v, nil
 }
 
-func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, includeClaims bool) ([]WorkV2View, error) {
+func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, includeClaims, details bool) ([]WorkV2View, error) {
 	ids := make([]string, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)
 	}
-	relations, err := w.Store.WorkV2Relations(ctx, ids)
+	readRelations := w.Store.WorkV2Relations
+	if !details {
+		readRelations = w.Store.WorkV2CardRelations
+	}
+	relations, err := readRelations(ctx, ids)
 	if err != nil {
 		return nil, mapWorkV2Error(err)
 	}
 	gates, err := w.Store.WorkGateCompactDetails(ctx, items)
+	if err != nil {
+		return nil, mapWorkV2Error(err)
+	}
+	links, err := w.Store.IssueLinks(ctx, ids)
 	if err != nil {
 		return nil, mapWorkV2Error(err)
 	}
@@ -437,6 +473,9 @@ func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, inclu
 		if compact, ok := gates[item.ID]; ok {
 			view.GateCompact = &compact
 		}
+		if link, ok := links[item.ID]; ok {
+			view.IssueLink = &link
+		}
 		out = append(out, view)
 	}
 	return out, nil
@@ -450,7 +489,7 @@ func (w *WorkSystemV2) List(ctx context.Context, project, owner, status, search 
 	if err != nil {
 		return nil, false, mapWorkV2Error(err)
 	}
-	out, err := w.pageViews(ctx, items, true)
+	out, err := w.pageViews(ctx, items, true, true)
 	if err != nil {
 		return nil, false, err
 	}
@@ -491,6 +530,15 @@ func decodeWorkV2ListCursor(raw string) (workV2ListCursor, error) {
 // the complete 100-row projection used by Session ownership and internal
 // reconciliation; paging the person's screen must not silently page those.
 func (w *WorkSystemV2) ListPage(ctx context.Context, project, status, search, rawCursor string) (WorkV2ListPage, error) {
+	return w.listPage(ctx, project, status, search, rawCursor, true)
+}
+
+// ListCardsPage shares paging and full-source search with ListPage, without detail relations.
+func (w *WorkSystemV2) ListCardsPage(ctx context.Context, project, status, search, rawCursor string) (WorkV2ListPage, error) {
+	return w.listPage(ctx, project, status, search, rawCursor, false)
+}
+
+func (w *WorkSystemV2) listPage(ctx context.Context, project, status, search, rawCursor string, details bool) (WorkV2ListPage, error) {
 	if status != "open" && status != "done" && status != "all" {
 		return WorkV2ListPage{}, workV2Error(http.StatusBadRequest, "invalid_status", "Status is open, done or all.")
 	}
@@ -503,7 +551,7 @@ func (w *WorkSystemV2) ListPage(ctx context.Context, project, status, search, ra
 	if err != nil {
 		return WorkV2ListPage{}, mapWorkV2Error(err)
 	}
-	rows, err := w.pageViews(ctx, items, true)
+	rows, err := w.pageViews(ctx, items, true, details)
 	if err != nil {
 		return WorkV2ListPage{}, err
 	}
@@ -519,7 +567,7 @@ func (w *WorkSystemV2) RecentlyCompleted(ctx context.Context, session string) ([
 	if err != nil {
 		return nil, false, mapWorkV2Error(err)
 	}
-	out, err := w.pageViews(ctx, items, false)
+	out, err := w.pageViews(ctx, items, false, true)
 	if err != nil {
 		return nil, false, err
 	}
@@ -2252,4 +2300,20 @@ func AgentExpectedVersion(v int64) int64 {
 		return AnyVersion
 	}
 	return v
+}
+
+// LinkIssue opts an existing item into issue sync, the person's choice made
+// as they assign it (docs/issue-sync.md). A closed item takes no new link.
+func (w *WorkSystemV2) LinkIssue(ctx context.Context, id string, target work.IssueTarget, actor string) error {
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		item, err := tx.Item(id)
+		if err != nil {
+			return err
+		}
+		if item.Phase.Terminal() {
+			return work.RefuseV2("item_terminal", "A closed item is not synced.")
+		}
+		return tx.LinkIssue(item, target, actor, w.now())
+	})
+	return mapWorkV2Error(err)
 }

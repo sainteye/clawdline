@@ -617,8 +617,12 @@ func TestOwnedSessionChecksRevocationAndExactIdentityBeforeWriting(t *testing.T)
 	if err != nil {
 		t.Fatal("second preview refused", err)
 	}
-	if _, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir}); err == nil {
-		t.Fatal("preview process limit ignored")
+	third, err := h.Open(context.Background(), ports.OpenRequest{Cwd: dir})
+	if err != nil {
+		t.Fatal("third explicit conversation refused", err)
+	}
+	if err := h.Close(context.Background(), third); err != nil {
+		t.Fatal(err)
 	}
 	if err := h.Close(context.Background(), second); err != nil {
 		t.Fatal(err)

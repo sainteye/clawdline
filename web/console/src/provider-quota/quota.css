@@ -14,10 +14,10 @@
 .quota-provider:hover { color: var(--ink); }
 .quota-logo, .quota-logo svg { display: block; width: 16px; height: 16px; flex: 0 0 16px; }
 .provider-quota-bar .quota-logo, .provider-quota-bar .quota-logo svg { width: 12px; height: 12px; flex-basis: 12px; }
-.quota-full-windows { display: flex; align-items: center; gap: 8px; }
-.quota-window-separator { color: var(--faint); }
-.quota-compact-window { display: none; }
-.quota-window { display: inline-flex; align-items: center; gap: 5px; }
+.quota-provider-name { flex-shrink: 0; }
+/* One reading per provider: 7d (or the tightest window); the rest open with the details. */
+.quota-compact-window { display: inline-flex; min-width: 0; overflow: hidden; }
+.quota-window { display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; }
 .quota-window progress { width: 56px; height: 5px; border: 0; appearance: none; background: var(--line); border-radius: 4px; overflow: hidden; color: var(--dim); }
 .quota-window progress::-webkit-progress-bar { background: var(--line); }
 .quota-window progress::-webkit-progress-value { background: var(--dim); }
@@ -27,7 +27,6 @@
 .quota-window[data-urgent] { color: var(--accent); }
 .quota-window-name, .quota-reset, .quota-caption { color: var(--faint); }
 .quota-window-name { font-size: 10px; }
-.quota-provider[data-provider="gemini"] .quota-window-name { display: none; }
 .quota-stale { font-size: 10px; color: var(--faint); }
 .quota-provider[data-stale] progress { opacity: .5; }
 .quota-refresh, .quota-more { flex: 0 0 auto; padding: 4px; }
@@ -52,11 +51,14 @@
     gap: 8px; padding: 8px 10px calc(8px + max(var(--indicator, 0px), env(safe-area-inset-bottom, 0px), 12px));
   }
   .app[data-view="detail"] ~ .provider-quota-bar { display: none; }
-  .quota-full-windows { display: none; }
-  .quota-compact-window { display: inline-flex; }
+  .quota-compact-window { text-overflow: ellipsis; white-space: nowrap; }
+  .quota-compact-window .quota-window { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quota-compact-window .quota-window span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .quota-compact-window .quota-window-name { display: none; }
   .quota-machine { display: none; }
-  .quota-providers { gap: 12px; }
+  .quota-providers { gap: 12px; overflow: hidden; }
+  .quota-provider { min-width: 0; flex-shrink: 1; overflow: hidden; }
+  .quota-stale { flex-shrink: 0; }
   .quota-compact-window progress, .quota-compact-window .quota-reset { display: none; }
 }
 

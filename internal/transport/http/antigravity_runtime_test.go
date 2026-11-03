@@ -415,3 +415,18 @@ func TestAntigravityRuntimeKeepsMissingAndUnknownDistinct(t *testing.T) {
 		t.Fatal("unavailable installation created runtime")
 	}
 }
+
+func TestAntigravityRuntimeAcceptsCapabilityVerifiedNewerVersions(t *testing.T) {
+	s, _ := runtimeServer(t)
+	original := s.antigravityInstallation
+	s.antigravityInstallation = func(ctx context.Context) antigravity.Installation {
+		info := original(ctx)
+		info.Version = "2.0.0"
+		return info
+	}
+	stop, err := s.StartAntigravity(context.Background(), AntigravityRuntimeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop()
+}

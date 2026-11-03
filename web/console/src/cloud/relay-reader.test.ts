@@ -1938,6 +1938,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/v2/human-interventions/conversation%3A10000000-0000-4000-8000-000000000002", "work.v2.human-interventions", { terminal: "conversation:10000000-0000-4000-8000-000000000002" }],
   ["/v1/projects", "projects", {}],
   ["/v1/projects/cloud-p1/files", "project-file-list", { project: "p1" }],
+  ["/v1/projects/cloud-p1/graphify", "project-graphify", { project: "p1" }],
   ["/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-read", { project: "p1", file: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
   ["/v1/projects/cloud-p1/antigravity-consent", "project-antigravity-consent-status", { project: "p1" }],
   ["/v1/projects/cloud-p1/unify", "project-unify-plan", { project: "p1" }],
@@ -2057,6 +2058,7 @@ test("squad reads carry exact scope, binding and cursor fields to the chosen mac
   const client = new FakeClient()
   const r = reader(client, { t: 1000 })
   const cases: [string, string, Record<string, unknown>][] = [
+    ["/v1/tool-library", "tools.catalog", {}],
     ["/v1/squad/catalog", "squad.catalog", {}],
     ["/v1/squad/scopes", "squad.scopes", {}],
     ["/v1/squad/skill-sources?provider=codex&place_id=p1", "squad.skill-sources", { provider: "codex", place_id: "p1" }],
@@ -2359,5 +2361,84 @@ test("both Cloud list paths reuse provider counts without opening rich rows or i
     payload.agent_count_unknown = false
     assert.equal(await drawn(), undefined, "older machines do not invent zero")
     assert.equal(client.reads.length, 0, "the list never requests per-Session provider work")
+  }
+})
+
+test("board summaries use the versioned word only when the machine advertises it", async () => {
+  for (const capability of ["yes", "unknown", "no"]) {
+    const client = new FakeClient()
+    ;(client as unknown as { _machineImplements(machine: string, word: string): string })._machineImplements =
+      (_machine, word) => word === "work.v2.cards" ? capability : "unknown"
+    const r = reader(client, { t: 10_000 })
+    const response = await r.fetch("/v1/work/v2/items?view=cards-v1&project=cloud-p1&status=all&q=needle&cursor=page-2")
+    assert.equal(response.status, 200)
+    assert.deepEqual(client.reads.at(-1), {
+      machine: "mac-a", word: capability === "yes" ? "work.v2.cards" : "work.v2.search",
+      body: { project: "p1", status: "all", query: "needle", cursor: "page-2" },
+    })
+  }
+})
+
+test("expanding a stored tool body carries its exact machine and execution pin", async () => {
+  const client = new FakeClient()
+  const target = { machineID: "mac-a", sessionID: "s1", executionGeneration: "a".repeat(32) }
+  const signal = new AbortController().signal
+  const view = "entry-v1z:0:" + "b".repeat(64)
+  const requests: unknown[] = []
+  Object.assign(client, { readForGeneration: async (...args: unknown[]) => {
+    requests.push(args)
+    return { reference: "0:" + "b".repeat(64), entry: { role: "tool", text: "complete stored output" } }
+  } })
+  const r = new RelayReader("mac-a", { classicStatus: true, now: () => 1000,
+    resolveSession: async () => target })
+  r.attach(client)
+  const answer = await r.fetch("/v1/transcript?session=s1&view=" + view, { signal })
+  assert.equal(answer.status, 200)
+  assert.deepEqual(requests, [[target, "transcript", { limit: 200, view }, signal]])
+  assert.equal(client.asks, 0, "expansion must not be replaced by a cached full-page read")
+})
+
+
+test("Graphify session reads preserve the exact session and reject extra fields", async () => {
+ const client=new FakeClient();const r=reader(client,{t:1000})
+ const res=await r.fetch("/v1/sessions/"+encodeURIComponent("%19")+"/graphify")
+ assert.equal(res.status,200)
+ assert.deepEqual(client.sessionPageReads,[{identity:{machine:"mac-a",session:"%19"},word:"session-graphify",body:{},answer:"session-graphify"}])
+ const bad=await r.fetch("/v1/sessions/"+encodeURIComponent("%19")+"/graphify?path=/elsewhere")
+ assert.equal(bad.status,501);assert.equal(client.sessionPageReads.length,1)
+})
+
+test("Cloud restores native prompt text only from the current authorized execution row", async () => {
+  for (const fleet of [false, true]) {
+    const client = new FakeClient()
+    const now = 1_000_000
+    const execution = "a".repeat(32)
+    const destination = { machineID: "mac-a", sessionID: "s1", executionGeneration: execution }
+    const projection = { destination, assistant: "claude" as const, state: "idle", freshness: "current" as const, observedAt: now }
+    const suggestion = { id: "native-1", text: "Run the fixture tests", source: "claude-terminal", conversation_id: "conversation-a", observed_at: 1, state: "available" }
+    const rich = (extra: Record<string, unknown> = {}) => ({ machine: "mac-a", session: "s1", execution_generation: execution,
+      state: "idle", prompt_suggestion: suggestion, source: { freshness: "current", observed_at: now / 1000 }, ...extra })
+    const held = new Map<string, unknown>([["mac-a\u0000s1", rich()]])
+    Object.assign(client, fleet ? { detailSnapshots: held } : { sessionSnapshots: held })
+    client.statusSnapshots = new Map([
+      [JSON.stringify(["mac-a", SESSION_INVENTORY_ID]), { payload: { at: now / 1000, complete: true,
+        snapshot_generation: execution, inventory: { version: 1, sessions: ["s1"] } } }],
+      [JSON.stringify(["mac-a", "s1"]), { payload: { machine_id: "mac-a", session_id: "s1", execution_generation: execution,
+        snapshot_generation: execution, state: "idle", assistant: "claude", source: { freshness: "current", observed_at: now / 1000 } } }],
+    ])
+    const reader = new RelayReader("mac-a", { classicStatus: true, now: () => now,
+      ...(fleet ? { fleetTarget: () => destination } : {}),
+      listPresentations: async () => [{ destination, title: "Fixture Session", assistant: "claude", status: { state: "idle", sessionId: "conversation-a" }, projection }],
+    })
+    reader.attach(client)
+    const drawn = async () => (await reader.snapshot()).sessions[0]
+    assert.deepEqual((await drawn()).prompt_suggestion, suggestion)
+    for (const extra of [{ machine: "mac-b" }, { session: "s2" }, { execution_generation: "b".repeat(32) }, { state: "working" },
+      { source: { freshness: "unverified", observed_at: now / 1000 } }, { source: { freshness: "current", observed_at: (now - 600_000) / 1000 } }]) {
+      held.set("mac-a\u0000s1", rich(extra))
+      assert.equal((await drawn()).prompt_suggestion, undefined)
+    }
+    held.set("mac-a\u0000s1", rich({ prompt_suggestion: { ...suggestion, id: undefined, text: undefined, state: "none", observed_at: 2 } }))
+    assert.equal((await drawn()).prompt_suggestion?.state, "none")
   }
 })

@@ -17,6 +17,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 )
 
 // Past is StartPoints.Past: one conversation an assistant has already written
@@ -59,14 +61,15 @@ type front struct {
 	opening string
 	// said is the whole of that first turn's text, which the weak-title
 	// rule judges.
-	said         string
-	entrypoint   string
-	promptSource string
-	dispatched   bool
+	said          string
+	entrypoint    string
+	promptSource  string
+	dispatched    bool
+	remoteControl bool
 }
 
 func (f front) isConversation() bool {
-	return !f.dispatched && f.entrypoint != "sdk-cli" && f.promptSource != "sdk"
+	return !f.dispatched && (f.remoteControl || f.entrypoint != "sdk-cli" && f.promptSource != "sdk")
 }
 
 var (
@@ -78,7 +81,7 @@ var (
 // project's transcript folder, newest first, conversations somebody had only.
 // `open` is every transcript something is writing to, by resolved path.
 func ClaudePast(place Place, open map[string]bool, titles PastTitles, limit, scan int) []Past {
-	dir := filepath.Join(home(), ".claude", "projects", Slug(place.Path))
+	dir := filepath.Join(transcript.ClaudeConfigDir(home()), "projects", Slug(place.Path))
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
@@ -179,7 +182,7 @@ func cachedFront(path string) front {
 		return hit
 	}
 	found := frontOfFile(path, 60, 8<<20)
-	if found.opening == "" {
+	if found.opening == "" || !found.isConversation() && !found.dispatched {
 		return found
 	}
 	frontsMu.Lock()
@@ -197,18 +200,35 @@ func frontOfFile(path string, records, limit int) front {
 	}
 	defer f.Close()
 	r := bufio.NewReaderSize(io.LimitReader(f, int64(limit)), 64<<10)
+	var first front
+	remoteControl := false
 	for seen := 0; seen < records; seen++ {
 		line, err := r.ReadBytes('\n')
 		if len(bytes.TrimSpace(line)) > 0 {
-			if found, ok := frontInRecord(line, 80); ok {
-				return found
+			var bridge struct {
+				Type            string `json:"type"`
+				BridgeSessionID string `json:"bridgeSessionId"`
+			}
+			if json.Unmarshal(line, &bridge) == nil && (bridge.Type == "bridge-session" || bridge.Type == "user") &&
+				((strings.HasPrefix(bridge.BridgeSessionID, "session_") && len(bridge.BridgeSessionID) > len("session_")) ||
+					(strings.HasPrefix(bridge.BridgeSessionID, "cse_") && len(bridge.BridgeSessionID) > len("cse_"))) {
+				remoteControl = true
+			}
+			if first.opening == "" {
+				if found, ok := frontInRecord(line, 80); ok {
+					first = found
+				}
+			}
+			first.remoteControl = remoteControl
+			if first.opening != "" && (first.isConversation() || first.dispatched) {
+				return first
 			}
 		}
 		if err != nil {
 			break
 		}
 	}
-	return front{}
+	return first
 }
 
 // frontInRecord is StartPoints.front(inRecord:limit:). The type is read after
@@ -354,6 +374,12 @@ func CodexPast(ctx context.Context, place Place, open map[string]bool, titles Pa
 	return rows, nil
 }
 
+// codexUserSource admits interactive CLI and IDE conversations, never exec or
+// provider subagents. The same policy governs discovery, listing and resume.
+func codexUserSource(source string) bool {
+	return source == "cli" || source == "vscode"
+}
+
 // codexListed is CodexNaming.listedThreads(in:cwd:open:).
 func codexListed(response []byte, cwd string, open map[string]bool, titles PastTitles) []Past {
 	var answer struct {
@@ -364,6 +390,8 @@ func codexListed(response []byte, cwd string, open map[string]bool, titles PastT
 				UpdatedAt json.RawMessage `json:"updatedAt"`
 				Preview   string          `json:"preview"`
 				Name      *string         `json:"name"`
+				Source    json.RawMessage `json:"source"`
+				Ephemeral bool            `json:"ephemeral"`
 			} `json:"data"`
 		} `json:"result"`
 	}
@@ -372,8 +400,14 @@ func codexListed(response []byte, cwd string, open map[string]bool, titles PastT
 	}
 	out := []Past{}
 	for _, row := range answer.Result.Data {
-		if row.Cwd != cwd {
+		if row.Cwd != cwd || row.Ephemeral {
 			continue
+		}
+		if len(row.Source) > 0 {
+			var source string
+			if json.Unmarshal(row.Source, &source) != nil || !codexUserSource(source) {
+				continue
+			}
 		}
 		id, ok := SessionName(row.ID)
 		if !ok {
@@ -456,7 +490,7 @@ func codexExecutable() string {
 func codexThreadList(ctx context.Context, exe, cwd string, limit int) ([]byte, error) {
 	return codexRequest(ctx, exe, "thread/list", map[string]any{
 		"archived": false, "cwd": cwd, "limit": max(1, limit),
-		"sortDirection": "desc", "sortKey": "updated_at", "sourceKinds": []string{"cli"}})
+		"sortDirection": "desc", "sortKey": "updated_at", "sourceKinds": []string{"cli", "vscode"}})
 }
 
 func codexRequest(ctx context.Context, exe, method string, params map[string]any) ([]byte, error) {
@@ -581,7 +615,7 @@ func CodexPastPage(ctx context.Context, place Place, open map[string]bool, title
 
 func codexPastPage(ctx context.Context, exe string, place Place, open map[string]bool, titles PastTitles, cursor string) ([]Past, string, error) {
 	params := map[string]any{"archived": false, "cwd": place.Path, "limit": CodexPastPageLimit,
-		"sortDirection": "desc", "sortKey": "updated_at", "sourceKinds": []string{"cli"}}
+		"sortDirection": "desc", "sortKey": "updated_at", "sourceKinds": []string{"cli", "vscode"}}
 	if cursor != "" {
 		params["cursor"] = cursor
 	}
@@ -648,7 +682,8 @@ func codexConversation(ctx context.Context, exe string, place Place, id string) 
 	if json.Unmarshal(reply.Result.Thread, &thread) != nil || len(thread.Source) == 0 {
 		return false, ErrCodexUnavailable
 	}
-	if string(thread.Source) != `"cli"` || thread.Ephemeral {
+	var source string
+	if json.Unmarshal(thread.Source, &source) != nil || !codexUserSource(source) || thread.Ephemeral {
 		return false, nil
 	}
 	// Reuse the list's directory, UUID and child exclusions for the selected row.

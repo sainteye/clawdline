@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { StatusCloudClient, pinnedReplyMatches, statusChannel } from "./status-client.js"
+import { StatusCloudClient, applyTranscriptDelta, pinnedReplyMatches, statusChannel } from "./status-client.js"
 import { base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
 
 const zero = (length) => Buffer.alloc(length).toString("base64")
@@ -8,6 +8,99 @@ const envelope = (ch) => ({ v: 1, ch, seq: 1, ts: 1, class: "stream", key_id: "k
   ct: zero(16), sender: "sender", sig: zero(64) })
 const genA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const genB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+function machineCountClient() {
+  const client = Object.create(StatusCloudClient.prototype)
+  client._knownMachines = () => ["mac", "linux"]
+  client.orchestratorSnapshots = new Map(["mac", "linux"].map(id => [id, {
+    at: Date.now() / 1000, machine: { platform: id === "mac" ? "darwin" : "linux" },
+  }]))
+  client.machineDescriptors = new Map()
+  client.machineObservedAt = new Map()
+  client.unpairedMachines = new Set()
+  client.viewerVerified = new Map([["mac", {}], ["linux", {}]])
+  client.pairingSeen = new Set()
+  client.sessionSnapshots = new Map()
+  client.statusSnapshots = new Map()
+  return client
+}
+
+function holdCountInventory(client, machine, sessions, overrides = {}) {
+  const identity = { machine, session: "__clawdline_inventory_v1__" }
+  const marker = { identity, observedAt: Date.now(), sequence: 1,
+    payload: { at: Date.now() / 1000, complete: true, snapshot_generation: genA,
+      inventory: { version: 1, sessions }, ...overrides } }
+  client.statusSnapshots.set(JSON.stringify([machine, identity.session]), marker)
+  return marker
+}
+
+test("machine counts follow the complete status inventory before any Session detail opens", async () => {
+  const client = machineCountClient()
+  holdCountInventory(client, "mac", ["root", "child", "idle"])
+  holdCountInventory(client, "linux", ["root"])
+  const counts = async () => (await client.machines()).machines.map(row => [row.id, row.sessions])
+  assert.deepEqual(await counts(), [["mac", 3], ["linux", 1]])
+  client.sessionSnapshots.set("mac\u0000root", { machine: "mac", session: "root" })
+  client.sessionSnapshots.set("mac\u0000removed", { machine: "mac", session: "removed" })
+  assert.deepEqual(await counts(), [["mac", 3], ["linux", 1]], "opened or obsolete details are not a census")
+  holdCountInventory(client, "mac", ["root"])
+  assert.deepEqual(await counts(), [["mac", 1], ["linux", 1]], "a newer complete set replaces the count")
+  holdCountInventory(client, "mac", [])
+  assert.deepEqual(await counts(), [["mac", 0], ["linux", 1]], "a complete empty set proves zero")
+})
+
+test("missing, partial, expired or malformed status inventories never invent a machine count", async () => {
+  const client = machineCountClient()
+  client.sessionSnapshots.set("mac\u0000opened", { machine: "mac", session: "opened" })
+  assert.equal((await client.machines()).machines[0].sessions, undefined)
+  for (const overrides of [
+    { complete: false }, { at: undefined }, { at: Date.now() / 1000 - 301 },
+    { at: Date.now() / 1000 + 301 }, { snapshot_generation: "invalid" },
+    { inventory: { version: 1, sessions: ["same", "same"] } },
+    { inventory: { version: 1, sessions: ["__clawdline_inventory_v1__"] } },
+    { inventory: { version: 2, sessions: [] } },
+  ]) {
+    holdCountInventory(client, "mac", [], overrides)
+    assert.equal((await client.machines()).machines[0].sessions, undefined, JSON.stringify(overrides))
+  }
+  const marker = holdCountInventory(client, "mac", [])
+  marker.identity = { machine: "linux", session: marker.identity.session }
+  assert.equal((await client.machines()).machines[0].sessions, undefined, "held identity must match its machine")
+})
+
+test("authenticated inventory replay updates the picker count without subscribing to rich detail", async () => {
+  const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])
+  const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])
+  const client = machineCountClient()
+  client.statusSequences = new Map()
+  client.sequenceBySender = new Map()
+  client.realignSequenceByChannel = new Map()
+  client._machinePairing = async () => ({ keyID: "key", senderID: "sender", senderKey: keys.publicKey, masterKey })
+  client._compareKeyID = () => {}
+  client._sawAuthenticatedEnvelope = () => {}
+  client._recordReceiveFailure = () => {}
+  const readings = []
+  client._emit = () => readings.push(client._machineRows()[0].sessions)
+  for (const [seq, sessions] of [[1, ["root", "child", "idle"]], [2, []]]) {
+    const nonce = crypto.getRandomValues(new Uint8Array(12))
+    const payload = { at: Date.now() / 1000, complete: true, snapshot_generation: genA,
+      inventory: { version: 1, sessions } }
+    const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, masterKey,
+      new TextEncoder().encode(JSON.stringify(payload)))
+    const signed = { ...envelope("ss/mac/__clawdline_inventory_v1__"), seq, ts: Date.now(),
+      nonce: Buffer.from(nonce).toString("base64"), ct: Buffer.from(ct).toString("base64") }
+    signed.sig = Buffer.from(await crypto.subtle.sign({ name: "Ed25519" }, keys.privateKey,
+      envelopeSigningBytes(signed))).toString("base64")
+    const signature = base64Bytes(signed.sig, "sig")
+    signature[0] ^= 1
+    await assert.rejects(client._receiveEnvelope({ ...signed, sig: Buffer.from(signature).toString("base64") }, true),
+      { code: "unreadable_envelope" })
+    await client._receiveEnvelope(signed, true)
+  }
+  assert.deepEqual(readings, [3, 0])
+  assert.equal(client.sessionSnapshots.size, 0)
+  assert.equal((await client.machines()).machines[1].sessions, undefined, "another machine remains unknown")
+})
 
 test("fleet diagnostics choose a paired Mac even when a Linux test machine sorts first", () => {
   const client = Object.create(StatusCloudClient.prototype)
@@ -511,6 +604,7 @@ test("a paired signed ss envelope decrypts into only its machine and Session key
 
 test("pinned transcript sends exact generation and never coalesces another generation", async () => {
   const client = Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor = () => null
   client.pinnedTranscriptFlights = new Map()
   const calls = []
   let settle
@@ -538,6 +632,7 @@ test("pinned transcript sends exact generation and never coalesces another gener
 
 test("an older transcript page names its cursor in the read waiter and preserves its pin", async () => {
   const client = Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor = () => null
   const calls = []
   client._read = (...args) => { calls.push(args); return Promise.resolve({ entries: [], nextBefore: 40 }) }
   const destination = { machineID: "m", sessionID: "s", executionGeneration: genA }
@@ -553,6 +648,7 @@ test("an older transcript page names its cursor in the read waiter and preserves
 
 test("same-offset native pages on different revisions own separate read names", async () => {
   const client = Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor = () => null
   const calls = []
   client._read = (...args) => { calls.push(args); return Promise.resolve({ entries: [] }) }
   const destination = { machineID: "m", sessionID: "s", executionGeneration: genA }
@@ -562,6 +658,122 @@ test("same-offset native pages on different revisions own separate read names", 
   assert.deepEqual(calls.map((args) => args[2].revision), ["agy1:1:123:abc", "agy1:2:123:def"])
   assert.deepEqual(calls.map((args) => args[3]), ["transcript.before.123.revision.agy1:1:123:abc",
     "transcript.before.123.revision.agy1:2:123:def"])
+})
+
+test("native older pages keep their negotiated view through relay and carrier publication", async (t) => {
+  const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"])
+  const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
+  for (const transport of ["relay", "carrier"]) {
+    for (const view of [null, "tools-v1", "tools-v2"]) {
+      await t.test(`${transport}: ${view || "original"}`, async () => {
+        let sequence = 10
+        const client = new StatusCloudClient({ relayURL: "wss://relay.example.test", deviceToken: "fixture",
+          deviceID: "viewer", devicePrivateKey: keys.privateKey, nextSequence: async () => sequence++ })
+        client.ready = true
+        client.machineDescriptor = () => ({ machine: { transcript_tools_v1: !!view, transcript_tools_v2: view === "tools-v2" } })
+        client._unsupportedRefusal = () => null
+        client._offlineRefusal = () => null
+        client._outboundMachinePairing = async () => ({ keyID: "key", masterKey })
+        client._subscriptionRoom = () => null
+        client.subscribe = () => {}
+        client._releaseSubscription = () => {}
+        let published
+        const publication = new Promise(resolve => { published = resolve })
+        client._send = frame => published(frame.envelope)
+        client._carrierFor = () => transport === "carrier" ? { open: true, send: published } : null
+        const revision = "native1:123:fixture"
+        const read = "transcript.before.123.revision." + revision +
+          (view ? ".view." + view + (typeof DecompressionStream === "function" ? "z" : "") : "")
+        const key = "m\u0000s\u0000" + read
+        const controller = new AbortController()
+        const result = client.transcriptPageForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA },
+          123, controller.signal, revision)
+        try {
+          const envelope = await Promise.race([publication, result.then(() => assert.fail("read settled before publication"))])
+          const fields = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: base64Bytes(envelope.nonce, "nonce") }, masterKey, base64Bytes(envelope.ct, "ct"))))
+          assert.equal(envelope.ch, "r/m")
+          assert.equal(fields.revision, revision)
+          assert.equal(fields.view ?? null, view ? view + (typeof DecompressionStream === "function" ? "z" : "") : null)
+          assert.equal(client.readWaiters.size, 1)
+          assert.ok(client.readWaiters.has(key))
+          const body = { entries: [{ role: "assistant", text: "An older message" }], nextBefore: 40 }
+          client._applySnapshot({ kind: "transcript", machine: "m", session: "s" }, {
+            read, machine_id: "m", session_id: "s", expected_generation: genA, seq: envelope.seq, body,
+          }, { seq: 50, ts: Date.now() }, false)
+          assert.deepEqual(await result, body)
+          assert.equal(client.readWaiters.size, 0)
+          assert.equal(client.pinnedReadProofs.size, 0)
+          assert.equal(client.pendingBySequence.size, 0)
+          assert.equal(client.transcriptSnapshots.size, 0)
+        } finally {
+          controller.abort()
+          await result.catch(() => {})
+        }
+      })
+    }
+  }
+})
+
+test("Graphify and Terminal reads cross the real pinned client on relay and carrier without write access", async (t) => {
+  const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"])
+  const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
+  for (const [word, body, writeWord] of [
+    ["session-graphify", { state: "index_missing", nodes: [], links: [] }, "session-graphify-build"],
+    ["native-terminal-screen", { text: "Select a model", execution_generation: genA, frame: "fixture" }, "native-terminal-input"],
+  ]) {
+    for (const transport of ["relay", "carrier"]) {
+      await t.test(`${word}: ${transport}`, async () => {
+        let sequence = 10
+        const client = new StatusCloudClient({ relayURL: "wss://relay.example.test", deviceToken: "fixture",
+          deviceID: "viewer", devicePrivateKey: keys.privateKey, nextSequence: async () => sequence++ })
+        client.ready = true
+        client.allowWrites = false
+        client.machineDescriptor = () => null
+        client._unsupportedRefusal = () => null
+        client._offlineRefusal = () => null
+        client._outboundMachinePairing = async () => ({ keyID: "key", masterKey })
+        client._subscriptionRoom = () => null
+        client.subscribe = () => {}
+        client._releaseSubscription = () => {}
+        let published
+        const publication = new Promise(resolve => { published = resolve })
+        client._send = frame => published(frame.envelope)
+        client._carrierFor = () => transport === "carrier" ? { open: true, send: published } : null
+        const controller = new AbortController()
+        const result = client.readForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA },
+          word, {}, controller.signal)
+        try {
+          const envelope = await Promise.race([publication, result.then(() => assert.fail("read settled before publication"))])
+          const fields = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: base64Bytes(envelope.nonce, "nonce") }, masterKey, base64Bytes(envelope.ct, "ct"))))
+          assert.equal(envelope.ch, "r/m")
+          assert.equal(fields.type, word)
+          assert.equal(fields.machine_id, "m")
+          assert.equal(fields.session, "s")
+          assert.equal(fields.expected_generation, genA)
+          assert.equal(client.allowWrites, false)
+          const key = "m\u0000s\u0000" + word
+          assert.ok(client.readWaiters.has(key))
+          assert.ok(client.pinnedReadProofs.has(key))
+          client._applySnapshot({ kind: "transcript", machine: "m", session: "s" }, {
+            read: word, machine_id: "m", session_id: "s", expected_generation: genA,
+            seq: envelope.seq, body,
+          }, { seq: 50, ts: Date.now() }, false)
+          assert.deepEqual(await result, body)
+          assert.equal(client.readWaiters.size, 0)
+          assert.equal(client.pinnedReadProofs.size, 0)
+          assert.equal(client.pendingBySequence.size, 0)
+          await assert.rejects(() => client.readForGeneration({ machineID: "m", sessionID: "s", executionGeneration: genA },
+            writeWord, {}, controller.signal), { code: "read_only_channel" })
+          assert.equal(client.allowWrites, false)
+        } finally {
+          controller.abort()
+          await result.catch(() => {})
+        }
+      })
+    }
+  }
 })
 
 test("pinned info asks for full detail with the exact machine and generation", async () => {
@@ -650,7 +862,9 @@ test("original detail panels retain their read names on the exact r/ target", as
   client._read = (...args) => { calls.push(args); return Promise.resolve({}) }
   const target = { machineID: "m", sessionID: "s", executionGeneration: genA }
   for (const [word, fields, answer] of [
+    ["info", {parts:"full"}, "info.full"], ["info", {parts:"remote-permission"}, "info.remote-permission"],
     ["git", {}, "git"], ["git-diff", { request: "diff-1", path: "README.md" }, "read:diff-1"],
+    ["outputs", {}, "outputs"], ["output-file", { request: "file-1", id: "a".repeat(64), offset: "0", revision: "", size: "thumb" }, "read:file-1"],
     ["screen", {}, "screen"], ["agent", { agent: "a", limit: 100 }, "agent:a"],
     ["agent", { agent: "a", limit: 100, before: 17 }, "agent:a.before.17"],
     ["shell", { shell: "sh", bytes: 4096 }, "shell:sh"], ["documents", {}, "documents"],
@@ -664,7 +878,7 @@ test("original detail panels retain their read names on the exact r/ target", as
     assert.deepEqual(sent[2], { ...fields, machine_id: "m", expected_generation: genA })
     assert.equal(sent[3], answer)
   }
-  assert.equal(calls.length, 9)
+  assert.equal(calls.length, 13)
   await assert.rejects(() => client.readForGeneration(target, "send", { request: "write-1" }),
     { code: "read_only_channel" })
   await assert.rejects(() => client.readForGeneration({ ...target, executionGeneration: "" }, "git"),
@@ -682,6 +896,7 @@ test("pinned detail refuses to join an unpinned read waiter", async () => {
 
 test("read_transcript-only pinned reads pass the old local write guard", async () => {
   const client = Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor=()=>null
   client.allowWrites = false
   client.retired = false
   client.readWaiters = new Map()
@@ -1350,4 +1565,236 @@ test("an older carrier's pin requirement falls back only its reads and stops new
   assert.equal(c.carrierReads.has("two"), true)
   assert.equal(c._carrierFor("m"), null)
   assert.deepEqual(settled, [])
+})
+
+test("versioned tool views require an authenticated machine capability and reuse only matching pages", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.pinnedTranscriptFlights = new Map()
+  let supported = false
+  client.machineDescriptor = () => ({machine:{transcript_tools_v1:supported}})
+  const asks = []
+  const held = {id:"s",version:"a".repeat(64),entries:[{role:"assistant",text:"held"}]}
+  client._read = async (_identity,_type,fields,answer) => {
+    asks.push({fields,answer})
+    return fields.view?.includes(held.version) ? {unchanged:true,version:held.version} : held
+  }
+  const target = {machineID:"m",sessionID:"s",executionGeneration:genA}
+  assert.equal(await client.transcriptForGeneration(target,undefined,held),held)
+  assert.equal(asks[0].fields.view,undefined)
+  supported = true
+  assert.equal(await client.transcriptForGeneration(target,undefined,held),held)
+  assert.match(asks[1].fields.view,/^tools-v1z?:a{64}$/)
+  assert.equal(asks[1].answer,"transcript.view."+asks[1].fields.view)
+  assert.equal(asks[1].fields.expected_generation,genA)
+  client._read = async () => ({unchanged:true,version:"b".repeat(64)})
+  await assert.rejects(client.transcriptForGeneration(target,undefined,held),error=>error.code==="transcript_cursor_stale")
+})
+
+test("a stale capability falls back once without dropping the execution pin", async () => {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.pinnedTranscriptFlights = new Map()
+  client.machineDescriptor = () => ({machine:{transcript_tools_v1:true}})
+  const asks = []
+  client._read = async (_identity,_type,fields) => {
+    asks.push(fields)
+    if(fields.view) throw Object.assign(new Error("old machine"),{code:"cloud_read_timeout"})
+    return {entries:[]}
+  }
+  await client.transcriptForGeneration({machineID:"m",sessionID:"s",executionGeneration:genA})
+  assert.equal(asks.length,2)
+  assert.equal(asks[1].view,undefined)
+  assert.equal(asks[1].expected_generation,genA)
+})
+
+test("long tool bodies opt into v2 only on a supporting machine, including older pages",async()=>{
+ for(const supported of [false,true]) {
+  const client=Object.create(StatusCloudClient.prototype)
+  client.pinnedTranscriptFlights=new Map()
+  client.machineDescriptor=()=>({machine:{transcript_tools_v1:true,transcript_tools_v2:supported}})
+  const asks=[]
+  client._read=async(_identity,_type,fields,answer)=>{asks.push({fields,answer});return {entries:[]}}
+  const target={machineID:"m",sessionID:"s",executionGeneration:genA}
+  await client.transcriptForGeneration(target)
+  await client.transcriptPageForGeneration(target,200,undefined,"held-revision")
+  assert.equal(asks.length,2)
+  for(const ask of asks) {
+   assert.match(ask.fields.view,supported?/^tools-v2z?$/:/^tools-v1z?$/)
+   assert.equal(ask.fields.expected_generation,genA)
+   assert.ok(ask.answer.endsWith(".view."+ask.fields.view))
+  }
+  assert.equal(asks[1].fields.revision,"held-revision")
+ }
+})
+
+test("a stale v2 descriptor retries one v1 read with the same execution and history cursor",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.pinnedTranscriptFlights=new Map()
+ client.machineDescriptor=()=>({machine:{transcript_tools_v1:true,transcript_tools_v2:true}})
+ const asks=[]
+ client._read=async(_identity,_type,fields,answer)=>{
+  asks.push({fields,answer})
+  if(fields.view.startsWith("tools-v2")) throw Object.assign(new Error("downgraded"),{code:"invalid_transcript_view"})
+  return {entries:[]}
+ }
+ const target={machineID:"m",sessionID:"s",executionGeneration:genA}
+ await client.transcriptForGeneration(target)
+ await client.transcriptPageForGeneration(target,200,undefined,"revision")
+ assert.equal(asks.length,4)
+ for(const index of [1,3]) {
+  assert.match(asks[index].fields.view,/^tools-v1z?$/)
+  assert.equal(asks[index].fields.expected_generation,genA)
+ }
+ assert.equal(asks[3].fields.before,200)
+ assert.equal(asks[3].fields.revision,"revision")
+})
+
+test("transcript deltas replace revisions and preserve repeated entries atomically",()=>{
+ const row=text=>({role:"tool",text})
+ const held={id:"s",version:"a".repeat(64),signature:"old",evidence:"transcript",nextBefore:10,entries:[row("same"),row("pending"),row("same")]}
+ const reply={baseVersion:held.version,entryCount:4,page:{id:"s",version:"b".repeat(64),signature:"new",evidence:"transcript",entries:[]},delta:[{start:1,deleteCount:1,entries:[row("complete"),row("same")]}]}
+ const result=applyTranscriptDelta(held,reply,"s",200)
+ assert.deepEqual(result.entries.map(x=>x.text),["same","complete","same","same"])
+ assert.equal(result.signature,"new")
+ assert.equal(result.nextBefore,undefined,"current metadata replaces stale metadata")
+ assert.equal(held.entries[1].text,"pending","the held page is immutable until the update passes")
+})
+
+test("malformed or foreign transcript deltas never change the held page",()=>{
+ const held={id:"s",version:"a".repeat(64),entries:[{role:"assistant",text:"kept"}]}
+ const good={baseVersion:held.version,entryCount:2,page:{id:"s",version:"b".repeat(64),signature:"new",evidence:"transcript",entries:[]},delta:[{start:1,deleteCount:0,entries:[{role:"assistant",text:"new"}]}]}
+ const bad=[{...good,baseVersion:"c".repeat(64)}, {...good,page:{...good.page,id:"other"}},
+  {...good,delta:[{...good.delta[0],start:-1}]}, {...good,delta:[{...good.delta[0],start:2}]},
+  {...good,delta:[{...good.delta[0],deleteCount:1}]}, {...good,delta:[{...good.delta[0],entries:null}]},
+  {...good,delta:[{...good.delta[0],entries:[{role:"tool"}]}]}, {...good,page:{...good.page,entries:[{role:"tool",text:"ambiguous"}]}}]
+ for(const reply of bad) assert.throws(()=>applyTranscriptDelta(held,reply,"s",200),error=>error.code==="transcript_cursor_stale")
+ assert.throws(()=>applyTranscriptDelta(held,{...good,entryCount:1},"s"),error=>error.code==="transcript_cursor_stale")
+ assert.deepEqual(held.entries,[{role:"assistant",text:"kept"}])
+})
+
+test("incremental transcript reads require a negotiated capability and merge before publishing",async()=>{
+ for(const supported of [false,true]) {
+  const client=Object.create(StatusCloudClient.prototype)
+  client.pinnedTranscriptFlights=new Map()
+  client.machineDescriptor=()=>({machine:{transcript_tools_v1:true,transcript_tools_v2:true,transcript_delta_v1:supported}})
+  const held={id:"s",version:"a".repeat(64),entries:[{role:"assistant",text:"kept"}]}
+  const full={id:"s",version:"b".repeat(64),signature:"next",evidence:"transcript",entries:[...held.entries,{role:"assistant",text:"new"}]}
+  const asks=[]
+  client._read=async(_identity,_type,fields,read,_x,options)=>{
+   asks.push({fields,read,signal:options.signal})
+   return fields.view.startsWith("delta-")?{baseVersion:held.version,entryCount:full.entries.length,page:{...full,entries:[]},delta:[{start:1,deleteCount:0,entries:[full.entries[1]]}]}:full
+  }
+  const controller=new AbortController(),target={machineID:"m",sessionID:"s",executionGeneration:genA}
+  assert.deepEqual(await client.transcriptForGeneration(target,controller.signal,held),full)
+  assert.match(asks[0].fields.view,supported?/^delta-v1z?:a{64}$/:/^tools-v2z?:a{64}$/)
+  assert.equal(asks[0].read,"transcript.view."+asks[0].fields.view)
+  assert.equal(asks[0].fields.machine_id,"m")
+  assert.equal(asks[0].fields.expected_generation,genA)
+  assert.equal(asks[0].signal,controller.signal)
+  await client.transcriptForGeneration(target)
+  assert.match(asks[1].fields.view,/^tools-v2z?$/,"the first page is always full")
+ }
+})
+
+test("a stale delta recovers once with a full compact read and keeps cancellation and scope",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.pinnedTranscriptFlights=new Map()
+ client.machineDescriptor=()=>({machine:{transcript_tools_v1:true,transcript_tools_v2:true,transcript_delta_v1:true}})
+ const held={id:"s",version:"a".repeat(64),entries:[]},full={id:"s",entries:[{role:"assistant",text:"recovered"}]}
+ const asks=[],controller=new AbortController(),target={machineID:"m",sessionID:"s",executionGeneration:genA}
+ client._read=async(_identity,_type,fields,_read,_x,options)=>{
+  asks.push({fields,signal:options.signal})
+  return fields.view.startsWith("delta-")?{baseVersion:"wrong",delta:{}}:full
+ }
+ assert.equal(await client.transcriptForGeneration(target,controller.signal,held),full)
+ assert.equal(asks.length,2)
+ assert.match(asks[1].fields.view,/^tools-v2z?$/)
+ assert.equal(asks[1].fields.expected_generation,genA)
+ assert.equal(asks[1].signal,controller.signal)
+ asks.length=0
+ client._read=async(_identity,_type,fields)=>{asks.push(fields);throw Object.assign(new Error("stale"),{code:"transcript_cursor_stale"})}
+ await assert.rejects(client.transcriptForGeneration(target,undefined,held),error=>error.code==="transcript_cursor_stale")
+ assert.equal(asks.length,2,"recovery cannot amplify into an unbounded retry")
+})
+
+test("an execution switch waits out an old delta and cannot publish it as the new answer",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.pinnedTranscriptFlights=new Map()
+ client.machineDescriptor=()=>({machine:{transcript_tools_v1:true,transcript_tools_v2:true,transcript_delta_v1:true}})
+ const held={id:"s",version:"a".repeat(64),entries:[]},asks=[]
+ let release
+ client._read=async(_identity,_type,fields)=>{
+  asks.push(fields)
+  if(fields.expected_generation===genA) return new Promise(resolve=>release=resolve)
+  return {id:"s",entries:[{role:"assistant",text:"new execution"}]}
+ }
+ const old=client.transcriptForGeneration({machineID:"m",sessionID:"s",executionGeneration:genA},undefined,held)
+ const next=client.transcriptForGeneration({machineID:"m",sessionID:"s",executionGeneration:genB},undefined,held)
+ assert.equal(asks.length,1)
+ release({unchanged:true,version:held.version})
+ assert.equal(await old,held)
+ assert.equal((await next).entries[0].text,"new execution")
+ assert.equal(asks[1].expected_generation,genB)
+})
+
+test("rolling windows and provider expansions preserve all retained and repeated rows",()=>{
+ const rows=Array.from({length:201},(_,i)=>({role:"tool",text:"row-"+i}))
+ const held={id:"s",version:"a".repeat(64),entries:rows.slice(0,200)}
+ const page={id:"s",version:"b".repeat(64),signature:"new",evidence:"transcript",entries:[]}
+ const rolling={baseVersion:held.version,entryCount:200,page,delta:[{start:0,deleteCount:1,entries:[]},{start:200,deleteCount:0,entries:[rows[200]]}]}
+ assert.deepEqual(applyTranscriptDelta(held,rolling,"s").entries,rows.slice(1))
+ const expanded={...rolling,entryCount:201,delta:[rolling.delta[1]]}
+ assert.deepEqual(applyTranscriptDelta(held,expanded,"s").entries,rows)
+ assert.throws(()=>applyTranscriptDelta(held,{...rolling,delta:[rolling.delta[1],rolling.delta[0]]},"s"),error=>error.code==="transcript_cursor_stale")
+})
+
+test("generic JSON compression is negotiated only for capable read peers",async()=>{
+ for(const capable of [false,true]) {
+  const client=Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor=()=>({machine:{read_compression_v1:capable}})
+  const calls=[]
+  client._readRepresentation=async(...args)=>{calls.push(args);return {items:[]}}
+  const signal=new AbortController().signal,identity={machine:"m",session:"__clawdline_machine__"}
+  await client._read(identity,"work.v2.cards",{request:"fixture"},"read:fixture",123,{signal})
+  assert.equal(calls[0][2].accept_encoding,capable?"gzip-v1":undefined)
+  assert.equal(calls[0][3],capable?"read:fixture.encoding.gzip-v1":"read:fixture")
+  assert.equal(calls[0][5].signal,signal)
+  await client._read(identity,"work.v2.edit",{request:"write"},"action:write")
+  await client._read(identity,"image",{id:"picture"},"image.picture")
+  assert.equal(calls[1][2].accept_encoding,undefined)
+  assert.equal(calls[2][2].accept_encoding,undefined)
+ }
+})
+
+test("a stale compression capability falls back once and disables repeat failures",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.machineDescriptor=()=>({machine:{read_compression_v1:true}})
+ const calls=[],identity={machine:"m",session:"s"},fields={machine_id:"m",expected_generation:genA}
+ client._readRepresentation=async(...args)=>{
+  calls.push(args)
+  if(args[2].accept_encoding) throw Object.assign(new Error("old peer"),{code:"malformed_read"})
+  return {skills:[]}
+ }
+ await client._read(identity,"skills",fields,"skills")
+ await client._read(identity,"skills",fields,"skills")
+ assert.equal(calls.length,3)
+ assert.equal(calls[1][3],"skills")
+ assert.equal(calls[1][2].expected_generation,genA)
+ assert.equal(calls[2][2].accept_encoding,undefined)
+ client.machineLacks.clear();calls.length=0
+ client._readRepresentation=async(...args)=>{calls.push(args);throw Object.assign(new Error("denied"),{code:"forbidden"})}
+ await assert.rejects(client._read(identity,"skills",fields,"skills"),error=>error.code==="forbidden")
+ assert.equal(calls.length,1,"authorization failures must not trigger another read")
+})
+
+test("negotiated pinned reads preserve the reply proof and abort without fallback",async()=>{
+ const client=Object.create(StatusCloudClient.prototype)
+ client.machineDescriptor=()=>({machine:{read_compression_v1:true}})
+ Object.assign(client,{allowWrites:false,retired:false,readWaiters:new Map(),pinnedReadProofs:new Map(),_unsupportedRefusal:()=>null,
+  _offlineRefusal:()=>Object.assign(new Error("offline"),{code:"sentinel"})})
+ await assert.rejects(client._read({machine:"m",session:"s"},"skills",{machine_id:"m",expected_generation:genA},"skills"),error=>error.code==="sentinel")
+ assert.equal(client.allowWrites,false)
+ const controller=new AbortController();let calls=0
+ client._readRepresentation=async()=>{calls++;controller.abort();throw Object.assign(new Error("cancelled"),{code:"cloud_read_timeout"})}
+ await assert.rejects(client._read({machine:"m",session:"s"},"skills",{},"skills",123,{signal:controller.signal}),error=>error.code==="cloud_read_timeout")
+ assert.equal(calls,1)
 })

@@ -92,6 +92,99 @@ func doing(s session.Session, state session.State) session.Session {
 	return s
 }
 
+func TestModelCapacityPushIsImmediateDurableAndSeparateFromQuestions(t *testing.T) {
+	r := newWaitingRig(t)
+	s := doing(asking("capacity"), session.StateIdle)
+	s.Assistant = session.AssistantCodex
+	s.Activity.ProviderBlock = session.ProviderBlockModelCapacity
+	key := WaitingKey(s) + "|model_capacity"
+	r.w.Enabled = func() bool { return false }
+	if n := r.at(0, s); n != 1 {
+		t.Fatalf("first capacity reading pushed %d, want 1 even with question pushes off", n)
+	}
+	effects, err := r.st.Effects(context.Background(), orchestrator.EffectWaitingPush, key)
+	if err != nil || len(effects) != 1 {
+		t.Fatalf("capacity effects: %v, %v", effects, err)
+	}
+	var p orchestrator.WaitingPush
+	if err := json.Unmarshal(effects[0].Payload, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Reason != session.ProviderBlockModelCapacity || p.Terminal != s.ID || p.Tag != "model-capacity-"+s.ID ||
+		p.Title != "模型容量不足：root capacity" || !strings.Contains(p.Body, "換模型或重試") {
+		t.Fatalf("capacity notification: %+v", p)
+	}
+	r.w = r.watcher()
+	if n := r.at(time.Minute, s); n != 0 {
+		t.Fatalf("restart repeated a capacity stop: %d", n)
+	}
+	// A retained or unknown row cannot end the stop and cause another push.
+	stale := s
+	stale.Activity.ProviderBlock = ""
+	stale.Observation.Freshness = session.FreshnessUnverified
+	r.at(2*time.Minute, stale)
+	unknown := doing(stale, session.StateUnknown)
+	unknown.Observation = session.Observation{}
+	r.at(3*time.Minute, unknown)
+	if n := r.at(4*time.Minute, s); n != 0 {
+		t.Fatalf("uncertain observations rearmed the capacity stop: %d", n)
+	}
+	// Recovery rearms capacity, and a question is its own ten-minute stop.
+	recovered := s
+	recovered.Activity.ProviderBlock = ""
+	r.at(5*time.Minute, recovered)
+	if n := r.at(6*time.Minute, s); n != 1 {
+		t.Fatalf("new capacity stop pushed %d, want 1", n)
+	}
+	question := asking(s.ID)
+	r.at(7*time.Minute, question)
+	if n := r.at(17*time.Minute, question); n != 1 {
+		t.Fatalf("capacity notice suppressed a later question: %d", n)
+	}
+	if n := r.at(18*time.Minute, s); n != 1 {
+		t.Fatalf("question notice suppressed a later capacity stop: %d", n)
+	}
+}
+
+func TestModelCapacitySwitchAndSharedBudget(t *testing.T) {
+	r := newWaitingRig(t)
+	s := asking("capacity")
+	s.Activity.ProviderBlock = session.ProviderBlockModelCapacity
+	enabled := false
+	r.w.ModelCapacityEnabled = func() bool { return enabled }
+	if n := r.at(0, s); n != 0 {
+		t.Fatal("disabled capacity pushed")
+	}
+	if n := r.at(11*time.Minute, s); n != 0 {
+		t.Fatal("capacity also pushed as a question")
+	}
+	enabled = true
+	if n := r.at(12*time.Minute, s); n != 1 {
+		t.Fatal("reenabled capacity did not push")
+	}
+	// Both reasons use the existing per-machine hourly budget.
+	r.w.HourLimit = 1
+	q := asking("question")
+	r.at(13*time.Minute, s, q)
+	if n := r.at(23*time.Minute, s, q); n != 0 {
+		t.Fatal("question bypassed shared budget")
+	}
+}
+
+func TestRetainedModelCapacityDoesNotCreatePush(t *testing.T) {
+	r := newWaitingRig(t)
+	s := asking("retained-capacity")
+	s.Activity.ProviderBlock = session.ProviderBlockModelCapacity
+	s.Observation.Freshness = session.FreshnessUnverified
+	if n := r.at(0, s); n != 0 {
+		t.Fatal("retained capacity pushed")
+	}
+	s.Observation = session.Observation{}
+	if n := r.at(time.Minute, s); n != 1 {
+		t.Fatal("current capacity did not push")
+	}
+}
+
 // The rule itself: nothing while a person could still be about to answer,
 // one push when the question has stood ten minutes, and nothing again on any
 // sweep after — one stop, one notification.

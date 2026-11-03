@@ -1,3 +1,4 @@
+import { LocalAPIPerformance } from "./LocalAPIPerformance.js"
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
 import { focusModalContainer } from "../modal-focus.js"
@@ -48,19 +49,24 @@ function chinese(): boolean {
  */
 export type DashboardSource = {
   name: string
+  machineID: string
+  ownerScope: string
+  apiFetch: typeof fetch
   sessions: readonly SessionRow[]
   readUsage: () => Promise<MachineUsage>
   onClawdfather: (id: string | null) => void
 }
 
-export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage = readMachineUsage, machineName }: {
+export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage = readMachineUsage, machineName, apiFetch }: {
   sessions: readonly SessionRow[]
   readUsage?: () => Promise<MachineUsage>
+  apiFetch?: typeof fetch
   machineName?: string
   onClose: () => void
   onClawdfather: (id: string | null) => void
 }) {
   const zh = chinese()
+  const [pane, setPane] = useState<"resources" | "api">("resources")
   const [usage, setUsage] = useState<MachineUsage | null>(null)
   const [error, setError] = useState<unknown>(null)
   const [sort, setSort] = useState<Sort>("memory")
@@ -71,6 +77,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
   const dialogRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (pane !== "resources") return
     let alive = true
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = async () => {
@@ -98,12 +105,13 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
       alive = false
       if (timer) clearTimeout(timer)
     }
-  }, [readUsage])
+  }, [readUsage, pane])
 
   useEffect(() => {
     focusModalContainer(dialogRef.current)
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault()
         e.stopPropagation()
         onClose()
       }
@@ -143,8 +151,8 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
       >
         <div className="machine-head">
           <div className="machine-heading">
-            <h2 id="machine-title">{machineName ? <>{machineName} · </> : null}{catalogWord("literal", "0a0017caec11")}</h2>
-            <span className="machine-sub">
+            <h2 id="machine-title">{machineName ? <>{machineName} · </> : null}{nextWord("machineMonitoringNav")}</h2>
+            {pane === "resources" && <span className="machine-sub">
               {usage ? (
                 <>
                   {catalogFormat("template", "7e8b4dfff169", [usage.cores, bytes(usage.memory_total_bytes)])}
@@ -152,13 +160,15 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
                   {stale ? (catalogWord("literal", "7361fddb7d5f")) : catalogWord("literal", "371d49dd8b8f")}
                 </>
               ) : error ? null : catalogWord("literal", "f8533719e17a")}
-            </span>
+            </span>}
           </div>
           <button className="machine-close" type="button" ref={closeRef} onClick={onClose} aria-label={catalogWord("literal", "82860b805ea6")}>
             ×
           </button>
         </div>
 
+        <nav className="machine-tabs" aria-label={nextWord("apiPerformanceTab")}><button type="button" aria-pressed={pane === "resources"} onClick={() => setPane("resources")}>{nextWord("machineResourcesTab")}</button><button type="button" aria-pressed={pane === "api"} onClick={() => setPane("api")}>{nextWord("apiPerformanceTab")}</button></nav>
+        {pane === "api" ? <LocalAPIPerformance get={apiFetch} /> : <>
         {!usage && error ? (asMachineNeedsUpdate(error)
           ? <NeedsUpdate update={asMachineNeedsUpdate(error)} className="machine-verdict" />
           : <p className="machine-verdict" data-level="warn" lang={failureWordsLanguage(error)}>{failureWords(error, zh)}</p>) : null}
@@ -330,6 +340,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
             </p>
           </>
         ) : null}
+        </>}
       </div>
     </div>
   )

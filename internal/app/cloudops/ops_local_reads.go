@@ -15,15 +15,18 @@ func init() {
 		},
 
 		op{name: "info", read: true,
-			divergence: "`parts` travels as a query and this daemon's info route answers the " +
-				"same body for both halves, so a summary is a full answer here",
+			divergence: "`parts` travels as a query; full and summary share metadata here, " +
+				"while remote-permission explicitly inspects the live RC worker",
 		},
 
 		op{name: "git", read: true},
+		op{name: "outputs", read: true},
+		op{name: "output-file", read: true},
 
 		op{name: "git-diff", read: true},
 
 		op{name: "screen", read: true},
+		op{name: "native-terminal-screen", read: true},
 
 		op{name: "image", read: true, shape: shapeImage},
 
@@ -79,6 +82,9 @@ func init() {
 
 		// The complete squad catalog and private effective settings cross only
 		// the paired machine relay. The local route repeats its own read gate.
+		op{name: "tools.catalog", read: true},
+		op{name: "tools.save"},
+		op{name: "tools.prepare"},
 		op{name: "squad.catalog", read: true},
 		op{name: "squad.definition", read: true},
 		op{name: "squad.scopes", read: true},

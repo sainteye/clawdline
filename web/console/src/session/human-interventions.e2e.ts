@@ -42,6 +42,8 @@ let listAttentionCount = 1
 let documentMode: "ready" | "refused" | "keyed" | "starting" = "ready"
 let documentListMode: "ready" | "empty" | "starting" = "ready"
 let documentReadDelay = 0
+let promptMode = false
+let nativePrompt = { id: "prompt-1", state: "available", text: "Run the fixture tests", conversation_id: CONVERSATION, source: "claude-terminal", observed_at: 1 }
 let questionTool = ""
 const row = {
   id: SESSION, label: "Delivery Session", backend: "owned", state: "idle", work_state: "ready",
@@ -348,7 +350,7 @@ test("opening a Session repairs a stale list attention count from its verified n
 
 const snapshot = () => ({ at: Date.now(), scan: { complete: true, completed: { complete: true, sequence: 1 },
   emptyAuthoritative: true, epoch: 1, generation: 1, provenance: "fixture" },
-  sessions: [{ ...row, ...(listAttentionCount < 0 ? {} : { attention_count: listAttentionCount }),
+  sessions: [{ ...row, ...(promptMode ? { backend: "tmux", assistant: "claude", prompt_suggestion: nativePrompt } : {}), ...(listAttentionCount < 0 ? {} : { attention_count: listAttentionCount }),
     state: listWaiting ? "waiting" : "idle", work_state: listWaiting ? "waiting_you" : "ready" }] })
 const TYPES: Record<string, string> = { ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".webp": "image/webp" }
 function json(res: ServerResponse, status: number, value: unknown) { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(value)) }
@@ -368,7 +370,19 @@ function fixture(): Server {
   const publish = () => { for (const client of eventClients) client.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n") }
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
-    if (path === "/__fixture/reset") { withdrawn = false; questionTool = ""; readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteReads = 0; todoReads = 0; noteCount = 1; showOptions = true; singleOption = false; secretMode = false; handoffValues = []; handoffDelay = 0; failHandoff = false; listWaiting = false; listAttentionCount = 1; documentMode = "ready"; documentListMode = "ready"; documentReadDelay = 0; sendRequests = 0; sentTexts = []; sentBeforeResolve = []; failSends = false; sendDelay = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { promptMode = false; withdrawn = false; questionTool = ""; readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteReads = 0; todoReads = 0; noteCount = 1; showOptions = true; singleOption = false; secretMode = false; handoffValues = []; handoffDelay = 0; failHandoff = false; listWaiting = false; listAttentionCount = 1; documentMode = "ready"; documentListMode = "ready"; documentReadDelay = 0; sendRequests = 0; sentTexts = []; sentBeforeResolve = []; failSends = false; sendDelay = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/native-prompt") {
+      const params = new URL(req.url ?? "/", "http://fixture").searchParams
+      promptMode = true
+      nativePrompt = { ...nativePrompt, id: "prompt-" + (nativePrompt.observed_at + 1), observed_at: nativePrompt.observed_at + 1,
+        state: params.get("clear") === "1" ? "none" : "available", text: params.get("text") || "Run the fixture tests" }
+      publish()
+      for (const client of eventClients) client.write("event: screen\ndata: " + JSON.stringify({ id: SESSION, revision: nativePrompt.id }) + "\n\n")
+      return json(res, 200, { ok: true })
+    }
+    if (path === "/v1/sessions/" + SESSION + "/screen") return json(res, 200, { screen: { id: SESSION, backend: "tmux", channel: "signalled",
+      readable: true, pending: false, captures: 1, signals: 1, revision: nativePrompt.id, watchingUntil: Math.floor(Date.now()/1000)+30,
+      prompt_suggestion: nativePrompt } })
     if (path === "/__fixture/handoff-delay") { handoffDelay = 400; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/handoff-fail") { failHandoff = true; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/document-mode") { const mode = new URL(req.url ?? "/", "http://fixture").searchParams.get("value"); documentMode = mode === "refused" || mode === "keyed" || mode === "starting" ? mode : "ready"; return json(res, 200, { ok: true }) }
@@ -515,7 +529,7 @@ class Browser {
     const id = ++this.seq; this.ws.send(JSON.stringify({ id, method, params, sessionId }))
     return new Promise((ok, fail) => {
       const timer = setTimeout(() => fail(new Error(method + " timed out")), 15_000)
-      this.pending.set(id, { ok: (v) => { clearTimeout(timer); ok(v) }, fail: (e) => { clearTimeout(timer); fail(e) } })
+      this.pending.set(id, { ok: (v) => { clearTimeout(timer); ok(v) }, fail: (e) => { clearTimeout(timer); fail(new Error(method + ": " + e.message)) } })
     })
   }
   async loaded(sessionId: string, before: number): Promise<void> {
@@ -1116,3 +1130,98 @@ test("an Agent-withdrawn Note keeps its reason without requesting a reply and ca
   assert.equal(await run(`!!document.querySelector(".human-intervention-option")`),true)
  } finally { await fetch(origin+"/__fixture/reset"); await browser.send("Target.closeTarget",{targetId}) }
 })
+
+
+for (const width of [1280, 390]) {
+  test(`native prompt placeholder at ${width}px accepts Space and Tab without sending`, async () => {
+    const { browserContextId } = await browser.send("Target.createBrowserContext")
+    const { targetId } = await browser.send("Target.createTarget", { url: "about:blank", browserContextId })
+    const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+    const run = async (expression: string) => {
+      const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, id)
+      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+      return result.value
+    }
+    const until = async (expression: string) => {
+      const deadline = Date.now() + 8000
+      while (!(await run(expression))) {
+        if (Date.now() > deadline) assert.fail("native prompt did not reach " + expression + ": " + JSON.stringify(await run(`({text:document.getElementById('msg')?.textContent, inner:document.getElementById('msg')?.innerText,html:document.getElementById('msg')?.innerHTML,placeholder:document.getElementById('msg')?.dataset.placeholder,active:document.activeElement?.id})`)))
+        await new Promise(resolve => setTimeout(resolve, 25))
+      }
+    }
+    const key = async (value: string, modifiers = 0) => {
+      await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: value, code: value === " " ? "Space" : value,
+        windowsVirtualKeyCode: value === " " ? 32 : 9, modifiers }, id)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: value, code: value === " " ? "Space" : value,
+        windowsVirtualKeyCode: value === " " ? 32 : 9, modifiers }, id)
+    }
+    try {
+      await fetch(origin + "/__fixture/reset")
+      await fetch(origin + "/__fixture/native-prompt")
+      await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
+      await browser.send("Emulation.setDeviceMetricsOverride", { width, height: 844, deviceScaleFactor: 1, mobile: width < 900 }, id)
+      const mark = browser.loadCount
+      await browser.send("Page.navigate", { url: `${origin}/?ui=zh-Hant#session=${SESSION}` }, id)
+      await browser.loaded(id, mark)
+      await until(`!!document.querySelector('#msg[data-prompt-suggestion]')`)
+      const empty = `document.getElementById('msg').textContent`
+      assert.equal(await run(empty), "")
+      assert.equal(await run(`document.getElementById('msg').dataset.placeholder`), "Run the fixture tests")
+      if (shots) { const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id); writeFileSync(join(shots, `native-prompt-placeholder-${width}.png`), Buffer.from(data, "base64")) }
+
+      assert.equal(await run(`document.querySelector('.composer button.send').disabled`), true)
+      const label = await run(`document.getElementById('msg').getAttribute('aria-label')`)
+      await run(`document.getElementById('msg').focus()`)
+      for (const modifier of ["shiftKey", "ctrlKey", "altKey", "metaKey"]) {
+        const intercepted = await run(`(() => { const el = document.getElementById('msg'); el.dispatchEvent(new KeyboardEvent('keydown', {bubbles:true,key:' ',[${JSON.stringify(modifier)}]:true})); const intercepted = !el.dispatchEvent(new InputEvent('beforeinput', {bubbles:true,cancelable:true,inputType:'insertText',data:' '})); el.dispatchEvent(new KeyboardEvent('keyup', {bubbles:true,key:' '})); return intercepted })()`)
+        assert.equal(intercepted, false, modifier + " Space must retain its ordinary behavior")
+        assert.equal(await run(empty), "")
+      }
+      await key("Tab", 8)
+      assert.equal(await run(empty), "", "Shift+Tab must keep keyboard navigation")
+      await run(`document.getElementById('msg').focus()`)
+      await key("Tab")
+      await until(`document.getElementById('msg').textContent === 'Run the fixture tests'`)
+      assert.equal(sendRequests, 0)
+      assert.equal(await run(`document.getElementById('msg').getAttribute('aria-label')`), label)
+      await run(`document.execCommand('undo')`)
+      await until(`document.getElementById('msg').textContent === ''`)
+      assert.equal(await run(`document.getElementById('msg').hasAttribute('data-prompt-suggestion')`), false)
+
+      await fetch(origin + "/__fixture/native-prompt?clear=1")
+      await fetch(origin + "/__fixture/native-prompt?text=Inspect%20the%20new%20result")
+      await until(`document.getElementById('msg').dataset.placeholder === 'Inspect the new result'`)
+      await run(`document.getElementById('msg').focus()`)
+      await key(" ")
+      await until(`document.getElementById('msg').textContent === 'Inspect the new result'`)
+      assert.equal(sendRequests, 0)
+      await browser.send("Input.insertText", { text: " " }, id)
+      assert.equal(await run(`document.getElementById('msg').textContent.replace(/\u00a0/g, ' ')`), "Inspect the new result ", "ordinary Space in a draft remains text")
+      await run(`document.execCommand('selectAll'); document.execCommand('delete')`)
+
+      await fetch(origin + "/__fixture/native-prompt?clear=1")
+      await fetch(origin + "/__fixture/native-prompt?text=Soft%20keyboard%20completion")
+      await until(`document.getElementById('msg').dataset.placeholder === 'Soft keyboard completion'`)
+      await run(`document.getElementById('msg').dispatchEvent(new InputEvent('beforeinput', {bubbles:true,cancelable:true,inputType:'insertText',data:' '}))`)
+      await until(`document.getElementById('msg').textContent === 'Soft keyboard completion'`)
+      assert.equal(sendRequests, 0)
+      await run(`document.execCommand('selectAll'); document.execCommand('delete')`)
+
+      await fetch(origin + "/__fixture/native-prompt?clear=1")
+      await fetch(origin + "/__fixture/native-prompt?text=Keep%20IME%20selection")
+      await until(`!!document.querySelector('#msg[data-prompt-suggestion]')`)
+      await run(`document.getElementById('msg').dispatchEvent(new CompositionEvent('compositionstart', {bubbles:true,data:''}))`)
+      await until(`!document.querySelector('#msg[data-prompt-suggestion]')`)
+      const prevented = await run(`!document.getElementById('msg').dispatchEvent(new InputEvent('beforeinput', {bubbles:true,cancelable:true,inputType:'insertCompositionText',isComposing:true,data:' '}))`)
+      assert.equal(prevented, false)
+      assert.equal(await run(empty), "")
+      await run(`document.getElementById('msg').dispatchEvent(new CompositionEvent('compositionend', {bubbles:true,data:'測試'}))`)
+      assert.equal(sendRequests, 0)
+      assert.equal(await run(`document.documentElement.scrollWidth <= innerWidth`), true)
+      if (shots) {
+        const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id)
+        writeFileSync(join(shots, `native-prompt-${width}.png`), Buffer.from(data, "base64"))
+      }
+    } finally { await browser.send("Target.closeTarget", { targetId }); await browser.send("Target.disposeBrowserContext", { browserContextId }) }
+  })
+}

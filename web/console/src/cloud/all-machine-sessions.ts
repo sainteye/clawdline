@@ -99,7 +99,8 @@ export function presentationPass(reading: Extract<MachineSessionProjection, { ki
 export function displayedPresentationStatus(row: ProjectedSession,
   presentation: SessionListPresentation | undefined): Partial<SessionRow> | undefined {
   const status = presentation?.status
-  return row.freshness === "current" && status?.state && status.state !== row.state &&
+  return row.freshness === "current" && status?.state &&
+    (status.state !== row.state || status.provider_block !== row.providerBlock) &&
     (!Number.isFinite(presentation?.observedAt) || presentation!.observedAt! < row.observedAt) ? undefined : status
 }
 
@@ -117,13 +118,14 @@ export interface ProjectedSession {
    */
   title?: undefined
   assistant?: "claude" | "codex" | "antigravity"
-  backend?: "tmux" | "iterm" | "ps"
+  backend?: "tmux" | "iterm" | "ps" | "owned" | "claude_remote"
   parentSessionID?: string
   machineScope?: boolean
   coordinatorBound?: boolean
   state: string
   freshness: "current" | "stale" | "unknown"
   needsAttention?: boolean
+  providerBlock?: "model_capacity"
   waitingForReply?: true
   observedAt: number
   lastMovementAt?: number
@@ -242,7 +244,16 @@ export function destinationFragment(value: SessionDestination): string {
   return `#machine=${encodeURIComponent(value.machineID)}&session=${encodeURIComponent(value.sessionID)}&generation=${encodeURIComponent(value.executionGeneration)}`
 }
 
+/** Canonicalizing a Session must not consume its exact file-preview destination. */
+export function destinationFragmentWithOutput(value: SessionDestination, hash: string): string {
+  const current = destinationFromFragment(hash)
+  const output = /&output=[0-9a-f]{64}$/.exec(hash)?.[0] ?? ""
+  return destinationFragment(value) + (current && destinationKey(current) === destinationKey(value) ? output : "")
+}
+
 export function destinationFromFragment(hash: string): SessionDestination | null {
+  // Output links retain the complete pinned Session address, plus one opaque file ID.
+  hash = hash.replace(/&output=[0-9a-f]{64}$/, "")
   // Push URLs also contain #session first so the same notification still
   // opens in the local, single-machine console.
   const match = DESTINATION.exec(hash) || /^#session=([^&]+)&machine=([^&]+)&generation=([^&]+)$/.exec(hash)

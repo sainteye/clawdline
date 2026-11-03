@@ -77,6 +77,9 @@ func TestACPProcess(t *testing.T) {
 		var result any
 		switch method {
 		case "session/cancel":
+			if mode == "lifecycle-held" {
+				continue
+			}
 			if len(m["id"]) != 0 || len(interruptedPrompt) == 0 {
 				os.Exit(40)
 			}
@@ -136,6 +139,22 @@ func TestACPProcess(t *testing.T) {
 				result = map[string]any{"configOptions": []any{map[string]string{"id": "thinking_level", "type": "select", "currentValue": "low"}}}
 			}
 		case "session/prompt":
+			if mode == "prompt-rpc-error" {
+				enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32800, "message": "synthetic private cancellation"}})
+				continue
+			}
+			if mode == "lifecycle-held" {
+				interruptedPrompt = append(json.RawMessage(nil), id...)
+				enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fake-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "synthetic finished"}}}})
+				continue
+			}
+			if mode == "lifecycle-updates" {
+				for _, kind := range []string{"user_message_chunk", "agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan", "usage_update", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update", "notice", "compaction_update", "compaction_summary_chunk", "future_update"} {
+					enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fake-session", "update": map[string]any{"sessionUpdate": kind}}})
+				}
+				result = map[string]string{"stopReason": "end_turn"}
+				break
+			}
 			if mode == "interrupt" || mode == "interrupt-permission" {
 				interruptTurns++
 				if interruptTurns > 1 {
@@ -228,6 +247,13 @@ func TestACPProcess(t *testing.T) {
 			result = map[string]string{"stopReason": "end_turn"}
 		default:
 			os.Exit(38)
+		}
+		if strings.HasPrefix(mode, "tier:") && (method == "session/new" || method == "session/resume" || method == "session/load") {
+			var tier any
+			if json.Unmarshal([]byte(strings.TrimPrefix(mode, "tier:")), &tier) != nil {
+				os.Exit(43)
+			}
+			result.(map[string]any)["_meta"] = map[string]any{"antigravity": map[string]any{"tier": tier}}
 		}
 		enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 		if method == "session/new" && mode == "stall-write" {
@@ -453,7 +479,7 @@ func TestMetadataErrorsCancellationAndBusyNeverRetry(t *testing.T) {
 func fake(t *testing.T, mode string, update func(context.Context, json.RawMessage) error) (*Client, string) {
 	return fakePermission(t, mode, update, nil)
 }
-func fakePermission(t *testing.T, mode string, update func(context.Context, json.RawMessage) error, permission func(context.Context, *PermissionRequest) error) (*Client, string) {
+func fakePermission(t *testing.T, mode string, update func(context.Context, json.RawMessage) error, permission func(context.Context, *PermissionRequest) error, wire ...func(WireEvent) error) (*Client, string) {
 	t.Helper()
 	t.Setenv("CLAWDLINE_ACP_FAKE", "1")
 	t.Setenv("OPENAI_API_KEY", "synthetic")
@@ -469,7 +495,11 @@ func fakePermission(t *testing.T, mode string, update func(context.Context, json
 	if mode == "stall-write" {
 		maxFrame = 1 << 22
 	}
-	c, err := Start(context.Background(), Options{Executable: exe, Args: []string{"-test.run=^TestACPProcess$", "--", mode}, AccountDir: dir, WorkingDir: dir, MaxFrameBytes: maxFrame, CallTimeout: 2 * time.Second, OnUpdate: update, OnPermission: permission})
+	var observe func(WireEvent) error
+	if len(wire) > 0 {
+		observe = wire[0]
+	}
+	c, err := Start(context.Background(), Options{OnWire: observe, Executable: exe, Args: []string{"-test.run=^TestACPProcess$", "--", mode}, AccountDir: dir, WorkingDir: dir, MaxFrameBytes: maxFrame, CallTimeout: 2 * time.Second, OnUpdate: update, OnPermission: permission})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -587,6 +617,51 @@ func TestPersonalFlowAndOrderedLateUpdates(t *testing.T) {
 	}
 }
 
+func TestPersonalSessionsDoNotGateOnTierMetadata(t *testing.T) {
+	// Sanitized tier fields from a native session/new response. No real model
+	// request is made by this fake peer regression.
+	for _, tier := range []string{`null`, `{}`, `{"id":"future-tier","name":"Future Plan"}`, `{"name":"Google AI Pro","id":"g1-pro-tier","upgradeUri":"https://antigravity.google/g1-upgrade"}`} {
+		for _, method := range []string{"session/new", "session/resume", "session/load"} {
+			t.Run(method, func(t *testing.T) {
+				c, dir := fake(t, "tier:"+tier, nil)
+				ctx := context.Background()
+				if _, err := c.Initialize(ctx); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := c.AuthenticatePersonal(ctx); err != nil {
+					t.Fatal(err)
+				}
+				var err error
+				wantID := "saved-exact"
+				switch method {
+				case "session/new":
+					_, err = c.NewSession(ctx)
+					wantID = "fake-session"
+				case "session/resume":
+					_, err = c.ResumeSession(ctx, wantID)
+				case "session/load":
+					_, err = c.LoadSession(ctx, wantID)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if c.SessionID() != wantID {
+					t.Fatal("native conversation identity changed")
+				}
+				if _, err = c.Prompt(ctx, "synthetic turn"); err != nil {
+					t.Fatal(err)
+				}
+				settings(t, dir, `{"useG1Credits":true,"auth":{"type":"oauth-personal"}}`)
+				_, err = c.Prompt(ctx, "must not reach peer")
+				requireError(t, err, "personal_settings_required", NotWritten)
+				if got := methods(t, dir); !reflect.DeepEqual(got, []string{"initialize", "authenticate", method, "session/prompt"}) {
+					t.Fatal("unexpected request or replay", got)
+				}
+			})
+		}
+	}
+}
+
 func TestPersonalSettingsAndTierRefuseBeforePrompt(t *testing.T) {
 	for _, value := range []string{`{}`, `{"useG1Credits":true,"auth":{"type":"oauth-personal"}}`, `{"useG1Credits":false,"auth":{"type":"api-key"}}`, `{"useG1Credits":false,"useG1Credits":true,"auth":{"type":"oauth-personal"}}`, `bad`} {
 		t.Run(value, func(t *testing.T) {
@@ -608,18 +683,6 @@ func TestPersonalSettingsAndTierRefuseBeforePrompt(t *testing.T) {
 		settings(t, dir, `{"useG1Credits":true,"auth":{"type":"oauth-personal"}}`)
 		_, err := c.Prompt(context.Background(), "never send")
 		requireError(t, err, "personal_settings_required", NotWritten)
-		if got := methods(t, dir); len(got) != 3 {
-			t.Fatal(got)
-		}
-	})
-	t.Run("tier", func(t *testing.T) {
-		c, dir := fake(t, "paid-tier", nil)
-		c.Initialize(context.Background())
-		c.AuthenticatePersonal(context.Background())
-		_, err := c.NewSession(context.Background())
-		requireError(t, err, "free_tier_required", Acknowledged)
-		_, err = c.Prompt(context.Background(), "never send")
-		requireError(t, err, "not_ready", NotWritten)
 		if got := methods(t, dir); len(got) != 3 {
 			t.Fatal(got)
 		}
@@ -833,4 +896,16 @@ func TestControlRPCStillTimesOut(t *testing.T) {
 	ready(t, c)
 	err := c.SetModelChecked(context.Background(), "offered-model", nil)
 	requireError(t, err, "cancelled", Uncertain)
+}
+
+func TestNativeConfigTransportDoesNotRestrictConfigNames(t *testing.T) {
+	c, dir := fake(t, "happy", nil)
+	ready(t, c)
+	if err := c.SetConfigOptionChecked(context.Background(), "future_option", "opaque value", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := methods(t, dir); !reflect.DeepEqual(got, []string{"initialize", "authenticate", "session/new", "session/set_config_option"}) {
+		t.Fatal(got)
+	}
+	requireError(t, c.SetConfigOptionChecked(context.Background(), "", "opaque value", nil, nil), "invalid_config", NotWritten)
 }

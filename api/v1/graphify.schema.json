@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "graphify.schema.json",
+  "title": "Graphify project view",
+  "description": "Machine opt-in Graphify graph view. GET reads inert data and current build status. Explicit POST {} starts a bounded local-only code build when no index exists, with an Idempotency-Key and device send authority. Toggle alone does not install or build. Existing indexes are never replaced.",
+  "$defs": {
+    "GraphifyNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "file",
+        "location",
+        "community"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "community": {
+          "type": "string"
+        }
+      }
+    },
+    "GraphifyLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "target",
+        "relation",
+        "confidence"
+      ],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "string"
+        }
+      }
+    },
+    "GraphifyView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reason",
+        "checked_at",
+        "total_nodes",
+        "total_links",
+        "truncated",
+        "nodes",
+        "links",
+        "build",
+        "can_build",
+        "unverified_sources"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "checked_at": {
+          "type": "integer"
+        },
+        "total_nodes": {
+          "type": "integer"
+        },
+        "total_links": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphifyNode"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphifyLink"
+          }
+        },
+        "build": {
+          "$ref": "#/$defs/GraphifyBuildStatus"
+        },
+        "can_build": {
+          "type": "boolean"
+        },
+        "unverified_sources": {
+          "type": "integer"
+        }
+      }
+    },
+    "GraphifyBuildStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "phase",
+        "files",
+        "bytes",
+        "started_at",
+        "updated_at",
+        "error"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "files": {
+          "type": "integer"
+        },
+        "bytes": {
+          "type": "integer"
+        },
+        "started_at": {
+          "type": "integer"
+        },
+        "updated_at": {
+          "type": "integer"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

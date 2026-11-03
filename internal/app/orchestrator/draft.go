@@ -368,6 +368,9 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	if kind == TaskKindCallback {
 		return bad("kind callback is for clawdline callback, not a dispatch")
 	}
+	if kind == TaskKindSupportAnswer && (d.Assistant != "codex" || isolation != IsolationNone || len(claims) != 0 || !scheduled) {
+		return bad("support_answer requires a Codex schedule, no checkout isolation and no repository writes")
+	}
 	gate, err := admitGateOrigin(d.VerificationGate, kind, d.Assistant, isolation, claims)
 	if err != nil {
 		return Record{}, err

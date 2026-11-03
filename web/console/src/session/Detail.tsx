@@ -1,6 +1,11 @@
-import { assistantStateCurrent, assistantProtocolOwned } from "./antigravity-ui.js"
+import { ToolLibrary } from "../tool-library/ToolLibrary.js"
+import { localized, toolTarget, type ToolDraft } from "../tool-library/model.js"
+import { outputSessionKey, readOutputs } from "./output-files-api.js"
+import { OutputFiles } from "./OutputFiles.js"
+import { WorkflowProfileHeader } from "./workflow-profile-header.js"
+import { assistantStateCurrent, assistantProtocolOwned, sessionActionVisibility } from "./antigravity-ui.js"
 import { assistantFactsMachine, useAssistantFacts } from "./assistant-facts.js"
-import { catalogWord } from "../catalog.js"
+import { catalogWord, currentCatalogTag } from "../catalog.js"
 import type { Icon, ScanSource, SessionAgent, SessionRow, SessionShell, TaskRow } from "@clawdline/contract"
 import {
   useEffect,
@@ -8,6 +13,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
   type ComponentPropsWithRef,
@@ -24,6 +30,11 @@ import { Transcript } from "./Transcript.js"
 import { GitPanel } from "./GitPanel.js"
 import { Composer } from "./Composer.js"
 import { composerDraftKey } from "./composer-drafts.js"
+import { nativeTerminalCommand, nativeTerminalAvailable as terminalPanelAvailable } from "./native-terminal-command.js"
+import { NativeTerminalPanel } from "./NativeTerminalPanel.js"
+import { MenuHandoffNotice } from "./MenuHandoffNotice.js"
+import { menuHandoffDelay, unreadMenuSeen, type UnreadMenu } from "./menu-handoff.js"
+import { pendingSends } from "./send.js"
 import { ScreenPanel } from "./ScreenPanel.js"
 import { ShellPanel } from "./ShellPanel.js"
 import { BackgroundStrip } from "./BackgroundStrip.js"
@@ -92,6 +103,7 @@ function suggestionsTitle(): string {
  */
 export function Detail({
   row,
+  readerMachine,
   tasks: _tasks,
   onOpenSession: _onOpenSession,
   onBack,
@@ -104,6 +116,7 @@ export function Detail({
   scanSources,
 }: {
   row: SessionRow | null
+  readerMachine?: string | null
   tasks: TaskRow[] | null
   onOpenSession: (id: string) => void
   onBack: () => void
@@ -139,13 +152,45 @@ export function Detail({
   // console has; `pane-detail`'s `data-panel` is what the stylesheet reads, and
   // it is deleted rather than set to a word when nothing is open, as
   // `Terminal.close` does.
+  const [outputsFor, setOutputsFor] = useState<string | null>(null)
+  const outputTrigger = useRef<HTMLButtonElement>(null)
+  const outputIdentity = outputSessionKey(row ? { ...row, machine: readerMachine ?? undefined } : null)
+  const [outputsKnownFor, setOutputsKnownFor] = useState<string | null>(null)
+  const hasOutputs = outputsKnownFor === outputIdentity
+  const outputsOpen = outputsFor === outputIdentity
+  useEffect(() => {
+    if (!row || conversationNotStarted(row) || hasOutputs) return
+    const abort = new AbortController()
+    // Only a positive index answer reveals the entrance. Until then, changes
+    // in the existing Session feed recheck it without adding a polling timer.
+    void readOutputs(row.id, abort.signal).then(page => {
+      if (!abort.signal.aborted && page.files.length) setOutputsKnownFor(outputIdentity)
+    }, () => { /* Unknown or unsupported output history does not reveal an empty entrance. */ })
+    return () => abort.abort()
+    // The index belongs to this exact conversation, not a fresh row object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outputIdentity, hasOutputs, row?.activity?.at, row?.state])
+  useEffect(() => {
+    const follow = () => {
+      const values = new URLSearchParams(location.hash.slice(1))
+      if (row && values.get("session") === row.id && /^[0-9a-f]{64}$/.test(values.get("output") ?? "")) setOutputsFor(outputIdentity)
+    }
+    follow(); window.addEventListener("hashchange", follow)
+    return () => window.removeEventListener("hashchange", follow)
+  }, [outputIdentity, row?.id])
   const [screenOpen, setScreenOpen] = useState(false)
+  const [nativeTerminalOpen,setNativeTerminalOpen] = useState(false)
   const actionsTrigger = useRef<HTMLButtonElement>(null)
+  const [toolOpen, setToolOpen] = useState(false)
+  const [toolDraft, setToolDraft] = useState<ToolDraft | null>(null)
+  const toolIdentity = toolTarget(row, readerMachine || "")
+  useEffect(() => { setToolOpen(false); setToolDraft(null) }, [toolIdentity])
   // A different session, or none, closes the panel: it is that session's
   // terminal that was being watched (`followTerminal`).
   useEffect(() => {
     setScreenOpen(false)
-  }, [row?.id])
+    setNativeTerminalOpen(false)
+  }, [row?.id,row?.execution_generation])
 
   // `input/shell-panel.js`: the background command whose output has the
   // transcript's space, as the strip's row was when it was opened. A
@@ -173,6 +218,43 @@ export function Detail({
     const trigger = document.getElementById("detail-actions-trigger") as HTMLButtonElement | null
     if (trigger && !trigger.disabled) trigger.focus({ preventScroll: true })
   }
+
+  const pendingVersion = useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
+  const terminalHandoff = useRef("")
+  const nativeTerminalAvailable = nativeTerminalCommand("/help", row?.assistant, row?.backend)
+  const acceptedCommand = row && nativeTerminalAvailable ? pendingSends.of(row.id).find(card =>
+    card.state === "accepted" && nativeTerminalCommand(card.text, row.assistant, row.backend, card.pictures.length)) : null
+  const unreadMenu = row?.state === "waiting" && !row.menu?.options?.length
+  const openNativeTerminal = () => { setScreenOpen(false); setGitOpen(false); setShellOpen(null); setNativeTerminalOpen(true) }
+  useEffect(() => {
+    if (!row || !nativeTerminalAvailable) return
+    // Receipt and screen reads are sufficient for native dialogs; many never
+    // produce a transcript turn. Reopening a retained accepted card only reads.
+    // A command the person sent asked for that CLI screen, so it opens at once.
+    const key = acceptedCommand?.token || ""
+    if (!key || terminalHandoff.current === key) return
+    terminalHandoff.current = key
+    openNativeTerminal()
+  }, [row?.id, nativeTerminalAvailable, acceptedCommand?.token, pendingVersion])
+  // A question without options is often only a read that has not landed yet
+  // (`menu-handoff.ts`): it is offered to Terminal, with a notice, only after
+  // it has stayed unreadable on a captured screen.
+  const unreadKey = row && nativeTerminalAvailable && unreadMenu ? `${row.id}:${row.execution_generation}:${row.menu?.question || ""}` : ""
+  const unreadSince = useRef<UnreadMenu | null>(null)
+  unreadSince.current = unreadMenuSeen(unreadSince.current, unreadKey, Date.now())
+  const [handoffOffer, setHandoffOffer] = useState("")
+  useEffect(() => {
+    const delay = menuHandoffDelay(unreadSince.current, row?.screen_reading, terminalHandoff.current, Date.now())
+    if (delay === null) return
+    const key = unreadKey
+    const timer = window.setTimeout(() => {
+      if (unreadSince.current?.key !== key) return
+      terminalHandoff.current = key
+      setHandoffOffer(key)
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [unreadKey, row?.screen_reading])
+  useEffect(() => { if (handoffOffer && handoffOffer !== unreadKey) setHandoffOffer("") }, [unreadKey, handoffOffer])
 
   // The project the machine resolved for this session, once the sheet has read
   // it (`snippetProjectFor`): a session in a subdirectory of a project, or in a
@@ -217,7 +299,7 @@ export function Detail({
     <DetailPane
       id="pane-detail"
       data-agent-view={selectedAgent ? "on" : undefined}
-      data-panel={screenOpen ? "screen" : gitOpen ? "git" : shellOpen ? "shell" : undefined}
+      data-panel={nativeTerminalOpen ? "native-terminal" : screenOpen ? "screen" : gitOpen ? "git" : shellOpen ? "shell" : undefined}
     >
       {selectedAgent ? (
         <AgentHead
@@ -284,11 +366,18 @@ export function Detail({
               </span>
               <span className="sub" id="detail-sub">
                 {role ? <DetailPersona head={role} /> : null}
+                <WorkflowProfileHeader row={row} machine={readerMachine} />
                 {detailSub(row, projectedCoordinatorBound)}
               </span>
             </span>
           </button>
         </div>
+        {row && hasOutputs && <button ref={outputTrigger} type="button" className="output-entry" aria-expanded={outputsOpen}
+          aria-label={nextWord("outputsTitle")} title={nextWord("outputsTitle")} disabled={ending}
+          onClick={() => setOutputsFor(outputsOpen ? null : outputIdentity)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M3 7h7l2-3h8v16H3z"/><path d="M3 9h17"/></svg>
+          <span>{nextWord("outputsTitle")}</span>
+        </button>}
         <div className="tools">
           <Tools
             row={row}
@@ -296,13 +385,20 @@ export function Detail({
             ending={ending}
             onDid={onDid}
             triggerRef={actionsTrigger}
-            onScreen={() => setScreenOpen(true)}
+            onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}}
+            onScreen={() => {setNativeTerminalOpen(false);setScreenOpen(true)}}
             onOpenGit={() => setGitOpen(true)}
             onSuggestions={requestSnippets}
+            onTools={() => setToolOpen(true)}
           />
         </div>
       </div>}
 
+      <div className="session-output-layout" data-open={outputsOpen ? "true" : undefined}>
+      <div className="session-conversation">
+      <NativeTerminalPanel row={row} open={nativeTerminalOpen} onClose={()=>setNativeTerminalOpen(false)} />
+      {handoffOffer && handoffOffer === unreadKey && !nativeTerminalOpen &&
+        <MenuHandoffNotice onSwitch={() => { setHandoffOffer(""); openNativeTerminal() }} onStay={() => setHandoffOffer("")} />}
       <ScreenPanel
         row={row}
         open={screenOpen}
@@ -356,11 +452,17 @@ export function Detail({
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
-      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} row={row} onDid={onDid} onSent={onSent} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} />}
+      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}
       {selectedAgent || !row ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
+      </div>
+      <OutputFiles row={row} machine={readerMachine} open={outputsOpen} trigger={outputTrigger} onClose={() => setOutputsFor(null)} />
+      </div>
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens
           it is this component's. */}
+      {row && toolOpen && <ToolLibrary key={toolIdentity} row={row} machine={readerMachine} onClose={() => {setToolOpen(false); actionsTrigger.current?.focus({preventScroll:true})}} onPrepared={(prepared, identity) => {
+        setAgentId(null); setToolDraft({text:prepared.task, attachment:{id:crypto.randomUUID(),target:identity,title:localized(prepared.project.name, currentCatalogTag()) || prepared.project.repo, prompt:prepared.prompt,revision:prepared.project.source_commit,mode:prepared.mode}});setToolOpen(false)
+      }} />}
       <UserMessages row={row} />
       <Snippets row={row} steward={steward} />
     </DetailPane>
@@ -444,9 +546,11 @@ function detailSub(row: SessionRow | null, projectedCoordinatorBound = false): s
   if (!row) return ""
   const T = L.strings
   const sub: string[] = [L.path(row.cwd)]
+  if (row.backend === "claude_remote") sub.push(nextWord("claudeRemoteShort"))
   if (row.machine_scope && !sessionCoordinatorBound(row) && !projectedCoordinatorBound) sub.push(nextWord("machineSessionPendingShort"))
   if (row.tty) sub.push(row.tty)
-  if (row.state === "waiting") sub.push(T.sessionWaiting)
+  if (row.provider_block === "model_capacity") sub.push(nextWord("sessionModelCapacity"))
+  else if (row.state === "waiting") sub.push(T.sessionWaiting)
   else if (row.state === "working") sub.push(T.webStateWorking)
   else if (conversationNotStarted(row)) sub.push(nextWord(/^(tty|pts\/)/.test(row.id) ? "processOnlyShort" : "sessionNotStartedShort"))
   else if (row.state === "unknown") sub.push(nextWord("sessionStateUnrecognizedDetail"))
@@ -500,8 +604,10 @@ function Tools({
   onDid,
   triggerRef,
   onScreen,
+  onNativeTerminal,
   onOpenGit,
   onSuggestions,
+  onTools,
 }: {
   row: SessionRow | null
   project: string
@@ -509,13 +615,15 @@ function Tools({
   onDid: () => void
   triggerRef: RefObject<HTMLButtonElement | null>
   onScreen: () => void
+  onNativeTerminal: () => void
   onOpenGit: () => void
   onSuggestions: () => void
+  onTools: () => void
 }) {
   const T = L.strings
   const steward = !!row && !!(row.machine_scope || row.coordinator)
   const actions = richSessionSwipeActions(row)
-  const protocolOwned = assistantProtocolOwned(row)
+  const menuVisibility = sessionActionVisibility(row)
   const [open, setOpen] = useState(false)
   const [more, setMore] = useState(false)
   const [openingTerminal, setOpeningTerminal] = useState(false)
@@ -536,7 +644,7 @@ function Tools({
 
   const items = () => {
     const level = more ? moreRef.current : mainRef.current
-    return level ? [...level.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")] : []
+    return level ? [...level.querySelectorAll<HTMLButtonElement>("button:not(:disabled):not([hidden])")] : []
   }
 
   useEffect(() => {
@@ -630,7 +738,7 @@ function Tools({
     const mine = row.id
     askInterrupt(mine).then(
       () => {
-        if (openNow.current?.id === mine) toast(nextWord("sessionStopSent"))
+        if (openNow.current?.id === mine) toast(nextWord(row.backend === "claude_remote" ? "claudeRemoteStopSent" : "sessionStopSent"))
       },
       (e) => {
         if (openNow.current?.id === mine) toastFailure(e, T.webRequestFailed)
@@ -717,7 +825,7 @@ function Tools({
         className="chip"
         id="tx-focus"
         type="button"
-        hidden={!atMac() || protocolOwned}
+        hidden={!atMac() || !menuVisibility.focus}
         disabled={!row || ending}
         title={T.webShowOnMacTip}
         onClick={focusMac}
@@ -769,7 +877,7 @@ function Tools({
             >
               <button
                 id="session-interrupt"
-                hidden={protocolOwned}
+                hidden={!menuVisibility.interrupt}
                 type="button"
                 role="menuitem"
                 disabled={!row || ending}
@@ -778,11 +886,11 @@ function Tools({
                   stop()
                 }}
               >
-                {nextWord("sessionStop")}
+                {nextWord(row?.backend === "claude_remote" ? "claudeRemoteStop" : "sessionStop")}
               </button>
               <button
                 id="session-focus"
-                hidden={protocolOwned}
+                hidden={!menuVisibility.focus}
                 type="button"
                 role="menuitem"
                 disabled={!row || ending}
@@ -793,16 +901,7 @@ function Tools({
               >
                 {T.webShowOnMac}
               </button>
-              <button
-                id="session-open-terminal"
-                type="button"
-                role="menuitem"
-                disabled={!row || ending || openingTerminal}
-                onClick={() => {
-                  closeMenu(false)
-                  void startProjectTerminal()
-                }}
-              >{nextWord("terminalStartTerminalTab")}</button>
+              <button type="button" role="menuitem" id="session-tool-library" disabled={!row || ending} onClick={() => {closeMenu(false); onTools()}}>{nextWord("toolLibraryTitle")}</button>
               <button
                 id="session-info"
                 type="button"
@@ -818,9 +917,14 @@ function Tools({
               {/* The original writes no `disabled` on this row and neither does
                   this: reading a screen needs no send capability, and the menu
                   it sits in cannot be opened without a session. */}
+              <button type="button" role="menuitem" id="session-native-terminal"
+                hidden={!terminalPanelAvailable(row?.assistant,row?.backend)} disabled={!row||ending}
+                onClick={()=>{closeMenu(false);onNativeTerminal()}}>
+                {catalogWord("nativeTerminal","title")}
+              </button>
               <button
                 id="session-screen"
-                hidden={protocolOwned}
+                hidden={!menuVisibility.screen}
                 type="button"
                 role="menuitem"
                 onClick={() => {
@@ -879,6 +983,16 @@ function Tools({
               >
                 ‹ {T.webSessionActions}
               </button>
+              <button
+                id="session-open-terminal"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending || openingTerminal}
+                onClick={() => {
+                  closeMenu(false)
+                  void startProjectTerminal()
+                }}
+              >{nextWord("terminalStartTerminalTab")}</button>
               <button
                 id="session-documents"
                 type="button"

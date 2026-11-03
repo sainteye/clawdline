@@ -5,6 +5,52 @@ self-contained SVG (`svg`, with empty `cells`). The daemon resolves it for
 the console's project, Session and Board views. Application and assistant marks
 are separate assets.
 
+The compact application mark in `web/console/src/brand-mark.ts` uses L-01 + G-02:
+a connected orange body and a separate full-width terminal-green underline
+(`#4CCB7F`). Its transparent sixteen-by-eleven grid is shared by navigation,
+sign-in, support, administration and machine-workspace marks. The settings window
+uses the same geometry in its existing icon slot.
+
+Large artwork adds low-contrast pixel lines inside the orange body. The selected
+F-04 animation moves only left to right; static surfaces use a still rendering.
+Compact interface and browser marks retain solid colors. `internal/domain/icon`
+renders matching browser, home-screen and launch-screen assets; regenerate them
+with `go run ./internal/domain/icon/cmd/splashgen -brand`.
+
+Large-format flow concepts retain the fine body grid and explore the underline:
+[one-way flow](assets/brand-line-concepts/f-01.svg),
+[packet pulses](assets/brand-line-concepts/f-02.svg),
+[two-way exchange](assets/brand-line-concepts/f-03.svg), and
+[quiet shimmer](assets/brand-line-concepts/f-04.svg).
+The [animated comparison](assets/brand-line-concepts/flow-comparison.gif) shows
+the four transmission treatments together. These are design drafts, not selected
+production assets. Small marks keep the solid line rather than the lighting effects.
+
+F-01 and F-04 also have standalone, dark-background animation drafts for a
+possible homepage illustration. Both are 832 by 608 pixels at 20 frames per
+second, with the body held still and only the underline moving. The repeated
+endpoint matches the opening frame before encoding; the endpoint is not included
+twice in the loop.
+
+| Concept | Loop | GIF preview | Animated WebP alternative |
+|---|---|---|---|
+| F-01, one-way flow | 2.4 seconds, 48 frames | [GIF](assets/brand-line-concepts/f-01-loop.gif), 837,714 bytes | [WebP](assets/brand-line-concepts/f-01-loop.webp), 107,244 bytes |
+| F-04, quiet shimmer | 4 seconds, 80 frames | [GIF](assets/brand-line-concepts/f-04-loop.gif), 1,292,044 bytes | [WebP](assets/brand-line-concepts/f-04-loop.webp), 132,428 bytes |
+
+These files are previews and have not been wired into the website. Keep a static
+poster available if an animation is later adopted for a reduced-motion setting.
+
+The revised motion study sends both highlights from left to right at constant
+speed. F-04 no longer reverses direction. Each highlight continues from the left
+after exiting the right edge; the periodic light copies preserve the loop seam.
+The body and its fine grid remain unchanged. These revisions run at 25 frames per
+second; the earlier drafts above are retained for comparison.
+
+| Revised concept | Loop | GIF preview | Animated WebP alternative |
+|---|---|---|---|
+| F-01, fast left-to-right flow | 1 second, 25 frames | [GIF](assets/brand-line-concepts/f-01-fast-ltr.gif), 474,174 bytes | [WebP](assets/brand-line-concepts/f-01-fast-ltr.webp), 56,108 bytes |
+| F-04, soft left-to-right flow | 1.2 seconds, 30 frames | [GIF](assets/brand-line-concepts/f-04-fast-ltr.gif), 858,630 bytes | [WebP](assets/brand-line-concepts/f-04-fast-ltr.webp), 69,304 bytes |
+
 `internal/domain/icon` resolves a local mark in this order:
 
 1. A saved mark in `CLAWDLINE_NEXT_DIR/project-icon-overrides.json`, using the

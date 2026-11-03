@@ -12,7 +12,8 @@
  * and, for a digit, that a Return followed only if the screen showed the digit
  * landed. `typed` is the strongest thing a send can claim: the bytes reached the
  * tty. Whether the assistant took the turn is a separate fact, read from the fleet
- * list, and this never asserts it.
+ * list, and this never asserts it. Remote Control `accepted` means the controller
+ * event was accepted by the service, not necessarily consumed or executed.
  */
 export interface ActionResult {
   action: string
@@ -300,6 +301,13 @@ export interface AssistantSkill {
   description: string
 
   /**
+   * The exact native invocation, including its prefix, for example /model or
+   * /prompts:review. Absent for older replies and ordinary skills, whose provider
+   * default prefix still applies.
+   */
+  invocation?: string
+
+  /**
    * What follows the prefix: `/` for Claude, `$` for Codex. A plugin's skill keeps
    * its namespace, `plugin:skill`.
    */
@@ -373,8 +381,9 @@ export type Backend =
     "iterm"
   | "tmux"
   | "owned"
+  | "claude_remote"
 
-export const BackendValues: readonly Backend[] = ["iterm", "tmux", "owned"] as const
+export const BackendValues: readonly Backend[] = ["iterm", "tmux", "owned", "claude_remote"] as const
 
 export interface BearingsLanding {
   age_seconds: number
@@ -1683,6 +1692,16 @@ export interface BrokerRootCleanupEligibility {
  */
 export interface BrokerSessionDelivery {
   created: boolean
+
+  /**
+   * Number of full commit IDs in the adapter-verified evidence.
+   */
+  delivery_evidence_commits?: number
+
+  /**
+   * SHA-256 of the exact optional evidence document stored with session.delivered.
+   */
+  delivery_evidence_sha256?: string
   disposition: BrokerDisposition
   ok: boolean
 
@@ -3232,6 +3251,49 @@ export interface DispatchResult {
   task_id: string
 }
 
+export interface DoctorCoverage {
+  dropped: number
+  from?: number
+  lost_unknown: boolean
+  state: string
+  through?: number
+}
+
+export interface DoctorEvent {
+  at: number
+  provider: DoctorProvider
+}
+
+export interface DoctorProvider {
+  id: string
+  observed_at: number | null
+  problem?: string
+  source: string
+  stale: boolean
+  state: string
+  used_percent: number | null
+}
+
+export interface DoctorReport {
+  arch: string
+  at: number
+  coverage: DoctorCoverage
+  gaps: string[]
+  history: DoctorEvent[]
+  os: string
+  providers: DoctorProvider[]
+  schema: string
+  tools: DoctorTool[]
+  version: string
+  web_version?: string
+}
+
+export interface DoctorTool {
+  id: string
+  state: string
+  version?: string
+}
+
 export interface DocumentList {
   documents: DocumentRow[]
 }
@@ -3458,6 +3520,45 @@ export interface GitSnapshot {
   head: string
 }
 
+export interface GraphifyBuildStatus {
+  bytes: number
+  error: string
+  files: number
+  phase: string
+  started_at: number
+  state: string
+  updated_at: number
+}
+
+export interface GraphifyLink {
+  confidence: string
+  relation: string
+  source: string
+  target: string
+}
+
+export interface GraphifyNode {
+  community: string
+  file: string
+  id: string
+  label: string
+  location: string
+}
+
+export interface GraphifyView {
+  build: GraphifyBuildStatus
+  can_build: boolean
+  checked_at: number
+  links: GraphifyLink[]
+  nodes: GraphifyNode[]
+  reason: string
+  state: string
+  total_links: number
+  total_nodes: number
+  truncated: boolean
+  unverified_sources: number
+}
+
 /**
  * GET /v1/health, open without a token: that this daemon is alive, which
  * implementation it is, and the two answers a page needs before it can be let in
@@ -3666,12 +3767,45 @@ export interface ImageStoreResult {
   ok: boolean
 
   /**
+   * Typed error when the images were stored but original output paths could not be
+   * indexed; image delivery is not undone.
+   */
+  output_index_error?: string
+
+  /**
    * The terminal id of the Session the pictures are shown in, when the request
    * named one: they appear under the first reply it writes after this answer.
    * Stored is not seen — GET /v1/transcript?session=… shows them in that
    * reply's `artifacts` once it is written.
    */
   terminal?: string
+}
+
+export interface IntegrationSettingsRequest {
+  graphify_enabled?: boolean
+
+  /**
+   * Machine-wide main workflow; omitted by older daemons.
+   */
+  workflow_profile?: string
+  workflow_skills_enabled?: boolean
+}
+
+export interface IntegrationSettingsSnapshot {
+  /**
+   * Machine-wide explicit opt-in; absent settings remain disabled.
+   */
+  graphify_enabled: boolean
+
+  /**
+   * Machine-wide main workflow; omitted by older daemons.
+   */
+  workflow_profile?: string
+
+  /**
+   * Machine-wide explicit opt-in; absent settings remain disabled.
+   */
+  workflow_skills_enabled: boolean
 }
 
 export interface IntentDraft {
@@ -4136,6 +4270,37 @@ export type MoverKind =
 
 export const MoverKindValues: readonly MoverKind[] = ["this_session", "other_session", "person", "task", "broker"] as const
 
+export interface NativeTerminalFrame {
+  /**
+   * A fingerprint of the foreground process and the plain grid.
+   */
+  expect: string
+
+  /**
+   * The same grid with its colour escape sequences, when the backend provides them.
+   */
+  styled?: string
+
+  /**
+   * The visible terminal grid.
+   */
+  text: string
+}
+
+export interface NativeTerminalInput {
+  expect: string
+
+  /**
+   * One named terminal key; exclusive with text.
+   */
+  key?: string
+
+  /**
+   * One UTF-8 line without control characters. Does not submit.
+   */
+  text?: string
+}
+
 export interface Obligation {
   age_seconds: number
   escalation: Escalation
@@ -4411,6 +4576,18 @@ export interface PersonaCatalog {
    */
   license: string
   personas: Persona[]
+}
+
+/**
+ * An opt-in display-v1 reading. version is the SHA-256 of the catalog with sorted
+ * object keys and Go JSON string escaping. An unchanged receipt requires a fresh
+ * authorized machine read.
+ */
+export interface PersonaDisplayReply {
+  catalog?: PersonaCatalog
+  unchanged?: boolean
+  version: string
+  view: string
 }
 
 /**
@@ -5337,6 +5514,26 @@ export type ProjectUnifyStatus =
   | "unknown"
 
 export const ProjectUnifyStatusValues: readonly ProjectUnifyStatus[] = ["unified", "drifting", "unknown"] as const
+
+/**
+ * An unaccepted native Claude terminal suggestion, kept outside the draft. It is
+ * absent when styling, execution identity or the screen lease cannot prove it. This
+ * is terminal evidence, not an independently generated prediction.
+ */
+export interface PromptSuggestion {
+  conversation_id: string
+  id?: string
+
+  /**
+   * Monotonic Unix milliseconds when the native suggestion changed, for ordering
+   * snapshots and invalidations. Zero advertises support before the first watched
+   * capture.
+   */
+  observed_at: number
+  source: string
+  state: string
+  text?: string
+}
 
 /**
  * /v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what the
@@ -6357,6 +6554,7 @@ export interface Screen {
    * happens behind it.
    */
   pending: boolean
+  prompt_suggestion?: PromptSuggestion
   readable: boolean
 
   /**
@@ -6652,6 +6850,20 @@ export interface SessionInfo {
    */
   linksObservedAt?: number
   models: SessionModel[]
+  protocol?: SessionProtocol
+  remotePermission?: SessionMenu
+
+  /**
+   * Fingerprint of the exact RC tool permission, including request ID, complete
+   * tool input, bridge and kernel generation.
+   */
+  remotePermissionExpect?: string
+
+  /**
+   * The live RC worker answered the permission query. Without this, an absent menu
+   * does not establish that no request is pending.
+   */
+  remotePermissionKnown?: boolean
 
   /**
    * What the one git read behind `links` found. Present whenever the session has a
@@ -6662,6 +6874,7 @@ export interface SessionInfo {
   repositoryUnreadable?: ProjectGitFailure
   session: SessionInfoSession
   usage?: SessionInfoUsage
+  workflow?: SessionWorkflow
 }
 
 /**
@@ -6958,6 +7171,39 @@ export interface SessionModel {
   name: string
 }
 
+export interface SessionOutputChunk {
+  data: string
+  id: string
+  media_type: string
+  name: string
+  offset: number
+  revision: string
+  total_bytes: number
+}
+
+export interface SessionOutputFile {
+  absolute_path: string
+  anchor: number
+  bytes: number
+  first_at: number
+  id: string
+  kind: string
+  media_type: string
+  name: string
+  path: string
+  source: string
+  state: string
+  updated_at: number
+  updates: number
+}
+
+export interface SessionOutputList {
+  coverage: string
+  files: SessionOutputFile[]
+  more: boolean
+  partial: boolean
+}
+
 /**
  * One durable pause and wake receipt. Safe point is receiver acknowledged, never
  * inferred from delivery.
@@ -6999,6 +7245,32 @@ export interface SessionPauseRequest {
   requester_session_id: string
   target_session_id: string
   wake_condition: string
+}
+
+/**
+ * Observed ACP v1 lifecycle, separate from model activity. Timestamps are Unix
+ * nanoseconds. Only a matched prompt response confirms completion; elapsed silence
+ * and text never do. Raw frames stay in the private local store and are never
+ * carried here. not_connected means no live worker was consulted, not idle.
+ */
+export interface SessionProtocol {
+  cancel_requested_at?: number
+  completed_at?: number
+  failure?: string
+  last_applied_at?: number
+  last_applied_kind?: string
+  last_received_at?: number
+  last_received_kind?: string
+  operation?: string
+  phase: string
+  request_id?: string
+  rpc_error: number | null
+  sequence: number
+  started_at?: number
+  stop_reason?: string
+  trace_enabled: boolean
+  trace_error?: string
+  unrecognized: number
 }
 
 /**
@@ -7116,6 +7388,14 @@ export interface SessionRow {
    * not absolute.
    */
   project_key?: string
+  prompt_suggestion?: PromptSuggestion
+
+  /**
+   * Current actionable provider refusal read from the native turn record.
+   * Independent of terminal activity; cleared by a later native turn boundary. Not
+   * a permission menu.
+   */
+  provider_block?: string
   root_assignment?: RootAssignmentRecord
 
   /**
@@ -7175,8 +7455,8 @@ export interface SessionRow {
   work_note?: string
 
   /**
-   * Whether that mover is a person. Absent unless the declaration decided the
-   * state; present and false is a real answer.
+   * Whether that mover is a person. Also true for a current actionable provider
+   * block; present and false is a real answer.
    */
   work_person_needed?: boolean
   work_provenance?: WorkProvenance
@@ -7463,6 +7743,16 @@ export interface SessionWaitTarget {
   task_id: string
 }
 
+export interface SessionWorkflow {
+  digest?: string
+  graphify_enabled: boolean | null
+  profile_id?: string
+  source?: string
+  stages?: WorkflowStage[]
+  state: string
+  version?: string
+}
+
 export interface SessionsSnapshot {
   at: number
   scan: Scan
@@ -7486,7 +7776,7 @@ export interface SettingsRequest {
   antigravity_default_model: string | null
 
   /**
-   * `claude` or `codex`.
+   * `session`, `claude`, `codex`, `antigravity`, or `auto`.
    */
   auto_name_assistant: string | null
 
@@ -7551,6 +7841,7 @@ export interface SettingsRequest {
    * Whether the terminal selects the tab the bar points at.
    */
   follow_target: boolean | null
+  graphify_enabled: boolean | null
 
   /**
    * A combination the shell can register (`cmd+shift+k`), or empty for none.
@@ -7699,6 +7990,11 @@ export interface SettingsRequest {
   push_on_fanout: boolean | null
 
   /**
+   * Notify when a Session stops because its model is at capacity.
+   */
+  push_on_model_capacity: boolean | null
+
+  /**
    * Notify when an App install or Cloud verification fails.
    */
   push_on_release_failure: boolean | null
@@ -7804,6 +8100,8 @@ export interface SettingsRequest {
    * 360 to 1400.
    */
   width: number | null
+  workflow_profile: string | null
+  workflow_skills_enabled: boolean | null
 
   /**
    * 0.05 to 0.80.
@@ -7825,8 +8123,9 @@ export interface SettingsSnapshot {
   antigravity_default_model: string | null
 
   /**
-   * Whose quota that naming turn spends, `claude` or `codex`. Remembered while the
-   * switch above is off, so turning it back on does not quietly change providers.
+   * Whose quota that naming turn spends: `session`, `claude`, `codex`,
+   * `antigravity`, or `auto`. Remembered while the switch above is off, so turning
+   * it back on does not quietly change providers.
    */
   auto_name_assistant: string | null
 
@@ -7905,6 +8204,7 @@ export interface SettingsSnapshot {
    * Whether the terminal selects the tab the bar points at.
    */
   follow_target: boolean | null
+  graphify_enabled: boolean | null
 
   /**
    * The file's `hotkey`, or null when the file does not carry one as a string. Null
@@ -8071,6 +8371,11 @@ export interface SettingsSnapshot {
   push_on_fanout: boolean | null
 
   /**
+   * Notify when a Session stops because its model is at capacity.
+   */
+  push_on_model_capacity: boolean | null
+
+  /**
    * Notify when an App install or Cloud verification fails.
    */
   push_on_release_failure: boolean | null
@@ -8186,6 +8491,8 @@ export interface SettingsSnapshot {
    * The bar's width in points.
    */
   width: number | null
+  workflow_profile: string | null
+  workflow_skills_enabled: boolean | null
 
   /**
    * Where the bar's top sits, as a fraction of screen height.
@@ -9310,9 +9617,19 @@ export interface TranscriptAction {
   command?: string
 
   /**
+   * Inclusive one-based last source line, when supplied.
+   */
+  endLine?: number
+
+  /**
    * read or search.
    */
   kind: string
+
+  /**
+   * One-based first source line, when supplied.
+   */
+  line?: number
   name?: string
   path?: string
   query?: string
@@ -9326,6 +9643,13 @@ export interface TranscriptActivity {
   actions: TranscriptAction[]
 
   /**
+   * Explicit native trajectory namespace for a tool from another agent; absent when
+   * its owner was not supplied.
+   */
+  agentID?: string
+  delegates?: TranscriptDelegate[]
+
+  /**
    * How long the item took. -1 when the record did not say, which the Swift app
    * sends as an absent key; 0 is a real, sub-millisecond duration and is drawn as
    * one.
@@ -9334,15 +9658,56 @@ export interface TranscriptActivity {
   kind: string
 
   /**
-   * A called tool's result text, cut at 4,000 characters.
+   * A called tool result. Owned ACP retains complete received text and pages large
+   * bodies on demand; older readers may provide a clipped result.
    */
   result?: string
+
+  /**
+   * True when a native result was received, including an explicitly empty result.
+   */
+  resultKnown?: boolean
 
   /**
    * inProgress, pending, completed or failed.
    */
   status?: string
   title?: string
+
+  /**
+   * Native tool identity, stable across partial updates.
+   */
+  toolCallID?: string
+  toolResult?: TranscriptToolResult
+}
+
+export interface TranscriptChangeStats {
+  additions: number
+  deletions: number
+  lineCount: number
+}
+
+export interface TranscriptDelegate {
+  model?: string
+  name: string
+}
+
+/**
+ * Opt-in delta-v1 reply. Apply only to baseVersion of the exact pinned Session;
+ * replace metadata with page and apply ordered, non-overlapping splices in original
+ * base coordinates atomically. A cache miss or a larger delta returns a full
+ * TranscriptPage. Unchanged remains the existing version receipt.
+ */
+export interface TranscriptDelta {
+  baseVersion: string
+  delta: TranscriptSplice[]
+
+  /**
+   * Exact resulting row count, including provider rows that expand into multiple
+   * entries.
+   */
+  entryCount: number
+  page: TranscriptPage
 }
 
 /**
@@ -9367,6 +9732,7 @@ export interface TranscriptEntry {
    * Unix seconds. Absent when the record carried no timestamp this reader accepts.
    */
   at?: number
+  detail?: TranscriptEntryDetail
 
   /**
    * Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent
@@ -9422,6 +9788,16 @@ export interface TranscriptEntry {
   tool?: string
 }
 
+/**
+ * An opt-in stored tool body. The reference binds a native row, its full projected
+ * content, machine and Session execution. Body fields arrive only after expansion.
+ */
+export interface TranscriptEntryDetail {
+  lineCount: number
+  reference: string
+  textBytes: number
+}
+
 export interface TranscriptFileChange {
   /**
    * The whole file, for an addition, a deletion or a Claude `Write`.
@@ -9435,6 +9811,7 @@ export interface TranscriptFileChange {
   kind: string
   movePath?: string
   path: string
+  stats?: TranscriptChangeStats
   unifiedDiff?: string
 }
 
@@ -9555,6 +9932,11 @@ export interface TranscriptPage {
   signature: string
   truncation?: TranscriptTruncation
   unread?: TranscriptUnread
+
+  /**
+   * Digest of this exact compact page, scoped to machine and Session execution.
+   */
+  version?: string
 }
 
 export interface TranscriptPlanStep {
@@ -9564,6 +9946,36 @@ export interface TranscriptPlanStep {
    */
   status: string
   step: string
+}
+
+/**
+ * One replacement in the exact held page. Equal prefix and suffix entries are
+ * retained, including distinct repeated entries.
+ */
+export interface TranscriptSplice {
+  deleteCount: number
+  entries: TranscriptEntry[]
+  start: number
+}
+
+export interface TranscriptToolResult {
+  images: number
+  preview: string
+  rawBytes: number
+
+  /**
+   * Opaque stored row offset and content digest; only readable in the same Session
+   * execution.
+   */
+  reference: string
+  sourceTruncated: boolean
+  textBytes: number
+
+  /**
+   * Native tool call identity when the provider recorded one.
+   */
+  toolID?: string
+  unknownBlocks: number
 }
 
 /**
@@ -11533,6 +11945,13 @@ export interface WorkflowSettingsSnapshot {
    */
   iterm_integration: boolean | null
   session_auto_discovery: boolean
+}
+
+export interface WorkflowStage {
+  acceptance: string
+  id: string
+  output: string
+  title: string
 }
 
 export interface WorktreeCanonical {

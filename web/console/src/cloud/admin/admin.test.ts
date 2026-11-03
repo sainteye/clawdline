@@ -13,7 +13,9 @@ import { dictationStatus } from "../../pages/settings/window/copy.ts"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
 import { completeDays, loadOverview, parseOverview, trend } from "./api.ts"
 // @ts-expect-error -- a `.ts` path, for node.
-import { ADMIN_ROUTES, adminPath, adminRoute, adminWords, bootAdminCatalog, type AdminWord } from "./words.ts"
+import { ADMIN_ROUTES, ADMIN_NAV_ROUTES, adminNavPath, adminPath, adminRoute, adminWords, bootAdminCatalog, type AdminWord } from "./words.ts"
+// @ts-expect-error -- Node runs this source test directly.
+import { healthRoute } from "./health/route.ts"
 // @ts-expect-error -- a `.ts` path, for node.
 import { demoOverview } from "./demo.ts"
 
@@ -241,6 +243,20 @@ test("each page has its own address, and an address names one page or none", () 
   assert.equal(adminRoute("/admin/health/trace/tr-1"), "health")
   assert.equal(adminRoute("/admin/health/machines/mac_1"), "health")
   assert.equal(adminRoute("/admin/healthy"), null)
+})
+
+test("the operations menu opens service performance directly without replacing connection health", () => {
+  assert.ok(ADMIN_NAV_ROUTES.includes("monitoring"))
+  const destination = new URL(adminNavPath("monitoring"), "https://example.test")
+  assert.equal(adminRoute(destination.pathname), "health")
+  const screen = healthRoute(destination.pathname, destination.search)
+  assert.equal(screen?.screen, "M03")
+  assert.ok(screen?.screen === "M03" && screen.performance)
+  assert.equal(adminNavPath("health"), "/admin/health")
+  for (const locale of ["en", "zh-TW"] as const) {
+    assert.ok(adminWords(locale)("nav_monitoring"))
+    assert.ok(adminWords(locale)("hint_monitoring"))
+  }
 })
 
 // The tables are typed against each other; what types cannot see is a key the

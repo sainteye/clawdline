@@ -141,6 +141,10 @@ type Worktree struct {
 
 const TaskKindVerificationGate = "verification_gate"
 
+// TaskKindSupportAnswer confines an operator's answering schedule to its
+// installed documentation, scoped support client and this run's receipts.
+const TaskKindSupportAnswer = "support_answer"
+
 // GateOrigin is the immutable authority a verification checker was admitted
 // against. A respawn preserves the round, candidate, criteria and base while
 // the broker advances only its attempt and records the persistent family id.

@@ -1,0 +1,12 @@
+<!doctype html><html lang="zh-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Clawdline 到訪統計 · 本機驗收</title></head><body style="margin:0"><div id="root"></div><script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { OverviewPage } from '/src/cloud/admin/AdminDashboard.tsx';
+import { demoOverview } from '/src/cloud/admin/demo.ts';
+import { adminWords } from '/src/cloud/admin/words.ts';
+import '/src/legacy/tokens.css';import '/src/legacy/base.css';import '/src/cloud/admin/admin.css';
+const lang=new URL(location.href).searchParams.get('lang')==='en'?'en':'zh-TW';document.documentElement.lang=lang;
+const say=adminWords(lang);
+const h=React.createElement;
+createRoot(document.getElementById('root')).render(h('div',{className:'adm adm-shell'},h('aside',{className:'adm-side'},h('h1',null,'Clawdline'),h('p',null,lang==='en'?'Local verification · synthetic accounts':'本機驗收 · 虛構帳號資料'),h('a',{href:'?lang=zh-TW',style:{color:'var(--ink)'}},'繁體中文'),h('a',{href:'?lang=en',style:{color:'var(--ink)'}},'English'),h('p',null,say('nav_overview'))),h('main',{className:'adm-main',style:{overflow:'auto',width:'100%',boxSizing:'border-box'}},h('p',{style:{color:'var(--accent)'}},lang==='en'?'Local fixture · real component and API, synthetic data':'本機驗收資料 · 真實元件與 API，使用虛構資料'),h(OverviewPage,{overview:demoOverview(),say,locale:lang,go:()=>{},apiOrigin:'http://127.0.0.1:5199',demo:false}))));
+</script></body></html>

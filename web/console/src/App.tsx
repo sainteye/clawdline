@@ -1,3 +1,4 @@
+import { supportWord } from "./support/words.js"
 import { macKeyboard, matchShortcut, shortcutAria, shortcutLabel } from "./shortcuts.js"
 import { openNewWorkItem } from "./pages/work/new-item.js"
 import { QuotaBar } from "./provider-quota/QuotaBar.js"
@@ -11,7 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client, followsRelay } from "./client.js"
-import { BRAND_MARK } from "./brand-mark.js"
+import { NAVIGATION_MARK } from "./brand-mark.js"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
 import { SetupGuide } from "./setup/SetupGuide.js"
 import { useFleet, usePoll } from "./useFleet.js"
@@ -32,7 +33,7 @@ import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
 import { bootLocalCatalog } from "./catalog.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
-import { destinationFragment, destinationFromFragment, destinationKey, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
+import { destinationFragmentWithOutput, destinationFromFragment, destinationKey, identifyOpenedFleetRow, sessionDetailID, withConfirmedFleetTitle,
   type FleetDetailProblem, type ProjectedSession, type SessionDestination } from "./cloud/all-machine-sessions.js"
 import { notificationAddress } from "./push/navigation.js"
 import { hasDocumentIntent, hasDocumentPageIntent, readPublishedDocument } from "./legacy/documents-bridge.js"
@@ -40,6 +41,7 @@ import { bindVideoPreview } from "./session/video-preview.js"
 import { videoLocatorFromHash } from "./session/video-preview-links.js"
 import "./session/video-preview.css"
 import { NewBuild } from "./NewBuild.js"
+import { ModuleLoadBoundary } from "./ModuleRecovery.js"
 import { MachineDashboard, type DashboardSource } from "./machine/MachineDashboard.js"
 import { Start } from "./session/Start.js"
 import { startedRow } from "./session/started-row.js"
@@ -158,25 +160,28 @@ function leaveAddress(state: unknown): void {
  * what it looks like (`openSession`, `session/open.js`), and the step carries
  * the session's address.
  *
- * There is only ever the one step. Opening a session from a detail — a forward
- * gesture, a reload of a detail, a link to another session — replaces the step
- * that is there; one pushed over it would leave Back going to a session that
- * is no longer on screen. An address that arrived asking for a session, typed
+ * Within this mounted Session view, opening another Session or taking
+ * Forward replaces the established detail step. A marker from an earlier
+ * view cannot prove its list entry survived a media-return opening gate,
+ * whether the document reloaded or only the console remounted.
+ * An address that arrived asking for a session, typed
  * or tapped in a notification, had no list under it: the entry it arrived in
  * becomes the list and the detail is pushed over that, so Back from it is the
  * list rather than whatever came before the console.
  */
-function stepIntoDetail(id: string, address: string, arrived: boolean): void {
+function stepIntoDetail(id: string, address: string, arrived: boolean, established: { current: boolean }): void {
   const detail = { view: "detail", id }
   try {
-    if ((history.state as { view?: unknown } | null)?.view === "detail") {
+    const wasDetail = (history.state as { view?: unknown } | null)?.view === "detail"
+    if (wasDetail && established.current) {
       history.replaceState(detail, "", address)
-    } else if (arrived) {
+    } else if (arrived || wasDetail) {
       history.replaceState({ view: "list" }, "", listAddress())
       history.pushState(detail, "", address)
     } else {
       history.pushState(detail, "", address)
     }
+    established.current = true
   } catch {
     /* the address stays as it was */
   }
@@ -332,6 +337,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const selectedRef = useRef(selected)
   const openRef = useRef(openId)
   const viewRef = useRef(view)
+  const detailStep = useRef(false)
   const paneRef = useRef(paneOpen)
   const filterRef = useRef(filter)
   const setSelected = (id: string | null) => {
@@ -369,7 +375,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   }, [])
 
   useLayoutEffect(() => {
-    L.paintIcon(markRef.current, BRAND_MARK, 3)
+    L.paintIcon(markRef.current, NAVIGATION_MARK, 3)
   }, [])
 
   // `Sidebar.close`: where the focus is is read before the drawer goes, because
@@ -553,11 +559,11 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     if (phone()) {
       if (viewRef.current !== "detail" && !videoAddress) releaseKeyboardFocus()
       setView("detail")
-      if (!videoAddress) stepIntoDetail(id, fleetList && fleetTarget ? listAddress() + destinationFragment(fleetTarget) :
-        listAddress() + sessionFragment(id), arrived)
+      if (!videoAddress) stepIntoDetail(id, fleetList && fleetTarget ? listAddress() + destinationFragmentWithOutput(fleetTarget, location.hash) :
+        listAddress() + sessionFragment(id), arrived, detailStep)
     } else {
       if (!paneRef.current) setPane(true)
-      if (!videoAddress) writeHash(fleetList && fleetTarget ? destinationFragment(fleetTarget) : sessionFragment(id))
+      if (!videoAddress) writeHash(fleetList && fleetTarget ? destinationFragmentWithOutput(fleetTarget, location.hash) : sessionFragment(id))
     }
     if (!keepFocus && !phone() && !videoAddress) rowNode(id)?.focus({ preventScroll: true })
   }
@@ -606,7 +612,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     go("sessions", { hash: false })
     if (phone()) {
       setView("detail")
-      stepIntoDetail(fleetTarget.sessionID, listAddress() + destinationFragment(fleetTarget), true)
+      stepIntoDetail(fleetTarget.sessionID, listAddress() + destinationFragmentWithOutput(fleetTarget, location.hash), true, detailStep)
     } else if (!paneRef.current) setPane(true)
   }, [fleetList && fleetTarget ? destinationKey(fleetTarget) : null])
   useEffect(() => {
@@ -783,7 +789,14 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
     }
     const onResize = () => {
       if (!phone()) setView("list")
-      else if (openRef.current) setView("detail")
+      else if (openRef.current) {
+        // A desktop selection replaces its address without adding a Back
+        // step. Narrowing the window turns it into a whole-screen detail,
+        // which needs the same list underneath as a phone tap or deep link.
+        if (pageRef.current === "sessions" && viewRef.current !== "detail")
+          stepIntoDetail(openRef.current, location.href, true, detailStep)
+        setView("detail")
+      }
     }
     window.addEventListener("popstate", onPop)
     window.addEventListener("resize", onResize)
@@ -908,15 +921,18 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         return
       }
       if (Info.isOpen()) {
+        ev.preventDefault()
         Info.close()
         return
       }
       // The drawer is over whatever page is showing, so it goes before the page does.
       if (menuRef.current) {
+        ev.preventDefault()
         closeMenu()
         return
       }
       if (shown("keys")) {
+        ev.preventDefault()
         closeKeys()
         return
       }
@@ -930,6 +946,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       }
       const active = document.activeElement
       if (filterEl && active === filterEl) {
+        ev.preventDefault()
         if (filterRef.current) {
           filterEl.value = ""
           setFilter("")
@@ -940,6 +957,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         return
       }
       if (typing(active)) {
+        ev.preventDefault()
         active.blur()
         return
       }
@@ -1172,6 +1190,10 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
           </section>
           <section className="sidebar-group" aria-label={nextWord("sidebarManage")}>
             <h2>{nextWord("sidebarManage")}</h2>
+            <button className="sidebar-item" id="nav-machine-monitoring" type="button" aria-haspopup="dialog"
+              onClick={() => { closeMenu(); if (onChooseDashboardMachine) onChooseDashboardMachine(); else setMachine(true) }}>
+              <SidebarIcon name="usage" />{nextWord("machineMonitoringNav")}
+            </button>
             {sidebarPages.filter((p) => p.id === "devices").map(sidebarPage)}
             {cloudPeerAccess && <button className="sidebar-item" id="nav-peer-access" type="button"
               data-page-to="peer-access" aria-current={page === "peer-access" ? "page" : undefined}
@@ -1179,6 +1201,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
               <SidebarIcon name="access" />{nextWord("cloudPeerAccessNav")}
             </button>}
             {sidebarPages.filter((p) => p.id === "notifications").map(sidebarPage)}
+            {surveyAccount ? <a className="sidebar-item" id="nav-my-questions" href="/community/mine"><SidebarIcon name="questions" />{supportWord("communityMine")}</a> : null}
             {sidebarPages.filter((p) => p.id === "plan").map(sidebarPage)}
             {sidebarPages.filter((p) => p.id === "settings").map(sidebarPage)}
           </section>
@@ -1235,6 +1258,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         fleetCoordinatorBound={!!fleetList && !!fleetTarget && fleetTargetIdentity?.machineScope === true &&
           fleetTargetIdentity.coordinatorBound === true}
         fleetDetailPending={fleetDetailPending}
+        readerMachine={fleetReaderMachine}
         fleetDetailProblem={fleetList && fleetTarget ? fleetDetailProblem : null}
       />}
       {cloudPeerAccess && <section id="peer-access" className="page cloud-peer-access-page"
@@ -1244,12 +1268,16 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       {Object.values(PAGE_MODULES).map(({ id, Component }) => (
         // Mounted once opened and kept, as the original keeps its sections in
         // the document and only hides them.
-        <Component key={id} shown={page === id && knowsHere(id)} />
+        <ModuleLoadBoundary key={id} shown={page === id && knowsHere(id)} onSessions={() => { go("sessions") }}>
+          <Component shown={page === id && knowsHere(id)} />
+        </ModuleLoadBoundary>
       ))}
       {!surveyAccount ? <SurveyCoordinator /> : null}
       <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine} key={fleetReaderMachine ?? "local"} machineName={quotaMachineName} offline={!!cloudMachineOffline} />
       <Overlays />
       {machine ? <MachineDashboard
+        key={dashboardSource?.ownerScope ?? "local"}
+        apiFetch={dashboardSource?.apiFetch}
         sessions={dashboardSource?.sessions ?? fleet.snapshot?.sessions ?? []}
         readUsage={dashboardSource?.readUsage}
         machineName={dashboardSource?.name}

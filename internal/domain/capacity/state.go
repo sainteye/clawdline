@@ -271,7 +271,13 @@ func (t *Tracker) Observe(res Resolved, r Reading, now time.Time) (Status, []Eve
 	if r.Known && res.Limit > 0 {
 		st.Ratio = float64(r.Used) / float64(res.Limit)
 		next = Level(e, prev, st.Ratio)
-		if e.Projects {
+		if e.RoutineOccupancy() && (r.Used <= res.Limit || e.AtLimit == Rotate) {
+			next = OK
+		}
+		if r.Failing {
+			next = Full
+		}
+		if e.Projects && !e.RoutineOccupancy() {
 			tr.samples = keep(tr.samples, sample{at: now, used: r.Used}, now)
 			if perDay, full, ok := project(tr.samples, r.Used, res.Limit, now); ok {
 				st.HasGrowth, st.GrowthPerDay, st.ProjectedFullAt = true, perDay, full

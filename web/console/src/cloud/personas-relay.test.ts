@@ -15,6 +15,9 @@
 // Sealing and opening stand aside, as in `subscriptions.test.ts`.
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
+// @ts-expect-error -- Node loads the source extension.
+import { canonicalPersonaCatalog } from "./persona-cache.ts"
 import { CloudClient } from "../legacy/js/net/cloud-client.js"
 import { parseEnvelopeChannel } from "../legacy/js/net/cloud-crypto.js"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
@@ -28,6 +31,7 @@ const CATALOG = { personas: [{ id: "architect" }], license: "MIT" }
 type Frame = { type: string; channels?: string[]; envelope?: { ch: string; body: Record<string, unknown> } }
 
 class Machine {
+  display = false
   socket: FakeSocket | null = null
   /** Every publish, and whether `ops.go` would have decoded it. */
   asked: { body: Record<string, unknown>; decoded: boolean }[] = []
@@ -40,14 +44,14 @@ class Machine {
     if (frame.type !== "publish") return
     const body = frame.envelope!.body
     const keys = Object.keys(body).sort()
-    const decoded = body.type === "personas" && keys.join(",") === "request,session,type" &&
+    const decoded = body.type === "personas" && (keys.join(",") === "request,session,type" || this.display && ["request,session,type,view", "request,session,type,version,view"].includes(keys.join(","))) &&
       body.session === "__clawdline_machine__" && typeof body.request === "string" && !!body.request
     this.asked.push({ body, decoded })
     this.say({ type: "ack", ch: frame.envelope!.ch, seq: this.seq, fanout: 1, status: "delivered" })
     if (decoded) {
       this.say({ type: "envelope", envelope: {
         ch: REPLY, seq: this.seq, ts: Date.now(), sender: "mac-sender",
-        payload: { read: "read:" + body.request, body: CATALOG },
+        payload: { read: "read:" + body.request, body: body.view === "display-v1" ? { view: "display-v1", version: createHash("sha256").update(canonicalPersonaCatalog(CATALOG)).digest("hex"), ...(body.version ? { unchanged: true } : { catalog: CATALOG }) } : CATALOG },
       } })
     }
     this.seq += 1
@@ -57,7 +61,7 @@ class Machine {
   describe(commands: string[]) {
     this.say({ type: "envelope", envelope: {
       ch: "orch/" + MACHINE, seq: this.seq++, ts: Date.now(), sender: "mac-sender",
-      payload: { machine: { platform: "linux", commands } },
+      payload: { machine: { platform: "linux", commands, persona_display_v1: this.display } },
     } })
   }
 
@@ -142,4 +146,67 @@ test("a machine whose descriptor does not list `personas` is sent nothing, and t
   } finally {
     client.stop()
   }
+})
+
+
+test("display reads negotiate with a supporting machine and reload with a fresh version receipt", async () => {
+  const machine = new Machine()
+  machine.display = true
+  const client = await connected(machine, ["personas"])
+  let saved: string | null = null
+  const old = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage")
+  Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: {
+    getItem: () => saved, setItem: (_key: string, value: string) => { saved = value }, removeItem: () => { saved = null },
+  } })
+  try {
+    const first = await reader(client).fetch("/v1/personas?view=display-v1")
+    assert.equal(first.status, 200)
+    assert.deepEqual(await first.json(), CATALOG)
+    const reloaded = await reader(client).fetch("/v1/personas?view=display-v1")
+    assert.deepEqual(await reloaded.json(), CATALOG)
+    assert.equal(machine.asked.length, 2)
+    assert.equal(machine.asked.every((call) => call.decoded), true)
+    assert.equal(machine.asked[0].body.view, "display-v1")
+    assert.equal(machine.asked[0].body.version, undefined)
+    assert.equal(machine.asked[1].body.version, createHash("sha256").update(canonicalPersonaCatalog(CATALOG)).digest("hex"))
+  } finally {
+    client.stop()
+    if (old) Object.defineProperty(globalThis, "sessionStorage", old)
+    else Reflect.deleteProperty(globalThis, "sessionStorage")
+  }
+})
+
+test("display callers send no new fields to an older machine", async () => {
+  const machine = new Machine()
+  const client = await connected(machine, ["personas"])
+  try {
+    const result = await reader(client).fetch("/v1/personas?view=display-v1")
+    assert.deepEqual(await result.json(), CATALOG)
+    assert.equal(machine.asked.length, 1)
+    assert.equal(machine.asked[0].decoded, true)
+    assert.equal(machine.asked[0].body.view, undefined)
+  } finally { client.stop() }
+})
+
+
+test("a stale display capability falls back once while an authority refusal does not retry", async () => {
+ const machine = new Machine()
+ machine.display = true
+ const client = await connected(machine, ["personas"])
+ const original = client._machineRequest.bind(client)
+ let attempts = 0
+ client._machineRequest = async (target: string, word: string, fields: Record<string, unknown>, ...rest: unknown[]) => {
+  attempts++
+  if (fields.view) throw {code:"malformed_read"}
+  return original(target, word, fields, ...rest)
+ }
+ try {
+  assert.deepEqual(await (await reader(client).fetch("/v1/personas?view=display-v1")).json(), CATALOG)
+  assert.equal(attempts, 2)
+  attempts = 0
+  client._machineRequest = async () => { attempts++; throw {code:"permission_denied", status:403} }
+  const refused = await reader(client).fetch("/v1/personas?view=display-v1")
+  assert.equal(refused.ok, false)
+  assert.equal(attempts, 1)
+ } finally {client.stop()}
 })

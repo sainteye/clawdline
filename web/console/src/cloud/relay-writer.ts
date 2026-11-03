@@ -250,6 +250,11 @@ export interface WriteHost {
  * report name.
  */
 export type WriteRoute =
+ | {op: "tool-library-write"; word: Carried<"tools.save" | "tools.prepare">}
+ | {op:"native-terminal-screen";word:Carried<"native-terminal-screen">;session:string}
+ | {op:"native-terminal-input";word:Carried<"native-terminal-input">;session:string}
+ | {op:"project-graphify-build";word:Carried<"project-graphify-build">;project:string}
+ | {op:"session-graphify-build";word:Carried<"session-graphify-build">;session:string}
  | { op: "squad-write"; word: Carried<"squad.settings.update" | "squad.motion.update" | "squad.catalog.update" | "squad.role-draft"> }
   | { op: "squad-package"; word: Carried<"squad.packages.preview" | "squad.packages.adopt" | "squad.packages.export"> }
   | { op: "project-hide"; word: Carried<"project-hide"> }
@@ -264,6 +269,8 @@ export type WriteRoute =
   | { op: "info"; word: Carried<"info">; session: string }
   | { op: "skills"; word: Carried<"skills">; session: string }
   | { op: "git"; word: Carried<"git">; session: string }
+  | { op: "outputs"; word: Carried<"outputs">; session: string }
+  | { op: "output-file"; word: Carried<"output-file">; session: string; id: string }
   | { op: "git-diff"; word: Carried<"git-diff">; session: string }
   | { op: "screen"; word: Carried<"screen">; session: string }
   | { op: "documents"; word: Carried<"documents">; session: string }
@@ -291,18 +298,25 @@ export type WriteRoute =
   | { op: "usage-work-samples"; word: Carried<"usage.work-samples"> }
   | { op: "capacity"; word: Carried<"capacity"> }
   | { op: "provider-quotas"; word: Carried<"provider-quotas"> }
+  | { op: "doctor"; word: Carried<"doctor"> }
   | { op: "default-models"; word: Carried<"default-models"> }
   | { op: "default-models-update"; word: Carried<"default-models-update"> }
   | { op: "notification-rules"; word: Carried<"notification-rules"> }
   | { op: "notification-rules-update"; word: Carried<"notification-rules-update"> }
   | { op: "work-gate-settings"; word: Carried<"work-gate-settings"> }
   | { op: "workflow-settings"; word: Carried<"workflow-settings"> }
+  | { op: "integration-settings"; word: Carried<"integration-settings"> }
   | { op: "work-gate-settings-update"; word: Carried<"work-gate-settings-update"> }
   | { op: "workflow-settings-update"; word: Carried<"workflow-settings-update"> }
+  | { op: "integration-settings-update"; word: Carried<"integration-settings-update"> }
+  | { op: "issue-tracker-read"; word: Carried<"github-connection" | "jira-connection" | "jira-projects"> }
+  | { op: "issue-tracker-write"; word: Carried<"github-connect" | "github-disconnect" | "jira-connect" | "jira-disconnect"> }
+  | { op: "issue-sync-retry"; word: Carried<"issue-sync.retry">; id: string }
   | { op: "notification-settings"; word: Carried<"notification-settings"> }
   | { op: "notification-settings-update"; word: Carried<"notification-settings-update"> }
   | { op: "board-command"; word: Carried<"board-command"> }
   | { op: "machine-usage"; word: Carried<"machine-usage"> }
+  | { op: "api-performance"; word: Carried<"api-performance"> }
   | { op: "update"; word: Carried<"update"> }
   | { op: "update-fresh"; word: Carried<"update-fresh"> }
   | { op: "update-apply"; word: Carried<"update-apply"> }
@@ -465,6 +479,7 @@ const HTTP_STATUS: Readonly<Record<string, number>> = {
  * refused at once, so nothing pressed during the gap is sent after it.
  */
 export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["op"]>([
+  "native-terminal-screen",
   "voice-source",
   "work-v2-image",
   "usage-compare",
@@ -473,14 +488,18 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "usage",
   "capacity",
   "provider-quotas",
+  "doctor",
   "default-models",
   "notification-rules",
   "work-gate-settings",
   "workflow-settings",
+  "integration-settings",
+  "issue-tracker-read",
   "notification-settings",
   "restorable",
   "archived",
   "machine-usage",
+  "api-performance",
   "update",
   "update-fresh",
   "verification-read",
@@ -491,6 +510,8 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "skills",
   "git",
   "git-diff",
+  "outputs",
+  "output-file",
   "screen",
   "documents",
   "document",
@@ -543,6 +564,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     // The capacity block on Settings: the register's rows and the dead
     // letters, machine-wide, on the machine's one reply channel.
+    if (head === "doctor" && segments.length === 1) return { op: "doctor", word: "doctor" }
     if (head === "provider-quotas" && segments.length === 1) return { op: "provider-quotas", word: "provider-quotas" }
     if (head === "capacity" && segments.length === 1) return { op: "capacity", word: "capacity" }
     if (head === "settings" && a === "default-models" && segments.length === 2) {
@@ -555,6 +577,16 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "settings" && a === "workflow" && segments.length === 2) {
       return { op: "workflow-settings", word: "workflow-settings" }
     }
+    if (head === "settings" && a === "integrations" && segments.length === 2) {
+      return { op: "integration-settings", word: "integration-settings" }
+    }
+    // Issue sync's tracker connections (pages/work/IssueSync.tsx). No answer
+    // carries a token.
+    if (head === "integrations" && a === "github" && segments.length === 2) return { op: "issue-tracker-read", word: "github-connection" }
+    if (head === "integrations" && a === "jira" && segments.length === 2) return { op: "issue-tracker-read", word: "jira-connection" }
+    if (head === "integrations" && a === "jira" && b === "projects" && segments.length === 3) {
+      return { op: "issue-tracker-read", word: "jira-projects" }
+    }
     if (head === "settings" && a === "notifications" && segments.length === 2) {
       return { op: "notification-settings", word: "notification-settings" }
     }
@@ -566,6 +598,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     // The dashboard behind the session counts: the machine's CPU and memory
     // and each session's share, on the machine's one reply channel.
+    if (head === "api-performance" && segments.length === 1) return { op: "api-performance", word: "api-performance" }
     if (head === "machine" && a === "usage" && segments.length === 2) {
       return { op: "machine-usage", word: "machine-usage" }
     }
@@ -603,12 +636,17 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // the same reason `info` is: it is a session's read, so it has to be asked
     // under the session's own identity as this page holds it (`identity`,
     // F5) rather than on the machine channel the reader's generic uses.
+    if (head === "sessions" && a && b === "outputs") {
+      if (segments.length === 3) return { op: "outputs", word: "outputs", session: a }
+      if (segments.length === 4 && c) return { op: "output-file", word: "output-file", session: a, id: c }
+    }
     if (head === "sessions" && a && b === "git" && segments.length === 3) {
       return { op: "git", word: "git", session: a }
     }
     if (head === "sessions" && a && b === "git" && c === "diff" && segments.length === 4) {
       return { op: "git-diff", word: "git-diff", session: a }
     }
+    if (head === "sessions" && a && b === "native-terminal" && segments.length === 3) return {op:"native-terminal-screen",word:"native-terminal-screen",session:a}
     // A session's read for the same reason: asked under the row's identity.
     if (head === "sessions" && a && b === "screen" && segments.length === 3) {
       return { op: "screen", word: "screen", session: a }
@@ -649,6 +687,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "work" && a === "v2" && b === "items" && c && segments.length === 4 && method === "PATCH") {
     return { op: "work-v2-edit", word: "work.v2.edit", id: c }
   }
+  if (head === "integrations" && (a === "github" || a === "jira") && segments.length === 2 && method === "DELETE") {
+    return { op: "issue-tracker-write", word: a === "github" ? "github-disconnect" : "jira-disconnect" }
+  }
   if (head === "places" && segments.length === 1 && method === "DELETE") return { op: "project-hide", word: "project-hide" }
   if (head === "places" && segments.length === 1 && method === "POST") return { op: "project-add", word: "project-add" }
   if (head === "projects" && a && b === "files" && c && segments.length === 4 && method === "PUT" && /^[0-9a-f]{32}$/.test(c)) {
@@ -657,8 +698,14 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "projects" && a && b === "antigravity-consent" && segments.length === 3 && method === "POST") {
     return { op: "project-antigravity-consent-change", word: "project-antigravity-consent-change", project: a }
   }
+  if (head === "projects" && a && b === "graphify" && segments.length === 3 && method === "POST") return {op:"project-graphify-build",word:"project-graphify-build",project:a}
+  if (head === "sessions" && a && b === "graphify" && segments.length === 3 && method === "POST") return {op:"session-graphify-build",word:"session-graphify-build",session:a}
   if (head === "projects" && a && b === "unify" && segments.length === 3 && method === "POST") {
     return { op: "project-unify-apply", word: "project-unify-apply", project: a }
+  }
+  if (head === "tool-library" && method === "POST") {
+    if (segments.length === 1) return {op:"tool-library-write",word:"tools.save"}
+    if (segments.length === 2 && a === "prepare") return {op:"tool-library-write",word:"tools.prepare"}
   }
   if (head === "squad" && segments.length === 2 && method === "PUT") {
     if (a === "settings") return { op: "squad-write", word: "squad.settings.update" }
@@ -676,6 +723,12 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return { op: "worktree-remove", word: "project-worktree-remove", project: a, worktree: c }
   }
   if (method !== "POST") return null
+  if (head === "integrations" && a === "github" && b === "device" && segments.length === 3) {
+    return { op: "issue-tracker-write", word: "github-connect" }
+  }
+  // The Jira API token rides inside the end-to-end encrypted command only.
+  if (head === "integrations" && a === "jira" && segments.length === 2) return { op: "issue-tracker-write", word: "jira-connect" }
+  if (head === "issue-sync" && a && b === "retry" && segments.length === 3) return { op: "issue-sync-retry", word: "issue-sync.retry", id: a }
   if (head === "squad" && a === "catalog" && segments.length === 2) return { op: "squad-write", word: "squad.catalog.update" }
   if (head === "squad" && a === "role-draft" && segments.length === 2) return { op: "squad-write", word: "squad.role-draft" }
   if (head === "squad-packages" && segments.length === 2) {
@@ -695,6 +748,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   }
   if (head === "settings" && a === "workflow" && segments.length === 2) {
     return { op: "workflow-settings-update", word: "workflow-settings-update" }
+  }
+  if (head === "settings" && a === "integrations" && segments.length === 2) {
+    return { op: "integration-settings-update", word: "integration-settings-update" }
   }
   if (head === "settings" && a === "notifications" && segments.length === 2) {
     return { op: "notification-settings-update", word: "notification-settings-update" }
@@ -793,6 +849,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   }
   if (head === "sessions" && a && segments.length === 3) {
     switch (b) {
+      case "native-terminal": return {op:"native-terminal-input",word:"native-terminal-input",session:a}
       case "send":
         return { op: "send", word: "send", session: a }
       case "key":
@@ -875,6 +932,8 @@ type Spelling = "flat" | "nested"
  */
 function spellingOf(route: WriteRoute): Spelling {
   switch (route.op) {
+    case "native-terminal-screen":
+    case "native-terminal-input":
     case "send":
     case "answer":
     case "end":
@@ -887,6 +946,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "skills":
     case "git":
     case "git-diff":
+    case "outputs":
+    case "output-file":
     case "screen":
     case "video":
     case "document":
@@ -926,17 +987,25 @@ function spellingOf(route: WriteRoute): Spelling {
     case "notification-rules":
     case "notification-rules-update":
     case "work-gate-settings":
+    case "integration-settings":
     case "workflow-settings":
     case "work-gate-settings-update":
+    case "integration-settings-update":
     case "workflow-settings-update":
+    case "issue-tracker-read":
+    case "issue-tracker-write":
+    case "issue-sync-retry":
     case "notification-settings":
     case "notification-settings-update":
+    case "tool-library-write":
     case "squad-write":
     case "squad-package":
     case "board-command":
     case "project-hide":
     case "project-add":
     case "project-file-save":
+    case "project-graphify-build":
+    case "session-graphify-build":
     case "project-antigravity-consent-change":
     case "project-unify-apply":
     case "project-mirror-apply":
@@ -1073,7 +1142,9 @@ export class RelayWriter {
       // filtering it to a code. It is the local route's answer again: a 500
       // whose body says what ran, what failed and the plan read again.
       if (route.op === "project-unify-apply" && isStoppedUnify(body)) return json(500, cleanAnswer(body))
-      return json(200, cleanAnswer(body))
+      const response = json(200, cleanAnswer(body))
+      if (route.op === "api-performance") response.headers.set("Cache-Control", "no-store")
+      return response
     } catch (error) {
       return this.refuse(route, method, path, started, spelling, error as CloudFailureLike)
     }
@@ -1120,6 +1191,21 @@ export class RelayWriter {
 
   private async carry(client: CloudWriteClient, route: WriteRoute, url: URL, init?: RequestInit): Promise<unknown> {
     switch (route.op) {
+      case "native-terminal-screen": {
+        if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, route.word, {}, init?.signal)
+        const target = await this.contentTarget(route.session, init?.signal, true)
+        if (!target) throw failure("execution_target_required", "The terminal needs an exact Session execution.", 409)
+        return this.contentRead(client, target, route.word, {}, init?.signal)
+      }
+      case "native-terminal-input": {
+        const body = await bodyOf(init)
+        const request = headerOf(init,"idempotency-key")
+        if (!request.trim()) throw failure("idempotency_key_required", "This action needs an Idempotency-Key.", 400)
+        const {identity,generation,client:current} = await this.mutationTarget(client,route.session,route.word)
+        if (typeof current._read !== "function") throw failure("cloud_not_carried",route.word,501)
+        return current._read(identity,route.word,{request,execution_generation:generation,expect:body.expect,
+          ...(typeof body.key === "string" && body.key ? {key:body.key} : {text:body.text})},"action:"+request)
+      }
       case "send": {
         const body = await bodyOf(init)
         const text = typeof body.text === "string" ? body.text : ""
@@ -1220,7 +1306,7 @@ export class RelayWriter {
       case "session-receipt": {
         const action = url.searchParams.get("action") ?? ""
         const generation = url.searchParams.get("execution_generation") ?? ""
-        if (!new Set(["send", "answer", "key", "interrupt", "end", "archive-session"]).has(action) || !/^[0-9a-f]{32}$/.test(generation)) {
+        if (!new Set(["send", "answer", "key", "interrupt", "end", "archive-session", "native-terminal-input"]).has(action) || !/^[0-9a-f]{32}$/.test(generation)) {
           throw failure("bad_request", "A receipt lookup needs its action and execution generation.", 400)
         }
         await this.host.settledWords?.("session-receipt", this.host.machine)
@@ -1243,6 +1329,13 @@ export class RelayWriter {
         // both — its own divergence — and the page still asks for the half it
         // wants, so a machine that does tell them apart is asked correctly.
         const exact = this.fleetTarget(route.session)
+        if (url.searchParams.get("parts") === "remote-permission") {
+          const fields = { parts: "remote-permission" }
+          if (exact) return this.contentRead(client, exact, "info", fields, init?.signal)
+          if (!client._read) throw failure("cloud_not_carried", "Pinned Session info is unavailable.", 501)
+          return client._read(await this.identity(client, route.session), "info", fields, "info.remote-permission",
+            undefined, { signal: init?.signal ?? undefined })
+        }
         if (exact) {
           if (!client.infoForGeneration) throw failure("cloud_not_carried", "Pinned Session info is unavailable.", 501)
           return client.infoForGeneration(exact, init?.signal ?? undefined)
@@ -1257,6 +1350,19 @@ export class RelayWriter {
         }
         if (!client.skills) throw failure("cloud_not_carried", "This Cloud client cannot read Session skills.", 501)
         return client.skills(await this.identity(client, route.session))
+      case "outputs":
+      case "output-file": {
+        const fields: Record<string, unknown> = route.op === "outputs" ? {} : {
+          id: route.id, request: this.requestID(), offset: url.searchParams.get("offset") ?? "",
+          revision: url.searchParams.get("revision") ?? "", size: url.searchParams.get("size") ?? "",
+        }
+        if (route.op === "output-file" && (!/^(0|[1-9][0-9]*)$/.test(String(fields.offset)) || !["", "thumb"].includes(String(fields.size))))
+          throw failure("malformed_read", "An output read needs an exact offset and size.", 400)
+        if (this.fleetTarget(route.session)) return this.pinnedRead(client, route.session, route.word, fields, init?.signal)
+        const target = await this.contentTarget(route.session, init?.signal, true)
+        if (!target) throw failure("execution_target_required", "An output read needs an exact Session execution.", 409)
+        return this.contentRead(client, target, route.word, fields, init?.signal)
+      }
       case "git":
         // A read, so nothing is marked written and `sessionOf` leaves it out:
         // asking what a repository has changed changes nothing. The machine's own
@@ -1453,11 +1559,14 @@ export class RelayWriter {
         }
         return client._machineRequest(this.host.machine, route.word, { id: route.id }, "read")
       }
+      case "doctor":
       case "provider-quotas":
       case "capacity":
       case "default-models":
       case "notification-rules":
       case "work-gate-settings":
+      case "integration-settings":
+      case "issue-tracker-read":
       case "workflow-settings":
       case "notification-settings":
       case "machine-usage":
@@ -1573,6 +1682,23 @@ export class RelayWriter {
           body.since = value
         }
         return client._machineRequest(this.host.machine, route.word, body, "read")
+      }
+      case "api-performance": {
+        const fields: Record<string, unknown> = { hours: "1" }
+        const seen = new Set<string>()
+        for (const [key, value] of url.searchParams) {
+          if (seen.has(key) || key !== "hours" && key !== "until") throw failure("invalid_query", "API history accepts one hours and one until value.", 400)
+          seen.add(key)
+          if (key === "hours") {
+            if (!["1", "6", "24", "168"].includes(value)) throw failure("invalid_query", "API history accepts hours=1, 6, 24 or 168.", 400)
+            fields.hours = value
+          } else {
+            if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) throw failure("invalid_query", "API history needs a Unix millisecond end.", 400)
+            fields.until = Number(value)
+          }
+        }
+        if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
+        return client._machineRequest(this.host.machine, route.word, fields, "read", undefined, { signal: init?.signal ?? undefined })
       }
       case "usage-overview": {
         const body = usageOverviewQuery(url.searchParams)
@@ -1794,11 +1920,21 @@ export class RelayWriter {
         return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"))
       }
       case "work-gate-settings-update":
+      case "integration-settings-update":
       case "workflow-settings-update": {
         for (const [key] of url.searchParams) {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
         }
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "issue-tracker-write": {
+        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        const fields = route.word === "jira-connect" ? { connection: await bodyOf(init) } : {}
+        return this.machineWorkV2(client, route.word, fields, headerOf(init, "idempotency-key"))
+      }
+      case "issue-sync-retry": {
+        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        return this.machineWorkV2(client, route.word, { id: route.id }, headerOf(init, "idempotency-key"))
       }
       case "notification-settings-update": {
         for (const [key] of url.searchParams) {
@@ -1806,10 +1942,11 @@ export class RelayWriter {
         }
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
+      case "tool-library-write":
       case "squad-write": {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         const request = headerOf(init, "idempotency-key")
-        if (!request) throw failure("idempotency_key_required", "Squad writes need an Idempotency-Key.", 400)
+        if (!request) throw failure("idempotency_key_required", "This operation needs an Idempotency-Key.", 400)
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, request)
       }
       case "squad-package": {
@@ -1871,6 +2008,24 @@ export class RelayWriter {
         if (!request) throw failure("idempotency_key_required", "Saving a Project file needs an Idempotency-Key.", 400)
         return client._machineRequestAs(request, place.machine, route.word,
           { project: place.id, file: route.file, item: await bodyOf(init) }, "action")
+      }
+      case "project-graphify-build": {
+        if(client.allowWrites!==true)throw failure("send_disabled","Building an index needs send access to this machine.",403)
+        if ([...url.searchParams].length || Object.keys(await bodyOf(init)).length) throw failure("bad_request","An index build accepts only an empty JSON object.",400)
+        if (typeof client._place!=="function" || typeof client._machineRequestAs!=="function") throw failure("cloud_not_carried",route.word,501)
+        const place=client._place(route.project)
+        if (place.machine!==this.host.machine) throw failure("cloud_project_machine_mismatch","This Project belongs to another machine.",409)
+        const request=headerOf(init,"idempotency-key")
+        if (!request) throw failure("idempotency_key_required","An index build needs an Idempotency-Key.",400)
+        return client._machineRequestAs(request,place.machine,route.word,{project:place.id},"action")
+      }
+      case "session-graphify-build": {
+        if(client.allowWrites!==true)throw failure("send_disabled","Building an index needs send access to this machine.",403)
+        if ([...url.searchParams].length || Object.keys(await bodyOf(init)).length) throw failure("bad_request","An index build accepts only an empty JSON object.",400)
+        const request=headerOf(init,"idempotency-key")
+        if (!request) throw failure("idempotency_key_required","An index build needs an Idempotency-Key.",400)
+        const {identity,generation,client:current}=await this.mutationTarget(client,route.session,route.word)
+        return current._read!(identity,route.word,{request,execution_generation:generation},"action:"+request)
       }
       case "project-antigravity-consent-change":
       case "project-unify-apply": {
@@ -2157,11 +2312,11 @@ export class RelayWriter {
    * must fail on replacement instead of silently resolving another execution.
    * Weak keys release pins with their callers; retries use a new signal.
    */
-  private async contentTarget(session: string, signal?: AbortSignal | null): Promise<SessionContentTarget | null> {
+  private async contentTarget(session: string, signal?: AbortSignal | null, resolveUnopened = false): Promise<SessionContentTarget | null> {
     if (signal?.aborted) throw failure("abandoned_read", "The content read was cancelled.", 499)
     const held = signal ? this.contentPins.get(signal)?.get(session) : null
     const opened = this.host.exactTarget?.()
-    if (!opened && !held) return null
+    if (!opened && !held && !resolveUnopened) return null
     const resolve = async (): Promise<SessionContentTarget> => {
       const target = opened?.machineID === this.host.machine && opened.sessionID === session
         ? opened : await this.host.resolveSession?.(this.host.machine, session)
@@ -2299,7 +2454,9 @@ export class RelayWriter {
       spelling === "flat"
         ? { error: code, detail: message, route: path, ...fields }
         : { error: { code, message, ...fields } }
-    return json(status, body)
+    const response = json(status, body)
+    if (route.op === "api-performance") response.headers.set("Cache-Control", "no-store")
+    return response
   }
 }
 
@@ -2310,6 +2467,7 @@ function declaredCommands(client: CloudWriteClient, machine: string): string[] |
 
 function sessionOf(route: WriteRoute): string | null {
   switch (route.op) {
+    case "native-terminal-input":
     case "send":
     case "answer":
     case "end":

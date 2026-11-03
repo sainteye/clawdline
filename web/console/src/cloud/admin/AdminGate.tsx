@@ -9,7 +9,7 @@ import { DemoPromotions } from "./DemoPromotions.js"
 import { demoOverview } from "./demo.js"
 import { mayLeaveCode } from "./navigation-guard.js"
 import { loadOverview, type Overview } from "./api.js"
-import { ADMIN_ROUTES, adminPath, adminRoute, adminWords, bootAdminCatalog, type AdminRoute, type Say } from "./words.js"
+import { ADMIN_NAV_ROUTES, adminNavPath, adminPath, adminRoute, adminWords, bootAdminCatalog, type AdminNavRoute, type AdminRoute, type Say } from "./words.js"
 // Loaded on first visit, so the other operations pages do not carry its screens and copy.
 const ConnectionHealth = lazy(() => import("./health/ConnectionHealth.js").then((m) => ({ default: m.ConnectionHealth })))
 import { healthRoute } from "./health/route.js"
@@ -190,7 +190,8 @@ export function AdminGate({ declared }: { declared: string }) {
     else void start()
   }, [start])
   const healthFetch = useMemo<typeof fetch>(() => (url, init) => fetch(url, init), [])
-  const pageTitle = say(`nav_${route}`)
+  const navigationRoute = health?.screen === "M03" && health.performance ? "monitoring" : route
+  const pageTitle = say(`nav_${navigationRoute}`)
 
   useEffect(() => {
     document.title = navigable ? say("docTitlePage", { page: pageTitle }) : say("docTitle")
@@ -219,7 +220,7 @@ export function AdminGate({ declared }: { declared: string }) {
 
   if (route === "health") {
     return (
-      <Shell route={route} go={go} say={say} consoleHref={consoleHref} stampText={null} refreshing={false} onRefresh={null}>
+      <Shell route={navigationRoute} go={go} say={say} consoleHref={consoleHref} stampText={null} refreshing={false} onRefresh={null}>
         <Suspense fallback={<Skeleton label={say("loading")} />}>
         {health === null ? (
           <Notice title={say("failedTitle")} body={say("healthUnknownAddress")}>
@@ -266,7 +267,7 @@ export function AdminGate({ declared }: { declared: string }) {
               {say("staleNote", { code: phase.stale.code, time: new Intl.DateTimeFormat(locale, { timeZone: "UTC", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(phase.overview.generated_at)) })}
             </p>
           ) : null}
-          {route === "overview" ? <OverviewPage overview={demo ? sample : phase.overview} say={say} locale={locale} go={go} /> : null}
+          {route === "overview" ? <OverviewPage apiOrigin={config?.apiOrigin ?? ""} demo={demo} overview={demo ? sample : phase.overview} say={say} locale={locale} go={go} /> : null}
           {route === "survey" && config ? <SurveyStatistics apiOrigin={config.apiOrigin} demo={demo} refreshToken={phase.overview.generated_at} /> : null}
           {route === "accounts" ? <AccountsPage overview={demo ? sample : phase.overview} say={say} locale={locale} go={go} /> : null}
           {route === "usage" ? <UsagePage overview={demo ? sample : phase.overview} say={say} locale={locale} go={go} /> : null}
@@ -357,7 +358,7 @@ function PageHead({ route, say, moved }: { route: AdminRoute; say: Say; moved: n
 }
 
 function Shell({ route, go, say, consoleHref, stampText, refreshing, onRefresh, children }: {
-  route: AdminRoute
+  route: AdminNavRoute
   go: Go
   say: Say
   consoleHref: string
@@ -436,7 +437,7 @@ function Shell({ route, go, say, consoleHref, stampText, refreshing, onRefresh, 
         role={narrow ? "dialog" : undefined} aria-modal={drawerOpen || undefined} aria-label={narrow ? say("menuLabel") : undefined}
         aria-hidden={narrow && !open ? true : undefined}>
         <div className="adm-brand">
-          <svg className="adm-brand-mark" viewBox="0 0 8 4" aria-hidden="true" focusable="false" shapeRendering="crispEdges">
+          <svg className="adm-brand-mark" viewBox="0 0 16 11" aria-hidden="true" focusable="false" shapeRendering="crispEdges">
             {BRAND_MARK.cells.flatMap((row, y) => row.map((fill, x) => fill ? (
               <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={fill} />
             ) : null))}
@@ -453,10 +454,10 @@ function Shell({ route, go, say, consoleHref, stampText, refreshing, onRefresh, 
         </div>
         <nav className="adm-nav" aria-label={say("navLabel")}>
           <ul>
-            {ADMIN_ROUTES.map((r) => (
+            {ADMIN_NAV_ROUTES.map((r) => (
               <li key={r}>
-                <RouteLink href={adminPath(r)} go={follow} className={r === route ? "adm-nav-link adm-nav-on" : "adm-nav-link"} current={r === route}>
-                  <span className={"adm-nav-icon adm-nav-icon-" + r} aria-hidden="true" />
+                <RouteLink href={adminNavPath(r)} go={follow} className={r === route ? "adm-nav-link adm-nav-on" : "adm-nav-link"} current={r === route}>
+                  <span className={"adm-nav-icon adm-nav-icon-" + (r === "monitoring" ? "usage" : r)} aria-hidden="true" />
                   <span className="adm-nav-text">
                     <span className="adm-nav-label">{say(`nav_${r}`)}</span>
                     <span className="adm-nav-hint">{say(`hint_${r}`)}</span>

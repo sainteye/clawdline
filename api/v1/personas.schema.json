@@ -29,6 +29,17 @@
         "source": { "description": "The upstream file this persona was adapted from, at a fixed commit.", "type": "string" }
       }
     },
+    "PersonaDisplayReply": {
+      "description": "An opt-in display-v1 reading. version is the SHA-256 of the catalog with sorted object keys and Go JSON string escaping. An unchanged receipt requires a fresh authorized machine read.",
+      "type": "object", "additionalProperties": false,
+      "required": ["view", "version"],
+      "properties": {
+        "view": {"type": "string"},
+        "version": {"type": "string"},
+        "catalog": {"$ref": "#/$defs/PersonaCatalog"},
+        "unchanged": {"type": "boolean"}
+      }
+    },
     "PersonaCatalog": {
       "description": "Every persona in the order a picker shows them, and where the texts came from.",
       "type": "object",

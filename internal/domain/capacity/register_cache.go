@@ -3,6 +3,8 @@ package capacity
 // cacheBounds is every registered row named cache.*.
 func cacheBounds() []Entry {
 	return []Entry{
+		{Name: "cache.transcript_delta_pages", Class: Cache, Unit: Rows, Limit: 128, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaPagesLimit"}},
+		{Name: "cache.transcript_delta_bytes", Class: Cache, Unit: Bytes, Limit: 8 << 20, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaBytesLimit"}},
 		{Name: "cache.provider_quota", Class: Cache, Unit: Rows, Limit: 4, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/providerquota.CacheLimit"}},
@@ -15,6 +17,18 @@ func cacheBounds() []Entry {
 		{Name: "cache.provider_quota_request_seconds", Class: Observation, Unit: Seconds, Limit: 10, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/providerquota.RequestSecondsLimit"}},
+		// Claude Code's own usage answer, asked when the status line has no
+		// fresh window: one ask at a time, at most one per 15 minutes, ten
+		// seconds each, reading at most 1 MiB of its output.
+		{Name: "cache.claude_usage_refresh_seconds", Class: Observation, Unit: Seconds, Limit: 900, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/claudeusage.RefreshSecondsLimit"}},
+		{Name: "cache.claude_usage_request_seconds", Class: Observation, Unit: Seconds, Limit: 10, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/claudeusage.RequestSecondsLimit"}},
+		{Name: "cache.claude_usage_reply_bytes", Class: Buffer, Unit: Bytes, Limit: 1048576, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/claudeusage.ReplyBytesLimit"}},
 
 		{
 			// The one execution scan observeExecutions last committed, by
@@ -141,7 +155,7 @@ func cacheBounds() []Entry {
 			// A directory git answered "not a repository" for is answered
 			// that way for a minute without running git again
 			// (internal/adapters/git/notrepo.go). Only that answer is kept.
-			Name: CacheGitNotRepo, Class: Cache, Unit: Seconds,
+			Name: CacheGitNotRepo, Routine: true, Class: Cache, Unit: Seconds,
 			Limit: 60, AtLimit: Expire,
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,

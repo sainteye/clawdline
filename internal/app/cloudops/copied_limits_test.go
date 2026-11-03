@@ -10,6 +10,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/cloudvocab"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/domain/squadpack"
+	"github.com/sainteye/clawdline/internal/domain/toollibrary"
 )
 
 // copiedConstants is every Go constant a limit in the vocabulary table is a
@@ -31,6 +32,7 @@ var copiedConstants = map[string]int64{
 	"workV2CloudImageBodyLimit":                    workV2CloudImageBodyLimit,
 	"projectfiles.MaxWriteBytes":                   projectfiles.MaxWriteBytes,
 	"squad.MaxSquadRequestBytes":                   squad.MaxSquadRequestBytes,
+	"toollibrary.MaxRequestBytes":                  toollibrary.MaxRequestBytes,
 	"squadpack.MaxRequestBytes":                    squadpack.MaxRequestBytes,
 	"store.MaxSquadEventPageRows":                  store.MaxSquadEventPageRows,
 }

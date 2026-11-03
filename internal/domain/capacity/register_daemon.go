@@ -3,8 +3,10 @@ package capacity
 // daemonBounds is every registered row named audit.*, deploy.*, devices.*,
 // diagnostics.*, log.*, notification.*, push.*, settings.* and sse.*: the
 // daemon's own plumbing: audit, logs, devices, pushes, settings and streams.
-func daemonBounds() []Entry {
-	return []Entry{
+func daemonBounds() []Entry { return append(doctorBounds(), legacyDaemonBounds()...) }
+
+func legacyDaemonBounds() []Entry {
+	return append([]Entry{
 		{
 			// remote-audit.jsonl (limits N12). Rotated into segments at this
 			// size; a segment is never deleted by the daemon.
@@ -125,5 +127,5 @@ func daemonBounds() []Entry {
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/http.MaxRouteLatencySamples"},
 		},
-	}
+	}, apiPerformanceBounds()...)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/logs"
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
@@ -14,7 +15,36 @@ import (
 // daemonCapacityMeasures measures every row of the register's "daemon" area
 // (capacity.AreaOf), one reading per row.
 func (s *Server) daemonCapacityMeasures() map[string]func() capacity.Reading {
-	return map[string]func() capacity.Reading{
+	out := map[string]func() capacity.Reading{
+		"diagnostics.doctor_checks": func() capacity.Reading {
+			var used int64
+			if s.doctorBusy.Load() {
+				used = 1
+			}
+			return capacity.Reading{Known: true, Used: used, Note: "active Doctor check"}
+		},
+		"diagnostics.doctor_history_rows": func() capacity.Reading {
+			return s.doctorHistory().Reading(false)
+		},
+		"diagnostics.doctor_history_bytes": func() capacity.Reading {
+			return s.doctorHistory().Reading(true)
+		},
+		"diagnostics.doctor_history_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, WindowSeconds: 259200, Note: "expired transitions are pruned on the next quota observation or report"}
+		},
+		"diagnostics.doctor_version_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-machine Doctor bound; exported reports state evidence coverage"}
+		},
+		"diagnostics.doctor_version_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-machine Doctor bound; exported reports state evidence coverage"}
+		},
+		"diagnostics.doctor_report_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-machine Doctor bound; exported reports state evidence coverage"}
+		},
+		"diagnostics.doctor_description_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-machine Doctor bound; exported reports state evidence coverage"}
+		},
+
 		capacity.DeployHealthSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-deploy health guard; no retained wait"}
 		},
@@ -94,4 +124,26 @@ func (s *Server) daemonCapacityMeasures() map[string]func() capacity.Reading {
 			return s.screenBus.reading()
 		},
 	}
+	for _, e := range capacity.Register() {
+		if !strings.HasPrefix(e.Name, "diagnostics.api_") {
+			continue
+		}
+		name := strings.TrimPrefix(e.Name, "diagnostics.api_")
+		out[e.Name] = func() capacity.Reading {
+			rt := s.routeStatsTable().performance.Load()
+			if rt == nil {
+				_, err := os.Stat(filepath.Join(s.cfg.Dir, "api-performance", "history.sqlite"))
+				if errors.Is(err, os.ErrNotExist) {
+					return capacity.Reading{Known: true, Note: "monitoring has not started; no local history exists"}
+				}
+				return capacity.Unmeasured("owner-local API monitoring is not running")
+			}
+			n, known := rt.Usage(name)
+			if !known {
+				return capacity.Unmeasured("owner-local API storage is unavailable")
+			}
+			return capacity.Reading{Known: true, Used: n, Note: "owner-local operational aggregates; not uploaded"}
+		}
+	}
+	return out
 }

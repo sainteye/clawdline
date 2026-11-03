@@ -2,6 +2,7 @@ package http
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
@@ -10,6 +11,12 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) cloudCapacityMeasures() map[string]func() capacity.Reading {
 	out := map[string]func() capacity.Reading{
+		"cloud.persona_display_cache": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "one browser session-storage catalog; revalidated before use; browser occupancy is not measured"}
+		},
+		"cloud.read_plaintext_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read byte guard; no retained buffer"}
+		},
 		"cloud.viewer_rekey_pending": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "browser policy only; disabled by default; no daemon queue; live browser usage is not measured"}
 		},
@@ -245,5 +252,11 @@ func (s *Server) cloudCapacityMeasures() map[string]func() capacity.Reading {
 	for name, m := range s.connectionHealthCapacityMeasures() {
 		out[name] = m
 	}
+	for name, measure := range performanceCapacityMeasures() {
+		if strings.HasPrefix(name, "cloud.") {
+			out[name] = measure
+		}
+	}
+
 	return out
 }

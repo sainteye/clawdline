@@ -74,12 +74,7 @@ test("the assignment picker shows one compact AI suggestion action", () => {
   assert.doesNotMatch(source, pattern`${said("只有按下按鈕才會把項目類型")}`)
 })
 
-test("new Session assignment leaves the role empty until one is explicitly picked", () => {
-  assert.match(source, /<RoleRow[^>]*chosen=\{persona\?\.id \?\? ""\}/)
-  assert.match(source, /onPick=\{\(id\) => setPersonaChoice\(id\)\}/)
-  assert.match(source, /assignNewWorkV2\(item, assistant, persona\?\.id\)/)
-  assert.match(source, /onClick=\{\(\) => void askAIForPersona\(\)\}/)
-})
+// New-Session model and role choices are exercised through the browser in session/address.e2e.ts.
 
 // Not covered: assigning to an existing Session confirms only after one is selected. What stood
 // here read the component's source; asserting it needs a DOM runner.

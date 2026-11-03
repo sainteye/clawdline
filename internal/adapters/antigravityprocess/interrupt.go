@@ -50,5 +50,6 @@ func (c *Client) Interrupt(ctx context.Context, before func() error) error {
 		c.shutdown(failure("write_failed", Uncertain))
 		return failure("write_failed", Uncertain)
 	}
+	c.cancelRequested(id)
 	return nil
 }

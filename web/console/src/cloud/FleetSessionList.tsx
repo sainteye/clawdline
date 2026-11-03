@@ -468,14 +468,14 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                   const title = fleetRowTitle(row, presentation, nextWord("cloudAllUnknown"),
                     confirmedTitles?.get(destinationKey(row.destination)))
                   const actions = sessionSwipeActions(row.freshness,
-                    displayedPresentationStatus(row, presentation)?.sessionId)
+                    displayedPresentationStatus(row, presentation)?.sessionId, row.backend)
                   return <ProjectedRow key={destinationKey(row.destination)}
                     title={title} icon={presentation?.icon} cwd={presentation?.cwd}
                     machineScope={row.machineScope === true} coordinatorBound={row.coordinatorBound === true}
                     status={displayedPresentationStatus(row, presentation)}
                     runningAgents={row.freshness === "current" ? row.agentCountUnknown ? null : row.runningAgentCount : undefined}
                     sessionID={row.destination.sessionID} machineID={machine.id} machineName={machine.name}
-                    assistant={row.assistant ?? presentation?.assistant} state={row.state} stateLabel={stateWord(row.state)}
+                    assistant={row.assistant ?? presentation?.assistant} state={row.state} stateLabel={row.providerBlock === "model_capacity" ? nextWord("sessionModelCapacity") : stateWord(row.state)}
                     freshness={row.freshness === "unknown" ? nextWord("cloudAllUnknown") : ""}
                     lastMovementAt={row.lastMovementAt} attention={row.needsAttention === true}
                     depth={depth} branchThrough={branchThrough} ancestorThrough={ancestorThrough}

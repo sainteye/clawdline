@@ -143,3 +143,7 @@
 #start-with .chip .assistant-logo { display: block; width: 13px; height: 13px; }
 #start-with .chip:not(.on) .assistant-logo { opacity: 0.5; }
 #start-with .chip:hover:not(:disabled) .assistant-logo { opacity: 1; }
+
+/* The model row is the Board's collapsed choice; it sits under the role row. */
+.sheet .start-model { margin: 0 0 8px; }
+.sheet .start-model .work-launch-option { border-bottom: 1px solid var(--line); }

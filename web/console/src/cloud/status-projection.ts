@@ -88,7 +88,7 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
     rows.push({
       destination: { machineID: machine, sessionID: session, executionGeneration: data.execution_generation },
       assistant: data.assistant === "claude" || data.assistant === "codex" || data.assistant === "antigravity" ? data.assistant : undefined,
-      backend: data.backend === "tmux" || data.backend === "iterm" || data.backend === "ps" ? data.backend : undefined,
+      backend: data.backend === "tmux" || data.backend === "iterm" || data.backend === "ps" || data.backend === "owned" || data.backend === "claude_remote" ? data.backend : undefined,
       parentSessionID: typeof data.parent_session_id === "string" && data.parent_session_id !== session
         ? data.parent_session_id : taskParents.get(session),
       machineScope: data.machine_scope === true,
@@ -97,6 +97,7 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
       freshness: stale || rowStale ? "stale" : source!.freshness === "current" ? "current" :
         source!.freshness === "unverified" ? "stale" : "unknown",
       needsAttention: typeof data.attention_required === "boolean" ? data.attention_required : undefined,
+      providerBlock: data.provider_block === "model_capacity" ? "model_capacity" : undefined,
       waitingForReply: data.waiting_for_reply === true ? true : undefined,
       observedAt: Number(source!.observed_at) * 1000,
       lastMovementAt: Number.isFinite(data.last_movement_at) ? Number(data.last_movement_at) * 1000 : undefined,

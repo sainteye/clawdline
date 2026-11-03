@@ -656,3 +656,28 @@ func TestAnIdleStoreDoesNoIO(t *testing.T) {
 		t.Fatalf("idle store wrote: writes %d→%d syncs %d→%d", before.Writes, after.Writes, before.Syncs, after.Syncs)
 	}
 }
+
+func TestStatusMeasuresRecoverySegmentsAndLostRangeMemory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "unrecognized"), []byte("kept"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	clock := newClock(t0)
+	s := open(t, Options{Dir: dir, BootID: "boot-a", Build: "build", Clock: clock})
+	producer := newProducer(t, clock, "boot-a", "build")
+	offerAll(t, s, producer.next(t, 2))
+	flush(t, s)
+	s.markLost(10, 11)
+	s.markLost(20, 21)
+	st := s.Status()
+	if st.LostRanges != 2 || st.LargestSegmentBytes <= 0 || st.Recovery.EntriesExamined != 2 {
+		t.Fatal(st)
+	}
+	// An opening scan is not misrepresented as a fresh directory scan.
+	if err := os.WriteFile(filepath.Join(dir, "later"), []byte("kept"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Status().Recovery.EntriesExamined; got != 2 {
+		t.Fatal("opening observation changed", got)
+	}
+}

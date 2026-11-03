@@ -1,6 +1,9 @@
 package http
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -16,6 +19,11 @@ import (
 func (s *Server) personasRoute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Personas are read with GET.")
+		return
+	}
+	view, version := r.URL.Query().Get("view"), r.URL.Query().Get("version")
+	if (view != "" && view != "display-v1") || (version != "" && (view == "" || !personaCatalogVersion(version))) {
+		writeRefusal(w, http.StatusBadRequest, "invalid_persona_view", "Use display-v1 and a SHA-256 catalog version.")
 		return
 	}
 	out := personaCatalog()
@@ -44,6 +52,10 @@ func (s *Server) personasRoute(w http.ResponseWriter, r *http.Request) {
 			SuggestedKinds: []string{}, Icon: contract.Icon{Accent: d.Icon.Accent, Cells: d.Icon.Cells}, Source: d.Source,
 		})
 	}
+	if view == "display-v1" {
+		writeJSON(w, personaDisplay(out, version))
+		return
+	}
 	writeJSON(w, out)
 }
 
@@ -61,4 +73,39 @@ func personaCatalog() contract.PersonaCatalog {
 		})
 	}
 	return out
+}
+
+// The display projection keeps the short summary used by tooltips and screen
+// readers. Provenance and full role bodies remain on the existing detail reads.
+func personaDisplay(catalog contract.PersonaCatalog, held string) contract.PersonaDisplayReply {
+	catalog.Personas = append([]contract.Persona{}, catalog.Personas...)
+	catalog.License = ""
+	for i := range catalog.Personas {
+		catalog.Personas[i].Source = ""
+	}
+	raw, _ := json.Marshal(catalog)
+	var canonical any
+	_ = json.Unmarshal(raw, &canonical)
+	raw, _ = json.Marshal(canonical)
+	sum := sha256.Sum256(raw)
+	version := hex.EncodeToString(sum[:])
+	reply := contract.PersonaDisplayReply{View: "display-v1", Version: version}
+	if held == version {
+		reply.Unchanged = true
+	} else {
+		reply.Catalog = &catalog
+	}
+	return reply
+}
+
+func personaCatalogVersion(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	for _, c := range value {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }

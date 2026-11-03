@@ -4,6 +4,54 @@
   "title": "What a session said",
   "description": "GET /v1/transcript reads the assistant's own record and carries evidence rather than presenting content with no source. The initial request reads the newest page; before=nextBefore reads the next older page at a JSONL row boundary; after=nextAfter reads only the rows appended since, oldest first, and is refused 409 transcript_cursor_stale when the cursor no longer meets the record or the appended rows exceed one page (or, for Claude, hold a peer message), so the reader reads the newest page whole. Native Antigravity cursors require revision=signature from the exact held cursor page. A before read requires the current full snapshot revision; an after read verifies that the held revision is still the unchanged file prefix. Missing, replaced, truncated or edited revisions are refused as transcript_cursor_stale. Cloud carries before and revision but deliberately omits nextAfter and refuses after. Each page remains bounded by its row, byte and read-window limits.",
   "$defs": {
+    "TranscriptSplice": {
+      "description": "One replacement in the exact held page. Equal prefix and suffix entries are retained, including distinct repeated entries.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "deleteCount",
+        "entries"
+      ],
+      "properties": {
+        "start": {
+          "type": "integer"
+        },
+        "deleteCount": {
+          "type": "integer"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TranscriptEntry"
+          }
+        }
+      }
+    },
+    "TranscriptDelta": {
+      "description": "Opt-in delta-v1 reply. Apply only to baseVersion of the exact pinned Session; replace metadata with page and apply ordered, non-overlapping splices in original base coordinates atomically. A cache miss or a larger delta returns a full TranscriptPage. Unchanged remains the existing version receipt.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseVersion",
+        "entryCount",
+        "delta",
+        "page"
+      ],
+      "properties": {
+        "baseVersion": {
+          "type": "string"
+        },
+        "entryCount": { "type": "integer", "description": "Exact resulting row count, including provider rows that expand into multiple entries." },
+        "delta": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TranscriptSplice" }
+        },
+        "page": {
+          "$ref": "#/$defs/TranscriptPage"
+        }
+      }
+    },
     "TranscriptEntry": {
       "description": "One thing in a conversation, in the shape the Swift app's `transcriptRows` writes it. A tool call and what the tool returned both carry `role: tool`; only the call names its tool. A call's `text` is the one line describing what it was asked to do — a command, a path, a query — which is what a folded row shows as its subject. An `AskUserQuestion` call carries its questions instead, after the U+0001 `ask` U+0001 marker.",
       "type": "object",
@@ -13,6 +61,7 @@
         "activity": { "$ref": "#/$defs/TranscriptActivity" },
         "artifacts": { "description": "Pictures an assistant turn showed with a `<clawdline-image>` marker, or a Clawdline session message carried. Resolved against this daemon's store and then, read-only, the Swift app's.", "type": "array", "items": { "$ref": "images.schema.json#/$defs/ImageArtifact" } },
         "at": { "description": "Unix seconds. Absent when the record carried no timestamp this reader accepts.", "type": "integer" },
+        "detail": { "$ref": "#/$defs/TranscriptEntryDetail" },
         "fileChanges": { "description": "Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent on every other entry.", "type": "array", "items": { "$ref": "#/$defs/TranscriptFileChange" } },
         "imageCount": { "description": "Images attached to a user turn. Absent when there were none: the Swift app writes an explicit 0 on user rows, and a reader treats absence as that 0.", "type": "integer" },
         "id": { "description": "Stable entry identity when the provider has a durable projection. Owned ACP uses acp2:generation:ordinal, preserving distinct repeated turns and replacing streamed content in place. Absent for providers without entry identities.", "type": "string" },
@@ -26,6 +75,25 @@
         "tool": { "description": "The tool a call used. Absent on a tool's result and on prose.", "type": "string" }
       }
     },
+    "TranscriptEntryDetail": {
+      "description": "An opt-in stored tool body. The reference binds a native row, its full projected content, machine and Session execution. Body fields arrive only after expansion.",
+      "type": "object", "additionalProperties": false,
+      "required": ["reference", "textBytes", "lineCount"],
+      "properties": {
+        "reference": { "type": "string" },
+        "textBytes": { "type": "integer" },
+        "lineCount": { "type": "integer" }
+      }
+    },
+    "TranscriptChangeStats": {
+      "type": "object", "additionalProperties": false,
+      "required": ["additions", "deletions", "lineCount"],
+      "properties": {
+        "additions": { "type": "integer" },
+        "deletions": { "type": "integer" },
+        "lineCount": { "type": "integer" }
+      }
+    },
     "TranscriptFileChange": {
       "type": "object",
       "additionalProperties": false,
@@ -35,7 +103,8 @@
         "kind": { "description": "add, delete, update or write, as the record spelled it; `change` when it did not.", "type": "string" },
         "movePath": { "type": "string" },
         "path": { "type": "string" },
-        "unifiedDiff": { "type": "string" }
+        "unifiedDiff": { "type": "string" },
+        "stats": { "$ref": "#/$defs/TranscriptChangeStats" }
       }
     },
     "TranscriptPlanStep": {
@@ -54,12 +123,62 @@
       "required": ["actions", "durationMs", "kind"],
       "properties": {
         "actions": { "type": "array", "items": { "$ref": "#/$defs/TranscriptAction" } },
+        "agentID": { "type": "string", "description": "Explicit native trajectory namespace for a tool from another agent; absent when its owner was not supplied." },
+        "toolCallID": { "type": "string", "description": "Native tool identity, stable across partial updates." },
+        "delegates": { "type": "array", "items": { "$ref": "#/$defs/TranscriptDelegate" } },
+        "resultKnown": { "type": "boolean", "description": "True when a native result was received, including an explicitly empty result." },
         "durationMs": { "description": "How long the item took. -1 when the record did not say, which the Swift app sends as an absent key; 0 is a real, sub-millisecond duration and is drawn as one.", "type": "integer" },
         "kind": { "type": "string" },
-        "result": { "description": "A called tool's result text, cut at 4,000 characters.", "type": "string" },
+        "result": { "description": "A called tool result. Owned ACP retains complete received text and pages large bodies on demand; older readers may provide a clipped result.", "type": "string" },
         "status": { "description": "inProgress, pending, completed or failed.", "type": "string" },
-        "title": { "type": "string" }
+        "title": { "type": "string" },
+        "toolResult": { "$ref": "#/$defs/TranscriptToolResult" }
       }
+    },
+    "TranscriptToolResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference",
+        "preview",
+        "textBytes",
+        "rawBytes",
+        "images",
+        "unknownBlocks",
+        "sourceTruncated"
+      ],
+      "properties": {
+        "reference": {
+          "type": "string",
+          "description": "Opaque stored row offset and content digest; only readable in the same Session execution."
+        },
+        "preview": {
+          "type": "string"
+        },
+        "textBytes": {
+          "type": "integer"
+        },
+        "rawBytes": {
+          "type": "integer"
+        },
+        "images": {
+          "type": "integer"
+        },
+        "unknownBlocks": {
+          "type": "integer"
+        },
+        "sourceTruncated": {
+          "type": "boolean"
+        },
+        "toolID": {
+          "type": "string",
+          "description": "Native tool call identity when the provider recorded one."
+        }
+      }
+    },
+    "TranscriptDelegate": {
+      "type": "object", "additionalProperties": false, "required": ["name"],
+      "properties": { "name": { "type": "string" }, "model": { "type": "string" } }
     },
     "TranscriptAction": {
       "type": "object",
@@ -67,6 +186,8 @@
       "required": ["kind"],
       "properties": {
         "command": { "type": "string" },
+        "line": { "type": "integer", "description": "One-based first source line, when supplied." },
+        "endLine": { "type": "integer", "description": "Inclusive one-based last source line, when supplied." },
         "kind": { "description": "read or search.", "type": "string" },
         "name": { "type": "string" },
         "path": { "type": "string" },
@@ -160,6 +281,7 @@
         "readBefore": { "description": "Optional exclusive opaque cursor for rereading this exact durable ACP page with its signature, including after its entries leave the newest window.", "type": "integer" },
         "nextAfter": { "description": "The byte offset just past the last complete row read: pass it as after= to read only what was appended since. Absent when nothing complete was read (no record yet, or an unreadable one), and from a daemon that does not take after=; a reader without it keeps reading the newest page whole.", "type": "integer" },
         "path": { "description": "Which file this was read from. A reading that cannot name its source is not evidence.", "type": "string" },
+        "version": { "description": "Digest of this exact compact page, scoped to machine and Session execution.", "type": "string" },
         "signature": { "description": "Opaque record revision, empty when nothing was read. Claude/Codex use size and modification time; native Antigravity uses agy1:file-generation:prefix-bytes:sha256; durable owned ACP uses acp2:generation:revision, where only a native history replacement changes generation. Return this exact held page signature as revision with its before/after cursor; never substitute another page's signature.", "type": "string" },
         "truncation": { "$ref": "#/$defs/TranscriptTruncation" },
         "unread": { "$ref": "#/$defs/TranscriptUnread" }

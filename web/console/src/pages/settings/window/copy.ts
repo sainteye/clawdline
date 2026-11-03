@@ -36,9 +36,9 @@ const ownWords = {
       "{combo} could not be registered (the operating system returned {status}). The ✳ in Clawdline's menu still opens the input box; press the button above to choose another combination.",
     webCloudStatusReadFailed: "Could not read this machine's status.",
     webRemoteMachineOnly:
-      "This browser cannot manage Cloud; only this machine's own sign-in can. Use the Clawdline app's settings on this machine, or run clawdline cloud login in a terminal on this machine.",
+      "This browser cannot manage this machine's Cloud sign-in. Use the setup guide on this machine, or run clawdline cloud login in a terminal on this machine.",
     webCloudManagedElsewhere:
-      "Clawdline Cloud, which lets your phone and other machines reach this one, is not managed from a browser. On a Mac with the app, open Settings from the Clawdline menu bar icon and choose Remote. Anywhere else, run clawdline cloud login and then clawdline cloud on in a terminal on this machine; clawdline cloud pair shows a pairing link and QR code.",
+      "Open Clawdline's setup guide on this machine to connect your Cloud account and pair a browser or phone. You can also run clawdline cloud login, clawdline cloud on, and clawdline cloud pair in a terminal on this machine.",
     webCloudStatusToken: "Machine credential expires: {at}",
     webCloudStatusKey: "Machine key: {key}",
     webCloudStatusMachine: "Machine {machine}",
@@ -82,6 +82,7 @@ const ownWords = {
     settingsCompactWindowHint:
       "Only for Claude sessions Clawdline opens — children, Root Assignments, handoffs — never Codex, never a session you opened. Past this many tokens of context the session replaces its history with a summary: every later call re-reads fewer tokens, which is where most of a long session's cost goes, but the summary can lose detail, files get read again, and each compaction takes about ten seconds. Empty leaves Claude Code alone; it then compacts near its own 1M window. A task can ask for its own. Takes effect at the next launch.",
     settingsCompactWindowInvalid: "A whole number of tokens from {min} to {max}, or empty for none.",
+    settingsAutoNameSession: "Match session assistant",
     settingsAutoNameAuto: "Automatic (Claude Code, then Codex)",
     settingsCodexDefaultModel: "Codex default model",
     settingsCodexDefaultEffort: "Codex default reasoning effort",
@@ -136,9 +137,9 @@ const ownWords = {
       "{combo} 註冊不起來（作業系統回 {status}）。Clawdline 選單裡的 ✳ 一樣打得開輸入框；要換一組就按上面的按鈕。",
     webCloudStatusReadFailed: "讀不到這台機器的狀態。",
     webRemoteMachineOnly:
-      "這個瀏覽器不能管理 Cloud，只有這台機器本身的登入可以。請改用這台機器上 Clawdline App 的設定，或在這台機器的終端機執行 clawdline cloud login。",
+      "這個瀏覽器不能管理這台機器的 Cloud 登入。請在這台機器開啟設定精靈，或在這台機器的終端機執行 clawdline cloud login。",
     webCloudManagedElsewhere:
-      "Clawdline Cloud（讓手機與其他機器連到這台）不在瀏覽器裡管理。有 App 的 Mac：從選單列的 Clawdline 圖示打開「設定」，選「遠端」。其他機器：在這台機器的終端機執行 clawdline cloud login，再執行 clawdline cloud on；clawdline cloud pair 會顯示配對連結與 QR 碼。",
+      "請在這台機器開啟 Clawdline 設定精靈，連接 Cloud 帳號並配對瀏覽器或手機。也可以在這台機器的終端機依序執行 clawdline cloud login、clawdline cloud on 與 clawdline cloud pair。",
     webCloudStatusToken: "機器憑證到期：{at}",
     webCloudStatusKey: "機器金鑰：{key}",
     webCloudStatusMachine: "機器 {machine}",
@@ -180,6 +181,7 @@ const ownWords = {
     settingsCompactWindowHint:
       "只套用在 Clawdline 開的 Claude session——child、Root Assignment、handoff——不會動到 Codex，也不會動到你自己開的 session。context 超過這麼多 token，session 就把歷史換成一份摘要：之後每一次呼叫要重讀的 token 變少，長 session 的花費大多在這裡；代價是摘要可能漏掉細節、檔案要重讀，每次壓縮大約花十秒。空白就是不插手，Claude Code 會等到接近它自己的 1M 上限才壓縮。單一任務可以另外指定。下一次開 session 時生效。",
     settingsCompactWindowInvalid: "要是 {min} 到 {max} 之間的整數 token 數，或留空表示不插手。",
+    settingsAutoNameSession: "跟隨 Session 助理",
     settingsAutoNameAuto: "自動（先 Claude Code，不能用時改 Codex）",
     settingsCodexDefaultModel: "Codex 預設模型",
     settingsCodexDefaultEffort: "Codex 預設推理強度",
@@ -321,6 +323,7 @@ const baseW = {
   settingsCompactWindow: ownWord("settingsCompactWindow"),
   settingsCompactWindowHint: ownWord("settingsCompactWindowHint"),
   settingsCompactWindowInvalid: ownWord("settingsCompactWindowInvalid"),
+  settingsAutoNameSession: ownWord("settingsAutoNameSession"),
   settingsAutoNameAuto: ownWord("settingsAutoNameAuto"),
   settingsCodexDefaultModel: ownWord("settingsCodexDefaultModel"),
   settingsCodexDefaultEffort: ownWord("settingsCodexDefaultEffort"),

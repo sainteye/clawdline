@@ -142,7 +142,7 @@ func TestAWriteThatFailsGoesToTheFallbackAndIsCounted(t *testing.T) {
 		t.Fatalf("fallback got %q", fallback.String())
 	}
 	r := w.Reading()
-	if r.Counters.WriteErrors == 0 || r.Note == "" {
+	if r.Counters.WriteErrors == 0 || r.Note == "" || !r.Failing {
 		t.Fatalf("the failure was not counted: %+v", r)
 	}
 }
@@ -155,9 +155,9 @@ func TestTheSwiftAppsDirectoryIsRefused(t *testing.T) {
 }
 
 // The register row the writer reports against, filled on purpose through the
-// writer itself: ok → warn → critical → full, then one rotation (limits §4.7
-// layer 1, on the real writer rather than a table).
-func TestTheRowWalksToFullAndRotatesOnce(t *testing.T) {
+// writer itself: routine occupancy stays ok without notices, including the
+// complete write crossing the rotation threshold, then one rotation.
+func TestTheRowStaysHealthyAndRotatesOnce(t *testing.T) {
 	w, _ := open(t)
 	res, problems := capacity.Resolve(capacity.Register(), capacity.LogDaemon+"=200")
 	if len(problems) > 0 {
@@ -192,7 +192,7 @@ func TestTheRowWalksToFullAndRotatesOnce(t *testing.T) {
 	for _, s := range states {
 		got = append(got, string(s))
 	}
-	if strings.Join(got[:4], ",") != "ok,warn,critical,full" || w.Reading().Counters.Rotated != 1 || notices != 1 {
+	if strings.Join(got, ",") != "ok" || w.Reading().Counters.Rotated != 1 || notices != 0 {
 		t.Fatalf("states %v, rotated %d, notices %d", got, w.Reading().Counters.Rotated, notices)
 	}
 }

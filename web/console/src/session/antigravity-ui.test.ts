@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+// @ts-expect-error -- Node's strip-types test runner needs the source extension.
+import { nativeTerminalAvailable } from "./native-terminal-command.ts"
 import test from "node:test"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 import english from "../../public/catalogs/en.json" with { type: "json" }
@@ -16,7 +18,7 @@ import { STATUS_FRESH_MS, statusProjection } from "../cloud/status-projection.ts
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
 import { pinnedQuestion } from "../cloud/status-source.ts"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
-import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantMenuAdmits, assistantStateCurrent, assistantLabel, assistantRolesAdmit, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
+import { antigravitySlashDraft, assistantAdmits, assistantComposeAdmits, assistantMenuAdmits, assistantStateCurrent, assistantLabel, assistantRolesAdmit, sessionActionVisibility, assistantUnavailable, isAssistant, type AssistantFacts } from "./antigravity-ui.ts"
 
 const active: AssistantFacts = { id: "antigravity", installed: true, authState: "ready", integrationState: "active",
   capabilities: { start: true, resume: true, send: true, menus: true, transcript: true } }
@@ -211,4 +213,34 @@ test("owned Gemini permission choices remain answerable without a terminal scree
     { menu: { ...row.menu, options: [] } }, { menu: { ...row.menu, source: "transcript" } }]) {
     assert.equal(assistantMenuAdmits({ ...row, ...patch }), false)
   }
+})
+
+
+test("owned Gemini model and effort operations reach the Host while unsupported terminal commands stay drafts", () => {
+ for (const text of ["/model native-model", "/effort high", "/model   native-model"]) {
+  assert.equal(antigravitySlashDraft("antigravity", text, true), false)
+  assert.equal(antigravitySlashDraft("antigravity", text), true)
+ }
+ for (const text of ["/model", "/effort", "/exit", "/logout", "/model native\n/exit"]) assert.equal(antigravitySlashDraft("antigravity", text, true), true)
+})
+
+test("owned Gemini and Remote Control keep Stop current work while hiding terminal-only actions", () => {
+  const terminalRow = { id: "%1", backend: "tmux", assistant: "codex", identity: "launch_hook" } as any
+  const ownedRow = { id: "owned:acp:one", backend: "owned", assistant: "antigravity", identity: "protocol" } as any
+  const fleetOwnedRow = { id: "owned:acp:one", backend: "owned", assistant: "antigravity",
+    identity: { machine: "m", session: "owned:acp:one" }, sessionBinding: "protocol" } as any
+  const remoteRow = { id: "rc:one", backend: "claude_remote", assistant: "claude" } as any
+  assert.deepEqual(sessionActionVisibility(terminalRow), { interrupt: true, focus: true, screen: false })
+  assert.deepEqual(sessionActionVisibility(ownedRow), { interrupt: true, focus: false, screen: false })
+  assert.deepEqual(sessionActionVisibility(fleetOwnedRow), { interrupt: true, focus: false, screen: false })
+  assert.deepEqual(sessionActionVisibility(remoteRow), { interrupt: true, focus: false, screen: false })
+})
+
+test("the read-only screen mirror stays only where the interactive Terminal is unavailable", () => {
+  for (const assistant of ["claude", "codex"]) for (const backend of ["tmux", "iterm"])
+    assert.equal(sessionActionVisibility({ id: "%1", backend, assistant } as any).screen, false, assistant + "/" + backend)
+  assert.equal(sessionActionVisibility({ id: "%2", backend: "tmux", assistant: "antigravity" } as any).screen, false, "Gemini in tmux has the Terminal too")
+  assert.equal(sessionActionVisibility({ id: "%3", backend: "tmux", assistant: "shell" } as any).screen, true)
+  for (const assistant of ["claude", "codex", "antigravity", "shell"]) for (const backend of ["tmux", "iterm", "pty"])
+    assert.equal(sessionActionVisibility({ id: "%4", backend, assistant } as any).screen, !nativeTerminalAvailable(assistant, backend), assistant + "/" + backend)
 })

@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "outputs.schema.json",
+  "title": "Provenance-backed Session output files",
+  "$defs": {
+    "SessionOutputFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "path",
+        "absolute_path",
+        "media_type",
+        "source",
+        "first_at",
+        "updated_at",
+        "updates",
+        "bytes",
+        "anchor",
+        "kind",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "absolute_path": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "first_at": {
+          "type": "integer"
+        },
+        "updated_at": {
+          "type": "integer"
+        },
+        "updates": {
+          "type": "integer"
+        },
+        "bytes": {
+          "type": "integer"
+        },
+        "anchor": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "created",
+            "modified",
+            "published"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "available",
+            "missing",
+            "too_large"
+          ]
+        }
+      }
+    },
+    "SessionOutputList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "files",
+        "more",
+        "partial",
+        "coverage"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionOutputFile"
+          }
+        },
+        "more": {
+          "type": "boolean"
+        },
+        "partial": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "type": "string"
+        }
+      }
+    },
+    "SessionOutputChunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "media_type",
+        "revision",
+        "data",
+        "offset",
+        "total_bytes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "data": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "total_bytes": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

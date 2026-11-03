@@ -41,6 +41,7 @@ notification arrives on this device.
 | When | Condition and destination |
 | --- | --- |
 | A Session waits on a question or permission for **10 minutes** | `push_on_waiting`: once per stop, at most 6 per hour per machine; it opens that Session. When unset, this key inherits the older `orchestrator_agent_notify` choice. |
+| A Session stops because its selected model is at capacity | `push_on_model_capacity`: enabled by default, independently of question and system-capacity notifications. Sends on the first current reading, once per stop, and opens that Session. Shares the waiting-notification budget of 6 per hour per machine. |
 | An agent calls `clawdline notify --title … --body …` or a task's notification route | Subject to `orchestrator_agent_notify` and the agent notification limit; `--session` opens the named Session. |
 | An agent creates an unsolicited human intervention Note | Subject to `orchestrator_agent_notify`; it opens the owning Session. |
 | A blocking Board decision needs an answer | `push_on_board_decision`: once per pending decision, at most 30 per hour per machine; it opens the list. |
@@ -107,3 +108,9 @@ answer, stale idle observations, unknown states, incomplete absence and a
 restarted broker before allowing one fresh idle observation to release the
 notification. Recovery of an attempted push and concurrent recovery cannot
 send it twice.
+
+
+## Admin new-question notifications
+
+The Cloud help center has a separate per-device notification for Admins when a member submits a
+new question. It does not use a machine Session notification rule. See [Questions and replies](help-center.md#admin-inbox-and-new-question-notifications) for setup and the authenticated question destination.

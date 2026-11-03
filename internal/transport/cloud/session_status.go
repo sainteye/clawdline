@@ -44,6 +44,7 @@ type SessionStatus struct {
 	WaitingForReply      bool   `json:"waiting_for_reply,omitempty"`
 	CompletedUnconfirmed bool   `json:"completed_unconfirmed,omitempty"`
 	AttentionRequired    bool   `json:"attention_required,omitempty"`
+	ProviderBlock        string `json:"provider_block,omitempty"`
 	CloseBlocked         *bool  `json:"close_blocked,omitempty"`
 	FailedAgentCount     *int64 `json:"failed_agent_count,omitempty"`
 	RunningAgentCount    *int64 `json:"running_agent_count,omitempty"`
@@ -67,7 +68,7 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 	if v, _ := row["assistant"].(string); v == "claude" || v == "codex" || v == "antigravity" {
 		out.Assistant = v
 	}
-	if v, _ := row["backend"].(string); v == "tmux" || v == "iterm" || v == "ps" || v == "owned" {
+	if v, _ := row["backend"].(string); v == "tmux" || v == "iterm" || v == "ps" || v == "owned" || v == "claude_remote" {
 		out.Backend = v
 	}
 	out.MachineScope, _ = row["machine_scope"].(bool)
@@ -118,6 +119,10 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 		out.CompletedUnconfirmed = true
 	}
 	if row["work_person_needed"] == true {
+		out.AttentionRequired = true
+	}
+	if row["provider_block"] == string(session.ProviderBlockModelCapacity) {
+		out.ProviderBlock = string(session.ProviderBlockModelCapacity)
 		out.AttentionRequired = true
 	}
 	if count, ok := row["attention_count"].(float64); ok && count > 0 {

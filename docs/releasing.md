@@ -72,7 +72,12 @@ each step done. v2.2.0 was cut this way ([acceptance record](records/release-v2.
 5. **Wait for the draft**: the run concludes `success`, and `gh release view <version>` shows a
    draft whose `targetCommitish` is the released commit.
 6. **Gate, then publish** (step 3 of *Cutting a release*): `tools/release/gate.sh <version>`, then
-   `--publish`, which repeats every check and publishes only if all pass. `stapler validate`
+   `--publish`, which repeats every check and publishes only if all pass. Changes to the updater,
+   daemon executable identity or service registration also require the
+   [update/recovery transition matrix](records/daemon-launchagent-recovery-20261101.md#required-release-acceptance)
+   on the actual previous published updater and candidate signed archives before publication.
+   Record console/BUILD recovery under failure, including both managed executable paths;
+   source tests or a fresh installation alone do not accept this transition. `stapler validate`
    queries Apple (`api.apple-cloudkit.com`) on every run; if it reports *no stapled notarization
    ticket*, run `xcrun stapler validate -v` on the App it names a few times. A ticket that
    validates there makes the failure a failed query: run the gate again unchanged. A ticket that
@@ -342,6 +347,22 @@ compilation if the selected identity is not Developer ID Application.
   releases and need the installer run again.
 
 ## Recent acceptance records
+
+- [v2.13.0 publication, the macOS CI fix it carries, and installed release evidence](records/release-v2.13.0-acceptance.md).
+- [v2.12.1 publication, signed-archive update transitions from v2.12.0 and v2.11.0, and installed release evidence](records/release-v2.12.1-acceptance.md).
+- [v2.12.0 publication, Board issue sync, named macOS service and installed release evidence](records/release-v2.12.0-acceptance.md).
+
+- [v2.11.0 publication, Terminal colour and prompt fix, and isolated DMG evidence](records/release-v2.11.0-acceptance.md).
+
+- [v2.10.0 publication, workflows, project graphs and isolated DMG evidence](records/release-v2.10.0-acceptance.md).
+
+- [v2.9.0 publication, model-capacity notifications and isolated DMG evidence](records/release-v2.9.0-acceptance.md).
+
+- [v2.8.0 publication, Doctor and installed release evidence](records/release-v2.8.0-acceptance.md).
+
+- [v2.7.0 publication, Remote Control boundaries and installed release evidence](records/release-v2.7.0-acceptance.md).
+
+- [v2.6.0 publication, Cloud console and isolated DMG installation evidence](records/release-v2.6.0-acceptance.md).
 
 - [v2.5.0 publication, video playback and installed release evidence](records/release-v2.5.0-acceptance.md).
 

@@ -276,3 +276,26 @@ func TestAPictureLetGoAtTheLimitIsCountedAndSaysWhy(t *testing.T) {
 		t.Fatalf("the picture let go reads %+v; want expired and evicted", found)
 	}
 }
+
+func TestSmallReplyImagesSurvivePastTheOldCountCeiling(t *testing.T) {
+	s := NewStore(t.TempDir())
+	path := writePNG(t, t.TempDir(), "small.png", 1, 1)
+	now := time.Unix(1800000000, 0)
+	first := ""
+	for i := 0; i < 65; i++ {
+		stored, err := s.ImportPaths(context.Background(), []string{path}, now.Add(time.Duration(i)*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			first = stored[0].Artifact.ID
+		}
+	}
+	if got := s.Lookup(first, now.Add(time.Minute)); got.State != Live {
+		t.Fatal("small recent reply image was evicted", got.State)
+	}
+	count, bytes := s.Readings(now.Add(time.Minute))
+	if count.Used != 65 || count.Counters.Evicted != 0 || bytes.Used > 64<<20 {
+		t.Fatal(count, bytes)
+	}
+}

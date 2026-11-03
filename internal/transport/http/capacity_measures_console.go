@@ -2,12 +2,71 @@ package http
 
 import (
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"strings"
 )
 
 // consoleCapacityMeasures measures every row of the register's "console" area
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
-	return map[string]func() capacity.Reading{
+	out := map[string]func() capacity.Reading{
+		"console.public_analytics_activems": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
+		},
+		"console.public_analytics_countries": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
+		},
+		"console.public_analytics_hours": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
+		},
+		"console.public_analytics_days": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
+		},
+		"console.public_analytics_page": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
+		},
+		"console.public_analytics_path": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
+		},
+		"console.public_analytics_readms": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
+		},
+		"console.public_analytics_rows": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser public visit report guard; this daemon cannot measure another browser or the Cloud visit store"}
+		},
+
+		"console.community_share_fetch_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "Cloud edge preview deadline; this daemon does not observe hosted requests"}
+		},
+		"console.community_share_response_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "Cloud edge public-response guard; this daemon does not observe hosted response sizes"}
+		},
+		"console.community_share_text_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "public preview text guard shared by edge and browser; this daemon does not observe individual previews"}
+		},
+		"console.support_image_count": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
+		},
+		"console.support_image_source_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
+		},
+		"console.support_image_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
+		},
+		"console.support_image_edge": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
+		},
+		"console.support_image_upload_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support image guard; daemon cannot measure another browser's image state"}
+		},
+		"console.support_request_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser help request deadline; no machine Session read"}
+		},
+		"console.support_refresh_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser visible help thread refresh interval"}
+		},
+		"console.support_title_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser support title input guard; Cloud independently validates titles"}
+		},
 		"console.video_preview_frames": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser representative video frame sampling; daemon cannot measure another device's decoder"}
 		},
@@ -222,4 +281,10 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
 		},
 	}
+	for name, measure := range performanceCapacityMeasures() {
+		if strings.HasPrefix(name, "console.") {
+			out[name] = measure
+		}
+	}
+	return out
 }

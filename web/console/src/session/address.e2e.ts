@@ -86,6 +86,7 @@ let modelMenuScenario: { stage: "missing" | "models" | "gap" | "effort"; looks: 
 const picker = (question: string, labels: string[]) => ({ question,
   options: labels.map((label, i) => ({ n: i + 1, label, can: true, selected: i === 0 })) })
 const ACP = "owned:acp:fixture"
+let acpProtocolState: Record<string, unknown> | undefined
 let protocolMenuScenario: { waiting: boolean; requests: Record<string, unknown>[] } | null = null
 const protocolMenu = { revision: "native-offer-exact", question: "Inspect the attached image?", options: [
   { n: 1, label: "Allow once", can: true, selected: false }, { n: 2, label: "Deny", can: true, selected: false },
@@ -94,6 +95,17 @@ function protocolRow() {
  return { ...row(ACP, "Gemini fixture", "owned", "native-fixture"), assistant: "antigravity", identity: "protocol", isClaude: false,
   evidence: "structured", state: protocolMenuScenario?.waiting ? "waiting" : "idle", menu: protocolMenuScenario?.waiting ? protocolMenu : null }
 }
+const graphifyRealView=process.env.CLAWDLINE_GRAPHIFY_SMOKE_VIEW?JSON.parse(readFileSync(process.env.CLAWDLINE_GRAPHIFY_SMOKE_VIEW,"utf8")):null
+let graphifyScenario = "matched"
+let graphifyReads = 0
+let graphifyBuilds=0
+let graphifyBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""}
+let graphifyBuildResult=""
+const graphifyFixture = {state:"source_matched",reason:"graphify_sources_match",checked_at:1793300000,total_nodes:3,total_links:2,truncated:false,
+ nodes:[{id:"a",label:"Entry",file:"src/entry.ts",location:"L1",community:"0"},
+ {id:"b",label:"Worker",file:"src/worker.ts",location:"L12",community:"1"},
+ {id:"c",label:'<img src=x onerror="globalThis.graphExecuted=true">',file:"src/inert.ts",location:"L4",community:"1"}],
+ links:[{source:"a",target:"b",relation:"calls",confidence:"EXTRACTED"},{source:"b",target:"c",relation:"references",confidence:"INFERRED"}]}
 let currentClaudeModel = "claude-opus-5-5"
 
 // ---- the stand-in daemon
@@ -134,7 +146,15 @@ let machineSettings: Record<string, unknown> = {
 }
 let workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true }
 let refuseWorkflowWrite = false
+let integrationSettings: { workflow_profile?: string; workflow_skills_enabled: boolean; graphify_enabled: boolean } = { workflow_skills_enabled: false, graphify_enabled: false }
+let integrationWrites: Record<string, unknown>[] = []
+let workflowRecords: Record<string, unknown> = {}
+let heldWorkflowInfo: { id: string; replies: (() => void)[] } | null = null
+let refuseIntegrationWrite = false
+let refuseIntegrationRead = false
 let refuseDefaultModelWrite = false
+let refuseModelCatalog = false
+let assignmentBody: Record<string, unknown> | null = null
 let smartTitleRequestKey = ""
 let smartTitleRefusal = ""
 let namingAssistant = "claude"
@@ -243,6 +263,7 @@ const usagePickerOptions = [
   { id: "unattributed", name: "unattributed" },
 ]
 let usagePickerQueries: URLSearchParams[] = []
+const draftSendBodies: Record<string, unknown>[] = []
 
 function daemon(): Server {
   return createServer((req, res) => {
@@ -280,6 +301,19 @@ function daemon(): Server {
       if (heldSessions) return void heldSessions.push(() => json(res, 200, snapshot()))
       return json(res, 200, snapshot())
     }
+    if (path === "/v1/settings/integrations" && req.method === "GET") {
+      if (refuseIntegrationRead) { refuseIntegrationRead = false; return json(res, 503, { error: "settings_unavailable", detail: "Could not read settings." }) }
+      return json(res, 200, integrationSettings)
+    }
+    if (path === "/v1/settings/integrations" && req.method === "POST") {
+      void requestJSON(req).then(change => {
+        if (refuseIntegrationWrite) { refuseIntegrationWrite = false; return json(res, 503, { error: "settings_unavailable", detail: "Could not save settings." }) }
+        integrationWrites.push(change)
+        integrationSettings = { ...integrationSettings, ...change }
+        json(res, 200, integrationSettings)
+      })
+      return
+    }
     if (path === "/v1/settings/workflow" && req.method === "GET") return json(res, 200, workflowSettings)
     if (path === "/v1/settings/workflow" && req.method === "POST") {
       void requestJSON(req).then(change => {
@@ -289,7 +323,10 @@ function daemon(): Server {
       })
       return
     }
-    if (path === "/v1/settings/default-models" && req.method === "GET") return json(res, 200, machineSettings)
+    if (path === "/v1/settings/default-models" && req.method === "GET") {
+      if (refuseModelCatalog) return json(res, 503, { error: "catalog_unavailable", detail: "Model catalog is unavailable." })
+      return json(res, 200, machineSettings)
+    }
     if (path === "/v1/settings/default-models" && req.method === "POST") {
       void requestJSON(req).then((change) => {
         if (refuseDefaultModelWrite) {
@@ -320,13 +357,34 @@ function daemon(): Server {
       })
       return
     }
+    if (/^\/v1\/(sessions|projects)\/[^/]+\/graphify$/.test(path)) {
+      if(req.method==="POST"){
+       void requestJSON(req).then(body=>{
+        if(!integrationSettings.graphify_enabled)return json(res,403,{error:"graphify_disabled"})
+        assert.deepEqual(body,{});assert.ok(req.headers["idempotency-key"])
+        graphifyBuilds++;graphifyBuild={state:"running",phase:"preparing",files:2,bytes:1024,started_at:1793300000,updated_at:1793300000,error:""}
+        json(res,202,graphifyBuild)
+       });return
+      }
+      graphifyReads++
+      if(graphifyBuild.state==="running" && graphifyBuildResult){
+       if(graphifyBuildResult==="success"){graphifyScenario="matched";graphifyBuild={...graphifyBuild,state:"succeeded",phase:"complete"}}
+       else graphifyBuild={...graphifyBuild,state:"failed",phase:"failed",error:graphifyBuildResult}
+      }
+      if (!integrationSettings.graphify_enabled) return json(res,403,{error:{code:"graphify_disabled",message:"Graphify is off."}})
+      if(graphifyScenario==="real" && graphifyRealView)return json(res,200,graphifyRealView)
+      if (graphifyScenario === "failure") return json(res,503,{error:{code:"graphify_unavailable",message:"Graph unavailable."}})
+      return json(res,200,graphifyScenario === "missing" ? {...graphifyFixture,build:graphifyBuild,can_build:graphifyBuild.state!=="running",state:"missing",nodes:[],links:[],total_nodes:0,total_links:0} : {...graphifyFixture,build:graphifyBuild,can_build:false,state:graphifyScenario === "stale" ? "stale" : "source_matched",truncated:graphifyScenario === "large",total_nodes:graphifyScenario === "large" ? 1000 : 3})
+    }
     const info = /^\/v1\/sessions\/([^/]+)\/info$/.exec(path)
     if (info && req.method === "GET") {
       const id = decodeURIComponent(info[1])
       const session = (protocolMenuScenario ? [protocolRow()] : ROWS).find((candidate) => candidate.id === id)
       if (!session) return json(res, 404, { error: { code: "not_found", message: id } })
-      return json(res, 200, {
+      const reply = () => json(res, 200, {
         info: {
+          protocol: id === ACP ? acpProtocolState : undefined,
+          workflow: workflowRecords[id],
           session: {
             id: session.id,
             title: session.label,
@@ -344,6 +402,8 @@ function daemon(): Server {
           links: [],
         },
       })
+      if (heldWorkflowInfo?.id === id) { heldWorkflowInfo.replies.push(reply); return }
+      return reply()
     }
     const interrupt = /^\/v1\/sessions\/([^/]+)\/interrupt$/.exec(path)
     if (interrupt && req.method === "POST") {
@@ -506,7 +566,8 @@ function daemon(): Server {
       return
     }
     if (/^\/v1\/work\/v2\/items\/[^/]+\/assign$/.test(path) && req.method === "POST") {
-      void requestJSON(req).then(() => {
+      void requestJSON(req).then((body) => {
+        assignmentBody = body
         assignmentReply = () => json(res, 503, { error: "fixture_assignment_paused", detail: "assignment paused for loading verification" })
       }, () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
       return
@@ -565,6 +626,13 @@ function daemon(): Server {
     if (path === "/v1/sessions/" + encodeURIComponent(TMUX) + "/documents/project/security.md") {
       res.writeHead(200, { "content-type": "text/markdown; charset=utf-8" })
       return res.end(untrustedContent)
+    }
+    if (req.method === "POST" && /^\/v1\/sessions\/[^/]+\/send$/.test(path)) {
+      void requestJSON(req).then(body => {
+        draftSendBodies.push(body)
+        json(res, 200, { ok: true })
+      })
+      return
     }
     if (path.startsWith("/v1/")) return json(res, 404, { error: { code: "not_found", message: path } })
     if (path === "/") {
@@ -734,6 +802,23 @@ class Tab {
     await this.b.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }, this.session)
   }
 
+  async clickPoint(x: number, y: number): Promise<void> {
+    await this.b.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 }, this.session)
+    await this.b.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 }, this.session)
+  }
+
+  async pinch(x: number, y: number): Promise<void> {
+    const points = (distance: number) => [{ x: x - distance, y, id: 1 }, { x: x + distance, y, id: 2 }]
+    await this.b.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(25) }, this.session)
+    await this.b.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(50) }, this.session)
+    await this.b.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }, this.session)
+  }
+
+  async withoutWebGL(): Promise<void> {
+    await this.b.send("Page.addScriptToEvaluateOnNewDocument", { source: `const originalGetContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function(type,...args) { return /^webgl/.test(type) ? null : originalGetContext.call(this,type,...args) }` }, this.session)
+  }
+
   async screenshot(path: string): Promise<void> {
     const { data } = await this.b.send("Page.captureScreenshot", { format: "png", fromSurface: true }, this.session)
     writeFileSync(path, Buffer.from(data, "base64"))
@@ -780,6 +865,12 @@ class Tab {
     await new Promise((r) => setTimeout(r, 150))
     const { data } = await this.b.send("Page.captureScreenshot", { format: "png" }, this.session)
     writeFileSync(join(shots, name + ".png"), Buffer.from(data, "base64"))
+  }
+
+  async reducedMotion(reduce: boolean): Promise<void> {
+    await this.b.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: reduce ? "reduce" : "no-preference" }],
+    }, this.session)
   }
 
 }
@@ -1815,6 +1906,70 @@ test("phone: a tap puts the session in the address, and the back gesture returns
     await tab.until("forward is the detail again", (s) => s.view === "detail" && s.open === TMUX)
   }))
 
+test("phone: the Session reading surface allows horizontal browser navigation and contains vertical overscroll", () =>
+  inTab(PHONE, async (tab) => {
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    await tab.tap(TMUX)
+    await tab.until("the detail opens", (s) => s.view === "detail" && s.open === TMUX)
+    const styles = await tab.run(`(() => {
+      const body = getComputedStyle(document.body)
+      const transcript = getComputedStyle(document.getElementById("tx-scroll"))
+      return { bodyX: body.overscrollBehaviorX, bodyY: body.overscrollBehaviorY,
+        transcriptX: transcript.overscrollBehaviorX, transcriptY: transcript.overscrollBehaviorY,
+        touch: transcript.touchAction }
+    })()`)
+    assert.deepEqual(styles, { bodyX: "auto", bodyY: "none", transcriptX: "auto", transcriptY: "contain", touch: "auto" })
+    await tab.run("history.back()")
+    await tab.until("the browser returns to the list", (s) => s.view === "list" && s.open === null)
+  }))
+
+test("phone: a Session opened in a wide window gets a Back step when the window narrows", () =>
+  inTab(DESK, async (tab) => {
+    await tab.go("/")
+    await tab.until("the wide detail opens", (s) => s.open === TMUX)
+    await tab.view(PHONE, "dark")
+    await tab.until("the narrow detail opens", (s) => s.view === "detail" && s.open === TMUX)
+    assert.equal(await tab.run("history.state?.view"), "detail", "the visible phone detail owns a history step")
+    await tab.run("history.back()")
+    await tab.until("Back stays in the console and returns to the list", (s) => s.console && s.view === "list" && s.open === null)
+    await tab.run("history.forward()")
+    await tab.until("Forward reopens the same Session", (s) => s.view === "detail" && s.open === TMUX)
+  }))
+
+test("phone: a restored detail marker without its old list gets a new Back destination", () =>
+  inTab(PHONE, async (tab) => {
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    // Reconstruct the surviving entry after the browser discarded the old
+    // page/history context while another media surface was in front.
+    await tab.run(`history.replaceState({ view: "detail", id: ${JSON.stringify(TMUX)} }, "", ${JSON.stringify(FRAGMENT[TMUX])})`)
+    await tab.reload()
+    await tab.until("the restored Session opens", (s) => s.view === "detail" && s.open === TMUX)
+    const steps = await tab.run("history.length")
+    await tab.run("history.back()")
+    await tab.until("one Back reaches the list inside the console", (s) => s.console && s.view === "list" && s.open === null)
+    await tab.run("history.forward()")
+    await tab.until("Forward reopens the restored Session", (s) => s.view === "detail" && s.open === TMUX)
+    assert.equal(await tab.run("history.length"), steps, "Forward reuses the new document's established step")
+  }))
+
+test("phone: reloading after a closed video preview leaves one Back to the list", () =>
+  inTab(PHONE, async (tab) => {
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    await tab.tap(TMUX)
+    await tab.until("the Session opens", (s) => s.view === "detail" && s.open === TMUX)
+    const video = "#document=1&machine=this-mac&session=" + escapedPane(801) + "&scope=project&path=fixture.mp4"
+    await tab.run(`(() => { const link = document.createElement("a"); link.href = ${JSON.stringify(video)};
+      document.body.append(link); link.click(); document.querySelector(".video-lightbox-close").click(); link.remove() })()`)
+    assert.ok(await tab.run("history.state?.videoPreviewClosed"), "the real modal leaves its reusable closed entry")
+    await tab.reload()
+    await tab.until("the Session survives reload", (s) => s.view === "detail" && s.open === TMUX)
+    await tab.run("history.back()")
+    await tab.until("the closed media entry cannot swallow Back", (s) => s.console && s.view === "list" && s.open === null)
+  }))
+
 test("phone: after a reload of a detail, the back gesture still returns to the list", () =>
   inTab(PHONE, async (tab) => {
     await tab.go("/")
@@ -2386,6 +2541,8 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
         const card = modal?.querySelector(".work-v2-card")
         if (card) {
           const roles = card.querySelector(".work-new-persona")
+          const toggle = card.querySelector('[aria-controls^="work-roles-"]')
+          if (toggle?.getAttribute("aria-expanded") === "false") { toggle.click(); return setTimeout(read, 25) }
           // RoleRow fills its native buttons in an effect after the card's
           // first paint. Measure only once that accessible row is complete.
           if (roles?.querySelectorAll(".chip").length !== ${PERSONAS.length + 1}) {
@@ -2498,11 +2655,11 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
     await tab.run(`document.querySelector(".work-created-modal .work-session-trigger").focus()`)
     assert.equal(await tab.run(`document.activeElement?.getAttribute("aria-label")`), "指派既有 Session")
     const keyboard: string[] = []
-    for (let index = 0; index < 4; index++) {
+    for (let index = 0; index < 6; index++) {
       await tab.press("Tab")
       keyboard.push(await tab.run(`document.activeElement?.getAttribute("aria-label") || document.activeElement?.textContent?.trim()`))
     }
-    assert.deepEqual(keyboard, ["Codex", "Claude Code", "AI 建議", "不指定"], "keyboard order")
+    assert.deepEqual(keyboard, ["Codex", "Claude Code", "模型使用預設", "角色不指定", "AI 建議", "不指定"], "keyboard order")
     assert.deepEqual(await tab.run(`(() => {
       const role = document.querySelector(".work-created-modal .work-new-persona .chip")
       return { active: document.activeElement === role, disabled: role.disabled, text: role.textContent }
@@ -2521,13 +2678,14 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
         actions: [...card.querySelectorAll(".work-assignment-action")].map((button) => button.textContent),
       }
     })()`), {
-      focused: "前端工程師",
+      focused: "角色前端工程師",
       chosenRole: "前端工程師",
       actions: ["開新 Codex Session（前端工程師）"],
     })
 
     // One explicit press sends one receipted request, selects the catalog id
     // AI returned, and still permits a manual override afterward.
+    await tab.run(`document.querySelector('.work-created-modal [aria-controls^="work-roles-"]').click()`)
     await tab.run(`document.querySelector(".work-created-modal .work-persona-ai-button").click()`)
     const ai = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
@@ -2617,6 +2775,113 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       assignmentReply = null
     }
   }))
+
+test("phone and desktop: new Board Sessions keep compact model and team-role choices and send only the chosen launch", async () => {
+  const originalSettings = machineSettings
+  const first = PERSONAS[0] as (typeof PERSONAS)[number] & { teams?: string[] }
+  const originalTeams = first.teams
+  const originalIcon = first.icon
+  first.icon = { accent: "#e07a5f", cells: ["...##...", "..####..", ".######.", ".#o##o#.", ".######.", "..####..", "..#..#..", ".##..##."].map(row =>
+    [...row].map(cell => cell === "#" ? "#e07a5f" : cell === "o" ? "#141416" : "")) }
+  const defaults = {
+    codex_default_model: "gpt-6-sol", claude_default_model: "opus",
+    models: {
+      codex: [{ value: "gpt-6-sol", label: "GPT-6 Sol" }, { value: "gpt-6-astra", label: "GPT-6 Astra" },
+        ...Array.from({ length: 22 }, (_, n) => ({ value: `fixture-model-${n}`, label: `Fixture model ${n}` }))],
+      claude: [{ value: "opus", label: "Opus 5.5" }],
+    },
+  }
+  machineSettings = defaults
+  first.teams = ["engineering", "design"]
+  try {
+    for (const size of [PHONE, DESK]) await inTab(size, async (tab) => {
+      await fetch(origin + "/v1/work/v2/items", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "feature", title: "模型與角色選擇驗證", description: "確認本次啟動的模型與角色。", deployment_policy: "agent_decides" }) })
+      await tab.go("/#page=work")
+      const wait = (expression: string) => tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000
+        const read = () => { const result = (${expression}); if (result) return resolve(true)
+          if (Date.now() > deadline) return reject(new Error('launch choices did not settle'))
+          setTimeout(read, 25) }; read()
+      })`)
+      await wait(`document.querySelector('.work-card-summary')`)
+      await tab.run(`document.querySelector('.work-card-summary').click()`)
+      await wait(`document.querySelector('.work-created-modal [aria-controls^="work-roles-"]')`)
+      assert.deepEqual(await tab.run(`(() => {
+        const modal = document.querySelector('.work-created-modal')
+        return [...modal.querySelectorAll('.work-launch-toggle')].map(button => ({
+          name: button.textContent, expanded: button.getAttribute('aria-expanded'),
+          hidden: document.getElementById(button.getAttribute('aria-controls')).hidden,
+        }))
+      })()`), [{ name: "模型使用預設", expanded: "false", hidden: true }, { name: "角色不指定", expanded: "false", hidden: true }])
+      await tab.shot(`launch-${size.width}-collapsed`)
+      // A missing catalog leaves the default available and can be retried.
+      refuseModelCatalog = true
+      await tab.run(`document.querySelector('.work-created-modal [aria-controls^="work-models-"]').click()`)
+      await wait(`document.querySelector('.work-created-modal .work-launch-body [role="alert"]')`)
+      assert.equal(await tab.run(`document.querySelector('.work-created-modal .work-launch-models [role="radio"]').disabled`), false)
+      refuseModelCatalog = false
+      await tab.run(`document.querySelector('.work-created-modal .work-launch-body [role="alert"] button').click()`)
+      await wait(`document.querySelectorAll('.work-created-modal .work-launch-models .m').length === 25`)
+      assert.deepEqual(await tab.run(`(() => {
+        const list = document.querySelector('.work-created-modal .work-launch-models')
+        const buttons = [...list.children]
+        return { scrolls: list.scrollHeight > list.clientHeight, bounded: list.clientHeight <= 160,
+          sharesRow: buttons[0].offsetTop === buttons[1].offsetTop,
+          fits: list.getBoundingClientRect().right <= innerWidth,
+          pageFits: document.documentElement.scrollWidth <= innerWidth }
+      })()`), { scrolls: true, bounded: true, sharesRow: true, fits: true, pageFits: true })
+      const beforeScroll = await tab.run(`document.querySelector('.work-created-modal .work-assignment-route:last-of-type .work-assignment-action').getBoundingClientRect().top`)
+      await tab.run(`document.querySelector('.work-created-modal .work-launch-models').scrollTop = 200`)
+      assert.equal(await tab.run(`document.querySelector('.work-created-modal .work-assignment-route:last-of-type .work-assignment-action').getBoundingClientRect().top`), beforeScroll)
+      await tab.run(`document.querySelector('.work-created-modal .work-launch-models').scrollTop = 0`)
+      await tab.shot(`launch-${size.width}-models`)
+      await tab.run(`Array.from(document.querySelectorAll('.work-created-modal .work-launch-models .m')).find(b => b.textContent === 'GPT-6 Astra').click()`)
+      assert.deepEqual(await tab.run(`(() => {
+        const trigger = document.querySelector('.work-created-modal [aria-controls^="work-models-"]')
+        return { name: trigger.textContent, expanded: trigger.getAttribute('aria-expanded'), focused: document.activeElement === trigger }
+      })()`), { name: "模型GPT-6 Astra", expanded: "false", focused: true })
+      // Changing provider cannot reuse a model selected for the other one.
+      await tab.run(`document.querySelector('.work-created-modal [aria-label="Claude Code"]').click()`)
+      assert.equal(await tab.run(`document.querySelector('.work-created-modal [aria-controls^="work-models-"]').textContent`), "模型使用預設")
+      await tab.run(`document.querySelector('.work-created-modal [aria-controls^="work-models-"]').click()`)
+      await wait(`document.querySelectorAll('.work-created-modal .work-launch-models .m').length === 2`)
+      assert.deepEqual(await tab.run(`Array.from(document.querySelectorAll('.work-created-modal .work-launch-models .m')).map(b=>b.textContent)`), ["使用預設", "Opus 5.5"])
+      await tab.run(`document.querySelector('.work-created-modal [aria-label="Codex"]').click()`)
+      await wait(`document.querySelectorAll('.work-created-modal .work-launch-models .m').length === 25`)
+      await tab.run(`Array.from(document.querySelectorAll('.work-created-modal .work-launch-models .m')).find(b => b.textContent === 'GPT-6 Astra').click()`)
+      await tab.run(`document.querySelector('.work-created-modal [aria-controls^="work-roles-"]').click()`)
+      await wait(`document.querySelector('.work-created-modal .role-team select')`)
+      await tab.run(`(() => { const team=document.querySelector('.work-created-modal .role-team select'); team.value='design'; team.dispatchEvent(new Event('change',{bubbles:true})) })()`)
+      await wait(`document.querySelectorAll('.work-created-modal .work-new-persona .chip').length === 2`)
+      await tab.shot(`launch-${size.width}-team`)
+      await tab.run(`document.querySelector('.work-created-modal [data-persona-id="architect"]').click()`)
+      assert.deepEqual(await tab.run(`(() => {
+        const trigger = document.querySelector('.work-created-modal [aria-controls^="work-roles-"]')
+        const icon = trigger.querySelector('canvas')
+        return { name: trigger.textContent, expanded: trigger.getAttribute('aria-expanded'),
+          iconDrawn: !!icon && icon.width > 0 && icon.height > 0, focused: document.activeElement === trigger }
+      })()`), { name: "角色架構師", expanded: "false", iconDrawn: true, focused: true })
+      await tab.shot(`launch-${size.width}-chosen`)
+      assignmentBody = null
+      await tab.run(`document.querySelector('.work-created-modal .work-assignment-route:last-of-type .work-assignment-action').click()`)
+      const deadline = Date.now() + 5000
+      while (!assignmentReply && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25))
+      assert.ok(assignmentReply, "launch reached the assignment endpoint")
+      assert.deepEqual(assignmentBody, { expected_version: 1, mode: "new_session", assistant: "codex", model: "gpt-6-astra", persona: "architect" })
+      assignmentReply()
+      assignmentReply = null
+      assert.deepEqual(machineSettings, defaults, "per-launch choices must not write the machine defaults")
+    })
+  } finally {
+    assignmentReply?.(); assignmentReply = null
+    refuseModelCatalog = false
+    machineSettings = originalSettings
+    first.teams = originalTeams
+    first.icon = originalIcon
+    createdWork = null
+  }
+})
 
 test("phone: Projects offers a folder picker that can be cancelled", () =>
   inTab(PHONE, async (tab) => {
@@ -2947,13 +3212,13 @@ test("workflow settings explain both switches and persist independent changes on
         }
         await waitFor(`!!document.getElementById("settings-tab-3")`)
         await tab.run(`document.getElementById("settings-tab-3").click()`)
-        const switches = `.settings-workflow [role="switch"]`
+        const switches = `.settings-workflow:not(.settings-integrations) [role="switch"]`
         await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
         assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute("aria-checked"))`), ["true", "true"])
         assert.equal(await tab.run(`document.querySelectorAll('.workflow-setting-help:not([hidden])').length`), 0)
         await tab.run(`document.querySelector('.workflow-info').focus()`)
         await tab.press("Enter")
-        assert.equal(await tab.run(`document.querySelector('.workflow-info').getAttribute("aria-expanded")`), "true")
+        await waitFor(`document.querySelector('.workflow-info').getAttribute("aria-expanded") === 'true'`)
         assert.ok(await tab.run(`document.getElementById('workflow-dispatch_full_permission-help').textContent.includes(${JSON.stringify(tag === "en" ? "Running tasks" : "執行中的任務")})`))
         await tab.run(`document.querySelector('${switches}').click()`)
         await waitFor(`document.querySelector('${switches}').getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
@@ -3006,7 +3271,7 @@ for (const key of ["1", "2"]) test(`phone: owned Gemini permission option ${key}
   } finally { protocolMenuScenario = null }
 })
 
-for (const size of [PHONE, DESK]) test(`composer drafts: ${size.width}px restores, isolates and clears text and images`, () =>
+for (const size of [PHONE, DESK]) test(`composer drafts: ${size.width}px keeps text without IndexedDB and leaves images in the current editor`, () =>
   inTab(size, async tab => {
     const wait = async (expression: string) => {
       const deadline = Date.now() + 5_000
@@ -3026,95 +3291,481 @@ for (const size of [PHONE, DESK]) test(`composer drafts: ${size.width}px restore
     }
     const text = () => tab.run(`document.getElementById("msg")?.innerText`)
     const pictures = () => tab.run(`document.querySelectorAll("#shots .shot").length`)
+    const addPicture = async () => {
+      await tab.run(`(() => {
+        const canvas = document.createElement("canvas"); canvas.width = 2; canvas.height = 2;
+        return new Promise(resolve => canvas.toBlob(blob => {
+          const transfer = new DataTransfer(); transfer.items.add(new File([blob], "draft.png", { type: "image/png" }));
+          const pick = document.getElementById("pick"); pick.files = transfer.files;
+          pick.dispatchEvent(new Event("change", { bubbles: true })); resolve(true);
+        }));
+      })()`)
+      await wait(`document.querySelectorAll("#shots .shot").length === 1 && !document.getElementById("send").disabled`)
+    }
+    draftSendBodies.length = 0
     await tab.go("/v1/health")
-    await tab.run(`new Promise((resolve, reject) => {
-      const request = indexedDB.deleteDatabase("clawdline-composer-drafts");
-      request.onsuccess = () => resolve(true); request.onerror = () => reject(request.error);
-    })`)
+    await tab.run(`Object.keys(localStorage).filter(key => key.startsWith("clawdline.composer-draft:")).forEach(key => localStorage.removeItem(key))`)
     await tab.go("/?ui=en")
     await tab.until("the fixture Session list arrives", s => s.rows === ROWS.length)
-    await open(TTY)
-    assert.equal(await text(), "")
     await tab.run(`(() => {
-      window.draftTextWrites = 0; window.draftImageWrites = 0;
-      const set = Storage.prototype.setItem; const put = IDBObjectStore.prototype.put;
+      window.draftDatabaseCalls = 0; window.draftTextWrites = 0;
+      IDBFactory.prototype.open = function() {
+        window.draftDatabaseCalls++; throw new DOMException("Injected storage failure", "UnknownError");
+      };
+      const set = Storage.prototype.setItem;
       Storage.prototype.setItem = function(key, value) {
         if (key.startsWith("clawdline.composer-draft:")) window.draftTextWrites++;
         return set.call(this, key, value);
       };
-      IDBObjectStore.prototype.put = function(...args) {
-        if (this.name === "fields") window.draftImageWrites++;
-        return put.apply(this, args);
-      };
+    })()`)
+    await open(TTY)
+    assert.equal(await text(), "")
+    await tab.run(`(() => {
       const box = document.getElementById("msg");
       for (let i = 1; i <= 1000; i++) {
         box.textContent = "x".repeat(i);
         box.dispatchEvent(new InputEvent("input", { bubbles: true }));
       }
     })()`)
-    assert.deepEqual(await tab.run(`[window.draftTextWrites, window.draftImageWrites]`), [0, 0], "one thousand real editor inputs make no storage writes")
+    assert.equal(await tab.run(`window.draftTextWrites`), 0, "one thousand real editor inputs make no storage writes")
     await type("Unfinished first line\n草稿第二行")
-    await tab.run(`(() => {
-      const canvas = document.createElement("canvas"); canvas.width = 2; canvas.height = 2;
-      return new Promise(resolve => canvas.toBlob(blob => {
-        const transfer = new DataTransfer(); transfer.items.add(new File([blob], "draft.png", { type: "image/png" }));
-        const pick = document.getElementById("pick"); pick.files = transfer.files;
-        pick.dispatchEvent(new Event("change", { bubbles: true })); resolve(true);
-      }));
-    })()`)
-    await wait(`document.querySelectorAll("#shots .shot").length === 1 && !document.getElementById("send").disabled`)
-    await tab.run(`(() => {
-      const decode = window.createImageBitmap.bind(window);
-      const gate = new Promise(resolve => { window.finishDraftImage = resolve });
-      window.createImageBitmap = async (...args) => { await gate; return decode(...args) };
-      const canvas = document.createElement("canvas"); canvas.width = 3; canvas.height = 3;
-      return new Promise(resolve => canvas.toBlob(blob => {
-        const transfer = new DataTransfer(); transfer.items.add(new File([blob], "late.png", { type: "image/png" }));
-        const pick = document.getElementById("pick"); pick.files = transfer.files;
-        pick.dispatchEvent(new Event("change", { bubbles: true })); resolve(true);
-      }));
-    })()`)
+    await addPicture()
     await open(TMUX)
-    assert.equal(await text(), "", "another Session starts with its own empty editor")
+    assert.equal(await text(), "", "another Session has its own text")
     assert.equal(await pictures(), 0)
-    assert.equal(await tab.run(`window.draftTextWrites`), 1, "leaving saves the final text exactly once")
+    assert.equal(await tab.run(`window.draftTextWrites`), 1, "leaving saves the final text once")
     await type("Other Session's unfinished message")
     await open(TTY)
-    await tab.run(`document.querySelector("#shots [data-shot]").click()`)
-    await wait(`document.querySelectorAll("#shots .shot").length === 0`)
-    await tab.run(`window.finishDraftImage()`)
-    await wait(`new Promise(resolve => {
-      const request = indexedDB.open("clawdline-composer-drafts", 1);
-      request.onsuccess = () => {
-        const db = request.result;
-        const read = db.transaction("fields").objectStore("fields").get([${JSON.stringify(JSON.stringify(['this-mac',TTY,'10000000-0000-4000-8000-000000000002']))}, "images"]);
-        read.onsuccess = () => { resolve(read.result?.length === 1); db.close() };
-      };
-    })`)
-    await wait(`document.querySelectorAll("#shots .shot").length === 1`)
-    await open(TMUX)
-    assert.equal(await pictures(), 0, "a late image stays with its original Session")
-    await open(TTY)
     assert.equal(await text(), "Unfinished first line\n草稿第二行")
-    assert.equal(await pictures(), 1)
-    await tab.run(`document.getElementById("back").click()`)
-    await tab.until("leaving the detail returns to the list", s => !s.open)
-    await open(TTY)
-    assert.equal(await text(), "Unfinished first line\n草稿第二行")
-    await tab.reload()
-    await wait(`document.getElementById("msg")?.isContentEditable`)
-    assert.equal(await text(), "Unfinished first line\n草稿第二行", "a browser reload restores the draft")
-    assert.equal(await pictures(), 1)
+    assert.equal(await pictures(), 0, "leaving an editor discards its unsent pictures")
+    await addPicture()
     await tab.run(`document.getElementById("send").click()`)
     await wait(`document.getElementById("msg")?.innerText === "" && document.querySelectorAll("#shots .shot").length === 0`)
+    const sentBy = Date.now() + 5_000
+    while (!draftSendBodies.length && Date.now() < sentBy) await new Promise(resolve => setTimeout(resolve, 30))
+    assert.equal(draftSendBodies.length, 1, "one send reaches the fixture")
+    assert.equal(draftSendBodies[0].text, "Unfinished first line\n草稿第二行")
+    assert.equal((draftSendBodies[0].images as string[]).length, 1, "ordinary image sending still carries the selected image")
+    assert.match((draftSendBodies[0].images as string[])[0], /^data:image\//)
     await open(TMUX)
-    assert.equal(await text(), "Other Session's unfinished message", "sending clears only its own draft")
+    assert.equal(await text(), "Other Session's unfinished message", "sending clears only its own text")
     await open(TTY)
     assert.equal(await text(), "", "a sent draft does not return")
-    assert.equal(await pictures(), 0)
-    await open(TMUX)
+    await type("Text survives reopening")
+    await addPicture()
+    assert.equal(await tab.run(`window.draftDatabaseCalls`), 0, "entering, editing, switching and sending use no IndexedDB")
+    await tab.reload()
+    await wait(`document.getElementById("msg")?.isContentEditable`)
+    assert.equal(await text(), "Text survives reopening")
+    assert.equal(await pictures(), 0, "a page reload never restores a picture draft")
     await type("")
     await tab.reload()
     await wait(`document.getElementById("msg")?.isContentEditable`)
-    assert.equal(await text(), "", "manually clearing text also deletes the saved draft")
+    assert.equal(await text(), "", "clearing text deletes the saved draft")
   }))
+
+
+test("integration switches persist machine opt-ins and recover failures in both languages and sizes", async () => {
+  for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
+    for (const tag of ["en", "zh-Hant"]) {
+      integrationSettings = { workflow_skills_enabled: false, graphify_enabled: false }
+      refuseIntegrationRead = true
+      await inTab(size, async tab => {
+        const waitFor = async (expression: string) => {
+          const end = Date.now() + 5000
+          while (!await tab.run(expression)) {
+            if (Date.now() > end) assert.fail("integration wait: " + expression)
+            await new Promise(resolve => setTimeout(resolve, 30))
+          }
+        }
+        await tab.go("/")
+        await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)})`)
+        await tab.run(`location.hash = "page=settings"`)
+        await tab.reload()
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
+        await waitFor(`!!document.querySelector('.settings-integrations .chip')`)
+        assert.equal(await tab.run(`document.querySelector('.settings-integrations [role="switch"]').disabled`), true)
+        await tab.run(`document.querySelector('.settings-integrations .chip').click()`)
+        const switches = `.settings-integrations [role="switch"]`
+        await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
+        assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["false", "false"])
+        await tab.run(`document.querySelector('.settings-integrations .workflow-info').click()`)
+        assert.ok(await tab.run(`document.querySelector('.settings-integrations .workflow-setting-help').textContent.includes(${JSON.stringify(tag === "en" ? "new Claude/Codex" : "新 Claude／Codex")})`))
+        for (const [index, key] of [[0, "workflow_skills_enabled"], [1, "graphify_enabled"]] as const) {
+          await tab.run(`document.querySelectorAll('${switches}')[${index}].click()`)
+          await waitFor(`document.querySelectorAll('${switches}')[${index}].getAttribute('aria-checked') === 'true' && !document.querySelector('${switches}').disabled`)
+          assert.equal(integrationSettings[key], true)
+        }
+        assert.deepEqual(integrationSettings, { workflow_skills_enabled: true, graphify_enabled: true })
+        const bounds = await tab.run(`({width:innerWidth,page:document.documentElement.scrollWidth})`)
+        assert.ok(bounds.page <= bounds.width + 1, `${tag} ${sizeName} integration overflow: ${JSON.stringify(bounds)}`)
+        await tab.run(`document.querySelector('.settings-integrations .workflow-info').click(); document.querySelectorAll('.settings-integrations .workflow-info')[1].click(); document.querySelector('.settings-integrations').scrollIntoView({block:'start'})`)
+        if (shots) { mkdirSync(shots, { recursive: true }); await tab.shot(`${tag}-${sizeName}-integration-settings`) }
+        await tab.reload()
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
+        await waitFor(`!document.querySelector('${switches}')?.disabled`)
+        assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["true", "true"])
+        refuseIntegrationWrite = true
+        await tab.run(`document.querySelector('${switches}').click()`)
+        await waitFor(`!document.querySelector('${switches}').disabled && !!document.querySelector('.settings-integrations .said').textContent`)
+        assert.equal(await tab.run(`document.querySelector('${switches}').getAttribute('aria-checked')`), "true")
+        await tab.run(`document.querySelector('${switches}').click()`)
+        await waitFor(`document.querySelector('${switches}').getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
+        assert.deepEqual(integrationSettings, { workflow_skills_enabled: false, graphify_enabled: true })
+      })
+    }
+  }
+})
+
+
+test("workflow profile picker saves only the selected profile and preserves Graphify", async () => {
+  for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
+    for (const tag of ["en", "zh-Hant"]) {
+      integrationSettings = { workflow_profile: "clawdline", workflow_skills_enabled: false, graphify_enabled: true }
+      integrationWrites = []
+      await inTab(size, async tab => {
+        const waitFor = async (expression: string) => {
+          const end = Date.now() + 5000
+          while (!await tab.run(expression)) {
+            if (Date.now() > end) assert.fail("workflow wait: " + expression)
+            await new Promise(resolve => setTimeout(resolve, 30))
+          }
+        }
+        await tab.go("/")
+        await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)}); location.hash = "page=settings"`)
+        await tab.reload()
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
+        await waitFor(`!!document.getElementById("workflow-profile-select")`)
+        const select = `document.getElementById("workflow-profile-select")`
+        assert.deepEqual(await tab.run(`[...${select}.options].map(x=>[x.value,x.disabled])`), [["clawdline",false],["superpowers",false],["poteto",false]])
+        const choose = async (profile: string) => {
+          await tab.run(`${select}.value=${JSON.stringify(profile)}; ${select}.dispatchEvent(new Event("change", {bubbles:true}))`)
+          await waitFor(`!${select}.disabled && !!document.querySelector('.settings-integrations .said').textContent`)
+        }
+        await choose("superpowers")
+        assert.equal(integrationSettings.workflow_profile, "superpowers")
+        await choose("poteto")
+        assert.equal(integrationSettings.workflow_profile, "poteto")
+        assert.deepEqual(integrationWrites, [{ workflow_profile: "superpowers" }, { workflow_profile: "poteto" }])
+        assert.equal(integrationSettings.graphify_enabled, true)
+        assert.equal(integrationSettings.workflow_skills_enabled, false)
+        refuseIntegrationWrite = true
+        await choose("clawdline")
+        assert.equal(await tab.run(`${select}.value`), "poteto", "failed save retains the last accepted choice")
+        assert.equal(integrationSettings.workflow_profile, "poteto")
+        await tab.run(`document.querySelector('.settings-integrations .workflow-info').click()`)
+        assert.ok(await tab.run(`document.getElementById('workflow-profile-help').textContent.includes('Poteto')`))
+        const bounds = await tab.run(`(() => {const s=${select}.getBoundingClientRect(),a=document.querySelector('.workflow-profile-picker svg').getBoundingClientRect();return {delta:Math.abs((s.top+s.bottom-a.top-a.bottom)/2),width:innerWidth,page:document.documentElement.scrollWidth}})()`)
+        assert.ok(bounds.delta < 1, `centered caret ${tag}/${sizeName}: ${JSON.stringify(bounds)}`)
+        assert.ok(bounds.page <= bounds.width + 1, `settings overflow ${tag}/${sizeName}`)
+        await tab.shot(`workflow-${tag}-${sizeName}-settings`)
+        await tab.reload()
+        await waitFor(`!!document.getElementById("settings-tab-3")`)
+        await tab.run(`document.getElementById("settings-tab-3").click()`)
+        await waitFor(`!!${select}`)
+        assert.equal(await tab.run(`${select}.value`), "poteto")
+        await choose("clawdline")
+        assert.equal(integrationSettings.workflow_profile, "clawdline")
+      })
+    }
+  }
+  integrationSettings = { workflow_skills_enabled: false, graphify_enabled: false }
+})
+
+test("Station shows confirmed optional workflows and keeps absent or uncertain records out of the header", async () => {
+  const record = { state: "recorded", profile_id: "poteto", source: "pstack 0.15.36", version: "1", digest: "a".repeat(64), graphify_enabled: true,
+    stages: [{id: "verify", title: "Verify", output: "Evidence", acceptance: "Passing checks"}] }
+  workflowRecords = { [TMUX]: record, [TTY]: { state: "legacy_unsnapshotted" } }
+  for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
+    for (const tag of ["en", "zh-Hant"]) {
+      await inTab(size, async tab => {
+        const waitFor = async (expression: string) => {
+          const end = Date.now() + 5000
+          while (!await tab.run(expression)) {
+            if (Date.now() > end) assert.fail("workflow info wait: " + expression + " " + JSON.stringify(await tab.run(`({hash:location.hash,lang:document.documentElement.lang,workflow:document.querySelector('.detail-workflow')?.textContent,head:document.querySelector('#detail-name')?.textContent})`)))
+            await new Promise(resolve => setTimeout(resolve, 30))
+          }
+        }
+        await tab.go("/")
+        await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)})`)
+        await tab.run(`location.hash=${JSON.stringify(FRAGMENT[TMUX].slice(1))}`)
+        await tab.reload()
+        await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Poteto')`)
+        await tab.shot(`workflow-${tag}-${sizeName}-station`)
+        await tab.run(`document.getElementById('detail-info').click()`)
+        await waitFor(`!!document.querySelector('#info-body .flow-session')`)
+        assert.equal(await tab.run(`document.querySelector('.flow-session').open`), false)
+        await tab.run(`document.querySelector('.flow-session > summary').click()`)
+        assert.ok(await tab.run(`document.querySelector('.flow-facts').textContent.includes('0.15.36')`))
+        assert.ok(await tab.run(`document.querySelector('.flow-facts').textContent.includes(${JSON.stringify(tag === "en" ? "No use receipt" : "尚無使用回報")})`))
+        assert.equal(await tab.run(`document.querySelector('.flow-steps').open`), false)
+        await tab.run(`document.querySelector('.flow-steps > summary').click()`)
+        assert.ok(await tab.run(`document.querySelector('.flow-steps').textContent.includes(${JSON.stringify(tag === "en" ? "Verify" : "驗證")})`))
+        const bounds = await tab.run(`({width:innerWidth,page:document.documentElement.scrollWidth,sheet:document.getElementById('info-sheet').getBoundingClientRect().width})`)
+        assert.ok(bounds.page <= bounds.width + 1 && bounds.sheet <= bounds.width, `info overflow ${tag}/${sizeName}: ${JSON.stringify(bounds)}`)
+        await tab.shot(`workflow-${tag}-${sizeName}-info`)
+        await tab.run(`document.getElementById('info-close').click()`)
+        const hiddenRecords = [
+          { state: "legacy_unsnapshotted" },
+          { state: "unavailable" },
+          { state: "recorded", profile_id: "clawdline" },
+          { state: "recorded", profile_id: "future-profile" },
+          { state: "recorded" },
+          undefined,
+        ]
+        for (const hidden of hiddenRecords) {
+          workflowRecords[TTY] = hidden
+          await tab.tap(TMUX)
+          await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Poteto')`)
+          await tab.tap(TTY)
+          await waitFor(`document.getElementById('detail-name')?.textContent.includes('Bravo')`)
+          await tab.run(`document.getElementById('detail-info').click()`)
+          await waitFor(`!!document.querySelector('#info-body .flow-session')`)
+          assert.equal(await tab.run(`!!document.querySelector('.detail-workflow')`), false, `hidden workflow ${tag}/${sizeName}: ${JSON.stringify(hidden)}`)
+          await tab.run(`document.getElementById('info-close').click()`)
+        }
+        workflowRecords[TTY] = { state: "recorded", profile_id: "superpowers" }
+        await tab.tap(TMUX)
+        await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Poteto')`)
+        await tab.tap(TTY)
+        await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Superpowers')`)
+        await tab.shot(`workflow-${tag}-${sizeName}-confirmed-header`)
+        workflowRecords[TTY] = { state: "legacy_unsnapshotted" }
+        await tab.tap(TMUX)
+        await waitFor(`document.querySelector('.detail-workflow')?.textContent.includes('Poteto')`)
+        await tab.tap(TTY)
+        await waitFor(`document.getElementById('detail-name')?.textContent.includes('Bravo')`)
+        await tab.run(`document.getElementById('detail-info').click()`)
+        await waitFor(`!!document.querySelector('#info-body .flow-session')`)
+        await tab.run(`document.getElementById('info-close').click()`)
+        assert.equal(await tab.run(`!!document.querySelector('.detail-workflow')`), false)
+        await tab.shot(`workflow-${tag}-${sizeName}-quiet-header`)
+      })
+    }
+  }
+  workflowRecords = {}
+})
+
+test("a late workflow read cannot relabel the next Session", async () => {
+  workflowRecords = { [TMUX]: {state: "recorded", profile_id: "poteto"}, [TTY]: {state: "recorded", profile_id: "superpowers"} }
+  heldWorkflowInfo = {id: TMUX, replies: []}
+  try {
+    await inTab(DESK, async tab => {
+      await tab.go("/" + FRAGMENT[TMUX])
+      const end = Date.now() + 5000
+      while (!heldWorkflowInfo!.replies.length) {
+        if (Date.now() > end) assert.fail("first workflow read was not held")
+        await new Promise(resolve => setTimeout(resolve, 30))
+      }
+      await tab.run(`location.hash=${JSON.stringify(FRAGMENT[TTY].slice(1))}`)
+      while (!await tab.run(`document.querySelector('.detail-workflow')?.textContent.includes('Superpowers')`)) {
+        if (Date.now() > end) assert.fail("next Session workflow was not shown")
+        await new Promise(resolve => setTimeout(resolve, 30))
+      }
+      const replies = heldWorkflowInfo!.replies; heldWorkflowInfo = null
+      for (const reply of replies) reply()
+      assert.ok(await tab.run(`document.querySelector('.detail-workflow').textContent.includes('Superpowers')`))
+    })
+  } finally {
+    for (const reply of heldWorkflowInfo?.replies ?? []) reply()
+    heldWorkflowInfo = null; workflowRecords = {}
+  }
+})
+
+test("Graphify project viewer respects the toggle and renders safe graphs in both entry points and sizes", async () => {
+ for(const size of [DESK,PHONE]) for(const tag of ["en","zh-Hant"]) {
+  integrationSettings={workflow_skills_enabled:false,graphify_enabled:false};graphifyScenario="matched";graphifyReads=0
+  await inTab(size,async tab => {
+   const wait=async(expression:string) => {const end=Date.now()+6000;while(!await tab.run(expression)) {if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+   await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
+   await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(tag)})`);await tab.reload();await tab.until("Session ready",s=>s.open===TMUX)
+   await tab.run(`document.getElementById("detail-info").click()`);await wait(`!document.getElementById("info").hidden && !!document.querySelector("#info .sec")`)
+   await new Promise(r=>setTimeout(r,100));assert.equal(await tab.run(`!!document.querySelector("[data-graphify-open]")`),false);assert.equal(graphifyReads,0)
+   integrationSettings.graphify_enabled=true
+   await tab.run(`document.getElementById("info-refresh").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
+   await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector('.graphify-dialog[open] .graphify-stage[data-renderer-state="ready"]')`)
+   assert.equal(await tab.run(`document.querySelectorAll(".graphify-node-list button").length`),3)
+   assert.equal(await tab.run(`/\\{(?:arg)?[0-3]\\}/.test(document.querySelector(".graphify-body").textContent)`),false)
+   assert.ok(await tab.run(`document.querySelectorAll(".graphify-canvas canvas").length > 0`))
+   await tab.run(`document.querySelector('.graphify-node-list summary').click(); document.querySelector('.graphify-node-list button').focus()`); await tab.press('Enter')
+   await wait(`!!document.querySelector(".graphify-node-detail")`)
+   assert.ok(await tab.run(`document.querySelector(".graphify-node-detail").textContent.includes("Worker")`))
+   const dims=await tab.run(`({viewport:innerWidth,page:document.documentElement.scrollWidth,dialog:document.querySelector('.graphify-dialog').getBoundingClientRect().width,executed:globalThis.graphExecuted===true,active:document.querySelectorAll('.graphify-dialog img,.graphify-dialog script').length})`)
+   assert.ok(dims.page<=dims.viewport+1);assert.ok(dims.dialog<=dims.viewport);assert.equal(dims.executed,false);assert.equal(dims.active,0)
+   await tab.run(`(()=>{const input=document.querySelector('.graphify-controls input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'worker');input.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+   await wait(`document.querySelectorAll('.graphify-node-list button').length===1`)
+   assert.ok(await tab.run(`document.querySelector('.graphify-map-heading').textContent.includes(${JSON.stringify(tag==='en'?'0 connections':'0 條連線')})`))
+   await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+   await tab.go("/?graphify-project=1#page=projects");await wait(`!!document.querySelector('button.project-row[data-place-id]')`)
+   await tab.run(`document.querySelector('button.project-row[data-place-id]').click()`);await wait(`!!document.querySelector('.project-setup-dialog[open] .graphify-open')`)
+   await tab.run(`document.querySelector('.project-setup-dialog .graphify-open').click()`);await wait(`document.querySelectorAll('.graphify-dialog[open] .graphify-node-list button').length===3`)
+   if(shots) {mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-graphify`)}
+   for(const state of ["stale","large","missing","failure","matched"]) {
+    graphifyScenario=state
+    await tab.run(`document.querySelector('.graphify-dialog footer button').click()`)
+    if(state==="failure")await wait(`!!document.querySelector('.graphify-dialog [role="alert"]')`)
+    else await wait(`!!document.querySelector('.graphify-dialog .graphify-status') && !document.querySelector('.graphify-body').matches('[aria-busy="true"]')`)
+    if(state==="stale")assert.ok(await tab.run(`!!document.querySelector('.graphify-status.is-stale')`))
+    if(state==="large")assert.ok(await tab.run(`!!document.querySelector('.graphify-notice')`))
+    if(state==="missing")assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),0)
+    if(state==="matched")assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),3)
+   }
+   await tab.run(`window.dispatchEvent(new CustomEvent('clawdline:graphify-setting',{detail:false}))`)
+   assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),0)
+   await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+   assert.equal(await tab.run(`!!document.querySelector('.project-setup-dialog .graphify-open')`),false)
+  })
+ }
+})
+
+ test("Graphify local index build survives closing, explains failure and loads the completed graph",async()=>{
+  for(const size of [DESK,PHONE])for(const tag of ["en","zh-Hant"]){
+   graphifyScenario="missing";graphifyBuilds=0;graphifyBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""};graphifyBuildResult=""
+   integrationSettings={workflow_skills_enabled:false,graphify_enabled:true}
+   await inTab(size,async tab=>{
+    const wait=async(expression:string)=>{const end=Date.now()+6000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+    await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
+    await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(tag)})`);await tab.reload();await tab.until("Session ready",s=>s.open===TMUX)
+    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
+    await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector(".graphify-build button")`)
+    assert.equal(graphifyBuilds,0)
+    assert.equal(await tab.run(`document.querySelectorAll('.working-indicator').length`),0)
+    assert.ok(await tab.run(`document.querySelector('.graphify-build').textContent.includes(${JSON.stringify(tag==="en"?"no model or paid API":"不使用模型或付費 API")})`))
+    if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-graphify-build-missing`)}
+    await tab.run(`document.querySelector('.graphify-build button').click()`);await wait(`document.querySelector('.graphify-build')?.textContent.includes(${JSON.stringify(tag==="en"?"Preparing":"準備")}) && !document.querySelector('.graphify-build button')`)
+    assert.equal(graphifyBuilds,1)
+    assert.ok(await tab.run(`document.querySelector('.working-indicator [role="status"]').textContent.includes(${JSON.stringify(tag==="en"?"Clawdline is working":"Clawdline 正在努力工作")})`))
+    assert.equal(await tab.run(`document.querySelector('.working-indicator-art').getAttribute('aria-hidden')`),"true")
+    assert.notEqual(await tab.run(`getComputedStyle(document.querySelector('.working-indicator-body')).animationName`),"none")
+    await tab.reducedMotion(true)
+    assert.equal(await tab.run(`getComputedStyle(document.querySelector('.working-indicator-body')).animationName`),"none")
+    assert.ok(await tab.run(`document.querySelector('.working-indicator-detail').textContent.length>0`))
+    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-reduced-motion`)
+    await tab.reducedMotion(false)
+    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-running`)
+    await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+    const reads=graphifyReads;await new Promise(r=>setTimeout(r,1200));assert.equal(graphifyReads,reads)
+    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!document.getElementById("info").hidden && !!document.querySelector("[data-graphify-open]")`)
+    await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector('.graphify-build')`)
+    assert.equal(graphifyBuilds,1)
+    graphifyBuildResult="prerequisite_missing"
+    await wait(`!!document.querySelector('.graphify-dialog [role="alert"]') && !!document.querySelector('.graphify-build button')`)
+    assert.ok(await tab.run(`document.querySelector('.graphify-dialog [role="alert"]').textContent.includes('Python 3.12')`))
+    assert.equal(await tab.run(`document.querySelectorAll('.working-indicator').length`),0)
+    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-failed`)
+    graphifyBuildResult=""
+    await tab.run(`document.querySelector('.graphify-build button').click()`);await wait(`!document.querySelector('.graphify-build button')`)
+    assert.equal(graphifyBuilds,2);graphifyBuildResult="success"
+    await wait(`document.querySelectorAll('.graphify-node-list button').length===3`)
+    assert.equal(await tab.run(`document.querySelectorAll('.working-indicator').length`),0)
+    if(shots)await tab.shot(`${tag}-${size.width}-graphify-build-complete`)
+    assert.equal(graphifyBuilds,2)
+    assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
+    await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+   })
+  }
+ })
+
+ test("Graphify renders the real locally built project overview on desktop and phone",{skip:!graphifyRealView},async()=>{
+  for(const size of [DESK,PHONE])for(const tag of ["en","zh-Hant"]){
+   graphifyScenario="real";graphifyBuild={state:"idle",phase:"idle",files:0,bytes:0,started_at:0,updated_at:0,error:""};graphifyBuildResult=""
+   integrationSettings={workflow_skills_enabled:false,graphify_enabled:true}
+   await inTab(size,async tab=>{
+    const wait=async(expression:string)=>{const end=Date.now()+6000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+    await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
+    await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(tag)})`);await tab.reload();await tab.until("Session ready",s=>s.open===TMUX)
+    await tab.run(`document.getElementById("detail-info").click()`);await wait(`!!document.querySelector("[data-graphify-open]")`)
+    await tab.run(`document.querySelector("[data-graphify-open]").click()`);await wait(`!!document.querySelector('.graphify-status.is-source_matched') && document.querySelector('.graphify-stage')?.dataset.rendererState==='ready'`)
+    assert.equal(await tab.run(`document.querySelectorAll('.graphify-node-list button').length`),graphifyRealView.nodes.length)
+    assert.ok(graphifyRealView.total_nodes>graphifyRealView.nodes.length)
+    assert.ok(await tab.run(`!!document.querySelector('.graphify-notice')`))
+    const copy=await tab.run(`document.querySelector('.graphify-body').textContent`)
+    assert.ok(copy.includes(String(graphifyRealView.total_nodes)))
+    assert.ok(copy.includes(String(graphifyRealView.total_links)))
+    assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
+    if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`${tag}-${size.width}-graphify-real-project`)}
+    await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+   })
+  }
+ })
+
+test("Sigma graph supports real picking, camera controls and phone pinch without rebuilding the index", async () => {
+ for(const size of [DESK,PHONE]) {
+  integrationSettings={workflow_skills_enabled:false,graphify_enabled:true};graphifyScenario="matched";graphifyBuilds=0
+  await inTab(size,async tab=>{
+   const wait=async(expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+   await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
+   await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-graphify-open]')`)
+   await tab.run(`document.querySelector('[data-graphify-open]').click()`);await wait(`document.querySelector('.graphify-stage')?.dataset.rendererState==='ready'`)
+   await tab.run(`document.querySelector('.graphify-node-list summary').click(); document.querySelectorAll('.graphify-node-list button')[1].click()`)
+   await wait(`document.querySelector('.graphify-node-detail h3')?.textContent==='Worker'`)
+   await tab.run(`document.querySelector('.graphify-focus').click();document.querySelector('.graphify-inspector-heading button').click()`)
+   await wait(`!document.querySelector('.graphify-node-detail')`)
+   const center=await tab.run(`(()=>{const r=document.querySelector('.graphify-canvas').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`)
+   if(size.mobile)await tab.touch(center.x,center.y);else await tab.clickPoint(center.x,center.y)
+   await wait(`document.querySelector('.graphify-node-detail h3')?.textContent==='Worker'`)
+   await tab.run(`document.querySelector('.graphify-zoom button:last-child').click()`)
+   await wait(`parseInt(document.querySelector('.graphify-zoom button:nth-child(2)').textContent)>100`)
+   await tab.run(`document.querySelector('.graphify-zoom button:nth-child(2)').click()`)
+   await wait(`document.querySelector('.graphify-zoom button:nth-child(2)').textContent==='100%'`)
+   if(size.mobile){await tab.pinch(center.x,center.y);await wait(`parseInt(document.querySelector('.graphify-zoom button:nth-child(2)').textContent)>100`)}
+   await tab.run(`document.querySelector('.graphify-canvas').focus()`);await tab.press('0');await wait(`document.querySelector('.graphify-zoom button:nth-child(2)').textContent==='100%'`)
+   assert.equal(graphifyBuilds,0)
+   assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
+   if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`sigma-${size.width}-selected`)}
+   await tab.run(`document.querySelector('.graphify-dialog header button').click()`)
+   await wait(`!document.querySelector('.graphify-dialog').open && document.querySelectorAll('.graphify-canvas canvas').length===0`)
+  })
+ }
+})
+
+test("Sigma rendering failure keeps the keyboard node list and source inspector usable",async()=>{
+ integrationSettings={workflow_skills_enabled:false,graphify_enabled:true};graphifyScenario="matched"
+ await inTab(PHONE,async tab=>{
+  await tab.withoutWebGL();await tab.go("/"+FRAGMENT[TMUX]);await tab.until("Session ready",s=>s.open===TMUX)
+  const wait=async(expression:string)=>{const end=Date.now()+7000;while(!await tab.run(expression)){if(Date.now()>end)assert.fail(expression);await new Promise(r=>setTimeout(r,30))}}
+  await tab.run(`document.getElementById('detail-info').click()`);await wait(`!!document.querySelector('[data-graphify-open]')`)
+  await tab.run(`document.querySelector('[data-graphify-open]').click()`);await wait(`document.querySelector('.graphify-stage')?.dataset.rendererState==='unavailable'`)
+  assert.ok(await tab.run(`document.querySelector('.graphify-render-message').textContent.length>0`))
+  await tab.run(`document.querySelector('.graphify-node-list summary').click(); document.querySelector('.graphify-node-list button').focus()`);await tab.press('Enter')
+  await wait(`!!document.querySelector('.graphify-node-detail')`)
+  assert.ok(await tab.run(`document.querySelector('.graphify-node-detail').textContent.includes('src/entry.ts')`))
+  assert.ok(await tab.run(`document.documentElement.scrollWidth<=innerWidth+1`))
+  if(shots){mkdirSync(shots,{recursive:true});await tab.shot('sigma-phone-unavailable')}
+ })
+})
+
+
+test("ACP lifecycle evidence renders in English and Traditional Chinese on phone and desktop", async () => {
+  protocolMenuScenario = {waiting:false,requests:[]}
+  try {
+    for (const lang of ["en", "zh-Hant"]) for (const [name,size] of [["desktop",DESK],["phone",PHONE]] as const) {
+      acpProtocolState = {phase:"cancel_requested",operation:"prompt",sequence:5,unrecognized:0,last_received_at:1e9,trace_enabled:true}
+      await inTab(size,async tab => {
+        await tab.go("/")
+        await tab.run(`localStorage.setItem("ui_language",${JSON.stringify(lang)})`)
+        await tab.run(`history.replaceState(null,"",${JSON.stringify("/#session="+encodeURIComponent(ACP))})`)
+        await tab.reload()
+        await tab.until("Gemini is open",state=>state.open===ACP)
+        await tab.run(`document.getElementById("detail-info").click()`)
+        const seen = await tab.run(`new Promise((resolve,reject)=>{
+          const until=Date.now()+5000
+          const check=()=>{
+            const el=document.querySelector('[data-acp-phase="cancel_requested"]')
+            if(el)return resolve(el.textContent)
+            if(Date.now()>until)return reject(new Error("missing ACP lifecycle"))
+            setTimeout(check,25)
+          };check()
+        })`)
+        assert.match(String(seen),lang==="en"?/Cancellation was sent/:/已送出取消/)
+        assert.match(String(seen),lang==="en"?/Raw communication is recorded locally/:/原始通訊保存在本機/)
+        const bounds=await tab.run(`({width:innerWidth,page:document.documentElement.scrollWidth})`)
+        assert.ok(bounds.page<=bounds.width+1,JSON.stringify(bounds))
+        if(shots){mkdirSync(shots,{recursive:true});await tab.shot(`acp-lifecycle-${lang}-${name}`)}
+      })
+    }
+  } finally {protocolMenuScenario=null;acpProtocolState=undefined}
+})

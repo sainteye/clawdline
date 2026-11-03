@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import type { SessionRow } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see order.test.ts.
 import { conversationNotStarted } from "./readiness.ts"
-import { sessionWorkStateHTML } from "../legacy/js/view/derive.js"
+import { sessionWorkStateHTML, projectSessionWorkState } from "../legacy/js/view/derive.js"
 
 function row(extra: Partial<SessionRow>): SessionRow {
   return {
@@ -17,6 +17,15 @@ function row(extra: Partial<SessionRow>): SessionRow {
     ...extra,
   }
 }
+
+test("a native capacity block needs attention independently of terminal activity", () => {
+  for (const state of ["idle", "unknown", "working"] as const) {
+    const blocked = row({ state, provider_block: "model_capacity", work_state: "waiting_you", work_person_needed: true })
+    assert.equal(projectSessionWorkState(blocked).state, "waiting_you")
+    assert.equal(blocked.menu, undefined)
+  }
+  assert.equal(projectSessionWorkState(row({ state: "working", work_state: "working" })).state, "working")
+})
 
 test("a provider with no first record is not an unreadable screen", () => {
   assert.equal(conversationNotStarted(row({ identity: "no_record" })), true, "fresh Codex identity")

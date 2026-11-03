@@ -34,20 +34,6 @@ func KnownAssistant(name string) bool {
 	return name == AssistantClaude || name == AssistantCodex || name == AssistantAntigravity
 }
 
-// StartModels is Planner.models: the only model names the start route's
-// fourth segment answers to.
-var StartModels = []string{"haiku", "sonnet", "opus"}
-
-// KnownStartModel is `Planner.models.contains(model)`.
-func KnownStartModel(name string) bool {
-	for _, m := range StartModels {
-		if m == name {
-			return true
-		}
-	}
-	return false
-}
-
 // ModelName is SessionLaunchPolicy.modelName: `[a-z0-9._-]`, 1…64, never
 // opening with `-`. No string it admits holds a character a shell reads.
 func ModelName(raw string) (string, bool) {
@@ -175,6 +161,10 @@ type LaunchRequest struct {
 	// launches exactly as a launch did before shared memory existed. Only
 	// daemon launch code fills it, from the store, never from a request.
 	Memory string
+	// IntegrationInstructions is generated from explicit machine opt-ins,
+	// never accepted from a launch request. Only new Claude/Codex Sessions
+	// receive it; resuming cannot introduce a newly enabled integration.
+	IntegrationInstructions string
 }
 
 // MemoryLaunchLimit is the longest Memory a launch carries: the 8 KiB index
@@ -382,10 +372,18 @@ func Admit(req LaunchRequest) (Launch, error) {
 	if req.Assistant == AssistantCodex && req.Language != "" {
 		codexInstructions = append(codexInstructions, codexBoardLanguageInstruction(req.Language))
 	}
-	if req.Memory != "" {
-		personaArgs = append(personaArgs, MemoryArgs(req.Assistant, req.Memory)...)
+	extra := req.Memory
+	if req.Resume == "" && req.IntegrationInstructions != "" &&
+		(req.Assistant == AssistantClaude || req.Assistant == AssistantCodex) {
+		if extra != "" {
+			extra += "\n\n"
+		}
+		extra += req.IntegrationInstructions
+	}
+	if extra != "" {
+		personaArgs = append(personaArgs, MemoryArgs(req.Assistant, extra)...)
 		if req.Assistant == AssistantCodex {
-			codexInstructions = append(codexInstructions, req.Memory)
+			codexInstructions = append(codexInstructions, extra)
 		}
 	}
 	if len(codexInstructions) > 0 {

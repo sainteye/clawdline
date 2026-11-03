@@ -23,13 +23,17 @@ import (
 // live record of a running session. It carries the conversation id, the tmux
 // pane and an official status, none of which has to be guessed from a screen.
 type ClaudeRegistry struct {
-	PID       int    `json:"pid"`
-	SessionID string `json:"sessionId"`
-	CWD       string `json:"cwd"`
-	Tmux      string `json:"tmux"`
-	Status    string `json:"status"`
-	Name      string `json:"name"`
-	Version   string `json:"version"`
+	PID             int    `json:"pid"`
+	SessionID       string `json:"sessionId"`
+	CWD             string `json:"cwd"`
+	Tmux            string `json:"tmux"`
+	Status          string `json:"status"`
+	Name            string `json:"name"`
+	Version         string `json:"version"`
+	BridgeSessionID string `json:"bridgeSessionId"`
+	Entrypoint      string `json:"entrypoint"`
+	ProcStart       string `json:"procStart"`
+	PIDDomain       string `json:"pidDomain"`
 }
 
 // Pane returns the tmux pane id out of a value like "clawdline:@8.%12".
@@ -43,7 +47,7 @@ func (r ClaudeRegistry) Pane() string {
 // ClaudeRegistryByPID reads every live session record Claude Code keeps.
 func ClaudeRegistryByPID(home string) map[int]ClaudeRegistry {
 	out := map[int]ClaudeRegistry{}
-	dir := filepath.Join(home, ".claude", "sessions")
+	dir := filepath.Join(ClaudeConfigDir(home), "sessions")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return out
