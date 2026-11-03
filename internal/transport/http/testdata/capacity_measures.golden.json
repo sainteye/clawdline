@@ -1377,6 +1377,11 @@
     "Note": true
   },
   {
+    "Name": "console.ops_resolving_poll_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.owner_retention_poll_seconds",
     "Known": true,
     "Note": true

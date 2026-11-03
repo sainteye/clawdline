@@ -1188,6 +1188,8 @@
   "capacityRow.console.health_ui_trend_signals.what": "The trend buckets the connection-health page lists to investigate.",
   "capacityRow.console.machine_list_poll_seconds.full": "Between checks the list can be a few seconds behind. Closing and reopening the page reads it again right away.",
   "capacityRow.console.machine_list_poll_seconds.what": "How often the open machine list checks each machine again, so whether reads go direct or through Cloud stays current.",
+  "capacityRow.console.ops_resolving_poll_seconds.full": "Between checks the page can be a few seconds behind. It stops checking once no link is being read.",
+  "capacityRow.console.ops_resolving_poll_seconds.what": "How often an open Ops page checks again while a Session is reading a link, so its name or access problem appears without a reload.",
   "capacityRow.console.native_pairing_save_seconds.full": "After that long the app stops waiting, shows no code, and lets you try saving again or ignore the request. If this keeps happening, restart Clawdline and pair again.",
   "capacityRow.console.native_pairing_save_seconds.what": "When a phone or browser asks to pair, how long the desktop app waits for the service to save the permission you chose before the six-digit code is shown. Without it, a stalled service would hold the pairing until the code expires.",
   "capacityRow.console.opened_row_quiet_seconds.full": "The pane then says the machine has not sent this Session instead of saying it is reading. If it stays that way, check that the machine is online and Clawdline is running there.",

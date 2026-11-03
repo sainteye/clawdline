@@ -1188,6 +1188,8 @@
   "capacityRow.console.health_ui_trend_signals.what": "連線健康頁面列出要調查的趨勢時段數量。",
   "capacityRow.console.machine_list_poll_seconds.full": "兩次確認之間，清單可能慢幾秒。離開再回到這一頁會立刻重新讀取。",
   "capacityRow.console.machine_list_poll_seconds.what": "機器清單開著時，多久重新確認一次每台機器，讓「直連或經 Cloud」保持最新。",
+  "capacityRow.console.ops_resolving_poll_seconds.full": "兩次檢查之間畫面可能慢幾秒。沒有連結在讀取時就停止檢查。",
+  "capacityRow.console.ops_resolving_poll_seconds.what": "Session 正在讀取連結時，開著的 Ops 頁多久重新檢查一次，讓名稱或權限問題不用重新整理就會出現。",
   "capacityRow.console.native_pairing_save_seconds.full": "等這麼久還沒保存，App 就不再等、不顯示代碼，讓你重試保存或忽略這次要求。如果常常這樣，重新啟動 Clawdline 後再配對一次。",
   "capacityRow.console.native_pairing_save_seconds.what": "手機或瀏覽器要求配對時，桌面 App 最多等多久讓服務保存你選的權限，保存後才顯示六位數代碼。沒有這個時限，服務卡住時配對會一直等到代碼過期。",
   "capacityRow.console.opened_row_quiet_seconds.full": "時間到後，畫面會改說機器還沒送來這個對話，而不是繼續顯示讀取中。如果一直這樣，檢查那台機器是否在線、Clawdline 有沒有在跑。",

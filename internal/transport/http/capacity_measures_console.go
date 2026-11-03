@@ -280,6 +280,9 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.ConsoleMachineListPoll: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
 		},
+		capacity.ConsoleOpsResolvingPoll: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab cadence while an Ops link is being read; daemon cannot measure live browser timers"}
+		},
 	}
 	for name, measure := range performanceCapacityMeasures() {
 		if strings.HasPrefix(name, "console.") {

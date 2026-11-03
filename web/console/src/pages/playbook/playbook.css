@@ -115,8 +115,8 @@
 .playbook-ops-refs > span { font-weight: 600; }
 .playbook-ops-refs ul { margin: 0; padding-left: 1.2rem; display: grid; gap: .2rem; color: var(--ink); }
 .playbook-ops-refs em { color: var(--warn); font-style: normal; }
-.playbook-ops-options { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.playbook-ops-options { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: .4rem; }
 .playbook-page .playbook-ops-options label { display: flex; align-items: center; gap: .7rem; min-height: 2.75rem; padding: .5rem .75rem; border: 1px solid var(--line); border-radius: .6rem; cursor: pointer; }
 .playbook-page .playbook-ops-options input { width: 1.15rem; height: 1.15rem; flex: none; padding: 0; }
-.playbook-ops-options span { display: grid; gap: .15rem; min-width: 0; }
+.playbook-ops-options span { display: grid; gap: .15rem; min-width: 0; overflow-wrap: anywhere; }
 .playbook-ops-options small { color: var(--dim); }

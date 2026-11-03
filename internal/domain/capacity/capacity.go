@@ -524,6 +524,7 @@ const (
 	ConsoleDirectHistoryHours    = "console.direct_history_hours"
 	ConsoleDirectHistoryMachines = "console.direct_history_machines"
 	ConsoleMachineListPoll       = "console.machine_list_poll_seconds"
+	ConsoleOpsResolvingPoll      = "console.ops_resolving_poll_seconds"
 	// The ordinary shells this machine holds open for a person, and what one
 	// request may type into one or read back from it (limits N59).
 	TerminalCount        = "terminal.count"

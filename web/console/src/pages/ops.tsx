@@ -45,6 +45,9 @@ function refusalText(error: unknown, fallback: OpsWord = "createRefused"): strin
 }
 
 /** The send route's refusal, said as what the person can do about it. */
+/** Registered as console.ops_resolving_poll_seconds (internal/domain/capacity). */
+export const OPS_RESOLVING_POLL_MS = 5_000
+
 function sendFailureText(cause: unknown): string {
   if (!(cause instanceof RefusalError)) return W("linkSavedUnsent")
   const problem = sendProblem(cause.code, cause.detail)
@@ -226,6 +229,15 @@ function OpsPage({ shown }: { shown: boolean }) {
     setLoading(true); setList(null); setSelected(null)
     void refresh(place).finally(() => setLoading(false))
   }, [shown, place?.id])
+
+  // The agent's answer to a resolve request arrives with no event: while a link
+  // is being read, read the list again (console.ops_resolving_poll_seconds).
+  const resolving = !!list?.entries.some((entry) => entry.status === "resolving")
+  useEffect(() => {
+    if (!shown || !place || !resolving) return
+    const timer = setInterval(() => { void refresh(place) }, OPS_RESOLVING_POLL_MS)
+    return () => clearInterval(timer)
+  }, [shown, place?.id, resolving, refresh])
 
   useEffect(() => {
     if (!menuOpen) return

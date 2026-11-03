@@ -134,6 +134,14 @@ func consoleBounds() []Entry {
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
+			// While an Ops link waits for a Session to read it, the open Ops
+			// page reads the list again at this pace (OPS_RESOLVING_POLL_MS,
+			// pages/ops.tsx), because the agent's answer arrives with no event.
+			Name: ConsoleOpsResolvingPoll, Class: Cache, Unit: Seconds,
+			Limit: 5, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// A failed transcript read waits 2, 4, 8 … seconds, at most this
 			// long (BACKOFF.maxMs), before the next.
 			Name: ConsoleTranscriptBackoffSeconds, Class: Cache, Unit: Seconds,

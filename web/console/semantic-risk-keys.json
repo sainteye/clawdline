@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10608,
+  "englishKeys": 10610,
   "counts": {
-    "negation": 2951,
-    "state": 1728,
-    "permission": 627,
+    "negation": 2953,
+    "state": 1729,
+    "permission": 628,
     "deletion": 234,
     "uncertainty": 397
   },
-  "unionCount": 4665,
+  "unionCount": 4667,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -369,6 +369,8 @@
       "capacityRow.console.opened_row_quiet_seconds.full",
       "capacityRow.console.opened_row_restate_seconds.full",
       "capacityRow.console.opened_row_restate_seconds.what",
+      "capacityRow.console.ops_resolving_poll_seconds.full",
+      "capacityRow.console.ops_resolving_poll_seconds.what",
       "capacityRow.console.owner_retention_poll_seconds.full",
       "capacityRow.console.pinned_list_read_timeout_seconds.what",
       "capacityRow.console.relay_feature_wait_seconds.full",
@@ -3222,6 +3224,7 @@
       "capacityRow.console.next_messages.full",
       "capacityRow.console.next_messages.what",
       "capacityRow.console.opened_row_quiet_seconds.full",
+      "capacityRow.console.ops_resolving_poll_seconds.what",
       "capacityRow.console.owner_retention_poll_seconds.what",
       "capacityRow.console.persona_retry_seconds.what",
       "capacityRow.console.pinned_list_read_timeout_seconds.full",
@@ -4782,6 +4785,7 @@
       "capacityRow.console.health_live_seconds.full",
       "capacityRow.console.native_pairing_save_seconds.full",
       "capacityRow.console.native_pairing_save_seconds.what",
+      "capacityRow.console.ops_resolving_poll_seconds.what",
       "capacityRow.console.public_analytics_readms.what",
       "capacityRow.console.support_image_upload_seconds.what",
       "capacityRow.devices.list.full",
@@ -6532,6 +6536,8 @@
     "capacityRow.console.opened_row_quiet_seconds.full",
     "capacityRow.console.opened_row_restate_seconds.full",
     "capacityRow.console.opened_row_restate_seconds.what",
+    "capacityRow.console.ops_resolving_poll_seconds.full",
+    "capacityRow.console.ops_resolving_poll_seconds.what",
     "capacityRow.console.owner_retention_poll_seconds.full",
     "capacityRow.console.owner_retention_poll_seconds.what",
     "capacityRow.console.owner_retention_request_seconds.full",
