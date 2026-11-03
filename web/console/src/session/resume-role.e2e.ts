@@ -47,6 +47,10 @@ const personas = {
 let offer: Record<string, unknown> = { available: false, reason: "boot_unknown", sessions: [], at: 0 }
 /** Every resume that arrived, by its path. */
 let resumes: string[] = []
+/** Every new start that arrived, by its path. */
+let starts: string[] = []
+/** The route level /v1/health reports; 39 is a daemon before the start route admitted every model. */
+let healthLevel = 40
 let placeReads = 0
 let commandAssistant = ""
 let commandCWD = "/work/api"
@@ -106,7 +110,7 @@ function daemon(): Server {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
     if (path === "/v1/sessions") return json(res, 200, snapshot())
-    if (path === "/v1/health") return json(res, 200, { ok: true })
+    if (path === "/v1/health") return json(res, 200, { ok: true, api_level: healthLevel })
     if (path === "/v1/strings" && url.searchParams.get("lang") === "zh-Hant") {
       return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
     }
@@ -158,6 +162,18 @@ function daemon(): Server {
       let body = ""; req.on("data", chunk => body += String(chunk))
       req.on("end", () => { commandSends.push(JSON.parse(body).text); commandSendUncertain ? json(res,503,{error:"send_failed",detail:"fixture uncertain",outcome:"unknown"}) : json(res, 200, { ok: true }) })
       return
+    }
+    if (path === "/v1/settings/default-models" && req.method === "GET") return json(res, 200, {
+      claude: "", codex: "", codex_effort: "",
+      models: {
+        claude: [{ value: "opus", label: "Opus 5.5" }, { value: "fable", label: "Fable 5.1" }, { value: "sonnet", label: "Sonnet 5" }],
+        codex: [{ value: "gpt-5.5", label: "GPT-5.5" }, { value: "gpt-5.5-codex", label: "GPT-5.5 Codex" }],
+        antigravity: [],
+      },
+    })
+    if (req.method === "POST" && /^\/v1\/places\/[^/]+\/start(\/|$)/.test(path)) {
+      starts.push(path)
+      return json(res, 200, { ok: true, id: "started-" + starts.length, backend: "tmux", assistant: "claude", place: "place-api", cwd: "/work/api", attach: "", at: now() })
     }
     if (req.method === "POST" && /^\/v1\/places\/[^/]+\/resume\//.test(path)) {
       resumes.push(path)
@@ -806,4 +822,95 @@ test("a native frame does not discard or replay an uncertain command",async()=>{
   assert.deepEqual(commandSends,["/future-provider-command argument"])
   assert.deepEqual(nativeRequests,[])
  }finally{commandAssistant="";commandSendUncertain=false;await tab.close()}
+})
+
+/** The model row in the start sheet, read in one go. */
+const MODEL = `(() => {
+  const row = document.getElementById("start-model")
+  const toggle = row?.querySelector(".work-launch-toggle")
+  const body = document.getElementById("start-model-options")
+  return {
+    shown: !!row && row.getClientRects().length > 0,
+    summary: toggle?.querySelector(".work-launch-summary")?.textContent ?? "",
+    open: toggle?.getAttribute("aria-expanded") === "true",
+    options: body && !body.hidden ? [...body.querySelectorAll(".m")].map((b) => b.textContent) : [],
+    wide: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }
+})()`
+
+async function modelRow(tab: Tab, what: string, ok: (m: { shown: boolean; summary: string; open: boolean; options: string[]; wide: boolean }) => boolean) {
+  const deadline = Date.now() + 6_000
+  let last: any = null
+  for (;;) {
+    last = await tab.run(MODEL)
+    if (ok(last)) return last
+    if (Date.now() > deadline) assert.fail(what + "; the model row showed " + JSON.stringify(last))
+    await new Promise((r) => setTimeout(r, 50))
+  }
+}
+
+for (const [width, height, mobile, name] of [[390, 844, true, "phone"], [1280, 900, false, "desktop"]] as const) {
+  test(`a new start can choose a model per assistant on the ${name}`, async () => {
+    const tab = await Tab.open(browser, width, height, mobile)
+    starts = []
+    try {
+      await tab.go("/")
+      await tab.click("#start-go")
+      await tab.until("the places are listed", (s) => s.places > 0)
+      await modelRow(tab, "the collapsed model row starts at the default", (m) => m.shown && !m.open && m.summary === "使用預設")
+      await tab.shot(`start-model-${name}-collapsed`)
+      await tab.click("#start-model .work-launch-toggle")
+      const opened = await modelRow(tab, "the Claude catalog is offered", (m) => m.open && m.options.length === 4)
+      assert.deepEqual(opened.options, ["使用預設", "Opus 5.5", "Fable 5.1", "Sonnet 5"])
+      assert.equal(opened.wide, false)
+      await tab.shot(`start-model-${name}-open`)
+      await tab.run(`[...document.querySelectorAll("#start-model-options .m")].find((b) => b.textContent === "Fable 5.1").click()`)
+      await modelRow(tab, "the chosen model is summarised and the row collapses", (m) => !m.open && m.summary === "Fable 5.1")
+      // A model belongs to its assistant: Codex starts at its own default.
+      await tab.pressChip("#start-with", "Codex")
+      await modelRow(tab, "switching assistant shows Codex's default", (m) => m.shown && m.summary === "使用預設")
+      await tab.click("#start-model .work-launch-toggle")
+      const codex = await modelRow(tab, "the Codex catalog is offered", (m) => m.open && m.options.length === 3)
+      assert.deepEqual(codex.options, ["使用預設", "GPT-5.5", "GPT-5.5 Codex"])
+      await tab.run(`[...document.querySelectorAll("#start-model-options .m")].find((b) => b.textContent === "GPT-5.5").click()`)
+      await modelRow(tab, "the Codex choice is summarised", (m) => m.summary === "GPT-5.5")
+      await tab.shot(`start-model-${name}-chosen`)
+      await tab.click('#start-list .place[data-id="place-api"]')
+      for (let i = 0; i < 100 && !starts.length; i++) await new Promise((r) => setTimeout(r, 50))
+      assert.deepEqual(starts, ["/v1/places/place-api/start/codex/gpt-5.5"])
+
+      // The next opening starts at the default again and sends the route it always sent.
+      await tab.go("/")
+      await tab.click("#start-go")
+      await tab.until("the places are listed again", (s) => s.places > 0)
+      await modelRow(tab, "a fresh sheet is back at the default", (m) => m.shown && m.summary === "使用預設")
+      await tab.click('#start-list .place[data-id="place-api"]')
+      for (let i = 0; i < 100 && starts.length < 2; i++) await new Promise((r) => setTimeout(r, 50))
+      assert.equal(starts.length, 2)
+      assert.ok(!/\/(opus|fable|sonnet|gpt-5\.5)/.test(starts[1]), starts[1])
+    } finally {
+      await tab.close()
+    }
+  })
+}
+
+test("a daemon before API level 40 is offered no model choice", async () => {
+  const tab = await Tab.open(browser, 390, 844, true)
+  healthLevel = 39
+  starts = []
+  try {
+    await tab.go("/")
+    await tab.click("#start-go")
+    await tab.until("the places are listed", (s) => s.places > 0)
+    await new Promise((r) => setTimeout(r, 500))
+    const row = await tab.run(MODEL)
+    assert.equal(row.shown, false, "an older daemon would refuse the chosen model")
+    await tab.click('#start-list .place[data-id="place-api"]')
+    for (let i = 0; i < 100 && !starts.length; i++) await new Promise((r) => setTimeout(r, 50))
+    assert.equal(starts.length, 1)
+    assert.ok(!/\/(opus|fable|sonnet|gpt)/.test(starts[0]), starts[0])
+  } finally {
+    healthLevel = 40
+    await tab.close()
+  }
 })

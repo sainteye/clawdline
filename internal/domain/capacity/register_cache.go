@@ -17,6 +17,18 @@ func cacheBounds() []Entry {
 		{Name: "cache.provider_quota_request_seconds", Class: Observation, Unit: Seconds, Limit: 10, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/providerquota.RequestSecondsLimit"}},
+		// Claude Code's own usage answer, asked when the status line has no
+		// fresh window: one ask at a time, at most one per 15 minutes, ten
+		// seconds each, reading at most 1 MiB of its output.
+		{Name: "cache.claude_usage_refresh_seconds", Class: Observation, Unit: Seconds, Limit: 900, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/claudeusage.RefreshSecondsLimit"}},
+		{Name: "cache.claude_usage_request_seconds", Class: Observation, Unit: Seconds, Limit: 10, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/claudeusage.RequestSecondsLimit"}},
+		{Name: "cache.claude_usage_reply_bytes", Class: Buffer, Unit: Bytes, Limit: 1048576, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/claudeusage.ReplyBytesLimit"}},
 
 		{
 			// The one execution scan observeExecutions last committed, by

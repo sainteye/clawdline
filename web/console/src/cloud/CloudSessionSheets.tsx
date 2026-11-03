@@ -3,6 +3,7 @@ import { Start } from "../session/Start.js"
 import { Command } from "../session/Command.js"
 import { openNewWorkItem } from "../pages/work/new-item.js"
 import type { SessionDestination, SessionProjectionSource } from "./all-machine-sessions.js"
+import { observeStartedSession } from "./started-session.js"
 import { toolPlan } from "./machine-tool.js"
 import type { StartAnswer, StartPlaceRow } from "../legacy/start-bridge.js"
 import type { MachineToolbarAction } from "./FleetSessionList.js"
@@ -53,47 +54,19 @@ export function CloudSessionSheets({ machineID, machines, source, pending, onCon
     const open = (sessionID: string, accept: () => boolean = () => true, machine?: string) => {
       stopOpen()
       const mine = ++active
-      let busy = false
-      let again = false
-      let settled = false
-      const find = async () => {
-        if (closed || mine !== active || settled) return
-        if (busy) { again = true; return }
-        busy = true
-        try {
-          for (const id of machine ? [machine] : looking.current) {
-            const reading = await source.readMachine(id, new AbortController().signal)
-            if (closed || mine !== active) return
-            const row = reading.rows?.find((item) => item.destination.machineID === id &&
-              item.destination.sessionID === sessionID && item.freshness === "current")
-            if (row) {
-              settled = true
-              if (accept()) {
-                const destination = row.destination
-                Start.afterProgressHidden(() => opened.current(destination))
-              }
-              stopOpen()
-              return
-            }
-          }
-        } catch { /* the next status event can retry this exact destination */ }
-        finally {
-          busy = false
-          if (again && !settled) { again = false; void find() }
-        }
-      }
-      stopOpen = source.subscribe((event) => {
-        if ((machine ? event.machineID === machine : looking.current.includes(event.machineID)) &&
-          (!event.sessionID || event.sessionID === sessionID)) void find()
-      })
-      void find()
+      stopOpen = observeStartedSession(source, sessionID, () => machine ? [machine] : looking.current,
+        () => !closed && mine === active && accept(),
+        (destination) => Start.afterProgressHidden(() => opened.current(destination)))
     }
     Start.host({ open, openId: () => null, refresh: () => undefined,
       openStarted: (answer, place, finish) => {
         if (!answer.id) return false
         confirmed.current?.(answer, place)
         const from = location.hash
-        open(answer.id, () => location.hash === from && finish(), place?.machine)
+        open(answer.id, () => {
+          const navigate = finish()
+          return location.hash === from && navigate
+        }, place?.machine)
         return true
       },
     })

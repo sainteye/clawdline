@@ -132,11 +132,10 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 		model := ""
 		if len(parts) == 4 {
 			model = parts[3]
-			valid := projects.KnownStartModel(model)
-			if assistant == projects.AssistantAntigravity {
-				_, valid = projects.ModelName(model)
-			}
-			if !valid {
+			// The launch policy's slug, the same gate Settings and the Board's
+			// launches use, for every assistant; `as` stays the persona marker.
+			_, valid := projects.ModelName(model)
+			if !valid || model == "as" {
 				writePlaceRefusal(w, http.StatusNotFound, "not_found", "No model named that", "")
 				return
 			}

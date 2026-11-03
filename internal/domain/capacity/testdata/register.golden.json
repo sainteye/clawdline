@@ -1011,6 +1011,63 @@
   },
   {
     "Register": "daemon",
+    "Name": "cache.claude_usage_refresh_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 900,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/claudeusage.RefreshSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cache.claude_usage_reply_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/claudeusage.ReplyBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cache.claude_usage_request_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 10,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/claudeusage.RequestSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cache.git_not_repo",
     "Class": "cache",
     "Unit": "seconds",

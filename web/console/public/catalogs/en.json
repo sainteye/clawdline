@@ -10432,5 +10432,11 @@
   "capacityRow.antigravity.acp_trace_connections.what": "Uses one separate SQLite connection to persist optional raw ACP diagnostics.",
   "capacityRow.antigravity.acp_trace_connections.full": "A recording failure is reported as a gap and cannot occupy the conversation history connection.",
   "acp.controlPending": "Waiting for Gemini to finish a connection or settings operation.",
-  "acp.quotaPending": "Waiting for Gemini to finish reading quota."
+  "acp.quotaPending": "Waiting for Gemini to finish reading quota.",
+  "capacityRow.cache.claude_usage_refresh_seconds.what": "Sets the shortest interval between asking Claude Code for its plan usage.",
+  "capacityRow.cache.claude_usage_refresh_seconds.full": "Readings in between use the last answer; Claude Code is asked only when the status line has no fresh window.",
+  "capacityRow.cache.claude_usage_request_seconds.what": "Limits how long one ask of Claude Code for its plan usage may take.",
+  "capacityRow.cache.claude_usage_request_seconds.full": "A slow ask is stopped without blocking the interface and keeps the last reading.",
+  "capacityRow.cache.claude_usage_reply_bytes.what": "Limits how much of Claude Code's output one usage ask reads.",
+  "capacityRow.cache.claude_usage_reply_bytes.full": "Larger output is refused and the last reading is kept."
 }

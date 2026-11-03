@@ -310,9 +310,27 @@ func TestAntigravityFactsCacheInvalidatesSameSizePreservedMtimeRewrite(t *testin
 	if err != nil || first.Usage == nil || first.Usage.Input != 10 {
 		t.Fatalf("initial=%+v %v", first, err)
 	}
-	writeAntigravityTest(t, path, antigravityTestPlanner(0, "one", 90, 1, 0))
-	if err := os.Chtimes(path, st.ModTime(), st.ModTime()); err != nil {
-		t.Fatal(err)
+	// The cache promises change-time invalidation, so first establish a
+	// rewrite the filesystem can distinguish. Back-to-back writes can share
+	// its timestamp tick even when Go's clock has nanosecond precision.
+	before := antigravityChangeIdentity(st)
+	deadline := time.Now().Add(time.Second)
+	for {
+		writeAntigravityTest(t, path, antigravityTestPlanner(0, "one", 90, 1, 0))
+		if err := os.Chtimes(path, st.ModTime(), st.ModTime()); err != nil {
+			t.Fatal(err)
+		}
+		after, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if before == "" || antigravityChangeIdentity(after) != before {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("filesystem did not expose a distinct change time for the rewrite")
+		}
+		time.Sleep(time.Millisecond)
 	}
 	second, err := cache.Read(path, "antigravity")
 	if err != nil || second.Usage == nil || second.Usage.Input != 90 {

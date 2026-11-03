@@ -34,20 +34,6 @@ func KnownAssistant(name string) bool {
 	return name == AssistantClaude || name == AssistantCodex || name == AssistantAntigravity
 }
 
-// StartModels is Planner.models: the only model names the start route's
-// fourth segment answers to.
-var StartModels = []string{"haiku", "sonnet", "opus"}
-
-// KnownStartModel is `Planner.models.contains(model)`.
-func KnownStartModel(name string) bool {
-	for _, m := range StartModels {
-		if m == name {
-			return true
-		}
-	}
-	return false
-}
-
 // ModelName is SessionLaunchPolicy.modelName: `[a-z0-9._-]`, 1…64, never
 // opening with `-`. No string it admits holds a character a shell reads.
 func ModelName(raw string) (string, bool) {

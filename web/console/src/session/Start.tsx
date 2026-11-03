@@ -18,6 +18,11 @@ import { removeProjectPlace } from "../pages/work/api.js"
 import { catalogRefusalDetail, catalogWord } from "../catalog.js"
 import { assistantAdmits, assistantLabel, assistantRolesAdmit, assistantUnavailable, type AssistantOperation } from "./antigravity-ui.js"
 import { resumeCommandPlace } from "./resume-command.js"
+import type { Assistant } from "@clawdline/contract"
+import { WorkModelChoice } from "../pages/work/WorkModelChoice.js"
+import { useMachineVersion } from "../machine/NeedsUpdate.js"
+import type { DefaultModelOption } from "../pages/settings/api.js"
+import "../pages/work/work.css"
 
 /**
  * Starting a session, and picking one back up, against the `div#start` sheet
@@ -91,6 +96,10 @@ let with_: string | null = null
 let persona = ""
 /** The team the role row shows when no persona is chosen. */
 let team = ""
+/** The model chosen for the next start, kept with the assistant it belongs to; null for the default. */
+let model: { assistant: string; option: DefaultModelOption } | null = null
+/** Redraws the React model row after the imperative state it reads has changed. */
+let redrawModel: () => void = () => {}
 /** The persona chosen for the next resume from the place entered; "" for none. */
 let resumeAs = ""
 let loading = false
@@ -377,6 +386,24 @@ function chosenPersona(): string {
   return personaById(personasNow(onMachine?.id ?? null), id) ? id : ""
 }
 
+/**
+ * The model row, the Board's per-launch choice: shown for a new start in a
+ * Project on the machine this console reads, whose model catalog is the one
+ * `/v1/settings/default-models` answers with. A machine Session uses the
+ * configured default, and a start on another machine would read the wrong
+ * catalog, so neither offers it.
+ */
+function modelRowShown(): boolean {
+  const sheet = el("start")
+  return !!sheet && !sheet.hidden && write && mode === "session" && !machineOnly && !at && !onMachine &&
+    !!with_ && !!places?.length && !(resume && resumable())
+}
+
+/** The chosen model for `with_`, when the row is offered; "" for the default. */
+function chosenModel(): string {
+  return modelRowShown() && model && model.assistant === with_ ? model.option.value : ""
+}
+
 /** The role chips; see the header. */
 function drawPersona(): void {
   const row = el("start-persona")
@@ -502,6 +529,7 @@ function edge(): void {
 
 function draw(): void {
   L.setStartSpin(null)
+  redrawModel()
   if (sheetHidden()) return
   el("start-say").classList.remove("loading")
   const list = el("start-list")
@@ -892,7 +920,8 @@ function press(id: string): void {
   showProgress({ stage: "asking", resume: false, words: "", background: false, place: place || (id === MACHINE_PLACE
     ? { id, label: "Clawdfather", path: nextWord("machineSessionScope") } : null) })
   const as = id === MACHINE_PLACE ? "" : chosenPersona()
-  asked(() => api.startPlace(id, with_, undefined, as || undefined))
+  const chosen = id === MACHINE_PLACE ? "" : chosenModel()
+  asked(() => api.startPlace(id, with_, chosen || undefined, as || undefined))
     .then((d) => {
       startPress.settle(() => {
         pressing = null
@@ -996,7 +1025,8 @@ function began(answer: L.StartAnswer | undefined, place: Place | null): void {
 }
 
 function finishStarted(id: string): boolean {
-  if (!wait || wait.id !== id || wait.late || host.openId() !== wait.from) return false
+  if (!wait || wait.id !== id) return false
+  const navigate = !wait.late && host.openId() === wait.from
   wait = null
   landed = id
   if (timer) clearTimeout(timer)
@@ -1004,8 +1034,9 @@ function finishStarted(id: string): boolean {
   detached = null
   progress = null
   hideBand()
+  draw()
   renderList()
-  return true
+  return navigate
 }
 
 function detachedWords(): string {
@@ -1028,6 +1059,9 @@ function hideBand(): void {
 }
 
 function openMode(machine: boolean, requested: StartMode = "session", on: { id: string; name: string } | null = null, entry: ResumeEntry | null = null): void {
+  // A previous pane may never report (for example its assistant exited).
+  // Reopening the sheet after the observation window permits a new start.
+  if (wait?.late) Start.dismiss()
   onMachine = on
   const active = document.activeElement
   opener = machine ? el("machine-dashboard-open") : active instanceof HTMLElement && active !== document.body ? active : el("start-go")
@@ -1048,6 +1082,7 @@ function openMode(machine: boolean, requested: StartMode = "session", on: { id: 
   startArch = ""
   leave()
   persona = ""
+  model = null
   team = rememberedTeam()
   if (mode === "session") void loadPersonas(undefined, onMachine?.id ?? null).then(() => draw())
   if (mode === "session" && !hostedConsole()) void readTerminalMachine().then((reading) => {
@@ -1186,6 +1221,30 @@ export const Start = {
 }
 
 /** `div#start`, as `index.html` writes it; `static.js`'s words drawn by React. */
+/**
+ * API level 40 is the first daemon whose start route admits every model the
+ * catalog offers; an older one answers 404 to Fable or a Codex model. The row
+ * is offered only to a daemon known to be at least that level.
+ */
+const START_MODEL_API_LEVEL = 40
+
+/** The model row; React draws it, from the sheet's imperative state. */
+function StartModelRow() {
+  const version = useMachineVersion()
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    redrawModel = () => setTick((n) => n + 1)
+    return () => { redrawModel = () => {} }
+  }, [])
+  if (!modelRowShown() || !with_ || (version.apiLevel ?? 0) < START_MODEL_API_LEVEL) return null
+  const assistant = with_
+  return <div className="start-model" id="start-model">
+    <WorkModelChoice key={assistant} id="start-model-options" assistant={assistant as Assistant}
+      choice={model?.assistant === assistant ? model.option : null} disabled={!!pressing || !!wait}
+      onPick={(option) => { model = option ? { assistant, option } : null; draw() }} />
+  </div>
+}
+
 export function StartSheet() {
   const T = L.strings
   const bound = useRef(false)
@@ -1218,8 +1277,9 @@ export function StartSheet() {
     const sheet = el("start-sheet")
     const filter = el<HTMLInputElement>("start-filter")
     const list = el("start-list")
-    const onOverlay = () => close()
-    const onSheet = (ev: Event) => ev.stopPropagation()
+    // Only a press on the backdrop itself closes: the sheet lets its clicks
+    // bubble, so React's delegated handlers inside it (the model row) answer.
+    const onOverlay = (ev: Event) => { if (ev.target === ev.currentTarget) close() }
     const onClose = () => close()
     const onMachine = () => press(MACHINE_PLACE)
     const onInput = () => Start.typed(filter.value)
@@ -1288,7 +1348,6 @@ export function StartSheet() {
       if (!typing) ev.stopImmediatePropagation()
     }
     start.addEventListener("click", onOverlay)
-    sheet.addEventListener("click", onSheet)
     el("start-close").addEventListener("click", onClose)
     el("start-machine-action").addEventListener("click", onMachine)
     el("start-add-project").addEventListener("click", onAddProject)
@@ -1309,7 +1368,6 @@ export function StartSheet() {
       window.clearInterval(placesRefresh)
       bound.current = false
       start.removeEventListener("click", onOverlay)
-      sheet.removeEventListener("click", onSheet)
       el("start-close")?.removeEventListener("click", onClose)
       el("start-machine-action")?.removeEventListener("click", onMachine)
       el("start-add-project")?.removeEventListener("click", onAddProject)
@@ -1336,6 +1394,7 @@ export function StartSheet() {
           <div className="row" id="start-machine" hidden></div>
           <div className="row" id="start-with" hidden></div>
           <div className="row persona-row" id="start-persona" role="group" aria-label={nextWord("personaPicker")} hidden></div>
+          <StartModelRow />
           <div className="row" id="start-resume" hidden></div>
           <button className="chip machine-start" id="start-machine-action" type="button" hidden>
             <span className="clawdfather-crown" aria-hidden="true" />

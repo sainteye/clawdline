@@ -12,10 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/claudeusage"
 	"github.com/sainteye/clawdline/internal/adapters/limits"
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -1268,7 +1270,12 @@ var (
 func quotaReader() *limits.Reader {
 	limitsOnce.Do(func() {
 		home, _ := os.UserHomeDir()
-		limitsReader = limits.NewReader(home, nil)
+		// One Claude reading for every consumer: when the status line has no
+		// fresh window, the reader asks the installed Claude Code itself.
+		limitsReader = limits.NewReader(home, nil).WithClaudeCode(
+			func(ctx context.Context) ([]claudeusage.Window, claudeusage.Outcome) {
+				return claudeusage.Ask(ctx, transcript.ClaudeExecutable(home))
+			})
 	})
 	return limitsReader
 }
