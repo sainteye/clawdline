@@ -128,3 +128,8 @@
 .info-sheet .flow-steps li { margin-bottom: 12px; }
 .info-sheet .flow-steps li p { margin: 3px 0; }
 @media (max-width: 440px) { .info-sheet dl.flow-facts > div { grid-template-columns: 73px minmax(0, 1fr); gap: 8px; } }
+
+/* Start or set up this project's dev stack, under the Links rows. */
+.info-sheet .devstack-offer {
+  margin-top: 10px;
+}

@@ -11,6 +11,7 @@ import { pressKey } from "../press-key.js"
 import { contextCell } from "../session/context.js"
 import { resetWhen } from "../session/reset-when.js"
 import { repositoryNote } from "./links-note.js"
+import { devStackOffer, devStackWords } from "./devstack-offer.js"
 import { SessionFacts } from "./facts.js"
 import { conversationBecameKnown, factsMissConversation } from "../session/info-freshness.js"
 import {
@@ -212,6 +213,11 @@ function canSwitch(): boolean {
   const s = session()
   return !!(s && host.writable() && s.state === "idle" && !busy &&
     (s.assistant !== "antigravity" || !!data?.models.length))
+}
+/** A request typed into a working Session would land in the middle of its turn. */
+function canAsk(): boolean {
+  const s = session()
+  return !!(s && host.writable() && s.state === "idle" && !busy)
 }
 /** A Codex row may be unknown while its terminal remains writable. A deliberate press can open its picker. */
 function canOpenCodexPicker(): boolean {
@@ -524,7 +530,7 @@ function openable(url: string): boolean {
 function linksHTML(links: ProjectLink[], d: Facts): string {
   const note = repositoryNote(d.repository, d.repositoryUnreadable, d.deployQuiet,
     { word: nextWord, clock: L.clock })
-  const noteHTML = note ? '<p class="note">' + esc(note) + "</p>" : ""
+  const noteHTML = (note ? '<p class="note">' + esc(note) + "</p>" : "") + devStackHTML(links, d)
   if (!links.length) return '<p class="note">' + esc(T.webLinksEmpty) + "</p>" + noteHTML
   const rows = links
     .map((link) => {
@@ -550,6 +556,19 @@ function linksHTML(links: ProjectLink[], d: Facts): string {
     })
     .join("")
   return rows + noteHTML
+}
+
+/**
+ * Start this project's dev stack, or set one up when there is none. The press
+ * asks this Session's own assistant (devstack-offer.ts); a read-only pairing
+ * gets no button rather than a dead one, and a working Session is not
+ * interrupted with a second request.
+ */
+function devStackHTML(links: ProjectLink[], d: Facts): string {
+  if (!host.writable() || !d.session?.cwd) return ""
+  const offer = devStackOffer(d.devStack, links)
+  return '<div class="devstack-offer"><button type="button" class="chip" data-devstack="' + offer + '"' +
+    (canAsk() ? "" : " disabled") + ">" + esc(nextWord(devStackWords(offer).button)) + "</button></div>"
 }
 
 function html(d: Facts): string {
@@ -857,6 +876,33 @@ export const Info = {
     })
   },
 
+  /**
+   * Sends the dev stack request into this Session as one message. The daemon
+   * types it like any other; the assistant does the starting or the setup.
+   */
+  askDevStack(raw: string): void {
+    const id = forId
+    if (!id || (raw !== "start" && raw !== "create") || !canAsk()) return
+    const words = devStackWords(raw)
+    busy = true
+    said("")
+    draw()
+    client.send(id, nextWord(words.request), pressKey("devstack")).then(
+      () => {
+        if (forId !== id) return
+        busy = false
+        said(nextWord(words.sent), true)
+        draw()
+      },
+      (e) => {
+        if (forId !== id) return
+        busy = false
+        said(why(e), false)
+        draw()
+      },
+    )
+  },
+
   openModelPicker(): void {
     const id = forId
     if (!id || data?.session?.assistant !== "codex" || !canOpenCodexPicker()) return
@@ -991,6 +1037,11 @@ export function bindInfo(): () => void {
     if (t.closest("button[data-graphify-open]") && graphifyEnabled && forId) {
       const target = { kind: "session" as const, id: forId, label: data?.session.title }
       Info.close(); openGraphify(target); return
+    }
+    const stack = t.closest<HTMLButtonElement>("button[data-devstack]")
+    if (stack) {
+      if (!stack.disabled) Info.askDevStack(stack.dataset.devstack || "")
+      return
     }
     const picker = t.closest<HTMLButtonElement>("button[data-model-picker]")
     if (picker) {

@@ -671,6 +671,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 		info.Repository = contract.ProjectRepository(reading.Repo)
 		info.RepositoryUnreadable = contract.ProjectGitFailure(reading.Unreadable)
 		info.DeployQuiet = wireDeployQuiet(reading.DeployQuiet)
+		info.DevStack = devStackSetup(cwd)
 	}
 	if !s.admitPinnedTarget(w, r, id) {
 		return

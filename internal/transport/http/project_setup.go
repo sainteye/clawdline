@@ -62,20 +62,35 @@ func projectSetup(cwd, repo string, iconSource icon.Source) *contract.ProjectSet
 		}
 	}
 
-	spec, stackState := devstack.Inspect(cwd, home)
-	switch stackState {
-	case devstack.InspectionReady:
-		out.ServerCount = int64(len(spec.Declared))
-		if out.ServerCount > 0 {
-			out.Servers = contract.ProjectServerSetupReady
-		} else {
-			out.Servers = contract.ProjectServerSetupEmpty
-		}
-	case devstack.InspectionUnreadable:
-		out.Servers = contract.ProjectServerSetupAttention
-	}
+	out.Servers, out.ServerCount = serverSetup(cwd, home)
 	out.Unify, out.UnifyCount = unifySetup(cwd)
 	return out
+}
+
+// serverSetup is the static reading of the nearest .devstack.json: whether
+// it is readable and how many servers it declares. Nothing it names is run
+// and no port is probed.
+func serverSetup(cwd, home string) (contract.ProjectServerSetup, int64) {
+	spec, state := devstack.Inspect(cwd, home)
+	switch state {
+	case devstack.InspectionReady:
+		if n := int64(len(spec.Declared)); n > 0 {
+			return contract.ProjectServerSetupReady, n
+		}
+		return contract.ProjectServerSetupEmpty, 0
+	case devstack.InspectionUnreadable:
+		return contract.ProjectServerSetupAttention, 0
+	}
+	return contract.ProjectServerSetupMissing, 0
+}
+
+// devStackSetup is serverSetup for a Session's info card, which offers to
+// start a declared stack or to set one up. The card's button asks the
+// Session's own assistant; this daemon still runs none of the file's commands.
+func devStackSetup(cwd string) contract.ProjectServerSetup {
+	home, _ := os.UserHomeDir()
+	state, _ := serverSetup(cwd, home)
+	return state
 }
 
 // unifySetup is the readiness card's unify row: the same Plan the unify route

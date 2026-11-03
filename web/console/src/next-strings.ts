@@ -388,6 +388,12 @@ const words = {
     documentsTasks: "The folders of {count} older tasks were not searched.",
     stackStatusNotRun: "needs its status command",
     stackNothingDeclared: "declares no ports",
+    stackStartButton: "Start dev stack",
+    stackCreateButton: "Set up dev stack",
+    stackStartRequest: "Start this project's dev stack. Read the nearest .devstack.json above this Session's directory and run its `up` command from the directory that file is in. If it names no `up`, start each declared process the way this repository already starts it. Leave anything already running alone, and do not stop, restart or deploy anything. Wait until each declared port or URL answers, then list each process with its address, and say which did not come up and why.",
+    stackCreateRequest: "Set up a dev stack for this project so Clawdline can show and start its local servers. First run and read `clawdline guide en project`, section 4 (Development servers), then this repository's AGENTS.md, README and the scripts it already uses to start its servers. Add the smallest truthful .devstack.json at the nearest deployable root: an `up` command that starts the stack the way this repository already does, and each server process with its real port or URL. Take commands and ports from the repository; do not invent new ones or add a second process manager. If a .devstack.json already exists but cannot be read, repair it instead. Validate the JSON and show me the file. Do not start, stop, restart or deploy anything in this step.",
+    stackStartSent: "Asked this Session to start the dev stack.",
+    stackCreateSent: "Asked this Session to set up a dev stack.",
     stackUnknownTip:
       "Only this project's own status command can tell, and this app does not run a project's commands. Run it in a terminal in {root}.",
     stacksCommandsNotRun:
@@ -2724,6 +2730,12 @@ const words = {
     documentsTasks: "比較舊的 {count} 個工作的資料夾沒有搜尋。",
     stackStatusNotRun: "要跑它的 status 才知道",
     stackNothingDeclared: "沒有宣告 port",
+    stackStartButton: "跑起 dev stack",
+    stackCreateButton: "建立 dev stack",
+    stackStartRequest: "請跑起這個專案的 dev stack。讀取這個 Session 目錄往上最近的 .devstack.json，在該檔案所在的目錄執行它的 `up` 指令；如果沒有 `up`，就照這個 repository 原本的方式逐一啟動宣告的 process。已經在跑的不要動，也不要停止、重啟或部署任何東西。等每個宣告的 port 或 URL 都有回應後，列出每個 process 與它的位址；沒起來的請說明是哪一個、原因是什麼。",
+    stackCreateRequest: "請為這個專案建立 dev stack，讓 Clawdline 能顯示並跑起它的本機伺服器。先執行並讀完 `clawdline guide zh-TW project` 第 4 節（Development servers），再讀這個 repository 的 AGENTS.md、README，以及它現在用來啟動伺服器的腳本。在最近的可部署根目錄加一份最小且真實的 .devstack.json：寫上照這個 repository 原本方式啟動的 `up` 指令，以及每個伺服器 process 的實際 port 或 URL。指令和 port 都從 repository 取得，不要自己編新的，也不要另加一套 process manager。如果已經有 .devstack.json 但讀不出來，就修好它。驗證 JSON 後把檔案給我看。這一步不要啟動、停止、重啟或部署任何東西。",
+    stackStartSent: "已請這個 Session 跑起 dev stack。",
+    stackCreateSent: "已請這個 Session 建立 dev stack。",
     stackUnknownTip: "只有這個專案自己的 status 指令知道狀態，而這個 app 不執行專案的指令。請在 {root} 的終端機裡跑。",
     stacksCommandsNotRun:
       "這裡只探測 .devstack.json 宣告的 port，不會執行檔案裡的指令（status、up、restart、down、logs）：要啟動、重啟或看紀錄，請在那個專案的終端機裡自己跑。",

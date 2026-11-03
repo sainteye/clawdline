@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 10426,
-  "riskKeys": 4605,
-  "nonRiskCount": 5821,
+  "englishContentKeys": 10432,
+  "riskKeys": 4607,
+  "nonRiskCount": 5825,
   "groups": [
     {
       "name": "acp / other",
@@ -3710,7 +3710,7 @@
     },
     {
       "name": "next / other",
-      "count": 632,
+      "count": 636,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4155,6 +4155,10 @@
         "next.smartTitleButton",
         "next.smartTitleConfirmTitle",
         "next.smartTitleWorking",
+        "next.stackCreateButton",
+        "next.stackCreateSent",
+        "next.stackStartButton",
+        "next.stackStartSent",
         "next.stackStatusNotRun",
         "next.startAddFirstFolder",
         "next.startPastMore",

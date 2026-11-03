@@ -5799,6 +5799,13 @@ type SessionInfo struct {
 	// between runs are one blank cell.
 	DeployQuiet *ProjectDeployQuiet `json:"deployQuiet,omitempty"`
 
+	// Whether the nearest .devstack.json above the working directory is readable and
+	// declares servers, read without probing a port or running any of its commands.
+	// The card offers to start a declared stack, or to set one up when there is none,
+	// by asking the Session's own assistant. Absent when the session has no working
+	// directory, and from an older daemon.
+	DevStack ProjectServerSetup `json:"devStack,omitempty"`
+
 	// Native offered thinking_level option values for this owned ACP session. May
 	// change with model selection. Absent when structured options are unavailable; no
 	// inferred effort control.

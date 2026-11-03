@@ -110,3 +110,40 @@ func TestProjectSetupCarriesTheUnifyStatusOfThePlan(t *testing.T) {
 		t.Errorf("a place no longer on disk: unify %q", got.Unify)
 	}
 }
+
+// The Session card's offer follows the nearest .devstack.json above the
+// Session's directory: a Session started in a subdirectory of a declared
+// stack is offered to start it, not to set up a second one.
+func TestSessionDevStackFollowsTheNearestFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	project := filepath.Join(home, "shop")
+	nested := filepath.Join(project, "web", "src")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(text string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(project, ".devstack.json"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := devStackSetup(nested); got != contract.ProjectServerSetupMissing {
+		t.Fatalf("no file = %q", got)
+	}
+	write(`{"up":"make dev","processes":[{"name":"web","port":4173}]}`)
+	if got := devStackSetup(nested); got != contract.ProjectServerSetupReady {
+		t.Fatalf("declared stack from a subdirectory = %q", got)
+	}
+	write(`{"up":"make dev","processes":[]}`)
+	if got := devStackSetup(project); got != contract.ProjectServerSetupEmpty {
+		t.Fatalf("no declared servers = %q", got)
+	}
+	write(`not json`)
+	if got := devStackSetup(project); got != contract.ProjectServerSetupAttention {
+		t.Fatalf("unreadable file = %q", got)
+	}
+	if got := devStackSetup(""); got != contract.ProjectServerSetupMissing {
+		t.Fatalf("no directory = %q", got)
+	}
+}

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 10426,
+  "englishKeys": 10432,
   "counts": {
-    "negation": 2913,
-    "state": 1704,
+    "negation": 2915,
+    "state": 1705,
     "permission": 625,
     "deletion": 225,
     "uncertainty": 391
   },
-  "unionCount": 4605,
+  "unionCount": 4607,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2496,8 +2496,10 @@
       "next.smartTitleNoNamerAll",
       "next.smartTitleOutOfQuota",
       "next.smartTitleOutOfQuotaAll",
+      "next.stackCreateRequest",
       "next.stackNoAction",
       "next.stackNothingDeclared",
+      "next.stackStartRequest",
       "next.stackUnknownTip",
       "next.stacksCommandsNotRun",
       "next.stacksFailed",
@@ -4357,6 +4359,7 @@
       "next.smartTitleConfirmSayAuto",
       "next.smartTitleSaved",
       "next.smartTitleSavedBy",
+      "next.stackStartRequest",
       "next.startProgressArrive",
       "next.startProgressAsk",
       "next.startProgressBackground",
@@ -9750,8 +9753,10 @@
     "next.smartTitleOutOfQuotaAll",
     "next.smartTitleSaved",
     "next.smartTitleSavedBy",
+    "next.stackCreateRequest",
     "next.stackNoAction",
     "next.stackNothingDeclared",
+    "next.stackStartRequest",
     "next.stackUnknownTip",
     "next.stacksCommandsNotRun",
     "next.stacksFailed",
