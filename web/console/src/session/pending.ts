@@ -153,9 +153,16 @@ const EARLY_MS = 2 * 60 * 1000
  * record keeps whichever arrived, and `! ls` and `!ls` run the same command.
  */
 export function turnWords(text: string, imageCount: number): string {
-  const words = imageCount > 0 ? text.replace(/\[Image #\d+\]/g, "") : text
+  let words = imageCount > 0 ? text.replace(/\[Image #\d+\]/g, "") : text
+  const dropsMatch = words.match(/(?:\s+(?:[^\s"'\\]*\/drops\/clawdline-[^\s"'\\]+\.(?:png|jpe?g|gif|webp)|"[^"\\]*\/drops\/clawdline-[^"\\]+\.(?:png|jpe?g|gif|webp)"|'[^'\\]*\/drops\/clawdline-[^'\\]+\.(?:png|jpe?g|gif|webp)'))+$/) ||
+                     words.match(/^(?:(?:\s*)[^\s"'\\]*\/drops\/clawdline-[^\s"'\\]+\.(?:png|jpe?g|gif|webp))+$/)
+  let count = imageCount
+  if (dropsMatch) {
+    words = words.slice(0, dropsMatch.index ?? 0)
+    if (count <= 0) count = 1
+  }
   const flat = words.replace(/\s+/g, " ").trim().replace(/^! /, "!")
-  return flat + (imageCount > 0 ? "\u0001pictures" : "")
+  return flat + (count > 0 ? "\u0001pictures" : "")
 }
 
 /** One turn's identity: when it was written and what it says. */

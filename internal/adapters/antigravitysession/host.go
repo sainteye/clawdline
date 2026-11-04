@@ -32,6 +32,9 @@ type Options struct {
 	// TurnComplete runs outside conversation locks after a successful model turn.
 	// It shares the host lifetime and job; callers must not create a work queue.
 	TurnComplete func(context.Context, session.Session)
+	// PromptAccepted runs outside conversation locks immediately after a user prompt is accepted.
+	// It shares the host lifetime and job; callers must not create a work queue.
+	PromptAccepted func(context.Context, session.Session)
 }
 
 type Host struct {
@@ -393,8 +396,16 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 			c.append(contract.TranscriptEntry{Role: "user", Text: text, At: time.Now().Unix()})
 			close(c.writeGate)
 			c.writeGate = nil
+			row := c.row
 			c.mu.Unlock()
 			close(accepted)
+			if h.ctx.Err() == nil && h.opts.PromptAccepted != nil {
+				h.jobs.Add(1)
+				go func(r session.Session) {
+					defer h.jobs.Done()
+					h.opts.PromptAccepted(h.ctx, r)
+				}(row)
+			}
 		})
 		stop()
 		c.mu.Lock()
@@ -415,6 +426,7 @@ func (h *Host) SendProtocol(ctx context.Context, s session.Session, text string,
 			c.row.State = session.StateUnknown
 			c.uncertain = true
 			c.append(contract.TranscriptEntry{Role: "error", Text: err.Error(), At: time.Now().Unix()})
+			_ = c.saveState()
 			return
 		}
 		c.row.State = session.StateIdle
@@ -459,7 +471,134 @@ func (h *Host) Interrupt(ctx context.Context, s session.Session) error {
 func (h *Host) Reveal(context.Context, session.Session, bool) error {
 	return refusal("terminal_unavailable")
 }
-func (h *Host) Screen(context.Context, session.Session, int) (string, bool) { return "", false }
+
+func (h *Host) NativeTerminalIdentity(ctx context.Context, s session.Session) (string, error) {
+	c, err := h.lookup(s)
+	if err != nil {
+		return "", err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client == nil {
+		return "", refusal("session_closed")
+	}
+	return fmt.Sprintf("acp:%s:%d:%s", c.generation, c.revision, c.row.State), nil
+}
+
+func (h *Host) Keystroke(ctx context.Context, s session.Session, b []byte) error {
+	if len(b) == 0 {
+		return nil
+	}
+	if len(b) == 1 && b[0] == 0x1b {
+		return h.Interrupt(ctx, s)
+	}
+	if len(b) == 1 && (b[0] == '\r' || b[0] == '\n') {
+		return nil
+	}
+	return h.SendProtocol(ctx, s, string(b), nil)
+}
+
+func (h *Host) Screen(ctx context.Context, s session.Session, cols int) (string, bool) {
+	c, err := h.lookup(s)
+	if err != nil {
+		return "", false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var sb strings.Builder
+	sb.WriteString("\x1b[1;36m[Gemini · Antigravity ACP Session]\x1b[0m\r\n")
+	sb.WriteString(fmt.Sprintf("\x1b[90mWorkspace:\x1b[0m %s\r\n", c.row.CWD))
+
+	stateColor := "\x1b[32m"
+	switch c.row.State {
+	case session.StateWorking:
+		stateColor = "\x1b[33m"
+	case session.StateWaiting:
+		stateColor = "\x1b[35m"
+	}
+	sb.WriteString(fmt.Sprintf("\x1b[90mState:\x1b[0m     %s%s\x1b[0m", stateColor, c.row.State))
+	if c.model != "" {
+		sb.WriteString(fmt.Sprintf("  \x1b[90mModel:\x1b[0m %s", c.model))
+	}
+	if c.effort != "" {
+		sb.WriteString(fmt.Sprintf("  \x1b[90mThinking:\x1b[0m %s", c.effort))
+	}
+	sb.WriteString("\r\n\x1b[90m" + strings.Repeat("─", 50) + "\x1b[0m\r\n")
+
+	if c.busy || c.row.State == session.StateWorking {
+		sb.WriteString("\x1b[1;33m● Working on task...\x1b[0m\r\n")
+	} else if c.row.State == session.StateWaiting {
+		sb.WriteString("\x1b[1;35m? Waiting for confirmation / input\x1b[0m\r\n")
+	} else {
+		sb.WriteString("\x1b[90mReady for input.\x1b[0m\r\n")
+	}
+
+	var recentLines []string
+	if c.store != nil {
+		rows, err := c.store.db.QueryContext(ctx, `SELECT body FROM entries WHERE id=? AND generation=? ORDER BY ordinal DESC LIMIT 6`, c.row.ID, c.generation)
+		if err == nil {
+			var bodies [][]byte
+			for rows.Next() {
+				var b []byte
+				if rows.Scan(&b) == nil {
+					bodies = append(bodies, b)
+				}
+			}
+			rows.Close()
+			for i := len(bodies) - 1; i >= 0; i-- {
+				var e contract.TranscriptEntry
+				if json.Unmarshal(bodies[i], &e) == nil && e.Text != "" {
+					prefix := "\x1b[34m[User]\x1b[0m "
+					if e.Role == "assistant" {
+						prefix = "\x1b[32m[Gemini]\x1b[0m "
+					} else if e.Role == "tool" {
+						prefix = "\x1b[33m[Tool]\x1b[0m "
+					}
+					snippet := strings.ReplaceAll(e.Text, "\r\n", " ")
+					snippet = strings.ReplaceAll(snippet, "\n", " ")
+					if len(snippet) > 80 {
+						snippet = snippet[:77] + "..."
+					}
+					recentLines = append(recentLines, prefix+snippet)
+				}
+			}
+		}
+	} else {
+		start := 0
+		if len(c.entries) > 6 {
+			start = len(c.entries) - 6
+		}
+		for _, e := range c.entries[start:] {
+			if e.Text != "" {
+				prefix := "\x1b[34m[User]\x1b[0m "
+				if e.Role == "assistant" {
+					prefix = "\x1b[32m[Gemini]\x1b[0m "
+				} else if e.Role == "tool" {
+					prefix = "\x1b[33m[Tool]\x1b[0m "
+				}
+				snippet := strings.ReplaceAll(e.Text, "\r\n", " ")
+				snippet = strings.ReplaceAll(snippet, "\n", " ")
+				if len(snippet) > 80 {
+					snippet = snippet[:77] + "..."
+				}
+				recentLines = append(recentLines, prefix+snippet)
+			}
+		}
+	}
+
+	if len(recentLines) > 0 {
+		sb.WriteString("\r\n\x1b[90m--- Recent History ---\x1b[0m\r\n")
+		for _, line := range recentLines {
+			sb.WriteString(line + "\r\n")
+		}
+	}
+
+	sb.WriteString("\x1b[90m" + strings.Repeat("─", 50) + "\x1b[0m\r\n")
+	sb.WriteString("\x1b[90mCommands: /model <id> · /effort <level> · /status · /help\x1b[0m\r\n")
+
+	return sb.String(), true
+}
 func (h *Host) Close(ctx context.Context, s session.Session) error {
 	c, err := h.lookup(s)
 	if err != nil {

@@ -3,6 +3,7 @@ package antigravityprocess
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 // Interrupt requests native turn cancellation without closing the conversation.
@@ -39,8 +40,14 @@ func (c *Client) Interrupt(ctx context.Context, before func() error) error {
 		c.stateMu.Unlock()
 		return failure("closed", NotWritten)
 	}
-	if c.activePrompt != id || c.cancelledPrompt == id {
+	if c.activePrompt != id {
 		c.stateMu.Unlock()
+		return nil
+	}
+	if c.cancelledPrompt == id {
+		c.stateMu.Unlock()
+		// Repeated interrupt while cancellation is already pending forces immediate teardown.
+		c.shutdown(failure("cancelled", Uncertain))
 		return nil
 	}
 	c.cancelledPrompt = id
@@ -51,5 +58,24 @@ func (c *Client) Interrupt(ctx context.Context, before func() error) error {
 		return failure("write_failed", Uncertain)
 	}
 	c.cancelRequested(id)
+	grace := c.opts.StopGraceTimeout
+	if grace <= 0 {
+		grace = 4 * time.Second
+	}
+	go func(promptID string, d time.Duration) {
+		timer := time.NewTimer(d)
+		defer timer.Stop()
+		select {
+		case <-c.done:
+			return
+		case <-timer.C:
+			c.stateMu.Lock()
+			stillPending := c.activePrompt == promptID
+			c.stateMu.Unlock()
+			if stillPending {
+				c.shutdown(failure("cancelled", Uncertain))
+			}
+		}
+	}(id, grace)
 	return nil
 }

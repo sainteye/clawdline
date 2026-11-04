@@ -71,3 +71,63 @@ func TestInterruptCancelsNativeTurnAndKeepsConversation(t *testing.T) {
 		})
 	}
 }
+
+func TestInterruptForceConvergenceOnUnresponsiveWorker(t *testing.T) {
+	c, _ := fake(t, "lifecycle-held", nil)
+	c.opts.StopGraceTimeout = 100 * time.Millisecond
+	ready(t, c)
+	ctx := context.Background()
+	accepted := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.PromptAccepted(ctx, "hangs on cancel", func() { close(accepted) })
+		done <- err
+	}()
+	<-accepted
+	if err := c.Interrupt(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected error from forced teardown")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("prompt did not converge within grace window")
+	}
+	if c.Err() == nil {
+		t.Fatal("expected client to be closed after forced teardown")
+	}
+}
+
+func TestRepeatedInterruptForcesImmediateTeardown(t *testing.T) {
+	c, _ := fake(t, "lifecycle-held", nil)
+	c.opts.StopGraceTimeout = 10 * time.Second // long grace timeout
+	ready(t, c)
+	ctx := context.Background()
+	accepted := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.PromptAccepted(ctx, "hangs on cancel", func() { close(accepted) })
+		done <- err
+	}()
+	<-accepted
+	if err := c.Interrupt(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Second interrupt forces immediate teardown without waiting for 10s grace
+	if err := c.Interrupt(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected error from forced teardown")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("repeated interrupt did not force immediate teardown")
+	}
+	if c.Err() == nil {
+		t.Fatal("expected client to be closed after forced teardown")
+	}
+}

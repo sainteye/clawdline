@@ -119,10 +119,15 @@ test("a turn dated well before the send is not it", () => {
 test("pictures: the daemon's markers are not words, and a picture-only send matches a picture-only turn", () => {
   assert.equal(turnWords("look  at\nthis [Image #1]", 1), turnWords("look at this", 2))
   assert.notEqual(turnWords("look at this", 0), turnWords("look at this", 1))
+  assert.equal(turnWords("question", 1), turnWords("question /Users/user/.config/clawdline-next/drops/clawdline-20261104-114626-567-5b097d5d.png", 0))
+  assert.equal(turnWords("", 1), turnWords("/Users/user/.config/clawdline-next/drops/clawdline-20261104-114626-567-5b097d5d.png", 0))
   const p = new PendingSends()
   p.reconcile("s", [], T0 - 1)
   p.add("s", "", ["data:image/png;base64,AAAA"], T0)
   p.reconcile("s", [user("[Image #1]", T0 + 1_000, 1)], T0 + 2_000)
+  assert.equal(p.of("s").length, 0)
+  p.add("s", "investigate", ["data:image/png;base64,AAAA"], T0 + 3_000)
+  p.reconcile("s", [user("[Image #1]", T0 + 1_000, 1), user("investigate /Users/user/.config/clawdline-next/drops/clawdline-20261104-114626.png", T0 + 4_000, 0)], T0 + 5_000)
   assert.equal(p.of("s").length, 0)
 })
 

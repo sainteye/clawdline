@@ -60,7 +60,10 @@ type Options struct {
 	Args                []string
 	MaxFrameBytes       int
 	CallTimeout         time.Duration
-	OnUpdate            func(ctx context.Context, frame json.RawMessage) error
+	// StopGraceTimeout bounds the duration between an explicit cancellation and
+	// forced child teardown when the native worker fails to converge. Defaults to 4s.
+	StopGraceTimeout time.Duration
+	OnUpdate         func(ctx context.Context, frame json.RawMessage) error
 	// OnPermission publishes one live request and returns promptly. No callback
 	// or an unsupported offer is cancelled. The reader waits in wire order.
 	OnPermission func(context.Context, *PermissionRequest) error
