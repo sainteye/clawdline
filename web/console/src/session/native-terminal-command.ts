@@ -7,5 +7,5 @@ export function nativeTerminalCommand(text:string,assistant:string|undefined,bac
  * operate. Gemini's standalone CLI qualifies; its slash commands do not route
  * here, because Clawdline gives them their own meaning (`antigravitySlashDraft`). */
 export function nativeTerminalAvailable(assistant:string|undefined,backend:string|undefined):boolean {
- return (assistant==="claude"||assistant==="codex"||assistant==="antigravity") && (backend==="tmux"||backend==="iterm")
+ return (assistant==="claude"||assistant==="codex"||assistant==="antigravity") && (backend==="tmux"||backend==="iterm"||(assistant==="antigravity"&&backend==="owned"))
 }

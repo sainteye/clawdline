@@ -23,7 +23,7 @@ for (const assistant of ["claude", "codex"]) {
 
 test("Gemini gets the Terminal panel without routing its slash commands there",()=>{
  assert.equal(nativeTerminalAvailable("antigravity","tmux"),true)
- assert.equal(nativeTerminalAvailable("antigravity","owned"),false)
+ assert.equal(nativeTerminalAvailable("antigravity","owned"),true)
  assert.equal(nativeTerminalAvailable("claude","claude_remote"),false)
  assert.equal(nativeTerminalCommand("/help","antigravity","tmux"),false)
 })

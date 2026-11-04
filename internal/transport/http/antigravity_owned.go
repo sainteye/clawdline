@@ -118,7 +118,22 @@ func (p ownedAntigravityTerminal) InterruptProtocol(ctx context.Context, s sessi
 func (p ownedAntigravityTerminal) Reveal(context.Context, session.Session, bool) error {
 	return ownedAntigravityUnavailable()
 }
-func (p ownedAntigravityTerminal) Screen(context.Context, session.Session, int) (string, bool) {
+func (p ownedAntigravityTerminal) NativeTerminalIdentity(ctx context.Context, s session.Session) (string, error) {
+	if h := p.server.antigravitySessions.Load(); h != nil {
+		return h.NativeTerminalIdentity(ctx, s)
+	}
+	return "", ownedAntigravityUnavailable()
+}
+func (p ownedAntigravityTerminal) Keystroke(ctx context.Context, s session.Session, b []byte) error {
+	if h := p.server.antigravitySessions.Load(); h != nil {
+		return h.Keystroke(ctx, s, b)
+	}
+	return ownedAntigravityUnavailable()
+}
+func (p ownedAntigravityTerminal) Screen(ctx context.Context, s session.Session, cols int) (string, bool) {
+	if h := p.server.antigravitySessions.Load(); h != nil {
+		return h.Screen(ctx, s, cols)
+	}
 	return "", false
 }
 func (p ownedAntigravityTerminal) Close(ctx context.Context, s session.Session) error {
@@ -159,7 +174,7 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 	if st, err := os.Stat(cfg.Executable); err != nil || st.IsDir() || st.Mode()&0111 == 0 {
 		return nil, ownedAntigravityUnavailable()
 	}
-	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions"), NewSessionMode: "yolo", RawTrace: cfg.RawTrace, TurnComplete: s.automaticGeminiTitle})
+	h, err := antigravitysession.New(ctx, antigravitysession.Options{Executable: cfg.Executable, AccountDir: cfg.AccountDir, Args: cfg.Args, StateDir: filepath.Join(s.cfg.Dir, "antigravity-sessions"), NewSessionMode: "yolo", RawTrace: cfg.RawTrace, TurnComplete: s.automaticGeminiTitle, PromptAccepted: s.automaticGeminiTitle})
 	if err != nil {
 		return nil, err
 	}

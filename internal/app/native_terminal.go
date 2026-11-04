@@ -105,7 +105,7 @@ func nativeTerminalSettled(text string) string {
 // keeps its colour sequences and the plain text is derived from it, so the
 // coloured picture and the fingerprinted text can never be two moments.
 func (a Actions) nativeTerminalGrid(ctx context.Context, s session.Session, h nativeTerminalHost) (string, string, bool) {
-	if s.Backend == session.BackendTmux {
+	if s.Backend == session.BackendTmux || s.Backend == session.BackendOwned {
 		if screen, can := h.(interface {
 			Screen(context.Context, session.Session, int) (string, bool)
 		}); can {

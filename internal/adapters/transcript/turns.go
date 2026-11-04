@@ -2452,6 +2452,11 @@ func dropDirectory() string {
 	return filepath.Join(base, "com.tsunamiworks.clawdline", "drops")
 }
 
+// CanonicalImageContent exposes canonicalImageContent for cross-package normalization.
+func CanonicalImageContent(raw string, structured int, inferMarkers bool) (string, int) {
+	return canonicalImageContent(raw, structured, inferMarkers)
+}
+
 // canonicalImageContent is a user turn's text and how many images it carried:
 // structured image blocks, `[Image #N]` markers when they are to be counted,
 // and paths into the drop cache. A turn that was nothing but pictures keeps a
