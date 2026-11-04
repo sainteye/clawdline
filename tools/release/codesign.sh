@@ -48,7 +48,11 @@ codesign_begin() {
 # a JIT or sends Apple Events.
 codesign_path() {
   local p opts=() identity=()
-  [ "${CLAWDLINE_CODESIGN_HARDENED:-0}" != 1 ] || opts=(--options runtime --timestamp)
+  if [ "${CLAWDLINE_CODESIGN_HARDENED:-0}" = 1 ]; then
+    opts=(--options runtime --timestamp)
+  else
+    opts=(--timestamp=none)
+  fi
   for p in "$@"; do
     identity=()
     if [ "$(basename "$p")" = clawdline-daemon ]; then identity=(--identifier clawdline-daemon); fi
