@@ -766,6 +766,8 @@
   "capacityRow.antigravity.acp_view_bytes.full": "舊訊息仍保存在磁碟，可以繼續往前翻頁讀取。",
   "capacityRow.antigravity.history_connections.what": "保存對話歷史的 SQLite 共用連線池。已開啟的連線可能正在閒置；不能只用連線數判斷是否壅塞。",
   "capacityRow.antigravity.history_connections.full": "歷史讀取會在請求期限內等待共用連線；已保存的內容不會被刪除。",
+  "capacityRow.antigravity.active_tool_bytes.what": "限制單一進行中 ACP 回合保留的工具識別碼，讓長時間工具可暫停無活動逾時判定，且記憶體用量有上限。",
+  "capacityRow.antigravity.active_tool_bytes.full": "超過上限時會以具型別錯誤拒絕新增工具追蹤；工具完成或回合結束時釋放識別碼。",
   "capacityRow.antigravity.acp_call_seconds.what": "限制原生 ACP 控制請求、管線寫入與更新回呼的時間；模型回合與權限選擇沒有總時間上限。",
   "capacityRow.antigravity.acp_call_seconds.full": "控制操作卡住時會回傳具型別的錯誤；長時間模型工作與權限選擇會持續到完成或明確取消。",
   "capacityRow.antigravity.hook_connections.full": "連線額滿時回傳忙碌錯誤；既有請求仍受原本期限限制。",

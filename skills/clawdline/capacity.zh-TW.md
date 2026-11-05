@@ -13,6 +13,7 @@
 | `antigravity.acp_trace_records` | 8192 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `antigravity.acp_trace_seconds` | 86400 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `antigravity.acp_view_bytes` | 1048576 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `antigravity.active_tool_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.ancestry_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.context_history` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `antigravity.context_index_bytes` | 4194304 | `bytes` | `refuse` | `diagnostics, sender` | — |

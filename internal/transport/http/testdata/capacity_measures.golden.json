@@ -38,6 +38,11 @@
     "Known": true
   },
   {
+    "Name": "antigravity.active_tool_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "antigravity.ancestry_rows",
     "Known": true,
     "Note": true

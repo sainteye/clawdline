@@ -6,6 +6,8 @@ import "time"
 const (
 	MaxFrameBytes = 1 << 20
 	MaxViewBytes  = 1 << 20
+	// MaxActiveToolBytes bounds exact IDs retained until tool or turn completion.
+	MaxActiveToolBytes = 1 << 20
 	// MaxCallTime bounds control RPCs and pipe writes, not model turns or human decisions.
 	MaxCallTime           = 45 * time.Second
 	MaxHistoryConnections = 1
